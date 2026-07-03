@@ -1,0 +1,18 @@
+[package]
+name = "miniq-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+miniq-protocol = { path = "../miniq-protocol" }
+miniq-sandbox = { path = "../miniq-sandbox" }
+miniq-models = { path = "../miniq-models" }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

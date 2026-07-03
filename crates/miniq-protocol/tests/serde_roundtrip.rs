@@ -1,0 +1,82 @@
+use miniq_protocol::*;
+use serde_json::json;
+
+#[test]
+fn request_roundtrip() {
+    let raw = json!({
+        "jsonrpc": "2.0",
+        "id": "req_01",
+        "method": "session.sendMessage",
+        "params": {"sessionId": "sess_01", "message": {"role": "user", "content": "hi"}}
+    });
+    let req: RpcRequest = serde_json::from_value(raw.clone()).unwrap();
+    assert_eq!(req.method, "session.sendMessage");
+    assert_eq!(req.id, RequestId::String("req_01".into()));
+    let back = serde_json::to_value(&req).unwrap();
+    assert_eq!(back, raw);
+}
+
+#[test]
+fn numeric_request_id() {
+    let raw = json!({"jsonrpc": "2.0", "id": 7, "method": "daemon.health"});
+    let req: RpcRequest = serde_json::from_value(raw).unwrap();
+    assert_eq!(req.id, RequestId::Number(7));
+    assert!(req.params.is_none());
+}
+
+#[test]
+fn response_ok_shape() {
+    let resp = RpcResponse::ok("req_01".into(), json!({"ok": true}));
+    let v = serde_json::to_value(&resp).unwrap();
+    assert_eq!(v["jsonrpc"], "2.0");
+    assert_eq!(v["result"]["ok"], true);
+    assert!(v.get("error").is_none());
+}
+
+#[test]
+fn response_err_shape() {
+    let resp = RpcResponse::err(
+        "req_02".into(),
+        RpcError::new(ErrorCode::MethodNotFound, "no such method"),
+    );
+    let v = serde_json::to_value(&resp).unwrap();
+    assert_eq!(v["error"]["code"], -32601);
+    assert!(v.get("result").is_none());
+}
+
+#[test]
+fn event_tagged_serialization() {
+    let ev = Event::ToolCallStarted {
+        session_id: "sess_01".into(),
+        tool_call_id: "tool_01".into(),
+        tool_name: "shell.run".into(),
+        input: json!({"command": "cargo test"}),
+    };
+    let v = serde_json::to_value(&ev).unwrap();
+    assert_eq!(v["type"], "tool_call_started");
+    assert_eq!(v["sessionId"], "sess_01");
+    assert_eq!(v["toolName"], "shell.run");
+
+    let back: Event = serde_json::from_value(v).unwrap();
+    assert_eq!(back.session_id(), "sess_01");
+}
+
+#[test]
+fn status_enums_snake_case() {
+    assert_eq!(
+        serde_json::to_value(SessionStatus::WaitingApproval).unwrap(),
+        json!("waiting_approval")
+    );
+    assert_eq!(serde_json::to_value(RiskLevel::Blocked).unwrap(), json!("blocked"));
+    assert_eq!(
+        serde_json::to_value(ToolCallStatus::Succeeded).unwrap(),
+        json!("succeeded")
+    );
+}
+
+#[test]
+fn risk_level_ordering() {
+    assert!(RiskLevel::Low < RiskLevel::Medium);
+    assert!(RiskLevel::Medium < RiskLevel::High);
+    assert!(RiskLevel::High < RiskLevel::Blocked);
+}
