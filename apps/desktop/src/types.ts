@@ -74,6 +74,28 @@ export interface Approval {
   resolvedAt?: string;
 }
 
+export interface PlanTask {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+}
+
+export interface Question {
+  id: string;
+  sessionId: string;
+  toolCallId: string;
+  prompt: string;
+  options: string[];
+}
+
+export interface Artifact {
+  id: string;
+  sessionId: string;
+  path: string;
+  kind: string;
+  title: string;
+  createdAt: string;
+}
+
 export interface HealthStatus {
   protocolVersion: number;
   daemonVersion: string;
@@ -107,5 +129,15 @@ export type DaemonEvent =
       riskLevel: RiskLevel;
     }
   | { type: "approval_resolved"; sessionId: string; approval: Approval }
+  | { type: "plan_updated"; sessionId: string; tasks: PlanTask[] }
+  | { type: "question_requested"; sessionId: string; question: Question }
+  | { type: "question_resolved"; sessionId: string; questionId: string; answer: string }
+  | { type: "artifact_created"; sessionId: string; artifact: Artifact }
+  | {
+      type: "skill_suggested";
+      sessionId: string;
+      reason: string;
+      toolSequence: string[];
+    }
   | { type: "turn_completed"; sessionId: string }
   | { type: "turn_failed"; sessionId: string; error: string };

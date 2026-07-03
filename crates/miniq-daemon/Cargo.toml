@@ -11,6 +11,7 @@ miniq-models = { path = "../miniq-models" }
 miniq-agent = { path = "../miniq-agent" }
 miniq-tools = { path = "../miniq-tools" }
 miniq-sandbox = { path = "../miniq-sandbox" }
+miniq-skills = { path = "../miniq-skills" }
 tokio-util = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }

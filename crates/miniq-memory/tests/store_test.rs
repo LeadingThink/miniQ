@@ -54,7 +54,7 @@ fn tool_call_lifecycle() {
 
     let input = json!({"command": "git status"});
     let call = store
-        .create_tool_call(&sess.id, "shell.run", &input, ToolCallStatus::Running)
+        .create_tool_call(&sess.id, "shell_run", &input, ToolCallStatus::Running)
         .unwrap();
     store
         .finish_tool_call(&call.id, ToolCallStatus::Succeeded, Some(&json!({"exitCode": 0})))
@@ -76,7 +76,7 @@ fn approval_resolve_only_once() {
     let call = store
         .create_tool_call(
             &sess.id,
-            "file.write",
+            "file_write",
             &json!({"path": "a.txt"}),
             ToolCallStatus::WaitingApproval,
         )
@@ -105,7 +105,7 @@ fn audit_events_append() {
     let ws = store.create_workspace("D:/tmp/proj", "proj").unwrap();
     let sess = store.create_session(&ws.id, "t").unwrap();
     store
-        .append_audit_event(Some(&sess.id), "tool_call", &json!({"tool": "file.read"}))
+        .append_audit_event(Some(&sess.id), "tool_call", &json!({"tool": "file_read"}))
         .unwrap();
     store
         .append_audit_event(Some(&sess.id), "approval", &json!({"status": "approved"}))

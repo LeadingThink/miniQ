@@ -8,12 +8,20 @@ use tokio_util::sync::CancellationToken;
 
 use crate::state::AppState;
 
-const SYSTEM_PROMPT: &str = "You are miniQ, a local coding copilot that collaborates with the \
-user inside their workspace. Be concise and accurate.";
+const SYSTEM_PROMPT: &str = "You are miniQ, a local AI coworker that collaborates with the \
+user inside their workspace: you plan multi-step tasks, read and edit files, run commands \
+and deliver ready-to-use results. Be concise and accurate. High-risk actions go through \
+user approval; if an action is rejected, adapt instead of retrying it verbatim.";
 
-/// Build the provider-facing history from persisted messages.
-fn history_from_messages(messages: &[Message]) -> Vec<ChatMessage> {
-    let mut history = vec![ChatMessage::system(SYSTEM_PROMPT)];
+/// Build the provider-facing history from persisted messages, with the
+/// available-skills block appended to the system prompt.
+fn history_from_messages(messages: &[Message], skills_block: &str) -> Vec<ChatMessage> {
+    let system = if skills_block.is_empty() {
+        SYSTEM_PROMPT.to_string()
+    } else {
+        format!("{SYSTEM_PROMPT}\n\n{skills_block}")
+    };
+    let mut history = vec![ChatMessage::system(system)];
     for msg in messages {
         let role = match msg.role {
             Role::User => ChatRole::User,
@@ -45,6 +53,7 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
                     session_id: session_id.clone(),
                     status: SessionStatus::Idle,
                 });
+                maybe_suggest_skill(&state, &session_id);
                 state.emit(Event::TurnCompleted {
                     session_id: session_id.clone(),
                 });
@@ -83,16 +92,69 @@ enum TurnError {
     Fatal(String),
 }
 
+/// Suggestion threshold: this many successful tool calls in one session
+/// without consulting any skill hints at a codifiable workflow.
+const SUGGEST_MIN_TOOL_CALLS: usize = 5;
+
+/// After a successful turn, nudge the user to save the workflow as a skill
+/// when the session was tool-heavy and no existing skill was used.
+fn maybe_suggest_skill(state: &AppState, session_id: &str) {
+    let Ok(calls) = state.store.list_tool_calls(session_id) else {
+        return;
+    };
+    let succeeded: Vec<&miniq_protocol::ToolCall> = calls
+        .iter()
+        .filter(|c| c.status == miniq_protocol::ToolCallStatus::Succeeded)
+        .collect();
+    if succeeded.len() < SUGGEST_MIN_TOOL_CALLS {
+        return;
+    }
+    if succeeded.iter().any(|c| c.tool_name == "skill_read") {
+        return; // Already following a skill.
+    }
+    // Interaction-only sessions are not workflows.
+    let substantive = succeeded
+        .iter()
+        .filter(|c| !matches!(c.tool_name.as_str(), "task_update" | "ask_user"))
+        .count();
+    if substantive < SUGGEST_MIN_TOOL_CALLS {
+        return;
+    }
+    state.emit(Event::SkillSuggested {
+        session_id: session_id.to_string(),
+        reason: format!(
+            "this task used {} tool calls without an existing skill — consider saving \
+             it as a reusable skill",
+            succeeded.len()
+        ),
+        tool_sequence: succeeded.iter().map(|c| c.tool_name.clone()).collect(),
+    });
+}
+
 async fn execute_turn(
     state: &AppState,
     session_id: &str,
     cancel: CancellationToken,
 ) -> Result<(), TurnError> {
+    // Resolve the workspace first: it scopes both skills and tools.
+    let session = state
+        .store
+        .get_session(session_id)
+        .map_err(|e| TurnError::Fatal(e.to_string()))?;
+    let workspace = state
+        .store
+        .get_workspace(&session.workspace_id)
+        .map_err(|e| TurnError::Fatal(e.to_string()))?;
+    let workspace_path = std::path::PathBuf::from(&workspace.path);
+
+    let skills = state.skills.discover(Some(&workspace_path));
+    let skills_block = miniq_skills::available_skills_block(&skills);
+
     let messages = state
         .store
         .list_messages(session_id)
         .map_err(|e| TurnError::Fatal(e.to_string()))?;
-    let history = history_from_messages(&messages);
+    let history = history_from_messages(&messages, &skills_block);
 
     // Allocate the assistant message id upfront so streaming deltas can
     // reference it before the row is written.
@@ -115,23 +177,16 @@ async fn execute_turn(
         }
     });
 
-    // Resolve the workspace for tool containment.
-    let session = state
-        .store
-        .get_session(session_id)
-        .map_err(|e| TurnError::Fatal(e.to_string()))?;
-    let workspace = state
-        .store
-        .get_workspace(&session.workspace_id)
-        .map_err(|e| TurnError::Fatal(e.to_string()))?;
-
+    let search = state.settings.lock().unwrap().search.clone();
     let executor = crate::executor::SessionToolExecutor {
         state: state.clone(),
         session_id: session_id.to_string(),
         router: state.router.clone(),
-        ctx: miniq_tools::ToolContext {
-            workspace: std::path::PathBuf::from(&workspace.path),
-        },
+        ctx: miniq_tools::ToolContext::new(workspace_path)
+            .with_search(search)
+            .with_skills(Some(state.skills.clone()))
+            .with_memory(Some(state.store.clone()), Some(session.workspace_id.clone()))
+            .with_mcp(state.mcp_bridge()),
         cancel: cancel.clone(),
     };
 

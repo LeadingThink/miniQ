@@ -4,7 +4,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::types::{Approval, Message, RiskLevel, SessionStatus, ToolCallStatus};
+use crate::types::{
+    Approval, Artifact, Message, PlanTask, Question, RiskLevel, SessionStatus, ToolCallStatus,
+};
 
 /// An event pushed by the daemon over the WebSocket connection.
 ///
@@ -70,6 +72,40 @@ pub enum Event {
         session_id: String,
         approval: Approval,
     },
+    /// The agent updated its step plan for the current task.
+    PlanUpdated {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        tasks: Vec<PlanTask>,
+    },
+    /// The agent is waiting for the user to answer a question.
+    QuestionRequested {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        question: Question,
+    },
+    /// A question was answered.
+    QuestionResolved {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        #[serde(rename = "questionId")]
+        question_id: String,
+        answer: String,
+    },
+    /// A deliverable file was produced.
+    ArtifactCreated {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        artifact: Artifact,
+    },
+    /// This session's workflow looks worth saving as a skill.
+    SkillSuggested {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        reason: String,
+        #[serde(rename = "toolSequence")]
+        tool_sequence: Vec<String>,
+    },
     /// The current turn finished (final assistant message already sent via
     /// `MessageCreated`).
     TurnCompleted {
@@ -94,6 +130,11 @@ impl Event {
             | Event::ToolCallFinished { session_id, .. }
             | Event::ApprovalRequested { session_id, .. }
             | Event::ApprovalResolved { session_id, .. }
+            | Event::PlanUpdated { session_id, .. }
+            | Event::QuestionRequested { session_id, .. }
+            | Event::QuestionResolved { session_id, .. }
+            | Event::ArtifactCreated { session_id, .. }
+            | Event::SkillSuggested { session_id, .. }
             | Event::TurnCompleted { session_id }
             | Event::TurnFailed { session_id, .. } => session_id,
         }

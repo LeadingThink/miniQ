@@ -1,0 +1,19 @@
+[package]
+name = "miniq-docs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+calamine = { workspace = true }
+csv = { workspace = true }
+docx-rs = { workspace = true }
+pdf-extract = { workspace = true }
+quick-xml = { workspace = true }
+rust_xlsxwriter = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+zip = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

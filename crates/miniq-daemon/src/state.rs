@@ -19,6 +19,19 @@ use tokio_util::sync::CancellationToken;
 pub struct DaemonSettings {
     #[serde(default)]
     pub provider: Option<ProviderConfig>,
+    #[serde(default)]
+    pub search: Option<miniq_tools::SearchConfig>,
+    #[serde(default)]
+    pub mcp_servers: Vec<crate::mcp::McpServerConfig>,
+}
+
+fn uuid_suffix() -> String {
+    use rand::Rng;
+    rand::rng()
+        .sample_iter(&rand::distr::Alphanumeric)
+        .take(12)
+        .map(char::from)
+        .collect()
 }
 
 impl DaemonSettings {
@@ -55,32 +68,59 @@ pub struct AppState {
     /// Where settings are persisted; `None` for in-memory (tests).
     pub settings_path: Option<Arc<PathBuf>>,
     pub router: Arc<miniq_tools::ToolRouter>,
+    pub skills: Arc<miniq_skills::SkillStore>,
     pub events: broadcast::Sender<Event>,
     pub started: Instant,
     pub token: String,
-    /// Cancellation token per session with an active turn. One writing turn
-    /// per session at a time.
+    /// Cancellation token per session with an active turn.
     pub active_turns: Arc<Mutex<HashMap<String, CancellationToken>>>,
+    /// Workspaces with an active turn (one writing turn per workspace;
+    /// different workspaces run in parallel).
+    pub busy_workspaces: Arc<Mutex<HashMap<String, String>>>,
     /// Pending approvals waiting for a user decision (approval id -> waker).
     pub pending_approvals: Arc<Mutex<HashMap<String, oneshot::Sender<ApprovalDecision>>>>,
     /// Per-session allowlist of approved tool patterns ("approve for session").
     pub session_allowlist: Arc<Mutex<HashMap<String, HashSet<String>>>>,
+    /// Pending ask_user questions (question id -> answer waker).
+    pub pending_questions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
+    /// Latest published plan per session (in-memory; the plan is a live view).
+    pub plans: Arc<Mutex<HashMap<String, Vec<miniq_protocol::PlanTask>>>>,
+    /// Directory holding checkpoint file backups.
+    pub checkpoints_dir: PathBuf,
+    /// MCP connection manager (lazy per-server connections).
+    pub mcp: Arc<crate::mcp::McpManager>,
 }
 
 impl AppState {
-    /// State with a fixed provider (tests).
+    /// State with a fixed provider (tests). Skills live in a fresh temp dir.
     pub fn new(store: Store, token: String, provider: Arc<dyn ModelProvider>) -> Self {
-        Self::build(store, token, Some(provider), DaemonSettings::default(), None)
+        let skills_dir = std::env::temp_dir().join(format!(
+            "miniq-test-{}",
+            uuid_suffix()
+        ));
+        Self::build(
+            store,
+            token,
+            Some(provider),
+            DaemonSettings::default(),
+            None,
+            skills_dir,
+        )
     }
 
     /// State whose provider follows persisted settings (production daemon).
+    /// The skill store lives next to the settings file in the data dir.
     pub fn with_settings(
         store: Store,
         token: String,
         settings: DaemonSettings,
         settings_path: PathBuf,
     ) -> Self {
-        Self::build(store, token, None, settings, Some(settings_path))
+        let data_dir = settings_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."));
+        Self::build(store, token, None, settings, Some(settings_path), data_dir)
     }
 
     fn build(
@@ -89,6 +129,7 @@ impl AppState {
         provider_override: Option<Arc<dyn ModelProvider>>,
         settings: DaemonSettings,
         settings_path: Option<PathBuf>,
+        data_dir: PathBuf,
     ) -> Self {
         let (events, _) = broadcast::channel(1024);
         Self {
@@ -97,12 +138,52 @@ impl AppState {
             settings: Arc::new(Mutex::new(settings)),
             settings_path: settings_path.map(Arc::new),
             router: Arc::new(miniq_tools::default_router()),
+            skills: Arc::new(miniq_skills::SkillStore::new(
+                &data_dir,
+                miniq_skills::bundled_skills(),
+            )),
             events,
             started: Instant::now(),
             token,
             active_turns: Arc::new(Mutex::new(HashMap::new())),
+            busy_workspaces: Arc::new(Mutex::new(HashMap::new())),
             pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             session_allowlist: Arc::new(Mutex::new(HashMap::new())),
+            pending_questions: Arc::new(Mutex::new(HashMap::new())),
+            plans: Arc::new(Mutex::new(HashMap::new())),
+            checkpoints_dir: data_dir.join("checkpoints"),
+            mcp: crate::mcp::McpManager::new(),
+        }
+    }
+
+    /// Bridge handed to tools so mcp_call can reach configured servers.
+    pub fn mcp_bridge(&self) -> Option<Arc<dyn miniq_tools::McpBridge>> {
+        let servers = self.settings.lock().unwrap().mcp_servers.clone();
+        if servers.is_empty() {
+            return None;
+        }
+        Some(Arc::new(crate::mcp::ManagerBridge {
+            manager: self.mcp.clone(),
+            servers,
+        }))
+    }
+
+    /// Register a pending question and get the receiver the executor awaits.
+    pub fn register_question(&self, question_id: &str) -> oneshot::Receiver<String> {
+        let (tx, rx) = oneshot::channel();
+        self.pending_questions
+            .lock()
+            .unwrap()
+            .insert(question_id.to_string(), tx);
+        rx
+    }
+
+    /// Deliver an answer to a waiting ask_user call.
+    pub fn deliver_answer(&self, question_id: &str, answer: String) -> bool {
+        let sender = self.pending_questions.lock().unwrap().remove(question_id);
+        match sender {
+            Some(tx) => tx.send(answer).is_ok(),
+            None => false,
         }
     }
 
@@ -172,20 +253,27 @@ impl AppState {
         let _ = self.events.send(event);
     }
 
-    /// Register a new turn for a session. Returns `None` if one is already
-    /// running.
-    pub fn begin_turn(&self, session_id: &str) -> Option<CancellationToken> {
+    /// Register a new turn. One turn per session AND per workspace — cross-
+    /// workspace tasks run in parallel, same-workspace turns are serialized
+    /// to avoid conflicting writes. Returns `None` when busy.
+    pub fn begin_turn(&self, session_id: &str, workspace_id: &str) -> Option<CancellationToken> {
         let mut turns = self.active_turns.lock().unwrap();
-        if turns.contains_key(session_id) {
+        let mut busy = self.busy_workspaces.lock().unwrap();
+        if turns.contains_key(session_id) || busy.contains_key(workspace_id) {
             return None;
         }
         let token = CancellationToken::new();
         turns.insert(session_id.to_string(), token.clone());
+        busy.insert(workspace_id.to_string(), session_id.to_string());
         Some(token)
     }
 
     pub fn end_turn(&self, session_id: &str) {
         self.active_turns.lock().unwrap().remove(session_id);
+        self.busy_workspaces
+            .lock()
+            .unwrap()
+            .retain(|_, sess| sess != session_id);
     }
 
     pub fn cancel_turn(&self, session_id: &str) -> bool {

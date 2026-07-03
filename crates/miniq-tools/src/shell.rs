@@ -1,4 +1,4 @@
-//! shell.run: execute a command inside the workspace cwd.
+//! shell_run: execute a command inside the workspace cwd.
 
 use async_trait::async_trait;
 use miniq_sandbox::{classify_command, Risk};
@@ -23,7 +23,7 @@ struct ShellRunInput {
 #[async_trait]
 impl Tool for ShellRunTool {
     fn name(&self) -> &str {
-        "shell.run"
+        "shell_run"
     }
     fn description(&self) -> &str {
         "Run a shell command with the workspace root as working directory. \
@@ -112,9 +112,7 @@ mod tests {
     #[tokio::test]
     async fn runs_echo() {
         let dir = tempfile::tempdir().unwrap();
-        let ctx = ToolContext {
-            workspace: dir.path().to_path_buf(),
-        };
+        let ctx = ToolContext::new(dir.path().to_path_buf());
         let out = ShellRunTool
             .execute(&ctx, json!({"command": "echo hello-miniq"}))
             .await
@@ -125,9 +123,7 @@ mod tests {
 
     #[test]
     fn risk_delegates_to_classifier() {
-        let ctx = ToolContext {
-            workspace: std::path::PathBuf::from("."),
-        };
+        let ctx = ToolContext::new(std::path::PathBuf::from("."));
         assert_eq!(
             ShellRunTool.evaluate_risk(&ctx, &json!({"command": "git status"})).level,
             RiskLevel::Low

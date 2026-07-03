@@ -6,6 +6,8 @@ members = [
     "crates/miniq-models",
     "crates/miniq-agent",
     "crates/miniq-sandbox",
+    "crates/miniq-skills",
+    "crates/miniq-docs",
     "crates/miniq-tools",
     "crates/miniq-daemon",
 ]
@@ -34,3 +36,16 @@ rand = "0.9"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 async-trait = "0.1"
 tokio-util = "0.7"
+ignore = "0.4"
+globset = "0.4"
+regex = "1"
+html2text = "0.12"
+url = "2"
+serde_yaml = "0.9"
+calamine = "0.26"
+rust_xlsxwriter = "0.79"
+docx-rs = "0.4"
+pdf-extract = "0.7"
+zip = "2"
+quick-xml = "0.37"
+csv = "1"

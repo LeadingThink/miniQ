@@ -15,6 +15,13 @@ pub struct OpenAiCompatProvider {
     client: reqwest::Client,
 }
 
+/// OpenAI function names must match `^[a-zA-Z0-9_-]+$`. miniQ tool names are
+/// snake_case and already conform; this defensive normalization keeps any
+/// future dotted name from producing a provider 400.
+fn wire_name(name: &str) -> String {
+    name.replace('.', "_")
+}
+
 impl OpenAiCompatProvider {
     pub fn new(config: ProviderConfig) -> Self {
         Self {
@@ -42,7 +49,7 @@ impl OpenAiCompatProvider {
                         json!({
                             "type": "function",
                             "function": {
-                                "name": t.name,
+                                "name": wire_name(&t.name),
                                 "description": t.description,
                                 "parameters": t.parameters,
                             }

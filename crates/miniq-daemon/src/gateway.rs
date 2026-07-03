@@ -22,9 +22,20 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.sendMessage" => session_send_message(state, req.params),
         "session.cancel" => session_cancel(state, req.params),
         "approval.resolve" => approval_resolve(state, req.params),
+        "question.resolve" => question_resolve(state, req.params),
+        "checkpoint.rollback" => checkpoint_rollback(state, req.params),
         "tool.list" => tool_list(state),
         "settings.get" => settings_get(state),
         "settings.update" => settings_update(state, req.params),
+        "skill.list" => skill_list(state, req.params),
+        "skill.read" => skill_read(state, req.params),
+        "skill.setEnabled" => skill_set_enabled(state, req.params),
+        "skill.delete" => skill_delete(state, req.params),
+        "skill.distill" => skill_distill(state, req.params).await,
+        "skill.refine" => skill_refine(state, req.params).await,
+        "skill.save" => skill_save(state, req.params),
+        "mcp.list" => mcp_list(state, req.params).await,
+        "mcp.update" => mcp_update(state, req.params),
         _ => Err(RpcError::new(
             ErrorCode::MethodNotFound,
             format!("unknown method: {}", req.method),
@@ -172,13 +183,13 @@ fn session_send_message(state: &AppState, raw: Option<Value>) -> Result<Value, R
     if p.message.content.trim().is_empty() {
         return Err(RpcError::new(ErrorCode::InvalidParams, "message content is empty"));
     }
-    state.store.get_session(&p.session_id).map_err(store_err)?;
+    let session = state.store.get_session(&p.session_id).map_err(store_err)?;
 
-    // One writing turn per session.
-    let Some(cancel) = state.begin_turn(&p.session_id) else {
+    // One writing turn per session and per workspace.
+    let Some(cancel) = state.begin_turn(&p.session_id, &session.workspace_id) else {
         return Err(RpcError::new(
             ErrorCode::SessionBusy,
-            "session already has an active turn",
+            "session or workspace already has an active turn",
         ));
     };
 
@@ -269,7 +280,312 @@ fn tool_list(state: &AppState) -> Result<Value, RpcError> {
     to_value(json!({ "tools": state.router.specs() }))
 }
 
-/// Settings view sent to the UI: the API key itself is never echoed back.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuestionResolveParams {
+    question_id: String,
+    answer: String,
+}
+
+fn question_resolve(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: QuestionResolveParams = params(raw)?;
+    if !state.deliver_answer(&p.question_id, p.answer) {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "question not found or already answered",
+        ));
+    }
+    Ok(json!({ "resolved": true }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckpointRollbackParams {
+    checkpoint_id: String,
+}
+
+fn checkpoint_rollback(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: CheckpointRollbackParams = params(raw)?;
+    let checkpoint = state.store.get_checkpoint(&p.checkpoint_id).map_err(store_err)?;
+    let target = std::path::Path::new(&checkpoint.abs_path);
+    if checkpoint.existed {
+        let backup = checkpoint.backup_path.as_deref().ok_or_else(|| {
+            RpcError::new(ErrorCode::InternalError, "checkpoint has no backup file")
+        })?;
+        std::fs::copy(backup, target)
+            .map_err(|e| RpcError::new(ErrorCode::InternalError, format!("restore: {e}")))?;
+    } else if target.exists() {
+        // File did not exist before the tool ran: rollback = remove it.
+        std::fs::remove_file(target)
+            .map_err(|e| RpcError::new(ErrorCode::InternalError, format!("remove: {e}")))?;
+    }
+    let _ = state.store.append_audit_event(
+        Some(&checkpoint.session_id),
+        "checkpoint_rollback",
+        &json!({"checkpointId": checkpoint.id, "path": checkpoint.abs_path}),
+    );
+    Ok(json!({ "restored": checkpoint.abs_path, "existedBefore": checkpoint.existed }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillScopeParams {
+    /// Include this workspace's project skills in scope.
+    #[serde(default)]
+    workspace_id: Option<String>,
+}
+
+/// Resolve the optional workspace path used for project-skill scoping.
+fn skill_workspace(state: &AppState, workspace_id: Option<&str>) -> Result<Option<std::path::PathBuf>, RpcError> {
+    match workspace_id {
+        Some(id) => {
+            let ws = state.store.get_workspace(id).map_err(store_err)?;
+            Ok(Some(std::path::PathBuf::from(ws.path)))
+        }
+        None => Ok(None),
+    }
+}
+
+fn skill_err(e: miniq_skills::StoreError) -> RpcError {
+    match &e {
+        miniq_skills::StoreError::NotFound(_) => {
+            RpcError::new(ErrorCode::InvalidParams, e.to_string())
+        }
+        _ => RpcError::new(ErrorCode::InternalError, e.to_string()),
+    }
+}
+
+fn skill_list(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: SkillScopeParams = params(raw)?;
+    let workspace = skill_workspace(state, p.workspace_id.as_deref())?;
+    let skills = state.skills.discover(workspace.as_deref());
+    to_value(json!({ "skills": skills }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillReadParams {
+    name: String,
+    #[serde(default)]
+    workspace_id: Option<String>,
+}
+
+fn skill_read(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: SkillReadParams = params(raw)?;
+    let workspace = skill_workspace(state, p.workspace_id.as_deref())?;
+    let detail = state
+        .skills
+        .read(workspace.as_deref(), &p.name)
+        .map_err(skill_err)?;
+    to_value(detail)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillSetEnabledParams {
+    name: String,
+    enabled: bool,
+}
+
+fn skill_set_enabled(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: SkillSetEnabledParams = params(raw)?;
+    state.skills.set_enabled(&p.name, p.enabled).map_err(skill_err)?;
+    Ok(json!({ "name": p.name, "enabled": p.enabled }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillDeleteParams {
+    name: String,
+    #[serde(default)]
+    workspace_id: Option<String>,
+}
+
+fn skill_delete(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: SkillDeleteParams = params(raw)?;
+    let workspace = skill_workspace(state, p.workspace_id.as_deref())?;
+    state
+        .skills
+        .delete(workspace.as_deref(), &p.name)
+        .map_err(skill_err)?;
+    Ok(json!({ "deleted": p.name }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillDistillParams {
+    session_id: String,
+}
+
+async fn skill_distill(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: SkillDistillParams = params(raw)?;
+    state.store.get_session(&p.session_id).map_err(store_err)?;
+    if !crate::learn::has_completed_turn(state, &p.session_id) {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "session has no completed turn to distill",
+        ));
+    }
+    let transcript = crate::learn::build_transcript(state, &p.session_id)
+        .map_err(|e| RpcError::new(ErrorCode::InternalError, e))?;
+    let existing: Vec<String> = state
+        .skills
+        .discover(None)
+        .into_iter()
+        .map(|s| s.meta.name)
+        .collect();
+    let inference = crate::learn::ProviderInference {
+        provider: state.current_provider(),
+    };
+    let outcome = miniq_skills::distill_skill(&transcript, &existing, &inference)
+        .await
+        .map_err(|e| RpcError::new(ErrorCode::InternalError, e.to_string()))?;
+    match outcome {
+        miniq_skills::DistillOutcome::Skipped { reason } => {
+            Ok(json!({ "skipped": true, "reason": reason }))
+        }
+        miniq_skills::DistillOutcome::Draft {
+            content,
+            name,
+            description,
+            warnings,
+        } => {
+            let existing_skill = existing.contains(&name);
+            Ok(json!({
+                "skipped": false,
+                "content": content,
+                "name": name,
+                "description": description,
+                "warnings": warnings,
+                "existingSkill": existing_skill,
+            }))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillRefineParams {
+    session_id: String,
+    name: String,
+}
+
+async fn skill_refine(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: SkillRefineParams = params(raw)?;
+    let detail = state.skills.read(None, &p.name).map_err(skill_err)?;
+    let existing_md =
+        miniq_skills::render_skill_md(&detail.skill.meta, &detail.body);
+    let transcript = crate::learn::build_transcript(state, &p.session_id)
+        .map_err(|e| RpcError::new(ErrorCode::InternalError, e))?;
+    let inference = crate::learn::ProviderInference {
+        provider: state.current_provider(),
+    };
+    let outcome = miniq_skills::refine_skill(&existing_md, &transcript, &inference)
+        .await
+        .map_err(|e| RpcError::new(ErrorCode::InternalError, e.to_string()))?;
+    match outcome {
+        miniq_skills::RefineOutcome::Kept => Ok(json!({ "kept": true })),
+        miniq_skills::RefineOutcome::Updated { content, warnings } => Ok(json!({
+            "kept": false,
+            "content": content,
+            "warnings": warnings,
+        })),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillSaveParams {
+    content: String,
+    /// Save even when sensitive-content warnings remain (user confirmed).
+    #[serde(default)]
+    force: bool,
+}
+
+fn skill_save(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: SkillSaveParams = params(raw)?;
+    let warnings = miniq_skills::scan_sensitive(&p.content);
+    if !warnings.is_empty() && !p.force {
+        let mut err = RpcError::new(
+            ErrorCode::InvalidParams,
+            "draft contains possibly sensitive content; edit it or pass force=true",
+        );
+        err.data = Some(json!({ "warnings": warnings }));
+        return Err(err);
+    }
+    let meta = state.skills.save(&p.content).map_err(skill_err)?;
+    let _ = state.store.append_audit_event(
+        None,
+        "skill_saved",
+        &json!({"name": meta.name, "version": meta.version}),
+    );
+    to_value(json!({ "name": meta.name, "version": meta.version }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpListParams {
+    /// Connect to enabled servers and fetch their tool lists.
+    #[serde(default)]
+    connect: bool,
+}
+
+async fn mcp_list(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: McpListParams = params(raw)?;
+    let servers = state.settings.lock().unwrap().mcp_servers.clone();
+    let mut out = Vec::new();
+    for server in servers {
+        let mut entry = json!({
+            "name": server.name,
+            "command": server.command,
+            "args": server.args,
+            "enabled": server.enabled,
+        });
+        if p.connect && server.enabled {
+            match state.mcp.list_tools(&server).await {
+                Ok(tools) => {
+                    entry["status"] = json!("running");
+                    entry["tools"] = json!(tools);
+                }
+                Err(e) => {
+                    entry["status"] = json!("error");
+                    entry["error"] = json!(e);
+                }
+            }
+        } else {
+            entry["status"] = json!(if server.enabled { "configured" } else { "disabled" });
+        }
+        out.push(entry);
+    }
+    Ok(json!({ "servers": out }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpUpdateParams {
+    servers: Vec<crate::mcp::McpServerConfig>,
+}
+
+/// Replace the MCP server list (add/remove/enable are all list edits).
+fn mcp_update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: McpUpdateParams = params(raw)?;
+    for server in &p.servers {
+        if server.name.trim().is_empty() || server.command.trim().is_empty() {
+            return Err(RpcError::new(
+                ErrorCode::InvalidParams,
+                "server name and command must not be empty",
+            ));
+        }
+    }
+    let mut settings = state.settings.lock().unwrap().clone();
+    settings.mcp_servers = p.servers;
+    state
+        .update_settings(settings)
+        .map_err(|e| RpcError::new(ErrorCode::InternalError, e))?;
+    Ok(json!({ "ok": true }))
+}
+
+/// Settings view sent to the UI: API keys are never echoed back.
 fn settings_get(state: &AppState) -> Result<Value, RpcError> {
     let settings = state.settings.lock().unwrap().clone();
     let provider = settings.provider.as_ref().map(|p| {
@@ -279,13 +595,25 @@ fn settings_get(state: &AppState) -> Result<Value, RpcError> {
             "hasApiKey": !p.api_key.is_empty(),
         })
     });
-    Ok(json!({ "provider": provider }))
+    let search = settings.search.as_ref().map(|s| {
+        json!({
+            "provider": s.provider,
+            "baseUrl": s.base_url,
+            "hasApiKey": !s.api_key.is_empty(),
+        })
+    });
+    Ok(json!({ "provider": provider, "search": search }))
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SettingsUpdateParams {
-    provider: ProviderUpdate,
+    /// Absent => keep current provider settings.
+    #[serde(default)]
+    provider: Option<ProviderUpdate>,
+    /// Absent => keep current search settings.
+    #[serde(default)]
+    search: Option<SearchUpdate>,
 }
 
 #[derive(Deserialize)]
@@ -298,29 +626,58 @@ struct ProviderUpdate {
     api_key: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchUpdate {
+    #[serde(default = "default_search_provider")]
+    provider: String,
+    #[serde(default)]
+    base_url: Option<String>,
+    /// Omitted or empty => keep the currently stored key.
+    #[serde(default)]
+    api_key: Option<String>,
+}
+
+fn default_search_provider() -> String {
+    "tavily".to_string()
+}
+
+/// Merge an optional new key over the existing one (empty/absent keeps old).
+fn merged_key(new_key: Option<String>, existing: Option<String>) -> String {
+    match new_key {
+        Some(key) if !key.is_empty() => key,
+        _ => existing.unwrap_or_default(),
+    }
+}
+
 fn settings_update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let p: SettingsUpdateParams = params(raw)?;
-    if p.provider.base_url.trim().is_empty() || p.provider.model.trim().is_empty() {
-        return Err(RpcError::new(
-            ErrorCode::InvalidParams,
-            "baseUrl and model must not be empty",
-        ));
-    }
     let mut settings = state.settings.lock().unwrap().clone();
-    let existing_key = settings
-        .provider
-        .as_ref()
-        .map(|prev| prev.api_key.clone())
-        .unwrap_or_default();
-    let api_key = match p.provider.api_key {
-        Some(key) if !key.is_empty() => key,
-        _ => existing_key,
-    };
-    settings.provider = Some(miniq_models::ProviderConfig {
-        base_url: p.provider.base_url,
-        api_key,
-        model: p.provider.model,
-    });
+
+    if let Some(provider) = p.provider {
+        if provider.base_url.trim().is_empty() || provider.model.trim().is_empty() {
+            return Err(RpcError::new(
+                ErrorCode::InvalidParams,
+                "provider baseUrl and model must not be empty",
+            ));
+        }
+        let existing_key = settings.provider.as_ref().map(|prev| prev.api_key.clone());
+        settings.provider = Some(miniq_models::ProviderConfig {
+            base_url: provider.base_url,
+            api_key: merged_key(provider.api_key, existing_key),
+            model: provider.model,
+        });
+    }
+
+    if let Some(search) = p.search {
+        let existing_key = settings.search.as_ref().map(|prev| prev.api_key.clone());
+        settings.search = Some(miniq_tools::SearchConfig {
+            provider: search.provider,
+            api_key: merged_key(search.api_key, existing_key),
+            base_url: search.base_url,
+        });
+    }
+
     state
         .update_settings(settings)
         .map_err(|e| RpcError::new(ErrorCode::InternalError, e))?;
@@ -338,9 +695,19 @@ fn session_open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError>
     let session = state.store.get_session(&p.session_id).map_err(store_err)?;
     let messages = state.store.list_messages(&p.session_id).map_err(store_err)?;
     let tool_calls = state.store.list_tool_calls(&p.session_id).map_err(store_err)?;
+    let artifacts = state.store.list_artifacts(&p.session_id).map_err(store_err)?;
+    let plan = state
+        .plans
+        .lock()
+        .unwrap()
+        .get(&p.session_id)
+        .cloned()
+        .unwrap_or_default();
     to_value(json!({
         "session": session,
         "messages": messages,
         "toolCalls": tool_calls,
+        "artifacts": artifacts,
+        "plan": plan,
     }))
 }

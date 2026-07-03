@@ -34,19 +34,34 @@ impl SessionToolExecutor {
         }
     }
 
-    /// Pattern used for "approve for session": tool name, plus the program
-    /// token for shell commands so `cargo ...` approval does not unlock `rm`.
+    /// Pattern used for "approve for session": tool name, refined so a broad
+    /// grant is impossible — shell commands are scoped to the program token
+    /// (approving `cargo ...` does not unlock `rm`), network tools to the
+    /// target domain (approving example.com does not unlock other hosts).
     fn approval_pattern(&self, call: &ToolCallRequest) -> String {
-        if call.name == "shell.run" {
-            let program = call
-                .arguments
-                .get("command")
-                .and_then(|c| c.as_str())
-                .and_then(|c| c.split_whitespace().next())
-                .unwrap_or("");
-            format!("shell.run:{program}")
-        } else {
-            call.name.clone()
+        match call.name.as_str() {
+            "shell_run" => {
+                let program = call
+                    .arguments
+                    .get("command")
+                    .and_then(|c| c.as_str())
+                    .and_then(|c| c.split_whitespace().next())
+                    .unwrap_or("");
+                format!("shell_run:{program}")
+            }
+            "web_fetch" | "http_request" => {
+                let host = miniq_tools::url_host(&call.arguments).unwrap_or_default();
+                format!("{}:{host}", call.name)
+            }
+            "mcp_call" => {
+                let server = call
+                    .arguments
+                    .get("server")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("");
+                format!("mcp_call:{server}")
+            }
+            _ => call.name.clone(),
         }
     }
 
@@ -128,6 +143,155 @@ impl SessionToolExecutor {
             status: SessionStatus::Running,
         });
         Ok(proceed)
+    }
+
+    /// Tools that modify files and therefore get a checkpoint backup first.
+    fn is_write_tool(name: &str) -> bool {
+        matches!(name, "file_write" | "file_edit" | "doc_write" | "file_patch")
+    }
+
+    /// Back up the target file before a write tool runs. Returns the
+    /// checkpoint id, or `None` when the input has no resolvable path.
+    fn take_checkpoint(&self, call: &ToolCallRequest, tool_call_id: &str) -> Option<String> {
+        let requested = call.arguments.get("path")?.as_str()?;
+        let abs = miniq_sandbox::resolve_in_workspace(&self.ctx.workspace, requested).ok()?;
+        let existed = abs.is_file();
+        let backup_path = if existed {
+            let backup = self
+                .state
+                .checkpoints_dir
+                .join(format!("{}-{}", miniq_memory::new_id("bk"), abs.file_name()?.to_string_lossy()));
+            std::fs::create_dir_all(&self.state.checkpoints_dir).ok()?;
+            std::fs::copy(&abs, &backup).ok()?;
+            Some(backup.to_string_lossy().to_string())
+        } else {
+            None
+        };
+        let row = self
+            .state
+            .store
+            .create_checkpoint(
+                &self.session_id,
+                tool_call_id,
+                &abs.to_string_lossy(),
+                existed,
+                backup_path.as_deref(),
+            )
+            .ok()?;
+        Some(row.id)
+    }
+
+    /// Handle an ask_user call: emit the question event and wait for the
+    /// user's answer (or cancellation).
+    async fn ask_user(
+        &self,
+        call: &ToolCallRequest,
+        tool_call_id: &str,
+    ) -> Result<Value, AgentError> {
+        let prompt = call
+            .arguments
+            .get("prompt")
+            .and_then(|p| p.as_str())
+            .unwrap_or("")
+            .to_string();
+        if prompt.trim().is_empty() {
+            return Ok(json!({"error": "ask_user requires a non-empty prompt"}));
+        }
+        let options: Vec<String> = call
+            .arguments
+            .get("options")
+            .and_then(|o| o.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let question = miniq_protocol::Question {
+            id: miniq_memory::new_id("q"),
+            session_id: self.session_id.clone(),
+            tool_call_id: tool_call_id.to_string(),
+            prompt,
+            options,
+        };
+        let rx = self.state.register_question(&question.id);
+
+        let _ = self
+            .state
+            .store
+            .update_session_status(&self.session_id, SessionStatus::WaitingApproval);
+        self.state.emit(Event::SessionStatusChanged {
+            session_id: self.session_id.clone(),
+            status: SessionStatus::WaitingApproval,
+        });
+        self.state.emit(Event::QuestionRequested {
+            session_id: self.session_id.clone(),
+            question: question.clone(),
+        });
+        self.audit("question", json!({"questionId": question.id, "prompt": question.prompt}));
+
+        let answer = tokio::select! {
+            _ = self.cancel.cancelled() => {
+                self.state.pending_questions.lock().unwrap().remove(&question.id);
+                return Err(AgentError::Cancelled);
+            }
+            answer = rx => answer.unwrap_or_default(),
+        };
+
+        self.state.emit(Event::QuestionResolved {
+            session_id: self.session_id.clone(),
+            question_id: question.id,
+            answer: answer.clone(),
+        });
+        let _ = self
+            .state
+            .store
+            .update_session_status(&self.session_id, SessionStatus::Running);
+        self.state.emit(Event::SessionStatusChanged {
+            session_id: self.session_id.clone(),
+            status: SessionStatus::Running,
+        });
+        Ok(json!({ "answer": answer }))
+    }
+
+    /// Post-success hooks: plan events for task_update, artifacts for
+    /// doc_write.
+    fn after_success(&self, call: &ToolCallRequest, output: &Value) {
+        match call.name.as_str() {
+            "task_update" => {
+                let tasks: Vec<miniq_protocol::PlanTask> = call
+                    .arguments
+                    .get("tasks")
+                    .and_then(|t| serde_json::from_value(t.clone()).ok())
+                    .unwrap_or_default();
+                self.state
+                    .plans
+                    .lock()
+                    .unwrap()
+                    .insert(self.session_id.clone(), tasks.clone());
+                self.state.emit(Event::PlanUpdated {
+                    session_id: self.session_id.clone(),
+                    tasks,
+                });
+            }
+            "doc_write" => {
+                let path = output.get("path").and_then(|p| p.as_str()).unwrap_or("");
+                let kind = output.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+                let title = output.get("title").and_then(|t| t.as_str()).unwrap_or(path);
+                if let Ok(artifact) =
+                    self.state
+                        .store
+                        .create_artifact(&self.session_id, path, kind, title)
+                {
+                    self.state.emit(Event::ArtifactCreated {
+                        session_id: self.session_id.clone(),
+                        artifact,
+                    });
+                }
+            }
+            _ => {}
+        }
     }
 
     fn finish(
@@ -228,6 +392,29 @@ impl ToolExecutor for SessionToolExecutor {
             input: call.arguments.clone(),
         });
 
+        // ask_user is interactive: handled here, not by the router.
+        if call.name == "ask_user" {
+            let result = self.ask_user(call, &tool_call.id).await;
+            return match result {
+                Ok(output) => {
+                    self.finish(&tool_call.id, ToolCallStatus::Succeeded, &output);
+                    Ok(output)
+                }
+                Err(e) => {
+                    let output = json!({"cancelled": true});
+                    self.finish(&tool_call.id, ToolCallStatus::Cancelled, &output);
+                    Err(e)
+                }
+            };
+        }
+
+        // Back up the target before any file-mutating tool runs.
+        let checkpoint_id = if Self::is_write_tool(&call.name) {
+            self.take_checkpoint(call, &tool_call.id)
+        } else {
+            None
+        };
+
         let result = tokio::select! {
             _ = self.cancel.cancelled() => {
                 let output = json!({"cancelled": true});
@@ -238,7 +425,11 @@ impl ToolExecutor for SessionToolExecutor {
         };
 
         match result {
-            Ok(output) => {
+            Ok(mut output) => {
+                if let Some(id) = checkpoint_id {
+                    output["checkpointId"] = json!(id);
+                }
+                self.after_success(call, &output);
                 self.finish(&tool_call.id, ToolCallStatus::Succeeded, &output);
                 Ok(output)
             }

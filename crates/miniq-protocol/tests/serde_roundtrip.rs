@@ -49,13 +49,13 @@ fn event_tagged_serialization() {
     let ev = Event::ToolCallStarted {
         session_id: "sess_01".into(),
         tool_call_id: "tool_01".into(),
-        tool_name: "shell.run".into(),
+        tool_name: "shell_run".into(),
         input: json!({"command": "cargo test"}),
     };
     let v = serde_json::to_value(&ev).unwrap();
     assert_eq!(v["type"], "tool_call_started");
     assert_eq!(v["sessionId"], "sess_01");
-    assert_eq!(v["toolName"], "shell.run");
+    assert_eq!(v["toolName"], "shell_run");
 
     let back: Event = serde_json::from_value(v).unwrap();
     assert_eq!(back.session_id(), "sess_01");

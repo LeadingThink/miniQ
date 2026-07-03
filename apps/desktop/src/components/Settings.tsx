@@ -7,21 +7,37 @@ interface ProviderView {
   hasApiKey: boolean;
 }
 
+interface SearchView {
+  provider: string;
+  baseUrl: string | null;
+  hasApiKey: boolean;
+}
+
+interface SettingsView {
+  provider: ProviderView | null;
+  search: SearchView | null;
+}
+
 export function SettingsPanel(props: { client: RpcClient; onClose: () => void }) {
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
+  const [searchApiKey, setSearchApiKey] = useState("");
+  const [hasSearchKey, setHasSearchKey] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
     props.client
-      .call<{ provider: ProviderView | null }>("settings.get")
+      .call<SettingsView>("settings.get")
       .then((res) => {
         if (res.provider) {
           setBaseUrl(res.provider.baseUrl);
           setModel(res.provider.model);
           setHasKey(res.provider.hasApiKey);
+        }
+        if (res.search) {
+          setHasSearchKey(res.search.hasApiKey);
         }
       })
       .catch((e) => setStatus(String(e)));
@@ -31,14 +47,20 @@ export function SettingsPanel(props: { client: RpcClient; onClose: () => void })
   const save = async () => {
     setStatus(null);
     try {
-      const params: Record<string, unknown> = { baseUrl, model };
-      if (apiKey) params.apiKey = apiKey;
-      const res = await props.client.call<{ provider: ProviderView | null }>(
-        "settings.update",
-        { provider: params },
-      );
+      const params: Record<string, unknown> = {};
+      if (baseUrl.trim() && model.trim()) {
+        const provider: Record<string, unknown> = { baseUrl, model };
+        if (apiKey) provider.apiKey = apiKey;
+        params.provider = provider;
+      }
+      if (searchApiKey) {
+        params.search = { provider: "tavily", apiKey: searchApiKey };
+      }
+      const res = await props.client.call<SettingsView>("settings.update", params);
       setHasKey(res.provider?.hasApiKey ?? false);
+      setHasSearchKey(res.search?.hasApiKey ?? false);
       setApiKey("");
+      setSearchApiKey("");
       setStatus("Saved.");
     } catch (e) {
       setStatus(e instanceof Error ? e.message : String(e));
@@ -72,6 +94,18 @@ export function SettingsPanel(props: { client: RpcClient; onClose: () => void })
             value={apiKey}
             placeholder={hasKey ? "leave empty to keep the stored key" : "sk-..."}
             onChange={(e) => setApiKey(e.target.value)}
+          />
+        </label>
+        <h2>Web search (Tavily)</h2>
+        <label>
+          Search API key {hasSearchKey && <span className="badge">stored</span>}
+          <input
+            type="password"
+            value={searchApiKey}
+            placeholder={
+              hasSearchKey ? "leave empty to keep the stored key" : "tvly-... (optional)"
+            }
+            onChange={(e) => setSearchApiKey(e.target.value)}
           />
         </label>
         {status && <div className="settings-status">{status}</div>}

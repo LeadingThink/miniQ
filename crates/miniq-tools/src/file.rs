@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 
 use crate::router::{parse_input, Tool, ToolContext, ToolError};
 
-fn path_risk(ctx: &ToolContext, input: &Value, base: RiskLevel, reason: &str) -> Risk {
+pub(crate) fn path_risk(ctx: &ToolContext, input: &Value, base: RiskLevel, reason: &str) -> Risk {
     let Some(path) = input.get("path").and_then(|p| p.as_str()) else {
         return Risk {
             level: RiskLevel::Blocked,
@@ -28,7 +28,7 @@ fn path_risk(ctx: &ToolContext, input: &Value, base: RiskLevel, reason: &str) ->
     }
 }
 
-// ---- file.read ----
+// ---- file_read ----
 
 pub struct FileReadTool;
 
@@ -47,7 +47,7 @@ struct FileReadInput {
 #[async_trait]
 impl Tool for FileReadTool {
     fn name(&self) -> &str {
-        "file.read"
+        "file_read"
     }
     fn description(&self) -> &str {
         "Read a text file inside the workspace. Supports optional line offset/limit paging."
@@ -98,7 +98,7 @@ impl Tool for FileReadTool {
     }
 }
 
-// ---- file.list ----
+// ---- file_list ----
 
 pub struct FileListTool;
 
@@ -116,7 +116,7 @@ fn default_dot() -> String {
 #[async_trait]
 impl Tool for FileListTool {
     fn name(&self) -> &str {
-        "file.list"
+        "file_list"
     }
     fn description(&self) -> &str {
         "List directory entries inside the workspace."
@@ -171,7 +171,7 @@ impl Tool for FileListTool {
     }
 }
 
-// ---- file.write ----
+// ---- file_write ----
 
 pub struct FileWriteTool;
 
@@ -185,7 +185,7 @@ struct FileWriteInput {
 #[async_trait]
 impl Tool for FileWriteTool {
     fn name(&self) -> &str {
-        "file.write"
+        "file_write"
     }
     fn description(&self) -> &str {
         "Create or overwrite a text file inside the workspace. Requires approval."
@@ -229,9 +229,7 @@ mod tests {
     use super::*;
 
     fn ctx(dir: &std::path::Path) -> ToolContext {
-        ToolContext {
-            workspace: dir.to_path_buf(),
-        }
+        ToolContext::new(dir.to_path_buf())
     }
 
     #[tokio::test]

@@ -6,4 +6,4 @@
 
 mod store;
 
-pub use store::{new_id, now_iso, MemoryError, Store};
+pub use store::{new_id, now_iso, CheckpointRow, MemoryError, MemoryRow, Store};

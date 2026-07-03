@@ -27,14 +27,14 @@ fn low_risk(reason: &str) -> Risk {
     }
 }
 
-// ---- git.status ----
+// ---- git_status ----
 
 pub struct GitStatusTool;
 
 #[async_trait]
 impl Tool for GitStatusTool {
     fn name(&self) -> &str {
-        "git.status"
+        "git_status"
     }
     fn description(&self) -> &str {
         "Show git working tree status (branch plus changed files)."
@@ -69,7 +69,7 @@ impl Tool for GitStatusTool {
     }
 }
 
-// ---- git.diff ----
+// ---- git_diff ----
 
 pub struct GitDiffTool;
 
@@ -85,7 +85,7 @@ struct GitDiffInput {
 #[async_trait]
 impl Tool for GitDiffTool {
     fn name(&self) -> &str {
-        "git.diff"
+        "git_diff"
     }
     fn description(&self) -> &str {
         "Show the git diff of the working tree (or the staged index with staged=true), \
@@ -136,9 +136,7 @@ mod tests {
     #[tokio::test]
     async fn status_and_diff_in_fresh_repo() {
         let dir = tempfile::tempdir().unwrap();
-        let ctx = ToolContext {
-            workspace: dir.path().to_path_buf(),
-        };
+        let ctx = ToolContext::new(dir.path().to_path_buf());
         let init = tokio::process::Command::new("git")
             .args(["init", "-q"])
             .current_dir(dir.path())

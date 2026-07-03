@@ -178,6 +178,49 @@ pub struct Approval {
     pub resolved_at: Option<String>,
 }
 
+/// One step in the agent's plan for the current task.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanTask {
+    pub content: String,
+    pub status: PlanTaskStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanTaskStatus {
+    Pending,
+    InProgress,
+    Completed,
+}
+
+/// A clarification question the agent is waiting on.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Question {
+    pub id: String,
+    pub session_id: String,
+    pub tool_call_id: String,
+    pub prompt: String,
+    /// Suggested answers; the user can always type a free-form one.
+    #[serde(default)]
+    pub options: Vec<String>,
+}
+
+/// A deliverable file produced during a task.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Artifact {
+    pub id: String,
+    pub session_id: String,
+    /// Workspace-relative path.
+    pub path: String,
+    /// File kind, e.g. "docx", "xlsx", "md".
+    pub kind: String,
+    pub title: String,
+    pub created_at: String,
+}
+
 /// Daemon health snapshot returned by `daemon.health`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

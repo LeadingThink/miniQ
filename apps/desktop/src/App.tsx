@@ -2,22 +2,43 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RpcClient, resolveConnection } from "./rpc";
 import type {
   Approval,
+  Artifact,
   DaemonEvent,
   HealthStatus,
   Message,
+  PlanTask,
+  Question,
   Session,
   ToolCall,
   Workspace,
 } from "./types";
 import { Sidebar } from "./components/Sidebar";
 import { Timeline } from "./components/Timeline";
-import { Composer } from "./components/Composer";
+import { Composer, ComposerCard } from "./components/Composer";
 import { SettingsPanel } from "./components/Settings";
+import { SkillsPanel } from "./components/Skills";
+import { DistillModal } from "./components/Distill";
+import { McpPanel } from "./components/Mcp";
 
 export interface PendingApproval {
   approval: Approval;
   toolName: string;
   input: unknown;
+}
+
+/** Native folder picker inside Tauri; plain prompt in browser dev mode. */
+async function pickDirectory(): Promise<string | null> {
+  const w = window as unknown as { __TAURI_INTERNALS__?: unknown };
+  if (w.__TAURI_INTERNALS__) {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: "选择工作区文件夹",
+    });
+    return typeof selected === "string" ? selected : null;
+  }
+  return window.prompt("工作区目录(绝对路径):");
 }
 
 export default function App() {
@@ -30,16 +51,33 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [plan, setPlan] = useState<PlanTask[]>([]);
+  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [streamingText, setStreamingText] = useState<string>("");
   const [showSettings, setShowSettings] = useState(false);
+  const [showSkills, setShowSkills] = useState(false);
+  const [showDistill, setShowDistill] = useState(false);
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [showMcp, setShowMcp] = useState(false);
 
   const currentSession = useMemo(
     () => sessions.find((s) => s.id === currentSessionId) ?? null,
     [sessions, currentSessionId],
+  );
+  const selectedWorkspace = useMemo(
+    () =>
+      workspaces.find((w) => w.id === selectedWorkspaceId) ?? workspaces[0] ?? null,
+    [workspaces, selectedWorkspaceId],
+  );
+  const currentWorkspace = useMemo(
+    () => workspaces.find((w) => w.id === currentSession?.workspaceId) ?? null,
+    [workspaces, currentSession],
   );
 
   const refreshSessions = useCallback(async () => {
@@ -80,7 +118,6 @@ export default function App() {
   useEffect(() => {
     return client.onEvent((event: DaemonEvent) => {
       if ("sessionId" in event && event.sessionId !== currentSessionId) {
-        // Still refresh session list state transitions for other sessions.
         if (event.type === "session_status_changed") void refreshSessions();
         return;
       }
@@ -93,7 +130,11 @@ export default function App() {
           );
           break;
         case "message_created":
-          setMessages((prev) => [...prev, event.message]);
+          setMessages((prev) =>
+            prev.some((m) => m.id === event.message.id)
+              ? prev
+              : [...prev, event.message],
+          );
           if (event.message.role === "assistant") setStreamingText("");
           break;
         case "assistant_delta":
@@ -137,6 +178,21 @@ export default function App() {
             prev.filter((a) => a.approval.id !== event.approval.id),
           );
           break;
+        case "plan_updated":
+          setPlan(event.tasks);
+          break;
+        case "question_requested":
+          setQuestions((prev) => [...prev, event.question]);
+          break;
+        case "question_resolved":
+          setQuestions((prev) => prev.filter((q) => q.id !== event.questionId));
+          break;
+        case "artifact_created":
+          setArtifacts((prev) => [...prev, event.artifact]);
+          break;
+        case "skill_suggested":
+          setSuggestion(event.reason);
+          break;
         case "turn_completed":
         case "turn_failed":
           setStreamingText("");
@@ -147,26 +203,38 @@ export default function App() {
   }, [client, currentSessionId, refreshSessions]);
 
   const openWorkspace = useCallback(async () => {
-    const path = window.prompt("Workspace directory (absolute path):");
+    const path = await pickDirectory();
     if (!path) return;
     try {
-      await client.call("workspace.open", { path });
+      const ws = await client.call<Workspace>("workspace.open", { path });
       await refreshWorkspaces();
+      setSelectedWorkspaceId(ws.id);
+      setCurrentSessionId(null);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   }, [client, refreshWorkspaces]);
 
+  const resetSessionView = () => {
+    setMessages([]);
+    setToolCalls([]);
+    setApprovals([]);
+    setQuestions([]);
+    setPlan([]);
+    setArtifacts([]);
+    setStreamingText("");
+    setSuggestion(null);
+  };
+
   const createSession = useCallback(
     async (workspaceId: string) => {
       const session = await client.call<Session>("session.create", { workspaceId });
       await refreshSessions();
+      setSelectedWorkspaceId(workspaceId);
       setCurrentSessionId(session.id);
-      setMessages([]);
-      setToolCalls([]);
-      setApprovals([]);
-      setStreamingText("");
+      resetSessionView();
+      return session;
     },
     [client, refreshSessions],
   );
@@ -177,12 +245,16 @@ export default function App() {
         session: Session;
         messages: Message[];
         toolCalls: ToolCall[];
+        artifacts: Artifact[];
+        plan: PlanTask[];
       }>("session.open", { sessionId });
       setCurrentSessionId(sessionId);
+      setSelectedWorkspaceId(res.session.workspaceId);
+      resetSessionView();
       setMessages(res.messages);
       setToolCalls(res.toolCalls);
-      setApprovals([]);
-      setStreamingText("");
+      setPlan(res.plan ?? []);
+      setArtifacts(res.artifacts ?? []);
     },
     [client],
   );
@@ -203,6 +275,26 @@ export default function App() {
     [client, currentSessionId],
   );
 
+  /** Hero flow: type a goal -> session is created and the goal sent. */
+  const startTask = useCallback(
+    async (content: string) => {
+      if (!selectedWorkspace) return;
+      setError(null);
+      try {
+        const session = await createSession(selectedWorkspace.id);
+        await client.call("session.sendMessage", {
+          sessionId: session.id,
+          message: { role: "user", content },
+        });
+        // Sync anything we missed while the event listener re-bound.
+        await openSession(session.id);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [client, selectedWorkspace, createSession, openSession],
+  );
+
   const cancelTurn = useCallback(async () => {
     if (!currentSessionId) return;
     await client.call("session.cancel", { sessionId: currentSessionId });
@@ -212,6 +304,32 @@ export default function App() {
     async (approvalId: string, decision: string) => {
       try {
         await client.call("approval.resolve", { approvalId, decision });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [client],
+  );
+
+  const resolveQuestion = useCallback(
+    async (questionId: string, answer: string) => {
+      try {
+        await client.call("question.resolve", { questionId, answer });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [client],
+  );
+
+  const rollbackCheckpoint = useCallback(
+    async (checkpointId: string) => {
+      try {
+        const res = await client.call<{ restored: string }>("checkpoint.rollback", {
+          checkpointId,
+        });
+        setError(null);
+        window.alert(`已恢复: ${res.restored}`);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
@@ -229,51 +347,127 @@ export default function App() {
         workspaces={workspaces}
         sessions={sessions}
         currentSessionId={currentSessionId}
+        selectedWorkspaceId={selectedWorkspace?.id ?? null}
         onOpenWorkspace={openWorkspace}
+        onSelectWorkspace={(id) => {
+          setSelectedWorkspaceId(id);
+          setCurrentSessionId(null);
+          resetSessionView();
+        }}
         onCreateSession={createSession}
         onSelectSession={openSession}
+        onShowSkills={() => setShowSkills(true)}
+        onShowMcp={() => setShowMcp(true)}
+        onShowSettings={() => setShowSettings(true)}
       />
       <div className="main">
         <div className="statusbar">
           <span className={`dot ${connected ? "ok" : "bad"}`} />
           <span>
-            {connected
-              ? `daemon v${health?.daemonVersion ?? "?"} · protocol ${health?.protocolVersion ?? "?"}`
-              : "disconnected"}
+            {connected ? `daemon v${health?.daemonVersion ?? "?"}` : "未连接"}
           </span>
           {currentSession && (
-            <>
-              <span>·</span>
-              <span>{currentSession.title}</span>
-              <span className={`badge ${currentSession.status}`}>
-                {currentSession.status}
-              </span>
-            </>
+            <span className={`badge ${currentSession.status}`}>
+              {currentSession.status}
+            </span>
           )}
           <span style={{ flex: 1 }} />
-          <button className="secondary" onClick={() => setShowSettings(true)}>
-            Settings
-          </button>
+          {currentSession &&
+            !busy &&
+            messages.some((m) => m.role === "assistant") && (
+              <button className="ghost" onClick={() => setShowDistill(true)}>
+                ✦ 保存为技能
+              </button>
+            )}
         </div>
+        {error && <div className="error-banner">{error}</div>}
+        {suggestion && (
+          <div className="suggestion-banner">
+            💡 {suggestion}
+            <button
+              onClick={() => {
+                setSuggestion(null);
+                setShowDistill(true);
+              }}
+            >
+              保存为技能
+            </button>
+            <button className="ghost" onClick={() => setSuggestion(null)}>
+              忽略
+            </button>
+          </div>
+        )}
         {showSettings && (
           <SettingsPanel client={client} onClose={() => setShowSettings(false)} />
         )}
-        {error && <div className="error-banner">{error}</div>}
+        {showSkills && (
+          <SkillsPanel
+            client={client}
+            workspaceId={selectedWorkspace?.id ?? null}
+            onClose={() => setShowSkills(false)}
+          />
+        )}
+        {showMcp && <McpPanel client={client} onClose={() => setShowMcp(false)} />}
+        {showDistill && currentSessionId && (
+          <DistillModal
+            client={client}
+            sessionId={currentSessionId}
+            onClose={() => setShowDistill(false)}
+          />
+        )}
         {currentSessionId ? (
           <>
             <Timeline
               messages={messages}
               toolCalls={toolCalls}
               approvals={approvals}
+              questions={questions}
+              plan={plan}
+              artifacts={artifacts}
               streamingText={streamingText}
               onResolveApproval={resolveApproval}
+              onResolveQuestion={resolveQuestion}
+              onRollback={rollbackCheckpoint}
             />
-            <Composer busy={!!busy} onSend={sendMessage} onCancel={cancelTurn} />
+            <Composer
+              busy={!!busy}
+              chip={currentWorkspace?.name}
+              onSend={sendMessage}
+              onCancel={cancelTurn}
+            />
           </>
         ) : (
-          <div className="empty-state">
-            <div>Open a workspace and create a session to start.</div>
-            <button onClick={openWorkspace}>Open workspace</button>
+          <div className="hero">
+            <h1>
+              {selectedWorkspace
+                ? `要在 ${selectedWorkspace.name} 中完成什么?`
+                : "今天想完成什么?"}
+            </h1>
+            <div className="hero-composer">
+              {selectedWorkspace ? (
+                <ComposerCard
+                  busy={false}
+                  autoFocus
+                  placeholder="描述你的目标,例如:整理这份资料并生成周报"
+                  chip={selectedWorkspace.name}
+                  onSend={startTask}
+                />
+              ) : (
+                <div style={{ display: "flex", justifyContent: "center" }}>
+                  <button onClick={openWorkspace}>打开工作区</button>
+                </div>
+              )}
+            </div>
+            <div className="hero-cards">
+              <div className="hero-card" onClick={() => setShowSkills(true)}>
+                <div className="hero-card-title">✦ 技能</div>
+                <div className="hero-card-sub">查看可复用的工作流,或从任务中学习新技能</div>
+              </div>
+              <div className="hero-card" onClick={() => setShowMcp(true)}>
+                <div className="hero-card-title">🔌 连接 MCP</div>
+                <div className="hero-card-sub">接入外部工具与服务,扩展 agent 能力</div>
+              </div>
+            </div>
           </div>
         )}
       </div>

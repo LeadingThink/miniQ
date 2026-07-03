@@ -3,6 +3,8 @@
 
 pub mod executor;
 pub mod gateway;
+pub mod learn;
+pub mod mcp;
 pub mod server;
 pub mod state;
 pub mod turn;
@@ -23,6 +25,15 @@ pub fn load_settings(settings_path: &std::path::Path) -> state::DaemonSettings {
             settings.provider = Some(config);
         } else {
             tracing::warn!("no model provider configured; set it via settings.update or MINIQ_BASE_URL/MINIQ_MODEL");
+        }
+    }
+    if settings.search.is_none() {
+        if let Ok(api_key) = std::env::var("MINIQ_SEARCH_API_KEY") {
+            settings.search = Some(miniq_tools::SearchConfig {
+                provider: std::env::var("MINIQ_SEARCH_PROVIDER").unwrap_or_else(|_| "tavily".into()),
+                api_key,
+                base_url: std::env::var("MINIQ_SEARCH_BASE_URL").ok(),
+            });
         }
     }
     settings

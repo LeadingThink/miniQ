@@ -54,6 +54,40 @@
         ],
         "type": "string"
       },
+      "Artifact": {
+        "description": "A deliverable file produced during a task.",
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "File kind, e.g. \"docx\", \"xlsx\", \"md\".",
+            "type": "string"
+          },
+          "path": {
+            "description": "Workspace-relative path.",
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "kind",
+          "path",
+          "sessionId",
+          "title"
+        ],
+        "type": "object"
+      },
       "Message": {
         "properties": {
           "content": {
@@ -78,6 +112,62 @@
           "id",
           "role",
           "sessionId"
+        ],
+        "type": "object"
+      },
+      "PlanTask": {
+        "description": "One step in the agent's plan for the current task.",
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/definitions/PlanTaskStatus"
+          }
+        },
+        "required": [
+          "content",
+          "status"
+        ],
+        "type": "object"
+      },
+      "PlanTaskStatus": {
+        "enum": [
+          "pending",
+          "in_progress",
+          "completed"
+        ],
+        "type": "string"
+      },
+      "Question": {
+        "description": "A clarification question the agent is waiting on.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "options": {
+            "default": [],
+            "description": "Suggested answers; the user can always type a free-form one.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "toolCallId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "prompt",
+          "sessionId",
+          "toolCallId"
         ],
         "type": "object"
       },
@@ -310,6 +400,135 @@
         "required": [
           "approval",
           "sessionId",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "The agent updated its step plan for the current task.",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/definitions/PlanTask"
+            },
+            "type": "array"
+          },
+          "type": {
+            "enum": [
+              "plan_updated"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "tasks",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "The agent is waiting for the user to answer a question.",
+        "properties": {
+          "question": {
+            "$ref": "#/definitions/Question"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "question_requested"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "sessionId",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "A question was answered.",
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "questionId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "question_resolved"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer",
+          "questionId",
+          "sessionId",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "A deliverable file was produced.",
+        "properties": {
+          "artifact": {
+            "$ref": "#/definitions/Artifact"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "artifact_created"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact",
+          "sessionId",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "This session's workflow looks worth saving as a skill.",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "toolSequence": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": {
+            "enum": [
+              "skill_suggested"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "sessionId",
+          "toolSequence",
           "type"
         ],
         "type": "object"

@@ -23,10 +23,58 @@ pub enum ToolError {
 }
 
 /// Everything a tool needs to run. Tools must not reach outside this context.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ToolContext {
     /// Absolute workspace root; all paths and cwd are constrained to it.
     pub workspace: PathBuf,
+    /// Search provider config; `None` = web_search unavailable.
+    pub search: Option<crate::web::SearchConfig>,
+    /// Skill store; `None` = skill_read unavailable.
+    pub skills: Option<Arc<miniq_skills::SkillStore>>,
+    /// SQLite store for memory tools; `None` = memory tools unavailable.
+    pub memory: Option<Arc<miniq_memory::Store>>,
+    /// Workspace id for workspace-scoped memory.
+    pub workspace_id: Option<String>,
+    /// MCP bridge; `None` = mcp_call unavailable.
+    pub mcp: Option<Arc<dyn crate::mcp::McpBridge>>,
+}
+
+impl ToolContext {
+    pub fn new(workspace: PathBuf) -> Self {
+        Self {
+            workspace,
+            search: None,
+            skills: None,
+            memory: None,
+            workspace_id: None,
+            mcp: None,
+        }
+    }
+
+    pub fn with_mcp(mut self, mcp: Option<Arc<dyn crate::mcp::McpBridge>>) -> Self {
+        self.mcp = mcp;
+        self
+    }
+
+    pub fn with_memory(
+        mut self,
+        memory: Option<Arc<miniq_memory::Store>>,
+        workspace_id: Option<String>,
+    ) -> Self {
+        self.memory = memory;
+        self.workspace_id = workspace_id;
+        self
+    }
+
+    pub fn with_search(mut self, search: Option<crate::web::SearchConfig>) -> Self {
+        self.search = search;
+        self
+    }
+
+    pub fn with_skills(mut self, skills: Option<Arc<miniq_skills::SkillStore>>) -> Self {
+        self.skills = skills;
+        self
+    }
 }
 
 #[async_trait]

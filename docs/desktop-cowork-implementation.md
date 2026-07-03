@@ -1,654 +1,440 @@
-# miniQ Desktop Cowork 实现文档
+# miniQ Desktop AI Coworker 实现文档
 
 ## 1. 产品定位
 
-miniQ 是一个面向开发者的桌面端 AI cowork 产品，目标体验接近 Claude Code / Codex cowork：用户在本地工作区中与 agent 协作，由 agent 读取文件、修改代码、运行命令、调用 MCP 工具、维护会话记忆，并在高风险操作前请求用户审批。
+miniQ 是一款面向通用办公场景的桌面端 AI Agent 产品。它不是编程 IDE,也不是聊天机器人,而是一个在用户电脑上协助完成工作的 "AI Coworker":
 
-核心原则：
+用户给出目标 —— 整理资料、生成报告、分析表格、修改文档、准备演示稿、汇总会议内容、起草邮件、完成一个项目任务 —— agent 自动拆解步骤、读取本地文件、调用工具和应用、在关键操作前请求用户确认,最终交付一个可直接使用的结果。
 
-- 桌面体验优先：常驻本地、低延迟、支持多工作区和长期会话。
-- 本地控制优先：shell、git、file、memory、approval、sandbox 都由本机 Rust runtime 管控。
-- 协议优先：UI 与 agent core 之间走清晰的 JSON-RPC / WebSocket 协议，工具和外部能力通过 MCP / ACP 接入。
-- 安全默认：命令审批、权限声明、沙箱策略、审计日志是核心能力，不作为后续补丁。
-- 轻量实现：避免 Electron + Node agent 的重量级路线，采用 Tauri 2 + Rust daemon。
+核心原则:
 
-## 2. 总体架构
+- 目标驱动:用户描述结果,agent 负责规划和执行,过程可见、可控、可中断。
+- 本地控制优先:文件、shell、审批、沙箱、记忆全部由本机 Rust runtime 管控。
+- 技能为中心:agent 的通用执行力来自一小组内置工具;"怎么做某类工作" 的知识全部以技能(Skill)组装,用户可以把一次任务的做法固化成新技能。
+- 安全默认:命令审批、风险分级、路径沙箱、审计日志是核心能力,不是补丁。
+- 轻量实现:Tauri 2 + Rust daemon,不走 Electron + Node 的重量级路线。
+
+## 2. 核心概念:通用 Agent + 技能体系
+
+### 2.1 两层能力模型
 
 ```text
-Tauri 2 Desktop App
-  ├─ Svelte / React UI
-  ├─ Tauri command bridge
-  └─ Local WebSocket client
-       ↓
-Local Rust Agent Daemon
-  ├─ JSON-RPC / WebSocket gateway
-  ├─ Session manager
-  ├─ Agent runtime
-  ├─ Tool router
-  ├─ Approval manager
-  ├─ Sandbox manager
-  ├─ Memory service
-  └─ Event stream
-       ↓
-Tools and Integrations
-  ├─ MCP clients / servers
-  ├─ ACP adapters
-  ├─ Shell tool
-  ├─ Git tool
-  ├─ File tool
-  └─ Model provider adapters
-       ↓
-SQLite
-  ├─ sessions
-  ├─ messages
-  ├─ tool_calls
-  ├─ approvals
-  ├─ memories
-  ├─ workspaces
-  └─ audit_events
+┌─────────────────────────────────────────────┐
+│ 技能层(知识 / 流程)                        │
+│   SKILL.md + 可选 scripts/                   │
+│   "怎么整理周报"、"怎么分析这类表格"、        │
+│   "怎么处理发票"、"怎么写代码修 bug"          │
+│   —— 全部可由用户从任务中蒸馏生成            │
+├─────────────────────────────────────────────┤
+│ 工具层(执行能力,内置、不可由技能替代)      │
+│   file_read/write/list  shell_run            │
+│   git_status/diff       doc_read (pdf/office)│
+│   web_fetch             mcp_call ...         │
+│   —— 全部经过 ToolRouter、风险分级、审批     │
+└─────────────────────────────────────────────┘
 ```
 
-推荐采用单机本地 daemon，而不是把所有 agent 逻辑塞进 Tauri command。Tauri 只负责桌面外壳、窗口、系统权限和轻量桥接；agent daemon 负责长期运行状态、任务调度、工具调用和安全策略。
+关键结论(来自参考项目验证,详见 §5):
 
-## 3. 技术栈
+- 工具给 agent 通用执行力("想干嘛就能干嘛"),数量保持少而稳定。
+- 技能是组织工具的知识层,不是新的执行通道。技能里的脚本仍通过 `shell_run` 执行,自动继承审批与沙箱。
+- 编程、报告、数据分析、邮件等都不是独立子系统,而是同一个 agent 加载不同技能后的表现。
+
+### 2.2 技能格式
+
+一个技能是一个目录:
+
+```text
+weekly-report/
+  SKILL.md          # 必需:YAML frontmatter + markdown 正文
+  scripts/          # 可选:可执行脚本(py/ps1/sh/js)
+  templates/        # 可选:输出模板(docx/pptx/md 模板等)
+  references/       # 可选:参考资料
+```
+
+`SKILL.md` frontmatter 最小字段:
+
+```yaml
+---
+name: weekly-report
+description: 汇总本周工作记录并生成周报 docx
+version: 1
+origin: distilled          # bundled | user | distilled | installed
+requires:
+  bins: []                 # 依赖的本地命令
+allowedTools: []           # 留空 = 不额外限制
+enabled: true
+---
+```
+
+正文约定结构(与蒸馏输出契约一致):
+
+```markdown
+## 适用场景
+## 步骤(写明每步用哪个工具)
+## 注意事项(真实踩过的坑)
+## 如何确认完成
+```
+
+### 2.3 技能如何参与推理
+
+1. daemon 启动 / 会话开始时扫描技能目录,只解析 frontmatter(便宜)。
+2. 系统提示词注入 `<available_skills>` 清单(name + description),设定 token 预算,超预算先压缩描述再截断。
+3. agent 判断某技能相关时,调用内置工具 `skill_read(name)` 读取正文和文件清单,再按其中的步骤行动。
+4. 技能自带脚本时,`skill_read` 返回脚本落盘后的绝对路径,agent 用 `shell_run` 执行 —— 因此脚本执行天然进入风险分级和审批。
+
+技能目录优先级(同名时高优先级遮蔽低优先级):
+
+```text
+<workspace>/.miniq/skills/   # 项目技能
+<data_dir>/skills/           # 用户全局技能(含蒸馏产物)
+内置 bundled 技能             # 编译期打包
+```
+
+### 2.4 「创建技能」:录制 → 蒸馏 → 复用 → 进化
+
+这是产品的招牌功能,实现分四步:
+
+1. **录制**:无需额外操作 —— 会话的 messages / tool_calls / approvals 本来就完整落在 SQLite,这就是 transcript。
+2. **蒸馏(distill)**:用户在任务完成后点「保存为技能」,daemon 把该会话 transcript 交给蒸馏 prompt,产出一份 SKILL.md 草稿:步骤必须写明确切工具名与关键参数、记录真实出现过的坑、给出完成判据;纯问答类会话拒绝蒸馏(返回 SKIP 及原因)。
+3. **校验与保存**:蒸馏产物用与技能加载完全相同的解析器校验(保证"学会的技能一定能用"),用户在 UI 预览、可编辑,确认后写入 `<data_dir>/skills/<name>/`。技能名从任务内容确定性派生,保证重复学习得到稳定身份。
+4. **进化(refine)**:后续会话若命中同名技能且任务再次完成,提供「更新技能」:把新 transcript 与现有 SKILL.md 一起交给 refine prompt,合并新经验并 version+1,或判定 KEEP 不变。
+
+增强(后置):挖掘历史会话中重复出现的工具调用序列(次数 ≥ N 且未被现有技能覆盖),主动建议"把这个流程存成技能"。
+
+安全红线:蒸馏 prompt 明确禁止把密钥、token、个人敏感信息写进技能;蒸馏产物默认 `origin: distilled`、仅本机可用,分享/安装体系(注册表、签名)属于后期。
+
+## 3. 总体架构
+
+```text
+Tauri 2 Desktop App (apps/desktop)
+  ├─ TypeScript 前端(当前 React 实现,组件按可迁移 Svelte 设计)
+  ├─ Tauri command bridge(仅 daemon 发现/启动)
+  └─ Local WebSocket client
+       ↓ JSON-RPC 2.0 / WebSocket
+Local Rust Agent Daemon (miniq-daemon)
+  ├─ RpcGateway(认证、分发、事件广播)
+  ├─ SessionManager(workspace / session / turn 生命周期)
+  ├─ AgentRuntime(规划-执行循环,miniq-agent)
+  ├─ ToolRouter(miniq-tools)
+  ├─ SkillService(发现、注入、读取、蒸馏、进化)★ 新增
+  ├─ ApprovalManager(风险分级 + 审批)
+  ├─ SandboxManager(miniq-sandbox)
+  └─ Memory / Store(miniq-memory, SQLite)
+       ↓
+Tools and Integrations
+  ├─ file / shell / git 工具(已实现)
+  ├─ doc 工具:pdf / docx / xlsx / pptx 读取与生成 ★ 新增
+  ├─ web 工具:网页抓取整理 ★ 新增
+  ├─ MCP clients(外部工具接入)
+  └─ Model provider adapters(OpenAI-compatible,已实现)
+```
+
+## 4. 技术栈
 
 | 层级 | 技术 | 职责 |
 | --- | --- | --- |
-| 桌面容器 | Tauri 2 | 跨平台窗口、系统托盘、本地权限、自动更新 |
-| 前端 | Svelte 或 React | 聊天、任务流、文件 diff、审批面板、设置页 |
-| 本地核心 | Rust | agent runtime、工具系统、会话状态、安全控制 |
+| 桌面容器 | Tauri 2 | 窗口、托盘、自动更新、daemon 发现启动 |
+| 前端 | TypeScript(React 现状 / Svelte 可选) | 任务进度、审批、文件预览、结果交付、技能管理 |
+| 本地核心 | Rust | agent runtime、工具、技能、审批、沙箱、持久化 |
 | 本地通信 | JSON-RPC 2.0 over WebSocket | UI 与 daemon 双向通信、事件流 |
-| 工具协议 | MCP | 接入外部工具、上下文服务、第三方能力 |
-| agent 协作协议 | ACP / JSON-RPC | 与 agent server、远程 worker 或其他客户端互操作 |
-| 存储 | SQLite | 会话、记忆、工具调用、审批、审计日志 |
+| 工具协议 | MCP | 外部工具与第三方能力接入 |
+| 存储 | SQLite | 会话、消息、工具调用、审批、审计;技能以文件形式存盘 |
 | 异步运行时 | Tokio | daemon、工具调用、事件推送、任务取消 |
-| 数据校验 | serde + schemars | Rust 类型生成 JSON Schema |
-| 前端类型 | TypeScript | 从 JSON Schema 生成请求、响应和事件类型 |
+| 数据校验 | serde + schemars | Rust 类型生成 JSON Schema(schemas/) |
 
-如果后续引入 Python agent 或评测脚本，必须保持 JSON Schema 与 Pydantic model 的字段限制一致。推荐以 JSON Schema 作为跨语言契约源，Rust 与 Python 都从同一份 schema 校验。
+## 5. 参考项目吸收方式
 
-## 4. 参考项目吸收方式
+`reference-repos/` 为本地完整代码参考(已 gitignore),实现每个模块前先检索对应实现:
 
-本仓库使用 `reference-repos/` 作为本地参考代码目录。该目录已经加入 `.gitignore`，不会被提交，但实现 miniQ 时可以直接读取和检索其中的完整代码。
+| 项目 | 重点参考 |
+| --- | --- |
+| moltis | 技能目录发现(多根优先级 + frontmatter 惰性解析)、`<available_skills>` 提示词注入与 token 预算、`read_skill`/`create_skill` 等技能 CRUD 工具及路径守卫 |
+| ironclaw | **`ironclaw_skill_learning`:transcript → distill/refine 的技能学习管线**(蒸馏/进化 prompt、与安装路径同解析器校验、SKIP 门槛);技能激活打分(keywords/patterns/预算/信任衰减);trusted vs installed 信任分层 |
+| opencrust | `skill_suggester`(重复工具序列挖掘 → 主动建议成技能)、`create_skill_tool` |
+| zeroclaw | WASM 插件模型(manifest + 权限声明 + Ed25519 签名 + wasmtime)—— 留作后期第三方分发方案;轻量 runtime 与 `Tool` trait |
+| openfang / librefang | Tauri 桌面结构、技能开关 UI |
+| microclaw | 消息事件流、多端连接 |
 
-参考代码路径：
+已验证的关键设计判断:
 
-```text
-reference-repos/
-  openfang/     # Tauri/Rust 桌面结构、本地服务组织
-  librefang/    # Tauri/Rust 桌面结构、前后端通信
-  zeroclaw/     # 轻量 agent runtime、Rust 工具编排
-  opencrust/    # 轻量 runtime、agent core 设计
-  moltis/       # 长期 session、memory、sandbox 思路
-  ironclaw/     # 安全沙箱、权限、命令审批
-  microclaw/    # 聊天渠道、消息事件流
-```
+- SKILL.md 指令注入是四个项目共同的主流形态;可执行代码放 `scripts/` 由 agent 经 shell 工具调用,而非独立执行通道。
+- 技能学习(distill/refine)在 ironclaw 有完整先例,蒸馏产物必须用加载路径同一解析器校验。
+- WASM 插件仅在需要沙箱化第三方分发时才引入,第一阶段不做。
 
-这些项目作为完整代码参考，不直接 fork：
+使用原则:吸收架构边界与关键实现细节,不复制项目结构;不继承参考代码中的旧逻辑与历史兼容层。
 
-- OpenFang / LibreFang：参考 Tauri 桌面结构、窗口管理、前端与本地核心的拆分方式。
-- ZeroClaw / OpenCrust：参考轻量 Rust runtime，避免把 agent core 做成复杂平台。
-- Moltis：参考长期 session、memory、sandbox 的服务化设计。
-- IronClaw：参考安全沙箱、命令审批、权限边界。
-- MicroClaw：参考聊天渠道、消息事件流、多端连接能力。
-
-miniQ 的实现策略是吸收架构边界、代码组织方式和关键实现细节，不复制项目结构。每开始实现一个模块前，应先在 `reference-repos/` 中检索对应项目的实现，确认成熟项目如何处理进程边界、协议、工具调用、持久化和安全策略。
-
-推荐检索方式：
-
-```powershell
-rg "tauri|command|invoke|websocket|jsonrpc" reference-repos\openfang reference-repos\librefang
-rg "tool|runtime|agent|executor" reference-repos\zeroclaw reference-repos\opencrust
-rg "session|memory|sqlite|sandbox" reference-repos\moltis
-rg "approval|permission|sandbox|command" reference-repos\ironclaw
-rg "message|chat|stream|event" reference-repos\microclaw
-```
-
-参考代码使用原则：
-
-- 先读已有实现，再设计 miniQ 模块边界。
-- 可以借鉴目录分层、trait 边界、协议字段和测试方法。
-- 不直接复制大段代码，除非许可证允许且保留必要声明。
-- 不为了兼容参考项目而牺牲 miniQ 的新架构。
-- 参考代码中的旧逻辑、复杂兜底和历史兼容层不默认继承。
-
-项目初期应优先完成一条稳定的本地闭环：聊天输入、模型规划、工具调用、审批、文件修改、命令执行、结果回传、会话持久化。
-
-## 5. 仓库结构
+## 6. 仓库结构
 
 ```text
 miniQ/
-  reference-repos/          # 本地参考代码，被 .gitignore 忽略，不提交
-  apps/
-    desktop/
-      src/                  # Svelte / React 前端
-      src-tauri/            # Tauri 2 shell
+  reference-repos/          # 本地参考代码,不提交
+  apps/desktop/
+    src/                    # TypeScript 前端
+    src-tauri/              # Tauri 2 shell(独立 cargo package)
   crates/
-    miniq-daemon/           # 本地 agent daemon 入口
-    miniq-protocol/         # JSON-RPC 请求、响应、事件类型
-    miniq-agent/            # agent runtime、planner、executor
-    miniq-tools/            # shell/git/file/MCP/ACP 工具
-    miniq-sandbox/          # sandbox 和权限策略
-    miniq-memory/           # SQLite memory/session 服务
-    miniq-models/           # LLM provider adapter
-  schemas/
-    protocol.schema.json
-    tools.schema.json
-  migrations/
-    0001_init.sql
+    miniq-protocol/         # JSON-RPC 请求、响应、事件类型(已实现)
+    miniq-daemon/           # daemon 入口、网关、executor(已实现)
+    miniq-agent/            # turn 运行器、ToolExecutor trait(已实现)
+    miniq-tools/            # file/shell/git 工具 + ToolRouter(已实现)
+    miniq-sandbox/          # 路径约束、命令风险分级(已实现)
+    miniq-memory/           # SQLite 持久化(已实现)
+    miniq-models/           # LLM provider adapter(已实现)
+    miniq-skills/           # 技能:类型、发现、注入、蒸馏、进化 ★ 新增
+    miniq-docs/             # pdf/docx/xlsx/pptx 解析与生成 ★ 新增
+  schemas/                  # 生成的 JSON Schema
+  migrations/               # SQLite migration
   docs/
-    desktop-cowork-implementation.md
 ```
 
-代码边界要求：
+代码边界要求:
 
-- `miniq-protocol` 只放协议类型，不依赖 UI、agent、tools。
-- `miniq-agent` 只编排任务，不直接访问 SQLite 和系统命令。
-- `miniq-tools` 通过 trait 暴露工具能力，由 `ToolRouter` 统一调度。
-- `miniq-sandbox` 只负责权限判定、路径约束、命令风险分级。
-- `miniq-memory` 只负责持久化，不承载业务流程。
-- 单文件不超过 500 行，单函数不超过 100 行。超过后按职责拆模块。
+- `miniq-skills` 只依赖 protocol 与文件系统,蒸馏所需的模型调用通过 trait 注入(不直接依赖 miniq-models)。
+- `miniq-docs` 只做文档解析/生成,以工具形式经 `miniq-tools` 注册进 ToolRouter。
+- 其余边界不变:agent 不碰 SQLite 和系统命令;tools 全部经 ToolRouter;sandbox 只做判定;memory 只做持久化。
+- 单文件不超过 500 行,单函数不超过 100 行。
 
-## 6. 进程模型
+## 7. 进程模型(已实现,保持不变)
 
-第一版采用两个本地进程：
+两个本地进程:Tauri 壳负责启动/发现 daemon(`daemon.json` + `/health` 探测),UI 经一次性 token 建立 WebSocket。daemon 支持多 workspace、多 session、单 session 任务取消、重启后可读恢复、所有工具调用写审计日志。
 
-```text
-Desktop UI Process
-  └─ starts and monitors
-Agent Daemon Process
-```
+## 8. UI 模块
 
-启动流程：
+围绕"任务"而非"对话"组织界面,6 个主区域:
 
-1. Tauri app 启动。
-2. Tauri 检查 daemon 是否已运行。
-3. 如果没有运行，则启动 `miniq-daemon`。
-4. daemon 绑定 `127.0.0.1` 本地端口或命名管道。
-5. UI 通过一次性 token 建立 WebSocket 连接。
-6. UI 请求 `session.list`，恢复最近工作区。
-7. 用户发送消息后，UI 调用 `session.sendMessage`。
-8. daemon 推送 token、tool call、approval request、diff、command output 等事件。
+- **任务面板(sidebar)**:工作区、任务(session)列表、每个任务的状态与进度、模型/技能状态。
+- **执行时间线**:目标 → 步骤计划 → 工具调用卡片(输入/输出可折叠)→ 审批卡片 → 阶段性产物。已实现聊天时间线,需扩展步骤计划与产物展示。
+- **Composer**:目标输入、附件、上下文选择。
+- **结果交付区**:任务产出的文件清单(报告、表格、演示稿),支持预览、打开所在目录、"接受/放弃"。
+- **技能页** ★:技能列表(来源/版本/开关)、技能详情预览、编辑、删除;会话完成后的「保存为技能」入口与蒸馏结果预览确认流。
+- **设置**:模型 provider(已实现)、技能目录、MCP server、权限策略。
 
-daemon 需要支持：
+前端不直接访问文件系统、git 或 shell;一切经 daemon 协议,保证审批、审计、沙箱一致。
 
-- 多 workspace。
-- 多 session。
-- 单 session 内任务取消。
-- daemon 重启后恢复未完成会话的可读状态。
-- 所有工具调用写入审计日志。
+## 9. Daemon 核心模块
 
-## 7. UI 模块
+### 9.1 RpcGateway(已实现,新增技能方法)
 
-桌面 UI 建议分为 6 个主区域：
+现有方法:`daemon.health`、`workspace.open/list`、`session.create/list/open/sendMessage/cancel`、`approval.resolve`、`tool.list`、`settings.get/update`。
 
-- Workspace sidebar：工作区、会话列表、模型状态、MCP 状态。
-- Chat timeline：用户消息、assistant 消息、工具调用、审批卡片、运行结果。
-- Composer：输入框、附件、上下文选择、模式选择。
-- Diff viewer：文件变更、接受/拒绝、逐文件查看。
-- Terminal panel：命令输出、退出码、运行时长。
-- Settings：模型、MCP server、权限策略、memory、日志。
+新增:
 
-前端状态管理建议：
+- `skill.list` — 全部技能(含来源、版本、enabled)。
+- `skill.read` — 技能正文与文件清单(UI 预览用)。
+- `skill.distill` — 输入 sessionId,返回蒸馏出的 SKILL.md 草稿或 SKIP 原因。
+- `skill.save` — 保存(新建或覆盖)用户确认后的技能。
+- `skill.refine` — 输入 sessionId + 技能名,返回合并后的新版本草稿。
+- `skill.setEnabled` / `skill.delete`。
 
-- 服务端状态来自 daemon event stream。
-- UI 本地只保存视图状态，例如当前 tab、展开项、输入框草稿。
-- 所有 session、message、tool call、approval 的真实状态以 daemon 为准。
+### 9.2 SessionManager(已实现,保持)
 
-前端不要直接访问文件系统、git 或 shell。所有本地能力必须通过 daemon 协议调用，以保证审批、审计和沙箱一致。
+状态机:`idle / running / waiting_approval / cancelling / failed`。每个 workspace 同时只允许一个写入型 turn。
 
-## 8. Daemon 核心模块
+### 9.3 AgentRuntime(已实现,增强)
 
-### 8.1 RpcGateway
+现有:构建上下文 → 调 provider → 解析工具调用 → 经 ToolRouter 执行 → 回喂结果循环,直到无工具调用。
 
-职责：
-
-- 暴露 JSON-RPC over WebSocket。
-- 校验请求 schema。
-- 管理连接认证。
-- 将请求分发到 service。
-- 将 daemon 内部事件广播给订阅的 UI。
+增强:
 
-主要方法：
-
-- `session.create`
-- `session.list`
-- `session.open`
-- `session.sendMessage`
-- `session.cancel`
-- `tool.list`
-- `approval.resolve`
-- `workspace.open`
-- `settings.update`
-
-### 8.2 SessionManager
-
-职责：
-
-- 管理 workspace 与 session 生命周期。
-- 维护当前 turn 状态。
-- 负责消息落库。
-- 负责恢复历史记录。
-- 将 agent event 转换为 UI event。
+- 系统提示词组装加入 `<available_skills>` 段(SkillService 提供,带 token 预算)。
+- 面向长任务的计划输出约定:鼓励模型先给步骤清单,UI 以进度形式展示(第一版靠提示词约定,不做独立 planner 状态机)。
 
-Session 状态：
+### 9.4 ToolRouter(已实现,扩充工具)
 
-- `idle`
-- `running`
-- `waiting_approval`
-- `cancelling`
-- `failed`
-
-不建议支持隐式多任务并发修改同一 workspace。第一版每个 workspace 同时只允许一个写入型 agent turn，降低文件冲突和审批复杂度。
-
-### 8.3 AgentRuntime
-
-职责：
-
-- 构建模型上下文。
-- 调用 model provider。
-- 解析工具调用。
-- 调度工具。
-- 汇总结果继续推理。
-- 输出最终回复。
-
-AgentRuntime 不直接执行系统操作。所有工具必须走 `ToolRouter`，所有高风险工具必须经过 `ApprovalManager`。
-
-### 8.4 ToolRouter
-
-职责：
-
-- 注册工具。
-- 根据 tool name 分发调用。
-- 校验 tool input schema。
-- 调用 sandbox risk evaluation。
-- 触发 approval。
-- 写入 tool call 日志。
-- 返回结构化结果。
-
-内置工具：
-
-- `file.read`
-- `file.write`
-- `file.patch`
-- `file.list`
-- `shell.run`
-- `git.status`
-- `git.diff`
-- `git.apply`
-- `mcp.call`
-- `memory.search`
-- `memory.write`
-
-工具输入输出必须结构化，避免使用纯文本承载状态。不要截取字符串、列表或字典作为持久化事实，避免数据一致性问题。
-
-## 9. 协议设计
-
-协议采用 JSON-RPC 2.0，WebSocket 负责双向事件。
-
-请求示例：
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "req_01",
-  "method": "session.sendMessage",
-  "params": {
-    "sessionId": "sess_01",
-    "message": {
-      "role": "user",
-      "content": "帮我修复测试失败"
-    }
-  }
-}
-```
-
-事件示例：
-
-```json
-{
-  "type": "tool_call_started",
-  "sessionId": "sess_01",
-  "toolCallId": "tool_01",
-  "toolName": "shell.run",
-  "input": {
-    "command": "cargo test",
-    "cwd": "D:/study/miniQ"
-  }
-}
-```
-
-协议类型分三类：
-
-- Request：UI 主动调用 daemon。
-- Response：daemon 返回一次性结果。
-- Event：daemon 推送运行状态。
-
-所有协议类型都必须有版本字段或 schema 版本。协议变更只向前推进，不为旧协议堆叠兼容层。
-
-## 10. Memory 与 SQLite
-
-SQLite 是本地事实源，用于恢复会话、检索历史、审计工具调用。
-
-基础表：
-
-```sql
-CREATE TABLE workspaces (
-  id TEXT PRIMARY KEY,
-  path TEXT NOT NULL UNIQUE,
-  name TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE sessions (
-  id TEXT PRIMARY KEY,
-  workspace_id TEXT NOT NULL,
-  title TEXT NOT NULL,
-  status TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
-);
-
-CREATE TABLE messages (
-  id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL,
-  role TEXT NOT NULL,
-  content TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  FOREIGN KEY (session_id) REFERENCES sessions(id)
-);
-
-CREATE TABLE tool_calls (
-  id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL,
-  tool_name TEXT NOT NULL,
-  input_json TEXT NOT NULL,
-  output_json TEXT,
-  status TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  completed_at TEXT,
-  FOREIGN KEY (session_id) REFERENCES sessions(id)
-);
-
-CREATE TABLE approvals (
-  id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL,
-  tool_call_id TEXT NOT NULL,
-  risk_level TEXT NOT NULL,
-  status TEXT NOT NULL,
-  reason TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  resolved_at TEXT,
-  FOREIGN KEY (session_id) REFERENCES sessions(id),
-  FOREIGN KEY (tool_call_id) REFERENCES tool_calls(id)
-);
-
-CREATE TABLE memories (
-  id TEXT PRIMARY KEY,
-  workspace_id TEXT,
-  scope TEXT NOT NULL,
-  content TEXT NOT NULL,
-  metadata_json TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE audit_events (
-  id TEXT PRIMARY KEY,
-  session_id TEXT,
-  event_type TEXT NOT NULL,
-  payload_json TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
-```
-
-Memory 分类：
-
-- Global memory：用户偏好、常用模型、通用协作规则。
-- Workspace memory：项目结构、运行命令、测试方式、约定。
-- Session memory：当前对话中的短期任务状态。
-
-写入 memory 必须显式标注 scope。agent 不能把临时推测直接写入长期 memory，应由规则或审批控制。
-
-## 11. 安全、审批与沙箱
-
-安全系统分为三层：
-
-1. 静态权限：工具是否启用、workspace 是否允许写入。
-2. 风险分级：每次工具调用按路径、命令、参数、影响范围计算风险。
-3. 用户审批：中高风险操作必须显示审批卡片并等待用户确认。
-
-风险等级：
-
-- `low`：只读文件、git status、目录列表。
-- `medium`：修改 workspace 内文件、运行测试、安装依赖。
-- `high`：删除文件、移动大量文件、执行网络命令、修改 git 历史。
-- `blocked`：workspace 外写入、危险系统命令、访问未授权路径。
-
-审批卡片必须展示：
-
-- 工具名。
-- 工作目录。
-- 完整命令或完整文件路径。
-- 风险原因。
-- 预期影响。
-- 允许一次。
-- 拒绝。
-- 对相同模式本会话允许。
-
-沙箱规则：
-
-- 默认只允许访问当前 workspace。
-- workspace 外路径需要用户显式授权。
-- shell 命令默认在 workspace cwd 下执行。
-- 文件写入必须通过 file tool 或 patch tool。
-- 高风险命令不允许通过字符串变形绕过审批。
-
-## 12. MCP / ACP 集成
-
-MCP 集成目标：
-
-- 允许用户配置本地或远程 MCP server。
-- 将 MCP tools 映射进 `ToolRouter`。
-- MCP 调用同样进入审批和审计系统。
-- MCP 返回值以结构化 JSON 保存，不在 daemon 内做随意截断。
-
-ACP / JSON-RPC 集成目标：
-
-- 允许 miniQ 与其他 agent server 或 worker 通信。
-- 支持本地 agent daemon 作为 server。
-- 支持 UI 作为 client 连接 daemon。
-- 预留远程 agent worker，但第一版不实现复杂分布式调度。
-
-第一版 MCP 管理界面需要支持：
-
-- 添加 server。
-- 启用 / 禁用 server。
-- 查看 server 状态。
-- 查看 tools 列表。
-- 测试连接。
-- 查看最近调用日志。
-
-## 13. 模型 Provider
-
-模型层通过 adapter 抽象：
-
-```text
-ModelProvider
-  ├─ complete(request) -> stream
-  ├─ list_models()
-  └─ validate_config()
-```
-
-第一版建议支持：
-
-- OpenAI-compatible API。
-- Anthropic-compatible API。
-- 本地模型 OpenAI-compatible endpoint。
-
-Provider 不直接调用工具。工具调用由 AgentRuntime 解析模型输出后交给 ToolRouter 执行。
+内置工具(现有):`file_read/list/write`、`shell_run`、`git_status/diff`。
+
+新增工具按三个梯队规划(对比 zeroclaw 86 个工具与 moltis 40+ 个工具后收敛的必备集合):
+
+**第一梯队 —— 通用 agent 基本功(M1)**
+
+- `file_edit` — 精确字符串替换编辑(中风险,走审批)。避免整文件覆盖式修改。
+- `file_glob` — 按模式匹配查找文件(低风险)。
+- `file_grep` — 文件内容正则搜索(低风险)。跨平台自实现,不依赖系统 grep。
+- `web_fetch` — 抓取网页正文为 markdown(高风险=网络,按域名审批,可会话内放行)。
+- `web_search` — 联网搜索(高风险=网络;搜索 provider 可配置)。
+
+**第二梯队 —— 任务型 agent 标配(M3/M5)**
+
+- `task_update` — agent 维护多步任务计划,驱动 `plan_updated` 事件与 UI 进度展示。
+- `ask_user` — 审批之外的主动澄清提问(结构化选项 + 自由输入)。
+- `doc_read` — 统一入口读取 pdf/docx/xlsx/pptx/csv 为结构化文本(低风险)。
+- `doc_write` — 生成 docx/xlsx/pptx/md/csv(中风险,走审批)。
+- `checkpoint` — 写入型操作前自动备份,支持回滚(配合 file_write/edit/doc_write)。
+- `http_request` — 通用 HTTP API 调用(高风险=网络,按域名审批)。
+- `skill_read` — 读取技能正文/脚本路径(低风险,M2 随技能系统)。
+- `memory_search/write`、`file_patch`。
+
+**第三梯队 —— 生态与进阶(M6)**
+
+- `mcp_call` — MCP server 工具接入(进审批与审计链)。
+- `browser.*` — 浏览器自动化("操作应用"的落点,重依赖,后置)。
+- `screenshot` / `image.info` — 屏幕与图像理解。
+- `email.read/search` — IMAP 邮件读取(草稿生成先以技能形式产出 .eml,不直接发送)。
+- `agent.spawn` — 子代理并行任务。
+- `cron` — 定时任务。
+
+工具输入输出必须结构化;持久化与协议传输保持完整数据,不做截断。
+
+### 9.5 SkillService ★
+
+职责:
+
+- 按 §2.3 的目录优先级发现技能,解析 frontmatter,维护内存索引。
+- 生成系统提示词技能清单(token 预算 → 压缩 → 截断)。
+- 提供 `skill_read` 工具与 `skill.read` RPC;bundled 技能脚本按需落盘。
+- 蒸馏与进化:组装 transcript(messages + tool_calls + approvals)→ 调蒸馏/进化 prompt → 用加载路径同一解析器校验 → 返回草稿。
+- 守卫:技能名/路径合法性、防路径穿越、符号链接拒绝、单技能体积上限。
+
+## 10. 协议设计(已实现,增量)
+
+JSON-RPC 2.0 over WebSocket,三类:Request / Response / Event。协议变更只向前推进,`PROTOCOL_VERSION` 递增,不做旧协议兼容层。
+
+现有事件:`session_status_changed`、`message_created`、`assistant_delta`、`tool_call_started/finished`、`approval_requested/resolved`、`turn_completed/failed`。
+
+新增事件:
+
+- `plan_updated` — 步骤计划(首次给出或更新)。
+- `artifact_created` — 任务产物(文件路径 + 类型 + 说明),驱动结果交付区。
+- `skill_suggested` — (后期)检测到可固化的重复流程。
+
+## 11. Memory 与 SQLite(已实现,增量)
+
+现有表:workspaces、sessions、messages、tool_calls、approvals、memories、audit_events(见 migrations/0001)。
+
+增量 migration:
+
+- `artifacts(id, session_id, path, kind, title, created_at)` — 任务产物索引。
+- `skill_usage(id, session_id, skill_name, used_at)` — 技能使用记录,供进化与建议挖掘。
+
+技能本体存文件系统(可被用户直接编辑、git 管理),SQLite 只存索引与统计 —— 事实源分离,避免双写不一致。
+
+Memory 分类保持:Global / Workspace / Session;写入 memory 必须显式标注 scope。
+
+## 12. 安全、审批与沙箱(已实现,扩展)
+
+三层不变:静态权限 → 风险分级 → 用户审批。
+
+风险等级(现有实现):`low` 自动执行;`medium/high` 审批(允许一次 / 本会话允许 / 拒绝);`blocked` 直接拦截。审批模式键:工具名,`shell_run` 细化到程序名。
+
+技能相关的扩展规则:
+
+- 技能本身无执行权:脚本必须经 `shell_run`(或未来的受限执行工具)进入分级与审批,无旁路。
+- 信任分层:`bundled/user/distilled` 技能默认可用;`installed`(未来来自外部)默认只读工具授权,提权需显式确认。
+- 蒸馏产物落盘前经过敏感信息扫描(密钥/token 模式),命中即要求用户处理。
+- `web_fetch` 网络访问按域名审批,支持"本会话允许该域名"。
+
+## 13. 模型 Provider(已实现,保持)
+
+`ModelProvider` trait:`stream_complete(request) -> DeltaStream`。已支持 OpenAI-compatible(含 SSE 流式与分片 tool-call 参数);Anthropic-compatible 后续补充。Provider 不直接调工具;蒸馏/进化同样经 provider,走独立的低温请求。
 
 ## 14. 开发里程碑
 
-### Phase 0：项目骨架
+里程碑安排原则:先把 agent 的"手脚"补齐(第一梯队工具),再上技能系统,然后围绕办公文档和任务体验(第二梯队),招牌功能技能学习紧随其后,生态与进阶能力(第三梯队)收尾。
 
-- 初始化 Tauri 2 + Svelte/React。
-- 初始化 Rust workspace。
-- 建立 `miniq-protocol`、`miniq-daemon`、`miniq-memory`。
-- 建立 SQLite migration。
-- 建立 JSON Schema 生成流程。
+### M0 基础平台(已完成)
 
-验收标准：
+Rust workspace、协议、SQLite、WebSocket 网关、聊天流式闭环、file(read/list/write)/shell/git 工具、风险分级、审批流、settings、React UI、Tauri 壳。47 项测试 + 真实 SSE 端到端验证通过。
 
-- 桌面 app 可以启动 daemon。
-- UI 可以连接 WebSocket。
-- UI 可以展示 daemon health 状态。
+### M1 核心工具补齐(第一梯队)✅ 已完成
 
-### Phase 1：聊天闭环
+- `file_edit`:精确字符串替换(唯一匹配校验、审批、编辑前快照),替代整文件覆盖的小改动场景。
+- `file_glob`:模式匹配查文件,含忽略规则(node_modules/target/.git 等)。
+- `file_grep`:内容正则搜索(纯 Rust 实现,限制结果规模,分页返回)。
+- `web_fetch`:URL → 正文 markdown(HTML 净化、大小上限、按域名审批)。
+- `web_search`:搜索 provider 抽象 + 至少一个实现(可配置 API);未配置时返回明确的不可用提示引导用户配置。
 
-- 实现 session create/list/open。
-- 实现 message 持久化。
-- 接入一个 OpenAI-compatible provider。
-- UI 展示 streaming assistant response。
+验收:agent 能在不认识的目录里自主定位文件与内容并完成一次小修改;能抓取指定网页并总结;全部新工具进入风险分级、审批与审计链,附单元与集成测试。
 
-验收标准：
+### M2 技能系统骨架 ✅ 已完成
 
-- 用户可以创建会话并获得模型回复。
-- 关闭 app 后重新打开能恢复历史会话。
+- `miniq-skills`:SKILL.md 解析、目录发现(三级优先)、索引。
+- 系统提示词注入 `<available_skills>`(token 预算)。
+- `skill_read` 工具 + `skill.list/read/setEnabled/delete` RPC。
+- UI 技能页(列表/预览/开关)。
+- 打包 2~3 个 bundled 示例技能(如"整理目录并输出清单"、"生成 markdown 周报")。
 
-### Phase 2：工具闭环
+验收:agent 在任务中能自主发现并按技能步骤执行;技能开关即时生效。
 
-- 实现 file read/list。
-- 实现 shell run。
-- 实现 git status/diff。
-- 实现 ToolRouter。
-- 实现 tool call event stream。
+### M3 办公文档与任务体验(第二梯队上半)✅ 已完成
 
-验收标准：
+- `miniq-docs`:pdf/docx/xlsx/pptx/csv 读取为结构化文本;docx/xlsx/md/csv 生成。
+- `doc_read` / `doc_write` 工具接入 ToolRouter(write 走审批)。
+- `checkpoint`:file_write/edit、doc_write 前自动备份,UI 可一键回滚。
+- `task_update` 工具 + `plan_updated` 事件:多步任务计划外显为 UI 进度。
+- `ask_user` 工具:agent 主动澄清(结构化选项卡片)。
+- `artifact_created` 事件 + artifacts 表 + UI 结果交付区。
 
-- agent 能读取项目文件。
-- agent 能运行只读命令。
-- UI 能看到工具调用过程和结果。
+验收:"读这份 PDF 和这个 Excel,写一份 docx 摘要报告" 全流程闭环 —— 计划可见、产物出现在交付区、误改可回滚。
 
-### Phase 3：审批与写入
+### M4 技能学习(招牌功能)✅ 已完成
 
-- 实现 ApprovalManager。
-- 实现 file patch/write。
-- 实现命令风险分级。
-- 实现审批卡片。
-- 实现 audit_events。
+- 蒸馏管线:transcript 组装 → distill prompt → 同解析器校验 → 草稿。
+- `skill.distill/save/refine` RPC;UI「保存为技能」+ 草稿预览编辑确认流。
+- 敏感信息扫描;SKIP 门槛(纯问答不蒸馏)。
+- 进化:命中已有技能的会话完成后提供「更新技能」。
 
-验收标准：
+验收:完成一次多步骤任务 → 一键保存为技能 → 新会话中 agent 自动运用该技能且步骤明显更少;重复任务后技能可进化出新版本。
 
-- 写文件前会请求审批。
-- 高风险 shell 命令会被拦截或审批。
-- 用户拒绝后 agent 能收到结构化拒绝结果。
+### M5 更广工作流(第二梯队下半)✅ 已完成
 
-### Phase 4：MCP 与 memory
+- `http_request`(域名审批)、`file_patch`(原子多编辑)、`memory_search/write`(写入走审批)。
+- 邮件草稿 bundled 技能 `email-draft`(产出 .eml,不直接发送)。
+- `skill_suggested`:工具密集且未用技能的会话完成后主动建议保存技能(≥5 次成功工具调用阈值)。
 
-- 实现 MCP client 管理。
-- 将 MCP tools 接入 ToolRouter。
-- 实现 workspace memory。
-- 实现 memory search/write。
+### M6 生态与进阶(第三梯队)✅ 核心项已完成
 
-验收标准：
+已完成:
 
-- 用户能添加 MCP server 并调用工具。
-- agent 能读取和写入 workspace memory。
-- MCP 调用进入审批与审计链路。
+- MCP client:stdio 传输(JSON-RPC over newline-delimited JSON,initialize 握手 + tools/list + tools/call),`mcp_call` 工具进 ToolRouter 与审批链(按 server 审批),`mcp.list/update` RPC,UI 管理面板(添加/启停/移除/测试连接/工具列表)。
+- 多任务并行:同 workspace 写入串行、跨 workspace 并行(workspace 级写入锁)。
+- 系统托盘:关窗最小化到托盘,托盘菜单 Show/Quit。
+- Windows 安装包:NSIS(`npx tauri build`),miniq-daemon 以 externalBin 随包分发。
 
-### Phase 5：产品化
+后续(非本版验收项):
 
-- 多窗口或系统托盘。
-- 自动更新。
-- 日志导出。
-- 设置导入导出。
-- 崩溃恢复。
-- 打包签名。
-
-验收标准：
-
-- Windows/macOS/Linux 至少完成一个平台的稳定安装包。
-- 核心会话、工具、审批、memory 可长期使用。
+- `browser.*` 浏览器自动化、`screenshot`/`image.info`、`email.read/search`、`agent.spawn`、`cron`。
+- 自动更新与安装包签名(需要签名证书与更新服务端)。
+- (评估)技能分享/安装与签名验证 —— 参考 zeroclaw WASM 插件与 ironclaw registry。
 
 ## 15. 测试策略
 
-Rust 测试：
+Rust:
 
-- protocol schema 测试。
-- ToolRouter 单元测试。
-- sandbox 风险分级测试。
-- SQLite migration 测试。
-- daemon JSON-RPC 集成测试。
+- miniq-tools 新工具:file_edit 唯一匹配/冲突用例、file_glob 忽略规则、file_grep 正则与分页、web_fetch HTML 净化与大小上限(本地 mock HTTP)、checkpoint 备份回滚往返。
+- miniq-skills:SKILL.md 解析/校验往返、目录优先级遮蔽、prompt 预算截断、蒸馏产物校验(用固定 transcript 快照 + mock provider)。
+- miniq-docs:各格式解析快照测试、生成文件可再读回。
+- 既有:protocol schema、ToolRouter、sandbox 分级、migration、daemon JSON-RPC 集成(mock provider 脚本化多轮 tool call)。
 
-前端测试：
+前端:时间线渲染、审批卡交互、技能页、交付区。
 
-- timeline 渲染。
-- approval 卡片交互。
-- diff viewer 展示。
-- settings 表单校验。
+端到端:mock OpenAI SSE 服务驱动「目标 → 计划 → 工具 → 审批 → 产物 → 保存为技能 → 复用技能」全链路。
 
-端到端测试：
+## 16. 第一版对外 MVP 范围
 
-- 启动 desktop。
-- daemon health check。
-- 创建 session。
-- 发送消息。
-- 触发 tool call。
-- 审批文件修改。
-- 验证 SQLite 写入。
+必须包含(= M0 已有 + M1 ~ M4):
 
-如果项目存在 uv 环境，Python 测试和脚本运行使用 uv。若存在后端目录，进入后端目录执行测试命令。
+- 桌面 app + 本地 daemon + 流式对话(已有)。
+- 审批、沙箱、审计(已有)。
+- 完整的第一梯队工具:file_edit/glob/grep、web_fetch/search。
+- 技能系统:发现、注入、读取、开关。
+- 办公文档读写(pdf/docx/xlsx 至少各一)、checkpoint 回滚、任务计划外显、结果交付区。
+- 「保存为技能」蒸馏闭环。
 
-## 16. 第一版最小可用范围
-
-MVP 必须包含：
-
-- Tauri 桌面 app。
-- 本地 Rust daemon。
-- JSON-RPC over WebSocket。
-- SQLite session/message/tool_call 存储。
-- OpenAI-compatible model provider。
-- file read/list。
-- shell run。
-- git status/diff。
-- command approval。
-- workspace sandbox。
-- tool call timeline。
-- 基础 settings。
-
-MVP 暂不包含：
-
-- 远程多 agent 调度。
-- 团队协作。
-- 插件市场。
-- 复杂权限继承。
-- 旧协议兼容层。
-- 多 workspace 并发写入。
+暂不包含:技能市场与签名分发、WASM 插件、远程多 agent、团队协作、直接发送邮件、自动操作任意 GUI 应用。
 
 ## 17. 工程规范
 
-- 类型优先：协议、工具输入、工具输出都必须有强类型。
-- schema 优先：跨进程数据结构必须生成或校验 JSON Schema。
-- 高内聚低耦合：service 只依赖必要 trait，不跨层调用具体实现。
-- 无重复实现：相同工具校验、路径规范化、审批判断必须抽象复用。
-- 不过度设计：第一版只实现本地单用户 cowork，不提前做复杂分布式平台。
-- 不保留旧逻辑：重构后删除旧实现和旧测试。
-- 不做数据截取：持久化和协议传输保持完整数据，UI 层用折叠展示解决可读性。
-- 审计不可绕过：任何工具调用都必须经过 ToolRouter。
+- 类型优先、schema 优先(schemas/ 由 gen-schemas 生成)。
+- 高内聚低耦合;相同校验/路径规范化/审批判断抽象复用。
+- 不过度设计:第一版单用户本地;技能=文件,不引入数据库存正文。
+- 不保留旧逻辑:重构后删除旧实现与旧测试。
+- 不做数据截取:持久化与协议保持完整数据,UI 折叠展示。
+- 审计不可绕过:任何工具调用必须经 ToolRouter;技能脚本无执行旁路。
 
 ## 18. 推荐下一步
 
-建议按以下顺序开工：
-
-1. 创建 Rust workspace 与 Tauri app。
-2. 定义 `miniq-protocol` 的 request/response/event 类型。
-3. 实现 daemon health check 与 WebSocket 连接。
-4. 建立 SQLite migration 和 session/message 存储。
-5. 打通第一条聊天 streaming。
-6. 接入 ToolRouter 和只读工具。
-7. 加入审批系统后再开放写入工具。
-
-这条路线可以先做出一个小而完整的本地 cowork 闭环，再逐步吸收 MCP、memory、sandbox 和更强的 agent runtime。核心目标是让产品从第一版开始就具备清晰边界、安全控制和长期可维护的本地架构。
+1. M1 先做纯本地三件套 `file_edit/glob/grep`(无新外部依赖,复用 sandbox 路径约束),再做 `web_fetch/search`(引入 HTML 净化与搜索 provider 抽象)。
+2. M2:实现 `miniq-skills` 解析与发现,先让 bundled 技能进系统提示词并可被 `skill_read`。
+3. 蒸馏 prompt 与校验器同步设计(输出契约即 §2.2 正文结构),M2 期间即可用固定 transcript 打磨。
+4. M3 文档工具选型:纯 Rust 解析库优先(pdf-extract/docx-rs/calamine/umya-spreadsheet 类),避免运行时依赖 Office。
+5. UI 从"对话"过渡到"任务"心智:先加结果交付区与技能页,再演进任务面板。

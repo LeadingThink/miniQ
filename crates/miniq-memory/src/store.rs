@@ -5,8 +5,8 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use miniq_protocol::{
-    Approval, ApprovalStatus, Message, RiskLevel, Role, Session, SessionStatus, ToolCall,
-    ToolCallStatus, Workspace,
+    Approval, ApprovalStatus, Artifact, Message, RiskLevel, Role, Session, SessionStatus,
+    ToolCall, ToolCallStatus, Workspace,
 };
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde_json::Value;
@@ -15,7 +15,13 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-const MIGRATIONS: &[(&str, &str)] = &[("0001_init", include_str!("../../../migrations/0001_init.sql"))];
+const MIGRATIONS: &[(&str, &str)] = &[
+    ("0001_init", include_str!("../../../migrations/0001_init.sql")),
+    (
+        "0002_artifacts_checkpoints",
+        include_str!("../../../migrations/0002_artifacts_checkpoints.sql"),
+    ),
+];
 
 #[derive(Debug, Error)]
 pub enum MemoryError {
@@ -41,6 +47,31 @@ pub fn now_iso() -> String {
 /// Generate a prefixed unique id (`msg_...`, `sess_...`).
 pub fn new_id(prefix: &str) -> String {
     format!("{prefix}_{}", Uuid::new_v4().simple())
+}
+
+/// Checkpoint record: a file backup taken before a write-type tool ran.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckpointRow {
+    pub id: String,
+    pub session_id: String,
+    pub tool_call_id: String,
+    pub abs_path: String,
+    pub existed: bool,
+    pub backup_path: Option<String>,
+    pub created_at: String,
+}
+
+/// Long-term memory row.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryRow {
+    pub id: String,
+    pub workspace_id: Option<String>,
+    pub scope: String,
+    pub content: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 pub struct Store {
@@ -407,6 +438,171 @@ impl Store {
             row_to_approval,
         )
         .map_err(Into::into)
+    }
+
+    // ---- artifacts ----
+
+    pub fn create_artifact(
+        &self,
+        session_id: &str,
+        path: &str,
+        kind: &str,
+        title: &str,
+    ) -> Result<Artifact> {
+        let conn = self.conn.lock().unwrap();
+        let artifact = Artifact {
+            id: new_id("art"),
+            session_id: session_id.to_string(),
+            path: path.to_string(),
+            kind: kind.to_string(),
+            title: title.to_string(),
+            created_at: now_iso(),
+        };
+        conn.execute(
+            "INSERT INTO artifacts (id, session_id, path, kind, title, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                artifact.id,
+                artifact.session_id,
+                artifact.path,
+                artifact.kind,
+                artifact.title,
+                artifact.created_at
+            ],
+        )?;
+        Ok(artifact)
+    }
+
+    pub fn list_artifacts(&self, session_id: &str) -> Result<Vec<Artifact>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, path, kind, title, created_at
+             FROM artifacts WHERE session_id = ?1 ORDER BY created_at ASC, id ASC",
+        )?;
+        let rows = stmt.query_map(params![session_id], |row| {
+            Ok(Artifact {
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                path: row.get(2)?,
+                kind: row.get(3)?,
+                title: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    // ---- checkpoints ----
+
+    pub fn create_checkpoint(
+        &self,
+        session_id: &str,
+        tool_call_id: &str,
+        abs_path: &str,
+        existed: bool,
+        backup_path: Option<&str>,
+    ) -> Result<CheckpointRow> {
+        let conn = self.conn.lock().unwrap();
+        let row = CheckpointRow {
+            id: new_id("ckpt"),
+            session_id: session_id.to_string(),
+            tool_call_id: tool_call_id.to_string(),
+            abs_path: abs_path.to_string(),
+            existed,
+            backup_path: backup_path.map(|s| s.to_string()),
+            created_at: now_iso(),
+        };
+        conn.execute(
+            "INSERT INTO checkpoints (id, session_id, tool_call_id, abs_path, existed, backup_path, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                row.id,
+                row.session_id,
+                row.tool_call_id,
+                row.abs_path,
+                row.existed as i64,
+                row.backup_path,
+                row.created_at
+            ],
+        )?;
+        Ok(row)
+    }
+
+    pub fn get_checkpoint(&self, id: &str) -> Result<CheckpointRow> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT id, session_id, tool_call_id, abs_path, existed, backup_path, created_at
+             FROM checkpoints WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(CheckpointRow {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    tool_call_id: row.get(2)?,
+                    abs_path: row.get(3)?,
+                    existed: row.get::<_, i64>(4)? != 0,
+                    backup_path: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
+            },
+        )
+        .optional()?
+        .ok_or_else(|| MemoryError::NotFound(format!("checkpoint {id}")))
+    }
+
+    // ---- memories ----
+
+    pub fn create_memory(
+        &self,
+        workspace_id: Option<&str>,
+        scope: &str,
+        content: &str,
+    ) -> Result<MemoryRow> {
+        let conn = self.conn.lock().unwrap();
+        let now = now_iso();
+        let row = MemoryRow {
+            id: new_id("mem"),
+            workspace_id: workspace_id.map(|s| s.to_string()),
+            scope: scope.to_string(),
+            content: content.to_string(),
+            created_at: now.clone(),
+            updated_at: now,
+        };
+        conn.execute(
+            "INSERT INTO memories (id, workspace_id, scope, content, metadata_json, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, '{}', ?5, ?6)",
+            params![row.id, row.workspace_id, row.scope, row.content, row.created_at, row.updated_at],
+        )?;
+        Ok(row)
+    }
+
+    /// Substring search over memories visible to a workspace: its own rows
+    /// plus global-scope rows.
+    pub fn search_memories(
+        &self,
+        workspace_id: Option<&str>,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<MemoryRow>> {
+        let conn = self.conn.lock().unwrap();
+        let pattern = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
+        let mut stmt = conn.prepare(
+            "SELECT id, workspace_id, scope, content, created_at, updated_at FROM memories
+             WHERE content LIKE ?1 ESCAPE '\\'
+               AND (scope = 'global' OR workspace_id IS ?2 OR ?2 IS NULL)
+             ORDER BY updated_at DESC LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![pattern, workspace_id, limit as i64], |row| {
+            Ok(MemoryRow {
+                id: row.get(0)?,
+                workspace_id: row.get(1)?,
+                scope: row.get(2)?,
+                content: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
     // ---- audit ----
