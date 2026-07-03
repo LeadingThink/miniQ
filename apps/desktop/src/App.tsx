@@ -168,10 +168,18 @@ export default function App() {
           );
           break;
         case "approval_requested":
-          setApprovals((prev) => [
-            ...prev,
-            { approval: event.approval, toolName: event.toolName, input: event.input },
-          ]);
+          setApprovals((prev) =>
+            prev.some((a) => a.approval.id === event.approval.id)
+              ? prev
+              : [
+                  ...prev,
+                  {
+                    approval: event.approval,
+                    toolName: event.toolName,
+                    input: event.input,
+                  },
+                ],
+          );
           break;
         case "approval_resolved":
           setApprovals((prev) =>
@@ -182,13 +190,21 @@ export default function App() {
           setPlan(event.tasks);
           break;
         case "question_requested":
-          setQuestions((prev) => [...prev, event.question]);
+          setQuestions((prev) =>
+            prev.some((q) => q.id === event.question.id)
+              ? prev
+              : [...prev, event.question],
+          );
           break;
         case "question_resolved":
           setQuestions((prev) => prev.filter((q) => q.id !== event.questionId));
           break;
         case "artifact_created":
-          setArtifacts((prev) => [...prev, event.artifact]);
+          setArtifacts((prev) =>
+            prev.some((a) => a.id === event.artifact.id)
+              ? prev
+              : [...prev, event.artifact],
+          );
           break;
         case "skill_suggested":
           setSuggestion(event.reason);
@@ -268,11 +284,13 @@ export default function App() {
           sessionId: currentSessionId,
           message: { role: "user", content },
         });
+        // Pick up the auto-generated session title.
+        void refreshSessions();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
     },
-    [client, currentSessionId],
+    [client, currentSessionId, refreshSessions],
   );
 
   /** Hero flow: type a goal -> session is created and the goal sent. */
@@ -286,13 +304,15 @@ export default function App() {
           sessionId: session.id,
           message: { role: "user", content },
         });
-        // Sync anything we missed while the event listener re-bound.
+        // Sync anything we missed while the event listener re-bound, and
+        // pick up the auto-generated title.
         await openSession(session.id);
+        void refreshSessions();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       }
     },
-    [client, selectedWorkspace, createSession, openSession],
+    [client, selectedWorkspace, createSession, openSession, refreshSessions],
   );
 
   const cancelTurn = useCallback(async () => {
@@ -380,7 +400,14 @@ export default function App() {
               </button>
             )}
         </div>
-        {error && <div className="error-banner">{error}</div>}
+        {error && (
+          <div className="error-banner">
+            <span style={{ flex: 1 }}>{error}</span>
+            <span className="banner-close" onClick={() => setError(null)}>
+              ✕
+            </span>
+          </div>
+        )}
         {suggestion && (
           <div className="suggestion-banner">
             💡 {suggestion}
@@ -425,6 +452,7 @@ export default function App() {
               plan={plan}
               artifacts={artifacts}
               streamingText={streamingText}
+              busy={!!busy}
               onResolveApproval={resolveApproval}
               onResolveQuestion={resolveQuestion}
               onRollback={rollbackCheckpoint}

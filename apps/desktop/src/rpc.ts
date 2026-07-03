@@ -19,31 +19,41 @@ type Pending = {
 
 export class RpcClient {
   private ws: WebSocket | null = null;
+  private connecting = false;
   private pending = new Map<string, Pending>();
   private nextId = 1;
   private eventListeners = new Set<(event: DaemonEvent) => void>();
   private statusListeners = new Set<(connected: boolean) => void>();
 
+  /** Idempotent: a second call while connected/connecting is a no-op, so
+   * React StrictMode's double-mounted effects cannot open two sockets
+   * (which would deliver every broadcast event twice). */
   async connect(info: ConnectionInfo): Promise<void> {
+    if (this.ws || this.connecting) return;
+    this.connecting = true;
     const url = `ws://127.0.0.1:${info.port}/ws?token=${encodeURIComponent(info.token)}`;
-    await new Promise<void>((resolve, reject) => {
-      const ws = new WebSocket(url);
-      ws.onopen = () => {
-        this.ws = ws;
-        this.notifyStatus(true);
-        resolve();
-      };
-      ws.onerror = () => reject(new Error("failed to connect to daemon"));
-      ws.onclose = () => {
-        this.ws = null;
-        this.notifyStatus(false);
-        for (const p of this.pending.values()) {
-          p.reject(new Error("connection closed"));
-        }
-        this.pending.clear();
-      };
-      ws.onmessage = (msg) => this.onMessage(String(msg.data));
-    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const ws = new WebSocket(url);
+        ws.onopen = () => {
+          this.ws = ws;
+          this.notifyStatus(true);
+          resolve();
+        };
+        ws.onerror = () => reject(new Error("failed to connect to daemon"));
+        ws.onclose = () => {
+          this.ws = null;
+          this.notifyStatus(false);
+          for (const p of this.pending.values()) {
+            p.reject(new Error("connection closed"));
+          }
+          this.pending.clear();
+        };
+        ws.onmessage = (msg) => this.onMessage(String(msg.data));
+      });
+    } finally {
+      this.connecting = false;
+    }
   }
 
   get connected(): boolean {

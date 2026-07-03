@@ -203,6 +203,14 @@ fn session_send_message(state: &AppState, raw: Option<Value>) -> Result<Value, R
             return Err(store_err(e));
         }
     };
+
+    // First message names the session (like every chat app).
+    if session.title == "New session" {
+        let title: String = p.message.content.trim().chars().take(30).collect();
+        if !title.is_empty() {
+            let _ = state.store.update_session_title(&p.session_id, &title);
+        }
+    }
     state.emit(miniq_protocol::Event::MessageCreated {
         session_id: p.session_id.clone(),
         message: message.clone(),

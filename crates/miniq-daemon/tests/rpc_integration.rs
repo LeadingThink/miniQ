@@ -168,6 +168,8 @@ async fn chat_turn_streams_and_persists() {
     assert_eq!(messages[0]["role"], "user");
     assert_eq!(messages[1]["content"], "hello from mock");
     assert_eq!(resp["result"]["session"]["status"], "idle");
+    // The first message auto-names the session.
+    assert_eq!(resp["result"]["session"]["title"], "hi");
 }
 
 #[tokio::test]
