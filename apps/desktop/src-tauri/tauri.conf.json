@@ -26,7 +26,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "icon": ["icons/icon.ico", "icons/icon.png", "icons/icon.icns"],
     "externalBin": ["binaries/miniq-daemon"]
   }
 }
