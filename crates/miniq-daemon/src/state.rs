@@ -13,6 +13,20 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, oneshot};
 use tokio_util::sync::CancellationToken;
 
+/// How risky (medium/high) tool calls are gated. Blocked calls are always
+/// rejected regardless of mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ApprovalMode {
+    /// Ask before every risky action, even ones already approved this session.
+    AlwaysAsk,
+    /// Ask for risky actions unless approved for this session (default).
+    #[default]
+    Auto,
+    /// Never ask; every non-blocked action runs immediately.
+    FullAccess,
+}
+
 /// Persisted daemon settings (data dir `settings.json`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,6 +37,8 @@ pub struct DaemonSettings {
     pub search: Option<miniq_tools::SearchConfig>,
     #[serde(default)]
     pub mcp_servers: Vec<crate::mcp::McpServerConfig>,
+    #[serde(default)]
+    pub approval_mode: ApprovalMode,
 }
 
 fn uuid_suffix() -> String {

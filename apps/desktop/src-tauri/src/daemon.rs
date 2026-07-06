@@ -62,17 +62,23 @@ fn daemon_binary_candidates() -> Vec<PathBuf> {
         candidates.push(PathBuf::from(explicit));
     }
     let exe_name = if cfg!(windows) { "miniq-daemon.exe" } else { "miniq-daemon" };
+    // Dev builds prefer the workspace target dir: it holds the freshly built
+    // daemon, while the copy next to the shell exe is a possibly stale
+    // sidecar snapshot from `binaries/`. src-tauri is three levels below the
+    // repo root (apps/desktop/src-tauri).
+    #[cfg(debug_assertions)]
+    {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        if let Some(repo_root) = manifest_dir.ancestors().nth(3) {
+            candidates.push(repo_root.join("target").join("debug").join(exe_name));
+            candidates.push(repo_root.join("target").join("release").join(exe_name));
+        }
+    }
     // Next to the shell executable (bundled installs).
     if let Ok(current) = std::env::current_exe() {
         if let Some(dir) = current.parent() {
             candidates.push(dir.join(exe_name));
         }
-    }
-    // Dev fallback: workspace target dir (src-tauri is two levels below root).
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    if let Some(repo_root) = manifest_dir.ancestors().nth(2) {
-        candidates.push(repo_root.join("target").join("debug").join(exe_name));
-        candidates.push(repo_root.join("target").join("release").join(exe_name));
     }
     candidates
 }
@@ -86,8 +92,16 @@ fn spawn_daemon() -> Result<(), String> {
              or set MINIQ_DAEMON_PATH"
                 .to_string()
         })?;
-    std::process::Command::new(&binary)
-        .spawn()
+    let mut cmd = std::process::Command::new(&binary);
+    // Release builds hide the daemon's console window; debug builds keep it
+    // attached so `tauri dev` still shows daemon logs in the terminal.
+    #[cfg(all(windows, not(debug_assertions)))]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd.spawn()
         .map_err(|e| format!("failed to start {}: {e}", binary.display()))?;
     Ok(())
 }

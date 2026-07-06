@@ -360,8 +360,21 @@ impl ToolExecutor for SessionToolExecutor {
             }
             RiskLevel::Low => {}
             RiskLevel::Medium | RiskLevel::High => {
+                let mode = self.state.settings.lock().unwrap().approval_mode;
                 let pattern = self.approval_pattern(call);
-                if !self.state.is_allowed_for_session(&self.session_id, &pattern) {
+                let pre_approved = match mode {
+                    crate::state::ApprovalMode::FullAccess => true,
+                    // Auto ("替我审批"): medium-risk actions (workspace writes,
+                    // build/test commands — all checkpointed or reversible) run
+                    // without asking; only high risk (arbitrary network,
+                    // dangerous commands) needs the user, once per pattern.
+                    crate::state::ApprovalMode::Auto => {
+                        risk.level == RiskLevel::Medium
+                            || self.state.is_allowed_for_session(&self.session_id, &pattern)
+                    }
+                    crate::state::ApprovalMode::AlwaysAsk => false,
+                };
+                if !pre_approved {
                     let _ = self
                         .state
                         .store

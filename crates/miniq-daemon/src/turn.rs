@@ -53,7 +53,6 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
                     session_id: session_id.clone(),
                     status: SessionStatus::Idle,
                 });
-                maybe_suggest_skill(&state, &session_id);
                 state.emit(Event::TurnCompleted {
                     session_id: session_id.clone(),
                 });
@@ -90,45 +89,6 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
 enum TurnError {
     Cancelled,
     Fatal(String),
-}
-
-/// Suggestion threshold: this many successful tool calls in one session
-/// without consulting any skill hints at a codifiable workflow.
-const SUGGEST_MIN_TOOL_CALLS: usize = 5;
-
-/// After a successful turn, nudge the user to save the workflow as a skill
-/// when the session was tool-heavy and no existing skill was used.
-fn maybe_suggest_skill(state: &AppState, session_id: &str) {
-    let Ok(calls) = state.store.list_tool_calls(session_id) else {
-        return;
-    };
-    let succeeded: Vec<&miniq_protocol::ToolCall> = calls
-        .iter()
-        .filter(|c| c.status == miniq_protocol::ToolCallStatus::Succeeded)
-        .collect();
-    if succeeded.len() < SUGGEST_MIN_TOOL_CALLS {
-        return;
-    }
-    if succeeded.iter().any(|c| c.tool_name == "skill_read") {
-        return; // Already following a skill.
-    }
-    // Interaction-only sessions are not workflows.
-    let substantive = succeeded
-        .iter()
-        .filter(|c| !matches!(c.tool_name.as_str(), "task_update" | "ask_user"))
-        .count();
-    if substantive < SUGGEST_MIN_TOOL_CALLS {
-        return;
-    }
-    state.emit(Event::SkillSuggested {
-        session_id: session_id.to_string(),
-        reason: format!(
-            "this task used {} tool calls without an existing skill — consider saving \
-             it as a reusable skill",
-            succeeded.len()
-        ),
-        tool_sequence: succeeded.iter().map(|c| c.tool_name.clone()).collect(),
-    });
 }
 
 async fn execute_turn(

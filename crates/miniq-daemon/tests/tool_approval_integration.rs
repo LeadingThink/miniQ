@@ -133,6 +133,9 @@ async fn write_tool_requires_approval_and_runs_after_approve() {
 
     let dir = tempfile::tempdir().unwrap();
     let sess_id = setup_session(&mut ws, dir.path()).await;
+    // Medium risk auto-runs in the default mode; alwaysAsk exercises the
+    // approval flow.
+    call(&mut ws, "m1", "settings.update", json!({"approvalMode": "alwaysAsk"})).await;
 
     call(
         &mut ws,
@@ -180,6 +183,7 @@ async fn rejected_approval_returns_structured_rejection() {
 
     let dir = tempfile::tempdir().unwrap();
     let sess_id = setup_session(&mut ws, dir.path()).await;
+    call(&mut ws, "m1", "settings.update", json!({"approvalMode": "alwaysAsk"})).await;
 
     call(
         &mut ws,
@@ -234,10 +238,11 @@ async fn blocked_command_is_rejected_without_approval() {
     next_event_of(&mut ws, "turn_completed").await;
 }
 
+/// Default mode ("替我审批"): medium-risk workspace writes run without any
+/// approval round-trip — only high risk asks.
 #[tokio::test]
-async fn approve_for_session_skips_second_approval() {
+async fn medium_writes_auto_approved_in_default_mode() {
     let provider = MockProvider::new(vec![
-        // Turn 1: two writes, one after the other.
         vec![tool_call("c1", "file_write", json!({"path": "a.txt", "content": "1"}))],
         vec![tool_call("c2", "file_write", json!({"path": "b.txt", "content": "2"}))],
         vec![ChatDelta::Text("both written".into())],
@@ -256,17 +261,7 @@ async fn approve_for_session_skips_second_approval() {
     )
     .await;
 
-    let requested = next_event_of(&mut ws, "approval_requested").await;
-    let approval_id = requested["approval"]["id"].as_str().unwrap().to_string();
-    call(
-        &mut ws,
-        "r2",
-        "approval.resolve",
-        json!({"approvalId": approval_id, "decision": "approve_for_session"}),
-    )
-    .await;
-
-    // Both tool calls succeed; only one approval was ever requested.
+    // Straight to finished twice — an approval_requested would stall this.
     let f1 = next_event_of(&mut ws, "tool_call_finished").await;
     assert_eq!(f1["status"], "succeeded");
     let f2 = next_event_of(&mut ws, "tool_call_finished").await;
@@ -275,6 +270,103 @@ async fn approve_for_session_skips_second_approval() {
 
     assert!(dir.path().join("a.txt").exists());
     assert!(dir.path().join("b.txt").exists());
+}
+
+#[tokio::test]
+async fn full_access_mode_skips_approval() {
+    let provider = MockProvider::new(vec![
+        vec![tool_call("c1", "file_write", json!({"path": "out.txt", "content": "yes"}))],
+        vec![ChatDelta::Text("done".into())],
+    ]);
+    let (port, token) = start(provider).await;
+    let mut ws = connect(port, &token).await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let sess_id = setup_session(&mut ws, dir.path()).await;
+
+    let resp = call(
+        &mut ws,
+        "m1",
+        "settings.update",
+        json!({"approvalMode": "fullAccess"}),
+    )
+    .await;
+    assert_eq!(resp["result"]["approvalMode"], "fullAccess");
+
+    call(
+        &mut ws,
+        "r1",
+        "session.sendMessage",
+        json!({"sessionId": sess_id, "message": {"role": "user", "content": "write out.txt"}}),
+    )
+    .await;
+
+    // The write runs straight through — no approval_requested event; waiting
+    // for tool_call_finished would time out otherwise.
+    let finished = next_event_of(&mut ws, "tool_call_finished").await;
+    assert_eq!(finished["status"], "succeeded");
+    next_event_of(&mut ws, "turn_completed").await;
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("out.txt")).unwrap(),
+        "yes"
+    );
+}
+
+#[tokio::test]
+async fn always_ask_mode_ignores_session_grant() {
+    let provider = MockProvider::new(vec![
+        vec![tool_call("c1", "file_write", json!({"path": "a.txt", "content": "1"}))],
+        vec![tool_call("c2", "file_write", json!({"path": "b.txt", "content": "2"}))],
+        vec![ChatDelta::Text("both written".into())],
+    ]);
+    let (port, token) = start(provider).await;
+    let mut ws = connect(port, &token).await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let sess_id = setup_session(&mut ws, dir.path()).await;
+
+    call(
+        &mut ws,
+        "m1",
+        "settings.update",
+        json!({"approvalMode": "alwaysAsk"}),
+    )
+    .await;
+
+    call(
+        &mut ws,
+        "r1",
+        "session.sendMessage",
+        json!({"sessionId": sess_id, "message": {"role": "user", "content": "write both"}}),
+    )
+    .await;
+
+    // Approve the first write "for session" — always-ask must still ask again.
+    let first = next_event_of(&mut ws, "approval_requested").await;
+    let first_id = first["approval"]["id"].as_str().unwrap().to_string();
+    call(
+        &mut ws,
+        "r2",
+        "approval.resolve",
+        json!({"approvalId": first_id, "decision": "approve_for_session"}),
+    )
+    .await;
+    let f1 = next_event_of(&mut ws, "tool_call_finished").await;
+    assert_eq!(f1["status"], "succeeded");
+
+    let second = next_event_of(&mut ws, "approval_requested").await;
+    assert_eq!(second["toolName"], "file_write");
+    let second_id = second["approval"]["id"].as_str().unwrap().to_string();
+    call(
+        &mut ws,
+        "r3",
+        "approval.resolve",
+        json!({"approvalId": second_id, "decision": "approve"}),
+    )
+    .await;
+    let f2 = next_event_of(&mut ws, "tool_call_finished").await;
+    assert_eq!(f2["status"], "succeeded");
+    next_event_of(&mut ws, "turn_completed").await;
 }
 
 /// M1 acceptance: locate a file in an unknown directory (glob), find the
@@ -317,17 +409,7 @@ async fn locate_and_edit_in_unknown_directory() {
     assert_eq!(f2["status"], "succeeded");
     assert_eq!(f2["output"]["matches"][0]["line"], 2);
 
-    // edit is medium risk -> approval.
-    let requested = next_event_of(&mut ws, "approval_requested").await;
-    assert_eq!(requested["toolName"], "file_edit");
-    let approval_id = requested["approval"]["id"].as_str().unwrap().to_string();
-    call(
-        &mut ws,
-        "r2",
-        "approval.resolve",
-        json!({"approvalId": approval_id, "decision": "approve"}),
-    )
-    .await;
+    // edit is medium risk -> auto-approved in the default mode.
     let f3 = next_event_of(&mut ws, "tool_call_finished").await;
     assert_eq!(f3["status"], "succeeded");
     next_event_of(&mut ws, "turn_completed").await;

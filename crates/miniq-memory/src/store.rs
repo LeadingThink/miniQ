@@ -5,8 +5,8 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use miniq_protocol::{
-    Approval, ApprovalStatus, Artifact, Message, RiskLevel, Role, Session, SessionStatus,
-    ToolCall, ToolCallStatus, Workspace,
+    Approval, ApprovalStatus, Artifact, Message, RiskLevel, Role, ScheduledTask, Session,
+    SessionStatus, ToolCall, ToolCallStatus, Workspace,
 };
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde_json::Value;
@@ -20,6 +20,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0002_artifacts_checkpoints",
         include_str!("../../../migrations/0002_artifacts_checkpoints.sql"),
+    ),
+    (
+        "0003_scheduled_tasks",
+        include_str!("../../../migrations/0003_scheduled_tasks.sql"),
     ),
 ];
 
@@ -261,6 +265,135 @@ impl Store {
         )?;
         if n == 0 {
             return Err(MemoryError::NotFound(format!("session {id}")));
+        }
+        Ok(())
+    }
+
+    // ---- scheduled tasks ----
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_scheduled_task(
+        &self,
+        workspace_id: &str,
+        name: &str,
+        prompt: &str,
+        schedule: &Value,
+        next_run_at: &str,
+    ) -> Result<ScheduledTask> {
+        let conn = self.conn.lock().unwrap();
+        let task = ScheduledTask {
+            id: new_id("sched"),
+            workspace_id: workspace_id.to_string(),
+            name: name.to_string(),
+            prompt: prompt.to_string(),
+            schedule: schedule.clone(),
+            enabled: true,
+            next_run_at: next_run_at.to_string(),
+            last_run_at: None,
+            last_session_id: None,
+            created_at: now_iso(),
+        };
+        conn.execute(
+            "INSERT INTO scheduled_tasks
+               (id, workspace_id, name, prompt, schedule, enabled, next_run_at, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7)",
+            params![
+                task.id,
+                task.workspace_id,
+                task.name,
+                task.prompt,
+                serde_json::to_string(&task.schedule)?,
+                task.next_run_at,
+                task.created_at
+            ],
+        )?;
+        Ok(task)
+    }
+
+    pub fn list_scheduled_tasks(&self) -> Result<Vec<ScheduledTask>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, workspace_id, name, prompt, schedule, enabled, next_run_at,
+                    last_run_at, last_session_id, created_at
+             FROM scheduled_tasks ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map([], row_to_scheduled_task)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn get_scheduled_task(&self, id: &str) -> Result<ScheduledTask> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT id, workspace_id, name, prompt, schedule, enabled, next_run_at,
+                    last_run_at, last_session_id, created_at
+             FROM scheduled_tasks WHERE id = ?1",
+            params![id],
+            row_to_scheduled_task,
+        )
+        .optional()?
+        .ok_or_else(|| MemoryError::NotFound(format!("scheduled task {id}")))
+    }
+
+    /// Enabled tasks whose next_run_at is at or before `now` (RFC3339 UTC).
+    pub fn due_scheduled_tasks(&self, now: &str) -> Result<Vec<ScheduledTask>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, workspace_id, name, prompt, schedule, enabled, next_run_at,
+                    last_run_at, last_session_id, created_at
+             FROM scheduled_tasks WHERE enabled = 1 AND next_run_at <= ?1",
+        )?;
+        let rows = stmt.query_map(params![now], row_to_scheduled_task)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Record a run: bump last_run/last_session and set the next due time.
+    pub fn mark_scheduled_task_run(
+        &self,
+        id: &str,
+        session_id: &str,
+        next_run_at: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute(
+            "UPDATE scheduled_tasks
+             SET last_run_at = ?2, last_session_id = ?3, next_run_at = ?4 WHERE id = ?1",
+            params![id, now_iso(), session_id, next_run_at],
+        )?;
+        if n == 0 {
+            return Err(MemoryError::NotFound(format!("scheduled task {id}")));
+        }
+        Ok(())
+    }
+
+    /// Enable/disable; enabling recomputes next_run_at (passed by the caller).
+    pub fn set_scheduled_task_enabled(
+        &self,
+        id: &str,
+        enabled: bool,
+        next_run_at: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let n = match next_run_at {
+            Some(next) => conn.execute(
+                "UPDATE scheduled_tasks SET enabled = ?2, next_run_at = ?3 WHERE id = ?1",
+                params![id, enabled, next],
+            )?,
+            None => conn.execute(
+                "UPDATE scheduled_tasks SET enabled = ?2 WHERE id = ?1",
+                params![id, enabled],
+            )?,
+        };
+        if n == 0 {
+            return Err(MemoryError::NotFound(format!("scheduled task {id}")));
+        }
+        Ok(())
+    }
+
+    pub fn delete_scheduled_task(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute("DELETE FROM scheduled_tasks WHERE id = ?1", params![id])?;
+        if n == 0 {
+            return Err(MemoryError::NotFound(format!("scheduled task {id}")));
         }
         Ok(())
     }
@@ -706,6 +839,22 @@ fn invalid_text(msg: String) -> rusqlite::Error {
 fn parse_json(s: String) -> rusqlite::Result<Value> {
     serde_json::from_str(&s).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+    })
+}
+
+fn row_to_scheduled_task(row: &Row<'_>) -> rusqlite::Result<ScheduledTask> {
+    let schedule_raw: String = row.get(4)?;
+    Ok(ScheduledTask {
+        id: row.get(0)?,
+        workspace_id: row.get(1)?,
+        name: row.get(2)?,
+        prompt: row.get(3)?,
+        schedule: serde_json::from_str(&schedule_raw).unwrap_or(Value::Null),
+        enabled: row.get(5)?,
+        next_run_at: row.get(6)?,
+        last_run_at: row.get(7)?,
+        last_session_id: row.get(8)?,
+        created_at: row.get(9)?,
     })
 }
 

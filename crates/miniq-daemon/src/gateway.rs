@@ -15,7 +15,13 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
     let result = match req.method.as_str() {
         "daemon.health" => health(state),
         "workspace.open" => workspace_open(state, req.params),
+        "workspace.create" => workspace_create(state, req.params),
         "workspace.list" => workspace_list(state),
+        "schedule.create" => schedule_create(state, req.params),
+        "schedule.list" => schedule_list(state),
+        "schedule.toggle" => schedule_toggle(state, req.params),
+        "schedule.delete" => schedule_delete(state, req.params),
+        "schedule.runNow" => schedule_run_now(state, req.params),
         "session.create" => session_create(state, req.params),
         "session.list" => session_list(state, req.params),
         "session.open" => session_open(state, req.params),
@@ -120,6 +126,126 @@ fn dunce_canonicalize(path: &std::path::Path) -> Option<String> {
 fn workspace_list(state: &AppState) -> Result<Value, RpcError> {
     let list = state.store.list_workspaces().map_err(store_err)?;
     to_value(json!({ "workspaces": list }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceCreateParams {
+    name: String,
+}
+
+/// Create a blank project: a fresh directory under `<data dir>/projects/`.
+fn workspace_create(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: WorkspaceCreateParams = params(raw)?;
+    let name = p.name.trim();
+    if name.is_empty() {
+        return Err(RpcError::new(ErrorCode::InvalidParams, "project name is empty"));
+    }
+    if name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "project name contains invalid characters",
+        ));
+    }
+    let dir = crate::data_dir().join("projects").join(name);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| RpcError::new(ErrorCode::InternalError, e.to_string()))?;
+    let canonical = dunce_canonicalize(&dir).unwrap_or_else(|| dir.to_string_lossy().to_string());
+    let ws = state
+        .store
+        .create_workspace(&canonical, name)
+        .map_err(store_err)?;
+    to_value(ws)
+}
+
+// ---- scheduled tasks ----
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScheduleCreateParams {
+    workspace_id: String,
+    name: String,
+    prompt: String,
+    schedule: Value,
+}
+
+fn schedule_create(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: ScheduleCreateParams = params(raw)?;
+    if p.name.trim().is_empty() || p.prompt.trim().is_empty() {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "name and prompt must not be empty",
+        ));
+    }
+    // Workspace must exist.
+    state.store.get_workspace(&p.workspace_id).map_err(store_err)?;
+    let schedule = crate::schedule::parse_schedule(&p.schedule)
+        .map_err(|e| RpcError::new(ErrorCode::InvalidParams, e))?;
+    let next = crate::schedule::next_run_iso(&schedule, time::OffsetDateTime::now_utc());
+    let task = state
+        .store
+        .create_scheduled_task(&p.workspace_id, p.name.trim(), &p.prompt, &p.schedule, &next)
+        .map_err(store_err)?;
+    to_value(task)
+}
+
+fn schedule_list(state: &AppState) -> Result<Value, RpcError> {
+    let tasks = state.store.list_scheduled_tasks().map_err(store_err)?;
+    to_value(json!({ "tasks": tasks }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScheduleToggleParams {
+    id: String,
+    enabled: bool,
+}
+
+fn schedule_toggle(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: ScheduleToggleParams = params(raw)?;
+    let next = if p.enabled {
+        let task = state.store.get_scheduled_task(&p.id).map_err(store_err)?;
+        let schedule = crate::schedule::parse_schedule(&task.schedule)
+            .map_err(|e| RpcError::new(ErrorCode::InvalidParams, e))?;
+        Some(crate::schedule::next_run_iso(
+            &schedule,
+            time::OffsetDateTime::now_utc(),
+        ))
+    } else {
+        None
+    };
+    state
+        .store
+        .set_scheduled_task_enabled(&p.id, p.enabled, next.as_deref())
+        .map_err(store_err)?;
+    let task = state.store.get_scheduled_task(&p.id).map_err(store_err)?;
+    to_value(task)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScheduleIdParams {
+    id: String,
+}
+
+fn schedule_delete(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: ScheduleIdParams = params(raw)?;
+    state.store.delete_scheduled_task(&p.id).map_err(store_err)?;
+    to_value(json!({ "deleted": true }))
+}
+
+fn schedule_run_now(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let p: ScheduleIdParams = params(raw)?;
+    let task = state.store.get_scheduled_task(&p.id).map_err(store_err)?;
+    let schedule = crate::schedule::parse_schedule(&task.schedule)
+        .map_err(|e| RpcError::new(ErrorCode::InvalidParams, e))?;
+    let session_id = crate::schedule::fire_task(state, &task)
+        .map_err(|e| RpcError::new(ErrorCode::SessionBusy, e))?;
+    let next = crate::schedule::next_run_iso(&schedule, time::OffsetDateTime::now_utc());
+    let _ = state
+        .store
+        .mark_scheduled_task_run(&p.id, &session_id, &next);
+    to_value(json!({ "sessionId": session_id }))
 }
 
 #[derive(Deserialize)]
@@ -610,7 +736,11 @@ fn settings_get(state: &AppState) -> Result<Value, RpcError> {
             "hasApiKey": !s.api_key.is_empty(),
         })
     });
-    Ok(json!({ "provider": provider, "search": search }))
+    Ok(json!({
+        "provider": provider,
+        "search": search,
+        "approvalMode": settings.approval_mode,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -622,6 +752,9 @@ struct SettingsUpdateParams {
     /// Absent => keep current search settings.
     #[serde(default)]
     search: Option<SearchUpdate>,
+    /// Absent => keep the current approval mode.
+    #[serde(default)]
+    approval_mode: Option<crate::state::ApprovalMode>,
 }
 
 #[derive(Deserialize)]
@@ -684,6 +817,10 @@ fn settings_update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
             api_key: merged_key(search.api_key, existing_key),
             base_url: search.base_url,
         });
+    }
+
+    if let Some(mode) = p.approval_mode {
+        settings.approval_mode = mode;
     }
 
     state

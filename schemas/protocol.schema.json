@@ -504,36 +504,6 @@
         "type": "object"
       },
       {
-        "description": "This session's workflow looks worth saving as a skill.",
-        "properties": {
-          "reason": {
-            "type": "string"
-          },
-          "sessionId": {
-            "type": "string"
-          },
-          "toolSequence": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "type": {
-            "enum": [
-              "skill_suggested"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "reason",
-          "sessionId",
-          "toolSequence",
-          "type"
-        ],
-        "type": "object"
-      },
-      {
         "description": "The current turn finished (final assistant message already sent via `MessageCreated`).",
         "properties": {
           "sessionId": {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RpcClient, resolveConnection } from "./rpc";
 import type {
   Approval,
+  ApprovalMode,
   Artifact,
   DaemonEvent,
   HealthStatus,
@@ -19,6 +20,9 @@ import { SettingsPanel } from "./components/Settings";
 import { SkillsPanel } from "./components/Skills";
 import { DistillModal } from "./components/Distill";
 import { McpPanel } from "./components/Mcp";
+import { SchedulePanel } from "./components/Schedule";
+import { SearchOverlay } from "./components/Search";
+import { ProjectPicker } from "./components/ProjectPicker";
 
 export interface PendingApproval {
   approval: Approval;
@@ -63,8 +67,10 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showSkills, setShowSkills] = useState(false);
   const [showDistill, setShowDistill] = useState(false);
-  const [suggestion, setSuggestion] = useState<string | null>(null);
   const [showMcp, setShowMcp] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [approvalMode, setApprovalMode] = useState<ApprovalMode>("auto");
 
   const currentSession = useMemo(
     () => sessions.find((s) => s.id === currentSessionId) ?? null,
@@ -90,20 +96,36 @@ export default function App() {
     setWorkspaces(res.workspaces);
   }, [client]);
 
-  // Connect on mount.
+  // Connect on mount. The daemon may still be starting up (the shell spawns
+  // it and waits for a health check), so retry with a short delay instead of
+  // giving up on the first failure.
   useEffect(() => {
     let disposed = false;
     (async () => {
-      try {
-        const info = await resolveConnection();
-        await client.connect(info);
-        if (disposed) return;
-        setConnected(true);
-        setHealth(await client.call<HealthStatus>("daemon.health"));
-        await refreshWorkspaces();
-        await refreshSessions();
-      } catch (e) {
-        if (!disposed) setError(e instanceof Error ? e.message : String(e));
+      const maxAttempts = 10;
+      for (let attempt = 1; !disposed; attempt++) {
+        try {
+          const info = await resolveConnection();
+          await client.connect(info);
+          if (disposed) return;
+          setConnected(true);
+          setHealth(await client.call<HealthStatus>("daemon.health"));
+          const settings = await client.call<{ approvalMode?: ApprovalMode }>(
+            "settings.get",
+          );
+          if (settings.approvalMode) setApprovalMode(settings.approvalMode);
+          await refreshWorkspaces();
+          await refreshSessions();
+          setError(null);
+          return;
+        } catch (e) {
+          if (disposed) return;
+          if (attempt >= maxAttempts) {
+            setError(e instanceof Error ? e.message : String(e));
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 800));
+        }
       }
     })();
     const offStatus = client.onStatus(setConnected);
@@ -206,9 +228,6 @@ export default function App() {
               : [...prev, event.artifact],
           );
           break;
-        case "skill_suggested":
-          setSuggestion(event.reason);
-          break;
         case "turn_completed":
         case "turn_failed":
           setStreamingText("");
@@ -232,6 +251,31 @@ export default function App() {
     }
   }, [client, refreshWorkspaces]);
 
+  const createBlankProject = useCallback(
+    async (name: string) => {
+      try {
+        const ws = await client.call<Workspace>("workspace.create", { name });
+        await refreshWorkspaces();
+        setSelectedWorkspaceId(ws.id);
+        setCurrentSessionId(null);
+        setError(null);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [client, refreshWorkspaces],
+  );
+
+  /** "新对话": back to the hero composer, keeping the selected project. */
+  const newChat = useCallback(() => {
+    setCurrentSessionId(null);
+    setShowSettings(false);
+    setShowSkills(false);
+    setShowMcp(false);
+    setShowSchedule(false);
+    setShowSearch(false);
+  }, []);
+
   const resetSessionView = () => {
     setMessages([]);
     setToolCalls([]);
@@ -240,7 +284,6 @@ export default function App() {
     setPlan([]);
     setArtifacts([]);
     setStreamingText("");
-    setSuggestion(null);
   };
 
   const createSession = useCallback(
@@ -296,7 +339,10 @@ export default function App() {
   /** Hero flow: type a goal -> session is created and the goal sent. */
   const startTask = useCallback(
     async (content: string) => {
-      if (!selectedWorkspace) return;
+      if (!selectedWorkspace) {
+        setError("请先选择一个项目(或新建一个)");
+        return;
+      }
       setError(null);
       try {
         const session = await createSession(selectedWorkspace.id);
@@ -313,6 +359,20 @@ export default function App() {
       }
     },
     [client, selectedWorkspace, createSession, openSession, refreshSessions],
+  );
+
+  const changeApprovalMode = useCallback(
+    async (mode: ApprovalMode) => {
+      const previous = approvalMode;
+      setApprovalMode(mode);
+      try {
+        await client.call("settings.update", { approvalMode: mode });
+      } catch (e) {
+        setApprovalMode(previous);
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [client, approvalMode],
   );
 
   const cancelTurn = useCallback(async () => {
@@ -368,7 +428,9 @@ export default function App() {
         sessions={sessions}
         currentSessionId={currentSessionId}
         selectedWorkspaceId={selectedWorkspace?.id ?? null}
-        onOpenWorkspace={openWorkspace}
+        onNewChat={newChat}
+        onShowSearch={() => setShowSearch(true)}
+        onShowSchedule={() => setShowSchedule(true)}
         onSelectWorkspace={(id) => {
           setSelectedWorkspaceId(id);
           setCurrentSessionId(null);
@@ -408,22 +470,6 @@ export default function App() {
             </span>
           </div>
         )}
-        {suggestion && (
-          <div className="suggestion-banner">
-            💡 {suggestion}
-            <button
-              onClick={() => {
-                setSuggestion(null);
-                setShowDistill(true);
-              }}
-            >
-              保存为技能
-            </button>
-            <button className="ghost" onClick={() => setSuggestion(null)}>
-              忽略
-            </button>
-          </div>
-        )}
         {showSettings && (
           <SettingsPanel client={client} onClose={() => setShowSettings(false)} />
         )}
@@ -435,6 +481,23 @@ export default function App() {
           />
         )}
         {showMcp && <McpPanel client={client} onClose={() => setShowMcp(false)} />}
+        {showSchedule && (
+          <SchedulePanel
+            client={client}
+            workspaces={workspaces}
+            defaultWorkspaceId={selectedWorkspace?.id ?? null}
+            onClose={() => setShowSchedule(false)}
+            onOpenSession={(id) => void openSession(id)}
+          />
+        )}
+        {showSearch && (
+          <SearchOverlay
+            sessions={sessions}
+            workspaces={workspaces}
+            onSelectSession={(id) => void openSession(id)}
+            onClose={() => setShowSearch(false)}
+          />
+        )}
         {showDistill && currentSessionId && (
           <DistillModal
             client={client}
@@ -460,6 +523,8 @@ export default function App() {
             <Composer
               busy={!!busy}
               chip={currentWorkspace?.name}
+              approvalMode={approvalMode}
+              onApprovalModeChange={changeApprovalMode}
               onSend={sendMessage}
               onCancel={cancelTurn}
             />
@@ -472,19 +537,30 @@ export default function App() {
                 : "今天想完成什么?"}
             </h1>
             <div className="hero-composer">
-              {selectedWorkspace ? (
-                <ComposerCard
-                  busy={false}
-                  autoFocus
-                  placeholder="描述你的目标,例如:整理这份资料并生成周报"
-                  chip={selectedWorkspace.name}
-                  onSend={startTask}
-                />
-              ) : (
-                <div style={{ display: "flex", justifyContent: "center" }}>
-                  <button onClick={openWorkspace}>打开工作区</button>
-                </div>
-              )}
+              <ComposerCard
+                busy={false}
+                autoFocus
+                placeholder={
+                  selectedWorkspace
+                    ? "描述你的目标,例如:整理这份资料并生成周报"
+                    : "先选择一个项目,再描述你的目标"
+                }
+                chipSlot={
+                  <ProjectPicker
+                    workspaces={workspaces}
+                    selectedId={selectedWorkspace?.id ?? null}
+                    onSelect={(id) => {
+                      setSelectedWorkspaceId(id);
+                      setCurrentSessionId(null);
+                    }}
+                    onCreateBlank={(name) => void createBlankProject(name)}
+                    onOpenFolder={() => void openWorkspace()}
+                  />
+                }
+                approvalMode={approvalMode}
+                onApprovalModeChange={changeApprovalMode}
+                onSend={startTask}
+              />
             </div>
             <div className="hero-cards">
               <div className="hero-card" onClick={() => setShowSkills(true)}>

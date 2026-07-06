@@ -4,8 +4,60 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>miniQ</title>
+    <style>
+      /* Inline splash: visible as soon as the HTML parses, long before the
+         JS bundle loads. Removed by main.tsx after React's first paint. */
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: #ffffff;
+        transition: opacity 0.25s ease;
+      }
+      #splash.splash-hide {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #splash .splash-mark {
+        width: 64px;
+        height: 64px;
+        border-radius: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        font-size: 34px;
+        font-weight: 700;
+        color: #ffffff;
+        background: linear-gradient(135deg, #6366f1, #2563eb);
+        animation: splash-pulse 1.4s ease-in-out infinite;
+      }
+      #splash .splash-name {
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        color: #6b7280;
+      }
+      @keyframes splash-pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(0.92); opacity: 0.75; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #splash .splash-mark { animation: none; }
+      }
+    </style>
   </head>
   <body>
+    <div id="splash">
+      <div class="splash-mark">Q</div>
+      <div class="splash-name">miniQ</div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

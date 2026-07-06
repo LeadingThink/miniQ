@@ -102,6 +102,28 @@ export interface HealthStatus {
   uptimeSecs: number;
 }
 
+/** How risky tool calls are gated (mirrors daemon ApprovalMode). */
+export type ApprovalMode = "alwaysAsk" | "auto" | "fullAccess";
+
+/** Schedule spec for a recurring task. */
+export type ScheduleSpec =
+  | { type: "daily"; time: string }
+  | { type: "weekly"; weekday: number; time: string }
+  | { type: "interval"; minutes: number };
+
+export interface ScheduledTask {
+  id: string;
+  workspaceId: string;
+  name: string;
+  prompt: string;
+  schedule: ScheduleSpec;
+  enabled: boolean;
+  nextRunAt: string;
+  lastRunAt: string | null;
+  lastSessionId: string | null;
+  createdAt: string;
+}
+
 export type DaemonEvent =
   | { type: "session_status_changed"; sessionId: string; status: SessionStatus }
   | { type: "message_created"; sessionId: string; message: Message }
@@ -133,11 +155,5 @@ export type DaemonEvent =
   | { type: "question_requested"; sessionId: string; question: Question }
   | { type: "question_resolved"; sessionId: string; questionId: string; answer: string }
   | { type: "artifact_created"; sessionId: string; artifact: Artifact }
-  | {
-      type: "skill_suggested";
-      sessionId: string;
-      reason: string;
-      toolSequence: string[];
-    }
   | { type: "turn_completed"; sessionId: string }
   | { type: "turn_failed"; sessionId: string; error: string };

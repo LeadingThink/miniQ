@@ -98,14 +98,6 @@ pub enum Event {
         session_id: String,
         artifact: Artifact,
     },
-    /// This session's workflow looks worth saving as a skill.
-    SkillSuggested {
-        #[serde(rename = "sessionId")]
-        session_id: String,
-        reason: String,
-        #[serde(rename = "toolSequence")]
-        tool_sequence: Vec<String>,
-    },
     /// The current turn finished (final assistant message already sent via
     /// `MessageCreated`).
     TurnCompleted {
@@ -134,7 +126,6 @@ impl Event {
             | Event::QuestionRequested { session_id, .. }
             | Event::QuestionResolved { session_id, .. }
             | Event::ArtifactCreated { session_id, .. }
-            | Event::SkillSuggested { session_id, .. }
             | Event::TurnCompleted { session_id }
             | Event::TurnFailed { session_id, .. } => session_id,
         }

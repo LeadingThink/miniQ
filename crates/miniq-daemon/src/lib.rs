@@ -5,6 +5,7 @@ pub mod executor;
 pub mod gateway;
 pub mod learn;
 pub mod mcp;
+pub mod schedule;
 pub mod server;
 pub mod state;
 pub mod turn;

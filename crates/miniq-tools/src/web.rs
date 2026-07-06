@@ -1,5 +1,6 @@
-//! web_fetch and web_search: network tools. Both are high risk (network
-//! access) and go through per-domain approval in the executor.
+//! web_fetch: fetch a page as readable text. High risk (network access),
+//! goes through per-domain approval in the executor. Search lives in
+//! `web_search.rs`.
 
 use async_trait::async_trait;
 use miniq_protocol::RiskLevel;
@@ -145,120 +146,10 @@ impl Tool for WebFetchTool {
     }
 }
 
-// ---- web_search ----
-
-/// Search provider configuration, supplied by the daemon via ToolContext.
-#[derive(Debug, Clone, serde::Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchConfig {
-    /// Currently supported: "tavily".
-    pub provider: String,
-    pub api_key: String,
-    #[serde(default)]
-    pub base_url: Option<String>,
-}
-
-pub struct WebSearchTool;
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct WebSearchInput {
-    query: String,
-    #[serde(default)]
-    max_results: Option<usize>,
-}
-
-#[async_trait]
-impl Tool for WebSearchTool {
-    fn name(&self) -> &str {
-        "web_search"
-    }
-    fn description(&self) -> &str {
-        "Search the web and return result titles, URLs and snippets. Requires a \
-         configured search provider."
-    }
-    fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "maxResults": {"type": "integer", "description": "Default 5, max 10"}
-            },
-            "required": ["query"]
-        })
-    }
-    fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
-        network_risk("network access to the configured search provider".into())
-    }
-    async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
-        let p: WebSearchInput = parse_input(input)?;
-        let Some(config) = &ctx.search else {
-            return Err(ToolError::ExecutionFailed(
-                "web_search is not configured; ask the user to set a search provider \
-                 (settings: search.provider + search.apiKey)"
-                    .into(),
-            ));
-        };
-        if config.provider != "tavily" {
-            return Err(ToolError::ExecutionFailed(format!(
-                "unsupported search provider: {}",
-                config.provider
-            )));
-        }
-        let max_results = p.max_results.unwrap_or(5).clamp(1, 10);
-        let base = config
-            .base_url
-            .clone()
-            .unwrap_or_else(|| "https://api.tavily.com".to_string());
-        let url = format!("{}/search", base.trim_end_matches('/'));
-
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(FETCH_TIMEOUT_SECS))
-            .build()
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-        let response = client
-            .post(&url)
-            .json(&json!({
-                "api_key": config.api_key,
-                "query": p.query,
-                "max_results": max_results,
-            }))
-            .send()
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("search failed: {e}")))?;
-        if !response.status().is_success() {
-            let status = response.status().as_u16();
-            return Err(ToolError::ExecutionFailed(format!(
-                "search provider returned {status}"
-            )));
-        }
-        let body: Value = response
-            .json()
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-        let results: Vec<Value> = body["results"]
-            .as_array()
-            .map(|items| {
-                items
-                    .iter()
-                    .map(|r| {
-                        json!({
-                            "title": r["title"],
-                            "url": r["url"],
-                            "snippet": r["content"],
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        Ok(json!({ "query": p.query, "results": results }))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::routing::{get, post};
+    use axum::routing::get;
 
     async fn serve(app: axum::Router) -> u16 {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
@@ -323,44 +214,5 @@ mod tests {
         let risk = WebFetchTool.evaluate_risk(&ctx(), &json!({"url": "https://example.com/x"}));
         assert_eq!(risk.level, RiskLevel::High);
         assert!(risk.reason.contains("example.com"));
-    }
-
-    #[tokio::test]
-    async fn search_unconfigured_errors() {
-        let err = WebSearchTool
-            .execute(&ctx(), json!({"query": "hello"}))
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("not configured"));
-    }
-
-    #[tokio::test]
-    async fn search_tavily_contract() {
-        let app = axum::Router::new().route(
-            "/search",
-            post(|body: axum::Json<Value>| async move {
-                assert_eq!(body["query"], "rust");
-                axum::Json(json!({
-                    "results": [
-                        {"title": "Rust", "url": "https://rust-lang.org", "content": "systems language"}
-                    ]
-                }))
-            }),
-        );
-        let port = serve(app).await;
-        let mut context = ctx();
-        context.search = Some(SearchConfig {
-            provider: "tavily".into(),
-            api_key: "k".into(),
-            base_url: Some(format!("http://127.0.0.1:{port}")),
-        });
-        let out = WebSearchTool
-            .execute(&context, json!({"query": "rust"}))
-            .await
-            .unwrap();
-        let results = out["results"].as_array().unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0]["url"], "https://rust-lang.org");
-        assert_eq!(results[0]["snippet"], "systems language");
     }
 }

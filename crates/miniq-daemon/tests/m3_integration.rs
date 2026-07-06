@@ -105,6 +105,7 @@ async fn plan_document_artifact_flow() {
 
     let dir = tempfile::tempdir().unwrap();
     let sess_id = setup_session(&mut ws, dir.path()).await;
+    call(&mut ws, "mode0", "settings.update", json!({"approvalMode": "alwaysAsk"})).await;
 
     call(
         &mut ws,
@@ -215,6 +216,7 @@ async fn checkpoint_rollback_restores_file() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("notes.txt"), "original content").unwrap();
     let sess_id = setup_session(&mut ws, dir.path()).await;
+    call(&mut ws, "mode0", "settings.update", json!({"approvalMode": "alwaysAsk"})).await;
 
     call(
         &mut ws,
@@ -276,6 +278,7 @@ async fn rollback_removes_file_that_did_not_exist() {
 
     let dir = tempfile::tempdir().unwrap();
     let sess_id = setup_session(&mut ws, dir.path()).await;
+    call(&mut ws, "mode0", "settings.update", json!({"approvalMode": "alwaysAsk"})).await;
 
     call(
         &mut ws,

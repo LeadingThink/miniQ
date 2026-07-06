@@ -49,6 +49,24 @@ pub struct Session {
     pub updated_at: String,
 }
 
+/// A recurring task: at each due time a fresh session is created in the
+/// workspace and `prompt` is sent as the user message.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduledTask {
+    pub id: String,
+    pub workspace_id: String,
+    pub name: String,
+    pub prompt: String,
+    /// Schedule spec as JSON (daily / weekly / interval), parsed by the daemon.
+    pub schedule: Value,
+    pub enabled: bool,
+    pub next_run_at: String,
+    pub last_run_at: Option<String>,
+    pub last_session_id: Option<String>,
+    pub created_at: String,
+}
+
 /// Message author role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

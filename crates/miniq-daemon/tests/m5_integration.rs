@@ -1,5 +1,4 @@
-//! M5 acceptance: memory tools through the full approval chain, and the
-//! skill-suggestion nudge after tool-heavy sessions.
+//! M5 acceptance: memory tools through the full approval chain.
 
 use futures_util::{SinkExt, StreamExt};
 use miniq_daemon::server;
@@ -98,6 +97,7 @@ async fn memory_write_needs_approval_then_search_finds_it() {
 
     let dir = tempfile::tempdir().unwrap();
     let sess_id = setup_session(&mut ws, dir.path()).await;
+    call(&mut ws, "mode0", "settings.update", json!({"approvalMode": "alwaysAsk"})).await;
 
     call(
         &mut ws,
@@ -129,69 +129,4 @@ async fn memory_write_needs_approval_then_search_finds_it() {
     assert_eq!(memories.len(), 1);
     assert!(memories[0]["content"].as_str().unwrap().contains("npm run build"));
     next_event_of(&mut ws, "turn_completed").await;
-}
-
-#[tokio::test]
-async fn tool_heavy_session_triggers_skill_suggestion() {
-    // Six read-only calls, no skill_read -> suggestion after the turn.
-    let calls: Vec<Vec<ChatDelta>> = (0..6)
-        .map(|i| vec![tool_call(&format!("c{i}"), "file_list", json!({}))])
-        .collect();
-    let mut turns = calls;
-    turns.push(vec![ChatDelta::Text("done".into())]);
-    let provider = Arc::new(MockProvider::new(turns));
-    let (port, token) = start(provider).await;
-    let mut ws = connect(port, &token).await;
-
-    let dir = tempfile::tempdir().unwrap();
-    let sess_id = setup_session(&mut ws, dir.path()).await;
-
-    call(
-        &mut ws,
-        "r1",
-        "session.sendMessage",
-        json!({"sessionId": sess_id, "message": {"role": "user", "content": "盘点"}}),
-    )
-    .await;
-
-    let suggested = next_event_of(&mut ws, "skill_suggested").await;
-    assert_eq!(suggested["sessionId"], sess_id.as_str());
-    assert_eq!(suggested["toolSequence"].as_array().unwrap().len(), 6);
-    next_event_of(&mut ws, "turn_completed").await;
-}
-
-#[tokio::test]
-async fn short_session_gets_no_suggestion() {
-    let provider = Arc::new(MockProvider::new(vec![
-        vec![tool_call("c1", "file_list", json!({}))],
-        vec![ChatDelta::Text("done".into())],
-    ]));
-    let (port, token) = start(provider).await;
-    let mut ws = connect(port, &token).await;
-
-    let dir = tempfile::tempdir().unwrap();
-    let sess_id = setup_session(&mut ws, dir.path()).await;
-    call(
-        &mut ws,
-        "r1",
-        "session.sendMessage",
-        json!({"sessionId": sess_id, "message": {"role": "user", "content": "看一眼"}}),
-    )
-    .await;
-
-    // turn_completed must arrive WITHOUT a preceding skill_suggested.
-    loop {
-        let msg = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
-            .await
-            .expect("timeout")
-            .unwrap()
-            .unwrap();
-        let Message::Text(text) = msg else { continue };
-        let v: Value = serde_json::from_str(&text).unwrap();
-        match v.get("type").and_then(|t| t.as_str()) {
-            Some("skill_suggested") => panic!("unexpected suggestion for a short session"),
-            Some("turn_completed") => break,
-            _ => {}
-        }
-    }
 }
