@@ -11,7 +11,13 @@ interface McpServerView {
   error?: string;
 }
 
-export function McpPanel(props: { client: RpcClient; onClose: () => void }) {
+const STATUS_LABEL: Record<string, string> = {
+  running: "运行中",
+  configured: "已配置",
+  error: "错误",
+};
+
+export function McpPanel(props: { client: RpcClient }) {
   const [servers, setServers] = useState<McpServerView[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -20,7 +26,7 @@ export function McpPanel(props: { client: RpcClient; onClose: () => void }) {
 
   const refresh = useCallback(
     async (connect: boolean) => {
-      setStatus(connect ? "Connecting to servers..." : null);
+      setStatus(connect ? "正在连接服务器..." : null);
       try {
         const res = await props.client.call<{ servers: McpServerView[] }>("mcp.list", {
           connect,
@@ -77,80 +83,114 @@ export function McpPanel(props: { client: RpcClient; onClose: () => void }) {
   };
 
   const remove = async (server: McpServerView) => {
-    if (!window.confirm(`Remove MCP server "${server.name}"?`)) return;
+    if (!window.confirm(`移除 MCP 服务器"${server.name}"?`)) return;
     await saveServers(servers.filter((s) => s.name !== server.name));
   };
 
   return (
-    <div className="settings-overlay" onClick={props.onClose}>
-      <div className="settings-panel skills-panel" onClick={(e) => e.stopPropagation()}>
-        <h2>MCP servers</h2>
+    <div className="page">
+      <div className="page-inner wide">
+        <div className="page-header">
+          <div className="page-title">MCP</div>
+          <div className="page-sub">
+            接入外部工具与服务(Model Context Protocol),扩展 agent 的能力。
+          </div>
+        </div>
         {status && <div className="settings-status">{status}</div>}
-        <div className="skill-list">
-          {servers.length === 0 && (
-            <div className="settings-status">No MCP servers configured.</div>
-          )}
-          {servers.map((server) => (
-            <div key={server.name} className="skill-row">
-              <div className="skill-row-main">
-                <span className="tool-name">{server.name}</span>
-                <span
-                  className={`badge ${
-                    server.status === "running"
-                      ? "succeeded"
-                      : server.status === "error"
-                        ? "failed"
-                        : ""
-                  }`}
-                >
-                  {server.status}
-                </span>
-                <div className="sub">
+
+        {servers.length === 0 ? (
+          <div className="schedule-empty compact">
+            <div className="schedule-empty-icon">🔌</div>
+            <div className="schedule-empty-title">还没有 MCP 服务器</div>
+            <div className="schedule-empty-sub">
+              在下方添加一个 stdio MCP 服务器,agent 即可调用它提供的工具
+            </div>
+          </div>
+        ) : (
+          <div className="card-grid">
+            {servers.map((server) => (
+              <div
+                key={server.name}
+                className={`asset-card ${server.enabled ? "" : "off"}`}
+              >
+                <div className="asset-card-head">
+                  <div className="asset-icon">{server.name.slice(0, 1).toUpperCase()}</div>
+                  <div className="asset-name" title={server.name}>
+                    {server.name}
+                  </div>
+                  <div
+                    className={`switch ${server.enabled ? "on" : ""}`}
+                    title={server.enabled ? "点击禁用" : "点击启用"}
+                    onClick={() => void toggle(server)}
+                  >
+                    <div className="switch-knob" />
+                  </div>
+                </div>
+                <div className="asset-cmd" title={`${server.command} ${server.args.join(" ")}`}>
                   {server.command} {server.args.join(" ")}
                 </div>
                 {server.tools && (
-                  <div className="sub">
-                    tools: {server.tools.map((t) => t.name).join(", ") || "(none)"}
+                  <div className="asset-desc">
+                    工具: {server.tools.map((t) => t.name).join(", ") || "(无)"}
                   </div>
                 )}
-                {server.error && <div className="sub">{server.error}</div>}
+                {server.error && (
+                  <div className="asset-desc" style={{ color: "var(--danger)" }}>
+                    {server.error}
+                  </div>
+                )}
+                <div className="asset-meta">
+                  <span
+                    className={`badge ${
+                      server.status === "running"
+                        ? "succeeded"
+                        : server.status === "error"
+                          ? "failed"
+                          : ""
+                    }`}
+                  >
+                    {STATUS_LABEL[server.status] ?? server.status}
+                  </span>
+                  <span style={{ flex: 1 }} />
+                  <button className="ghost danger" onClick={() => void remove(server)}>
+                    移除
+                  </button>
+                </div>
               </div>
-              <button className={server.enabled ? "secondary" : ""} onClick={() => toggle(server)}>
-                {server.enabled ? "Disable" : "Enable"}
-              </button>
-              <button className="danger" onClick={() => remove(server)}>
-                Remove
-              </button>
-            </div>
-          ))}
-        </div>
-        <h2>Add server</h2>
-        <label>
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-server" />
-        </label>
-        <label>
-          Command
-          <input
-            value={command}
-            onChange={(e) => setCommand(e.target.value)}
-            placeholder="npx / python / path-to-binary"
-          />
-        </label>
-        <label>
-          Arguments (space separated)
-          <input value={args} onChange={(e) => setArgs(e.target.value)} placeholder="-y @some/mcp-server" />
-        </label>
-        <div className="approval-actions">
-          <button onClick={addServer} disabled={!name.trim() || !command.trim()}>
-            Add
-          </button>
-          <button className="secondary" onClick={() => refresh(true)}>
-            Test connections
-          </button>
-          <button className="secondary" onClick={props.onClose}>
-            Close
-          </button>
+            ))}
+          </div>
+        )}
+
+        <div className="form-card">
+          <div className="form-card-title">添加服务器</div>
+          <label>
+            名称
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-server" />
+          </label>
+          <label>
+            命令
+            <input
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              placeholder="npx / python / 可执行文件路径"
+            />
+          </label>
+          <label>
+            参数(空格分隔)
+            <input
+              value={args}
+              onChange={(e) => setArgs(e.target.value)}
+              placeholder="-y @some/mcp-server"
+            />
+          </label>
+          <div className="settings-actions">
+            <button onClick={addServer} disabled={!name.trim() || !command.trim()}>
+              添加
+            </button>
+            <button className="secondary" onClick={() => refresh(true)}>
+              测试连接
+            </button>
+          </div>
         </div>
       </div>
     </div>

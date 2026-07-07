@@ -65,11 +65,10 @@ export default function App() {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [streamingText, setStreamingText] = useState<string>("");
   const [showSettings, setShowSettings] = useState(false);
-  const [showSkills, setShowSkills] = useState(false);
   const [showDistill, setShowDistill] = useState(false);
-  const [showMcp, setShowMcp] = useState(false);
-  const [showSchedule, setShowSchedule] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  /** Full pages rendered in the main sheet (mutually exclusive with a session view). */
+  const [page, setPage] = useState<"schedule" | "skills" | "mcp" | null>(null);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>("auto");
 
   const currentSession = useMemo(
@@ -270,10 +269,8 @@ export default function App() {
   const newChat = useCallback(() => {
     setCurrentSessionId(null);
     setShowSettings(false);
-    setShowSkills(false);
-    setShowMcp(false);
-    setShowSchedule(false);
     setShowSearch(false);
+    setPage(null);
   }, []);
 
   const resetSessionView = () => {
@@ -292,6 +289,7 @@ export default function App() {
       await refreshSessions();
       setSelectedWorkspaceId(workspaceId);
       setCurrentSessionId(session.id);
+      setPage(null);
       resetSessionView();
       return session;
     },
@@ -309,6 +307,7 @@ export default function App() {
       }>("session.open", { sessionId });
       setCurrentSessionId(sessionId);
       setSelectedWorkspaceId(res.session.workspaceId);
+      setPage(null);
       resetSessionView();
       setMessages(res.messages);
       setToolCalls(res.toolCalls);
@@ -430,16 +429,17 @@ export default function App() {
         selectedWorkspaceId={selectedWorkspace?.id ?? null}
         onNewChat={newChat}
         onShowSearch={() => setShowSearch(true)}
-        onShowSchedule={() => setShowSchedule(true)}
+        onShowSchedule={() => setPage("schedule")}
         onSelectWorkspace={(id) => {
           setSelectedWorkspaceId(id);
           setCurrentSessionId(null);
+          setPage(null);
           resetSessionView();
         }}
         onCreateSession={createSession}
         onSelectSession={openSession}
-        onShowSkills={() => setShowSkills(true)}
-        onShowMcp={() => setShowMcp(true)}
+        onShowSkills={() => setPage("skills")}
+        onShowMcp={() => setPage("mcp")}
         onShowSettings={() => setShowSettings(true)}
       />
       <div className="main">
@@ -473,23 +473,6 @@ export default function App() {
         {showSettings && (
           <SettingsPanel client={client} onClose={() => setShowSettings(false)} />
         )}
-        {showSkills && (
-          <SkillsPanel
-            client={client}
-            workspaceId={selectedWorkspace?.id ?? null}
-            onClose={() => setShowSkills(false)}
-          />
-        )}
-        {showMcp && <McpPanel client={client} onClose={() => setShowMcp(false)} />}
-        {showSchedule && (
-          <SchedulePanel
-            client={client}
-            workspaces={workspaces}
-            defaultWorkspaceId={selectedWorkspace?.id ?? null}
-            onClose={() => setShowSchedule(false)}
-            onOpenSession={(id) => void openSession(id)}
-          />
-        )}
         {showSearch && (
           <SearchOverlay
             sessions={sessions}
@@ -505,7 +488,19 @@ export default function App() {
             onClose={() => setShowDistill(false)}
           />
         )}
-        {currentSessionId ? (
+        {page === "schedule" ? (
+          <SchedulePanel
+            client={client}
+            workspaces={workspaces}
+            defaultWorkspaceId={selectedWorkspace?.id ?? null}
+            onClose={() => setPage(null)}
+            onOpenSession={(id) => void openSession(id)}
+          />
+        ) : page === "skills" ? (
+          <SkillsPanel client={client} workspaceId={selectedWorkspace?.id ?? null} />
+        ) : page === "mcp" ? (
+          <McpPanel client={client} />
+        ) : currentSessionId ? (
           <>
             <Timeline
               messages={messages}
@@ -563,11 +558,11 @@ export default function App() {
               />
             </div>
             <div className="hero-cards">
-              <div className="hero-card" onClick={() => setShowSkills(true)}>
+              <div className="hero-card" onClick={() => setPage("skills")}>
                 <div className="hero-card-title">✦ 技能</div>
                 <div className="hero-card-sub">查看可复用的工作流,或从任务中学习新技能</div>
               </div>
-              <div className="hero-card" onClick={() => setShowMcp(true)}>
+              <div className="hero-card" onClick={() => setPage("mcp")}>
                 <div className="hero-card-title">🔌 连接 MCP</div>
                 <div className="hero-card-sub">接入外部工具与服务,扩展 agent 能力</div>
               </div>

@@ -1,5 +1,9 @@
+import { useState } from "react";
 import type { Session, Workspace } from "../types";
 import { relativeAge } from "../time";
+
+/** Sessions shown per workspace before the "展开显示" toggle kicks in. */
+const COLLAPSED_SESSION_COUNT = 3;
 
 export function Sidebar(props: {
   workspaces: Workspace[];
@@ -16,6 +20,16 @@ export function Sidebar(props: {
   onShowMcp: () => void;
   onShowSettings: () => void;
 }) {
+  // Workspace ids whose session list is fully expanded.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpanded = (workspaceId: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(workspaceId)) next.delete(workspaceId);
+      else next.add(workspaceId);
+      return next;
+    });
+
   return (
     <div className="sidebar">
       <div className="brand">miniQ</div>
@@ -34,6 +48,11 @@ export function Sidebar(props: {
       <div className="sidebar-scroll">
         {props.workspaces.map((ws) => {
           const sessions = props.sessions.filter((s) => s.workspaceId === ws.id);
+          const isOpen = expanded.has(ws.id);
+          const visibleSessions = isOpen
+            ? sessions
+            : sessions.slice(0, COLLAPSED_SESSION_COUNT);
+          const hiddenCount = sessions.length - COLLAPSED_SESSION_COUNT;
           return (
             <div key={ws.id} className="workspace-group">
               <div
@@ -60,7 +79,7 @@ export function Sidebar(props: {
                   +
                 </span>
               </div>
-              {sessions.map((s) => (
+              {visibleSessions.map((s) => (
                 <div
                   key={s.id}
                   className={`session-item ${s.id === props.currentSessionId ? "active" : ""}`}
@@ -72,6 +91,12 @@ export function Sidebar(props: {
                   <span className="session-age">{relativeAge(s.updatedAt)}</span>
                 </div>
               ))}
+              {hiddenCount > 0 && (
+                <div className="session-toggle" onClick={() => toggleExpanded(ws.id)}>
+                  <span className={`chevron ${isOpen ? "open" : ""}`}>›</span>
+                  {isOpen ? "收起" : `展开显示 ${hiddenCount} 条`}
+                </div>
+              )}
             </div>
           );
         })}

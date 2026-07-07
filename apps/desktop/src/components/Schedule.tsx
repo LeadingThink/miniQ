@@ -24,6 +24,7 @@ interface Template {
   key: string;
   icon: string;
   label: string;
+  desc: string;
   name: string;
   prompt: string;
   schedule: ScheduleSpec;
@@ -34,6 +35,7 @@ const TEMPLATES: Template[] = [
     key: "daily",
     icon: "🔔",
     label: "每日简报",
+    desc: "每天早上总结昨日进展和今日重点",
     name: "每日简报",
     prompt:
       "生成今天的工作简报:查看工作区里最近变动的文件和进行中的事项,总结昨天完成了什么、今天值得关注什么,如果需要外部信息可以联网搜索。",
@@ -43,6 +45,7 @@ const TEMPLATES: Template[] = [
     key: "weekly",
     icon: "📋",
     label: "每周回顾",
+    desc: "每周五梳理本周产出,生成周报文档",
     name: "每周回顾",
     prompt:
       "写一份本周回顾:梳理工作区内这一周的产出与变化,总结完成的事项、未完成的事项和下周建议,输出为一份简洁的周报文档。",
@@ -52,6 +55,7 @@ const TEMPLATES: Template[] = [
     key: "monitor",
     icon: "🔎",
     label: "项目监控",
+    desc: "定时巡检项目,发现异常及时汇报",
     name: "项目监控",
     prompt:
       "检查项目状态:查看工作区是否有异常(构建失败记录、TODO 堆积、明显错误),发现问题就整理一份简短的问题清单,没有问题则简单确认一切正常。",
@@ -168,23 +172,37 @@ export function SchedulePanel(props: {
     props.workspaces.find((w) => w.id === id)?.name ?? "已删除的项目";
 
   return (
-    <div className="settings-overlay" onClick={props.onClose}>
-      <div className="settings-panel skills-panel" onClick={(e) => e.stopPropagation()}>
-        <h2>已安排</h2>
-        <div className="sub" style={{ marginBottom: 12 }}>
-          定时让 agent 在项目里执行任务、生成简报或跟踪更新。
+    <div className="page">
+      <div className="page-inner">
+        <div className="page-header">
+          <div className="page-title">已安排</div>
+          <div className="page-sub">定时让 agent 在项目里执行任务、生成简报或跟踪更新。</div>
         </div>
         {status && <div className="settings-status">{status}</div>}
 
         {tasks.length === 0 && !creating && (
           <div className="schedule-empty">
-            <div className="schedule-empty-title">创建首个已安排任务</div>
-            <div className="schedule-templates">
+            <div className="schedule-empty-icon">◷</div>
+            <div className="schedule-empty-title">创建首个定时任务</div>
+            <div className="schedule-empty-sub">从模板开始,或从头自定义</div>
+            <div className="template-list">
               {TEMPLATES.map((t) => (
-                <button key={t.key} className="ghost" onClick={() => applyTemplate(t)}>
-                  {t.icon} {t.label}
-                </button>
+                <div key={t.key} className="template-card" onClick={() => applyTemplate(t)}>
+                  <div className="template-icon">{t.icon}</div>
+                  <div className="template-text">
+                    <div className="template-label">{t.label}</div>
+                    <div className="template-desc">{t.desc}</div>
+                  </div>
+                  <span className="badge">{describeSchedule(t.schedule)}</span>
+                </div>
               ))}
+              <div className="template-card custom" onClick={() => setCreating(true)}>
+                <div className="template-icon">＋</div>
+                <div className="template-text">
+                  <div className="template-label">自定义任务</div>
+                  <div className="template-desc">自己写指令,自选运行时间</div>
+                </div>
+              </div>
             </div>
           </div>
         )}

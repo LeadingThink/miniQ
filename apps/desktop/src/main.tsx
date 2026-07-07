@@ -1,6 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+// Bundled fonts (self-hosted, offline). Latin: Inter (UI) + JetBrains Mono
+// (code); CJK: MiSans VF subset (@font-face lives in styles.css).
+import "@fontsource-variable/inter/wght.css";
+import "@fontsource-variable/jetbrains-mono/wght.css";
 import "./styles.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

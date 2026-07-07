@@ -16,11 +16,13 @@ interface SkillDetailView extends SkillView {
   skillDir?: string;
 }
 
-export function SkillsPanel(props: {
-  client: RpcClient;
-  workspaceId: string | null;
-  onClose: () => void;
-}) {
+const SOURCE_LABEL: Record<SkillView["source"], string> = {
+  project: "项目",
+  user: "我的",
+  bundled: "内置",
+};
+
+export function SkillsPanel(props: { client: RpcClient; workspaceId: string | null }) {
   const [skills, setSkills] = useState<SkillView[]>([]);
   const [detail, setDetail] = useState<SkillDetailView | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -58,7 +60,7 @@ export function SkillsPanel(props: {
   };
 
   const remove = async (skill: SkillView) => {
-    if (!window.confirm(`Delete skill "${skill.name}"?`)) return;
+    if (!window.confirm(`删除技能"${skill.name}"?`)) return;
     try {
       await props.client.call("skill.delete", { name: skill.name, ...scope });
       setDetail(null);
@@ -69,29 +71,29 @@ export function SkillsPanel(props: {
   };
 
   return (
-    <div className="settings-overlay" onClick={props.onClose}>
-      <div
-        className="settings-panel skills-panel"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2>Skills</h2>
-        {status && <div className="error-banner">{status}</div>}
+    <div className="page">
+      <div className="page-inner wide">
+        <div className="page-header">
+          <div className="page-title">技能</div>
+          <div className="page-sub">
+            可复用的工作流。启用的技能会在任务中自动使用;完成任务后可通过「保存为技能」蒸馏新技能。
+          </div>
+        </div>
+        {status && <div className="settings-status">{status}</div>}
+
         {detail ? (
           <div className="skill-detail">
             <div className="card-head">
-              <span className="tool-name">{detail.name}</span>
-              <span className="badge">{detail.source}</span>
-              <span className="badge">v{detail.version}</span>
-              <span style={{ flex: 1 }} />
-              <button className="secondary" onClick={() => setDetail(null)}>
-                Back
+              <button className="ghost" onClick={() => setDetail(null)}>
+                ← 返回
               </button>
+              <span className="tool-name">{detail.name}</span>
+              <span className="badge">{SOURCE_LABEL[detail.source]}</span>
+              <span className="badge">v{detail.version}</span>
             </div>
-            <div style={{ margin: "8px 0", color: "var(--text-dim)" }}>
-              {detail.description}
-            </div>
+            <div style={{ color: "var(--text-dim)", fontSize: 13 }}>{detail.description}</div>
             {detail.files.length > 0 && (
-              <div className="settings-status">files: {detail.files.join(", ")}</div>
+              <div className="settings-status">附带文件: {detail.files.join(", ")}</div>
             )}
             <pre className="skill-body">{detail.body}</pre>
             {detail.source === "user" && (
@@ -100,37 +102,51 @@ export function SkillsPanel(props: {
                 onClick={() => remove(detail)}
                 style={{ alignSelf: "flex-start" }}
               >
-                Delete skill
+                删除技能
               </button>
             )}
           </div>
+        ) : skills.length === 0 ? (
+          <div className="schedule-empty">
+            <div className="schedule-empty-icon">✦</div>
+            <div className="schedule-empty-title">还没有技能</div>
+            <div className="schedule-empty-sub">
+              完成一次任务后,点右上角「保存为技能」,agent 就会学会这个工作流
+            </div>
+          </div>
         ) : (
-          <div className="skill-list">
-            {skills.length === 0 && (
-              <div className="settings-status">No skills discovered.</div>
-            )}
+          <div className="card-grid">
             {skills.map((skill) => (
-              <div key={skill.name} className="skill-row">
-                <div className="skill-row-main" onClick={() => open(skill)}>
-                  <span className="tool-name">{skill.name}</span>
-                  <span className="badge">{skill.source}</span>
-                  <div className="sub">{skill.description}</div>
+              <div
+                key={skill.name}
+                className={`asset-card clickable ${skill.enabled ? "" : "off"}`}
+                onClick={() => void open(skill)}
+              >
+                <div className="asset-card-head">
+                  <div className="asset-icon">{skill.name.slice(0, 1).toUpperCase()}</div>
+                  <div className="asset-name" title={skill.name}>
+                    {skill.name}
+                  </div>
+                  <div
+                    className={`switch ${skill.enabled ? "on" : ""}`}
+                    title={skill.enabled ? "点击禁用" : "点击启用"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void toggle(skill);
+                    }}
+                  >
+                    <div className="switch-knob" />
+                  </div>
                 </div>
-                <button
-                  className={skill.enabled ? "secondary" : ""}
-                  onClick={() => toggle(skill)}
-                >
-                  {skill.enabled ? "Disable" : "Enable"}
-                </button>
+                <div className="asset-desc">{skill.description || "(无描述)"}</div>
+                <div className="asset-meta">
+                  <span className="badge">{SOURCE_LABEL[skill.source]}</span>
+                  <span className="badge">v{skill.version}</span>
+                </div>
               </div>
             ))}
           </div>
         )}
-        <div className="approval-actions">
-          <button className="secondary" onClick={props.onClose}>
-            Close
-          </button>
-        </div>
       </div>
     </div>
   );
