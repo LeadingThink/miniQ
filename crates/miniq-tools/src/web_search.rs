@@ -25,18 +25,6 @@ const BROWSER_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
      AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 const ACCEPT_LANGUAGE: &str = "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7";
 
-/// Search provider configuration, kept for settings compatibility.
-/// web_search no longer consumes it — the free fallback chain needs no key.
-#[derive(Debug, Clone, serde::Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchConfig {
-    /// Currently supported: "tavily".
-    pub provider: String,
-    pub api_key: String,
-    #[serde(default)]
-    pub base_url: Option<String>,
-}
-
 // ---- HTML helpers (regex-based, no extra dependencies) ----
 
 fn decode_basic_html_entities(value: &str) -> String {

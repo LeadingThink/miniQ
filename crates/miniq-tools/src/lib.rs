@@ -35,7 +35,7 @@ pub use search::{FileGlobTool, FileGrepTool};
 pub use shell::ShellRunTool;
 pub use skill::SkillReadTool;
 pub use web::WebFetchTool;
-pub use web_search::{SearchConfig, WebSearchTool};
+pub use web_search::WebSearchTool;
 
 /// Hosts that identify a tool call as network-bound for approval scoping.
 pub use web::url_host;

@@ -34,8 +34,6 @@ pub struct DaemonSettings {
     #[serde(default)]
     pub provider: Option<ProviderConfig>,
     #[serde(default)]
-    pub search: Option<miniq_tools::SearchConfig>,
-    #[serde(default)]
     pub mcp_servers: Vec<crate::mcp::McpServerConfig>,
     #[serde(default)]
     pub approval_mode: ApprovalMode,

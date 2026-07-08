@@ -7,15 +7,8 @@ interface ProviderView {
   hasApiKey: boolean;
 }
 
-interface SearchView {
-  provider: string;
-  baseUrl: string | null;
-  hasApiKey: boolean;
-}
-
 interface SettingsView {
   provider: ProviderView | null;
-  search: SearchView | null;
 }
 
 export function SettingsPanel(props: { client: RpcClient; onClose: () => void }) {
@@ -23,8 +16,6 @@ export function SettingsPanel(props: { client: RpcClient; onClose: () => void })
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
-  const [searchApiKey, setSearchApiKey] = useState("");
-  const [hasSearchKey, setHasSearchKey] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,9 +26,6 @@ export function SettingsPanel(props: { client: RpcClient; onClose: () => void })
           setBaseUrl(res.provider.baseUrl);
           setModel(res.provider.model);
           setHasKey(res.provider.hasApiKey);
-        }
-        if (res.search) {
-          setHasSearchKey(res.search.hasApiKey);
         }
       })
       .catch((e) => setStatus(String(e)));
@@ -53,14 +41,9 @@ export function SettingsPanel(props: { client: RpcClient; onClose: () => void })
         if (apiKey) provider.apiKey = apiKey;
         params.provider = provider;
       }
-      if (searchApiKey) {
-        params.search = { provider: "tavily", apiKey: searchApiKey };
-      }
       const res = await props.client.call<SettingsView>("settings.update", params);
       setHasKey(res.provider?.hasApiKey ?? false);
-      setHasSearchKey(res.search?.hasApiKey ?? false);
       setApiKey("");
-      setSearchApiKey("");
       setStatus("Saved.");
     } catch (e) {
       setStatus(e instanceof Error ? e.message : String(e));
@@ -94,18 +77,6 @@ export function SettingsPanel(props: { client: RpcClient; onClose: () => void })
             value={apiKey}
             placeholder={hasKey ? "leave empty to keep the stored key" : "sk-..."}
             onChange={(e) => setApiKey(e.target.value)}
-          />
-        </label>
-        <h2>Web search (Tavily)</h2>
-        <label>
-          Search API key {hasSearchKey && <span className="badge">stored</span>}
-          <input
-            type="password"
-            value={searchApiKey}
-            placeholder={
-              hasSearchKey ? "leave empty to keep the stored key" : "tvly-... (optional)"
-            }
-            onChange={(e) => setSearchApiKey(e.target.value)}
           />
         </label>
         {status && <div className="settings-status">{status}</div>}

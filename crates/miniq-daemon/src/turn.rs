@@ -137,13 +137,11 @@ async fn execute_turn(
         }
     });
 
-    let search = state.settings.lock().unwrap().search.clone();
     let executor = crate::executor::SessionToolExecutor {
         state: state.clone(),
         session_id: session_id.to_string(),
         router: state.router.clone(),
         ctx: miniq_tools::ToolContext::new(workspace_path)
-            .with_search(search)
             .with_skills(Some(state.skills.clone()))
             .with_memory(Some(state.store.clone()), Some(session.workspace_id.clone()))
             .with_mcp(state.mcp_bridge()),

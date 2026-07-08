@@ -27,8 +27,6 @@ pub enum ToolError {
 pub struct ToolContext {
     /// Absolute workspace root; all paths and cwd are constrained to it.
     pub workspace: PathBuf,
-    /// Search provider config; `None` = web_search uses the free fallback chain.
-    pub search: Option<crate::web_search::SearchConfig>,
     /// Skill store; `None` = skill_read unavailable.
     pub skills: Option<Arc<miniq_skills::SkillStore>>,
     /// SQLite store for memory tools; `None` = memory tools unavailable.
@@ -43,7 +41,6 @@ impl ToolContext {
     pub fn new(workspace: PathBuf) -> Self {
         Self {
             workspace,
-            search: None,
             skills: None,
             memory: None,
             workspace_id: None,
@@ -63,11 +60,6 @@ impl ToolContext {
     ) -> Self {
         self.memory = memory;
         self.workspace_id = workspace_id;
-        self
-    }
-
-    pub fn with_search(mut self, search: Option<crate::web_search::SearchConfig>) -> Self {
-        self.search = search;
         self
     }
 

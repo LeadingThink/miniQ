@@ -729,16 +729,8 @@ fn settings_get(state: &AppState) -> Result<Value, RpcError> {
             "hasApiKey": !p.api_key.is_empty(),
         })
     });
-    let search = settings.search.as_ref().map(|s| {
-        json!({
-            "provider": s.provider,
-            "baseUrl": s.base_url,
-            "hasApiKey": !s.api_key.is_empty(),
-        })
-    });
     Ok(json!({
         "provider": provider,
-        "search": search,
         "approvalMode": settings.approval_mode,
     }))
 }
@@ -749,9 +741,6 @@ struct SettingsUpdateParams {
     /// Absent => keep current provider settings.
     #[serde(default)]
     provider: Option<ProviderUpdate>,
-    /// Absent => keep current search settings.
-    #[serde(default)]
-    search: Option<SearchUpdate>,
     /// Absent => keep the current approval mode.
     #[serde(default)]
     approval_mode: Option<crate::state::ApprovalMode>,
@@ -765,22 +754,6 @@ struct ProviderUpdate {
     /// Omitted or empty => keep the currently stored key.
     #[serde(default)]
     api_key: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SearchUpdate {
-    #[serde(default = "default_search_provider")]
-    provider: String,
-    #[serde(default)]
-    base_url: Option<String>,
-    /// Omitted or empty => keep the currently stored key.
-    #[serde(default)]
-    api_key: Option<String>,
-}
-
-fn default_search_provider() -> String {
-    "tavily".to_string()
 }
 
 /// Merge an optional new key over the existing one (empty/absent keeps old).
@@ -807,15 +780,6 @@ fn settings_update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
             base_url: provider.base_url,
             api_key: merged_key(provider.api_key, existing_key),
             model: provider.model,
-        });
-    }
-
-    if let Some(search) = p.search {
-        let existing_key = settings.search.as_ref().map(|prev| prev.api_key.clone());
-        settings.search = Some(miniq_tools::SearchConfig {
-            provider: search.provider,
-            api_key: merged_key(search.api_key, existing_key),
-            base_url: search.base_url,
         });
     }
 
