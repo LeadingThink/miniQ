@@ -78,3 +78,42 @@ jobs:
           uploadUpdaterJson: true
           uploadUpdaterSignatures: true
           args: --target x86_64-pc-windows-msvc --bundles nsis
+
+      - name: Normalize updater download URLs
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          $release = gh api "repos/LeadingThink/miniQ-releases/releases/tags/$env:RELEASE_TAG" |
+            ConvertFrom-Json
+          $manifestAsset = $release.assets | Where-Object name -eq "latest.json"
+          if (-not $manifestAsset) {
+            throw "latest.json was not uploaded"
+          }
+
+          $downloadUrls = @{}
+          foreach ($asset in $release.assets) {
+            $downloadUrls[[string]$asset.url] = [string]$asset.browser_download_url
+          }
+
+          $manifestPath = Join-Path $env:RUNNER_TEMP "latest.json"
+          Invoke-WebRequest -Uri $manifestAsset.browser_download_url -OutFile $manifestPath
+          $manifest = Get-Content -Raw $manifestPath | ConvertFrom-Json
+          foreach ($platform in $manifest.platforms.PSObject.Properties) {
+            $url = [string]$platform.Value.url
+            if ($downloadUrls.ContainsKey($url)) {
+              $platform.Value.url = $downloadUrls[$url]
+            } elseif ($release.assets.browser_download_url -notcontains $url) {
+              throw "unknown updater asset URL: $url"
+            }
+          }
+
+          $json = $manifest | ConvertTo-Json -Depth 10
+          [System.IO.File]::WriteAllText(
+            $manifestPath,
+            $json,
+            [System.Text.UTF8Encoding]::new($false)
+          )
+          gh release upload $env:RELEASE_TAG $manifestPath --clobber `
+            --repo LeadingThink/miniQ-releases
