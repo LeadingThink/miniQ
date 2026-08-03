@@ -1,5 +1,10 @@
 import type { MiniqAppController } from "../hooks/useMiniqApp";
-import type { LocalFileTarget } from "../localFiles";
+import { errorMessage } from "../errorMessage";
+import {
+  isTextPreviewFile,
+  revealLocalFile,
+  type LocalFileTarget,
+} from "../localFiles";
 import { FileDiff } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { Composer, ComposerCard } from "./Composer";
@@ -24,9 +29,17 @@ const FilePreviewPanel = lazy(async () => {
   return { default: module.FilePreviewPanel };
 });
 
-function openFilePreview(app: MiniqAppController, target: LocalFileTarget) {
-  app.review.setOpen(false);
-  void app.preview.openFile(target);
+function openFileTarget(app: MiniqAppController, target: LocalFileTarget) {
+  if (isTextPreviewFile(target.path)) {
+    app.review.setOpen(false);
+    void app.preview.openFile(target);
+    return;
+  }
+
+  app.setError(null);
+  void revealLocalFile(target.path, app.catalog.currentWorkspace?.path).catch(
+    (cause) => app.setError(errorMessage(cause)),
+  );
 }
 
 function StatusBar({ app }: AppShellProps) {
@@ -144,7 +157,7 @@ function SessionPage({ app }: AppShellProps) {
         onResolveApproval={app.actions.resolveApproval}
         onResolveQuestion={app.actions.resolveQuestion}
         onRollback={app.actions.rollbackCheckpoint}
-        onOpenFile={(target) => openFilePreview(app, target)}
+        onOpenFile={(target) => openFileTarget(app, target)}
       />
       <Composer
         busy={!!app.busy}
@@ -280,7 +293,7 @@ export function AppShell({ app }: AppShellProps) {
       ) : app.review.open && app.catalog.currentWorkspace ? (
         <ReviewPanel
           diff={app.review.data}
-          onOpenFile={(target) => openFilePreview(app, target)}
+          onOpenFile={(target) => openFileTarget(app, target)}
           onClose={() => app.review.setOpen(false)}
         />
       ) : null}

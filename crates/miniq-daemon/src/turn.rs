@@ -14,6 +14,16 @@ user inside their workspace: you plan multi-step tasks, read and edit files, run
 and deliver ready-to-use results. Be concise and accurate. High-risk actions go through \
 user approval; if an action is rejected, adapt instead of retrying it verbatim.";
 
+const HOST_APP_CONTEXT: &str = "Host app file references: whenever you reference a local \
+workspace file in a response, use a Markdown link with a concise filename label and the \
+complete absolute filesystem path as its target, for example `[filename](D:/absolute/path)` \
+on Windows or `[filename](/absolute/path)` on Unix. Use forward slashes in Windows Markdown \
+link targets. If a target contains spaces, wrap it in angle brackets, for example \
+`[report.md](<D:/work/My Project/report.md>)`. Never abbreviate or omit any path segment, \
+including with `...`. Do not use relative targets, `file://`, `vscode://`, or backticks around \
+the link. When a source line matters, put it in the label, for example \
+`[main.rs (line 42)](/absolute/path/main.rs)`, while keeping the target as the file path only.";
+
 /// Build the provider-facing history from persisted messages, with runtime
 /// details and available skills appended to the system prompt.
 fn history_from_messages(
@@ -21,7 +31,10 @@ fn history_from_messages(
     skills_block: &str,
     workspace_path: &Path,
 ) -> Vec<ChatMessage> {
-    let mut system = format!("{SYSTEM_PROMPT}\n\n{}", runtime_context(workspace_path));
+    let mut system = format!(
+        "{SYSTEM_PROMPT}\n\n{}\n\n{HOST_APP_CONTEXT}",
+        runtime_context(workspace_path)
+    );
     if !skills_block.is_empty() {
         system.push_str("\n\n");
         system.push_str(skills_block);
@@ -220,12 +233,27 @@ mod tests {
     }
 
     #[test]
+    fn system_prompt_requires_complete_absolute_file_links() {
+        let history = history_from_messages(&[], "", Path::new("workspace"));
+        let system = &history[0].content;
+
+        assert!(system.contains("[filename](D:/absolute/path)"));
+        assert!(system.contains("complete absolute filesystem path"));
+        assert!(system.contains("Never abbreviate or omit any path segment"));
+        assert!(system.contains("Use forward slashes in Windows Markdown link targets"));
+        assert!(system.contains("[main.rs (line 42)](/absolute/path/main.rs)"));
+    }
+
+    #[test]
     fn system_prompt_appends_skills_after_runtime_context() {
         let history = history_from_messages(&[], "AVAILABLE SKILLS", Path::new("workspace"));
         let system = &history[0].content;
 
         let runtime_index = system.find("Runtime environment:").unwrap();
+        let host_context_index = system.find("Host app file references:").unwrap();
         let skills_index = system.find("AVAILABLE SKILLS").unwrap();
         assert!(runtime_index < skills_index);
+        assert!(runtime_index < host_context_index);
+        assert!(host_context_index < skills_index);
     }
 }

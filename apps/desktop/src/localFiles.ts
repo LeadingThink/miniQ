@@ -14,6 +14,29 @@ const FILE_EXTENSIONS = new Set([
   "tar", "tgz", "toml", "ts", "tsv", "tsx", "txt", "vue", "wasm", "wav",
   "webm", "webp", "xls", "xlsx", "xml", "yaml", "yml", "zsh", "zip",
 ]);
+const TEXT_PREVIEW_EXTENSIONS = new Set([
+  "bash", "bat", "c", "cc", "cjs", "conf", "cpp", "cs", "css", "csv",
+  "diff", "env", "fish", "go", "h", "hpp", "htm", "html", "ini", "java",
+  "js", "json", "jsonl", "jsx", "kt", "kts", "less", "lock", "log",
+  "markdown", "md", "mjs", "patch", "php", "ps1", "py", "pyi", "rb", "rs",
+  "rst", "sass", "scss", "sh", "sql", "svelte", "svg", "swift", "toml", "ts",
+  "tsv", "tsx", "txt", "vue", "xml", "yaml", "yml", "zsh",
+]);
+const TEXT_PREVIEW_NAMES = new Set([
+  ".dockerignore",
+  ".editorconfig",
+  ".gitattributes",
+  ".gitignore",
+  ".gitmodules",
+  ".npmrc",
+  ".prettierignore",
+  ".prettierrc",
+  "changelog",
+  "dockerfile",
+  "license",
+  "makefile",
+  "readme",
+]);
 
 export interface LocalFileTarget {
   path: string;
@@ -89,8 +112,15 @@ export function looksLikeFileReference(reference: string): boolean {
   return (
     NAMED_FILES.test(name) ||
     (extension !== undefined && FILE_EXTENSIONS.has(extension)) ||
-    /^\.(?:env|gitignore|npmrc|prettierignore|prettierrc)$/.test(name)
+    isTextPreviewFile(path)
   );
+}
+
+export function isTextPreviewFile(path: string): boolean {
+  const name = path.split(/[\\/]/).at(-1)?.toLowerCase() ?? "";
+  if (TEXT_PREVIEW_NAMES.has(name) || /^\.env(?:\..+)?$/.test(name)) return true;
+  const extension = /\.([A-Za-z0-9_-]+)$/.exec(name)?.[1].toLowerCase();
+  return extension !== undefined && TEXT_PREVIEW_EXTENSIONS.has(extension);
 }
 
 export function resolveLocalFileReference(

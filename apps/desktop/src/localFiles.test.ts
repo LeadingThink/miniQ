@@ -1,9 +1,33 @@
 import { describe, expect, it } from "vitest";
 import {
+  isTextPreviewFile,
   looksLikeFileReference,
   resolveLocalFileReference,
   resolveWorkspacePath,
 } from "./localFiles";
+
+describe("local file preview types", () => {
+  it.each([
+    "src/main.ts",
+    "docs/README.md",
+    "D:\\work\\app\\.env",
+    "/work/app/.env.local",
+    "/work/app/config.JSON",
+    "/work/app/Dockerfile",
+  ])("previews text file %s", (path) => {
+    expect(isTextPreviewFile(path)).toBe(true);
+  });
+
+  it.each([
+    "archive.zip",
+    "document.pdf",
+    "image.png",
+    "report.docx",
+    "installer.exe",
+  ])("reveals non-text file %s", (path) => {
+    expect(isTextPreviewFile(path)).toBe(false);
+  });
+});
 
 describe("local file references", () => {
   it("resolves Windows and POSIX relative paths", () => {
