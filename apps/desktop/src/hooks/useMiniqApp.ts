@@ -12,6 +12,7 @@ import type {
   Workspace,
 } from "../types";
 import { useDaemonConnection } from "./useDaemonConnection";
+import { useAppUpdater } from "./useAppUpdater";
 import { useSessionFeed } from "./useSessionFeed";
 
 export type AppPage = "schedule" | "skills" | "mcp" | null;
@@ -378,6 +379,7 @@ export function useMiniqApp() {
     refreshSessions: catalog.refreshSessions,
     onError: setError,
   });
+  const updater = useAppUpdater(client, setError);
   const navigationActions = useNavigationActions(catalog, navigation, feed);
   const workspaceActions = useWorkspaceActions(client, catalog, setError);
   const lifecycle = useSessionLifecycleActions(client, catalog, navigation, feed);
@@ -396,6 +398,7 @@ export function useMiniqApp() {
     navigation,
     feed,
     connection,
+    updater,
     actions: {
       ...navigationActions,
       ...workspaceActions,

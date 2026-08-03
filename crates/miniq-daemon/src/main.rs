@@ -48,5 +48,7 @@ async fn main() -> anyhow::Result<()> {
     let settings = miniq_daemon::load_settings(&settings_path);
     let state = AppState::with_settings(store, token, settings, settings_path);
     miniq_daemon::schedule::spawn_scheduler(state.clone());
-    server::serve(listener, state).await
+    let result = server::serve(listener, state).await;
+    let _ = std::fs::remove_file(dir.join("daemon.json"));
+    result
 }

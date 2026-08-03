@@ -26,7 +26,19 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "icon": ["icons/icon.ico", "icons/icon.png", "icons/icon.icns"],
     "externalBin": ["binaries/miniq-daemon"]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaW5uIHB1YmxpYyBrZXk6IDMwNEYwQ0FGRkM5ODk4NDIKUldSQ21Kajhyd3hQTUVkaFN4M0R5eGdORGVwZmpNc2tsYTRvZ3BZMWxGVGlvNGIwVUVZTzAxUjUK",
+      "endpoints": [
+        "https://github.com/LeadingThink/miniQ-releases/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

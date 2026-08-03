@@ -294,6 +294,42 @@ body {
   gap: 2px;
 }
 
+.update-notice {
+  min-height: 34px;
+  overflow: hidden;
+}
+
+.update-notice span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-notice:not(.update-busy) {
+  color: var(--text);
+  background: var(--bg-active);
+}
+
+.update-notice.update-error {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.update-busy {
+  cursor: default;
+}
+
+.update-spinner {
+  animation: update-spin 0.9s linear infinite;
+}
+
+@keyframes update-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ============ Buttons ============ */
 button {
   background: var(--accent);

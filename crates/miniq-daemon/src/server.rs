@@ -29,7 +29,10 @@ pub async fn bind(port: u16) -> anyhow::Result<TcpListener> {
 }
 
 pub async fn serve(listener: TcpListener, state: AppState) -> anyhow::Result<()> {
-    axum::serve(listener, router(state)).await?;
+    let shutdown = state.shutdown.clone();
+    axum::serve(listener, router(state))
+        .with_graceful_shutdown(shutdown.cancelled_owned())
+        .await?;
     Ok(())
 }
 
@@ -58,6 +61,7 @@ async fn ws_upgrade(
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState) {
+    let shutdown = state.shutdown.clone();
     let (mut sink, mut stream) = socket.split();
     let mut events = state.events.subscribe();
     // Channel that serializes everything written to the sink: RPC responses
@@ -91,7 +95,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         }
     });
 
-    while let Some(Ok(msg)) = stream.next().await {
+    loop {
+        let msg = tokio::select! {
+            _ = shutdown.cancelled() => break,
+            msg = stream.next() => msg,
+        };
+        let Some(Ok(msg)) = msg else {
+            break;
+        };
         let WsMessage::Text(text) = msg else {
             continue;
         };

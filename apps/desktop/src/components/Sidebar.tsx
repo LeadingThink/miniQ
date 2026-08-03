@@ -14,9 +14,11 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { Session, Workspace } from "../types";
+import type { AppUpdaterState } from "../hooks/useAppUpdater";
 import { openExternalUrl } from "../externalLinks";
 import { relativeAge } from "../time";
 import { PROVIDER_LABELS, PROVIDER_MARKS } from "./externalSessionImportModel";
+import { UpdateNotice } from "./UpdateNotice";
 
 const COLLAPSED_SESSION_COUNT = 3;
 const FEEDBACK_FORM_URL =
@@ -37,6 +39,9 @@ interface SidebarProps {
   onShowSkills: () => void;
   onShowMcp: () => void;
   onShowSettings: () => void;
+  updateState: AppUpdaterState;
+  onCheckForUpdates: () => void;
+  onInstallUpdate: () => void;
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -76,6 +81,11 @@ export function Sidebar(props: SidebarProps) {
       </div>
 
       <div className="sidebar-footer">
+        <UpdateNotice
+          state={props.updateState}
+          onCheck={props.onCheckForUpdates}
+          onInstall={props.onInstallUpdate}
+        />
         <div className="nav-item" onClick={props.onShowSkills}>
           <Sparkles className="nav-icon" size={16} /> 技能
         </div>

@@ -86,6 +86,8 @@ pub struct AppState {
     pub events: broadcast::Sender<Event>,
     pub started: Instant,
     pub token: String,
+    /// Cancels the listener and connected clients during an app update.
+    pub shutdown: CancellationToken,
     /// Cancellation token per session with an active turn.
     pub active_turns: Arc<Mutex<HashMap<String, CancellationToken>>>,
     /// Pending approvals waiting for a user decision (approval id -> waker).
@@ -153,6 +155,7 @@ impl AppState {
             events,
             started: Instant::now(),
             token,
+            shutdown: CancellationToken::new(),
             active_turns: Arc::new(Mutex::new(HashMap::new())),
             pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             session_allowlist: Arc::new(Mutex::new(HashMap::new())),
@@ -285,5 +288,13 @@ impl AppState {
             }
             None => false,
         }
+    }
+
+    pub fn cancel_all_turns(&self) -> usize {
+        let turns = self.active_turns.lock().unwrap();
+        for token in turns.values() {
+            token.cancel();
+        }
+        turns.len()
     }
 }

@@ -35,6 +35,24 @@ fn read_connection_info() -> Option<ConnectionInfo> {
     serde_json::from_str(&raw).ok()
 }
 
+pub fn wait_for_exit() -> Result<(), String> {
+    let Some(info) = read_connection_info() else {
+        return Ok(());
+    };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        if !health_ok(info.port) {
+            std::thread::sleep(Duration::from_millis(300));
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    Err(format!(
+        "miniq-daemon process {} did not exit within 10 seconds",
+        info.pid
+    ))
+}
+
 /// Minimal HTTP GET /health probe over a raw TCP socket (avoids pulling an
 /// HTTP client into the shell).
 fn health_ok(port: u16) -> bool {
@@ -61,7 +79,11 @@ fn daemon_binary_candidates() -> Vec<PathBuf> {
     if let Ok(explicit) = std::env::var("MINIQ_DAEMON_PATH") {
         candidates.push(PathBuf::from(explicit));
     }
-    let exe_name = if cfg!(windows) { "miniq-daemon.exe" } else { "miniq-daemon" };
+    let exe_name = if cfg!(windows) {
+        "miniq-daemon.exe"
+    } else {
+        "miniq-daemon"
+    };
     // Dev builds prefer the workspace target dir: it holds the freshly built
     // daemon, while the copy next to the shell exe is a possibly stale
     // sidecar snapshot from `binaries/`. src-tauri is three levels below the

@@ -1,0 +1,80 @@
+name: Release Desktop Update
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing source tag, for example v0.1.0
+        required: true
+        type: string
+      draft:
+        description: Create a draft release
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-x86_64-pc-windows-msvc
+          workspaces: |
+            . -> target
+            apps/desktop/src-tauri -> apps/desktop/src-tauri/target
+
+      - name: Install frontend dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Validate release version
+        working-directory: apps/desktop
+        run: npm run release:check-version -- ${{ inputs.tag }}
+
+      - name: Build daemon sidecar
+        run: cargo build --release -p miniq-daemon --target x86_64-pc-windows-msvc
+
+      - name: Place daemon sidecar
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force apps/desktop/src-tauri/binaries | Out-Null
+          Copy-Item target/x86_64-pc-windows-msvc/release/miniq-daemon.exe `
+            apps/desktop/src-tauri/binaries/miniq-daemon-x86_64-pc-windows-msvc.exe
+
+      - name: Build and publish signed updater release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          owner: LeadingThink
+          repo: miniQ-releases
+          releaseCommitish: main
+          tagName: ${{ inputs.tag }}
+          releaseName: miniQ ${{ inputs.tag }}
+          releaseBody: Signed Windows x64 installer and automatic-update metadata for miniQ.
+          releaseDraft: ${{ inputs.draft }}
+          prerelease: false
+          updaterJsonPreferNsis: true
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          args: --target x86_64-pc-windows-msvc --bundles nsis

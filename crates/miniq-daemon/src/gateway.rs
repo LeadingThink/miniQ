@@ -41,6 +41,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
     let id = req.id.clone();
     let result = match req.method.as_str() {
         "daemon.health" => system::health(state),
+        "daemon.shutdown" => system::shutdown(state),
         "workspace.open" => workspace::open(state, req.params),
         "workspace.create" => workspace::create(state, req.params),
         "workspace.list" => workspace::list(state),

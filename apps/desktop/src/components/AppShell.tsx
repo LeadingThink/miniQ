@@ -222,6 +222,9 @@ export function AppShell({ app }: AppShellProps) {
         onShowSkills={() => app.navigation.setPage("skills")}
         onShowMcp={() => app.navigation.setPage("mcp")}
         onShowSettings={() => app.navigation.setShowSettings(true)}
+        updateState={app.updater.state}
+        onCheckForUpdates={() => void app.updater.checkNow()}
+        onInstallUpdate={() => void app.updater.install()}
       />
       <div className="main">
         <StatusBar app={app} />
