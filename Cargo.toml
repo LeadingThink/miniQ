@@ -14,7 +14,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 
@@ -51,3 +51,4 @@ pdf-extract = "0.7"
 zip = "2"
 quick-xml = "0.37"
 csv = "1"
+similar = "2"

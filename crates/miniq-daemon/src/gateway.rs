@@ -13,6 +13,7 @@ mod interaction;
 mod mcp;
 mod schedule;
 mod session;
+mod session_diff;
 mod settings;
 mod skill;
 mod system;
@@ -53,6 +54,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.create" => session::create(state, req.params),
         "session.list" => session::list(state, req.params),
         "session.open" => session::open(state, req.params),
+        "session.diff" => session_diff::get(state, req.params),
         "session.sendMessage" => session::send_message(state, req.params),
         "session.cancel" => session::cancel(state, req.params),
         "externalSession.scan" => external_session::scan().await,

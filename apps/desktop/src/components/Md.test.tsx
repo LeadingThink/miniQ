@@ -53,6 +53,27 @@ describe("Md file references", () => {
     expect(html).toContain("/work/project/docs/README.md");
   });
 
+  it("keeps Codex-style line locations on file controls", () => {
+    const html = renderToStaticMarkup(
+      <Md workspacePath="/work/project">
+        {"[worker.py (line 130)](src/worker.py)"}
+      </Md>,
+    );
+
+    expect(html).toContain("/work/project/src/worker.py:130");
+  });
+
+  it("resolves percent-encoded Windows link destinations to absolute paths", () => {
+    const html = renderToStaticMarkup(
+      <Md workspacePath={"D:\\work\\project"}>
+        {String.raw`[data](backend\mongo-dump\alerts.json)`}
+      </Md>,
+    );
+
+    expect(html).toContain('class="file-reference"');
+    expect(html).toContain("D:\\work\\project\\backend\\mongo-dump\\alerts.json");
+  });
+
   it("keeps ordinary inline code as code", () => {
     const html = render("Run `npm test`.");
 

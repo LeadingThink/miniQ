@@ -8,6 +8,7 @@ import "@fontsource-variable/jetbrains-mono/wght.css";
 import "./styles/base.css";
 import "./styles/conversation.css";
 import "./styles/interactions.css";
+import "./styles/review.css";
 import "./styles/pages.css";
 import "./styles/scheduling.css";
 import "./external-sessions.css";

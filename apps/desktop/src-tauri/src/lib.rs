@@ -3,6 +3,7 @@
 //! to it over WebSocket. The shell only hands the connection info to the UI.
 
 mod daemon;
+mod local_file;
 
 #[tauri::command]
 fn daemon_connection() -> Result<daemon::ConnectionInfo, String> {
@@ -16,6 +17,32 @@ async fn wait_for_daemon_exit() -> Result<(), String> {
         .map_err(|error| error.to_string())?
 }
 
+#[tauri::command]
+fn open_local_file(
+    app: tauri::AppHandle,
+    path: String,
+    workspace_path: String,
+) -> Result<(), String> {
+    local_file::open(&app, &path, &workspace_path)
+}
+
+#[tauri::command]
+fn reveal_local_file(
+    app: tauri::AppHandle,
+    path: String,
+    workspace_path: String,
+) -> Result<(), String> {
+    local_file::reveal(&app, &path, &workspace_path)
+}
+
+#[tauri::command]
+fn read_local_text_file(
+    path: String,
+    workspace_path: String,
+) -> Result<local_file::LocalTextFile, String> {
+    local_file::read_text(&path, &workspace_path)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -24,7 +51,10 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             daemon_connection,
-            wait_for_daemon_exit
+            wait_for_daemon_exit,
+            open_local_file,
+            reveal_local_file,
+            read_local_text_file
         ])
         .setup(|app| {
             setup_tray(app.handle())?;

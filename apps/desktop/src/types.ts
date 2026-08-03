@@ -165,6 +165,40 @@ export interface Artifact {
   createdAt: string;
 }
 
+export type DiffLineKind = "context" | "addition" | "deletion";
+
+export interface DiffLine {
+  kind: DiffLineKind;
+  oldLine: number | null;
+  newLine: number | null;
+  content: string;
+}
+
+export interface DiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: DiffLine[];
+}
+
+export interface FileDiff {
+  path: string;
+  absolutePath: string;
+  oldExists: boolean;
+  newExists: boolean;
+  binary: boolean;
+  additions: number;
+  deletions: number;
+  hunks: DiffHunk[];
+}
+
+export interface SessionDiff {
+  files: FileDiff[];
+  additions: number;
+  deletions: number;
+}
+
 export interface HealthStatus {
   protocolVersion: number;
   daemonVersion: string;

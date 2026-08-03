@@ -7,21 +7,35 @@ import {
 
 describe("local file references", () => {
   it("resolves Windows and POSIX relative paths", () => {
-    expect(resolveLocalFileReference("src/main.ts:12", "D:\\work\\app")).toBe(
-      "D:\\work\\app\\src\\main.ts",
-    );
-    expect(resolveLocalFileReference("docs/README.md#L8", "/work/app")).toBe(
-      "/work/app/docs/README.md",
-    );
+    expect(resolveLocalFileReference("src/main.ts:12:4", "D:\\work\\app")).toEqual({
+      path: "D:\\work\\app\\src\\main.ts",
+      line: 12,
+      column: 4,
+    });
+    expect(resolveLocalFileReference("docs/README.md#L8", "/work/app")).toEqual({
+      path: "/work/app/docs/README.md",
+      line: 8,
+      column: null,
+    });
   });
 
   it("preserves absolute paths", () => {
-    expect(resolveLocalFileReference("D:/work/app/main.ts", "/ignored")).toBe(
+    expect(resolveLocalFileReference("D:/work/app/main.ts", "/ignored")?.path).toBe(
       "D:/work/app/main.ts",
     );
-    expect(resolveLocalFileReference("/work/app/main.ts", "D:/ignored")).toBe(
+    expect(resolveLocalFileReference("/work/app/main.ts", "D:/ignored")?.path).toBe(
       "/work/app/main.ts",
     );
+  });
+
+  it("uses a Markdown label as the line-location fallback", () => {
+    expect(
+      resolveLocalFileReference(
+        "src/worker.py",
+        "/work/app",
+        "worker.py (line 130)",
+      ),
+    ).toEqual({ path: "/work/app/src/worker.py", line: 130, column: null });
   });
 
   it("resolves artifact paths without relying on their extension", () => {
@@ -34,5 +48,10 @@ describe("local file references", () => {
     expect(looksLikeFileReference("https://example.com/file.ts")).toBe(false);
     expect(looksLikeFileReference("npm test")).toBe(false);
     expect(resolveLocalFileReference("answer.value", "/work/app")).toBe(null);
+  });
+
+  it("rejects shortened paths that do not identify a real file", () => {
+    expect(looksLikeFileReference(String.raw`storage\uploads\...\TEST.zip`)).toBe(false);
+    expect(resolveLocalFileReference("storage/…/TEST.zip", "/work/app")).toBe(null);
   });
 });

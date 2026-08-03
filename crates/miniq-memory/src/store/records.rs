@@ -111,6 +111,26 @@ impl Store {
         .ok_or_else(|| MemoryError::NotFound(format!("checkpoint {id}")))
     }
 
+    pub fn list_checkpoints(&self, session_id: &str) -> Result<Vec<CheckpointRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, tool_call_id, abs_path, existed, backup_path, created_at
+             FROM checkpoints WHERE session_id = ?1 ORDER BY created_at ASC, id ASC",
+        )?;
+        let rows = stmt.query_map(params![session_id], |row| {
+            Ok(CheckpointRow {
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                tool_call_id: row.get(2)?,
+                abs_path: row.get(3)?,
+                existed: row.get::<_, i64>(4)? != 0,
+                backup_path: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
     pub fn create_memory(
         &self,
         workspace_id: Option<&str>,

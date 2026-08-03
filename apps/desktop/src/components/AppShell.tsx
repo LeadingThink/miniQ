@@ -1,9 +1,13 @@
 import type { MiniqAppController } from "../hooks/useMiniqApp";
+import type { LocalFileTarget } from "../localFiles";
+import { FileDiff } from "lucide-react";
+import { lazy, Suspense } from "react";
 import { Composer, ComposerCard } from "./Composer";
 import { DistillModal } from "./Distill";
 import { ExternalSessionImportDialog } from "./ExternalSessionImport";
 import { McpPanel } from "./Mcp";
 import { ProjectPicker } from "./ProjectPicker";
+import { ReviewPanel } from "./ReviewPanel";
 import { SchedulePanel } from "./Schedule";
 import { SearchOverlay } from "./Search";
 import { SettingsPanel } from "./Settings";
@@ -13,6 +17,16 @@ import { Timeline } from "./Timeline";
 
 interface AppShellProps {
   app: MiniqAppController;
+}
+
+const FilePreviewPanel = lazy(async () => {
+  const module = await import("./FilePreviewPanel");
+  return { default: module.FilePreviewPanel };
+});
+
+function openFilePreview(app: MiniqAppController, target: LocalFileTarget) {
+  app.review.setOpen(false);
+  void app.preview.openFile(target);
 }
 
 function StatusBar({ app }: AppShellProps) {
@@ -33,6 +47,21 @@ function StatusBar({ app }: AppShellProps) {
         </span>
       )}
       <span style={{ flex: 1 }} />
+      {app.review.data.files.length > 0 && (
+        <button
+          className="ghost review-toggle"
+          title="查看本会话的代码修改"
+          onClick={() => {
+            app.preview.close();
+            app.review.setOpen(!app.review.open);
+          }}
+        >
+          <FileDiff size={16} />
+          审阅 {app.review.data.files.length}
+          <span className="diff-add">+{app.review.data.additions}</span>
+          <span className="diff-delete">-{app.review.data.deletions}</span>
+        </button>
+      )}
       {canDistill && (
         <button
           className="ghost"
@@ -115,6 +144,7 @@ function SessionPage({ app }: AppShellProps) {
         onResolveApproval={app.actions.resolveApproval}
         onResolveQuestion={app.actions.resolveQuestion}
         onRollback={app.actions.rollbackCheckpoint}
+        onOpenFile={(target) => openFilePreview(app, target)}
       />
       <Composer
         busy={!!app.busy}
@@ -232,6 +262,27 @@ export function AppShell({ app }: AppShellProps) {
         <AppOverlays app={app} />
         <MainPage app={app} />
       </div>
+      {app.preview.state.open && app.catalog.currentWorkspace ? (
+        <Suspense
+          fallback={
+            <aside className="file-preview-panel">
+              <div className="diff-empty">正在加载编辑器...</div>
+            </aside>
+          }
+        >
+          <FilePreviewPanel
+            preview={app.preview.state}
+            workspacePath={app.catalog.currentWorkspace.path}
+            onClose={app.preview.close}
+          />
+        </Suspense>
+      ) : app.review.open && app.catalog.currentWorkspace ? (
+        <ReviewPanel
+          diff={app.review.data}
+          onOpenFile={(target) => openFilePreview(app, target)}
+          onClose={() => app.review.setOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

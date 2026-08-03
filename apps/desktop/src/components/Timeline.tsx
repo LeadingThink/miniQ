@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import type { Artifact, Message, PlanTask, Question, ToolCall } from "../types";
 import type { PendingApproval } from "../App";
 import {
-  openLocalFile,
   resolveWorkspacePath,
   revealLocalFile,
+  type LocalFileTarget,
 } from "../localFiles";
 import { Md } from "./Md";
 
@@ -182,8 +182,12 @@ function PlanBar({ plan }: { plan: PlanTask[] }) {
   );
 }
 
-function ArtifactsBar(props: { artifacts: Artifact[]; workspacePath?: string | null }) {
-  const { artifacts, workspacePath } = props;
+function ArtifactsBar(props: {
+  artifacts: Artifact[];
+  workspacePath?: string | null;
+  onOpenFile: (target: LocalFileTarget) => void;
+}) {
+  const { artifacts, workspacePath, onOpenFile } = props;
   if (artifacts.length === 0) return null;
   return (
     <div className="artifacts-bar">
@@ -198,7 +202,7 @@ function ArtifactsBar(props: { artifacts: Artifact[]; workspacePath?: string | n
               className="artifact-open"
               disabled={!path}
               onClick={() => {
-                if (path) void openLocalFile(path).catch(() => undefined);
+                if (path) onOpenFile({ path, line: null, column: null });
               }}
             >
               <span className="artifact-title">{artifact.title}</span>
@@ -212,7 +216,7 @@ function ArtifactsBar(props: { artifacts: Artifact[]; workspacePath?: string | n
               title="在文件夹中显示"
               disabled={!path}
               onClick={() => {
-                if (path) void revealLocalFile(path).catch(() => undefined);
+                if (path) void revealLocalFile(path, workspacePath).catch(() => undefined);
               }}
             >
               <FolderOpen size={16} aria-hidden="true" />
@@ -241,6 +245,7 @@ interface TimelineProps {
   onResolveApproval: (approvalId: string, decision: string) => void;
   onResolveQuestion: (questionId: string, answer: string) => void;
   onRollback: (checkpointId: string) => void;
+  onOpenFile: (target: LocalFileTarget) => void;
 }
 
 function createTimelineItems(messages: Message[], toolCalls: ToolCall[]): TimelineItem[] {
@@ -265,6 +270,7 @@ function TimelineEntries(props: {
   onResolveApproval: TimelineProps["onResolveApproval"];
   onResolveQuestion: TimelineProps["onResolveQuestion"];
   onRollback: TimelineProps["onRollback"];
+  onOpenFile: TimelineProps["onOpenFile"];
   workspacePath?: string | null;
 }) {
   return (
@@ -278,11 +284,15 @@ function TimelineEntries(props: {
           ) : item.message.role === "tool" ? (
             <div key={item.message.id} className="bubble tool-transcript">
               <span>工具记录</span>
-              <Md workspacePath={props.workspacePath}>{item.message.content}</Md>
+              <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile}>
+                {item.message.content}
+              </Md>
             </div>
           ) : (
             <div key={item.message.id} className="bubble assistant">
-              <Md workspacePath={props.workspacePath}>{item.message.content}</Md>
+              <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile}>
+                {item.message.content}
+              </Md>
             </div>
           )
         ) : (
@@ -305,7 +315,9 @@ function TimelineEntries(props: {
       ))}
       {props.streamingText && (
         <div className="bubble assistant">
-          <Md workspacePath={props.workspacePath}>{props.streamingText}</Md>
+          <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile}>
+            {props.streamingText}
+          </Md>
           <span className="type-cursor" />
         </div>
       )}
@@ -370,10 +382,15 @@ export function Timeline(props: TimelineProps) {
           onResolveApproval={props.onResolveApproval}
           onResolveQuestion={props.onResolveQuestion}
           onRollback={props.onRollback}
+          onOpenFile={props.onOpenFile}
           workspacePath={props.workspacePath}
         />
       </div>
-      <ArtifactsBar artifacts={props.artifacts} workspacePath={props.workspacePath} />
+      <ArtifactsBar
+        artifacts={props.artifacts}
+        workspacePath={props.workspacePath}
+        onOpenFile={props.onOpenFile}
+      />
     </>
   );
 }

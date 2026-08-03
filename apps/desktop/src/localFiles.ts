@@ -15,6 +15,17 @@ const FILE_EXTENSIONS = new Set([
   "webm", "webp", "xls", "xlsx", "xml", "yaml", "yml", "zsh", "zip",
 ]);
 
+export interface LocalFileTarget {
+  path: string;
+  line: number | null;
+  column: number | null;
+}
+
+export interface LocalTextFile {
+  path: string;
+  content: string;
+}
+
 function decodePath(value: string) {
   try {
     return decodeURIComponent(value);
@@ -23,10 +34,28 @@ function decodePath(value: string) {
   }
 }
 
-function stripLocation(reference: string) {
-  return reference
-    .replace(/#L\d+(?:C\d+)?$/i, "")
-    .replace(/(\.[A-Za-z][A-Za-z0-9_-]{0,15}):\d+(?::\d+)?$/, "$1");
+function parseLocation(reference: string): {
+  reference: string;
+  line: number | null;
+  column: number | null;
+} {
+  const value = reference.trim();
+  const patterns = [
+    /#L(?<line>\d+)(?:C(?<column>\d+))?$/i,
+    /(?<extension>\.[A-Za-z][A-Za-z0-9_-]{0,15}):(?<line>\d+)(?::(?<column>\d+))?$/,
+    /\s*\((?:line\s*)?(?<line>\d+)(?:\s*[,，:]\s*(?:column\s*)?(?<column>\d+))?\)$/i,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(value);
+    if (!match?.groups?.line) continue;
+    const extension = match.groups.extension ?? "";
+    return {
+      reference: `${value.slice(0, match.index)}${extension}`.trim(),
+      line: Number(match.groups.line),
+      column: match.groups.column ? Number(match.groups.column) : null,
+    };
+  }
+  return { reference: value, line: null, column: null };
 }
 
 function fileUriPath(reference: string) {
@@ -44,7 +73,7 @@ function fileUriPath(reference: string) {
 }
 
 export function looksLikeFileReference(reference: string): boolean {
-  const value = stripLocation(reference.trim());
+  const value = parseLocation(reference).reference;
   if (!value || /[\r\n<>|*]/.test(value)) return false;
   if (URL_SCHEME.test(value) && !WINDOWS_DRIVE.test(value) && !/^file:/i.test(value)) {
     return false;
@@ -52,6 +81,9 @@ export function looksLikeFileReference(reference: string): boolean {
 
   const path = /^file:/i.test(value) ? fileUriPath(value) : decodePath(value);
   if (!path) return false;
+  if (path.split(/[\\/]/).some((segment) => segment === "..." || segment === "…")) {
+    return false;
+  }
   const name = path.split(/[\\/]/).at(-1) ?? "";
   const extension = /\.([A-Za-z0-9_-]+)$/.exec(name)?.[1].toLowerCase();
   return (
@@ -64,16 +96,25 @@ export function looksLikeFileReference(reference: string): boolean {
 export function resolveLocalFileReference(
   reference: string,
   workspacePath?: string | null,
-): string | null {
+  locationReference?: string | null,
+): LocalFileTarget | null {
   if (!looksLikeFileReference(reference)) return null;
-  return resolveWorkspacePath(reference, workspacePath);
+  const location = parseLocation(reference);
+  const fallbackLocation = locationReference ? parseLocation(locationReference) : null;
+  const path = resolveWorkspacePath(location.reference, workspacePath);
+  if (!path) return null;
+  return {
+    path,
+    line: location.line ?? fallbackLocation?.line ?? null,
+    column: location.column ?? fallbackLocation?.column ?? null,
+  };
 }
 
 export function resolveWorkspacePath(
   reference: string,
   workspacePath?: string | null,
 ): string | null {
-  const stripped = stripLocation(reference.trim());
+  const stripped = parseLocation(reference).reference;
   let path = /^file:/i.test(stripped) ? fileUriPath(stripped) : decodePath(stripped);
   if (!path) return null;
   if (/^\/[A-Za-z]:[\\/]/.test(path)) path = path.slice(1);
@@ -87,23 +128,41 @@ export function resolveWorkspacePath(
   return `${workspacePath.replace(/[\\/]+$/, "")}${separator}${path}`;
 }
 
+export async function readLocalTextFile(
+  path: string,
+  workspacePath?: string | null,
+): Promise<LocalTextFile> {
+  if (!workspacePath) throw new Error("无法预览文件：当前会话没有工作区");
+  if (!isTauriRuntime()) throw new Error("文件预览仅在 miniQ 桌面应用中可用");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<LocalTextFile>("read_local_text_file", { path, workspacePath });
+}
+
 function browserFileUrl(path: string) {
   const normalized = path.replaceAll("\\", "/");
   return encodeURI(WINDOWS_DRIVE.test(normalized) ? `file:///${normalized}` : `file://${normalized}`);
 }
 
-export async function openLocalFile(path: string): Promise<void> {
+export async function openLocalFile(
+  path: string,
+  workspacePath?: string | null,
+): Promise<void> {
   if (isTauriRuntime()) {
-    const { openPath } = await import("@tauri-apps/plugin-opener");
-    await openPath(path);
+    if (!workspacePath) throw new Error("无法打开文件：当前会话没有工作区");
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("open_local_file", { path, workspacePath });
     return;
   }
   window.open(browserFileUrl(path), "_blank", "noopener,noreferrer");
 }
 
-export async function revealLocalFile(path: string): Promise<void> {
+export async function revealLocalFile(
+  path: string,
+  workspacePath?: string | null,
+): Promise<void> {
   if (isTauriRuntime()) {
-    const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
-    await revealItemInDir(path);
+    if (!workspacePath) throw new Error("无法定位文件：当前会话没有工作区");
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("reveal_local_file", { path, workspacePath });
   }
 }

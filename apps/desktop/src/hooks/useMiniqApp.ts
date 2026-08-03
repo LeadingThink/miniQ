@@ -13,7 +13,9 @@ import type {
 } from "../types";
 import { useDaemonConnection } from "./useDaemonConnection";
 import { useAppUpdater } from "./useAppUpdater";
+import { useFilePreview } from "./useFilePreview";
 import { useSessionFeed } from "./useSessionFeed";
+import { useSessionDiff } from "./useSessionDiff";
 
 export type AppPage = "schedule" | "skills" | "mcp" | null;
 
@@ -320,7 +322,11 @@ function useTurnActions(
   return { sendMessage, startTask, cancelTurn };
 }
 
-function useInteractionActions(client: RpcClient, setError: ErrorSetter) {
+function useInteractionActions(
+  client: RpcClient,
+  setError: ErrorSetter,
+  refreshDiff: () => Promise<void>,
+) {
   const resolveApproval = useCallback(
     async (approvalId: string, decision: string) => {
       try {
@@ -349,13 +355,14 @@ function useInteractionActions(client: RpcClient, setError: ErrorSetter) {
         const result = await client.call<{ restored: string }>("checkpoint.rollback", {
           checkpointId,
         });
+        await refreshDiff();
         setError(null);
         window.alert(`已恢复: ${result.restored}`);
       } catch (error) {
         setError(errorMessage(error));
       }
     },
-    [client, setError],
+    [client, refreshDiff, setError],
   );
 
   return { resolveApproval, resolveQuestion, rollbackCheckpoint };
@@ -373,6 +380,8 @@ export function useMiniqApp() {
     onSessionStatusChanged: catalog.updateSessionStatus,
     onError: setError,
   });
+  const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls);
+  const preview = useFilePreview(catalog.currentWorkspace?.path);
   const connection = useDaemonConnection({
     client,
     refreshWorkspaces: catalog.refreshWorkspaces,
@@ -384,7 +393,7 @@ export function useMiniqApp() {
   const workspaceActions = useWorkspaceActions(client, catalog, setError);
   const lifecycle = useSessionLifecycleActions(client, catalog, navigation, feed);
   const turnActions = useTurnActions(client, catalog, lifecycle, setError);
-  const interactionActions = useInteractionActions(client, setError);
+  const interactionActions = useInteractionActions(client, setError, review.refresh);
   const busy =
     catalog.currentSession?.status === "running" ||
     catalog.currentSession?.status === "waiting_approval";
@@ -397,6 +406,8 @@ export function useMiniqApp() {
     catalog,
     navigation,
     feed,
+    review,
+    preview,
     connection,
     updater,
     actions: {
