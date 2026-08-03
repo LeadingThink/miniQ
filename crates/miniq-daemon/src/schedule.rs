@@ -129,16 +129,15 @@ pub fn next_run_iso(schedule: &Schedule, now_utc: OffsetDateTime) -> String {
 }
 
 /// Fire one task now: create a session, send the prompt, spawn the turn.
-/// Returns the new session id. Fails when the workspace is busy — callers
-/// decide whether to retry (the loop retries next tick).
+/// Returns the new session id.
 pub fn fire_task(state: &AppState, task: &ScheduledTask) -> Result<String, String> {
     let session = state
         .store
         .create_session(&task.workspace_id, &task.name)
         .map_err(|e| e.to_string())?;
 
-    let Some(cancel) = state.begin_turn(&session.id, &task.workspace_id) else {
-        return Err("workspace already has an active turn".to_string());
+    let Some(cancel) = state.begin_turn(&session.id) else {
+        return Err("session already has an active turn".to_string());
     };
 
     let message = match state
@@ -177,8 +176,13 @@ async fn run_due_tasks(state: &AppState) {
     };
     for task in due {
         let Ok(schedule) = parse_schedule(&task.schedule) else {
-            tracing::error!("scheduler: task {} has invalid schedule; disabling", task.id);
-            let _ = state.store.set_scheduled_task_enabled(&task.id, false, None);
+            tracing::error!(
+                "scheduler: task {} has invalid schedule; disabling",
+                task.id
+            );
+            let _ = state
+                .store
+                .set_scheduled_task_enabled(&task.id, false, None);
             continue;
         };
         match fire_task(state, &task) {
@@ -258,7 +262,10 @@ mod tests {
                 time: ScheduleTime { hour, minute },
             };
             let next = next_run_after(&schedule, now);
-            assert!(next > now, "daily {hour:02}:{minute:02} must be in the future");
+            assert!(
+                next > now,
+                "daily {hour:02}:{minute:02} must be in the future"
+            );
             assert!(next - now <= Duration::days(1) + Duration::minutes(1));
         }
     }
@@ -269,7 +276,10 @@ mod tests {
         for weekday in 1u8..=7 {
             let schedule = Schedule::Weekly {
                 weekday,
-                time: ScheduleTime { hour: 12, minute: 0 },
+                time: ScheduleTime {
+                    hour: 12,
+                    minute: 0,
+                },
             };
             let next = next_run_after(&schedule, now);
             assert!(next > now);

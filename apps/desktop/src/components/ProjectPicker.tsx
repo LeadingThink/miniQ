@@ -1,15 +1,99 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Workspace } from "../types";
 
-/** Codex-style project chooser chip: search existing projects, create a
- * blank one, or open an existing folder. */
-export function ProjectPicker(props: {
+interface ProjectPickerProps {
   workspaces: Workspace[];
   selectedId: string | null;
   onSelect: (workspaceId: string) => void;
   onCreateBlank: (name: string) => void;
   onOpenFolder: () => void;
-}) {
+}
+
+interface ProjectMenuProps {
+  query: string;
+  results: Workspace[];
+  selectedId: string | null;
+  naming: boolean;
+  newName: string;
+  onQueryChange: (query: string) => void;
+  onSelect: (workspaceId: string) => void;
+  onNamingChange: (naming: boolean) => void;
+  onNewNameChange: (name: string) => void;
+  onSubmitNewName: () => void;
+  onOpenFolder: () => void;
+}
+
+function ProjectMenu(props: ProjectMenuProps) {
+  return (
+    <div className="mode-menu project-menu">
+      <input
+        className="project-search"
+        placeholder="搜索项目"
+        value={props.query}
+        autoFocus
+        onChange={(e) => props.onQueryChange(e.target.value)}
+      />
+      <div className="project-list">
+        {props.results.map((workspace) => (
+          <div
+            key={workspace.id}
+            className="mode-item"
+            onClick={() => props.onSelect(workspace.id)}
+          >
+            <div className="mode-item-label">
+              🗂 {workspace.name}
+              {workspace.id === props.selectedId && (
+                <svg
+                  className="mode-check"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m5 13 4 4L19 7" />
+                </svg>
+              )}
+            </div>
+          </div>
+        ))}
+        {props.results.length === 0 && (
+          <div className="sub" style={{ padding: "6px 10px" }}>
+            没有匹配的项目
+          </div>
+        )}
+      </div>
+      <div className="project-menu-divider" />
+      {props.naming ? (
+        <div className="project-new-name">
+          <input
+            placeholder="项目名称"
+            value={props.newName}
+            autoFocus
+            onChange={(e) => props.onNewNameChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") props.onSubmitNewName();
+              if (e.key === "Escape") props.onNamingChange(false);
+            }}
+          />
+          <button onClick={props.onSubmitNewName}>创建</button>
+        </div>
+      ) : (
+        <div className="mode-item" onClick={() => props.onNamingChange(true)}>
+          <div className="mode-item-label">＋ 新建空白项目</div>
+        </div>
+      )}
+      <div className="mode-item" onClick={props.onOpenFolder}>
+        <div className="mode-item-label">📂 使用现有文件夹</div>
+      </div>
+    </div>
+  );
+}
+
+/** Codex-style project chooser chip: search existing projects, create a
+ * blank one, or open an existing folder. */
+export function ProjectPicker(props: ProjectPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [naming, setNaming] = useState(false);
@@ -48,77 +132,40 @@ export function ProjectPicker(props: {
 
   return (
     <div className="mode-select" ref={ref}>
-      <button className="mode-trigger" onClick={() => setOpen((v) => !v)}>
+      <button className="mode-trigger" onClick={() => setOpen((value) => !value)}>
         🗂 {selected ? selected.name : "选择项目"}
-        <svg className="mode-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          className="mode-caret"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="m6 9 6 6 6-6" />
         </svg>
       </button>
       {open && (
-        <div className="mode-menu project-menu">
-          <input
-            className="project-search"
-            placeholder="搜索项目"
-            value={query}
-            autoFocus
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <div className="project-list">
-            {results.map((w) => (
-              <div
-                key={w.id}
-                className="mode-item"
-                onClick={() => {
-                  props.onSelect(w.id);
-                  setOpen(false);
-                }}
-              >
-                <div className="mode-item-label">
-                  🗂 {w.name}
-                  {w.id === props.selectedId && (
-                    <svg className="mode-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="m5 13 4 4L19 7" />
-                    </svg>
-                  )}
-                </div>
-              </div>
-            ))}
-            {results.length === 0 && (
-              <div className="sub" style={{ padding: "6px 10px" }}>
-                没有匹配的项目
-              </div>
-            )}
-          </div>
-          <div className="project-menu-divider" />
-          {naming ? (
-            <div className="project-new-name">
-              <input
-                placeholder="项目名称"
-                value={newName}
-                autoFocus
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") submitNewName();
-                  if (e.key === "Escape") setNaming(false);
-                }}
-              />
-              <button onClick={submitNewName}>创建</button>
-            </div>
-          ) : (
-            <div className="mode-item" onClick={() => setNaming(true)}>
-              <div className="mode-item-label">＋ 新建空白项目</div>
-            </div>
-          )}
-          <div
-            className="mode-item"
-            onClick={() => {
-              setOpen(false);
-              props.onOpenFolder();
-            }}
-          >
-            <div className="mode-item-label">📂 使用现有文件夹</div>
-          </div>
-        </div>
+        <ProjectMenu
+          query={query}
+          results={results}
+          selectedId={props.selectedId}
+          naming={naming}
+          newName={newName}
+          onQueryChange={setQuery}
+          onSelect={(workspaceId) => {
+            props.onSelect(workspaceId);
+            setOpen(false);
+          }}
+          onNamingChange={setNaming}
+          onNewNameChange={setNewName}
+          onSubmitNewName={submitNewName}
+          onOpenFolder={() => {
+            setOpen(false);
+            props.onOpenFolder();
+          }}
+        />
       )}
     </div>
   );

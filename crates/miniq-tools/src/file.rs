@@ -163,8 +163,14 @@ impl Tool for FileListTool {
             }));
         }
         entries.sort_by(|a, b| {
-            let ak = (a["kind"].as_str().unwrap_or(""), a["name"].as_str().unwrap_or("").to_string());
-            let bk = (b["kind"].as_str().unwrap_or(""), b["name"].as_str().unwrap_or("").to_string());
+            let ak = (
+                a["kind"].as_str().unwrap_or(""),
+                a["name"].as_str().unwrap_or("").to_string(),
+            );
+            let bk = (
+                b["kind"].as_str().unwrap_or(""),
+                b["name"].as_str().unwrap_or("").to_string(),
+            );
             ak.cmp(&bk)
         });
         Ok(json!({ "path": p.path, "entries": entries }))
@@ -201,7 +207,12 @@ impl Tool for FileWriteTool {
         })
     }
     fn evaluate_risk(&self, ctx: &ToolContext, input: &Value) -> Risk {
-        path_risk(ctx, input, RiskLevel::Medium, "writes a file in the workspace")
+        path_risk(
+            ctx,
+            input,
+            RiskLevel::Medium,
+            "writes a file in the workspace",
+        )
     }
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: FileWriteInput = parse_input(input)?;
@@ -246,7 +257,10 @@ mod tests {
         assert_eq!(out["totalLines"], 3);
 
         let out = FileReadTool
-            .execute(&ctx(dir.path()), json!({"path": "a.txt", "offset": 2, "limit": 1}))
+            .execute(
+                &ctx(dir.path()),
+                json!({"path": "a.txt", "offset": 2, "limit": 1}),
+            )
             .await
             .unwrap();
         assert_eq!(out["content"], "line2");
@@ -277,7 +291,10 @@ mod tests {
     async fn write_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
         let out = FileWriteTool
-            .execute(&ctx(dir.path()), json!({"path": "new/dir/file.txt", "content": "hello"}))
+            .execute(
+                &ctx(dir.path()),
+                json!({"path": "new/dir/file.txt", "content": "hello"}),
+            )
             .await
             .unwrap();
         assert_eq!(out["created"], true);

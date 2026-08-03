@@ -129,10 +129,8 @@ mod tests {
 
     #[test]
     fn defaults_applied() {
-        let (meta, _) = parse_skill_md(
-            "---\nname: simple\ndescription: a simple skill\n---\nbody",
-        )
-        .unwrap();
+        let (meta, _) =
+            parse_skill_md("---\nname: simple\ndescription: a simple skill\n---\nbody").unwrap();
         assert_eq!(meta.version, 1);
         assert_eq!(meta.origin, SkillOrigin::User);
         assert!(meta.requires.bins.is_empty());

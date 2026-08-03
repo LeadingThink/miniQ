@@ -138,7 +138,10 @@ impl ProviderConfig {
 #[async_trait]
 pub trait ModelProvider: Send + Sync {
     /// Stream a completion. The stream ends with `ChatDelta::Finished`.
-    async fn stream_complete(&self, request: CompletionRequest) -> Result<DeltaStream, ProviderError>;
+    async fn stream_complete(
+        &self,
+        request: CompletionRequest,
+    ) -> Result<DeltaStream, ProviderError>;
 
     /// Human-readable provider identity for logs and settings.
     fn describe(&self) -> String;

@@ -5,9 +5,7 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use futures_util::stream;
 
-use crate::provider::{
-    ChatDelta, CompletionRequest, DeltaStream, ModelProvider, ProviderError,
-};
+use crate::provider::{ChatDelta, CompletionRequest, DeltaStream, ModelProvider, ProviderError};
 
 /// One scripted turn: the deltas the provider will emit (a trailing
 /// `Finished` is appended automatically).
@@ -46,14 +44,10 @@ impl ModelProvider for MockProvider {
         request: CompletionRequest,
     ) -> Result<DeltaStream, ProviderError> {
         self.requests.lock().unwrap().push(request);
-        let turn = self
-            .turns
-            .lock()
-            .unwrap()
-            .next()
-            .ok_or_else(|| ProviderError::Config("mock provider has no more scripted turns".into()))?;
-        let mut items: Vec<Result<ChatDelta, ProviderError>> =
-            turn.into_iter().map(Ok).collect();
+        let turn = self.turns.lock().unwrap().next().ok_or_else(|| {
+            ProviderError::Config("mock provider has no more scripted turns".into())
+        })?;
+        let mut items: Vec<Result<ChatDelta, ProviderError>> = turn.into_iter().map(Ok).collect();
         items.push(Ok(ChatDelta::Finished));
         Ok(Box::pin(stream::iter(items)))
     }

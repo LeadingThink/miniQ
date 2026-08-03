@@ -68,7 +68,10 @@ impl Tool for TaskUpdateTool {
     async fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: TaskUpdateInput = parse_input(input)?;
         for task in &p.tasks {
-            if !matches!(task.status.as_str(), "pending" | "in_progress" | "completed") {
+            if !matches!(
+                task.status.as_str(),
+                "pending" | "in_progress" | "completed"
+            ) {
                 return Err(ToolError::InvalidInput(format!(
                     "invalid status: {}",
                     task.status

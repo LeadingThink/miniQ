@@ -61,7 +61,12 @@ impl Tool for FilePatchTool {
         })
     }
     fn evaluate_risk(&self, ctx: &ToolContext, input: &Value) -> Risk {
-        path_risk(ctx, input, RiskLevel::Medium, "patches a file in the workspace")
+        path_risk(
+            ctx,
+            input,
+            RiskLevel::Medium,
+            "patches a file in the workspace",
+        )
     }
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: FilePatchInput = parse_input(input)?;
@@ -78,7 +83,9 @@ impl Tool for FilePatchTool {
         let mut total = 0usize;
         for (i, edit) in p.edits.iter().enumerate() {
             if edit.old_string.is_empty() {
-                return Err(ToolError::InvalidInput(format!("edit {i}: empty oldString")));
+                return Err(ToolError::InvalidInput(format!(
+                    "edit {i}: empty oldString"
+                )));
             }
             let count = content.matches(&edit.old_string).count();
             if count == 0 {

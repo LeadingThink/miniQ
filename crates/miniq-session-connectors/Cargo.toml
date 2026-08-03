@@ -1,0 +1,17 @@
+[package]
+name = "miniq-session-connectors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+miniq-protocol = { path = "../miniq-protocol" }
+rusqlite = { workspace = true }
+rayon = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

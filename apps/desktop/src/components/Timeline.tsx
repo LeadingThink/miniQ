@@ -1,6 +1,12 @@
+import { FileText, FolderOpen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Artifact, Message, PlanTask, Question, ToolCall } from "../types";
 import type { PendingApproval } from "../App";
+import {
+  openLocalFile,
+  resolveWorkspacePath,
+  revealLocalFile,
+} from "../localFiles";
 import { Md } from "./Md";
 
 /** One-line human summary of a tool call's input. */
@@ -176,35 +182,145 @@ function PlanBar({ plan }: { plan: PlanTask[] }) {
   );
 }
 
-function ArtifactsBar({ artifacts }: { artifacts: Artifact[] }) {
+function ArtifactsBar(props: { artifacts: Artifact[]; workspacePath?: string | null }) {
+  const { artifacts, workspacePath } = props;
   if (artifacts.length === 0) return null;
   return (
     <div className="artifacts-bar">
       <div className="plan-progress">交付产物</div>
-      {artifacts.map((a) => (
-        <div key={a.id} className="artifact-item" title={a.path}>
-          <span className="badge">{a.kind}</span>
-          <span className="artifact-title">{a.title}</span>
-          <span className="sub">{a.path}</span>
-        </div>
-      ))}
+      {artifacts.map((artifact) => {
+        const path = resolveWorkspacePath(artifact.path, workspacePath);
+        return (
+          <div key={artifact.id} className="artifact-item" title={path ?? artifact.path}>
+            <FileText size={18} aria-hidden="true" />
+            <button
+              type="button"
+              className="artifact-open"
+              disabled={!path}
+              onClick={() => {
+                if (path) void openLocalFile(path).catch(() => undefined);
+              }}
+            >
+              <span className="artifact-title">{artifact.title}</span>
+              <span className="sub">{artifact.path}</span>
+            </button>
+            <span className="badge">{artifact.kind}</span>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={`在文件夹中显示 ${artifact.title}`}
+              title="在文件夹中显示"
+              disabled={!path}
+              onClick={() => {
+                if (path) void revealLocalFile(path).catch(() => undefined);
+              }}
+            >
+              <FolderOpen size={16} aria-hidden="true" />
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-export function Timeline(props: {
+type TimelineItem =
+  | { kind: "message"; at: string; message: Message }
+  | { kind: "tool"; at: string; call: ToolCall };
+
+interface TimelineProps {
   messages: Message[];
   toolCalls: ToolCall[];
   approvals: PendingApproval[];
   questions: Question[];
   plan: PlanTask[];
   artifacts: Artifact[];
+  workspacePath?: string | null;
   streamingText: string;
   busy: boolean;
   onResolveApproval: (approvalId: string, decision: string) => void;
   onResolveQuestion: (questionId: string, answer: string) => void;
   onRollback: (checkpointId: string) => void;
+}
+
+function createTimelineItems(messages: Message[], toolCalls: ToolCall[]): TimelineItem[] {
+  return [
+    ...messages
+      .filter((message) => message.role !== "system")
+      .map((message) => ({
+        kind: "message" as const,
+        at: message.createdAt,
+        message,
+      })),
+    ...toolCalls.map((call) => ({ kind: "tool" as const, at: call.createdAt, call })),
+  ].sort((left, right) => left.at.localeCompare(right.at));
+}
+
+function TimelineEntries(props: {
+  items: TimelineItem[];
+  approvals: PendingApproval[];
+  questions: Question[];
+  streamingText: string;
+  thinking: boolean;
+  onResolveApproval: TimelineProps["onResolveApproval"];
+  onResolveQuestion: TimelineProps["onResolveQuestion"];
+  onRollback: TimelineProps["onRollback"];
+  workspacePath?: string | null;
 }) {
+  return (
+    <div className="timeline-inner">
+      {props.items.map((item) =>
+        item.kind === "message" ? (
+          item.message.role === "user" ? (
+            <div key={item.message.id} className="bubble user">
+              {item.message.content}
+            </div>
+          ) : item.message.role === "tool" ? (
+            <div key={item.message.id} className="bubble tool-transcript">
+              <span>工具记录</span>
+              <Md workspacePath={props.workspacePath}>{item.message.content}</Md>
+            </div>
+          ) : (
+            <div key={item.message.id} className="bubble assistant">
+              <Md workspacePath={props.workspacePath}>{item.message.content}</Md>
+            </div>
+          )
+        ) : (
+          <ToolCallCard key={item.call.id} call={item.call} onRollback={props.onRollback} />
+        ),
+      )}
+      {props.approvals.map((approval) => (
+        <ApprovalCard
+          key={approval.approval.id}
+          item={approval}
+          onResolve={props.onResolveApproval}
+        />
+      ))}
+      {props.questions.map((question) => (
+        <QuestionCard
+          key={question.id}
+          question={question}
+          onResolve={props.onResolveQuestion}
+        />
+      ))}
+      {props.streamingText && (
+        <div className="bubble assistant">
+          <Md workspacePath={props.workspacePath}>{props.streamingText}</Md>
+          <span className="type-cursor" />
+        </div>
+      )}
+      {props.thinking && (
+        <div className="thinking">
+          <span className="thinking-dot" />
+          <span className="thinking-dot" />
+          <span className="thinking-dot" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function Timeline(props: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
 
@@ -230,16 +346,7 @@ export function Timeline(props: {
     props.busy,
   ]);
 
-  const items: Array<
-    | { kind: "message"; at: string; message: Message }
-    | { kind: "tool"; at: string; call: ToolCall }
-  > = [
-    ...props.messages
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ kind: "message" as const, at: m.createdAt, message: m })),
-    ...props.toolCalls.map((t) => ({ kind: "tool" as const, at: t.createdAt, call: t })),
-  ].sort((a, b) => a.at.localeCompare(b.at));
-
+  const items = createTimelineItems(props.messages, props.toolCalls);
   const hasRunningTool = props.toolCalls.some(
     (t) => t.status === "running" || t.status === "waiting_approval",
   );
@@ -254,52 +361,19 @@ export function Timeline(props: {
     <>
       <PlanBar plan={props.plan} />
       <div className="timeline" ref={scrollRef} onScroll={onScroll}>
-        <div className="timeline-inner">
-          {items.map((item) =>
-            item.kind === "message" ? (
-              item.message.role === "user" ? (
-                <div key={item.message.id} className="bubble user">
-                  {item.message.content}
-                </div>
-              ) : (
-                <div key={item.message.id} className="bubble assistant">
-                  <Md>{item.message.content}</Md>
-                </div>
-              )
-            ) : (
-              <ToolCallCard
-                key={item.call.id}
-                call={item.call}
-                onRollback={props.onRollback}
-              />
-            ),
-          )}
-          {props.approvals.map((a) => (
-            <ApprovalCard
-              key={a.approval.id}
-              item={a}
-              onResolve={props.onResolveApproval}
-            />
-          ))}
-          {props.questions.map((q) => (
-            <QuestionCard key={q.id} question={q} onResolve={props.onResolveQuestion} />
-          ))}
-          {props.streamingText && (
-            <div className="bubble assistant">
-              <Md>{props.streamingText}</Md>
-              <span className="type-cursor" />
-            </div>
-          )}
-          {thinking && (
-            <div className="thinking">
-              <span className="thinking-dot" />
-              <span className="thinking-dot" />
-              <span className="thinking-dot" />
-            </div>
-          )}
-        </div>
+        <TimelineEntries
+          items={items}
+          approvals={props.approvals}
+          questions={props.questions}
+          streamingText={props.streamingText}
+          thinking={thinking}
+          onResolveApproval={props.onResolveApproval}
+          onResolveQuestion={props.onResolveQuestion}
+          onRollback={props.onRollback}
+          workspacePath={props.workspacePath}
+        />
       </div>
-      <ArtifactsBar artifacts={props.artifacts} />
+      <ArtifactsBar artifacts={props.artifacts} workspacePath={props.workspacePath} />
     </>
   );
 }

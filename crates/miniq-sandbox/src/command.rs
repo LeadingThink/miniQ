@@ -15,26 +15,109 @@ pub struct Risk {
 
 /// Read-only commands that never modify state.
 const LOW_RISK: &[&str] = &[
-    "ls", "dir", "cat", "type", "head", "tail", "grep", "rg", "find", "findstr", "pwd", "echo",
-    "which", "where", "wc", "diff", "tree", "stat", "file", "du", "df",
+    "ls",
+    "dir",
+    "cat",
+    "type",
+    "head",
+    "tail",
+    "grep",
+    "rg",
+    "find",
+    "findstr",
+    "pwd",
+    "echo",
+    "which",
+    "where",
+    "wc",
+    "diff",
+    "tree",
+    "stat",
+    "file",
+    "du",
+    "df",
+    "get-childitem",
+    "get-content",
+    "get-item",
+    "get-location",
+    "get-process",
+    "get-service",
+    "measure-object",
+    "resolve-path",
+    "select-object",
+    "select-string",
+    "sort-object",
+    "test-path",
+    "where-object",
+    "write-output",
 ];
 
 /// Read-only git subcommands.
-const GIT_LOW: &[&str] = &["status", "diff", "log", "show", "branch", "remote", "blame", "shortlog"];
+const GIT_LOW: &[&str] = &[
+    "status", "diff", "log", "show", "branch", "remote", "blame", "shortlog",
+];
 
 /// Git subcommands that rewrite history or discard work.
-const GIT_HIGH: &[&str] = &["push", "reset", "rebase", "clean", "checkout", "restore", "filter-branch"];
+const GIT_HIGH: &[&str] = &[
+    "push",
+    "reset",
+    "rebase",
+    "clean",
+    "checkout",
+    "restore",
+    "filter-branch",
+];
 
 /// Commands that reach the network or fetch remote code.
-const NETWORK: &[&str] = &["curl", "wget", "ssh", "scp", "nc", "ncat", "telnet", "ftp"];
+const NETWORK: &[&str] = &[
+    "curl",
+    "wget",
+    "ssh",
+    "scp",
+    "nc",
+    "ncat",
+    "telnet",
+    "ftp",
+    "invoke-restmethod",
+    "invoke-webrequest",
+    "irm",
+    "iwr",
+];
 
 /// Commands that delete or overwrite data.
-const DESTRUCTIVE: &[&str] = &["rm", "rmdir", "del", "erase", "rd", "mkfs", "dd"];
+const DESTRUCTIVE: &[&str] = &[
+    "rm",
+    "rmdir",
+    "del",
+    "erase",
+    "rd",
+    "mkfs",
+    "dd",
+    "clear-content",
+    "remove-item",
+    "set-content",
+    "stop-process",
+];
 
 /// Commands that must never run from an agent session.
 const BLOCKED: &[&str] = &[
-    "shutdown", "reboot", "halt", "poweroff", "format", "diskpart", "bcdedit", "reg", "regedit",
-    "sc", "schtasks", "mkfs",
+    "shutdown",
+    "reboot",
+    "halt",
+    "poweroff",
+    "format",
+    "diskpart",
+    "bcdedit",
+    "reg",
+    "regedit",
+    "sc",
+    "schtasks",
+    "mkfs",
+    "clear-disk",
+    "format-volume",
+    "remove-partition",
+    "restart-computer",
+    "stop-computer",
 ];
 
 /// Substrings that force `Blocked` wherever they appear (defence against
@@ -43,7 +126,7 @@ const BLOCKED_PATTERNS: &[&str] = &[
     "rm -rf /",
     "rm -rf ~",
     "rm -rf c:",
-    ":(){",         // fork bomb
+    ":(){", // fork bomb
     "> /dev/sd",
     "sudo rm",
     "format c:",
@@ -160,6 +243,14 @@ mod tests {
         assert_eq!(classify_command("ls -la").level, RiskLevel::Low);
         assert_eq!(classify_command("git status").level, RiskLevel::Low);
         assert_eq!(classify_command("rg foo src").level, RiskLevel::Low);
+        assert_eq!(
+            classify_command("Get-ChildItem -Recurse").level,
+            RiskLevel::Low
+        );
+        assert_eq!(
+            classify_command("Get-Content README.md | Select-String miniQ").level,
+            RiskLevel::Low
+        );
     }
 
     #[test]
@@ -172,29 +263,56 @@ mod tests {
     #[test]
     fn destructive_and_network_are_high() {
         assert_eq!(classify_command("rm -r target").level, RiskLevel::High);
-        assert_eq!(classify_command("curl https://example.com").level, RiskLevel::High);
+        assert_eq!(
+            classify_command("curl https://example.com").level,
+            RiskLevel::High
+        );
         assert_eq!(classify_command("git push --force").level, RiskLevel::High);
         assert_eq!(classify_command("git reset --hard").level, RiskLevel::High);
+        assert_eq!(
+            classify_command("Remove-Item target -Recurse").level,
+            RiskLevel::High
+        );
+        assert_eq!(
+            classify_command("Invoke-WebRequest https://example.com").level,
+            RiskLevel::High
+        );
     }
 
     #[test]
     fn chained_command_takes_worst() {
-        assert_eq!(classify_command("ls && rm -r target").level, RiskLevel::High);
+        assert_eq!(
+            classify_command("ls && rm -r target").level,
+            RiskLevel::High
+        );
         assert_eq!(classify_command("cat a.txt | grep x").level, RiskLevel::Low);
-        assert_eq!(classify_command("echo hi; cargo build").level, RiskLevel::Medium);
+        assert_eq!(
+            classify_command("echo hi; cargo build").level,
+            RiskLevel::Medium
+        );
     }
 
     #[test]
     fn blocked_commands() {
         assert_eq!(classify_command("shutdown /s").level, RiskLevel::Blocked);
         assert_eq!(classify_command("rm -rf /").level, RiskLevel::Blocked);
-        assert_eq!(classify_command("echo x && sudo rm -rf /tmp").level, RiskLevel::Blocked);
+        assert_eq!(
+            classify_command("echo x && sudo rm -rf /tmp").level,
+            RiskLevel::Blocked
+        );
         assert_eq!(classify_command("format c:").level, RiskLevel::Blocked);
+        assert_eq!(
+            classify_command("Restart-Computer -Force").level,
+            RiskLevel::Blocked
+        );
     }
 
     #[test]
     fn path_prefixed_program_detected() {
         assert_eq!(classify_command("/usr/bin/rm -r x").level, RiskLevel::High);
-        assert_eq!(classify_command(r"C:\Windows\System32\shutdown.exe /s").level, RiskLevel::Blocked);
+        assert_eq!(
+            classify_command(r"C:\Windows\System32\shutdown.exe /s").level,
+            RiskLevel::Blocked
+        );
     }
 }

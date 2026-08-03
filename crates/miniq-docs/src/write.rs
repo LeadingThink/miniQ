@@ -87,11 +87,7 @@ fn write_docx(path: &Path, text: &str) -> Result<(), WriteError> {
         if size > 22 {
             run = run.bold();
         }
-        docx = docx.add_paragraph(
-            Paragraph::new()
-                .add_run(run)
-                .align(AlignmentType::Left),
-        );
+        docx = docx.add_paragraph(Paragraph::new().add_run(run).align(AlignmentType::Left));
     }
     let file = std::fs::File::create(path)?;
     docx.build().pack(file).map_err(|e| build_err("docx", e))?;
@@ -150,7 +146,9 @@ mod tests {
         let path = dir.path().join("report.docx");
         write_document(
             &path,
-            &DocOutput::Text("# Weekly Report\n\nAll systems normal.\n## Details\nNothing broke.".into()),
+            &DocOutput::Text(
+                "# Weekly Report\n\nAll systems normal.\n## Details\nNothing broke.".into(),
+            ),
         )
         .unwrap();
         let DocContent::Text { kind, text } = read_document(&path).unwrap() else {

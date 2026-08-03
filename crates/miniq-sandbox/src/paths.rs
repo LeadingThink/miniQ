@@ -101,7 +101,11 @@ mod tests {
 
     #[test]
     fn absolute_outside_rejected() {
-        let outside = if cfg!(windows) { r"C:\other\file" } else { "/other/file" };
+        let outside = if cfg!(windows) {
+            r"C:\other\file"
+        } else {
+            "/other/file"
+        };
         assert!(resolve_in_workspace(&ws(), outside).is_err());
     }
 

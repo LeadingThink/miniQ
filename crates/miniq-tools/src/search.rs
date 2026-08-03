@@ -230,7 +230,9 @@ impl Tool for FileGrepTool {
                 if entry.metadata().map(|m| m.len()).unwrap_or(0) > GREP_MAX_FILE_BYTES {
                     continue;
                 }
-                let Ok(bytes) = std::fs::read(path) else { continue };
+                let Ok(bytes) = std::fs::read(path) else {
+                    continue;
+                };
                 // Binary detection: NUL byte in the first 8KB.
                 if bytes.iter().take(8192).any(|&b| b == 0) {
                     continue;
@@ -279,7 +281,11 @@ mod tests {
         std::fs::create_dir_all(dir.join("docs")).unwrap();
         std::fs::write(dir.join("src/main.rs"), "fn main() { println!(\"hi\"); }").unwrap();
         std::fs::write(dir.join("src/lib.rs"), "pub fn add() {}").unwrap();
-        std::fs::write(dir.join("docs/note.md"), "TODO: write the report\nplain line").unwrap();
+        std::fs::write(
+            dir.join("docs/note.md"),
+            "TODO: write the report\nplain line",
+        )
+        .unwrap();
         std::fs::write(dir.join("binary.bin"), [0u8, 159, 146, 150]).unwrap();
     }
 
@@ -376,7 +382,8 @@ mod tests {
     #[tokio::test]
     async fn escape_denied() {
         let dir = tempfile::tempdir().unwrap();
-        let risk = FileGlobTool.evaluate_risk(&ctx(dir.path()), &json!({"pattern": "*", "path": "../"}));
+        let risk =
+            FileGlobTool.evaluate_risk(&ctx(dir.path()), &json!({"pattern": "*", "path": "../"}));
         assert_eq!(risk.level, RiskLevel::Blocked);
         let err = FileGrepTool
             .execute(&ctx(dir.path()), json!({"pattern": "x", "path": "../"}))

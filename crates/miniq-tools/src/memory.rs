@@ -11,9 +11,9 @@ use serde_json::{json, Value};
 use crate::router::{parse_input, Tool, ToolContext, ToolError};
 
 fn memory_store(ctx: &ToolContext) -> Result<&std::sync::Arc<miniq_memory::Store>, ToolError> {
-    ctx.memory.as_ref().ok_or_else(|| {
-        ToolError::ExecutionFailed("memory is not available in this session".into())
-    })
+    ctx.memory
+        .as_ref()
+        .ok_or_else(|| ToolError::ExecutionFailed("memory is not available in this session".into()))
 }
 
 // ---- memory_search ----
@@ -107,7 +107,10 @@ impl Tool for MemoryWriteTool {
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: MemoryWriteInput = parse_input(input)?;
         if !matches!(p.scope.as_str(), "workspace" | "global") {
-            return Err(ToolError::InvalidInput(format!("invalid scope: {}", p.scope)));
+            return Err(ToolError::InvalidInput(format!(
+                "invalid scope: {}",
+                p.scope
+            )));
         }
         if p.content.trim().is_empty() {
             return Err(ToolError::InvalidInput("content is empty".into()));
@@ -154,7 +157,10 @@ mod tests {
             .await
             .unwrap();
         MemoryWriteTool
-            .execute(&ctx, json!({"scope": "global", "content": "用户偏好中文回复"}))
+            .execute(
+                &ctx,
+                json!({"scope": "global", "content": "用户偏好中文回复"}),
+            )
             .await
             .unwrap();
 
@@ -164,7 +170,10 @@ mod tests {
             .unwrap();
         let memories = out["memories"].as_array().unwrap();
         assert_eq!(memories.len(), 1);
-        assert!(memories[0]["content"].as_str().unwrap().contains("cargo test"));
+        assert!(memories[0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("cargo test"));
 
         // Global memories are visible too.
         let out = MemorySearchTool

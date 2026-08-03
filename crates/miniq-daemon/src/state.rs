@@ -88,9 +88,6 @@ pub struct AppState {
     pub token: String,
     /// Cancellation token per session with an active turn.
     pub active_turns: Arc<Mutex<HashMap<String, CancellationToken>>>,
-    /// Workspaces with an active turn (one writing turn per workspace;
-    /// different workspaces run in parallel).
-    pub busy_workspaces: Arc<Mutex<HashMap<String, String>>>,
     /// Pending approvals waiting for a user decision (approval id -> waker).
     pub pending_approvals: Arc<Mutex<HashMap<String, oneshot::Sender<ApprovalDecision>>>>,
     /// Per-session allowlist of approved tool patterns ("approve for session").
@@ -108,10 +105,7 @@ pub struct AppState {
 impl AppState {
     /// State with a fixed provider (tests). Skills live in a fresh temp dir.
     pub fn new(store: Store, token: String, provider: Arc<dyn ModelProvider>) -> Self {
-        let skills_dir = std::env::temp_dir().join(format!(
-            "miniq-test-{}",
-            uuid_suffix()
-        ));
+        let skills_dir = std::env::temp_dir().join(format!("miniq-test-{}", uuid_suffix()));
         Self::build(
             store,
             token,
@@ -160,7 +154,6 @@ impl AppState {
             started: Instant::now(),
             token,
             active_turns: Arc::new(Mutex::new(HashMap::new())),
-            busy_workspaces: Arc::new(Mutex::new(HashMap::new())),
             pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             session_allowlist: Arc::new(Mutex::new(HashMap::new())),
             pending_questions: Arc::new(Mutex::new(HashMap::new())),
@@ -267,27 +260,20 @@ impl AppState {
         let _ = self.events.send(event);
     }
 
-    /// Register a new turn. One turn per session AND per workspace — cross-
-    /// workspace tasks run in parallel, same-workspace turns are serialized
-    /// to avoid conflicting writes. Returns `None` when busy.
-    pub fn begin_turn(&self, session_id: &str, workspace_id: &str) -> Option<CancellationToken> {
+    /// Register a new turn for a session. Different sessions may run in
+    /// parallel, including sessions that share a workspace.
+    pub fn begin_turn(&self, session_id: &str) -> Option<CancellationToken> {
         let mut turns = self.active_turns.lock().unwrap();
-        let mut busy = self.busy_workspaces.lock().unwrap();
-        if turns.contains_key(session_id) || busy.contains_key(workspace_id) {
+        if turns.contains_key(session_id) {
             return None;
         }
         let token = CancellationToken::new();
         turns.insert(session_id.to_string(), token.clone());
-        busy.insert(workspace_id.to_string(), session_id.to_string());
         Some(token)
     }
 
     pub fn end_turn(&self, session_id: &str) {
         self.active_turns.lock().unwrap().remove(session_id);
-        self.busy_workspaces
-            .lock()
-            .unwrap()
-            .retain(|_, sess| sess != session_id);
     }
 
     pub fn cancel_turn(&self, session_id: &str) -> bool {

@@ -30,9 +30,8 @@ async fn start_daemon_with(
     (port, token)
 }
 
-type WsClient = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type WsClient =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn connect(port: u16, token: &str) -> WsClient {
     let (ws, _) = connect_async(format!("ws://127.0.0.1:{port}/ws?token={token}"))
@@ -43,7 +42,9 @@ async fn connect(port: u16, token: &str) -> WsClient {
 
 async fn call(ws: &mut WsClient, id: &str, method: &str, params: Value) -> Value {
     let req = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
-    ws.send(Message::Text(req.to_string().into())).await.unwrap();
+    ws.send(Message::Text(req.to_string().into()))
+        .await
+        .unwrap();
     // Skip broadcast events until we see our response id.
     loop {
         let msg = ws.next().await.expect("stream open").expect("ws ok");
@@ -88,7 +89,10 @@ async fn workspace_and_session_flow() {
     let path = dir.path().to_string_lossy().to_string();
 
     let resp = call(&mut ws, "r1", "workspace.open", json!({"path": path})).await;
-    let ws_id = resp["result"]["id"].as_str().expect("workspace id").to_string();
+    let ws_id = resp["result"]["id"]
+        .as_str()
+        .expect("workspace id")
+        .to_string();
 
     let resp = call(
         &mut ws,
@@ -97,7 +101,10 @@ async fn workspace_and_session_flow() {
         json!({"workspaceId": ws_id, "title": "hello"}),
     )
     .await;
-    let sess_id = resp["result"]["id"].as_str().expect("session id").to_string();
+    let sess_id = resp["result"]["id"]
+        .as_str()
+        .expect("session id")
+        .to_string();
     assert_eq!(resp["result"]["status"], "idle");
 
     let resp = call(&mut ws, "r3", "session.list", json!({"workspaceId": ws_id})).await;
@@ -138,7 +145,13 @@ async fn chat_turn_streams_and_persists() {
     )
     .await;
     let ws_id = resp["result"]["id"].as_str().unwrap().to_string();
-    let resp = call(&mut ws, "r2", "session.create", json!({"workspaceId": ws_id})).await;
+    let resp = call(
+        &mut ws,
+        "r2",
+        "session.create",
+        json!({"workspaceId": ws_id}),
+    )
+    .await;
     let sess_id = resp["result"]["id"].as_str().unwrap().to_string();
 
     let resp = call(
@@ -187,7 +200,13 @@ async fn busy_session_rejects_second_message() {
     )
     .await;
     let ws_id = resp["result"]["id"].as_str().unwrap().to_string();
-    let resp = call(&mut ws, "r2", "session.create", json!({"workspaceId": ws_id})).await;
+    let resp = call(
+        &mut ws,
+        "r2",
+        "session.create",
+        json!({"workspaceId": ws_id}),
+    )
+    .await;
     let sess_id = resp["result"]["id"].as_str().unwrap().to_string();
 
     let send = json!({"sessionId": sess_id, "message": {"role": "user", "content": "hi"}});
@@ -220,7 +239,13 @@ async fn provider_failure_marks_turn_failed() {
     )
     .await;
     let ws_id = resp["result"]["id"].as_str().unwrap().to_string();
-    let resp = call(&mut ws, "r2", "session.create", json!({"workspaceId": ws_id})).await;
+    let resp = call(
+        &mut ws,
+        "r2",
+        "session.create",
+        json!({"workspaceId": ws_id}),
+    )
+    .await;
     let sess_id = resp["result"]["id"].as_str().unwrap().to_string();
 
     call(

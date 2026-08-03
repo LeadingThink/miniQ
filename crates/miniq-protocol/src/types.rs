@@ -45,6 +45,8 @@ pub struct Session {
     pub workspace_id: String,
     pub title: String,
     pub status: SessionStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external: Option<crate::ExternalSessionLink>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -141,7 +143,9 @@ pub struct ToolCall {
 }
 
 /// Risk level assigned by the sandbox to a tool invocation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum RiskLevel {
     Low,

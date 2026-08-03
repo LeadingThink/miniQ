@@ -234,7 +234,10 @@ impl SkillStore {
         if let Some(parent) = self.state_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&self.state_path, serde_json::to_string_pretty(&state).unwrap())?;
+        std::fs::write(
+            &self.state_path,
+            serde_json::to_string_pretty(&state).unwrap(),
+        )?;
         Ok(())
     }
 }
@@ -305,7 +308,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("SKILL.md"),
-            format!("---\nname: {name}\ndescription: {description}\n---\n\n## Steps\nbody of {name}\n"),
+            format!(
+                "---\nname: {name}\ndescription: {description}\n---\n\n## Steps\nbody of {name}\n"
+            ),
         )
         .unwrap();
     }
@@ -330,12 +335,19 @@ mod tests {
         write_skill(&data.path().join("skills"), "bundled-demo", "user override");
         let skills = store.discover(Some(ws.path()));
         assert_eq!(skills.len(), 2);
-        let demo = skills.iter().find(|s| s.meta.name == "bundled-demo").unwrap();
+        let demo = skills
+            .iter()
+            .find(|s| s.meta.name == "bundled-demo")
+            .unwrap();
         assert_eq!(demo.source, SkillSource::User);
         assert_eq!(demo.meta.description, "user override");
 
         // Project skill shadows user.
-        write_skill(&ws.path().join(".miniq/skills"), "my-skill", "project override");
+        write_skill(
+            &ws.path().join(".miniq/skills"),
+            "my-skill",
+            "project override",
+        );
         let skills = store.discover(Some(ws.path()));
         let mine = skills.iter().find(|s| s.meta.name == "my-skill").unwrap();
         assert_eq!(mine.source, SkillSource::Project);
@@ -351,7 +363,11 @@ mod tests {
 
         write_skill(&data.path().join("skills"), "on-disk", "disk skill");
         std::fs::create_dir_all(data.path().join("skills/on-disk/scripts")).unwrap();
-        std::fs::write(data.path().join("skills/on-disk/scripts/run.py"), "print(1)").unwrap();
+        std::fs::write(
+            data.path().join("skills/on-disk/scripts/run.py"),
+            "print(1)",
+        )
+        .unwrap();
         let detail = store.read(None, "on-disk").unwrap();
         assert!(detail.body.contains("body of on-disk"));
         assert_eq!(detail.files, vec!["scripts/run.py"]);

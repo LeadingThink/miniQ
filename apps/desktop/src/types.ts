@@ -40,8 +40,77 @@ export interface Session {
   workspaceId: string;
   title: string;
   status: SessionStatus;
+  external?: ExternalSessionLink;
   createdAt: string;
   updatedAt: string;
+}
+
+export type ExternalProvider = "codex" | "claude_code" | "opencode";
+
+export type ExternalContinuationMode =
+  | "native_resumable"
+  | "recreate_only"
+  | "read_only";
+
+export interface ExternalSessionLink {
+  provider: ExternalProvider;
+  externalId: string;
+  sourcePath: string;
+  continuationMode: ExternalContinuationMode;
+  importedAt: string;
+  lastSyncedAt: string;
+}
+
+export interface ExternalSessionSummary {
+  provider: ExternalProvider;
+  externalId: string;
+  title: string;
+  cwd: string | null;
+  sourcePath: string;
+  messageCount: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+  continuationMode: ExternalContinuationMode;
+}
+
+export interface ExternalProviderStatus {
+  provider: ExternalProvider;
+  root: string;
+  available: boolean;
+  sessionCount: number;
+  messageCount: number;
+  error: string | null;
+}
+
+export interface ExternalScanError {
+  provider: ExternalProvider;
+  sourcePath: string | null;
+  message: string;
+}
+
+export interface ExternalSessionScan {
+  providers: ExternalProviderStatus[];
+  sessions: ExternalSessionSummary[];
+  errors: ExternalScanError[];
+}
+
+export interface ExternalSessionSelection {
+  provider: ExternalProvider;
+  externalId: string;
+  sourcePath: string;
+  workspaceId: string | null;
+}
+
+export interface ExternalImportError {
+  provider: ExternalProvider;
+  externalId: string | null;
+  message: string;
+}
+
+export interface ExternalSessionImportResult {
+  importedSessionIds: string[];
+  importedMessages: number;
+  errors: ExternalImportError[];
 }
 
 export interface Message {

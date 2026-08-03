@@ -1,0 +1,197 @@
+use miniq_protocol::{ErrorCode, Event, Role, RpcError, SessionStatus};
+use serde::Deserialize;
+use serde_json::{json, Value};
+
+use super::common::{params, store_err, to_value};
+use crate::state::AppState;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateParams {
+    workspace_id: String,
+    #[serde(default)]
+    title: Option<String>,
+}
+
+pub(super) fn create(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: CreateParams = params(raw)?;
+    state
+        .store
+        .get_workspace(&input.workspace_id)
+        .map_err(store_err)?;
+    let title = input.title.unwrap_or_else(|| "New session".to_string());
+    let session = state
+        .store
+        .create_session(&input.workspace_id, &title)
+        .map_err(store_err)?;
+    to_value(session)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListParams {
+    #[serde(default)]
+    workspace_id: Option<String>,
+}
+
+pub(super) fn list(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: ListParams = params(raw)?;
+    let sessions = state
+        .store
+        .list_sessions(input.workspace_id.as_deref())
+        .map_err(store_err)?;
+    to_value(json!({ "sessions": sessions }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenParams {
+    session_id: String,
+}
+
+pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: OpenParams = params(raw)?;
+    let session = state
+        .store
+        .get_session(&input.session_id)
+        .map_err(store_err)?;
+    let messages = state
+        .store
+        .list_messages(&input.session_id)
+        .map_err(store_err)?;
+    let tool_calls = state
+        .store
+        .list_tool_calls(&input.session_id)
+        .map_err(store_err)?;
+    let artifacts = state
+        .store
+        .list_artifacts(&input.session_id)
+        .map_err(store_err)?;
+    let plan = state
+        .plans
+        .lock()
+        .unwrap()
+        .get(&input.session_id)
+        .cloned()
+        .unwrap_or_default();
+    to_value(json!({
+        "session": session,
+        "messages": messages,
+        "toolCalls": tool_calls,
+        "artifacts": artifacts,
+        "plan": plan,
+    }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SendMessageParams {
+    session_id: String,
+    message: IncomingMessage,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IncomingMessage {
+    role: String,
+    content: String,
+}
+
+pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: SendMessageParams = params(raw)?;
+    validate_message(&input.message)?;
+    let session = state
+        .store
+        .get_session(&input.session_id)
+        .map_err(store_err)?;
+
+    let Some(cancel) = state.begin_turn(&input.session_id) else {
+        return Err(RpcError::new(
+            ErrorCode::SessionBusy,
+            "session already has an active turn",
+        ));
+    };
+
+    let message = append_user_message(state, &input, &session.title)?;
+    state.emit(Event::MessageCreated {
+        session_id: input.session_id.clone(),
+        message: message.clone(),
+    });
+    set_running(state, &input.session_id)?;
+    crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
+    to_value(json!({ "message": message }))
+}
+
+fn validate_message(message: &IncomingMessage) -> Result<(), RpcError> {
+    if message.role != "user" {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "only user messages can be sent",
+        ));
+    }
+    if message.content.trim().is_empty() {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "message content is empty",
+        ));
+    }
+    Ok(())
+}
+
+fn append_user_message(
+    state: &AppState,
+    input: &SendMessageParams,
+    current_title: &str,
+) -> Result<miniq_protocol::Message, RpcError> {
+    let message = state
+        .store
+        .append_message(&input.session_id, Role::User, &input.message.content)
+        .map_err(|error| {
+            state.end_turn(&input.session_id);
+            store_err(error)
+        })?;
+
+    if current_title == "New session" {
+        let title: String = input.message.content.trim().chars().take(30).collect();
+        if !title.is_empty() {
+            let _ = state.store.update_session_title(&input.session_id, &title);
+        }
+    }
+    Ok(message)
+}
+
+fn set_running(state: &AppState, session_id: &str) -> Result<(), RpcError> {
+    state
+        .store
+        .update_session_status(session_id, SessionStatus::Running)
+        .map_err(|error| {
+            state.end_turn(session_id);
+            store_err(error)
+        })?;
+    state.emit(Event::SessionStatusChanged {
+        session_id: session_id.to_string(),
+        status: SessionStatus::Running,
+    });
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CancelParams {
+    session_id: String,
+}
+
+pub(super) fn cancel(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: CancelParams = params(raw)?;
+    let cancelled = state.cancel_turn(&input.session_id);
+    if cancelled {
+        let _ = state
+            .store
+            .update_session_status(&input.session_id, SessionStatus::Cancelling);
+        state.emit(Event::SessionStatusChanged {
+            session_id: input.session_id,
+            status: SessionStatus::Cancelling,
+        });
+    }
+    Ok(json!({ "cancelled": cancelled }))
+}

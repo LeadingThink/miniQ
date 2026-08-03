@@ -1,6 +1,7 @@
 // JSON-RPC over WebSocket client for the miniQ daemon.
 
 import type { DaemonEvent } from "./types";
+import { isTauriRuntime } from "./runtime";
 
 export interface ConnectionInfo {
   port: number;
@@ -119,8 +120,7 @@ export class RpcClient {
 /// - Inside Tauri: ask the shell (it spawns/discovers the daemon).
 /// - In a plain browser (dev): read ?port=...&token=... from the URL.
 export async function resolveConnection(): Promise<ConnectionInfo> {
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown };
-  if (w.__TAURI_INTERNALS__) {
+  if (isTauriRuntime()) {
     const { invoke } = await import("@tauri-apps/api/core");
     return await invoke<ConnectionInfo>("daemon_connection");
   }

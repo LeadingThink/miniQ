@@ -4,6 +4,7 @@
 use miniq_agent::{run_turn, AgentError, AgentEvent};
 use miniq_models::{ChatMessage, ChatRole};
 use miniq_protocol::{Event, Message, Role, SessionStatus};
+use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
 use crate::state::AppState;
@@ -13,14 +14,18 @@ user inside their workspace: you plan multi-step tasks, read and edit files, run
 and deliver ready-to-use results. Be concise and accurate. High-risk actions go through \
 user approval; if an action is rejected, adapt instead of retrying it verbatim.";
 
-/// Build the provider-facing history from persisted messages, with the
-/// available-skills block appended to the system prompt.
-fn history_from_messages(messages: &[Message], skills_block: &str) -> Vec<ChatMessage> {
-    let system = if skills_block.is_empty() {
-        SYSTEM_PROMPT.to_string()
-    } else {
-        format!("{SYSTEM_PROMPT}\n\n{skills_block}")
-    };
+/// Build the provider-facing history from persisted messages, with runtime
+/// details and available skills appended to the system prompt.
+fn history_from_messages(
+    messages: &[Message],
+    skills_block: &str,
+    workspace_path: &Path,
+) -> Vec<ChatMessage> {
+    let mut system = format!("{SYSTEM_PROMPT}\n\n{}", runtime_context(workspace_path));
+    if !skills_block.is_empty() {
+        system.push_str("\n\n");
+        system.push_str(skills_block);
+    }
     let mut history = vec![ChatMessage::system(system)];
     for msg in messages {
         let role = match msg.role {
@@ -40,6 +45,21 @@ fn history_from_messages(messages: &[Message], skills_block: &str) -> Vec<ChatMe
     history
 }
 
+fn runtime_context(workspace_path: &Path) -> String {
+    #[cfg(windows)]
+    let platform = "Windows; shell_run executes Windows PowerShell through powershell.exe \
+                    without profiles or interactive input";
+    #[cfg(not(windows))]
+    let platform = "a Unix-like operating system; shell_run executes POSIX sh";
+
+    format!(
+        "Runtime environment: {platform}. The workspace and command working directory is '{}'. \
+         Use commands valid for this shell. Prefer native shell commands for ordinary filesystem \
+         inspection; use Python when the task actually benefits from Python.",
+        workspace_path.display()
+    )
+}
+
 /// Run a full turn in a background task. Assumes the user message is already
 /// persisted and the turn slot is registered in `state.active_turns`.
 pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken) {
@@ -48,7 +68,9 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
         state.end_turn(&session_id);
         match result {
             Ok(()) => {
-                let _ = state.store.update_session_status(&session_id, SessionStatus::Idle);
+                let _ = state
+                    .store
+                    .update_session_status(&session_id, SessionStatus::Idle);
                 state.emit(Event::SessionStatusChanged {
                     session_id: session_id.clone(),
                     status: SessionStatus::Idle,
@@ -58,7 +80,9 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
                 });
             }
             Err(TurnError::Cancelled) => {
-                let _ = state.store.update_session_status(&session_id, SessionStatus::Idle);
+                let _ = state
+                    .store
+                    .update_session_status(&session_id, SessionStatus::Idle);
                 state.emit(Event::SessionStatusChanged {
                     session_id: session_id.clone(),
                     status: SessionStatus::Idle,
@@ -114,7 +138,7 @@ async fn execute_turn(
         .store
         .list_messages(session_id)
         .map_err(|e| TurnError::Fatal(e.to_string()))?;
-    let history = history_from_messages(&messages, &skills_block);
+    let history = history_from_messages(&messages, &skills_block, &workspace_path);
 
     // Allocate the assistant message id upfront so streaming deltas can
     // reference it before the row is written.
@@ -143,7 +167,10 @@ async fn execute_turn(
         router: state.router.clone(),
         ctx: miniq_tools::ToolContext::new(workspace_path)
             .with_skills(Some(state.skills.clone()))
-            .with_memory(Some(state.store.clone()), Some(session.workspace_id.clone()))
+            .with_memory(
+                Some(state.store.clone()),
+                Some(session.workspace_id.clone()),
+            )
             .with_mcp(state.mcp_bridge()),
         cancel: cancel.clone(),
     };
@@ -160,11 +187,45 @@ async fn execute_turn(
 
     let message = state
         .store
-        .append_message_with_id(&message_id, session_id, Role::Assistant, &outcome.final_text)
+        .append_message_with_id(
+            &message_id,
+            session_id,
+            Role::Assistant,
+            &outcome.final_text,
+        )
         .map_err(|e| TurnError::Fatal(e.to_string()))?;
     state.emit(Event::MessageCreated {
         session_id: session_id.to_string(),
         message,
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn system_prompt_includes_runtime_and_workspace() {
+        let workspace = Path::new("test-workspace");
+        let history = history_from_messages(&[], "", workspace);
+        let system = &history[0].content;
+
+        assert!(system.contains("Runtime environment:"));
+        assert!(system.contains("test-workspace"));
+        #[cfg(windows)]
+        assert!(system.contains("Windows PowerShell"));
+        #[cfg(not(windows))]
+        assert!(system.contains("POSIX sh"));
+    }
+
+    #[test]
+    fn system_prompt_appends_skills_after_runtime_context() {
+        let history = history_from_messages(&[], "AVAILABLE SKILLS", Path::new("workspace"));
+        let system = &history[0].content;
+
+        let runtime_index = system.find("Runtime environment:").unwrap();
+        let skills_index = system.find("AVAILABLE SKILLS").unwrap();
+        assert!(runtime_index < skills_index);
+    }
 }

@@ -57,7 +57,11 @@ fn tool_call_lifecycle() {
         .create_tool_call(&sess.id, "shell_run", &input, ToolCallStatus::Running)
         .unwrap();
     store
-        .finish_tool_call(&call.id, ToolCallStatus::Succeeded, Some(&json!({"exitCode": 0})))
+        .finish_tool_call(
+            &call.id,
+            ToolCallStatus::Succeeded,
+            Some(&json!({"exitCode": 0})),
+        )
         .unwrap();
 
     let calls = store.list_tool_calls(&sess.id).unwrap();
@@ -122,7 +126,9 @@ fn persistent_store_reopens() {
         let store = Store::open(&db).unwrap();
         let ws = store.create_workspace("D:/tmp/proj", "proj").unwrap();
         let sess = store.create_session(&ws.id, "persisted").unwrap();
-        store.append_message(&sess.id, Role::User, "still here?").unwrap();
+        store
+            .append_message(&sess.id, Role::User, "still here?")
+            .unwrap();
         sess_id = sess.id;
     }
     let store = Store::open(&db).unwrap();

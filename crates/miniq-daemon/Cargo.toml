@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 miniq-protocol = { path = "../miniq-protocol" }
 miniq-memory = { path = "../miniq-memory" }
+miniq-session-connectors = { path = "../miniq-session-connectors" }
 miniq-models = { path = "../miniq-models" }
 miniq-agent = { path = "../miniq-agent" }
 miniq-tools = { path = "../miniq-tools" }

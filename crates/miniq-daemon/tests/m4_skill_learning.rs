@@ -13,9 +13,8 @@ use std::sync::Arc;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
-type WsClient = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type WsClient =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn start(provider: Arc<MockProvider>) -> (u16, String) {
     let token = "test-token".to_string();
@@ -36,7 +35,9 @@ async fn connect(port: u16, token: &str) -> WsClient {
 
 async fn call(ws: &mut WsClient, id: &str, method: &str, params: Value) -> Value {
     let req = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
-    ws.send(Message::Text(req.to_string().into())).await.unwrap();
+    ws.send(Message::Text(req.to_string().into()))
+        .await
+        .unwrap();
     loop {
         let msg = ws.next().await.expect("stream open").expect("ws ok");
         let Message::Text(text) = msg else { continue };
@@ -71,7 +72,13 @@ async fn setup_session(ws: &mut WsClient, dir: &std::path::Path) -> String {
     )
     .await;
     let ws_id = resp["result"]["id"].as_str().unwrap().to_string();
-    let resp = call(ws, "setup2", "session.create", json!({"workspaceId": ws_id})).await;
+    let resp = call(
+        ws,
+        "setup2",
+        "session.create",
+        json!({"workspaceId": ws_id}),
+    )
+    .await;
     resp["result"]["id"].as_str().unwrap().to_string()
 }
 
@@ -114,7 +121,13 @@ async fn full_learning_loop() {
     next_event_of(&mut ws, "turn_completed").await;
 
     // 2. Distill it.
-    let resp = call(&mut ws, "r2", "skill.distill", json!({"sessionId": sess_id})).await;
+    let resp = call(
+        &mut ws,
+        "r2",
+        "skill.distill",
+        json!({"sessionId": sess_id}),
+    )
+    .await;
     assert_eq!(resp["result"]["skipped"], false);
     assert_eq!(resp["result"]["name"], "inventory-report");
     assert_eq!(resp["result"]["existingSkill"], false);
@@ -142,7 +155,13 @@ async fn full_learning_loop() {
     )
     .await;
     let ws_id = ws_resp["result"]["id"].as_str().unwrap().to_string();
-    let resp = call(&mut ws, "r4", "session.create", json!({"workspaceId": ws_id})).await;
+    let resp = call(
+        &mut ws,
+        "r4",
+        "session.create",
+        json!({"workspaceId": ws_id}),
+    )
+    .await;
     let sess2 = resp["result"]["id"].as_str().unwrap().to_string();
     call(
         &mut ws,
@@ -155,7 +174,10 @@ async fn full_learning_loop() {
     {
         let requests = provider.requests.lock().unwrap();
         let system = &requests[3].messages[0].content;
-        assert!(system.contains("inventory-report"), "learned skill must be advertised");
+        assert!(
+            system.contains("inventory-report"),
+            "learned skill must be advertised"
+        );
     }
 
     // 5. Refine from the repeat session.
@@ -173,7 +195,13 @@ async fn full_learning_loop() {
     assert_eq!(resp["result"]["version"], 2);
 
     // The stored skill is now v2.
-    let resp = call(&mut ws, "r8", "skill.read", json!({"name": "inventory-report"})).await;
+    let resp = call(
+        &mut ws,
+        "r8",
+        "skill.read",
+        json!({"name": "inventory-report"}),
+    )
+    .await;
     assert_eq!(resp["result"]["version"], 2);
     assert_eq!(resp["result"]["source"], "user");
 }
@@ -198,17 +226,38 @@ async fn distill_skip_and_sensitive_save_guard() {
     .await;
     next_event_of(&mut ws, "turn_completed").await;
 
-    let resp = call(&mut ws, "r2", "skill.distill", json!({"sessionId": sess_id})).await;
+    let resp = call(
+        &mut ws,
+        "r2",
+        "skill.distill",
+        json!({"sessionId": sess_id}),
+    )
+    .await;
     assert_eq!(resp["result"]["skipped"], true);
-    assert!(resp["result"]["reason"].as_str().unwrap().contains("question"));
+    assert!(resp["result"]["reason"]
+        .as_str()
+        .unwrap()
+        .contains("question"));
 
     // Saving a draft with an embedded key is rejected unless forced.
     let dirty = "---\nname: leaky-skill\ndescription: leaks\n---\n\n## 步骤\napi_key = \"sk-abcdefghijklmnop1234\"\n";
     let resp = call(&mut ws, "r3", "skill.save", json!({"content": dirty})).await;
-    assert!(resp["error"]["message"].as_str().unwrap().contains("sensitive"));
-    assert!(!resp["error"]["data"]["warnings"].as_array().unwrap().is_empty());
+    assert!(resp["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("sensitive"));
+    assert!(!resp["error"]["data"]["warnings"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 
-    let resp = call(&mut ws, "r4", "skill.save", json!({"content": dirty, "force": true})).await;
+    let resp = call(
+        &mut ws,
+        "r4",
+        "skill.save",
+        json!({"content": dirty, "force": true}),
+    )
+    .await;
     assert_eq!(resp["result"]["name"], "leaky-skill");
 }
 
@@ -220,7 +269,13 @@ async fn distill_requires_completed_turn() {
 
     let dir = tempfile::tempdir().unwrap();
     let sess_id = setup_session(&mut ws, dir.path()).await;
-    let resp = call(&mut ws, "r1", "skill.distill", json!({"sessionId": sess_id})).await;
+    let resp = call(
+        &mut ws,
+        "r1",
+        "skill.distill",
+        json!({"sessionId": sess_id}),
+    )
+    .await;
     assert!(resp["error"]["message"]
         .as_str()
         .unwrap()

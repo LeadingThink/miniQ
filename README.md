@@ -25,7 +25,10 @@ Tauri 2 Desktop (apps/desktop, React + 托盘)
 - **技能**:三级目录发现(项目 > 用户 > 内置),注入系统提示词,`Save as skill` 一键把任务 transcript 蒸馏为 SKILL.md,重复任务可进化版本
 - **安全**:low 自动执行;medium/high 审批(允许一次 / 本会话允许,shell 按程序、网络按域名、MCP 按 server 细分);blocked 拦截;写入前自动 checkpoint 可回滚;全部进审计日志
 - **任务体验**:步骤计划外显、澄清提问卡片、产物交付区、同 workspace 串行 / 跨 workspace 并行
+- **外部会话**:全量发现并导入本机 Codex、Claude Code、OpenCode 历史,保留原始事件与来源身份,导入后可直接用 miniQ 继续
 - **MCP**:配置 stdio MCP server,tools 经 `mcp_call` 进入审批与审计链
+
+外部会话的来源路径、导入语义和扩展契约见 [docs/external-session-import.md](docs/external-session-import.md)。
 
 ## 快速开始
 

@@ -41,7 +41,8 @@ mod bundled_tests {
     #[test]
     fn bundled_skills_parse() {
         for bundled in super::bundled_skills() {
-            let (meta, body) = super::parse_skill_md(bundled.content).expect("bundled skill parses");
+            let (meta, body) =
+                super::parse_skill_md(bundled.content).expect("bundled skill parses");
             assert!(!body.is_empty(), "{} has empty body", meta.name);
         }
     }

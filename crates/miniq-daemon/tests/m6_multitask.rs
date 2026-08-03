@@ -1,6 +1,5 @@
-//! M6 acceptance (multi-tasking): turns in different workspaces run in
-//! parallel; a second session in the SAME workspace is rejected while a
-//! turn is active.
+//! M6 acceptance (multi-tasking): different sessions run in parallel even
+//! when they share a workspace. A session still accepts only one active turn.
 
 use futures_util::{SinkExt, StreamExt};
 use miniq_daemon::server;
@@ -12,9 +11,8 @@ use std::sync::Arc;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
-type WsClient = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type WsClient =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 /// Provider whose turns block until released, so tests can hold a turn open.
 struct GatedProvider {
@@ -63,7 +61,9 @@ async fn connect(port: u16, token: &str) -> WsClient {
 
 async fn call(ws: &mut WsClient, id: &str, method: &str, params: Value) -> Value {
     let req = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
-    ws.send(Message::Text(req.to_string().into())).await.unwrap();
+    ws.send(Message::Text(req.to_string().into()))
+        .await
+        .unwrap();
     loop {
         let msg = ws.next().await.expect("stream open").expect("ws ok");
         let Message::Text(text) = msg else { continue };
@@ -75,49 +75,99 @@ async fn call(ws: &mut WsClient, id: &str, method: &str, params: Value) -> Value
 }
 
 #[tokio::test]
-async fn same_workspace_serialized_cross_workspace_parallel() {
+async fn different_sessions_run_in_parallel_regardless_of_workspace() {
     let (release_tx, release_rx) = tokio::sync::watch::channel(false);
-    let provider: Arc<dyn ModelProvider> = Arc::new(GatedProvider { release: release_rx });
+    let provider: Arc<dyn ModelProvider> = Arc::new(GatedProvider {
+        release: release_rx,
+    });
     let (port, token) = start(provider).await;
     let mut ws = connect(port, &token).await;
 
     let dir_a = tempfile::tempdir().unwrap();
     let dir_b = tempfile::tempdir().unwrap();
-    let ws_a = call(&mut ws, "r1", "workspace.open", json!({"path": dir_a.path().to_string_lossy()}))
-        .await["result"]["id"]
+    let ws_a = call(
+        &mut ws,
+        "r1",
+        "workspace.open",
+        json!({"path": dir_a.path().to_string_lossy()}),
+    )
+    .await["result"]["id"]
         .as_str()
         .unwrap()
         .to_string();
-    let ws_b = call(&mut ws, "r2", "workspace.open", json!({"path": dir_b.path().to_string_lossy()}))
-        .await["result"]["id"]
+    let ws_b = call(
+        &mut ws,
+        "r2",
+        "workspace.open",
+        json!({"path": dir_b.path().to_string_lossy()}),
+    )
+    .await["result"]["id"]
         .as_str()
         .unwrap()
         .to_string();
 
-    let sess_a1 = call(&mut ws, "r3", "session.create", json!({"workspaceId": ws_a}))
-        .await["result"]["id"].as_str().unwrap().to_string();
-    let sess_a2 = call(&mut ws, "r4", "session.create", json!({"workspaceId": ws_a}))
-        .await["result"]["id"].as_str().unwrap().to_string();
-    let sess_b = call(&mut ws, "r5", "session.create", json!({"workspaceId": ws_b}))
-        .await["result"]["id"].as_str().unwrap().to_string();
+    let sess_a1 = call(
+        &mut ws,
+        "r3",
+        "session.create",
+        json!({"workspaceId": ws_a}),
+    )
+    .await["result"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let sess_a2 = call(
+        &mut ws,
+        "r4",
+        "session.create",
+        json!({"workspaceId": ws_a}),
+    )
+    .await["result"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let sess_b = call(
+        &mut ws,
+        "r5",
+        "session.create",
+        json!({"workspaceId": ws_b}),
+    )
+    .await["result"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // Start a (gated) turn in workspace A.
-    let send = |sess: &str| json!({"sessionId": sess, "message": {"role": "user", "content": "go"}});
+    let send =
+        |sess: &str| json!({"sessionId": sess, "message": {"role": "user", "content": "go"}});
     let resp = call(&mut ws, "r6", "session.sendMessage", send(&sess_a1)).await;
     assert!(resp.get("result").is_some(), "first turn starts: {resp}");
 
-    // Second session in the SAME workspace is rejected as busy.
-    let resp = call(&mut ws, "r7", "session.sendMessage", send(&sess_a2)).await;
-    assert_eq!(resp["error"]["code"], -32003, "same workspace must be busy: {resp}");
+    // The same session cannot start another turn until its current one ends.
+    let resp = call(&mut ws, "r7", "session.sendMessage", send(&sess_a1)).await;
+    assert_eq!(
+        resp["error"]["code"], -32003,
+        "same session must be busy: {resp}"
+    );
 
-    // A session in ANOTHER workspace runs in parallel.
-    let resp = call(&mut ws, "r8", "session.sendMessage", send(&sess_b)).await;
-    assert!(resp.get("result").is_some(), "other workspace runs in parallel: {resp}");
+    // Another session in the SAME workspace runs in parallel.
+    let resp = call(&mut ws, "r8", "session.sendMessage", send(&sess_a2)).await;
+    assert!(
+        resp.get("result").is_some(),
+        "same-workspace session runs in parallel: {resp}"
+    );
 
-    // Release the gate; both turns complete.
+    // A session in another workspace also runs in parallel.
+    let resp = call(&mut ws, "r9", "session.sendMessage", send(&sess_b)).await;
+    assert!(
+        resp.get("result").is_some(),
+        "other workspace runs in parallel: {resp}"
+    );
+
+    // Release the gate; all three turns complete.
     release_tx.send(true).unwrap();
     let mut completed = std::collections::HashSet::new();
-    while completed.len() < 2 {
+    while completed.len() < 3 {
         let msg = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
             .await
             .expect("turns complete")
@@ -130,10 +180,14 @@ async fn same_workspace_serialized_cross_workspace_parallel() {
         }
     }
     assert!(completed.contains(&sess_a1));
+    assert!(completed.contains(&sess_a2));
     assert!(completed.contains(&sess_b));
 
-    // Workspace A is free again.
-    let resp = call(&mut ws, "r9", "session.sendMessage", send(&sess_a2)).await;
-    assert!(resp.get("result").is_some(), "workspace A freed after turn: {resp}");
+    // The original session is free again after its turn completes.
+    let resp = call(&mut ws, "r10", "session.sendMessage", send(&sess_a1)).await;
+    assert!(
+        resp.get("result").is_some(),
+        "session freed after turn: {resp}"
+    );
     release_tx.send(true).ok();
 }

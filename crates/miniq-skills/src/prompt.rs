@@ -80,7 +80,10 @@ mod tests {
 
     #[test]
     fn includes_only_enabled() {
-        let skills = vec![skill("a-skill", "does A", true), skill("b-skill", "does B", false)];
+        let skills = vec![
+            skill("a-skill", "does A", true),
+            skill("b-skill", "does B", false),
+        ];
         let block = available_skills_block(&skills);
         assert!(block.contains("a-skill: does A"));
         assert!(!block.contains("b-skill"));

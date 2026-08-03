@@ -11,9 +11,8 @@ use std::sync::Arc;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
-type WsClient = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type WsClient =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn start(provider: Arc<MockProvider>) -> (u16, String) {
     let token = "test-token".to_string();
@@ -34,7 +33,9 @@ async fn connect(port: u16, token: &str) -> WsClient {
 
 async fn call(ws: &mut WsClient, id: &str, method: &str, params: Value) -> Value {
     let req = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
-    ws.send(Message::Text(req.to_string().into())).await.unwrap();
+    ws.send(Message::Text(req.to_string().into()))
+        .await
+        .unwrap();
     loop {
         let msg = ws.next().await.expect("stream open").expect("ws ok");
         let Message::Text(text) = msg else { continue };
@@ -69,7 +70,13 @@ async fn setup_session(ws: &mut WsClient, dir: &std::path::Path) -> String {
     )
     .await;
     let ws_id = resp["result"]["id"].as_str().unwrap().to_string();
-    let resp = call(ws, "setup2", "session.create", json!({"workspaceId": ws_id})).await;
+    let resp = call(
+        ws,
+        "setup2",
+        "session.create",
+        json!({"workspaceId": ws_id}),
+    )
+    .await;
     resp["result"]["id"].as_str().unwrap().to_string()
 }
 
@@ -97,7 +104,13 @@ async fn memory_write_needs_approval_then_search_finds_it() {
 
     let dir = tempfile::tempdir().unwrap();
     let sess_id = setup_session(&mut ws, dir.path()).await;
-    call(&mut ws, "mode0", "settings.update", json!({"approvalMode": "alwaysAsk"})).await;
+    call(
+        &mut ws,
+        "mode0",
+        "settings.update",
+        json!({"approvalMode": "alwaysAsk"}),
+    )
+    .await;
 
     call(
         &mut ws,
@@ -127,6 +140,9 @@ async fn memory_write_needs_approval_then_search_finds_it() {
     assert_eq!(f2["status"], "succeeded");
     let memories = f2["output"]["memories"].as_array().unwrap();
     assert_eq!(memories.len(), 1);
-    assert!(memories[0]["content"].as_str().unwrap().contains("npm run build"));
+    assert!(memories[0]["content"]
+        .as_str()
+        .unwrap()
+        .contains("npm run build"));
     next_event_of(&mut ws, "turn_completed").await;
 }

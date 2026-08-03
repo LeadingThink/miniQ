@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
-import type { ScheduledTask, ScheduleSpec, Workspace } from "../types";
 import { localDateTime, relativeAge } from "../time";
+import type { ScheduledTask, ScheduleSpec, Workspace } from "../types";
 
 const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
@@ -63,50 +64,77 @@ const TEMPLATES: Template[] = [
   },
 ];
 
-export function SchedulePanel(props: {
+interface SchedulePanelProps {
   client: RpcClient;
   workspaces: Workspace[];
   defaultWorkspaceId: string | null;
   onClose: () => void;
   onOpenSession: (sessionId: string) => void;
-}) {
+}
+
+function useScheduledTasks(client: RpcClient, setStatus: (status: string | null) => void) {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
-  const [status, setStatus] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-
-  // Create-form state.
-  const [name, setName] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [workspaceId, setWorkspaceId] = useState(props.defaultWorkspaceId ?? "");
-  const [schedType, setSchedType] = useState<ScheduleSpec["type"]>("daily");
-  const [time, setTime] = useState("09:00");
-  const [weekday, setWeekday] = useState(1);
-  const [minutes, setMinutes] = useState(60);
-
   const refresh = useCallback(async () => {
     try {
-      const res = await props.client.call<{ tasks: ScheduledTask[] }>("schedule.list");
-      setTasks(res.tasks);
-    } catch (e) {
-      setStatus(e instanceof Error ? e.message : String(e));
+      const result = await client.call<{ tasks: ScheduledTask[] }>("schedule.list");
+      setTasks(result.tasks);
+    } catch (error) {
+      setStatus(errorMessage(error));
     }
-  }, [props.client]);
+  }, [client, setStatus]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  const applyTemplate = (t: Template) => {
-    setCreating(true);
-    setName(t.name);
-    setPrompt(t.prompt);
-    setSchedType(t.schedule.type);
-    if (t.schedule.type === "daily") setTime(t.schedule.time);
-    if (t.schedule.type === "weekly") {
-      setTime(t.schedule.time);
-      setWeekday(t.schedule.weekday);
+  const toggle = async (task: ScheduledTask) => {
+    try {
+      await client.call("schedule.toggle", { id: task.id, enabled: !task.enabled });
+      await refresh();
+    } catch (error) {
+      setStatus(errorMessage(error));
     }
-    if (t.schedule.type === "interval") setMinutes(t.schedule.minutes);
+  };
+
+  const remove = async (task: ScheduledTask) => {
+    if (!window.confirm(`删除定时任务"${task.name}"?`)) return;
+    try {
+      await client.call("schedule.delete", { id: task.id });
+      await refresh();
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+
+  return { tasks, refresh, toggle, remove };
+}
+
+function useScheduleForm(
+  client: RpcClient,
+  defaultWorkspaceId: string | null,
+  refresh: () => Promise<void>,
+  setStatus: (status: string | null) => void,
+) {
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [workspaceId, setWorkspaceId] = useState(defaultWorkspaceId ?? "");
+  const [schedType, setSchedType] = useState<ScheduleSpec["type"]>("daily");
+  const [time, setTime] = useState("09:00");
+  const [weekday, setWeekday] = useState(1);
+  const [minutes, setMinutes] = useState(60);
+
+  const applyTemplate = (template: Template) => {
+    setCreating(true);
+    setName(template.name);
+    setPrompt(template.prompt);
+    setSchedType(template.schedule.type);
+    if (template.schedule.type === "daily") setTime(template.schedule.time);
+    if (template.schedule.type === "weekly") {
+      setTime(template.schedule.time);
+      setWeekday(template.schedule.weekday);
+    }
+    if (template.schedule.type === "interval") setMinutes(template.schedule.minutes);
   };
 
   const create = async () => {
@@ -121,7 +149,7 @@ export function SchedulePanel(props: {
           ? { type: "weekly", weekday, time }
           : { type: "interval", minutes };
     try {
-      await props.client.call("schedule.create", {
+      await client.call("schedule.create", {
         workspaceId,
         name: name.trim(),
         prompt: prompt.trim(),
@@ -132,44 +160,250 @@ export function SchedulePanel(props: {
       setPrompt("");
       setStatus(null);
       await refresh();
-    } catch (e) {
-      setStatus(e instanceof Error ? e.message : String(e));
+    } catch (error) {
+      setStatus(errorMessage(error));
     }
   };
 
-  const toggle = async (task: ScheduledTask) => {
-    try {
-      await props.client.call("schedule.toggle", { id: task.id, enabled: !task.enabled });
-      await refresh();
-    } catch (e) {
-      setStatus(e instanceof Error ? e.message : String(e));
-    }
+  return {
+    creating,
+    setCreating,
+    name,
+    setName,
+    prompt,
+    setPrompt,
+    workspaceId,
+    setWorkspaceId,
+    schedType,
+    setSchedType,
+    time,
+    setTime,
+    weekday,
+    setWeekday,
+    minutes,
+    setMinutes,
+    applyTemplate,
+    create,
   };
+}
 
-  const remove = async (task: ScheduledTask) => {
-    if (!window.confirm(`删除定时任务"${task.name}"?`)) return;
-    try {
-      await props.client.call("schedule.delete", { id: task.id });
-      await refresh();
-    } catch (e) {
-      setStatus(e instanceof Error ? e.message : String(e));
-    }
-  };
+type ScheduleFormModel = ReturnType<typeof useScheduleForm>;
+
+function EmptySchedule(props: {
+  onApplyTemplate: (template: Template) => void;
+  onCreateCustom: () => void;
+}) {
+  return (
+    <div className="schedule-empty">
+      <div className="schedule-empty-icon">◷</div>
+      <div className="schedule-empty-title">创建首个定时任务</div>
+      <div className="schedule-empty-sub">从模板开始,或从头自定义</div>
+      <div className="template-list">
+        {TEMPLATES.map((template) => (
+          <div
+            key={template.key}
+            className="template-card"
+            onClick={() => props.onApplyTemplate(template)}
+          >
+            <div className="template-icon">{template.icon}</div>
+            <div className="template-text">
+              <div className="template-label">{template.label}</div>
+              <div className="template-desc">{template.desc}</div>
+            </div>
+            <span className="badge">{describeSchedule(template.schedule)}</span>
+          </div>
+        ))}
+        <div className="template-card custom" onClick={props.onCreateCustom}>
+          <div className="template-icon">＋</div>
+          <div className="template-text">
+            <div className="template-label">自定义任务</div>
+            <div className="template-desc">自己写指令,自选运行时间</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScheduledTaskList(props: {
+  tasks: ScheduledTask[];
+  workspaces: Workspace[];
+  onOpenResult: (sessionId: string) => void;
+  onRunNow: (task: ScheduledTask) => void;
+  onToggle: (task: ScheduledTask) => void;
+  onRemove: (task: ScheduledTask) => void;
+}) {
+  const workspaceName = (id: string) =>
+    props.workspaces.find((workspace) => workspace.id === id)?.name ?? "已删除的项目";
+  return (
+    <div className="skill-list">
+      {props.tasks.map((task) => (
+        <div key={task.id} className="skill-row">
+          <div className="skill-row-main">
+            <span className="tool-name">{task.name}</span>
+            <span className={`badge ${task.enabled ? "succeeded" : ""}`}>
+              {task.enabled ? describeSchedule(task.schedule) : "已暂停"}
+            </span>
+            <div className="sub">
+              {workspaceName(task.workspaceId)}
+              {task.enabled && ` · 下次 ${localDateTime(task.nextRunAt)}`}
+              {task.lastRunAt && ` · 上次运行 ${relativeAge(task.lastRunAt)}前`}
+            </div>
+          </div>
+          {task.lastSessionId && (
+            <button className="ghost" onClick={() => props.onOpenResult(task.lastSessionId!)}>
+              查看结果
+            </button>
+          )}
+          <button className="ghost" onClick={() => props.onRunNow(task)}>
+            立即运行
+          </button>
+          <button className="ghost" onClick={() => props.onToggle(task)}>
+            {task.enabled ? "暂停" : "启用"}
+          </button>
+          <button className="ghost danger" onClick={() => props.onRemove(task)}>
+            删除
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TemplateButtons(props: {
+  onApplyTemplate: (template: Template) => void;
+  onCreateCustom: () => void;
+}) {
+  return (
+    <div className="schedule-templates" style={{ marginTop: 12 }}>
+      {TEMPLATES.map((template) => (
+        <button
+          key={template.key}
+          className="ghost"
+          onClick={() => props.onApplyTemplate(template)}
+        >
+          {template.icon} {template.label}
+        </button>
+      ))}
+      <button className="ghost" onClick={props.onCreateCustom}>
+        ＋ 自定义任务
+      </button>
+    </div>
+  );
+}
+
+function ScheduleCreateForm(props: { form: ScheduleFormModel; workspaces: Workspace[] }) {
+  const { form } = props;
+  return (
+    <div className="schedule-form">
+      <label>
+        名称
+        <input
+          value={form.name}
+          onChange={(event) => form.setName(event.target.value)}
+          placeholder="每日简报"
+        />
+      </label>
+      <label>
+        任务内容(发给 agent 的指令)
+        <textarea
+          rows={3}
+          value={form.prompt}
+          onChange={(event) => form.setPrompt(event.target.value)}
+          placeholder="例如:总结今天工作区里的变化,输出一份简报"
+        />
+      </label>
+      <label>
+        项目
+        <select
+          value={form.workspaceId}
+          onChange={(event) => form.setWorkspaceId(event.target.value)}
+        >
+          <option value="">选择项目...</option>
+          {props.workspaces.map((workspace) => (
+            <option key={workspace.id} value={workspace.id}>
+              {workspace.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="schedule-when">
+        <select
+          value={form.schedType}
+          onChange={(event) => form.setSchedType(event.target.value as ScheduleSpec["type"])}
+        >
+          <option value="daily">每天</option>
+          <option value="weekly">每周</option>
+          <option value="interval">按间隔</option>
+        </select>
+        {form.schedType === "weekly" && (
+          <select
+            value={form.weekday}
+            onChange={(event) => form.setWeekday(Number(event.target.value))}
+          >
+            {WEEKDAYS.map((day, index) => (
+              <option key={day} value={index + 1}>
+                {day}
+              </option>
+            ))}
+          </select>
+        )}
+        {(form.schedType === "daily" || form.schedType === "weekly") && (
+          <input
+            type="time"
+            value={form.time}
+            onChange={(event) => form.setTime(event.target.value)}
+          />
+        )}
+        {form.schedType === "interval" && (
+          <select
+            value={form.minutes}
+            onChange={(event) => form.setMinutes(Number(event.target.value))}
+          >
+            <option value={15}>每 15 分钟</option>
+            <option value={30}>每 30 分钟</option>
+            <option value={60}>每 1 小时</option>
+            <option value={180}>每 3 小时</option>
+            <option value={360}>每 6 小时</option>
+          </select>
+        )}
+      </div>
+      <div className="settings-actions">
+        <button onClick={form.create}>创建</button>
+        <button className="ghost" onClick={() => form.setCreating(false)}>
+          取消
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function SchedulePanel(props: SchedulePanelProps) {
+  const [status, setStatus] = useState<string | null>(null);
+  const tasks = useScheduledTasks(props.client, setStatus);
+  const form = useScheduleForm(
+    props.client,
+    props.defaultWorkspaceId,
+    tasks.refresh,
+    setStatus,
+  );
 
   const runNow = async (task: ScheduledTask) => {
     try {
-      const res = await props.client.call<{ sessionId: string }>("schedule.runNow", {
+      const result = await props.client.call<{ sessionId: string }>("schedule.runNow", {
         id: task.id,
       });
-      props.onOpenSession(res.sessionId);
+      props.onOpenSession(result.sessionId);
       props.onClose();
-    } catch (e) {
-      setStatus(e instanceof Error ? e.message : String(e));
+    } catch (error) {
+      setStatus(errorMessage(error));
     }
   };
 
-  const wsName = (id: string) =>
-    props.workspaces.find((w) => w.id === id)?.name ?? "已删除的项目";
+  const openResult = (sessionId: string) => {
+    props.onOpenSession(sessionId);
+    props.onClose();
+  };
 
   return (
     <div className="page">
@@ -179,150 +413,27 @@ export function SchedulePanel(props: {
           <div className="page-sub">定时让 agent 在项目里执行任务、生成简报或跟踪更新。</div>
         </div>
         {status && <div className="settings-status">{status}</div>}
-
-        {tasks.length === 0 && !creating && (
-          <div className="schedule-empty">
-            <div className="schedule-empty-icon">◷</div>
-            <div className="schedule-empty-title">创建首个定时任务</div>
-            <div className="schedule-empty-sub">从模板开始,或从头自定义</div>
-            <div className="template-list">
-              {TEMPLATES.map((t) => (
-                <div key={t.key} className="template-card" onClick={() => applyTemplate(t)}>
-                  <div className="template-icon">{t.icon}</div>
-                  <div className="template-text">
-                    <div className="template-label">{t.label}</div>
-                    <div className="template-desc">{t.desc}</div>
-                  </div>
-                  <span className="badge">{describeSchedule(t.schedule)}</span>
-                </div>
-              ))}
-              <div className="template-card custom" onClick={() => setCreating(true)}>
-                <div className="template-icon">＋</div>
-                <div className="template-text">
-                  <div className="template-label">自定义任务</div>
-                  <div className="template-desc">自己写指令,自选运行时间</div>
-                </div>
-              </div>
-            </div>
-          </div>
+        {tasks.tasks.length === 0 && !form.creating && (
+          <EmptySchedule
+            onApplyTemplate={form.applyTemplate}
+            onCreateCustom={() => form.setCreating(true)}
+          />
         )}
-
-        <div className="skill-list">
-          {tasks.map((task) => (
-            <div key={task.id} className="skill-row">
-              <div className="skill-row-main">
-                <span className="tool-name">{task.name}</span>
-                <span className={`badge ${task.enabled ? "succeeded" : ""}`}>
-                  {task.enabled ? describeSchedule(task.schedule) : "已暂停"}
-                </span>
-                <div className="sub">
-                  {wsName(task.workspaceId)}
-                  {task.enabled && ` · 下次 ${localDateTime(task.nextRunAt)}`}
-                  {task.lastRunAt && ` · 上次运行 ${relativeAge(task.lastRunAt)}前`}
-                </div>
-              </div>
-              {task.lastSessionId && (
-                <button
-                  className="ghost"
-                  onClick={() => {
-                    props.onOpenSession(task.lastSessionId!);
-                    props.onClose();
-                  }}
-                >
-                  查看结果
-                </button>
-              )}
-              <button className="ghost" onClick={() => runNow(task)}>
-                立即运行
-              </button>
-              <button className="ghost" onClick={() => toggle(task)}>
-                {task.enabled ? "暂停" : "启用"}
-              </button>
-              <button className="ghost danger" onClick={() => remove(task)}>
-                删除
-              </button>
-            </div>
-          ))}
-        </div>
-
-        {tasks.length > 0 && !creating && (
-          <div className="schedule-templates" style={{ marginTop: 12 }}>
-            {TEMPLATES.map((t) => (
-              <button key={t.key} className="ghost" onClick={() => applyTemplate(t)}>
-                {t.icon} {t.label}
-              </button>
-            ))}
-            <button className="ghost" onClick={() => setCreating(true)}>
-              ＋ 自定义任务
-            </button>
-          </div>
+        <ScheduledTaskList
+          tasks={tasks.tasks}
+          workspaces={props.workspaces}
+          onOpenResult={openResult}
+          onRunNow={(task) => void runNow(task)}
+          onToggle={(task) => void tasks.toggle(task)}
+          onRemove={(task) => void tasks.remove(task)}
+        />
+        {tasks.tasks.length > 0 && !form.creating && (
+          <TemplateButtons
+            onApplyTemplate={form.applyTemplate}
+            onCreateCustom={() => form.setCreating(true)}
+          />
         )}
-
-        {creating && (
-          <div className="schedule-form">
-            <label>
-              名称
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="每日简报" />
-            </label>
-            <label>
-              任务内容(发给 agent 的指令)
-              <textarea
-                rows={3}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="例如:总结今天工作区里的变化,输出一份简报"
-              />
-            </label>
-            <label>
-              项目
-              <select value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)}>
-                <option value="">选择项目...</option>
-                {props.workspaces.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="schedule-when">
-              <select
-                value={schedType}
-                onChange={(e) => setSchedType(e.target.value as ScheduleSpec["type"])}
-              >
-                <option value="daily">每天</option>
-                <option value="weekly">每周</option>
-                <option value="interval">按间隔</option>
-              </select>
-              {schedType === "weekly" && (
-                <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))}>
-                  {WEEKDAYS.map((d, i) => (
-                    <option key={d} value={i + 1}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {(schedType === "daily" || schedType === "weekly") && (
-                <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-              )}
-              {schedType === "interval" && (
-                <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
-                  <option value={15}>每 15 分钟</option>
-                  <option value={30}>每 30 分钟</option>
-                  <option value={60}>每 1 小时</option>
-                  <option value={180}>每 3 小时</option>
-                  <option value={360}>每 6 小时</option>
-                </select>
-              )}
-            </div>
-            <div className="settings-actions">
-              <button onClick={create}>创建</button>
-              <button className="ghost" onClick={() => setCreating(false)}>
-                取消
-              </button>
-            </div>
-          </div>
-        )}
+        {form.creating && <ScheduleCreateForm form={form} workspaces={props.workspaces} />}
       </div>
     </div>
   );

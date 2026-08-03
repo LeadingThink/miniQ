@@ -6,4 +6,6 @@
 
 mod store;
 
-pub use store::{new_id, now_iso, CheckpointRow, MemoryError, MemoryRow, Store};
+pub use store::{
+    new_id, now_iso, CheckpointRow, ExternalImportOutcome, MemoryError, MemoryRow, Store,
+};

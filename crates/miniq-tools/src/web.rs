@@ -152,7 +152,9 @@ mod tests {
     use axum::routing::get;
 
     async fn serve(app: axum::Router) -> u16 {
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
         let port = listener.local_addr().unwrap().port();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         port
@@ -175,7 +177,10 @@ mod tests {
         );
         let port = serve(app).await;
         let out = WebFetchTool
-            .execute(&ctx(), json!({"url": format!("http://127.0.0.1:{port}/page")}))
+            .execute(
+                &ctx(),
+                json!({"url": format!("http://127.0.0.1:{port}/page")}),
+            )
             .await
             .unwrap();
         assert_eq!(out["status"], 200);
@@ -187,10 +192,7 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_size_cap() {
-        let app = axum::Router::new().route(
-            "/big",
-            get(|| async { "x".repeat(10_000) }),
-        );
+        let app = axum::Router::new().route("/big", get(|| async { "x".repeat(10_000) }));
         let port = serve(app).await;
         let out = WebFetchTool
             .execute(

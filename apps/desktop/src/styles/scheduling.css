@@ -1,0 +1,226 @@
+/* ---- form card (e.g. MCP add-server) ---- */
+.form-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-card-title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.form-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--text-mid);
+  font-weight: 500;
+}
+
+.form-card input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-size: 13px;
+}
+
+.form-card input:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.35);
+  outline-offset: -1px;
+}
+
+/* ---- schedule panel ---- */
+.schedule-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0 4px;
+}
+
+.schedule-empty-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: var(--text-mid);
+  margin-bottom: 10px;
+}
+
+.schedule-empty-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.schedule-empty-sub {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  margin: 3px 0 18px;
+}
+
+/* Template cards: icon tile + label/desc + schedule badge. */
+.template-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.template-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+.template-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+
+.template-card.custom {
+  background: transparent;
+  border-style: dashed;
+}
+
+.template-card.custom .template-icon {
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  color: var(--text-dim);
+}
+
+.template-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--bg-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex: none;
+}
+
+.template-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.template-label {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.template-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-card .badge {
+  flex: none;
+}
+
+.schedule-templates {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.schedule-form {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.schedule-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-mid);
+}
+
+.schedule-form input,
+.schedule-form textarea,
+.schedule-form select,
+.schedule-when select,
+.schedule-when input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.schedule-when {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---- project picker ---- */
+.project-menu {
+  width: 260px;
+}
+
+.project-search {
+  width: 100%;
+  box-sizing: border-box;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+  padding: 8px 10px;
+  font-size: 13px;
+  margin-bottom: 4px;
+  background: transparent;
+}
+
+.project-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.project-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.project-new-name {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+}
+
+.project-new-name input {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 13px;
+}

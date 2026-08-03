@@ -97,19 +97,15 @@ impl Tool for HttpRequestTool {
         let headers: serde_json::Map<String, Value> = response
             .headers()
             .iter()
-            .map(|(k, v)| {
-                (
-                    k.to_string(),
-                    json!(v.to_str().unwrap_or("<non-utf8>")),
-                )
-            })
+            .map(|(k, v)| (k.to_string(), json!(v.to_str().unwrap_or("<non-utf8>"))))
             .collect();
         let bytes = response
             .bytes()
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
         let truncated = bytes.len() > MAX_RESPONSE_BYTES;
-        let body = String::from_utf8_lossy(&bytes[..bytes.len().min(MAX_RESPONSE_BYTES)]).to_string();
+        let body =
+            String::from_utf8_lossy(&bytes[..bytes.len().min(MAX_RESPONSE_BYTES)]).to_string();
 
         Ok(json!({
             "url": p.url,
@@ -135,7 +131,9 @@ mod tests {
                 axum::Json(json!({"pong": true}))
             }),
         );
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
         let port = listener.local_addr().unwrap().port();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
 
@@ -159,7 +157,8 @@ mod tests {
     #[test]
     fn risk_is_domain_scoped_high() {
         let ctx = ToolContext::new(std::path::PathBuf::from("."));
-        let risk = HttpRequestTool.evaluate_risk(&ctx, &json!({"url": "https://api.example.com/v1"}));
+        let risk =
+            HttpRequestTool.evaluate_risk(&ctx, &json!({"url": "https://api.example.com/v1"}));
         assert_eq!(risk.level, RiskLevel::High);
         assert!(risk.reason.contains("api.example.com"));
     }

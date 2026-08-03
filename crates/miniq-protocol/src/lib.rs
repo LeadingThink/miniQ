@@ -5,10 +5,12 @@
 //! runtime, tools or storage.
 
 pub mod event;
+pub mod external;
 pub mod rpc;
 pub mod types;
 
 pub use event::*;
+pub use external::*;
 pub use rpc::*;
 pub use types::*;
 

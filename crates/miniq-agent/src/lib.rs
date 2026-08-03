@@ -23,8 +23,6 @@ pub enum AgentError {
     Provider(#[from] miniq_models::ProviderError),
     #[error("turn cancelled")]
     Cancelled,
-    #[error("max iterations ({0}) reached without a final answer")]
-    MaxIterations(usize),
 }
 
 /// Events surfaced to the caller while a turn runs.
@@ -70,8 +68,6 @@ pub struct TurnOutcome {
     pub appended: Vec<ChatMessage>,
 }
 
-const MAX_ITERATIONS: usize = 24;
-
 /// Run one turn to completion.
 pub async fn run_turn(
     provider: &dyn ModelProvider,
@@ -83,7 +79,7 @@ pub async fn run_turn(
     let tools = executor.specs();
     let mut appended: Vec<ChatMessage> = Vec::new();
 
-    for _ in 0..MAX_ITERATIONS {
+    loop {
         if cancel.is_cancelled() {
             return Err(AgentError::Cancelled);
         }
@@ -140,6 +136,72 @@ pub async fn run_turn(
             appended.push(result_msg);
         }
     }
+}
 
-    Err(AgentError::MaxIterations(MAX_ITERATIONS))
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use miniq_models::mock::MockProvider;
+
+    struct TestExecutor;
+
+    #[async_trait]
+    impl ToolExecutor for TestExecutor {
+        fn specs(&self) -> Vec<ToolSpec> {
+            vec![ToolSpec {
+                name: "continue_work".to_string(),
+                description: "Continue the test task".to_string(),
+                parameters: serde_json::json!({ "type": "object" }),
+            }]
+        }
+
+        async fn execute(&self, call: &ToolCallRequest) -> Result<Value, AgentError> {
+            Ok(serde_json::json!({ "completed": call.id }))
+        }
+    }
+
+    fn tool_turn(index: usize) -> Vec<ChatDelta> {
+        vec![ChatDelta::ToolCall(ToolCallRequest {
+            id: format!("call-{index}"),
+            name: "continue_work".to_string(),
+            arguments: serde_json::json!({}),
+        })]
+    }
+
+    #[tokio::test]
+    async fn continues_until_final_answer_after_more_than_24_tool_rounds() {
+        let mut turns = (0..25).map(tool_turn).collect::<Vec<_>>();
+        turns.push(vec![ChatDelta::Text("finished".to_string())]);
+        let provider = MockProvider::new(turns);
+        let (events, _receiver) = tokio::sync::mpsc::channel(64);
+
+        let outcome = run_turn(
+            &provider,
+            &TestExecutor,
+            Vec::new(),
+            events,
+            CancellationToken::new(),
+        )
+        .await
+        .expect("the turn should continue past the previous limit");
+
+        assert_eq!(outcome.final_text, "finished");
+        assert_eq!(outcome.appended.len(), 50);
+        assert_eq!(provider.requests.lock().unwrap().len(), 26);
+    }
+
+    #[tokio::test]
+    async fn cancellation_still_stops_the_unbounded_loop() {
+        let provider = MockProvider::new(vec![tool_turn(0)]);
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let (events, _receiver) = tokio::sync::mpsc::channel(1);
+
+        let error = match run_turn(&provider, &TestExecutor, Vec::new(), events, cancel).await {
+            Ok(_) => panic!("a cancelled turn must stop"),
+            Err(error) => error,
+        };
+
+        assert!(matches!(error, AgentError::Cancelled));
+    }
 }

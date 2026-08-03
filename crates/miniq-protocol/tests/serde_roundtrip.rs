@@ -67,7 +67,10 @@ fn status_enums_snake_case() {
         serde_json::to_value(SessionStatus::WaitingApproval).unwrap(),
         json!("waiting_approval")
     );
-    assert_eq!(serde_json::to_value(RiskLevel::Blocked).unwrap(), json!("blocked"));
+    assert_eq!(
+        serde_json::to_value(RiskLevel::Blocked).unwrap(),
+        json!("blocked")
+    );
     assert_eq!(
         serde_json::to_value(ToolCallStatus::Succeeded).unwrap(),
         json!("succeeded")

@@ -3,7 +3,7 @@
 // Subsets the MiSans VF variable font (weight axis 150–700 preserved) down to
 // the General Standard Chinese Characters table level 1+2 (常用字 6500) plus
 // ASCII and CJK punctuation. Rare characters outside the subset fall back to
-// Microsoft YaHei / PingFang via the font stack in styles.css.
+// Microsoft YaHei / PingFang via the font stack in styles/base.css.
 //
 // Inputs (not committed; download before running):
 //   MiSansVF.ttf     https://raw.githubusercontent.com/luyanci/Misansvf/main/MiSansVF.ttf

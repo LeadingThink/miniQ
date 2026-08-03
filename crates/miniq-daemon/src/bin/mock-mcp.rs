@@ -29,9 +29,7 @@ fn main() {
                 }]
             }),
             "tools/call" => {
-                let message = msg["params"]["arguments"]["message"]
-                    .as_str()
-                    .unwrap_or("");
+                let message = msg["params"]["arguments"]["message"].as_str().unwrap_or("");
                 serde_json::json!({
                     "content": [{"type": "text", "text": format!("echo: {message}")}],
                     "isError": false,
@@ -41,8 +39,7 @@ fn main() {
             _ => continue,
         };
         if let Some(id) = id {
-            let response =
-                serde_json::json!({"jsonrpc": "2.0", "id": id, "result": result});
+            let response = serde_json::json!({"jsonrpc": "2.0", "id": id, "result": result});
             let mut out = stdout.lock();
             let _ = writeln!(out, "{response}");
             let _ = out.flush();

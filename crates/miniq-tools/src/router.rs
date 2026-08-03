@@ -115,7 +115,12 @@ impl ToolRouter {
     }
 
     /// Evaluate risk without executing.
-    pub fn evaluate(&self, ctx: &ToolContext, name: &str, input: &Value) -> Result<Risk, ToolError> {
+    pub fn evaluate(
+        &self,
+        ctx: &ToolContext,
+        name: &str,
+        input: &Value,
+    ) -> Result<Risk, ToolError> {
         let tool = self
             .tools
             .get(name)

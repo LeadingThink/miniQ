@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
 
 interface DistillResult {
@@ -11,14 +12,88 @@ interface DistillResult {
   existingSkill?: boolean;
 }
 
-export function DistillModal(props: {
+type DistillPhase = "loading" | "skipped" | "draft" | "saved";
+
+interface DistillModalProps {
   client: RpcClient;
   sessionId: string;
   onClose: () => void;
+}
+
+function PhaseMessage(props: { phase: DistillPhase; reason: string }) {
+  if (props.phase === "loading") {
+    return <div className="settings-status">Distilling this session into a skill...</div>;
+  }
+  if (props.phase === "skipped") {
+    return <div className="settings-status">Not saved: {props.reason}</div>;
+  }
+  if (props.phase === "saved") {
+    return (
+      <div className="settings-status">Skill saved. It will be available in new turns.</div>
+    );
+  }
+  return null;
+}
+
+function DistillDraft(props: {
+  name: string;
+  existing: boolean;
+  warnings: string[];
+  draft: string;
+  onRefine: () => void;
+  onDraftChange: (draft: string) => void;
+  onSave: (force: boolean) => void;
+  onClose: () => void;
 }) {
-  const [phase, setPhase] = useState<"loading" | "skipped" | "draft" | "saved">(
-    "loading",
+  const hasWarnings = props.warnings.length > 0;
+  return (
+    <>
+      <div className="card-head">
+        <span className="tool-name">{props.name}</span>
+        {props.existing && <span className="badge medium">name exists</span>}
+      </div>
+      {props.existing && (
+        <div className="settings-status">
+          A skill with this name already exists —
+          <button className="secondary" onClick={props.onRefine} style={{ marginLeft: 8 }}>
+            Update existing skill instead
+          </button>
+        </div>
+      )}
+      {hasWarnings && (
+        <div className="error-banner">
+          Possible sensitive content: {props.warnings.join("; ")} — edit before saving.
+        </div>
+      )}
+      <textarea
+        className="distill-editor"
+        value={props.draft}
+        onChange={(event) => props.onDraftChange(event.target.value)}
+      />
+      <div className="approval-actions">
+        <button onClick={() => props.onSave(hasWarnings)}>
+          {hasWarnings ? "Save anyway" : "Save skill"}
+        </button>
+        <button className="secondary" onClick={props.onClose}>
+          Cancel
+        </button>
+      </div>
+    </>
   );
+}
+
+function CloseActions(props: { onClose: () => void }) {
+  return (
+    <div className="approval-actions">
+      <button className="secondary" onClick={props.onClose}>
+        Close
+      </button>
+    </div>
+  );
+}
+
+export function DistillModal(props: DistillModalProps) {
+  const [phase, setPhase] = useState<DistillPhase>("loading");
   const [reason, setReason] = useState("");
   const [draft, setDraft] = useState("");
   const [name, setName] = useState("");
@@ -29,19 +104,19 @@ export function DistillModal(props: {
   useEffect(() => {
     props.client
       .call<DistillResult>("skill.distill", { sessionId: props.sessionId })
-      .then((res) => {
-        if (res.skipped) {
-          setReason(res.reason ?? "");
+      .then((result) => {
+        if (result.skipped) {
+          setReason(result.reason ?? "");
           setPhase("skipped");
         } else {
-          setDraft(res.content ?? "");
-          setName(res.name ?? "");
-          setWarnings(res.warnings ?? []);
-          setExisting(res.existingSkill ?? false);
+          setDraft(result.content ?? "");
+          setName(result.name ?? "");
+          setWarnings(result.warnings ?? []);
+          setExisting(result.existingSkill ?? false);
           setPhase("draft");
         }
       })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((caught) => setError(errorMessage(caught)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -49,22 +124,22 @@ export function DistillModal(props: {
     setPhase("loading");
     setError(null);
     try {
-      const res = await props.client.call<{
+      const result = await props.client.call<{
         kept: boolean;
         content?: string;
         warnings?: string[];
       }>("skill.refine", { sessionId: props.sessionId, name });
-      if (res.kept) {
+      if (result.kept) {
         setReason("现有技能已覆盖本次经验,无需更新。");
         setPhase("skipped");
       } else {
-        setDraft(res.content ?? "");
-        setWarnings(res.warnings ?? []);
+        setDraft(result.content ?? "");
+        setWarnings(result.warnings ?? []);
         setExisting(false);
         setPhase("draft");
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch (caught) {
+      setError(errorMessage(caught));
       setPhase("draft");
     }
   };
@@ -74,69 +149,30 @@ export function DistillModal(props: {
     try {
       await props.client.call("skill.save", { content: draft, force });
       setPhase("saved");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch (caught) {
+      setError(errorMessage(caught));
     }
   };
 
   return (
     <div className="settings-overlay" onClick={props.onClose}>
-      <div
-        className="settings-panel skills-panel"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="settings-panel skills-panel" onClick={(event) => event.stopPropagation()}>
         <h2>Save as skill</h2>
         {error && <div className="error-banner">{error}</div>}
-        {phase === "loading" && (
-          <div className="settings-status">Distilling this session into a skill...</div>
-        )}
-        {phase === "skipped" && (
-          <div className="settings-status">Not saved: {reason}</div>
-        )}
-        {phase === "saved" && (
-          <div className="settings-status">Skill saved. It will be available in new turns.</div>
-        )}
+        <PhaseMessage phase={phase} reason={reason} />
         {phase === "draft" && (
-          <>
-            <div className="card-head">
-              <span className="tool-name">{name}</span>
-              {existing && <span className="badge medium">name exists</span>}
-            </div>
-            {existing && (
-              <div className="settings-status">
-                A skill with this name already exists —
-                <button className="secondary" onClick={refine} style={{ marginLeft: 8 }}>
-                  Update existing skill instead
-                </button>
-              </div>
-            )}
-            {warnings.length > 0 && (
-              <div className="error-banner">
-                Possible sensitive content: {warnings.join("; ")} — edit before saving.
-              </div>
-            )}
-            <textarea
-              className="distill-editor"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-            />
-            <div className="approval-actions">
-              <button onClick={() => save(warnings.length > 0)}>
-                {warnings.length > 0 ? "Save anyway" : "Save skill"}
-              </button>
-              <button className="secondary" onClick={props.onClose}>
-                Cancel
-              </button>
-            </div>
-          </>
+          <DistillDraft
+            name={name}
+            existing={existing}
+            warnings={warnings}
+            draft={draft}
+            onRefine={() => void refine()}
+            onDraftChange={setDraft}
+            onSave={(force) => void save(force)}
+            onClose={props.onClose}
+          />
         )}
-        {(phase === "skipped" || phase === "saved") && (
-          <div className="approval-actions">
-            <button className="secondary" onClick={props.onClose}>
-              Close
-            </button>
-          </div>
-        )}
+        {(phase === "skipped" || phase === "saved") && <CloseActions onClose={props.onClose} />}
       </div>
     </div>
   );

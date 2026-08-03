@@ -92,7 +92,10 @@ Rules: never include secrets; keep the body language unchanged."#;
 
 /// Patterns that must never appear in a saved skill.
 const SENSITIVE_PATTERNS: &[(&str, &str)] = &[
-    (r"(?i)(api[_-]?key|secret|password|token)\s*[:=]\s*['\x22]?[A-Za-z0-9_\-./+]{8,}", "credential assignment"),
+    (
+        r"(?i)(api[_-]?key|secret|password|token)\s*[:=]\s*['\x22]?[A-Za-z0-9_\-./+]{8,}",
+        "credential assignment",
+    ),
     (r"sk-[A-Za-z0-9]{16,}", "OpenAI-style API key"),
     (r"tvly-[A-Za-z0-9]{8,}", "Tavily API key"),
     (r"(?i)bearer\s+[A-Za-z0-9._\-]{16,}", "bearer token"),
@@ -117,7 +120,10 @@ fn strip_code_fence(raw: &str) -> &str {
         return trimmed;
     };
     // Drop an optional language tag line, then the closing fence.
-    let inner = inner.strip_prefix("markdown").or(inner.strip_prefix("md")).unwrap_or(inner);
+    let inner = inner
+        .strip_prefix("markdown")
+        .or(inner.strip_prefix("md"))
+        .unwrap_or(inner);
     let inner = inner.trim_start_matches('\n');
     inner.strip_suffix("```").map(str::trim).unwrap_or(inner)
 }
@@ -215,8 +221,7 @@ mod tests {
     #[tokio::test]
     async fn distill_skip_and_garbage() {
         let inference = FakeInference("SKIP: pure question answering".into());
-        let DistillOutcome::Skipped { reason } =
-            distill_skill("t", &[], &inference).await.unwrap()
+        let DistillOutcome::Skipped { reason } = distill_skill("t", &[], &inference).await.unwrap()
         else {
             panic!("expected skip");
         };

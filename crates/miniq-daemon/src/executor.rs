@@ -13,7 +13,7 @@ use miniq_tools::{ToolContext, ToolRouter};
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 
-use crate::state::{ApprovalDecision, AppState};
+use crate::state::{AppState, ApprovalDecision};
 
 pub struct SessionToolExecutor {
     pub state: AppState,
@@ -25,10 +25,10 @@ pub struct SessionToolExecutor {
 
 impl SessionToolExecutor {
     fn audit(&self, event_type: &str, payload: Value) {
-        if let Err(e) = self
-            .state
-            .store
-            .append_audit_event(Some(&self.session_id), event_type, &payload)
+        if let Err(e) =
+            self.state
+                .store
+                .append_audit_event(Some(&self.session_id), event_type, &payload)
         {
             tracing::error!("audit write failed: {e}");
         }
@@ -76,7 +76,9 @@ impl SessionToolExecutor {
             .state
             .store
             .create_approval(&self.session_id, tool_call_id, risk.level, &risk.reason)
-            .map_err(|e| AgentError::Provider(miniq_models::ProviderError::Config(e.to_string())))?;
+            .map_err(|e| {
+                AgentError::Provider(miniq_models::ProviderError::Config(e.to_string()))
+            })?;
         let rx = self.state.register_approval(&approval.id);
 
         let _ = self
@@ -147,7 +149,10 @@ impl SessionToolExecutor {
 
     /// Tools that modify files and therefore get a checkpoint backup first.
     fn is_write_tool(name: &str) -> bool {
-        matches!(name, "file_write" | "file_edit" | "doc_write" | "file_patch")
+        matches!(
+            name,
+            "file_write" | "file_edit" | "doc_write" | "file_patch"
+        )
     }
 
     /// Back up the target file before a write tool runs. Returns the
@@ -157,10 +162,11 @@ impl SessionToolExecutor {
         let abs = miniq_sandbox::resolve_in_workspace(&self.ctx.workspace, requested).ok()?;
         let existed = abs.is_file();
         let backup_path = if existed {
-            let backup = self
-                .state
-                .checkpoints_dir
-                .join(format!("{}-{}", miniq_memory::new_id("bk"), abs.file_name()?.to_string_lossy()));
+            let backup = self.state.checkpoints_dir.join(format!(
+                "{}-{}",
+                miniq_memory::new_id("bk"),
+                abs.file_name()?.to_string_lossy()
+            ));
             std::fs::create_dir_all(&self.state.checkpoints_dir).ok()?;
             std::fs::copy(&abs, &backup).ok()?;
             Some(backup.to_string_lossy().to_string())
@@ -229,7 +235,10 @@ impl SessionToolExecutor {
             session_id: self.session_id.clone(),
             question: question.clone(),
         });
-        self.audit("question", json!({"questionId": question.id, "prompt": question.prompt}));
+        self.audit(
+            "question",
+            json!({"questionId": question.id, "prompt": question.prompt}),
+        );
 
         let answer = tokio::select! {
             _ = self.cancel.cancelled() => {
@@ -294,12 +303,73 @@ impl SessionToolExecutor {
         }
     }
 
-    fn finish(
+    async fn run_tool_call(
         &self,
+        call: &ToolCallRequest,
         tool_call_id: &str,
-        status: ToolCallStatus,
-        output: &Value,
-    ) {
+    ) -> Result<Value, AgentError> {
+        let _ = self
+            .state
+            .store
+            .update_tool_call_status(tool_call_id, ToolCallStatus::Running);
+        self.state.emit(Event::ToolCallStarted {
+            session_id: self.session_id.clone(),
+            tool_call_id: tool_call_id.to_string(),
+            tool_name: call.name.clone(),
+            input: call.arguments.clone(),
+        });
+
+        // ask_user is interactive: handled here, not by the router.
+        if call.name == "ask_user" {
+            let result = self.ask_user(call, tool_call_id).await;
+            return match result {
+                Ok(output) => {
+                    self.finish(tool_call_id, ToolCallStatus::Succeeded, &output);
+                    Ok(output)
+                }
+                Err(e) => {
+                    let output = json!({"cancelled": true});
+                    self.finish(tool_call_id, ToolCallStatus::Cancelled, &output);
+                    Err(e)
+                }
+            };
+        }
+
+        // Back up the target before any file-mutating tool runs.
+        let checkpoint_id = if Self::is_write_tool(&call.name) {
+            self.take_checkpoint(call, tool_call_id)
+        } else {
+            None
+        };
+
+        let result = tokio::select! {
+            _ = self.cancel.cancelled() => {
+                let output = json!({"cancelled": true});
+                self.finish(tool_call_id, ToolCallStatus::Cancelled, &output);
+                return Err(AgentError::Cancelled);
+            }
+            result = self.router.dispatch(&self.ctx, &call.name, call.arguments.clone()) => result,
+        };
+
+        match result {
+            Ok(mut output) => {
+                if let Some(id) = checkpoint_id {
+                    output["checkpointId"] = json!(id);
+                }
+                self.after_success(call, &output);
+                self.finish(tool_call_id, ToolCallStatus::Succeeded, &output);
+                Ok(output)
+            }
+            Err(e) => {
+                // Tool errors are surfaced to the model, not fatal to the turn.
+                let output = json!({"error": e.to_string()});
+                self.finish(tool_call_id, ToolCallStatus::Failed, &output);
+                Ok(output)
+            }
+        }
+    }
+
+    fn finish(&self, tool_call_id: &str, status: ToolCallStatus, output: &Value) {
         if let Err(e) = self
             .state
             .store
@@ -341,7 +411,9 @@ impl ToolExecutor for SessionToolExecutor {
                 &call.arguments,
                 ToolCallStatus::Pending,
             )
-            .map_err(|e| AgentError::Provider(miniq_models::ProviderError::Config(e.to_string())))?;
+            .map_err(|e| {
+                AgentError::Provider(miniq_models::ProviderError::Config(e.to_string()))
+            })?;
         self.audit(
             "tool_call",
             json!({"toolCallId": tool_call.id, "tool": call.name, "risk": risk.level.as_str()}),
@@ -370,7 +442,9 @@ impl ToolExecutor for SessionToolExecutor {
                     // dangerous commands) needs the user, once per pattern.
                     crate::state::ApprovalMode::Auto => {
                         risk.level == RiskLevel::Medium
-                            || self.state.is_allowed_for_session(&self.session_id, &pattern)
+                            || self
+                                .state
+                                .is_allowed_for_session(&self.session_id, &pattern)
                     }
                     crate::state::ApprovalMode::AlwaysAsk => false,
                 };
@@ -394,64 +468,6 @@ impl ToolExecutor for SessionToolExecutor {
         }
 
         // 4. Execute.
-        let _ = self
-            .state
-            .store
-            .update_tool_call_status(&tool_call.id, ToolCallStatus::Running);
-        self.state.emit(Event::ToolCallStarted {
-            session_id: self.session_id.clone(),
-            tool_call_id: tool_call.id.clone(),
-            tool_name: call.name.clone(),
-            input: call.arguments.clone(),
-        });
-
-        // ask_user is interactive: handled here, not by the router.
-        if call.name == "ask_user" {
-            let result = self.ask_user(call, &tool_call.id).await;
-            return match result {
-                Ok(output) => {
-                    self.finish(&tool_call.id, ToolCallStatus::Succeeded, &output);
-                    Ok(output)
-                }
-                Err(e) => {
-                    let output = json!({"cancelled": true});
-                    self.finish(&tool_call.id, ToolCallStatus::Cancelled, &output);
-                    Err(e)
-                }
-            };
-        }
-
-        // Back up the target before any file-mutating tool runs.
-        let checkpoint_id = if Self::is_write_tool(&call.name) {
-            self.take_checkpoint(call, &tool_call.id)
-        } else {
-            None
-        };
-
-        let result = tokio::select! {
-            _ = self.cancel.cancelled() => {
-                let output = json!({"cancelled": true});
-                self.finish(&tool_call.id, ToolCallStatus::Cancelled, &output);
-                return Err(AgentError::Cancelled);
-            }
-            result = self.router.dispatch(&self.ctx, &call.name, call.arguments.clone()) => result,
-        };
-
-        match result {
-            Ok(mut output) => {
-                if let Some(id) = checkpoint_id {
-                    output["checkpointId"] = json!(id);
-                }
-                self.after_success(call, &output);
-                self.finish(&tool_call.id, ToolCallStatus::Succeeded, &output);
-                Ok(output)
-            }
-            Err(e) => {
-                // Tool errors are surfaced to the model, not fatal to the turn.
-                let output = json!({"error": e.to_string()});
-                self.finish(&tool_call.id, ToolCallStatus::Failed, &output);
-                Ok(output)
-            }
-        }
+        self.run_tool_call(call, &tool_call.id).await
     }
 }

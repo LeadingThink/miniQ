@@ -195,7 +195,10 @@ impl ModelProvider for OpenAiCompatProvider {
     }
 
     fn describe(&self) -> String {
-        format!("openai-compat {} @ {}", self.config.model, self.config.base_url)
+        format!(
+            "openai-compat {} @ {}",
+            self.config.model, self.config.base_url
+        )
     }
 }
 

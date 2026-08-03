@@ -47,12 +47,19 @@ impl Tool for FileEditTool {
         })
     }
     fn evaluate_risk(&self, ctx: &ToolContext, input: &Value) -> Risk {
-        crate::file::path_risk(ctx, input, RiskLevel::Medium, "edits a file in the workspace")
+        crate::file::path_risk(
+            ctx,
+            input,
+            RiskLevel::Medium,
+            "edits a file in the workspace",
+        )
     }
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: FileEditInput = parse_input(input)?;
         if p.old_string.is_empty() {
-            return Err(ToolError::InvalidInput("oldString must not be empty".into()));
+            return Err(ToolError::InvalidInput(
+                "oldString must not be empty".into(),
+            ));
         }
         if p.old_string == p.new_string {
             return Err(ToolError::InvalidInput(

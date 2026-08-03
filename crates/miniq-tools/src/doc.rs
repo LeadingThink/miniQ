@@ -153,7 +153,12 @@ impl Tool for DocWriteTool {
         })
     }
     fn evaluate_risk(&self, ctx: &ToolContext, input: &Value) -> Risk {
-        path_risk(ctx, input, RiskLevel::Medium, "writes a document in the workspace")
+        path_risk(
+            ctx,
+            input,
+            RiskLevel::Medium,
+            "writes a document in the workspace",
+        )
     }
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: DocWriteInput = parse_input(input)?;
@@ -243,7 +248,10 @@ mod tests {
         DocWriteTool
             .execute(
                 &ctx(dir.path()),
-                serde_json::to_value(json!({"path": "data.xlsx", "sheets": [{"name": "S", "rows": rows}]})).unwrap(),
+                serde_json::to_value(
+                    json!({"path": "data.xlsx", "sheets": [{"name": "S", "rows": rows}]}),
+                )
+                .unwrap(),
             )
             .await
             .unwrap();

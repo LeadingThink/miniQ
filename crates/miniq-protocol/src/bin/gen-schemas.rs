@@ -1,7 +1,10 @@
 //! Generate schemas/protocol.schema.json from the Rust protocol types.
 //! Run with: cargo run -p miniq-protocol --bin gen-schemas
 
-use miniq_protocol::{Event, RpcRequest, RpcResponse};
+use miniq_protocol::{
+    Event, ExternalSessionImportRequest, ExternalSessionImportResult, ExternalSessionScan,
+    RpcRequest, RpcResponse, Session,
+};
 use schemars::schema_for;
 use serde_json::json;
 
@@ -12,9 +15,13 @@ fn main() {
         "request": schema_for!(RpcRequest),
         "response": schema_for!(RpcResponse),
         "event": schema_for!(Event),
+        "session": schema_for!(Session),
+        "externalSessionScan": schema_for!(ExternalSessionScan),
+        "externalSessionImportRequest": schema_for!(ExternalSessionImportRequest),
+        "externalSessionImportResult": schema_for!(ExternalSessionImportResult),
     });
-    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../schemas/protocol.schema.json");
+    let out =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/protocol.schema.json");
     std::fs::create_dir_all(out.parent().unwrap()).expect("create schemas dir");
     std::fs::write(&out, serde_json::to_string_pretty(&bundle).unwrap()).expect("write schema");
     println!("wrote {}", out.canonicalize().unwrap().display());

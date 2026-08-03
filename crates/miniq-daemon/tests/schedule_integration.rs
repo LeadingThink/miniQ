@@ -10,9 +10,8 @@ use serde_json::{json, Value};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
-type WsClient = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type WsClient =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn start(provider: MockProvider) -> (u16, String) {
     let token = "test-token".to_string();
@@ -33,7 +32,9 @@ async fn connect(port: u16, token: &str) -> WsClient {
 
 async fn call(ws: &mut WsClient, id: &str, method: &str, params: Value) -> Value {
     let req = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
-    ws.send(Message::Text(req.to_string().into())).await.unwrap();
+    ws.send(Message::Text(req.to_string().into()))
+        .await
+        .unwrap();
     loop {
         let msg = ws.next().await.expect("stream open").expect("ws ok");
         let Message::Text(text) = msg else { continue };
@@ -107,7 +108,10 @@ async fn schedule_crud_and_run_now() {
         }),
     )
     .await;
-    assert!(resp["error"]["message"].as_str().unwrap().contains("invalid schedule"));
+    assert!(resp["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("invalid schedule"));
 
     // List contains the task.
     let resp = call(&mut ws, "s3", "schedule.list", Value::Null).await;
@@ -118,7 +122,13 @@ async fn schedule_crud_and_run_now() {
     let session_id = resp["result"]["sessionId"].as_str().unwrap().to_string();
     next_event_of(&mut ws, "turn_completed").await;
 
-    let resp = call(&mut ws, "s5", "session.open", json!({"sessionId": session_id})).await;
+    let resp = call(
+        &mut ws,
+        "s5",
+        "session.open",
+        json!({"sessionId": session_id}),
+    )
+    .await;
     let messages = resp["result"]["messages"].as_array().unwrap();
     assert_eq!(messages[0]["content"], "汇总今天的进展");
     assert_eq!(messages[1]["content"], "日报写好了");
@@ -153,7 +163,13 @@ async fn workspace_create_makes_blank_project() {
     let (port, token) = start(MockProvider::text("ok")).await;
     let mut ws = connect(port, &token).await;
 
-    let resp = call(&mut ws, "c1", "workspace.create", json!({"name": "我的新项目"})).await;
+    let resp = call(
+        &mut ws,
+        "c1",
+        "workspace.create",
+        json!({"name": "我的新项目"}),
+    )
+    .await;
     let created = &resp["result"];
     assert_eq!(created["name"], "我的新项目");
     let path = created["path"].as_str().unwrap();

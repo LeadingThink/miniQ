@@ -12,9 +12,8 @@ use std::sync::Arc;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
-type WsClient = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type WsClient =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 fn mock_mcp_path() -> String {
     env!("CARGO_BIN_EXE_mock-mcp").to_string()
@@ -39,7 +38,9 @@ async fn connect(port: u16, token: &str) -> WsClient {
 
 async fn call(ws: &mut WsClient, id: &str, method: &str, params: Value) -> Value {
     let req = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
-    ws.send(Message::Text(req.to_string().into())).await.unwrap();
+    ws.send(Message::Text(req.to_string().into()))
+        .await
+        .unwrap();
     loop {
         let msg = ws.next().await.expect("stream open").expect("ws ok");
         let Message::Text(text) = msg else { continue };
@@ -92,15 +93,35 @@ async fn mcp_configure_list_and_call_through_agent() {
     let resp = call(&mut ws, "r2", "mcp.list", json!({"connect": true})).await;
     let servers = resp["result"]["servers"].as_array().unwrap();
     assert_eq!(servers.len(), 1);
-    assert_eq!(servers[0]["status"], "running", "server should be running: {:?}", servers[0]);
+    assert_eq!(
+        servers[0]["status"], "running",
+        "server should be running: {:?}",
+        servers[0]
+    );
     assert_eq!(servers[0]["tools"][0]["name"], "echo");
 
     // Agent calls the MCP tool; high risk -> approval scoped to the server.
     let dir = tempfile::tempdir().unwrap();
-    let ws_id = call(&mut ws, "r3", "workspace.open", json!({"path": dir.path().to_string_lossy()}))
-        .await["result"]["id"].as_str().unwrap().to_string();
-    let sess_id = call(&mut ws, "r4", "session.create", json!({"workspaceId": ws_id}))
-        .await["result"]["id"].as_str().unwrap().to_string();
+    let ws_id = call(
+        &mut ws,
+        "r3",
+        "workspace.open",
+        json!({"path": dir.path().to_string_lossy()}),
+    )
+    .await["result"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let sess_id = call(
+        &mut ws,
+        "r4",
+        "session.create",
+        json!({"workspaceId": ws_id}),
+    )
+    .await["result"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     call(
         &mut ws,
         "r5",
@@ -112,7 +133,10 @@ async fn mcp_configure_list_and_call_through_agent() {
     let requested = next_event_of(&mut ws, "approval_requested").await;
     assert_eq!(requested["toolName"], "mcp_call");
     assert_eq!(requested["riskLevel"], "high");
-    assert!(requested["approval"]["reason"].as_str().unwrap().contains("mock"));
+    assert!(requested["approval"]["reason"]
+        .as_str()
+        .unwrap()
+        .contains("mock"));
     let approval_id = requested["approval"]["id"].as_str().unwrap().to_string();
     call(
         &mut ws,
@@ -151,10 +175,26 @@ async fn mcp_unknown_server_reports_error() {
     .await;
 
     let dir = tempfile::tempdir().unwrap();
-    let ws_id = call(&mut ws, "r2", "workspace.open", json!({"path": dir.path().to_string_lossy()}))
-        .await["result"]["id"].as_str().unwrap().to_string();
-    let sess_id = call(&mut ws, "r3", "session.create", json!({"workspaceId": ws_id}))
-        .await["result"]["id"].as_str().unwrap().to_string();
+    let ws_id = call(
+        &mut ws,
+        "r2",
+        "workspace.open",
+        json!({"path": dir.path().to_string_lossy()}),
+    )
+    .await["result"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let sess_id = call(
+        &mut ws,
+        "r3",
+        "session.create",
+        json!({"workspaceId": ws_id}),
+    )
+    .await["result"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     call(
         &mut ws,
         "r4",
@@ -175,6 +215,9 @@ async fn mcp_unknown_server_reports_error() {
 
     let finished = next_event_of(&mut ws, "tool_call_finished").await;
     assert_eq!(finished["status"], "failed");
-    assert!(finished["output"]["error"].as_str().unwrap().contains("unknown MCP server"));
+    assert!(finished["output"]["error"]
+        .as_str()
+        .unwrap()
+        .contains("unknown MCP server"));
     next_event_of(&mut ws, "turn_completed").await;
 }
