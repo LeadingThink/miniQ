@@ -2,6 +2,7 @@ import { Download, LoaderCircle, RefreshCw } from "lucide-react";
 import type { AppUpdaterState } from "../hooks/useAppUpdater";
 
 interface UpdateNoticeProps {
+  supported: boolean;
   state: AppUpdaterState;
   onCheck: () => void;
   onInstall: () => void;
@@ -13,8 +14,17 @@ function progressLabel(state: AppUpdaterState): string {
   return `正在下载 ${percent}%`;
 }
 
-export function UpdateNotice({ state, onCheck, onInstall }: UpdateNoticeProps) {
-  if (state.phase === "idle") return null;
+export function UpdateNotice({ supported, state, onCheck, onInstall }: UpdateNoticeProps) {
+  if (!supported) return null;
+
+  if (state.phase === "idle") {
+    return (
+      <button type="button" className="nav-item sidebar-nav-button" onClick={onCheck}>
+        <RefreshCw className="nav-icon" size={16} />
+        <span>检查更新</span>
+      </button>
+    );
+  }
 
   if (state.phase === "available") {
     return (

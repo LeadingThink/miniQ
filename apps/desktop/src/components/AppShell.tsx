@@ -252,6 +252,7 @@ export function AppShell({ app }: AppShellProps) {
         onShowSkills={() => app.navigation.setPage("skills")}
         onShowMcp={() => app.navigation.setPage("mcp")}
         onShowSettings={() => app.navigation.setShowSettings(true)}
+        updateSupported={app.updater.supported}
         updateState={app.updater.state}
         onCheckForUpdates={() => void app.updater.checkNow()}
         onInstallUpdate={() => void app.updater.install()}

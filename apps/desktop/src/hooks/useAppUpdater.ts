@@ -5,7 +5,8 @@ import type { ConnectionInfo, RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 
 const STARTUP_CHECK_DELAY_MS = 10_000;
-const UPDATE_CHECK_INTERVAL_MS = 3 * 60 * 60 * 1_000;
+const UPDATE_CHECK_INTERVAL_MS = 10 * 60 * 1_000;
+const FOCUS_CHECK_INTERVAL_MS = 60_000;
 
 export type UpdatePhase =
   | "idle"
@@ -30,6 +31,10 @@ const INITIAL_STATE: AppUpdaterState = {
   totalBytes: null,
   error: null,
 };
+
+export function shouldCheckForUpdate(lastCheckedAt: number, now: number): boolean {
+  return now - lastCheckedAt >= FOCUS_CHECK_INTERVAL_MS;
+}
 
 export function applyDownloadEvent(
   state: AppUpdaterState,
@@ -66,13 +71,17 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
   const [state, setState] = useState<AppUpdaterState>(INITIAL_STATE);
   const updateRef = useRef<Update | null>(null);
   const checkRef = useRef<Promise<void> | null>(null);
+  const installRef = useRef(false);
+  const lastCheckedAtRef = useRef(Date.now());
   const supported = isTauriRuntime() && !import.meta.env.DEV;
 
   const runCheck = useCallback(
     async (silent: boolean) => {
       if (!supported) return;
+      if (installRef.current) return;
       if (checkRef.current) return checkRef.current;
       const task = (async () => {
+        lastCheckedAtRef.current = Date.now();
         if (!silent) setState((current) => ({ ...current, phase: "checking", error: null }));
         try {
           const { check } = await import("@tauri-apps/plugin-updater");
@@ -93,10 +102,9 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
             error: null,
           });
         } catch (error) {
-          if (silent) return;
           const message = errorMessage(error);
           setState((current) => ({ ...current, phase: "error", error: message }));
-          onError(`检查更新失败：${message}`);
+          if (!silent) onError(`检查更新失败：${message}`);
         }
       })();
       checkRef.current = task;
@@ -119,9 +127,18 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
       () => void runCheck(true),
       UPDATE_CHECK_INTERVAL_MS,
     );
+    const checkWhenVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (!shouldCheckForUpdate(lastCheckedAtRef.current, Date.now())) return;
+      void runCheck(true);
+    };
+    window.addEventListener("focus", checkWhenVisible);
+    document.addEventListener("visibilitychange", checkWhenVisible);
     return () => {
       window.clearTimeout(startupTimer);
       window.clearInterval(interval);
+      window.removeEventListener("focus", checkWhenVisible);
+      document.removeEventListener("visibilitychange", checkWhenVisible);
     };
   }, [runCheck, supported]);
 
@@ -136,6 +153,7 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
     const update = updateRef.current;
     if (!update || state.phase !== "available") return;
     let daemonStopped = false;
+    installRef.current = true;
     try {
       setState((current) => ({ ...current, phase: "downloading", error: null }));
       await update.download((event) => setState((current) => applyDownloadEvent(current, event)));
@@ -158,6 +176,8 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
       }
       setState((current) => ({ ...current, phase: "error", error: message }));
       onError(`更新失败：${message}`);
+    } finally {
+      installRef.current = false;
     }
   }, [client, onError, state.phase]);
 

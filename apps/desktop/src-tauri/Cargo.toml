@@ -1,6 +1,6 @@
 [package]
 name = "miniq-desktop"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 license = "MIT"
 
@@ -19,6 +19,8 @@ serde_json = "1"
 tauri-plugin-opener = "2.5.4"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
+# Enables Windows system proxy discovery for the updater's shared reqwest client.
+reqwest = { version = "0.13", default-features = false, features = ["system-proxy"] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { applyDownloadEvent, type AppUpdaterState } from "./useAppUpdater";
+import {
+  applyDownloadEvent,
+  shouldCheckForUpdate,
+  type AppUpdaterState,
+} from "./useAppUpdater";
 
 const DOWNLOADING: AppUpdaterState = {
   phase: "downloading",
@@ -31,5 +35,12 @@ describe("applyDownloadEvent", () => {
     );
 
     expect(finished.downloadedBytes).toBe(1_000);
+  });
+});
+
+describe("shouldCheckForUpdate", () => {
+  it("checks again after the app has been open or hidden for one minute", () => {
+    expect(shouldCheckForUpdate(1_000, 60_999)).toBe(false);
+    expect(shouldCheckForUpdate(1_000, 61_000)).toBe(true);
   });
 });

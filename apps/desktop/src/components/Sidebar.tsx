@@ -39,6 +39,7 @@ interface SidebarProps {
   onShowSkills: () => void;
   onShowMcp: () => void;
   onShowSettings: () => void;
+  updateSupported: boolean;
   updateState: AppUpdaterState;
   onCheckForUpdates: () => void;
   onInstallUpdate: () => void;
@@ -82,6 +83,7 @@ export function Sidebar(props: SidebarProps) {
 
       <div className="sidebar-footer">
         <UpdateNotice
+          supported={props.updateSupported}
           state={props.updateState}
           onCheck={props.onCheckForUpdates}
           onInstall={props.onInstallUpdate}
