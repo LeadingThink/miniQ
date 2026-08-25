@@ -45,6 +45,7 @@ export function SettingsPanel(props: { client: RpcClient; onClose: () => void })
       setHasKey(res.provider?.hasApiKey ?? false);
       setApiKey("");
       setStatus("Saved.");
+      setTimeout(() => props.onClose(), 500);
     } catch (e) {
       setStatus(e instanceof Error ? e.message : String(e));
     }
