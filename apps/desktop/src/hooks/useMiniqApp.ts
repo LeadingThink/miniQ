@@ -201,7 +201,37 @@ function useWorkspaceActions(
     [client, refreshWorkspaces, setCurrentSessionId, setError, setSelectedWorkspaceId],
   );
 
-  return { openWorkspace, createBlankProject };
+  const deleteWorkspace = useCallback(
+    async (workspaceId: string) => {
+      try {
+        await client.call("workspace.delete", { workspaceId });
+        await refreshWorkspaces();
+        if (catalog.selectedWorkspaceId === workspaceId) {
+          setSelectedWorkspaceId(null);
+          setCurrentSessionId(null);
+        }
+      } catch (err) {
+        console.error("Failed to delete workspace:", err);
+        setError(err instanceof Error ? err.message : "删除项目失败");
+      }
+    },
+    [client, catalog.selectedWorkspaceId, refreshWorkspaces, setCurrentSessionId, setError, setSelectedWorkspaceId],
+  );
+
+  const renameWorkspace = useCallback(
+    async (workspaceId: string, name: string) => {
+      try {
+        await client.call("workspace.rename", { workspaceId, name });
+        await refreshWorkspaces();
+      } catch (err) {
+        console.error("Failed to rename workspace:", err);
+        setError(err instanceof Error ? err.message : "重命名项目失败");
+      }
+    },
+    [client, refreshWorkspaces, setError],
+  );
+
+  return { openWorkspace, createBlankProject, deleteWorkspace, renameWorkspace };
 }
 
 interface OpenSessionResult {
@@ -217,6 +247,7 @@ function useSessionLifecycleActions(
   catalog: Catalog,
   navigation: NavigationState,
   feed: SessionFeed,
+  setError: ErrorSetter,
 ) {
   const {
     refreshSessions,
@@ -255,7 +286,50 @@ function useSessionLifecycleActions(
     [client, load, setCurrentSessionId, setPage, setSelectedWorkspaceId],
   );
 
-  return { createSession, openSession };
+  const deleteSession = useCallback(
+    async (sessionId: string) => {
+      try {
+        await client.call("session.delete", { sessionId });
+        await refreshSessions();
+        if (catalog.currentSessionId === sessionId) {
+          setCurrentSessionId(null);
+          reset();
+        }
+      } catch (err) {
+        console.error("Failed to delete session:", err);
+        setError(err instanceof Error ? err.message : "删除会话失败");
+      }
+    },
+    [client, catalog.currentSessionId, refreshSessions, reset, setCurrentSessionId, setError],
+  );
+
+  const renameSession = useCallback(
+    async (sessionId: string, title: string) => {
+      try {
+        await client.call("session.rename", { sessionId, title });
+        await refreshSessions();
+      } catch (err) {
+        console.error("Failed to rename session:", err);
+        setError(err instanceof Error ? err.message : "重命名会话失败");
+      }
+    },
+    [client, refreshSessions, setError],
+  );
+
+  const setSessionPinned = useCallback(
+    async (sessionId: string, pinned: boolean) => {
+      try {
+        await client.call("session.setPinned", { sessionId, pinned });
+        await refreshSessions();
+      } catch (err) {
+        console.error("Failed to pin/unpin session:", err);
+        setError(err instanceof Error ? err.message : "置顶会话失败");
+      }
+    },
+    [client, refreshSessions, setError],
+  );
+
+  return { createSession, openSession, deleteSession, renameSession, setSessionPinned };
 }
 
 type SessionLifecycle = ReturnType<typeof useSessionLifecycleActions>;
@@ -391,7 +465,7 @@ export function useMiniqApp() {
   const updater = useAppUpdater(client, setError);
   const navigationActions = useNavigationActions(catalog, navigation, feed);
   const workspaceActions = useWorkspaceActions(client, catalog, setError);
-  const lifecycle = useSessionLifecycleActions(client, catalog, navigation, feed);
+  const lifecycle = useSessionLifecycleActions(client, catalog, navigation, feed, setError);
   const turnActions = useTurnActions(client, catalog, lifecycle, setError);
   const interactionActions = useInteractionActions(client, setError, review.refresh);
   const busy =

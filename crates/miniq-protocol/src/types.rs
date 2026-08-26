@@ -45,6 +45,8 @@ pub struct Session {
     pub workspace_id: String,
     pub title: String,
     pub status: SessionStatus,
+    #[serde(default)]
+    pub pinned: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external: Option<crate::ExternalSessionLink>,
     pub created_at: String,

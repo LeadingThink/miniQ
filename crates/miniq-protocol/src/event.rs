@@ -110,6 +110,34 @@ pub enum Event {
         session_id: String,
         error: String,
     },
+    /// A session was deleted.
+    SessionDeleted {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+    },
+    /// A workspace (project) was deleted.
+    WorkspaceDeleted {
+        #[serde(rename = "workspaceId")]
+        workspace_id: String,
+    },
+    /// A session was renamed.
+    SessionRenamed {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        title: String,
+    },
+    /// A workspace was renamed.
+    WorkspaceRenamed {
+        #[serde(rename = "workspaceId")]
+        workspace_id: String,
+        name: String,
+    },
+    /// A session's pinned state changed.
+    SessionPinnedChanged {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        pinned: bool,
+    },
 }
 
 impl Event {
@@ -127,7 +155,12 @@ impl Event {
             | Event::QuestionResolved { session_id, .. }
             | Event::ArtifactCreated { session_id, .. }
             | Event::TurnCompleted { session_id }
-            | Event::TurnFailed { session_id, .. } => session_id,
+            | Event::TurnFailed { session_id, .. }
+            | Event::SessionDeleted { session_id }
+            | Event::SessionRenamed { session_id, .. }
+            | Event::SessionPinnedChanged { session_id, .. } => session_id,
+            Event::WorkspaceDeleted { .. }
+            | Event::WorkspaceRenamed { .. } => "",
         }
     }
 }

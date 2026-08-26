@@ -40,6 +40,7 @@ export interface Session {
   workspaceId: string;
   title: string;
   status: SessionStatus;
+  pinned: boolean;
   external?: ExternalSessionLink;
   createdAt: string;
   updatedAt: string;
@@ -259,4 +260,9 @@ export type DaemonEvent =
   | { type: "question_resolved"; sessionId: string; questionId: string; answer: string }
   | { type: "artifact_created"; sessionId: string; artifact: Artifact }
   | { type: "turn_completed"; sessionId: string }
-  | { type: "turn_failed"; sessionId: string; error: string };
+  | { type: "turn_failed"; sessionId: string; error: string }
+  | { type: "session_deleted"; sessionId: string }
+  | { type: "workspace_deleted"; workspaceId: string }
+  | { type: "session_renamed"; sessionId: string; title: string }
+  | { type: "workspace_renamed"; workspaceId: string; name: string }
+  | { type: "session_pinned_changed"; sessionId: string; pinned: boolean };

@@ -139,6 +139,11 @@ function reduceDaemonEvent(
     case "turn_failed":
       return { ...state, streamingText: "" };
     case "session_status_changed":
+    case "session_deleted":
+    case "workspace_deleted":
+    case "session_renamed":
+    case "workspace_renamed":
+    case "session_pinned_changed":
       return state;
   }
 }
@@ -180,6 +185,22 @@ export function useSessionFeed(options: SessionFeedOptions) {
 
   useEffect(() => {
     return client.onEvent((event) => {
+      // Workspace-level events have no session context.
+      if (event.type === "workspace_deleted" || event.type === "workspace_renamed") {
+        void refreshSessions();
+        return;
+      }
+      // Session metadata changes that affect the sidebar list.
+      if (
+        event.type === "session_deleted" ||
+        event.type === "session_renamed" ||
+        event.type === "session_pinned_changed"
+      ) {
+        void refreshSessions();
+        if (event.sessionId !== currentSessionId) return;
+        if (event.type === "session_deleted") return;
+      }
+      // Events for other sessions: only refresh sidebar on status change.
       if (event.sessionId !== currentSessionId) {
         if (event.type === "session_status_changed") {
           void refreshSessions();

@@ -36,6 +36,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0004_external_sessions",
         include_str!("../../../migrations/0004_external_sessions.sql"),
     ),
+    (
+        "0005_pinned_sessions",
+        include_str!("../../../migrations/0005_pinned_sessions.sql"),
+    ),
 ];
 
 #[derive(Debug, Error)]

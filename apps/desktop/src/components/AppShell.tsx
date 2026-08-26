@@ -261,7 +261,12 @@ export function AppShell({ app }: AppShellProps) {
         onImportSessions={() => app.navigation.setShowExternalImport(true)}
         onSelectWorkspace={app.actions.selectWorkspace}
         onCreateSession={(workspaceId) => void app.actions.createSession(workspaceId)}
+        onDeleteWorkspace={(workspaceId) => void app.actions.deleteWorkspace(workspaceId)}
+        onRenameWorkspace={(workspaceId, name) => void app.actions.renameWorkspace(workspaceId, name)}
         onSelectSession={(sessionId) => void app.actions.openSession(sessionId)}
+        onDeleteSession={(sessionId) => void app.actions.deleteSession(sessionId)}
+        onRenameSession={(sessionId, title) => void app.actions.renameSession(sessionId, title)}
+        onSetSessionPinned={(sessionId, pinned) => void app.actions.setSessionPinned(sessionId, pinned)}
         onShowSkills={() => app.navigation.setPage("skills")}
         onShowMcp={() => app.navigation.setPage("mcp")}
         onShowSettings={() => app.navigation.setShowSettings(true)}

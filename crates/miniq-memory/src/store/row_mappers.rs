@@ -105,12 +105,14 @@ pub(super) fn row_to_workspace(row: &Row<'_>) -> rusqlite::Result<Workspace> {
 
 pub(super) fn row_to_session(row: &Row<'_>) -> rusqlite::Result<Session> {
     let status: String = row.get(3)?;
-    let provider: Option<String> = row.get(6)?;
+    let pinned: i32 = row.get(6)?;
+    let provider: Option<String> = row.get(7)?;
     Ok(Session {
         id: row.get(0)?,
         workspace_id: row.get(1)?,
         title: row.get(2)?,
         status: parse_session_status(&status)?,
+        pinned: pinned != 0,
         external: provider
             .map(|provider| external_session_link(row, &provider))
             .transpose()?,
@@ -120,7 +122,7 @@ pub(super) fn row_to_session(row: &Row<'_>) -> rusqlite::Result<Session> {
 }
 
 fn external_session_link(row: &Row<'_>, provider: &str) -> rusqlite::Result<ExternalSessionLink> {
-    let continuation: String = row.get(9)?;
+    let continuation: String = row.get(10)?;
     Ok(ExternalSessionLink {
         provider: parse_external_provider(provider)?,
         external_id: row.get(7)?,

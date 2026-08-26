@@ -195,3 +195,79 @@ pub(super) fn cancel(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
     }
     Ok(json!({ "cancelled": cancelled }))
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameParams {
+    session_id: String,
+    title: String,
+}
+
+pub(super) fn rename(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: RenameParams = params(raw)?;
+    let title = input.title.trim().to_string();
+    if title.is_empty() {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "title cannot be empty",
+        ));
+    }
+    state
+        .store
+        .update_session_title(&input.session_id, &title)
+        .map_err(store_err)?;
+    state.emit(Event::SessionRenamed {
+        session_id: input.session_id.clone(),
+        title: title.clone(),
+    });
+    Ok(json!({ "id": input.session_id, "title": title }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetPinnedParams {
+    session_id: String,
+    pinned: bool,
+}
+
+pub(super) fn set_pinned(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: SetPinnedParams = params(raw)?;
+    state
+        .store
+        .set_session_pinned(&input.session_id, input.pinned)
+        .map_err(store_err)?;
+    state.emit(Event::SessionPinnedChanged {
+        session_id: input.session_id.clone(),
+        pinned: input.pinned,
+    });
+    Ok(json!({ "id": input.session_id, "pinned": input.pinned }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteParams {
+    session_id: String,
+}
+
+pub(super) fn delete(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: DeleteParams = params(raw)?;
+    // Refuse to delete a running session.
+    let session = state
+        .store
+        .get_session(&input.session_id)
+        .map_err(store_err)?;
+    if session.status == SessionStatus::Running || session.status == SessionStatus::Cancelling {
+        return Err(RpcError::new(
+            ErrorCode::SessionBusy,
+            "cannot delete a running session",
+        ));
+    }
+    state
+        .store
+        .delete_session(&input.session_id)
+        .map_err(store_err)?;
+    state.emit(Event::SessionDeleted {
+        session_id: input.session_id,
+    });
+    Ok(json!({ "deleted": true }))
+}

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use miniq_protocol::{ErrorCode, RpcError};
+use miniq_protocol::{ErrorCode, Event, RpcError};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -81,4 +81,49 @@ fn validate_name(name: &str) -> Result<(), RpcError> {
         ));
     }
     Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameParams {
+    workspace_id: String,
+    name: String,
+}
+
+pub(super) fn rename(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: RenameParams = params(raw)?;
+    let name = input.name.trim().to_string();
+    if name.is_empty() {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "name cannot be empty",
+        ));
+    }
+    state
+        .store
+        .update_workspace_name(&input.workspace_id, &name)
+        .map_err(store_err)?;
+    state.emit(Event::WorkspaceRenamed {
+        workspace_id: input.workspace_id.clone(),
+        name: name.clone(),
+    });
+    Ok(json!({ "id": input.workspace_id, "name": name }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteParams {
+    workspace_id: String,
+}
+
+pub(super) fn delete(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: DeleteParams = params(raw)?;
+    state
+        .store
+        .delete_workspace(&input.workspace_id)
+        .map_err(store_err)?;
+    state.emit(Event::WorkspaceDeleted {
+        workspace_id: input.workspace_id,
+    });
+    Ok(json!({ "deleted": true }))
 }

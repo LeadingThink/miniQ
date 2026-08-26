@@ -210,21 +210,57 @@ body {
   color: var(--text);
 }
 
+.workspace-item .menu-container {
+  position: relative;
+  margin-left: auto;
+  flex: none;
+}
+
+.workspace-item .menu-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.workspace-item:hover .menu-trigger {
+  opacity: 1;
+}
+
+.workspace-item .menu-trigger:hover {
+  background: var(--border-strong);
+  color: var(--text);
+}
+
 .session-item {
+  display: flex;
+  align-items: center;
   min-height: 32px;
   padding: 5px 8px 5px 30px;
   border-radius: 7px;
   cursor: pointer;
   font-size: 13px;
   color: var(--text-mid);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .session-item:hover {
   background: var(--bg-hover);
   color: var(--text);
+}
+
+.session-item .session-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
 }
 
 .session-item.active {
@@ -250,6 +286,96 @@ body {
 
 .session-item .session-status.failed {
   background: var(--danger);
+}
+
+.session-item .menu-container {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+}
+
+.session-item .menu-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.session-item:hover .menu-trigger {
+  opacity: 1;
+}
+
+.session-item .menu-trigger:hover {
+  background: var(--border-strong);
+  color: var(--text);
+}
+
+/* Shared dropdown menu styles */
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 100;
+  min-width: 120px;
+  padding: 4px;
+  margin-top: 2px;
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dropdown-item:hover {
+  background: var(--bg-hover);
+}
+
+.dropdown-item.danger:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+.rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 4px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg-card, #fff);
+  color: var(--text);
+  font-size: inherit;
+  outline: none;
+}
+
+.pin-icon {
+  flex: none;
+  color: var(--accent);
+  transform: rotate(45deg);
+}
+
+.session-item.pinned .session-title {
+  font-weight: 500;
 }
 
 /* "展开显示 / 收起" row under a workspace's session list. */
