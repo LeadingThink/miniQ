@@ -49,7 +49,7 @@ describe("Md file references", () => {
       <Md workspacePath="/work/project">{"[README.md](docs/README.md)"}</Md>,
     );
 
-    expect(html).toContain('class="file-reference"');
+    expect(html).toContain('class="file-reference-link"');
     expect(html).toContain("/work/project/docs/README.md");
   });
 
@@ -60,6 +60,7 @@ describe("Md file references", () => {
       </Md>,
     );
 
+    expect(html).toContain('class="file-reference-link"');
     expect(html).toContain("/work/project/src/worker.py:130");
   });
 
@@ -70,8 +71,20 @@ describe("Md file references", () => {
       </Md>,
     );
 
-    expect(html).toContain('class="file-reference"');
+    expect(html).toContain('class="file-reference-link"');
     expect(html).toContain("D:\\work\\project\\backend\\mongo-dump\\alerts.json");
+  });
+
+  it("preserves absolute Windows paths in markdown link hrefs", () => {
+    const html = renderToStaticMarkup(
+      <Md workspacePath={"D:\\study\\miniQ"}>
+        {"[下载文件](D:/study/miniQ/output.txt)"}
+      </Md>,
+    );
+
+    // The href should NOT be stripped by react-markdown's URL sanitizer
+    expect(html).toContain('href="D:/study/miniQ/output.txt"');
+    expect(html).toContain('class="file-reference-link"');
   });
 
   it("keeps ordinary inline code as code", () => {
