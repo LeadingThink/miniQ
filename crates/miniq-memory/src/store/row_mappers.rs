@@ -125,11 +125,11 @@ fn external_session_link(row: &Row<'_>, provider: &str) -> rusqlite::Result<Exte
     let continuation: String = row.get(10)?;
     Ok(ExternalSessionLink {
         provider: parse_external_provider(provider)?,
-        external_id: row.get(7)?,
-        source_path: row.get(8)?,
+        external_id: row.get(8)?,
+        source_path: row.get(9)?,
         continuation_mode: parse_continuation_mode(&continuation)?,
-        imported_at: row.get(10)?,
-        last_synced_at: row.get(11)?,
+        imported_at: row.get(11)?,
+        last_synced_at: row.get(12)?,
     })
 }
 

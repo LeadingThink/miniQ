@@ -159,8 +159,7 @@ impl Event {
             | Event::SessionDeleted { session_id }
             | Event::SessionRenamed { session_id, .. }
             | Event::SessionPinnedChanged { session_id, .. } => session_id,
-            Event::WorkspaceDeleted { .. }
-            | Event::WorkspaceRenamed { .. } => "",
+            Event::WorkspaceDeleted { .. } | Event::WorkspaceRenamed { .. } => "",
         }
     }
 }

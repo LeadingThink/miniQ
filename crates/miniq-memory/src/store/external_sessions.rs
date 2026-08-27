@@ -200,6 +200,7 @@ fn read_session(transaction: &Transaction<'_>, session_id: &str) -> Result<Sessi
     transaction
         .query_row(
             "SELECT s.id, s.workspace_id, s.title, s.status, s.created_at, s.updated_at,
+                    s.pinned,
                     e.provider, e.external_id, e.source_path, e.continuation_mode,
                     e.imported_at, e.last_synced_at
              FROM sessions s

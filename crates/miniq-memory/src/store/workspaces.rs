@@ -190,11 +190,9 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         // Verify the session exists first.
         let exists: bool = conn
-            .query_row(
-                "SELECT 1 FROM sessions WHERE id = ?1",
-                params![id],
-                |_| Ok(true),
-            )
+            .query_row("SELECT 1 FROM sessions WHERE id = ?1", params![id], |_| {
+                Ok(true)
+            })
             .optional()?
             .unwrap_or(false);
         if !exists {
@@ -203,26 +201,11 @@ impl Store {
         // Delete in dependency order. external_session_links and
         // external_session_events use ON DELETE CASCADE so they are
         // handled automatically when the session row is removed.
-        conn.execute(
-            "DELETE FROM approvals WHERE session_id = ?1",
-            params![id],
-        )?;
-        conn.execute(
-            "DELETE FROM tool_calls WHERE session_id = ?1",
-            params![id],
-        )?;
-        conn.execute(
-            "DELETE FROM messages WHERE session_id = ?1",
-            params![id],
-        )?;
-        conn.execute(
-            "DELETE FROM artifacts WHERE session_id = ?1",
-            params![id],
-        )?;
-        conn.execute(
-            "DELETE FROM checkpoints WHERE session_id = ?1",
-            params![id],
-        )?;
+        conn.execute("DELETE FROM approvals WHERE session_id = ?1", params![id])?;
+        conn.execute("DELETE FROM tool_calls WHERE session_id = ?1", params![id])?;
+        conn.execute("DELETE FROM messages WHERE session_id = ?1", params![id])?;
+        conn.execute("DELETE FROM artifacts WHERE session_id = ?1", params![id])?;
+        conn.execute("DELETE FROM checkpoints WHERE session_id = ?1", params![id])?;
         conn.execute(
             "DELETE FROM audit_events WHERE session_id = ?1",
             params![id],
@@ -265,9 +248,7 @@ impl Store {
         }
         // Collect all session IDs for this workspace.
         let session_ids: Vec<String> = {
-            let mut stmt = conn.prepare(
-                "SELECT id FROM sessions WHERE workspace_id = ?1",
-            )?;
+            let mut stmt = conn.prepare("SELECT id FROM sessions WHERE workspace_id = ?1")?;
             let rows = stmt.query_map(params![id], |row| row.get(0))?;
             rows.collect::<std::result::Result<Vec<_>, _>>()?
         };
@@ -276,24 +257,24 @@ impl Store {
             "DELETE FROM scheduled_tasks WHERE workspace_id = ?1",
             params![id],
         )?;
-        conn.execute(
-            "DELETE FROM memories WHERE workspace_id = ?1",
-            params![id],
-        )?;
+        conn.execute("DELETE FROM memories WHERE workspace_id = ?1", params![id])?;
         // Delete session-level dependents.
         for sid in &session_ids {
             conn.execute("DELETE FROM approvals WHERE session_id = ?1", params![sid])?;
             conn.execute("DELETE FROM tool_calls WHERE session_id = ?1", params![sid])?;
             conn.execute("DELETE FROM messages WHERE session_id = ?1", params![sid])?;
             conn.execute("DELETE FROM artifacts WHERE session_id = ?1", params![sid])?;
-            conn.execute("DELETE FROM checkpoints WHERE session_id = ?1", params![sid])?;
-            conn.execute("DELETE FROM audit_events WHERE session_id = ?1", params![sid])?;
+            conn.execute(
+                "DELETE FROM checkpoints WHERE session_id = ?1",
+                params![sid],
+            )?;
+            conn.execute(
+                "DELETE FROM audit_events WHERE session_id = ?1",
+                params![sid],
+            )?;
         }
         // Delete all sessions (cascades to external_session_*).
-        conn.execute(
-            "DELETE FROM sessions WHERE workspace_id = ?1",
-            params![id],
-        )?;
+        conn.execute("DELETE FROM sessions WHERE workspace_id = ?1", params![id])?;
         // Finally delete the workspace itself.
         conn.execute("DELETE FROM workspaces WHERE id = ?1", params![id])?;
         Ok(())
