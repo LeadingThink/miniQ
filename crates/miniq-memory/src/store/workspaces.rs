@@ -164,9 +164,12 @@ impl Store {
 
     pub fn set_session_pinned(&self, id: &str, pinned: bool) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        // Never touch updated_at — keep the original session timestamp so the
+        // item returns to its chronological position after being unpinned and
+        // the displayed time stays consistent.
         let updated = conn.execute(
-            "UPDATE sessions SET pinned = ?2, updated_at = ?3 WHERE id = ?1",
-            params![id, pinned as i32, now_iso()],
+            "UPDATE sessions SET pinned = ?2 WHERE id = ?1",
+            params![id, pinned as i32],
         )?;
         if updated == 0 {
             return Err(MemoryError::NotFound(format!("session {id}")));

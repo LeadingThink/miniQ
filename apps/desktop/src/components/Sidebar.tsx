@@ -22,6 +22,7 @@ import { openExternalUrl } from "../externalLinks";
 import { relativeAge } from "../time";
 import { PROVIDER_LABELS, PROVIDER_MARKS } from "./externalSessionImportModel";
 import { UpdateNotice } from "./UpdateNotice";
+import { DropdownMenu } from "./DropdownMenu";
 
 const COLLAPSED_SESSION_COUNT = 3;
 const FEEDBACK_FORM_URL =
@@ -143,20 +144,9 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(props.workspace.name);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const hiddenCount = Math.max(0, props.sessions.length - COLLAPSED_SESSION_COUNT);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handleOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleOutside);
-    return () => document.removeEventListener("mousedown", handleOutside);
-  }, [menuOpen]);
 
   useEffect(() => {
     if (renaming && inputRef.current) {
@@ -215,8 +205,9 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
         >
           <Plus size={15} />
         </button>
-        <div className="menu-container" ref={menuRef}>
+        <div className="menu-container">
           <button
+            ref={menuBtnRef}
             className="menu-trigger"
             aria-label="更多操作"
             title="更多操作"
@@ -227,35 +218,37 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
           >
             <MoreHorizontal size={14} />
           </button>
-          {menuOpen && (
-            <div className="dropdown-menu">
-              <button
-                className="dropdown-item"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setMenuOpen(false);
-                  setRenameValue(props.workspace.name);
-                  setRenaming(true);
-                }}
-              >
-                <PencilLine size={13} />
-                <span>重命名</span>
-              </button>
-              <button
-                className="dropdown-item danger"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setMenuOpen(false);
-                  if (window.confirm(`确定要删除项目「${props.workspace.name}」吗？该项目下的所有会话也将被删除。`)) {
-                    props.onDeleteWorkspace(props.workspace.id);
-                  }
-                }}
-              >
-                <Trash2 size={13} />
-                <span>删除工作区</span>
-              </button>
-            </div>
-          )}
+          <DropdownMenu
+            triggerRef={menuBtnRef}
+            open={menuOpen}
+            onClose={() => setMenuOpen(false)}
+          >
+            <button
+              className="dropdown-item"
+              onClick={(event) => {
+                event.stopPropagation();
+                setMenuOpen(false);
+                setRenameValue(props.workspace.name);
+                setRenaming(true);
+              }}
+            >
+              <PencilLine size={13} />
+              <span>重命名</span>
+            </button>
+            <button
+              className="dropdown-item danger"
+              onClick={(event) => {
+                event.stopPropagation();
+                setMenuOpen(false);
+                if (window.confirm(`确定要删除项目「${props.workspace.name}」吗？该项目下的所有会话也将被删除。`)) {
+                  props.onDeleteWorkspace(props.workspace.id);
+                }
+              }}
+            >
+              <Trash2 size={13} />
+              <span>删除工作区</span>
+            </button>
+          </DropdownMenu>
         </div>
       </div>
       {props.sessions.map((session, index) => (
@@ -297,20 +290,9 @@ function SessionItem(props: {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(props.session.title);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const external = props.session.external;
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handleOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleOutside);
-    return () => document.removeEventListener("mousedown", handleOutside);
-  }, [menuOpen]);
 
   useEffect(() => {
     if (renaming && inputRef.current) {
@@ -368,8 +350,9 @@ function SessionItem(props: {
         <span className="session-title">{props.session.title}</span>
       )}
       <span className="session-age">{relativeAge(props.session.updatedAt)}</span>
-      <div className="menu-container" ref={menuRef}>
+      <div className="menu-container">
         <button
+          ref={menuBtnRef}
           className="menu-trigger"
           aria-label="更多操作"
           title="更多操作"
@@ -380,46 +363,48 @@ function SessionItem(props: {
         >
           <MoreHorizontal size={14} />
         </button>
-        {menuOpen && (
-          <div className="dropdown-menu">
-            <button
-              className="dropdown-item"
-              onClick={(event) => {
-                event.stopPropagation();
-                setMenuOpen(false);
-                setRenameValue(props.session.title);
-                setRenaming(true);
-              }}
-            >
-              <PencilLine size={13} />
-              <span>重命名</span>
-            </button>
-            <button
-              className="dropdown-item"
-              onClick={(event) => {
-                event.stopPropagation();
-                setMenuOpen(false);
-                props.onSetPinned(props.session.id, !props.session.pinned);
-              }}
-            >
-              <Pin size={13} />
-              <span>{props.session.pinned ? "取消置顶" : "置顶"}</span>
-            </button>
-            <button
-              className="dropdown-item danger"
-              onClick={(event) => {
-                event.stopPropagation();
-                setMenuOpen(false);
-                if (window.confirm(`确定要删除会话「${props.session.title}」吗？`)) {
-                  props.onDelete(props.session.id);
-                }
-              }}
-            >
-              <Trash2 size={13} />
-              <span>删除会话</span>
-            </button>
-          </div>
-        )}
+        <DropdownMenu
+          triggerRef={menuBtnRef}
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+        >
+          <button
+            className="dropdown-item"
+            onClick={(event) => {
+              event.stopPropagation();
+              setMenuOpen(false);
+              setRenameValue(props.session.title);
+              setRenaming(true);
+            }}
+          >
+            <PencilLine size={13} />
+            <span>重命名</span>
+          </button>
+          <button
+            className="dropdown-item"
+            onClick={(event) => {
+              event.stopPropagation();
+              setMenuOpen(false);
+              props.onSetPinned(props.session.id, !props.session.pinned);
+            }}
+          >
+            <Pin size={13} />
+            <span>{props.session.pinned ? "取消置顶" : "置顶"}</span>
+          </button>
+          <button
+            className="dropdown-item danger"
+            onClick={(event) => {
+              event.stopPropagation();
+              setMenuOpen(false);
+              if (window.confirm(`确定要删除会话「${props.session.title}」吗？`)) {
+                props.onDelete(props.session.id);
+              }
+            }}
+          >
+            <Trash2 size={13} />
+            <span>删除会话</span>
+          </button>
+        </DropdownMenu>
       </div>
     </div>
   );
