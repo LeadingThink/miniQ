@@ -3,12 +3,14 @@
 
 mod conversation;
 mod external_sessions;
+mod model_context;
 mod records;
 mod row_mappers;
 mod scheduled_tasks;
 mod workspaces;
 
 pub use external_sessions::ExternalImportOutcome;
+pub use model_context::ModelContextSnapshot;
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -39,6 +41,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0005_pinned_sessions",
         include_str!("../../../migrations/0005_pinned_sessions.sql"),
+    ),
+    (
+        "0006_model_context",
+        include_str!("../../../migrations/0006_model_context.sql"),
     ),
 ];
 

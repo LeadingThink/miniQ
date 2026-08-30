@@ -3,6 +3,7 @@
 miniQ 是一款面向通用办公场景的桌面端 AI Coworker:用户给出目标,agent 拆解步骤、读取本地文件、调用工具、在关键操作前请求审批,最终交付可直接使用的结果。所有"怎么做某类工作"的知识以技能(SKILL.md)组装,一次任务的做法可以一键蒸馏为可复用技能。
 
 完整设计见 [docs/desktop-cowork-implementation.md](docs/desktop-cowork-implementation.md)。
+Agent 长会话、压缩与工具执行保护见 [docs/harness-runtime.md](docs/harness-runtime.md)。
 
 ## 架构
 

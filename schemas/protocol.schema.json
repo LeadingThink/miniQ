@@ -292,6 +292,37 @@
         "type": "object"
       },
       {
+        "description": "Old context was summarized or oversized tool results were pruned.",
+        "properties": {
+          "estimatedTokensAfter": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "estimatedTokensBefore": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "context_compacted"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "estimatedTokensAfter",
+          "estimatedTokensBefore",
+          "sessionId",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
         "description": "A tool call started executing.",
         "properties": {
           "input": true,
@@ -540,6 +571,113 @@
         },
         "required": [
           "error",
+          "sessionId",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "A session was deleted.",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "session_deleted"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "A workspace (project) was deleted.",
+        "properties": {
+          "type": {
+            "enum": [
+              "workspace_deleted"
+            ],
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "workspaceId"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "A session was renamed.",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "session_renamed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "title",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "A workspace was renamed.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "workspace_renamed"
+            ],
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "workspaceId"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "A session's pinned state changed.",
+        "properties": {
+          "pinned": {
+            "type": "boolean"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "session_pinned_changed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "pinned",
           "sessionId",
           "type"
         ],
@@ -994,6 +1132,10 @@
       },
       "id": {
         "type": "string"
+      },
+      "pinned": {
+        "default": false,
+        "type": "boolean"
       },
       "status": {
         "$ref": "#/definitions/SessionStatus"

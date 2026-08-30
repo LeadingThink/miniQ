@@ -7,5 +7,6 @@
 mod store;
 
 pub use store::{
-    new_id, now_iso, CheckpointRow, ExternalImportOutcome, MemoryError, MemoryRow, Store,
+    new_id, now_iso, CheckpointRow, ExternalImportOutcome, MemoryError, MemoryRow,
+    ModelContextSnapshot, Store,
 };

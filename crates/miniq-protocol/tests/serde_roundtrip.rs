@@ -62,6 +62,20 @@ fn event_tagged_serialization() {
 }
 
 #[test]
+fn context_compaction_event_uses_camel_case_metrics() {
+    let event = Event::ContextCompacted {
+        session_id: "sess_01".into(),
+        estimated_tokens_before: 120_000,
+        estimated_tokens_after: 18_000,
+    };
+    let value = serde_json::to_value(event).unwrap();
+
+    assert_eq!(value["type"], "context_compacted");
+    assert_eq!(value["estimatedTokensBefore"], 120_000);
+    assert_eq!(value["estimatedTokensAfter"], 18_000);
+}
+
+#[test]
 fn status_enums_snake_case() {
     assert_eq!(
         serde_json::to_value(SessionStatus::WaitingApproval).unwrap(),

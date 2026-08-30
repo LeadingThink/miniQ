@@ -9,7 +9,11 @@
 //! daemon.
 
 use async_trait::async_trait;
-use futures_util::StreamExt;
+mod context;
+
+pub use context::{compact_history, estimate_tokens, ContextOutcome, ContextPolicy};
+
+use futures_util::{future::join_all, StreamExt};
 use miniq_models::{
     ChatDelta, ChatMessage, CompletionRequest, ModelProvider, ToolCallRequest, ToolSpec,
 };
@@ -23,6 +27,10 @@ pub enum AgentError {
     Provider(#[from] miniq_models::ProviderError),
     #[error("turn cancelled")]
     Cancelled,
+    #[error("agent stopped after {steps} model steps to prevent a runaway loop")]
+    StepLimitExceeded { steps: usize },
+    #[error("agent repeated the same tool batch {repetitions} times")]
+    RepeatedToolLoop { repetitions: usize },
 }
 
 /// Events surfaced to the caller while a turn runs.
@@ -30,6 +38,16 @@ pub enum AgentError {
 pub enum AgentEvent {
     /// Incremental assistant text.
     TextDelta(String),
+    ContextCompacted {
+        estimated_tokens_before: usize,
+        estimated_tokens_after: usize,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolExecutionMode {
+    Sequential,
+    Parallel,
 }
 
 /// Executes tool calls on behalf of the agent. Implementations own risk
@@ -38,6 +56,10 @@ pub enum AgentEvent {
 pub trait ToolExecutor: Send + Sync {
     /// Tool specs advertised to the model.
     fn specs(&self) -> Vec<ToolSpec>;
+
+    fn execution_mode(&self, _call: &ToolCallRequest) -> ToolExecutionMode {
+        ToolExecutionMode::Sequential
+    }
 
     /// Execute one call and return a structured result. Errors and
     /// rejections must be encoded in the returned JSON so the model can
@@ -60,6 +82,7 @@ impl ToolExecutor for NoTools {
     }
 }
 
+#[derive(Debug)]
 pub struct TurnOutcome {
     /// Final assistant text (last model message without tool calls).
     pub final_text: String,
@@ -68,20 +91,63 @@ pub struct TurnOutcome {
     pub appended: Vec<ChatMessage>,
 }
 
+#[derive(Debug, Clone)]
+pub struct RunLimits {
+    pub max_steps: usize,
+    pub repeated_tool_batch_limit: usize,
+}
+
+impl Default for RunLimits {
+    fn default() -> Self {
+        Self {
+            max_steps: 96,
+            repeated_tool_batch_limit: 4,
+        }
+    }
+}
+
 /// Run one turn to completion.
 pub async fn run_turn(
+    provider: &dyn ModelProvider,
+    executor: &dyn ToolExecutor,
+    history: Vec<ChatMessage>,
+    events: tokio::sync::mpsc::Sender<AgentEvent>,
+    cancel: CancellationToken,
+) -> Result<TurnOutcome, AgentError> {
+    run_turn_with_limits(
+        provider,
+        executor,
+        history,
+        events,
+        cancel,
+        RunLimits::default(),
+    )
+    .await
+}
+
+pub async fn run_turn_with_limits(
     provider: &dyn ModelProvider,
     executor: &dyn ToolExecutor,
     mut history: Vec<ChatMessage>,
     events: tokio::sync::mpsc::Sender<AgentEvent>,
     cancel: CancellationToken,
+    limits: RunLimits,
 ) -> Result<TurnOutcome, AgentError> {
     let tools = executor.specs();
     let mut appended: Vec<ChatMessage> = Vec::new();
+    let mut steps = 0;
+    let mut last_tool_batch = String::new();
+    let mut repeated_tool_batch = 0;
 
     loop {
         if cancel.is_cancelled() {
             return Err(AgentError::Cancelled);
+        }
+        steps += 1;
+        if steps > limits.max_steps {
+            return Err(AgentError::StepLimitExceeded {
+                steps: limits.max_steps,
+            });
         }
         let request = CompletionRequest {
             messages: history.clone(),
@@ -116,6 +182,25 @@ pub async fn run_turn(
             });
         }
 
+        let batch_fingerprint = serde_json::to_string(
+            &tool_calls
+                .iter()
+                .map(|call| (&call.name, &call.arguments))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_default();
+        if batch_fingerprint == last_tool_batch {
+            repeated_tool_batch += 1;
+        } else {
+            last_tool_batch = batch_fingerprint;
+            repeated_tool_batch = 1;
+        }
+        if repeated_tool_batch >= limits.repeated_tool_batch_limit {
+            return Err(AgentError::RepeatedToolLoop {
+                repetitions: repeated_tool_batch,
+            });
+        }
+
         // Record the assistant message that requested the calls.
         let assistant_msg = ChatMessage {
             role: miniq_models::ChatRole::Assistant,
@@ -126,11 +211,23 @@ pub async fn run_turn(
         history.push(assistant_msg.clone());
         appended.push(assistant_msg);
 
-        for call in &tool_calls {
-            if cancel.is_cancelled() {
-                return Err(AgentError::Cancelled);
+        let results = if tool_calls
+            .iter()
+            .all(|call| executor.execution_mode(call) == ToolExecutionMode::Parallel)
+        {
+            join_all(tool_calls.iter().map(|call| executor.execute(call))).await
+        } else {
+            let mut results = Vec::with_capacity(tool_calls.len());
+            for call in &tool_calls {
+                if cancel.is_cancelled() {
+                    return Err(AgentError::Cancelled);
+                }
+                results.push(executor.execute(call).await);
             }
-            let result = executor.execute(call).await?;
+            results
+        };
+        for (call, result) in tool_calls.iter().zip(results) {
+            let result = result?;
             let result_msg = ChatMessage::tool_result(call.id.clone(), result.to_string());
             history.push(result_msg.clone());
             appended.push(result_msg);
@@ -142,6 +239,9 @@ pub async fn run_turn(
 mod tests {
     use super::*;
     use miniq_models::mock::MockProvider;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
 
     struct TestExecutor;
 
@@ -164,7 +264,7 @@ mod tests {
         vec![ChatDelta::ToolCall(ToolCallRequest {
             id: format!("call-{index}"),
             name: "continue_work".to_string(),
-            arguments: serde_json::json!({}),
+            arguments: serde_json::json!({"index": index}),
         })]
     }
 
@@ -203,5 +303,98 @@ mod tests {
         };
 
         assert!(matches!(error, AgentError::Cancelled));
+    }
+
+    #[tokio::test]
+    async fn stops_a_repeated_identical_tool_loop() {
+        let repeated = vec![ChatDelta::ToolCall(ToolCallRequest {
+            id: "call".to_string(),
+            name: "continue_work".to_string(),
+            arguments: serde_json::json!({"same": true}),
+        })];
+        let provider = MockProvider::new(vec![
+            repeated.clone(),
+            repeated.clone(),
+            repeated.clone(),
+            repeated,
+        ]);
+        let (events, _receiver) = tokio::sync::mpsc::channel(8);
+
+        let error = run_turn_with_limits(
+            &provider,
+            &TestExecutor,
+            Vec::new(),
+            events,
+            CancellationToken::new(),
+            RunLimits {
+                max_steps: 20,
+                repeated_tool_batch_limit: 4,
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            AgentError::RepeatedToolLoop { repetitions: 4 }
+        ));
+    }
+
+    struct ParallelExecutor {
+        active: Arc<AtomicUsize>,
+        peak: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl ToolExecutor for ParallelExecutor {
+        fn specs(&self) -> Vec<ToolSpec> {
+            Vec::new()
+        }
+
+        fn execution_mode(&self, _call: &ToolCallRequest) -> ToolExecutionMode {
+            ToolExecutionMode::Parallel
+        }
+
+        async fn execute(&self, _call: &ToolCallRequest) -> Result<Value, AgentError> {
+            let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+            self.peak.fetch_max(active, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            self.active.fetch_sub(1, Ordering::SeqCst);
+            Ok(serde_json::json!({"ok": true}))
+        }
+    }
+
+    #[tokio::test]
+    async fn executes_a_parallel_safe_tool_batch_concurrently() {
+        let calls = (0..3)
+            .map(|index| {
+                ChatDelta::ToolCall(ToolCallRequest {
+                    id: format!("call-{index}"),
+                    name: "read".to_string(),
+                    arguments: serde_json::json!({"index": index}),
+                })
+            })
+            .collect();
+        let provider = MockProvider::new(vec![calls, vec![ChatDelta::Text("done".into())]]);
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let executor = ParallelExecutor {
+            active,
+            peak: peak.clone(),
+        };
+        let (events, _receiver) = tokio::sync::mpsc::channel(8);
+
+        let outcome = run_turn(
+            &provider,
+            &executor,
+            Vec::new(),
+            events,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome.final_text, "done");
+        assert_eq!(peak.load(Ordering::SeqCst), 3);
     }
 }

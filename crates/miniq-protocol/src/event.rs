@@ -35,6 +35,15 @@ pub enum Event {
         message_id: String,
         delta: String,
     },
+    /// Old context was summarized or oversized tool results were pruned.
+    ContextCompacted {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        #[serde(rename = "estimatedTokensBefore")]
+        estimated_tokens_before: usize,
+        #[serde(rename = "estimatedTokensAfter")]
+        estimated_tokens_after: usize,
+    },
     /// A tool call started executing.
     ToolCallStarted {
         #[serde(rename = "sessionId")]
@@ -146,6 +155,7 @@ impl Event {
             Event::SessionStatusChanged { session_id, .. }
             | Event::MessageCreated { session_id, .. }
             | Event::AssistantDelta { session_id, .. }
+            | Event::ContextCompacted { session_id, .. }
             | Event::ToolCallStarted { session_id, .. }
             | Event::ToolCallFinished { session_id, .. }
             | Event::ApprovalRequested { session_id, .. }
