@@ -313,6 +313,37 @@
         "type": "object"
       },
       {
+        "description": "Old context was summarized or oversized tool results were pruned.",
+        "properties": {
+          "estimatedTokensAfter": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "estimatedTokensBefore": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "context_compacted"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "estimatedTokensAfter",
+          "estimatedTokensBefore",
+          "sessionId",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
         "description": "A tool call started executing.",
         "properties": {
           "input": true,

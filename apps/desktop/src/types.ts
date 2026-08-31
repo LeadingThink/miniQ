@@ -244,6 +244,12 @@ export type DaemonEvent =
   | { type: "message_created"; sessionId: string; message: Message }
   | { type: "assistant_delta"; sessionId: string; messageId: string; delta: string }
   | {
+      type: "context_compacted";
+      sessionId: string;
+      estimatedTokensBefore: number;
+      estimatedTokensAfter: number;
+    }
+  | {
       type: "tool_call_started";
       sessionId: string;
       toolCallId: string;

@@ -1,13 +1,14 @@
 {
   "name": "miniq-desktop",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "release:check-version": "node scripts/check-release-version.mjs",
-    "test": "vitest run",
+    "test": "vitest run && npm run test:release-manifest",
+    "test:release-manifest": "node --test scripts/build-release-manifest.node-test.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

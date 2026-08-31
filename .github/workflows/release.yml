@@ -4,8 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing source tag, for example v0.1.0
+        description: Existing source tag, for example v0.1.3
         required: true
+        type: string
+      notes:
+        description: Release notes shown in the updater
+        required: false
+        default: ""
         type: string
       draft:
         description: Create a draft release
@@ -14,106 +19,175 @@ on:
         type: boolean
 
 jobs:
-  release-windows:
-    runs-on: windows-latest
+  validate:
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag }}
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
-
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: release-x86_64-pc-windows-msvc
-          workspaces: |
-            . -> target
-            apps/desktop/src-tauri -> apps/desktop/src-tauri/target
-
       - name: Install frontend dependencies
         working-directory: apps/desktop
         run: npm ci
-
       - name: Validate release version
         working-directory: apps/desktop
         run: npm run release:check-version -- ${{ inputs.tag }}
+      - name: Test release manifest builder
+        working-directory: apps/desktop
+        run: npm run test:release-manifest
 
-      - name: Build daemon sidecar
-        run: cargo build --release -p miniq-daemon --target x86_64-pc-windows-msvc
-
-      - name: Place daemon sidecar
-        shell: pwsh
+  build:
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            bundles: dmg
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
         run: |
-          New-Item -ItemType Directory -Force apps/desktop/src-tauri/binaries | Out-Null
-          Copy-Item target/x86_64-pc-windows-msvc/release/miniq-daemon.exe `
-            apps/desktop/src-tauri/binaries/miniq-daemon-x86_64-pc-windows-msvc.exe
-
-      - name: Build and publish signed updater release
-        uses: tauri-apps/tauri-action@v1
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl \
+            wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Validate Apple signing credentials
+        if: runner.os == 'macOS'
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=0
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+            APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Missing Apple secret::$name is required for signed and notarized macOS releases"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+          workspaces: |
+            . -> target
+            apps/desktop/src-tauri -> apps/desktop/src-tauri/target
+      - name: Build daemon sidecar
+        run: cargo build --release -p miniq-daemon --target ${{ matrix.target }}
+      - name: Place daemon sidecar
+        shell: bash
+        run: |
+          ext=""
+          if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
+          mkdir -p apps/desktop/src-tauri/binaries
+          cp "target/${{ matrix.target }}/release/miniq-daemon${ext}" \
+             "apps/desktop/src-tauri/binaries/miniq-daemon-${{ matrix.target }}${ext}"
+      - name: Install frontend dependencies
+        working-directory: apps/desktop
+        run: npm ci
+      - name: Build signed release bundles
+        working-directory: apps/desktop
+        env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run tauri build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - uses: actions/upload-artifact@v4
         with:
-          projectPath: apps/desktop
-          owner: LeadingThink
-          repo: miniQ-releases
-          releaseCommitish: main
-          tagName: ${{ inputs.tag }}
-          releaseName: miniQ ${{ inputs.tag }}
-          releaseBody: Signed Windows x64 installer and automatic-update metadata for miniQ.
-          releaseDraft: ${{ inputs.draft }}
-          prerelease: false
-          updaterJsonPreferNsis: true
-          uploadUpdaterJson: true
-          uploadUpdaterSignatures: true
-          args: --target x86_64-pc-windows-msvc --bundles nsis
+          name: miniq-release-${{ matrix.target }}
+          path: |
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe.sig
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage.tar.gz
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage.tar.gz.sig
+          if-no-files-found: error
 
-      - name: Normalize updater download URLs
-        shell: pwsh
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: miniq-release-*
+          path: dist-release/artifacts
+      - name: Assemble platform assets and latest.json
+        working-directory: apps/desktop
+        env:
+          RELEASE_NOTES: ${{ inputs.notes }}
+        run: >-
+          node scripts/build-release-manifest.mjs
+          --input ../../dist-release/artifacts
+          --output ../../dist-release/publish
+          --tag ${{ inputs.tag }}
+          --repo LeadingThink/miniQ-releases
+      - name: Create or update public release
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_NOTES: ${{ inputs.notes }}
+          RELEASE_DRAFT: ${{ inputs.draft }}
         run: |
-          $release = gh api "repos/LeadingThink/miniQ-releases/releases/tags/$env:RELEASE_TAG" |
-            ConvertFrom-Json
-          $manifestAsset = $release.assets | Where-Object name -eq "latest.json"
-          if (-not $manifestAsset) {
-            throw "latest.json was not uploaded"
-          }
-
-          $downloadUrls = @{}
-          foreach ($asset in $release.assets) {
-            $downloadUrls[[string]$asset.url] = [string]$asset.browser_download_url
-          }
-
-          $manifestPath = Join-Path $env:RUNNER_TEMP "latest.json"
-          Invoke-WebRequest -Uri $manifestAsset.browser_download_url -OutFile $manifestPath
-          $manifest = Get-Content -Raw $manifestPath | ConvertFrom-Json
-          foreach ($platform in $manifest.platforms.PSObject.Properties) {
-            $url = [string]$platform.Value.url
-            if ($downloadUrls.ContainsKey($url)) {
-              $platform.Value.url = $downloadUrls[$url]
-            } elseif ($release.assets.browser_download_url -notcontains $url) {
-              throw "unknown updater asset URL: $url"
-            }
-          }
-
-          $json = $manifest | ConvertTo-Json -Depth 10
-          [System.IO.File]::WriteAllText(
-            $manifestPath,
-            $json,
-            [System.Text.UTF8Encoding]::new($false)
-          )
-          gh release upload $env:RELEASE_TAG $manifestPath --clobber `
+          if ! gh release view "$RELEASE_TAG" --repo LeadingThink/miniQ-releases >/dev/null 2>&1; then
+            args=(release create "$RELEASE_TAG" --repo LeadingThink/miniQ-releases \
+              --target main --title "miniQ $RELEASE_TAG")
+            if [ "$RELEASE_DRAFT" = "true" ]; then args+=(--draft); fi
+            if [ -n "$RELEASE_NOTES" ]; then
+              args+=(--notes "$RELEASE_NOTES")
+            else
+              args+=(--notes "miniQ desktop release for Windows, macOS, and Linux.")
+            fi
+            gh "${args[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" dist-release/publish/* --clobber \
             --repo LeadingThink/miniQ-releases

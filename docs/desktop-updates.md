@@ -35,6 +35,20 @@ key was generated with a password.
 Do not use a broad personal access token. The updater public key is committed in
 `apps/desktop/src-tauri/tauri.conf.json`; the private key must never be committed.
 
+Formal macOS releases also require an active Apple Developer Program team and:
+
+- `APPLE_CERTIFICATE`: base64-encoded Developer ID Application certificate (`.p12`)
+- `APPLE_CERTIFICATE_PASSWORD`
+- `APPLE_SIGNING_IDENTITY`
+- `APPLE_ID`
+- `APPLE_PASSWORD`: an app-specific password, not the Apple ID password
+- `APPLE_TEAM_ID`
+
+The release workflow fails before building macOS when any Apple value is missing.
+This prevents an unsigned, unnotarized DMG from being presented as a production
+download. The same Apple Developer Program team can later sign the 在问 iOS App;
+it does not require a second program membership.
+
 ## Publishing
 
 1. Update the version in the root workspace, desktop Cargo manifest,
@@ -43,9 +57,10 @@ Do not use a broad personal access token. The updater public key is committed in
 3. Commit, create and push the `vX.Y.Z` source tag.
 4. Run the `Release Desktop Update` workflow with that tag.
 
-The workflow builds the matching daemon sidecar, creates signed NSIS updater
-artifacts, and publishes the installer, signature, and `latest.json` to the
-public release repository.
+The workflow builds matching daemon sidecars and signed updater artifacts for
+Windows x64, macOS Apple Silicon, macOS Intel, and Linux x64. It publishes NSIS,
+DMG, AppImage, and deb installers, then creates one `latest.json` containing all
+four updater targets. A release is published only after every target succeeds.
 
 Tauri update signatures protect package integrity. Windows Authenticode signing
 is a separate requirement and should be added before broad public distribution

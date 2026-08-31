@@ -1,8 +1,13 @@
 //! One agent turn: persist the user message, stream the model, persist the
 //! assistant reply and emit protocol events along the way.
 
+<<<<<<< HEAD
 use miniq_agent::{run_turn, AgentError, AgentEvent};
 use miniq_models::{ChatMessage, ChatRole, ImageAttachment};
+=======
+use miniq_agent::{compact_history, run_turn, AgentError, AgentEvent, ContextPolicy};
+use miniq_models::{ChatMessage, ChatRole};
+>>>>>>> 9b8d8b02ad02cd72355098d365ab1294f6bfbf90
 use miniq_protocol::{Event, Message, Role, SessionStatus};
 use std::path::Path;
 use tokio_util::sync::CancellationToken;
@@ -24,13 +29,7 @@ including with `...`. Do not use relative targets, `file://`, `vscode://`, or ba
 the link. When a source line matters, put it in the label, for example \
 `[main.rs (line 42)](/absolute/path/main.rs)`, while keeping the target as the file path only.";
 
-/// Build the provider-facing history from persisted messages, with runtime
-/// details and available skills appended to the system prompt.
-fn history_from_messages(
-    messages: &[Message],
-    skills_block: &str,
-    workspace_path: &Path,
-) -> Vec<ChatMessage> {
+fn system_message(skills_block: &str, workspace_path: &Path) -> ChatMessage {
     let mut system = format!(
         "{SYSTEM_PROMPT}\n\n{}\n\n{HOST_APP_CONTEXT}",
         runtime_context(workspace_path)
@@ -39,6 +38,7 @@ fn history_from_messages(
         system.push_str("\n\n");
         system.push_str(skills_block);
     }
+<<<<<<< HEAD
     let mut history = vec![ChatMessage::system(system)];
     for msg in messages {
         let role = match msg.role {
@@ -63,7 +63,76 @@ fn history_from_messages(
             tool_calls: Vec::new(),
         });
     }
+=======
+    ChatMessage::system(system)
+}
+
+fn visible_message_to_chat(message: &Message) -> Option<ChatMessage> {
+    let role = match message.role {
+        Role::User => ChatRole::User,
+        Role::Assistant => ChatRole::Assistant,
+        Role::System => ChatRole::System,
+        Role::Tool => return None,
+    };
+    Some(ChatMessage {
+        role,
+        content: message.content.clone(),
+        tool_call_id: None,
+        tool_calls: Vec::new(),
+    })
+}
+
+fn conversation_from_messages(messages: &[Message]) -> Vec<ChatMessage> {
+    messages
+        .iter()
+        .filter_map(visible_message_to_chat)
+        .collect()
+}
+
+fn restore_conversation(
+    messages: &[Message],
+    snapshot: Option<miniq_memory::ModelContextSnapshot>,
+) -> Vec<ChatMessage> {
+    let Some(snapshot) = snapshot else {
+        return conversation_from_messages(messages);
+    };
+    let Ok(mut history) = serde_json::from_value::<Vec<ChatMessage>>(snapshot.history) else {
+        return conversation_from_messages(messages);
+    };
+    let Some(last_index) = messages
+        .iter()
+        .position(|message| message.id == snapshot.last_message_id)
+    else {
+        return conversation_from_messages(messages);
+    };
+    history.extend(
+        messages[last_index + 1..]
+            .iter()
+            .filter_map(visible_message_to_chat),
+    );
+>>>>>>> 9b8d8b02ad02cd72355098d365ab1294f6bfbf90
     history
+}
+
+fn history_for_turn(
+    messages: &[Message],
+    snapshot: Option<miniq_memory::ModelContextSnapshot>,
+    skills_block: &str,
+    workspace_path: &Path,
+) -> Vec<ChatMessage> {
+    let mut history = vec![system_message(skills_block, workspace_path)];
+    history.extend(restore_conversation(messages, snapshot));
+    history
+}
+
+fn context_policy() -> ContextPolicy {
+    let mut policy = ContextPolicy::default();
+    if let Ok(value) = std::env::var("MINIQ_CONTEXT_TOKENS") {
+        if let Ok(tokens) = value.parse::<usize>() {
+            policy.soft_limit_tokens = tokens.max(8_000);
+        }
+    }
+    policy
 }
 
 fn runtime_context(workspace_path: &Path) -> String {
@@ -159,7 +228,11 @@ async fn execute_turn(
         .store
         .list_messages(session_id)
         .map_err(|e| TurnError::Fatal(e.to_string()))?;
-    let history = history_from_messages(&messages, &skills_block, &workspace_path);
+    let snapshot = state
+        .store
+        .get_model_context(session_id)
+        .map_err(|e| TurnError::Fatal(e.to_string()))?;
+    let history = history_for_turn(&messages, snapshot, &skills_block, &workspace_path);
 
     // Allocate the assistant message id upfront so streaming deltas can
     // reference it before the row is written.
@@ -177,6 +250,14 @@ async fn execute_turn(
                     session_id: forward_session.clone(),
                     message_id: forward_message_id.clone(),
                     delta,
+                }),
+                AgentEvent::ContextCompacted {
+                    estimated_tokens_before,
+                    estimated_tokens_after,
+                } => forward_state.emit(Event::ContextCompacted {
+                    session_id: forward_session.clone(),
+                    estimated_tokens_before,
+                    estimated_tokens_after,
                 }),
             }
         }
@@ -197,7 +278,27 @@ async fn execute_turn(
     };
 
     let provider = state.current_provider();
-    let outcome = run_turn(provider.as_ref(), &executor, history, event_tx, cancel).await;
+    let context = compact_history(
+        provider.as_ref(),
+        history,
+        &context_policy(),
+        &event_tx,
+        &cancel,
+    )
+    .await
+    .map_err(|error| match error {
+        AgentError::Cancelled => TurnError::Cancelled,
+        error => TurnError::Fatal(error.to_string()),
+    })?;
+    let provider_history = context.messages;
+    let outcome = run_turn(
+        provider.as_ref(),
+        &executor,
+        provider_history.clone(),
+        event_tx,
+        cancel,
+    )
+    .await;
     let _ = forwarder.await;
 
     let outcome = match outcome {
@@ -215,6 +316,15 @@ async fn execute_turn(
             &outcome.final_text,
         )
         .map_err(|e| TurnError::Fatal(e.to_string()))?;
+    let mut persisted_history = provider_history.into_iter().skip(1).collect::<Vec<_>>();
+    persisted_history.extend(outcome.appended);
+    persisted_history.push(ChatMessage::assistant(outcome.final_text));
+    let persisted_history =
+        serde_json::to_value(persisted_history).map_err(|e| TurnError::Fatal(e.to_string()))?;
+    state
+        .store
+        .save_model_context(session_id, &message.id, &persisted_history)
+        .map_err(|e| TurnError::Fatal(e.to_string()))?;
     state.emit(Event::MessageCreated {
         session_id: session_id.to_string(),
         message,
@@ -226,10 +336,20 @@ async fn execute_turn(
 mod tests {
     use super::*;
 
+    fn message(id: &str, role: Role, content: &str) -> Message {
+        Message {
+            id: id.to_string(),
+            session_id: "session".to_string(),
+            role,
+            content: content.to_string(),
+            created_at: "2026-08-30T00:00:00Z".to_string(),
+        }
+    }
+
     #[test]
     fn system_prompt_includes_runtime_and_workspace() {
         let workspace = Path::new("test-workspace");
-        let history = history_from_messages(&[], "", workspace);
+        let history = history_for_turn(&[], None, "", workspace);
         let system = &history[0].content;
 
         assert!(system.contains("Runtime environment:"));
@@ -242,7 +362,7 @@ mod tests {
 
     #[test]
     fn system_prompt_requires_complete_absolute_file_links() {
-        let history = history_from_messages(&[], "", Path::new("workspace"));
+        let history = history_for_turn(&[], None, "", Path::new("workspace"));
         let system = &history[0].content;
 
         assert!(system.contains("[filename](D:/absolute/path)"));
@@ -254,7 +374,7 @@ mod tests {
 
     #[test]
     fn system_prompt_appends_skills_after_runtime_context() {
-        let history = history_from_messages(&[], "AVAILABLE SKILLS", Path::new("workspace"));
+        let history = history_for_turn(&[], None, "AVAILABLE SKILLS", Path::new("workspace"));
         let system = &history[0].content;
 
         let runtime_index = system.find("Runtime environment:").unwrap();
@@ -263,5 +383,40 @@ mod tests {
         assert!(runtime_index < skills_index);
         assert!(runtime_index < host_context_index);
         assert!(host_context_index < skills_index);
+    }
+
+    #[test]
+    fn restores_tool_transcript_then_appends_messages_after_snapshot() {
+        let messages = vec![
+            message("user-1", Role::User, "first"),
+            message("assistant-1", Role::Assistant, "done"),
+            message("user-2", Role::User, "continue"),
+        ];
+        let stored = vec![
+            ChatMessage::user("first"),
+            ChatMessage {
+                role: ChatRole::Assistant,
+                content: String::new(),
+                tool_call_id: None,
+                tool_calls: vec![miniq_models::ToolCallRequest {
+                    id: "tool-1".to_string(),
+                    name: "file_read".to_string(),
+                    arguments: serde_json::json!({"path": "README.md"}),
+                }],
+            },
+            ChatMessage::tool_result("tool-1", "contents"),
+            ChatMessage::assistant("done"),
+        ];
+        let snapshot = miniq_memory::ModelContextSnapshot {
+            last_message_id: "assistant-1".to_string(),
+            history: serde_json::to_value(stored).unwrap(),
+        };
+
+        let restored = restore_conversation(&messages, Some(snapshot));
+
+        assert_eq!(restored.len(), 5);
+        assert_eq!(restored[1].tool_calls[0].name, "file_read");
+        assert_eq!(restored[2].role, ChatRole::Tool);
+        assert_eq!(restored[4].content, "continue");
     }
 }
