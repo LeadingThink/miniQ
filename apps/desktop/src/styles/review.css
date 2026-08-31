@@ -206,10 +206,10 @@
   top: 0;
   z-index: 1;
   padding: 5px 10px;
-  color: #2563eb;
-  background: #eff6ff;
-  border-top: 1px solid #dbeafe;
-  border-bottom: 1px solid #dbeafe;
+  color: var(--blue);
+  background: var(--diff-hunk-bg);
+  border-top: 1px solid var(--diff-hunk-border);
+  border-bottom: 1px solid var(--diff-hunk-border);
 }
 
 .diff-line {
@@ -235,18 +235,18 @@
 }
 
 .diff-line.addition {
-  background: #ecfdf3;
+  background: var(--diff-add-bg);
 }
 
 .diff-line.deletion {
-  background: #fff1f2;
+  background: var(--diff-delete-bg);
 }
 
 .diff-line-number {
   padding: 0 6px;
   color: var(--text-dim);
-  background: rgba(0, 0, 0, 0.025);
-  border-right: 1px solid rgba(0, 0, 0, 0.05);
+  background: var(--diff-number-bg);
+  border-right: 1px solid var(--diff-number-border);
   text-align: right;
   user-select: none;
 }

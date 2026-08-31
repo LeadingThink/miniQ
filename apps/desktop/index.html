@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>miniQ</title>
+    <script>
+      try {
+        const theme = localStorage.getItem("miniq.appearance.theme");
+        if (theme) document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
     <style>
       /* Inline splash: visible as soon as the HTML parses, long before the
          JS bundle loads. Removed by main.tsx after React's first paint. */
@@ -16,7 +22,7 @@
         align-items: center;
         justify-content: center;
         gap: 16px;
-        background: #f2f2f5;
+        background: var(--canvas, #f2f2f5);
         transition: opacity 0.25s ease;
       }
       #splash.splash-hide {
@@ -42,8 +48,13 @@
         font-size: 15px;
         font-weight: 600;
         letter-spacing: 0.02em;
-        color: #6b7280;
+        color: var(--text-dim, #6b7280);
       }
+      :root[data-theme="graphite"] #splash {
+        background: #17191d;
+      }
+      :root[data-theme="midnight"] #splash { background: #111821; }
+      :root[data-theme="aurora"] #splash { background: #121b1c; }
       @keyframes splash-pulse {
         0%, 100% { transform: scale(1); opacity: 1; }
         50% { transform: scale(0.92); opacity: 0.75; }
