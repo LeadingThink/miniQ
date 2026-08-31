@@ -6,12 +6,16 @@ import App from "./App";
 import "@fontsource-variable/inter/wght.css";
 import "@fontsource-variable/jetbrains-mono/wght.css";
 import "./styles/base.css";
+import "./styles/themes.css";
 import "./styles/conversation.css";
 import "./styles/interactions.css";
 import "./styles/review.css";
 import "./styles/pages.css";
 import "./styles/scheduling.css";
 import "./external-sessions.css";
+import { applyTheme, readStoredTheme } from "./theme";
+
+applyTheme(readStoredTheme());
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

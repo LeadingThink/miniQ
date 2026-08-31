@@ -88,20 +88,22 @@ body {
 }
 
 .app {
+  --canvas-pattern: radial-gradient(var(--canvas-dot) 1px, transparent 1.5px);
+  --canvas-pattern-size: 22px 22px;
   display: flex;
   flex: 1;
   min-height: 0;
   /* Dotted canvas: hints at spatial depth, keeps the gray base from feeling flat. */
   background-color: var(--canvas);
-  background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1.5px);
-  background-size: 22px 22px;
+  background-image: var(--canvas-pattern);
+  background-size: var(--canvas-pattern-size);
 }
 
 /* ============ Sidebar ============ */
 .sidebar {
   width: 264px;
   /* Frosted over the dotted canvas — dots stay faintly visible through the blur. */
-  background: rgba(250, 250, 251, 0.6);
+  background: var(--sidebar-bg);
   backdrop-filter: var(--glass-blur);
   display: flex;
   flex-direction: column;
@@ -322,7 +324,7 @@ body {
   z-index: 1000;
   min-width: 120px;
   padding: 4px;
-  background: var(--bg-card, #fff);
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
@@ -349,7 +351,7 @@ body {
 
 .dropdown-item.danger:hover {
   background: var(--danger);
-  color: #fff;
+  color: var(--danger-contrast);
 }
 
 .rename-input {
@@ -358,7 +360,7 @@ body {
   padding: 1px 4px;
   border: 1px solid var(--accent);
   border-radius: 4px;
-  background: var(--bg-card, #fff);
+  background: var(--bg);
   color: var(--text);
   font-size: inherit;
   outline: none;
@@ -504,5 +506,5 @@ button.ghost:hover {
 
 button.danger {
   background: var(--danger);
-  color: #fff;
+  color: var(--danger-contrast);
 }

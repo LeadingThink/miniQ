@@ -1,4 +1,5 @@
 import type { MiniqAppController } from "../hooks/useMiniqApp";
+import type { ThemeId } from "../theme";
 import { errorMessage } from "../errorMessage";
 import {
   isTextPreviewFile,
@@ -20,8 +21,13 @@ import { Sidebar } from "./Sidebar";
 import { SkillsPanel } from "./Skills";
 import { Timeline } from "./Timeline";
 
-interface AppShellProps {
+interface AppOnlyProps {
   app: MiniqAppController;
+}
+
+interface AppShellProps extends AppOnlyProps {
+  theme: ThemeId;
+  onThemeChange: (theme: ThemeId) => void;
 }
 
 const FilePreviewPanel = lazy(async () => {
@@ -42,7 +48,7 @@ function openFileTarget(app: MiniqAppController, target: LocalFileTarget) {
   );
 }
 
-function StatusBar({ app }: AppShellProps) {
+function StatusBar({ app }: AppOnlyProps) {
   const { connected, health } = app.connection;
   const currentSession = app.catalog.currentSession;
   const canDistill =
@@ -87,7 +93,7 @@ function StatusBar({ app }: AppShellProps) {
   );
 }
 
-function ErrorBanner({ app }: AppShellProps) {
+function ErrorBanner({ app }: AppOnlyProps) {
   if (!app.error) return null;
   return (
     <div className="error-banner">
@@ -99,12 +105,14 @@ function ErrorBanner({ app }: AppShellProps) {
   );
 }
 
-function AppOverlays({ app }: AppShellProps) {
+function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
   return (
     <>
       {app.navigation.showSettings && (
         <SettingsPanel
           client={app.client}
+          theme={theme}
+          onThemeChange={onThemeChange}
           onClose={() => app.navigation.setShowSettings(false)}
         />
       )}
@@ -141,7 +149,7 @@ function AppOverlays({ app }: AppShellProps) {
   );
 }
 
-function SessionPage({ app }: AppShellProps) {
+function SessionPage({ app }: AppOnlyProps) {
   return (
     <>
       <Timeline
@@ -171,7 +179,7 @@ function SessionPage({ app }: AppShellProps) {
   );
 }
 
-function HeroPage({ app }: AppShellProps) {
+function HeroPage({ app }: AppOnlyProps) {
   const selectedWorkspace = app.catalog.selectedWorkspace;
   return (
     <div className="hero">
@@ -217,7 +225,7 @@ function HeroPage({ app }: AppShellProps) {
   );
 }
 
-function MainPage({ app }: AppShellProps) {
+function MainPage({ app }: AppOnlyProps) {
   switch (app.navigation.page) {
     case "schedule":
       return (
@@ -247,7 +255,7 @@ function MainPage({ app }: AppShellProps) {
   }
 }
 
-export function AppShell({ app }: AppShellProps) {
+export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
   return (
     <div className="app">
       <Sidebar
@@ -278,7 +286,7 @@ export function AppShell({ app }: AppShellProps) {
       <div className="main">
         <StatusBar app={app} />
         <ErrorBanner app={app} />
-        <AppOverlays app={app} />
+        <AppOverlays app={app} theme={theme} onThemeChange={onThemeChange} />
         <MainPage app={app} />
       </div>
       {app.preview.state.open && app.catalog.currentWorkspace ? (
