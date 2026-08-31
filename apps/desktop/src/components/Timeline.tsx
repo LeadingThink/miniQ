@@ -279,7 +279,18 @@ function TimelineEntries(props: {
         item.kind === "message" ? (
           item.message.role === "user" ? (
             <div key={item.message.id} className="bubble user">
-              {item.message.content}
+              {!!item.message.images?.length && (
+                <div className="message-images">
+                  {item.message.images.map((image, index) => (
+                    <img
+                      key={`${item.message.id}-${index}`}
+                      src={`data:${image.mediaType};base64,${image.data}`}
+                      alt={`用户图片 ${index + 1}`}
+                    />
+                  ))}
+                </div>
+              )}
+              {item.message.content && <div>{item.message.content}</div>}
             </div>
           ) : item.message.role === "tool" ? (
             <div key={item.message.id} className="bubble tool-transcript">

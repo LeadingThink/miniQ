@@ -1,4 +1,4 @@
-use miniq_protocol::{ErrorCode, Event, Role, RpcError, SessionStatus};
+use miniq_protocol::{ErrorCode, Event, ImageAttachment, Role, RpcError, SessionStatus};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -95,6 +95,8 @@ struct SendMessageParams {
 struct IncomingMessage {
     role: String,
     content: String,
+    #[serde(default)]
+    images: Vec<ImageAttachment>,
 }
 
 pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
@@ -129,11 +131,34 @@ fn validate_message(message: &IncomingMessage) -> Result<(), RpcError> {
             "only user messages can be sent",
         ));
     }
-    if message.content.trim().is_empty() {
+    if message.content.trim().is_empty() && message.images.is_empty() {
         return Err(RpcError::new(
             ErrorCode::InvalidParams,
             "message content is empty",
         ));
+    }
+    if message.images.len() > 4 {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "a message can contain at most 4 images",
+        ));
+    }
+    for image in &message.images {
+        if !matches!(
+            image.media_type.as_str(),
+            "image/png" | "image/jpeg" | "image/webp" | "image/gif"
+        ) {
+            return Err(RpcError::new(
+                ErrorCode::InvalidParams,
+                "unsupported image type",
+            ));
+        }
+        if image.data.is_empty() || image.data.len() > 14_000_000 {
+            return Err(RpcError::new(
+                ErrorCode::InvalidParams,
+                "image data is empty or exceeds 10 MiB",
+            ));
+        }
     }
     Ok(())
 }
@@ -145,14 +170,23 @@ fn append_user_message(
 ) -> Result<miniq_protocol::Message, RpcError> {
     let message = state
         .store
-        .append_message(&input.session_id, Role::User, &input.message.content)
+        .append_message_with_images(
+            &input.session_id,
+            Role::User,
+            &input.message.content,
+            &input.message.images,
+        )
         .map_err(|error| {
             state.end_turn(&input.session_id);
             store_err(error)
         })?;
 
     if current_title == "New session" {
-        let title: String = input.message.content.trim().chars().take(30).collect();
+        let title: String = if input.message.content.trim().is_empty() {
+            "图片问答".to_string()
+        } else {
+            input.message.content.trim().chars().take(30).collect()
+        };
         if !title.is_empty() {
             let _ = state.store.update_session_title(&input.session_id, &title);
         }

@@ -9,6 +9,7 @@ import type {
   Session,
   SessionStatus,
   ToolCall,
+  UserMessageInput,
   Workspace,
 } from "../types";
 import { useDaemonConnection } from "./useDaemonConnection";
@@ -343,13 +344,13 @@ function useTurnActions(
   const { createSession, openSession } = lifecycle;
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (message: UserMessageInput) => {
       if (!catalog.currentSessionId) return;
       setError(null);
       try {
         await client.call("session.sendMessage", {
           sessionId: catalog.currentSessionId,
-          message: { role: "user", content },
+          message: { role: "user", ...message },
         });
         void catalog.refreshSessions();
       } catch (error) {
@@ -360,7 +361,7 @@ function useTurnActions(
   );
 
   const startTask = useCallback(
-    async (content: string) => {
+    async (message: UserMessageInput) => {
       if (!catalog.selectedWorkspace) {
         setError("请先选择一个项目(或新建一个)");
         return;
@@ -370,7 +371,7 @@ function useTurnActions(
         const session = await createSession(catalog.selectedWorkspace.id);
         await client.call("session.sendMessage", {
           sessionId: session.id,
-          message: { role: "user", content },
+          message: { role: "user", ...message },
         });
         await openSession(session.id);
         void catalog.refreshSessions();

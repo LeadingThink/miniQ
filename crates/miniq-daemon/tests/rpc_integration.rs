@@ -186,6 +186,67 @@ async fn chat_turn_streams_and_persists() {
 }
 
 #[tokio::test]
+async fn image_message_reaches_provider_and_persists() {
+    let provider = std::sync::Arc::new(miniq_models::mock::MockProvider::text("I see it"));
+    let (port, token) = start_daemon_with(provider.clone()).await;
+    let mut ws = connect(port, &token).await;
+    let dir = tempfile::tempdir().unwrap();
+
+    let resp = call(
+        &mut ws,
+        "r1",
+        "workspace.open",
+        json!({"path": dir.path().to_string_lossy()}),
+    )
+    .await;
+    let workspace_id = resp["result"]["id"].as_str().unwrap();
+    let resp = call(
+        &mut ws,
+        "r2",
+        "session.create",
+        json!({"workspaceId": workspace_id}),
+    )
+    .await;
+    let session_id = resp["result"]["id"].as_str().unwrap().to_string();
+
+    let image = json!({"mediaType": "image/png", "data": "aGVsbG8="});
+    let resp = call(
+        &mut ws,
+        "r3",
+        "session.sendMessage",
+        json!({
+            "sessionId": session_id,
+            "message": {"role": "user", "content": "这是什么？", "images": [image]}
+        }),
+    )
+    .await;
+    assert_eq!(
+        resp["result"]["message"]["images"][0]["mediaType"],
+        "image/png"
+    );
+
+    next_event_of(&mut ws, "turn_completed").await;
+    {
+        let requests = provider.requests.lock().unwrap();
+        let user = &requests[0].messages[1];
+        assert_eq!(user.content, "这是什么？");
+        assert_eq!(user.images.len(), 1);
+        assert_eq!(user.images[0].data, "aGVsbG8=");
+    }
+
+    let resp = call(
+        &mut ws,
+        "r4",
+        "session.open",
+        json!({"sessionId": session_id}),
+    )
+    .await;
+    let stored = &resp["result"]["messages"][0];
+    assert_eq!(stored["images"][0]["mediaType"], "image/png");
+    assert_eq!(stored["images"][0]["data"], "aGVsbG8=");
+}
+
+#[tokio::test]
 async fn busy_session_rejects_second_message() {
     // Script one slow-ish turn by using a multi-chunk mock.
     let (port, token) = start_daemon().await;

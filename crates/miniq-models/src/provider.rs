@@ -29,11 +29,21 @@ pub enum ChatRole {
     Tool,
 }
 
+/// An inline image attached to a user message.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageAttachment {
+    pub media_type: String,
+    pub data: String,
+}
+
 /// One message in the provider conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: ChatRole,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<ImageAttachment>,
     /// Set on `Tool` messages: which call this result answers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
@@ -56,6 +66,7 @@ impl ChatMessage {
         Self {
             role: ChatRole::Tool,
             content: content.into(),
+            images: Vec::new(),
             tool_call_id: Some(tool_call_id.into()),
             tool_calls: Vec::new(),
         }
@@ -64,6 +75,7 @@ impl ChatMessage {
         Self {
             role,
             content: content.into(),
+            images: Vec::new(),
             tool_call_id: None,
             tool_calls: Vec::new(),
         }

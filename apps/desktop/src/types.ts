@@ -10,6 +10,16 @@ export type SessionStatus =
 
 export type Role = "user" | "assistant" | "system" | "tool";
 
+export interface ImageAttachment {
+  mediaType: string;
+  data: string;
+}
+
+export interface UserMessageInput {
+  content: string;
+  images: ImageAttachment[];
+}
+
 export type ToolCallStatus =
   | "pending"
   | "waiting_approval"
@@ -119,6 +129,7 @@ export interface Message {
   sessionId: string;
   role: Role;
   content: string;
+  images?: ImageAttachment[];
   createdAt: string;
 }
 

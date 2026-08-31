@@ -88,6 +88,21 @@
         ],
         "type": "object"
       },
+      "ImageAttachment": {
+        "properties": {
+          "data": {
+            "type": "string"
+          },
+          "mediaType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data",
+          "mediaType"
+        ],
+        "type": "object"
+      },
       "Message": {
         "properties": {
           "content": {
@@ -98,6 +113,12 @@
           },
           "id": {
             "type": "string"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/definitions/ImageAttachment"
+            },
+            "type": "array"
           },
           "role": {
             "$ref": "#/definitions/Role"
@@ -544,6 +565,113 @@
           "type"
         ],
         "type": "object"
+      },
+      {
+        "description": "A session was deleted.",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "session_deleted"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "A workspace (project) was deleted.",
+        "properties": {
+          "type": {
+            "enum": [
+              "workspace_deleted"
+            ],
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "workspaceId"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "A session was renamed.",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "session_renamed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "title",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "A workspace was renamed.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "workspace_renamed"
+            ],
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "workspaceId"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "A session's pinned state changed.",
+        "properties": {
+          "pinned": {
+            "type": "boolean"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "session_pinned_changed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "pinned",
+          "sessionId",
+          "type"
+        ],
+        "type": "object"
       }
     ],
     "title": "Event"
@@ -817,7 +945,7 @@
     "title": "ExternalSessionScan",
     "type": "object"
   },
-  "protocolVersion": 1,
+  "protocolVersion": 2,
   "request": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "definitions": {
@@ -994,6 +1122,10 @@
       },
       "id": {
         "type": "string"
+      },
+      "pinned": {
+        "default": false,
+        "type": "boolean"
       },
       "status": {
         "$ref": "#/definitions/SessionStatus"

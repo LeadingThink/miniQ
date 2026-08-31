@@ -4,6 +4,8 @@ import { resolveConnection } from "../rpc";
 import type { RpcClient } from "../rpc";
 import type { ApprovalMode, HealthStatus } from "../types";
 
+const PROTOCOL_VERSION = 2;
+
 interface ConnectionOptions {
   client: RpcClient;
   refreshWorkspaces: () => Promise<void>;
@@ -26,7 +28,13 @@ async function connectWithRetry(options: ConnectAttemptOptions): Promise<void> {
       await options.client.connect(info);
       if (options.isDisposed()) return;
       options.onConnected(true);
-      options.onHealth(await options.client.call<HealthStatus>("daemon.health"));
+      const health = await options.client.call<HealthStatus>("daemon.health");
+      if (health.protocolVersion !== PROTOCOL_VERSION) {
+        throw new Error(
+          `daemon protocol ${health.protocolVersion} is incompatible with desktop protocol ${PROTOCOL_VERSION}; restart miniQ to use the updated daemon`,
+        );
+      }
+      options.onHealth(health);
       const settings = await options.client.call<{ approvalMode?: ApprovalMode }>(
         "settings.get",
       );

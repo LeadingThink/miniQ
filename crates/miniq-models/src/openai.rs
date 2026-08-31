@@ -69,7 +69,24 @@ fn message_to_json(msg: &ChatMessage) -> Value {
         ChatRole::Assistant => "assistant",
         ChatRole::Tool => "tool",
     };
-    let mut v = json!({ "role": role, "content": msg.content });
+    let content = if msg.images.is_empty() {
+        json!(msg.content)
+    } else {
+        let mut parts = Vec::with_capacity(msg.images.len() + 1);
+        if !msg.content.is_empty() {
+            parts.push(json!({ "type": "text", "text": msg.content }));
+        }
+        parts.extend(msg.images.iter().map(|image| {
+            json!({
+                "type": "image_url",
+                "image_url": {
+                    "url": format!("data:{};base64,{}", image.media_type, image.data)
+                }
+            })
+        }));
+        Value::Array(parts)
+    };
+    let mut v = json!({ "role": role, "content": content });
     if let Some(id) = &msg.tool_call_id {
         v["tool_call_id"] = json!(id);
     }
@@ -91,6 +108,44 @@ fn message_to_json(msg: &ChatMessage) -> Value {
         );
     }
     v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::message_to_json;
+    use crate::provider::{ChatMessage, ImageAttachment};
+    use serde_json::json;
+
+    #[test]
+    fn serializes_plain_text_as_string_content() {
+        assert_eq!(
+            message_to_json(&ChatMessage::user("hello")),
+            json!({ "role": "user", "content": "hello" })
+        );
+    }
+
+    #[test]
+    fn serializes_images_as_multimodal_content() {
+        let mut message = ChatMessage::user("What is shown here?");
+        message.images.push(ImageAttachment {
+            media_type: "image/png".to_string(),
+            data: "aGVsbG8=".to_string(),
+        });
+
+        assert_eq!(
+            message_to_json(&message),
+            json!({
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": "What is shown here?" },
+                    {
+                        "type": "image_url",
+                        "image_url": { "url": "data:image/png;base64,aGVsbG8=" }
+                    }
+                ]
+            })
+        );
+    }
 }
 
 /// Partially accumulated tool call from streamed fragments.

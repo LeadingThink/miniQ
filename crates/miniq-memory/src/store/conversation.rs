@@ -1,5 +1,5 @@
 use miniq_protocol::{
-    Approval, ApprovalStatus, Message, RiskLevel, Role, ToolCall, ToolCallStatus,
+    Approval, ApprovalStatus, ImageAttachment, Message, RiskLevel, Role, ToolCall, ToolCallStatus,
 };
 use rusqlite::params;
 use serde_json::Value;
@@ -9,7 +9,17 @@ use super::{new_id, now_iso, MemoryError, Result, Store};
 
 impl Store {
     pub fn append_message(&self, session_id: &str, role: Role, content: &str) -> Result<Message> {
-        self.append_message_with_id(&new_id("msg"), session_id, role, content)
+        self.append_message_with_images(session_id, role, content, &[])
+    }
+
+    pub fn append_message_with_images(
+        &self,
+        session_id: &str,
+        role: Role,
+        content: &str,
+        images: &[ImageAttachment],
+    ) -> Result<Message> {
+        self.append_message_with_id_and_images(&new_id("msg"), session_id, role, content, images)
     }
 
     /// Append a message with a caller-allocated id (used for streaming, where
@@ -21,22 +31,35 @@ impl Store {
         role: Role,
         content: &str,
     ) -> Result<Message> {
+        self.append_message_with_id_and_images(id, session_id, role, content, &[])
+    }
+
+    fn append_message_with_id_and_images(
+        &self,
+        id: &str,
+        session_id: &str,
+        role: Role,
+        content: &str,
+        images: &[ImageAttachment],
+    ) -> Result<Message> {
         let conn = self.conn.lock().unwrap();
         let message = Message {
             id: id.to_string(),
             session_id: session_id.to_string(),
             role,
             content: content.to_string(),
+            images: images.to_vec(),
             created_at: now_iso(),
         };
         conn.execute(
-            "INSERT INTO messages (id, session_id, role, content, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO messages (id, session_id, role, content, images_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 message.id,
                 message.session_id,
                 message.role.as_str(),
                 message.content,
+                serde_json::to_string(&message.images)?,
                 message.created_at
             ],
         )?;
@@ -50,7 +73,7 @@ impl Store {
     pub fn list_messages(&self, session_id: &str) -> Result<Vec<Message>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT m.id, m.session_id, m.role, m.content, m.created_at
+            "SELECT m.id, m.session_id, m.role, m.content, m.images_json, m.created_at
              FROM messages m
              LEFT JOIN external_session_events e ON e.projected_message_id = m.id
              WHERE m.session_id = ?1

@@ -1,6 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { ApprovalMode } from "../types";
+import type { ApprovalMode, ImageAttachment, UserMessageInput } from "../types";
+
+const MAX_IMAGES = 4;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const SUPPORTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
+function readImage(file: File): Promise<ImageAttachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`无法读取图片 ${file.name}`));
+    reader.onload = () => {
+      const result = String(reader.result);
+      const comma = result.indexOf(",");
+      if (comma < 0) {
+        reject(new Error(`无法解析图片 ${file.name}`));
+        return;
+      }
+      resolve({ mediaType: file.type, data: result.slice(comma + 1) });
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function imageUrl(image: ImageAttachment) {
+  return `data:${image.mediaType};base64,${image.data}`;
+}
 
 /** Monochrome line icons (stroke = currentColor), Codex-style. */
 function HandIcon() {
@@ -125,16 +150,45 @@ export function ComposerCard(props: {
   autoFocus?: boolean;
   approvalMode?: ApprovalMode;
   onApprovalModeChange?: (mode: ApprovalMode) => void;
-  onSend: (content: string) => void;
+  onSend: (message: UserMessageInput) => void;
   onCancel?: () => void;
 }) {
   const [draft, setDraft] = useState("");
+  const [images, setImages] = useState<ImageAttachment[]>([]);
+  const [imageError, setImageError] = useState<string | null>(null);
 
   const send = () => {
     const content = draft.trim();
-    if (!content || props.busy) return;
-    props.onSend(content);
+    if ((!content && images.length === 0) || props.busy) return;
+    props.onSend({ content, images });
     setDraft("");
+    setImages([]);
+    setImageError(null);
+  };
+
+  const onPaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(event.clipboardData.files).filter((file) =>
+      file.type.startsWith("image/"),
+    );
+    if (files.length === 0) return;
+    event.preventDefault();
+
+    const accepted = files
+      .filter((file) => SUPPORTED_IMAGE_TYPES.has(file.type) && file.size <= MAX_IMAGE_BYTES)
+      .slice(0, MAX_IMAGES - images.length);
+    if (accepted.length !== files.length) {
+      setImageError("最多粘贴 4 张图片，单张不超过 10 MiB，支持 PNG、JPEG、WebP 和 GIF");
+    } else {
+      setImageError(null);
+    }
+    if (accepted.length === 0) return;
+
+    try {
+      const added = await Promise.all(accepted.map(readImage));
+      setImages((current) => [...current, ...added].slice(0, MAX_IMAGES));
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : "无法读取粘贴的图片");
+    }
   };
 
   return (
@@ -144,6 +198,7 @@ export function ComposerCard(props: {
         autoFocus={props.autoFocus}
         placeholder={props.busy ? "任务执行中..." : props.placeholder}
         rows={1}
+        onPaste={onPaste}
         onChange={(e) => {
           setDraft(e.target.value);
           e.target.style.height = "auto";
@@ -156,6 +211,24 @@ export function ComposerCard(props: {
           }
         }}
       />
+      {images.length > 0 && (
+        <div className="composer-images">
+          {images.map((image, index) => (
+            <div className="composer-image" key={`${image.data.slice(0, 24)}-${index}`}>
+              <img src={imageUrl(image)} alt={`粘贴的图片 ${index + 1}`} />
+              <button
+                type="button"
+                title="移除图片"
+                aria-label={`移除图片 ${index + 1}`}
+                onClick={() => setImages((current) => current.filter((_, item) => item !== index))}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {imageError && <div className="composer-image-error">{imageError}</div>}
       <div className="composer-row">
         {props.chipSlot}
         {props.chip && <span className="chip">🗂 {props.chip}</span>}
@@ -167,7 +240,12 @@ export function ComposerCard(props: {
             ■
           </button>
         ) : (
-          <button className="send-btn" title="发送" disabled={!draft.trim()} onClick={send}>
+          <button
+            className="send-btn"
+            title="发送"
+            disabled={!draft.trim() && images.length === 0}
+            onClick={send}
+          >
             ↑
           </button>
         )}
@@ -182,7 +260,7 @@ export function Composer(props: {
   chip?: string;
   approvalMode?: ApprovalMode;
   onApprovalModeChange?: (mode: ApprovalMode) => void;
-  onSend: (content: string) => void;
+  onSend: (message: UserMessageInput) => void;
   onCancel: () => void;
 }) {
   return (

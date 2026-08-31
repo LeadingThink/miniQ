@@ -8,8 +8,8 @@ mod provider;
 
 pub use openai::OpenAiCompatProvider;
 pub use provider::{
-    ChatDelta, ChatMessage, ChatRole, CompletionRequest, DeltaStream, ModelProvider,
-    ProviderConfig, ProviderError, ToolCallRequest, ToolSpec,
+    ChatDelta, ChatMessage, ChatRole, CompletionRequest, DeltaStream, ImageAttachment,
+    ModelProvider, ProviderConfig, ProviderError, ToolCallRequest, ToolSpec,
 };
 
 pub mod mock;

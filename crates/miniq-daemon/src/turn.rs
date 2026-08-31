@@ -2,7 +2,7 @@
 //! assistant reply and emit protocol events along the way.
 
 use miniq_agent::{run_turn, AgentError, AgentEvent};
-use miniq_models::{ChatMessage, ChatRole};
+use miniq_models::{ChatMessage, ChatRole, ImageAttachment};
 use miniq_protocol::{Event, Message, Role, SessionStatus};
 use std::path::Path;
 use tokio_util::sync::CancellationToken;
@@ -51,6 +51,14 @@ fn history_from_messages(
         history.push(ChatMessage {
             role,
             content: msg.content.clone(),
+            images: msg
+                .images
+                .iter()
+                .map(|image| ImageAttachment {
+                    media_type: image.media_type.clone(),
+                    data: image.data.clone(),
+                })
+                .collect(),
             tool_call_id: None,
             tool_calls: Vec::new(),
         });

@@ -120,6 +120,7 @@ pub async fn run_turn(
         let assistant_msg = ChatMessage {
             role: miniq_models::ChatRole::Assistant,
             content: text,
+            images: Vec::new(),
             tool_call_id: None,
             tool_calls: tool_calls.clone(),
         };
