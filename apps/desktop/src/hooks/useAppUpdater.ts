@@ -11,6 +11,7 @@ const FOCUS_CHECK_INTERVAL_MS = 60_000;
 export type UpdatePhase =
   | "idle"
   | "checking"
+  | "unavailable"
   | "available"
   | "downloading"
   | "installing"
@@ -34,6 +35,13 @@ const INITIAL_STATE: AppUpdaterState = {
 
 export function shouldCheckForUpdate(lastCheckedAt: number, now: number): boolean {
   return now - lastCheckedAt >= FOCUS_CHECK_INTERVAL_MS;
+}
+
+export function isUnsupportedPlatformUpdateError(message: string): boolean {
+  return (
+    message.includes("fallback platforms") &&
+    message.includes("were found in the response")
+  );
 }
 
 export function applyDownloadEvent(
@@ -103,6 +111,10 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
           });
         } catch (error) {
           const message = errorMessage(error);
+          if (isUnsupportedPlatformUpdateError(message)) {
+            setState({ ...INITIAL_STATE, phase: "unavailable" });
+            return;
+          }
           setState((current) => ({ ...current, phase: "error", error: message }));
           if (!silent) onError(`检查更新失败：${message}`);
         }

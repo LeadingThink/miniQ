@@ -37,4 +37,18 @@ describe("UpdateNotice", () => {
 
     expect(html).toBe("");
   });
+
+  it("does not present a missing platform package as an update failure", () => {
+    const html = renderToStaticMarkup(
+      <UpdateNotice
+        supported
+        state={{ ...IDLE, phase: "unavailable" }}
+        onCheck={() => undefined}
+        onInstall={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("当前平台暂无更新");
+    expect(html).not.toContain("更新失败");
+  });
 });

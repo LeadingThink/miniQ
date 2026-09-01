@@ -23,17 +23,24 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   </React.StrictMode>,
 );
 
-// Fade out the inline splash (index.html) once React has painted its first
-// frame into #root.
-function hideSplash() {
+// WebKit may defer requestAnimationFrame while a packaged window is opening.
+// Observe React's root directly so the splash cannot cover a ready app.
+function hideSplashWhenReady() {
   const splash = document.getElementById("splash");
   if (!splash) return;
   const root = document.getElementById("root");
-  if (!root || root.childElementCount === 0) {
-    requestAnimationFrame(hideSplash);
-    return;
-  }
-  splash.classList.add("splash-hide");
-  window.setTimeout(() => splash.remove(), 300);
+  if (!root) return;
+
+  let hidden = false;
+  const hide = () => {
+    if (hidden || root.childElementCount === 0) return;
+    hidden = true;
+    observer.disconnect();
+    splash.classList.add("splash-hide");
+    window.setTimeout(() => splash.remove(), 300);
+  };
+  const observer = new MutationObserver(hide);
+  observer.observe(root, { childList: true });
+  hide();
 }
-requestAnimationFrame(hideSplash);
+hideSplashWhenReady();

@@ -35,6 +35,20 @@ export function UpdateNotice({ supported, state, onCheck, onInstall }: UpdateNot
     );
   }
 
+  if (state.phase === "unavailable") {
+    return (
+      <button
+        type="button"
+        className="nav-item sidebar-nav-button"
+        title="发布清单尚未提供当前平台的安装包"
+        onClick={onCheck}
+      >
+        <RefreshCw className="nav-icon" size={16} />
+        <span>当前平台暂无更新</span>
+      </button>
+    );
+  }
+
   if (state.phase === "error") {
     return (
       <button
