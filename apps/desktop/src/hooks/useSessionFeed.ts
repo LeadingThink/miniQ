@@ -139,7 +139,6 @@ function reduceDaemonEvent(
     case "turn_failed":
       return { ...state, streamingText: "" };
     case "session_status_changed":
-    case "context_compacted":
     case "session_deleted":
     case "workspace_deleted":
     case "session_renamed":

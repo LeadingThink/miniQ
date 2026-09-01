@@ -6,7 +6,7 @@
 //! structured JSON result so the model can react.
 
 use async_trait::async_trait;
-use miniq_agent::{AgentError, ToolExecutionMode, ToolExecutor};
+use miniq_agent::{AgentError, ToolExecutor};
 use miniq_models::{ToolCallRequest, ToolSpec};
 use miniq_protocol::{ApprovalStatus, Event, RiskLevel, SessionStatus, ToolCallStatus};
 use miniq_tools::{ToolContext, ToolRouter};
@@ -390,14 +390,6 @@ impl SessionToolExecutor {
 impl ToolExecutor for SessionToolExecutor {
     fn specs(&self) -> Vec<ToolSpec> {
         self.router.specs()
-    }
-
-    fn execution_mode(&self, call: &ToolCallRequest) -> ToolExecutionMode {
-        match call.name.as_str() {
-            "file_read" | "file_list" | "file_glob" | "file_grep" | "git_status" | "git_diff"
-            | "doc_read" | "skill_read" | "memory_search" => ToolExecutionMode::Parallel,
-            _ => ToolExecutionMode::Sequential,
-        }
     }
 
     async fn execute(&self, call: &ToolCallRequest) -> Result<Value, AgentError> {
