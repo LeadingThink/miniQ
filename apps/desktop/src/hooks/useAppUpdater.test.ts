@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyDownloadEvent,
+  isUnsupportedPlatformUpdateError,
   shouldCheckForUpdate,
   type AppUpdaterState,
 } from "./useAppUpdater";
@@ -42,5 +43,19 @@ describe("shouldCheckForUpdate", () => {
   it("checks again after the app has been open or hidden for one minute", () => {
     expect(shouldCheckForUpdate(1_000, 60_999)).toBe(false);
     expect(shouldCheckForUpdate(1_000, 61_000)).toBe(true);
+  });
+});
+
+describe("isUnsupportedPlatformUpdateError", () => {
+  it("recognizes a release manifest that has no package for this platform", () => {
+    expect(
+      isUnsupportedPlatformUpdateError(
+        'None of the fallback platforms `["darwin-aarch64-app"]` were found in the response `platforms` object',
+      ),
+    ).toBe(true);
+  });
+
+  it("does not hide network and signature failures", () => {
+    expect(isUnsupportedPlatformUpdateError("request timed out")).toBe(false);
   });
 });
