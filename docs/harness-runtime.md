@@ -4,16 +4,9 @@ miniQ 的 Agent 运行时吸收了 DeepSeek Harness 与 OpenAI Codex 开源实�
 
 ## 每轮上下文
 
-`miniq-daemon` 在一次 turn 成功结束后，把模型实际看到的消息保存到 SQLite 的 `model_context_snapshots` 表。快照包括：
+`miniq-daemon` 在每次 turn 开始时从 SQLite 中已持久化的 user 和 assistant 消息重建模型上下文。工具调用、审批和审计记录分别持久化，用于界面展示与操作追踪，但不会通过旧的模型上下文快照恢复机制回放。
 
-- user 和 assistant 消息；
-- assistant 发出的完整 tool calls；
-- 对应的 tool results；
-- 快照对应的最后一条持久消息 ID。
-
-下一轮先恢复快照，再追加该消息 ID 之后的新用户消息。这样模型获得的是完整工具记录，而不是只有聊天正文的近似历史。快照按 session 覆盖写入，数据库迁移位于 `migrations/0006_model_context.sql`。
-
-当前只在成功轮次结束时推进快照。失败或取消的轮次不会污染下一轮可用上下文；工具调用和审计记录仍按原有机制持久化。
+旧的 `model_context_snapshots` 状态持久化已移除，数据库不再创建或依赖该表。
 
 ## 上下文压缩
 
@@ -52,10 +45,9 @@ git_status, git_diff, doc_read, skill_read, memory_search
 
 ## 代码位置
 
-- 上下文预算和压缩：`crates/miniq-agent/src/context.rs`
-- step 循环、并行白名单和重复检测：`crates/miniq-agent/src/lib.rs`
-- 快照恢复与保存：`crates/miniq-daemon/src/turn.rs`
-- SQLite 存储：`crates/miniq-memory/src/store/model_context.rs`
+- step 循环和工具调度：`crates/miniq-agent/src/lib.rs`
+- 对话上下文构建：`crates/miniq-daemon/src/turn.rs`
+- SQLite 消息存储：`crates/miniq-memory/src/store/conversation.rs`
 - 客户端事件：`crates/miniq-protocol/src/event.rs`
 
 ## 后续演进
@@ -67,4 +59,4 @@ git_status, git_diff, doc_read, skill_read, memory_search
 3. 增加真实 provider、审批和压缩组合测试，以及长任务恢复评测。
 4. 为压缩率、重复调用、工具延迟和恢复成功率建立运行时指标。
 
-这些演进必须复用当前 snapshot、协议事件和审计表，不建立第二套并行状态源。
+这些演进必须复用当前持久消息、协议事件和审计表，不建立第二套并行状态源。

@@ -206,10 +206,6 @@ impl Store {
         // handled automatically when the session row is removed.
         conn.execute("DELETE FROM approvals WHERE session_id = ?1", params![id])?;
         conn.execute("DELETE FROM tool_calls WHERE session_id = ?1", params![id])?;
-        conn.execute(
-            "DELETE FROM model_context_snapshots WHERE session_id = ?1",
-            params![id],
-        )?;
         conn.execute("DELETE FROM messages WHERE session_id = ?1", params![id])?;
         conn.execute("DELETE FROM artifacts WHERE session_id = ?1", params![id])?;
         conn.execute("DELETE FROM checkpoints WHERE session_id = ?1", params![id])?;
@@ -269,10 +265,6 @@ impl Store {
         for sid in &session_ids {
             conn.execute("DELETE FROM approvals WHERE session_id = ?1", params![sid])?;
             conn.execute("DELETE FROM tool_calls WHERE session_id = ?1", params![sid])?;
-            conn.execute(
-                "DELETE FROM model_context_snapshots WHERE session_id = ?1",
-                params![sid],
-            )?;
             conn.execute("DELETE FROM messages WHERE session_id = ?1", params![sid])?;
             conn.execute("DELETE FROM artifacts WHERE session_id = ?1", params![sid])?;
             conn.execute(

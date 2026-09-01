@@ -136,3 +136,36 @@ fn persistent_store_reopens() {
     assert_eq!(msgs.len(), 1);
     assert_eq!(msgs[0].content, "still here?");
 }
+
+#[test]
+fn delete_session_works_without_legacy_model_context_table() {
+    let store = Store::open_in_memory().unwrap();
+    let workspace = store
+        .create_workspace("D:/tmp/delete-session", "proj")
+        .unwrap();
+    let session = store.create_session(&workspace.id, "delete me").unwrap();
+    store
+        .append_message(&session.id, Role::User, "temporary")
+        .unwrap();
+
+    store.delete_session(&session.id).unwrap();
+
+    assert!(store.get_session(&session.id).is_err());
+}
+
+#[test]
+fn delete_workspace_works_without_legacy_model_context_table() {
+    let store = Store::open_in_memory().unwrap();
+    let workspace = store
+        .create_workspace("D:/tmp/delete-workspace", "proj")
+        .unwrap();
+    let session = store.create_session(&workspace.id, "delete me").unwrap();
+    store
+        .append_message(&session.id, Role::User, "temporary")
+        .unwrap();
+
+    store.delete_workspace(&workspace.id).unwrap();
+
+    assert!(store.get_workspace(&workspace.id).is_err());
+    assert!(store.get_session(&session.id).is_err());
+}
