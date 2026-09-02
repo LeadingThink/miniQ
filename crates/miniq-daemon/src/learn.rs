@@ -106,6 +106,7 @@ impl SkillInference for ProviderInference {
         let mut text = String::new();
         while let Some(delta) = stream.next().await {
             match delta.map_err(|e| e.to_string())? {
+                ChatDelta::Reasoning(_) => {}
                 ChatDelta::Text(t) => text.push_str(&t),
                 ChatDelta::ToolCall(_) => {}
                 ChatDelta::Finished => break,

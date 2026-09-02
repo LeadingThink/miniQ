@@ -392,6 +392,21 @@ impl ToolExecutor for SessionToolExecutor {
         self.router.specs()
     }
 
+    async fn record_intermediate_text(&self, text: &str) -> Result<(), AgentError> {
+        let message = self
+            .state
+            .store
+            .append_message(&self.session_id, miniq_protocol::Role::Assistant, text)
+            .map_err(|error| {
+                AgentError::Provider(miniq_models::ProviderError::Config(error.to_string()))
+            })?;
+        self.state.emit(Event::MessageCreated {
+            session_id: self.session_id.clone(),
+            message,
+        });
+        Ok(())
+    }
+
     async fn execute(&self, call: &ToolCallRequest) -> Result<Value, AgentError> {
         // 1. Risk evaluation (unknown tools are reported back to the model).
         let risk = match self.router.evaluate(&self.ctx, &call.name, &call.arguments) {

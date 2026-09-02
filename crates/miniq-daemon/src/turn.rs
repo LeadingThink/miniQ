@@ -12,7 +12,10 @@ use crate::state::AppState;
 const SYSTEM_PROMPT: &str = "You are miniQ, a local AI coworker that collaborates with the \
 user inside their workspace: you plan multi-step tasks, read and edit files, run commands \
 and deliver ready-to-use results. Be concise and accurate. High-risk actions go through \
-user approval; if an action is rejected, adapt instead of retrying it verbatim.";
+user approval; if an action is rejected, adapt instead of retrying it verbatim. Always use \
+Simplified Chinese for all user-facing text, including the reasoning text emitted before each \
+tool call and the final answer. Preserve code, commands, file paths, URLs, and proper nouns in \
+their original form when appropriate.";
 
 const HOST_APP_CONTEXT: &str = "Host app file references: whenever you reference a local \
 workspace file in a response, use a Markdown link with a concise filename label and the \
@@ -250,6 +253,16 @@ mod tests {
         assert!(system.contains("Never abbreviate or omit any path segment"));
         assert!(system.contains("Use forward slashes in Windows Markdown link targets"));
         assert!(system.contains("[main.rs (line 42)](/absolute/path/main.rs)"));
+    }
+
+    #[test]
+    fn system_prompt_requires_simplified_chinese_reasoning_and_answers() {
+        let history = history_from_messages(&[], "", Path::new("workspace"));
+        let system = &history[0].content;
+
+        assert!(system.contains("Always use Simplified Chinese"));
+        assert!(system.contains("reasoning text emitted before each tool call"));
+        assert!(system.contains("final answer"));
     }
 
     #[test]

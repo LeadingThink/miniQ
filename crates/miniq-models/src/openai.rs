@@ -36,6 +36,7 @@ impl OpenAiCompatProvider {
             "model": self.config.model,
             "messages": messages,
             "stream": true,
+            "reasoning_effort": "high",
         });
         if let Some(t) = request.temperature {
             body["temperature"] = json!(t);
@@ -112,8 +113,10 @@ fn message_to_json(msg: &ChatMessage) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::message_to_json;
-    use crate::provider::{ChatMessage, ImageAttachment};
+    use super::{message_to_json, OpenAiCompatProvider, StreamChunk};
+    use crate::provider::{
+        ChatMessage, CompletionRequest, ImageAttachment, ProviderConfig, ToolSpec,
+    };
     use serde_json::json;
 
     #[test]
@@ -122,6 +125,26 @@ mod tests {
             message_to_json(&ChatMessage::user("hello")),
             json!({ "role": "user", "content": "hello" })
         );
+    }
+
+    #[test]
+    fn requests_high_reasoning_effort_for_tool_turns() {
+        let provider = OpenAiCompatProvider::new(ProviderConfig {
+            base_url: "https://example.com/v1".to_string(),
+            api_key: String::new(),
+            model: "reasoning-model".to_string(),
+        });
+        let request = CompletionRequest {
+            messages: vec![ChatMessage::user("inspect")],
+            tools: vec![ToolSpec {
+                name: "inspect".to_string(),
+                description: "Inspect a value".to_string(),
+                parameters: json!({ "type": "object" }),
+            }],
+            temperature: None,
+        };
+
+        assert_eq!(provider.build_body(&request)["reasoning_effort"], "high");
     }
 
     #[test]
@@ -145,6 +168,52 @@ mod tests {
                 ]
             })
         );
+    }
+
+    #[test]
+    fn deserializes_provider_reasoning_fields() {
+        let reasoning_content: StreamChunk = serde_json::from_value(json!({
+            "choices": [{ "delta": { "reasoning_content": "first" } }]
+        }))
+        .unwrap();
+        let reasoning: StreamChunk = serde_json::from_value(json!({
+            "choices": [{ "delta": { "reasoning": "second" } }]
+        }))
+        .unwrap();
+
+        assert_eq!(
+            reasoning_content.choices[0]
+                .delta
+                .reasoning_content
+                .as_deref(),
+            Some("first")
+        );
+        assert_eq!(
+            reasoning.choices[0].delta.reasoning.as_deref(),
+            Some("second")
+        );
+
+        let details: StreamChunk = serde_json::from_value(json!({
+            "choices": [{
+                "delta": {
+                    "reasoning_details": [
+                        { "type": "reasoning.text", "text": "third" },
+                        { "type": "thinking", "content": "fourth" }
+                    ],
+                    "content": [
+                        { "type": "reasoning", "text": "fifth" },
+                        { "type": "text", "text": "answer" }
+                    ]
+                }
+            }]
+        }))
+        .unwrap();
+
+        assert_eq!(details.choices[0].delta.reasoning_details.len(), 2);
+        assert!(matches!(
+            details.choices[0].delta.content,
+            Some(super::StreamContent::Blocks(ref blocks)) if blocks.len() == 2
+        ));
     }
 }
 
@@ -173,9 +242,53 @@ struct StreamChoice {
 #[derive(Deserialize, Default)]
 struct StreamDelta {
     #[serde(default)]
-    content: Option<String>,
+    reasoning_content: Option<String>,
+    #[serde(default)]
+    reasoning: Option<String>,
+    #[serde(default)]
+    reasoning_details: Vec<ReasoningDetail>,
+    #[serde(default)]
+    content: Option<StreamContent>,
     #[serde(default)]
     tool_calls: Option<Vec<StreamToolCall>>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum StreamContent {
+    Text(String),
+    Blocks(Vec<ContentBlock>),
+}
+
+#[derive(Deserialize)]
+struct ContentBlock {
+    #[serde(rename = "type", default)]
+    kind: String,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    content: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ReasoningDetail {
+    Text(String),
+    Detail {
+        #[serde(default)]
+        text: Option<String>,
+        #[serde(default)]
+        content: Option<String>,
+    },
+}
+
+impl ReasoningDetail {
+    fn into_text(self) -> Option<String> {
+        match self {
+            Self::Text(text) => Some(text),
+            Self::Detail { text, content } => text.or(content),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -304,9 +417,48 @@ fn async_stream_sse(
                         }
                     };
                     for choice in parsed.choices {
-                        if let Some(text) = choice.delta.content {
-                            if !text.is_empty() {
-                                emit(Ok(ChatDelta::Text(text))).await;
+                        let mut reasoning_parts = Vec::new();
+                        reasoning_parts.extend(
+                            [choice.delta.reasoning_content, choice.delta.reasoning]
+                                .into_iter()
+                                .flatten(),
+                        );
+                        reasoning_parts.extend(
+                            choice
+                                .delta
+                                .reasoning_details
+                                .into_iter()
+                                .filter_map(ReasoningDetail::into_text),
+                        );
+                        for reasoning in reasoning_parts {
+                            if !reasoning.is_empty() {
+                                emit(Ok(ChatDelta::Reasoning(reasoning))).await;
+                            }
+                        }
+                        if let Some(content) = choice.delta.content {
+                            match content {
+                                StreamContent::Text(text) if !text.is_empty() => {
+                                    emit(Ok(ChatDelta::Text(text))).await;
+                                }
+                                StreamContent::Blocks(blocks) => {
+                                    for block in blocks {
+                                        let Some(text) = block.text.or(block.content) else {
+                                            continue;
+                                        };
+                                        if text.is_empty() {
+                                            continue;
+                                        }
+                                        if matches!(
+                                            block.kind.as_str(),
+                                            "reasoning" | "thinking" | "analysis"
+                                        ) {
+                                            emit(Ok(ChatDelta::Reasoning(text))).await;
+                                        } else if block.kind == "text" {
+                                            emit(Ok(ChatDelta::Text(text))).await;
+                                        }
+                                    }
+                                }
+                                StreamContent::Text(_) => {}
                             }
                         }
                         if let Some(tool_calls) = choice.delta.tool_calls {

@@ -7,7 +7,10 @@ use crate::support::{call, connect, next_event_of, setup_session, start, tool_ca
 #[tokio::test]
 async fn readonly_tool_runs_without_approval() {
     let provider = MockProvider::new(vec![
-        vec![tool_call("c1", "file_read", json!({"path": "hello.txt"}))],
+        vec![
+            ChatDelta::Text("I'll read it first.".into()),
+            tool_call("c1", "file_read", json!({"path": "hello.txt"})),
+        ],
         vec![ChatDelta::Text("the file says hi".into())],
     ]);
     let (port, token) = start(provider).await;
@@ -24,6 +27,13 @@ async fn readonly_tool_runs_without_approval() {
         json!({"sessionId": session_id, "message": {"role": "user", "content": "read hello.txt"}}),
     )
     .await;
+
+    let user_created = next_event_of(&mut ws, "message_created").await;
+    assert_eq!(user_created["message"]["role"], "user");
+
+    let intermediate = next_event_of(&mut ws, "message_created").await;
+    assert_eq!(intermediate["message"]["role"], "assistant");
+    assert_eq!(intermediate["message"]["content"], "I'll read it first.");
 
     let started = next_event_of(&mut ws, "tool_call_started").await;
     assert_eq!(started["toolName"], "file_read");
@@ -48,6 +58,10 @@ async fn readonly_tool_runs_without_approval() {
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0]["toolName"], "file_read");
     assert_eq!(calls[0]["status"], "succeeded");
+    let messages = response["result"]["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 3);
+    assert_eq!(messages[1]["content"], "I'll read it first.");
+    assert_eq!(messages[2]["content"], "the file says hi");
 }
 
 /// M1 acceptance: locate a file in an unknown directory (glob), find the

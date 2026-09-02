@@ -110,6 +110,8 @@ pub struct CompletionRequest {
 /// Streamed provider output.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChatDelta {
+    /// Incremental reasoning explicitly exposed by the provider.
+    Reasoning(String),
     /// Incremental assistant text.
     Text(String),
     /// A complete tool call request (providers accumulate fragments before
