@@ -16,13 +16,24 @@ function walk(directory) {
   });
 }
 
-function findOne(directory, suffix, label) {
-  if (!existsSync(directory)) throw new Error(`${label}: expected one *${suffix} file, found 0`);
-  const matches = walk(directory).filter((path) => basename(path).endsWith(suffix));
+function findMatches(directory, suffix) {
+  return walk(directory).filter((path) => basename(path).endsWith(suffix));
+}
+
+function findOptionalOne(directory, suffix, label) {
+  if (!existsSync(directory)) return undefined;
+  const matches = findMatches(directory, suffix);
+  if (matches.length === 0) return undefined;
   if (matches.length !== 1) {
     throw new Error(`${label}: expected one *${suffix} file, found ${matches.length}`);
   }
   return matches[0];
+}
+
+function findOne(directory, suffix, label) {
+  const match = findOptionalOne(directory, suffix, label);
+  if (!match) throw new Error(`${label}: expected one *${suffix} file, found 0`);
+  return match;
 }
 
 function artifactDirectory(input, target) {
@@ -45,9 +56,14 @@ function updateEntry(source, signatureSource, output, name, baseUrl) {
 
 function optionalEntry(directory, artifactSuffix, signatureSuffix, label, output, name, baseUrl) {
   if (!existsSync(directory)) return undefined;
+  const artifact = findOptionalOne(directory, artifactSuffix, `${label} updater`);
+  const signature = findOptionalOne(directory, signatureSuffix, `${label} signature`);
+  if (!artifact && !signature) return undefined;
+  if (!artifact) throw new Error(`${label} updater: expected one *${artifactSuffix} file, found 0`);
+  if (!signature) throw new Error(`${label} signature: expected one *${signatureSuffix} file, found 0`);
   return updateEntry(
-    findOne(directory, artifactSuffix, `${label} updater`),
-    findOne(directory, signatureSuffix, `${label} signature`),
+    artifact,
+    signature,
     output,
     name,
     baseUrl,
@@ -55,8 +71,8 @@ function optionalEntry(directory, artifactSuffix, signatureSuffix, label, output
 }
 
 function copyOptionalArtifact(directory, suffix, label, output, name) {
-  if (!existsSync(directory)) return;
-  copyArtifact(findOne(directory, suffix, label), output, name);
+  const artifact = findOptionalOne(directory, suffix, label);
+  if (artifact) copyArtifact(artifact, output, name);
 }
 
 export function buildRelease({ input, output, tag, repo, notes = "", publishedAt = new Date().toISOString() }) {
