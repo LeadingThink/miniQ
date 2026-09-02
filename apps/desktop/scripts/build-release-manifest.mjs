@@ -43,6 +43,22 @@ function updateEntry(source, signatureSource, output, name, baseUrl) {
   };
 }
 
+function optionalEntry(directory, artifactSuffix, signatureSuffix, label, output, name, baseUrl) {
+  if (!existsSync(directory)) return undefined;
+  return updateEntry(
+    findOne(directory, artifactSuffix, `${label} updater`),
+    findOne(directory, signatureSuffix, `${label} signature`),
+    output,
+    name,
+    baseUrl,
+  );
+}
+
+function copyOptionalArtifact(directory, suffix, label, output, name) {
+  if (!existsSync(directory)) return;
+  copyArtifact(findOne(directory, suffix, label), output, name);
+}
+
 export function buildRelease({ input, output, tag, repo, notes = "", publishedAt = new Date().toISOString() }) {
   if (!/^v\d+\.\d+\.\d+$/.test(tag)) throw new Error(`invalid release tag: ${tag}`);
   const version = tag.slice(1);
@@ -56,41 +72,59 @@ export function buildRelease({ input, output, tag, repo, notes = "", publishedAt
   const macIntel = artifactDirectory(inputRoot, TARGETS.macIntel);
   const linux = artifactDirectory(inputRoot, TARGETS.linux);
 
-  const platforms = {
-    "windows-x86_64": updateEntry(
-      findOne(windows, ".exe", "Windows installer"),
-      findOne(windows, ".exe.sig", "Windows signature"),
-      outputRoot,
-      `miniQ_${version}_x64-setup.exe`,
-      baseUrl,
-    ),
-    "darwin-aarch64": updateEntry(
-      findOne(macArm, ".app.tar.gz", "Apple Silicon updater"),
-      findOne(macArm, ".app.tar.gz.sig", "Apple Silicon signature"),
-      outputRoot,
-      `miniQ_${version}_aarch64.app.tar.gz`,
-      baseUrl,
-    ),
-    "darwin-x86_64": updateEntry(
-      findOne(macIntel, ".app.tar.gz", "Intel macOS updater"),
-      findOne(macIntel, ".app.tar.gz.sig", "Intel macOS signature"),
-      outputRoot,
-      `miniQ_${version}_x64.app.tar.gz`,
-      baseUrl,
-    ),
-    "linux-x86_64": updateEntry(
-      findOne(linux, ".AppImage.tar.gz", "Linux updater"),
-      findOne(linux, ".AppImage.tar.gz.sig", "Linux signature"),
-      outputRoot,
-      `miniQ_${version}_x64.AppImage.tar.gz`,
-      baseUrl,
-    ),
-  };
+  const platforms = {};
+  const windowsEntry = optionalEntry(
+    windows,
+    ".exe",
+    ".exe.sig",
+    "Windows",
+    outputRoot,
+    `miniQ_${version}_x64-setup.exe`,
+    baseUrl,
+  );
+  if (windowsEntry) platforms["windows-x86_64"] = windowsEntry;
 
-  copyArtifact(findOne(macArm, ".dmg", "Apple Silicon DMG"), outputRoot, `miniQ_${version}_aarch64.dmg`);
-  copyArtifact(findOne(macIntel, ".dmg", "Intel macOS DMG"), outputRoot, `miniQ_${version}_x64.dmg`);
-  copyArtifact(findOne(linux, ".AppImage", "Linux AppImage"), outputRoot, `miniQ_${version}_x64.AppImage`);
-  copyArtifact(findOne(linux, ".deb", "Linux deb"), outputRoot, `miniQ_${version}_amd64.deb`);
+  const macArmEntry = optionalEntry(
+    macArm,
+    ".app.tar.gz",
+    ".app.tar.gz.sig",
+    "Apple Silicon",
+    outputRoot,
+    `miniQ_${version}_aarch64.app.tar.gz`,
+    baseUrl,
+  );
+  if (macArmEntry) platforms["darwin-aarch64"] = macArmEntry;
+
+  const macIntelEntry = optionalEntry(
+    macIntel,
+    ".app.tar.gz",
+    ".app.tar.gz.sig",
+    "Intel macOS",
+    outputRoot,
+    `miniQ_${version}_x64.app.tar.gz`,
+    baseUrl,
+  );
+  if (macIntelEntry) platforms["darwin-x86_64"] = macIntelEntry;
+
+  const linuxEntry = optionalEntry(
+    linux,
+    ".AppImage.tar.gz",
+    ".AppImage.tar.gz.sig",
+    "Linux",
+    outputRoot,
+    `miniQ_${version}_x64.AppImage.tar.gz`,
+    baseUrl,
+  );
+  if (linuxEntry) platforms["linux-x86_64"] = linuxEntry;
+
+  if (Object.keys(platforms).length === 0) {
+    throw new Error("expected at least one signed updater artifact");
+  }
+
+  copyOptionalArtifact(macArm, ".dmg", "Apple Silicon DMG", outputRoot, `miniQ_${version}_aarch64.dmg`);
+  copyOptionalArtifact(macIntel, ".dmg", "Intel macOS DMG", outputRoot, `miniQ_${version}_x64.dmg`);
+  copyOptionalArtifact(linux, ".AppImage", "Linux AppImage", outputRoot, `miniQ_${version}_x64.AppImage`);
+  copyOptionalArtifact(linux, ".deb", "Linux deb", outputRoot, `miniQ_${version}_amd64.deb`);
 
   const manifest = { version, notes, pub_date: publishedAt, platforms };
   writeFileSync(join(outputRoot, "latest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

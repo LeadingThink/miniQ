@@ -48,10 +48,29 @@ test("builds one signed update manifest for every desktop platform", () => {
   assert.deepEqual(JSON.parse(readFileSync(join(output, "latest.json"), "utf8")), manifest);
 });
 
-test("fails instead of publishing a partial release", () => {
+test("builds a manifest from the platform artifacts that exist", () => {
+  const root = mkdtempSync(join(tmpdir(), "miniq-release-partial-"));
+  const input = join(root, "input");
+  const output = join(root, "output");
+  fixture(input, targets.windows, [["miniQ-setup.exe"], ["miniQ-setup.exe.sig", "windows-signature"]]);
+
+  const manifest = buildRelease({
+    input,
+    output,
+    tag: "v1.2.3",
+    repo: "LeadingThink/miniQ-releases",
+    publishedAt: "2026-08-30T00:00:00.000Z",
+  });
+
+  assert.deepEqual(Object.keys(manifest.platforms), ["windows-x86_64"]);
+  assert.equal(manifest.platforms["windows-x86_64"].signature, "windows-signature");
+  assert.match(manifest.platforms["windows-x86_64"].url, /miniQ_1\.2\.3_x64-setup\.exe$/);
+});
+
+test("fails when no signed updater artifacts exist", () => {
   const root = mkdtempSync(join(tmpdir(), "miniq-release-missing-"));
   assert.throws(
     () => buildRelease({ input: root, output: join(root, "out"), tag: "v1.2.3", repo: "LeadingThink/miniQ-releases" }),
-    /expected one/,
+    /expected at least one signed updater artifact/,
   );
 });

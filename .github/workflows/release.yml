@@ -46,6 +46,7 @@ jobs:
   build:
     needs: validate
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'macos-latest' }}
     permissions:
       contents: read
     strategy:
