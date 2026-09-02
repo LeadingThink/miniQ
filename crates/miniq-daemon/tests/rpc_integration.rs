@@ -5,6 +5,7 @@ use futures_util::{SinkExt, StreamExt};
 use miniq_daemon::server;
 use miniq_daemon::state::AppState;
 use miniq_memory::Store;
+use miniq_protocol::PROTOCOL_VERSION;
 use serde_json::{json, Value};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
@@ -68,7 +69,7 @@ async fn health_check() {
     let (port, token) = start_daemon().await;
     let mut ws = connect(port, &token).await;
     let resp = call(&mut ws, "r1", "daemon.health", Value::Null).await;
-    assert_eq!(resp["result"]["protocolVersion"], 1);
+    assert_eq!(resp["result"]["protocolVersion"], PROTOCOL_VERSION);
     assert!(resp["result"]["daemonVersion"].is_string());
 }
 
