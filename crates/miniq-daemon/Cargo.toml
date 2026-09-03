@@ -27,6 +27,7 @@ tracing-subscriber = { workspace = true }
 tracing-appender = { workspace = true }
 time = { workspace = true, features = ["local-offset", "macros"] }
 similar = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 tokio-tungstenite = { workspace = true }

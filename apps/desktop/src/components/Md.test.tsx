@@ -94,3 +94,19 @@ describe("Md file references", () => {
     expect(html).not.toContain('class="file-reference"');
   });
 });
+
+describe("Md code blocks", () => {
+  it("wraps fenced code blocks with a copy button", () => {
+    const html = render("```js\nconsole.log(1);\n```");
+
+    expect(html).toContain('class="code-block"');
+    expect(html).toContain('class="code-copy "');
+    expect(html).toContain("复制");
+  });
+
+  it("does not add copy buttons to inline code", () => {
+    const html = render("Run `npm test`.");
+
+    expect(html).not.toContain('class="code-block"');
+  });
+});

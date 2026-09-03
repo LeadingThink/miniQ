@@ -116,6 +116,7 @@ async fn tool_list_reports_toolset() {
         names,
         vec![
             "ask_user",
+            "browser_automation",
             "doc_read",
             "doc_write",
             "file_edit",

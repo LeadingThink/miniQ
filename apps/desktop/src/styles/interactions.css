@@ -66,8 +66,7 @@
   align-items: center;
 }
 
-/* ============ Plan + artifacts bars ============ */
-.plan-bar,
+/* ============ Artifacts bar ============ */
 .artifacts-bar {
   padding: 10px 20px;
   font-size: 13px;
@@ -78,16 +77,10 @@
   overflow-y: auto;
 }
 
-.plan-bar > *,
 .artifacts-bar > * {
   max-width: 820px;
   width: 100%;
   margin: 0 auto;
-}
-
-.plan-bar {
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-subtle);
 }
 
 .artifacts-bar {
@@ -103,25 +96,54 @@
   color: var(--text-dim);
 }
 
-.plan-task {
+/* ============ Queued messages ============ */
+.queue-bar {
+  max-width: 820px;
+  width: 100%;
+  margin: 10px auto 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.queue-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+
+.queue-item {
   display: flex;
   align-items: center;
-  gap: 9px;
-  color: var(--text-mid);
+  gap: 8px;
+  font-size: 13px;
 }
 
-.plan-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--border-strong);
-  flex-shrink: 0;
+.queue-content {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
 }
 
-.plan-task.in_progress { color: var(--text); }
-.plan-task.in_progress .plan-dot { background: var(--warn); }
-.plan-task.completed .plan-dot { background: var(--ok); }
-.plan-task.completed { color: var(--text-dim); text-decoration: line-through; }
+.queue-steer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.queue-remove {
+  color: var(--text-dim);
+}
 
 .artifact-item {
   display: flex;
@@ -177,6 +199,12 @@
   padding: 8px 10px;
   font-size: 13px;
   font-family: inherit;
+}
+
+.question-timeout {
+  margin-top: 8px;
+  color: var(--text-dim);
+  font-size: 12px;
 }
 
 /* ============ Overlays / panels ============ */
@@ -282,6 +310,82 @@
 
 .provider-settings {
   gap: 11px;
+}
+
+.provider-purchase {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 11px;
+  color: var(--text);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.provider-purchase-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.provider-purchase-icon {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  color: var(--accent);
+  background: var(--focus-shadow);
+  border-radius: 8px;
+}
+
+.provider-purchase-copy strong {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.provider-purchase-copy p {
+  margin: 2px 0 0;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.provider-purchase-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.provider-purchase-actions a,
+.provider-base-url-button {
+  min-height: 31px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.provider-purchase-actions a {
+  color: var(--accent-fg);
+  background: var(--accent);
+}
+
+.provider-purchase-actions a:hover {
+  opacity: 0.88;
+}
+
+.provider-purchase-actions a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .theme-grid {
@@ -476,6 +580,10 @@
 }
 
 .banner-close {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   cursor: pointer;
   opacity: 0.6;
   padding: 0 4px;

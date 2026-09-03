@@ -96,7 +96,9 @@ impl SkillInference for ProviderInference {
         let request = CompletionRequest {
             messages: vec![ChatMessage::system(system), ChatMessage::user(user)],
             tools: Vec::new(),
-            temperature: Some(0.2),
+            // Keep auxiliary inference compatible with thinking models whose
+            // gateways reject custom temperatures.
+            temperature: None,
         };
         let mut stream = self
             .provider

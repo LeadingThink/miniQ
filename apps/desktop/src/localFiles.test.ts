@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatFileSize,
   isTextPreviewFile,
   looksLikeFileReference,
   resolveLocalFileReference,
@@ -26,6 +27,13 @@ describe("local file preview types", () => {
     "installer.exe",
   ])("reveals non-text file %s", (path) => {
     expect(isTextPreviewFile(path)).toBe(false);
+  });
+
+  it("formats file sizes without noisy precision", () => {
+    expect(formatFileSize(512)).toBe("512 B");
+    expect(formatFileSize(1536)).toBe("1.5 KB");
+    expect(formatFileSize(25 * 1024)).toBe("25 KB");
+    expect(formatFileSize(2.25 * 1024 * 1024)).toBe("2.3 MB");
   });
 });
 

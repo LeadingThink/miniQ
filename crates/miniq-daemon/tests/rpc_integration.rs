@@ -163,7 +163,12 @@ async fn chat_turn_streams_and_persists() {
     .await;
     assert_eq!(resp["result"]["message"]["role"], "user");
 
-    // Streaming deltas arrive, then the final assistant message, then done.
+    // Observable progress arrives before streaming text, then the final
+    // assistant message and completion event.
+    let progress = next_event_of(&mut ws, "turn_progress_changed").await;
+    assert_eq!(progress["sessionId"], sess_id.as_str());
+    assert_eq!(progress["progress"]["phase"], "preparing_context");
+
     let delta = next_event_of(&mut ws, "assistant_delta").await;
     assert_eq!(delta["sessionId"], sess_id.as_str());
     assert!(!delta["delta"].as_str().unwrap().is_empty());
@@ -181,12 +186,13 @@ async fn chat_turn_streams_and_persists() {
     assert_eq!(messages[0]["role"], "user");
     assert_eq!(messages[1]["content"], "hello from mock");
     assert_eq!(resp["result"]["session"]["status"], "idle");
+    assert!(resp["result"]["turnProgress"].is_null());
     // The first message auto-names the session.
     assert_eq!(resp["result"]["session"]["title"], "hi");
 }
 
 #[tokio::test]
-async fn busy_session_rejects_second_message() {
+async fn busy_session_queues_second_message() {
     // Script one slow-ish turn by using a multi-chunk mock.
     let (port, token) = start_daemon().await;
     let mut ws = connect(port, &token).await;
@@ -213,14 +219,15 @@ async fn busy_session_rejects_second_message() {
     let first = call(&mut ws, "r3", "session.sendMessage", send.clone()).await;
     let second = call(&mut ws, "r4", "session.sendMessage", send).await;
 
-    // One of the two must be rejected as busy OR both succeed sequentially is
-    // NOT allowed: the second request races the turn end, so accept either a
-    // busy error or (rarely) success if the mock turn already finished.
+    // The first send must start a turn. The second races the turn end: while
+    // the turn is active it must be queued (never rejected); if the mock turn
+    // already finished it starts a fresh turn instead.
     let first_ok = first.get("result").is_some();
     assert!(first_ok, "first send must succeed: {first}");
-    if let Some(err) = second.get("error") {
-        assert_eq!(err["code"], -32003);
-    }
+    assert!(
+        second.get("result").is_some(),
+        "second send must never error: {second}"
+    );
 }
 
 #[tokio::test]

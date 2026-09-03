@@ -23,6 +23,12 @@ use miniq_protocol::{ErrorCode, RpcError, RpcRequest, RpcResponse};
 
 use crate::state::AppState;
 
+/// Broadcast the session's current queue (used by the turn runner when it
+/// drains a queued message).
+pub fn emit_session_queue_changed(state: &AppState, session_id: &str) {
+    session::emit_queue_changed(state, session_id);
+}
+
 fn canonical_workspace_path(path: &Path) -> Option<String> {
     path.canonicalize()
         .ok()
@@ -57,9 +63,14 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.diff" => session_diff::get(state, req.params),
         "session.sendMessage" => session::send_message(state, req.params),
         "session.cancel" => session::cancel(state, req.params),
+        "session.queueList" => session::queue_list(state, req.params),
+        "session.queueRemove" => session::queue_remove(state, req.params),
+        "session.queueSteer" => session::queue_steer(state, req.params),
         "session.rename" => session::rename(state, req.params),
         "session.setPinned" => session::set_pinned(state, req.params),
+        "session.setArchived" => session::set_archived(state, req.params),
         "session.delete" => session::delete(state, req.params),
+        "session.search" => session::search(state, req.params),
         "workspace.rename" => workspace::rename(state, req.params),
         "workspace.delete" => workspace::delete(state, req.params),
         "externalSession.scan" => external_session::scan().await,

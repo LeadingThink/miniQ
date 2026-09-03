@@ -1,9 +1,11 @@
 //! One agent turn: persist the user message, stream the model, persist the
 //! assistant reply and emit protocol events along the way.
 
-use miniq_agent::{compact_history, run_turn, AgentError, AgentEvent, ContextPolicy};
+use miniq_agent::{
+    compact_history, estimate_tokens, run_turn, AgentError, AgentEvent, ContextPolicy,
+};
 use miniq_models::{ChatMessage, ChatRole};
-use miniq_protocol::{Event, Message, Role, SessionStatus};
+use miniq_protocol::{Event, Message, Role, SessionStatus, TurnPhase};
 use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
@@ -123,6 +125,8 @@ fn runtime_context(workspace_path: &Path) -> String {
 pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken) {
     tokio::spawn(async move {
         let result = execute_turn(&state, &session_id, cancel).await;
+        state.clear_streaming_text(&session_id);
+        state.clear_turn_progress(&session_id);
         state.end_turn(&session_id);
         match result {
             Ok(()) => {
@@ -165,7 +169,54 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
                 });
             }
         }
+        // Queued follow-ups (sent while this turn ran, or steered to the
+        // front to interrupt it) start automatically once the session rests.
+        start_next_queued(&state, &session_id);
     });
+}
+
+/// If the session has queued messages, dequeue the head and start its turn.
+/// No-op when another turn already claimed the session.
+fn start_next_queued(state: &AppState, session_id: &str) {
+    let next = match state.store.dequeue_message(session_id) {
+        Ok(Some(next)) => next,
+        Ok(None) => return,
+        Err(err) => {
+            tracing::error!(session_id, %err, "failed to read message queue");
+            return;
+        }
+    };
+    let Some(cancel) = state.begin_turn(session_id) else {
+        // Session got claimed in the meantime; put the message back in front.
+        if let Ok(requeued) = state.store.enqueue_message(session_id, &next.content) {
+            let _ = state.store.promote_queued_message(&requeued.id);
+        }
+        return;
+    };
+    crate::gateway::emit_session_queue_changed(state, session_id);
+    let message = match state
+        .store
+        .append_message(session_id, Role::User, &next.content)
+    {
+        Ok(message) => message,
+        Err(err) => {
+            tracing::error!(session_id, %err, "failed to persist queued message");
+            state.end_turn(session_id);
+            return;
+        }
+    };
+    state.emit(Event::MessageCreated {
+        session_id: session_id.to_string(),
+        message,
+    });
+    let _ = state
+        .store
+        .update_session_status(session_id, SessionStatus::Running);
+    state.emit(Event::SessionStatusChanged {
+        session_id: session_id.to_string(),
+        status: SessionStatus::Running,
+    });
+    spawn_turn(state.clone(), session_id.to_string(), cancel);
 }
 
 enum TurnError {
@@ -178,6 +229,13 @@ async fn execute_turn(
     session_id: &str,
     cancel: CancellationToken,
 ) -> Result<(), TurnError> {
+    state.clear_streaming_text(session_id);
+    state.set_turn_progress(session_id, TurnPhase::PreparingContext, None);
+    state.plans.lock().unwrap().remove(session_id);
+    state.emit(Event::PlanUpdated {
+        session_id: session_id.to_string(),
+        tasks: Vec::new(),
+    });
     // Resolve the workspace first: it scopes both skills and tools.
     let session = state
         .store
@@ -214,11 +272,24 @@ async fn execute_turn(
     let forwarder = tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
             match event {
-                AgentEvent::TextDelta(delta) => forward_state.emit(Event::AssistantDelta {
-                    session_id: forward_session.clone(),
-                    message_id: forward_message_id.clone(),
-                    delta,
-                }),
+                AgentEvent::TextDelta(delta) => {
+                    forward_state.append_streaming_text(&forward_session, &delta);
+                    forward_state.emit(Event::AssistantDelta {
+                        session_id: forward_session.clone(),
+                        message_id: forward_message_id.clone(),
+                        delta,
+                    });
+                }
+                AgentEvent::ModelRequestStarted { step } => forward_state.set_turn_progress(
+                    &forward_session,
+                    TurnPhase::RequestingModel,
+                    Some(step),
+                ),
+                AgentEvent::ModelResponseStarted { step } => forward_state.set_turn_progress(
+                    &forward_session,
+                    TurnPhase::ReceivingModel,
+                    Some(step),
+                ),
                 AgentEvent::ContextCompacted {
                     estimated_tokens_before,
                     estimated_tokens_after,
@@ -246,18 +317,16 @@ async fn execute_turn(
     };
 
     let provider = state.current_provider();
-    let context = compact_history(
-        provider.as_ref(),
-        history,
-        &context_policy(),
-        &event_tx,
-        &cancel,
-    )
-    .await
-    .map_err(|error| match error {
-        AgentError::Cancelled => TurnError::Cancelled,
-        error => TurnError::Fatal(error.to_string()),
-    })?;
+    let policy = context_policy();
+    if estimate_tokens(&history) > policy.soft_limit_tokens {
+        state.set_turn_progress(session_id, TurnPhase::CompactingContext, None);
+    }
+    let context = compact_history(provider.as_ref(), history, &policy, &event_tx, &cancel)
+        .await
+        .map_err(|error| match error {
+            AgentError::Cancelled => TurnError::Cancelled,
+            error => TurnError::Fatal(error.to_string()),
+        })?;
     let provider_history = context.messages;
     let outcome = run_turn(
         provider.as_ref(),
@@ -270,7 +339,10 @@ async fn execute_turn(
     let _ = forwarder.await;
 
     let outcome = match outcome {
-        Ok(outcome) => outcome,
+        Ok(outcome) => {
+            state.set_turn_progress(session_id, TurnPhase::Finalizing, None);
+            outcome
+        }
         Err(AgentError::Cancelled) => return Err(TurnError::Cancelled),
         Err(e) => return Err(TurnError::Fatal(e.to_string())),
     };

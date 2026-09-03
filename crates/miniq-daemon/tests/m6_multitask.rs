@@ -1,5 +1,6 @@
 //! M6 acceptance (multi-tasking): different sessions run in parallel even
-//! when they share a workspace. A session still accepts only one active turn.
+//! when they share a workspace. Messages sent to a session with an active
+//! turn are queued and drained when the turn ends.
 
 use futures_util::{SinkExt, StreamExt};
 use miniq_daemon::server;
@@ -143,11 +144,33 @@ async fn different_sessions_run_in_parallel_regardless_of_workspace() {
     let resp = call(&mut ws, "r6", "session.sendMessage", send(&sess_a1)).await;
     assert!(resp.get("result").is_some(), "first turn starts: {resp}");
 
-    // The same session cannot start another turn until its current one ends.
+    // Sending to the same session while its turn runs queues the message
+    // instead of failing; it will run when the current turn ends.
     let resp = call(&mut ws, "r7", "session.sendMessage", send(&sess_a1)).await;
-    assert_eq!(
-        resp["error"]["code"], -32003,
-        "same session must be busy: {resp}"
+    assert!(
+        resp["result"]["queued"].is_object(),
+        "same-session message is queued: {resp}"
+    );
+    let queued_id = resp["result"]["queued"]["id"].as_str().unwrap().to_string();
+    let resp = call(
+        &mut ws,
+        "r7b",
+        "session.queueList",
+        json!({"sessionId": sess_a1}),
+    )
+    .await;
+    assert_eq!(resp["result"]["queue"][0]["id"], queued_id.as_str());
+    // Remove it again so the release below only completes three turns.
+    let resp = call(
+        &mut ws,
+        "r7c",
+        "session.queueRemove",
+        json!({"queuedMessageId": queued_id}),
+    )
+    .await;
+    assert!(
+        resp.get("result").is_some(),
+        "queued message removed: {resp}"
     );
 
     // Another session in the SAME workspace runs in parallel.

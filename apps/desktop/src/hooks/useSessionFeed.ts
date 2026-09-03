@@ -7,8 +7,10 @@ import type {
   Message,
   PlanTask,
   Question,
+  QueuedMessage,
   SessionStatus,
   ToolCall,
+  TurnProgress,
 } from "../types";
 
 export interface PendingApproval {
@@ -24,7 +26,9 @@ interface SessionFeedState {
   questions: Question[];
   plan: PlanTask[];
   artifacts: Artifact[];
+  queue: QueuedMessage[];
   streamingText: string;
+  turnProgress: TurnProgress | null;
 }
 
 export interface LoadedSessionFeed {
@@ -32,6 +36,11 @@ export interface LoadedSessionFeed {
   toolCalls: ToolCall[];
   artifacts: Artifact[];
   plan: PlanTask[];
+  queue: QueuedMessage[];
+  approvals: PendingApproval[];
+  questions: Question[];
+  streamingText: string;
+  turnProgress: TurnProgress | null;
 }
 
 type SessionFeedAction =
@@ -46,19 +55,22 @@ const EMPTY_FEED: SessionFeedState = {
   questions: [],
   plan: [],
   artifacts: [],
+  queue: [],
   streamingText: "",
+  turnProgress: null,
 };
 
 function updateFinishedToolCall(
   toolCalls: ToolCall[],
   event: Extract<DaemonEvent, { type: "tool_call_finished" }>,
+  receivedAt: string,
 ): ToolCall[] {
   if (!toolCalls.some((toolCall) => toolCall.id === event.toolCallId)) {
     return toolCalls;
   }
   return toolCalls.map((toolCall) =>
     toolCall.id === event.toolCallId
-      ? { ...toolCall, status: event.status, output: event.output }
+      ? { ...toolCall, status: event.status, output: event.output, completedAt: receivedAt }
       : toolCall,
   );
 }
@@ -77,7 +89,11 @@ function reduceDaemonEvent(
           : [...state.messages, event.message],
         streamingText:
           event.message.role === "assistant" ? "" : state.streamingText,
+        plan: event.message.role === "user" ? [] : state.plan,
+        turnProgress: event.message.role === "user" ? null : state.turnProgress,
       };
+    case "turn_progress_changed":
+      return { ...state, turnProgress: event.progress };
     case "assistant_delta":
       return { ...state, streamingText: state.streamingText + event.delta };
     case "tool_call_started":
@@ -98,7 +114,7 @@ function reduceDaemonEvent(
     case "tool_call_finished":
       return {
         ...state,
-        toolCalls: updateFinishedToolCall(state.toolCalls, event),
+        toolCalls: updateFinishedToolCall(state.toolCalls, event, receivedAt),
         approvals: state.approvals.filter(
           (item) => item.approval.toolCallId !== event.toolCallId,
         ),
@@ -137,7 +153,9 @@ function reduceDaemonEvent(
         : { ...state, artifacts: [...state.artifacts, event.artifact] };
     case "turn_completed":
     case "turn_failed":
-      return { ...state, streamingText: "" };
+      return { ...state, streamingText: "", turnProgress: null };
+    case "queue_changed":
+      return { ...state, queue: event.queue };
     case "session_status_changed":
     case "context_compacted":
     case "session_deleted":
@@ -145,6 +163,7 @@ function reduceDaemonEvent(
     case "session_renamed":
     case "workspace_renamed":
     case "session_pinned_changed":
+    case "session_archived_changed":
       return state;
   }
 }
@@ -161,6 +180,11 @@ function sessionFeedReducer(
       toolCalls: action.feed.toolCalls,
       artifacts: action.feed.artifacts,
       plan: action.feed.plan,
+      queue: action.feed.queue,
+      approvals: action.feed.approvals,
+      questions: action.feed.questions,
+      streamingText: action.feed.streamingText,
+      turnProgress: action.feed.turnProgress,
     };
   }
   return reduceDaemonEvent(state, action.event, action.receivedAt);
@@ -195,7 +219,8 @@ export function useSessionFeed(options: SessionFeedOptions) {
       if (
         event.type === "session_deleted" ||
         event.type === "session_renamed" ||
-        event.type === "session_pinned_changed"
+        event.type === "session_pinned_changed" ||
+        event.type === "session_archived_changed"
       ) {
         void refreshSessions();
         if (event.sessionId !== currentSessionId) return;

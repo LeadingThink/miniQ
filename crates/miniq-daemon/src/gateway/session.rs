@@ -74,12 +74,37 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         .get(&input.session_id)
         .cloned()
         .unwrap_or_default();
+    let queue = state
+        .store
+        .list_queued_messages(&input.session_id)
+        .map_err(store_err)?;
+    let approvals = state
+        .store
+        .list_pending_approval_requests(&input.session_id)
+        .map_err(store_err)?
+        .into_iter()
+        .map(|request| {
+            json!({
+                "approval": request.approval,
+                "toolName": request.tool_name,
+                "input": request.input,
+            })
+        })
+        .collect::<Vec<_>>();
+    let questions = state.pending_questions_for_session(&input.session_id);
+    let streaming_text = state.streaming_text(&input.session_id);
+    let turn_progress = state.turn_progress(&input.session_id);
     to_value(json!({
         "session": session,
         "messages": messages,
         "toolCalls": tool_calls,
         "artifacts": artifacts,
         "plan": plan,
+        "queue": queue,
+        "approvals": approvals,
+        "questions": questions,
+        "streamingText": streaming_text,
+        "turnProgress": turn_progress,
     }))
 }
 
@@ -106,10 +131,14 @@ pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value
         .map_err(store_err)?;
 
     let Some(cancel) = state.begin_turn(&input.session_id) else {
-        return Err(RpcError::new(
-            ErrorCode::SessionBusy,
-            "session already has an active turn",
-        ));
+        // The session already has an active turn: queue the message instead of
+        // rejecting it. It will run automatically when the current turn ends.
+        let queued = state
+            .store
+            .enqueue_message(&input.session_id, &input.message.content)
+            .map_err(store_err)?;
+        emit_queue_changed(state, &input.session_id);
+        return to_value(json!({ "queued": queued }));
     };
 
     let message = append_user_message(state, &input, &session.title)?;
@@ -120,6 +149,70 @@ pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value
     set_running(state, &input.session_id)?;
     crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
     to_value(json!({ "message": message }))
+}
+
+pub(super) fn emit_queue_changed(state: &AppState, session_id: &str) {
+    let queue = state
+        .store
+        .list_queued_messages(session_id)
+        .unwrap_or_default();
+    state.emit(Event::QueueChanged {
+        session_id: session_id.to_string(),
+        queue,
+    });
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QueueListParams {
+    session_id: String,
+}
+
+pub(super) fn queue_list(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: QueueListParams = params(raw)?;
+    let queue = state
+        .store
+        .list_queued_messages(&input.session_id)
+        .map_err(store_err)?;
+    to_value(json!({ "queue": queue }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QueueItemParams {
+    queued_message_id: String,
+}
+
+pub(super) fn queue_remove(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: QueueItemParams = params(raw)?;
+    let removed = state
+        .store
+        .remove_queued_message(&input.queued_message_id)
+        .map_err(store_err)?;
+    emit_queue_changed(state, &removed.session_id);
+    to_value(json!({ "removed": removed }))
+}
+
+/// "调整方向": move a queued message to the front and interrupt the running
+/// turn so it executes immediately. The turn-end drain picks it up.
+pub(super) fn queue_steer(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: QueueItemParams = params(raw)?;
+    let promoted = state
+        .store
+        .promote_queued_message(&input.queued_message_id)
+        .map_err(store_err)?;
+    emit_queue_changed(state, &promoted.session_id);
+    let interrupted = state.cancel_turn(&promoted.session_id);
+    if interrupted {
+        let _ = state
+            .store
+            .update_session_status(&promoted.session_id, SessionStatus::Cancelling);
+        state.emit(Event::SessionStatusChanged {
+            session_id: promoted.session_id.clone(),
+            status: SessionStatus::Cancelling,
+        });
+    }
+    to_value(json!({ "promoted": promoted, "interrupted": interrupted }))
 }
 
 fn validate_message(message: &IncomingMessage) -> Result<(), RpcError> {
@@ -183,6 +276,15 @@ struct CancelParams {
 
 pub(super) fn cancel(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: CancelParams = params(raw)?;
+    // An explicit stop discards queued follow-ups too: the user wants the
+    // session to come to rest, not to start the next queued message.
+    let cleared = state
+        .store
+        .clear_queued_messages(&input.session_id)
+        .unwrap_or(0);
+    if cleared > 0 {
+        emit_queue_changed(state, &input.session_id);
+    }
     let cancelled = state.cancel_turn(&input.session_id);
     if cancelled {
         let _ = state
@@ -241,6 +343,50 @@ pub(super) fn set_pinned(state: &AppState, raw: Option<Value>) -> Result<Value, 
         pinned: input.pinned,
     });
     Ok(json!({ "id": input.session_id, "pinned": input.pinned }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchParams {
+    query: String,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+/// Full-text search across message contents. Returns the latest matching
+/// message per session so the UI can jump straight into the conversation.
+pub(super) fn search(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: SearchParams = params(raw)?;
+    let query = input.query.trim();
+    if query.is_empty() {
+        return to_value(json!({ "matches": [] }));
+    }
+    let limit = input.limit.unwrap_or(20).min(100);
+    let matches = state
+        .store
+        .search_messages(query, limit)
+        .map_err(store_err)?;
+    to_value(json!({ "matches": matches }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetArchivedParams {
+    session_id: String,
+    archived: bool,
+}
+
+pub(super) fn set_archived(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: SetArchivedParams = params(raw)?;
+    state
+        .store
+        .set_session_archived(&input.session_id, input.archived)
+        .map_err(store_err)?;
+    state.emit(Event::SessionArchivedChanged {
+        session_id: input.session_id.clone(),
+        archived: input.archived,
+    });
+    Ok(json!({ "id": input.session_id, "archived": input.archived }))
 }
 
 #[derive(Deserialize)]

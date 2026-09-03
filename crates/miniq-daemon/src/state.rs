@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use miniq_memory::Store;
 use miniq_models::{ModelProvider, OpenAiCompatProvider, ProviderConfig};
-use miniq_protocol::Event;
+use miniq_protocol::{Event, TurnPhase, TurnProgress};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -96,8 +96,14 @@ pub struct AppState {
     pub session_allowlist: Arc<Mutex<HashMap<String, HashSet<String>>>>,
     /// Pending ask_user questions (question id -> answer waker).
     pub pending_questions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
+    /// Details retained so a reconnected UI can restore pending questions.
+    pub pending_question_details: Arc<Mutex<HashMap<String, miniq_protocol::Question>>>,
     /// Latest published plan per session (in-memory; the plan is a live view).
     pub plans: Arc<Mutex<HashMap<String, Vec<miniq_protocol::PlanTask>>>>,
+    /// In-progress assistant text retained across UI reconnects.
+    pub streaming_texts: Arc<Mutex<HashMap<String, String>>>,
+    /// Latest observable turn phase retained across UI reconnects.
+    pub turn_progresses: Arc<Mutex<HashMap<String, TurnProgress>>>,
     /// Directory holding checkpoint file backups.
     pub checkpoints_dir: PathBuf,
     /// MCP connection manager (lazy per-server connections).
@@ -160,7 +166,10 @@ impl AppState {
             pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             session_allowlist: Arc::new(Mutex::new(HashMap::new())),
             pending_questions: Arc::new(Mutex::new(HashMap::new())),
+            pending_question_details: Arc::new(Mutex::new(HashMap::new())),
             plans: Arc::new(Mutex::new(HashMap::new())),
+            streaming_texts: Arc::new(Mutex::new(HashMap::new())),
+            turn_progresses: Arc::new(Mutex::new(HashMap::new())),
             checkpoints_dir: data_dir.join("checkpoints"),
             mcp: crate::mcp::McpManager::new(),
         }
@@ -179,13 +188,91 @@ impl AppState {
     }
 
     /// Register a pending question and get the receiver the executor awaits.
-    pub fn register_question(&self, question_id: &str) -> oneshot::Receiver<String> {
+    pub fn register_question(
+        &self,
+        question: &miniq_protocol::Question,
+    ) -> oneshot::Receiver<String> {
         let (tx, rx) = oneshot::channel();
         self.pending_questions
             .lock()
             .unwrap()
-            .insert(question_id.to_string(), tx);
+            .insert(question.id.clone(), tx);
+        self.pending_question_details
+            .lock()
+            .unwrap()
+            .insert(question.id.clone(), question.clone());
         rx
+    }
+
+    pub fn finish_question(&self, question_id: &str) {
+        self.pending_questions.lock().unwrap().remove(question_id);
+        self.pending_question_details
+            .lock()
+            .unwrap()
+            .remove(question_id);
+    }
+
+    pub fn pending_questions_for_session(&self, session_id: &str) -> Vec<miniq_protocol::Question> {
+        let mut questions = self
+            .pending_question_details
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|question| question.session_id == session_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        questions.sort_by(|left, right| left.created_at.cmp(&right.created_at));
+        questions
+    }
+
+    pub fn append_streaming_text(&self, session_id: &str, delta: &str) {
+        self.streaming_texts
+            .lock()
+            .unwrap()
+            .entry(session_id.to_string())
+            .or_default()
+            .push_str(delta);
+    }
+
+    pub fn streaming_text(&self, session_id: &str) -> String {
+        self.streaming_texts
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub fn clear_streaming_text(&self, session_id: &str) {
+        self.streaming_texts.lock().unwrap().remove(session_id);
+    }
+
+    pub fn set_turn_progress(&self, session_id: &str, phase: TurnPhase, model_step: Option<usize>) {
+        let progress = TurnProgress {
+            phase,
+            model_step,
+            started_at: miniq_memory::now_iso(),
+        };
+        self.turn_progresses
+            .lock()
+            .unwrap()
+            .insert(session_id.to_string(), progress.clone());
+        self.emit(Event::TurnProgressChanged {
+            session_id: session_id.to_string(),
+            progress,
+        });
+    }
+
+    pub fn turn_progress(&self, session_id: &str) -> Option<TurnProgress> {
+        self.turn_progresses
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .cloned()
+    }
+
+    pub fn clear_turn_progress(&self, session_id: &str) {
+        self.turn_progresses.lock().unwrap().remove(session_id);
     }
 
     /// Deliver an answer to a waiting ask_user call.
@@ -296,5 +383,44 @@ impl AppState {
             token.cancel();
         }
         turns.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use miniq_models::mock::MockProvider;
+
+    #[test]
+    fn streaming_text_survives_ui_reloads_until_turn_finishes() {
+        let state = AppState::new(
+            Store::open_in_memory().unwrap(),
+            "token".to_string(),
+            Arc::new(MockProvider::new(Vec::new())),
+        );
+
+        state.append_streaming_text("session", "前半段");
+        state.append_streaming_text("session", "后半段");
+        assert_eq!(state.streaming_text("session"), "前半段后半段");
+
+        state.clear_streaming_text("session");
+        assert_eq!(state.streaming_text("session"), "");
+    }
+
+    #[test]
+    fn turn_progress_survives_ui_reloads_until_turn_finishes() {
+        let state = AppState::new(
+            Store::open_in_memory().unwrap(),
+            "token".to_string(),
+            Arc::new(MockProvider::new(Vec::new())),
+        );
+
+        state.set_turn_progress("session", TurnPhase::RequestingModel, Some(3));
+        let progress = state.turn_progress("session").unwrap();
+        assert_eq!(progress.phase, TurnPhase::RequestingModel);
+        assert_eq!(progress.model_step, Some(3));
+
+        state.clear_turn_progress("session");
+        assert!(state.turn_progress("session").is_none());
     }
 }

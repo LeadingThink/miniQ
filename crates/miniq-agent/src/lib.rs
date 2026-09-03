@@ -38,6 +38,12 @@ pub enum AgentError {
 pub enum AgentEvent {
     /// Incremental assistant text.
     TextDelta(String),
+    ModelRequestStarted {
+        step: usize,
+    },
+    ModelResponseStarted {
+        step: usize,
+    },
     ContextCompacted {
         estimated_tokens_before: usize,
         estimated_tokens_after: usize,
@@ -138,6 +144,8 @@ pub async fn run_turn_with_limits(
     let mut steps = 0;
     let mut last_tool_batch = String::new();
     let mut repeated_tool_batch = 0;
+    let mut streamed_any_text = false;
+    let mut trailing_stream_newlines = 0;
 
     loop {
         if cancel.is_cancelled() {
@@ -154,10 +162,22 @@ pub async fn run_turn_with_limits(
             tools: tools.clone(),
             temperature: None,
         };
-        let mut stream = provider.stream_complete(request).await?;
+        let _ = events
+            .send(AgentEvent::ModelRequestStarted { step: steps })
+            .await;
+        // Race the provider call against cancellation so an interrupt takes
+        // effect even while connecting / waiting for the first byte.
+        let mut stream = tokio::select! {
+            _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+            stream = provider.stream_complete(request) => stream?,
+        };
+        let _ = events
+            .send(AgentEvent::ModelResponseStarted { step: steps })
+            .await;
 
         let mut text = String::new();
         let mut tool_calls: Vec<ToolCallRequest> = Vec::new();
+        let mut started_text_segment = false;
 
         loop {
             let delta = tokio::select! {
@@ -167,7 +187,37 @@ pub async fn run_turn_with_limits(
             let Some(delta) = delta else { break };
             match delta? {
                 ChatDelta::Text(t) => {
+                    if t.is_empty() {
+                        continue;
+                    }
+                    if !started_text_segment {
+                        // Each model step is a separate progress paragraph, while
+                        // deltas within the same step must remain contiguous.
+                        if streamed_any_text {
+                            let separator = if trailing_stream_newlines >= 2 {
+                                ""
+                            } else if trailing_stream_newlines == 1 {
+                                "\n"
+                            } else {
+                                "\n\n"
+                            };
+                            if !separator.is_empty() {
+                                let _ = events
+                                    .send(AgentEvent::TextDelta(separator.to_string()))
+                                    .await;
+                            }
+                        }
+                        started_text_segment = true;
+                    }
                     text.push_str(&t);
+                    streamed_any_text = true;
+                    for character in t.chars() {
+                        trailing_stream_newlines = if character == '\n' {
+                            (trailing_stream_newlines + 1).min(2)
+                        } else {
+                            0
+                        };
+                    }
                     let _ = events.send(AgentEvent::TextDelta(t)).await;
                 }
                 ChatDelta::ToolCall(call) => tool_calls.push(call),
@@ -266,6 +316,84 @@ mod tests {
             name: "continue_work".to_string(),
             arguments: serde_json::json!({"index": index}),
         })]
+    }
+
+    #[tokio::test]
+    async fn reports_model_request_and_response_phases() {
+        let provider = MockProvider::new(vec![vec![ChatDelta::Text("完成".to_string())]]);
+        let (events, mut receiver) = tokio::sync::mpsc::channel(8);
+
+        run_turn(
+            &provider,
+            &TestExecutor,
+            Vec::new(),
+            events,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            AgentEvent::ModelRequestStarted { step: 1 }
+        ));
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            AgentEvent::ModelResponseStarted { step: 1 }
+        ));
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            AgentEvent::TextDelta(delta) if delta == "完成"
+        ));
+    }
+
+    #[tokio::test]
+    async fn separates_text_from_sequential_model_steps_without_splitting_chunks() {
+        let mut inspect = vec![
+            ChatDelta::Text("检查".to_string()),
+            ChatDelta::Text("文件".to_string()),
+        ];
+        inspect.extend(tool_turn(0));
+        let mut analyze = vec![ChatDelta::Text("分析完成\n".to_string())];
+        analyze.extend(tool_turn(1));
+        let mut edit = vec![ChatDelta::Text("修改完成\n\n".to_string())];
+        edit.extend(tool_turn(2));
+        let provider = MockProvider::new(vec![
+            inspect,
+            analyze,
+            edit,
+            vec![ChatDelta::Text("全部完成".to_string())],
+        ]);
+        let (events, mut receiver) = tokio::sync::mpsc::channel(16);
+
+        run_turn(
+            &provider,
+            &TestExecutor,
+            Vec::new(),
+            events,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        let mut deltas = Vec::new();
+        while let Ok(event) = receiver.try_recv() {
+            if let AgentEvent::TextDelta(delta) = event {
+                deltas.push(delta);
+            }
+        }
+        assert_eq!(
+            deltas,
+            vec![
+                "检查",
+                "文件",
+                "\n\n",
+                "分析完成\n",
+                "\n",
+                "修改完成\n\n",
+                "全部完成",
+            ]
+        );
     }
 
     #[tokio::test]

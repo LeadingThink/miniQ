@@ -135,9 +135,14 @@ async fn summarize_batch(
             ChatMessage::user(transcript),
         ],
         tools: Vec::new(),
-        temperature: Some(0.0),
+        // Provider defaults are the only portable choice here: thinking
+        // models may reject any explicit value other than 1.
+        temperature: None,
     };
-    let mut stream = provider.stream_complete(request).await?;
+    let mut stream = tokio::select! {
+        _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+        stream = provider.stream_complete(request) => stream?,
+    };
     let mut summary = String::new();
     loop {
         let delta = tokio::select! {
@@ -292,6 +297,7 @@ mod tests {
         assert!(outcome.compacted);
         assert!(outcome.messages[1].content.contains("stable summary"));
         assert_eq!(outcome.messages[2].content, "recent request");
+        assert_eq!(provider.requests.lock().unwrap()[0].temperature, None);
         assert!(matches!(
             receiver.recv().await,
             Some(AgentEvent::ContextCompacted { .. })

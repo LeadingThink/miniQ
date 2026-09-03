@@ -7,6 +7,13 @@ use serde_json::Value;
 use super::row_mappers::{row_to_approval, row_to_message, row_to_tool_call};
 use super::{new_id, now_iso, MemoryError, Result, Store};
 
+#[derive(Debug, Clone)]
+pub struct PendingApprovalRequest {
+    pub approval: Approval,
+    pub tool_name: String,
+    pub input: Value,
+}
+
 impl Store {
     pub fn append_message(&self, session_id: &str, role: Role, content: &str) -> Result<Message> {
         self.append_message_with_id(&new_id("msg"), session_id, role, content)
@@ -61,6 +68,32 @@ impl Store {
                m.id ASC",
         )?;
         let rows = stmt.query_map(params![session_id], row_to_message)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Case-insensitive substring search across message contents. Returns the
+    /// most recent match per session, newest first.
+    pub fn search_messages(&self, query: &str, limit: usize) -> Result<Vec<Message>> {
+        let conn = self.conn.lock().unwrap();
+        let pattern = format!(
+            "%{}%",
+            query
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        );
+        let mut stmt = conn.prepare(
+            // SQLite bare-column semantics: with MAX() in the select list,
+            // the other columns come from the row where the max occurs, so
+            // this yields the latest matching message per session.
+            "SELECT id, session_id, role, content, MAX(created_at) AS created_at
+             FROM messages
+             WHERE content LIKE ?1 ESCAPE '\\' AND role IN ('user', 'assistant')
+             GROUP BY session_id
+             ORDER BY created_at DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![pattern, limit as i64], row_to_message)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
@@ -188,5 +221,37 @@ impl Store {
             row_to_approval,
         )
         .map_err(Into::into)
+    }
+
+    pub fn list_pending_approval_requests(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<PendingApprovalRequest>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT a.id, a.session_id, a.tool_call_id, a.risk_level, a.status,
+                    a.reason, a.created_at, a.resolved_at, t.tool_name, t.input_json
+             FROM approvals a
+             JOIN tool_calls t ON t.id = a.tool_call_id
+             WHERE a.session_id = ?1 AND a.status = 'pending'
+             ORDER BY a.created_at ASC, a.id ASC",
+        )?;
+        let rows = stmt.query_map(params![session_id], |row| {
+            let approval = row_to_approval(row)?;
+            let input_json: String = row.get(9)?;
+            let input = serde_json::from_str(&input_json).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    9,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
+            Ok(PendingApprovalRequest {
+                approval,
+                tool_name: row.get(8)?,
+                input,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 }

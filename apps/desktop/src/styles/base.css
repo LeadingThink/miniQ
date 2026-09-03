@@ -112,6 +112,14 @@ body {
   overflow: hidden;
 }
 
+.app.sidebar-collapsed .sidebar {
+  display: none;
+}
+
+.app.sidebar-collapsed .main {
+  margin-left: 10px;
+}
+
 .sidebar .brand {
   font-size: 16px;
   font-weight: 700;
@@ -183,6 +191,36 @@ body {
   color: var(--text);
 }
 
+.workspace-select,
+.session-select {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.workspace-select {
+  flex: 1;
+  min-height: 24px;
+}
+
+.workspace-select:hover,
+.session-select:hover {
+  opacity: 1;
+}
+
+.workspace-select:focus-visible,
+.session-select:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .workspace-icon {
   flex: none;
   color: var(--text-dim);
@@ -203,7 +241,8 @@ body {
   border-radius: 6px;
 }
 
-.workspace-item:hover .new-session {
+.workspace-item:hover .new-session,
+.workspace-item:focus-within .new-session {
   opacity: 1;
 }
 
@@ -232,7 +271,8 @@ body {
   transition: opacity 0.1s;
 }
 
-.workspace-item:hover .menu-trigger {
+.workspace-item:hover .menu-trigger,
+.workspace-item:focus-within .menu-trigger {
   opacity: 1;
 }
 
@@ -257,7 +297,12 @@ body {
   color: var(--text);
 }
 
-.session-item .session-title {
+.session-select {
+  flex: 1;
+  min-height: 22px;
+}
+
+.session-select .session-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -271,7 +316,7 @@ body {
   font-weight: 500;
 }
 
-.session-item .session-status {
+.session-select .session-status {
   display: inline-block;
   width: 6px;
   height: 6px;
@@ -310,7 +355,8 @@ body {
   transition: opacity 0.1s;
 }
 
-.session-item:hover .menu-trigger {
+.session-item:hover .menu-trigger,
+.session-item:focus-within .menu-trigger {
   opacity: 1;
 }
 

@@ -1,4 +1,5 @@
-import { FileText } from "lucide-react";
+import { Check, Copy, FileText } from "lucide-react";
+import { useRef, useState } from "react";
 import type {
   AnchorHTMLAttributes,
   ComponentPropsWithoutRef,
@@ -50,9 +51,10 @@ function MarkdownLink(
     node?: unknown;
     workspacePath?: string | null;
     onOpenFile?: (target: LocalFileTarget) => void;
+    onOpenUrl?: (url: string) => void;
   },
 ) {
-  const { node: _node, workspacePath, onOpenFile, ...anchorProps } = props;
+  const { node: _node, workspacePath, onOpenFile, onOpenUrl, ...anchorProps } = props;
   const filePath = props.href
     ? resolveLocalFileReference(props.href, workspacePath, nodeText(props.children))
     : null;
@@ -61,9 +63,8 @@ function MarkdownLink(
       props.onClick?.(event);
       if (event.defaultPrevented) return;
       event.preventDefault();
-      openLocalFile(filePath.path, workspacePath).catch(() => {
-        onOpenFile?.(filePath);
-      });
+      if (onOpenFile) onOpenFile(filePath);
+      else void openLocalFile(filePath.path, workspacePath);
     };
     const location = filePath.line ? `:${filePath.line}` : "";
     return (
@@ -84,7 +85,11 @@ function MarkdownLink(
     // Open recognized external URLs in the system browser
     if (url) {
       event.preventDefault();
-      void openExternalUrl(url).catch(() => undefined);
+      if (onOpenUrl && (url.protocol === "http:" || url.protocol === "https:")) {
+        onOpenUrl(url.href);
+      } else {
+        void openExternalUrl(url).catch(() => undefined);
+      }
       return;
     }
 
@@ -108,11 +113,8 @@ function MarkdownLink(
       }
 
       if (candidatePath) {
-        // Try opening with the system default application first
-        openLocalFile(candidatePath, workspacePath).catch(() => {
-          // Fall back to onOpenFile (preview panel / reveal in explorer)
-          onOpenFile?.({ path: candidatePath!, line: null, column: null });
-        });
+        if (onOpenFile) onOpenFile({ path: candidatePath, line: null, column: null });
+        else void openLocalFile(candidatePath, workspacePath);
       }
       return;
     }
@@ -144,6 +146,37 @@ function MarkdownCode(
     );
   }
   return <code {...codeProps}>{children}</code>;
+}
+
+/** Fenced code block with a hover copy button (ChatGPT-style). */
+function MarkdownPre(props: ComponentPropsWithoutRef<"pre"> & { node?: unknown }) {
+  const { node: _node, ...preProps } = props;
+  const preRef = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  const copy = () => {
+    const text = preRef.current?.innerText ?? "";
+    if (!text) return;
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <div className="code-block">
+      <button
+        type="button"
+        className={`code-copy ${copied ? "copied" : ""}`}
+        title="复制代码"
+        onClick={copy}
+      >
+        {copied ? <Check size={13} /> : <Copy size={13} />}
+        {copied ? "已复制" : "复制"}
+      </button>
+      <pre ref={preRef} {...preProps} />
+    </div>
+  );
 }
 
 /**
@@ -178,6 +211,7 @@ export function Md(props: {
   children: string;
   workspacePath?: string | null;
   onOpenFile?: (target: LocalFileTarget) => void;
+  onOpenUrl?: (url: string) => void;
 }) {
   return (
     <div className="md">
@@ -189,6 +223,7 @@ export function Md(props: {
               {...linkProps}
               workspacePath={props.workspacePath}
               onOpenFile={props.onOpenFile}
+              onOpenUrl={props.onOpenUrl}
             />
           ),
           code: (codeProps) => (
@@ -198,6 +233,7 @@ export function Md(props: {
               onOpenFile={props.onOpenFile}
             />
           ),
+          pre: MarkdownPre,
         }}
         rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
         remarkPlugins={[remarkGfm, remarkMath]}

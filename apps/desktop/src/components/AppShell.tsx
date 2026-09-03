@@ -1,13 +1,17 @@
 import type { MiniqAppController } from "../hooks/useMiniqApp";
+import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import type { ThemeId } from "../theme";
-import { errorMessage } from "../errorMessage";
+import { type LocalFileTarget } from "../localFiles";
 import {
-  isTextPreviewFile,
-  revealLocalFile,
-  type LocalFileTarget,
-} from "../localFiles";
-import { FileDiff } from "lucide-react";
-import { lazy, Suspense } from "react";
+  clampWorkbenchWidth,
+  DEFAULT_WORKBENCH_WIDTH,
+  maxWorkbenchWidth,
+  MIN_WORKBENCH_WIDTH,
+  readWorkbenchWidth,
+  WORKBENCH_WIDTH_STORAGE_KEY,
+} from "../workbenchWidth";
+import { LoaderCircle, PlugZap, Sparkles } from "lucide-react";
+import { lazy, Suspense, useEffect, useState, type CSSProperties } from "react";
 import { Composer, ComposerCard } from "./Composer";
 import { DistillModal } from "./Distill";
 import { ExternalSessionImportDialog } from "./ExternalSessionImport";
@@ -15,11 +19,13 @@ import { McpPanel } from "./Mcp";
 import { ProjectPicker } from "./ProjectPicker";
 import { ReviewPanel } from "./ReviewPanel";
 import { SchedulePanel } from "./Schedule";
-import { SearchOverlay } from "./Search";
+import { SearchOverlay, type PaletteCommand } from "./Search";
 import { SettingsPanel } from "./Settings";
 import { Sidebar } from "./Sidebar";
 import { SkillsPanel } from "./Skills";
-import { Timeline } from "./Timeline";
+import { StarterPrompts } from "./StarterPrompts";
+import { WorkbenchResizer } from "./WorkbenchResizer";
+import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 
 interface AppOnlyProps {
   app: MiniqAppController;
@@ -35,74 +41,19 @@ const FilePreviewPanel = lazy(async () => {
   return { default: module.FilePreviewPanel };
 });
 
+const BrowserPanel = lazy(async () => {
+  const module = await import("./BrowserPanel");
+  return { default: module.BrowserPanel };
+});
+
+const Timeline = lazy(async () => {
+  const module = await import("./Timeline");
+  return { default: module.Timeline };
+});
+
 function openFileTarget(app: MiniqAppController, target: LocalFileTarget) {
-  if (isTextPreviewFile(target.path)) {
-    app.review.setOpen(false);
-    void app.preview.openFile(target);
-    return;
-  }
-
-  app.setError(null);
-  void revealLocalFile(target.path, app.catalog.currentWorkspace?.path).catch(
-    (cause) => app.setError(errorMessage(cause)),
-  );
-}
-
-function StatusBar({ app }: AppOnlyProps) {
-  const { connected, health } = app.connection;
-  const currentSession = app.catalog.currentSession;
-  const canDistill =
-    currentSession &&
-    !app.busy &&
-    app.feed.messages.some((message) => message.role === "assistant");
-
-  return (
-    <div className="statusbar">
-      <span className={`dot ${connected ? "ok" : "bad"}`} />
-      <span>{connected ? `daemon v${health?.daemonVersion ?? "?"}` : "未连接"}</span>
-      {currentSession && (
-        <span className={`badge ${currentSession.status}`}>
-          {currentSession.status}
-        </span>
-      )}
-      <span style={{ flex: 1 }} />
-      {app.review.data.files.length > 0 && (
-        <button
-          className="ghost review-toggle"
-          title="查看本会话的代码修改"
-          onClick={() => {
-            app.preview.close();
-            app.review.setOpen(!app.review.open);
-          }}
-        >
-          <FileDiff size={16} />
-          审阅 {app.review.data.files.length}
-          <span className="diff-add">+{app.review.data.additions}</span>
-          <span className="diff-delete">-{app.review.data.deletions}</span>
-        </button>
-      )}
-      {canDistill && (
-        <button
-          className="ghost"
-          onClick={() => app.navigation.setShowDistill(true)}
-        >
-          ✦ 保存为技能
-        </button>
-      )}
-    </div>
-  );
-}
-
-function ErrorBanner({ app }: AppOnlyProps) {
-  if (!app.error) return null;
-  return (
-    <div className="error-banner">
-      <span style={{ flex: 1 }}>{app.error}</span>
-      <span className="banner-close" onClick={() => app.setError(null)}>
-        ✕
-      </span>
-    </div>
-  );
+  app.review.setOpen(false);
+  void app.preview.openFile(target);
 }
 
 function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
@@ -120,6 +71,8 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
         <SearchOverlay
           sessions={app.catalog.sessions}
           workspaces={app.catalog.workspaces}
+          commands={buildPaletteCommands(app)}
+          client={app.client}
           onSelectSession={(sessionId) => void app.actions.openSession(sessionId)}
           onClose={() => app.navigation.setShowSearch(false)}
         />
@@ -149,31 +102,54 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
   );
 }
 
-function SessionPage({ app }: AppOnlyProps) {
+interface WorkbenchPageProps extends AppOnlyProps {
+  onOpenFile: (target: LocalFileTarget) => void;
+  onOpenUrl: (url: string) => void;
+}
+
+function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
   return (
     <>
-      <Timeline
-        messages={app.feed.messages}
-        toolCalls={app.feed.toolCalls}
-        approvals={app.feed.approvals}
-        questions={app.feed.questions}
-        plan={app.feed.plan}
-        artifacts={app.feed.artifacts}
-        workspacePath={app.catalog.currentWorkspace?.path}
-        streamingText={app.feed.streamingText}
-        busy={!!app.busy}
-        onResolveApproval={app.actions.resolveApproval}
-        onResolveQuestion={app.actions.resolveQuestion}
-        onRollback={app.actions.rollbackCheckpoint}
-        onOpenFile={(target) => openFileTarget(app, target)}
-      />
+      <Suspense
+        fallback={
+          <div className="timeline-loading">
+            <LoaderCircle className="connection-spinner" size={18} />
+            正在加载会话
+          </div>
+        }
+      >
+        <Timeline
+          messages={app.feed.messages}
+          toolCalls={app.feed.toolCalls}
+          approvals={app.feed.approvals}
+          questions={app.feed.questions}
+          plan={app.feed.plan}
+          artifacts={app.feed.artifacts}
+          queue={app.feed.queue}
+          workspacePath={app.catalog.currentWorkspace?.path}
+          streamingText={app.feed.streamingText}
+          turnProgress={app.feed.turnProgress}
+          busy={!!app.busy}
+          onResolveApproval={app.actions.resolveApproval}
+          onResolveQuestion={app.actions.resolveQuestion}
+          onRollback={app.actions.rollbackCheckpoint}
+          onOpenFile={onOpenFile}
+          onOpenUrl={onOpenUrl}
+          onSteerQueued={(id) => void app.actions.steerQueued(id)}
+          onRemoveQueued={(id) => void app.actions.removeQueued(id)}
+          onError={app.setError}
+        />
+      </Suspense>
       <Composer
         busy={!!app.busy}
         chip={app.catalog.currentWorkspace?.name}
+        draftKey={app.catalog.currentSessionId ?? undefined}
+        client={app.client}
         approvalMode={app.connection.approvalMode}
         onApprovalModeChange={app.connection.changeApprovalMode}
         onSend={app.actions.sendMessage}
         onCancel={app.actions.cancelTurn}
+        onError={app.setError}
       />
     </>
   );
@@ -181,6 +157,9 @@ function SessionPage({ app }: AppOnlyProps) {
 
 function HeroPage({ app }: AppOnlyProps) {
   const selectedWorkspace = app.catalog.selectedWorkspace;
+  const [draftRequest, setDraftRequest] = useState<
+    { id: number; content: string } | undefined
+  >();
   return (
     <div className="hero">
       <h1>
@@ -192,6 +171,9 @@ function HeroPage({ app }: AppOnlyProps) {
         <ComposerCard
           busy={false}
           autoFocus
+          draftKey="hero"
+          draftRequest={draftRequest}
+          client={app.client}
           placeholder={
             selectedWorkspace
               ? "描述你的目标,例如:整理这份资料并生成周报"
@@ -209,23 +191,31 @@ function HeroPage({ app }: AppOnlyProps) {
           approvalMode={app.connection.approvalMode}
           onApprovalModeChange={app.connection.changeApprovalMode}
           onSend={app.actions.startTask}
+          onError={app.setError}
+          sendBlocked={!selectedWorkspace}
+          sendBlockedReason="请先选择项目"
         />
       </div>
+      <StarterPrompts
+        onSelect={(prompt) =>
+          setDraftRequest({ id: Date.now(), content: prompt.prompt })
+        }
+      />
       <div className="hero-cards">
-        <div className="hero-card" onClick={() => app.navigation.setPage("skills")}>
-          <div className="hero-card-title">✦ 技能</div>
+        <button type="button" className="hero-card" onClick={() => app.navigation.setPage("skills")}>
+          <div className="hero-card-title"><Sparkles size={14} />技能</div>
           <div className="hero-card-sub">查看可复用的工作流,或从任务中学习新技能</div>
-        </div>
-        <div className="hero-card" onClick={() => app.navigation.setPage("mcp")}>
-          <div className="hero-card-title">🔌 连接 MCP</div>
+        </button>
+        <button type="button" className="hero-card" onClick={() => app.navigation.setPage("mcp")}>
+          <div className="hero-card-title"><PlugZap size={14} />连接 MCP</div>
           <div className="hero-card-sub">接入外部工具与服务,扩展 agent 能力</div>
-        </div>
+        </button>
       </div>
     </div>
   );
 }
 
-function MainPage({ app }: AppOnlyProps) {
+function MainPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
   switch (app.navigation.page) {
     case "schedule":
       return (
@@ -248,16 +238,123 @@ function MainPage({ app }: AppOnlyProps) {
       return <McpPanel client={app.client} />;
     default:
       return app.catalog.currentSessionId ? (
-        <SessionPage app={app} />
+        <SessionPage app={app} onOpenFile={onOpenFile} onOpenUrl={onOpenUrl} />
       ) : (
         <HeroPage app={app} />
       );
   }
 }
 
+function buildPaletteCommands(app: MiniqAppController): PaletteCommand[] {
+  return [
+    {
+      id: "new-chat",
+      label: "新建会话",
+      hint: "⌘N",
+      icon: "new",
+      run: app.actions.newChat,
+    },
+    {
+      id: "settings",
+      label: "打开设置",
+      hint: "⌘,",
+      icon: "settings",
+      run: () => app.navigation.setShowSettings(true),
+    },
+    {
+      id: "skills",
+      label: "技能",
+      icon: "skills",
+      run: () => app.navigation.setPage("skills"),
+    },
+    {
+      id: "mcp",
+      label: "MCP 连接",
+      icon: "mcp",
+      run: () => app.navigation.setPage("mcp"),
+    },
+    {
+      id: "schedule",
+      label: "已安排的任务",
+      icon: "schedule",
+      run: () => app.navigation.setPage("schedule"),
+    },
+  ];
+}
+
 export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
+  const [browserUrl, setBrowserUrl] = useState<string | null>(null);
+  const [workbenchWidth, setWorkbenchWidth] = useState(() =>
+    readWorkbenchWidth(
+      window.localStorage,
+      window.innerWidth,
+      app.navigation.sidebarCollapsed,
+    ),
+  );
+  const workbenchMax = maxWorkbenchWidth(
+    window.innerWidth,
+    app.navigation.sidebarCollapsed,
+  );
+  const resizeWorkbench = (width: number) => {
+    const next = clampWorkbenchWidth(
+      width,
+      window.innerWidth,
+      app.navigation.sidebarCollapsed,
+    );
+    setWorkbenchWidth(next);
+    window.localStorage.setItem(WORKBENCH_WIDTH_STORAGE_KEY, String(next));
+  };
+
+  useEffect(() => {
+    const handleResize = () => {
+      setWorkbenchWidth((current) => {
+        const next = clampWorkbenchWidth(
+          current,
+          window.innerWidth,
+          app.navigation.sidebarCollapsed,
+        );
+        window.localStorage.setItem(WORKBENCH_WIDTH_STORAGE_KEY, String(next));
+        return next;
+      });
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [app.navigation.sidebarCollapsed]);
+
+  const openBrowserUrl = (url: string) => {
+    app.preview.close();
+    app.review.setOpen(false);
+    setBrowserUrl(url);
+  };
+  const openPreviewFile = (target: LocalFileTarget) => {
+    setBrowserUrl(null);
+    openFileTarget(app, target);
+  };
+
+  useGlobalShortcuts({
+    onPalette: () => app.navigation.setShowSearch(!app.navigation.showSearch),
+    onNewChat: app.actions.newChat,
+    onSettings: () => app.navigation.setShowSettings(true),
+    onStop: app.busy ? () => void app.actions.cancelTurn() : undefined,
+    onToggleSidebar: () =>
+      app.navigation.setSidebarCollapsed(!app.navigation.sidebarCollapsed),
+  });
+
+  const workbenchOpen = Boolean(
+    browserUrl ||
+    (app.preview.state.open && app.catalog.currentWorkspace) ||
+    (app.review.open && app.catalog.currentWorkspace),
+  );
+  const appStyle = {
+    "--workbench-width": `${workbenchWidth}px`,
+  } as CSSProperties;
+
   return (
-    <div className="app">
+    <div
+      className={`app ${app.navigation.sidebarCollapsed ? "sidebar-collapsed" : ""}`}
+      style={appStyle}
+    >
       <Sidebar
         workspaces={app.catalog.workspaces}
         sessions={app.catalog.sessions}
@@ -275,6 +372,7 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
         onDeleteSession={(sessionId) => void app.actions.deleteSession(sessionId)}
         onRenameSession={(sessionId, title) => void app.actions.renameSession(sessionId, title)}
         onSetSessionPinned={(sessionId, pinned) => void app.actions.setSessionPinned(sessionId, pinned)}
+        onSetSessionArchived={(sessionId, archived) => void app.actions.setSessionArchived(sessionId, archived)}
         onShowSkills={() => app.navigation.setPage("skills")}
         onShowMcp={() => app.navigation.setPage("mcp")}
         onShowSettings={() => app.navigation.setShowSettings(true)}
@@ -282,14 +380,42 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
         updateState={app.updater.state}
         onCheckForUpdates={() => void app.updater.checkNow()}
         onInstallUpdate={() => void app.updater.install()}
+        onError={app.setError}
       />
       <div className="main">
-        <StatusBar app={app} />
-        <ErrorBanner app={app} />
+        <AppStatusBar
+          app={app}
+          onOpenBrowser={() => openBrowserUrl("https://www.bing.com/")}
+          onToggleReview={() => {
+            setBrowserUrl(null);
+            app.preview.close();
+            app.review.setOpen(!app.review.open);
+          }}
+        />
+        <AppErrorBanner app={app} />
         <AppOverlays app={app} theme={theme} onThemeChange={onThemeChange} />
-        <MainPage app={app} />
+        <MainPage app={app} onOpenUrl={openBrowserUrl} onOpenFile={openPreviewFile} />
       </div>
-      {app.preview.state.open && app.catalog.currentWorkspace ? (
+      {workbenchOpen && (
+        <WorkbenchResizer
+          width={workbenchWidth}
+          min={MIN_WORKBENCH_WIDTH}
+          max={workbenchMax}
+          onResize={resizeWorkbench}
+          onReset={() => resizeWorkbench(DEFAULT_WORKBENCH_WIDTH)}
+        />
+      )}
+      {browserUrl ? (
+        <Suspense
+          fallback={<aside className="browser-panel"><div className="diff-empty">正在启动浏览器...</div></aside>}
+        >
+          <BrowserPanel
+            url={browserUrl}
+            onNavigate={setBrowserUrl}
+            onClose={() => setBrowserUrl(null)}
+          />
+        </Suspense>
+      ) : app.preview.state.open && app.catalog.currentWorkspace ? (
         <Suspense
           fallback={
             <aside className="file-preview-panel">
@@ -301,12 +427,16 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
             preview={app.preview.state}
             workspacePath={app.catalog.currentWorkspace.path}
             onClose={app.preview.close}
+            onRetry={() => {
+              const target = app.preview.state.target;
+              if (target) void app.preview.openFile(target);
+            }}
           />
         </Suspense>
       ) : app.review.open && app.catalog.currentWorkspace ? (
         <ReviewPanel
           diff={app.review.data}
-          onOpenFile={(target) => openFileTarget(app, target)}
+          onOpenFile={openPreviewFile}
           onClose={() => app.review.setOpen(false)}
         />
       ) : null}

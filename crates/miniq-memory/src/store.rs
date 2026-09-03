@@ -4,6 +4,7 @@
 mod conversation;
 mod external_sessions;
 mod model_context;
+mod queue;
 mod records;
 mod row_mappers;
 mod scheduled_tasks;
@@ -45,6 +46,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0006_model_context",
         include_str!("../../../migrations/0006_model_context.sql"),
+    ),
+    (
+        "0007_queued_messages",
+        include_str!("../../../migrations/0007_queued_messages.sql"),
     ),
 ];
 

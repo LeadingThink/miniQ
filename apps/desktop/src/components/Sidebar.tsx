@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Archive,
+  ArchiveRestore,
   ChevronDown,
   ChevronUp,
   Clock3,
@@ -45,6 +47,7 @@ interface SidebarProps {
   onDeleteSession: (sessionId: string) => void;
   onRenameSession: (sessionId: string, title: string) => void;
   onSetSessionPinned: (sessionId: string, pinned: boolean) => void;
+  onSetSessionArchived: (sessionId: string, archived: boolean) => void;
   onShowSkills: () => void;
   onShowMcp: () => void;
   onShowSettings: () => void;
@@ -52,24 +55,27 @@ interface SidebarProps {
   updateState: AppUpdaterState;
   onCheckForUpdates: () => void;
   onInstallUpdate: () => void;
+  onError: (message: string) => void;
 }
 
 export function Sidebar(props: SidebarProps) {
+  const [showArchived, setShowArchived] = useState(false);
+  const archivedSessions = props.sessions.filter((session) => session.archived);
   return (
     <div className="sidebar">
       <div className="brand">miniQ</div>
-      <div className="nav-item" onClick={props.onNewChat}>
+      <button type="button" className="nav-item sidebar-nav-button" onClick={props.onNewChat}>
         <PencilLine className="nav-icon" size={16} /> 新对话
-      </div>
-      <div className="nav-item" onClick={props.onShowSearch}>
+      </button>
+      <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSearch}>
         <Search className="nav-icon" size={16} /> 搜索
-      </div>
-      <div className="nav-item" onClick={props.onShowSchedule}>
+      </button>
+      <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSchedule}>
         <Clock3 className="nav-icon" size={16} /> 已安排
-      </div>
-      <div className="nav-item" onClick={props.onImportSessions}>
+      </button>
+      <button type="button" className="nav-item sidebar-nav-button" onClick={props.onImportSessions}>
         <Download className="nav-icon" size={15} /> 导入会话
-      </div>
+      </button>
 
       {props.workspaces.length > 0 && <div className="sidebar-section">项目</div>}
       <div className="sidebar-scroll">
@@ -78,7 +84,9 @@ export function Sidebar(props: SidebarProps) {
             currentSessionId={props.currentSessionId}
             key={workspace.id}
             selected={workspace.id === props.selectedWorkspaceId}
-            sessions={props.sessions.filter((session) => session.workspaceId === workspace.id)}
+            sessions={props.sessions.filter(
+              (session) => session.workspaceId === workspace.id && !session.archived,
+            )}
             workspace={workspace}
             onCreateSession={props.onCreateSession}
             onDeleteWorkspace={props.onDeleteWorkspace}
@@ -87,11 +95,40 @@ export function Sidebar(props: SidebarProps) {
             onDeleteSession={props.onDeleteSession}
             onRenameSession={props.onRenameSession}
             onSetSessionPinned={props.onSetSessionPinned}
+            onSetSessionArchived={props.onSetSessionArchived}
             onSelectWorkspace={props.onSelectWorkspace}
           />
         ))}
         {props.workspaces.length === 0 && (
           <div className="sidebar-empty">点击新对话选择或创建一个项目开始协作</div>
+        )}
+        {archivedSessions.length > 0 && (
+          <>
+            <button
+              type="button"
+              className="session-toggle"
+              aria-expanded={showArchived}
+              onClick={() => setShowArchived((current) => !current)}
+            >
+              <Archive size={13} />
+              <span>已归档 {archivedSessions.length}</span>
+              {showArchived ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {showArchived &&
+              archivedSessions.map((session) => (
+                <SessionItem
+                  current={session.id === props.currentSessionId}
+                  hidden={false}
+                  key={session.id}
+                  session={session}
+                  onSelect={props.onSelectSession}
+                  onDelete={props.onDeleteSession}
+                  onRename={props.onRenameSession}
+                  onSetPinned={props.onSetSessionPinned}
+                  onSetArchived={props.onSetSessionArchived}
+                />
+              ))}
+          </>
         )}
       </div>
 
@@ -102,23 +139,25 @@ export function Sidebar(props: SidebarProps) {
           onCheck={props.onCheckForUpdates}
           onInstall={props.onInstallUpdate}
         />
-        <div className="nav-item" onClick={props.onShowSkills}>
+        <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSkills}>
           <Sparkles className="nav-icon" size={16} /> 技能
-        </div>
-        <div className="nav-item" onClick={props.onShowMcp}>
+        </button>
+        <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowMcp}>
           <Plug className="nav-icon" size={16} /> MCP
-        </div>
+        </button>
         <button
           type="button"
           className="nav-item sidebar-nav-button"
           title="打开反馈表单"
-          onClick={() => void openExternalUrl(FEEDBACK_FORM_URL).catch(() => undefined)}
+          onClick={() => void openExternalUrl(FEEDBACK_FORM_URL).catch((cause) => {
+            props.onError(`无法打开反馈页面：${cause instanceof Error ? cause.message : String(cause)}`);
+          })}
         >
           <MessageSquareText className="nav-icon" size={16} /> 反馈
         </button>
-        <div className="nav-item" onClick={props.onShowSettings}>
+        <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSettings}>
           <Settings className="nav-icon" size={16} /> 设置
-        </div>
+        </button>
       </div>
     </div>
   );
@@ -137,6 +176,7 @@ interface WorkspaceGroupProps {
   onDeleteSession: (sessionId: string) => void;
   onRenameSession: (sessionId: string, title: string) => void;
   onSetSessionPinned: (sessionId: string, pinned: boolean) => void;
+  onSetSessionArchived: (sessionId: string, archived: boolean) => void;
 }
 
 function WorkspaceGroup(props: WorkspaceGroupProps) {
@@ -146,7 +186,13 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
   const [renameValue, setRenameValue] = useState(props.workspace.name);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const renameCommittedRef = useRef(false);
   const hiddenCount = Math.max(0, props.sessions.length - COLLAPSED_SESSION_COUNT);
+
+  useEffect(() => {
+    const currentIndex = props.sessions.findIndex((session) => session.id === props.currentSessionId);
+    if (currentIndex >= COLLAPSED_SESSION_COUNT) setExpanded(true);
+  }, [props.currentSessionId, props.sessions]);
 
   useEffect(() => {
     if (renaming && inputRef.current) {
@@ -156,6 +202,8 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
   }, [renaming]);
 
   const commitRename = () => {
+    if (renameCommittedRef.current) return;
+    renameCommittedRef.current = true;
     const trimmed = renameValue.trim();
     setRenaming(false);
     if (trimmed && trimmed !== props.workspace.name) {
@@ -167,14 +215,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
 
   return (
     <div className="workspace-group">
-      <div
-        className={`workspace-item ${props.selected ? "selected" : ""}`}
-        title={props.workspace.path}
-        onClick={() => {
-          if (!renaming) props.onSelectWorkspace(props.workspace.id);
-        }}
-      >
-        <Folder className="workspace-icon" size={15} />
+      <div className={`workspace-item ${props.selected ? "selected" : ""}`}>
         {renaming ? (
           <input
             ref={inputRef}
@@ -183,18 +224,30 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
             onChange={(e) => setRenameValue(e.target.value)}
             onBlur={commitRename}
             onKeyDown={(e) => {
-              if (e.key === "Enter") commitRename();
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitRename();
+              }
               if (e.key === "Escape") {
                 setRenameValue(props.workspace.name);
                 setRenaming(false);
               }
             }}
-            onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className="workspace-name">{props.workspace.name}</span>
+          <button
+            type="button"
+            className="workspace-select"
+            title={props.workspace.path}
+            aria-current={props.selected ? "true" : undefined}
+            onClick={() => props.onSelectWorkspace(props.workspace.id)}
+          >
+            <Folder className="workspace-icon" size={15} />
+            <span className="workspace-name">{props.workspace.name}</span>
+          </button>
         )}
         <button
+          type="button"
           className="new-session"
           aria-label={`在 ${props.workspace.name} 中新建会话`}
           title="新建会话"
@@ -207,6 +260,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
         </button>
         <div className="menu-container">
           <button
+            type="button"
             ref={menuBtnRef}
             className="menu-trigger"
             aria-label="更多操作"
@@ -224,10 +278,12 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
             onClose={() => setMenuOpen(false)}
           >
             <button
+              type="button"
               className="dropdown-item"
               onClick={(event) => {
                 event.stopPropagation();
                 setMenuOpen(false);
+                renameCommittedRef.current = false;
                 setRenameValue(props.workspace.name);
                 setRenaming(true);
               }}
@@ -236,6 +292,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
               <span>重命名</span>
             </button>
             <button
+              type="button"
               className="dropdown-item danger"
               onClick={(event) => {
                 event.stopPropagation();
@@ -261,6 +318,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
           onDelete={props.onDeleteSession}
           onRename={props.onRenameSession}
           onSetPinned={props.onSetSessionPinned}
+          onSetArchived={props.onSetSessionArchived}
         />
       ))}
       {hiddenCount > 0 && (
@@ -286,12 +344,14 @@ function SessionItem(props: {
   onDelete: (sessionId: string) => void;
   onRename: (sessionId: string, title: string) => void;
   onSetPinned: (sessionId: string, pinned: boolean) => void;
+  onSetArchived: (sessionId: string, archived: boolean) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(props.session.title);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const renameCommittedRef = useRef(false);
   const external = props.session.external;
 
   useEffect(() => {
@@ -302,6 +362,8 @@ function SessionItem(props: {
   }, [renaming]);
 
   const commitRename = () => {
+    if (renameCommittedRef.current) return;
+    renameCommittedRef.current = true;
     const trimmed = renameValue.trim();
     setRenaming(false);
     if (trimmed && trimmed !== props.session.title) {
@@ -315,21 +377,8 @@ function SessionItem(props: {
     <div
       className={`session-item ${props.current ? "active" : ""} ${props.session.pinned ? "pinned" : ""}`}
       hidden={props.hidden}
-      onClick={() => {
-        if (!renaming) props.onSelect(props.session.id);
-      }}
       title={props.session.title}
     >
-      <span className={`session-status ${props.session.status}`} />
-      {external && (
-        <span
-          className={`session-source ${external.provider}`}
-          title={PROVIDER_LABELS[external.provider]}
-        >
-          {PROVIDER_MARKS[external.provider]}
-        </span>
-      )}
-      {props.session.pinned && <Pin className="pin-icon" size={12} />}
       {renaming ? (
         <input
           ref={inputRef}
@@ -338,20 +387,37 @@ function SessionItem(props: {
           onChange={(e) => setRenameValue(e.target.value)}
           onBlur={commitRename}
           onKeyDown={(e) => {
-            if (e.key === "Enter") commitRename();
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commitRename();
+            }
             if (e.key === "Escape") {
               setRenameValue(props.session.title);
               setRenaming(false);
             }
           }}
-          onClick={(e) => e.stopPropagation()}
         />
       ) : (
-        <span className="session-title">{props.session.title}</span>
+        <button
+          type="button"
+          className="session-select"
+          aria-current={props.current ? "page" : undefined}
+          onClick={() => props.onSelect(props.session.id)}
+        >
+          <span className={`session-status ${props.session.status}`} />
+          {external && (
+            <span className={`session-source ${external.provider}`} title={PROVIDER_LABELS[external.provider]}>
+              {PROVIDER_MARKS[external.provider]}
+            </span>
+          )}
+          {props.session.pinned && <Pin className="pin-icon" size={12} />}
+          <span className="session-title">{props.session.title}</span>
+          <span className="session-age">{relativeAge(props.session.updatedAt)}</span>
+        </button>
       )}
-      <span className="session-age">{relativeAge(props.session.updatedAt)}</span>
       <div className="menu-container">
         <button
+          type="button"
           ref={menuBtnRef}
           className="menu-trigger"
           aria-label="更多操作"
@@ -369,10 +435,12 @@ function SessionItem(props: {
           onClose={() => setMenuOpen(false)}
         >
           <button
+            type="button"
             className="dropdown-item"
             onClick={(event) => {
               event.stopPropagation();
               setMenuOpen(false);
+              renameCommittedRef.current = false;
               setRenameValue(props.session.title);
               setRenaming(true);
             }}
@@ -381,6 +449,7 @@ function SessionItem(props: {
             <span>重命名</span>
           </button>
           <button
+            type="button"
             className="dropdown-item"
             onClick={(event) => {
               event.stopPropagation();
@@ -392,6 +461,19 @@ function SessionItem(props: {
             <span>{props.session.pinned ? "取消置顶" : "置顶"}</span>
           </button>
           <button
+            type="button"
+            className="dropdown-item"
+            onClick={(event) => {
+              event.stopPropagation();
+              setMenuOpen(false);
+              props.onSetArchived(props.session.id, !props.session.archived);
+            }}
+          >
+            {props.session.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
+            <span>{props.session.archived ? "取消归档" : "归档"}</span>
+          </button>
+          <button
+            type="button"
             className="dropdown-item danger"
             onClick={(event) => {
               event.stopPropagation();
@@ -409,4 +491,3 @@ function SessionItem(props: {
     </div>
   );
 }
-

@@ -8,6 +8,19 @@ export type SessionStatus =
   | "cancelling"
   | "failed";
 
+export type TurnPhase =
+  | "preparing_context"
+  | "compacting_context"
+  | "requesting_model"
+  | "receiving_model"
+  | "finalizing";
+
+export interface TurnProgress {
+  phase: TurnPhase;
+  modelStep?: number;
+  startedAt: string;
+}
+
 export type Role = "user" | "assistant" | "system" | "tool";
 
 export type ToolCallStatus =
@@ -41,9 +54,19 @@ export interface Session {
   title: string;
   status: SessionStatus;
   pinned: boolean;
+  archived: boolean;
   external?: ExternalSessionLink;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A user message queued while the session had an active turn. */
+export interface QueuedMessage {
+  id: string;
+  sessionId: string;
+  content: string;
+  position: number;
+  createdAt: string;
 }
 
 export type ExternalProvider = "codex" | "claude_code" | "opencode";
@@ -155,6 +178,9 @@ export interface Question {
   toolCallId: string;
   prompt: string;
   options: string[];
+  createdAt: string;
+  autoContinueAfterSeconds?: number;
+  defaultAnswer?: string;
 }
 
 export interface Artifact {
@@ -230,6 +256,7 @@ export interface ScheduledTask {
 
 export type DaemonEvent =
   | { type: "session_status_changed"; sessionId: string; status: SessionStatus }
+  | { type: "turn_progress_changed"; sessionId: string; progress: TurnProgress }
   | { type: "message_created"; sessionId: string; message: Message }
   | { type: "assistant_delta"; sessionId: string; messageId: string; delta: string }
   | {
@@ -271,4 +298,6 @@ export type DaemonEvent =
   | { type: "workspace_deleted"; workspaceId: string }
   | { type: "session_renamed"; sessionId: string; title: string }
   | { type: "workspace_renamed"; workspaceId: string; name: string }
-  | { type: "session_pinned_changed"; sessionId: string; pinned: boolean };
+  | { type: "session_pinned_changed"; sessionId: string; pinned: boolean }
+  | { type: "session_archived_changed"; sessionId: string; archived: boolean }
+  | { type: "queue_changed"; sessionId: string; queue: QueuedMessage[] };

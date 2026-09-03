@@ -26,6 +26,27 @@ pub enum SessionStatus {
     Failed,
 }
 
+/// The active stage of an agent turn. This is intentionally descriptive,
+/// not a synthetic percentage: model and tool runtimes are not predictable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnPhase {
+    PreparingContext,
+    CompactingContext,
+    RequestingModel,
+    ReceivingModel,
+    Finalizing,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnProgress {
+    pub phase: TurnPhase,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_step: Option<usize>,
+    pub started_at: String,
+}
+
 impl SessionStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -47,10 +68,24 @@ pub struct Session {
     pub status: SessionStatus,
     #[serde(default)]
     pub pinned: bool,
+    #[serde(default)]
+    pub archived: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external: Option<crate::ExternalSessionLink>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// A user message sent while the session had an active turn. Drained in
+/// order when the turn ends, or steered to the front to interrupt.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuedMessage {
+    pub id: String,
+    pub session_id: String,
+    pub content: String,
+    pub position: i64,
+    pub created_at: String,
 }
 
 /// A recurring task: at each due time a fresh session is created in the
@@ -229,6 +264,11 @@ pub struct Question {
     /// Suggested answers; the user can always type a free-form one.
     #[serde(default)]
     pub options: Vec<String>,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_continue_after_seconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_answer: Option<String>,
 }
 
 /// A deliverable file produced during a task.
