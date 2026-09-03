@@ -161,10 +161,12 @@ fn start_next_queued(state: &AppState, session_id: &str) {
         return;
     };
     crate::gateway::emit_session_queue_changed(state, session_id);
-    let message = match state
-        .store
-        .append_message_with_images(session_id, Role::User, &next.content, &next.images)
-    {
+    let message = match state.store.append_message_with_images(
+        session_id,
+        Role::User,
+        &next.content,
+        &next.images,
+    ) {
         Ok(message) => message,
         Err(err) => {
             tracing::error!(session_id, %err, "failed to persist queued message");

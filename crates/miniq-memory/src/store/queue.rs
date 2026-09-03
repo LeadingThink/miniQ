@@ -7,8 +7,9 @@ use super::{new_id, now_iso, MemoryError, Result, Store};
 
 fn row_to_queued(row: &rusqlite::Row<'_>) -> rusqlite::Result<QueuedMessage> {
     let images_json: String = row.get(3)?;
-    let images = serde_json::from_str(&images_json)
-        .map_err(|error| rusqlite::Error::FromSqlConversionFailure(3, Type::Text, Box::new(error)))?;
+    let images = serde_json::from_str(&images_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(3, Type::Text, Box::new(error))
+    })?;
     Ok(QueuedMessage {
         id: row.get(0)?,
         session_id: row.get(1)?,

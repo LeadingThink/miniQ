@@ -380,7 +380,7 @@ mod tests {
         let mut turns = (0..25).map(tool_turn).collect::<Vec<_>>();
         turns.push(vec![ChatDelta::Text("finished".to_string())]);
         let provider = MockProvider::new(turns);
-        let (events, _receiver) = tokio::sync::mpsc::channel(64);
+        let (events, _receiver) = tokio::sync::mpsc::channel(256);
 
         let outcome = run_turn(
             &provider,
@@ -445,7 +445,7 @@ mod tests {
         let executor = OrderedExecutor {
             events: Mutex::new(Vec::new()),
         };
-        let (events, _receiver) = tokio::sync::mpsc::channel(4);
+        let (events, _receiver) = tokio::sync::mpsc::channel(16);
 
         let outcome = run_turn(
             &provider,
@@ -496,7 +496,7 @@ mod tests {
         let executor = ProgressExecutor {
             text: Mutex::new(String::new()),
         };
-        let (events, _receiver) = tokio::sync::mpsc::channel(4);
+        let (events, _receiver) = tokio::sync::mpsc::channel(16);
 
         run_turn(
             &provider,
