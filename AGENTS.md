@@ -48,7 +48,7 @@ When release authorization is explicit, use the existing GitHub Actions workflow
 
 ## Windows Release Workflow
 
-The current release pipeline publishes a signed Windows x64 NSIS installer and Tauri updater metadata. Source code and tags live in `LeadingThink/miniQ`; release assets live in `LeadingThink/miniQ-releases`.
+The current release pipeline publishes signed desktop installers and Tauri updater metadata. Source code and tags live in `LeadingThink/miniQ`; Qiniu is the primary release origin and `LeadingThink/miniQ-releases` is the public mirror.
 
 1. Determine the requested semantic version. If no version is specified, use the next appropriate version and state it before making release changes. Never reuse or move an existing release tag.
 
@@ -104,5 +104,7 @@ The current release pipeline publishes a signed Windows x64 NSIS installer and T
    - `latest.json`.
 
 9. Verify `latest.json` points to browser download URLs for the same release and that the release is published rather than left as a draft. Report the source commit, tag, workflow URL, release URL, and verification result.
+
+10. Verify the same assets exist under `https://oss.zaiwen.top/releases/miniq/v<version>/`, and that both `releases/miniq/latest.json` and the legacy root `latest.json` return the new version. Qiniu is the primary endpoint; GitHub is the fallback.
 
 Never print or expose `RELEASES_TOKEN`, `TAURI_SIGNING_PRIVATE_KEY`, or `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.

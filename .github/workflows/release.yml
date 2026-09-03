@@ -164,7 +164,23 @@ jobs:
           --input ../../dist-release/artifacts
           --output ../../dist-release/publish
           --tag ${{ inputs.tag }}
-          --repo LeadingThink/miniQ-releases
+          --asset-base-url https://oss.zaiwen.top/releases/miniq/${{ inputs.tag }}
+          --mirror-base-url https://github.com/LeadingThink/miniQ-releases/releases/download/${{ inputs.tag }}
+      - name: Publish Qiniu primary download origin
+        env:
+          QINIU_ACCESS_KEY: ${{ secrets.QINIU_ACCESS_KEY }}
+          QINIU_SECRET_KEY: ${{ secrets.QINIU_SECRET_KEY }}
+          QINIU_BUCKET: ${{ secrets.QINIU_BUCKET }}
+          QINIU_DOMAIN: https://oss.zaiwen.top
+          QINIU_LEGACY_BUCKET: miniq-zaiwenai
+          QINIU_LEGACY_DOMAIN: https://miniq.zaiwenai.com
+        run: |
+          python -m pip install 'qiniu==7.18.0'
+          python apps/desktop/scripts/upload_qiniu_release.py \
+            --input dist-release/publish \
+            --tag "${{ inputs.tag }}"
+      - name: Select GitHub mirror update manifest
+        run: mv dist-release/publish/latest.github.json dist-release/publish/latest.json
       - name: Create or update public release
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}

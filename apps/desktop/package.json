@@ -7,8 +7,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "release:check-version": "node scripts/check-release-version.mjs",
-    "test": "vitest run && npm run test:release-manifest",
+    "test": "vitest run && npm run test:release-manifest && npm run test:qiniu-publisher",
     "test:release-manifest": "node --test scripts/build-release-manifest.node-test.mjs",
+    "test:qiniu-publisher": "python3 scripts/upload_qiniu_release_test.py",
     "preview": "vite preview",
     "tauri": "tauri"
   },
