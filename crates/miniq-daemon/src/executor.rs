@@ -142,7 +142,7 @@ impl SessionToolExecutor {
             session_id: self.session_id.clone(),
             approval: approval.clone(),
             tool_name: call.name.clone(),
-            input: call.arguments.clone(),
+            input: crate::security::redacted(call.arguments.clone()),
             risk_level: risk.level,
         });
         self.audit(
@@ -385,7 +385,7 @@ impl SessionToolExecutor {
             session_id: self.session_id.clone(),
             tool_call_id: tool_call_id.to_string(),
             tool_name: call.name.clone(),
-            input: call.arguments.clone(),
+            input: crate::security::redacted(call.arguments.clone()),
         });
 
         // ask_user is interactive: handled here, not by the router.
@@ -439,10 +439,11 @@ impl SessionToolExecutor {
     }
 
     fn finish(&self, tool_call_id: &str, status: ToolCallStatus, output: &Value) {
-        if let Err(e) = self
-            .state
-            .store
-            .finish_tool_call(tool_call_id, status, Some(output))
+        let redacted_output = crate::security::redacted(output.clone());
+        if let Err(e) =
+            self.state
+                .store
+                .finish_tool_call(tool_call_id, status, Some(&redacted_output))
         {
             tracing::error!("tool call persist failed: {e}");
         }
@@ -450,7 +451,7 @@ impl SessionToolExecutor {
             session_id: self.session_id.clone(),
             tool_call_id: tool_call_id.to_string(),
             status,
-            output: Some(output.clone()),
+            output: Some(redacted_output),
         });
     }
 }
@@ -485,7 +486,7 @@ impl ToolExecutor for SessionToolExecutor {
             .create_tool_call(
                 &self.session_id,
                 &call.name,
-                &call.arguments,
+                &crate::security::redacted(call.arguments.clone()),
                 ToolCallStatus::Pending,
             )
             .map_err(|e| {

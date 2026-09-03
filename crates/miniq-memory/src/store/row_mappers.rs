@@ -155,12 +155,20 @@ fn parse_continuation_mode(value: &str) -> rusqlite::Result<ExternalContinuation
 
 pub(super) fn row_to_message(row: &Row<'_>) -> rusqlite::Result<Message> {
     let role: String = row.get(2)?;
+    let attachments_json: String = row.get(4)?;
     Ok(Message {
         id: row.get(0)?,
         session_id: row.get(1)?,
         role: parse_role(&role)?,
         content: row.get(3)?,
-        created_at: row.get(4)?,
+        attachments: serde_json::from_str(&attachments_json).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                4,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
+        created_at: row.get(5)?,
     })
 }
 

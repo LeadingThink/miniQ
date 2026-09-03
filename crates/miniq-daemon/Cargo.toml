@@ -18,6 +18,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 futures-util = { workspace = true }
+tokio-tungstenite = { workspace = true, features = ["rustls-tls-webpki-roots"] }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -28,7 +29,11 @@ tracing-appender = { workspace = true }
 time = { workspace = true, features = ["local-offset", "macros"] }
 similar = { workspace = true }
 url = { workspace = true }
+reqwest = { workspace = true }
+base64 = "0.22"
+regex = { workspace = true }
+aes-gcm = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
-tokio-tungstenite = { workspace = true }
 tempfile = "3"

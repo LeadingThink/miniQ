@@ -1,10 +1,8 @@
 //! One agent turn: persist the user message, stream the model, persist the
 //! assistant reply and emit protocol events along the way.
 
-use miniq_agent::{
-    compact_history, estimate_tokens, run_turn, AgentError, AgentEvent, ContextPolicy,
-};
-use miniq_models::{ChatMessage, ChatRole};
+use miniq_agent::{run_turn_with_limits, AgentError, AgentEvent, ContextPolicy, RunLimits};
+use miniq_models::{ChatImage, ChatMessage, ChatRole};
 use miniq_protocol::{Event, Message, Role, SessionStatus, TurnPhase};
 use std::path::Path;
 use tokio_util::sync::CancellationToken;
@@ -48,6 +46,16 @@ fn visible_message_to_chat(message: &Message) -> Option<ChatMessage> {
     Some(ChatMessage {
         role,
         content: message.content.clone(),
+        images: message
+            .attachments
+            .iter()
+            .filter_map(|attachment| {
+                attachment.mime_type.as_ref().map(|mime_type| ChatImage {
+                    path: attachment.path.clone(),
+                    mime_type: mime_type.clone(),
+                })
+            })
+            .collect(),
         tool_call_id: None,
         tool_calls: Vec::new(),
     })
@@ -128,6 +136,11 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
         state.clear_streaming_text(&session_id);
         state.clear_turn_progress(&session_id);
         state.end_turn(&session_id);
+        state.plans.lock().unwrap().remove(&session_id);
+        state.emit(Event::PlanUpdated {
+            session_id: session_id.clone(),
+            tasks: Vec::new(),
+        });
         match result {
             Ok(()) => {
                 let _ = state
@@ -188,16 +201,22 @@ fn start_next_queued(state: &AppState, session_id: &str) {
     };
     let Some(cancel) = state.begin_turn(session_id) else {
         // Session got claimed in the meantime; put the message back in front.
-        if let Ok(requeued) = state.store.enqueue_message(session_id, &next.content) {
+        if let Ok(requeued) = state.store.enqueue_message_with_attachments(
+            session_id,
+            &next.content,
+            &next.attachments,
+        ) {
             let _ = state.store.promote_queued_message(&requeued.id);
         }
         return;
     };
     crate::gateway::emit_session_queue_changed(state, session_id);
-    let message = match state
-        .store
-        .append_message(session_id, Role::User, &next.content)
-    {
+    let message = match state.store.append_message_with_attachments(
+        session_id,
+        Role::User,
+        &next.content,
+        &next.attachments,
+    ) {
         Ok(message) => message,
         Err(err) => {
             tracing::error!(session_id, %err, "failed to persist queued message");
@@ -317,23 +336,16 @@ async fn execute_turn(
     };
 
     let provider = state.current_provider();
-    let policy = context_policy();
-    if estimate_tokens(&history) > policy.soft_limit_tokens {
-        state.set_turn_progress(session_id, TurnPhase::CompactingContext, None);
-    }
-    let context = compact_history(provider.as_ref(), history, &policy, &event_tx, &cancel)
-        .await
-        .map_err(|error| match error {
-            AgentError::Cancelled => TurnError::Cancelled,
-            error => TurnError::Fatal(error.to_string()),
-        })?;
-    let provider_history = context.messages;
-    let outcome = run_turn(
+    let outcome = run_turn_with_limits(
         provider.as_ref(),
         &executor,
-        provider_history.clone(),
+        history,
         event_tx,
         cancel,
+        RunLimits {
+            context_policy: context_policy(),
+            ..RunLimits::default()
+        },
     )
     .await;
     let _ = forwarder.await;
@@ -356,9 +368,15 @@ async fn execute_turn(
             &outcome.final_text,
         )
         .map_err(|e| TurnError::Fatal(e.to_string()))?;
-    let mut persisted_history = provider_history.into_iter().skip(1).collect::<Vec<_>>();
-    persisted_history.extend(outcome.appended);
-    persisted_history.push(ChatMessage::assistant(outcome.final_text));
+    // The first entry is the runtime system prompt, rebuilt on every turn.
+    // Keep any compacted summary plus the exact transcript used by the final
+    // model request, including the final assistant reply.
+    let mut persisted_history = outcome
+        .provider_history
+        .into_iter()
+        .skip(1)
+        .collect::<Vec<_>>();
+    crate::security::redact_provider_history(&mut persisted_history);
     let persisted_history =
         serde_json::to_value(persisted_history).map_err(|e| TurnError::Fatal(e.to_string()))?;
     state
@@ -382,6 +400,7 @@ mod tests {
             session_id: "session".to_string(),
             role,
             content: content.to_string(),
+            attachments: Vec::new(),
             created_at: "2026-08-30T00:00:00Z".to_string(),
         }
     }
@@ -437,6 +456,7 @@ mod tests {
             ChatMessage {
                 role: ChatRole::Assistant,
                 content: String::new(),
+                images: Vec::new(),
                 tool_call_id: None,
                 tool_calls: vec![miniq_models::ToolCallRequest {
                     id: "tool-1".to_string(),

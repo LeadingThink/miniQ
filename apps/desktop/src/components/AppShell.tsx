@@ -349,6 +349,11 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
   const appStyle = {
     "--workbench-width": `${workbenchWidth}px`,
   } as CSSProperties;
+  const closeMobileSidebar = () => {
+    if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 720px)").matches) {
+      app.navigation.setSidebarCollapsed(true);
+    }
+  };
 
   return (
     <div
@@ -358,30 +363,40 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
       <Sidebar
         workspaces={app.catalog.workspaces}
         sessions={app.catalog.sessions}
+        unreadSessionIds={app.unreadSessionIds}
         currentSessionId={app.catalog.currentSessionId}
         selectedWorkspaceId={app.catalog.selectedWorkspace?.id ?? null}
-        onNewChat={app.actions.newChat}
-        onShowSearch={() => app.navigation.setShowSearch(true)}
-        onShowSchedule={() => app.navigation.setPage("schedule")}
-        onImportSessions={() => app.navigation.setShowExternalImport(true)}
-        onSelectWorkspace={app.actions.selectWorkspace}
+        onNewChat={() => { app.actions.newChat(); closeMobileSidebar(); }}
+        onShowSearch={() => { app.navigation.setShowSearch(true); closeMobileSidebar(); }}
+        onShowSchedule={() => { app.navigation.setPage("schedule"); closeMobileSidebar(); }}
+        onImportSessions={() => { app.navigation.setShowExternalImport(true); closeMobileSidebar(); }}
+        onSelectWorkspace={(workspaceId) => { app.actions.selectWorkspace(workspaceId); closeMobileSidebar(); }}
         onCreateSession={(workspaceId) => void app.actions.createSession(workspaceId)}
         onDeleteWorkspace={(workspaceId) => void app.actions.deleteWorkspace(workspaceId)}
         onRenameWorkspace={(workspaceId, name) => void app.actions.renameWorkspace(workspaceId, name)}
-        onSelectSession={(sessionId) => void app.actions.openSession(sessionId)}
+        onSelectSession={(sessionId) => { closeMobileSidebar(); void app.actions.openSession(sessionId); }}
+        onSessionSeen={app.markSessionSeen}
         onDeleteSession={(sessionId) => void app.actions.deleteSession(sessionId)}
         onRenameSession={(sessionId, title) => void app.actions.renameSession(sessionId, title)}
         onSetSessionPinned={(sessionId, pinned) => void app.actions.setSessionPinned(sessionId, pinned)}
         onSetSessionArchived={(sessionId, archived) => void app.actions.setSessionArchived(sessionId, archived)}
-        onShowSkills={() => app.navigation.setPage("skills")}
-        onShowMcp={() => app.navigation.setPage("mcp")}
-        onShowSettings={() => app.navigation.setShowSettings(true)}
+        onShowSkills={() => { app.navigation.setPage("skills"); closeMobileSidebar(); }}
+        onShowMcp={() => { app.navigation.setPage("mcp"); closeMobileSidebar(); }}
+        onShowSettings={() => { app.navigation.setShowSettings(true); closeMobileSidebar(); }}
         updateSupported={app.updater.supported}
         updateState={app.updater.state}
         onCheckForUpdates={() => void app.updater.checkNow()}
         onInstallUpdate={() => void app.updater.install()}
         onError={app.setError}
       />
+      {!app.navigation.sidebarCollapsed && (
+        <button
+          type="button"
+          className="mobile-sidebar-scrim"
+          aria-label="关闭侧栏"
+          onClick={() => app.navigation.setSidebarCollapsed(true)}
+        />
+      )}
       <div className="main">
         <AppStatusBar
           app={app}

@@ -1,6 +1,7 @@
 //! End-to-end test: start the daemon router on an ephemeral port, connect a
 //! real WebSocket client, and drive the JSON-RPC surface.
 
+use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use miniq_daemon::server;
 use miniq_daemon::state::AppState;
@@ -319,6 +320,87 @@ async fn settings_update_and_masking() {
     let raw = std::fs::read_to_string(&settings_path).unwrap();
     assert!(raw.contains("secret-key"));
     assert!(raw.contains("other-model"));
+
+    let resp = call(
+        &mut ws,
+        "r4",
+        "settings.update",
+        json!({"remoteAccess": {
+            "enabled": true,
+            "relayUrl": "wss://oneapi.zaiwenai.com/miniq-relay/ws",
+            "deviceName": "Office desktop"
+        }}),
+    )
+    .await;
+    assert_eq!(resp["result"]["remoteAccess"]["enabled"], true);
+    assert_eq!(
+        resp["result"]["remoteAccess"]["deviceName"],
+        "Office desktop"
+    );
+    assert_eq!(resp["result"]["remoteStatus"]["state"], "disabled");
+    assert!(resp["result"].to_string().find("secret-key").is_none());
+
+    let raw = std::fs::read_to_string(&settings_path).unwrap();
+    assert!(raw.contains("miniq-relay"));
+    assert!(raw.contains("Office desktop"));
+}
+
+#[tokio::test]
+async fn voice_transcription_uses_configured_provider() {
+    use axum::{body::Bytes, extract::Request, http::header, routing::post, Router};
+    use miniq_daemon::state::DaemonSettings;
+    use miniq_models::ProviderConfig;
+
+    let voice_api = Router::new().route(
+        "/v1/audio/transcriptions",
+        post(|request: Request| async move {
+            assert_eq!(
+                request.headers().get(header::AUTHORIZATION).unwrap(),
+                "Bearer test-secret"
+            );
+            let bytes = axum::body::to_bytes(request.into_body(), 1024 * 1024)
+                .await
+                .unwrap();
+            let body = String::from_utf8_lossy(&bytes);
+            assert!(body.contains("grok-transcribe"));
+            assert!(body.contains("record.wav"));
+            axum::Json(json!({"text": "转写成功"}))
+        }),
+    );
+    let api_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_address = api_listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(api_listener, voice_api).await.unwrap() });
+
+    let settings = DaemonSettings {
+        provider: Some(ProviderConfig {
+            base_url: format!("http://{api_address}/v1"),
+            api_key: "test-secret".to_string(),
+            model: "chat-model".to_string(),
+        }),
+        ..DaemonSettings::default()
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let token = "voice-token".to_string();
+    let state = AppState::with_settings(
+        Store::open_in_memory().unwrap(),
+        token.clone(),
+        settings,
+        dir.path().join("settings.json"),
+    );
+    let listener = server::bind(0).await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move { server::serve(listener, state).await.unwrap() });
+
+    let mut ws = connect(port, &token).await;
+    let wav = base64::engine::general_purpose::STANDARD.encode(Bytes::from_static(&[0_u8; 45]));
+    let response = call(
+        &mut ws,
+        "voice-1",
+        "voice.transcribe",
+        json!({"audioBase64": wav, "filename": "record.wav"}),
+    )
+    .await;
+    assert_eq!(response["result"]["text"], "转写成功");
 }
 
 #[tokio::test]

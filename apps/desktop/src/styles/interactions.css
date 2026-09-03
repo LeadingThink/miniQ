@@ -312,6 +312,74 @@
   gap: 11px;
 }
 
+.remote-access-toggle {
+  min-height: 52px;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 11px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.remote-access-toggle > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.remote-access-toggle strong {
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.remote-access-toggle small {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.settings-panel .remote-access-toggle input[type="checkbox"] {
+  width: 36px;
+  height: 21px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.remote-access-summary {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  color: var(--text-mid);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.remote-access-summary.connected {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 24%, var(--border));
+}
+
+.remote-access-summary strong {
+  display: block;
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.remote-access-summary p {
+  margin: 2px 0 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .provider-purchase {
   display: flex;
   flex-direction: column;

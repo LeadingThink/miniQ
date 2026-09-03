@@ -1,5 +1,5 @@
 use miniq_protocol::{
-    Approval, ApprovalStatus, Message, RiskLevel, Role, ToolCall, ToolCallStatus,
+    Approval, ApprovalStatus, Message, MessageAttachment, RiskLevel, Role, ToolCall, ToolCallStatus,
 };
 use rusqlite::params;
 use serde_json::Value;
@@ -16,7 +16,23 @@ pub struct PendingApprovalRequest {
 
 impl Store {
     pub fn append_message(&self, session_id: &str, role: Role, content: &str) -> Result<Message> {
-        self.append_message_with_id(&new_id("msg"), session_id, role, content)
+        self.append_message_with_attachments(session_id, role, content, &[])
+    }
+
+    pub fn append_message_with_attachments(
+        &self,
+        session_id: &str,
+        role: Role,
+        content: &str,
+        attachments: &[MessageAttachment],
+    ) -> Result<Message> {
+        self.append_message_with_id_and_attachments(
+            &new_id("msg"),
+            session_id,
+            role,
+            content,
+            attachments,
+        )
     }
 
     /// Append a message with a caller-allocated id (used for streaming, where
@@ -28,22 +44,35 @@ impl Store {
         role: Role,
         content: &str,
     ) -> Result<Message> {
+        self.append_message_with_id_and_attachments(id, session_id, role, content, &[])
+    }
+
+    pub fn append_message_with_id_and_attachments(
+        &self,
+        id: &str,
+        session_id: &str,
+        role: Role,
+        content: &str,
+        attachments: &[MessageAttachment],
+    ) -> Result<Message> {
         let conn = self.conn.lock().unwrap();
         let message = Message {
             id: id.to_string(),
             session_id: session_id.to_string(),
             role,
             content: content.to_string(),
+            attachments: attachments.to_vec(),
             created_at: now_iso(),
         };
         conn.execute(
-            "INSERT INTO messages (id, session_id, role, content, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO messages (id, session_id, role, content, attachments_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 message.id,
                 message.session_id,
                 message.role.as_str(),
                 message.content,
+                serde_json::to_string(&message.attachments)?,
                 message.created_at
             ],
         )?;
@@ -57,7 +86,7 @@ impl Store {
     pub fn list_messages(&self, session_id: &str) -> Result<Vec<Message>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT m.id, m.session_id, m.role, m.content, m.created_at
+            "SELECT m.id, m.session_id, m.role, m.content, m.attachments_json, m.created_at
              FROM messages m
              LEFT JOIN external_session_events e ON e.projected_message_id = m.id
              WHERE m.session_id = ?1
@@ -86,7 +115,7 @@ impl Store {
             // SQLite bare-column semantics: with MAX() in the select list,
             // the other columns come from the row where the max occurs, so
             // this yields the latest matching message per session.
-            "SELECT id, session_id, role, content, MAX(created_at) AS created_at
+            "SELECT id, session_id, role, content, attachments_json, MAX(created_at) AS created_at
              FROM messages
              WHERE content LIKE ?1 ESCAPE '\\' AND role IN ('user', 'assistant')
              GROUP BY session_id

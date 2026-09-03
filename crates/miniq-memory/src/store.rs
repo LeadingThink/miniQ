@@ -51,6 +51,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0007_queued_messages",
         include_str!("../../../migrations/0007_queued_messages.sql"),
     ),
+    (
+        "0008_message_attachments",
+        include_str!("../../../migrations/0008_message_attachments.sql"),
+    ),
 ];
 
 #[derive(Debug, Error)]
@@ -102,6 +106,15 @@ pub struct MemoryRow {
     pub content: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// Rows repaired when a daemon starts after the previous process exited
+/// before it could finish active work.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StartupRecovery {
+    pub sessions_failed: usize,
+    pub tool_calls_cancelled: usize,
+    pub approvals_rejected: usize,
 }
 
 pub struct Store {
@@ -156,5 +169,37 @@ impl Store {
             }
         }
         Ok(())
+    }
+
+    /// Atomically mark process-owned in-flight state as terminal. None of
+    /// these operations can still be running after a fresh daemon starts.
+    pub fn recover_interrupted_work(&self) -> Result<StartupRecovery> {
+        let mut conn = self.conn.lock().unwrap();
+        let transaction = conn.transaction()?;
+        let now = now_iso();
+        let sessions_failed = transaction.execute(
+            "UPDATE sessions
+             SET status = 'failed', updated_at = ?1
+             WHERE status IN ('running', 'waiting_approval', 'cancelling')",
+            params![now],
+        )?;
+        let tool_calls_cancelled = transaction.execute(
+            "UPDATE tool_calls
+             SET status = 'cancelled', completed_at = ?1
+             WHERE status IN ('pending', 'waiting_approval', 'running')",
+            params![now],
+        )?;
+        let approvals_rejected = transaction.execute(
+            "UPDATE approvals
+             SET status = 'rejected', resolved_at = ?1
+             WHERE status = 'pending'",
+            params![now],
+        )?;
+        transaction.commit()?;
+        Ok(StartupRecovery {
+            sessions_failed,
+            tool_calls_cancelled,
+            approvals_rejected,
+        })
     }
 }

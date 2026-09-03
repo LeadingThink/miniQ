@@ -22,6 +22,7 @@ import type { Session, Workspace } from "../types";
 import type { AppUpdaterState } from "../hooks/useAppUpdater";
 import { openExternalUrl } from "../externalLinks";
 import { relativeAge } from "../time";
+import { sessionStatusLabel } from "../sessionStatus";
 import { PROVIDER_LABELS, PROVIDER_MARKS } from "./externalSessionImportModel";
 import { UpdateNotice } from "./UpdateNotice";
 import { DropdownMenu } from "./DropdownMenu";
@@ -33,6 +34,7 @@ const FEEDBACK_FORM_URL =
 interface SidebarProps {
   workspaces: Workspace[];
   sessions: Session[];
+  unreadSessionIds: ReadonlySet<string>;
   currentSessionId: string | null;
   selectedWorkspaceId: string | null;
   onNewChat: () => void;
@@ -44,6 +46,7 @@ interface SidebarProps {
   onDeleteWorkspace: (workspaceId: string) => void;
   onRenameWorkspace: (workspaceId: string, name: string) => void;
   onSelectSession: (sessionId: string) => void;
+  onSessionSeen: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
   onRenameSession: (sessionId: string, title: string) => void;
   onSetSessionPinned: (sessionId: string, pinned: boolean) => void;
@@ -87,11 +90,13 @@ export function Sidebar(props: SidebarProps) {
             sessions={props.sessions.filter(
               (session) => session.workspaceId === workspace.id && !session.archived,
             )}
+            unreadSessionIds={props.unreadSessionIds}
             workspace={workspace}
             onCreateSession={props.onCreateSession}
             onDeleteWorkspace={props.onDeleteWorkspace}
             onRenameWorkspace={props.onRenameWorkspace}
             onSelectSession={props.onSelectSession}
+            onSessionSeen={props.onSessionSeen}
             onDeleteSession={props.onDeleteSession}
             onRenameSession={props.onRenameSession}
             onSetSessionPinned={props.onSetSessionPinned}
@@ -122,6 +127,8 @@ export function Sidebar(props: SidebarProps) {
                   key={session.id}
                   session={session}
                   onSelect={props.onSelectSession}
+                  onSeen={props.onSessionSeen}
+                  unread={props.unreadSessionIds.has(session.id)}
                   onDelete={props.onDeleteSession}
                   onRename={props.onRenameSession}
                   onSetPinned={props.onSetSessionPinned}
@@ -166,6 +173,7 @@ export function Sidebar(props: SidebarProps) {
 interface WorkspaceGroupProps {
   workspace: Workspace;
   sessions: Session[];
+  unreadSessionIds: ReadonlySet<string>;
   currentSessionId: string | null;
   selected: boolean;
   onSelectWorkspace: (workspaceId: string) => void;
@@ -173,6 +181,7 @@ interface WorkspaceGroupProps {
   onDeleteWorkspace: (workspaceId: string) => void;
   onRenameWorkspace: (workspaceId: string, name: string) => void;
   onSelectSession: (sessionId: string) => void;
+  onSessionSeen: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
   onRenameSession: (sessionId: string, title: string) => void;
   onSetSessionPinned: (sessionId: string, pinned: boolean) => void;
@@ -315,6 +324,8 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
           key={session.id}
           session={session}
           onSelect={props.onSelectSession}
+          onSeen={props.onSessionSeen}
+          unread={props.unreadSessionIds.has(session.id)}
           onDelete={props.onDeleteSession}
           onRename={props.onRenameSession}
           onSetPinned={props.onSetSessionPinned}
@@ -341,6 +352,8 @@ function SessionItem(props: {
   current: boolean;
   hidden: boolean;
   onSelect: (sessionId: string) => void;
+  onSeen: (sessionId: string) => void;
+  unread: boolean;
   onDelete: (sessionId: string) => void;
   onRename: (sessionId: string, title: string) => void;
   onSetPinned: (sessionId: string, pinned: boolean) => void;
@@ -353,6 +366,8 @@ function SessionItem(props: {
   const inputRef = useRef<HTMLInputElement>(null);
   const renameCommittedRef = useRef(false);
   const external = props.session.external;
+  const unread = !props.current && props.unread;
+  const statusText = unread ? "新回复" : sessionStatusLabel(props.session.status);
 
   useEffect(() => {
     if (renaming && inputRef.current) {
@@ -375,9 +390,9 @@ function SessionItem(props: {
 
   return (
     <div
-      className={`session-item ${props.current ? "active" : ""} ${props.session.pinned ? "pinned" : ""}`}
+      className={`session-item ${props.current ? "active" : ""} ${unread ? "unread" : ""} ${props.session.pinned ? "pinned" : ""}`}
       hidden={props.hidden}
-      title={props.session.title}
+      title={`${props.session.title}${unread || props.session.status !== "idle" ? ` · ${statusText}` : ""}`}
     >
       {renaming ? (
         <input
@@ -402,9 +417,16 @@ function SessionItem(props: {
           type="button"
           className="session-select"
           aria-current={props.current ? "page" : undefined}
-          onClick={() => props.onSelect(props.session.id)}
+          aria-label={`${props.session.title}${unread || props.session.status !== "idle" ? `，${statusText}` : ""}`}
+          onClick={() => {
+            props.onSeen(props.session.id);
+            props.onSelect(props.session.id);
+          }}
         >
-          <span className={`session-status ${props.session.status}`} />
+          <span
+            className={`session-status ${props.session.status} ${unread ? "unread" : ""}`}
+            aria-hidden="true"
+          />
           {external && (
             <span className={`session-source ${external.provider}`} title={PROVIDER_LABELS[external.provider]}>
               {PROVIDER_MARKS[external.provider]}
@@ -412,6 +434,15 @@ function SessionItem(props: {
           )}
           {props.session.pinned && <Pin className="pin-icon" size={12} />}
           <span className="session-title">{props.session.title}</span>
+          {(unread || props.session.status !== "idle") && (
+            <span
+              className={`session-state-label ${unread ? "unread" : props.session.status}`}
+              role="status"
+              aria-label={statusText}
+            >
+              {statusText}
+            </span>
+          )}
           <span className="session-age">{relativeAge(props.session.updatedAt)}</span>
         </button>
       )}

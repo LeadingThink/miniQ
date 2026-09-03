@@ -1,0 +1,23 @@
+[Unit]
+Description=miniQ encrypted device relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/miniq-relay
+Environment=NODE_ENV=production
+Environment=MINIQ_RELAY_HOST=127.0.0.1
+Environment=MINIQ_RELAY_PORT=9200
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/miniq-relay
+
+[Install]
+WantedBy=multi-user.target

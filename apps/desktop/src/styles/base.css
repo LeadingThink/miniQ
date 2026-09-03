@@ -316,10 +316,20 @@ body {
   font-weight: 500;
 }
 
+.session-item.unread {
+  background: var(--bg-active);
+  box-shadow: inset 3px 0 0 var(--accent);
+  color: var(--text);
+}
+
+.session-item.unread .session-title {
+  font-weight: 650;
+}
+
 .session-select .session-status {
   display: inline-block;
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex: none;
   margin-right: 0;
@@ -329,10 +339,82 @@ body {
 .session-item .session-status.running,
 .session-item .session-status.waiting_approval {
   background: var(--warn);
+  box-shadow: 0 0 0 3px var(--warn-bg);
+  animation: session-status-pulse 1.8s ease-in-out infinite;
+}
+
+.session-item .session-status.cancelling {
+  background: var(--text-dim);
+  animation: session-status-pulse 1.5s ease-in-out infinite;
 }
 
 .session-item .session-status.failed {
   background: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-bg);
+}
+
+.session-item .session-status.unread {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-shadow);
+  animation: session-unread-pulse 2s ease-in-out infinite;
+}
+
+.session-state-label {
+  flex: none;
+  max-width: 58px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+}
+
+.session-state-label.running,
+.session-state-label.waiting_approval {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+  background: var(--warn-bg);
+}
+
+.session-state-label.cancelling {
+  color: var(--text-mid);
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+
+.session-state-label.failed {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+  background: var(--danger-bg);
+}
+
+.session-state-label.unread {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: var(--focus-shadow);
+}
+
+@keyframes session-status-pulse {
+  0%, 100% { opacity: 0.65; transform: scale(0.86); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes session-unread-pulse {
+  0%, 100% { opacity: 0.72; box-shadow: 0 0 0 3px var(--focus-shadow); }
+  50% { opacity: 1; box-shadow: 0 0 0 5px var(--focus-shadow); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-item .session-status.running,
+  .session-item .session-status.waiting_approval,
+  .session-item .session-status.cancelling,
+  .session-item .session-status.unread {
+    animation: none;
+  }
 }
 
 .session-item .menu-container {

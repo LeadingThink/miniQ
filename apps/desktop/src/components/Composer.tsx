@@ -10,7 +10,6 @@ import type { ReactNode } from "react";
 import { Paperclip, Sparkles, X } from "lucide-react";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import {
-  buildComposerMessage,
   canSendComposer,
   isComposerSendKey,
 } from "../composerInput";
@@ -22,6 +21,8 @@ import {
   containsUnsupportedInput,
   sanitizeTextInput,
 } from "../textInputNavigation";
+import { insertTranscript, type TextRange } from "../voiceAudio";
+import { VoiceInput } from "./VoiceInput";
 
 /** Listen for native file drops (Tauri window-level drag & drop). */
 function useDroppedFiles(
@@ -166,7 +167,7 @@ export function ComposerCard(props: {
   client?: RpcClient;
   approvalMode?: ApprovalMode;
   onApprovalModeChange?: (mode: ApprovalMode) => void;
-  onSend: (content: string) => void;
+  onSend: (content: string, attachments?: string[]) => void;
   onCancel?: () => void;
   onError?: (message: string) => void;
   sendBlocked?: boolean;
@@ -178,6 +179,7 @@ export function ComposerCard(props: {
   const [dismissedSlashDraft, setDismissedSlashDraft] = useState<string | null>(null);
   const draftKeyRef = useRef(props.draftKey);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const voiceRangeRef = useRef<TextRange>({ start: 0, end: 0 });
   const slashMenuId = useId();
   const slashActive = draft.startsWith("/") && dismissedSlashDraft !== draft;
   const slashSkills = useSlashSkills(props.client, slashActive);
@@ -244,7 +246,7 @@ export function ComposerCard(props: {
 
   const send = () => {
     if (props.sendBlocked || !canSendComposer(draft, attachments)) return;
-    props.onSend(buildComposerMessage(draft, attachments));
+    props.onSend(draft.trim(), attachments);
     setDraft("");
     setAttachments([]);
     setDismissedSlashDraft(null);
@@ -254,6 +256,28 @@ export function ComposerCard(props: {
     setDraft(`使用技能「${skill.name}」：`);
     setDismissedSlashDraft(null);
     requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const rememberVoiceInsertion = () => {
+    const textarea = textareaRef.current;
+    voiceRangeRef.current = {
+      start: textarea?.selectionStart ?? draft.length,
+      end: textarea?.selectionEnd ?? draft.length,
+    };
+  };
+
+  const applyTranscription = (text: string) => {
+    let cursor = 0;
+    setDraftState((current) => {
+      const result = insertTranscript(current, text, voiceRangeRef.current);
+      cursor = result.cursor;
+      storeDraft(props.draftKey, result.value);
+      return result.value;
+    });
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(cursor, cursor);
+    });
   };
 
   return (
@@ -363,6 +387,14 @@ export function ComposerCard(props: {
           >
             <Paperclip size={15} />
           </button>
+        )}
+        {props.client && (
+          <VoiceInput
+            client={props.client}
+            onStart={rememberVoiceInsertion}
+            onTranscribed={applyTranscription}
+            onError={props.onError}
+          />
         )}
         {props.approvalMode && props.onApprovalModeChange && (
           <ApprovalModeSelect mode={props.approvalMode} onChange={props.onApprovalModeChange} />

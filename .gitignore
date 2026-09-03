@@ -2,6 +2,7 @@ reference-repos/
 target/
 node_modules/
 apps/desktop/dist/
+services/relay/dist/
 apps/desktop/src-tauri/gen/
 *.log
 dist-release/

@@ -1,4 +1,4 @@
-use miniq_protocol::{ErrorCode, Event, Role, RpcError, SessionStatus};
+use miniq_protocol::{ErrorCode, Event, MessageAttachment, Role, RpcError, SessionStatus};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -120,11 +120,14 @@ struct SendMessageParams {
 struct IncomingMessage {
     role: String,
     content: String,
+    #[serde(default)]
+    attachments: Vec<String>,
 }
 
 pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: SendMessageParams = params(raw)?;
-    validate_message(&input.message)?;
+    let attachments = validate_message(&input.message)?;
+    let content = display_content(&input.message.content, &attachments);
     let session = state
         .store
         .get_session(&input.session_id)
@@ -135,13 +138,19 @@ pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value
         // rejecting it. It will run automatically when the current turn ends.
         let queued = state
             .store
-            .enqueue_message(&input.session_id, &input.message.content)
+            .enqueue_message_with_attachments(&input.session_id, &content, &attachments)
             .map_err(store_err)?;
         emit_queue_changed(state, &input.session_id);
         return to_value(json!({ "queued": queued }));
     };
 
-    let message = append_user_message(state, &input, &session.title)?;
+    let message = append_user_message(
+        state,
+        &input.session_id,
+        &content,
+        &attachments,
+        &session.title,
+    )?;
     state.emit(Event::MessageCreated {
         session_id: input.session_id.clone(),
         message: message.clone(),
@@ -215,39 +224,120 @@ pub(super) fn queue_steer(state: &AppState, raw: Option<Value>) -> Result<Value,
     to_value(json!({ "promoted": promoted, "interrupted": interrupted }))
 }
 
-fn validate_message(message: &IncomingMessage) -> Result<(), RpcError> {
+const MAX_ATTACHMENTS: usize = 10;
+const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+
+fn validate_message(message: &IncomingMessage) -> Result<Vec<MessageAttachment>, RpcError> {
     if message.role != "user" {
         return Err(RpcError::new(
             ErrorCode::InvalidParams,
             "only user messages can be sent",
         ));
     }
-    if message.content.trim().is_empty() {
+    if message.content.trim().is_empty() && message.attachments.is_empty() {
         return Err(RpcError::new(
             ErrorCode::InvalidParams,
             "message content is empty",
         ));
     }
-    Ok(())
+    if message.attachments.len() > MAX_ATTACHMENTS {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            format!("一次最多附加 {MAX_ATTACHMENTS} 个文件"),
+        ));
+    }
+    message
+        .attachments
+        .iter()
+        .map(|path| validate_attachment(path))
+        .collect()
+}
+
+fn validate_attachment(path: &str) -> Result<MessageAttachment, RpcError> {
+    let canonical = std::fs::canonicalize(path).map_err(|error| {
+        RpcError::new(
+            ErrorCode::InvalidParams,
+            format!("无法读取附件 {path}: {error}"),
+        )
+    })?;
+    let metadata = canonical.metadata().map_err(|error| {
+        RpcError::new(
+            ErrorCode::InvalidParams,
+            format!("无法读取附件 {}: {error}", canonical.display()),
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            format!("附件不是文件: {}", canonical.display()),
+        ));
+    }
+    let mime_type = image_mime_type(&canonical).map(str::to_string);
+    if mime_type.is_some() && metadata.len() > MAX_IMAGE_BYTES {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            format!("图片附件不能超过 20 MB: {}", canonical.display()),
+        ));
+    }
+    let name = canonical
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("attachment")
+        .to_string();
+    Ok(MessageAttachment {
+        path: canonical.to_string_lossy().into_owned(),
+        name,
+        mime_type,
+    })
+}
+
+fn image_mime_type(path: &std::path::Path) -> Option<&'static str> {
+    match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "webp" => Some("image/webp"),
+        "gif" => Some("image/gif"),
+        _ => None,
+    }
+}
+
+fn display_content(content: &str, attachments: &[MessageAttachment]) -> String {
+    let content = content.trim();
+    if attachments.is_empty() {
+        return content.to_string();
+    }
+    let files = attachments
+        .iter()
+        .map(|attachment| format!("- {}", attachment.path))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let block = format!("[用户附加的本地文件]\n{files}");
+    if content.is_empty() {
+        block
+    } else {
+        format!("{content}\n\n{block}")
+    }
 }
 
 fn append_user_message(
     state: &AppState,
-    input: &SendMessageParams,
+    session_id: &str,
+    content: &str,
+    attachments: &[MessageAttachment],
     current_title: &str,
 ) -> Result<miniq_protocol::Message, RpcError> {
     let message = state
         .store
-        .append_message(&input.session_id, Role::User, &input.message.content)
+        .append_message_with_attachments(session_id, Role::User, content, attachments)
         .map_err(|error| {
-            state.end_turn(&input.session_id);
+            state.end_turn(session_id);
             store_err(error)
         })?;
 
     if current_title == "New session" {
-        let title: String = input.message.content.trim().chars().take(30).collect();
+        let title: String = content.trim().chars().take(30).collect();
         if !title.is_empty() {
-            let _ = state.store.update_session_title(&input.session_id, &title);
+            let _ = state.store.update_session_title(session_id, &title);
         }
     }
     Ok(message)

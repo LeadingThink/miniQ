@@ -17,6 +17,7 @@ mod session_diff;
 mod settings;
 mod skill;
 mod system;
+mod voice;
 mod workspace;
 
 use miniq_protocol::{ErrorCode, RpcError, RpcRequest, RpcResponse};
@@ -81,6 +82,9 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "tool.list" => system::list_tools(state),
         "settings.get" => settings::get(state),
         "settings.update" => settings::update(state, req.params),
+        "remote.status" => serde_json::to_value(crate::remote::status(state))
+            .map_err(|error| RpcError::new(ErrorCode::InternalError, error.to_string())),
+        "voice.transcribe" => voice::transcribe(state, req.params).await,
         "skill.list" => skill::list(state, req.params),
         "skill.read" => skill::read(state, req.params),
         "skill.setEnabled" => skill::set_enabled(state, req.params),

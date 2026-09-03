@@ -28,6 +28,7 @@ describe("Sidebar", () => {
       <Sidebar
         workspaces={[workspace]}
         sessions={[session]}
+        unreadSessionIds={new Set()}
         currentSessionId={session.id}
         selectedWorkspaceId={workspace.id}
         onNewChat={noop}
@@ -39,6 +40,7 @@ describe("Sidebar", () => {
         onDeleteWorkspace={noop}
         onRenameWorkspace={noop}
         onSelectSession={noop}
+        onSessionSeen={noop}
         onDeleteSession={noop}
         onRenameSession={noop}
         onSetSessionPinned={noop}
@@ -57,5 +59,42 @@ describe("Sidebar", () => {
     expect(html).toContain('aria-current="true"');
     expect(html).toContain('class="session-select"');
     expect(html).toContain('aria-current="page"');
+  });
+
+  it("makes a completed background reply visibly unread", () => {
+    const html = renderToStaticMarkup(
+      <Sidebar
+        workspaces={[workspace]}
+        sessions={[{ ...session, status: "idle" }]}
+        unreadSessionIds={new Set([session.id])}
+        currentSessionId={null}
+        selectedWorkspaceId={workspace.id}
+        onNewChat={noop}
+        onShowSearch={noop}
+        onShowSchedule={noop}
+        onImportSessions={noop}
+        onSelectWorkspace={noop}
+        onCreateSession={noop}
+        onDeleteWorkspace={noop}
+        onRenameWorkspace={noop}
+        onSelectSession={noop}
+        onSessionSeen={noop}
+        onDeleteSession={noop}
+        onRenameSession={noop}
+        onSetSessionPinned={noop}
+        onSetSessionArchived={noop}
+        onShowSkills={noop}
+        onShowMcp={noop}
+        onShowSettings={noop}
+        updateSupported={false}
+        updateState={{ phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null }}
+        onCheckForUpdates={noop}
+        onInstallUpdate={noop}
+        onError={noop}
+      />,
+    );
+    expect(html).toMatch(/class="session-item[^\"]*unread/);
+    expect(html).toContain('class="session-state-label unread"');
+    expect(html).toContain(">新回复<");
   });
 });

@@ -95,12 +95,17 @@ pub struct TurnOutcome {
     /// Full provider-facing transcript appended during this turn (assistant
     /// tool-call messages and tool results), excluding the incoming history.
     pub appended: Vec<ChatMessage>,
+    /// Provider transcript after any mid-turn compaction, including the final
+    /// assistant message.
+    pub provider_history: Vec<ChatMessage>,
 }
 
 #[derive(Debug, Clone)]
 pub struct RunLimits {
     pub max_steps: usize,
     pub repeated_tool_batch_limit: usize,
+    pub max_model_retries: usize,
+    pub context_policy: ContextPolicy,
 }
 
 impl Default for RunLimits {
@@ -108,6 +113,8 @@ impl Default for RunLimits {
         Self {
             max_steps: 96,
             repeated_tool_batch_limit: 4,
+            max_model_retries: 2,
+            context_policy: ContextPolicy::default(),
         }
     }
 }
@@ -157,78 +164,131 @@ pub async fn run_turn_with_limits(
                 steps: limits.max_steps,
             });
         }
-        let request = CompletionRequest {
-            messages: history.clone(),
-            tools: tools.clone(),
-            temperature: None,
-        };
-        let _ = events
-            .send(AgentEvent::ModelRequestStarted { step: steps })
-            .await;
-        // Race the provider call against cancellation so an interrupt takes
-        // effect even while connecting / waiting for the first byte.
-        let mut stream = tokio::select! {
-            _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-            stream = provider.stream_complete(request) => stream?,
-        };
-        let _ = events
-            .send(AgentEvent::ModelResponseStarted { step: steps })
-            .await;
+        let context =
+            compact_history(provider, history, &limits.context_policy, &events, &cancel).await?;
+        history = context.messages;
 
-        let mut text = String::new();
-        let mut tool_calls: Vec<ToolCallRequest> = Vec::new();
-        let mut started_text_segment = false;
-
-        loop {
-            let delta = tokio::select! {
-                _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-                delta = stream.next() => delta,
+        let mut model_retry = 0;
+        let mut output_budget = 16_384u32;
+        let (text, tool_calls) = loop {
+            let request = CompletionRequest {
+                messages: history.clone(),
+                tools: tools.clone(),
+                temperature: None,
+                max_output_tokens: Some(output_budget),
             };
-            let Some(delta) = delta else { break };
-            match delta? {
-                ChatDelta::Text(t) => {
-                    if t.is_empty() {
-                        continue;
+            let _ = events
+                .send(AgentEvent::ModelRequestStarted { step: steps })
+                .await;
+            // Race the provider call against cancellation so an interrupt
+            // takes effect while connecting or waiting for the first byte.
+            let mut stream = tokio::select! {
+                _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+                stream = provider.stream_complete(request) => stream?,
+            };
+            let _ = events
+                .send(AgentEvent::ModelResponseStarted { step: steps })
+                .await;
+
+            let mut text = String::new();
+            let mut tool_calls: Vec<ToolCallRequest> = Vec::new();
+            let mut started_text_segment = false;
+            let mut stream_error = None;
+
+            loop {
+                let delta = tokio::select! {
+                    _ = cancel.cancelled() => return Err(AgentError::Cancelled),
+                    delta = stream.next() => delta,
+                };
+                let Some(delta) = delta else { break };
+                let delta = match delta {
+                    Ok(delta) => delta,
+                    Err(error) => {
+                        stream_error = Some(error);
+                        break;
                     }
-                    if !started_text_segment {
-                        // Each model step is a separate progress paragraph, while
-                        // deltas within the same step must remain contiguous.
-                        if streamed_any_text {
-                            let separator = if trailing_stream_newlines >= 2 {
-                                ""
-                            } else if trailing_stream_newlines == 1 {
-                                "\n"
-                            } else {
-                                "\n\n"
-                            };
-                            if !separator.is_empty() {
-                                let _ = events
-                                    .send(AgentEvent::TextDelta(separator.to_string()))
-                                    .await;
-                            }
+                };
+                match delta {
+                    ChatDelta::Text(t) => {
+                        if t.is_empty() {
+                            continue;
                         }
-                        started_text_segment = true;
+                        if !started_text_segment {
+                            if streamed_any_text {
+                                let separator = if trailing_stream_newlines >= 2 {
+                                    ""
+                                } else if trailing_stream_newlines == 1 {
+                                    "\n"
+                                } else {
+                                    "\n\n"
+                                };
+                                if !separator.is_empty() {
+                                    let _ = events
+                                        .send(AgentEvent::TextDelta(separator.to_string()))
+                                        .await;
+                                }
+                            }
+                            started_text_segment = true;
+                        }
+                        text.push_str(&t);
+                        streamed_any_text = true;
+                        for character in t.chars() {
+                            trailing_stream_newlines = if character == '\n' {
+                                (trailing_stream_newlines + 1).min(2)
+                            } else {
+                                0
+                            };
+                        }
+                        let _ = events.send(AgentEvent::TextDelta(t)).await;
                     }
-                    text.push_str(&t);
-                    streamed_any_text = true;
-                    for character in t.chars() {
-                        trailing_stream_newlines = if character == '\n' {
-                            (trailing_stream_newlines + 1).min(2)
-                        } else {
-                            0
-                        };
-                    }
-                    let _ = events.send(AgentEvent::TextDelta(t)).await;
+                    ChatDelta::ToolCall(call) => tool_calls.push(call),
+                    ChatDelta::Finished => break,
                 }
-                ChatDelta::ToolCall(call) => tool_calls.push(call),
-                ChatDelta::Finished => break,
             }
-        }
+
+            if let Some(error) = stream_error {
+                if text.is_empty() && model_retry < limits.max_model_retries {
+                    if matches!(
+                        &error,
+                        miniq_models::ProviderError::OutputLimitReached
+                            | miniq_models::ProviderError::IncompleteToolArguments { .. }
+                    ) {
+                        output_budget = output_budget.saturating_mul(2).min(65_536);
+                    }
+                    model_retry += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(250 * model_retry as u64))
+                        .await;
+                    continue;
+                }
+                return Err(AgentError::Provider(error));
+            }
+            if text.trim().is_empty()
+                && tool_calls.is_empty()
+                && model_retry < limits.max_model_retries
+            {
+                model_retry += 1;
+                tokio::time::sleep(std::time::Duration::from_millis(250 * model_retry as u64))
+                    .await;
+                continue;
+            }
+            break (text, tool_calls);
+        };
 
         if tool_calls.is_empty() {
+            if text.trim().is_empty() {
+                return Err(AgentError::Provider(
+                    miniq_models::ProviderError::InvalidResponse(format!(
+                        "provider returned an empty completion after {} attempts",
+                        limits.max_model_retries + 1
+                    )),
+                ));
+            }
+            let mut provider_history = history.clone();
+            provider_history.push(ChatMessage::assistant(text.clone()));
             return Ok(TurnOutcome {
                 final_text: text,
                 appended,
+                provider_history,
             });
         }
 
@@ -255,6 +315,7 @@ pub async fn run_turn_with_limits(
         let assistant_msg = ChatMessage {
             role: miniq_models::ChatRole::Assistant,
             content: text,
+            images: Vec::new(),
             tool_call_id: None,
             tool_calls: tool_calls.clone(),
         };
@@ -288,9 +349,10 @@ pub async fn run_turn_with_limits(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures_util::stream;
     use miniq_models::mock::MockProvider;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     struct TestExecutor;
@@ -316,6 +378,38 @@ mod tests {
             name: "continue_work".to_string(),
             arguments: serde_json::json!({"index": index}),
         })]
+    }
+
+    struct FallibleProvider {
+        turns: Mutex<std::vec::IntoIter<Vec<Result<ChatDelta, miniq_models::ProviderError>>>>,
+        requests: Mutex<Vec<CompletionRequest>>,
+    }
+
+    impl FallibleProvider {
+        fn new(turns: Vec<Vec<Result<ChatDelta, miniq_models::ProviderError>>>) -> Self {
+            Self {
+                turns: Mutex::new(turns.into_iter()),
+                requests: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl ModelProvider for FallibleProvider {
+        async fn stream_complete(
+            &self,
+            request: CompletionRequest,
+        ) -> Result<miniq_models::DeltaStream, miniq_models::ProviderError> {
+            self.requests.lock().unwrap().push(request);
+            let turn = self.turns.lock().unwrap().next().ok_or_else(|| {
+                miniq_models::ProviderError::Config("no scripted turn".to_string())
+            })?;
+            Ok(Box::pin(stream::iter(turn)))
+        }
+
+        fn describe(&self) -> String {
+            "fallible-test-provider".to_string()
+        }
     }
 
     #[tokio::test]
@@ -419,6 +513,129 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn retries_an_empty_completion_instead_of_saving_it() {
+        let provider = MockProvider::new(vec![Vec::new(), vec![ChatDelta::Text("done".into())]]);
+        let (events, _receiver) = tokio::sync::mpsc::channel(16);
+
+        let outcome = run_turn(
+            &provider,
+            &TestExecutor,
+            vec![ChatMessage::user("work")],
+            events,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome.final_text, "done");
+        let requests = provider.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].max_output_tokens, Some(16_384));
+        assert_eq!(requests[1].max_output_tokens, Some(16_384));
+    }
+
+    #[tokio::test]
+    async fn raises_output_budget_after_a_truncated_response() {
+        let provider = FallibleProvider::new(vec![
+            vec![Err(miniq_models::ProviderError::OutputLimitReached)],
+            vec![
+                Ok(ChatDelta::Text("complete".into())),
+                Ok(ChatDelta::Finished),
+            ],
+        ]);
+        let (events, _receiver) = tokio::sync::mpsc::channel(16);
+
+        let outcome = run_turn(
+            &provider,
+            &TestExecutor,
+            vec![ChatMessage::user("work")],
+            events,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome.final_text, "complete");
+        let requests = provider.requests.lock().unwrap();
+        assert_eq!(requests[0].max_output_tokens, Some(16_384));
+        assert_eq!(requests[1].max_output_tokens, Some(32_768));
+    }
+
+    #[tokio::test]
+    async fn returns_a_clear_error_when_empty_retries_are_exhausted() {
+        let provider = MockProvider::new(vec![Vec::new(), Vec::new(), Vec::new()]);
+        let (events, _receiver) = tokio::sync::mpsc::channel(16);
+
+        let error = run_turn(
+            &provider,
+            &TestExecutor,
+            vec![ChatMessage::user("work")],
+            events,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("empty completion after 3 attempts"));
+    }
+
+    struct LargeResultExecutor;
+
+    #[async_trait]
+    impl ToolExecutor for LargeResultExecutor {
+        fn specs(&self) -> Vec<ToolSpec> {
+            TestExecutor.specs()
+        }
+
+        async fn execute(&self, _call: &ToolCallRequest) -> Result<Value, AgentError> {
+            Ok(serde_json::json!({"content": "x".repeat(4_000)}))
+        }
+    }
+
+    #[tokio::test]
+    async fn compacts_large_tool_results_during_the_same_turn() {
+        let provider = MockProvider::new(vec![
+            tool_turn(0),
+            vec![ChatDelta::Text("finished".to_string())],
+        ]);
+        let (events, mut receiver) = tokio::sync::mpsc::channel(32);
+        let limits = RunLimits {
+            context_policy: ContextPolicy {
+                soft_limit_tokens: 100,
+                preserve_recent_messages: 0,
+                prune_tool_results_over_tokens: 10,
+                summary_batch_tokens: 100,
+            },
+            ..RunLimits::default()
+        };
+
+        let outcome = run_turn_with_limits(
+            &provider,
+            &LargeResultExecutor,
+            vec![ChatMessage::user("work")],
+            events,
+            CancellationToken::new(),
+            limits,
+        )
+        .await
+        .unwrap();
+
+        let tool_result = outcome
+            .provider_history
+            .iter()
+            .find(|message| message.role == miniq_models::ChatRole::Tool)
+            .unwrap();
+        assert!(tool_result.content.contains("old_tool_result"));
+        let mut saw_compaction = false;
+        while let Ok(event) = receiver.try_recv() {
+            saw_compaction |= matches!(event, AgentEvent::ContextCompacted { .. });
+        }
+        assert!(saw_compaction);
+    }
+
+    #[tokio::test]
     async fn cancellation_still_stops_the_unbounded_loop() {
         let provider = MockProvider::new(vec![tool_turn(0)]);
         let cancel = CancellationToken::new();
@@ -457,6 +674,7 @@ mod tests {
             RunLimits {
                 max_steps: 20,
                 repeated_tool_batch_limit: 4,
+                ..RunLimits::default()
             },
         )
         .await

@@ -11,3 +11,11 @@ const SESSION_STATUS_LABELS: Record<SessionStatus, string> = {
 export function sessionStatusLabel(status: SessionStatus): string {
   return SESSION_STATUS_LABELS[status];
 }
+
+export function isSessionRunning(status: SessionStatus): boolean {
+  return status === "running" || status === "waiting_approval" || status === "cancelling";
+}
+
+export function isSessionTerminal(status: SessionStatus): boolean {
+  return status === "idle" || status === "failed";
+}

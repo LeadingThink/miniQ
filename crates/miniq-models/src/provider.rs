@@ -16,6 +16,12 @@ pub enum ProviderError {
     Api { status: u16, body: String },
     #[error("invalid response: {0}")]
     InvalidResponse(String),
+    #[error("provider stopped because the output token limit was reached")]
+    OutputLimitReached,
+    #[error("provider stream ended before a terminal event")]
+    IncompleteStream,
+    #[error("tool call {tool} ended with incomplete JSON arguments: {detail}")]
+    IncompleteToolArguments { tool: String, detail: String },
     #[error("configuration error: {0}")]
     Config(String),
 }
@@ -34,12 +40,22 @@ pub enum ChatRole {
 pub struct ChatMessage {
     pub role: ChatRole,
     pub content: String,
+    /// Local images explicitly attached by the user. The OpenAI-compatible
+    /// adapter reads them only while building the provider request.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<ChatImage>,
     /// Set on `Tool` messages: which call this result answers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
     /// Set on `Assistant` messages that requested tool calls.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_calls: Vec<ToolCallRequest>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatImage {
+    pub path: String,
+    pub mime_type: String,
 }
 
 impl ChatMessage {
@@ -56,6 +72,7 @@ impl ChatMessage {
         Self {
             role: ChatRole::Tool,
             content: content.into(),
+            images: Vec::new(),
             tool_call_id: Some(tool_call_id.into()),
             tool_calls: Vec::new(),
         }
@@ -64,6 +81,7 @@ impl ChatMessage {
         Self {
             role,
             content: content.into(),
+            images: Vec::new(),
             tool_call_id: None,
             tool_calls: Vec::new(),
         }
@@ -93,6 +111,9 @@ pub struct CompletionRequest {
     pub messages: Vec<ChatMessage>,
     pub tools: Vec<ToolSpec>,
     pub temperature: Option<f32>,
+    /// Maximum completion budget. Agent retries can raise this after a
+    /// provider reports a truncated output.
+    pub max_output_tokens: Option<u32>,
 }
 
 /// Streamed provider output.

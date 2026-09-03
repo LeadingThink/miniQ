@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 
 // Tauri expects a fixed dev port.
 export default defineConfig({
+  base: "./",
   plugins: [react()],
   clearScreen: false,
   server: {

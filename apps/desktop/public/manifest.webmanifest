@@ -1,0 +1,17 @@
+{
+  "name": "miniQ 移动工作台",
+  "short_name": "miniQ",
+  "description": "移动问答与端到端加密的 miniQ 桌面远程控制",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f2f2f5",
+  "theme_color": "#f2f2f5",
+  "icons": [
+    {
+      "src": "./miniq-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

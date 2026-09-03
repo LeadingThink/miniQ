@@ -25,6 +25,15 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
     let store = Store::open(&dir.join("miniq.db"))?;
+    let recovered = store.recover_interrupted_work()?;
+    if recovered != miniq_memory::StartupRecovery::default() {
+        tracing::warn!(
+            sessions = recovered.sessions_failed,
+            tool_calls = recovered.tool_calls_cancelled,
+            approvals = recovered.approvals_rejected,
+            "recovered interrupted work from the previous daemon process"
+        );
+    }
 
     let token = std::env::var("MINIQ_TOKEN").unwrap_or_else(|_| generate_token());
     let port: u16 = std::env::var("MINIQ_PORT")
@@ -48,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
     let settings = miniq_daemon::load_settings(&settings_path);
     let state = AppState::with_settings(store, token, settings, settings_path);
     miniq_daemon::schedule::spawn_scheduler(state.clone());
+    miniq_daemon::remote::spawn(state.clone());
     let result = server::serve(listener, state).await;
     let _ = std::fs::remove_file(dir.join("daemon.json"));
     result

@@ -19,6 +19,7 @@ import { useFilePreview } from "./useFilePreview";
 import { useSessionFeed } from "./useSessionFeed";
 import { useSessionDiff } from "./useSessionDiff";
 import { useTaskNotifications } from "./useTaskNotifications";
+import { isSessionRunning, isSessionTerminal } from "../sessionStatus";
 
 export type AppPage = "schedule" | "skills" | "mcp" | null;
 
@@ -107,7 +108,9 @@ function useNavigationState() {
   const [showSettings, setShowSettings] = useState(false);
   const [showDistill, setShowDistill] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    typeof window.matchMedia === "function" && window.matchMedia("(max-width: 720px)").matches,
+  );
   const [page, setPage] = useState<AppPage>(null);
   return {
     showExternalImport,
@@ -259,6 +262,7 @@ function useSessionLifecycleActions(
   navigation: NavigationState,
   feed: SessionFeed,
   setError: ErrorSetter,
+  markSessionSeen: (sessionId: string) => void,
 ) {
   const {
     refreshSessions,
@@ -284,6 +288,7 @@ function useSessionLifecycleActions(
   const openSession = useCallback(
     async (sessionId: string) => {
       const result = await client.call<OpenSessionResult>("session.open", { sessionId });
+      markSessionSeen(sessionId);
       setCurrentSessionId(sessionId);
       setSelectedWorkspaceId(result.session.workspaceId);
       setPage(null);
@@ -299,7 +304,7 @@ function useSessionLifecycleActions(
         turnProgress: result.turnProgress ?? null,
       });
     },
-    [client, load, setCurrentSessionId, setPage, setSelectedWorkspaceId],
+    [client, load, markSessionSeen, setCurrentSessionId, setPage, setSelectedWorkspaceId],
   );
 
   const deleteSession = useCallback(
@@ -383,13 +388,13 @@ function useTurnActions(
   const { createSession, openSession } = lifecycle;
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, attachments: string[] = []) => {
       if (!catalog.currentSessionId) return;
       setError(null);
       try {
         await client.call("session.sendMessage", {
           sessionId: catalog.currentSessionId,
-          message: { role: "user", content },
+          message: { role: "user", content, attachments },
         });
         void catalog.refreshSessions();
       } catch (error) {
@@ -400,7 +405,7 @@ function useTurnActions(
   );
 
   const startTask = useCallback(
-    async (content: string) => {
+    async (content: string, attachments: string[] = []) => {
       if (!catalog.selectedWorkspace) {
         setError("请先选择一个项目(或新建一个)");
         return;
@@ -410,7 +415,7 @@ function useTurnActions(
         const session = await createSession(catalog.selectedWorkspace.id);
         await client.call("session.sendMessage", {
           sessionId: session.id,
-          message: { role: "user", content },
+          message: { role: "user", content, attachments },
         });
         await openSession(session.id);
         void catalog.refreshSessions();
@@ -509,13 +514,55 @@ function useInteractionActions(
 export function useMiniqApp() {
   const client = useRpcClient();
   const [error, setError] = useState<string | null>(null);
+  const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => new Set());
   const catalog = useCatalog(client);
+  const markSessionSeen = useCallback((sessionId: string) => {
+    setUnreadSessionIds((current) => {
+      if (!current.has(sessionId)) return current;
+      const next = new Set(current);
+      next.delete(sessionId);
+      return next;
+    });
+  }, []);
+  const handleSessionStatusChanged = useCallback(
+    (sessionId: string, status: SessionStatus) => {
+      const previous = catalog.sessions.find((session) => session.id === sessionId)?.status;
+      catalog.updateSessionStatus(sessionId, status);
+      if (
+        catalog.currentSessionId !== sessionId &&
+        previous &&
+        isSessionRunning(previous) &&
+        isSessionTerminal(status)
+      ) {
+        setUnreadSessionIds((current) => {
+          if (current.has(sessionId)) return current;
+          const next = new Set(current);
+          next.add(sessionId);
+          return next;
+        });
+      }
+    },
+    [catalog.currentSessionId, catalog.sessions, catalog.updateSessionStatus],
+  );
+  const handleSessionCompleted = useCallback(
+    (sessionId: string) => {
+      if (catalog.currentSessionId === sessionId) return;
+      setUnreadSessionIds((current) => {
+        if (current.has(sessionId)) return current;
+        const next = new Set(current);
+        next.add(sessionId);
+        return next;
+      });
+    },
+    [catalog.currentSessionId],
+  );
   const navigation = useNavigationState();
   const feed = useSessionFeed({
     client,
     currentSessionId: catalog.currentSessionId,
     refreshSessions: catalog.refreshSessions,
-    onSessionStatusChanged: catalog.updateSessionStatus,
+    onSessionStatusChanged: handleSessionStatusChanged,
+    onSessionCompleted: handleSessionCompleted,
     onError: setError,
   });
   const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls);
@@ -530,7 +577,14 @@ export function useMiniqApp() {
   const updater = useAppUpdater(client, setError);
   const navigationActions = useNavigationActions(catalog, navigation, feed);
   const workspaceActions = useWorkspaceActions(client, catalog, setError);
-  const lifecycle = useSessionLifecycleActions(client, catalog, navigation, feed, setError);
+  const lifecycle = useSessionLifecycleActions(
+    client,
+    catalog,
+    navigation,
+    feed,
+    setError,
+    markSessionSeen,
+  );
   const turnActions = useTurnActions(client, catalog, lifecycle, setError);
   const interactionActions = useInteractionActions(client, setError, review.refresh);
   const lastResyncedConnection = useRef(0);
@@ -551,6 +605,8 @@ export function useMiniqApp() {
     setError,
     busy,
     catalog,
+    unreadSessionIds,
+    markSessionSeen,
     navigation,
     feed,
     review,

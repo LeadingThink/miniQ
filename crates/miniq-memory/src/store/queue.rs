@@ -1,23 +1,40 @@
 //! Queued user messages: sent while a turn was active, drained when it ends.
 
-use miniq_protocol::QueuedMessage;
+use miniq_protocol::{MessageAttachment, QueuedMessage};
 use rusqlite::{params, OptionalExtension};
 
 use super::{new_id, now_iso, MemoryError, Result, Store};
 
 fn row_to_queued(row: &rusqlite::Row<'_>) -> rusqlite::Result<QueuedMessage> {
+    let attachments_json: String = row.get(3)?;
     Ok(QueuedMessage {
         id: row.get(0)?,
         session_id: row.get(1)?,
         content: row.get(2)?,
-        position: row.get(3)?,
-        created_at: row.get(4)?,
+        attachments: serde_json::from_str(&attachments_json).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                3,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
+        position: row.get(4)?,
+        created_at: row.get(5)?,
     })
 }
 
 impl Store {
     /// Append a message to the end of the session's queue.
     pub fn enqueue_message(&self, session_id: &str, content: &str) -> Result<QueuedMessage> {
+        self.enqueue_message_with_attachments(session_id, content, &[])
+    }
+
+    pub fn enqueue_message_with_attachments(
+        &self,
+        session_id: &str,
+        content: &str,
+        attachments: &[MessageAttachment],
+    ) -> Result<QueuedMessage> {
         let conn = self.conn.lock().unwrap();
         let position: i64 = conn.query_row(
             "SELECT COALESCE(MAX(position), 0) + 1 FROM queued_messages WHERE session_id = ?1",
@@ -28,16 +45,19 @@ impl Store {
             id: new_id("qmsg"),
             session_id: session_id.to_string(),
             content: content.to_string(),
+            attachments: attachments.to_vec(),
             position,
             created_at: now_iso(),
         };
         conn.execute(
-            "INSERT INTO queued_messages (id, session_id, content, position, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO queued_messages
+               (id, session_id, content, attachments_json, position, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 message.id,
                 message.session_id,
                 message.content,
+                serde_json::to_string(&message.attachments)?,
                 message.position,
                 message.created_at
             ],
@@ -49,7 +69,7 @@ impl Store {
     pub fn list_queued_messages(&self, session_id: &str) -> Result<Vec<QueuedMessage>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, session_id, content, position, created_at
+            "SELECT id, session_id, content, attachments_json, position, created_at
              FROM queued_messages WHERE session_id = ?1 ORDER BY position ASC",
         )?;
         let rows = stmt.query_map(params![session_id], row_to_queued)?;
@@ -61,7 +81,7 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let message = conn
             .query_row(
-                "SELECT id, session_id, content, position, created_at
+                "SELECT id, session_id, content, attachments_json, position, created_at
                  FROM queued_messages WHERE session_id = ?1
                  ORDER BY position ASC LIMIT 1",
                 params![session_id],
@@ -82,7 +102,7 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let message = conn
             .query_row(
-                "SELECT id, session_id, content, position, created_at
+                "SELECT id, session_id, content, attachments_json, position, created_at
                  FROM queued_messages WHERE id = ?1",
                 params![id],
                 row_to_queued,
@@ -98,7 +118,7 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let message = conn
             .query_row(
-                "SELECT id, session_id, content, position, created_at
+                "SELECT id, session_id, content, attachments_json, position, created_at
                  FROM queued_messages WHERE id = ?1",
                 params![id],
                 row_to_queued,

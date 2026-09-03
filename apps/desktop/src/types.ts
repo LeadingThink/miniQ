@@ -142,7 +142,14 @@ export interface Message {
   sessionId: string;
   role: Role;
   content: string;
+  attachments?: MessageAttachment[];
   createdAt: string;
+}
+
+export interface MessageAttachment {
+  path: string;
+  name: string;
+  mimeType?: string;
 }
 
 export interface ToolCall {

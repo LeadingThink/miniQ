@@ -37,6 +37,8 @@ pub struct DaemonSettings {
     pub mcp_servers: Vec<crate::mcp::McpServerConfig>,
     #[serde(default)]
     pub approval_mode: ApprovalMode,
+    #[serde(default)]
+    pub remote_access: crate::remote::RemoteAccessSettings,
 }
 
 fn uuid_suffix() -> String {
@@ -108,6 +110,8 @@ pub struct AppState {
     pub checkpoints_dir: PathBuf,
     /// MCP connection manager (lazy per-server connections).
     pub mcp: Arc<crate::mcp::McpManager>,
+    /// Observable state for the outbound encrypted relay connection.
+    pub remote_status: Arc<Mutex<crate::remote::RemoteRuntimeStatus>>,
 }
 
 impl AppState {
@@ -172,6 +176,7 @@ impl AppState {
             turn_progresses: Arc::new(Mutex::new(HashMap::new())),
             checkpoints_dir: data_dir.join("checkpoints"),
             mcp: crate::mcp::McpManager::new(),
+            remote_status: Arc::new(Mutex::new(crate::remote::RemoteRuntimeStatus::default())),
         }
     }
 

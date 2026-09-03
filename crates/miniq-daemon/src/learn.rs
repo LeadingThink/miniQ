@@ -99,6 +99,7 @@ impl SkillInference for ProviderInference {
             // Keep auxiliary inference compatible with thinking models whose
             // gateways reject custom temperatures.
             temperature: None,
+            max_output_tokens: Some(16_384),
         };
         let mut stream = self
             .provider

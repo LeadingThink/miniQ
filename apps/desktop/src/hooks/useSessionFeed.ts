@@ -195,6 +195,7 @@ interface SessionFeedOptions {
   currentSessionId: string | null;
   refreshSessions: () => Promise<void>;
   onSessionStatusChanged: (sessionId: string, status: SessionStatus) => void;
+  onSessionCompleted: (sessionId: string) => void;
   onError: (message: string) => void;
 }
 
@@ -205,6 +206,7 @@ export function useSessionFeed(options: SessionFeedOptions) {
     currentSessionId,
     refreshSessions,
     onSessionStatusChanged,
+    onSessionCompleted,
     onError,
   } = options;
 
@@ -229,7 +231,10 @@ export function useSessionFeed(options: SessionFeedOptions) {
       // Events for other sessions: only refresh sidebar on status change.
       if (event.sessionId !== currentSessionId) {
         if (event.type === "session_status_changed") {
+          onSessionStatusChanged(event.sessionId, event.status);
           void refreshSessions();
+        } else if (event.type === "turn_completed" || event.type === "turn_failed") {
+          onSessionCompleted(event.sessionId);
         }
         return;
       }
@@ -243,7 +248,7 @@ export function useSessionFeed(options: SessionFeedOptions) {
         receivedAt: new Date().toISOString(),
       });
     });
-  }, [client, currentSessionId, onError, onSessionStatusChanged, refreshSessions]);
+  }, [client, currentSessionId, onError, onSessionCompleted, onSessionStatusChanged, refreshSessions]);
 
   const reset = useCallback(() => dispatch({ kind: "reset" }), []);
   const load = useCallback(

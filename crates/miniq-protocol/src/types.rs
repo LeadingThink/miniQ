@@ -84,8 +84,22 @@ pub struct QueuedMessage {
     pub id: String,
     pub session_id: String,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<MessageAttachment>,
     pub position: i64,
     pub created_at: String,
+}
+
+/// A local file explicitly attached to a user message. Image MIME types are
+/// sent to vision-capable models; other files remain available to the agent
+/// through their absolute paths.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageAttachment {
+    pub path: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
 }
 
 /// A recurring task: at each due time a fresh session is created in the
@@ -134,6 +148,8 @@ pub struct Message {
     pub session_id: String,
     pub role: Role,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<MessageAttachment>,
     pub created_at: String,
 }
 

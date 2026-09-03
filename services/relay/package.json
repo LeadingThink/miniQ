@@ -1,0 +1,20 @@
+{
+  "name": "miniq-relay",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.1",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.7"
+  }
+}

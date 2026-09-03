@@ -136,3 +136,57 @@ fn persistent_store_reopens() {
     assert_eq!(msgs.len(), 1);
     assert_eq!(msgs[0].content, "still here?");
 }
+
+#[test]
+fn startup_recovery_atomically_terminates_process_owned_state() {
+    let store = Store::open_in_memory().unwrap();
+    let ws = store
+        .create_workspace("D:/tmp/recovery", "recovery")
+        .unwrap();
+    let active = store.create_session(&ws.id, "active").unwrap();
+    let idle = store.create_session(&ws.id, "idle").unwrap();
+    store
+        .update_session_status(&active.id, SessionStatus::WaitingApproval)
+        .unwrap();
+    let call = store
+        .create_tool_call(
+            &active.id,
+            "shell_run",
+            &json!({"command": "cargo test"}),
+            ToolCallStatus::WaitingApproval,
+        )
+        .unwrap();
+    let approval = store
+        .create_approval(&active.id, &call.id, RiskLevel::High, "test")
+        .unwrap();
+
+    let report = store.recover_interrupted_work().unwrap();
+
+    assert_eq!(report.sessions_failed, 1);
+    assert_eq!(report.tool_calls_cancelled, 1);
+    assert_eq!(report.approvals_rejected, 1);
+    assert_eq!(
+        store.get_session(&active.id).unwrap().status,
+        SessionStatus::Failed
+    );
+    assert_eq!(
+        store.get_session(&idle.id).unwrap().status,
+        SessionStatus::Idle
+    );
+    assert_eq!(
+        store.list_tool_calls(&active.id).unwrap()[0].status,
+        ToolCallStatus::Cancelled
+    );
+    assert!(store
+        .list_pending_approval_requests(&active.id)
+        .unwrap()
+        .is_empty());
+    assert!(store
+        .resolve_approval(&approval.id, ApprovalStatus::Approved)
+        .is_err());
+
+    assert_eq!(
+        store.recover_interrupted_work().unwrap(),
+        miniq_memory::StartupRecovery::default()
+    );
+}

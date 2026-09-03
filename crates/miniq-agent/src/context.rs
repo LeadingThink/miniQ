@@ -15,10 +15,10 @@ pub struct ContextPolicy {
 impl Default for ContextPolicy {
     fn default() -> Self {
         Self {
-            soft_limit_tokens: 96_000,
-            preserve_recent_messages: 24,
-            prune_tool_results_over_tokens: 4_000,
-            summary_batch_tokens: 48_000,
+            soft_limit_tokens: 64_000,
+            preserve_recent_messages: 16,
+            prune_tool_results_over_tokens: 2_000,
+            summary_batch_tokens: 32_000,
         }
     }
 }
@@ -35,6 +35,7 @@ pub fn estimate_tokens(messages: &[ChatMessage]) -> usize {
         .iter()
         .map(|message| {
             estimate_text_tokens(&message.content)
+                + message.images.len() * 1_024
                 + message
                     .tool_calls
                     .iter()
@@ -92,9 +93,17 @@ fn recent_boundary(messages: &[ChatMessage], preserve: usize) -> usize {
         .len()
         .saturating_sub(preserve)
         .min(messages.len() - 1);
-    (0..=desired)
-        .rev()
-        .find(|index| messages[*index].role == ChatRole::User)
+    let is_safe_start = |message: &ChatMessage| {
+        message.role == ChatRole::User
+            || (message.role == ChatRole::Assistant && !message.tool_calls.is_empty())
+    };
+    (desired..messages.len())
+        .find(|index| is_safe_start(&messages[*index]))
+        .or_else(|| {
+            (1..desired)
+                .rev()
+                .find(|index| is_safe_start(&messages[*index]))
+        })
         .unwrap_or(0)
 }
 
@@ -138,6 +147,7 @@ async fn summarize_batch(
         // Provider defaults are the only portable choice here: thinking
         // models may reject any explicit value other than 1.
         temperature: None,
+        max_output_tokens: Some(8_192),
     };
     let mut stream = tokio::select! {
         _ = cancel.cancelled() => return Err(AgentError::Cancelled),
@@ -189,7 +199,17 @@ pub async fn compact_history(
         });
     }
 
-    let pruned = prune_old_tool_results(&mut messages, policy);
+    let mut pruned = prune_old_tool_results(&mut messages, policy);
+    if estimate_tokens(&messages) > policy.soft_limit_tokens {
+        // One user turn can contain dozens of tool rounds. Keep the latest
+        // exchange verbatim, but compact earlier large results even if they
+        // still sit inside the normal recent-message window.
+        let aggressive_policy = ContextPolicy {
+            preserve_recent_messages: 4,
+            ..policy.clone()
+        };
+        pruned |= prune_old_tool_results(&mut messages, &aggressive_policy);
+    }
     if estimate_tokens(&messages) <= policy.soft_limit_tokens {
         let estimated_tokens_after = estimate_tokens(&messages);
         let _ = events

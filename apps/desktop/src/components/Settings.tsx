@@ -1,9 +1,10 @@
-import { Check, ExternalLink, KeyRound, Palette, Server, X } from "lucide-react";
+import { Check, ExternalLink, KeyRound, MonitorSmartphone, Palette, Server, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import { openExternalUrl } from "../externalLinks";
 import type { RpcClient } from "../rpc";
 import { THEMES, type ThemeId } from "../theme";
+import { clearRemoteCredentials, DEFAULT_RELAY_URL } from "../remoteAccess";
 
 export const ZAIWEN_API_PORTAL_URL = "https://platform.zaiwenai.com/";
 export const ZAIWEN_API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
@@ -16,6 +17,16 @@ interface ProviderView {
 
 interface SettingsView {
   provider: ProviderView | null;
+  remoteAccess: {
+    enabled: boolean;
+    relayUrl: string;
+    deviceName: string;
+  };
+  remoteStatus: {
+    state: "disabled" | "waiting_for_key" | "connecting" | "connected" | "reconnecting";
+    mobileClients: number;
+    lastError?: string;
+  };
 }
 
 interface SettingsPanelProps {
@@ -33,6 +44,10 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [remoteEnabled, setRemoteEnabled] = useState(false);
+  const [relayUrl, setRelayUrl] = useState(DEFAULT_RELAY_URL);
+  const [deviceName, setDeviceName] = useState("我的电脑");
+  const [remoteStatus, setRemoteStatus] = useState<SettingsView["remoteStatus"] | null>(null);
   const panelRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
@@ -44,6 +59,12 @@ export function SettingsPanel(props: SettingsPanelProps) {
           setModel(res.provider.model);
           setHasKey(res.provider.hasApiKey);
         }
+        if (res.remoteAccess) {
+          setRemoteEnabled(res.remoteAccess.enabled);
+          setRelayUrl(res.remoteAccess.relayUrl);
+          setDeviceName(res.remoteAccess.deviceName);
+        }
+        setRemoteStatus(res.remoteStatus ?? null);
         setStatus(null);
       })
       .catch((error) => setStatus(`读取设置失败：${errorMessage(error)}`))
@@ -94,9 +115,15 @@ export function SettingsPanel(props: SettingsPanelProps) {
         if (apiKey) provider.apiKey = apiKey;
         params.provider = provider;
       }
+      params.remoteAccess = {
+        enabled: remoteEnabled,
+        relayUrl: relayUrl.trim(),
+        deviceName: deviceName.trim(),
+      };
       const res = await props.client.call<SettingsView>("settings.update", params);
       setHasKey(res.provider?.hasApiKey ?? false);
       setApiKey("");
+      setRemoteStatus(res.remoteStatus ?? null);
       setStatus("已保存");
     } catch (e) {
       setStatus(`保存失败：${errorMessage(e)}`);
@@ -172,6 +199,18 @@ export function SettingsPanel(props: SettingsPanelProps) {
           </div>
         </section>
 
+        {props.client.mode === "remote" ? (
+          <section className="settings-section provider-settings">
+            <div className="settings-section-title"><MonitorSmartphone size={15} /><span>远程桌面</span></div>
+            <div className="remote-access-summary connected">
+              <Wifi size={17} />
+              <div><strong>端到端加密连接已建立</strong><p>当前页面操作由桌面 miniQ 执行，relay 无法读取会话内容。</p></div>
+            </div>
+            <button type="button" className="secondary" onClick={() => { void clearRemoteCredentials().finally(() => window.location.reload()); }}>
+              <WifiOff size={14} />退出远程桌面
+            </button>
+          </section>
+        ) : <>
         <section className="settings-section provider-settings">
           <div>
             <div className="settings-section-title">模型服务</div>
@@ -247,15 +286,45 @@ export function SettingsPanel(props: SettingsPanelProps) {
             </div>
           </div>
         </section>
+        <section className="settings-section provider-settings">
+          <div>
+            <div className="settings-section-title"><MonitorSmartphone size={15} /><span>移动端与远程桌面</span></div>
+            <p className="settings-section-description">开启后，使用同一个 API Key 可在手机上查看并控制这台电脑的 miniQ。</p>
+          </div>
+          <label className="remote-access-toggle">
+            <span><strong>允许远程连接</strong><small>daemon 主动连接 relay，无需暴露本机端口</small></span>
+            <input type="checkbox" checked={remoteEnabled} disabled={loading || saving} onChange={(event) => setRemoteEnabled(event.target.checked)} />
+          </label>
+          {remoteEnabled && <>
+            <label>
+              设备名称
+              <input value={deviceName} maxLength={80} disabled={loading || saving} onChange={(event) => setDeviceName(event.target.value)} />
+            </label>
+            <label>
+              Relay URL
+              <input value={relayUrl} inputMode="url" spellCheck={false} disabled={loading || saving} onChange={(event) => setRelayUrl(event.target.value)} />
+            </label>
+            {remoteStatus && (
+              <div className={`remote-access-summary ${remoteStatus.state === "connected" ? "connected" : ""}`}>
+                {remoteStatus.state === "connected" ? <Wifi size={17} /> : <WifiOff size={17} />}
+                <div>
+                  <strong>{remoteStatusLabel(remoteStatus.state)}</strong>
+                  <p>{remoteStatus.state === "connected" ? `${remoteStatus.mobileClients} 台移动设备已连接` : remoteStatus.lastError ?? "保存后 daemon 会自动建立连接"}</p>
+                </div>
+              </div>
+            )}
+          </>}
+        </section>
+        </>}
         {(loading || status) && (
           <div className="settings-status" role="status" aria-live="polite">
             {loading ? "正在读取模型设置..." : status}
           </div>
         )}
         <div className="approval-actions">
-          <button type="submit" disabled={loading || saving || !baseUrl.trim() || !model.trim()}>
+          {props.client.mode === "local" && <button type="submit" disabled={loading || saving || !baseUrl.trim() || !model.trim() || !relayUrl.trim() || !deviceName.trim()}>
             {saving ? "正在保存..." : "保存模型设置"}
-          </button>
+          </button>}
           <button type="button" className="secondary" onClick={props.onClose}>
             关闭
           </button>
@@ -263,4 +332,14 @@ export function SettingsPanel(props: SettingsPanelProps) {
       </form>
     </div>
   );
+}
+
+function remoteStatusLabel(state: SettingsView["remoteStatus"]["state"]): string {
+  switch (state) {
+    case "connected": return "远程连接已就绪";
+    case "connecting": return "正在连接 relay";
+    case "reconnecting": return "正在恢复远程连接";
+    case "waiting_for_key": return "等待 API Key";
+    default: return "远程访问未启用";
+  }
 }
