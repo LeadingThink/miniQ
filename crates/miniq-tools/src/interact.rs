@@ -104,7 +104,8 @@ impl Tool for AskUserTool {
             "type": "object",
             "properties": {
                 "prompt": {"type": "string", "description": "The question to ask"},
-                "options": {"type": "array", "items": {"type": "string"}, "description": "Suggested answers (the user can also type freely)"}
+                "options": {"type": "array", "items": {"type": "string"}, "description": "Suggested answers (the user can also type freely)"},
+                "default": {"type": "string", "description": "The safest reasonable answer to use if the user does not respond"}
             },
             "required": ["prompt"]
         })

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
@@ -6,10 +6,12 @@ import type {
   Artifact,
   Message,
   PlanTask,
+  QueuedMessage,
   Session,
   SessionStatus,
   ToolCall,
   UserMessageInput,
+  TurnProgress,
   Workspace,
 } from "../types";
 import { useDaemonConnection } from "./useDaemonConnection";
@@ -17,6 +19,7 @@ import { useAppUpdater } from "./useAppUpdater";
 import { useFilePreview } from "./useFilePreview";
 import { useSessionFeed } from "./useSessionFeed";
 import { useSessionDiff } from "./useSessionDiff";
+import { useTaskNotifications } from "./useTaskNotifications";
 
 export type AppPage = "schedule" | "skills" | "mcp" | null;
 
@@ -105,17 +108,20 @@ function useNavigationState() {
   const [showSettings, setShowSettings] = useState(false);
   const [showDistill, setShowDistill] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [page, setPage] = useState<AppPage>(null);
   return {
     showExternalImport,
     showSettings,
     showDistill,
     showSearch,
+    sidebarCollapsed,
     page,
     setShowExternalImport,
     setShowSettings,
     setShowDistill,
     setShowSearch,
+    setSidebarCollapsed,
     setPage,
   };
 }
@@ -241,6 +247,11 @@ interface OpenSessionResult {
   toolCalls: ToolCall[];
   artifacts: Artifact[];
   plan: PlanTask[];
+  queue: QueuedMessage[];
+  approvals: SessionFeed["approvals"];
+  questions: SessionFeed["questions"];
+  streamingText: string;
+  turnProgress: TurnProgress | null;
 }
 
 function useSessionLifecycleActions(
@@ -282,6 +293,11 @@ function useSessionLifecycleActions(
         toolCalls: result.toolCalls,
         plan: result.plan ?? [],
         artifacts: result.artifacts ?? [],
+        queue: result.queue ?? [],
+        approvals: result.approvals ?? [],
+        questions: result.questions ?? [],
+        streamingText: result.streamingText ?? "",
+        turnProgress: result.turnProgress ?? null,
       });
     },
     [client, load, setCurrentSessionId, setPage, setSelectedWorkspaceId],
@@ -330,7 +346,31 @@ function useSessionLifecycleActions(
     [client, refreshSessions, setError],
   );
 
-  return { createSession, openSession, deleteSession, renameSession, setSessionPinned };
+  const setSessionArchived = useCallback(
+    async (sessionId: string, archived: boolean) => {
+      try {
+        await client.call("session.setArchived", { sessionId, archived });
+        await refreshSessions();
+        if (archived && catalog.currentSessionId === sessionId) {
+          setCurrentSessionId(null);
+          reset();
+        }
+      } catch (err) {
+        console.error("Failed to archive session:", err);
+        setError(err instanceof Error ? err.message : "归档会话失败");
+      }
+    },
+    [client, catalog.currentSessionId, refreshSessions, reset, setCurrentSessionId, setError],
+  );
+
+  return {
+    createSession,
+    openSession,
+    deleteSession,
+    renameSession,
+    setSessionPinned,
+    setSessionArchived,
+  };
 }
 
 type SessionLifecycle = ReturnType<typeof useSessionLifecycleActions>;
@@ -394,7 +434,31 @@ function useTurnActions(
     await client.call("session.cancel", { sessionId: catalog.currentSessionId });
   }, [catalog.currentSessionId, client]);
 
-  return { sendMessage, startTask, cancelTurn };
+  /** Remove a message from the pending queue. */
+  const removeQueued = useCallback(
+    async (queuedMessageId: string) => {
+      try {
+        await client.call("session.queueRemove", { queuedMessageId });
+      } catch (error) {
+        setError(errorMessage(error));
+      }
+    },
+    [client, setError],
+  );
+
+  /** "调整方向": promote a queued message and interrupt the running turn. */
+  const steerQueued = useCallback(
+    async (queuedMessageId: string) => {
+      try {
+        await client.call("session.queueSteer", { queuedMessageId });
+      } catch (error) {
+        setError(errorMessage(error));
+      }
+    },
+    [client, setError],
+  );
+
+  return { sendMessage, startTask, cancelTurn, removeQueued, steerQueued };
 }
 
 function useInteractionActions(
@@ -457,6 +521,7 @@ export function useMiniqApp() {
   });
   const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls);
   const preview = useFilePreview(catalog.currentWorkspace?.path);
+  useTaskNotifications(client, catalog.sessions);
   const connection = useDaemonConnection({
     client,
     refreshWorkspaces: catalog.refreshWorkspaces,
@@ -469,6 +534,14 @@ export function useMiniqApp() {
   const lifecycle = useSessionLifecycleActions(client, catalog, navigation, feed, setError);
   const turnActions = useTurnActions(client, catalog, lifecycle, setError);
   const interactionActions = useInteractionActions(client, setError, review.refresh);
+  const lastResyncedConnection = useRef(0);
+  useEffect(() => {
+    const sessionId = catalog.currentSessionId;
+    const epoch = connection.connectionEpoch;
+    if (!sessionId || epoch === 0 || epoch === lastResyncedConnection.current) return;
+    lastResyncedConnection.current = epoch;
+    void lifecycle.openSession(sessionId).catch((cause) => setError(errorMessage(cause)));
+  }, [catalog.currentSessionId, connection.connectionEpoch, lifecycle, setError]);
   const busy =
     catalog.currentSession?.status === "running" ||
     catalog.currentSession?.status === "waiting_approval";

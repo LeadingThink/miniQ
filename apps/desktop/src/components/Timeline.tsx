@@ -1,6 +1,14 @@
-import { FileText, FolderOpen } from "lucide-react";
+import { ArrowDown, Check, Copy, FileText, FolderOpen, X, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { Artifact, Message, PlanTask, Question, ToolCall } from "../types";
+import type {
+  Artifact,
+  Message,
+  PlanTask,
+  Question,
+  QueuedMessage,
+  ToolCall,
+  TurnProgress,
+} from "../types";
 import type { PendingApproval } from "../App";
 import {
   resolveWorkspacePath,
@@ -8,80 +16,25 @@ import {
   type LocalFileTarget,
 } from "../localFiles";
 import { Md } from "./Md";
+import { ExecutionPrelude, PlanProgress, ToolStep } from "./ExecutionActivity";
 
-/** One-line human summary of a tool call's input. */
-function summarize(call: ToolCall): string {
-  const input = (call.input ?? {}) as Record<string, unknown>;
-  const s = (key: string) => (typeof input[key] === "string" ? (input[key] as string) : null);
+/** Hover copy button for a whole assistant message (ChatGPT-style). */
+function MessageCopy({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
   return (
-    s("path") ??
-    s("command") ??
-    s("url") ??
-    s("query") ??
-    s("pattern") ??
-    s("name") ??
-    s("prompt") ??
-    ""
-  );
-}
-
-const STATUS_ICON: Record<string, string> = {
-  succeeded: "✓",
-  failed: "✕",
-  rejected: "⊘",
-  cancelled: "⊘",
-};
-
-function ToolCallCard({
-  call,
-  onRollback,
-}: {
-  call: ToolCall;
-  onRollback: (checkpointId: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const running = call.status === "running" || call.status === "waiting_approval";
-  const checkpointId =
-    call.output && typeof call.output === "object"
-      ? ((call.output as Record<string, unknown>).checkpointId as string | undefined)
-      : undefined;
-  const summary = summarize(call);
-
-  return (
-    <div className={`tool-line ${call.status}`}>
-      <div className="tool-line-head" onClick={() => setOpen((v) => !v)}>
-        {running ? (
-          <span className="spinner" />
-        ) : (
-          <span className={`tool-status-icon ${call.status}`}>
-            {STATUS_ICON[call.status] ?? "·"}
-          </span>
-        )}
-        <span className="tool-name">{call.toolName}</span>
-        {summary && <span className="tool-summary">{summary}</span>}
-        <span style={{ flex: 1 }} />
-        {checkpointId && call.status === "succeeded" && (
-          <button
-            className="ghost tool-rollback"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRollback(checkpointId);
-            }}
-          >
-            回滚
-          </button>
-        )}
-        <span className={`chevron ${open ? "open" : ""}`}>›</span>
-      </div>
-      {open && (
-        <div className="tool-line-body">
-          <pre>{JSON.stringify(call.input, null, 2)}</pre>
-          {call.output !== undefined && call.output !== null && (
-            <pre>{JSON.stringify(call.output, null, 2)}</pre>
-          )}
-        </div>
-      )}
-    </div>
+    <button
+      type="button"
+      className={`msg-copy ${copied ? "copied" : ""}`}
+      title="复制消息"
+      onClick={() => {
+        void navigator.clipboard.writeText(content).then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+    >
+      {copied ? <Check size={13} /> : <Copy size={13} />}
+    </button>
   );
 }
 
@@ -127,12 +80,37 @@ function QuestionCard({
   onResolve: (questionId: string, answer: string) => void;
 }) {
   const [custom, setCustom] = useState("");
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  useEffect(() => {
+    if (!question.autoContinueAfterSeconds) {
+      setRemainingSeconds(null);
+      return;
+    }
+    const deadline =
+      new Date(question.createdAt).getTime() + question.autoContinueAfterSeconds * 1_000;
+    const update = () =>
+      setRemainingSeconds(Math.max(0, Math.ceil((deadline - Date.now()) / 1_000)));
+    update();
+    const timer = window.setInterval(update, 1_000);
+    return () => window.clearInterval(timer);
+  }, [question.autoContinueAfterSeconds, question.createdAt]);
+
+  const countdown =
+    remainingSeconds === null
+      ? null
+      : `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, "0")}`;
   return (
     <div className="card approval-card">
       <div className="card-head">
         <span>miniQ 想确认</span>
       </div>
       <div style={{ marginTop: 6 }}>{question.prompt}</div>
+      {countdown && (
+        <div className="question-timeout">
+          完全访问模式: {countdown} 后将采用
+          {question.defaultAnswer ? `“${question.defaultAnswer}”` : "默认方案"}继续
+        </div>
+      )}
       <div className="approval-actions" style={{ flexWrap: "wrap" }}>
         {question.options.map((opt) => (
           <button key={opt} onClick={() => onResolve(question.id, opt)}>
@@ -164,18 +142,34 @@ function QuestionCard({
   );
 }
 
-function PlanBar({ plan }: { plan: PlanTask[] }) {
-  if (plan.length === 0) return null;
-  const done = plan.filter((t) => t.status === "completed").length;
+function QueueBar(props: {
+  queue: QueuedMessage[];
+  onSteer: (queuedMessageId: string) => void;
+  onRemove: (queuedMessageId: string) => void;
+}) {
+  if (props.queue.length === 0) return null;
   return (
-    <div className="plan-bar">
-      <div className="plan-progress">
-        任务计划 {done}/{plan.length}
-      </div>
-      {plan.map((task, i) => (
-        <div key={i} className={`plan-task ${task.status}`}>
-          <span className="plan-dot" />
-          {task.content}
+    <div className="queue-bar">
+      <div className="queue-title">已排队 {props.queue.length} 条，当前任务结束后依次执行</div>
+      {props.queue.map((item) => (
+        <div key={item.id} className="queue-item">
+          <span className="queue-content" title={item.content}>
+            {item.content}
+          </span>
+          <button
+            className="ghost queue-steer"
+            title="调整方向：打断当前任务，立即执行这条消息"
+            onClick={() => props.onSteer(item.id)}
+          >
+            <Zap size={13} /> 调整方向
+          </button>
+          <button
+            className="ghost queue-remove"
+            title="从队列移除"
+            onClick={() => props.onRemove(item.id)}
+          >
+            <X size={13} />
+          </button>
         </div>
       ))}
     </div>
@@ -186,8 +180,9 @@ function ArtifactsBar(props: {
   artifacts: Artifact[];
   workspacePath?: string | null;
   onOpenFile: (target: LocalFileTarget) => void;
+  onError: (message: string) => void;
 }) {
-  const { artifacts, workspacePath, onOpenFile } = props;
+  const { artifacts, workspacePath, onOpenFile, onError } = props;
   if (artifacts.length === 0) return null;
   return (
     <div className="artifacts-bar">
@@ -216,7 +211,9 @@ function ArtifactsBar(props: {
               title="在文件夹中显示"
               disabled={!path}
               onClick={() => {
-                if (path) void revealLocalFile(path, workspacePath).catch(() => undefined);
+                if (path) void revealLocalFile(path, workspacePath).catch((cause) => {
+                  onError(`无法在文件夹中显示：${cause instanceof Error ? cause.message : String(cause)}`);
+                });
               }}
             >
               <FolderOpen size={16} aria-hidden="true" />
@@ -239,13 +236,19 @@ interface TimelineProps {
   questions: Question[];
   plan: PlanTask[];
   artifacts: Artifact[];
+  queue: QueuedMessage[];
   workspacePath?: string | null;
   streamingText: string;
+  turnProgress: TurnProgress | null;
   busy: boolean;
   onResolveApproval: (approvalId: string, decision: string) => void;
   onResolveQuestion: (questionId: string, answer: string) => void;
   onRollback: (checkpointId: string) => void;
   onOpenFile: (target: LocalFileTarget) => void;
+  onOpenUrl: (url: string) => void;
+  onSteerQueued: (queuedMessageId: string) => void;
+  onRemoveQueued: (queuedMessageId: string) => void;
+  onError: (message: string) => void;
 }
 
 function createTimelineItems(messages: Message[], toolCalls: ToolCall[]): TimelineItem[] {
@@ -257,7 +260,9 @@ function createTimelineItems(messages: Message[], toolCalls: ToolCall[]): Timeli
         at: message.createdAt,
         message,
       })),
-    ...toolCalls.map((call) => ({ kind: "tool" as const, at: call.createdAt, call })),
+    ...toolCalls
+      .filter((call) => call.toolName !== "task_update")
+      .map((call) => ({ kind: "tool" as const, at: call.createdAt, call })),
   ].sort((left, right) => left.at.localeCompare(right.at));
 }
 
@@ -265,12 +270,15 @@ function TimelineEntries(props: {
   items: TimelineItem[];
   approvals: PendingApproval[];
   questions: Question[];
+  plan: PlanTask[];
   streamingText: string;
+  turnProgress: TurnProgress | null;
   thinking: boolean;
   onResolveApproval: TimelineProps["onResolveApproval"];
   onResolveQuestion: TimelineProps["onResolveQuestion"];
   onRollback: TimelineProps["onRollback"];
   onOpenFile: TimelineProps["onOpenFile"];
+  onOpenUrl: TimelineProps["onOpenUrl"];
   workspacePath?: string | null;
 }) {
   return (
@@ -295,19 +303,20 @@ function TimelineEntries(props: {
           ) : item.message.role === "tool" ? (
             <div key={item.message.id} className="bubble tool-transcript">
               <span>工具记录</span>
-              <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile}>
+              <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile} onOpenUrl={props.onOpenUrl}>
                 {item.message.content}
               </Md>
             </div>
           ) : (
             <div key={item.message.id} className="bubble assistant">
-              <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile}>
+              <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile} onOpenUrl={props.onOpenUrl}>
                 {item.message.content}
               </Md>
+              <MessageCopy content={item.message.content} />
             </div>
           )
         ) : (
-          <ToolCallCard key={item.call.id} call={item.call} onRollback={props.onRollback} />
+          <ToolStep key={item.call.id} call={item.call} onRollback={props.onRollback} />
         ),
       )}
       {props.approvals.map((approval) => (
@@ -326,19 +335,16 @@ function TimelineEntries(props: {
       ))}
       {props.streamingText && (
         <div className="bubble assistant">
-          <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile}>
+          <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile} onOpenUrl={props.onOpenUrl}>
             {props.streamingText}
           </Md>
           <span className="type-cursor" />
         </div>
       )}
       {props.thinking && (
-        <div className="thinking">
-          <span className="thinking-dot" />
-          <span className="thinking-dot" />
-          <span className="thinking-dot" />
-        </div>
+        <ExecutionPrelude plan={props.plan} progress={props.turnProgress} />
       )}
+      <PlanProgress plan={props.plan} />
     </div>
   );
 }
@@ -346,12 +352,23 @@ function TimelineEntries(props: {
 export function Timeline(props: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
+  const [showJump, setShowJump] = useState(false);
 
   // Track whether the user is reading history (not pinned to bottom).
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    pinnedToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    pinnedToBottom.current = nearBottom;
+    setShowJump(!nearBottom);
+  };
+
+  const jumpToBottom = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    pinnedToBottom.current = true;
+    setShowJump(false);
   };
 
   // Auto-follow only while pinned to the bottom.
@@ -365,8 +382,11 @@ export function Timeline(props: TimelineProps) {
     props.toolCalls,
     props.approvals,
     props.questions,
+    props.plan,
     props.streamingText,
+    props.turnProgress,
     props.busy,
+    props.queue,
   ]);
 
   const items = createTimelineItems(props.messages, props.toolCalls);
@@ -375,32 +395,50 @@ export function Timeline(props: TimelineProps) {
   );
   const thinking =
     props.busy &&
-    !props.streamingText &&
     !hasRunningTool &&
     props.approvals.length === 0 &&
     props.questions.length === 0;
 
   return (
     <>
-      <PlanBar plan={props.plan} />
       <div className="timeline" ref={scrollRef} onScroll={onScroll}>
         <TimelineEntries
           items={items}
           approvals={props.approvals}
           questions={props.questions}
+          plan={props.plan}
           streamingText={props.streamingText}
+          turnProgress={props.turnProgress}
           thinking={thinking}
           onResolveApproval={props.onResolveApproval}
           onResolveQuestion={props.onResolveQuestion}
           onRollback={props.onRollback}
           onOpenFile={props.onOpenFile}
+          onOpenUrl={props.onOpenUrl}
           workspacePath={props.workspacePath}
         />
+        <QueueBar
+          queue={props.queue}
+          onSteer={props.onSteerQueued}
+          onRemove={props.onRemoveQueued}
+        />
       </div>
+      {showJump && (
+        <button
+          type="button"
+          className="jump-to-bottom"
+          title="回到底部"
+          aria-label="回到底部"
+          onClick={jumpToBottom}
+        >
+          <ArrowDown size={15} />
+        </button>
+      )}
       <ArtifactsBar
         artifacts={props.artifacts}
         workspacePath={props.workspacePath}
         onOpenFile={props.onOpenFile}
+        onError={props.onError}
       />
     </>
   );

@@ -62,6 +62,25 @@ fn event_tagged_serialization() {
 }
 
 #[test]
+fn turn_progress_event_exposes_phase_step_and_timestamp() {
+    let event = Event::TurnProgressChanged {
+        session_id: "sess_01".into(),
+        progress: TurnProgress {
+            phase: TurnPhase::RequestingModel,
+            model_step: Some(2),
+            started_at: "2026-09-03T02:00:00Z".into(),
+        },
+    };
+    let value = serde_json::to_value(event).unwrap();
+
+    assert_eq!(value["type"], "turn_progress_changed");
+    assert_eq!(value["sessionId"], "sess_01");
+    assert_eq!(value["progress"]["phase"], "requesting_model");
+    assert_eq!(value["progress"]["modelStep"], 2);
+    assert_eq!(value["progress"]["startedAt"], "2026-09-03T02:00:00Z");
+}
+
+#[test]
 fn status_enums_snake_case() {
     assert_eq!(
         serde_json::to_value(SessionStatus::WaitingApproval).unwrap(),

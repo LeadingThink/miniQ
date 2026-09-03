@@ -2,6 +2,7 @@
 //! All agent logic lives in the separate `miniq-daemon` process; the UI talks
 //! to it over WebSocket. The shell only hands the connection info to the UI.
 
+mod browser;
 mod daemon;
 mod local_file;
 
@@ -43,9 +44,53 @@ fn read_local_text_file(
     local_file::read_text(&path, &workspace_path)
 }
 
+#[tauri::command]
+fn read_local_file_preview(
+    path: String,
+    workspace_path: String,
+) -> Result<local_file::LocalFilePreview, String> {
+    local_file::read_preview(&path, &workspace_path)
+}
+
+#[tauri::command]
+fn browser_open(
+    app: tauri::AppHandle,
+    url: String,
+    bounds: browser::BrowserBounds,
+) -> Result<browser::BrowserState, String> {
+    browser::open(&app, &url, bounds)
+}
+
+#[tauri::command]
+fn browser_resize(
+    app: tauri::AppHandle,
+    bounds: browser::BrowserBounds,
+) -> Result<(), String> {
+    browser::resize_current(&app, bounds)
+}
+
+#[tauri::command]
+fn browser_action(
+    app: tauri::AppHandle,
+    action: String,
+) -> Result<browser::BrowserState, String> {
+    browser::action(&app, &action)
+}
+
+#[tauri::command]
+fn browser_current(app: tauri::AppHandle) -> Result<browser::BrowserState, String> {
+    browser::current(&app)
+}
+
+#[tauri::command]
+fn browser_close(app: tauri::AppHandle) -> Result<(), String> {
+    browser::close(&app)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -54,10 +99,17 @@ pub fn run() {
             wait_for_daemon_exit,
             open_local_file,
             reveal_local_file,
-            read_local_text_file
+            read_local_text_file,
+            read_local_file_preview,
+            browser_open,
+            browser_resize,
+            browser_action,
+            browser_current,
+            browser_close
         ])
         .setup(|app| {
             setup_tray(app.handle())?;
+            setup_global_shortcut(app.handle())?;
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -69,6 +121,37 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running miniQ desktop");
+}
+
+/// Alt+Space toggles the main window from anywhere, mirroring the
+/// ChatGPT desktop quick-launch experience.
+fn setup_global_shortcut(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::Manager;
+    use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
+
+    let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
+    app.plugin(
+        tauri_plugin_global_shortcut::Builder::new()
+            .with_shortcut(shortcut)
+            .map_err(|e| tauri::Error::Anyhow(e.into()))?
+            .with_handler(move |app, triggered, event| {
+                if triggered != &shortcut || event.state() != ShortcutState::Pressed {
+                    return;
+                }
+                let Some(window) = app.get_webview_window("main") else {
+                    return;
+                };
+                let focused = window.is_focused().unwrap_or(false);
+                if window.is_visible().unwrap_or(false) && focused {
+                    let _ = window.hide();
+                } else {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            })
+            .build(),
+    )?;
+    Ok(())
 }
 
 fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {

@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use crate::types::{
     Approval, Artifact, Message, PlanTask, Question, RiskLevel, SessionStatus, ToolCallStatus,
+    TurnProgress,
 };
 
 /// An event pushed by the daemon over the WebSocket connection.
@@ -20,6 +21,12 @@ pub enum Event {
         #[serde(rename = "sessionId")]
         session_id: String,
         status: SessionStatus,
+    },
+    /// The current observable stage of a running turn changed.
+    TurnProgressChanged {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        progress: TurnProgress,
     },
     /// A full message was persisted (user echo or final assistant message).
     MessageCreated {
@@ -138,12 +145,25 @@ pub enum Event {
         session_id: String,
         pinned: bool,
     },
+    /// A session's archived state changed.
+    SessionArchivedChanged {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        archived: bool,
+    },
+    /// The session's queued (not yet executed) user messages changed.
+    QueueChanged {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        queue: Vec<crate::types::QueuedMessage>,
+    },
 }
 
 impl Event {
     pub fn session_id(&self) -> &str {
         match self {
             Event::SessionStatusChanged { session_id, .. }
+            | Event::TurnProgressChanged { session_id, .. }
             | Event::MessageCreated { session_id, .. }
             | Event::AssistantDelta { session_id, .. }
             | Event::ToolCallStarted { session_id, .. }
@@ -158,7 +178,9 @@ impl Event {
             | Event::TurnFailed { session_id, .. }
             | Event::SessionDeleted { session_id }
             | Event::SessionRenamed { session_id, .. }
-            | Event::SessionPinnedChanged { session_id, .. } => session_id,
+            | Event::SessionPinnedChanged { session_id, .. }
+            | Event::SessionArchivedChanged { session_id, .. }
+            | Event::QueueChanged { session_id, .. } => session_id,
             Event::WorkspaceDeleted { .. } | Event::WorkspaceRenamed { .. } => "",
         }
     }

@@ -128,7 +128,11 @@ async fn plan_document_artifact_flow() {
     )
     .await;
 
-    // Plan is published.
+    // Every turn clears stale progress before publishing its own plan.
+    let reset = next_event_of(&mut ws, "plan_updated").await;
+    assert!(reset["tasks"].as_array().unwrap().is_empty());
+
+    // The new plan is then published in execution order.
     let plan = next_event_of(&mut ws, "plan_updated").await;
     assert_eq!(plan["tasks"].as_array().unwrap().len(), 2);
     assert_eq!(plan["tasks"][1]["status"], "in_progress");
@@ -175,6 +179,13 @@ async fn ask_user_waits_for_answer() {
 
     let dir = tempfile::tempdir().unwrap();
     let sess_id = setup_session(&mut ws, dir.path()).await;
+    call(
+        &mut ws,
+        "question-mode",
+        "settings.update",
+        json!({"approvalMode": "fullAccess"}),
+    )
+    .await;
 
     call(
         &mut ws,
@@ -187,7 +198,18 @@ async fn ask_user_waits_for_answer() {
     let requested = next_event_of(&mut ws, "question_requested").await;
     assert_eq!(requested["question"]["prompt"], "报告用中文还是英文?");
     assert_eq!(requested["question"]["options"][0], "中文");
+    assert_eq!(requested["question"]["autoContinueAfterSeconds"], 180);
+    assert_eq!(requested["question"]["defaultAnswer"], "中文");
     let question_id = requested["question"]["id"].as_str().unwrap().to_string();
+
+    let reopened = call(
+        &mut ws,
+        "question-open",
+        "session.open",
+        json!({"sessionId": sess_id}),
+    )
+    .await;
+    assert_eq!(reopened["result"]["questions"][0]["id"], question_id);
 
     call(
         &mut ws,
@@ -247,6 +269,17 @@ async fn checkpoint_rollback_restores_file() {
 
     let requested = next_event_of(&mut ws, "approval_requested").await;
     let approval_id = requested["approval"]["id"].as_str().unwrap().to_string();
+    let reopened = call(
+        &mut ws,
+        "approval-open",
+        "session.open",
+        json!({"sessionId": sess_id}),
+    )
+    .await;
+    assert_eq!(
+        reopened["result"]["approvals"][0]["approval"]["id"],
+        approval_id
+    );
     call(
         &mut ws,
         "r2",

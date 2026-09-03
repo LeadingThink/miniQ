@@ -49,6 +49,32 @@ export interface LocalTextFile {
   content: string;
 }
 
+export type LocalPreviewKind =
+  | "text"
+  | "image"
+  | "audio"
+  | "video"
+  | "pdf"
+  | "docx"
+  | "xlsx"
+  | "pptx"
+  | "unsupported";
+
+export interface LocalFilePreview {
+  path: string;
+  kind: LocalPreviewKind;
+  mimeType: string;
+  content: string | null;
+  dataBase64: string | null;
+  size: number;
+}
+
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}
+
 function decodePath(value: string) {
   try {
     return decodeURIComponent(value);
@@ -166,6 +192,16 @@ export async function readLocalTextFile(
   if (!isTauriRuntime()) throw new Error("文件预览仅在 miniQ 桌面应用中可用");
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<LocalTextFile>("read_local_text_file", { path, workspacePath });
+}
+
+export async function readLocalFilePreview(
+  path: string,
+  workspacePath?: string | null,
+): Promise<LocalFilePreview> {
+  if (!workspacePath) throw new Error("无法预览文件：当前会话没有工作区");
+  if (!isTauriRuntime()) throw new Error("文件预览仅在 miniQ 桌面应用中可用");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<LocalFilePreview>("read_local_file_preview", { path, workspacePath });
 }
 
 function browserFileUrl(path: string) {

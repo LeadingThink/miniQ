@@ -497,6 +497,40 @@ fn async_stream_sse(
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn provider() -> OpenAiCompatProvider {
+        OpenAiCompatProvider::new(ProviderConfig {
+            base_url: "https://example.com/v1".to_string(),
+            api_key: String::new(),
+            model: "thinking-model".to_string(),
+        })
+    }
+
+    fn request(temperature: Option<f32>) -> CompletionRequest {
+        CompletionRequest {
+            messages: vec![ChatMessage::user("hello")],
+            tools: Vec::new(),
+            temperature,
+        }
+    }
+
+    #[test]
+    fn omits_temperature_when_the_caller_uses_provider_defaults() {
+        let body = provider().build_body(&request(None));
+        assert!(body.get("temperature").is_none());
+    }
+
+    #[test]
+    fn preserves_an_explicit_temperature_for_compatible_models() {
+        let body = provider().build_body(&request(Some(0.4)));
+        let temperature = body["temperature"].as_f64().unwrap();
+        assert!((temperature - 0.4).abs() < 0.000_001);
+    }
+}
+
 /// Minimal channel-backed stream builder (avoids an async-stream macro dep).
 fn async_stream<F, Fut>(f: F) -> impl futures_util::Stream<Item = Result<ChatDelta, ProviderError>>
 where

@@ -11,9 +11,43 @@ use miniq_models::{ToolCallRequest, ToolSpec};
 use miniq_protocol::{ApprovalStatus, Event, RiskLevel, SessionStatus, ToolCallStatus};
 use miniq_tools::{ToolContext, ToolRouter};
 use serde_json::{json, Value};
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 use crate::state::{AppState, ApprovalDecision};
+
+const UNATTENDED_QUESTION_TIMEOUT_SECS: u64 = 180;
+
+fn unattended_default(call: &ToolCallRequest, options: &[String]) -> String {
+    call.arguments
+        .get("default")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+        .or_else(|| options.first().cloned())
+        .unwrap_or_else(|| {
+            "请根据现有上下文选择最合理且可逆的默认方案继续，不要等待用户。".to_string()
+        })
+}
+
+async fn wait_for_question_answer(
+    receiver: tokio::sync::oneshot::Receiver<String>,
+    cancel: &CancellationToken,
+    unattended: Option<(Duration, String)>,
+) -> Result<(String, bool), AgentError> {
+    if let Some((timeout, default_answer)) = unattended {
+        tokio::select! {
+            _ = cancel.cancelled() => Err(AgentError::Cancelled),
+            answer = receiver => Ok((answer.unwrap_or(default_answer.clone()), false)),
+            _ = tokio::time::sleep(timeout) => Ok((default_answer, true)),
+        }
+    } else {
+        tokio::select! {
+            _ = cancel.cancelled() => Err(AgentError::Cancelled),
+            answer = receiver => Ok((answer.unwrap_or_default(), false)),
+        }
+    }
+}
 
 pub struct SessionToolExecutor {
     pub state: AppState,
@@ -52,6 +86,21 @@ impl SessionToolExecutor {
             "web_fetch" | "http_request" => {
                 let host = miniq_tools::url_host(&call.arguments).unwrap_or_default();
                 format!("{}:{host}", call.name)
+            }
+            "browser_automation" => {
+                let action = call
+                    .arguments
+                    .get("action")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("interaction");
+                let host = call
+                    .arguments
+                    .get("url")
+                    .and_then(|value| value.as_str())
+                    .and_then(|value| url::Url::parse(value).ok())
+                    .and_then(|value| value.host_str().map(str::to_string))
+                    .unwrap_or_else(|| "active-page".into());
+                format!("browser_automation:{action}:{host}")
             }
             "mcp_call" => {
                 let server = call
@@ -213,6 +262,9 @@ impl SessionToolExecutor {
                     .collect()
             })
             .unwrap_or_default();
+        let unattended = self.state.settings.lock().unwrap().approval_mode
+            == crate::state::ApprovalMode::FullAccess;
+        let default_answer = unattended.then(|| unattended_default(call, &options));
 
         let question = miniq_protocol::Question {
             id: miniq_memory::new_id("q"),
@@ -220,8 +272,11 @@ impl SessionToolExecutor {
             tool_call_id: tool_call_id.to_string(),
             prompt,
             options,
+            created_at: miniq_memory::now_iso(),
+            auto_continue_after_seconds: unattended.then_some(UNATTENDED_QUESTION_TIMEOUT_SECS),
+            default_answer: default_answer.clone(),
         };
-        let rx = self.state.register_question(&question.id);
+        let rx = self.state.register_question(&question);
 
         let _ = self
             .state
@@ -240,19 +295,33 @@ impl SessionToolExecutor {
             json!({"questionId": question.id, "prompt": question.prompt}),
         );
 
-        let answer = tokio::select! {
-            _ = self.cancel.cancelled() => {
-                self.state.pending_questions.lock().unwrap().remove(&question.id);
-                return Err(AgentError::Cancelled);
+        let unattended_wait = default_answer.map(|answer| {
+            (
+                Duration::from_secs(UNATTENDED_QUESTION_TIMEOUT_SECS),
+                answer,
+            )
+        });
+        let answer = wait_for_question_answer(rx, &self.cancel, unattended_wait).await;
+        let (answer, automatically_continued) = match answer {
+            Ok(answer) => answer,
+            Err(error) => {
+                self.state.finish_question(&question.id);
+                return Err(error);
             }
-            answer = rx => answer.unwrap_or_default(),
         };
+        self.state.finish_question(&question.id);
 
         self.state.emit(Event::QuestionResolved {
             session_id: self.session_id.clone(),
-            question_id: question.id,
+            question_id: question.id.clone(),
             answer: answer.clone(),
         });
+        if automatically_continued {
+            self.audit(
+                "question_auto_resolved",
+                json!({"questionId": question.id, "answer": answer}),
+            );
+        }
         let _ = self
             .state
             .store
@@ -484,5 +553,47 @@ impl ToolExecutor for SessionToolExecutor {
 
         // 4. Execute.
         self.run_tool_call(call, &tool_call.id).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn unattended_question_uses_default_after_timeout() {
+        let (_sender, receiver) = tokio::sync::oneshot::channel();
+        let result = wait_for_question_answer(
+            receiver,
+            &CancellationToken::new(),
+            Some((Duration::from_millis(1), "继续".to_string())),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result, ("继续".to_string(), true));
+    }
+
+    #[test]
+    fn unattended_default_prefers_explicit_then_first_option() {
+        let explicit = ToolCallRequest {
+            id: "call".to_string(),
+            name: "ask_user".to_string(),
+            arguments: json!({"prompt": "?", "default": "安全方案"}),
+        };
+        assert_eq!(
+            unattended_default(&explicit, &["第一项".to_string()]),
+            "安全方案"
+        );
+
+        let first = ToolCallRequest {
+            id: "call".to_string(),
+            name: "ask_user".to_string(),
+            arguments: json!({"prompt": "?"}),
+        };
+        assert_eq!(
+            unattended_default(&first, &["第一项".to_string()]),
+            "第一项"
+        );
     }
 }

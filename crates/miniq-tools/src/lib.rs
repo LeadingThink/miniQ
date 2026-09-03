@@ -5,6 +5,7 @@
 //! and dispatches. Approval and persistence are handled by the caller (the
 //! daemon) around `dispatch`.
 
+mod browser;
 mod doc;
 mod edit;
 mod file;
@@ -21,6 +22,7 @@ mod skill;
 mod web;
 mod web_search;
 
+pub use browser::BrowserAutomationTool;
 pub use doc::{DocReadTool, DocWriteTool};
 pub use edit::FileEditTool;
 pub use file::{FileListTool, FileReadTool, FileWriteTool};
@@ -65,5 +67,6 @@ pub fn default_router() -> ToolRouter {
     router.register(std::sync::Arc::new(MemorySearchTool));
     router.register(std::sync::Arc::new(MemoryWriteTool));
     router.register(std::sync::Arc::new(McpCallTool));
+    router.register(std::sync::Arc::new(BrowserAutomationTool::default()));
     router
 }

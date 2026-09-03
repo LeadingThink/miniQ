@@ -68,6 +68,7 @@ impl Store {
             title: title.to_string(),
             status: SessionStatus::Idle,
             pinned: false,
+            archived: false,
             external: None,
             created_at: now.clone(),
             updated_at: now,
@@ -92,7 +93,7 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
             "SELECT s.id, s.workspace_id, s.title, s.status, s.created_at, s.updated_at,
-                    s.pinned,
+                    s.pinned, s.archived,
                     e.provider, e.external_id, e.source_path, e.continuation_mode,
                     e.imported_at, e.last_synced_at
              FROM sessions s
@@ -111,7 +112,7 @@ impl Store {
             Some(workspace_id) => {
                 let mut stmt = conn.prepare(
                     "SELECT s.id, s.workspace_id, s.title, s.status, s.created_at, s.updated_at,
-                            s.pinned,
+                            s.pinned, s.archived,
                             e.provider, e.external_id, e.source_path, e.continuation_mode,
                             e.imported_at, e.last_synced_at
                      FROM sessions s
@@ -125,7 +126,7 @@ impl Store {
             None => {
                 let mut stmt = conn.prepare(
                     "SELECT s.id, s.workspace_id, s.title, s.status, s.created_at, s.updated_at,
-                            s.pinned,
+                            s.pinned, s.archived,
                             e.provider, e.external_id, e.source_path, e.continuation_mode,
                             e.imported_at, e.last_synced_at
                      FROM sessions s
@@ -170,6 +171,19 @@ impl Store {
         let updated = conn.execute(
             "UPDATE sessions SET pinned = ?2 WHERE id = ?1",
             params![id, pinned as i32],
+        )?;
+        if updated == 0 {
+            return Err(MemoryError::NotFound(format!("session {id}")));
+        }
+        Ok(())
+    }
+
+    pub fn set_session_archived(&self, id: &str, archived: bool) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        // Like pinning, archiving must not disturb the chronological order.
+        let updated = conn.execute(
+            "UPDATE sessions SET archived = ?2 WHERE id = ?1",
+            params![id, archived as i32],
         )?;
         if updated == 0 {
             return Err(MemoryError::NotFound(format!("session {id}")));

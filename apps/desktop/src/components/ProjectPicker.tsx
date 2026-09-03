@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { moveMenuIndex } from "../menuNavigation";
 import type { Workspace } from "../types";
 
 interface ProjectPickerProps {
@@ -15,29 +16,68 @@ interface ProjectMenuProps {
   selectedId: string | null;
   naming: boolean;
   newName: string;
+  activeIndex: number;
   onQueryChange: (query: string) => void;
   onSelect: (workspaceId: string) => void;
   onNamingChange: (naming: boolean) => void;
   onNewNameChange: (name: string) => void;
+  onActiveIndexChange: (index: number) => void;
   onSubmitNewName: () => void;
   onOpenFolder: () => void;
+  onClose: () => void;
 }
 
 function ProjectMenu(props: ProjectMenuProps) {
   return (
-    <div className="mode-menu project-menu">
+    <div
+      className="mode-menu project-menu"
+      role="dialog"
+      aria-label="选择项目"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          props.onClose();
+        }
+      }}
+    >
       <input
         className="project-search"
         placeholder="搜索项目"
         value={props.query}
         autoFocus
         onChange={(e) => props.onQueryChange(e.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            props.onActiveIndexChange(
+              moveMenuIndex(
+                props.activeIndex,
+                props.results.length,
+                event.key === "ArrowDown" ? 1 : -1,
+              ),
+            );
+          } else if (
+            event.key === "Enter" &&
+            !event.nativeEvent.isComposing &&
+            props.results.length > 0
+          ) {
+            event.preventDefault();
+            props.onSelect(
+              props.results[Math.max(0, props.activeIndex)]?.id ??
+                props.results[0].id,
+            );
+          }
+        }}
       />
-      <div className="project-list">
-        {props.results.map((workspace) => (
-          <div
+      <div className="project-list" role="listbox" aria-label="项目">
+        {props.results.map((workspace, index) => (
+          <button
             key={workspace.id}
-            className="mode-item"
+            type="button"
+            role="option"
+            aria-selected={workspace.id === props.selectedId}
+            className={`mode-item${index === props.activeIndex ? " active" : ""}`}
+            onMouseEnter={() => props.onActiveIndexChange(index)}
             onClick={() => props.onSelect(workspace.id)}
           >
             <div className="mode-item-label">
@@ -56,7 +96,7 @@ function ProjectMenu(props: ProjectMenuProps) {
                 </svg>
               )}
             </div>
-          </div>
+          </button>
         ))}
         {props.results.length === 0 && (
           <div className="sub" style={{ padding: "6px 10px" }}>
@@ -77,16 +117,26 @@ function ProjectMenu(props: ProjectMenuProps) {
               if (e.key === "Escape") props.onNamingChange(false);
             }}
           />
-          <button onClick={props.onSubmitNewName}>创建</button>
+          <button
+            type="button"
+            disabled={!props.newName.trim()}
+            onClick={props.onSubmitNewName}
+          >
+            创建
+          </button>
         </div>
       ) : (
-        <div className="mode-item" onClick={() => props.onNamingChange(true)}>
+        <button
+          type="button"
+          className="mode-item"
+          onClick={() => props.onNamingChange(true)}
+        >
           <div className="mode-item-label">＋ 新建空白项目</div>
-        </div>
+        </button>
       )}
-      <div className="mode-item" onClick={props.onOpenFolder}>
+      <button type="button" className="mode-item" onClick={props.onOpenFolder}>
         <div className="mode-item-label">📂 使用现有文件夹</div>
-      </div>
+      </button>
     </div>
   );
 }
@@ -98,14 +148,23 @@ export function ProjectPicker(props: ProjectPickerProps) {
   const [query, setQuery] = useState("");
   const [naming, setNaming] = useState(false);
   const [newName, setNewName] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const closeMenu = (restoreFocus = false) => {
+    setOpen(false);
+    setNaming(false);
+    setQuery("");
+    setActiveIndex(0);
+    if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus());
+  };
 
   useEffect(() => {
     if (!open) return;
     const onDocClick = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-        setNaming(false);
+        closeMenu();
       }
     };
     document.addEventListener("mousedown", onDocClick);
@@ -121,18 +180,28 @@ export function ProjectPicker(props: ProjectPickerProps) {
     return list.slice(0, 8);
   }, [query, props.workspaces]);
 
+  useEffect(() => {
+    setActiveIndex(results.length > 0 ? 0 : -1);
+  }, [query, results.length]);
+
   const submitNewName = () => {
     const name = newName.trim();
     if (!name) return;
     props.onCreateBlank(name);
     setNewName("");
-    setNaming(false);
-    setOpen(false);
+    closeMenu();
   };
 
   return (
     <div className="mode-select" ref={ref}>
-      <button className="mode-trigger" onClick={() => setOpen((value) => !value)}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="mode-trigger"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => (open ? closeMenu(true) : setOpen(true))}
+      >
         🗂 {selected ? selected.name : "选择项目"}
         <svg
           className="mode-caret"
@@ -153,18 +222,21 @@ export function ProjectPicker(props: ProjectPickerProps) {
           selectedId={props.selectedId}
           naming={naming}
           newName={newName}
+          activeIndex={activeIndex}
           onQueryChange={setQuery}
           onSelect={(workspaceId) => {
             props.onSelect(workspaceId);
-            setOpen(false);
+            closeMenu();
           }}
           onNamingChange={setNaming}
           onNewNameChange={setNewName}
+          onActiveIndexChange={setActiveIndex}
           onSubmitNewName={submitNewName}
           onOpenFolder={() => {
-            setOpen(false);
+            closeMenu();
             props.onOpenFolder();
           }}
+          onClose={() => closeMenu(true)}
         />
       )}
     </div>
