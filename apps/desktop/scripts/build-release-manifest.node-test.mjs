@@ -31,7 +31,8 @@ test("builds one signed update manifest for every desktop platform", () => {
     input,
     output,
     tag: "v1.2.3",
-    repo: "LeadingThink/miniQ-releases",
+    assetBaseUrl: "https://oss.example.com/releases/miniq/v1.2.3",
+    mirrorBaseUrl: "https://github.com/acme/releases/download/v1.2.3",
     notes: "Faster startup",
     publishedAt: "2026-08-30T00:00:00.000Z",
   });
@@ -44,14 +45,49 @@ test("builds one signed update manifest for every desktop platform", () => {
     "linux-x86_64",
   ]);
   assert.equal(manifest.platforms["darwin-aarch64"].signature, "arm-signature");
+  assert.match(manifest.platforms["windows-x86_64"].url, /^https:\/\/oss\.example\.com\//);
   assert.match(manifest.platforms["linux-x86_64"].url, /miniQ_1\.2\.3_x64\.AppImage\.tar\.gz$/);
   assert.deepEqual(JSON.parse(readFileSync(join(output, "latest.json"), "utf8")), manifest);
+  const mirrorManifest = JSON.parse(readFileSync(join(output, "latest.github.json"), "utf8"));
+  assert.match(mirrorManifest.platforms["windows-x86_64"].url, /^https:\/\/github\.com\/acme\//);
+  assert.equal(
+    mirrorManifest.platforms["windows-x86_64"].signature,
+    manifest.platforms["windows-x86_64"].signature,
+  );
 });
 
-test("fails instead of publishing a partial release", () => {
+test("builds a manifest from the platform artifacts that exist", () => {
+  const root = mkdtempSync(join(tmpdir(), "miniq-release-partial-"));
+  const input = join(root, "input");
+  const output = join(root, "output");
+  fixture(input, targets.windows, [["miniQ-setup.exe"], ["miniQ-setup.exe.sig", "windows-signature"]]);
+
+  const manifest = buildRelease({
+    input,
+    output,
+    tag: "v1.2.3",
+    assetBaseUrl: "https://oss.example.com/releases/miniq/v1.2.3/",
+    mirrorBaseUrl: "https://github.com/acme/releases/download/v1.2.3/",
+    publishedAt: "2026-08-30T00:00:00.000Z",
+  });
+
+  assert.deepEqual(Object.keys(manifest.platforms), ["windows-x86_64"]);
+  assert.equal(manifest.platforms["windows-x86_64"].signature, "windows-signature");
+  assert.match(manifest.platforms["windows-x86_64"].url, /miniQ_1\.2\.3_x64-setup\.exe$/);
+});
+
+test("fails when no signed updater artifacts exist", () => {
   const root = mkdtempSync(join(tmpdir(), "miniq-release-missing-"));
   assert.throws(
-    () => buildRelease({ input: root, output: join(root, "out"), tag: "v1.2.3", repo: "LeadingThink/miniQ-releases" }),
-    /expected one/,
+    () => buildRelease({ input: root, output: join(root, "out"), tag: "v1.2.3", assetBaseUrl: "https://oss.example.com/releases/miniq/v1.2.3", mirrorBaseUrl: "https://github.com/acme/releases/download/v1.2.3" }),
+    /expected at least one signed updater artifact/,
+  );
+});
+
+test("requires an HTTPS asset origin", () => {
+  const root = mkdtempSync(join(tmpdir(), "miniq-release-url-"));
+  assert.throws(
+    () => buildRelease({ input: root, output: join(root, "out"), tag: "v1.2.3", assetBaseUrl: "http://example.com", mirrorBaseUrl: "https://github.com/acme/releases/download/v1.2.3" }),
+    /assetBaseUrl must be an HTTPS URL/,
   );
 });

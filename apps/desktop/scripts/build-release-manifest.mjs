@@ -16,13 +16,24 @@ function walk(directory) {
   });
 }
 
-function findOne(directory, suffix, label) {
-  if (!existsSync(directory)) throw new Error(`${label}: expected one *${suffix} file, found 0`);
-  const matches = walk(directory).filter((path) => basename(path).endsWith(suffix));
+function findMatches(directory, suffix) {
+  return walk(directory).filter((path) => basename(path).endsWith(suffix));
+}
+
+function findOptionalOne(directory, suffix, label) {
+  if (!existsSync(directory)) return undefined;
+  const matches = findMatches(directory, suffix);
+  if (matches.length === 0) return undefined;
   if (matches.length !== 1) {
     throw new Error(`${label}: expected one *${suffix} file, found ${matches.length}`);
   }
   return matches[0];
+}
+
+function findOne(directory, suffix, label) {
+  const match = findOptionalOne(directory, suffix, label);
+  if (!match) throw new Error(`${label}: expected one *${suffix} file, found 0`);
+  return match;
 }
 
 function artifactDirectory(input, target) {
@@ -43,12 +54,35 @@ function updateEntry(source, signatureSource, output, name, baseUrl) {
   };
 }
 
-export function buildRelease({ input, output, tag, repo, notes = "", publishedAt = new Date().toISOString() }) {
+function optionalEntry(directory, artifactSuffix, signatureSuffix, label, output, name, baseUrl) {
+  if (!existsSync(directory)) return undefined;
+  const artifact = findOptionalOne(directory, artifactSuffix, `${label} updater`);
+  const signature = findOptionalOne(directory, signatureSuffix, `${label} signature`);
+  if (!artifact && !signature) return undefined;
+  if (!artifact) throw new Error(`${label} updater: expected one *${artifactSuffix} file, found 0`);
+  if (!signature) throw new Error(`${label} signature: expected one *${signatureSuffix} file, found 0`);
+  return updateEntry(
+    artifact,
+    signature,
+    output,
+    name,
+    baseUrl,
+  );
+}
+
+function copyOptionalArtifact(directory, suffix, label, output, name) {
+  const artifact = findOptionalOne(directory, suffix, label);
+  if (artifact) copyArtifact(artifact, output, name);
+}
+
+export function buildRelease({ input, output, tag, assetBaseUrl, mirrorBaseUrl, notes = "", publishedAt = new Date().toISOString() }) {
   if (!/^v\d+\.\d+\.\d+$/.test(tag)) throw new Error(`invalid release tag: ${tag}`);
+  if (!assetBaseUrl?.startsWith("https://")) throw new Error("assetBaseUrl must be an HTTPS URL");
+  if (!mirrorBaseUrl?.startsWith("https://")) throw new Error("mirrorBaseUrl must be an HTTPS URL");
   const version = tag.slice(1);
   const inputRoot = resolve(input);
   const outputRoot = resolve(output);
-  const baseUrl = `https://github.com/${repo}/releases/download/${tag}`;
+  const baseUrl = assetBaseUrl.replace(/\/$/, "");
   mkdirSync(outputRoot, { recursive: true });
 
   const windows = artifactDirectory(inputRoot, TARGETS.windows);
@@ -56,44 +90,72 @@ export function buildRelease({ input, output, tag, repo, notes = "", publishedAt
   const macIntel = artifactDirectory(inputRoot, TARGETS.macIntel);
   const linux = artifactDirectory(inputRoot, TARGETS.linux);
 
-  const platforms = {
-    "windows-x86_64": updateEntry(
-      findOne(windows, ".exe", "Windows installer"),
-      findOne(windows, ".exe.sig", "Windows signature"),
-      outputRoot,
-      `miniQ_${version}_x64-setup.exe`,
-      baseUrl,
-    ),
-    "darwin-aarch64": updateEntry(
-      findOne(macArm, ".app.tar.gz", "Apple Silicon updater"),
-      findOne(macArm, ".app.tar.gz.sig", "Apple Silicon signature"),
-      outputRoot,
-      `miniQ_${version}_aarch64.app.tar.gz`,
-      baseUrl,
-    ),
-    "darwin-x86_64": updateEntry(
-      findOne(macIntel, ".app.tar.gz", "Intel macOS updater"),
-      findOne(macIntel, ".app.tar.gz.sig", "Intel macOS signature"),
-      outputRoot,
-      `miniQ_${version}_x64.app.tar.gz`,
-      baseUrl,
-    ),
-    "linux-x86_64": updateEntry(
-      findOne(linux, ".AppImage.tar.gz", "Linux updater"),
-      findOne(linux, ".AppImage.tar.gz.sig", "Linux signature"),
-      outputRoot,
-      `miniQ_${version}_x64.AppImage.tar.gz`,
-      baseUrl,
-    ),
-  };
+  const platforms = {};
+  const windowsEntry = optionalEntry(
+    windows,
+    ".exe",
+    ".exe.sig",
+    "Windows",
+    outputRoot,
+    `miniQ_${version}_x64-setup.exe`,
+    baseUrl,
+  );
+  if (windowsEntry) platforms["windows-x86_64"] = windowsEntry;
 
-  copyArtifact(findOne(macArm, ".dmg", "Apple Silicon DMG"), outputRoot, `miniQ_${version}_aarch64.dmg`);
-  copyArtifact(findOne(macIntel, ".dmg", "Intel macOS DMG"), outputRoot, `miniQ_${version}_x64.dmg`);
-  copyArtifact(findOne(linux, ".AppImage", "Linux AppImage"), outputRoot, `miniQ_${version}_x64.AppImage`);
-  copyArtifact(findOne(linux, ".deb", "Linux deb"), outputRoot, `miniQ_${version}_amd64.deb`);
+  const macArmEntry = optionalEntry(
+    macArm,
+    ".app.tar.gz",
+    ".app.tar.gz.sig",
+    "Apple Silicon",
+    outputRoot,
+    `miniQ_${version}_aarch64.app.tar.gz`,
+    baseUrl,
+  );
+  if (macArmEntry) platforms["darwin-aarch64"] = macArmEntry;
+
+  const macIntelEntry = optionalEntry(
+    macIntel,
+    ".app.tar.gz",
+    ".app.tar.gz.sig",
+    "Intel macOS",
+    outputRoot,
+    `miniQ_${version}_x64.app.tar.gz`,
+    baseUrl,
+  );
+  if (macIntelEntry) platforms["darwin-x86_64"] = macIntelEntry;
+
+  const linuxEntry = optionalEntry(
+    linux,
+    ".AppImage.tar.gz",
+    ".AppImage.tar.gz.sig",
+    "Linux",
+    outputRoot,
+    `miniQ_${version}_x64.AppImage.tar.gz`,
+    baseUrl,
+  );
+  if (linuxEntry) platforms["linux-x86_64"] = linuxEntry;
+
+  if (Object.keys(platforms).length === 0) {
+    throw new Error("expected at least one signed updater artifact");
+  }
+
+  copyOptionalArtifact(macArm, ".dmg", "Apple Silicon DMG", outputRoot, `miniQ_${version}_aarch64.dmg`);
+  copyOptionalArtifact(macIntel, ".dmg", "Intel macOS DMG", outputRoot, `miniQ_${version}_x64.dmg`);
+  copyOptionalArtifact(linux, ".AppImage", "Linux AppImage", outputRoot, `miniQ_${version}_x64.AppImage`);
+  copyOptionalArtifact(linux, ".deb", "Linux deb", outputRoot, `miniQ_${version}_amd64.deb`);
 
   const manifest = { version, notes, pub_date: publishedAt, platforms };
   writeFileSync(join(outputRoot, "latest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  const mirrorManifest = {
+    ...manifest,
+    platforms: Object.fromEntries(
+      Object.entries(platforms).map(([platform, entry]) => [
+        platform,
+        { ...entry, url: `${mirrorBaseUrl.replace(/\/$/, "")}/${basename(entry.url)}` },
+      ]),
+    ),
+  };
+  writeFileSync(join(outputRoot, "latest.github.json"), `${JSON.stringify(mirrorManifest, null, 2)}\n`);
   return manifest;
 }
 
@@ -114,7 +176,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     input: args.input,
     output: args.output,
     tag: args.tag,
-    repo: args.repo,
+    assetBaseUrl: args["asset-base-url"],
+    mirrorBaseUrl: args["mirror-base-url"],
     notes: process.env.RELEASE_NOTES ?? "",
   });
 }
