@@ -1,8 +1,9 @@
 # Desktop updates
 
-miniQ uses the Tauri 2 updater with signed artifacts hosted in the public
-`LeadingThink/miniQ-releases` repository. Source code can remain private while
-installed clients fetch releases without embedding GitHub credentials.
+miniQ uses the Tauri 2 updater with signed artifacts hosted on Qiniu at
+`https://oss.zaiwen.top/releases/miniq/`. The public `LeadingThink/miniQ-releases`
+repository remains a mirror and emergency fallback. Source code can remain
+private while installed clients fetch releases without embedded credentials.
 
 ## Client behavior
 
@@ -32,6 +33,9 @@ key was generated with a password.
 
 `RELEASES_TOKEN` must be a fine-grained token limited to the
 `LeadingThink/miniQ-releases` repository with read/write access to Contents.
+The repository also requires `QINIU_ACCESS_KEY`, `QINIU_SECRET_KEY`, and
+`QINIU_BUCKET` secrets. Limit that Qiniu key to release-object upload and CDN
+refresh permissions for the production bucket.
 Do not use a broad personal access token. The updater public key is committed in
 `apps/desktop/src-tauri/tauri.conf.json`; the private key must never be committed.
 
@@ -60,7 +64,12 @@ it does not require a second program membership.
 The workflow builds matching daemon sidecars and signed updater artifacts for
 Windows x64, macOS Apple Silicon, macOS Intel, and Linux x64. It publishes NSIS,
 DMG, AppImage, and deb installers, then creates one `latest.json` containing all
-four updater targets. A release is published only after every target succeeds.
+four updater targets. Versioned assets are uploaded to Qiniu first, followed by
+the stable update manifest and a CDN refresh; GitHub Releases receives the same
+files plus its own GitHub-addressed `latest.json` as a functional fallback. A
+release is published only after every target succeeds.
+The workflow also updates `https://miniq.zaiwenai.com/latest.json` in the legacy
+`miniq-zaiwenai` bucket so already-installed clients continue receiving updates.
 
 Tauri update signatures protect package integrity. Windows Authenticode signing
 is a separate requirement and should be added before broad public distribution

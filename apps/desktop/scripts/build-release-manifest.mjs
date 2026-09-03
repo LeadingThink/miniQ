@@ -75,12 +75,14 @@ function copyOptionalArtifact(directory, suffix, label, output, name) {
   if (artifact) copyArtifact(artifact, output, name);
 }
 
-export function buildRelease({ input, output, tag, repo, notes = "", publishedAt = new Date().toISOString() }) {
+export function buildRelease({ input, output, tag, assetBaseUrl, mirrorBaseUrl, notes = "", publishedAt = new Date().toISOString() }) {
   if (!/^v\d+\.\d+\.\d+$/.test(tag)) throw new Error(`invalid release tag: ${tag}`);
+  if (!assetBaseUrl?.startsWith("https://")) throw new Error("assetBaseUrl must be an HTTPS URL");
+  if (!mirrorBaseUrl?.startsWith("https://")) throw new Error("mirrorBaseUrl must be an HTTPS URL");
   const version = tag.slice(1);
   const inputRoot = resolve(input);
   const outputRoot = resolve(output);
-  const baseUrl = `https://github.com/${repo}/releases/download/${tag}`;
+  const baseUrl = assetBaseUrl.replace(/\/$/, "");
   mkdirSync(outputRoot, { recursive: true });
 
   const windows = artifactDirectory(inputRoot, TARGETS.windows);
@@ -144,6 +146,16 @@ export function buildRelease({ input, output, tag, repo, notes = "", publishedAt
 
   const manifest = { version, notes, pub_date: publishedAt, platforms };
   writeFileSync(join(outputRoot, "latest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  const mirrorManifest = {
+    ...manifest,
+    platforms: Object.fromEntries(
+      Object.entries(platforms).map(([platform, entry]) => [
+        platform,
+        { ...entry, url: `${mirrorBaseUrl.replace(/\/$/, "")}/${basename(entry.url)}` },
+      ]),
+    ),
+  };
+  writeFileSync(join(outputRoot, "latest.github.json"), `${JSON.stringify(mirrorManifest, null, 2)}\n`);
   return manifest;
 }
 
@@ -164,7 +176,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     input: args.input,
     output: args.output,
     tag: args.tag,
-    repo: args.repo,
+    assetBaseUrl: args["asset-base-url"],
+    mirrorBaseUrl: args["mirror-base-url"],
     notes: process.env.RELEASE_NOTES ?? "",
   });
 }

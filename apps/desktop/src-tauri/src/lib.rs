@@ -62,18 +62,12 @@ fn browser_open(
 }
 
 #[tauri::command]
-fn browser_resize(
-    app: tauri::AppHandle,
-    bounds: browser::BrowserBounds,
-) -> Result<(), String> {
+fn browser_resize(app: tauri::AppHandle, bounds: browser::BrowserBounds) -> Result<(), String> {
     browser::resize_current(&app, bounds)
 }
 
 #[tauri::command]
-fn browser_action(
-    app: tauri::AppHandle,
-    action: String,
-) -> Result<browser::BrowserState, String> {
+fn browser_action(app: tauri::AppHandle, action: String) -> Result<browser::BrowserState, String> {
     browser::action(&app, &action)
 }
 
@@ -109,7 +103,7 @@ pub fn run() {
         ])
         .setup(|app| {
             setup_tray(app.handle())?;
-            setup_global_shortcut(app.handle())?;
+            setup_global_shortcut(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -125,17 +119,20 @@ pub fn run() {
 
 /// Alt+Space toggles the main window from anywhere, mirroring the
 /// ChatGPT desktop quick-launch experience.
-fn setup_global_shortcut(app: &tauri::AppHandle) -> tauri::Result<()> {
+///
+/// Never fails startup: Alt+Space is already taken by the window manager on
+/// many Linux desktops (and by the system menu on Windows), so a failed
+/// registration only disables the quick-toggle and logs a warning.
+fn setup_global_shortcut(app: &tauri::AppHandle) {
     use tauri::Manager;
-    use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
+    use tauri_plugin_global_shortcut::{
+        Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
+    };
 
-    let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
-    app.plugin(
+    if let Err(e) = app.plugin(
         tauri_plugin_global_shortcut::Builder::new()
-            .with_shortcut(shortcut)
-            .map_err(|e| tauri::Error::Anyhow(e.into()))?
-            .with_handler(move |app, triggered, event| {
-                if triggered != &shortcut || event.state() != ShortcutState::Pressed {
+            .with_handler(move |app, _triggered, event| {
+                if event.state() != ShortcutState::Pressed {
                     return;
                 }
                 let Some(window) = app.get_webview_window("main") else {
@@ -150,8 +147,26 @@ fn setup_global_shortcut(app: &tauri::AppHandle) -> tauri::Result<()> {
                 }
             })
             .build(),
-    )?;
-    Ok(())
+    ) {
+        eprintln!("[miniq] global-shortcut unavailable: {e}; continuing without quick-toggle");
+        return;
+    }
+
+    // Preferred first; fall back when the OS/window-manager already owns it.
+    let candidates = [
+        Shortcut::new(Some(Modifiers::ALT), Code::Space),
+        Shortcut::new(Some(Modifiers::ALT | Modifiers::CONTROL), Code::Space),
+    ];
+    for shortcut in candidates {
+        match app.global_shortcut().register(shortcut) {
+            Ok(()) => {
+                eprintln!("[miniq] quick-toggle registered: {shortcut}");
+                return;
+            }
+            Err(e) => eprintln!("[miniq] shortcut {shortcut} unavailable: {e}"),
+        }
+    }
+    eprintln!("[miniq] no quick-toggle shortcut available; continuing without it");
 }
 
 fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
