@@ -39,6 +39,64 @@ fn builds_messages_system_tools_and_grouped_tool_results() {
 }
 
 #[test]
+fn removes_unsupported_root_combinators_from_tool_schemas() {
+    let mut completion = request(vec![ChatMessage::user("use tools")]);
+    completion.tools = vec![
+        ToolSpec {
+            name: "apply_patch".into(),
+            description: "Patch files".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "oneOf": [
+                            {"type":"object","properties":{"type":{"const":"create_file"}}},
+                            {"type":"object","properties":{"type":{"const":"delete_file"}}}
+                        ]
+                    },
+                    "patch": {"type": "string"}
+                },
+                "oneOf": [{"required":["operation"]}, {"required":["patch"]}]
+            }),
+        },
+        ToolSpec {
+            name: "custom".into(),
+            description: "Plugin tool".into(),
+            parameters: json!({
+                "anyOf": [
+                    {"type":"object","properties":{"path":{"type":"string"}}},
+                    {"type":"object","properties":{"query":{"type":"string"}}}
+                ]
+            }),
+        },
+    ];
+
+    let body = provider().build_body(&completion);
+    for schema in body["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| &tool["input_schema"])
+    {
+        assert_eq!(schema["type"], "object");
+        assert!(schema.get("oneOf").is_none());
+        assert!(schema.get("anyOf").is_none());
+        assert!(schema.get("allOf").is_none());
+    }
+    assert!(body["tools"][0]["input_schema"]["properties"]["operation"]
+        .get("oneOf")
+        .is_some());
+    assert_eq!(
+        body["tools"][1]["input_schema"]["properties"]["path"]["type"],
+        "string"
+    );
+    assert_eq!(
+        body["tools"][1]["input_schema"]["properties"]["query"]["type"],
+        "string"
+    );
+}
+
+#[test]
 fn marks_structured_tool_failures_for_claude() {
     let body = provider().build_body(&request(vec![ChatMessage::tool_result(
         "call-1",
