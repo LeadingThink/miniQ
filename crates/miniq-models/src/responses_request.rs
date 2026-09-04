@@ -8,19 +8,12 @@ use crate::image::encode_image;
 use crate::provider::{ApiProtocol, ChatMessage, ChatRole, ProviderError, ToolSpec};
 
 pub(crate) fn response_tool(tool: &ToolSpec) -> Value {
-    match tool.name.as_str() {
-        "apply_patch" => json!({"type": "apply_patch"}),
-        "shell_batch" => json!({
-            "type": "shell",
-            "environment": {"type": "local"}
-        }),
-        _ => json!({
-            "type": "function",
-            "name": tool.name.replace('.', "_"),
-            "description": tool.description,
-            "parameters": tool.parameters,
-        }),
-    }
+    json!({
+        "type": "function",
+        "name": tool.name.replace('.', "_"),
+        "description": tool.description,
+        "parameters": tool.parameters,
+    })
 }
 
 fn text_part(kind: &str, text: &str) -> Value {

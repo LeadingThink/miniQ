@@ -35,24 +35,33 @@ fn builds_native_responses_input_and_tools() {
 }
 
 #[test]
-fn advertises_patch_and_shell_as_native_responses_tools() {
+fn advertises_patch_and_shell_as_standard_responses_functions() {
     let mut request = request(vec![ChatMessage::user("edit")]);
     request.tools = vec![
         ToolSpec {
             name: "apply_patch".into(),
             description: "patch".into(),
-            parameters: json!({"type":"object"}),
+            parameters: json!({"type":"object","properties":{"patch":{"type":"string"}}}),
         },
         ToolSpec {
             name: "shell_batch".into(),
             description: "shell".into(),
-            parameters: json!({"type":"object"}),
+            parameters: json!({"type":"object","properties":{"commands":{"type":"array"}}}),
         },
     ];
     let body = provider().build_body(&request);
-    assert_eq!(body["tools"][0], json!({"type":"apply_patch"}));
-    assert_eq!(body["tools"][1]["type"], "shell");
-    assert_eq!(body["tools"][1]["environment"]["type"], "local");
+    assert_eq!(body["tools"][0]["type"], "function");
+    assert_eq!(body["tools"][0]["name"], "apply_patch");
+    assert_eq!(
+        body["tools"][0]["parameters"]["properties"]["patch"]["type"],
+        "string"
+    );
+    assert_eq!(body["tools"][1]["type"], "function");
+    assert_eq!(body["tools"][1]["name"], "shell_batch");
+    assert_eq!(
+        body["tools"][1]["parameters"]["properties"]["commands"]["type"],
+        "array"
+    );
 }
 
 #[test]
