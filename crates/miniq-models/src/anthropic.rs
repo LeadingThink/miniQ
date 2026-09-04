@@ -112,6 +112,10 @@ fn build_messages(messages: &[ChatMessage]) -> Result<(String, Vec<Value>), Prov
                 let tool_use_id = message.tool_call_id.as_deref().ok_or_else(|| {
                     ProviderError::InvalidResponse("tool result is missing its tool_use_id".into())
                 })?;
+                let parsed = serde_json::from_str::<Value>(&message.content).unwrap_or(Value::Null);
+                let is_error = parsed.get("error").is_some()
+                    || parsed.get("rejected").is_some()
+                    || parsed.get("cancelled").and_then(Value::as_bool) == Some(true);
                 push_message(
                     &mut output,
                     "user",
@@ -119,6 +123,7 @@ fn build_messages(messages: &[ChatMessage]) -> Result<(String, Vec<Value>), Prov
                         "type": "tool_result",
                         "tool_use_id": tool_use_id,
                         "content": message.content,
+                        "is_error": is_error,
                     })],
                 );
             }

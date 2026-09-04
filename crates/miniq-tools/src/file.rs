@@ -33,7 +33,7 @@ pub(crate) fn path_risk(ctx: &ToolContext, input: &Value, base: RiskLevel, reaso
 pub struct FileReadTool;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FileReadInput {
     path: String,
     /// 1-based line to start from.
@@ -57,8 +57,8 @@ impl Tool for FileReadTool {
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "File path, relative to the workspace root"},
-                "offset": {"type": "integer", "description": "1-based first line to read"},
-                "limit": {"type": "integer", "description": "Maximum number of lines to return"}
+                "offset": {"type": "integer", "minimum": 1, "description": "1-based first line to read"},
+                "limit": {"type": "integer", "minimum": 1, "description": "Maximum number of lines to return"}
             },
             "required": ["path"]
         })
@@ -68,13 +68,18 @@ impl Tool for FileReadTool {
     }
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: FileReadInput = parse_input(input)?;
+        if p.offset == Some(0) || p.limit == Some(0) {
+            return Err(ToolError::InvalidInput(
+                "offset and limit must be positive integers".into(),
+            ));
+        }
         let path = resolve_in_workspace(&ctx.workspace, &p.path)
             .map_err(|e| ToolError::SandboxDenied(e.to_string()))?;
         let content = tokio::fs::read_to_string(&path)
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("read {}: {e}", path.display())))?;
         let total_lines = content.lines().count();
-        let offset = p.offset.unwrap_or(1).max(1);
+        let offset = p.offset.unwrap_or(1);
         let selected: String = match p.limit {
             Some(limit) => content
                 .lines()
@@ -182,7 +187,7 @@ impl Tool for FileListTool {
 pub struct FileWriteTool;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FileWriteInput {
     path: String,
     content: String,

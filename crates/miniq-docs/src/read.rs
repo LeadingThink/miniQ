@@ -62,6 +62,10 @@ fn read_pdf(path: &Path) -> Result<DocContent, ReadError> {
     Ok(DocContent::Text { kind: "pdf", text })
 }
 
+pub fn read_pdf_pages(path: &Path) -> Result<Vec<String>, ReadError> {
+    pdf_extract::extract_text_by_pages(path).map_err(|error| parse_err("pdf", error))
+}
+
 /// Extract text from OOXML parts: collects character data inside the given
 /// text element (`w:t` for docx, `a:t` for pptx).
 fn ooxml_part_text(xml: &str, text_tag: &str, para_tag: &str) -> String {

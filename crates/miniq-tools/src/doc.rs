@@ -1,7 +1,7 @@
 //! doc_read / doc_write: office document tools backed by miniq-docs.
 
 use async_trait::async_trait;
-use miniq_docs::{read_document, write_document, DocContent, DocOutput, SheetData};
+use miniq_docs::{read_document, read_pdf_pages, write_document, DocContent, DocOutput, SheetData};
 use miniq_protocol::RiskLevel;
 use miniq_sandbox::{resolve_in_workspace, Risk};
 use serde::Deserialize;
@@ -26,6 +26,15 @@ struct DocReadInput {
     /// Tables only: max rows per sheet (default 200).
     #[serde(default)]
     max_rows: Option<usize>,
+    /// Text documents only: 1-based first line.
+    #[serde(default)]
+    line_offset: Option<usize>,
+    /// Text documents only: maximum lines.
+    #[serde(default)]
+    line_limit: Option<usize>,
+    /// PDF only: comma-separated pages/ranges such as "1-3,5".
+    #[serde(default)]
+    pages: Option<String>,
 }
 
 #[async_trait]
@@ -44,6 +53,9 @@ impl Tool for DocReadTool {
                 "path": {"type": "string", "description": "Document path relative to the workspace root"},
                 "offset": {"type": "integer", "description": "Spreadsheets: 0-based first row"},
                 "maxRows": {"type": "integer", "description": "Spreadsheets: max rows per sheet (default 200)"}
+                ,"lineOffset": {"type": "integer", "minimum": 1, "description": "Text documents: 1-based first line"}
+                ,"lineLimit": {"type": "integer", "minimum": 1, "description": "Text documents: maximum lines"}
+                ,"pages": {"type": "string", "description": "PDF page selection such as 1-3,5"}
             },
             "required": ["path"]
         })
@@ -55,18 +67,80 @@ impl Tool for DocReadTool {
         let p: DocReadInput = parse_input(input)?;
         let path = resolve_in_workspace(&ctx.workspace, &p.path)
             .map_err(|e| ToolError::SandboxDenied(e.to_string()))?;
+        if let Some(selection) = p.pages.as_deref() {
+            if !path
+                .extension()
+                .and_then(|value| value.to_str())
+                .is_some_and(|value| value.eq_ignore_ascii_case("pdf"))
+            {
+                return Err(ToolError::InvalidInput(
+                    "pages is supported only for PDF files".into(),
+                ));
+            }
+            if p.line_offset.is_some() || p.line_limit.is_some() {
+                return Err(ToolError::InvalidInput(
+                    "pages cannot be combined with lineOffset or lineLimit".into(),
+                ));
+            }
+            let selected_pages = parse_page_selection(selection)?;
+            let read_path = path.clone();
+            let pages = tokio::task::spawn_blocking(move || read_pdf_pages(&read_path))
+                .await
+                .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?
+                .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?;
+            let total_pages = pages.len();
+            let selected = selected_pages
+                .into_iter()
+                .map(|number| {
+                    let text = pages.get(number - 1).ok_or_else(|| {
+                        ToolError::InvalidInput(format!(
+                            "PDF page {number} is outside 1-{total_pages}"
+                        ))
+                    })?;
+                    Ok(json!({"page": number, "text": text}))
+                })
+                .collect::<Result<Vec<_>, ToolError>>()?;
+            return Ok(json!({
+                "path": p.path,
+                "kind": "pdf",
+                "pages": selected,
+                "totalPages": total_pages,
+            }));
+        }
         let content = tokio::task::spawn_blocking(move || read_document(&path))
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
         match content {
-            DocContent::Text { kind, text } => Ok(json!({
-                "path": p.path,
-                "kind": kind,
-                "text": text,
-            })),
+            DocContent::Text { kind, text } => {
+                let total_lines = text.lines().count();
+                let offset = p.line_offset.unwrap_or(1).max(1);
+                let limit = p.line_limit.unwrap_or(usize::MAX);
+                let selected_lines = text
+                    .lines()
+                    .skip(offset - 1)
+                    .take(limit)
+                    .collect::<Vec<_>>();
+                let returned_lines = selected_lines.len();
+                let selected = selected_lines.join("\n");
+                let next_line_offset = (offset.saturating_sub(1) + returned_lines < total_lines)
+                    .then_some(offset + returned_lines);
+                Ok(json!({
+                    "path": p.path,
+                    "kind": kind,
+                    "text": selected,
+                    "totalLines": total_lines,
+                    "lineOffset": offset,
+                    "nextLineOffset": next_line_offset,
+                }))
+            }
             DocContent::Tables { kind, sheets } => {
+                if p.line_offset.is_some() || p.line_limit.is_some() {
+                    return Err(ToolError::InvalidInput(
+                        "lineOffset and lineLimit are not valid for spreadsheets".into(),
+                    ));
+                }
                 let offset = p.offset.unwrap_or(0);
                 let max_rows = p.max_rows.unwrap_or(DEFAULT_MAX_ROWS).max(1);
                 let sheets_json: Vec<Value> = sheets
@@ -92,6 +166,43 @@ impl Tool for DocReadTool {
             }
         }
     }
+}
+
+fn parse_page_selection(selection: &str) -> Result<Vec<usize>, ToolError> {
+    let mut pages = Vec::new();
+    for part in selection
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
+        if let Some((start, end)) = part.split_once('-') {
+            let start = parse_page_number(start)?;
+            let end = parse_page_number(end)?;
+            if end < start {
+                return Err(ToolError::InvalidInput(format!(
+                    "invalid descending page range: {part}"
+                )));
+            }
+            pages.extend(start..=end);
+        } else {
+            pages.push(parse_page_number(part)?);
+        }
+    }
+    pages.sort_unstable();
+    pages.dedup();
+    if pages.is_empty() {
+        return Err(ToolError::InvalidInput("pages must not be empty".into()));
+    }
+    Ok(pages)
+}
+
+fn parse_page_number(value: &str) -> Result<usize, ToolError> {
+    value
+        .trim()
+        .parse::<usize>()
+        .ok()
+        .filter(|number| *number > 0)
+        .ok_or_else(|| ToolError::InvalidInput(format!("invalid PDF page number: {value}")))
 }
 
 // ---- doc_write ----
@@ -217,6 +328,13 @@ mod tests {
 
     fn ctx(dir: &std::path::Path) -> ToolContext {
         ToolContext::new(dir.to_path_buf())
+    }
+
+    #[test]
+    fn parses_pdf_page_ranges_without_duplicates() {
+        assert_eq!(parse_page_selection("3,1-2,2").unwrap(), vec![1, 2, 3]);
+        assert!(parse_page_selection("3-1").is_err());
+        assert!(parse_page_selection("0").is_err());
     }
 
     #[tokio::test]

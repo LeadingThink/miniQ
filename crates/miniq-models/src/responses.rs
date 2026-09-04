@@ -5,11 +5,11 @@ use std::collections::{BTreeMap, HashSet};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::image::encode_image;
 use crate::provider::{
-    ApiProtocol, ChatDelta, ChatMessage, ChatRole, CompletionRequest, DeltaStream, ModelProvider,
-    ProviderConfig, ProviderContext, ProviderError, ToolCallRequest,
+    ApiProtocol, ChatDelta, CompletionRequest, DeltaStream, ModelProvider, ProviderConfig,
+    ProviderContext, ProviderError, ToolCallRequest,
 };
+use crate::responses_request::{build_input, response_tool};
 use crate::sse::{self, DecodedEvent, EventDecoder};
 
 pub struct ResponsesProvider {
@@ -40,20 +40,7 @@ impl ResponsesProvider {
             body["max_output_tokens"] = json!(max_output_tokens);
         }
         if !request.tools.is_empty() {
-            body["tools"] = Value::Array(
-                request
-                    .tools
-                    .iter()
-                    .map(|tool| {
-                        json!({
-                            "type": "function",
-                            "name": tool.name.replace('.', "_"),
-                            "description": tool.description,
-                            "parameters": tool.parameters,
-                        })
-                    })
-                    .collect(),
-            );
+            body["tools"] = Value::Array(request.tools.iter().map(response_tool).collect());
         }
         Ok(body)
     }
@@ -70,87 +57,6 @@ fn provider_client() -> reqwest::Client {
         .read_timeout(std::time::Duration::from_secs(620))
         .build()
         .expect("valid HTTP client configuration")
-}
-
-fn text_part(kind: &str, text: &str) -> Value {
-    json!({ "type": kind, "text": text })
-}
-
-fn message_content(message: &ChatMessage, text_kind: &str) -> Result<Vec<Value>, ProviderError> {
-    let mut content = Vec::with_capacity(message.images.len() + 1);
-    if !message.content.is_empty() {
-        content.push(text_part(text_kind, &message.content));
-    }
-    for image in &message.images {
-        let image = encode_image(image)?;
-        content.push(json!({
-            "type": "input_image",
-            "image_url": format!("data:{};base64,{}", image.mime_type, image.base64),
-            "detail": "auto",
-        }));
-    }
-    Ok(content)
-}
-
-fn build_input(messages: &[ChatMessage]) -> Result<Vec<Value>, ProviderError> {
-    let mut input = Vec::new();
-    for message in messages {
-        if message.role == ChatRole::Assistant {
-            if let Some(context) = &message.provider_context {
-                if context.protocol == ApiProtocol::Responses {
-                    let items = context.data.as_array().ok_or_else(|| {
-                        ProviderError::InvalidResponse(
-                            "Responses provider context must be an array".into(),
-                        )
-                    })?;
-                    input.extend(items.iter().cloned());
-                    continue;
-                }
-            }
-        }
-        match message.role {
-            ChatRole::System | ChatRole::User => {
-                let role = if message.role == ChatRole::System {
-                    "system"
-                } else {
-                    "user"
-                };
-                input.push(json!({
-                    "type": "message",
-                    "role": role,
-                    "content": message_content(message, "input_text")?,
-                }));
-            }
-            ChatRole::Assistant => {
-                if !message.content.is_empty() {
-                    input.push(json!({
-                        "type": "message",
-                        "role": "assistant",
-                        "content": message_content(message, "output_text")?,
-                    }));
-                }
-                input.extend(message.tool_calls.iter().map(|call| {
-                    json!({
-                        "type": "function_call",
-                        "call_id": call.id,
-                        "name": call.name,
-                        "arguments": call.arguments.to_string(),
-                    })
-                }));
-            }
-            ChatRole::Tool => {
-                let call_id = message.tool_call_id.as_deref().ok_or_else(|| {
-                    ProviderError::InvalidResponse("tool result is missing its call id".into())
-                })?;
-                input.push(json!({
-                    "type": "function_call_output",
-                    "call_id": call_id,
-                    "output": message.content,
-                }));
-            }
-        }
-    }
-    Ok(input)
 }
 
 #[derive(Default)]
@@ -181,15 +87,40 @@ impl ResponsesDecoder {
     }
 
     fn update_call_from_item(&mut self, index: usize, item: &Value) {
-        if item.get("type").and_then(Value::as_str) != Some("function_call") {
-            return;
-        }
+        let kind = item.get("type").and_then(Value::as_str).unwrap_or("");
         let call = self.calls.entry(index).or_default();
         set_string(&mut call.item_id, item.get("id"));
         set_string(&mut call.call_id, item.get("call_id"));
-        set_string(&mut call.name, item.get("name"));
-        if let Some(arguments) = item.get("arguments").and_then(Value::as_str) {
-            call.arguments = arguments.to_string();
+        match kind {
+            "function_call" => {
+                set_string(&mut call.name, item.get("name"));
+                if let Some(arguments) = item.get("arguments").and_then(Value::as_str) {
+                    call.arguments = arguments.to_string();
+                }
+            }
+            "apply_patch_call" => {
+                call.name = "apply_patch".into();
+                call.arguments = json!({
+                    "operation": item.get("operation").cloned().unwrap_or(Value::Null)
+                })
+                .to_string();
+            }
+            "shell_call" | "local_shell_call" => {
+                call.name = "shell_batch".into();
+                call.arguments = shell_arguments(item).to_string();
+            }
+            "custom_tool_call" => {
+                set_string(&mut call.name, item.get("name"));
+                if call.name == "apply_patch" {
+                    call.arguments = json!({
+                        "patch": item.get("input").and_then(Value::as_str).unwrap_or("")
+                    })
+                    .to_string();
+                }
+            }
+            _ => {
+                self.calls.remove(&index);
+            }
         }
     }
 
@@ -205,7 +136,7 @@ impl ResponsesDecoder {
         }
         if call.call_id.is_empty() || call.name.is_empty() {
             return Some(Err(ProviderError::InvalidResponse(format!(
-                "Responses function call at output index {index} is missing call_id or name"
+                "Responses tool call at output index {index} is missing call_id or name"
             ))));
         }
         let arguments = match parse_arguments(&call.name, &call.arguments) {
@@ -246,6 +177,57 @@ impl ResponsesDecoder {
         items.push(Ok(ChatDelta::Finished));
         DecodedEvent::terminal(items)
     }
+}
+
+fn shell_arguments(item: &Value) -> Value {
+    let action = item.get("action").unwrap_or(&Value::Null);
+    let commands = match action.get("commands") {
+        Some(Value::Array(commands)) => Value::Array(commands.clone()),
+        Some(Value::String(command)) => json!([command]),
+        _ => match action.get("command") {
+            Some(Value::Array(command)) => argv_command(command)
+                .map(|command| json!([command]))
+                .unwrap_or_else(|| json!([])),
+            Some(Value::String(command)) => json!([command]),
+            _ => json!([]),
+        },
+    };
+    let mut arguments = json!({"commands": commands});
+    for (source, destination) in [
+        ("timeout_ms", "timeoutMs"),
+        ("max_output_length", "maxOutputLength"),
+        ("working_directory", "workingDirectory"),
+        ("env", "env"),
+    ] {
+        if let Some(value) = action.get(source) {
+            arguments[destination] = value.clone();
+        }
+    }
+    arguments
+}
+
+fn argv_command(arguments: &[Value]) -> Option<String> {
+    let arguments = arguments
+        .iter()
+        .map(Value::as_str)
+        .collect::<Option<Vec<_>>>()?;
+    Some(
+        arguments
+            .into_iter()
+            .map(shell_quote)
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+}
+
+#[cfg(not(windows))]
+fn shell_quote(argument: &str) -> String {
+    format!("'{}'", argument.replace('\'', "'\"'\"'"))
+}
+
+#[cfg(windows)]
+fn shell_quote(argument: &str) -> String {
+    format!("'{}'", argument.replace('\'', "''"))
 }
 
 fn set_string(target: &mut String, value: Option<&Value>) {

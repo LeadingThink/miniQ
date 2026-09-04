@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -35,6 +36,17 @@ pub struct ToolContext {
     pub workspace_id: Option<String>,
     /// MCP bridge; `None` = mcp_call unavailable.
     pub mcp: Option<Arc<dyn crate::mcp::McpBridge>>,
+    /// Processes started by background shell calls. Shared across turns so a
+    /// later TaskOutput or KillShell call can address the same handle.
+    pub processes: Arc<crate::process::ProcessManager>,
+    /// Host-provided child-agent runtime. None outside daemon sessions.
+    pub agents: Option<Arc<dyn crate::agent::AgentBridge>>,
+    /// Structured task graph shared by all executors in the daemon.
+    pub tasks: Arc<crate::tasks::TaskManager>,
+    /// Namespace used to isolate task graphs between sessions.
+    pub task_scope: String,
+    /// Plan-mode guard shared by the executor and plan_mode tool.
+    plan_mode: Arc<AtomicBool>,
 }
 
 impl ToolContext {
@@ -45,6 +57,11 @@ impl ToolContext {
             memory: None,
             workspace_id: None,
             mcp: None,
+            processes: Arc::new(crate::process::ProcessManager::default()),
+            agents: None,
+            tasks: Arc::new(crate::tasks::TaskManager::default()),
+            task_scope: String::new(),
+            plan_mode: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -66,6 +83,34 @@ impl ToolContext {
     pub fn with_skills(mut self, skills: Option<Arc<miniq_skills::SkillStore>>) -> Self {
         self.skills = skills;
         self
+    }
+
+    pub fn with_processes(mut self, processes: Arc<crate::process::ProcessManager>) -> Self {
+        self.processes = processes;
+        self
+    }
+
+    pub fn with_agents(mut self, agents: Option<Arc<dyn crate::agent::AgentBridge>>) -> Self {
+        self.agents = agents;
+        self
+    }
+
+    pub fn with_tasks(
+        mut self,
+        tasks: Arc<crate::tasks::TaskManager>,
+        task_scope: impl Into<String>,
+    ) -> Self {
+        self.tasks = tasks;
+        self.task_scope = task_scope.into();
+        self
+    }
+
+    pub fn plan_mode(&self) -> bool {
+        self.plan_mode.load(Ordering::SeqCst)
+    }
+
+    pub fn set_plan_mode(&self, active: bool) {
+        self.plan_mode.store(active, Ordering::SeqCst);
     }
 }
 

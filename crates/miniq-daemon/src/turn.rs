@@ -14,7 +14,8 @@ user inside their workspace: you plan multi-step tasks, read and edit files, run
 and deliver ready-to-use results. Be concise and accurate. High-risk actions go through \
 user approval; if an action is rejected, adapt instead of retrying it verbatim. Invoke only \
 the function tools explicitly provided with the current model request, using their exact names \
-and schemas. Never invent provider-native tools such as Bash, Read, Write, or ToolSearch.";
+    and schemas. The host also safely normalizes common provider-native tool conventions when a \
+    model uses one from its agent training, such as Bash, Read, Write, or ToolSearch.";
 
 const HOST_APP_CONTEXT: &str = "Host app file references: whenever you reference a local \
 workspace file in a response, use a Markdown link with a concise filename label and the \
@@ -334,8 +335,20 @@ async fn execute_turn(
                 Some(state.store.clone()),
                 Some(session.workspace_id.clone()),
             )
-            .with_mcp(state.mcp_bridge()),
+            .with_mcp(state.mcp_bridge())
+            .with_processes(state.processes.clone())
+            .with_tasks(state.tasks.clone(), session_id)
+            .with_agents(Some(std::sync::Arc::new(
+                crate::agent_tasks::DaemonAgentBridge {
+                    state: state.clone(),
+                    session_id: session_id.to_string(),
+                    workspace: std::path::PathBuf::from(&workspace.path),
+                    workspace_id: session.workspace_id.clone(),
+                    depth: 0,
+                },
+            ))),
         cancel: cancel.clone(),
+        permission_policy: crate::executor::PermissionPolicy::Inherit,
     };
 
     let provider = state.current_provider();
