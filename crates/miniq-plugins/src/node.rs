@@ -178,13 +178,15 @@ impl NodePluginProcess {
         let failure = Arc::new(Mutex::new(None));
         spawn_stdout_reader(
             stdout,
-            responses.clone(),
-            notifications.clone(),
-            handles.clone(),
-            cancellation.clone(),
-            stopping.clone(),
-            failure.clone(),
-            limits.max_protocol_frame_bytes,
+            StdoutReaderState {
+                responses: responses.clone(),
+                notifications: notifications.clone(),
+                handles: handles.clone(),
+                cancellation: cancellation.clone(),
+                stopping: stopping.clone(),
+                failure: failure.clone(),
+                max_bytes: limits.max_protocol_frame_bytes,
+            },
         );
         spawn_stderr_reader(stderr, manifest.id.clone(), limits.max_stderr_bytes);
         let process = Arc::new(Self {
@@ -610,8 +612,7 @@ fn install_host(plugin_dir: &Path) -> Result<PathBuf, PluginError> {
         .map_err(|error| PluginError::new(PluginFailureKind::Process, error.to_string()))
 }
 
-fn spawn_stdout_reader<R>(
-    stdout: R,
+struct StdoutReaderState {
     responses: Arc<Mutex<HashMap<u64, oneshot::Sender<NodePluginResponse>>>>,
     notifications: broadcast::Sender<NodePluginNotification>,
     handles: Arc<Mutex<Vec<RegistrationHandle>>>,
@@ -619,7 +620,10 @@ fn spawn_stdout_reader<R>(
     stopping: Arc<AtomicBool>,
     failure: Arc<Mutex<Option<String>>>,
     max_bytes: usize,
-) where
+}
+
+fn spawn_stdout_reader<R>(stdout: R, state: StdoutReaderState)
+where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
     tokio::spawn(async move {
@@ -638,12 +642,12 @@ fn spawn_stdout_reader<R>(
             };
             buffer.extend_from_slice(&chunk[..count]);
             while let Some(newline) = buffer.iter().position(|byte| *byte == b'\n') {
-                if newline > max_bytes {
+                if newline > state.max_bytes {
                     exit_reason = "Node plugin host sent an oversized protocol frame".to_string();
                     break 'read;
                 }
                 if let Err(error) =
-                    process_stdout_frame(&buffer[..newline], &responses, &notifications)
+                    process_stdout_frame(&buffer[..newline], &state.responses, &state.notifications)
                 {
                     exit_reason =
                         format!("Node plugin host sent an invalid protocol frame: {error}");
@@ -651,17 +655,17 @@ fn spawn_stdout_reader<R>(
                 }
                 buffer.drain(..=newline);
             }
-            if buffer.len() > max_bytes {
+            if buffer.len() > state.max_bytes {
                 exit_reason = "Node plugin host sent an oversized protocol frame".to_string();
                 break;
             }
         }
-        if !stopping.load(Ordering::Acquire) {
-            *failure.lock().unwrap() = Some(exit_reason);
+        if !state.stopping.load(Ordering::Acquire) {
+            *state.failure.lock().unwrap() = Some(exit_reason);
         }
-        cancellation.cancel();
-        handles.lock().unwrap().clear();
-        responses.lock().unwrap().clear();
+        state.cancellation.cancel();
+        state.handles.lock().unwrap().clear();
+        state.responses.lock().unwrap().clear();
     });
 }
 
@@ -733,13 +737,15 @@ mod tests {
         let failure = Arc::new(Mutex::new(None));
         spawn_stdout_reader(
             reader,
-            responses,
-            notifications,
-            handles,
-            cancellation.clone(),
-            stopping,
-            failure.clone(),
-            16,
+            StdoutReaderState {
+                responses,
+                notifications,
+                handles,
+                cancellation: cancellation.clone(),
+                stopping,
+                failure: failure.clone(),
+                max_bytes: 16,
+            },
         );
 
         writer.write_all(&[b'x'; 17]).await.unwrap();

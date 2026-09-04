@@ -277,9 +277,15 @@ pub struct Question {
     pub session_id: String,
     pub tool_call_id: String,
     pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header: Option<String>,
     /// Suggested answers; the user can always type a free-form one.
     #[serde(default)]
     pub options: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub option_descriptions: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub multi_select: bool,
     pub created_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_continue_after_seconds: Option<u64>,

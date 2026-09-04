@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { Message, ToolCall, TurnProgress } from "../types";
+import type { Message, Question, ToolCall, TurnProgress } from "../types";
 import { Timeline } from "./Timeline";
 
 const noop = () => undefined;
@@ -12,13 +12,14 @@ function renderTimeline(options: {
   streamingText?: string;
   turnProgress?: TurnProgress | null;
   plan?: { content: string; status: "pending" | "in_progress" | "completed" }[];
+  questions?: Question[];
 }) {
   return renderToStaticMarkup(
     <Timeline
       messages={options.messages ?? []}
       toolCalls={options.toolCalls ?? []}
       approvals={[]}
-      questions={[]}
+      questions={options.questions ?? []}
       plan={options.plan ?? []}
       artifacts={[]}
       queue={[]}
@@ -104,5 +105,32 @@ describe("Timeline execution flow", () => {
     expect(html).toContain("已经完成前一阶段。");
     expect(html).toContain("正在将执行结果交给模型");
     expect(html).toContain("第 4 轮");
+  });
+
+  it("renders native question headings, option details, and multi-select controls", () => {
+    const html = renderTimeline({
+      questions: [
+        {
+          id: "question-1",
+          sessionId: "session-1",
+          toolCallId: "tool-1",
+          prompt: "选择要检查的平台",
+          header: "平台",
+          options: ["macOS", "Windows"],
+          optionDescriptions: {
+            macOS: "检查 Apple Silicon",
+            Windows: "检查 x64 安装包",
+          },
+          multiSelect: true,
+          createdAt: "2026-09-04T01:00:00Z",
+        },
+      ],
+    });
+
+    expect(html).toContain("平台");
+    expect(html).toContain("检查 Apple Silicon");
+    expect(html).toContain("检查 x64 安装包");
+    expect(html).toContain("确认选择");
+    expect(html).toContain('aria-pressed="false"');
   });
 });

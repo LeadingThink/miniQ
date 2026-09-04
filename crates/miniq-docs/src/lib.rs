@@ -9,5 +9,5 @@
 mod read;
 mod write;
 
-pub use read::{read_document, DocContent, ReadError};
+pub use read::{read_document, read_pdf_pages, DocContent, ReadError};
 pub use write::{write_document, DocOutput, SheetData, WriteError};

@@ -8,6 +8,7 @@ use miniq_protocol::RiskLevel;
 use miniq_sandbox::Risk;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 
 use crate::router::{parse_input, Tool, ToolContext, ToolError};
 
@@ -89,15 +90,129 @@ impl Tool for TaskUpdateTool {
 
 pub struct AskUserTool;
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AskUserInput {
+    #[serde(default)]
+    prompt: Option<String>,
+    #[serde(default)]
+    options: Vec<String>,
+    #[serde(default)]
+    default: Option<String>,
+    #[serde(default)]
+    header: Option<String>,
+    #[serde(default)]
+    option_descriptions: HashMap<String, String>,
+    #[serde(default)]
+    multi_select: bool,
+    #[serde(default)]
+    questions: Option<Vec<AskQuestionInput>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AskQuestionInput {
+    prompt: String,
+    #[serde(default)]
+    options: Vec<String>,
+    #[serde(default)]
+    default: Option<String>,
+    #[serde(default)]
+    header: Option<String>,
+    #[serde(default)]
+    option_descriptions: HashMap<String, String>,
+    #[serde(default)]
+    multi_select: bool,
+}
+
+pub fn validate_ask_user_input(input: &Value) -> Result<(), ToolError> {
+    let input: AskUserInput = parse_input(input.clone())?;
+    match (input.prompt.as_deref(), input.questions.as_deref()) {
+        (Some(_), Some(_)) => {
+            return Err(ToolError::InvalidInput(
+                "ask_user accepts prompt or questions, not both".into(),
+            ))
+        }
+        (None, None) => {
+            return Err(ToolError::InvalidInput(
+                "ask_user requires prompt or questions".into(),
+            ))
+        }
+        (Some(prompt), None) => validate_question(
+            prompt,
+            &input.options,
+            input.default.as_deref(),
+            input.header.as_deref(),
+            &input.option_descriptions,
+            input.multi_select,
+        )?,
+        (None, Some(questions)) => {
+            if questions.is_empty() {
+                return Err(ToolError::InvalidInput(
+                    "questions must not be empty".into(),
+                ));
+            }
+            for question in questions {
+                validate_question(
+                    &question.prompt,
+                    &question.options,
+                    question.default.as_deref(),
+                    question.header.as_deref(),
+                    &question.option_descriptions,
+                    question.multi_select,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_question(
+    prompt: &str,
+    options: &[String],
+    default: Option<&str>,
+    header: Option<&str>,
+    descriptions: &HashMap<String, String>,
+    multi_select: bool,
+) -> Result<(), ToolError> {
+    if prompt.trim().is_empty() {
+        return Err(ToolError::InvalidInput("question prompt is empty".into()));
+    }
+    if header.is_some_and(|header| header.trim().is_empty()) {
+        return Err(ToolError::InvalidInput("question header is empty".into()));
+    }
+    if options.iter().any(|option| option.trim().is_empty()) {
+        return Err(ToolError::InvalidInput("question option is empty".into()));
+    }
+    if descriptions
+        .keys()
+        .any(|label| !options.iter().any(|option| option == label))
+    {
+        return Err(ToolError::InvalidInput(
+            "optionDescriptions contains a label absent from options".into(),
+        ));
+    }
+    if let Some(default) = default {
+        if default.trim().is_empty() {
+            return Err(ToolError::InvalidInput("question default is empty".into()));
+        }
+        if !multi_select && !options.is_empty() && !options.iter().any(|option| option == default) {
+            return Err(ToolError::InvalidInput(
+                "question default must be one of options".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[async_trait]
 impl Tool for AskUserTool {
     fn name(&self) -> &str {
         "ask_user"
     }
     fn description(&self) -> &str {
-        "Ask the user a clarifying question and wait for their answer. Use when the \
-         task is ambiguous and the wrong guess would waste work. Provide short \
-         suggested options when possible."
+        "Ask one or more clarifying questions and wait for answers. Supports option \
+         descriptions and multi-select questions."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -105,15 +220,37 @@ impl Tool for AskUserTool {
             "properties": {
                 "prompt": {"type": "string", "description": "The question to ask"},
                 "options": {"type": "array", "items": {"type": "string"}, "description": "Suggested answers (the user can also type freely)"},
-                "default": {"type": "string", "description": "The safest reasonable answer to use if the user does not respond"}
+                "default": {"type": "string", "description": "The safest reasonable answer to use if the user does not respond"},
+                "header": {"type": "string", "description": "Short question heading"},
+                "optionDescriptions": {"type": "object", "additionalProperties": {"type": "string"}},
+                "multiSelect": {"type": "boolean"},
+                "questions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "prompt": {"type": "string"},
+                            "header": {"type": "string"},
+                            "options": {"type": "array", "items": {"type": "string"}},
+                            "optionDescriptions": {"type": "object", "additionalProperties": {"type": "string"}},
+                            "multiSelect": {"type": "boolean"},
+                            "default": {"type": "string"}
+                        },
+                        "required": ["prompt"],
+                        "additionalProperties": false
+                    }
+                }
             },
-            "required": ["prompt"]
+            "oneOf": [{"required": ["prompt"]}, {"required": ["questions"]}],
+            "additionalProperties": false
         })
     }
     fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
         low_risk("asks the user a question")
     }
     async fn execute(&self, _ctx: &ToolContext, _input: Value) -> Result<Value, ToolError> {
+        validate_ask_user_input(&_input)?;
         // The daemon executor intercepts ask_user and waits for the user;
         // reaching this fallback means there is no interactive session.
         Err(ToolError::ExecutionFailed(

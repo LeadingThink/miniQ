@@ -184,7 +184,10 @@ export interface Question {
   sessionId: string;
   toolCallId: string;
   prompt: string;
+  header?: string;
   options: string[];
+  optionDescriptions?: Record<string, string>;
+  multiSelect?: boolean;
   createdAt: string;
   autoContinueAfterSeconds?: number;
   defaultAnswer?: string;

@@ -84,7 +84,7 @@ miniQ 不再把所有模型强制塞进 Chat Completions。设置中的“API �
 
 模型发起工具调用后，miniQ 会保存供应商原生上下文并在下一步完整回传。这样 Responses 的 reasoning items，以及 Claude 的 signed thinking 和 `tool_use` 内容块，不会在“工具执行 -> 返回结果 -> 继续回答”之间丢失。持久化前仍会递归清理工具参数中的 API Key、token、密码等敏感字段。
 
-本地对照版本为 ChatGPT Desktop `26.810.41047` 和 Claude Code `2.1.234`。实现重点对齐这两类 agent 客户端依赖的流式事件、工具调用和跨轮上下文形态，而不是把客户端专属工具名映射成 miniQ 工具。
+本地对照版本为 ChatGPT Desktop `26.810.41047` 和 Claude Code `2.1.234`。实现同时对齐这两类 agent 客户端依赖的流式事件、工具调用、跨轮上下文和原生工具参数形态。
 
 真实 miniQ daemon 端到端结果：
 
@@ -95,8 +95,19 @@ OpenAI Responses 的实现依据官方 [Function calling](https://developers.ope
 
 ## 工具名兼容与故障恢复
 
-OneAPI 背后的模型可能带有原供应商 agent 环境的工具先验，例如 Claude 系模型偶尔会尝试调用 `Bash`、`Read`、`Write` 或 `ToolSearch`。这些名称不是 miniQ 当前请求实际声明的工具；直接映射执行会绕过各工具自己的参数校验和风险语义，因此 miniQ 不做隐式别名执行。
+OneAPI 背后的模型可能带有原供应商 agent 环境的工具先验。miniQ 现在会在风险评估之前，把已知的供应商原生名称和参数严格转换为等价的 miniQ 调用；转换后的调用仍经过同一套 JSON 参数校验、工作区沙箱、审批、检查点、审计和重复调用保护，不会用兼容性名义绕过安全边界。参数冲突、未知字段或供应商要求关闭沙箱时会明确失败，不做有损猜测。
 
-miniQ 会在每次请求中明确要求模型只使用已声明工具及其精确名称。模型仍发出未知名称时，该调用会作为失败工具调用进入会话记录与审计，并返回 `unknown_tool`、原始名称、当前全部可用工具名和恢复说明，让模型在下一轮改用 `shell_run`、`file_read` 等实际工具。若同一错误调用持续重复，现有重复调用保护会终止循环并向用户报告，而不会假装工具通道整体失效。
+Claude/Claude Code 兼容范围包括：
+
+- `Bash`、`Read`、`Write`、`Edit`、`MultiEdit`、`Glob`、`Grep`、`NotebookEdit`；
+- `WebFetch`、`WebSearch`、`ToolSearch`、`Skill`、`AskUserQuestion`、动态 `mcp__<server>__<tool>`；
+- `TodoWrite`、`TaskCreate`、`TaskGet`、`TaskList`、`TaskUpdate`、`EnterPlanMode`、`ExitPlanMode`；
+- `Task` / `Agent` 子代理、`TaskOutput`、`TaskStop`、`SendMessage`，包括后台执行、停止、完成后恢复、模型/模式保持、嵌套限制与 `isolation: "worktree"`。隔离代理的无改动 worktree 会自动清理；有未提交改动或新提交时保留路径和分支，避免丢失成果。
+
+OpenAI/Codex 兼容范围包括 `exec_command` / shell、Responses 原生 `shell_call` / `local_shell_call`、Responses 原生 `apply_patch_call` 与 Codex `*** Begin Patch` 文本补丁。调用 ID、argv 参数边界、退出状态、最大输出信息和 reasoning encrypted context 都会跨工具轮次保留。
+
+对于仍然未知的工具名，调用会作为失败工具调用写入会话与审计，并返回 `unknown_tool`、原始名称、当前全部可用工具名和恢复说明。若同一错误调用持续重复，重复调用保护会终止循环并向用户报告，而不会误报成整个 Bash/Read/ToolSearch 工具通道失效。
+
+2026-09-04 还核对了 `oneapi.zaiwenai.com` 的生产后端实现：模型详情接口返回上述两项协议元数据；Anthropic Messages 与 OpenAI Responses 路由分别把完整请求体复制到上游，仅替换平台配置的模型别名。因此 miniQ 可以直接使用供应商原生的工具、thinking/reasoning 和 SSE 事件格式，无需经过 Chat Completions 降级转换。
 
 OpenAI-compatible SSE 解析同时兼容 UTF-8 字符跨网络分片、LF/CRLF/CR 事件边界、多行 `data:`、旧式 `function_call` 和缺失调用 ID；流内错误、缺失函数名及不完整 JSON 参数都会在执行前明确失败。

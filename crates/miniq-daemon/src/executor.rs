@@ -11,64 +11,28 @@ use miniq_models::{ToolCallRequest, ToolSpec};
 use miniq_protocol::{ApprovalStatus, Event, RiskLevel, SessionStatus, ToolCallStatus};
 use miniq_tools::{ToolContext, ToolRouter};
 use serde_json::{json, Value};
-use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 use crate::state::{AppState, ApprovalDecision};
 
-const UNATTENDED_QUESTION_TIMEOUT_SECS: u64 = 180;
+mod adaptation;
+mod checkpoint;
+mod hooks;
+mod interaction;
+mod plan;
 
-fn unknown_tool_output(
-    router: &ToolRouter,
-    call: &ToolCallRequest,
-    error: &miniq_tools::ToolError,
-) -> Value {
-    let available_tools = router
-        .specs()
-        .into_iter()
-        .map(|spec| spec.name)
-        .collect::<Vec<_>>();
-    json!({
-        "error": {
-            "code": "unknown_tool",
-            "message": error.to_string(),
-            "requestedTool": call.name,
-            "availableTools": available_tools,
-            "recovery": "Use one of availableTools with its advertised JSON schema; do not use provider-native tool names."
-        }
-    })
+use adaptation::unknown_tool_output;
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum PermissionPolicy {
+    #[default]
+    Inherit,
+    AcceptEdits,
+    DontAsk,
 }
 
-fn unattended_default(call: &ToolCallRequest, options: &[String]) -> String {
-    call.arguments
-        .get("default")
-        .and_then(|value| value.as_str())
-        .filter(|value| !value.trim().is_empty())
-        .map(str::to_string)
-        .or_else(|| options.first().cloned())
-        .unwrap_or_else(|| {
-            "请根据现有上下文选择最合理且可逆的默认方案继续，不要等待用户。".to_string()
-        })
-}
-
-async fn wait_for_question_answer(
-    receiver: tokio::sync::oneshot::Receiver<String>,
-    cancel: &CancellationToken,
-    unattended: Option<(Duration, String)>,
-) -> Result<(String, bool), AgentError> {
-    if let Some((timeout, default_answer)) = unattended {
-        tokio::select! {
-            _ = cancel.cancelled() => Err(AgentError::Cancelled),
-            answer = receiver => Ok((answer.unwrap_or(default_answer.clone()), false)),
-            _ = tokio::time::sleep(timeout) => Ok((default_answer, true)),
-        }
-    } else {
-        tokio::select! {
-            _ = cancel.cancelled() => Err(AgentError::Cancelled),
-            answer = receiver => Ok((answer.unwrap_or_default(), false)),
-        }
-    }
-}
+#[cfg(test)]
+use interaction::{unattended_default, wait_for_question_answer};
 
 pub struct SessionToolExecutor {
     pub state: AppState,
@@ -76,6 +40,7 @@ pub struct SessionToolExecutor {
     pub router: std::sync::Arc<ToolRouter>,
     pub ctx: ToolContext,
     pub cancel: CancellationToken,
+    pub(crate) permission_policy: PermissionPolicy,
 }
 
 impl SessionToolExecutor {
@@ -217,182 +182,6 @@ impl SessionToolExecutor {
         Ok(proceed)
     }
 
-    /// Tools that modify files and therefore get a checkpoint backup first.
-    fn is_write_tool(name: &str) -> bool {
-        matches!(
-            name,
-            "file_write" | "file_edit" | "doc_write" | "file_patch"
-        )
-    }
-
-    /// Back up the target file before a write tool runs. Returns the
-    /// checkpoint id, or `None` when the input has no resolvable path.
-    fn take_checkpoint(&self, call: &ToolCallRequest, tool_call_id: &str) -> Option<String> {
-        let requested = call.arguments.get("path")?.as_str()?;
-        let abs = miniq_sandbox::resolve_in_workspace(&self.ctx.workspace, requested).ok()?;
-        let existed = abs.is_file();
-        let backup_path = if existed {
-            let backup = self.state.checkpoints_dir.join(format!(
-                "{}-{}",
-                miniq_memory::new_id("bk"),
-                abs.file_name()?.to_string_lossy()
-            ));
-            std::fs::create_dir_all(&self.state.checkpoints_dir).ok()?;
-            std::fs::copy(&abs, &backup).ok()?;
-            Some(backup.to_string_lossy().to_string())
-        } else {
-            None
-        };
-        let row = self
-            .state
-            .store
-            .create_checkpoint(
-                &self.session_id,
-                tool_call_id,
-                &abs.to_string_lossy(),
-                existed,
-                backup_path.as_deref(),
-            )
-            .ok()?;
-        Some(row.id)
-    }
-
-    /// Handle an ask_user call: emit the question event and wait for the
-    /// user's answer (or cancellation).
-    async fn ask_user(
-        &self,
-        call: &ToolCallRequest,
-        tool_call_id: &str,
-    ) -> Result<Value, AgentError> {
-        let prompt = call
-            .arguments
-            .get("prompt")
-            .and_then(|p| p.as_str())
-            .unwrap_or("")
-            .to_string();
-        if prompt.trim().is_empty() {
-            return Ok(json!({"error": "ask_user requires a non-empty prompt"}));
-        }
-        let options: Vec<String> = call
-            .arguments
-            .get("options")
-            .and_then(|o| o.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let unattended = self.state.settings.lock().unwrap().approval_mode
-            == crate::state::ApprovalMode::FullAccess;
-        let default_answer = unattended.then(|| unattended_default(call, &options));
-
-        let question = miniq_protocol::Question {
-            id: miniq_memory::new_id("q"),
-            session_id: self.session_id.clone(),
-            tool_call_id: tool_call_id.to_string(),
-            prompt,
-            options,
-            created_at: miniq_memory::now_iso(),
-            auto_continue_after_seconds: unattended.then_some(UNATTENDED_QUESTION_TIMEOUT_SECS),
-            default_answer: default_answer.clone(),
-        };
-        let rx = self.state.register_question(&question);
-
-        let _ = self
-            .state
-            .store
-            .update_session_status(&self.session_id, SessionStatus::WaitingApproval);
-        self.state.emit(Event::SessionStatusChanged {
-            session_id: self.session_id.clone(),
-            status: SessionStatus::WaitingApproval,
-        });
-        self.state.emit(Event::QuestionRequested {
-            session_id: self.session_id.clone(),
-            question: question.clone(),
-        });
-        self.audit(
-            "question",
-            json!({"questionId": question.id, "prompt": question.prompt}),
-        );
-
-        let unattended_wait = default_answer.map(|answer| {
-            (
-                Duration::from_secs(UNATTENDED_QUESTION_TIMEOUT_SECS),
-                answer,
-            )
-        });
-        let answer = wait_for_question_answer(rx, &self.cancel, unattended_wait).await;
-        let (answer, automatically_continued) = match answer {
-            Ok(answer) => answer,
-            Err(error) => {
-                self.state.finish_question(&question.id);
-                return Err(error);
-            }
-        };
-        self.state.finish_question(&question.id);
-
-        self.state.emit(Event::QuestionResolved {
-            session_id: self.session_id.clone(),
-            question_id: question.id.clone(),
-            answer: answer.clone(),
-        });
-        if automatically_continued {
-            self.audit(
-                "question_auto_resolved",
-                json!({"questionId": question.id, "answer": answer}),
-            );
-        }
-        let _ = self
-            .state
-            .store
-            .update_session_status(&self.session_id, SessionStatus::Running);
-        self.state.emit(Event::SessionStatusChanged {
-            session_id: self.session_id.clone(),
-            status: SessionStatus::Running,
-        });
-        Ok(json!({ "answer": answer }))
-    }
-
-    /// Post-success hooks: plan events for task_update, artifacts for
-    /// doc_write.
-    fn after_success(&self, call: &ToolCallRequest, output: &Value) {
-        match call.name.as_str() {
-            "task_update" => {
-                let tasks: Vec<miniq_protocol::PlanTask> = call
-                    .arguments
-                    .get("tasks")
-                    .and_then(|t| serde_json::from_value(t.clone()).ok())
-                    .unwrap_or_default();
-                self.state
-                    .plans
-                    .lock()
-                    .unwrap()
-                    .insert(self.session_id.clone(), tasks.clone());
-                self.state.emit(Event::PlanUpdated {
-                    session_id: self.session_id.clone(),
-                    tasks,
-                });
-            }
-            "doc_write" => {
-                let path = output.get("path").and_then(|p| p.as_str()).unwrap_or("");
-                let kind = output.get("kind").and_then(|k| k.as_str()).unwrap_or("");
-                let title = output.get("title").and_then(|t| t.as_str()).unwrap_or(path);
-                if let Ok(artifact) =
-                    self.state
-                        .store
-                        .create_artifact(&self.session_id, path, kind, title)
-                {
-                    self.state.emit(Event::ArtifactCreated {
-                        session_id: self.session_id.clone(),
-                        artifact,
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-
     async fn run_tool_call(
         &self,
         call: &ToolCallRequest,
@@ -411,6 +200,11 @@ impl SessionToolExecutor {
 
         // ask_user is interactive: handled here, not by the router.
         if call.name == "ask_user" {
+            if let Err(error) = miniq_tools::validate_ask_user_input(&call.arguments) {
+                let output = json!({"error": error.to_string()});
+                self.finish(tool_call_id, ToolCallStatus::Failed, &output);
+                return Ok(output);
+            }
             let result = self.ask_user(call, tool_call_id).await;
             return match result {
                 Ok(output) => {
@@ -426,11 +220,7 @@ impl SessionToolExecutor {
         }
 
         // Back up the target before any file-mutating tool runs.
-        let checkpoint_id = if Self::is_write_tool(&call.name) {
-            self.take_checkpoint(call, tool_call_id)
-        } else {
-            None
-        };
+        let checkpoint_ids = self.take_checkpoints(call, tool_call_id);
 
         let result = tokio::select! {
             _ = self.cancel.cancelled() => {
@@ -443,10 +233,13 @@ impl SessionToolExecutor {
 
         match result {
             Ok(mut output) => {
-                if let Some(id) = checkpoint_id {
+                if let Some(id) = checkpoint_ids.first() {
                     output["checkpointId"] = json!(id);
                 }
-                self.after_success(call, &output);
+                if checkpoint_ids.len() > 1 {
+                    output["checkpointIds"] = json!(checkpoint_ids);
+                }
+                hooks::after_success(self, call, &output);
                 self.finish(tool_call_id, ToolCallStatus::Succeeded, &output);
                 Ok(output)
             }
@@ -484,14 +277,65 @@ impl ToolExecutor for SessionToolExecutor {
     }
 
     fn execution_mode(&self, call: &ToolCallRequest) -> ToolExecutionMode {
-        match call.name.as_str() {
+        let name = miniq_tools::canonical_native_tool_name(&call.name).unwrap_or(&call.name);
+        match name {
             "file_read" | "file_list" | "file_glob" | "file_grep" | "git_status" | "git_diff"
             | "doc_read" | "skill_read" | "memory_search" => ToolExecutionMode::Parallel,
             _ => ToolExecutionMode::Sequential,
         }
     }
 
+    fn call_fingerprint(&self, call: &ToolCallRequest) -> String {
+        let adapted = miniq_tools::adapt_native_tool_call(call).ok().flatten();
+        let call = adapted
+            .as_ref()
+            .map(|adapted| &adapted.call)
+            .unwrap_or(call);
+        serde_json::to_string(&(&call.name, &call.arguments)).unwrap_or_default()
+    }
+
     async fn execute(&self, call: &ToolCallRequest) -> Result<Value, AgentError> {
+        let adapted = match miniq_tools::adapt_native_tool_call(call) {
+            Ok(adapted) => adapted,
+            Err(error) => {
+                let output = json!({
+                    "error": {
+                        "code": error.code,
+                        "message": error.message,
+                        "requestedTool": error.requested_tool,
+                    }
+                });
+                let tool_call = self
+                    .state
+                    .store
+                    .create_tool_call(
+                        &self.session_id,
+                        &call.name,
+                        &crate::security::redacted(call.arguments.clone()),
+                        ToolCallStatus::Pending,
+                    )
+                    .map_err(|e| {
+                        AgentError::Provider(miniq_models::ProviderError::Config(e.to_string()))
+                    })?;
+                self.audit(
+                    "native_tool_adaptation_failed",
+                    json!({"toolCallId": tool_call.id, "requestedTool": call.name, "code": error.code}),
+                );
+                self.state.emit(Event::ToolCallStarted {
+                    session_id: self.session_id.clone(),
+                    tool_call_id: tool_call.id.clone(),
+                    tool_name: call.name.clone(),
+                    input: crate::security::redacted(call.arguments.clone()),
+                });
+                self.finish(&tool_call.id, ToolCallStatus::Failed, &output);
+                return Ok(output);
+            }
+        };
+        let call = adapted
+            .as_ref()
+            .map(|adapted| &adapted.call)
+            .unwrap_or(call);
+
         // 1. Persist every attempted call, including provider-invented names.
         let tool_call = self
             .state
@@ -505,6 +349,17 @@ impl ToolExecutor for SessionToolExecutor {
             .map_err(|e| {
                 AgentError::Provider(miniq_models::ProviderError::Config(e.to_string()))
             })?;
+        if let Some(adapted) = &adapted {
+            self.audit(
+                "native_tool_adapted",
+                json!({
+                    "toolCallId": tool_call.id,
+                    "requestedTool": adapted.original_name,
+                    "tool": call.name,
+                    "providerCallId": call.id,
+                }),
+            );
+        }
 
         // 2. Risk evaluation. Unknown calls are visible in history and give
         // the model the exact current tool list so it can recover next round.
@@ -531,6 +386,16 @@ impl ToolExecutor for SessionToolExecutor {
             json!({"toolCallId": tool_call.id, "tool": call.name, "risk": risk.level.as_str()}),
         );
 
+        if self.ctx.plan_mode() && !plan::plan_mode_allows(call, risk.level) {
+            let output = json!({
+                "rejected": true,
+                "riskLevel": "blocked",
+                "reason": "tool is unavailable while plan mode is active; call plan_mode with action=exit before changing the workspace",
+            });
+            self.finish(&tool_call.id, ToolCallStatus::Rejected, &output);
+            return Ok(output);
+        }
+
         // 3. Gate by risk level.
         match risk.level {
             RiskLevel::Blocked => {
@@ -546,21 +411,39 @@ impl ToolExecutor for SessionToolExecutor {
             RiskLevel::Medium | RiskLevel::High => {
                 let mode = self.state.settings.lock().unwrap().approval_mode;
                 let pattern = self.approval_pattern(call);
-                let pre_approved = match mode {
-                    crate::state::ApprovalMode::FullAccess => true,
-                    // Auto ("替我审批"): medium-risk actions (workspace writes,
-                    // build/test commands — all checkpointed or reversible) run
-                    // without asking; only high risk (arbitrary network,
-                    // dangerous commands) needs the user, once per pattern.
-                    crate::state::ApprovalMode::Auto => {
+                let allowed_for_session = self
+                    .state
+                    .is_allowed_for_session(&self.session_id, &pattern);
+                let pre_approved = match self.permission_policy {
+                    PermissionPolicy::AcceptEdits => {
                         risk.level == RiskLevel::Medium
-                            || self
-                                .state
-                                .is_allowed_for_session(&self.session_id, &pattern)
+                            || mode == crate::state::ApprovalMode::FullAccess
+                            || allowed_for_session
                     }
-                    crate::state::ApprovalMode::AlwaysAsk => false,
+                    PermissionPolicy::DontAsk => {
+                        mode == crate::state::ApprovalMode::FullAccess || allowed_for_session
+                    }
+                    PermissionPolicy::Inherit => match mode {
+                        crate::state::ApprovalMode::FullAccess => true,
+                        // Auto ("替我审批"): medium-risk actions (workspace writes,
+                        // build/test commands -- all checkpointed or reversible) run
+                        // without asking; only high risk needs the user once per pattern.
+                        crate::state::ApprovalMode::Auto => {
+                            risk.level == RiskLevel::Medium || allowed_for_session
+                        }
+                        crate::state::ApprovalMode::AlwaysAsk => false,
+                    },
                 };
                 if !pre_approved {
+                    if self.permission_policy == PermissionPolicy::DontAsk {
+                        let output = json!({
+                            "rejected": true,
+                            "riskLevel": risk.level.as_str(),
+                            "reason": "agent permission mode dontAsk denied an action requiring approval",
+                        });
+                        self.finish(&tool_call.id, ToolCallStatus::Rejected, &output);
+                        return Ok(output);
+                    }
                     let _ = self
                         .state
                         .store

@@ -35,6 +35,16 @@ fn builds_messages_system_tools_and_grouped_tool_results() {
     assert_eq!(body["tools"][0]["name"], "file_read");
     assert_eq!(body["messages"][0]["content"].as_array().unwrap().len(), 3);
     assert_eq!(body["messages"][0]["content"][1]["tool_use_id"], "call-1");
+    assert_eq!(body["messages"][0]["content"][1]["is_error"], false);
+}
+
+#[test]
+fn marks_structured_tool_failures_for_claude() {
+    let body = provider().build_body(&request(vec![ChatMessage::tool_result(
+        "call-1",
+        r#"{"error":"denied"}"#,
+    )]));
+    assert_eq!(body["messages"][0]["content"][0]["is_error"], true);
 }
 
 #[test]

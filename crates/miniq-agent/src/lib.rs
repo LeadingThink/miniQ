@@ -67,6 +67,12 @@ pub trait ToolExecutor: Send + Sync {
         ToolExecutionMode::Sequential
     }
 
+    /// Stable semantic identity used by repeated-call protection. Executors
+    /// that accept provider-native aliases should normalize them here.
+    fn call_fingerprint(&self, call: &ToolCallRequest) -> String {
+        serde_json::to_string(&(&call.name, &call.arguments)).unwrap_or_default()
+    }
+
     /// Execute one call and return a structured result. Errors and
     /// rejections must be encoded in the returned JSON so the model can
     /// react to them; `Err` is reserved for turn-fatal failures.
@@ -296,13 +302,11 @@ pub async fn run_turn_with_limits(
             });
         }
 
-        let batch_fingerprint = serde_json::to_string(
-            &tool_calls
-                .iter()
-                .map(|call| (&call.name, &call.arguments))
-                .collect::<Vec<_>>(),
-        )
-        .unwrap_or_default();
+        let batch_fingerprint = tool_calls
+            .iter()
+            .map(|call| executor.call_fingerprint(call))
+            .collect::<Vec<_>>()
+            .join("\n");
         if batch_fingerprint == last_tool_batch {
             repeated_tool_batch += 1;
         } else {

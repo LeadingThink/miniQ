@@ -80,6 +80,7 @@ function QuestionCard({
   onResolve: (questionId: string, answer: string) => void;
 }) {
   const [custom, setCustom] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   useEffect(() => {
     if (!question.autoContinueAfterSeconds) {
@@ -95,6 +96,11 @@ function QuestionCard({
     return () => window.clearInterval(timer);
   }, [question.autoContinueAfterSeconds, question.createdAt]);
 
+  useEffect(() => {
+    setCustom("");
+    setSelected([]);
+  }, [question.id]);
+
   const countdown =
     remainingSeconds === null
       ? null
@@ -102,7 +108,7 @@ function QuestionCard({
   return (
     <div className="card approval-card">
       <div className="card-head">
-        <span>miniQ 想确认</span>
+        <span>{question.header || "miniQ 想确认"}</span>
       </div>
       <div style={{ marginTop: 6 }}>{question.prompt}</div>
       {countdown && (
@@ -112,11 +118,42 @@ function QuestionCard({
         </div>
       )}
       <div className="approval-actions" style={{ flexWrap: "wrap" }}>
-        {question.options.map((opt) => (
-          <button key={opt} onClick={() => onResolve(question.id, opt)}>
-            {opt}
+        {question.options.map((opt) => {
+          const active = selected.includes(opt);
+          return (
+            <button
+              key={opt}
+              className={active ? "question-option-selected" : undefined}
+              aria-pressed={question.multiSelect ? active : undefined}
+              title={question.optionDescriptions?.[opt]}
+              onClick={() => {
+                if (!question.multiSelect) {
+                  onResolve(question.id, opt);
+                  return;
+                }
+                setSelected((current) =>
+                  current.includes(opt)
+                    ? current.filter((value) => value !== opt)
+                    : [...current, opt],
+                );
+              }}
+            >
+              <span>{opt}</span>
+              {question.optionDescriptions?.[opt] && (
+                <small>{question.optionDescriptions[opt]}</small>
+              )}
+            </button>
+          );
+        })}
+        {question.multiSelect && (
+          <button
+            className="secondary"
+            disabled={selected.length === 0}
+            onClick={() => onResolve(question.id, selected.join(", "))}
+          >
+            确认选择
           </button>
-        ))}
+        )}
       </div>
       <div className="approval-actions">
         <input

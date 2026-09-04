@@ -16,6 +16,8 @@ pub struct SkillReadTool;
 #[serde(rename_all = "camelCase")]
 struct SkillReadInput {
     name: String,
+    #[serde(default)]
+    args: Option<String>,
 }
 
 #[async_trait]
@@ -31,7 +33,8 @@ impl Tool for SkillReadTool {
         json!({
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "Skill name exactly as listed in <available_skills>"}
+                "name": {"type": "string", "description": "Skill name exactly as listed in <available_skills>"},
+                "args": {"type": "string", "description": "Optional arguments supplied when invoking the skill"}
             },
             "required": ["name"]
         })
@@ -64,6 +67,7 @@ impl Tool for SkillReadTool {
             "version": detail.skill.meta.version,
             "body": detail.body,
             "files": detail.files,
+            "args": p.args,
         });
         if let Some(dir) = detail.skill_dir {
             out["skillDir"] = json!(dir);

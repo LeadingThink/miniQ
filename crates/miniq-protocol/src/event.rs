@@ -195,7 +195,9 @@ impl Event {
             | Event::SessionPinnedChanged { session_id, .. }
             | Event::SessionArchivedChanged { session_id, .. }
             | Event::QueueChanged { session_id, .. } => session_id,
-            Event::WorkspaceDeleted { .. } | Event::WorkspaceRenamed { .. } => "",
+            Event::WorkspaceDeleted { .. }
+            | Event::WorkspaceRenamed { .. }
+            | Event::PluginsChanged { .. } => "",
         }
     }
 }

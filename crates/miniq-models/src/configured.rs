@@ -57,7 +57,11 @@ impl ConfiguredProvider {
             segments.push("models");
             segments.push(&self.config.model);
         }
-        let response = match self.metadata_client.get(url).send().await {
+        let mut request = self.metadata_client.get(url);
+        if !self.config.api_key.is_empty() {
+            request = request.bearer_auth(&self.config.api_key);
+        }
+        let response = match request.send().await {
             Ok(response) if response.status().is_success() => response,
             _ => return Ok(inferred),
         };
@@ -149,9 +153,13 @@ mod tests {
     async fn auto_protocol_reads_provider_metadata() {
         let app = Router::new().route(
             "/v1/models/{model}",
-            get(|| async {
+            get(|headers: axum::http::HeaderMap| async move {
+                let authenticated = headers
+                    .get(axum::http::header::AUTHORIZATION)
+                    .and_then(|value| value.to_str().ok())
+                    == Some("Bearer metadata-secret");
                 Json(json!({
-                    "data": {"preferred_api_protocol": "anthropic_messages"}
+                    "data": {"preferred_api_protocol": if authenticated { "anthropic_messages" } else { "chat_completions" }}
                 }))
             }),
         );
@@ -160,7 +168,7 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let provider = ConfiguredProvider::new(ProviderConfig {
             base_url: format!("http://{address}/v1"),
-            api_key: String::new(),
+            api_key: "metadata-secret".into(),
             model: "custom-model".into(),
             api_protocol: ApiProtocol::Auto,
         });

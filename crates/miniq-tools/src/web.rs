@@ -50,6 +50,8 @@ struct WebFetchInput {
     url: String,
     #[serde(default)]
     max_bytes: Option<usize>,
+    #[serde(default)]
+    prompt: Option<String>,
 }
 
 #[async_trait]
@@ -66,7 +68,8 @@ impl Tool for WebFetchTool {
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "http(s) URL to fetch"},
-                "maxBytes": {"type": "integer", "description": "Response size cap in bytes (default 2MB)"}
+                "maxBytes": {"type": "integer", "description": "Response size cap in bytes (default 2MB)"},
+                "prompt": {"type": "string", "description": "Question or extraction goal to apply to the fetched content"}
             },
             "required": ["url"]
         })
@@ -142,6 +145,7 @@ impl Tool for WebFetchTool {
             "contentType": content_type,
             "content": content,
             "truncated": truncated,
+            "prompt": p.prompt,
         }))
     }
 }

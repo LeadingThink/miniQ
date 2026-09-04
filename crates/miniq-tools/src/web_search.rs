@@ -37,6 +37,10 @@ struct WebSearchInput {
     /// Override the Exa MCP endpoint (tests / self-hosted relays).
     #[serde(default)]
     exa_url: Option<String>,
+    #[serde(default)]
+    allowed_domains: Vec<String>,
+    #[serde(default)]
+    blocked_domains: Vec<String>,
 }
 
 #[async_trait]
@@ -61,7 +65,9 @@ impl Tool for WebSearchTool {
                     "type": "string",
                     "enum": ["auto", "exa", "bing", "duckduckgo"],
                     "description": "Force a specific provider; default auto (fallback chain)"
-                }
+                },
+                "allowedDomains": {"type": "array", "items": {"type": "string"}, "description": "Restrict results to these domains"},
+                "blockedDomains": {"type": "array", "items": {"type": "string"}, "description": "Exclude results from these domains"}
             },
             "required": ["query"]
         })
@@ -98,16 +104,18 @@ impl Tool for WebSearchTool {
             }
         };
 
+        let search_query =
+            domain_filtered_query(&input.query, &input.allowed_domains, &input.blocked_domains)?;
         let mut attempts = Vec::new();
         let mut final_results = Vec::new();
         let mut provider_used = None;
         for name in chain {
             let outcome = match name {
-                "exa" => run_exa_search(&input.query, max_results, &exa_url).await,
-                "bing" => run_bing_search(&input.query, max_results).await,
-                "duckduckgo" => run_duckduckgo_html_search(&input.query, max_results).await,
+                "exa" => run_exa_search(&search_query, max_results, &exa_url).await,
+                "bing" => run_bing_search(&search_query, max_results).await,
+                "duckduckgo" => run_duckduckgo_html_search(&search_query, max_results).await,
                 "duckduckgo_instant" => {
-                    run_duckduckgo_instant_search(&input.query, max_results).await
+                    run_duckduckgo_instant_search(&search_query, max_results).await
                 }
                 _ => unreachable!(),
             };
@@ -129,11 +137,56 @@ impl Tool for WebSearchTool {
 
         Ok(json!({
             "query": input.query,
+            "effectiveQuery": search_query,
+            "allowedDomains": input.allowed_domains,
+            "blockedDomains": input.blocked_domains,
             "provider": provider_used,
             "results": final_results,
             "attempts": attempts,
         }))
     }
+}
+
+fn domain_filtered_query(
+    query: &str,
+    allowed_domains: &[String],
+    blocked_domains: &[String],
+) -> Result<String, ToolError> {
+    let validate = |domain: &str| {
+        !domain.is_empty()
+            && domain.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '.' | '-')
+            })
+    };
+    if let Some(domain) = allowed_domains
+        .iter()
+        .chain(blocked_domains)
+        .find(|domain| !validate(domain))
+    {
+        return Err(ToolError::InvalidInput(format!(
+            "invalid search domain: {domain}"
+        )));
+    }
+    let mut filters = Vec::new();
+    if !allowed_domains.is_empty() {
+        filters.push(format!(
+            "({})",
+            allowed_domains
+                .iter()
+                .map(|domain| format!("site:{domain}"))
+                .collect::<Vec<_>>()
+                .join(" OR ")
+        ));
+    }
+    filters.extend(
+        blocked_domains
+            .iter()
+            .map(|domain| format!("-site:{domain}")),
+    );
+    Ok(std::iter::once(query.to_string())
+        .chain(filters)
+        .collect::<Vec<_>>()
+        .join(" "))
 }
 
 #[cfg(test)]

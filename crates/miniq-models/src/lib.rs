@@ -9,6 +9,7 @@ mod image;
 mod openai;
 mod provider;
 mod responses;
+mod responses_request;
 mod sse;
 
 pub use anthropic::AnthropicProvider;

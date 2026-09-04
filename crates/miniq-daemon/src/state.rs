@@ -84,6 +84,9 @@ pub struct AppState {
     /// Where settings are persisted; `None` for in-memory (tests).
     pub settings_path: Option<Arc<PathBuf>>,
     pub router: Arc<miniq_tools::ToolRouter>,
+    pub processes: Arc<miniq_tools::ProcessManager>,
+    pub tasks: Arc<miniq_tools::TaskManager>,
+    pub(crate) agent_tasks: Arc<crate::agent_tasks::AgentTaskManager>,
     pub plugins: Arc<miniq_plugins::PluginManager>,
     pub skills: Arc<miniq_skills::SkillStore>,
     pub events: broadcast::Sender<Event>,
@@ -165,6 +168,9 @@ impl AppState {
             settings: Arc::new(Mutex::new(settings)),
             settings_path: settings_path.map(Arc::new),
             router,
+            processes: Arc::new(miniq_tools::ProcessManager::default()),
+            tasks: Arc::new(miniq_tools::TaskManager::default()),
+            agent_tasks: Arc::new(crate::agent_tasks::AgentTaskManager::default()),
             plugins,
             skills: Arc::new(miniq_skills::SkillStore::new(
                 &data_dir,
@@ -300,12 +306,22 @@ impl AppState {
     /// Provider for the next turn: the test override, or one built from the
     /// current settings.
     pub fn current_provider(&self) -> Arc<dyn ModelProvider> {
+        self.current_provider_for_model(None)
+    }
+
+    pub fn current_provider_for_model(&self, model: Option<&str>) -> Arc<dyn ModelProvider> {
         if let Some(provider) = &self.provider_override {
             return provider.clone();
         }
         let settings = self.settings.lock().unwrap();
         match &settings.provider {
-            Some(config) => Arc::new(ConfiguredProvider::new(config.clone())),
+            Some(config) => {
+                let mut config = config.clone();
+                if let Some(model) = model {
+                    config.model = model.to_string();
+                }
+                Arc::new(ConfiguredProvider::new(config))
+            }
             None => Arc::new(crate::UnconfiguredProvider),
         }
     }

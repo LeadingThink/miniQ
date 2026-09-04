@@ -129,3 +129,19 @@ async fn rejects_unknown_provider() {
         .unwrap_err();
     assert!(err.to_string().contains("provider must be one of"));
 }
+
+#[test]
+fn builds_and_validates_native_domain_filters() {
+    let query = domain_filtered_query(
+        "rust async",
+        &["rust-lang.org".into(), "tokio.rs".into()],
+        &["example.com".into()],
+    )
+    .unwrap();
+    assert_eq!(
+        query,
+        "rust async (site:rust-lang.org OR site:tokio.rs) -site:example.com"
+    );
+    let error = domain_filtered_query("rust", &["bad/domain".into()], &[]).unwrap_err();
+    assert!(error.to_string().contains("invalid search domain"));
+}

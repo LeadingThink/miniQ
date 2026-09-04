@@ -66,6 +66,19 @@
   align-items: center;
 }
 
+.approval-actions .question-option-selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+
+.approval-actions button small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
 /* ============ Artifacts bar ============ */
 .artifacts-bar {
   padding: 10px 20px;
