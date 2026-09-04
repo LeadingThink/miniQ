@@ -4,6 +4,7 @@
 //! execute tools; tool calls are parsed and dispatched by the agent runtime.
 
 mod anthropic;
+mod compat_schema;
 mod configured;
 mod image;
 mod openai;

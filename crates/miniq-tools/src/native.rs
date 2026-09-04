@@ -179,6 +179,7 @@ pub fn adapt_native_tool_call(
                 ("allowedDomains", "allowedDomains"),
                 ("blocked_domains", "blockedDomains"),
                 ("blockedDomains", "blockedDomains"),
+                ("provider", "provider"),
             ],
             &[],
         )?,

@@ -133,6 +133,32 @@ fn maps_claude_search_and_question_shapes() {
 }
 
 #[test]
+fn search_web_alias_preserves_every_advertised_parameter() {
+    let adapted = adapt_native_tool_call(&call(
+        "search_web",
+        json!({
+            "query": "miniQ",
+            "maxResults": 3,
+            "allowedDomains": ["example.com"],
+            "blockedDomains": ["blocked.example"],
+            "provider": "bing"
+        }),
+    ))
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(adapted.call.name, "web_search");
+    assert_eq!(adapted.call.arguments["query"], "miniQ");
+    assert_eq!(adapted.call.arguments["maxResults"], 3);
+    assert_eq!(adapted.call.arguments["allowedDomains"][0], "example.com");
+    assert_eq!(
+        adapted.call.arguments["blockedDomains"][0],
+        "blocked.example"
+    );
+    assert_eq!(adapted.call.arguments["provider"], "bing");
+}
+
+#[test]
 fn maps_openai_commands_plans_and_native_mcp_names() {
     let command = adapt_native_tool_call(&call(
         "exec_command",
