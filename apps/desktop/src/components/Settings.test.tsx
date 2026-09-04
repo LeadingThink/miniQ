@@ -15,6 +15,8 @@ describe("SettingsPanel", () => {
     );
 
     expect(html).toContain("获取在问 API Key");
+    expect(html).toContain("Anthropic Messages");
+    expect(html).toContain("OpenAI Responses");
     expect(html).toContain(`href="${ZAIWEN_API_PORTAL_URL}"`);
     expect(ZAIWEN_API_BASE_URL).toBe("https://oneapi.zaiwenai.com/v1");
   });

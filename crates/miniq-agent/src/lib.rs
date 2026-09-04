@@ -170,7 +170,7 @@ pub async fn run_turn_with_limits(
 
         let mut model_retry = 0;
         let mut output_budget = 16_384u32;
-        let (text, tool_calls) = loop {
+        let (text, tool_calls, provider_context) = loop {
             let request = CompletionRequest {
                 messages: history.clone(),
                 tools: tools.clone(),
@@ -192,6 +192,7 @@ pub async fn run_turn_with_limits(
 
             let mut text = String::new();
             let mut tool_calls: Vec<ToolCallRequest> = Vec::new();
+            let mut provider_context = None;
             let mut started_text_segment = false;
             let mut stream_error = None;
 
@@ -242,6 +243,7 @@ pub async fn run_turn_with_limits(
                         let _ = events.send(AgentEvent::TextDelta(t)).await;
                     }
                     ChatDelta::ToolCall(call) => tool_calls.push(call),
+                    ChatDelta::Context(context) => provider_context = Some(context),
                     ChatDelta::Finished => break,
                 }
             }
@@ -271,7 +273,7 @@ pub async fn run_turn_with_limits(
                     .await;
                 continue;
             }
-            break (text, tool_calls);
+            break (text, tool_calls, provider_context);
         };
 
         if tool_calls.is_empty() {
@@ -284,7 +286,9 @@ pub async fn run_turn_with_limits(
                 ));
             }
             let mut provider_history = history.clone();
-            provider_history.push(ChatMessage::assistant(text.clone()));
+            let mut assistant = ChatMessage::assistant(text.clone());
+            assistant.provider_context = provider_context;
+            provider_history.push(assistant);
             return Ok(TurnOutcome {
                 final_text: text,
                 appended,
@@ -318,6 +322,7 @@ pub async fn run_turn_with_limits(
             images: Vec::new(),
             tool_call_id: None,
             tool_calls: tool_calls.clone(),
+            provider_context,
         };
         history.push(assistant_msg.clone());
         appended.push(assistant_msg);
@@ -487,6 +492,59 @@ mod tests {
                 "修改完成\n\n",
                 "全部完成",
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn preserves_provider_context_across_tool_steps_and_final_history() {
+        let tool_context = miniq_models::ProviderContext {
+            protocol: miniq_models::ApiProtocol::AnthropicMessages,
+            data: serde_json::json!([
+                {"type":"thinking","thinking":"private","signature":"signed"},
+                {"type":"tool_use","id":"call-0","name":"continue_work","input":{"index":0}}
+            ]),
+        };
+        let final_context = miniq_models::ProviderContext {
+            protocol: miniq_models::ApiProtocol::AnthropicMessages,
+            data: serde_json::json!([{"type":"text","text":"done"}]),
+        };
+        let provider = MockProvider::new(vec![
+            vec![
+                ChatDelta::Context(tool_context.clone()),
+                ChatDelta::ToolCall(ToolCallRequest {
+                    id: "call-0".into(),
+                    name: "continue_work".into(),
+                    arguments: serde_json::json!({"index": 0}),
+                }),
+            ],
+            vec![
+                ChatDelta::Text("done".into()),
+                ChatDelta::Context(final_context.clone()),
+            ],
+        ]);
+        let (events, _receiver) = tokio::sync::mpsc::channel(8);
+
+        let outcome = run_turn(
+            &provider,
+            &TestExecutor,
+            vec![ChatMessage::user("work")],
+            events,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            outcome.appended[0].provider_context,
+            Some(tool_context.clone())
+        );
+        assert_eq!(
+            provider.requests.lock().unwrap()[1].messages[1].provider_context,
+            Some(tool_context)
+        );
+        assert_eq!(
+            outcome.provider_history.last().unwrap().provider_context,
+            Some(final_context)
         );
     }
 

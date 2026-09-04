@@ -7,7 +7,7 @@ use std::time::Instant;
 use std::path::PathBuf;
 
 use miniq_memory::Store;
-use miniq_models::{ModelProvider, OpenAiCompatProvider, ProviderConfig};
+use miniq_models::{ConfiguredProvider, ModelProvider, ProviderConfig};
 use miniq_protocol::{Event, TurnPhase, TurnProgress};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, oneshot};
@@ -297,7 +297,7 @@ impl AppState {
         }
         let settings = self.settings.lock().unwrap();
         match &settings.provider {
-            Some(config) => Arc::new(OpenAiCompatProvider::new(config.clone())),
+            Some(config) => Arc::new(ConfiguredProvider::new(config.clone())),
             None => Arc::new(crate::UnconfiguredProvider),
         }
     }

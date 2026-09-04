@@ -385,6 +385,7 @@ async fn voice_transcription_uses_configured_provider() {
             base_url: format!("http://{api_address}/v1"),
             api_key: "test-secret".to_string(),
             model: "chat-model".to_string(),
+            api_protocol: miniq_models::ApiProtocol::ChatCompletions,
         }),
         ..DaemonSettings::default()
     };

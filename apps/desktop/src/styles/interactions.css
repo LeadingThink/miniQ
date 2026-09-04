@@ -543,7 +543,8 @@
   font-weight: 500;
 }
 
-.settings-panel input {
+.settings-panel input,
+.settings-panel select {
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border-strong);
@@ -553,7 +554,8 @@
   font-family: inherit;
 }
 
-.settings-panel input:focus {
+.settings-panel input:focus,
+.settings-panel select:focus {
   outline: 2px solid var(--focus-ring);
   outline-offset: -1px;
 }

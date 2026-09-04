@@ -12,8 +12,11 @@ export const ZAIWEN_API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
 interface ProviderView {
   baseUrl: string;
   model: string;
+  apiProtocol: ApiProtocol;
   hasApiKey: boolean;
 }
+
+type ApiProtocol = "auto" | "chat_completions" | "responses" | "anthropic_messages";
 
 interface SettingsView {
   provider: ProviderView | null;
@@ -41,6 +44,7 @@ interface SettingsPanelProps {
 export function SettingsPanel(props: SettingsPanelProps) {
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
+  const [apiProtocol, setApiProtocol] = useState<ApiProtocol>("auto");
   const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -59,6 +63,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         if (res.provider) {
           setBaseUrl(res.provider.baseUrl);
           setModel(res.provider.model);
+          setApiProtocol(res.provider.apiProtocol ?? "auto");
           setHasKey(res.provider.hasApiKey);
         }
         if (res.remoteAccess) {
@@ -134,6 +139,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         const provider: Record<string, unknown> = {
           baseUrl: baseUrl.trim(),
           model: model.trim(),
+          apiProtocol,
         };
         if (apiKey) provider.apiKey = apiKey;
         params.provider = provider;
@@ -237,7 +243,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         <section className="settings-section provider-settings">
           <div>
             <div className="settings-section-title">模型服务</div>
-            <p className="settings-section-description">兼容 OpenAI API 的服务地址</p>
+            <p className="settings-section-description">支持 OpenAI Chat、Responses 与 Anthropic Messages</p>
           </div>
           <label>
             Base URL
@@ -259,6 +265,19 @@ export function SettingsPanel(props: SettingsPanelProps) {
               placeholder="gpt-4o-mini"
               onChange={(event) => setModel(event.target.value)}
             />
+          </label>
+          <label>
+            API 协议
+            <select
+              value={apiProtocol}
+              disabled={loading || saving}
+              onChange={(event) => setApiProtocol(event.target.value as ApiProtocol)}
+            >
+              <option value="auto">自动识别</option>
+              <option value="responses">OpenAI Responses</option>
+              <option value="anthropic_messages">Anthropic Messages</option>
+              <option value="chat_completions">OpenAI Chat Completions</option>
+            </select>
           </label>
           <label>
             API key {hasKey && <span className="badge">已保存</span>}
@@ -300,6 +319,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 className="secondary provider-base-url-button"
                 onClick={() => {
                   setBaseUrl(ZAIWEN_API_BASE_URL);
+                  setApiProtocol("auto");
                   setStatus("已填入在问 API 地址，请继续填写模型名称和 API Key");
                 }}
               >

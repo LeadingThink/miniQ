@@ -1,10 +1,12 @@
 use super::*;
+use crate::ApiProtocol;
 
 fn provider() -> OpenAiCompatProvider {
     OpenAiCompatProvider::new(ProviderConfig {
         base_url: "https://example.com/v1".to_string(),
         api_key: String::new(),
         model: "thinking-model".to_string(),
+        api_protocol: ApiProtocol::ChatCompletions,
     })
 }
 
@@ -182,28 +184,4 @@ fn surfaces_error_objects_inside_successful_sse_responses() {
         deltas.as_slice(),
         [Err(ProviderError::InvalidResponse(detail))] if detail.contains("upstream unavailable")
     ));
-}
-
-#[test]
-fn buffers_split_utf8_until_the_complete_sse_event_arrives() {
-    let bytes = "data: {\"choices\":[{\"delta\":{\"content\":\"中文\"}}]}\n\n".as_bytes();
-    let split = bytes.iter().position(|byte| *byte >= 0x80).unwrap() + 1;
-    let mut buffer = bytes[..split].to_vec();
-    assert!(take_sse_event(&mut buffer).is_none());
-
-    buffer.extend_from_slice(&bytes[split..]);
-    let event = take_sse_event(&mut buffer).unwrap();
-    let decoded = decode_event_bytes(&event).unwrap();
-
-    assert!(decoded.contains("中文"));
-    assert!(buffer.is_empty());
-}
-
-#[test]
-fn recognizes_lf_crlf_and_cr_event_boundaries() {
-    for separator in ["\n\n", "\r\n\r\n", "\r\r", "\r\n\n", "\n\r\n"] {
-        let mut buffer = format!("data: [DONE]{separator}next").into_bytes();
-        assert_eq!(take_sse_event(&mut buffer).unwrap(), b"data: [DONE]");
-        assert_eq!(buffer, b"next");
-    }
 }

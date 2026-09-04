@@ -60,6 +60,7 @@ fn visible_message_to_chat(message: &Message) -> Option<ChatMessage> {
             .collect(),
         tool_call_id: None,
         tool_calls: Vec::new(),
+        provider_context: None,
     })
 }
 
@@ -467,6 +468,7 @@ mod tests {
                     name: "file_read".to_string(),
                     arguments: serde_json::json!({"path": "README.md"}),
                 }],
+                provider_context: None,
             },
             ChatMessage::tool_result("tool-1", "contents"),
             ChatMessage::assistant("done"),

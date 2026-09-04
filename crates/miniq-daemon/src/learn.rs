@@ -111,6 +111,7 @@ impl SkillInference for ProviderInference {
             match delta.map_err(|e| e.to_string())? {
                 ChatDelta::Text(t) => text.push_str(&t),
                 ChatDelta::ToolCall(_) => {}
+                ChatDelta::Context(_) => {}
                 ChatDelta::Finished => break,
             }
         }

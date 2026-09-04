@@ -8,6 +8,30 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiProtocol {
+    #[default]
+    Auto,
+    ChatCompletions,
+    Responses,
+    AnthropicMessages,
+}
+
+impl ApiProtocol {
+    pub fn parse(value: &str) -> Result<Self, ProviderError> {
+        match value.trim() {
+            "auto" => Ok(Self::Auto),
+            "chat_completions" => Ok(Self::ChatCompletions),
+            "responses" => Ok(Self::Responses),
+            "anthropic_messages" => Ok(Self::AnthropicMessages),
+            other => Err(ProviderError::Config(format!(
+                "unsupported API protocol: {other}"
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ProviderError {
     #[error("http error: {0}")]
@@ -50,6 +74,16 @@ pub struct ChatMessage {
     /// Set on `Assistant` messages that requested tool calls.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_calls: Vec<ToolCallRequest>,
+    /// Provider-native assistant output that must be replayed verbatim on a
+    /// later model step (for example reasoning or signed thinking blocks).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_context: Option<ProviderContext>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProviderContext {
+    pub protocol: ApiProtocol,
+    pub data: Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,6 +109,7 @@ impl ChatMessage {
             images: Vec::new(),
             tool_call_id: Some(tool_call_id.into()),
             tool_calls: Vec::new(),
+            provider_context: None,
         }
     }
     fn plain(role: ChatRole, content: impl Into<String>) -> Self {
@@ -84,6 +119,7 @@ impl ChatMessage {
             images: Vec::new(),
             tool_call_id: None,
             tool_calls: Vec::new(),
+            provider_context: None,
         }
     }
 }
@@ -124,6 +160,8 @@ pub enum ChatDelta {
     /// A complete tool call request (providers accumulate fragments before
     /// emitting this).
     ToolCall(ToolCallRequest),
+    /// Complete provider-native assistant output for lossless replay.
+    Context(ProviderContext),
     /// Stream finished normally.
     Finished,
 }
@@ -138,6 +176,8 @@ pub struct ProviderConfig {
     #[serde(default)]
     pub api_key: String,
     pub model: String,
+    #[serde(default)]
+    pub api_protocol: ApiProtocol,
 }
 
 impl ProviderConfig {
@@ -148,10 +188,16 @@ impl ProviderConfig {
         let model = std::env::var("MINIQ_MODEL")
             .map_err(|_| ProviderError::Config("MINIQ_MODEL is not set".into()))?;
         let api_key = std::env::var("MINIQ_API_KEY").unwrap_or_default();
+        let api_protocol = std::env::var("MINIQ_API_PROTOCOL")
+            .ok()
+            .map(|value| ApiProtocol::parse(&value))
+            .transpose()?
+            .unwrap_or_default();
         Ok(Self {
             base_url,
             api_key,
             model,
+            api_protocol,
         })
     }
 }

@@ -1,3 +1,4 @@
+use miniq_models::ApiProtocol;
 use miniq_protocol::{ErrorCode, RpcError};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -12,6 +13,7 @@ pub(super) fn get(state: &AppState) -> Result<Value, RpcError> {
         json!({
             "baseUrl": provider.base_url,
             "model": provider.model,
+            "apiProtocol": provider.api_protocol,
             "hasApiKey": !provider.api_key.is_empty(),
         })
     });
@@ -40,6 +42,8 @@ struct ProviderUpdate {
     base_url: String,
     model: String,
     #[serde(default)]
+    api_protocol: ApiProtocol,
+    #[serde(default)]
     api_key: Option<String>,
 }
 
@@ -65,6 +69,7 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
             base_url: provider.base_url.trim().to_string(),
             api_key: merged_key(provider.api_key, existing_key),
             model: provider.model.trim().to_string(),
+            api_protocol: provider.api_protocol,
         });
     }
     if let Some(mode) = input.approval_mode {
@@ -146,6 +151,7 @@ mod tests {
             let result = validate_provider(&ProviderUpdate {
                 base_url: base_url.to_string(),
                 model: "model".to_string(),
+                api_protocol: ApiProtocol::Auto,
                 api_key: None,
             });
             assert!(result.is_err(), "{base_url} should be rejected");

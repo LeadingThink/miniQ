@@ -1,16 +1,16 @@
 //! OpenAI-compatible chat completions adapter with SSE streaming.
 
 use async_trait::async_trait;
-use base64::Engine;
-use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::image::encode_image;
 use crate::provider::{
     ChatDelta, ChatImage, ChatMessage, ChatRole, CompletionRequest, DeltaStream, ModelProvider,
     ProviderConfig, ProviderError, ToolCallRequest,
 };
+use crate::sse::{self, DecodedEvent, EventDecoder};
 
 pub struct OpenAiCompatProvider {
     config: ProviderConfig,
@@ -84,38 +84,12 @@ impl OpenAiCompatProvider {
     }
 }
 
-const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
-
 fn image_to_json(image: &ChatImage) -> Result<Value, ProviderError> {
-    let metadata = std::fs::metadata(&image.path).map_err(|error| {
-        ProviderError::Config(format!(
-            "cannot read attached image {}: {error}",
-            image.path
-        ))
-    })?;
-    if !metadata.is_file() {
-        return Err(ProviderError::Config(format!(
-            "attached image is not a file: {}",
-            image.path
-        )));
-    }
-    if metadata.len() > MAX_IMAGE_BYTES {
-        return Err(ProviderError::Config(format!(
-            "attached image exceeds 20 MB: {}",
-            image.path
-        )));
-    }
-    let bytes = std::fs::read(&image.path).map_err(|error| {
-        ProviderError::Config(format!(
-            "cannot read attached image {}: {error}",
-            image.path
-        ))
-    })?;
-    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    let image = encode_image(image)?;
     Ok(json!({
         "type": "image_url",
         "image_url": {
-            "url": format!("data:{};base64,{encoded}", image.mime_type),
+            "url": format!("data:{};base64,{}", image.mime_type, image.base64),
             "detail": "auto"
         }
     }))
@@ -330,15 +304,9 @@ fn decode_sse_event(
     saw_finish_reason: &mut bool,
 ) -> (Vec<Result<ChatDelta, ProviderError>>, bool) {
     let mut deltas = Vec::new();
-    let normalized = event.replace('\r', "\n");
-    let data = normalized
-        .lines()
-        .filter_map(|line| line.strip_prefix("data:").map(str::trim_start))
-        .collect::<Vec<_>>()
-        .join("\n");
-    if data.is_empty() {
+    let Some(data) = sse::event_data(event) else {
         return (deltas, false);
-    }
+    };
     if data == "[DONE]" {
         deltas.extend(flush_tool_calls(pending));
         deltas.push(Ok(ChatDelta::Finished));
@@ -372,51 +340,31 @@ fn decode_sse_event(
     (deltas, false)
 }
 
-fn newline_length(buffer: &[u8], index: usize) -> usize {
-    match buffer.get(index) {
-        Some(b'\r') if buffer.get(index + 1) == Some(&b'\n') => 2,
-        Some(b'\r' | b'\n') => 1,
-        _ => 0,
-    }
+#[derive(Default)]
+struct ChatCompletionsDecoder {
+    pending: Vec<PendingToolCall>,
+    saw_finish_reason: bool,
 }
 
-fn take_sse_event(buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
-    let mut index = 0;
-    while index < buffer.len() {
-        let first = newline_length(buffer, index);
-        if first == 0 {
-            index += 1;
-            continue;
+impl EventDecoder for ChatCompletionsDecoder {
+    fn decode(&mut self, event: &str) -> DecodedEvent {
+        let (items, terminal) =
+            decode_sse_event(event, &mut self.pending, &mut self.saw_finish_reason);
+        if terminal {
+            DecodedEvent::terminal(items)
+        } else {
+            DecodedEvent::continue_with(items)
         }
-        let second = newline_length(buffer, index + first);
-        if second == 0 {
-            index += first;
-            continue;
+    }
+
+    fn finish(&mut self) -> Vec<Result<ChatDelta, ProviderError>> {
+        if !self.saw_finish_reason {
+            return vec![Err(ProviderError::IncompleteStream)];
         }
-        let event = buffer.drain(..index).collect();
-        buffer.drain(..first + second);
-        return Some(event);
+        let mut items = flush_tool_calls(&mut self.pending);
+        items.push(Ok(ChatDelta::Finished));
+        items
     }
-    None
-}
-
-fn decode_event_bytes(bytes: &[u8]) -> Result<&str, ProviderError> {
-    std::str::from_utf8(bytes).map_err(|error| {
-        ProviderError::InvalidResponse(format!("SSE event is not valid UTF-8: {error}"))
-    })
-}
-
-async fn forward_sse_event(
-    event: &str,
-    pending: &mut Vec<PendingToolCall>,
-    saw_finish_reason: &mut bool,
-    emit: &EmitFn,
-) -> bool {
-    let (deltas, terminal) = decode_sse_event(event, pending, saw_finish_reason);
-    for delta in deltas {
-        emit(delta).await;
-    }
-    terminal
 }
 
 #[async_trait]
@@ -441,8 +389,10 @@ impl ModelProvider for OpenAiCompatProvider {
             return Err(ProviderError::Api { status, body });
         }
 
-        let stream = async_stream_sse(response);
-        Ok(Box::pin(stream))
+        Ok(sse::response_stream(
+            response,
+            ChatCompletionsDecoder::default(),
+        ))
     }
 
     fn describe(&self) -> String {
@@ -451,97 +401,6 @@ impl ModelProvider for OpenAiCompatProvider {
             self.config.model, self.config.base_url
         )
     }
-}
-
-/// Turn the SSE byte stream into `ChatDelta`s. Accumulates tool call
-/// fragments and flushes them when the stream reports a finish reason or
-/// ends.
-fn async_stream_sse(
-    response: reqwest::Response,
-) -> impl futures_util::Stream<Item = Result<ChatDelta, ProviderError>> {
-    async_stream(move |emit| async move {
-        let mut buffer = Vec::new();
-        let mut pending: Vec<PendingToolCall> = Vec::new();
-        let mut byte_stream = response.bytes_stream();
-        let mut saw_finish_reason = false;
-
-        while let Some(chunk) = byte_stream.next().await {
-            let chunk = match chunk {
-                Ok(c) => c,
-                Err(e) => {
-                    emit(Err(ProviderError::Http(e))).await;
-                    return;
-                }
-            };
-            buffer.extend_from_slice(&chunk);
-            while let Some(event) = take_sse_event(&mut buffer) {
-                let event = match decode_event_bytes(&event) {
-                    Ok(event) => event,
-                    Err(error) => {
-                        emit(Err(error)).await;
-                        return;
-                    }
-                };
-                if forward_sse_event(event, &mut pending, &mut saw_finish_reason, &emit).await {
-                    return;
-                }
-            }
-        }
-        // A final SSE event is legal even without a trailing blank line.
-        if !buffer.iter().all(u8::is_ascii_whitespace) {
-            let event = match decode_event_bytes(&buffer) {
-                Ok(event) => event,
-                Err(error) => {
-                    emit(Err(error)).await;
-                    return;
-                }
-            };
-            if forward_sse_event(event, &mut pending, &mut saw_finish_reason, &emit).await {
-                return;
-            }
-        }
-        // Some compatible providers omit [DONE] but still send an explicit
-        // finish reason. A bare EOF is never a successful completion.
-        if saw_finish_reason {
-            for d in flush_tool_calls(&mut pending) {
-                emit(d).await;
-            }
-            emit(Ok(ChatDelta::Finished)).await;
-        } else {
-            emit(Err(ProviderError::IncompleteStream)).await;
-        }
-    })
-}
-
-/// Minimal channel-backed stream builder (avoids an async-stream macro dep).
-fn async_stream<F, Fut>(f: F) -> impl futures_util::Stream<Item = Result<ChatDelta, ProviderError>>
-where
-    F: FnOnce(EmitFn) -> Fut,
-    Fut: std::future::Future<Output = ()> + Send + 'static,
-{
-    let (tx, rx) = tokio::sync::mpsc::channel::<Result<ChatDelta, ProviderError>>(64);
-    let emit: EmitFn = std::sync::Arc::new(move |item| {
-        let tx = tx.clone();
-        Box::pin(async move {
-            let _ = tx.send(item).await;
-        })
-    });
-    tokio::spawn(f(emit));
-    tokio_stream_from_rx(rx)
-}
-
-type EmitFn = std::sync::Arc<
-    dyn Fn(
-            Result<ChatDelta, ProviderError>,
-        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
-        + Send
-        + Sync,
->;
-
-fn tokio_stream_from_rx<T>(
-    mut rx: tokio::sync::mpsc::Receiver<T>,
-) -> impl futures_util::Stream<Item = T> {
-    futures_util::stream::poll_fn(move |cx| rx.poll_recv(cx))
 }
 
 #[cfg(test)]

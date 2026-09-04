@@ -95,6 +95,9 @@ pub(crate) fn redact_provider_history(history: &mut [ChatMessage]) {
         for call in &mut message.tool_calls {
             redact_sensitive(&mut call.arguments);
         }
+        if let Some(context) = &mut message.provider_context {
+            redact_sensitive(&mut context.data);
+        }
         message.content = redact_string(&message.content);
     }
 }
@@ -127,5 +130,31 @@ mod tests {
 
         assert!(!redacted.as_str().unwrap().contains("secret"));
         assert!(redacted.as_str().unwrap().contains(REDACTED));
+    }
+
+    #[test]
+    fn redacts_provider_native_tool_context() {
+        let mut message = ChatMessage::assistant("");
+        message.provider_context = Some(miniq_models::ProviderContext {
+            protocol: miniq_models::ApiProtocol::AnthropicMessages,
+            data: serde_json::json!([{
+                "type": "tool_use",
+                "id": "call-1",
+                "name": "shell_run",
+                "input": {
+                    "command": "curl -H 'Authorization: Bearer secret-token' https://example.test",
+                    "api_key": "sk-secret"
+                }
+            }]),
+        });
+
+        redact_provider_history(std::slice::from_mut(&mut message));
+
+        let context = &message.provider_context.unwrap().data;
+        assert_eq!(context[0]["input"]["api_key"], REDACTED);
+        assert!(!context[0]["input"]["command"]
+            .as_str()
+            .unwrap()
+            .contains("secret-token"));
     }
 }

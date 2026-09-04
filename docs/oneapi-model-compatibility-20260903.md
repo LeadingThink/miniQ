@@ -13,7 +13,7 @@
 
 | 模型 | 文本结果 | 工具结果 | 原因 |
 |---|---|---|---|
-| `claude-fable-5` | `content_filter`、空正文 | `content_filter` | 当前渠道连续拦截最普通请求 |
+| `claude-fable-5`（Chat Completions） | `content_filter`、空正文 | `content_filter` | 旧的 OpenAI-compatible 路径不适合作为该模型的能力判断；原生 Messages 路径已于 2026-09-04 通过 |
 | `gemini-3.5-flash` | HTTP 200 但正文声明模型已停用 | 未调用工具 | 业务失败被伪装成成功响应 |
 | `gpt-5.1-codex-mini` | HTTP 400 | HTTP 400 | requested operation unsupported |
 | `grok-4` | HTTP 503 | HTTP 503 | 无可用渠道 |
@@ -68,7 +68,30 @@
 
 ## miniQ 当前推荐
 
-长时间 agent 任务优先 `gpt-5.6-sol` / `gpt-5.6-terra` / `grok-4.6`；低延迟任务可用 `gpt-5.6-luna`、`deepseek-v4-flash`、`gemini-3.7-flash`。应在 OneAPI 的 `/v1/models` 输出端移除上面的 5 个失效型号，而不只是由客户端隐藏。
+长时间 agent 任务优先 `gpt-5.6-sol` / `gpt-5.6-terra` / `grok-4.6`；低延迟任务可用 `gpt-5.6-luna`、`deepseek-v4-flash`、`gemini-3.7-flash`。旧探针失败的型号应按其原生协议重新验证后再决定是否下线；尤其不能再根据 Chat Completions 失败把 Claude 模型直接判为不可用。
+
+## miniQ 三协议兼容层（2026-09-04）
+
+miniQ 不再把所有模型强制塞进 Chat Completions。设置中的“API 协议”默认使用 `auto`，也可以手动固定协议：
+
+| 模型/协议族 | 首选入口 | miniQ 已处理的原生能力 |
+|---|---|---|
+| Claude | `/v1/messages` | `text`、图片、`tool_use` / `tool_result`、分片 `input_json_delta`、thinking/signature 原样回传、citations、流式错误和输出上限 |
+| GPT、o 系列、Codex | `/v1/responses` | `input` / `output` items、图片、函数调用参数分片、并行函数调用、reasoning encrypted context 回传、refusal、incomplete/failed 终态 |
+| Gemini、Grok、DeepSeek、GLM、Kimi 等兼容模型 | `/v1/chat/completions` | 文本、图片、现代 `tool_calls`、旧式 `function_call`、多调用参数合并和完整 SSE 终态校验 |
+
+`auto` 会先读取 `/v1/models/{model_id}` 的 `preferred_api_protocol`。OneAPI 同时公开 `supported_api_protocols`，使客户端无需猜测自定义模型别名；元数据暂时不可用时，miniQ 才按 Claude、GPT/o/Codex 和其他模型族回退。设置页可手动选择 `anthropic_messages`、`responses` 或 `chat_completions` 以覆盖自动结果。
+
+模型发起工具调用后，miniQ 会保存供应商原生上下文并在下一步完整回传。这样 Responses 的 reasoning items，以及 Claude 的 signed thinking 和 `tool_use` 内容块，不会在“工具执行 -> 返回结果 -> 继续回答”之间丢失。持久化前仍会递归清理工具参数中的 API Key、token、密码等敏感字段。
+
+本地对照版本为 ChatGPT Desktop `26.810.41047` 和 Claude Code `2.1.234`。实现重点对齐这两类 agent 客户端依赖的流式事件、工具调用和跨轮上下文形态，而不是把客户端专属工具名映射成 miniQ 工具。
+
+真实 miniQ daemon 端到端结果：
+
+- `claude-fable-5` + `anthropic_messages`：模型调用 `file_read` 读取 `README.md`，工具成功，随后返回正确一级标题，`turn_completed`。
+- `gpt-5.6-luna` + `responses`：模型调用 `file_read` 读取同一文件，工具成功，reasoning/function items 被保存，随后返回正确一级标题，`turn_completed`。
+
+OpenAI Responses 的实现依据官方 [Function calling](https://developers.openai.com/api/docs/guides/function-calling) 和 [Streaming API responses](https://developers.openai.com/api/docs/guides/streaming-responses) 文档：函数调用输出用 `call_id` 关联，推理模型的 reasoning items 与工具结果一起回传，并分别聚合 `response.output_item.*` 与 `response.function_call_arguments.*` 事件。
 
 ## 工具名兼容与故障恢复
 

@@ -34,17 +34,22 @@ pub fn estimate_tokens(messages: &[ChatMessage]) -> usize {
     messages
         .iter()
         .map(|message| {
-            estimate_text_tokens(&message.content)
-                + message.images.len() * 1_024
-                + message
-                    .tool_calls
-                    .iter()
-                    .map(|call| {
-                        estimate_text_tokens(&call.name)
-                            + estimate_text_tokens(&call.arguments.to_string())
-                            + 8
-                    })
-                    .sum::<usize>()
+            let provider_tokens = message
+                .provider_context
+                .as_ref()
+                .map(|context| estimate_text_tokens(&context.data.to_string()));
+            provider_tokens.unwrap_or_else(|| {
+                estimate_text_tokens(&message.content)
+                    + message
+                        .tool_calls
+                        .iter()
+                        .map(|call| {
+                            estimate_text_tokens(&call.name)
+                                + estimate_text_tokens(&call.arguments.to_string())
+                                + 8
+                        })
+                        .sum::<usize>()
+            }) + message.images.len() * 1_024
                 + 6
         })
         .sum()
@@ -169,6 +174,7 @@ async fn summarize_batch(
                     ),
                 ));
             }
+            ChatDelta::Context(_) => {}
             ChatDelta::Finished => break,
         }
     }
@@ -286,6 +292,17 @@ pub async fn compact_history(
 mod tests {
     use super::*;
     use miniq_models::mock::MockProvider;
+
+    #[test]
+    fn provider_context_contributes_to_context_limits() {
+        let mut message = ChatMessage::assistant("");
+        message.provider_context = Some(miniq_models::ProviderContext {
+            protocol: miniq_models::ApiProtocol::Responses,
+            data: serde_json::json!([{"type":"reasoning","encrypted_content":"x".repeat(400)}]),
+        });
+
+        assert!(estimate_tokens(&[message]) >= 100);
+    }
 
     #[tokio::test]
     async fn summarizes_old_context_and_preserves_recent_user_turn() {
