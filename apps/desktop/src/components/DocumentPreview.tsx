@@ -15,6 +15,7 @@ import {
   PDF_MIN_ZOOM,
   PDF_ZOOM_STEP,
   spreadsheetColumnLabel,
+  spreadsheetRow,
 } from "../documentPreviewModel";
 
 function decodeBase64(data: string): ArrayBuffer {
@@ -30,6 +31,8 @@ export function BlobPreview(props: {
   dataBase64: string;
   mimeType: string;
   kind: "image" | "audio" | "video";
+  label: string;
+  onError: (message: string) => void;
 }) {
   const url = useMemo(() => {
     const blob = new Blob([decodeBase64(props.dataBase64)], { type: props.mimeType });
@@ -39,12 +42,24 @@ export function BlobPreview(props: {
   useEffect(() => () => URL.revokeObjectURL(url), [url]);
 
   if (props.kind === "image") {
-    return <div className="media-preview"><img src={url} alt="文件预览" /></div>;
+    return (
+      <div className="media-preview">
+        <img src={url} alt={props.label || "图片预览"} onError={() => props.onError("图片解码失败")} />
+      </div>
+    );
   }
   if (props.kind === "audio") {
-    return <div className="media-preview"><audio src={url} controls /></div>;
+    return (
+      <div className="media-preview">
+        <audio src={url} controls preload="metadata" onError={() => props.onError("音频解码失败")} />
+      </div>
+    );
   }
-  return <div className="media-preview"><video src={url} controls /></div>;
+  return (
+    <div className="media-preview">
+      <video src={url} controls preload="metadata" onError={() => props.onError("视频解码失败")} />
+    </div>
+  );
 }
 
 export function PdfPreview(props: {
@@ -81,6 +96,7 @@ export function PdfPreview(props: {
     setLoading(true);
     setPage(1);
     setPageCount(0);
+    setZoom(1);
 
     void Promise.all([
       import("pdfjs-dist/legacy/build/pdf.mjs"),
@@ -101,6 +117,7 @@ export function PdfPreview(props: {
       })
       .catch((cause) => {
         if (!cancelled) {
+          setLoading(false);
           props.onError(cause instanceof Error ? cause.message : String(cause));
         }
       });
@@ -137,6 +154,7 @@ export function PdfPreview(props: {
       if (!cancelled) setLoading(false);
     }).catch((cause) => {
       if (!cancelled && cause instanceof Error && cause.name !== "RenderingCancelledException") {
+        setLoading(false);
         props.onError(cause.message);
       }
     });
@@ -204,7 +222,10 @@ export function DocxPreview(props: { dataBase64: string; onError: (message: stri
         });
       })
       .catch((cause) => {
-        if (!cancelled) props.onError(cause instanceof Error ? cause.message : String(cause));
+        if (!cancelled) {
+          container.replaceChildren();
+          props.onError(cause instanceof Error ? cause.message : String(cause));
+        }
       });
     return () => {
       cancelled = true;
@@ -236,7 +257,10 @@ export function PptxPreview(props: { dataBase64: string; onError: (message: stri
         );
       })
       .catch((cause) => {
-        if (!cancelled) props.onError(cause instanceof Error ? cause.message : String(cause));
+        if (!cancelled) {
+          container.replaceChildren();
+          props.onError(cause instanceof Error ? cause.message : String(cause));
+        }
       });
     return () => {
       cancelled = true;
@@ -275,7 +299,10 @@ export function SpreadsheetPreview(props: {
         }
       })
       .catch((cause) => {
-        if (!cancelled) props.onError(cause instanceof Error ? cause.message : String(cause));
+        if (!cancelled) {
+          setLoading(false);
+          props.onError(cause instanceof Error ? cause.message : String(cause));
+        }
       });
     return () => { cancelled = true; };
   }, [props.dataBase64, props.onError]);
@@ -288,11 +315,11 @@ export function SpreadsheetPreview(props: {
   const columnCount = sheet.data.reduce((maximum, row) => Math.max(maximum, row.length), 0);
 
   return (
-    <div className="spreadsheet-preview">
+    <div className="spreadsheet-preview" aria-busy={loading}>
       <div className="sheet-tabs" role="tablist">
         {sheets.map((item, index) => (
           <button
-            key={item.sheet}
+            key={`${item.sheet}-${index}`}
             id={`sheet-tab-${index}`}
             type="button"
             role="tab"
@@ -329,7 +356,7 @@ export function SpreadsheetPreview(props: {
             {rows.map((row, rowIndex) => (
               <tr key={page * ROWS_PER_PAGE + rowIndex}>
                 <th>{page * ROWS_PER_PAGE + rowIndex + 1}</th>
-                {row.map((cell, cellIndex) => (
+                {spreadsheetRow(row, columnCount).map((cell, cellIndex) => (
                   <td key={cellIndex} title={cell instanceof Date ? cell.toLocaleString() : String(cell ?? "")}>{cell instanceof Date ? cell.toLocaleString() : String(cell ?? "")}</td>
                 ))}
               </tr>

@@ -8,11 +8,11 @@ const FILE_EXTENSIONS = new Set([
   "cpp", "cs", "css", "csv", "doc", "docx", "env", "fish", "gif", "go",
   "gz", "h", "hpp", "htm", "html", "ico", "ini", "ipa", "jar", "java",
   "jpeg", "jpg", "jks", "js", "json", "jsonl", "jsx", "keystore", "kt",
-  "kts", "less", "lock", "log", "markdown", "md", "mjs", "mov", "mp3",
+  "kts", "less", "lock", "log", "m4a", "markdown", "md", "mjs", "mov", "mp3",
   "mp4", "pdf", "php", "png", "ppt", "pptx", "ps1", "py", "pyi", "rar",
   "rb", "rs", "rst", "sass", "scss", "sh", "sql", "svelte", "svg", "swift",
   "tar", "tgz", "toml", "ts", "tsv", "tsx", "txt", "vue", "wasm", "wav",
-  "webm", "webp", "xls", "xlsx", "xml", "yaml", "yml", "zsh", "zip",
+  "webm", "webp", "xls", "xlsm", "xlsx", "xml", "yaml", "yml", "zsh", "zip",
 ]);
 const TEXT_PREVIEW_EXTENSIONS = new Set([
   "bash", "bat", "c", "cc", "cjs", "conf", "cpp", "cs", "css", "csv",
@@ -51,6 +51,7 @@ export interface LocalTextFile {
 
 export type LocalPreviewKind =
   | "text"
+  | "markdown"
   | "image"
   | "audio"
   | "video"
@@ -70,9 +71,13 @@ export interface LocalFilePreview {
 }
 
 export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+  const size = Number.isFinite(bytes) ? Math.max(0, bytes) : 0;
+  if (size < 1024) return `${Math.round(size)} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(size < 10 * 1024 ? 1 : 0)} KB`;
+  if (size < 1024 * 1024 * 1024) {
+    return `${(size / 1024 / 1024).toFixed(size < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+  }
+  return `${(size / 1024 / 1024 / 1024).toFixed(size < 10 * 1024 * 1024 * 1024 ? 1 : 0)} GB`;
 }
 
 function decodePath(value: string) {
@@ -147,6 +152,11 @@ export function isTextPreviewFile(path: string): boolean {
   if (TEXT_PREVIEW_NAMES.has(name) || /^\.env(?:\..+)?$/.test(name)) return true;
   const extension = /\.([A-Za-z0-9_-]+)$/.exec(name)?.[1].toLowerCase();
   return extension !== undefined && TEXT_PREVIEW_EXTENSIONS.has(extension);
+}
+
+export function isMarkdownPreviewFile(path: string): boolean {
+  const name = path.split(/[\\/]/).at(-1)?.toLowerCase() ?? "";
+  return name === "readme" || name === "changelog" || /\.(?:md|markdown)$/.test(name);
 }
 
 export function resolveLocalFileReference(

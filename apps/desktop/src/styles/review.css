@@ -401,10 +401,68 @@
   background: var(--bg-active);
 }
 
+.preview-mode-toggle {
+  flex: none;
+  display: inline-flex;
+  height: 30px;
+  padding: 2px;
+  overflow: visible;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-subtle);
+}
+
+.preview-mode-toggle button {
+  width: 25px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-dim);
+  background: transparent;
+}
+
+.preview-mode-toggle button.selected {
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 10%);
+}
+
 .file-preview-content {
   flex: 1;
   min-height: 0;
   background: var(--bg);
+}
+
+.markdown-preview {
+  height: 100%;
+  padding: 24px clamp(20px, 6%, 44px) 48px;
+  overflow: auto;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.markdown-preview .md {
+  max-width: 780px;
+  margin: 0 auto;
+  font-size: 14px;
+}
+
+.markdown-preview .md h1,
+.markdown-preview .md h2,
+.markdown-preview .md h3,
+.markdown-preview .md h4,
+.markdown-preview .md h5,
+.markdown-preview .md h6 {
+  scroll-margin-top: 16px;
+}
+
+.markdown-preview .md table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .preview-error {

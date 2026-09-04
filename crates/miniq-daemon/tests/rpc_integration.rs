@@ -291,29 +291,36 @@ async fn settings_update_and_masking() {
 
     let resp = call(&mut ws, "r1", "settings.get", Value::Null).await;
     assert!(resp["result"]["provider"].is_null());
+    let remote_device_id = resp["result"]["remoteAccess"]["deviceId"]
+        .as_str()
+        .expect("remote desktop device id")
+        .to_string();
 
     let resp = call(
         &mut ws,
         "r2",
         "settings.update",
-        json!({"provider": {"baseUrl": "http://127.0.0.1:9999/v1", "model": "test-model", "apiKey": "secret-key"}}),
+        json!({"provider": {"baseUrl": "  http://127.0.0.1:9999/v1  ", "model": "  test-model  ", "apiKey": "  secret-key  "}}),
     )
     .await;
     assert_eq!(resp["result"]["provider"]["model"], "test-model");
     assert_eq!(resp["result"]["provider"]["hasApiKey"], true);
     // The key itself must never be echoed back.
-    assert!(resp["result"].to_string().find("secret-key").is_none());
+    assert!(!resp["result"].to_string().contains("secret-key"));
 
     // Persisted on disk with the real key.
     let raw = std::fs::read_to_string(&settings_path).unwrap();
-    assert!(raw.contains("secret-key"));
+    let saved: Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(saved["provider"]["baseUrl"], "http://127.0.0.1:9999/v1");
+    assert_eq!(saved["provider"]["model"], "test-model");
+    assert_eq!(saved["provider"]["apiKey"], "secret-key");
 
     // Update without apiKey keeps the stored key.
     let resp = call(
         &mut ws,
         "r3",
         "settings.update",
-        json!({"provider": {"baseUrl": "http://127.0.0.1:9999/v1", "model": "other-model"}}),
+        json!({"provider": {"baseUrl": " http://127.0.0.1:9999/v1 ", "model": " other-model ", "apiKey": "  "}}),
     )
     .await;
     assert_eq!(resp["result"]["provider"]["hasApiKey"], true);
@@ -327,8 +334,8 @@ async fn settings_update_and_masking() {
         "settings.update",
         json!({"remoteAccess": {
             "enabled": true,
-            "relayUrl": "wss://oneapi.zaiwenai.com/miniq-relay/ws",
-            "deviceName": "Office desktop"
+            "relayUrl": "  wss://oneapi.zaiwenai.com/miniq-relay/ws  ",
+            "deviceName": "  Office desktop  "
         }}),
     )
     .await;
@@ -337,12 +344,14 @@ async fn settings_update_and_masking() {
         resp["result"]["remoteAccess"]["deviceName"],
         "Office desktop"
     );
+    assert_eq!(resp["result"]["remoteAccess"]["deviceId"], remote_device_id);
     assert_eq!(resp["result"]["remoteStatus"]["state"], "disabled");
-    assert!(resp["result"].to_string().find("secret-key").is_none());
+    assert!(!resp["result"].to_string().contains("secret-key"));
 
     let raw = std::fs::read_to_string(&settings_path).unwrap();
     assert!(raw.contains("miniq-relay"));
     assert!(raw.contains("Office desktop"));
+    assert!(raw.contains(&remote_device_id));
 }
 
 #[tokio::test]

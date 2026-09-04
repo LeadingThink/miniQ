@@ -12,7 +12,9 @@ use crate::state::AppState;
 const SYSTEM_PROMPT: &str = "You are miniQ, a local AI coworker that collaborates with the \
 user inside their workspace: you plan multi-step tasks, read and edit files, run commands \
 and deliver ready-to-use results. Be concise and accurate. High-risk actions go through \
-user approval; if an action is rejected, adapt instead of retrying it verbatim.";
+user approval; if an action is rejected, adapt instead of retrying it verbatim. Invoke only \
+the function tools explicitly provided with the current model request, using their exact names \
+and schemas. Never invent provider-native tools such as Bash, Read, Write, or ToolSearch.";
 
 const HOST_APP_CONTEXT: &str = "Host app file references: whenever you reference a local \
 workspace file in a response, use a Markdown link with a concise filename label and the \
@@ -413,6 +415,8 @@ mod tests {
 
         assert!(system.contains("Runtime environment:"));
         assert!(system.contains("test-workspace"));
+        assert!(system.contains("using their exact names and schemas"));
+        assert!(system.contains("Bash, Read, Write, or ToolSearch"));
         #[cfg(windows)]
         assert!(system.contains("Windows PowerShell"));
         #[cfg(not(windows))]

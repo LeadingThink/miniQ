@@ -21,9 +21,11 @@ interface SettingsView {
     enabled: boolean;
     relayUrl: string;
     deviceName: string;
+    deviceId: string;
   };
   remoteStatus: {
     state: "disabled" | "waiting_for_key" | "connecting" | "connected" | "reconnecting";
+    relayUrl: string;
     mobileClients: number;
     lastError?: string;
   };
@@ -70,6 +72,27 @@ export function SettingsPanel(props: SettingsPanelProps) {
       .catch((error) => setStatus(`读取设置失败：${errorMessage(error)}`))
       .finally(() => setLoading(false));
   }, [props.client]);
+
+  useEffect(() => {
+    if (loading || props.client.mode !== "local" || !remoteEnabled) return;
+    let cancelled = false;
+    let timer: number | null = null;
+    const refreshRemoteStatus = async () => {
+      try {
+        const result = await props.client.call<SettingsView>("settings.get");
+        if (!cancelled) setRemoteStatus(result.remoteStatus ?? null);
+      } catch {
+        // The main connection status reports failures; polling resumes after reconnect.
+      } finally {
+        if (!cancelled) timer = window.setTimeout(() => void refreshRemoteStatus(), 2_000);
+      }
+    };
+    void refreshRemoteStatus();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [loading, props.client, remoteEnabled]);
 
   useEffect(() => {
     panelRef.current?.focus();
@@ -298,7 +321,13 @@ export function SettingsPanel(props: SettingsPanelProps) {
           {remoteEnabled && <>
             <label>
               设备名称
-              <input value={deviceName} maxLength={80} disabled={loading || saving} onChange={(event) => setDeviceName(event.target.value)} />
+              <input
+                value={deviceName}
+                disabled={loading || saving}
+                onChange={(event) => {
+                  if (Array.from(event.target.value).length <= 80) setDeviceName(event.target.value);
+                }}
+              />
             </label>
             <label>
               Relay URL

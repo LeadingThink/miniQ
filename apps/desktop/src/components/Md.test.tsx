@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Md } from "./Md";
 
 function render(markdown: string) {
-  return renderToStaticMarkup(<Md>{markdown}</Md>);
+  return renderToStaticMarkup(<Md headingAnchors>{markdown}</Md>);
 }
 
 describe("Md math rendering", () => {
@@ -92,6 +92,37 @@ describe("Md file references", () => {
 
     expect(html).toContain("<code>npm test</code>");
     expect(html).not.toContain('class="file-reference"');
+  });
+
+  it("reads line locations from nested Markdown labels", () => {
+    const html = renderToStaticMarkup(
+      <Md workspacePath="/work/project">
+        {"[**worker.py (line 17)**](src/worker.py)"}
+      </Md>,
+    );
+
+    expect(html).toContain("/work/project/src/worker.py:17");
+  });
+
+  it("keeps page fragments as anchors instead of treating them as files", () => {
+    const html = render("# Overview\n\n[Jump](#overview)");
+
+    expect(html).toContain('id="overview"');
+    expect(html).toContain('href="#overview"');
+    expect(html).not.toContain("file-reference-link");
+  });
+
+  it("gives duplicate headings unique anchor ids", () => {
+    const html = render("## Result\n\n## Result");
+
+    expect(html).toContain('id="result"');
+    expect(html).toContain('id="result-1"');
+  });
+
+  it("does not add page-global heading ids to ordinary chat Markdown", () => {
+    const html = renderToStaticMarkup(<Md>{"# Overview"}</Md>);
+
+    expect(html).not.toContain('id="overview"');
   });
 });
 

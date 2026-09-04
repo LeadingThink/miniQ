@@ -1,5 +1,5 @@
 import { Check, Copy, FileText } from "lucide-react";
-import { useRef, useState } from "react";
+import { createElement, isValidElement, useEffect, useRef, useState } from "react";
 import type {
   AnchorHTMLAttributes,
   ComponentPropsWithoutRef,
@@ -43,20 +43,61 @@ function FileReference(props: {
 function nodeText(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(nodeText).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) return nodeText(node.props.children);
   return "";
+}
+
+function headingSlug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^\p{Letter}\p{Number}_-]/gu, "") || "section";
+}
+
+function headingComponents() {
+  const occurrences = new Map<string, number>();
+  const heading = (tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6") =>
+    ({ node: _node, ...props }: ComponentPropsWithoutRef<"h1"> & { node?: unknown }) => {
+      const base = headingSlug(nodeText(props.children));
+      const occurrence = occurrences.get(base) ?? 0;
+      occurrences.set(base, occurrence + 1);
+      const id = occurrence === 0 ? base : `${base}-${occurrence}`;
+      return createElement(tag, { ...props, id: props.id ?? id });
+    };
+  return {
+    h1: heading("h1"),
+    h2: heading("h2"),
+    h3: heading("h3"),
+    h4: heading("h4"),
+    h5: heading("h5"),
+    h6: heading("h6"),
+  };
 }
 
 function MarkdownLink(
   props: AnchorHTMLAttributes<HTMLAnchorElement> & {
     node?: unknown;
     workspacePath?: string | null;
+    referenceBasePath?: string | null;
     onOpenFile?: (target: LocalFileTarget) => void;
     onOpenUrl?: (url: string) => void;
   },
 ) {
-  const { node: _node, workspacePath, onOpenFile, onOpenUrl, ...anchorProps } = props;
+  const {
+    node: _node,
+    workspacePath,
+    referenceBasePath,
+    onOpenFile,
+    onOpenUrl,
+    ...anchorProps
+  } = props;
+  if (props.href?.startsWith("#")) {
+    return <a {...anchorProps} />;
+  }
+  const resolutionBase = referenceBasePath ?? workspacePath;
   const filePath = props.href
-    ? resolveLocalFileReference(props.href, workspacePath, nodeText(props.children))
+    ? resolveLocalFileReference(props.href, resolutionBase, nodeText(props.children))
     : null;
   if (filePath) {
     const handleFileClick = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -108,8 +149,7 @@ function MarkdownLink(
           candidatePath = p;
         } catch { /* ignore */ }
       } else {
-        // Resolve relative paths against workspacePath to get absolute paths
-        candidatePath = resolveWorkspacePath(href, workspacePath) ?? href;
+        candidatePath = resolveWorkspacePath(href, resolutionBase) ?? href;
       }
 
       if (candidatePath) {
@@ -130,13 +170,21 @@ function MarkdownCode(
   props: ComponentPropsWithoutRef<"code"> & {
     node?: unknown;
     workspacePath?: string | null;
+    referenceBasePath?: string | null;
     onOpenFile?: (target: LocalFileTarget) => void;
   },
 ) {
-  const { children, node: _node, workspacePath, onOpenFile, ...codeProps } = props;
+  const {
+    children,
+    node: _node,
+    workspacePath,
+    referenceBasePath,
+    onOpenFile,
+    ...codeProps
+  } = props;
   const text = typeof children === "string" ? children : "";
   const filePath = !text.includes("\n")
-    ? resolveLocalFileReference(text, workspacePath)
+    ? resolveLocalFileReference(text, referenceBasePath ?? workspacePath)
     : null;
   if (filePath) {
     return (
@@ -152,27 +200,40 @@ function MarkdownCode(
 function MarkdownPre(props: ComponentPropsWithoutRef<"pre"> & { node?: unknown }) {
   const { node: _node, ...preProps } = props;
   const preRef = useRef<HTMLPreElement>(null);
-  const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<number | null>(null);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
 
-  const copy = () => {
+  useEffect(() => () => {
+    if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
+  }, []);
+
+  const copy = async () => {
     const text = preRef.current?.innerText ?? "";
     if (!text) return;
-    void navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    });
+    try {
+      if (!navigator.clipboard) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(text);
+      setCopyState("copied");
+    } catch {
+      setCopyState("error");
+    }
+    if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
+    resetTimer.current = window.setTimeout(() => setCopyState("idle"), 1500);
   };
+
+  const copied = copyState === "copied";
+  const label = copied ? "已复制" : copyState === "error" ? "复制失败" : "复制";
 
   return (
     <div className="code-block">
       <button
         type="button"
-        className={`code-copy ${copied ? "copied" : ""}`}
-        title="复制代码"
-        onClick={copy}
+        className={`code-copy ${copyState !== "idle" ? copyState : ""}`}
+        title={copyState === "error" ? "无法访问剪贴板" : "复制代码"}
+        onClick={() => void copy()}
       >
         {copied ? <Check size={13} /> : <Copy size={13} />}
-        {copied ? "已复制" : "复制"}
+        {label}
       </button>
       <pre ref={preRef} {...preProps} />
     </div>
@@ -210,18 +271,23 @@ function localFileUrlTransform(value: string): string {
 export function Md(props: {
   children: string;
   workspacePath?: string | null;
+  referenceBasePath?: string | null;
+  headingAnchors?: boolean;
   onOpenFile?: (target: LocalFileTarget) => void;
   onOpenUrl?: (url: string) => void;
 }) {
+  const headings = props.headingAnchors ? headingComponents() : {};
   return (
     <div className="md">
       <ReactMarkdown
         urlTransform={localFileUrlTransform}
         components={{
+          ...headings,
           a: (linkProps) => (
             <MarkdownLink
               {...linkProps}
               workspacePath={props.workspacePath}
+              referenceBasePath={props.referenceBasePath}
               onOpenFile={props.onOpenFile}
               onOpenUrl={props.onOpenUrl}
             />
@@ -230,6 +296,7 @@ export function Md(props: {
             <MarkdownCode
               {...codeProps}
               workspacePath={props.workspacePath}
+              referenceBasePath={props.referenceBasePath}
               onOpenFile={props.onOpenFile}
             />
           ),

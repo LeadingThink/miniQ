@@ -81,7 +81,7 @@ impl ClaudeConnector {
                     "Claude Code source path is not registered".to_owned(),
                 )
             })?;
-        let snapshot = self.parse_session(&path)?;
+        let snapshot = self.parse_session(path)?;
         if snapshot
             .as_ref()
             .is_some_and(|item| item.summary.external_id != external_id)

@@ -1,5 +1,7 @@
 import Editor, { type OnMount } from "@monaco-editor/react";
 import {
+  Code2,
+  Eye,
   ExternalLink,
   FileCode2,
   FolderOpen,
@@ -20,11 +22,13 @@ import {
   SpreadsheetPreview,
   UnsupportedPreview,
 } from "./DocumentPreview";
+import { MarkdownPreview } from "./MarkdownPreview";
 
 interface FilePreviewPanelProps {
   preview: FilePreviewState;
   workspacePath: string;
   onClose: () => void;
+  onOpenFile: (target: NonNullable<FilePreviewState["target"]>) => void;
   onRetry: () => void;
 }
 
@@ -74,12 +78,14 @@ export function FilePreviewPanel({
   preview,
   workspacePath,
   onClose,
+  onOpenFile,
   onRetry,
 }: FilePreviewPanelProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [renderAttempt, setRenderAttempt] = useState(0);
+  const [markdownSource, setMarkdownSource] = useState(false);
   const [wrapCode, setWrapCode] = useState(false);
   const target = preview.target;
   const path = preview.resolvedPath ?? target?.path ?? "";
@@ -101,10 +107,18 @@ export function FilePreviewPanel({
     setActionError(null);
     setRenderError(null);
     setRenderAttempt(0);
+    setMarkdownSource(Boolean(target?.line));
     setWrapCode(false);
-  }, [path]);
+  }, [path, target?.line]);
 
   const reportRenderError = useCallback((message: string) => setRenderError(message), []);
+  const sourceVisible = preview.kind === "text" || (
+    preview.kind === "markdown" && markdownSource
+  );
+
+  useEffect(() => {
+    if (!sourceVisible) editorRef.current = null;
+  }, [sourceVisible]);
 
   const handleMount: OnMount = (instance) => {
     editorRef.current = instance;
@@ -135,7 +149,31 @@ export function FilePreviewPanel({
             {preview.size !== null ? formatFileSize(preview.size) : ""}
           </small>
         )}
-        {preview.kind === "text" && (
+        {preview.kind === "markdown" && preview.content !== null && (
+          <span className="preview-mode-toggle" role="group" aria-label="Markdown 显示模式">
+            <button
+              type="button"
+              className={!markdownSource ? "selected" : ""}
+              title="渲染 Markdown"
+              aria-label="渲染 Markdown"
+              aria-pressed={!markdownSource}
+              onClick={() => setMarkdownSource(false)}
+            >
+              <Eye size={15} />
+            </button>
+            <button
+              type="button"
+              className={markdownSource ? "selected" : ""}
+              title="查看 Markdown 源码"
+              aria-label="查看 Markdown 源码"
+              aria-pressed={markdownSource}
+              onClick={() => setMarkdownSource(true)}
+            >
+              <Code2 size={15} />
+            </button>
+          </span>
+        )}
+        {sourceVisible && (
           <button
             type="button"
             className={`icon-button${wrapCode ? " active" : ""}`}
@@ -193,7 +231,14 @@ export function FilePreviewPanel({
       <div className="file-preview-content">
         {preview.loading ? (
           <div className="diff-empty">正在读取文件...</div>
-        ) : preview.kind === "text" && preview.content !== null ? (
+        ) : preview.kind === "markdown" && preview.content !== null && !markdownSource ? (
+          <MarkdownPreview
+            content={preview.content}
+            workspacePath={workspacePath}
+            currentFilePath={path}
+            onOpenFile={onOpenFile}
+          />
+        ) : sourceVisible && preview.content !== null ? (
           <Editor
             path={path}
             value={preview.content}
@@ -224,6 +269,8 @@ export function FilePreviewPanel({
             dataBase64={preview.dataBase64}
             mimeType={preview.mimeType}
             kind={preview.kind}
+            label={fileName(path)}
+            onError={reportRenderError}
           />
         ) : preview.kind === "pdf" && preview.dataBase64 ? (
           <PdfPreview key={renderAttempt} dataBase64={preview.dataBase64} onError={reportRenderError} />

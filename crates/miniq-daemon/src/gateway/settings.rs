@@ -62,9 +62,9 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
             .as_ref()
             .map(|existing| existing.api_key.clone());
         settings.provider = Some(miniq_models::ProviderConfig {
-            base_url: provider.base_url,
+            base_url: provider.base_url.trim().to_string(),
             api_key: merged_key(provider.api_key, existing_key),
-            model: provider.model,
+            model: provider.model.trim().to_string(),
         });
     }
     if let Some(mode) = input.approval_mode {
@@ -72,10 +72,12 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
     }
     if let Some(remote) = input.remote_access {
         validate_remote(&remote)?;
+        let device_id = settings.remote_access.device_id.clone();
         settings.remote_access = crate::remote::RemoteAccessSettings {
             enabled: remote.enabled,
             relay_url: remote.relay_url.trim().to_string(),
             device_name: remote.device_name.trim().to_string(),
+            device_id,
         };
     }
 
@@ -90,6 +92,12 @@ fn validate_remote(remote: &RemoteAccessUpdate) -> Result<(), RpcError> {
         return Err(RpcError::new(
             ErrorCode::InvalidParams,
             "remote deviceName must not be empty",
+        ));
+    }
+    if remote.device_name.trim().chars().count() > 80 {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "remote deviceName must not exceed 80 characters",
         ));
     }
     let url = url::Url::parse(remote.relay_url.trim())
@@ -110,12 +118,59 @@ fn validate_provider(provider: &ProviderUpdate) -> Result<(), RpcError> {
             "provider baseUrl and model must not be empty",
         ));
     }
+    let url = url::Url::parse(provider.base_url.trim())
+        .map_err(|_| RpcError::new(ErrorCode::InvalidParams, "provider baseUrl is invalid"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "provider baseUrl must use http or https",
+        ));
+    }
     Ok(())
 }
 
 fn merged_key(new_key: Option<String>, existing: Option<String>) -> String {
     match new_key {
-        Some(key) if !key.is_empty() => key,
+        Some(key) if !key.trim().is_empty() => key.trim().to_string(),
         _ => existing.unwrap_or_default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_validation_requires_an_http_url() {
+        for base_url in ["not-a-url", "ftp://models.test/v1"] {
+            let result = validate_provider(&ProviderUpdate {
+                base_url: base_url.to_string(),
+                model: "model".to_string(),
+                api_key: None,
+            });
+            assert!(result.is_err(), "{base_url} should be rejected");
+        }
+    }
+
+    #[test]
+    fn remote_validation_enforces_the_relay_name_limit() {
+        let result = validate_remote(&RemoteAccessUpdate {
+            enabled: true,
+            relay_url: "wss://relay.test/ws".to_string(),
+            device_name: "x".repeat(81),
+        });
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn api_keys_are_trimmed_without_erasing_the_saved_key() {
+        assert_eq!(
+            merged_key(Some("  new-key  ".to_string()), Some("old-key".to_string())),
+            "new-key"
+        );
+        assert_eq!(
+            merged_key(Some("  ".to_string()), Some("old-key".to_string())),
+            "old-key"
+        );
     }
 }

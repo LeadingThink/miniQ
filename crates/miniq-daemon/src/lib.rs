@@ -22,6 +22,11 @@ use rand::Rng;
 /// variables are the fallback for first-run convenience.
 pub fn load_settings(settings_path: &std::path::Path) -> state::DaemonSettings {
     let mut settings = state::DaemonSettings::load(settings_path);
+    if settings.remote_access.ensure_device_id() {
+        if let Err(error) = settings.save(settings_path) {
+            tracing::warn!(%error, "failed to persist remote desktop device id");
+        }
+    }
     if settings.provider.is_none() {
         if let Ok(config) = ProviderConfig::from_env() {
             tracing::info!(model = %config.model, "provider configured from environment");
@@ -88,4 +93,32 @@ pub fn write_connection_info(dir: &std::path::Path, info: &ConnectionInfo) -> an
     let path = dir.join("daemon.json");
     std::fs::write(path, serde_json::to_string_pretty(info)?)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_settings_persists_a_missing_remote_device_id() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{"remoteAccess":{"enabled":true,"relayUrl":"wss://relay.test/ws","deviceName":"Desk"}}"#,
+        )
+        .unwrap();
+
+        let first = load_settings(&path);
+        let second = load_settings(&path);
+
+        assert!(first.remote_access.device_id.starts_with("desktop-"));
+        assert_eq!(
+            first.remote_access.device_id,
+            second.remote_access.device_id
+        );
+        assert!(std::fs::read_to_string(path)
+            .unwrap()
+            .contains(&first.remote_access.device_id));
+    }
 }

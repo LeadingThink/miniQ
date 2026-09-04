@@ -25,11 +25,39 @@ pub struct LocalFilePreview {
 }
 
 fn preview_format(path: &Path) -> (&'static str, &'static str) {
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
     let extension = path
         .extension()
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
+    if matches!(name.as_str(), "readme" | "changelog")
+        || matches!(extension.as_str(), "md" | "markdown")
+    {
+        return ("markdown", "text/markdown; charset=utf-8");
+    }
+    if matches!(
+        name.as_str(),
+        ".dockerignore"
+            | ".editorconfig"
+            | ".gitattributes"
+            | ".gitignore"
+            | ".gitmodules"
+            | ".npmrc"
+            | ".prettierignore"
+            | ".prettierrc"
+            | "dockerfile"
+            | "license"
+            | "makefile"
+    ) || name == ".env"
+        || name.starts_with(".env.")
+    {
+        return ("text", "text/plain; charset=utf-8");
+    }
     match extension.as_str() {
         "bmp" => ("image", "image/bmp"),
         "gif" => ("image", "image/gif"),
@@ -57,12 +85,13 @@ fn preview_format(path: &Path) -> (&'static str, &'static str) {
             "pptx",
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         ),
-        "c" | "cc" | "cpp" | "cs" | "css" | "csv" | "diff" | "env" | "go" | "h"
-        | "hpp" | "htm" | "html" | "ini" | "java" | "js" | "json" | "jsonl"
-        | "jsx" | "kt" | "less" | "lock" | "log" | "md" | "mjs" | "patch" | "php"
-        | "ps1" | "py" | "rb" | "rs" | "rst" | "sass" | "scss" | "sh" | "sql"
-        | "svelte" | "swift" | "toml" | "ts" | "tsv" | "tsx" | "txt" | "vue"
-        | "xml" | "yaml" | "yml" | "zsh" => ("text", "text/plain; charset=utf-8"),
+        "bash" | "bat" | "c" | "cc" | "cjs" | "conf" | "cpp" | "cs" | "css"
+        | "csv" | "diff" | "env" | "fish" | "go" | "h" | "hpp" | "htm" | "html"
+        | "ini" | "java" | "js" | "json" | "jsonl" | "jsx" | "kt" | "kts" | "less"
+        | "lock" | "log" | "mjs" | "patch" | "php" | "ps1" | "py" | "pyi" | "rb"
+        | "rs" | "rst" | "sass" | "scss" | "sh" | "sql" | "svelte" | "swift"
+        | "toml" | "ts" | "tsv" | "tsx" | "txt" | "vue" | "xml" | "yaml" | "yml"
+        | "zsh" => ("text", "text/plain; charset=utf-8"),
         _ => ("unsupported", "application/octet-stream"),
     }
 }
@@ -124,7 +153,7 @@ pub fn read_preview(path: &str, workspace_path: &str) -> Result<LocalFilePreview
     }
 
     let (kind, mime_type) = preview_format(&file);
-    let (content, data_base64) = if kind == "text" {
+    let (content, data_base64) = if matches!(kind, "text" | "markdown") {
         let text = std::fs::read_to_string(&file)
             .map_err(|error| format!("无法读取 UTF-8 文本文件 {}: {error}", file.display()))?;
         (Some(text), None)
@@ -192,5 +221,39 @@ mod tests {
         .unwrap();
         assert_eq!(preview.kind, "text");
         assert_eq!(preview.content.as_deref(), Some("fn main() {}\n"));
+    }
+
+    #[test]
+    fn identifies_markdown_and_named_text_files() {
+        assert_eq!(
+            preview_format(Path::new("notes.MARKDOWN")),
+            ("markdown", "text/markdown; charset=utf-8")
+        );
+        assert_eq!(
+            preview_format(Path::new("README")),
+            ("markdown", "text/markdown; charset=utf-8")
+        );
+        assert_eq!(preview_format(Path::new(".env.local")).0, "text");
+        assert_eq!(preview_format(Path::new("Dockerfile")).0, "text");
+        assert_eq!(preview_format(Path::new("script.cjs")).0, "text");
+        assert_eq!(preview_format(Path::new("types.pyi")).0, "text");
+    }
+
+    #[test]
+    fn reads_markdown_as_text_for_the_rendered_preview() {
+        let workspace = tempfile::tempdir().unwrap();
+        let path = workspace.path().join("README.md");
+        std::fs::write(&path, "# Preview\n").unwrap();
+
+        let preview = read_preview(
+            path.to_str().unwrap(),
+            workspace.path().to_str().unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(preview.kind, "markdown");
+        assert_eq!(preview.mime_type, "text/markdown; charset=utf-8");
+        assert_eq!(preview.content.as_deref(), Some("# Preview\n"));
+        assert!(preview.data_base64.is_none());
     }
 }
