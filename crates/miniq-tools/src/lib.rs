@@ -53,7 +53,10 @@ pub use notebook::NotebookEditTool;
 pub use patch::FilePatchTool;
 pub use plan_mode::PlanModeTool;
 pub use process::{ProcessKillTool, ProcessManager, ProcessOutputTool};
-pub use router::{Tool, ToolContext, ToolError, ToolRouter};
+pub use router::{
+    RegistrationError, RegistrationHandle, Tool, ToolCatalog, ToolContext, ToolError, ToolOrigin,
+    ToolRouter,
+};
 pub use search::{FileGlobTool, FileGrepTool};
 pub use shell::{ShellBatchTool, ShellRunTool};
 pub use skill::SkillReadTool;
@@ -67,42 +70,51 @@ pub use web::url_host;
 /// Router with the full default toolset. Risk gating and approvals are
 /// enforced per call by the executor, not by membership in this set.
 pub fn default_router() -> ToolRouter {
-    let mut router = ToolRouter::new();
-    router.register(std::sync::Arc::new(FileReadTool));
-    router.register(std::sync::Arc::new(FileListTool));
-    router.register(std::sync::Arc::new(FileWriteTool));
-    router.register(std::sync::Arc::new(FileEditTool));
-    router.register(std::sync::Arc::new(FileGlobTool));
-    router.register(std::sync::Arc::new(FileGrepTool));
-    router.register(std::sync::Arc::new(ShellRunTool));
-    router.register(std::sync::Arc::new(ShellBatchTool));
-    router.register(std::sync::Arc::new(GitStatusTool));
-    router.register(std::sync::Arc::new(GitDiffTool));
-    router.register(std::sync::Arc::new(WebFetchTool));
-    router.register(std::sync::Arc::new(WebSearchTool));
-    router.register(std::sync::Arc::new(SkillReadTool));
-    router.register(std::sync::Arc::new(DocReadTool));
-    router.register(std::sync::Arc::new(DocWriteTool));
-    router.register(std::sync::Arc::new(TaskUpdateTool));
-    router.register(std::sync::Arc::new(AskUserTool));
-    router.register(std::sync::Arc::new(HttpRequestTool));
-    router.register(std::sync::Arc::new(FilePatchTool));
-    router.register(std::sync::Arc::new(ApplyPatchTool));
-    router.register(std::sync::Arc::new(NotebookEditTool));
-    router.register(std::sync::Arc::new(AgentRunTool));
-    router.register(std::sync::Arc::new(AgentMessageTool));
-    router.register(std::sync::Arc::new(PlanModeTool));
-    router.register(std::sync::Arc::new(TaskCreateTool));
-    router.register(std::sync::Arc::new(TaskGetTool));
-    router.register(std::sync::Arc::new(TaskListTool));
-    router.register(std::sync::Arc::new(TaskItemUpdateTool));
-    router.register(std::sync::Arc::new(ProcessOutputTool));
-    router.register(std::sync::Arc::new(ProcessKillTool));
-    router.register(std::sync::Arc::new(MemorySearchTool));
-    router.register(std::sync::Arc::new(MemoryWriteTool));
-    router.register(std::sync::Arc::new(McpCallTool));
-    router.register(std::sync::Arc::new(BrowserAutomationTool::default()));
-    let catalog = router.specs();
-    router.register(std::sync::Arc::new(ToolSearchTool::new(catalog)));
+    let router = ToolRouter::new();
+    let tools: Vec<std::sync::Arc<dyn Tool>> = vec![
+        std::sync::Arc::new(FileReadTool),
+        std::sync::Arc::new(FileListTool),
+        std::sync::Arc::new(FileWriteTool),
+        std::sync::Arc::new(FileEditTool),
+        std::sync::Arc::new(FileGlobTool),
+        std::sync::Arc::new(FileGrepTool),
+        std::sync::Arc::new(ShellRunTool),
+        std::sync::Arc::new(ShellBatchTool),
+        std::sync::Arc::new(GitStatusTool),
+        std::sync::Arc::new(GitDiffTool),
+        std::sync::Arc::new(WebFetchTool),
+        std::sync::Arc::new(WebSearchTool),
+        std::sync::Arc::new(SkillReadTool),
+        std::sync::Arc::new(DocReadTool),
+        std::sync::Arc::new(DocWriteTool),
+        std::sync::Arc::new(TaskUpdateTool),
+        std::sync::Arc::new(AskUserTool),
+        std::sync::Arc::new(HttpRequestTool),
+        std::sync::Arc::new(FilePatchTool),
+        std::sync::Arc::new(ApplyPatchTool),
+        std::sync::Arc::new(NotebookEditTool),
+        std::sync::Arc::new(AgentRunTool),
+        std::sync::Arc::new(AgentMessageTool),
+        std::sync::Arc::new(PlanModeTool),
+        std::sync::Arc::new(TaskCreateTool),
+        std::sync::Arc::new(TaskGetTool),
+        std::sync::Arc::new(TaskListTool),
+        std::sync::Arc::new(TaskItemUpdateTool),
+        std::sync::Arc::new(ProcessOutputTool),
+        std::sync::Arc::new(ProcessKillTool),
+        std::sync::Arc::new(MemorySearchTool),
+        std::sync::Arc::new(MemoryWriteTool),
+        std::sync::Arc::new(McpCallTool),
+        std::sync::Arc::new(BrowserAutomationTool::default()),
+    ];
+    for tool in tools {
+        router
+            .register_builtin(tool)
+            .expect("unique built-in tool name");
+    }
+    let catalog = router.catalog();
+    router
+        .register_builtin(std::sync::Arc::new(ToolSearchTool::new(catalog)))
+        .expect("unique built-in tool name");
     router
 }

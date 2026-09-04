@@ -11,6 +11,7 @@ members = [
     "crates/miniq-docs",
     "crates/miniq-tools",
     "crates/miniq-daemon",
+    "crates/miniq-plugins",
 ]
 
 [workspace.package]
@@ -55,3 +56,8 @@ similar = "2"
 headless_chrome = "1.0.22"
 aes-gcm = "0.10"
 sha2 = "0.10"
+semver = { version = "1", features = ["serde"] }
+toml = "0.8"
+wasmtime = { version = "31", features = ["component-model", "async", "cranelift", "runtime", "wat"] }
+wasmtime-wasi = "31"
+windows-sys = "0.61"

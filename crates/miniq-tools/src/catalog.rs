@@ -8,13 +8,13 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::native::{canonical_name, native_aliases};
-use crate::router::{parse_input, Tool, ToolContext, ToolError};
+use crate::router::{parse_input, Tool, ToolCatalog, ToolContext, ToolError};
 
 const DEFAULT_LIMIT: usize = 20;
 const MAX_LIMIT: usize = 100;
 
 pub struct ToolSearchTool {
-    catalog: Vec<ToolSpec>,
+    catalog: ToolCatalog,
 }
 
 #[derive(Deserialize)]
@@ -29,9 +29,7 @@ struct ToolSearchInput {
 }
 
 impl ToolSearchTool {
-    pub fn new(mut catalog: Vec<ToolSpec>) -> Self {
-        catalog.push(Self::tool_spec());
-        catalog.sort_by(|left, right| left.name.cmp(&right.name));
+    pub fn new(catalog: ToolCatalog) -> Self {
         Self { catalog }
     }
 
@@ -50,7 +48,7 @@ impl ToolSearchTool {
         }
     }
 
-    fn selected(&self, query: &str) -> Option<Vec<&ToolSpec>> {
+    fn selected<'a>(&self, catalog: &'a [ToolSpec], query: &str) -> Option<Vec<&'a ToolSpec>> {
         let names = query.strip_prefix("select:")?;
         let requested = names
             .split(',')
@@ -58,7 +56,7 @@ impl ToolSearchTool {
             .filter(|name| !name.is_empty())
             .collect::<Vec<_>>();
         Some(
-            self.catalog
+            catalog
                 .iter()
                 .filter(|spec| {
                     requested.iter().any(|name| {
@@ -69,12 +67,12 @@ impl ToolSearchTool {
         )
     }
 
-    fn searched(&self, query: &str) -> Vec<&ToolSpec> {
+    fn searched<'a>(&self, catalog: &'a [ToolSpec], query: &str) -> Vec<&'a ToolSpec> {
         let words = query
             .split_whitespace()
             .map(str::to_lowercase)
             .collect::<Vec<_>>();
-        self.catalog
+        catalog
             .iter()
             .filter(|spec| {
                 if words.is_empty() {
@@ -123,9 +121,14 @@ impl Tool for ToolSearchTool {
                 "limit must be between 1 and 100".into(),
             ));
         }
+        let mut catalog = (self.catalog)();
+        if !catalog.iter().any(|tool| tool.name == "tool_search") {
+            catalog.push(Self::tool_spec());
+        }
+        catalog.sort_by(|left, right| left.name.cmp(&right.name));
         let matches = self
-            .selected(input.query.trim())
-            .unwrap_or_else(|| self.searched(input.query.trim()));
+            .selected(&catalog, input.query.trim())
+            .unwrap_or_else(|| self.searched(&catalog, input.query.trim()));
         let total = matches.len();
         let limit = input.limit.unwrap_or(DEFAULT_LIMIT);
         let tools = matches
@@ -156,6 +159,10 @@ impl Tool for ToolSearchTool {
 mod tests {
     use super::*;
 
+    fn catalog_source(specs: Vec<ToolSpec>) -> ToolCatalog {
+        std::sync::Arc::new(move || specs.clone())
+    }
+
     #[tokio::test]
     async fn exact_select_resolves_native_names_and_returns_schemas() {
         let catalog = vec![ToolSpec {
@@ -163,7 +170,7 @@ mod tests {
             description: "Read files".into(),
             parameters: json!({"type":"object"}),
         }];
-        let output = ToolSearchTool::new(catalog)
+        let output = ToolSearchTool::new(catalog_source(catalog))
             .execute(
                 &ToolContext::new(".".into()),
                 json!({"query":"select:Read,ToolSearch"}),
@@ -184,7 +191,7 @@ mod tests {
                 parameters: json!({"type":"object"}),
             })
             .collect();
-        let output = ToolSearchTool::new(catalog)
+        let output = ToolSearchTool::new(catalog_source(catalog))
             .execute(
                 &ToolContext::new(".".into()),
                 json!({"query":"demo","limit":2}),
@@ -194,5 +201,34 @@ mod tests {
         assert_eq!(output["total"], 3);
         assert_eq!(output["tools"].as_array().unwrap().len(), 2);
         assert_eq!(output["nextOffset"], 2);
+    }
+
+    #[tokio::test]
+    async fn search_reads_the_latest_dynamic_catalog() {
+        let specs = std::sync::Arc::new(std::sync::RwLock::new(Vec::<ToolSpec>::new()));
+        let source = {
+            let specs = specs.clone();
+            std::sync::Arc::new(move || specs.read().unwrap().clone()) as ToolCatalog
+        };
+        let tool = ToolSearchTool::new(source);
+        let context = ToolContext::new(".".into());
+        assert_eq!(
+            tool.execute(&context, json!({"query":"plugin"}))
+                .await
+                .unwrap()["total"],
+            0
+        );
+
+        specs.write().unwrap().push(ToolSpec {
+            name: "plugin_tool".into(),
+            description: "dynamic plugin capability".into(),
+            parameters: json!({"type":"object"}),
+        });
+        assert_eq!(
+            tool.execute(&context, json!({"query":"plugin"}))
+                .await
+                .unwrap()["tools"][0]["name"],
+            "plugin_tool"
+        );
     }
 }

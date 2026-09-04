@@ -21,7 +21,7 @@ import { useSessionDiff } from "./useSessionDiff";
 import { useTaskNotifications } from "./useTaskNotifications";
 import { isSessionRunning, isSessionTerminal } from "../sessionStatus";
 
-export type AppPage = "schedule" | "skills" | "mcp" | null;
+export type AppPage = "schedule" | "skills" | "mcp" | "plugins" | null;
 
 async function pickDirectory(): Promise<string | null> {
   if (isTauriRuntime()) {

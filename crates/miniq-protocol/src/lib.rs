@@ -6,11 +6,15 @@
 
 pub mod event;
 pub mod external;
+pub mod node_plugin;
+pub mod plugin;
 pub mod rpc;
 pub mod types;
 
 pub use event::*;
 pub use external::*;
+pub use node_plugin::*;
+pub use plugin::*;
 pub use rpc::*;
 pub use types::*;
 

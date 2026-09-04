@@ -62,6 +62,14 @@ fn event_tagged_serialization() {
 }
 
 #[test]
+fn global_plugin_event_has_no_session_id() {
+    let event = Event::PluginsChanged {
+        plugins: Vec::new(),
+    };
+    assert_eq!(event.session_id(), "");
+}
+
+#[test]
 fn context_compaction_event_uses_camel_case_metrics() {
     let event = Event::ContextCompacted {
         session_id: "sess_01".into(),

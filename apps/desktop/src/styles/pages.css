@@ -279,6 +279,58 @@
   max-width: 780px;
 }
 
+.plugin-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.plugin-page-header > button,
+.plugin-card-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plugin-empty-icon {
+  color: var(--text-dim);
+}
+
+.plugin-card-title {
+  min-width: 0;
+  flex: 1;
+}
+
+.plugin-card .asset-name,
+.plugin-card .asset-cmd {
+  display: block;
+}
+
+.plugin-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.plugin-card-meta {
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.plugin-card-actions {
+  padding-top: 3px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 720px) {
+  .plugin-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 /* ---- asset cards (skills / MCP servers) ---- */
 .card-grid {
   display: grid;
@@ -389,6 +441,8 @@
 
 /* ---- toggle switch ---- */
 .switch {
+  display: inline-flex;
+  align-items: center;
   width: 36px;
   height: 21px;
   border-radius: 999px;
@@ -404,6 +458,8 @@
 }
 
 .switch .switch-knob {
+  display: block;
+  flex: none;
   width: 17px;
   height: 17px;
   border-radius: 50%;
@@ -413,11 +469,19 @@
 }
 
 .switch.on {
-  background: var(--accent);
+  background: var(--ok);
 }
 
 .switch.on:hover {
-  background: #33333a;
+  background: #15803d;
+}
+
+.switch:disabled:hover {
+  background: var(--border-strong);
+}
+
+.switch.on:disabled:hover {
+  background: var(--ok);
 }
 
 .switch.on .switch-knob {

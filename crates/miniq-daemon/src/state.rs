@@ -87,6 +87,7 @@ pub struct AppState {
     pub processes: Arc<miniq_tools::ProcessManager>,
     pub tasks: Arc<miniq_tools::TaskManager>,
     pub(crate) agent_tasks: Arc<crate::agent_tasks::AgentTaskManager>,
+    pub plugins: Arc<miniq_plugins::PluginManager>,
     pub skills: Arc<miniq_skills::SkillStore>,
     pub events: broadcast::Sender<Event>,
     pub started: Instant,
@@ -155,15 +156,22 @@ impl AppState {
         data_dir: PathBuf,
     ) -> Self {
         let (events, _) = broadcast::channel(1024);
+        let router = Arc::new(miniq_tools::default_router());
+        let plugins = Arc::new(miniq_plugins::PluginManager::new(
+            data_dir.join("plugins"),
+            router.clone(),
+            miniq_plugins::PluginLimits::default(),
+        ));
         Self {
             store: Arc::new(store),
             provider_override,
             settings: Arc::new(Mutex::new(settings)),
             settings_path: settings_path.map(Arc::new),
-            router: Arc::new(miniq_tools::default_router()),
+            router,
             processes: Arc::new(miniq_tools::ProcessManager::default()),
             tasks: Arc::new(miniq_tools::TaskManager::default()),
             agent_tasks: Arc::new(crate::agent_tasks::AgentTaskManager::default()),
+            plugins,
             skills: Arc::new(miniq_skills::SkillStore::new(
                 &data_dir,
                 miniq_skills::bundled_skills(),

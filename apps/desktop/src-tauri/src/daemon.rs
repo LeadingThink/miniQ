@@ -92,6 +92,9 @@ fn daemon_binary_candidates() -> Vec<PathBuf> {
     {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         if let Some(repo_root) = manifest_dir.ancestors().nth(3) {
+            if let Ok(target_dir) = std::env::var("CARGO_TARGET_DIR") {
+                candidates.push(PathBuf::from(target_dir).join("debug").join(exe_name));
+            }
             candidates.push(repo_root.join("target").join("debug").join(exe_name));
             candidates.push(repo_root.join("target").join("release").join(exe_name));
         }

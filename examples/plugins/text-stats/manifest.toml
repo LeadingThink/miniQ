@@ -1,0 +1,11 @@
+id = "dev.miniq.text-stats"
+name = "Text Stats"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "wasm"
+entry = "plugin.wasm"
+capabilities = ["tool"]
+permissions = []
+enabled = true
+description = "Counts characters, words, and lines without host access."
+author = "miniQ"

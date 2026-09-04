@@ -74,6 +74,16 @@ async fn health_check() {
 }
 
 #[tokio::test]
+async fn plugin_list_is_available_without_installed_plugins() {
+    let (port, token) = start_daemon().await;
+    let mut ws = connect(port, &token).await;
+
+    let response = call(&mut ws, "r1", "plugin.list", Value::Null).await;
+
+    assert_eq!(response["result"]["plugins"], json!([]));
+}
+
+#[tokio::test]
 async fn unknown_method_errors() {
     let (port, token) = start_daemon().await;
     let mut ws = connect(port, &token).await;

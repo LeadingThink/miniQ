@@ -57,7 +57,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const panelRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
-    props.client
+    void props.client
       .call<SettingsView>("settings.get")
       .then((res) => {
         if (res.provider) {

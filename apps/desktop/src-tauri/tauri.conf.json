@@ -4,7 +4,7 @@
   "version": "0.1.13",
   "identifier": "dev.miniq.desktop",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "cargo build --manifest-path ../../Cargo.toml -p miniq-daemon && npm run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"

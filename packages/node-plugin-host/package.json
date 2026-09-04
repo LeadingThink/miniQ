@@ -1,0 +1,17 @@
+{
+  "name": "@miniq/node-plugin-host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "miniq-node-plugin-host": "./dist/index.js" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.0"
+  },
+  "engines": { "node": ">=22" }
+}

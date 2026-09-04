@@ -56,6 +56,9 @@ async fn main() -> anyhow::Result<()> {
     let settings_path = dir.join("settings.json");
     let settings = miniq_daemon::load_settings(&settings_path);
     let state = AppState::with_settings(store, token, settings, settings_path);
+    if let Err(error) = state.plugins.scan_and_load().await {
+        tracing::error!(%error, "failed to scan plugin directory");
+    }
     miniq_daemon::schedule::spawn_scheduler(state.clone());
     miniq_daemon::remote::spawn(state.clone());
     let result = server::serve(listener, state).await;

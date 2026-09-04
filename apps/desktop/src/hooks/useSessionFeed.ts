@@ -162,6 +162,7 @@ function reduceDaemonEvent(
     case "workspace_deleted":
     case "session_renamed":
     case "workspace_renamed":
+    case "plugins_changed":
     case "session_pinned_changed":
     case "session_archived_changed":
       return state;
@@ -213,7 +214,12 @@ export function useSessionFeed(options: SessionFeedOptions) {
   useEffect(() => {
     return client.onEvent((event) => {
       // Workspace-level events have no session context.
-      if (event.type === "workspace_deleted" || event.type === "workspace_renamed") {
+      if (
+        event.type === "workspace_deleted" ||
+        event.type === "workspace_renamed" ||
+        event.type === "plugins_changed"
+      ) {
+        if (event.type === "plugins_changed") return;
         void refreshSessions();
         return;
       }
