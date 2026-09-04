@@ -26,3 +26,7 @@ export function moveTabIndex(index: number, count: number, direction: -1 | 1): n
   if (count <= 0) return 0;
   return (index + direction + count) % count;
 }
+
+export function spreadsheetRow<T>(row: T[], columnCount: number): Array<T | null> {
+  return Array.from({ length: Math.max(0, columnCount) }, (_, index) => row[index] ?? null);
+}

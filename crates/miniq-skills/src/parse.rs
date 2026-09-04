@@ -20,19 +20,14 @@ pub enum ParseError {
     EmptyDescription,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillOrigin {
     Bundled,
+    #[default]
     User,
     Distilled,
     Installed,
-}
-
-impl Default for SkillOrigin {
-    fn default() -> Self {
-        SkillOrigin::User
-    }
 }
 
 fn default_version() -> u32 {

@@ -18,6 +18,27 @@ use crate::state::{AppState, ApprovalDecision};
 
 const UNATTENDED_QUESTION_TIMEOUT_SECS: u64 = 180;
 
+fn unknown_tool_output(
+    router: &ToolRouter,
+    call: &ToolCallRequest,
+    error: &miniq_tools::ToolError,
+) -> Value {
+    let available_tools = router
+        .specs()
+        .into_iter()
+        .map(|spec| spec.name)
+        .collect::<Vec<_>>();
+    json!({
+        "error": {
+            "code": "unknown_tool",
+            "message": error.to_string(),
+            "requestedTool": call.name,
+            "availableTools": available_tools,
+            "recovery": "Use one of availableTools with its advertised JSON schema; do not use provider-native tool names."
+        }
+    })
+}
+
 fn unattended_default(call: &ToolCallRequest, options: &[String]) -> String {
     call.arguments
         .get("default")
@@ -471,15 +492,7 @@ impl ToolExecutor for SessionToolExecutor {
     }
 
     async fn execute(&self, call: &ToolCallRequest) -> Result<Value, AgentError> {
-        // 1. Risk evaluation (unknown tools are reported back to the model).
-        let risk = match self.router.evaluate(&self.ctx, &call.name, &call.arguments) {
-            Ok(risk) => risk,
-            Err(e) => {
-                return Ok(json!({"error": e.to_string()}));
-            }
-        };
-
-        // 2. Persist the call row before anything runs.
+        // 1. Persist every attempted call, including provider-invented names.
         let tool_call = self
             .state
             .store
@@ -492,6 +505,27 @@ impl ToolExecutor for SessionToolExecutor {
             .map_err(|e| {
                 AgentError::Provider(miniq_models::ProviderError::Config(e.to_string()))
             })?;
+
+        // 2. Risk evaluation. Unknown calls are visible in history and give
+        // the model the exact current tool list so it can recover next round.
+        let risk = match self.router.evaluate(&self.ctx, &call.name, &call.arguments) {
+            Ok(risk) => risk,
+            Err(error) => {
+                let output = unknown_tool_output(&self.router, call, &error);
+                self.audit(
+                    "unknown_tool",
+                    json!({"toolCallId": tool_call.id, "tool": call.name}),
+                );
+                self.state.emit(Event::ToolCallStarted {
+                    session_id: self.session_id.clone(),
+                    tool_call_id: tool_call.id.clone(),
+                    tool_name: call.name.clone(),
+                    input: crate::security::redacted(call.arguments.clone()),
+                });
+                self.finish(&tool_call.id, ToolCallStatus::Failed, &output);
+                return Ok(output);
+            }
+        };
         self.audit(
             "tool_call",
             json!({"toolCallId": tool_call.id, "tool": call.name, "risk": risk.level.as_str()}),
@@ -551,43 +585,4 @@ impl ToolExecutor for SessionToolExecutor {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn unattended_question_uses_default_after_timeout() {
-        let (_sender, receiver) = tokio::sync::oneshot::channel();
-        let result = wait_for_question_answer(
-            receiver,
-            &CancellationToken::new(),
-            Some((Duration::from_millis(1), "继续".to_string())),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(result, ("继续".to_string(), true));
-    }
-
-    #[test]
-    fn unattended_default_prefers_explicit_then_first_option() {
-        let explicit = ToolCallRequest {
-            id: "call".to_string(),
-            name: "ask_user".to_string(),
-            arguments: json!({"prompt": "?", "default": "安全方案"}),
-        };
-        assert_eq!(
-            unattended_default(&explicit, &["第一项".to_string()]),
-            "安全方案"
-        );
-
-        let first = ToolCallRequest {
-            id: "call".to_string(),
-            name: "ask_user".to_string(),
-            arguments: json!({"prompt": "?"}),
-        };
-        assert_eq!(
-            unattended_default(&first, &["第一项".to_string()]),
-            "第一项"
-        );
-    }
-}
+mod tests;

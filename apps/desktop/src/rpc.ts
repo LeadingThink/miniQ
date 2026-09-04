@@ -25,7 +25,11 @@ interface RpcError {
 type Pending = {
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
+  timer: number;
 };
+
+const CONNECTION_TIMEOUT_MS = 15_000;
+const RPC_TIMEOUT_MS = 60_000;
 
 export class RpcClient {
   private ws: WebSocket | null = null;
@@ -36,14 +40,20 @@ export class RpcClient {
   private statusListeners = new Set<(connected: boolean) => void>();
   private connectionMode: "local" | "remote" = "local";
   private remoteKey: CryptoKey | null = null;
-  private remoteMessageQueue: Promise<void> = Promise.resolve();
 
   /** Idempotent: concurrent calls share one in-flight connection attempt, so
    * React StrictMode's double-mounted effects cannot open two sockets — and
    * the second caller genuinely waits until the socket is open instead of
    * returning early and firing calls against a null socket. */
   async connect(info: ConnectionInfo): Promise<void> {
-    if (this.ws) return;
+    if (this.ws?.readyState === WebSocket.OPEN) return;
+    if (this.ws) {
+      const staleSocket = this.ws;
+      this.ws = null;
+      this.remoteKey = null;
+      staleSocket.close(4000, "stale connection");
+      this.notifyStatus(false);
+    }
     if (this.connectPromise) return this.connectPromise;
     this.connectionMode = info.kind;
     this.connectPromise = info.kind === "remote" ? this.connectRemote(info) : this.connectLocal(info);
@@ -85,42 +95,70 @@ export class RpcClient {
   ): Promise<void> {
     this.connectPromise = new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(url);
+      let remoteMessageQueue: Promise<void> = Promise.resolve();
       let settled = false;
-      ws.onopen = () => onOpen(ws, () => {
+      const finish = () => {
+        if (settled) return;
         settled = true;
+        window.clearTimeout(connectTimer);
         resolve();
-      });
+      };
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(connectTimer);
+        reject(error);
+      };
+      const connectTimer = window.setTimeout(() => {
+        fail(new Error(this.connectionMode === "remote" ? "连接 miniQ relay 超时" : "连接 miniQ daemon 超时"));
+        ws.close(4000, "connect timeout");
+      }, CONNECTION_TIMEOUT_MS);
+      ws.onopen = () => {
+        if (settled) {
+          ws.close(4000, "stale connection");
+          return;
+        }
+        try {
+          onOpen(ws, finish);
+        } catch (error) {
+          fail(error instanceof Error ? error : new Error(String(error)));
+          ws.close(4000, "handshake failed");
+        }
+      };
       ws.onerror = () => {
-        if (!settled) reject(new Error(this.connectionMode === "remote" ? "无法连接 miniQ relay" : "无法连接 miniQ daemon"));
+        fail(new Error(this.connectionMode === "remote" ? "无法连接 miniQ relay" : "无法连接 miniQ daemon"));
       };
       ws.onclose = () => {
-        if (!settled) reject(new Error(this.connectionMode === "remote" ? "桌面端未在线或远程连接已关闭" : "daemon 连接已关闭"));
+        window.clearTimeout(connectTimer);
+        fail(new Error(this.connectionMode === "remote" ? "桌面端未在线或远程连接已关闭" : "daemon 连接已关闭"));
         if (this.ws === ws) {
           this.ws = null;
           this.remoteKey = null;
           this.notifyStatus(false);
+          for (const p of this.pending.values()) {
+            window.clearTimeout(p.timer);
+            p.reject(new Error("connection closed"));
+          }
+          this.pending.clear();
         }
-        for (const p of this.pending.values()) {
-          p.reject(new Error("connection closed"));
-        }
-        this.pending.clear();
       };
       ws.onmessage = (message) => {
         if (!remoteKey) {
+          if (this.ws !== ws) return;
           this.onMessage(String(message.data));
           return;
         }
-        this.remoteMessageQueue = this.remoteMessageQueue
+        remoteMessageQueue = remoteMessageQueue
           .then(async () => {
+            if (settled && this.ws !== ws) return;
             const envelope = JSON.parse(String(message.data)) as Record<string, unknown>;
             if (envelope.type === "ready") {
               if (envelope.desktopOnline !== true) throw new Error("桌面端尚未在线");
               this.remoteKey = remoteKey;
               this.ws = ws;
               if (!settled) {
-                settled = true;
                 this.notifyStatus(true);
-                resolve();
+                finish();
               }
               return;
             }
@@ -137,10 +175,11 @@ export class RpcClient {
               String(envelope.nonce ?? ""),
               String(envelope.ciphertext ?? ""),
             );
+            if (this.ws !== ws) return;
             this.onMessage(JSON.stringify(payload));
           })
           .catch((error) => {
-            if (!settled) reject(error instanceof Error ? error : new Error(String(error)));
+            fail(error instanceof Error ? error : new Error(String(error)));
             ws.close(4000, "invalid remote message");
           });
       };
@@ -149,7 +188,7 @@ export class RpcClient {
   }
 
   get connected(): boolean {
-    return this.ws !== null;
+    return this.ws?.readyState === WebSocket.OPEN;
   }
 
   get mode(): "local" | "remote" {
@@ -173,6 +212,7 @@ export class RpcClient {
     const pending = this.pending.get(id);
     if (!pending) return;
     this.pending.delete(id);
+    window.clearTimeout(pending.timer);
     if (data.error) {
       const err = data.error as RpcError;
       pending.reject(new Error(`${err.message} (code ${err.code})`));
@@ -187,24 +227,38 @@ export class RpcClient {
     const id = `req_${this.nextId++}`;
     const payload = JSON.stringify({ jsonrpc: "2.0", id, method, params });
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+      const timer = window.setTimeout(() => {
+        if (!this.pending.delete(id)) return;
+        reject(new Error(`请求 ${method} 超时`));
+      }, RPC_TIMEOUT_MS);
+      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
       if (this.connectionMode === "local") {
-        ws.send(payload);
+        try {
+          if (ws.readyState !== WebSocket.OPEN) throw new Error("daemon 连接已关闭");
+          ws.send(payload);
+        } catch (error) {
+          this.pending.delete(id);
+          window.clearTimeout(timer);
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
         return;
       }
       const key = this.remoteKey;
       if (!key) {
         this.pending.delete(id);
+        window.clearTimeout(timer);
         reject(new Error("远程加密通道尚未就绪"));
         return;
       }
       void encryptRemotePayload(key, JSON.parse(payload))
         .then((encrypted) => {
+          if (!this.pending.has(id)) return;
           if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) throw new Error("远程连接已关闭");
           ws.send(JSON.stringify({ type: "frame", target: "desktop", ...encrypted }));
         })
         .catch((error) => {
           this.pending.delete(id);
+          window.clearTimeout(timer);
           reject(error instanceof Error ? error : new Error(String(error)));
         });
     });

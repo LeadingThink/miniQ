@@ -69,3 +69,11 @@
 ## miniQ 当前推荐
 
 长时间 agent 任务优先 `gpt-5.6-sol` / `gpt-5.6-terra` / `grok-4.6`；低延迟任务可用 `gpt-5.6-luna`、`deepseek-v4-flash`、`gemini-3.7-flash`。应在 OneAPI 的 `/v1/models` 输出端移除上面的 5 个失效型号，而不只是由客户端隐藏。
+
+## 工具名兼容与故障恢复
+
+OneAPI 背后的模型可能带有原供应商 agent 环境的工具先验，例如 Claude 系模型偶尔会尝试调用 `Bash`、`Read`、`Write` 或 `ToolSearch`。这些名称不是 miniQ 当前请求实际声明的工具；直接映射执行会绕过各工具自己的参数校验和风险语义，因此 miniQ 不做隐式别名执行。
+
+miniQ 会在每次请求中明确要求模型只使用已声明工具及其精确名称。模型仍发出未知名称时，该调用会作为失败工具调用进入会话记录与审计，并返回 `unknown_tool`、原始名称、当前全部可用工具名和恢复说明，让模型在下一轮改用 `shell_run`、`file_read` 等实际工具。若同一错误调用持续重复，现有重复调用保护会终止循环并向用户报告，而不会假装工具通道整体失效。
+
+OpenAI-compatible SSE 解析同时兼容 UTF-8 字符跨网络分片、LF/CRLF/CR 事件边界、多行 `data:`、旧式 `function_call` 和缺失调用 ID；流内错误、缺失函数名及不完整 JSON 参数都会在执行前明确失败。

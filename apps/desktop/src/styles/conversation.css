@@ -633,8 +633,13 @@
 }
 
 .md .code-block:hover .code-copy,
-.md .code-block .code-copy.copied {
+.md .code-block .code-copy.copied,
+.md .code-block .code-copy.error {
   opacity: 1;
+}
+
+.md .code-block .code-copy.error {
+  color: var(--danger);
 }
 
 .md .code-block .code-copy:hover {

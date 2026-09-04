@@ -442,6 +442,7 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
             preview={app.preview.state}
             workspacePath={app.catalog.currentWorkspace.path}
             onClose={app.preview.close}
+            onOpenFile={(target) => void app.preview.openFile(target)}
             onRetry={() => {
               const target = app.preview.state.target;
               if (target) void app.preview.openFile(target);

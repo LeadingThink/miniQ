@@ -53,8 +53,12 @@ function nextType(socket: WebSocket, type: string): Promise<Record<string, unkno
   });
 }
 
-function hello(role: "desktop" | "mobile", key = "sk-shared") {
-  return { type: "hello", protocol: 1, role, ...identity(key), deviceId: "device-1234", deviceName: role };
+function nextClose(socket: WebSocket): Promise<void> {
+  return new Promise((resolve) => socket.once("close", () => resolve()));
+}
+
+function hello(role: "desktop" | "mobile", key = "sk-shared", deviceId = "device-1234") {
+  return { type: "hello", protocol: 1, role, ...identity(key), deviceId, deviceName: role };
 }
 
 describe("miniQ relay", () => {
@@ -97,5 +101,100 @@ describe("miniQ relay", () => {
     const mobileFrame = nextType(mobile, "frame");
     desktop.send(JSON.stringify({ type: "frame", target: mobileReady.clientId, nonce: "BBBBBBBBBBBBBBBB", ciphertext: "opaque-response-ciphertext-value" }));
     await expect(mobileFrame).resolves.toMatchObject({ type: "frame", source: "device-1234", ciphertext: "opaque-response-ciphertext-value" });
+  });
+
+  it("rejects a second desktop with the same key without disrupting the active desktop", async () => {
+    const url = await start();
+    const activeDesktop = await connect(url);
+    activeDesktop.send(JSON.stringify(hello("desktop", "sk-shared", "desktop-active")));
+    await nextJson(activeDesktop);
+
+    const mobile = await connect(url);
+    mobile.send(JSON.stringify(hello("mobile")));
+    await nextJson(mobile);
+
+    const secondDesktop = await connect(url);
+    const conflict = nextJson(secondDesktop);
+    secondDesktop.send(JSON.stringify(hello("desktop", "sk-shared", "desktop-second")));
+    await expect(conflict).resolves.toMatchObject({ type: "error", code: "desktop_conflict" });
+
+    const activeFrame = nextType(activeDesktop, "frame");
+    mobile.send(JSON.stringify({
+      type: "frame",
+      target: "desktop",
+      nonce: "AAAAAAAAAAAAAAAA",
+      ciphertext: "request-after-conflict",
+    }));
+    await expect(activeFrame).resolves.toMatchObject({
+      type: "frame",
+      ciphertext: "request-after-conflict",
+    });
+  });
+
+  it("allows the same desktop device to reconnect without disconnecting mobiles", async () => {
+    const url = await start();
+    const firstDesktop = await connect(url);
+    firstDesktop.send(JSON.stringify(hello("desktop", "sk-shared", "desktop-stable")));
+    await nextJson(firstDesktop);
+
+    const mobile = await connect(url);
+    mobile.send(JSON.stringify(hello("mobile")));
+    await nextJson(mobile);
+
+    const reconnectedDesktop = await connect(url);
+    const replaced = nextClose(firstDesktop);
+    const ready = nextJson(reconnectedDesktop);
+    reconnectedDesktop.send(JSON.stringify(hello("desktop", "sk-shared", "desktop-stable")));
+    await expect(ready).resolves.toMatchObject({
+      type: "ready",
+      clientId: "desktop-stable",
+      mobileClients: 1,
+    });
+    await replaced;
+
+    const reconnectedFrame = nextType(reconnectedDesktop, "frame");
+    mobile.send(JSON.stringify({
+      type: "frame",
+      target: "desktop",
+      nonce: "BBBBBBBBBBBBBBBB",
+      ciphertext: "request-after-reconnect",
+    }));
+    await expect(reconnectedFrame).resolves.toMatchObject({
+      type: "frame",
+      ciphertext: "request-after-reconnect",
+    });
+    expect(mobile.readyState).toBe(WebSocket.OPEN);
+  });
+
+  it("allows another desktop after the active desktop has disconnected", async () => {
+    const url = await start();
+    const firstDesktop = await connect(url);
+    firstDesktop.send(JSON.stringify(hello("desktop", "sk-shared", "desktop-first")));
+    await nextJson(firstDesktop);
+    const disconnected = nextClose(firstDesktop);
+    firstDesktop.close();
+    await disconnected;
+
+    const nextDesktop = await connect(url);
+    const ready = nextJson(nextDesktop);
+    nextDesktop.send(JSON.stringify(hello("desktop", "sk-shared", "desktop-next")));
+
+    await expect(ready).resolves.toMatchObject({
+      type: "ready",
+      clientId: "desktop-next",
+      desktopOnline: true,
+    });
+  });
+
+  it("counts Unicode device names consistently with the desktop daemon", async () => {
+    const url = await start();
+    const desktop = await connect(url);
+    const ready = nextJson(desktop);
+    desktop.send(JSON.stringify({
+      ...hello("desktop"),
+      deviceName: "😀".repeat(80),
+    }));
+
+    await expect(ready).resolves.toMatchObject({ type: "ready", desktopOnline: true });
   });
 });

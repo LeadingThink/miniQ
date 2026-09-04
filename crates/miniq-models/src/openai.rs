@@ -5,6 +5,7 @@ use base64::Engine;
 use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::provider::{
     ChatDelta, ChatImage, ChatMessage, ChatRole, CompletionRequest, DeltaStream, ModelProvider,
@@ -175,6 +176,8 @@ struct PendingToolCall {
 struct StreamChunk {
     #[serde(default)]
     choices: Vec<StreamChoice>,
+    #[serde(default)]
+    error: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -191,6 +194,8 @@ struct StreamDelta {
     content: Option<String>,
     #[serde(default)]
     tool_calls: Option<Vec<StreamToolCall>>,
+    #[serde(default)]
+    function_call: Option<StreamToolFunction>,
 }
 
 #[derive(Deserialize)]
@@ -212,11 +217,17 @@ struct StreamToolFunction {
 }
 
 fn flush_tool_calls(pending: &mut Vec<PendingToolCall>) -> Vec<Result<ChatDelta, ProviderError>> {
+    static NEXT_SYNTHETIC_ID: AtomicU64 = AtomicU64::new(1);
     let calls = std::mem::take(pending);
     calls
         .into_iter()
-        .filter(|c| !c.name.is_empty())
-        .map(|c| {
+        .enumerate()
+        .map(|(index, c)| {
+            if c.name.trim().is_empty() {
+                return Err(ProviderError::InvalidResponse(format!(
+                    "tool call at index {index} is missing a function name"
+                )));
+            }
             let arguments: Value = if c.arguments.trim().is_empty() {
                 json!({})
             } else {
@@ -231,12 +242,86 @@ fn flush_tool_calls(pending: &mut Vec<PendingToolCall>) -> Vec<Result<ChatDelta,
                 }
             };
             Ok(ChatDelta::ToolCall(ToolCallRequest {
-                id: c.id,
+                id: if c.id.is_empty() {
+                    format!(
+                        "miniq-call-{}",
+                        NEXT_SYNTHETIC_ID.fetch_add(1, Ordering::Relaxed)
+                    )
+                } else {
+                    c.id
+                },
                 name: c.name,
                 arguments,
             }))
         })
         .collect()
+}
+
+fn decode_choice(
+    choice: StreamChoice,
+    pending: &mut Vec<PendingToolCall>,
+    saw_finish_reason: &mut bool,
+    deltas: &mut Vec<Result<ChatDelta, ProviderError>>,
+) -> bool {
+    if let Some(text) = choice.delta.content {
+        if !text.is_empty() {
+            deltas.push(Ok(ChatDelta::Text(text)));
+        }
+    }
+    if let Some(tool_calls) = choice.delta.tool_calls {
+        for tool_call in tool_calls {
+            if pending.len() <= tool_call.index {
+                pending.resize(tool_call.index + 1, PendingToolCall::default());
+            }
+            let slot = &mut pending[tool_call.index];
+            if let Some(id) = tool_call.id {
+                slot.id = id;
+            }
+            if let Some(function) = tool_call.function {
+                if let Some(name) = function.name {
+                    slot.name.push_str(&name);
+                }
+                if let Some(arguments) = function.arguments {
+                    slot.arguments.push_str(&arguments);
+                }
+            }
+        }
+    }
+    if let Some(function) = choice.delta.function_call {
+        if pending.is_empty() {
+            pending.push(PendingToolCall::default());
+        }
+        if let Some(name) = function.name {
+            pending[0].name.push_str(&name);
+        }
+        if let Some(arguments) = function.arguments {
+            pending[0].arguments.push_str(&arguments);
+        }
+    }
+    let Some(reason) = choice.finish_reason else {
+        return false;
+    };
+    *saw_finish_reason = true;
+    match reason.as_str() {
+        "stop" | "tool_calls" | "function_call" => deltas.extend(flush_tool_calls(pending)),
+        "length" | "max_tokens" => {
+            deltas.push(Err(ProviderError::OutputLimitReached));
+            return true;
+        }
+        "content_filter" => {
+            deltas.push(Err(ProviderError::InvalidResponse(
+                "provider blocked the completion with content_filter".to_string(),
+            )));
+            return true;
+        }
+        other => {
+            deltas.push(Err(ProviderError::InvalidResponse(format!(
+                "unsupported finish_reason: {other}"
+            ))));
+            return true;
+        }
+    }
+    false
 }
 
 fn decode_sse_event(
@@ -245,76 +330,80 @@ fn decode_sse_event(
     saw_finish_reason: &mut bool,
 ) -> (Vec<Result<ChatDelta, ProviderError>>, bool) {
     let mut deltas = Vec::new();
-    for line in event.lines() {
-        let Some(data) = line.strip_prefix("data:").map(str::trim) else {
-            continue;
-        };
-        if data == "[DONE]" {
-            deltas.extend(flush_tool_calls(pending));
-            deltas.push(Ok(ChatDelta::Finished));
+    let normalized = event.replace('\r', "\n");
+    let data = normalized
+        .lines()
+        .filter_map(|line| line.strip_prefix("data:").map(str::trim_start))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if data.is_empty() {
+        return (deltas, false);
+    }
+    if data == "[DONE]" {
+        deltas.extend(flush_tool_calls(pending));
+        deltas.push(Ok(ChatDelta::Finished));
+        return (deltas, true);
+    }
+    let parsed: StreamChunk = match serde_json::from_str(&data) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            deltas.push(Err(ProviderError::InvalidResponse(format!(
+                "bad SSE chunk: {error}"
+            ))));
             return (deltas, true);
         }
-        let parsed: StreamChunk = match serde_json::from_str(data) {
-            Ok(parsed) => parsed,
-            Err(error) => {
-                deltas.push(Err(ProviderError::InvalidResponse(format!(
-                    "bad SSE chunk: {error}"
-                ))));
-                return (deltas, true);
-            }
-        };
-        for choice in parsed.choices {
-            if let Some(text) = choice.delta.content {
-                if !text.is_empty() {
-                    deltas.push(Ok(ChatDelta::Text(text)));
-                }
-            }
-            if let Some(tool_calls) = choice.delta.tool_calls {
-                for tool_call in tool_calls {
-                    if pending.len() <= tool_call.index {
-                        pending.resize(tool_call.index + 1, PendingToolCall::default());
-                    }
-                    let slot = &mut pending[tool_call.index];
-                    if let Some(id) = tool_call.id {
-                        slot.id = id;
-                    }
-                    if let Some(function) = tool_call.function {
-                        if let Some(name) = function.name {
-                            slot.name.push_str(&name);
-                        }
-                        if let Some(arguments) = function.arguments {
-                            slot.arguments.push_str(&arguments);
-                        }
-                    }
-                }
-            }
-            if let Some(reason) = choice.finish_reason {
-                *saw_finish_reason = true;
-                match reason.as_str() {
-                    "stop" | "tool_calls" | "function_call" => {
-                        deltas.extend(flush_tool_calls(pending));
-                    }
-                    "length" | "max_tokens" => {
-                        deltas.push(Err(ProviderError::OutputLimitReached));
-                        return (deltas, true);
-                    }
-                    "content_filter" => {
-                        deltas.push(Err(ProviderError::InvalidResponse(
-                            "provider blocked the completion with content_filter".to_string(),
-                        )));
-                        return (deltas, true);
-                    }
-                    other => {
-                        deltas.push(Err(ProviderError::InvalidResponse(format!(
-                            "unsupported finish_reason: {other}"
-                        ))));
-                        return (deltas, true);
-                    }
-                }
-            }
+    };
+    if let Some(error) = parsed.error {
+        let detail = error
+            .get("message")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| error.to_string());
+        deltas.push(Err(ProviderError::InvalidResponse(format!(
+            "provider stream error: {detail}"
+        ))));
+        return (deltas, true);
+    }
+    for choice in parsed.choices {
+        if decode_choice(choice, pending, saw_finish_reason, &mut deltas) {
+            return (deltas, true);
         }
     }
     (deltas, false)
+}
+
+fn newline_length(buffer: &[u8], index: usize) -> usize {
+    match buffer.get(index) {
+        Some(b'\r') if buffer.get(index + 1) == Some(&b'\n') => 2,
+        Some(b'\r' | b'\n') => 1,
+        _ => 0,
+    }
+}
+
+fn take_sse_event(buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
+    let mut index = 0;
+    while index < buffer.len() {
+        let first = newline_length(buffer, index);
+        if first == 0 {
+            index += 1;
+            continue;
+        }
+        let second = newline_length(buffer, index + first);
+        if second == 0 {
+            index += first;
+            continue;
+        }
+        let event = buffer.drain(..index).collect();
+        buffer.drain(..first + second);
+        return Some(event);
+    }
+    None
+}
+
+fn decode_event_bytes(bytes: &[u8]) -> Result<&str, ProviderError> {
+    std::str::from_utf8(bytes).map_err(|error| {
+        ProviderError::InvalidResponse(format!("SSE event is not valid UTF-8: {error}"))
+    })
 }
 
 async fn forward_sse_event(
@@ -371,7 +460,7 @@ fn async_stream_sse(
     response: reqwest::Response,
 ) -> impl futures_util::Stream<Item = Result<ChatDelta, ProviderError>> {
     async_stream(move |emit| async move {
-        let mut buffer = String::new();
+        let mut buffer = Vec::new();
         let mut pending: Vec<PendingToolCall> = Vec::new();
         let mut byte_stream = response.bytes_stream();
         let mut saw_finish_reason = false;
@@ -384,27 +473,32 @@ fn async_stream_sse(
                     return;
                 }
             };
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
-            // Normalize CRLF so compatible gateways using Windows-style SSE
-            // framing are parsed identically to LF-only streams.
-            if buffer.contains('\r') {
-                buffer = buffer.replace("\r\n", "\n");
-            }
-
-            // SSE events are separated by a blank line.
-            while let Some(pos) = buffer.find("\n\n") {
-                let event = buffer[..pos].to_string();
-                buffer.drain(..pos + 2);
-                if forward_sse_event(&event, &mut pending, &mut saw_finish_reason, &emit).await {
+            buffer.extend_from_slice(&chunk);
+            while let Some(event) = take_sse_event(&mut buffer) {
+                let event = match decode_event_bytes(&event) {
+                    Ok(event) => event,
+                    Err(error) => {
+                        emit(Err(error)).await;
+                        return;
+                    }
+                };
+                if forward_sse_event(event, &mut pending, &mut saw_finish_reason, &emit).await {
                     return;
                 }
             }
         }
         // A final SSE event is legal even without a trailing blank line.
-        if !buffer.trim().is_empty()
-            && forward_sse_event(&buffer, &mut pending, &mut saw_finish_reason, &emit).await
-        {
-            return;
+        if !buffer.iter().all(u8::is_ascii_whitespace) {
+            let event = match decode_event_bytes(&buffer) {
+                Ok(event) => event,
+                Err(error) => {
+                    emit(Err(error)).await;
+                    return;
+                }
+            };
+            if forward_sse_event(event, &mut pending, &mut saw_finish_reason, &emit).await {
+                return;
+            }
         }
         // Some compatible providers omit [DONE] but still send an explicit
         // finish reason. A bare EOF is never a successful completion.
@@ -417,127 +511,6 @@ fn async_stream_sse(
             emit(Err(ProviderError::IncompleteStream)).await;
         }
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn provider() -> OpenAiCompatProvider {
-        OpenAiCompatProvider::new(ProviderConfig {
-            base_url: "https://example.com/v1".to_string(),
-            api_key: String::new(),
-            model: "thinking-model".to_string(),
-        })
-    }
-
-    fn request(temperature: Option<f32>) -> CompletionRequest {
-        CompletionRequest {
-            messages: vec![ChatMessage::user("hello")],
-            tools: Vec::new(),
-            temperature,
-            max_output_tokens: Some(16_384),
-        }
-    }
-
-    #[test]
-    fn omits_temperature_when_the_caller_uses_provider_defaults() {
-        let body = provider().build_body(&request(None));
-        assert!(body.get("temperature").is_none());
-    }
-
-    #[test]
-    fn preserves_an_explicit_temperature_for_compatible_models() {
-        let body = provider().build_body(&request(Some(0.4)));
-        let temperature = body["temperature"].as_f64().unwrap();
-        assert!((temperature - 0.4).abs() < 0.000_001);
-    }
-
-    #[test]
-    fn includes_the_agent_output_budget() {
-        let body = provider().build_body(&request(None));
-        assert_eq!(body["max_tokens"], 16_384);
-    }
-
-    #[test]
-    fn encodes_attached_images_as_openai_vision_content_parts() {
-        let path = std::env::temp_dir().join("miniq-openai-image-test.png");
-        std::fs::write(&path, [0x89_u8, b'P', b'N', b'G']).unwrap();
-        let mut request = request(None);
-        request.messages[0].images.push(ChatImage {
-            path: path.to_string_lossy().into_owned(),
-            mime_type: "image/png".to_string(),
-        });
-        let body = provider().build_body(&request);
-        let content = body["messages"][0]["content"].as_array().unwrap();
-        assert_eq!(content[0]["type"], "text");
-        assert_eq!(content[1]["type"], "image_url");
-        assert_eq!(content[1]["image_url"]["detail"], "auto");
-        assert!(content[1]["image_url"]["url"]
-            .as_str()
-            .unwrap()
-            .starts_with("data:image/png;base64,"));
-        let _ = std::fs::remove_file(path);
-    }
-
-    #[test]
-    fn done_event_finishes_a_normal_stream() {
-        let mut pending = Vec::new();
-        let mut saw_finish = false;
-        let (deltas, terminal) = decode_sse_event("data: [DONE]", &mut pending, &mut saw_finish);
-
-        assert!(terminal);
-        assert_eq!(deltas.len(), 1);
-        assert!(matches!(deltas[0], Ok(ChatDelta::Finished)));
-    }
-
-    #[test]
-    fn output_limit_is_not_reported_as_success() {
-        let mut pending = Vec::new();
-        let mut saw_finish = false;
-        let event =
-            r#"data: {"choices":[{"delta":{"content":"partial"},"finish_reason":"length"}]}"#;
-        let (deltas, terminal) = decode_sse_event(event, &mut pending, &mut saw_finish);
-
-        assert!(terminal);
-        assert!(saw_finish);
-        assert!(matches!(
-            &deltas[0],
-            Ok(ChatDelta::Text(text)) if text == "partial"
-        ));
-        assert!(matches!(deltas[1], Err(ProviderError::OutputLimitReached)));
-    }
-
-    #[test]
-    fn incomplete_tool_json_is_rejected_before_execution() {
-        let mut pending = Vec::new();
-        let mut saw_finish = false;
-        let event = r#"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"file_write","arguments":"{\\\"path\\\":\\\"a"}}]},"finish_reason":"tool_calls"}]}"#;
-        let (deltas, terminal) = decode_sse_event(event, &mut pending, &mut saw_finish);
-
-        assert!(!terminal);
-        assert!(matches!(
-            deltas.as_slice(),
-            [Err(ProviderError::IncompleteToolArguments { tool, .. })] if tool == "file_write"
-        ));
-    }
-
-    #[test]
-    fn crlf_event_body_is_parseable_after_transport_normalization() {
-        let mut pending = Vec::new();
-        let mut saw_finish = false;
-        let normalized =
-            "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\r\n"
-                .replace("\r\n", "\n");
-        let (deltas, terminal) = decode_sse_event(&normalized, &mut pending, &mut saw_finish);
-
-        assert!(!terminal);
-        assert!(saw_finish);
-        assert!(matches!(
-            deltas.as_slice(),
-            [Ok(ChatDelta::Text(text))] if text == "ok"
-        ));
-    }
 }
 
 /// Minimal channel-backed stream builder (avoids an async-stream macro dep).
@@ -570,3 +543,6 @@ fn tokio_stream_from_rx<T>(
 ) -> impl futures_util::Stream<Item = T> {
     futures_util::stream::poll_fn(move |cx| rx.poll_recv(cx))
 }
+
+#[cfg(test)]
+mod tests;

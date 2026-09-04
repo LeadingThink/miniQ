@@ -13,7 +13,8 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use miniq_protocol::{ErrorCode, RequestId, RpcError, RpcRequest, RpcResponse};
-use rand::RngCore;
+use rand::distr::Alphanumeric;
+use rand::{Rng, RngCore};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -34,6 +35,8 @@ pub struct RemoteAccessSettings {
     pub relay_url: String,
     #[serde(default = "default_device_name")]
     pub device_name: String,
+    #[serde(default)]
+    pub device_id: String,
 }
 
 impl Default for RemoteAccessSettings {
@@ -42,7 +45,18 @@ impl Default for RemoteAccessSettings {
             enabled: false,
             relay_url: default_relay_url(),
             device_name: default_device_name(),
+            device_id: new_device_id(),
         }
+    }
+}
+
+impl RemoteAccessSettings {
+    pub fn ensure_device_id(&mut self) -> bool {
+        if valid_device_id(&self.device_id) {
+            return false;
+        }
+        self.device_id = new_device_id();
+        true
     }
 }
 
@@ -56,6 +70,22 @@ fn default_device_name() -> String {
         .ok()
         .filter(|name| !name.trim().is_empty())
         .unwrap_or_else(|| "我的电脑".to_string())
+}
+
+fn new_device_id() -> String {
+    let suffix: String = rand::rng()
+        .sample_iter(&Alphanumeric)
+        .take(24)
+        .map(char::from)
+        .collect();
+    format!("desktop-{suffix}")
+}
+
+fn valid_device_id(value: &str) -> bool {
+    (8..=80).contains(&value.len())
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -93,6 +123,7 @@ impl Default for RemoteRuntimeStatus {
 struct ActiveConfig {
     relay_url: String,
     device_name: String,
+    device_id: String,
     api_key: String,
     fingerprint: [u8; 32],
 }
@@ -210,10 +241,13 @@ impl ActiveConfig {
         hasher.update([0]);
         hasher.update(remote.device_name.as_bytes());
         hasher.update([0]);
+        hasher.update(remote.device_id.as_bytes());
+        hasher.update([0]);
         hasher.update(api_key.as_bytes());
         Self {
             relay_url: remote.relay_url,
             device_name: remote.device_name,
+            device_id: remote.device_id,
             api_key,
             fingerprint: hasher.finalize().into(),
         }
@@ -227,8 +261,7 @@ async fn run_connection(state: &AppState, config: &ActiveConfig) -> anyhow::Resu
     )
     .await
     .map_err(|_| anyhow::anyhow!("连接 relay 超时"))??;
-        let identity = derive_identity(&config.api_key);
-    let device_id = short_hash(&format!("{}\0{}", identity.room_id, config.device_name));
+    let identity = derive_identity(&config.api_key);
     socket
         .send(Message::Text(
             json!({
@@ -237,7 +270,7 @@ async fn run_connection(state: &AppState, config: &ActiveConfig) -> anyhow::Resu
                 "role": "desktop",
                 "roomId": identity.room_id,
                 "authToken": identity.auth_token,
-                "deviceId": device_id,
+                "deviceId": config.device_id,
                 "deviceName": config.device_name,
             })
             .to_string()
@@ -419,10 +452,6 @@ fn derive_key(api_key: &str, label: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-fn short_hash(value: &str) -> String {
-    URL_SAFE_NO_PAD.encode(&derive_key(value, b"miniq-device-v1")[..12])
-}
-
 fn encrypt_payload(cipher: &Aes256Gcm, payload: &[u8]) -> anyhow::Result<(String, String)> {
     let mut nonce = [0_u8; 12];
     rand::rng().fill_bytes(&mut nonce);
@@ -478,9 +507,7 @@ fn sanitize_connection_error(error: &str) -> String {
         .split("authToken")
         .next()
         .unwrap_or("远程连接失败")
-        .chars()
-        .take(240)
-        .collect()
+        .to_string()
 }
 
 async fn sleep_or_shutdown(state: &AppState, duration: Duration) {
@@ -562,5 +589,15 @@ mod tests {
             seen.insert(format!("nonce-{index}"));
         }
         assert!(seen.values.len() <= MAX_SEEN_NONCES);
+    }
+
+    #[test]
+    fn connection_errors_are_redacted_without_losing_diagnostic_details() {
+        let detail = "x".repeat(400);
+        assert_eq!(sanitize_connection_error(&detail), detail);
+        assert_eq!(
+            sanitize_connection_error("handshake failed authToken=secret"),
+            "handshake failed "
+        );
     }
 }

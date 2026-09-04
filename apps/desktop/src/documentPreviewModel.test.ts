@@ -4,6 +4,7 @@ import {
   clampPdfZoom,
   moveTabIndex,
   spreadsheetColumnLabel,
+  spreadsheetRow,
 } from "./documentPreviewModel";
 
 describe("document preview controls", () => {
@@ -29,5 +30,10 @@ describe("document preview controls", () => {
   it("wraps keyboard navigation through sheet tabs", () => {
     expect(moveTabIndex(0, 3, -1)).toBe(2);
     expect(moveTabIndex(2, 3, 1)).toBe(0);
+  });
+
+  it("pads short spreadsheet rows so columns remain aligned", () => {
+    expect(spreadsheetRow(["A", "B"], 4)).toEqual(["A", "B", null, null]);
+    expect(spreadsheetRow(["A", "B", "C"], 2)).toEqual(["A", "B"]);
   });
 });

@@ -53,7 +53,18 @@ export class RelayBroker {
       if (existing && !sameToken(existing.authToken, hello.authToken)) {
         return this.reject(socket, "unauthorized", "认证失败");
       }
-      existing?.desktop.socket.close(4001, "desktop replaced");
+      if (
+        existing &&
+        existing.desktop.socket.readyState === existing.desktop.socket.OPEN &&
+        existing.desktop.id !== hello.deviceId
+      ) {
+        return this.reject(
+          socket,
+          "desktop_conflict",
+          "同一个 Key 已有另一台桌面在线，请先在那台电脑上关闭远程访问",
+        );
+      }
+      existing?.desktop.socket.close(4001, "desktop reconnected");
       const peer = createPeer(socket, "desktop", hello.roomId, hello.deviceId);
       const room: Room = {
         authToken: hello.authToken,
@@ -101,6 +112,7 @@ export class RelayBroker {
     }
     const room = this.rooms.get(peer.roomId);
     if (!room) return;
+    if (peer.role === "desktop" && room.desktop.socket !== socket) return;
 
     const forwarded = JSON.stringify({ ...frame, source: peer.id });
     if (peer.role === "mobile") {
@@ -165,7 +177,11 @@ function parseHello(raw: unknown): HelloMessage | null {
   if (typeof raw.roomId !== "string" || !HASH_PATTERN.test(raw.roomId)) return null;
   if (typeof raw.authToken !== "string" || !HASH_PATTERN.test(raw.authToken)) return null;
   if (typeof raw.deviceId !== "string" || !DEVICE_PATTERN.test(raw.deviceId)) return null;
-  if (typeof raw.deviceName !== "string" || raw.deviceName.trim().length === 0 || raw.deviceName.length > 80) return null;
+  if (
+    typeof raw.deviceName !== "string" ||
+    raw.deviceName.trim().length === 0 ||
+    Array.from(raw.deviceName).length > 80
+  ) return null;
   return raw as unknown as HelloMessage;
 }
 

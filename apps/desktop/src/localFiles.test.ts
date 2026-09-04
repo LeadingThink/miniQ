@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatFileSize,
+  isMarkdownPreviewFile,
   isTextPreviewFile,
   looksLikeFileReference,
   resolveLocalFileReference,
@@ -34,6 +35,28 @@ describe("local file preview types", () => {
     expect(formatFileSize(1536)).toBe("1.5 KB");
     expect(formatFileSize(25 * 1024)).toBe("25 KB");
     expect(formatFileSize(2.25 * 1024 * 1024)).toBe("2.3 MB");
+    expect(formatFileSize(3.5 * 1024 * 1024 * 1024)).toBe("3.5 GB");
+    expect(formatFileSize(Number.NaN)).toBe("0 B");
+    expect(formatFileSize(-1)).toBe("0 B");
+  });
+
+  it.each(["README", "CHANGELOG", "notes.md", "guide.MARKDOWN"])(
+    "renders Markdown file %s",
+    (path) => {
+      expect(isMarkdownPreviewFile(path)).toBe(true);
+    },
+  );
+
+  it.each(["README.txt", "LICENSE", "src/main.ts"])(
+    "does not render plain text file %s as Markdown",
+    (path) => {
+      expect(isMarkdownPreviewFile(path)).toBe(false);
+    },
+  );
+
+  it("recognizes binary preview formats supported by the desktop shell", () => {
+    expect(looksLikeFileReference("recording.m4a")).toBe(true);
+    expect(looksLikeFileReference("report.xlsm")).toBe(true);
   });
 });
 
