@@ -3,7 +3,10 @@
 
 use miniq_protocol::{
     Event, ExternalSessionImportRequest, ExternalSessionImportResult, ExternalSessionScan,
-    RpcRequest, RpcResponse, Session,
+    NodeHelloParams, NodeInitializeParams, NodePluginLogParams, NodePluginMessage,
+    NodeToolCancelParams, NodeToolExecuteParams, NodeToolResultParams, NodeToolsRegisterParams,
+    NodeToolsUnregisterParams, PluginDiagnosticsResult, PluginIdParams, PluginInstallParams,
+    PluginListResult, PluginSetEnabledParams, RpcRequest, RpcResponse, Session,
 };
 use schemars::schema_for;
 use serde_json::json;
@@ -19,6 +22,20 @@ fn main() {
         "externalSessionScan": schema_for!(ExternalSessionScan),
         "externalSessionImportRequest": schema_for!(ExternalSessionImportRequest),
         "externalSessionImportResult": schema_for!(ExternalSessionImportResult),
+        "pluginListResult": schema_for!(PluginListResult),
+        "pluginIdParams": schema_for!(PluginIdParams),
+        "pluginInstallParams": schema_for!(PluginInstallParams),
+        "pluginSetEnabledParams": schema_for!(PluginSetEnabledParams),
+        "pluginDiagnosticsResult": schema_for!(PluginDiagnosticsResult),
+        "nodePluginMessage": schema_for!(NodePluginMessage),
+        "nodeInitializeParams": schema_for!(NodeInitializeParams),
+        "nodeHelloParams": schema_for!(NodeHelloParams),
+        "nodeToolsRegisterParams": schema_for!(NodeToolsRegisterParams),
+        "nodeToolsUnregisterParams": schema_for!(NodeToolsUnregisterParams),
+        "nodeToolExecuteParams": schema_for!(NodeToolExecuteParams),
+        "nodeToolCancelParams": schema_for!(NodeToolCancelParams),
+        "nodeToolResultParams": schema_for!(NodeToolResultParams),
+        "nodePluginLogParams": schema_for!(NodePluginLogParams),
     });
     let out =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/protocol.schema.json");

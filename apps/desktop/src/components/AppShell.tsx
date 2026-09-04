@@ -16,6 +16,7 @@ import { Composer, ComposerCard } from "./Composer";
 import { DistillModal } from "./Distill";
 import { ExternalSessionImportDialog } from "./ExternalSessionImport";
 import { McpPanel } from "./Mcp";
+import { PluginsPanel } from "./Plugins";
 import { ProjectPicker } from "./ProjectPicker";
 import { ReviewPanel } from "./ReviewPanel";
 import { SchedulePanel } from "./Schedule";
@@ -236,6 +237,8 @@ function MainPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
       );
     case "mcp":
       return <McpPanel client={app.client} />;
+    case "plugins":
+      return <PluginsPanel client={app.client} />;
     default:
       return app.catalog.currentSessionId ? (
         <SessionPage app={app} onOpenFile={onOpenFile} onOpenUrl={onOpenUrl} />
@@ -382,6 +385,7 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
         onSetSessionArchived={(sessionId, archived) => void app.actions.setSessionArchived(sessionId, archived)}
         onShowSkills={() => { app.navigation.setPage("skills"); closeMobileSidebar(); }}
         onShowMcp={() => { app.navigation.setPage("mcp"); closeMobileSidebar(); }}
+        onShowPlugins={() => { app.navigation.setPage("plugins"); closeMobileSidebar(); }}
         onShowSettings={() => { app.navigation.setShowSettings(true); closeMobileSidebar(); }}
         updateSupported={app.updater.supported}
         updateState={app.updater.state}

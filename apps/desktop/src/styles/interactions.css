@@ -565,6 +565,29 @@
   color: var(--text-dim);
 }
 
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+}
+
+.plugin-warning,
+.plugin-error {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.plugin-warning {
+  color: var(--warn);
+}
+
+.plugin-error {
+  color: var(--danger);
+}
+
 .settings-actions {
   display: flex;
   align-items: center;

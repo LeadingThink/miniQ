@@ -239,6 +239,32 @@ export interface HealthStatus {
   uptimeSecs: number;
 }
 
+export type PluginStatus = "discovered" | "disabled" | "loading" | "active" | "failed" | "unloading";
+export type PluginRuntime = "wasm" | "node";
+export type PluginProcessState = "not_applicable" | "stopped" | "starting" | "running" | "failed";
+export interface PluginInfo {
+  id: string;
+  name: string;
+  version: string;
+  enabled: boolean;
+  status: PluginStatus;
+  tools: string[];
+  error: string | null;
+  description: string | null;
+  author: string | null;
+  runtime: PluginRuntime;
+  capabilities: string[];
+  permissions: string[];
+  trustedCode: boolean;
+  processState: PluginProcessState;
+  entry: string;
+  engineNode: string | null;
+  trustConfirmed: boolean;
+}
+export interface PluginListResult {
+  plugins: PluginInfo[];
+}
+
 /** How risky tool calls are gated (mirrors daemon ApprovalMode). */
 export type ApprovalMode = "alwaysAsk" | "auto" | "fullAccess";
 
@@ -307,4 +333,5 @@ export type DaemonEvent =
   | { type: "workspace_renamed"; workspaceId: string; name: string }
   | { type: "session_pinned_changed"; sessionId: string; pinned: boolean }
   | { type: "session_archived_changed"; sessionId: string; archived: boolean }
-  | { type: "queue_changed"; sessionId: string; queue: QueuedMessage[] };
+  | { type: "queue_changed"; sessionId: string; queue: QueuedMessage[] }
+  | { type: "plugins_changed"; plugins: PluginInfo[] };

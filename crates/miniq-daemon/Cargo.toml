@@ -11,6 +11,7 @@ miniq-session-connectors = { path = "../miniq-session-connectors" }
 miniq-models = { path = "../miniq-models" }
 miniq-agent = { path = "../miniq-agent" }
 miniq-tools = { path = "../miniq-tools" }
+miniq-plugins = { path = "../miniq-plugins" }
 miniq-sandbox = { path = "../miniq-sandbox" }
 miniq-skills = { path = "../miniq-skills" }
 tokio-util = { workspace = true }

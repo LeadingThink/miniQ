@@ -11,6 +11,7 @@ mod external_session;
 mod external_workspace;
 mod interaction;
 mod mcp;
+mod plugin;
 mod schedule;
 mod session;
 mod session_diff;
@@ -94,6 +95,12 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "skill.save" => skill::save(state, req.params),
         "mcp.list" => mcp::list(state, req.params).await,
         "mcp.update" => mcp::update(state, req.params),
+        "plugin.list" => plugin::list(state),
+        "plugin.install" => plugin::install(state, req.params).await,
+        "plugin.uninstall" => plugin::uninstall(state, req.params).await,
+        "plugin.reload" => plugin::reload(state, req.params).await,
+        "plugin.setEnabled" => plugin::set_enabled(state, req.params).await,
+        "plugin.getDiagnostics" => plugin::diagnostics(state, req.params),
         _ => Err(RpcError::new(
             ErrorCode::MethodNotFound,
             format!("unknown method: {}", req.method),

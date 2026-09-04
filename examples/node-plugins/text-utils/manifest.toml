@@ -1,0 +1,14 @@
+id = "dev.miniq.text-utils"
+name = "Text Utils"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "node"
+entry = "dist/index.js"
+capabilities = ["tool"]
+permissions = []
+enabled = false
+description = "Example trusted Node plugin with text transformation tools"
+author = "miniQ"
+
+[engine]
+node = ">=22"

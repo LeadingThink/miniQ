@@ -166,6 +166,10 @@ pub enum Event {
         session_id: String,
         queue: Vec<crate::types::QueuedMessage>,
     },
+    /// The installed plugin list changed.
+    PluginsChanged {
+        plugins: Vec<crate::plugin::PluginInfo>,
+    },
 }
 
 impl Event {

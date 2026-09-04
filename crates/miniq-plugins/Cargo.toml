@@ -1,0 +1,34 @@
+[package]
+name = "miniq-plugins"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+miniq-tools = { path = "../miniq-tools" }
+miniq-protocol = { path = "../miniq-protocol" }
+miniq-sandbox = { path = "../miniq-sandbox" }
+async-trait = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+	"Win32_Foundation",
+	"Win32_Security",
+	"Win32_Storage_FileSystem",
+	"Win32_System_JobObjects",
+	"Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tempfile = "3"

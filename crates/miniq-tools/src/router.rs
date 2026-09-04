@@ -1,8 +1,8 @@
 //! Tool trait and router.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 use miniq_models::ToolSpec;
@@ -20,6 +20,22 @@ pub enum ToolError {
     SandboxDenied(String),
     #[error("execution failed: {0}")]
     ExecutionFailed(String),
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum RegistrationError {
+    #[error("tool already registered: {0}")]
+    AlreadyRegistered(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToolOrigin {
+    Builtin,
+    Plugin {
+        id: String,
+        runtime: String,
+        version: String,
+    },
 }
 
 /// Everything a tool needs to run. Tools must not reach outside this context.
@@ -90,28 +106,118 @@ pub trait Tool: Send + Sync {
     }
 }
 
-#[derive(Default)]
 pub struct ToolRouter {
-    tools: HashMap<String, Arc<dyn Tool>>,
+    tools: Arc<RwLock<BTreeMap<String, RegisteredTool>>>,
+    next_id: std::sync::atomic::AtomicU64,
+}
+
+struct RegisteredTool {
+    id: u64,
+    tool: Arc<dyn Tool>,
+    origin: ToolOrigin,
+}
+
+pub struct RegistrationHandle {
+    tools: Arc<RwLock<BTreeMap<String, RegisteredTool>>>,
+    name: String,
+    id: u64,
+    disposed: bool,
 }
 
 impl ToolRouter {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            tools: Arc::new(RwLock::new(BTreeMap::new())),
+            next_id: std::sync::atomic::AtomicU64::new(1),
+        }
     }
 
-    pub fn register(&mut self, tool: Arc<dyn Tool>) {
-        self.tools.insert(tool.name().to_string(), tool);
+    pub fn register(&self, tool: Arc<dyn Tool>) -> Result<RegistrationHandle, RegistrationError> {
+        self.register_inner(tool, ToolOrigin::Builtin)
+    }
+
+    pub fn register_plugin(
+        &self,
+        tool: Arc<dyn Tool>,
+        id: String,
+        runtime: String,
+        version: String,
+    ) -> Result<RegistrationHandle, RegistrationError> {
+        self.register_inner(
+            tool,
+            ToolOrigin::Plugin {
+                id,
+                runtime,
+                version,
+            },
+        )
+    }
+
+    pub fn register_builtin(&self, tool: Arc<dyn Tool>) -> Result<(), RegistrationError> {
+        let name = tool.name().to_string();
+        let id = self
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut tools = self.tools.write().unwrap();
+        if tools.contains_key(&name) {
+            return Err(RegistrationError::AlreadyRegistered(name));
+        }
+        tools.insert(
+            name,
+            RegisteredTool {
+                id,
+                tool,
+                origin: ToolOrigin::Builtin,
+            },
+        );
+        Ok(())
+    }
+
+    fn register_inner(
+        &self,
+        tool: Arc<dyn Tool>,
+        origin: ToolOrigin,
+    ) -> Result<RegistrationHandle, RegistrationError> {
+        let name = tool.name().to_string();
+        let id = self
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut tools = self.tools.write().unwrap();
+        if tools.contains_key(&name) {
+            return Err(RegistrationError::AlreadyRegistered(name));
+        }
+        tools.insert(name.clone(), RegisteredTool { id, tool, origin });
+        Ok(RegistrationHandle {
+            tools: Arc::clone(&self.tools),
+            name,
+            id,
+            disposed: false,
+        })
     }
 
     pub fn specs(&self) -> Vec<ToolSpec> {
-        let mut specs: Vec<ToolSpec> = self.tools.values().map(|t| t.spec()).collect();
-        specs.sort_by(|a, b| a.name.cmp(&b.name));
-        specs
+        self.tools
+            .read()
+            .unwrap()
+            .values()
+            .map(|entry| entry.tool.spec())
+            .collect()
     }
 
-    pub fn get(&self, name: &str) -> Option<&Arc<dyn Tool>> {
-        self.tools.get(name)
+    pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
+        self.tools
+            .read()
+            .unwrap()
+            .get(name)
+            .map(|entry| Arc::clone(&entry.tool))
+    }
+
+    pub fn origin(&self, name: &str) -> Option<ToolOrigin> {
+        self.tools
+            .read()
+            .unwrap()
+            .get(name)
+            .map(|entry| entry.origin.clone())
     }
 
     /// Evaluate risk without executing.
@@ -122,7 +228,6 @@ impl ToolRouter {
         input: &Value,
     ) -> Result<Risk, ToolError> {
         let tool = self
-            .tools
             .get(name)
             .ok_or_else(|| ToolError::UnknownTool(name.to_string()))?;
         Ok(tool.evaluate_risk(ctx, input))
@@ -137,14 +242,101 @@ impl ToolRouter {
         input: Value,
     ) -> Result<Value, ToolError> {
         let tool = self
-            .tools
             .get(name)
             .ok_or_else(|| ToolError::UnknownTool(name.to_string()))?;
         tool.execute(ctx, input).await
     }
 }
 
+impl RegistrationHandle {
+    pub fn dispose(mut self) {
+        if !self.disposed {
+            let mut tools = self.tools.write().unwrap();
+            if tools
+                .get(&self.name)
+                .is_some_and(|entry| entry.id == self.id)
+            {
+                tools.remove(&self.name);
+            }
+            self.disposed = true;
+        }
+    }
+}
+
+impl Drop for RegistrationHandle {
+    fn drop(&mut self) {
+        if !self.disposed {
+            let mut tools = self.tools.write().unwrap();
+            if tools
+                .get(&self.name)
+                .is_some_and(|entry| entry.id == self.id)
+            {
+                tools.remove(&self.name);
+            }
+        }
+    }
+}
+
 /// Helper: deserialize tool input with a uniform error.
 pub(crate) fn parse_input<T: serde::de::DeserializeOwned>(input: Value) -> Result<T, ToolError> {
     serde_json::from_value(input).map_err(|e| ToolError::InvalidInput(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestTool(&'static str);
+
+    #[async_trait]
+    impl Tool for TestTool {
+        fn name(&self) -> &str {
+            self.0
+        }
+        fn description(&self) -> &str {
+            "test"
+        }
+        fn parameters_schema(&self) -> Value {
+            serde_json::json!({"type": "object"})
+        }
+        fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
+            Risk {
+                level: miniq_protocol::RiskLevel::Low,
+                reason: "test".into(),
+            }
+        }
+        async fn execute(&self, _ctx: &ToolContext, _input: Value) -> Result<Value, ToolError> {
+            Ok(Value::Null)
+        }
+    }
+
+    #[test]
+    fn registrations_are_ordered_and_revocable() {
+        let router = ToolRouter::new();
+        let first = router.register(Arc::new(TestTool("zeta"))).unwrap();
+        let second = router.register(Arc::new(TestTool("alpha"))).unwrap();
+        assert_eq!(
+            router
+                .specs()
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>(),
+            ["alpha", "zeta"]
+        );
+        second.dispose();
+        assert_eq!(router.specs().len(), 1);
+        drop(first);
+        assert!(router.specs().is_empty());
+    }
+
+    #[test]
+    fn duplicate_names_are_rejected_including_builtins() {
+        let router = ToolRouter::new();
+        router.register_builtin(Arc::new(TestTool("same"))).unwrap();
+        let error = match router.register(Arc::new(TestTool("same"))) {
+            Ok(_) => panic!("duplicate tool registration must fail"),
+            Err(error) => error,
+        };
+        assert_eq!(error, RegistrationError::AlreadyRegistered("same".into()));
+    }
 }

@@ -33,6 +33,9 @@ pub fn bundled_skills() -> Vec<BundledSkill> {
         BundledSkill {
             content: include_str!("../assets/email-draft/SKILL.md"),
         },
+        BundledSkill {
+            content: include_str!("../assets/develop-miniq-plugin/SKILL.md"),
+        },
     ]
 }
 

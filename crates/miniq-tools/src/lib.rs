@@ -32,7 +32,9 @@ pub use interact::{AskUserTool, TaskUpdateTool};
 pub use mcp::{McpBridge, McpCallTool};
 pub use memory::{MemorySearchTool, MemoryWriteTool};
 pub use patch::FilePatchTool;
-pub use router::{Tool, ToolContext, ToolError, ToolRouter};
+pub use router::{
+    RegistrationError, RegistrationHandle, Tool, ToolContext, ToolError, ToolOrigin, ToolRouter,
+};
 pub use search::{FileGlobTool, FileGrepTool};
 pub use shell::ShellRunTool;
 pub use skill::SkillReadTool;

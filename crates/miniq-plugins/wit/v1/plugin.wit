@@ -1,0 +1,42 @@
+package miniq:plugin@1.0.0;
+
+interface host {
+  enum log-level {
+    trace,
+    debug,
+    info,
+    warn,
+    error,
+  }
+
+  log: func(level: log-level, message: string);
+}
+
+interface guest {
+  record plugin-identity {
+    id: string,
+    version: string,
+    api-version: string,
+  }
+
+  record tool-metadata {
+    name: string,
+    description: string,
+    input-schema-json: string,
+    output-schema-json: string,
+  }
+
+  variant execution-result {
+    ok(string),
+    error(string),
+  }
+
+  identity: func() -> plugin-identity;
+  tools: func() -> list<tool-metadata>;
+  execute: func(tool-name: string, arguments-json: string) -> execution-result;
+}
+
+world tool-plugin {
+  import host;
+  export guest;
+}
