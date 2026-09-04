@@ -54,7 +54,7 @@ interface SidebarProps {
   onSetSessionArchived: (sessionId: string, archived: boolean) => void;
   onShowSkills: () => void;
   onShowMcp: () => void;
-  onShowPlugins: () => void;
+  onShowPlugins?: () => void;
   onShowSettings: () => void;
   updateSupported: boolean;
   updateState: AppUpdaterState;
@@ -154,7 +154,11 @@ export function Sidebar(props: SidebarProps) {
         <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowMcp}>
           <Plug className="nav-icon" size={16} /> MCP
         </button>
-        <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowPlugins}>
+        <button
+          type="button"
+          className="nav-item sidebar-nav-button"
+          onClick={() => props.onShowPlugins?.()}
+        >
           <Puzzle className="nav-icon" size={16} /> 插件
         </button>
         <button
