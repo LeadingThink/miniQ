@@ -5,6 +5,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::compat_schema::compatible_tool_schema;
 use crate::image::encode_image;
 use crate::provider::{
     ChatDelta, ChatImage, ChatMessage, ChatRole, CompletionRequest, DeltaStream, ModelProvider,
@@ -21,7 +22,13 @@ pub struct OpenAiCompatProvider {
 /// snake_case and already conform; this defensive normalization keeps any
 /// future dotted name from producing a provider 400.
 fn wire_name(name: &str) -> String {
-    name.replace('.', "_")
+    match name {
+        // Some Gemini-compatible relays reserve `web_search` for their hosted
+        // search tool and reject it beside ordinary function declarations.
+        // `search_web` is already a native alias mapped back by the executor.
+        "web_search" => "search_web".to_string(),
+        _ => name.replace('.', "_"),
+    }
 }
 
 impl OpenAiCompatProvider {
@@ -67,7 +74,7 @@ impl OpenAiCompatProvider {
                             "function": {
                                 "name": wire_name(&t.name),
                                 "description": t.description,
-                                "parameters": t.parameters,
+                                "parameters": compatible_tool_schema(&t.parameters),
                             }
                         })
                     })
@@ -127,7 +134,7 @@ fn message_to_json(msg: &ChatMessage) -> Result<Value, ProviderError> {
                         "id": c.id,
                         "type": "function",
                         "function": {
-                            "name": c.name,
+                            "name": wire_name(&c.name),
                             "arguments": c.arguments.to_string(),
                         }
                     })

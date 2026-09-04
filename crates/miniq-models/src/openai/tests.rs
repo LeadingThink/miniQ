@@ -1,5 +1,5 @@
 use super::*;
-use crate::ApiProtocol;
+use crate::{ApiProtocol, ToolSpec};
 
 fn provider() -> OpenAiCompatProvider {
     OpenAiCompatProvider::new(ProviderConfig {
@@ -36,6 +36,55 @@ fn preserves_an_explicit_temperature_for_compatible_models() {
 fn includes_the_agent_output_budget() {
     let body = provider().build_body(&request(None));
     assert_eq!(body["max_tokens"], 16_384);
+}
+
+#[test]
+fn normalizes_compat_tool_schemas_and_reserved_names() {
+    let mut completion = request(None);
+    completion.tools = vec![ToolSpec {
+        name: "web_search".into(),
+        description: "Search the web".into(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "source": {
+                    "oneOf": [
+                        {"type":"string","const":"web"},
+                        {"type":"string","const":"news"}
+                    ]
+                }
+            }
+        }),
+    }];
+
+    let body = provider().build_body(&completion);
+    let function = &body["tools"][0]["function"];
+    assert_eq!(function["name"], "search_web");
+    assert!(function["parameters"]["properties"]["source"]
+        .get("oneOf")
+        .is_none());
+    assert_eq!(
+        function["parameters"]["properties"]["source"]["enum"],
+        json!(["web", "news"])
+    );
+}
+
+#[test]
+fn replays_tool_calls_with_the_same_wire_name_as_the_declaration() {
+    let mut assistant = ChatMessage::assistant("");
+    assistant.tool_calls.push(ToolCallRequest {
+        id: "call-1".into(),
+        name: "web_search".into(),
+        arguments: json!({"query":"miniQ"}),
+    });
+
+    let mut completion = request(None);
+    completion.messages = vec![assistant];
+    let body = provider().build_body(&completion);
+    assert_eq!(
+        body["messages"][0]["tool_calls"][0]["function"]["name"],
+        "search_web"
+    );
 }
 
 #[test]
