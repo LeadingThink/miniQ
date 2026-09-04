@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Message, Question, ToolCall, TurnProgress } from "../types";
+import type { PendingApproval } from "../hooks/useSessionFeed";
 import { Timeline } from "./Timeline";
 
 const noop = () => undefined;
@@ -13,12 +14,13 @@ function renderTimeline(options: {
   turnProgress?: TurnProgress | null;
   plan?: { content: string; status: "pending" | "in_progress" | "completed" }[];
   questions?: Question[];
+  approvals?: PendingApproval[];
 }) {
   return renderToStaticMarkup(
     <Timeline
       messages={options.messages ?? []}
       toolCalls={options.toolCalls ?? []}
-      approvals={[]}
+      approvals={options.approvals ?? []}
       questions={options.questions ?? []}
       plan={options.plan ?? []}
       artifacts={[]}
@@ -132,5 +134,31 @@ describe("Timeline execution flow", () => {
     expect(html).toContain("检查 x64 安装包");
     expect(html).toContain("确认选择");
     expect(html).toContain('aria-pressed="false"');
+  });
+
+  it("renders actions for a pending tool approval", () => {
+    const html = renderTimeline({
+      busy: true,
+      approvals: [
+        {
+          approval: {
+            id: "approval-1",
+            sessionId: "session-1",
+            toolCallId: "tool-1",
+            riskLevel: "high",
+            status: "pending",
+            reason: "trusted Node plugin executes with the current user account",
+            createdAt: "2026-09-03T01:00:02Z",
+          },
+          toolName: "dev.miniq.text-utils.transform",
+          input: { text: "Hello, miniQ!", mode: "uppercase" },
+        },
+      ],
+    });
+
+    expect(html).toContain("dev.miniq.text-utils.transform");
+    expect(html).toContain("允许一次");
+    expect(html).toContain("本会话允许");
+    expect(html).toContain("拒绝");
   });
 });

@@ -117,6 +117,13 @@ pub struct StartupRecovery {
     pub approvals_rejected: usize,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SessionRecovery {
+    pub session_failed: bool,
+    pub tool_calls_cancelled: usize,
+    pub approvals_rejected: usize,
+}
+
 pub struct Store {
     conn: Mutex<Connection>,
 }
@@ -198,6 +205,38 @@ impl Store {
         transaction.commit()?;
         Ok(StartupRecovery {
             sessions_failed,
+            tool_calls_cancelled,
+            approvals_rejected,
+        })
+    }
+
+    /// Mark process-owned work for one session as terminal when no matching
+    /// in-memory turn exists anymore.
+    pub fn recover_interrupted_session(&self, session_id: &str) -> Result<SessionRecovery> {
+        let mut conn = self.conn.lock().unwrap();
+        let transaction = conn.transaction()?;
+        let now = now_iso();
+        let session_failed = transaction.execute(
+            "UPDATE sessions
+             SET status = 'failed', updated_at = ?2
+             WHERE id = ?1 AND status IN ('running', 'waiting_approval', 'cancelling')",
+            params![session_id, now],
+        )? > 0;
+        let tool_calls_cancelled = transaction.execute(
+            "UPDATE tool_calls
+             SET status = 'cancelled', completed_at = ?2
+             WHERE session_id = ?1 AND status IN ('pending', 'waiting_approval', 'running')",
+            params![session_id, now],
+        )?;
+        let approvals_rejected = transaction.execute(
+            "UPDATE approvals
+             SET status = 'rejected', resolved_at = ?2
+             WHERE session_id = ?1 AND status = 'pending'",
+            params![session_id, now],
+        )?;
+        transaction.commit()?;
+        Ok(SessionRecovery {
+            session_failed,
             tool_calls_cancelled,
             approvals_rejected,
         })

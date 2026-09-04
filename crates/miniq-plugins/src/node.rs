@@ -531,16 +531,20 @@ impl Tool for NodeTool {
         self.input_schema.clone()
     }
     fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
-        Risk {
-            level: RiskLevel::High,
-            reason: "trusted Node plugin executes with the current user account".into(),
-        }
+        node_tool_risk()
     }
     async fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         self.plugin
             .execute(&self.guest_name, input, self.cancellation.child_token())
             .await
             .map_err(|error| ToolError::ExecutionFailed(error.to_string()))
+    }
+}
+
+fn node_tool_risk() -> Risk {
+    Risk {
+        level: RiskLevel::Medium,
+        reason: "trusted Node plugin executes with the current user account".into(),
     }
 }
 
@@ -725,6 +729,11 @@ fn protocol_error(error: impl std::fmt::Display) -> PluginError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trusted_node_tool_uses_medium_risk() {
+        assert_eq!(node_tool_risk().level, RiskLevel::Medium);
+    }
 
     #[tokio::test]
     async fn rejects_oversized_frame_before_newline() {

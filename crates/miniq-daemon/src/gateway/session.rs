@@ -376,16 +376,29 @@ pub(super) fn cancel(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
         emit_queue_changed(state, &input.session_id);
     }
     let cancelled = state.cancel_turn(&input.session_id);
-    if cancelled {
+    let recovered = if cancelled {
         let _ = state
             .store
             .update_session_status(&input.session_id, SessionStatus::Cancelling);
         state.emit(Event::SessionStatusChanged {
-            session_id: input.session_id,
+            session_id: input.session_id.clone(),
             status: SessionStatus::Cancelling,
         });
-    }
-    Ok(json!({ "cancelled": cancelled }))
+        false
+    } else {
+        let recovery = state
+            .store
+            .recover_interrupted_session(&input.session_id)
+            .map_err(store_err)?;
+        if recovery.session_failed {
+            state.emit(Event::SessionStatusChanged {
+                session_id: input.session_id,
+                status: SessionStatus::Failed,
+            });
+        }
+        recovery.session_failed
+    };
+    Ok(json!({ "cancelled": cancelled || recovered }))
 }
 
 #[derive(Deserialize)]

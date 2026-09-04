@@ -3,6 +3,7 @@ import {
   buildComposerMessage,
   canSendComposer,
   isComposerSendKey,
+  shouldShowComposerSend,
 } from "./composerInput";
 
 describe("composer input behavior", () => {
@@ -25,5 +26,12 @@ describe("composer input behavior", () => {
     expect(isComposerSendKey("Enter", false, false)).toBe(true);
     expect(isComposerSendKey("Enter", true, false)).toBe(false);
     expect(isComposerSendKey("Enter", false, true)).toBe(false);
+  });
+
+  it("hides the queue button while busy until there is content to queue", () => {
+    expect(shouldShowComposerSend(true, "", [])).toBe(false);
+    expect(shouldShowComposerSend(true, "next task", [])).toBe(true);
+    expect(shouldShowComposerSend(true, "", ["/tmp/report.pdf"])).toBe(true);
+    expect(shouldShowComposerSend(false, "", [])).toBe(true);
   });
 });

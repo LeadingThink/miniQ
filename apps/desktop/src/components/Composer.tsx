@@ -12,6 +12,7 @@ import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import {
   canSendComposer,
   isComposerSendKey,
+  shouldShowComposerSend,
 } from "../composerInput";
 import { moveMenuIndex } from "../menuNavigation";
 import type { ApprovalMode } from "../types";
@@ -404,21 +405,23 @@ export function ComposerCard(props: {
             ■
           </button>
         )}
-        <button
-          type="button"
-          className="send-btn"
-          title={
-            props.sendBlocked
-              ? props.sendBlockedReason ?? "当前无法发送"
-              : props.busy
-                ? "加入队列，当前任务结束后执行"
-                : "发送"
-          }
-          disabled={props.sendBlocked || !canSendComposer(draft, attachments)}
-          onClick={send}
-        >
-          ↑
-        </button>
+        {shouldShowComposerSend(props.busy, draft, attachments) && (
+          <button
+            type="button"
+            className="send-btn"
+            title={
+              props.sendBlocked
+                ? props.sendBlockedReason ?? "当前无法发送"
+                : props.busy
+                  ? "加入队列，当前任务结束后执行"
+                  : "发送"
+            }
+            disabled={props.sendBlocked || !canSendComposer(draft, attachments)}
+            onClick={send}
+          >
+            ↑
+          </button>
+        )}
       </div>
     </div>
   );

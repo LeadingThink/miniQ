@@ -190,3 +190,53 @@ fn startup_recovery_atomically_terminates_process_owned_state() {
         miniq_memory::StartupRecovery::default()
     );
 }
+
+#[test]
+fn session_recovery_only_terminates_the_requested_session() {
+    let store = Store::open_in_memory().unwrap();
+    let workspace = store.create_workspace("ws", "C:/ws").unwrap();
+    let target = store.create_session(&workspace.id, "target").unwrap();
+    let other = store.create_session(&workspace.id, "other").unwrap();
+    for session in [&target, &other] {
+        store
+            .update_session_status(&session.id, SessionStatus::WaitingApproval)
+            .unwrap();
+        let call = store
+            .create_tool_call(
+                &session.id,
+                "plugin.tool",
+                &json!({}),
+                ToolCallStatus::WaitingApproval,
+            )
+            .unwrap();
+        store
+            .create_approval(&session.id, &call.id, RiskLevel::High, "test")
+            .unwrap();
+    }
+
+    let report = store.recover_interrupted_session(&target.id).unwrap();
+
+    assert_eq!(
+        report,
+        miniq_memory::SessionRecovery {
+            session_failed: true,
+            tool_calls_cancelled: 1,
+            approvals_rejected: 1,
+        }
+    );
+    assert_eq!(
+        store.get_session(&target.id).unwrap().status,
+        SessionStatus::Failed
+    );
+    assert_eq!(
+        store.get_session(&other.id).unwrap().status,
+        SessionStatus::WaitingApproval
+    );
+    assert_eq!(
+        store
+            .list_pending_approval_requests(&other.id)
+            .unwrap()
+            .len(),
+        1
+    );
+}

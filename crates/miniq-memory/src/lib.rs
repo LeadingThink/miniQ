@@ -8,5 +8,5 @@ mod store;
 
 pub use store::{
     new_id, now_iso, CheckpointRow, ExternalImportOutcome, MemoryError, MemoryRow,
-    ModelContextSnapshot, StartupRecovery, Store,
+    ModelContextSnapshot, SessionRecovery, StartupRecovery, Store,
 };
