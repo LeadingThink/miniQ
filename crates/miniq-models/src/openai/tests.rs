@@ -234,3 +234,21 @@ fn surfaces_error_objects_inside_successful_sse_responses() {
         [Err(ProviderError::InvalidResponse(detail))] if detail.contains("upstream unavailable")
     ));
 }
+
+#[test]
+fn classifies_context_overflow_inside_a_successful_sse_response() {
+    let mut pending = Vec::new();
+    let mut saw_finish = false;
+
+    let (deltas, terminal) = decode_sse_event(
+        r#"data: {"error":{"code":"context_length_exceeded","message":"maximum context length exceeded"}}"#,
+        &mut pending,
+        &mut saw_finish,
+    );
+
+    assert!(terminal);
+    assert!(matches!(
+        deltas.as_slice(),
+        [Err(ProviderError::ContextWindowExceeded)]
+    ));
+}

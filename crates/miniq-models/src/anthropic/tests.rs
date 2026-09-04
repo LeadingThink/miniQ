@@ -198,6 +198,15 @@ fn surfaces_anthropic_errors_and_output_limits() {
         limit.items[0],
         Err(ProviderError::OutputLimitReached)
     ));
+
+    let context_limit = decode(
+        &mut AnthropicDecoder::default(),
+        json!({"type":"message_delta","delta":{"stop_reason":"model_context_window_exceeded"}}),
+    );
+    assert!(matches!(
+        context_limit.items[0],
+        Err(ProviderError::ContextWindowExceeded)
+    ));
 }
 
 #[test]

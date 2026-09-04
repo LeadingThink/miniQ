@@ -337,10 +337,11 @@ impl EventDecoder for ResponsesDecoder {
                 DecodedEvent::terminal(vec![Err(error)])
             }
             "response.failed" | "error" => {
-                DecodedEvent::terminal(vec![Err(ProviderError::InvalidResponse(format!(
-                    "Responses API error: {}",
-                    error_detail(&event)
-                )))])
+                let detail = error_detail(&event);
+                DecodedEvent::terminal(vec![Err(ProviderError::from_stream_detail(
+                    "Responses API error",
+                    &detail,
+                ))])
             }
             _ => DecodedEvent::continue_with(Vec::new()),
         }
@@ -366,7 +367,7 @@ impl ModelProvider for ResponsesProvider {
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::Api { status, body });
+            return Err(ProviderError::from_api_response(status, body));
         }
         Ok(sse::response_stream(response, ResponsesDecoder::default()))
     }

@@ -334,9 +334,10 @@ fn decode_sse_event(
             .and_then(Value::as_str)
             .map(str::to_string)
             .unwrap_or_else(|| error.to_string());
-        deltas.push(Err(ProviderError::InvalidResponse(format!(
-            "provider stream error: {detail}"
-        ))));
+        deltas.push(Err(ProviderError::from_stream_detail(
+            "provider stream error",
+            &detail,
+        )));
         return (deltas, true);
     }
     for choice in parsed.choices {
@@ -393,7 +394,7 @@ impl ModelProvider for OpenAiCompatProvider {
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::Api { status, body });
+            return Err(ProviderError::from_api_response(status, body));
         }
 
         Ok(sse::response_stream(

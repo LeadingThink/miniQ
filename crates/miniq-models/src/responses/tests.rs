@@ -241,4 +241,16 @@ fn maps_incomplete_and_failed_terminal_events_to_errors() {
     assert!(
         matches!(&failed.items[0], Err(ProviderError::InvalidResponse(detail)) if detail.contains("overloaded"))
     );
+
+    let context_overflow = decode(
+        &mut ResponsesDecoder::default(),
+        json!({
+            "type":"response.failed",
+            "response":{"error":{"message":"Your input exceeds the context window of this model."}}
+        }),
+    );
+    assert!(matches!(
+        context_overflow.items[0],
+        Err(ProviderError::ContextWindowExceeded)
+    ));
 }

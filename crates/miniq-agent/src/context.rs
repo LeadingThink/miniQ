@@ -1,5 +1,5 @@
 use futures_util::StreamExt;
-use miniq_models::{ChatDelta, ChatMessage, ChatRole, CompletionRequest, ModelProvider};
+use miniq_models::{ChatDelta, ChatMessage, ChatRole, CompletionRequest, ModelProvider, ToolSpec};
 use tokio_util::sync::CancellationToken;
 
 use crate::{AgentError, AgentEvent};
@@ -65,29 +65,56 @@ fn estimate_text_tokens(value: &str) -> usize {
             non_ascii += 1;
         }
     }
-    ascii.div_ceil(4) + non_ascii
+    // Source code, JSON, paths, and shell output commonly tokenize closer to
+    // three ASCII characters per token than prose's often-quoted four.
+    ascii.div_ceil(3) + non_ascii
 }
 
-fn prune_old_tool_results(messages: &mut [ChatMessage], policy: &ContextPolicy) -> bool {
-    let recent_start = messages
-        .len()
-        .saturating_sub(policy.preserve_recent_messages);
+pub fn estimate_request_tokens(messages: &[ChatMessage], tools: &[ToolSpec]) -> usize {
+    let tool_tokens = serde_json::to_string(tools)
+        .ok()
+        .map(|tools| estimate_text_tokens(&tools))
+        .unwrap_or_default();
+    estimate_tokens(messages) + tool_tokens + 32
+}
+
+fn prune_tool_results_to_limit(
+    messages: &mut [ChatMessage],
+    tools: &[ToolSpec],
+    policy: &ContextPolicy,
+) -> bool {
     let mut changed = false;
-    for message in &mut messages[..recent_start] {
-        if message.role == ChatRole::Tool
-            && estimate_text_tokens(&message.content) > policy.prune_tool_results_over_tokens
-        {
-            let original_tokens = estimate_text_tokens(&message.content);
-            message.content = serde_json::json!({
-                "compacted": true,
-                "reason": "old_tool_result",
-                "originalEstimatedTokens": original_tokens,
-            })
-            .to_string();
-            changed = true;
+    let mut request_tokens = estimate_request_tokens(messages, tools);
+    for message in messages.iter_mut() {
+        if request_tokens <= policy.soft_limit_tokens {
+            break;
         }
+        if message.role != ChatRole::Tool {
+            continue;
+        }
+        let original_tokens = estimate_text_tokens(&message.content);
+        if original_tokens <= policy.prune_tool_results_over_tokens {
+            continue;
+        }
+        let previous_message_tokens = estimate_tokens(std::slice::from_ref(message));
+        message.content = serde_json::json!({
+            "compacted": true,
+            "reason": "oversized_tool_result",
+            "originalEstimatedTokens": original_tokens
+        })
+        .to_string();
+        let compacted_message_tokens = estimate_tokens(std::slice::from_ref(message));
+        request_tokens = request_tokens
+            .saturating_sub(previous_message_tokens)
+            .saturating_add(compacted_message_tokens);
+        changed = true;
     }
     changed
+}
+
+fn is_safe_start(message: &ChatMessage) -> bool {
+    message.role == ChatRole::User
+        || (message.role == ChatRole::Assistant && !message.tool_calls.is_empty())
 }
 
 fn recent_boundary(messages: &[ChatMessage], preserve: usize) -> usize {
@@ -98,10 +125,6 @@ fn recent_boundary(messages: &[ChatMessage], preserve: usize) -> usize {
         .len()
         .saturating_sub(preserve)
         .min(messages.len() - 1);
-    let is_safe_start = |message: &ChatMessage| {
-        message.role == ChatRole::User
-            || (message.role == ChatRole::Assistant && !message.tool_calls.is_empty())
-    };
     (desired..messages.len())
         .find(|index| is_safe_start(&messages[*index]))
         .or_else(|| {
@@ -110,6 +133,35 @@ fn recent_boundary(messages: &[ChatMessage], preserve: usize) -> usize {
                 .find(|index| is_safe_start(&messages[*index]))
         })
         .unwrap_or(0)
+}
+
+fn summary_boundary(
+    messages: &[ChatMessage],
+    tools: &[ToolSpec],
+    policy: &ContextPolicy,
+    conversation_start: usize,
+) -> usize {
+    let preferred =
+        recent_boundary(messages, policy.preserve_recent_messages).max(conversation_start);
+    let recent_target = policy.soft_limit_tokens.saturating_mul(3) / 4;
+    if preferred > conversation_start
+        && estimate_request_tokens(&messages[preferred..], tools) <= recent_target
+    {
+        return preferred;
+    }
+
+    // A short conversation can still be oversized when a single turn emits
+    // several large results. Keep a valid user/tool boundary, but allow more
+    // than the preferred recent-message count to be summarized when required.
+    (preferred.max(conversation_start + 1)..messages.len())
+        .filter(|index| is_safe_start(&messages[*index]))
+        .find(|index| estimate_request_tokens(&messages[*index..], tools) <= recent_target)
+        .or_else(|| {
+            (conversation_start + 1..messages.len())
+                .rev()
+                .find(|index| is_safe_start(&messages[*index]))
+        })
+        .unwrap_or(conversation_start)
 }
 
 fn batches(messages: &[ChatMessage], limit: usize) -> Vec<Vec<ChatMessage>> {
@@ -191,11 +243,12 @@ async fn summarize_batch(
 pub async fn compact_history(
     provider: &dyn ModelProvider,
     mut messages: Vec<ChatMessage>,
+    tools: &[ToolSpec],
     policy: &ContextPolicy,
     events: &tokio::sync::mpsc::Sender<AgentEvent>,
     cancel: &CancellationToken,
 ) -> Result<ContextOutcome, AgentError> {
-    let estimated_tokens_before = estimate_tokens(&messages);
+    let estimated_tokens_before = estimate_request_tokens(&messages, tools);
     if estimated_tokens_before <= policy.soft_limit_tokens {
         return Ok(ContextOutcome {
             messages,
@@ -205,19 +258,11 @@ pub async fn compact_history(
         });
     }
 
-    let mut pruned = prune_old_tool_results(&mut messages, policy);
-    if estimate_tokens(&messages) > policy.soft_limit_tokens {
-        // One user turn can contain dozens of tool rounds. Keep the latest
-        // exchange verbatim, but compact earlier large results even if they
-        // still sit inside the normal recent-message window.
-        let aggressive_policy = ContextPolicy {
-            preserve_recent_messages: 4,
-            ..policy.clone()
-        };
-        pruned |= prune_old_tool_results(&mut messages, &aggressive_policy);
-    }
-    if estimate_tokens(&messages) <= policy.soft_limit_tokens {
-        let estimated_tokens_after = estimate_tokens(&messages);
+    // Context limits are absolute: one multi-megabyte result must be compacted
+    // even when it is part of the newest tool batch.
+    let pruned = prune_tool_results_to_limit(&mut messages, tools, policy);
+    if estimate_request_tokens(&messages, tools) <= policy.soft_limit_tokens {
+        let estimated_tokens_after = estimate_request_tokens(&messages, tools);
         let _ = events
             .send(AgentEvent::ContextCompacted {
                 estimated_tokens_before,
@@ -237,11 +282,10 @@ pub async fn compact_history(
         .filter(|message| message.role == ChatRole::System)
         .cloned();
     let conversation_start = usize::from(system.is_some());
-    let boundary =
-        recent_boundary(&messages, policy.preserve_recent_messages).max(conversation_start);
+    let boundary = summary_boundary(&messages, tools, policy, conversation_start);
     let old = &messages[conversation_start..boundary];
     if old.is_empty() {
-        let estimated_tokens_after = estimate_tokens(&messages);
+        let estimated_tokens_after = estimate_request_tokens(&messages, tools);
         return Ok(ContextOutcome {
             messages,
             compacted: pruned,
@@ -273,7 +317,7 @@ pub async fn compact_history(
         summaries.join("\n\n")
     )));
     compacted_messages.extend_from_slice(&messages[boundary..]);
-    let estimated_tokens_after = estimate_tokens(&compacted_messages);
+    let estimated_tokens_after = estimate_request_tokens(&compacted_messages, tools);
     let _ = events
         .send(AgentEvent::ContextCompacted {
             estimated_tokens_before,
@@ -324,6 +368,7 @@ mod tests {
         let outcome = compact_history(
             &provider,
             messages,
+            &[],
             &policy,
             &events,
             &CancellationToken::new(),
@@ -339,5 +384,99 @@ mod tests {
             receiver.recv().await,
             Some(AgentEvent::ContextCompacted { .. })
         ));
+    }
+
+    #[test]
+    fn tool_schemas_contribute_to_request_estimate() {
+        let tools = vec![ToolSpec {
+            name: "large_tool".into(),
+            description: "x".repeat(600),
+            parameters: serde_json::json!({"type":"object"}),
+        }];
+
+        assert!(
+            estimate_request_tokens(&[ChatMessage::user("work")], &tools)
+                > estimate_request_tokens(&[ChatMessage::user("work")], &[]) + 150
+        );
+    }
+
+    #[tokio::test]
+    async fn compacts_an_oversized_tool_result_inside_the_recent_window() {
+        let provider = MockProvider::new(Vec::new());
+        let messages = vec![
+            ChatMessage::system("system"),
+            ChatMessage::user("inspect"),
+            ChatMessage::assistant("running command"),
+            ChatMessage::tool_result("call-1", "x".repeat(3_200_000)),
+        ];
+        let policy = ContextPolicy {
+            soft_limit_tokens: 64_000,
+            preserve_recent_messages: 16,
+            prune_tool_results_over_tokens: 2_000,
+            summary_batch_tokens: 32_000,
+        };
+        let (events, _receiver) = tokio::sync::mpsc::channel(4);
+
+        let outcome = compact_history(
+            &provider,
+            messages,
+            &[],
+            &policy,
+            &events,
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert!(outcome.compacted);
+        assert!(outcome.estimated_tokens_before > 1_000_000);
+        assert!(outcome.estimated_tokens_after < policy.soft_limit_tokens);
+        assert!(outcome.messages[3]
+            .content
+            .contains("oversized_tool_result"));
+        assert!(provider.requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn reduces_the_recent_window_when_it_cannot_fit_the_budget() {
+        let provider = MockProvider::new(vec![vec![ChatDelta::Text("summary".into())]]);
+        let mut messages = Vec::new();
+        for index in 0..10 {
+            messages.push(ChatMessage::user(format!(
+                "user-{index}-{}",
+                "u".repeat(600)
+            )));
+            messages.push(ChatMessage::assistant(format!(
+                "assistant-{index}-{}",
+                "a".repeat(600)
+            )));
+        }
+        let policy = ContextPolicy {
+            soft_limit_tokens: 800,
+            preserve_recent_messages: 16,
+            prune_tool_results_over_tokens: 100,
+            summary_batch_tokens: 10_000,
+        };
+        let (events, _receiver) = tokio::sync::mpsc::channel(4);
+
+        let outcome = compact_history(
+            &provider,
+            messages,
+            &[],
+            &policy,
+            &events,
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert!(outcome.compacted);
+        assert!(outcome.estimated_tokens_after <= policy.soft_limit_tokens);
+        assert!(outcome
+            .messages
+            .last()
+            .unwrap()
+            .content
+            .contains("assistant-9"));
     }
 }

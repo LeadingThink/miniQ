@@ -11,11 +11,14 @@
 use async_trait::async_trait;
 mod context;
 
-pub use context::{compact_history, estimate_tokens, ContextOutcome, ContextPolicy};
+pub use context::{
+    compact_history, estimate_request_tokens, estimate_tokens, ContextOutcome, ContextPolicy,
+};
 
 use futures_util::{future::join_all, StreamExt};
 use miniq_models::{
-    ChatDelta, ChatMessage, CompletionRequest, ModelProvider, ToolCallRequest, ToolSpec,
+    ChatDelta, ChatMessage, CompletionRequest, ModelCapabilities, ModelProvider, ProviderError,
+    ToolCallRequest, ToolSpec,
 };
 use serde_json::Value;
 use thiserror::Error;
@@ -125,6 +128,54 @@ impl Default for RunLimits {
     }
 }
 
+fn effective_context_policy(
+    configured: &ContextPolicy,
+    capabilities: &ModelCapabilities,
+    output_budget: u32,
+) -> ContextPolicy {
+    let mut policy = configured.clone();
+    if let Some(context_window) = capabilities.max_context_tokens {
+        let safety_margin = (context_window / 20).max(1_024);
+        let provider_input_limit = context_window
+            .saturating_sub(output_budget)
+            .saturating_sub(safety_margin) as usize;
+        if provider_input_limit > 0 {
+            policy.soft_limit_tokens = policy.soft_limit_tokens.min(provider_input_limit);
+        }
+    }
+    policy
+}
+
+async fn recover_context_overflow(
+    provider: &dyn ModelProvider,
+    history: &mut Vec<ChatMessage>,
+    tools: &[ToolSpec],
+    policy: &ContextPolicy,
+    events: &tokio::sync::mpsc::Sender<AgentEvent>,
+    cancel: &CancellationToken,
+) -> Result<bool, AgentError> {
+    let before = estimate_request_tokens(history, tools);
+    if before <= 1 {
+        return Ok(false);
+    }
+    let mut recovery_policy = policy.clone();
+    recovery_policy.soft_limit_tokens = recovery_policy
+        .soft_limit_tokens
+        .min(before.saturating_mul(2) / 3);
+    let outcome = compact_history(
+        provider,
+        std::mem::take(history),
+        tools,
+        &recovery_policy,
+        events,
+        cancel,
+    )
+    .await?;
+    let reduced = outcome.estimated_tokens_after < before;
+    *history = outcome.messages;
+    Ok(reduced)
+}
+
 /// Run one turn to completion.
 pub async fn run_turn(
     provider: &dyn ModelProvider,
@@ -153,6 +204,7 @@ pub async fn run_turn_with_limits(
     limits: RunLimits,
 ) -> Result<TurnOutcome, AgentError> {
     let tools = executor.specs();
+    let capabilities = provider.capabilities().await;
     let mut appended: Vec<ChatMessage> = Vec::new();
     let mut steps = 0;
     let mut last_tool_batch = String::new();
@@ -170,12 +222,17 @@ pub async fn run_turn_with_limits(
                 steps: limits.max_steps,
             });
         }
+        let mut output_budget = capabilities
+            .max_output_tokens
+            .map(|maximum| 16_384.min(maximum))
+            .unwrap_or(16_384);
+        let context_policy =
+            effective_context_policy(&limits.context_policy, &capabilities, output_budget);
         let context =
-            compact_history(provider, history, &limits.context_policy, &events, &cancel).await?;
+            compact_history(provider, history, &tools, &context_policy, &events, &cancel).await?;
         history = context.messages;
 
         let mut model_retry = 0;
-        let mut output_budget = 16_384u32;
         let (text, tool_calls, provider_context) = loop {
             let request = CompletionRequest {
                 messages: history.clone(),
@@ -188,9 +245,31 @@ pub async fn run_turn_with_limits(
                 .await;
             // Race the provider call against cancellation so an interrupt
             // takes effect while connecting or waiting for the first byte.
-            let mut stream = tokio::select! {
+            let stream = tokio::select! {
                 _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-                stream = provider.stream_complete(request) => stream?,
+                stream = provider.stream_complete(request) => stream,
+            };
+            let mut stream = match stream {
+                Ok(stream) => stream,
+                Err(ProviderError::ContextWindowExceeded)
+                    if model_retry < limits.max_model_retries =>
+                {
+                    if !recover_context_overflow(
+                        provider,
+                        &mut history,
+                        &tools,
+                        &context_policy,
+                        &events,
+                        &cancel,
+                    )
+                    .await?
+                    {
+                        return Err(AgentError::Provider(ProviderError::ContextWindowExceeded));
+                    }
+                    model_retry += 1;
+                    continue;
+                }
+                Err(error) => return Err(AgentError::Provider(error)),
             };
             let _ = events
                 .send(AgentEvent::ModelResponseStarted { step: steps })
@@ -256,12 +335,29 @@ pub async fn run_turn_with_limits(
 
             if let Some(error) = stream_error {
                 if text.is_empty() && model_retry < limits.max_model_retries {
+                    if matches!(&error, ProviderError::ContextWindowExceeded) {
+                        if !recover_context_overflow(
+                            provider,
+                            &mut history,
+                            &tools,
+                            &context_policy,
+                            &events,
+                            &cancel,
+                        )
+                        .await?
+                        {
+                            return Err(AgentError::Provider(error));
+                        }
+                        model_retry += 1;
+                        continue;
+                    }
                     if matches!(
                         &error,
-                        miniq_models::ProviderError::OutputLimitReached
-                            | miniq_models::ProviderError::IncompleteToolArguments { .. }
+                        ProviderError::OutputLimitReached
+                            | ProviderError::IncompleteToolArguments { .. }
                     ) {
-                        output_budget = output_budget.saturating_mul(2).min(65_536);
+                        let maximum = capabilities.max_output_tokens.unwrap_or(65_536);
+                        output_budget = output_budget.saturating_mul(2).min(maximum);
                     }
                     model_retry += 1;
                     tokio::time::sleep(std::time::Duration::from_millis(250 * model_retry as u64))
@@ -624,6 +720,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn respects_an_advertised_output_cap() {
+        let provider = MockProvider::new(vec![vec![ChatDelta::Text("done".into())]])
+            .with_capabilities(ModelCapabilities {
+                preferred_api_protocol: None,
+                max_output_tokens: Some(4_096),
+                max_context_tokens: Some(32_000),
+            });
+        let (events, _receiver) = tokio::sync::mpsc::channel(8);
+
+        run_turn(
+            &provider,
+            &TestExecutor,
+            vec![ChatMessage::user("work")],
+            events,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            provider.requests.lock().unwrap()[0].max_output_tokens,
+            Some(4_096)
+        );
+    }
+
+    #[tokio::test]
+    async fn compacts_before_retrying_a_context_overflow() {
+        let provider = FallibleProvider::new(vec![
+            vec![Err(ProviderError::ContextWindowExceeded)],
+            vec![Ok(ChatDelta::Text("working summary".into()))],
+            vec![Ok(ChatDelta::Text("done".into()))],
+        ]);
+        let history = vec![
+            ChatMessage::system("system"),
+            ChatMessage::user("x".repeat(3_000)),
+            ChatMessage::assistant("y".repeat(3_000)),
+            ChatMessage::user("continue"),
+        ];
+        let (events, _receiver) = tokio::sync::mpsc::channel(16);
+
+        let outcome = run_turn(
+            &provider,
+            &TestExecutor,
+            history,
+            events,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome.final_text, "done");
+        let requests = provider.requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        assert!(!requests[0].tools.is_empty());
+        assert!(requests[1].tools.is_empty());
+        assert!(!requests[2].tools.is_empty());
+        assert!(
+            estimate_request_tokens(&requests[2].messages, &requests[2].tools)
+                < estimate_request_tokens(&requests[0].messages, &requests[0].tools)
+        );
+    }
+
+    #[tokio::test]
     async fn returns_a_clear_error_when_empty_retries_are_exhausted() {
         let provider = MockProvider::new(vec![Vec::new(), Vec::new(), Vec::new()]);
         let (events, _receiver) = tokio::sync::mpsc::channel(16);
@@ -665,7 +824,7 @@ mod tests {
         let (events, mut receiver) = tokio::sync::mpsc::channel(32);
         let limits = RunLimits {
             context_policy: ContextPolicy {
-                soft_limit_tokens: 100,
+                soft_limit_tokens: 300,
                 preserve_recent_messages: 0,
                 prune_tool_results_over_tokens: 10,
                 summary_batch_tokens: 100,
@@ -689,7 +848,7 @@ mod tests {
             .iter()
             .find(|message| message.role == miniq_models::ChatRole::Tool)
             .unwrap();
-        assert!(tool_result.content.contains("old_tool_result"));
+        assert!(tool_result.content.contains("oversized_tool_result"));
         let mut saw_compaction = false;
         while let Ok(event) = receiver.try_recv() {
             saw_compaction |= matches!(event, AgentEvent::ContextCompacted { .. });
