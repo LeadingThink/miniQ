@@ -5,7 +5,9 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use futures_util::stream;
 
-use crate::provider::{ChatDelta, CompletionRequest, DeltaStream, ModelProvider, ProviderError};
+use crate::provider::{
+    ChatDelta, CompletionRequest, DeltaStream, ModelCapabilities, ModelProvider, ProviderError,
+};
 
 /// One scripted turn: the deltas the provider will emit (a trailing
 /// `Finished` is appended automatically).
@@ -17,6 +19,7 @@ pub struct MockProvider {
     turns: Mutex<std::vec::IntoIter<ScriptedTurn>>,
     /// Captured requests for assertions.
     pub requests: Mutex<Vec<CompletionRequest>>,
+    capabilities: ModelCapabilities,
 }
 
 impl MockProvider {
@@ -24,7 +27,13 @@ impl MockProvider {
         Self {
             turns: Mutex::new(turns.into_iter()),
             requests: Mutex::new(Vec::new()),
+            capabilities: ModelCapabilities::default(),
         }
+    }
+
+    pub fn with_capabilities(mut self, capabilities: ModelCapabilities) -> Self {
+        self.capabilities = capabilities;
+        self
     }
 
     /// Single-turn provider that streams `text` split into small chunks.
@@ -50,6 +59,10 @@ impl ModelProvider for MockProvider {
         let mut items: Vec<Result<ChatDelta, ProviderError>> = turn.into_iter().map(Ok).collect();
         items.push(Ok(ChatDelta::Finished));
         Ok(Box::pin(stream::iter(items)))
+    }
+
+    async fn capabilities(&self) -> ModelCapabilities {
+        self.capabilities.clone()
     }
 
     fn describe(&self) -> String {

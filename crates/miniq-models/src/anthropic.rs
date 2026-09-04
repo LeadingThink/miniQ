@@ -378,7 +378,7 @@ fn anthropic_error(event: &Value) -> ProviderError {
         .or_else(|| event.get("message"))
         .and_then(Value::as_str)
         .unwrap_or("provider returned an unspecified Anthropic error");
-    ProviderError::InvalidResponse(format!("Anthropic Messages API error: {detail}"))
+    ProviderError::from_stream_detail("Anthropic Messages API error", detail)
 }
 
 impl EventDecoder for AnthropicDecoder {
@@ -405,9 +405,7 @@ impl EventDecoder for AnthropicDecoder {
                         DecodedEvent::terminal(vec![Err(ProviderError::OutputLimitReached)])
                     }
                     Some("model_context_window_exceeded") => {
-                        DecodedEvent::terminal(vec![Err(ProviderError::InvalidResponse(
-                            "Anthropic model context window was exceeded".into(),
-                        ))])
+                        DecodedEvent::terminal(vec![Err(ProviderError::ContextWindowExceeded)])
                     }
                     _ => DecodedEvent::continue_with(Vec::new()),
                 }
@@ -442,7 +440,7 @@ impl ModelProvider for AnthropicProvider {
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::Api { status, body });
+            return Err(ProviderError::from_api_response(status, body));
         }
         Ok(sse::response_stream(response, AnthropicDecoder::default()))
     }

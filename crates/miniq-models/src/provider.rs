@@ -42,12 +42,42 @@ pub enum ProviderError {
     InvalidResponse(String),
     #[error("provider stopped because the output token limit was reached")]
     OutputLimitReached,
+    #[error("provider context window was exceeded")]
+    ContextWindowExceeded,
     #[error("provider stream ended before a terminal event")]
     IncompleteStream,
     #[error("tool call {tool} ended with incomplete JSON arguments: {detail}")]
     IncompleteToolArguments { tool: String, detail: String },
     #[error("configuration error: {0}")]
     Config(String),
+}
+
+impl ProviderError {
+    pub(crate) fn from_api_response(status: u16, body: String) -> Self {
+        if indicates_context_window_overflow(&body) {
+            Self::ContextWindowExceeded
+        } else {
+            Self::Api { status, body }
+        }
+    }
+
+    pub(crate) fn from_stream_detail(prefix: &str, detail: &str) -> Self {
+        if indicates_context_window_overflow(detail) {
+            Self::ContextWindowExceeded
+        } else {
+            Self::InvalidResponse(format!("{prefix}: {detail}"))
+        }
+    }
+}
+
+fn indicates_context_window_overflow(detail: &str) -> bool {
+    let detail = detail.to_ascii_lowercase();
+    detail.contains("context_length_exceeded")
+        || detail.contains("context window")
+        || detail.contains("maximum context length")
+        || detail.contains("model_context_window_exceeded")
+        || detail.contains("input is too long")
+        || detail.contains("input exceeds")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -152,6 +182,15 @@ pub struct CompletionRequest {
     pub max_output_tokens: Option<u32>,
 }
 
+/// Limits and protocol preference advertised by the configured model endpoint.
+/// Missing limits remain unknown rather than being replaced with guessed values.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModelCapabilities {
+    pub preferred_api_protocol: Option<ApiProtocol>,
+    pub max_output_tokens: Option<u32>,
+    pub max_context_tokens: Option<u32>,
+}
+
 /// Streamed provider output.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChatDelta {
@@ -210,6 +249,38 @@ pub trait ModelProvider: Send + Sync {
         request: CompletionRequest,
     ) -> Result<DeltaStream, ProviderError>;
 
+    /// Fetch model limits without starting a completion. Providers that do
+    /// not expose metadata return an empty capability set.
+    async fn capabilities(&self) -> ModelCapabilities {
+        ModelCapabilities::default()
+    }
+
     /// Human-readable provider identity for logs and settings.
     fn describe(&self) -> String;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classifies_context_overflow_from_common_provider_shapes() {
+        for detail in [
+            "Your input exceeds the context window of this model.",
+            r#"{"error":{"code":"context_length_exceeded"}}"#,
+            "maximum context length is 100000 tokens",
+            "model_context_window_exceeded",
+        ] {
+            assert!(matches!(
+                ProviderError::from_stream_detail("provider error", detail),
+                ProviderError::ContextWindowExceeded
+            ));
+        }
+    }
+
+    #[test]
+    fn preserves_unrelated_api_errors() {
+        let error = ProviderError::from_api_response(429, "rate limited".into());
+        assert!(matches!(error, ProviderError::Api { status: 429, .. }));
+    }
 }
