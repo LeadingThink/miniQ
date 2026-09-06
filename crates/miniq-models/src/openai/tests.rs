@@ -39,6 +39,14 @@ fn includes_the_agent_output_budget() {
 }
 
 #[test]
+fn omits_output_limit_when_the_caller_uses_provider_defaults() {
+    let mut completion = request(None);
+    completion.max_output_tokens = None;
+    let body = provider().build_body(&completion);
+    assert!(body.get("max_tokens").is_none());
+}
+
+#[test]
 fn normalizes_compat_tool_schemas_and_reserved_names() {
     let mut completion = request(None);
     completion.tools = vec![ToolSpec {
@@ -132,7 +140,10 @@ fn output_limit_is_not_reported_as_success() {
         &deltas[0],
         Ok(ChatDelta::Text(text)) if text == "partial"
     ));
-    assert!(matches!(deltas[1], Err(ProviderError::OutputLimitReached)));
+    assert!(matches!(
+        deltas[1],
+        Err(ProviderError::OutputLimitReached(_))
+    ));
 }
 
 #[test]

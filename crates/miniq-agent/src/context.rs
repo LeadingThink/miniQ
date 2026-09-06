@@ -204,7 +204,7 @@ async fn summarize_batch(
         // Provider defaults are the only portable choice here: thinking
         // models may reject any explicit value other than 1.
         temperature: None,
-        max_output_tokens: Some(8_192),
+        max_output_tokens: None,
     };
     let mut stream = tokio::select! {
         _ = cancel.cancelled() => return Err(AgentError::Cancelled),

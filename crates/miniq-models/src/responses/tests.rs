@@ -35,6 +35,14 @@ fn builds_native_responses_input_and_tools() {
 }
 
 #[test]
+fn omits_output_limit_when_the_caller_uses_provider_defaults() {
+    let mut completion = request(vec![ChatMessage::user("hello")]);
+    completion.max_output_tokens = None;
+    let body = provider().build_body(&completion);
+    assert!(body.get("max_output_tokens").is_none());
+}
+
+#[test]
 fn advertises_patch_and_shell_as_standard_responses_functions() {
     let mut request = request(vec![ChatMessage::user("edit")]);
     request.tools = vec![
@@ -227,12 +235,26 @@ fn shell_error_results_use_a_valid_nonzero_exit_outcome() {
 fn maps_incomplete_and_failed_terminal_events_to_errors() {
     let incomplete = decode(
         &mut ResponsesDecoder::default(),
-        json!({"type":"response.incomplete","response":{"incomplete_details":{"reason":"max_output_tokens"}}}),
+        json!({"type":"response.incomplete","response":{
+            "incomplete_details":{"reason":"max_output_tokens"},
+            "usage":{
+                "input_tokens":1200,
+                "output_tokens":16384,
+                "output_tokens_details":{"reasoning_tokens":16000}
+            }
+        }}),
     );
-    assert!(matches!(
-        incomplete.items[0],
-        Err(ProviderError::OutputLimitReached)
-    ));
+    let Err(ProviderError::OutputLimitReached(usage)) = &incomplete.items[0] else {
+        panic!("expected output-limit error");
+    };
+    assert_eq!(usage.input_tokens, Some(1200));
+    assert_eq!(usage.output_tokens, Some(16384));
+    assert_eq!(usage.reasoning_tokens, Some(16000));
+    assert!(incomplete.items[0]
+        .as_ref()
+        .unwrap_err()
+        .to_string()
+        .contains("reasoning_tokens=16000"));
 
     let failed = decode(
         &mut ResponsesDecoder::default(),

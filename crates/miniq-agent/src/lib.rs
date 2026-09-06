@@ -131,13 +131,13 @@ impl Default for RunLimits {
 fn effective_context_policy(
     configured: &ContextPolicy,
     capabilities: &ModelCapabilities,
-    output_budget: u32,
 ) -> ContextPolicy {
     let mut policy = configured.clone();
     if let Some(context_window) = capabilities.max_context_tokens {
+        let output_reserve = capabilities.max_output_tokens.unwrap_or(16_384);
         let safety_margin = (context_window / 20).max(1_024);
         let provider_input_limit = context_window
-            .saturating_sub(output_budget)
+            .saturating_sub(output_reserve)
             .saturating_sub(safety_margin) as usize;
         if provider_input_limit > 0 {
             policy.soft_limit_tokens = policy.soft_limit_tokens.min(provider_input_limit);
@@ -222,12 +222,7 @@ pub async fn run_turn_with_limits(
                 steps: limits.max_steps,
             });
         }
-        let mut output_budget = capabilities
-            .max_output_tokens
-            .map(|maximum| 16_384.min(maximum))
-            .unwrap_or(16_384);
-        let context_policy =
-            effective_context_policy(&limits.context_policy, &capabilities, output_budget);
+        let context_policy = effective_context_policy(&limits.context_policy, &capabilities);
         let context =
             compact_history(provider, history, &tools, &context_policy, &events, &cancel).await?;
         history = context.messages;
@@ -238,7 +233,7 @@ pub async fn run_turn_with_limits(
                 messages: history.clone(),
                 tools: tools.clone(),
                 temperature: None,
-                max_output_tokens: Some(output_budget),
+                max_output_tokens: None,
             };
             let _ = events
                 .send(AgentEvent::ModelRequestStarted { step: steps })
@@ -350,14 +345,6 @@ pub async fn run_turn_with_limits(
                         }
                         model_retry += 1;
                         continue;
-                    }
-                    if matches!(
-                        &error,
-                        ProviderError::OutputLimitReached
-                            | ProviderError::IncompleteToolArguments { .. }
-                    ) {
-                        let maximum = capabilities.max_output_tokens.unwrap_or(65_536);
-                        output_budget = output_budget.saturating_mul(2).min(maximum);
                     }
                     model_retry += 1;
                     tokio::time::sleep(std::time::Duration::from_millis(250 * model_retry as u64))
@@ -688,14 +675,16 @@ mod tests {
         assert_eq!(outcome.final_text, "done");
         let requests = provider.requests.lock().unwrap();
         assert_eq!(requests.len(), 2);
-        assert_eq!(requests[0].max_output_tokens, Some(16_384));
-        assert_eq!(requests[1].max_output_tokens, Some(16_384));
+        assert_eq!(requests[0].max_output_tokens, None);
+        assert_eq!(requests[1].max_output_tokens, None);
     }
 
     #[tokio::test]
-    async fn raises_output_budget_after_a_truncated_response() {
+    async fn retries_a_truncated_response_with_provider_defaults() {
         let provider = FallibleProvider::new(vec![
-            vec![Err(miniq_models::ProviderError::OutputLimitReached)],
+            vec![Err(miniq_models::ProviderError::OutputLimitReached(
+                miniq_models::OutputTokenUsage::default(),
+            ))],
             vec![
                 Ok(ChatDelta::Text("complete".into())),
                 Ok(ChatDelta::Finished),
@@ -715,12 +704,12 @@ mod tests {
 
         assert_eq!(outcome.final_text, "complete");
         let requests = provider.requests.lock().unwrap();
-        assert_eq!(requests[0].max_output_tokens, Some(16_384));
-        assert_eq!(requests[1].max_output_tokens, Some(32_768));
+        assert_eq!(requests[0].max_output_tokens, None);
+        assert_eq!(requests[1].max_output_tokens, None);
     }
 
     #[tokio::test]
-    async fn respects_an_advertised_output_cap() {
+    async fn does_not_send_the_advertised_output_cap() {
         let provider = MockProvider::new(vec![vec![ChatDelta::Text("done".into())]])
             .with_capabilities(ModelCapabilities {
                 preferred_api_protocol: None,
@@ -739,10 +728,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(
-            provider.requests.lock().unwrap()[0].max_output_tokens,
-            Some(4_096)
-        );
+        assert_eq!(provider.requests.lock().unwrap()[0].max_output_tokens, None);
     }
 
     #[tokio::test]
