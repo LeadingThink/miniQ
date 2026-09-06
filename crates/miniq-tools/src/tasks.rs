@@ -11,6 +11,10 @@ use serde_json::{json, Map, Value};
 
 use crate::router::{parse_input, Tool, ToolContext, ToolError};
 
+mod graph;
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TaskRecord {
@@ -27,7 +31,7 @@ struct TaskRecord {
     metadata: Map<String, Value>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct TaskBoard {
     next_id: u64,
     tasks: BTreeMap<String, TaskRecord>,
@@ -95,13 +99,14 @@ impl TaskManager {
             }
             return Ok(json!({"deletedTask": removed, "tasks": task_values(board)}));
         }
+        let mut proposed = board.clone();
         apply_relationships(
-            board,
+            &mut proposed,
             &input.task_id,
             &input.add_blocks,
             &input.add_blocked_by,
         );
-        let task = board
+        let task = proposed
             .tasks
             .get_mut(&input.task_id)
             .ok_or_else(|| unknown_task(&input.task_id))?;
@@ -124,6 +129,8 @@ impl TaskManager {
             task.metadata.extend(metadata);
         }
         let task = task.clone();
+        graph::validate(&proposed)?;
+        *board = proposed;
         Ok(board_output(board, Some(task)))
     }
 }
@@ -358,7 +365,7 @@ impl Tool for TaskItemUpdateTool {
         "task_item_update"
     }
     fn description(&self) -> &str {
-        "Update, assign, link, complete, or delete one structured task."
+        "Update, assign, link, complete, or delete one structured task. Dependencies must be acyclic. All blockers must be completed before a task can be in_progress or completed. Invalid updates leave the graph unchanged."
     }
     fn parameters_schema(&self) -> Value {
         update_schema()
@@ -406,48 +413,5 @@ fn low_risk() -> Risk {
     Risk {
         level: RiskLevel::Low,
         reason: "updates in-memory session task state".into(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn creates_links_updates_and_deletes_tasks() {
-        let context = ToolContext::new(std::path::PathBuf::from("."));
-        let first = TaskCreateTool
-            .execute(
-                &context,
-                json!({"subject":"First","description":"Do first"}),
-            )
-            .await
-            .unwrap();
-        let second = TaskCreateTool
-            .execute(
-                &context,
-                json!({"subject":"Second","description":"Do second"}),
-            )
-            .await
-            .unwrap();
-        let first_id = first["task"]["id"].as_str().unwrap();
-        let second_id = second["task"]["id"].as_str().unwrap();
-
-        let linked = TaskItemUpdateTool
-            .execute(
-                &context,
-                json!({"taskId": second_id, "status":"in_progress", "addBlockedBy":[first_id]}),
-            )
-            .await
-            .unwrap();
-        assert_eq!(linked["task"]["blockedBy"], json!([first_id]));
-        assert_eq!(linked["tasks"][0]["blocks"], json!([second_id]));
-
-        let deleted = TaskItemUpdateTool
-            .execute(&context, json!({"taskId": first_id, "status":"deleted"}))
-            .await
-            .unwrap();
-        assert_eq!(deleted["tasks"].as_array().unwrap().len(), 1);
-        assert_eq!(deleted["tasks"][0]["blockedBy"], json!([]));
     }
 }

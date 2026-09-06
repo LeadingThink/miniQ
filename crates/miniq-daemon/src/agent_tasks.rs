@@ -27,6 +27,7 @@ pub(crate) struct DaemonAgentBridge {
     pub workspace_id: String,
     pub depth: usize,
     pub agent_id: Option<String>,
+    pub cancel: CancellationToken,
 }
 
 impl DaemonAgentBridge {
@@ -69,7 +70,7 @@ impl DaemonAgentBridge {
                 state: self.state.clone(),
                 session_id: self.session_id.clone(),
                 router: self.state.router.clone(),
-                ctx: self.child_context(workspace.clone(), &record.id),
+                ctx: self.child_context(workspace.clone(), &record.id, cancel.clone()),
                 cancel: cancel.clone(),
                 permission_policy: permission_policy(&request),
             };
@@ -121,7 +122,12 @@ impl DaemonAgentBridge {
         }
     }
 
-    fn child_context(&self, workspace: PathBuf, agent_id: &str) -> ToolContext {
+    fn child_context(
+        &self,
+        workspace: PathBuf,
+        agent_id: &str,
+        cancel: CancellationToken,
+    ) -> ToolContext {
         ToolContext::new(workspace.clone())
             .with_skills(Some(self.state.skills.clone()))
             .with_memory(
@@ -141,6 +147,7 @@ impl DaemonAgentBridge {
                 workspace_id: self.workspace_id.clone(),
                 depth: self.depth + 1,
                 agent_id: Some(agent_id.to_owned()),
+                cancel,
             })))
     }
 
@@ -182,15 +189,13 @@ impl DaemonAgentBridge {
         }
         Ok((workspace, None))
     }
-}
 
-#[async_trait]
-impl AgentBridge for DaemonAgentBridge {
-    fn owner_agent_id(&self) -> Option<&str> {
-        self.agent_id.as_deref()
-    }
-
-    async fn run(&self, mut request: AgentRunRequest) -> Result<Value, ToolError> {
+    async fn run_managed(&self, mut request: AgentRunRequest) -> Result<Value, ToolError> {
+        if self.cancel.is_cancelled() {
+            return Err(ToolError::ExecutionFailed(
+                "parent agent is cancelled".into(),
+            ));
+        }
         if self.depth >= MAX_AGENT_DEPTH {
             return Err(ToolError::ExecutionFailed(format!(
                 "agent nesting limit reached ({MAX_AGENT_DEPTH})"
@@ -204,7 +209,7 @@ impl AgentBridge for DaemonAgentBridge {
                 .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?
                 .map(|config| config.model);
         }
-        let cancel = CancellationToken::new();
+        let cancel = self.cancel.child_token();
         let resuming = request.resume.is_some();
         let (id, record, resumed_history) = match request.resume.clone() {
             Some(resume) => {
@@ -268,6 +273,22 @@ impl AgentBridge for DaemonAgentBridge {
             .agent_tasks
             .output(&self.session_id, &id, false, Duration::ZERO)
             .await
+    }
+}
+
+#[async_trait]
+impl AgentBridge for DaemonAgentBridge {
+    fn owner_agent_id(&self) -> Option<&str> {
+        self.agent_id.as_deref()
+    }
+
+    async fn run(&self, request: AgentRunRequest) -> Result<Value, ToolError> {
+        let bridge = self.clone();
+        // The calling tool future may be dropped on cancellation. Keep startup,
+        // final state transitions, and worktree cleanup owned by the runtime.
+        tokio::spawn(async move { bridge.run_managed(request).await })
+            .await
+            .map_err(|error| ToolError::ExecutionFailed(format!("agent task failed: {error}")))?
     }
 
     async fn output(&self, id: &str, block: bool, timeout: Duration) -> Result<Value, ToolError> {

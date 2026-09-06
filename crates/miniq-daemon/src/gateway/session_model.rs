@@ -44,7 +44,7 @@ pub(super) async fn update(state: &AppState, raw: Option<Value>) -> Result<Value
         }
     }
     let baseline = state.settings.lock().unwrap().provider.clone();
-    if input.settings.reasoning_effort.is_some() {
+    if let Some(effort) = input.settings.reasoning_effort {
         let mut config = baseline.clone().ok_or_else(|| {
             RpcError::new(ErrorCode::InvalidParams, "configure a model provider first")
         })?;
@@ -56,7 +56,7 @@ pub(super) async fn update(state: &AppState, raw: Option<Value>) -> Result<Value
             .await
             .reasoning_efforts
             .unwrap_or_else(|| miniq_models::reasoning_efforts(&config.model, protocol));
-        if !choices.contains(&input.settings.reasoning_effort.unwrap()) {
+        if !choices.contains(&effort) {
             return Err(RpcError::new(
                 ErrorCode::InvalidParams,
                 "this model does not advertise the requested reasoning effort",

@@ -13,6 +13,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent_worktree::{self, AgentWorktree};
 
+mod cancellation;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AgentStatus {
     Running,
@@ -222,7 +224,9 @@ impl AgentTaskManager {
         let mut state = record.state.lock().await;
         state.result = Some(result);
         state.history = Some(history.clone());
-        if let Some(message) = state.inbox.pop_front() {
+        if state.cancel.is_cancelled() {
+            state.inbox.clear();
+        } else if let Some(message) = state.inbox.pop_front() {
             return Some((message, history));
         }
         state.status = AgentStatus::Finalizing;
@@ -231,8 +235,15 @@ impl AgentTaskManager {
 
     pub(crate) async fn complete(&self, record: &AgentRecord) {
         let mut state = record.state.lock().await;
-        if state.status == AgentStatus::Finalizing {
-            state.status = AgentStatus::Completed;
+        if matches!(
+            state.status,
+            AgentStatus::Finalizing | AgentStatus::Stopping
+        ) {
+            state.status = if state.cancel.is_cancelled() {
+                AgentStatus::Cancelled
+            } else {
+                AgentStatus::Completed
+            };
         }
         drop(state);
         record.changed.notify_waiters();
@@ -241,7 +252,8 @@ impl AgentTaskManager {
     pub(crate) async fn finish_error(&self, record: &AgentRecord, error: &AgentError) {
         let mut state = record.state.lock().await;
         let caller_stopped = state.status == AgentStatus::Stopping;
-        state.status = if matches!(error, AgentError::Cancelled) {
+        state.status = if state.cancel.is_cancelled() || matches!(error, AgentError::Cancelled) {
+            state.inbox.clear();
             AgentStatus::Cancelled
         } else {
             AgentStatus::Failed
@@ -360,33 +372,6 @@ impl AgentTaskManager {
                 if tokio::time::timeout_at(deadline, changed).await.is_err() {
                     break;
                 }
-            }
-        }
-        Ok(self.snapshot(&id, &record).await)
-    }
-
-    pub(crate) async fn stop(
-        &self,
-        session_id: &str,
-        id_or_name: &str,
-    ) -> Result<Value, ToolError> {
-        let (id, record) = self.resolve(session_id, id_or_name).await?;
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-        loop {
-            let changed = record.changed.notified();
-            let mut state = record.state.lock().await;
-            match state.status {
-                AgentStatus::Running => {
-                    state.cancel.cancel();
-                    state.status = AgentStatus::Stopping;
-                    state.error = Some("agent stopped by caller".into());
-                }
-                AgentStatus::Stopping | AgentStatus::Finalizing => {}
-                AgentStatus::Completed | AgentStatus::Failed | AgentStatus::Cancelled => break,
-            }
-            drop(state);
-            if tokio::time::timeout_at(deadline, changed).await.is_err() {
-                break;
             }
         }
         Ok(self.snapshot(&id, &record).await)

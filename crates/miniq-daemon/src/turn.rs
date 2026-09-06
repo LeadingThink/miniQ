@@ -356,6 +356,7 @@ async fn execute_turn(
                     workspace_id: session.workspace_id.clone(),
                     depth: 0,
                     agent_id: None,
+                    cancel: cancel.clone(),
                 },
             ))),
         cancel: cancel.clone(),

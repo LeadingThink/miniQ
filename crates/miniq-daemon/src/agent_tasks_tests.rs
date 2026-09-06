@@ -4,6 +4,9 @@ use miniq_models::{
 };
 use tokio::sync::{Mutex, Semaphore};
 
+#[path = "agent_tasks_tests/cancellation.rs"]
+mod cancellation;
+
 fn request(prompt: &str) -> AgentRunRequest {
     AgentRunRequest {
         prompt: prompt.into(),
@@ -115,6 +118,7 @@ fn bridge_with_provider(
         workspace_id: workspace.id,
         depth: 0,
         agent_id: None,
+        cancel: CancellationToken::new(),
     }
 }
 
