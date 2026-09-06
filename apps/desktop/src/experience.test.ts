@@ -43,6 +43,45 @@ function tool(
 }
 
 describe("long task evidence", () => {
+  it("preserves sub-millisecond tool ordering before and after an answer", () => {
+    const answer = { ...message, createdAt: "2026-09-06T01:00:02.123456Z" };
+    const before = {
+      ...tool("before", 2),
+      createdAt: "2026-09-06T01:00:02.123455Z",
+    };
+    const after = {
+      ...tool("after", 2),
+      createdAt: "2026-09-06T01:00:02.123457Z",
+    };
+    const items = createTimelineItems([answer], [after, before]);
+    expect(
+      items.map((item) =>
+        item.kind === "message" ? item.message.id : item.call.id
+      )
+    ).toEqual(["before", "m", "after"]);
+    expect(groupTimeline(items).map((group) => group.kind)).toEqual([
+      "tools",
+      "message",
+      "tools",
+    ]);
+  });
+  it("compares timezone-equivalent fractions with different precision", () => {
+    const answer = { ...message, createdAt: "2026-09-06T09:00:02.1234+08:00" };
+    const before = {
+      ...tool("before", 2),
+      createdAt: "2026-09-06T01:00:02.12339Z",
+    };
+    const equal = {
+      ...tool("equal", 2),
+      createdAt: "2026-09-06T01:00:02.123400Z",
+    };
+    const items = createTimelineItems([answer], [equal, before]);
+    expect(
+      items.map((item) =>
+        item.kind === "message" ? item.message.id : item.call.id
+      )
+    ).toEqual(["before", "m", "equal"]);
+  });
   it("groups only contiguous tools and retains chronological message boundaries", () => {
     const calls = [
       tool("3", 3),

@@ -131,6 +131,7 @@
 - 切换会话后的旧模型加载或更新失败，不再覆盖新会话的状态。
 - 沿用默认模型但单独覆盖协议时，新会话界面与后端实际配置保持一致。
 - 模型目录按大小写不敏感排序、按完整 ID 去重，不合并有意区分大小写的模型 ID。
+- 时间线与 Markdown 导出保留后端时间戳的亚毫秒精度，极快工具不会因 Date 毫秒取整被排到回答之后。
 - 工具 stdout/stderr 原文可读，完整 JSON 仍可切换和复制。
 - 公式规范化插入的行不会再造成 Markdown 源码跳转行号偏移。
 - 窄屏长文件路径不再挤压产物按钮，产物区有独立滚动范围。
@@ -184,7 +185,7 @@ npm run dev -- --host 127.0.0.1 --port 1459
 
 ## 最终验收记录
 
-- 前端：29 个测试文件、138 项测试通过；npm run build 通过，包含 TypeScript 类型检查。
+- 前端：29 个测试文件、140 项测试通过；npm run build 通过，包含 TypeScript 类型检查。
 - 后端：miniq-daemon、miniq-memory、miniq-models、miniq-protocol、miniq-agent 共 195 项测试通过。
 - cargo check --workspace、Tauri 桌面壳检查、cargo fmt --all -- --check 和 git diff --check 通过；
   新增前端源码及修改的公式规范化模块通过 Prettier 检查。
