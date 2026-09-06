@@ -1,6 +1,6 @@
 //! Provider-facing chat types and the `ModelProvider` trait.
 
-use std::pin::Pin;
+use std::{fmt, pin::Pin};
 
 use async_trait::async_trait;
 use futures_util::Stream;
@@ -40,8 +40,8 @@ pub enum ProviderError {
     Api { status: u16, body: String },
     #[error("invalid response: {0}")]
     InvalidResponse(String),
-    #[error("provider stopped because the output token limit was reached")]
-    OutputLimitReached,
+    #[error("provider stopped because the output token limit was reached{0}")]
+    OutputLimitReached(OutputTokenUsage),
     #[error("provider context window was exceeded")]
     ContextWindowExceeded,
     #[error("provider stream ended before a terminal event")]
@@ -53,6 +53,24 @@ pub enum ProviderError {
 }
 
 impl ProviderError {
+    pub(crate) fn output_limit() -> Self {
+        Self::OutputLimitReached(OutputTokenUsage::default())
+    }
+
+    pub(crate) fn output_limit_from_response(response: &Value) -> Self {
+        Self::OutputLimitReached(OutputTokenUsage {
+            input_tokens: response
+                .pointer("/usage/input_tokens")
+                .and_then(Value::as_u64),
+            output_tokens: response
+                .pointer("/usage/output_tokens")
+                .and_then(Value::as_u64),
+            reasoning_tokens: response
+                .pointer("/usage/output_tokens_details/reasoning_tokens")
+                .and_then(Value::as_u64),
+        })
+    }
+
     pub(crate) fn from_api_response(status: u16, body: String) -> Self {
         if indicates_context_window_overflow(&body) {
             Self::ContextWindowExceeded
@@ -66,6 +84,34 @@ impl ProviderError {
             Self::ContextWindowExceeded
         } else {
             Self::InvalidResponse(format!("{prefix}: {detail}"))
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OutputTokenUsage {
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub reasoning_tokens: Option<u64>,
+}
+
+impl fmt::Display for OutputTokenUsage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let fields = [
+            self.input_tokens
+                .map(|value| format!("input_tokens={value}")),
+            self.output_tokens
+                .map(|value| format!("output_tokens={value}")),
+            self.reasoning_tokens
+                .map(|value| format!("reasoning_tokens={value}")),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+        if fields.is_empty() {
+            Ok(())
+        } else {
+            write!(formatter, " (provider usage: {})", fields.join(", "))
         }
     }
 }
@@ -177,8 +223,9 @@ pub struct CompletionRequest {
     pub messages: Vec<ChatMessage>,
     pub tools: Vec<ToolSpec>,
     pub temperature: Option<f32>,
-    /// Maximum completion budget. Agent retries can raise this after a
-    /// provider reports a truncated output.
+    /// Optional caller override. `None` preserves the protocol/provider's
+    /// native output policy instead of converting a model capability into a
+    /// request parameter.
     pub max_output_tokens: Option<u32>,
 }
 

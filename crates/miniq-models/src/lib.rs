@@ -18,8 +18,8 @@ pub use configured::ConfiguredProvider;
 pub use openai::OpenAiCompatProvider;
 pub use provider::{
     ApiProtocol, ChatDelta, ChatImage, ChatMessage, ChatRole, CompletionRequest, DeltaStream,
-    ModelCapabilities, ModelProvider, ProviderConfig, ProviderContext, ProviderError,
-    ToolCallRequest, ToolSpec,
+    ModelCapabilities, ModelProvider, OutputTokenUsage, ProviderConfig, ProviderContext,
+    ProviderError, ToolCallRequest, ToolSpec,
 };
 pub use responses::ResponsesProvider;
 

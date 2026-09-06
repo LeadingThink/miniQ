@@ -196,7 +196,7 @@ fn surfaces_anthropic_errors_and_output_limits() {
     );
     assert!(matches!(
         limit.items[0],
-        Err(ProviderError::OutputLimitReached)
+        Err(ProviderError::OutputLimitReached(_))
     ));
 
     let context_limit = decode(

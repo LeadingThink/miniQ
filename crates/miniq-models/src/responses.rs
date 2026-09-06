@@ -328,7 +328,9 @@ impl EventDecoder for ResponsesDecoder {
                     .and_then(Value::as_str)
                     .unwrap_or("unknown");
                 let error = if reason == "max_output_tokens" {
-                    ProviderError::OutputLimitReached
+                    ProviderError::output_limit_from_response(
+                        event.get("response").unwrap_or(&event),
+                    )
                 } else {
                     ProviderError::InvalidResponse(format!(
                         "Responses API returned an incomplete response: {reason}"

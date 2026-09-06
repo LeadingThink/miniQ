@@ -402,7 +402,7 @@ impl EventDecoder for AnthropicDecoder {
                 let reason = event.pointer("/delta/stop_reason").and_then(Value::as_str);
                 match reason {
                     Some("max_tokens") => {
-                        DecodedEvent::terminal(vec![Err(ProviderError::OutputLimitReached)])
+                        DecodedEvent::terminal(vec![Err(ProviderError::output_limit())])
                     }
                     Some("model_context_window_exceeded") => {
                         DecodedEvent::terminal(vec![Err(ProviderError::ContextWindowExceeded)])

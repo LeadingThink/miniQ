@@ -286,7 +286,7 @@ fn decode_choice(
     match reason.as_str() {
         "stop" | "tool_calls" | "function_call" => deltas.extend(flush_tool_calls(pending)),
         "length" | "max_tokens" => {
-            deltas.push(Err(ProviderError::OutputLimitReached));
+            deltas.push(Err(ProviderError::output_limit()));
             return true;
         }
         "content_filter" => {
