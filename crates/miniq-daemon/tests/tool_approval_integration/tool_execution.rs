@@ -120,6 +120,7 @@ async fn tool_list_reports_toolset() {
             "apply_patch",
             "ask_user",
             "browser_automation",
+            "computer_use",
             "doc_read",
             "doc_write",
             "file_edit",
