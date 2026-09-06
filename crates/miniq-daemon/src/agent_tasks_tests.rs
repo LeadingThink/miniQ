@@ -20,6 +20,85 @@ fn request(prompt: &str) -> AgentRunRequest {
     }
 }
 
+#[tokio::test]
+async fn same_name_agents_are_session_scoped_for_every_operation() {
+    let directory = tempfile::tempdir().unwrap();
+    let provider = Arc::new(MockProvider::new(vec![
+        vec![ChatDelta::Text("one".into())],
+        vec![ChatDelta::Text("two".into())],
+    ]));
+    let first = bridge_with_provider(&directory, provider);
+    let mut second = first.clone();
+    second.session_id = second
+        .state
+        .store
+        .create_session(&second.workspace_id, "second")
+        .unwrap()
+        .id;
+    let one = first.run(request("one")).await.unwrap();
+    let two = second.run(request("two")).await.unwrap();
+    let foreign = one["agentId"].as_str().unwrap();
+    assert_ne!(one["agentId"], two["agentId"]);
+    assert_eq!(
+        second
+            .output("researcher", false, Duration::ZERO)
+            .await
+            .unwrap()["result"],
+        "two"
+    );
+    assert!(second.output(foreign, false, Duration::ZERO).await.is_err());
+    assert!(second.stop(foreign).await.is_err());
+    assert!(second
+        .send(AgentMessageRequest {
+            recipient: foreign.into(),
+            message: "intrude".into(),
+            summary: None
+        })
+        .await
+        .is_err());
+    let mut resume = request("intrude");
+    resume.resume = Some(foreign.into());
+    assert!(second.run(resume).await.is_err());
+    let listed = second.state.agent_tasks.list(&second.session_id).await;
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["agentId"], two["agentId"]);
+    assert!(listed[0].get("result").is_none());
+}
+
+#[tokio::test]
+async fn child_checklist_does_not_replace_parent_plan() {
+    let directory = tempfile::tempdir().unwrap();
+    let provider = Arc::new(MockProvider::new(vec![
+        vec![ChatDelta::ToolCall(miniq_models::ToolCallRequest {
+            id: "plan".into(),
+            name: "task_update".into(),
+            arguments: serde_json::json!({"tasks":[{"content":"child work","status":"pending"}]}),
+        })],
+        vec![ChatDelta::Text("done".into())],
+    ]));
+    let bridge = bridge_with_provider(&directory, provider);
+    let plan = vec![miniq_protocol::PlanTask {
+        content: "parent work".into(),
+        status: miniq_protocol::PlanTaskStatus::Pending,
+    }];
+    bridge
+        .state
+        .store
+        .set_session_plan(&bridge.session_id, &plan)
+        .unwrap();
+    bridge.run(request("plan")).await.unwrap();
+    assert_eq!(
+        bridge.state.store.session_plan(&bridge.session_id).unwrap()[0].content,
+        "parent work"
+    );
+    let tools = bridge
+        .state
+        .store
+        .list_tool_calls(&bridge.session_id)
+        .unwrap();
+    assert_eq!(tools[0].status, miniq_protocol::ToolCallStatus::Succeeded);
+}
+
 fn bridge_with_provider(
     directory: &tempfile::TempDir,
     provider: Arc<dyn ModelProvider>,
@@ -35,6 +114,7 @@ fn bridge_with_provider(
         workspace: directory.path().to_path_buf(),
         workspace_id: workspace.id,
         depth: 0,
+        agent_id: None,
     }
 }
 

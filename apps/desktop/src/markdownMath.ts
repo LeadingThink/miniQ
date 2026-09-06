@@ -16,10 +16,13 @@ function fenceAtStart(line: string) {
   return { marker: match[1][0], length: match[1].length };
 }
 
-function closesFence(line: string, fence: NonNullable<MarkdownState["codeFence"]>) {
+function closesFence(
+  line: string,
+  fence: NonNullable<MarkdownState["codeFence"]>
+) {
   const match = /^ {0,3}(`+|~+)[ \t]*$/.exec(line);
   return Boolean(
-    match && match[1][0] === fence.marker && match[1].length >= fence.length,
+    match && match[1][0] === fence.marker && match[1].length >= fence.length
   );
 }
 
@@ -35,7 +38,8 @@ function normalizeLine(line: string, state: MarkdownState) {
       const runLength = runEnd - index;
       output += line.slice(index, runEnd);
       if (state.inlineCodeLength === null) state.inlineCodeLength = runLength;
-      else if (state.inlineCodeLength === runLength) state.inlineCodeLength = null;
+      else if (state.inlineCodeLength === runLength)
+        state.inlineCodeLength = null;
       index = runEnd;
       continue;
     }
@@ -70,27 +74,43 @@ function normalizeLine(line: string, state: MarkdownState) {
 
 /** Converts Codex-style LaTeX delimiters without touching Markdown code. */
 export function normalizeMathDelimiters(markdown: string): string {
+  return normalizeMathWithSourceLines(markdown).content;
+}
+
+function normalizePart(part: string, state: MarkdownState): string {
+  if (state.codeFence) {
+    if (closesFence(part, state.codeFence)) state.codeFence = null;
+    return part;
+  }
+  if (state.inlineCodeLength === null) {
+    const fence = fenceAtStart(part);
+    if (fence) {
+      state.codeFence = fence;
+      return part;
+    }
+    if (/^(?: {4}|\t)/.test(part)) return part;
+  }
+  return normalizeLine(part, state);
+}
+
+/** Map inserted math-delimiter lines back to the original file. */
+export function normalizeMathWithSourceLines(markdown: string) {
   const state: MarkdownState = { codeFence: null, inlineCodeLength: null };
   const parts = markdown.split(/(\r\n|\n|\r)/);
-
-  return parts
+  let sourceLine = 1;
+  const sourceLines = [sourceLine];
+  const content = parts
     .map((part, index) => {
-      if (index % 2 === 1) return part;
-      if (state.codeFence) {
-        if (closesFence(part, state.codeFence)) state.codeFence = null;
+      if (index % 2 === 1) {
+        sourceLines.push(++sourceLine);
         return part;
       }
-
-      if (state.inlineCodeLength === null) {
-        const fence = fenceAtStart(part);
-        if (fence) {
-          state.codeFence = fence;
-          return part;
-        }
-        if (/^(?: {4}|\t)/.test(part)) return part;
+      const normalized = normalizePart(part, state);
+      for (const character of normalized) {
+        if (character === "\n") sourceLines.push(sourceLine);
       }
-
-      return normalizeLine(part, state);
+      return normalized;
     })
     .join("");
+  return { content, sourceLines };
 }

@@ -117,6 +117,9 @@ impl AgentMessageRequest {
 
 #[async_trait]
 pub trait AgentBridge: Send + Sync {
+    fn owner_agent_id(&self) -> Option<&str> {
+        None
+    }
     async fn run(&self, request: AgentRunRequest) -> Result<Value, ToolError>;
     async fn output(&self, id: &str, block: bool, timeout: Duration) -> Result<Value, ToolError>;
     async fn stop(&self, id: &str) -> Result<Value, ToolError>;

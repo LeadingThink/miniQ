@@ -13,6 +13,7 @@ import "./styles/review.css";
 import "./styles/pages.css";
 import "./styles/scheduling.css";
 import "./styles/remote.css";
+import "./styles/experience.css";
 import "./external-sessions.css";
 import { applyTheme, readStoredTheme } from "./theme";
 import { initializeMobileRuntime } from "./mobileRuntime";

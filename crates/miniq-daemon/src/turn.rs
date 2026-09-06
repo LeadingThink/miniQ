@@ -140,11 +140,6 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
         state.clear_streaming_text(&session_id);
         state.clear_turn_progress(&session_id);
         state.end_turn(&session_id);
-        state.plans.lock().unwrap().remove(&session_id);
-        state.emit(Event::PlanUpdated {
-            session_id: session_id.clone(),
-            tasks: Vec::new(),
-        });
         match result {
             Ok(()) => {
                 let _ = state
@@ -254,7 +249,10 @@ async fn execute_turn(
 ) -> Result<(), TurnError> {
     state.clear_streaming_text(session_id);
     state.set_turn_progress(session_id, TurnPhase::PreparingContext, None);
-    state.plans.lock().unwrap().remove(session_id);
+    state
+        .store
+        .set_session_plan(session_id, &[])
+        .map_err(|error| TurnError::Fatal(error.to_string()))?;
     state.emit(Event::PlanUpdated {
         session_id: session_id.to_string(),
         tasks: Vec::new(),
@@ -281,7 +279,19 @@ async fn execute_turn(
         .store
         .get_model_context(session_id)
         .map_err(|e| TurnError::Fatal(e.to_string()))?;
-    let history = history_for_turn(&messages, snapshot, &skills_block, &workspace_path);
+    let config = state
+        .provider_config_for_session(session_id, None)
+        .map_err(|error| TurnError::Fatal(error.to_string()))?;
+    let model_identity = crate::session_models::model_identity(config.as_ref());
+    let previous_identity = snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.model_identity.clone());
+    let mut history = history_for_turn(&messages, snapshot, &skills_block, &workspace_path);
+    crate::session_models::isolate_native_context(
+        &mut history,
+        previous_identity.as_deref(),
+        model_identity.as_deref(),
+    );
 
     // Allocate the assistant message id upfront so streaming deltas can
     // reference it before the row is written.
@@ -345,13 +355,14 @@ async fn execute_turn(
                     workspace: std::path::PathBuf::from(&workspace.path),
                     workspace_id: session.workspace_id.clone(),
                     depth: 0,
+                    agent_id: None,
                 },
             ))),
         cancel: cancel.clone(),
         permission_policy: crate::executor::PermissionPolicy::Inherit,
     };
 
-    let provider = state.current_provider();
+    let provider = state.provider_from_config(config);
     let outcome = run_turn_with_limits(
         provider.as_ref(),
         &executor,
@@ -397,7 +408,12 @@ async fn execute_turn(
         serde_json::to_value(persisted_history).map_err(|e| TurnError::Fatal(e.to_string()))?;
     state
         .store
-        .save_model_context(session_id, &message.id, &persisted_history)
+        .save_model_context(
+            session_id,
+            &message.id,
+            &persisted_history,
+            model_identity.as_deref(),
+        )
         .map_err(|e| TurnError::Fatal(e.to_string()))?;
     state.emit(Event::MessageCreated {
         session_id: session_id.to_string(),
@@ -487,6 +503,7 @@ mod tests {
             ChatMessage::assistant("done"),
         ];
         let snapshot = miniq_memory::ModelContextSnapshot {
+            model_identity: None,
             last_message_id: "assistant-1".to_string(),
             history: serde_json::to_value(stored).unwrap(),
         };

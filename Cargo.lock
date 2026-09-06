@@ -2067,6 +2067,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "futures-util",
+ "miniq-protocol",
  "reqwest",
  "serde",
  "serde_json",

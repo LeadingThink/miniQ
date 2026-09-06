@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+miniq-protocol = { path = "../miniq-protocol" }
 async-trait = { workspace = true }
 base64 = "0.22"
 futures-util = { workspace = true }

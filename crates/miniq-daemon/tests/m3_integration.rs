@@ -156,9 +156,9 @@ async fn plan_document_artifact_flow() {
     next_event_of(&mut ws, "turn_completed").await;
     assert!(dir.path().join("out/report.docx").exists());
 
-    // Completed turns clear the live plan while retaining durable artifacts.
+    // Reopening a completed turn retains the last published plan and artifacts.
     let resp = call(&mut ws, "r3", "session.open", json!({"sessionId": sess_id})).await;
-    assert!(resp["result"]["plan"].as_array().unwrap().is_empty());
+    assert_eq!(resp["result"]["plan"], plan["tasks"]);
     let artifacts = resp["result"]["artifacts"].as_array().unwrap();
     assert_eq!(artifacts.len(), 1);
     assert_eq!(artifacts[0]["path"], "out/report.docx");

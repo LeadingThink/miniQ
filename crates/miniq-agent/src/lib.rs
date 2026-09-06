@@ -715,6 +715,7 @@ mod tests {
                 preferred_api_protocol: None,
                 max_output_tokens: Some(4_096),
                 max_context_tokens: Some(32_000),
+                reasoning_efforts: None,
             });
         let (events, _receiver) = tokio::sync::mpsc::channel(8);
 

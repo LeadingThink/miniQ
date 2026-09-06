@@ -23,6 +23,9 @@ import {
   UnsupportedPreview,
 } from "./DocumentPreview";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { CopyButton } from "./CopyButton";
+import { HtmlPreview } from "./HtmlPreview";
+import { isHtmlFile } from "../htmlPreview";
 
 interface FilePreviewPanelProps {
   preview: FilePreviewState;
@@ -112,9 +115,8 @@ export function FilePreviewPanel({
   }, [path, target?.line]);
 
   const reportRenderError = useCallback((message: string) => setRenderError(message), []);
-  const sourceVisible = preview.kind === "text" || (
-    preview.kind === "markdown" && markdownSource
-  );
+  const renderable = preview.kind === "markdown" || (preview.kind === "text" && isHtmlFile(path));
+  const sourceVisible = (preview.kind === "text" && !renderable) || (renderable && markdownSource);
 
   useEffect(() => {
     if (!sourceVisible) editorRef.current = null;
@@ -149,13 +151,13 @@ export function FilePreviewPanel({
             {preview.size !== null ? formatFileSize(preview.size) : ""}
           </small>
         )}
-        {preview.kind === "markdown" && preview.content !== null && (
-          <span className="preview-mode-toggle" role="group" aria-label="Markdown 显示模式">
+        {renderable && preview.content !== null && (
+          <span className="preview-mode-toggle" role="group" aria-label="文件显示模式">
             <button
               type="button"
               className={!markdownSource ? "selected" : ""}
-              title="渲染 Markdown"
-              aria-label="渲染 Markdown"
+              title="渲染预览"
+              aria-label="渲染预览"
               aria-pressed={!markdownSource}
               onClick={() => setMarkdownSource(false)}
             >
@@ -164,8 +166,8 @@ export function FilePreviewPanel({
             <button
               type="button"
               className={markdownSource ? "selected" : ""}
-              title="查看 Markdown 源码"
-              aria-label="查看 Markdown 源码"
+              title="查看源码"
+              aria-label="查看源码"
               aria-pressed={markdownSource}
               onClick={() => setMarkdownSource(true)}
             >
@@ -185,6 +187,8 @@ export function FilePreviewPanel({
             <WrapText size={16} />
           </button>
         )}
+        <CopyButton content={path} label="复制文件路径" onError={setActionError} />
+        <button type="button" className="icon-button" title="重新读取文件" aria-label="重新读取文件" disabled={preview.loading || !path} onClick={onRetry}><RotateCcw size={15} /></button>
         <button
           className="icon-button"
           title="使用系统默认应用打开"
@@ -238,6 +242,8 @@ export function FilePreviewPanel({
             currentFilePath={path}
             onOpenFile={onOpenFile}
           />
+        ) : renderable && !markdownSource && preview.content !== null ? (
+          <HtmlPreview key={path} content={preview.content} label={fileName(path)} />
         ) : sourceVisible && preview.content !== null ? (
           <Editor
             path={path}

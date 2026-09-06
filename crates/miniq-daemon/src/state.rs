@@ -7,7 +7,7 @@ use std::time::Instant;
 use std::path::PathBuf;
 
 use miniq_memory::Store;
-use miniq_models::{ConfiguredProvider, ModelProvider, ProviderConfig};
+use miniq_models::{ModelProvider, ProviderConfig};
 use miniq_protocol::{Event, TurnPhase, TurnProgress};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, oneshot};
@@ -104,8 +104,6 @@ pub struct AppState {
     pub pending_questions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
     /// Details retained so a reconnected UI can restore pending questions.
     pub pending_question_details: Arc<Mutex<HashMap<String, miniq_protocol::Question>>>,
-    /// Latest published plan per session (in-memory; the plan is a live view).
-    pub plans: Arc<Mutex<HashMap<String, Vec<miniq_protocol::PlanTask>>>>,
     /// In-progress assistant text retained across UI reconnects.
     pub streaming_texts: Arc<Mutex<HashMap<String, String>>>,
     /// Latest observable turn phase retained across UI reconnects.
@@ -185,7 +183,6 @@ impl AppState {
             session_allowlist: Arc::new(Mutex::new(HashMap::new())),
             pending_questions: Arc::new(Mutex::new(HashMap::new())),
             pending_question_details: Arc::new(Mutex::new(HashMap::new())),
-            plans: Arc::new(Mutex::new(HashMap::new())),
             streaming_texts: Arc::new(Mutex::new(HashMap::new())),
             turn_progresses: Arc::new(Mutex::new(HashMap::new())),
             checkpoints_dir: data_dir.join("checkpoints"),
@@ -306,24 +303,7 @@ impl AppState {
     /// Provider for the next turn: the test override, or one built from the
     /// current settings.
     pub fn current_provider(&self) -> Arc<dyn ModelProvider> {
-        self.current_provider_for_model(None)
-    }
-
-    pub fn current_provider_for_model(&self, model: Option<&str>) -> Arc<dyn ModelProvider> {
-        if let Some(provider) = &self.provider_override {
-            return provider.clone();
-        }
-        let settings = self.settings.lock().unwrap();
-        match &settings.provider {
-            Some(config) => {
-                let mut config = config.clone();
-                if let Some(model) = model {
-                    config.model = model.to_string();
-                }
-                Arc::new(ConfiguredProvider::new(config))
-            }
-            None => Arc::new(crate::UnconfiguredProvider),
-        }
+        self.provider_from_config(self.settings.lock().unwrap().provider.clone())
     }
 
     /// Apply and persist new settings.

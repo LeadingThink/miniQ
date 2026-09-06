@@ -36,7 +36,7 @@ impl ConfiguredProvider {
         }
     }
 
-    async fn protocol(&self) -> Result<ApiProtocol, ProviderError> {
+    pub async fn protocol(&self) -> Result<ApiProtocol, ProviderError> {
         if self.config.api_protocol != ApiProtocol::Auto {
             return Ok(self.config.api_protocol);
         }
@@ -90,7 +90,7 @@ impl ConfiguredProvider {
     }
 }
 
-fn infer_protocol(model: &str) -> ApiProtocol {
+pub fn infer_protocol(model: &str) -> ApiProtocol {
     let model = model.to_ascii_lowercase();
     if model.starts_with("claude-") {
         ApiProtocol::AnthropicMessages
@@ -143,6 +143,8 @@ fn extract_capabilities(payload: &Value) -> ModelCapabilities {
                 .or_else(|| metadata_value(payload, "max_context_tokens"))
                 .or_else(|| metadata_value(payload, "context_window")),
         ),
+        reasoning_efforts: metadata_value(payload, "supported_reasoning_efforts")
+            .and_then(|value| serde_json::from_value(value.clone()).ok()),
     }
 }
 
@@ -152,7 +154,21 @@ impl ModelProvider for ConfiguredProvider {
         &self,
         request: CompletionRequest,
     ) -> Result<DeltaStream, ProviderError> {
-        match self.protocol().await? {
+        let protocol = self.protocol().await?;
+        if let Some(effort) = self.config.reasoning_effort {
+            let choices = self
+                .model_capabilities()
+                .await
+                .reasoning_efforts
+                .unwrap_or_else(|| crate::reasoning_efforts(&self.config.model, protocol));
+            if !choices.contains(&effort) {
+                return Err(ProviderError::Config(format!(
+                    "model {} does not advertise reasoning effort {effort:?}",
+                    self.config.model
+                )));
+            }
+        }
+        match protocol {
             ApiProtocol::Auto => unreachable!("auto protocol must be resolved"),
             ApiProtocol::ChatCompletions => self.chat.stream_complete(request).await,
             ApiProtocol::Responses => self.responses.stream_complete(request).await,
@@ -217,6 +233,7 @@ mod tests {
                 preferred_api_protocol: Some(ApiProtocol::Responses),
                 max_output_tokens: Some(128_000),
                 max_context_tokens: Some(1_000_000),
+                reasoning_efforts: None,
             }
         );
     }
@@ -247,6 +264,7 @@ mod tests {
             api_key: "metadata-secret".into(),
             model: "custom-model".into(),
             api_protocol: ApiProtocol::Auto,
+            reasoning_effort: None,
         });
 
         assert_eq!(
@@ -259,6 +277,7 @@ mod tests {
                 preferred_api_protocol: Some(ApiProtocol::AnthropicMessages),
                 max_output_tokens: Some(128_000),
                 max_context_tokens: Some(1_000_000),
+                reasoning_efforts: None,
             }
         );
     }

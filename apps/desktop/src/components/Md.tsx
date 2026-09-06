@@ -1,5 +1,5 @@
 import { Check, Copy, FileText } from "lucide-react";
-import { createElement, isValidElement, useEffect, useRef, useState } from "react";
+import { isValidElement, useEffect, useRef, useState } from "react";
 import type {
   AnchorHTMLAttributes,
   ComponentPropsWithoutRef,
@@ -19,6 +19,7 @@ import {
   type LocalFileTarget,
 } from "../localFiles";
 import { normalizeMathDelimiters } from "../markdownMath";
+import { remarkHeadingIds } from "../markdownOutline";
 
 function FileReference(props: {
   children: ReactNode;
@@ -45,34 +46,6 @@ function nodeText(node: ReactNode): string {
   if (Array.isArray(node)) return node.map(nodeText).join("");
   if (isValidElement<{ children?: ReactNode }>(node)) return nodeText(node.props.children);
   return "";
-}
-
-function headingSlug(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^\p{Letter}\p{Number}_-]/gu, "") || "section";
-}
-
-function headingComponents() {
-  const occurrences = new Map<string, number>();
-  const heading = (tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6") =>
-    ({ node: _node, ...props }: ComponentPropsWithoutRef<"h1"> & { node?: unknown }) => {
-      const base = headingSlug(nodeText(props.children));
-      const occurrence = occurrences.get(base) ?? 0;
-      occurrences.set(base, occurrence + 1);
-      const id = occurrence === 0 ? base : `${base}-${occurrence}`;
-      return createElement(tag, { ...props, id: props.id ?? id });
-    };
-  return {
-    h1: heading("h1"),
-    h2: heading("h2"),
-    h3: heading("h3"),
-    h4: heading("h4"),
-    h5: heading("h5"),
-    h6: heading("h6"),
-  };
 }
 
 function MarkdownLink(
@@ -276,13 +249,11 @@ export function Md(props: {
   onOpenFile?: (target: LocalFileTarget) => void;
   onOpenUrl?: (url: string) => void;
 }) {
-  const headings = props.headingAnchors ? headingComponents() : {};
   return (
     <div className="md">
       <ReactMarkdown
         urlTransform={localFileUrlTransform}
         components={{
-          ...headings,
           a: (linkProps) => (
             <MarkdownLink
               {...linkProps}
@@ -303,7 +274,7 @@ export function Md(props: {
           pre: MarkdownPre,
         }}
         rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={props.headingAnchors ? [remarkGfm, remarkMath, remarkHeadingIds] : [remarkGfm, remarkMath]}
       >
         {normalizeMathDelimiters(props.children)}
       </ReactMarkdown>

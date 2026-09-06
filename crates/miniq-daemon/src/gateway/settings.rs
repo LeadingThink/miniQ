@@ -70,6 +70,7 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
             api_key: merged_key(provider.api_key, existing_key),
             model: provider.model.trim().to_string(),
             api_protocol: provider.api_protocol,
+            reasoning_effort: None,
         });
     }
     if let Some(mode) = input.approval_mode {

@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import { Paperclip, Sparkles, X } from "lucide-react";
+import { ArrowUp, LoaderCircle, Paperclip, Sparkles, Square, X } from "lucide-react";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import {
   canSendComposer,
@@ -80,6 +80,24 @@ function storeDraft(key: string | undefined, value: string) {
     /* storage unavailable */
   }
 }
+
+function readAttachments(key?: string): string[] {
+  if (!key) return [];
+  try {
+    const value: unknown = JSON.parse(window.localStorage.getItem(`${DRAFT_PREFIX}${key}.attachments`) ?? "[]");
+    return Array.isArray(value) && value.every((path) => typeof path === "string") ? value : [];
+  } catch { return []; }
+}
+
+function storeAttachments(key: string | undefined, paths: string[]) {
+  if (!key) return;
+  try {
+    if (paths.length) window.localStorage.setItem(`${DRAFT_PREFIX}${key}.attachments`, JSON.stringify(paths));
+    else window.localStorage.removeItem(`${DRAFT_PREFIX}${key}.attachments`);
+  } catch { /* Draft remains in memory when browser storage is unavailable. */ }
+}
+
+type SendMessage = (content: string, attachments?: string[]) => void | boolean | Promise<void | boolean>;
 
 interface SlashSkill {
   name: string;
@@ -159,6 +177,7 @@ export function ComposerCard(props: {
   chip?: string;
   /** Custom leading element in the bottom row (e.g. a project picker). */
   chipSlot?: ReactNode;
+  modelSlot?: ReactNode;
   autoFocus?: boolean;
   /** Persist unsent drafts under this key (restored on remount). */
   draftKey?: string;
@@ -168,14 +187,16 @@ export function ComposerCard(props: {
   client?: RpcClient;
   approvalMode?: ApprovalMode;
   onApprovalModeChange?: (mode: ApprovalMode) => void;
-  onSend: (content: string, attachments?: string[]) => void;
+  onSend: SendMessage;
   onCancel?: () => void;
   onError?: (message: string) => void;
   sendBlocked?: boolean;
   sendBlockedReason?: string;
 }) {
   const [draft, setDraftState] = useState(() => readDraft(props.draftKey));
-  const [attachments, setAttachments] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<string[]>(() => readAttachments(props.draftKey));
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const [activeSkillIndex, setActiveSkillIndex] = useState(0);
   const [dismissedSlashDraft, setDismissedSlashDraft] = useState<string | null>(null);
   const draftKeyRef = useRef(props.draftKey);
@@ -191,7 +212,7 @@ export function ComposerCard(props: {
     if (draftKeyRef.current === props.draftKey) return;
     draftKeyRef.current = props.draftKey;
     setDraftState(readDraft(props.draftKey));
-    setAttachments([]);
+    setAttachments(readAttachments(props.draftKey));
     setDismissedSlashDraft(null);
   }, [props.draftKey]);
 
@@ -224,11 +245,13 @@ export function ComposerCard(props: {
   }, [draft]);
 
   const addAttachments = useCallback((paths: string[]) => {
-    setAttachments((current) => [
-      ...current,
-      ...paths.filter((path) => !current.includes(path)),
-    ]);
-  }, []);
+    if (sendingRef.current) return;
+    setAttachments((current) => {
+      const next = [...new Set([...current, ...paths])];
+      storeAttachments(props.draftKey, next);
+      return next;
+    });
+  }, [props.draftKey]);
 
   useDroppedFiles(addAttachments, props.onError);
 
@@ -245,12 +268,23 @@ export function ComposerCard(props: {
     }
   };
 
-  const send = () => {
-    if (props.sendBlocked || !canSendComposer(draft, attachments)) return;
-    props.onSend(draft.trim(), attachments);
-    setDraft("");
-    setAttachments([]);
-    setDismissedSlashDraft(null);
+  const send = async () => {
+    if (sendingRef.current || props.sendBlocked || !canSendComposer(draft, attachments)) return;
+    sendingRef.current = true;
+    setSending(true);
+    const key = props.draftKey;
+    try {
+      const accepted = await props.onSend(draft.trim(), attachments);
+      if (accepted === false) return;
+      storeDraft(key, "");
+      storeAttachments(key, []);
+      if (draftKeyRef.current === key) {
+        setDraftState("");
+        setAttachments([]);
+        setDismissedSlashDraft(null);
+      }
+    } catch (cause) { props.onError?.(cause instanceof Error ? cause.message : String(cause)); }
+    finally { sendingRef.current = false; setSending(false); }
   };
 
   const pickSkill = (skill: SlashSkill) => {
@@ -304,7 +338,11 @@ export function ComposerCard(props: {
                 title={`移除附件 ${fileName(path)}`}
                 aria-label={`移除附件 ${fileName(path)}`}
                 onClick={() =>
-                  setAttachments((current) => current.filter((p) => p !== path))
+                  !sending && setAttachments((current) => {
+                    const next = current.filter((p) => p !== path);
+                    storeAttachments(props.draftKey, next);
+                    return next;
+                  })
                 }
               >
                 <X size={11} />
@@ -314,6 +352,8 @@ export function ComposerCard(props: {
         </div>
       )}
       <textarea
+        readOnly={sending}
+        aria-label="消息"
         ref={textareaRef}
         value={draft}
         autoFocus={props.autoFocus}
@@ -377,6 +417,7 @@ export function ComposerCard(props: {
         }}
       />
       <div className="composer-row">
+        {props.modelSlot}
         {props.chipSlot}
         {props.chip && <span className="chip">🗂 {props.chip}</span>}
         {isTauriRuntime() && (
@@ -402,7 +443,7 @@ export function ComposerCard(props: {
         )}
         {props.busy && props.onCancel && (
           <button type="button" className="send-btn stop" title="停止并清空队列 (⌘.)" onClick={props.onCancel}>
-            ■
+            <Square size={14} fill="currentColor" aria-label="停止任务" />
           </button>
         )}
         {shouldShowComposerSend(props.busy, draft, attachments) && (
@@ -416,10 +457,10 @@ export function ComposerCard(props: {
                   ? "加入队列，当前任务结束后执行"
                   : "发送"
             }
-            disabled={props.sendBlocked || !canSendComposer(draft, attachments)}
+            disabled={sending || props.sendBlocked || !canSendComposer(draft, attachments)}
             onClick={send}
           >
-            ↑
+            {sending ? <LoaderCircle size={16} className="activity-spinner" aria-label="正在发送" /> : <ArrowUp size={18} aria-label="发送消息" />}
           </button>
         )}
       </div>
@@ -431,11 +472,13 @@ export function ComposerCard(props: {
 export function Composer(props: {
   busy: boolean;
   chip?: string;
+  modelSlot?: ReactNode;
+  sendBlocked?: boolean;
   draftKey?: string;
   client?: RpcClient;
   approvalMode?: ApprovalMode;
   onApprovalModeChange?: (mode: ApprovalMode) => void;
-  onSend: (content: string) => void;
+  onSend: SendMessage;
   onCancel: () => void;
   onError?: (message: string) => void;
 }) {
@@ -445,6 +488,8 @@ export function Composer(props: {
         busy={props.busy}
         placeholder="随心输入,Enter 发送,/ 引用技能"
         chip={props.chip}
+        modelSlot={props.modelSlot}
+        sendBlocked={props.sendBlocked}
         draftKey={props.draftKey}
         client={props.client}
         approvalMode={props.approvalMode}

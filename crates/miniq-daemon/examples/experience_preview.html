@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Interactive artifact</title>
+<style>
+  body { font: 16px system-ui; color: #222; background: #fff; margin: 24px; }
+  button { font: inherit; padding: 8px 14px; cursor: pointer; }
+  output { display: block; margin-top: 16px; }
+</style>
+<h1>Interactive artifact</h1>
+<button id="increment">Increment</button>
+<output id="count">0</output>
+<output id="boundary"></output>
+<script>
+  let count = 0;
+  document.getElementById('increment').onclick = () => {
+    document.getElementById('count').textContent = String(++count);
+  };
+  try {
+    void parent.document.body;
+    document.getElementById('boundary').textContent = 'UNSAFE';
+  } catch {
+    document.getElementById('boundary').textContent = 'Parent origin isolated';
+  }
+</script>
+</html>

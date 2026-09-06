@@ -19,6 +19,7 @@ fn main() {
         "response": schema_for!(RpcResponse),
         "event": schema_for!(Event),
         "session": schema_for!(Session),
+        "sessionModelUpdate": schema_for!(miniq_protocol::SessionModelUpdate),
         "externalSessionScan": schema_for!(ExternalSessionScan),
         "externalSessionImportRequest": schema_for!(ExternalSessionImportRequest),
         "externalSessionImportResult": schema_for!(ExternalSessionImportResult),

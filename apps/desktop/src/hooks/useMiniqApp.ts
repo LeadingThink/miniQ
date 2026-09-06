@@ -17,6 +17,8 @@ import { useDaemonConnection } from "./useDaemonConnection";
 import { useAppUpdater } from "./useAppUpdater";
 import { useFilePreview } from "./useFilePreview";
 import { useSessionFeed } from "./useSessionFeed";
+import { useSessionModel } from "./useSessionModel";
+import type { SessionModelSettings } from "../modelSelection";
 import { useSessionDiff } from "./useSessionDiff";
 import { useTaskNotifications } from "./useTaskNotifications";
 import { isSessionRunning, isSessionTerminal } from "../sessionStatus";
@@ -46,7 +48,12 @@ function useCatalog(client: RpcClient) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [currentSessionId, setCurrentSessionState] = useState<string | null>(null);
+  const navigationEpoch = useRef(0);
+  const setCurrentSessionId = useCallback((sessionId: string | null) => {
+    navigationEpoch.current++;
+    setCurrentSessionState(sessionId);
+  }, []);
 
   const refreshSessions = useCallback(async () => {
     const result = await client.call<{ sessions: Session[] }>("session.list", {});
@@ -92,6 +99,7 @@ function useCatalog(client: RpcClient) {
     sessions,
     selectedWorkspaceId,
     currentSessionId,
+    navigationEpoch,
     currentSession,
     selectedWorkspace,
     currentWorkspace,
@@ -287,9 +295,15 @@ function useSessionLifecycleActions(
 
   const openSession = useCallback(
     async (sessionId: string) => {
-      const result = await client.call<OpenSessionResult>("session.open", { sessionId });
-      markSessionSeen(sessionId);
       setCurrentSessionId(sessionId);
+      const epoch = catalog.navigationEpoch.current;
+      reset();
+      setPage(null);
+      let result: OpenSessionResult;
+      try { result = await client.call<OpenSessionResult>("session.open", { sessionId }); }
+      catch (cause) { if (epoch === catalog.navigationEpoch.current) setError(errorMessage(cause)); return; }
+      if (epoch !== catalog.navigationEpoch.current) return;
+      markSessionSeen(sessionId);
       setSelectedWorkspaceId(result.session.workspaceId);
       setPage(null);
       load({
@@ -304,7 +318,7 @@ function useSessionLifecycleActions(
         turnProgress: result.turnProgress ?? null,
       });
     },
-    [client, load, markSessionSeen, setCurrentSessionId, setPage, setSelectedWorkspaceId],
+    [client, load, markSessionSeen, reset, setCurrentSessionId, setPage, setSelectedWorkspaceId, catalog.navigationEpoch, setError],
   );
 
   const deleteSession = useCallback(
@@ -384,12 +398,13 @@ function useTurnActions(
   catalog: Catalog,
   lifecycle: SessionLifecycle,
   setError: ErrorSetter,
+  modelSettings: SessionModelSettings,
 ) {
-  const { createSession, openSession } = lifecycle;
+  const { openSession } = lifecycle;
 
   const sendMessage = useCallback(
     async (content: string, attachments: string[] = []) => {
-      if (!catalog.currentSessionId) return;
+      if (!catalog.currentSessionId) return false;
       setError(null);
       try {
         await client.call("session.sendMessage", {
@@ -397,8 +412,10 @@ function useTurnActions(
           message: { role: "user", content, attachments },
         });
         void catalog.refreshSessions();
+        return true;
       } catch (error) {
         setError(errorMessage(error));
+        return false;
       }
     },
     [catalog.currentSessionId, catalog.refreshSessions, client, setError],
@@ -408,26 +425,31 @@ function useTurnActions(
     async (content: string, attachments: string[] = []) => {
       if (!catalog.selectedWorkspace) {
         setError("请先选择一个项目(或新建一个)");
-        return;
+        return false;
       }
       setError(null);
       try {
-        const session = await createSession(catalog.selectedWorkspace.id);
+        const epoch = catalog.navigationEpoch.current;
+        const session = await client.call<Session>("session.create", { workspaceId: catalog.selectedWorkspace.id });
+        await client.call("session.modelUpdate", { sessionId: session.id, settings: modelSettings });
         await client.call("session.sendMessage", {
           sessionId: session.id,
           message: { role: "user", content, attachments },
         });
-        await openSession(session.id);
+        if (epoch === catalog.navigationEpoch.current) await openSession(session.id);
         void catalog.refreshSessions();
+        return true;
       } catch (error) {
         setError(errorMessage(error));
+        return false;
       }
     },
     [
       catalog.refreshSessions,
       catalog.selectedWorkspace,
       client,
-      createSession,
+      modelSettings,
+      catalog.navigationEpoch,
       openSession,
       setError,
     ],
@@ -516,6 +538,7 @@ export function useMiniqApp() {
   const [error, setError] = useState<string | null>(null);
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => new Set());
   const catalog = useCatalog(client);
+  const sessionModel = useSessionModel(client, catalog.currentSessionId);
   const markSessionSeen = useCallback((sessionId: string) => {
     setUnreadSessionIds((current) => {
       if (!current.has(sessionId)) return current;
@@ -585,7 +608,7 @@ export function useMiniqApp() {
     setError,
     markSessionSeen,
   );
-  const turnActions = useTurnActions(client, catalog, lifecycle, setError);
+  const turnActions = useTurnActions(client, catalog, lifecycle, setError, sessionModel.settings);
   const interactionActions = useInteractionActions(client, setError, review.refresh);
   const lastResyncedConnection = useRef(0);
   useEffect(() => {
@@ -601,6 +624,7 @@ export function useMiniqApp() {
 
   return {
     client,
+    sessionModel,
     error,
     setError,
     busy,

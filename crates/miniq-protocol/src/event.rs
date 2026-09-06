@@ -16,6 +16,11 @@ use crate::types::{
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
+    ModelSettingsChanged {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        settings: crate::SessionModelSettings,
+    },
     /// Session status changed (idle/running/waiting_approval/...).
     SessionStatusChanged {
         #[serde(rename = "sessionId")]
@@ -175,7 +180,8 @@ pub enum Event {
 impl Event {
     pub fn session_id(&self) -> &str {
         match self {
-            Event::SessionStatusChanged { session_id, .. }
+            Event::ModelSettingsChanged { session_id, .. }
+            | Event::SessionStatusChanged { session_id, .. }
             | Event::TurnProgressChanged { session_id, .. }
             | Event::MessageCreated { session_id, .. }
             | Event::AssistantDelta { session_id, .. }
