@@ -68,12 +68,9 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         .list_artifacts(&input.session_id)
         .map_err(store_err)?;
     let plan = state
-        .plans
-        .lock()
-        .unwrap()
-        .get(&input.session_id)
-        .cloned()
-        .unwrap_or_default();
+        .store
+        .session_plan(&input.session_id)
+        .map_err(store_err)?;
     let queue = state
         .store
         .list_queued_messages(&input.session_id)

@@ -27,6 +27,8 @@ import { SkillsPanel } from "./Skills";
 import { StarterPrompts } from "./StarterPrompts";
 import { WorkbenchResizer } from "./WorkbenchResizer";
 import { AppErrorBanner, AppStatusBar } from "./AppStatus";
+import { SessionModelControls } from "./SessionModelControls";
+import { AgentPanel } from "./AgentPanel";
 
 interface AppOnlyProps {
   app: MiniqAppController;
@@ -111,6 +113,7 @@ interface WorkbenchPageProps extends AppOnlyProps {
 function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
   return (
     <>
+      <AgentPanel key={app.catalog.currentSessionId} client={app.client} sessionId={app.catalog.currentSessionId!} busy={!!app.busy} />
       <Suspense
         fallback={
           <div className="timeline-loading">
@@ -120,6 +123,8 @@ function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
         }
       >
         <Timeline
+          key={app.catalog.currentSessionId}
+          title={app.catalog.currentSession?.title}
           messages={app.feed.messages}
           toolCalls={app.feed.toolCalls}
           approvals={app.feed.approvals}
@@ -142,6 +147,9 @@ function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
         />
       </Suspense>
       <Composer
+        key={app.catalog.currentSessionId}
+        modelSlot={<SessionModelControls client={app.client} model={app.sessionModel} busy={!!app.busy} />}
+        sendBlocked={!app.sessionModel.ready || app.sessionModel.pending}
         busy={!!app.busy}
         chip={app.catalog.currentWorkspace?.name}
         draftKey={app.catalog.currentSessionId ?? undefined}
@@ -170,6 +178,7 @@ function HeroPage({ app }: AppOnlyProps) {
       </h1>
       <div className="hero-composer">
         <ComposerCard
+          modelSlot={<SessionModelControls client={app.client} model={app.sessionModel} busy={false} />}
           busy={false}
           autoFocus
           draftKey="hero"
@@ -193,7 +202,7 @@ function HeroPage({ app }: AppOnlyProps) {
           onApprovalModeChange={app.connection.changeApprovalMode}
           onSend={app.actions.startTask}
           onError={app.setError}
-          sendBlocked={!selectedWorkspace}
+          sendBlocked={!selectedWorkspace || !app.sessionModel.ready || app.sessionModel.pending}
           sendBlockedReason="请先选择项目"
         />
       </div>

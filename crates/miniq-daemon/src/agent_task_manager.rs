@@ -49,6 +49,7 @@ struct AgentRecordState {
     result: Option<String>,
     error: Option<String>,
     history: Option<Vec<ChatMessage>>,
+    model_identity: Option<String>,
     inbox: VecDeque<String>,
     cancel: CancellationToken,
     request: AgentRunRequest,
@@ -58,6 +59,10 @@ struct AgentRecordState {
 }
 
 pub(crate) struct AgentRecord {
+    pub(crate) id: String,
+    pub(crate) session_id: String,
+    parent_id: Option<String>,
+    created_at: String,
     state: Mutex<AgentRecordState>,
     changed: Notify,
 }
@@ -65,7 +70,7 @@ pub(crate) struct AgentRecord {
 #[derive(Default)]
 pub(crate) struct AgentTaskManager {
     records: Mutex<HashMap<String, Arc<AgentRecord>>>,
-    names: Mutex<HashMap<String, String>>,
+    names: Mutex<HashMap<(String, String), String>>,
 }
 
 pub(crate) enum MessageDisposition {
@@ -74,22 +79,49 @@ pub(crate) enum MessageDisposition {
 }
 
 impl AgentTaskManager {
+    pub(crate) async fn list(&self, session_id: &str) -> Vec<Value> {
+        let records = self
+            .records
+            .lock()
+            .await
+            .values()
+            .filter(|record| record.session_id == session_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut entries = Vec::with_capacity(records.len());
+        for record in records {
+            let mut snapshot = self.snapshot(&record.id, &record).await;
+            // Results are retrieved on demand, not re-sent on every status poll.
+            snapshot.as_object_mut().unwrap().remove("result");
+            entries.push(snapshot);
+        }
+        entries.sort_by(|a, b| a["createdAt"].as_str().cmp(&b["createdAt"].as_str()));
+        entries
+    }
+
     pub(crate) async fn create(
         &self,
+        session_id: &str,
+        parent_id: Option<&str>,
         request: &AgentRunRequest,
         cancel: CancellationToken,
     ) -> Result<(String, Arc<AgentRecord>), ToolError> {
         let id = miniq_memory::new_id("agent");
         let name = request.name.clone().unwrap_or_else(|| id.clone());
         let mut names = self.names.lock().await;
-        if names.contains_key(&name) {
+        let scoped_name = (session_id.to_string(), name.clone());
+        if names.contains_key(&scoped_name) {
             return Err(ToolError::InvalidInput(format!(
                 "agent name is already in use: {name}"
             )));
         }
-        names.insert(name.clone(), id.clone());
+        names.insert(scoped_name, id.clone());
         drop(names);
         let record = Arc::new(AgentRecord {
+            id: id.clone(),
+            session_id: session_id.to_string(),
+            parent_id: parent_id.map(str::to_owned),
+            created_at: miniq_memory::now_iso(),
             state: Mutex::new(AgentRecordState {
                 description: request
                     .description
@@ -105,6 +137,7 @@ impl AgentTaskManager {
                 result: None,
                 error: None,
                 history: None,
+                model_identity: None,
                 inbox: VecDeque::new(),
                 cancel,
                 request: request.clone(),
@@ -118,12 +151,16 @@ impl AgentTaskManager {
         Ok((id, record))
     }
 
-    async fn resolve(&self, id_or_name: &str) -> Result<(String, Arc<AgentRecord>), ToolError> {
+    async fn resolve(
+        &self,
+        session_id: &str,
+        id_or_name: &str,
+    ) -> Result<(String, Arc<AgentRecord>), ToolError> {
         let id = self
             .names
             .lock()
             .await
-            .get(id_or_name)
+            .get(&(session_id.to_string(), id_or_name.to_string()))
             .cloned()
             .unwrap_or_else(|| id_or_name.to_string());
         let record = self
@@ -131,6 +168,7 @@ impl AgentTaskManager {
             .lock()
             .await
             .get(&id)
+            .filter(|record| record.session_id == session_id)
             .cloned()
             .ok_or_else(|| ToolError::InvalidInput(format!("unknown agent: {id_or_name}")))?;
         Ok((id, record))
@@ -138,11 +176,12 @@ impl AgentTaskManager {
 
     pub(crate) async fn prepare_resume(
         &self,
+        session_id: &str,
         id_or_name: &str,
         request: &mut AgentRunRequest,
         cancel: CancellationToken,
     ) -> Result<(String, Arc<AgentRecord>, Vec<ChatMessage>), ToolError> {
-        let (id, record) = self.resolve(id_or_name).await?;
+        let (id, record) = self.resolve(session_id, id_or_name).await?;
         let mut state = record.state.lock().await;
         if state.status.is_active() {
             return Err(ToolError::InvalidInput(format!(
@@ -225,7 +264,10 @@ impl AgentTaskManager {
     pub(crate) async fn discard(&self, id: &str, record: &AgentRecord) {
         let name = record.state.lock().await.name.clone();
         self.records.lock().await.remove(id);
-        self.names.lock().await.remove(&name);
+        self.names
+            .lock()
+            .await
+            .remove(&(record.session_id.clone(), name));
     }
 
     pub(crate) async fn cancel_token(&self, record: &AgentRecord) -> CancellationToken {
@@ -234,6 +276,21 @@ impl AgentTaskManager {
 
     pub(crate) async fn save_history(&self, record: &AgentRecord, history: &[ChatMessage]) {
         record.state.lock().await.history = Some(history.to_vec());
+    }
+
+    pub(crate) async fn bind_model_context(
+        &self,
+        record: &AgentRecord,
+        history: &mut [ChatMessage],
+        identity: Option<String>,
+    ) {
+        let mut state = record.state.lock().await;
+        crate::session_models::isolate_native_context(
+            history,
+            state.model_identity.as_deref(),
+            identity.as_deref(),
+        );
+        state.model_identity = identity;
     }
 
     pub(crate) async fn worktree(&self, record: &AgentRecord) -> Option<AgentWorktree> {
@@ -266,6 +323,9 @@ impl AgentTaskManager {
         let state = record.state.lock().await;
         json!({
             "agentId": id,
+            "sessionId": record.session_id,
+            "parentId": record.parent_id,
+            "createdAt": record.created_at,
             "taskId": id,
             "name": state.name,
             "description": state.description,
@@ -284,11 +344,12 @@ impl AgentTaskManager {
 
     pub(crate) async fn output(
         &self,
+        session_id: &str,
         id_or_name: &str,
         block: bool,
         timeout: Duration,
     ) -> Result<Value, ToolError> {
-        let (id, record) = self.resolve(id_or_name).await?;
+        let (id, record) = self.resolve(session_id, id_or_name).await?;
         if block {
             let deadline = tokio::time::Instant::now() + timeout;
             loop {
@@ -304,8 +365,12 @@ impl AgentTaskManager {
         Ok(self.snapshot(&id, &record).await)
     }
 
-    pub(crate) async fn stop(&self, id_or_name: &str) -> Result<Value, ToolError> {
-        let (id, record) = self.resolve(id_or_name).await?;
+    pub(crate) async fn stop(
+        &self,
+        session_id: &str,
+        id_or_name: &str,
+    ) -> Result<Value, ToolError> {
+        let (id, record) = self.resolve(session_id, id_or_name).await?;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
         loop {
             let changed = record.changed.notified();
@@ -329,10 +394,11 @@ impl AgentTaskManager {
 
     pub(crate) async fn route_message(
         &self,
+        session_id: &str,
         id_or_name: &str,
         message: String,
     ) -> Result<MessageDisposition, ToolError> {
-        let (id, record) = self.resolve(id_or_name).await?;
+        let (id, record) = self.resolve(session_id, id_or_name).await?;
         loop {
             let changed = record.changed.notified();
             let mut state = record.state.lock().await;

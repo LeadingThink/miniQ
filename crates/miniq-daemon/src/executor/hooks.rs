@@ -16,29 +16,11 @@ pub(super) fn after_success(
                 .get("tasks")
                 .and_then(|tasks| serde_json::from_value(tasks.clone()).ok())
                 .unwrap_or_default();
-            executor
-                .state
-                .plans
-                .lock()
-                .unwrap()
-                .insert(executor.session_id.clone(), tasks.clone());
-            executor.state.emit(Event::PlanUpdated {
-                session_id: executor.session_id.clone(),
-                tasks,
-            });
+            publish_plan(executor, tasks);
         }
         "task_create" | "task_get" | "task_list" | "task_item_update" => {
             if let Some(tasks) = super::plan::task_graph_plan(output) {
-                executor
-                    .state
-                    .plans
-                    .lock()
-                    .unwrap()
-                    .insert(executor.session_id.clone(), tasks.clone());
-                executor.state.emit(Event::PlanUpdated {
-                    session_id: executor.session_id.clone(),
-                    tasks,
-                });
+                publish_plan(executor, tasks);
             }
         }
         "doc_write" => {
@@ -58,5 +40,30 @@ pub(super) fn after_success(
             }
         }
         _ => {}
+    }
+}
+
+fn publish_plan(executor: &SessionToolExecutor, tasks: Vec<miniq_protocol::PlanTask>) {
+    // Child plans remain in their tool evidence; they must not replace the
+    // parent's top-level checklist.
+    if executor
+        .ctx
+        .agents
+        .as_ref()
+        .and_then(|bridge| bridge.owner_agent_id())
+        .is_some()
+    {
+        return;
+    }
+    match executor
+        .state
+        .store
+        .set_session_plan(&executor.session_id, &tasks)
+    {
+        Ok(()) => executor.state.emit(Event::PlanUpdated {
+            session_id: executor.session_id.clone(),
+            tasks,
+        }),
+        Err(error) => tracing::error!(%error, "could not persist the session plan"),
     }
 }

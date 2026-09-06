@@ -13,6 +13,8 @@ use crate::provider::{
 };
 use crate::sse::{self, DecodedEvent, EventDecoder};
 
+mod context;
+
 pub struct OpenAiCompatProvider {
     config: ProviderConfig,
     client: reqwest::Client,
@@ -57,6 +59,11 @@ impl OpenAiCompatProvider {
             "messages": messages,
             "stream": true,
         });
+        crate::reasoning::apply_reasoning(
+            &mut body,
+            &self.config,
+            crate::ApiProtocol::ChatCompletions,
+        );
         if let Some(t) = request.temperature {
             body["temperature"] = json!(t);
         }
@@ -142,6 +149,7 @@ fn message_to_json(msg: &ChatMessage) -> Result<Value, ProviderError> {
                 .collect(),
         );
     }
+    context::replay(msg, &mut v);
     Ok(v)
 }
 
@@ -172,6 +180,8 @@ struct StreamChoice {
 #[derive(Deserialize, Default)]
 struct StreamDelta {
     #[serde(default)]
+    reasoning_content: Option<String>,
+    #[serde(default)]
     content: Option<String>,
     #[serde(default)]
     tool_calls: Option<Vec<StreamToolCall>>,
@@ -181,6 +191,8 @@ struct StreamDelta {
 
 #[derive(Deserialize)]
 struct StreamToolCall {
+    #[serde(default)]
+    extra_content: Option<Value>,
     #[serde(default)]
     index: usize,
     #[serde(default)]
@@ -242,8 +254,10 @@ fn decode_choice(
     choice: StreamChoice,
     pending: &mut Vec<PendingToolCall>,
     saw_finish_reason: &mut bool,
+    context: &mut context::NativeContext,
     deltas: &mut Vec<Result<ChatDelta, ProviderError>>,
 ) -> bool {
+    context.accumulate(&choice.delta);
     if let Some(text) = choice.delta.content {
         if !text.is_empty() {
             deltas.push(Ok(ChatDelta::Text(text)));
@@ -302,6 +316,9 @@ fn decode_choice(
             return true;
         }
     }
+    if let Some(context) = context.delta() {
+        deltas.push(Ok(context));
+    }
     false
 }
 
@@ -309,6 +326,7 @@ fn decode_sse_event(
     event: &str,
     pending: &mut Vec<PendingToolCall>,
     saw_finish_reason: &mut bool,
+    context: &mut context::NativeContext,
 ) -> (Vec<Result<ChatDelta, ProviderError>>, bool) {
     let mut deltas = Vec::new();
     let Some(data) = sse::event_data(event) else {
@@ -316,6 +334,9 @@ fn decode_sse_event(
     };
     if data == "[DONE]" {
         deltas.extend(flush_tool_calls(pending));
+        if let Some(context) = context.delta() {
+            deltas.push(Ok(context));
+        }
         deltas.push(Ok(ChatDelta::Finished));
         return (deltas, true);
     }
@@ -341,7 +362,7 @@ fn decode_sse_event(
         return (deltas, true);
     }
     for choice in parsed.choices {
-        if decode_choice(choice, pending, saw_finish_reason, &mut deltas) {
+        if decode_choice(choice, pending, saw_finish_reason, context, &mut deltas) {
             return (deltas, true);
         }
     }
@@ -352,12 +373,17 @@ fn decode_sse_event(
 struct ChatCompletionsDecoder {
     pending: Vec<PendingToolCall>,
     saw_finish_reason: bool,
+    context: context::NativeContext,
 }
 
 impl EventDecoder for ChatCompletionsDecoder {
     fn decode(&mut self, event: &str) -> DecodedEvent {
-        let (items, terminal) =
-            decode_sse_event(event, &mut self.pending, &mut self.saw_finish_reason);
+        let (items, terminal) = decode_sse_event(
+            event,
+            &mut self.pending,
+            &mut self.saw_finish_reason,
+            &mut self.context,
+        );
         if terminal {
             DecodedEvent::terminal(items)
         } else {
@@ -370,6 +396,9 @@ impl EventDecoder for ChatCompletionsDecoder {
             return vec![Err(ProviderError::IncompleteStream)];
         }
         let mut items = flush_tool_calls(&mut self.pending);
+        if let Some(context) = self.context.delta() {
+            items.push(Ok(context));
+        }
         items.push(Ok(ChatDelta::Finished));
         items
     }

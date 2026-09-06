@@ -7,6 +7,7 @@ fn provider() -> AnthropicProvider {
         api_key: String::new(),
         model: "claude-test".into(),
         api_protocol: ApiProtocol::AnthropicMessages,
+        reasoning_effort: None,
     })
 }
 

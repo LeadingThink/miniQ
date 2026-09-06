@@ -9,18 +9,20 @@ mod configured;
 mod image;
 mod openai;
 mod provider;
+mod reasoning;
 mod responses;
 mod responses_request;
 mod sse;
 
 pub use anthropic::AnthropicProvider;
-pub use configured::ConfiguredProvider;
+pub use configured::{infer_protocol, ConfiguredProvider};
 pub use openai::OpenAiCompatProvider;
 pub use provider::{
     ApiProtocol, ChatDelta, ChatImage, ChatMessage, ChatRole, CompletionRequest, DeltaStream,
     ModelCapabilities, ModelProvider, OutputTokenUsage, ProviderConfig, ProviderContext,
     ProviderError, ToolCallRequest, ToolSpec,
 };
+pub use reasoning::reasoning_efforts;
 pub use responses::ResponsesProvider;
 
 pub mod mock;

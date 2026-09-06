@@ -9,6 +9,7 @@ fn provider() -> ResponsesProvider {
         api_key: String::new(),
         model: "gpt-test".into(),
         api_protocol: ApiProtocol::Responses,
+        reasoning_effort: None,
     })
 }
 

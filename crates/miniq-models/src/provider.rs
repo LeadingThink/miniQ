@@ -8,29 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ApiProtocol {
-    #[default]
-    Auto,
-    ChatCompletions,
-    Responses,
-    AnthropicMessages,
-}
-
-impl ApiProtocol {
-    pub fn parse(value: &str) -> Result<Self, ProviderError> {
-        match value.trim() {
-            "auto" => Ok(Self::Auto),
-            "chat_completions" => Ok(Self::ChatCompletions),
-            "responses" => Ok(Self::Responses),
-            "anthropic_messages" => Ok(Self::AnthropicMessages),
-            other => Err(ProviderError::Config(format!(
-                "unsupported API protocol: {other}"
-            ))),
-        }
-    }
-}
+pub use miniq_protocol::{ApiProtocol, ReasoningEffort};
 
 #[derive(Debug, Error)]
 pub enum ProviderError {
@@ -236,6 +214,7 @@ pub struct ModelCapabilities {
     pub preferred_api_protocol: Option<ApiProtocol>,
     pub max_output_tokens: Option<u32>,
     pub max_context_tokens: Option<u32>,
+    pub reasoning_efforts: Option<Vec<ReasoningEffort>>,
 }
 
 /// Streamed provider output.
@@ -255,7 +234,7 @@ pub enum ChatDelta {
 pub type DeltaStream = Pin<Box<dyn Stream<Item = Result<ChatDelta, ProviderError>> + Send>>;
 
 /// Provider configuration for OpenAI-compatible endpoints.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfig {
     pub base_url: String,
@@ -264,6 +243,8 @@ pub struct ProviderConfig {
     pub model: String,
     #[serde(default)]
     pub api_protocol: ApiProtocol,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<ReasoningEffort>,
 }
 
 impl ProviderConfig {
@@ -277,13 +258,15 @@ impl ProviderConfig {
         let api_protocol = std::env::var("MINIQ_API_PROTOCOL")
             .ok()
             .map(|value| ApiProtocol::parse(&value))
-            .transpose()?
+            .transpose()
+            .map_err(ProviderError::Config)?
             .unwrap_or_default();
         Ok(Self {
             base_url,
             api_key,
             model,
             api_protocol,
+            reasoning_effort: None,
         })
     }
 }

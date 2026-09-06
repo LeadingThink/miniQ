@@ -37,6 +37,7 @@ impl AnthropicProvider {
             "max_tokens": request.max_output_tokens.unwrap_or(16_384),
             "stream": true,
         });
+        crate::reasoning::apply_reasoning(&mut body, &self.config, ApiProtocol::AnthropicMessages);
         if !system.is_empty() {
             body["system"] = Value::String(system);
         }

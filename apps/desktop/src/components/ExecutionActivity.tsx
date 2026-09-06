@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { PlanTask, ToolCall, TurnProgress } from "../types";
+import { ToolPayload } from "./ToolPayload";
 
 interface ToolAction {
   running: string;
@@ -40,7 +41,7 @@ const TOOL_ACTIONS: Record<string, ToolAction> = {
 export function toolActionLabel(toolName: string, running: boolean): string {
   const action = TOOL_ACTIONS[toolName];
   if (action) return running ? action.running : action.finished;
-  return running ? "正在执行下一步" : "完成了一个步骤";
+  return running ? `正在执行 ${toolName}` : `已执行 ${toolName}`;
 }
 
 /** One-line human summary of the most relevant tool input. */
@@ -89,10 +90,6 @@ function LiveElapsed({
   return <span className={className}>{prefix ? `${prefix} ${duration}` : duration}</span>;
 }
 
-function formatPayload(payload: unknown): string {
-  return typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
-}
-
 function statusText(call: ToolCall): string | null {
   switch (call.status) {
     case "waiting_approval":
@@ -112,7 +109,8 @@ export function ToolStep(props: {
   call: ToolCall;
   onRollback: (checkpointId: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(props.call.status === "failed");
+  useEffect(() => { if (props.call.status === "failed") setOpen(true); }, [props.call.status]);
   const { call } = props;
   const running = call.status === "running" || call.status === "waiting_approval";
   const checkpointId =
@@ -167,15 +165,10 @@ export function ToolStep(props: {
       </div>
       {open && (
         <div className="tool-step-body">
-          <div>
-            <span>输入</span>
-            <pre>{formatPayload(call.input)}</pre>
-          </div>
+          <code className="tool-identity">{call.toolName}</code>
+          <ToolPayload label="输入" value={call.input} />
           {call.output !== undefined && call.output !== null && (
-            <div>
-              <span>结果</span>
-              <pre>{formatPayload(call.output)}</pre>
-            </div>
+            <ToolPayload label="结果" value={call.output} />
           )}
         </div>
       )}
@@ -193,6 +186,7 @@ export function PlanProgress({ plan }: { plan: PlanTask[] }) {
         <strong>{done === plan.length ? "任务步骤已完成" : "任务进度"}</strong>
         <span>{done}/{plan.length}</span>
       </div>
+      <progress value={done} max={plan.length} aria-label="已完成任务步骤" />
       <ol>
         {plan.map((task, index) => (
           <li key={`${index}-${task.content}`} className={task.status}>

@@ -1,5 +1,5 @@
-import { ArrowDown, Check, Copy, FileText, FolderOpen, X, Zap } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowDown, Download, FileText, FolderOpen, Search, X, Zap } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Artifact,
   Message,
@@ -16,27 +16,11 @@ import {
   type LocalFileTarget,
 } from "../localFiles";
 import { Md } from "./Md";
-import { ExecutionPrelude, PlanProgress, ToolStep } from "./ExecutionActivity";
-
-/** Hover copy button for a whole assistant message (ChatGPT-style). */
-function MessageCopy({ content }: { content: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      className={`msg-copy ${copied ? "copied" : ""}`}
-      title="复制消息"
-      onClick={() => {
-        void navigator.clipboard.writeText(content).then(() => {
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1500);
-        });
-      }}
-    >
-      {copied ? <Check size={13} /> : <Copy size={13} />}
-    </button>
-  );
-}
+import { ExecutionPrelude, PlanProgress } from "./ExecutionActivity";
+import { createTimelineItems, groupTimeline, filterTimelineGroups, type TimelineFilter, type TimelineGroup } from "../timelineModel";
+import { downloadSession } from "../sessionExport";
+import { CopyButton } from "./CopyButton";
+import { ToolGroup } from "./ToolGroup";
 
 function ApprovalCard({
   item,
@@ -162,7 +146,7 @@ function QuestionCard({
           placeholder="或者输入你的回答..."
           onChange={(e) => setCustom(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && custom.trim()) {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229 && custom.trim()) {
               onResolve(question.id, custom.trim());
             }
           }}
@@ -262,11 +246,8 @@ function ArtifactsBar(props: {
   );
 }
 
-type TimelineItem =
-  | { kind: "message"; at: string; message: Message }
-  | { kind: "tool"; at: string; call: ToolCall };
-
 interface TimelineProps {
+  title?: string;
   messages: Message[];
   toolCalls: ToolCall[];
   approvals: PendingApproval[];
@@ -288,23 +269,10 @@ interface TimelineProps {
   onError: (message: string) => void;
 }
 
-function createTimelineItems(messages: Message[], toolCalls: ToolCall[]): TimelineItem[] {
-  return [
-    ...messages
-      .filter((message) => message.role !== "system")
-      .map((message) => ({
-        kind: "message" as const,
-        at: message.createdAt,
-        message,
-      })),
-    ...toolCalls
-      .filter((call) => call.toolName !== "task_update")
-      .map((call) => ({ kind: "tool" as const, at: call.createdAt, call })),
-  ].sort((left, right) => left.at.localeCompare(right.at));
-}
-
 function TimelineEntries(props: {
-  items: TimelineItem[];
+  items: TimelineGroup[];
+  expandGroups: boolean;
+  onError: TimelineProps["onError"];
   approvals: PendingApproval[];
   questions: Question[];
   plan: PlanTask[];
@@ -323,8 +291,9 @@ function TimelineEntries(props: {
       {props.items.map((item) =>
         item.kind === "message" ? (
           item.message.role === "user" ? (
-            <div key={item.message.id} className="bubble user">
+            <div key={item.message.id} className="bubble user" title={new Date(item.message.createdAt).toLocaleString()}>
               {item.message.content}
+              <CopyButton className="msg-copy" label="复制消息" content={item.message.content} onError={props.onError} />
             </div>
           ) : item.message.role === "tool" ? (
             <div key={item.message.id} className="bubble tool-transcript">
@@ -334,15 +303,15 @@ function TimelineEntries(props: {
               </Md>
             </div>
           ) : (
-            <div key={item.message.id} className="bubble assistant">
+            <div key={item.message.id} className="bubble assistant" title={new Date(item.message.createdAt).toLocaleString()}>
               <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile} onOpenUrl={props.onOpenUrl}>
                 {item.message.content}
               </Md>
-              <MessageCopy content={item.message.content} />
+              <CopyButton className="msg-copy" label="复制消息" content={item.message.content} onError={props.onError} />
             </div>
           )
         ) : (
-          <ToolStep key={item.call.id} call={item.call} onRollback={props.onRollback} />
+          <ToolGroup key={item.calls[0].id} calls={item.calls} onRollback={props.onRollback} expanded={props.expandGroups} />
         ),
       )}
       {props.approvals.map((approval) => (
@@ -379,6 +348,8 @@ export function Timeline(props: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
   const [showJump, setShowJump] = useState(false);
+  const [filter, setFilter] = useState<TimelineFilter>("all");
+  const [query, setQuery] = useState("");
 
   // Track whether the user is reading history (not pinned to bottom).
   const onScroll = () => {
@@ -392,7 +363,7 @@ export function Timeline(props: TimelineProps) {
   const jumpToBottom = () => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    el.scrollTo({ top: el.scrollHeight, behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     pinnedToBottom.current = true;
     setShowJump(false);
   };
@@ -415,7 +386,8 @@ export function Timeline(props: TimelineProps) {
     props.queue,
   ]);
 
-  const items = createTimelineItems(props.messages, props.toolCalls);
+  const groups = useMemo(() => groupTimeline(createTimelineItems(props.messages, props.toolCalls)), [props.messages, props.toolCalls]);
+  const items = useMemo(() => filterTimelineGroups(groups, filter, query), [groups, filter, query]);
   const hasRunningTool = props.toolCalls.some(
     (t) => t.status === "running" || t.status === "waiting_approval",
   );
@@ -427,9 +399,22 @@ export function Timeline(props: TimelineProps) {
 
   return (
     <>
+      <div className="timeline-toolbar" aria-label="会话记录工具栏">
+        <div className="timeline-modes" role="group" aria-label="记录类型">
+          {([["all", "全部"], ["answers", "回答"], ["activity", "执行"], ["errors", "异常"]] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}
+        </div>
+        <label className="timeline-search"><Search size={14} /><input type="search" aria-label="搜索当前会话" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+        <details className="session-export"><summary title="导出会话" aria-label="导出会话"><Download size={16} /></summary><div>{(["md", "json"] as const).map((format) => <button type="button" key={format} onClick={() => {
+          try { downloadSession({ title: props.title ?? "miniQ session", messages: props.messages, toolCalls: props.toolCalls, plan: props.plan, artifacts: props.artifacts }, format); }
+          catch (cause) { props.onError(`导出失败: ${String(cause)}`); }
+        }}>{format === "md" ? "Markdown" : "JSON"}</button>)}</div></details>
+      </div>
       <div className="timeline" ref={scrollRef} onScroll={onScroll}>
+        {items.length === 0 && (filter !== "all" || query) && <div className="diff-empty" role="status">没有匹配的记录</div>}
         <TimelineEntries
           items={items}
+          expandGroups={filter !== "all" || !!query}
+          onError={props.onError}
           approvals={props.approvals}
           questions={props.questions}
           plan={props.plan}

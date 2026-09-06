@@ -1,12 +1,57 @@
 use super::*;
 use crate::{ApiProtocol, ToolSpec};
 
+#[test]
+fn reasoning_and_tool_signatures_survive_streaming_and_replay() {
+    let mut decoder = ChatCompletionsDecoder::default();
+    decoder.decode(r#"data: {"choices":[{"delta":{"reasoning_content":"first "}}]}"#);
+    decoder.decode(r#"data: {"choices":[{"delta":{"reasoning_content":"second","tool_calls":[{"index":0,"id":"call-1","function":{"name":"file_read","arguments":"{}"},"extra_content":{"google":{"thought_signature":"opaque-signature"}}}]}}]}"#);
+    let decoded =
+        decoder.decode(r#"data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#);
+    let mut assistant = ChatMessage::assistant("");
+    for delta in decoded.items {
+        match delta.unwrap() {
+            ChatDelta::Context(context) => assistant.provider_context = Some(context),
+            ChatDelta::ToolCall(call) => assistant.tool_calls.push(call),
+            _ => {}
+        }
+    }
+    let replay = message_to_json(&assistant).unwrap();
+    assert_eq!(replay["reasoning_content"], "first second");
+    assert_eq!(
+        replay["tool_calls"][0]["extra_content"]["google"]["thought_signature"],
+        "opaque-signature"
+    );
+    assistant.tool_calls.clear();
+    assert_eq!(
+        message_to_json(&assistant).unwrap()["reasoning_content"],
+        "first second"
+    );
+    assistant.provider_context.as_mut().unwrap().protocol = ApiProtocol::AnthropicMessages;
+    assert!(message_to_json(&assistant)
+        .unwrap()
+        .get("reasoning_content")
+        .is_none());
+}
+
+#[test]
+fn explicit_effort_is_encoded_on_the_actual_chat_request() {
+    let mut provider = provider();
+    provider.config.reasoning_effort = Some(miniq_protocol::ReasoningEffort::High);
+    let mut completion = request(None);
+    completion.max_output_tokens = None;
+    let wire = provider.build_body(&completion);
+    assert_eq!(wire["reasoning_effort"], "high");
+    assert!(wire.get("max_tokens").is_none());
+}
+
 fn provider() -> OpenAiCompatProvider {
     OpenAiCompatProvider::new(ProviderConfig {
         base_url: "https://example.com/v1".to_string(),
         api_key: String::new(),
         model: "thinking-model".to_string(),
         api_protocol: ApiProtocol::ChatCompletions,
+        reasoning_effort: None,
     })
 }
 
@@ -120,7 +165,12 @@ fn encodes_attached_images_as_openai_vision_content_parts() {
 fn done_event_finishes_a_normal_stream() {
     let mut pending = Vec::new();
     let mut saw_finish = false;
-    let (deltas, terminal) = decode_sse_event("data: [DONE]", &mut pending, &mut saw_finish);
+    let (deltas, terminal) = decode_sse_event(
+        "data: [DONE]",
+        &mut pending,
+        &mut saw_finish,
+        &mut Default::default(),
+    );
 
     assert!(terminal);
     assert_eq!(deltas.len(), 1);
@@ -132,7 +182,12 @@ fn output_limit_is_not_reported_as_success() {
     let mut pending = Vec::new();
     let mut saw_finish = false;
     let event = r#"data: {"choices":[{"delta":{"content":"partial"},"finish_reason":"length"}]}"#;
-    let (deltas, terminal) = decode_sse_event(event, &mut pending, &mut saw_finish);
+    let (deltas, terminal) = decode_sse_event(
+        event,
+        &mut pending,
+        &mut saw_finish,
+        &mut Default::default(),
+    );
 
     assert!(terminal);
     assert!(saw_finish);
@@ -151,7 +206,12 @@ fn incomplete_tool_json_is_rejected_before_execution() {
     let mut pending = Vec::new();
     let mut saw_finish = false;
     let event = r#"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"file_write","arguments":"{\\\"path\\\":\\\"a"}}]},"finish_reason":"tool_calls"}]}"#;
-    let (deltas, terminal) = decode_sse_event(event, &mut pending, &mut saw_finish);
+    let (deltas, terminal) = decode_sse_event(
+        event,
+        &mut pending,
+        &mut saw_finish,
+        &mut Default::default(),
+    );
 
     assert!(!terminal);
     assert!(matches!(
@@ -167,7 +227,12 @@ fn crlf_event_body_is_parseable_after_transport_normalization() {
     let normalized =
         "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\r\n"
             .replace("\r\n", "\n");
-    let (deltas, terminal) = decode_sse_event(&normalized, &mut pending, &mut saw_finish);
+    let (deltas, terminal) = decode_sse_event(
+        &normalized,
+        &mut pending,
+        &mut saw_finish,
+        &mut Default::default(),
+    );
 
     assert!(!terminal);
     assert!(saw_finish);
@@ -184,7 +249,12 @@ fn joins_multiline_sse_data_before_decoding_json() {
     let event =
         "data: {\"choices\":[\ndata: {\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}";
 
-    let (deltas, terminal) = decode_sse_event(event, &mut pending, &mut saw_finish);
+    let (deltas, terminal) = decode_sse_event(
+        event,
+        &mut pending,
+        &mut saw_finish,
+        &mut Default::default(),
+    );
 
     assert!(!terminal);
     assert!(saw_finish);
@@ -200,7 +270,12 @@ fn accepts_legacy_function_call_deltas() {
     let mut saw_finish = false;
     let event = r#"data: {"choices":[{"delta":{"function_call":{"name":"file_read","arguments":"{\"path\":\"README.md\"}"}},"finish_reason":"function_call"}]}"#;
 
-    let (deltas, terminal) = decode_sse_event(event, &mut pending, &mut saw_finish);
+    let (deltas, terminal) = decode_sse_event(
+        event,
+        &mut pending,
+        &mut saw_finish,
+        &mut Default::default(),
+    );
 
     assert!(!terminal);
     assert!(matches!(
@@ -237,6 +312,7 @@ fn surfaces_error_objects_inside_successful_sse_responses() {
         r#"data: {"error":{"message":"upstream unavailable"}}"#,
         &mut pending,
         &mut saw_finish,
+        &mut Default::default(),
     );
 
     assert!(terminal);
@@ -255,6 +331,7 @@ fn classifies_context_overflow_inside_a_successful_sse_response() {
         r#"data: {"error":{"code":"context_length_exceeded","message":"maximum context length exceeded"}}"#,
         &mut pending,
         &mut saw_finish,
+        &mut Default::default(),
     );
 
     assert!(terminal);

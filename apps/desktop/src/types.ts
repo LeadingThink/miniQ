@@ -291,6 +291,7 @@ export interface ScheduledTask {
 }
 
 export type DaemonEvent =
+  | { type: "model_settings_changed"; sessionId: string; settings: import("./modelSelection").SessionModelSettings }
   | { type: "session_status_changed"; sessionId: string; status: SessionStatus }
   | { type: "turn_progress_changed"; sessionId: string; progress: TurnProgress }
   | { type: "message_created"; sessionId: string; message: Message }

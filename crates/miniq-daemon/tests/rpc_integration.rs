@@ -396,6 +396,7 @@ async fn voice_transcription_uses_configured_provider() {
             api_key: "test-secret".to_string(),
             model: "chat-model".to_string(),
             api_protocol: miniq_models::ApiProtocol::ChatCompletions,
+            reasoning_effort: None,
         }),
         ..DaemonSettings::default()
     };

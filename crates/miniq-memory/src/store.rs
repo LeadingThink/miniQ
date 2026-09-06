@@ -8,6 +8,7 @@ mod queue;
 mod records;
 mod row_mappers;
 mod scheduled_tasks;
+mod session_settings;
 mod workspaces;
 
 pub use external_sessions::ExternalImportOutcome;
@@ -54,6 +55,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0008_message_attachments",
         include_str!("../../../migrations/0008_message_attachments.sql"),
+    ),
+    (
+        "0009_session_model_settings",
+        include_str!("../../../migrations/0009_session_model_settings.sql"),
     ),
 ];
 

@@ -157,6 +157,7 @@ function reduceDaemonEvent(
     case "queue_changed":
       return { ...state, queue: event.queue };
     case "session_status_changed":
+    case "model_settings_changed":
     case "context_compacted":
     case "session_deleted":
     case "workspace_deleted":

@@ -6,6 +6,7 @@
 
 use std::path::Path;
 
+mod agents;
 mod common;
 mod external_session;
 mod external_workspace;
@@ -15,6 +16,7 @@ mod plugin;
 mod schedule;
 mod session;
 mod session_diff;
+mod session_model;
 mod settings;
 mod skill;
 mod system;
@@ -62,6 +64,13 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.create" => session::create(state, req.params),
         "session.list" => session::list(state, req.params),
         "session.open" => session::open(state, req.params),
+        "session.modelGet" => session_model::get(state, req.params),
+        "session.modelUpdate" => session_model::update(state, req.params).await,
+        "model.list" => session_model::catalog(state).await,
+        "model.describe" => session_model::describe(state, req.params).await,
+        "agent.list" => agents::list(state, req.params).await,
+        "agent.output" => agents::action(state, req.params, false).await,
+        "agent.stop" => agents::action(state, req.params, true).await,
         "session.diff" => session_diff::get(state, req.params),
         "session.sendMessage" => session::send_message(state, req.params),
         "session.cancel" => session::cancel(state, req.params),

@@ -33,6 +33,7 @@ impl ResponsesProvider {
             "store": false,
             "include": ["reasoning.encrypted_content"],
         });
+        crate::reasoning::apply_reasoning(&mut body, &self.config, ApiProtocol::Responses);
         if let Some(temperature) = request.temperature {
             body["temperature"] = json!(temperature);
         }

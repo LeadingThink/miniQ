@@ -26,6 +26,7 @@ pub(crate) struct DaemonAgentBridge {
     pub workspace: PathBuf,
     pub workspace_id: String,
     pub depth: usize,
+    pub agent_id: Option<String>,
 }
 
 impl DaemonAgentBridge {
@@ -38,6 +39,28 @@ impl DaemonAgentBridge {
         worktree: Option<AgentWorktree>,
     ) {
         let cancel = self.state.agent_tasks.cancel_token(&record).await;
+        let config = match self
+            .state
+            .provider_config_for_session(&self.session_id, request.model.as_deref())
+        {
+            Ok(config) => config,
+            Err(error) => {
+                self.state
+                    .agent_tasks
+                    .fail_start(&record, &ToolError::ExecutionFailed(error.to_string()))
+                    .await;
+                return;
+            }
+        };
+        self.state
+            .agent_tasks
+            .bind_model_context(
+                &record,
+                &mut history,
+                crate::session_models::model_identity(config.as_ref()),
+            )
+            .await;
+        let provider = self.state.provider_from_config(config);
         let mut prompt = request.prompt.clone();
         loop {
             history.push(ChatMessage::user(prompt));
@@ -46,7 +69,7 @@ impl DaemonAgentBridge {
                 state: self.state.clone(),
                 session_id: self.session_id.clone(),
                 router: self.state.router.clone(),
-                ctx: self.child_context(workspace.clone()),
+                ctx: self.child_context(workspace.clone(), &record.id),
                 cancel: cancel.clone(),
                 permission_policy: permission_policy(&request),
             };
@@ -56,9 +79,7 @@ impl DaemonAgentBridge {
             let (events, mut receiver) = tokio::sync::mpsc::channel(128);
             let drain = tokio::spawn(async move { while receiver.recv().await.is_some() {} });
             let outcome = run_turn_with_limits(
-                self.state
-                    .current_provider_for_model(request.model.as_deref())
-                    .as_ref(),
+                provider.as_ref(),
                 &executor,
                 history,
                 events,
@@ -100,7 +121,7 @@ impl DaemonAgentBridge {
         }
     }
 
-    fn child_context(&self, workspace: PathBuf) -> ToolContext {
+    fn child_context(&self, workspace: PathBuf, agent_id: &str) -> ToolContext {
         ToolContext::new(workspace.clone())
             .with_skills(Some(self.state.skills.clone()))
             .with_memory(
@@ -109,13 +130,17 @@ impl DaemonAgentBridge {
             )
             .with_mcp(self.state.mcp_bridge())
             .with_processes(self.state.processes.clone())
-            .with_tasks(self.state.tasks.clone(), self.session_id.clone())
+            .with_tasks(
+                self.state.tasks.clone(),
+                format!("{}:{agent_id}", self.session_id),
+            )
             .with_agents(Some(Arc::new(Self {
                 state: self.state.clone(),
                 session_id: self.session_id.clone(),
                 workspace,
                 workspace_id: self.workspace_id.clone(),
                 depth: self.depth + 1,
+                agent_id: Some(agent_id.to_owned()),
             })))
     }
 
@@ -161,6 +186,10 @@ impl DaemonAgentBridge {
 
 #[async_trait]
 impl AgentBridge for DaemonAgentBridge {
+    fn owner_agent_id(&self) -> Option<&str> {
+        self.agent_id.as_deref()
+    }
+
     async fn run(&self, mut request: AgentRunRequest) -> Result<Value, ToolError> {
         if self.depth >= MAX_AGENT_DEPTH {
             return Err(ToolError::ExecutionFailed(format!(
@@ -168,17 +197,28 @@ impl AgentBridge for DaemonAgentBridge {
             )));
         }
         request.validate()?;
+        if request.resume.is_none() && request.model.is_none() {
+            request.model = self
+                .state
+                .provider_config_for_session(&self.session_id, None)
+                .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?
+                .map(|config| config.model);
+        }
         let cancel = CancellationToken::new();
         let resuming = request.resume.is_some();
         let (id, record, resumed_history) = match request.resume.clone() {
             Some(resume) => {
                 self.state
                     .agent_tasks
-                    .prepare_resume(&resume, &mut request, cancel)
+                    .prepare_resume(&self.session_id, &resume, &mut request, cancel)
                     .await?
             }
             None => {
-                let (id, record) = self.state.agent_tasks.create(&request, cancel).await?;
+                let (id, record) = self
+                    .state
+                    .agent_tasks
+                    .create(&self.session_id, self.agent_id.as_deref(), &request, cancel)
+                    .await?;
                 (id, record, Vec::new())
             }
         };
@@ -226,23 +266,26 @@ impl AgentBridge for DaemonAgentBridge {
         task.await;
         self.state
             .agent_tasks
-            .output(&id, false, Duration::ZERO)
+            .output(&self.session_id, &id, false, Duration::ZERO)
             .await
     }
 
     async fn output(&self, id: &str, block: bool, timeout: Duration) -> Result<Value, ToolError> {
-        self.state.agent_tasks.output(id, block, timeout).await
+        self.state
+            .agent_tasks
+            .output(&self.session_id, id, block, timeout)
+            .await
     }
 
     async fn stop(&self, id: &str) -> Result<Value, ToolError> {
-        self.state.agent_tasks.stop(id).await
+        self.state.agent_tasks.stop(&self.session_id, id).await
     }
 
     async fn send(&self, request: AgentMessageRequest) -> Result<Value, ToolError> {
         match self
             .state
             .agent_tasks
-            .route_message(&request.recipient, request.message)
+            .route_message(&self.session_id, &request.recipient, request.message)
             .await?
         {
             MessageDisposition::Queued(result) => Ok(result),
