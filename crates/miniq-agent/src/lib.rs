@@ -30,7 +30,7 @@ pub enum AgentError {
     Provider(#[from] miniq_models::ProviderError),
     #[error("turn cancelled")]
     Cancelled,
-    #[error("agent stopped after {steps} model steps to prevent a runaway loop")]
+    #[error("agent exhausted its configured budget of {steps} model steps")]
     StepLimitExceeded { steps: usize },
     #[error("agent repeated the same tool batch {repetitions} times")]
     RepeatedToolLoop { repetitions: usize },
@@ -119,7 +119,9 @@ pub struct TurnOutcome {
 
 #[derive(Debug, Clone)]
 pub struct RunLimits {
-    pub max_steps: usize,
+    /// Optional per-turn model-step budget. Interactive turns have no fixed
+    /// ceiling; callers running bounded child tasks can supply one explicitly.
+    pub max_steps: Option<usize>,
     pub repeated_tool_batch_limit: usize,
     pub max_model_retries: usize,
     pub context_policy: ContextPolicy,
@@ -128,7 +130,7 @@ pub struct RunLimits {
 impl Default for RunLimits {
     fn default() -> Self {
         Self {
-            max_steps: 96,
+            max_steps: None,
             repeated_tool_batch_limit: 4,
             max_model_retries: 2,
             context_policy: ContextPolicy::default(),
@@ -224,12 +226,10 @@ pub async fn run_turn_with_limits(
         if cancel.is_cancelled() {
             return Err(AgentError::Cancelled);
         }
-        steps += 1;
-        if steps > limits.max_steps {
-            return Err(AgentError::StepLimitExceeded {
-                steps: limits.max_steps,
-            });
+        if limits.max_steps.is_some_and(|max_steps| steps >= max_steps) {
+            return Err(AgentError::StepLimitExceeded { steps });
         }
+        steps += 1;
         let context_policy = effective_context_policy(&limits.context_policy, &capabilities);
         let context =
             compact_history(provider, history, &tools, &context_policy, &events, &cancel).await?;
@@ -451,6 +451,9 @@ pub async fn run_turn_with_limits(
 mod observation_tests;
 
 #[cfg(test)]
+mod run_limits_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use futures_util::stream;
@@ -648,11 +651,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn continues_until_final_answer_after_more_than_24_tool_rounds() {
-        let mut turns = (0..25).map(tool_turn).collect::<Vec<_>>();
+    async fn continues_until_final_answer_after_more_than_96_tool_rounds() {
+        let mut turns = (0..128).map(tool_turn).collect::<Vec<_>>();
         turns.push(vec![ChatDelta::Text("finished".to_string())]);
         let provider = MockProvider::new(turns);
-        let (events, _receiver) = tokio::sync::mpsc::channel(64);
+        let (events, mut receiver) = tokio::sync::mpsc::channel(300);
 
         let outcome = run_turn(
             &provider,
@@ -665,8 +668,15 @@ mod tests {
         .expect("the turn should continue past the previous limit");
 
         assert_eq!(outcome.final_text, "finished");
-        assert_eq!(outcome.appended.len(), 50);
-        assert_eq!(provider.requests.lock().unwrap().len(), 26);
+        assert_eq!(outcome.appended.len(), 256);
+        assert_eq!(provider.requests.lock().unwrap().len(), 129);
+        let mut request_steps = Vec::new();
+        while let Ok(event) = receiver.try_recv() {
+            if let AgentEvent::ModelRequestStarted { step } = event {
+                request_steps.push(step);
+            }
+        }
+        assert_eq!(request_steps, (1..=129).collect::<Vec<_>>());
     }
 
     #[tokio::test]
@@ -892,7 +902,7 @@ mod tests {
             events,
             CancellationToken::new(),
             RunLimits {
-                max_steps: 20,
+                max_steps: Some(20),
                 repeated_tool_batch_limit: 4,
                 ..RunLimits::default()
             },
