@@ -7,6 +7,9 @@ use tokio::sync::{Mutex, Semaphore};
 #[path = "agent_tasks_tests/cancellation.rs"]
 mod cancellation;
 
+#[path = "agent_tasks_tests/step_budget.rs"]
+mod step_budget;
+
 fn request(prompt: &str) -> AgentRunRequest {
     AgentRunRequest {
         prompt: prompt.into(),

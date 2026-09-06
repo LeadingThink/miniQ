@@ -86,7 +86,7 @@ impl DaemonAgentBridge {
                 events,
                 cancel.clone(),
                 RunLimits {
-                    max_steps: request.max_turns.unwrap_or(32),
+                    max_steps: Some(request.max_turns.unwrap_or(32)),
                     ..RunLimits::default()
                 },
             )
