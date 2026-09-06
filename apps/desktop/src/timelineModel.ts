@@ -8,6 +8,20 @@ export type TimelineGroup =
   | { kind: "tools"; at: string; calls: ToolCall[] };
 export type TimelineFilter = "all" | "answers" | "activity" | "errors";
 
+function compareTimestamps(a: string, b: string): number {
+  const difference = Date.parse(a) - Date.parse(b);
+  if (!Number.isFinite(difference)) return a.localeCompare(b);
+  if (difference !== 0) return difference;
+  // Date preserves timezone offsets but drops the daemon's sub-millisecond precision.
+  const fraction = /\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/i;
+  const aFraction = fraction.exec(a)?.[1] ?? "";
+  const bFraction = fraction.exec(b)?.[1] ?? "";
+  const width = Math.max(aFraction.length, bFraction.length);
+  return aFraction
+    .padEnd(width, "0")
+    .localeCompare(bFraction.padEnd(width, "0"));
+}
+
 export function createTimelineItems(
   messages: Message[],
   toolCalls: ToolCall[],
@@ -24,10 +38,7 @@ export function createTimelineItems(
     ...toolCalls
       .filter((call) => includeInternal || call.toolName !== "task_update")
       .map((call) => ({ kind: "tool" as const, at: call.createdAt, call })),
-  ].sort((a, b) => {
-    const difference = Date.parse(a.at) - Date.parse(b.at);
-    return Number.isFinite(difference) ? difference : a.at.localeCompare(b.at);
-  });
+  ].sort((a, b) => compareTimestamps(a.at, b.at));
 }
 
 export function payloadText(value: unknown): string {
