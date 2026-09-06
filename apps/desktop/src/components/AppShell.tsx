@@ -123,6 +123,7 @@ function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
         }
       >
         <Timeline
+          client={app.client}
           key={app.catalog.currentSessionId}
           title={app.catalog.currentSession?.title}
           messages={app.feed.messages}

@@ -3,15 +3,18 @@ import { useEffect, useState } from "react";
 import type { ToolCall } from "../types";
 import { toolCounts } from "../timelineModel";
 import { ToolStep } from "./ExecutionActivity";
+import type { RpcClient } from "../rpc";
 
 export function ToolGroup({
   calls,
   onRollback,
   expanded = false,
+  client,
 }: {
   calls: ToolCall[];
   onRollback: (id: string) => void;
   expanded?: boolean;
+  client?: RpcClient;
 }) {
   const counts = toolCounts(calls);
   const [open, setOpen] = useState(expanded || counts.attention);
@@ -19,7 +22,7 @@ export function ToolGroup({
     if (counts.attention || expanded) setOpen(true);
   }, [counts.attention, expanded]);
   if (calls.length === 1)
-    return <ToolStep call={calls[0]} onRollback={onRollback} />;
+    return <ToolStep call={calls[0]} onRollback={onRollback} client={client} />;
   return (
     <section
       className={`tool-group ${counts.attention ? "needs-attention" : ""}`}
@@ -44,7 +47,7 @@ export function ToolGroup({
       {open && (
         <div className="tool-group-body">
           {calls.map((call) => (
-            <ToolStep key={call.id} call={call} onRollback={onRollback} />
+            <ToolStep key={call.id} call={call} onRollback={onRollback} client={client} />
           ))}
         </div>
       )}

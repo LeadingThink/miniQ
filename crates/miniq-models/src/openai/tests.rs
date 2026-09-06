@@ -146,6 +146,7 @@ fn encodes_attached_images_as_openai_vision_content_parts() {
     std::fs::write(&path, [0x89_u8, b'P', b'N', b'G']).unwrap();
     let mut request = request(None);
     request.messages[0].images.push(ChatImage {
+        detail: crate::ImageDetail::Auto,
         path: path.to_string_lossy().into_owned(),
         mime_type: "image/png".to_string(),
     });
@@ -159,6 +160,35 @@ fn encodes_attached_images_as_openai_vision_content_parts() {
         .unwrap()
         .starts_with("data:image/png;base64,"));
     let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn tool_observations_follow_the_complete_tool_batch_as_user_images() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("image.png");
+    std::fs::write(&path, [0x89_u8, b'P', b'N', b'G']).unwrap();
+    let mut first = ChatMessage::tool_result("call-1", "observation metadata");
+    first.images.push(ChatImage {
+        path: path.to_string_lossy().into(),
+        mime_type: "image/png".into(),
+        detail: crate::ImageDetail::High,
+    });
+    let second = ChatMessage::tool_result("call-2", "other output");
+    let encoded = messages_to_json(&[first, second, ChatMessage::assistant("verified")]).unwrap();
+    assert_eq!(
+        encoded
+            .iter()
+            .map(|message| message["role"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["tool", "tool", "user", "assistant"]
+    );
+    assert_eq!(encoded[0]["content"], "observation metadata");
+    assert_eq!(encoded[1]["tool_call_id"], "call-2");
+    assert!(encoded[2]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("call-1"));
+    assert_eq!(encoded[2]["content"][1]["image_url"]["detail"], "high");
 }
 
 #[test]

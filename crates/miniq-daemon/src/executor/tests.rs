@@ -254,3 +254,84 @@ async fn plan_mode_blocks_workspace_writes_until_exit() {
     assert_eq!(output["rejected"], true);
     assert!(!directory.path().join("blocked.txt").exists());
 }
+
+struct DesktopProbe;
+
+#[async_trait::async_trait]
+impl miniq_tools::Tool for DesktopProbe {
+    fn name(&self) -> &str {
+        "computer_use"
+    }
+    fn description(&self) -> &str {
+        "Approval probe, never touches the desktop"
+    }
+    fn parameters_schema(&self) -> Value {
+        json!({"type":"object"})
+    }
+    fn evaluate_risk(&self, ctx: &ToolContext, input: &Value) -> miniq_sandbox::Risk {
+        miniq_tools::ComputerUseTool::default().evaluate_risk(ctx, input)
+    }
+    async fn execute(
+        &self,
+        _ctx: &ToolContext,
+        _input: Value,
+    ) -> Result<Value, miniq_tools::ToolError> {
+        panic!("unapproved desktop operation must never reach the backend");
+    }
+}
+
+#[tokio::test]
+async fn unapproved_desktop_operations_never_reach_the_backend() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = miniq_memory::Store::open_in_memory().unwrap();
+    let workspace = store
+        .create_workspace(directory.path().to_str().unwrap(), "test")
+        .unwrap();
+    let session = store
+        .create_session(&workspace.id, "approval gate")
+        .unwrap();
+    let state = AppState::new(
+        store,
+        "test".into(),
+        std::sync::Arc::new(miniq_models::mock::MockProvider::new(Vec::new())),
+    );
+    let router = std::sync::Arc::new(miniq_tools::ToolRouter::new());
+    router
+        .register_builtin(std::sync::Arc::new(DesktopProbe))
+        .unwrap();
+    let executor = SessionToolExecutor {
+        state: state.clone(),
+        session_id: session.id.clone(),
+        router,
+        ctx: ToolContext::new(directory.path().into()),
+        cancel: CancellationToken::new(),
+        permission_policy: PermissionPolicy::DontAsk,
+    };
+    for action in ["screenshot", "click", "type", "key", "drag", "scroll"] {
+        let output = executor
+            .execute(&ToolCallRequest {
+                id: action.into(),
+                name: "computer_use".into(),
+                arguments: json!({"action":action}),
+            })
+            .await
+            .unwrap();
+        assert_eq!(output["rejected"], true);
+        assert!(executor
+            .result_images(
+                &ToolCallRequest {
+                    id: action.into(),
+                    name: "computer_use".into(),
+                    arguments: json!({}),
+                },
+                &output
+            )
+            .is_empty());
+    }
+    assert!(state
+        .store
+        .list_tool_calls(&session.id)
+        .unwrap()
+        .iter()
+        .all(|call| call.status == ToolCallStatus::Rejected));
+}

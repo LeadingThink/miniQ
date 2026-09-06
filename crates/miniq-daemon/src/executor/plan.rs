@@ -10,6 +10,14 @@ pub(super) fn plan_mode_allows(call: &ToolCallRequest, risk: RiskLevel) -> bool 
         | "task_item_update" | "plan_mode" | "process_output" | "process_kill"
         | "agent_message" => true,
         "shell_run" | "shell_batch" => risk == RiskLevel::Low,
+        "browser_automation" => matches!(
+            call.arguments.get("action").and_then(Value::as_str),
+            Some("snapshot" | "screenshot" | "status" | "tabs" | "wait" | "close")
+        ),
+        "computer_use" => matches!(
+            call.arguments.get("action").and_then(Value::as_str),
+            Some("status" | "screenshot" | "release")
+        ),
         "agent_run" => call.arguments.get("mode").and_then(Value::as_str) == Some("plan"),
         _ => false,
     }
@@ -32,4 +40,29 @@ pub(super) fn task_graph_plan(output: &Value) -> Option<Vec<PlanTask>> {
             })
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn plan_mode_allows_observation_but_never_desktop_input() {
+        for (name, action, allowed) in [
+            ("computer_use", "screenshot", true),
+            ("computer_use", "click", false),
+            ("computer_use", "type", false),
+            ("browser_automation", "snapshot", true),
+            ("browser_automation", "type", false),
+            ("browser_automation", "open", false),
+        ] {
+            let call = ToolCallRequest {
+                id: "test".into(),
+                name: name.into(),
+                arguments: json!({"action":action}),
+            };
+            assert_eq!(plan_mode_allows(&call, RiskLevel::High), allowed);
+        }
+    }
 }

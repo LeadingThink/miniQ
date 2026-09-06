@@ -10,6 +10,7 @@ mod apply_patch;
 mod apply_patch_diff;
 mod browser;
 mod catalog;
+mod computer;
 mod doc;
 mod edit;
 mod file;
@@ -20,6 +21,7 @@ mod mcp;
 mod memory;
 mod native;
 mod notebook;
+mod observation;
 mod patch;
 mod plan_mode;
 mod process;
@@ -37,6 +39,7 @@ pub use agent::{
 pub use apply_patch::{affected_paths as apply_patch_affected_paths, ApplyPatchTool};
 pub use browser::BrowserAutomationTool;
 pub use catalog::ToolSearchTool;
+pub use computer::ComputerUseTool;
 pub use doc::{DocReadTool, DocWriteTool};
 pub use edit::FileEditTool;
 pub use file::{FileListTool, FileReadTool, FileWriteTool};
@@ -50,6 +53,7 @@ pub use native::{
     AdaptedToolCall, NativeToolError,
 };
 pub use notebook::NotebookEditTool;
+pub use observation::{observation_path, MAX_OBSERVATION_BYTES};
 pub use patch::FilePatchTool;
 pub use plan_mode::PlanModeTool;
 pub use process::{ProcessKillTool, ProcessManager, ProcessOutputTool};
@@ -106,6 +110,7 @@ pub fn default_router() -> ToolRouter {
         std::sync::Arc::new(MemoryWriteTool),
         std::sync::Arc::new(McpCallTool),
         std::sync::Arc::new(BrowserAutomationTool::default()),
+        std::sync::Arc::new(ComputerUseTool::default()),
     ];
     for tool in tools {
         router

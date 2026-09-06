@@ -12,6 +12,7 @@ mod external_session;
 mod external_workspace;
 mod interaction;
 mod mcp;
+mod observation;
 mod plugin;
 mod schedule;
 mod session;
@@ -90,6 +91,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "question.resolve" => interaction::resolve_question(state, req.params),
         "checkpoint.rollback" => interaction::rollback_checkpoint(state, req.params),
         "tool.list" => system::list_tools(state),
+        "observation.read" => observation::read(state, req.params).await,
         "settings.get" => settings::get(state),
         "settings.update" => settings::update(state, req.params),
         "remote.status" => serde_json::to_value(crate::remote::status(state))

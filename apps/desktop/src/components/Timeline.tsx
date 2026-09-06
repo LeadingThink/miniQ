@@ -21,6 +21,7 @@ import { createTimelineItems, groupTimeline, filterTimelineGroups, type Timeline
 import { downloadSession } from "../sessionExport";
 import { CopyButton } from "./CopyButton";
 import { ToolGroup } from "./ToolGroup";
+import type { RpcClient } from "../rpc";
 
 function ApprovalCard({
   item,
@@ -247,6 +248,7 @@ function ArtifactsBar(props: {
 }
 
 interface TimelineProps {
+  client?: RpcClient;
   title?: string;
   messages: Message[];
   toolCalls: ToolCall[];
@@ -270,6 +272,7 @@ interface TimelineProps {
 }
 
 function TimelineEntries(props: {
+  client?: RpcClient;
   items: TimelineGroup[];
   expandGroups: boolean;
   onError: TimelineProps["onError"];
@@ -311,7 +314,7 @@ function TimelineEntries(props: {
             </div>
           )
         ) : (
-          <ToolGroup key={item.calls[0].id} calls={item.calls} onRollback={props.onRollback} expanded={props.expandGroups} />
+          <ToolGroup key={item.calls[0].id} calls={item.calls} onRollback={props.onRollback} expanded={props.expandGroups} client={props.client} />
         ),
       )}
       {props.approvals.map((approval) => (
@@ -412,6 +415,7 @@ export function Timeline(props: TimelineProps) {
       <div className="timeline" ref={scrollRef} onScroll={onScroll}>
         {items.length === 0 && (filter !== "all" || query) && <div className="diff-empty" role="status">没有匹配的记录</div>}
         <TimelineEntries
+          client={props.client}
           items={items}
           expandGroups={filter !== "all" || !!query}
           onError={props.onError}

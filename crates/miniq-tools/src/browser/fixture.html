@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>miniQ Computer Use Test</title>
+<style>body{font:18px system-ui;margin:32px;background:#f4f5f6;color:#202124}button{background:#d52535;color:white;padding:14px}input,select{font:inherit;margin:12px;padding:8px}#canvas{width:260px;height:120px;background:#238a71}</style>
+<h1>miniQ Computer Use Test</h1>
+<button onclick="this.textContent='Completed'">Run</button>
+<label>Note<input value="old text" oninput="document.getElementById('note').textContent=this.value"></label>
+<p id="note">old text</p>
+<select onchange="document.getElementById('selected').textContent='Selected '+this.value"><option value="a">Alpha</option><option value="b">Beta</option></select>
+<p id="selected">Selected a</p>
+<div id="canvas" role="button" onpointerdown="this.dataset.start=event.clientX" onpointerup="this.textContent=Math.abs(event.clientX-Number(this.dataset.start))>30?'Dragged':'Coordinate clicked'" ondblclick="this.textContent='Double clicked'">Coordinate target</div>
+<div contenteditable="true">Editable content</div>
+<input type="password" value="not-in-dom-snapshot">
+<input aria-label="Read-only field" readonly value="Read-only text">
+<p style="margin-top:1000px;background:rgb(112,45,189);height:160px">End of fixture</p>
+</html>

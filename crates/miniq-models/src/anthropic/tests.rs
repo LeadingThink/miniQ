@@ -127,6 +127,7 @@ fn encodes_images_as_anthropic_source_blocks() {
     std::fs::write(&path, [0x89_u8, b'P', b'N', b'G']).unwrap();
     let mut message = ChatMessage::user("inspect");
     message.images.push(ChatImage {
+        detail: crate::ImageDetail::Auto,
         path: path.to_string_lossy().into_owned(),
         mime_type: "image/png".into(),
     });
@@ -136,6 +137,27 @@ fn encodes_images_as_anthropic_source_blocks() {
         "base64"
     );
     let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn tool_results_preserve_images_inside_the_tool_use_pair() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("image.png");
+    std::fs::write(&path, [0x89_u8, b'P', b'N', b'G']).unwrap();
+    let mut message = ChatMessage::tool_result("toolu-image", "observation metadata");
+    message.images.push(ChatImage {
+        path: path.to_string_lossy().into(),
+        mime_type: "image/png".into(),
+        detail: crate::ImageDetail::High,
+    });
+    let body = provider().build_body(&request(vec![message]));
+    let result = &body["messages"][0]["content"][0];
+    assert_eq!(result["type"], "tool_result");
+    assert_eq!(result["tool_use_id"], "toolu-image");
+    assert_eq!(result["content"][0]["text"], "observation metadata");
+    assert_eq!(result["content"][1]["source"]["type"], "base64");
+    assert_eq!(result["content"][1]["source"]["media_type"], "image/png");
+    assert_eq!(result["is_error"], false);
 }
 
 fn decode(decoder: &mut AnthropicDecoder, event: Value) -> DecodedEvent {

@@ -76,6 +76,14 @@ pub trait ToolExecutor: Send + Sync {
         serde_json::to_string(&(&call.name, &call.arguments)).unwrap_or_default()
     }
 
+    fn result_images(
+        &self,
+        _call: &ToolCallRequest,
+        _output: &Value,
+    ) -> Vec<miniq_models::ChatImage> {
+        Vec::new()
+    }
+
     /// Execute one call and return a structured result. Errors and
     /// rejections must be encoded in the returned JSON so the model can
     /// react to them; `Err` is reserved for turn-fatal failures.
@@ -431,12 +439,16 @@ pub async fn run_turn_with_limits(
         };
         for (call, result) in tool_calls.iter().zip(results) {
             let result = result?;
-            let result_msg = ChatMessage::tool_result(call.id.clone(), result.to_string());
+            let mut result_msg = ChatMessage::tool_result(call.id.clone(), result.to_string());
+            result_msg.images = executor.result_images(call, &result);
             history.push(result_msg.clone());
             appended.push(result_msg);
         }
     }
 }
+
+#[cfg(test)]
+mod observation_tests;
 
 #[cfg(test)]
 mod tests {

@@ -110,6 +110,7 @@ pub struct AppState {
     pub turn_progresses: Arc<Mutex<HashMap<String, TurnProgress>>>,
     /// Directory holding checkpoint file backups.
     pub checkpoints_dir: PathBuf,
+    pub observations_dir: PathBuf,
     /// MCP connection manager (lazy per-server connections).
     pub mcp: Arc<crate::mcp::McpManager>,
     /// Observable state for the outbound encrypted relay connection.
@@ -186,6 +187,7 @@ impl AppState {
             streaming_texts: Arc::new(Mutex::new(HashMap::new())),
             turn_progresses: Arc::new(Mutex::new(HashMap::new())),
             checkpoints_dir: data_dir.join("checkpoints"),
+            observations_dir: data_dir.join("observations"),
             mcp: crate::mcp::McpManager::new(),
             remote_status: Arc::new(Mutex::new(crate::remote::RemoteRuntimeStatus::default())),
         }

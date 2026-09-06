@@ -8,11 +8,14 @@ use crate::image::encode_image;
 use crate::provider::{ApiProtocol, ChatMessage, ChatRole, ProviderError, ToolSpec};
 
 pub(crate) fn response_tool(tool: &ToolSpec) -> Value {
+    // Runtime schemas include optional/defaulted fields and action-dependent
+    // requirements; do not let Responses normalize them into required fields.
     json!({
         "type": "function",
         "name": tool.name.replace('.', "_"),
         "description": tool.description,
         "parameters": tool.parameters,
+        "strict": false,
     })
 }
 
@@ -26,11 +29,12 @@ fn message_content(message: &ChatMessage, text_kind: &str) -> Result<Vec<Value>,
         content.push(text_part(text_kind, &message.content));
     }
     for image in &message.images {
+        let detail = image.detail;
         let image = encode_image(image)?;
         content.push(json!({
             "type": "input_image",
             "image_url": format!("data:{};base64,{}", image.mime_type, image.base64),
-            "detail": "auto",
+            "detail": detail,
         }));
     }
     Ok(content)
@@ -95,11 +99,15 @@ pub(crate) fn build_input(messages: &[ChatMessage]) -> Result<Vec<Value>, Provid
                 let call_id = message.tool_call_id.as_deref().ok_or_else(|| {
                     ProviderError::InvalidResponse("tool result is missing its call id".into())
                 })?;
-                input.push(tool_result_item(
+                let mut result = tool_result_item(
                     call_id,
                     &message.content,
                     native_calls.get(call_id).map(String::as_str),
-                ));
+                );
+                if !message.images.is_empty() && result["type"] == "function_call_output" {
+                    result["output"] = json!(message_content(message, "input_text")?);
+                }
+                input.push(result);
             }
         }
     }
