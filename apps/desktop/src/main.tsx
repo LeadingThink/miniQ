@@ -7,6 +7,7 @@ import "@fontsource-variable/inter/wght.css";
 import "@fontsource-variable/jetbrains-mono/wght.css";
 import "./styles/base.css";
 import "./styles/themes.css";
+import "./styles/theme-patterns.css";
 import "./styles/conversation.css";
 import "./styles/interactions.css";
 import "./styles/review.css";
@@ -14,11 +15,12 @@ import "./styles/pages.css";
 import "./styles/scheduling.css";
 import "./styles/remote.css";
 import "./styles/experience.css";
+import "./styles/theme-picker.css";
 import "./external-sessions.css";
-import { applyTheme, readStoredTheme } from "./theme";
+import { initializeAppearance } from "./theme";
 import { initializeMobileRuntime } from "./mobileRuntime";
 
-applyTheme(readStoredTheme());
+initializeAppearance();
 void initializeMobileRuntime();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

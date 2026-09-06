@@ -1,0 +1,179 @@
+[data-theme-pattern] {
+  --theme-page-pattern: none;
+  --theme-pattern-size: auto;
+  --theme-pattern-position: 0 0;
+}
+
+[data-theme-pattern="stars"] {
+  --theme-page-pattern: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--theme-accent) 46%, transparent) 0 1px,
+      transparent 1.5px
+    ),
+    radial-gradient(circle, color-mix(in srgb, var(--theme-text) 20%, transparent) 0 1px, transparent 1.4px);
+  --theme-pattern-size: 37px 37px, 59px 59px;
+  --theme-pattern-position: 0 0, 19px 13px;
+}
+
+[data-theme-pattern="grid"] {
+  --theme-page-pattern: linear-gradient(color-mix(in srgb, var(--theme-accent) 11%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--theme-accent) 11%, transparent) 1px, transparent 1px);
+  --theme-pattern-size: 25px 25px;
+}
+
+[data-theme-pattern="diagonal"] {
+  --theme-page-pattern: repeating-linear-gradient(
+    135deg,
+    transparent 0 28px,
+    color-mix(in srgb, var(--theme-accent) 7%, transparent) 28px 29px
+  );
+}
+
+[data-theme-pattern="dots"] {
+  --theme-page-pattern: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--theme-accent) 18%, transparent) 0 1.2px,
+    transparent 1.6px
+  );
+  --theme-pattern-size: 23px 23px;
+}
+
+[data-theme-pattern="paper"] {
+  --theme-page-pattern: linear-gradient(
+      90deg,
+      transparent 0 52px,
+      color-mix(in srgb, var(--theme-accent) 11%, transparent) 52px 53px,
+      transparent 53px
+    ),
+    repeating-linear-gradient(0deg, transparent 0 25px, color-mix(in srgb, var(--theme-text) 7%, transparent) 25px 26px);
+  --theme-pattern-size: 100% 100%, 100% 26px;
+}
+
+[data-theme-pattern="sketch"] {
+  --theme-page-pattern: repeating-linear-gradient(
+      2deg,
+      transparent 0 31px,
+      color-mix(in srgb, var(--theme-text) 5%, transparent) 31px 32px
+    ),
+    repeating-linear-gradient(
+      92deg,
+      transparent 0 47px,
+      color-mix(in srgb, var(--theme-accent) 5%, transparent) 47px 48px
+    );
+}
+
+[data-theme-pattern="waves"] {
+  --theme-page-pattern: radial-gradient(
+      ellipse at 0 100%,
+      transparent 0 19px,
+      color-mix(in srgb, var(--theme-accent) 10%, transparent) 20px 21px,
+      transparent 22px
+    ),
+    radial-gradient(
+      ellipse at 100% 0,
+      transparent 0 19px,
+      color-mix(in srgb, var(--theme-accent) 7%, transparent) 20px 21px,
+      transparent 22px
+    );
+  --theme-pattern-size: 44px 28px;
+}
+
+[data-theme-pattern="rain"] {
+  --theme-page-pattern: repeating-linear-gradient(
+      112deg,
+      transparent 0 17px,
+      color-mix(in srgb, var(--theme-accent) 9%, transparent) 17px 18px,
+      transparent 18px 35px
+    ),
+    repeating-linear-gradient(
+      112deg,
+      transparent 0 43px,
+      color-mix(in srgb, var(--theme-text) 5%, transparent) 43px 44px,
+      transparent 44px 71px
+    );
+}
+
+[data-theme-pattern="circuit"] {
+  --theme-page-pattern: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--theme-accent) 24%, transparent) 0 1.5px,
+      transparent 2px
+    ),
+    linear-gradient(color-mix(in srgb, var(--theme-accent) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--theme-accent) 7%, transparent) 1px, transparent 1px);
+  --theme-pattern-size: 32px 32px, 32px 32px, 32px 32px;
+}
+
+[data-theme-pattern="confetti"] {
+  --theme-page-pattern: linear-gradient(
+      32deg,
+      transparent 48%,
+      color-mix(in srgb, var(--theme-accent) 18%, transparent) 49% 51%,
+      transparent 52%
+    ),
+    linear-gradient(
+      118deg,
+      transparent 48%,
+      color-mix(in srgb, var(--theme-text) 9%, transparent) 49% 51%,
+      transparent 52%
+    );
+  --theme-pattern-size: 34px 39px, 51px 47px;
+  --theme-pattern-position: 0 0, 17px 11px;
+}
+
+[data-theme-pattern="petals"] {
+  --theme-page-pattern: radial-gradient(
+      ellipse at 35% 45%,
+      color-mix(in srgb, var(--theme-accent) 14%, transparent) 0 2px,
+      transparent 2.5px
+    ),
+    radial-gradient(
+      ellipse at 65% 55%,
+      color-mix(in srgb, var(--theme-accent) 9%, transparent) 0 2px,
+      transparent 2.5px
+    );
+  --theme-pattern-size: 31px 37px, 47px 53px;
+}
+
+[data-theme-pattern="topography"] {
+  --theme-page-pattern: repeating-radial-gradient(
+    ellipse at 20% 35%,
+    transparent 0 12px,
+    color-mix(in srgb, var(--theme-accent) 7%, transparent) 13px 14px,
+    transparent 15px 23px
+  );
+  --theme-pattern-size: 91px 67px;
+}
+
+[data-theme-pattern="plaid"] {
+  --theme-page-pattern: repeating-linear-gradient(
+      0deg,
+      transparent 0 18px,
+      color-mix(in srgb, var(--theme-accent) 7%, transparent) 18px 20px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 18px,
+      color-mix(in srgb, var(--theme-text) 5%, transparent) 18px 20px
+    );
+  --theme-pattern-size: 40px 40px;
+}
+
+[data-theme-pattern="halftone"] {
+  --theme-page-pattern: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--theme-accent) 13%, transparent) 0 1.5px,
+    transparent 1.7px
+  );
+  --theme-pattern-size: 9px 9px;
+}
+
+[data-theme-pattern="sunbeams"] {
+  --theme-page-pattern: repeating-conic-gradient(
+    from 18deg at 88% 8%,
+    color-mix(in srgb, var(--theme-accent) 6%, transparent) 0 7deg,
+    transparent 7deg 21deg
+  );
+  --theme-pattern-size: 720px 720px;
+  --theme-pattern-position: top right;
+}

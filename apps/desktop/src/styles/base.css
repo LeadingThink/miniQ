@@ -88,15 +88,12 @@ body {
 }
 
 .app {
-  --canvas-pattern: radial-gradient(var(--canvas-dot) 1px, transparent 1.5px);
-  --canvas-pattern-size: 22px 22px;
   display: flex;
   flex: 1;
   min-height: 0;
-  /* Dotted canvas: hints at spatial depth, keeps the gray base from feeling flat. */
   background-color: var(--canvas);
-  background-image: var(--canvas-pattern);
-  background-size: var(--canvas-pattern-size);
+  background-image: var(--theme-page-pattern);
+  background-size: var(--theme-pattern-size);
 }
 
 /* ============ Sidebar ============ */

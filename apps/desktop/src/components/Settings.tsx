@@ -1,9 +1,10 @@
-import { Check, ExternalLink, KeyRound, MonitorSmartphone, Palette, Server, Wifi, WifiOff, X } from "lucide-react";
+import { ExternalLink, KeyRound, MonitorSmartphone, Palette, Server, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import { openExternalUrl } from "../externalLinks";
 import type { RpcClient } from "../rpc";
-import { THEMES, type ThemeId } from "../theme";
+import type { ThemeId } from "../theme";
+import { ThemePicker } from "./ThemePicker";
 import { clearRemoteCredentials, DEFAULT_RELAY_URL } from "../remoteAccess";
 
 export const ZAIWEN_API_PORTAL_URL = "https://platform.zaiwenai.com/";
@@ -42,6 +43,7 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel(props: SettingsPanelProps) {
+  const [tab, setTab] = useState<"appearance" | "services">("appearance");
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ApiProtocol>("auto");
@@ -55,6 +57,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const [deviceName, setDeviceName] = useState("我的电脑");
   const [remoteStatus, setRemoteStatus] = useState<SettingsView["remoteStatus"] | null>(null);
   const panelRef = useRef<HTMLFormElement>(null);
+  const onCloseRef = useRef(props.onClose);
+  onCloseRef.current = props.onClose;
 
   useEffect(() => {
     void props.client
@@ -100,21 +104,22 @@ export function SettingsPanel(props: SettingsPanelProps) {
   }, [loading, props.client, remoteEnabled]);
 
   useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
     panelRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        props.onClose();
+        onCloseRef.current();
       } else if (event.key === "Tab" && panelRef.current) {
         const controls = Array.from(
           panelRef.current.querySelectorAll<HTMLElement>(
-            'button:not(:disabled), input:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
+            'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, a[href], [tabindex]:not([tabindex="-1"])',
           ),
-        );
+        ).filter((element) => element.tabIndex >= 0 && element.getClientRects().length > 0);
         if (controls.length === 0) return;
         const first = controls[0];
         const last = controls.at(-1)!;
-        if (event.shiftKey && document.activeElement === first) {
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === panelRef.current)) {
           event.preventDefault();
           last.focus();
         } else if (!event.shiftKey && document.activeElement === last) {
@@ -126,8 +131,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
+      previouslyFocused?.focus();
     };
-  }, [props.onClose]);
+  }, []);
 
   const save = async () => {
     if (saving) return;
@@ -182,51 +188,36 @@ export function SettingsPanel(props: SettingsPanelProps) {
         onClick={(event) => event.stopPropagation()}
         onSubmit={(event) => {
           event.preventDefault();
-          void save();
+          if (tab === "services" && props.client.mode === "local") void save();
         }}
       >
         <div className="settings-header">
           <div>
             <h2 id="settings-title">设置</h2>
-            <p>调整 miniQ 的外观和模型服务</p>
           </div>
           <button type="button" className="icon-button" title="关闭设置" aria-label="关闭设置" onClick={props.onClose}>
             <X size={16} />
           </button>
         </div>
 
-        <section className="settings-section">
-          <div className="settings-section-title">
-            <Palette size={15} />
-            <span>外观主题</span>
-          </div>
-          <div className="theme-grid" role="radiogroup" aria-label="外观主题">
-            {THEMES.map((theme) => {
-              const selected = props.theme === theme.id;
-              return (
-                <button
-                  key={theme.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  className={`theme-option${selected ? " selected" : ""}`}
-                  onClick={() => props.onThemeChange(theme.id)}
-                >
-                  <span className="theme-swatches" aria-hidden="true">
-                    {theme.swatches.map((color) => (
-                      <span key={color} style={{ backgroundColor: color }} />
-                    ))}
-                  </span>
-                  <span className="theme-copy">
-                    <strong>{theme.name}</strong>
-                    <small>{theme.description}</small>
-                  </span>
-                  {selected && <Check className="theme-check" size={15} />}
-                </button>
-              );
-            })}
-          </div>
-        </section>
+        <div className="settings-tabs" role="tablist" aria-label="设置分类">
+          {(["appearance", "services"] as const).map((value) => <button key={value} type="button" role="tab"
+            id={`settings-tab-${value}`} aria-controls={`settings-${value}`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1}
+            onClick={() => setTab(value)} onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              const next = event.key === "Home" ? "appearance" : event.key === "End" ? "services" : value === "appearance" ? "services" : "appearance";
+              setTab(next);
+              document.getElementById(`settings-tab-${next}`)?.focus();
+            }}>
+            {value === "appearance" ? <Palette size={15} /> : <Server size={15} />}
+            {value === "appearance" ? "外观" : "服务与远程"}
+          </button>)}
+        </div>
+        <div id="settings-appearance" role="tabpanel" aria-labelledby="settings-tab-appearance" hidden={tab !== "appearance"}>
+          <ThemePicker theme={props.theme} onThemeChange={props.onThemeChange} />
+        </div>
+        <div id="settings-services" role="tabpanel" aria-labelledby="settings-tab-services" hidden={tab !== "services"}>
 
         {props.client.mode === "remote" ? (
           <section className="settings-section provider-settings">
@@ -370,8 +361,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
             {loading ? "正在读取模型设置..." : status}
           </div>
         )}
+        </div>
         <div className="approval-actions">
-          {props.client.mode === "local" && <button type="submit" disabled={loading || saving || !baseUrl.trim() || !model.trim() || !relayUrl.trim() || !deviceName.trim()}>
+          {tab === "services" && props.client.mode === "local" && <button type="submit" disabled={loading || saving || !baseUrl.trim() || !model.trim() || !relayUrl.trim() || !deviceName.trim()}>
             {saving ? "正在保存..." : "保存模型设置"}
           </button>}
           <button type="button" className="secondary" onClick={props.onClose}>
