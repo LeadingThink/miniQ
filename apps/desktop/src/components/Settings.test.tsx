@@ -8,7 +8,7 @@ describe("SettingsPanel", () => {
     const html = renderToStaticMarkup(
       <SettingsPanel
         client={{} as RpcClient}
-        theme="paper"
+        theme="jade"
         onThemeChange={() => undefined}
         onClose={() => undefined}
       />,

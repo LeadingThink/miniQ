@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { AppShell } from "./components/AppShell";
 import { MobileEntry } from "./components/MobileEntry";
 import { useMiniqApp } from "./hooks/useMiniqApp";
 import { isRemoteBrowserEntry } from "./remoteAccess";
-import { readStoredTheme, storeTheme, type ThemeId } from "./theme";
+import { getAppearance, subscribeAppearance, storeTheme, type ThemeId } from "./theme";
 
 export type { PendingApproval } from "./hooks/useSessionFeed";
 
@@ -13,16 +13,11 @@ function ConnectedApp(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) =
 }
 
 export default function App() {
-  const [theme, setThemeState] = useState<ThemeId>(readStoredTheme);
+  const { theme } = useSyncExternalStore(subscribeAppearance, getAppearance, getAppearance);
   const [remoteActive, setRemoteActive] = useState(false);
-
-  const setTheme = (nextTheme: ThemeId) => {
-    storeTheme(nextTheme);
-    setThemeState(nextTheme);
-  };
 
   if (isRemoteBrowserEntry() && !remoteActive) {
     return <MobileEntry onRemote={() => setRemoteActive(true)} />;
   }
-  return <ConnectedApp theme={theme} onThemeChange={setTheme} />;
+  return <ConnectedApp theme={theme} onThemeChange={storeTheme} />;
 }

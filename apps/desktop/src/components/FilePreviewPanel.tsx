@@ -26,6 +26,7 @@ import { MarkdownPreview } from "./MarkdownPreview";
 import { CopyButton } from "./CopyButton";
 import { HtmlPreview } from "./HtmlPreview";
 import { isHtmlFile } from "../htmlPreview";
+import { useEditorTheme } from "../hooks/useEditorTheme";
 
 interface FilePreviewPanelProps {
   preview: FilePreviewState;
@@ -84,6 +85,7 @@ export function FilePreviewPanel({
   onOpenFile,
   onRetry,
 }: FilePreviewPanelProps) {
+  const configureEditorTheme = useEditorTheme();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -250,7 +252,8 @@ export function FilePreviewPanel({
             value={preview.content}
             language={languageForPath(path)}
             onMount={handleMount}
-            theme="vs"
+            beforeMount={configureEditorTheme}
+            theme="miniq"
             options={{
               automaticLayout: true,
               readOnly: true,

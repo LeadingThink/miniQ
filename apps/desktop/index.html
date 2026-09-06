@@ -9,12 +9,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./miniq-icon.png" />
     <title>miniQ</title>
-    <script>
-      try {
-        const theme = localStorage.getItem("miniq.appearance.theme");
-        if (theme) document.documentElement.dataset.theme = theme;
-      } catch {}
-    </script>
+    <!-- miniq-theme-bootstrap -->
     <style>
       /* Inline splash: visible as soon as the HTML parses, long before the
          JS bundle loads. Removed by main.tsx after React's first paint. */
@@ -27,7 +22,7 @@
         align-items: center;
         justify-content: center;
         gap: 16px;
-        background: var(--canvas, #f2f2f5);
+        background: var(--canvas, var(--theme-page, #f4f5f1));
         transition: opacity 0.25s ease;
       }
       #splash.splash-hide {
@@ -44,22 +39,17 @@
         font-family: "Inter Variable", "MiSans VF", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
         font-size: 34px;
         font-weight: 700;
-        color: #ffffff;
-        background: linear-gradient(135deg, #6366f1, #2563eb);
+        color: var(--accent-fg, #ffffff);
+        background: var(--theme-accent, #14775f);
         animation: splash-pulse 1.4s ease-in-out infinite;
       }
       #splash .splash-name {
         font-family: "Inter Variable", "MiSans VF", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
         font-size: 15px;
         font-weight: 600;
-        letter-spacing: 0.02em;
-        color: var(--text-dim, #6b7280);
+        letter-spacing: 0;
+        color: var(--text-dim, var(--theme-text, #17191d));
       }
-      :root[data-theme="graphite"] #splash {
-        background: #17191d;
-      }
-      :root[data-theme="midnight"] #splash { background: #111821; }
-      :root[data-theme="aurora"] #splash { background: #121b1c; }
       @keyframes splash-pulse {
         0%, 100% { transform: scale(1); opacity: 1; }
         50% { transform: scale(0.92); opacity: 0.75; }

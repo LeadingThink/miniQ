@@ -517,14 +517,6 @@
     padding: 8px;
   }
 
-  .settings-panel {
-    width: 100%;
-    max-height: calc(100dvh - 16px);
-    padding: 17px 15px;
-    border-radius: 12px;
-  }
-
-  .theme-grid,
   .card-grid {
     grid-template-columns: 1fr;
   }
