@@ -12,8 +12,9 @@ pub(super) fn health(state: &AppState) -> Result<Value, RpcError> {
     })
 }
 
-pub(super) fn shutdown(state: &AppState) -> Result<Value, RpcError> {
+pub(super) async fn shutdown(state: &AppState) -> Result<Value, RpcError> {
     let cancelled_turns = state.cancel_all_turns();
+    let cancelled_agents = state.agent_tasks.cancel_all().await;
     let shutdown = state.shutdown.clone();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
@@ -22,6 +23,7 @@ pub(super) fn shutdown(state: &AppState) -> Result<Value, RpcError> {
     to_value(json!({
         "accepted": true,
         "cancelledTurns": cancelled_turns,
+        "cancelledAgents": cancelled_agents,
     }))
 }
 
@@ -44,7 +46,7 @@ mod tests {
         );
         let turn = state.begin_turn("session-1").unwrap();
 
-        let result = shutdown(&state).unwrap();
+        let result = shutdown(&state).await.unwrap();
 
         assert_eq!(result["accepted"], true);
         assert_eq!(result["cancelledTurns"], 1);

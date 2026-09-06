@@ -361,7 +361,7 @@ struct CancelParams {
     session_id: String,
 }
 
-pub(super) fn cancel(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+pub(super) async fn cancel(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: CancelParams = params(raw)?;
     // An explicit stop discards queued follow-ups too: the user wants the
     // session to come to rest, not to start the next queued message.
@@ -389,13 +389,14 @@ pub(super) fn cancel(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
             .map_err(store_err)?;
         if recovery.session_failed {
             state.emit(Event::SessionStatusChanged {
-                session_id: input.session_id,
+                session_id: input.session_id.clone(),
                 status: SessionStatus::Failed,
             });
         }
         recovery.session_failed
     };
-    Ok(json!({ "cancelled": cancelled || recovered }))
+    let cancelled_agents = state.agent_tasks.cancel_session(&input.session_id).await;
+    Ok(json!({ "cancelled": cancelled || recovered || cancelled_agents > 0 }))
 }
 
 #[derive(Deserialize)]

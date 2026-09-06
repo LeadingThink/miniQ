@@ -52,7 +52,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
     let id = req.id.clone();
     let result = match req.method.as_str() {
         "daemon.health" => system::health(state),
-        "daemon.shutdown" => system::shutdown(state),
+        "daemon.shutdown" => system::shutdown(state).await,
         "workspace.open" => workspace::open(state, req.params),
         "workspace.create" => workspace::create(state, req.params),
         "workspace.list" => workspace::list(state),
@@ -73,7 +73,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "agent.stop" => agents::action(state, req.params, true).await,
         "session.diff" => session_diff::get(state, req.params),
         "session.sendMessage" => session::send_message(state, req.params),
-        "session.cancel" => session::cancel(state, req.params),
+        "session.cancel" => session::cancel(state, req.params).await,
         "session.queueList" => session::queue_list(state, req.params),
         "session.queueRemove" => session::queue_remove(state, req.params),
         "session.queueSteer" => session::queue_steer(state, req.params),
