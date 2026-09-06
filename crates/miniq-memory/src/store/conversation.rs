@@ -1,7 +1,7 @@
 use miniq_protocol::{
     Approval, ApprovalStatus, Message, MessageAttachment, RiskLevel, Role, ToolCall, ToolCallStatus,
 };
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
 use super::row_mappers::{row_to_approval, row_to_message, row_to_tool_call};
@@ -198,6 +198,13 @@ impl Store {
         let rows = stmt.query_map(params![session_id], row_to_tool_call)?;
         rows.collect::<std::result::Result<Vec<_>, _>>()
             .map_err(Into::into)
+    }
+
+    pub fn get_tool_call(&self, id: &str) -> Result<ToolCall> {
+        self.conn.lock().unwrap().query_row(
+            "SELECT id, session_id, tool_name, input_json, output_json, status, created_at, completed_at FROM tool_calls WHERE id = ?1",
+            params![id], row_to_tool_call,
+        ).optional()?.ok_or_else(|| MemoryError::NotFound(format!("tool_call {id}")))
     }
 
     pub fn create_approval(

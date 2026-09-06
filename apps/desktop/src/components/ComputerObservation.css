@@ -1,0 +1,9 @@
+.computer-observation { margin: 12px 0; min-width: 0; }
+.computer-observation figcaption { display: flex; align-items: center; gap: 8px; min-height: 34px; flex-wrap: wrap; font-size: 12px; }
+.computer-observation .observation-size { color: var(--muted); }
+.computer-observation .observation-actions { display: flex; flex: none; gap: 6px; margin-left: auto; }
+.computer-observation .icon-button { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; color: inherit; background: transparent; border: 1px solid var(--border); border-radius: 4px; }
+.computer-observation-image { overflow: auto; max-height: 560px; border: 1px solid var(--border); background: #f3f4f5; color: #383c40; }
+.computer-observation-image img { display: block; width: 100%; height: auto; }
+.computer-observation-image.original img { width: auto; max-width: none; }
+.computer-observation-image [role] { padding: 16px; overflow-wrap: anywhere; }

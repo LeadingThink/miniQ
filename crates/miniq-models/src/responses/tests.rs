@@ -31,6 +31,7 @@ fn builds_native_responses_input_and_tools() {
     let body = provider().build_body(&request(vec![ChatMessage::user("hello")]));
     assert_eq!(body["input"][0]["content"][0]["type"], "input_text");
     assert_eq!(body["tools"][0]["name"], "file_read");
+    assert_eq!(body["tools"][0]["strict"], false);
     assert_eq!(body["max_output_tokens"], 2048);
     assert_eq!(body["include"][0], "reasoning.encrypted_content");
 }
@@ -120,12 +121,32 @@ fn encodes_images_as_responses_input_parts() {
     std::fs::write(&path, [0x89_u8, b'P', b'N', b'G']).unwrap();
     let mut message = ChatMessage::user("inspect");
     message.images.push(ChatImage {
+        detail: crate::ImageDetail::Auto,
         path: path.to_string_lossy().into_owned(),
         mime_type: "image/png".into(),
     });
     let body = provider().build_body(&request(vec![message]));
     assert_eq!(body["input"][0]["content"][1]["type"], "input_image");
     let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn function_results_carry_visual_observations_in_native_content_parts() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("image.png");
+    std::fs::write(&path, [0x89_u8, b'P', b'N', b'G']).unwrap();
+    let mut message = ChatMessage::tool_result("call-image", "observation metadata");
+    message.images.push(ChatImage {
+        path: path.to_string_lossy().into(),
+        mime_type: "image/png".into(),
+        detail: crate::ImageDetail::High,
+    });
+    let body = provider().build_body(&request(vec![message]));
+    assert_eq!(body["input"][0]["type"], "function_call_output");
+    assert_eq!(body["input"][0]["call_id"], "call-image");
+    assert_eq!(body["input"][0]["output"][0]["type"], "input_text");
+    assert_eq!(body["input"][0]["output"][1]["type"], "input_image");
+    assert_eq!(body["input"][0]["output"][1]["detail"], "high");
 }
 
 fn decode(decoder: &mut ResponsesDecoder, event: Value) -> DecodedEvent {

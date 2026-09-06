@@ -129,6 +129,7 @@ impl DaemonAgentBridge {
         cancel: CancellationToken,
     ) -> ToolContext {
         ToolContext::new(workspace.clone())
+            .with_observations(self.state.observations_dir.clone())
             .with_skills(Some(self.state.skills.clone()))
             .with_memory(
                 Some(self.state.store.clone()),

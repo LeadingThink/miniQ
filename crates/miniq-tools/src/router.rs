@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
-use miniq_models::ToolSpec;
+use miniq_models::{ChatImage, ToolSpec};
 use miniq_sandbox::Risk;
 use serde_json::Value;
 use thiserror::Error;
@@ -63,6 +63,9 @@ pub struct ToolContext {
     pub tasks: Arc<crate::tasks::TaskManager>,
     /// Namespace used to isolate task graphs between sessions.
     pub task_scope: String,
+    /// Host-owned screenshot storage, outside the model's workspace.
+    pub observation_dir: PathBuf,
+    pub cancellation: tokio_util::sync::CancellationToken,
     /// Plan-mode guard shared by the executor and plan_mode tool.
     plan_mode: Arc<AtomicBool>,
 }
@@ -78,13 +81,26 @@ impl ToolContext {
             processes: Arc::new(crate::process::ProcessManager::default()),
             agents: None,
             tasks: Arc::new(crate::tasks::TaskManager::default()),
-            task_scope: String::new(),
+            task_scope: uuid::Uuid::new_v4().to_string(),
+            observation_dir: std::env::temp_dir()
+                .join(format!("miniq-observations-{}", uuid::Uuid::new_v4())),
+            cancellation: tokio_util::sync::CancellationToken::new(),
             plan_mode: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub fn with_mcp(mut self, mcp: Option<Arc<dyn crate::mcp::McpBridge>>) -> Self {
         self.mcp = mcp;
+        self
+    }
+
+    pub fn with_observations(mut self, directory: PathBuf) -> Self {
+        self.observation_dir = directory;
+        self
+    }
+
+    pub fn with_cancellation(mut self, token: tokio_util::sync::CancellationToken) -> Self {
+        self.cancellation = token;
         self
     }
 
@@ -143,6 +159,16 @@ pub trait Tool: Send + Sync {
     /// Execute. Input has already been risk-checked by the router; path
     /// containment must still be enforced here.
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError>;
+
+    /// Only the producing tool may attach host-owned images to its result.
+    fn output_images(&self, _ctx: &ToolContext, _output: &Value) -> Vec<ChatImage> {
+        Vec::new()
+    }
+
+    /// Stateful tools scope session approvals to their actually observed target.
+    fn approval_scope(&self, _ctx: &ToolContext, _input: &Value) -> Option<String> {
+        None
+    }
 
     fn spec(&self) -> ToolSpec {
         ToolSpec {

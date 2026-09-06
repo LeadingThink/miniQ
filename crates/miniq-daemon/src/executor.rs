@@ -59,6 +59,13 @@ impl SessionToolExecutor {
     /// (approving `cargo ...` does not unlock `rm`), network tools to the
     /// target domain (approving example.com does not unlock other hosts).
     fn approval_pattern(&self, call: &ToolCallRequest) -> String {
+        if let Some(scope) = self
+            .router
+            .get(&call.name)
+            .and_then(|tool| tool.approval_scope(&self.ctx, &call.arguments))
+        {
+            return format!("{}:{scope}", call.name);
+        }
         match call.name.as_str() {
             "shell_run" => {
                 let program = call
@@ -74,19 +81,8 @@ impl SessionToolExecutor {
                 format!("{}:{host}", call.name)
             }
             "browser_automation" => {
-                let action = call
-                    .arguments
-                    .get("action")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("interaction");
-                let host = call
-                    .arguments
-                    .get("url")
-                    .and_then(|value| value.as_str())
-                    .and_then(|value| url::Url::parse(value).ok())
-                    .and_then(|value| value.host_str().map(str::to_string))
-                    .unwrap_or_else(|| "active-page".into());
-                format!("browser_automation:{action}:{host}")
+                // No observed origin: approval is for this call only.
+                format!("browser_automation:call:{}", call.id)
             }
             "mcp_call" => {
                 let server = call
@@ -96,6 +92,13 @@ impl SessionToolExecutor {
                     .unwrap_or("");
                 format!("mcp_call:{server}")
             }
+            "computer_use" => format!(
+                "computer_use:{}",
+                call.arguments
+                    .get("action")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+            ),
             _ => call.name.clone(),
         }
     }
@@ -222,13 +225,14 @@ impl SessionToolExecutor {
         // Back up the target before any file-mutating tool runs.
         let checkpoint_ids = self.take_checkpoints(call, tool_call_id);
 
+        let ctx = self.ctx.clone().with_cancellation(self.cancel.clone());
         let result = tokio::select! {
             _ = self.cancel.cancelled() => {
                 let output = json!({"cancelled": true});
                 self.finish(tool_call_id, ToolCallStatus::Cancelled, &output);
                 return Err(AgentError::Cancelled);
             }
-            result = self.router.dispatch(&self.ctx, &call.name, call.arguments.clone()) => result,
+            result = self.router.dispatch(&ctx, &call.name, call.arguments.clone()) => result,
         };
 
         match result {
@@ -274,6 +278,18 @@ impl SessionToolExecutor {
 impl ToolExecutor for SessionToolExecutor {
     fn specs(&self) -> Vec<ToolSpec> {
         self.router.specs()
+    }
+
+    fn result_images(
+        &self,
+        call: &ToolCallRequest,
+        output: &Value,
+    ) -> Vec<miniq_models::ChatImage> {
+        let name = miniq_tools::canonical_native_tool_name(&call.name).unwrap_or(&call.name);
+        self.router
+            .get(name)
+            .map(|tool| tool.output_images(&self.ctx, output))
+            .unwrap_or_default()
     }
 
     fn execution_mode(&self, call: &ToolCallRequest) -> ToolExecutionMode {

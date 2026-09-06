@@ -9,6 +9,8 @@ import {
 import { useEffect, useState } from "react";
 import type { PlanTask, ToolCall, TurnProgress } from "../types";
 import { ToolPayload } from "./ToolPayload";
+import { ComputerObservation } from "./ComputerObservation";
+import type { RpcClient } from "../rpc";
 
 interface ToolAction {
   running: string;
@@ -30,6 +32,7 @@ const TOOL_ACTIONS: Record<string, ToolAction> = {
   web_fetch: { running: "正在读取网页", finished: "读取了网页" },
   http_request: { running: "正在请求接口", finished: "请求了接口" },
   browser_automation: { running: "正在操作浏览器", finished: "操作了浏览器" },
+  computer_use: { running: "正在操作桌面", finished: "操作了桌面" },
   doc_read: { running: "正在读取文档", finished: "读取了文档" },
   doc_write: { running: "正在生成文档", finished: "生成了文档" },
   memory_search: { running: "正在检索记忆", finished: "检索了记忆" },
@@ -47,7 +50,7 @@ export function toolActionLabel(toolName: string, running: boolean): string {
 /** One-line human summary of the most relevant tool input. */
 export function toolInputSummary(call: ToolCall): string {
   const input = (call.input ?? {}) as Record<string, unknown>;
-  const keys = ["path", "command", "url", "query", "pattern", "name", "prompt"];
+  const keys = ["path", "command", "url", "query", "pattern", "name", "prompt", "action"];
   for (const key of keys) {
     if (typeof input[key] === "string") return input[key];
   }
@@ -106,6 +109,7 @@ function statusText(call: ToolCall): string | null {
 }
 
 export function ToolStep(props: {
+  client?: RpcClient;
   call: ToolCall;
   onRollback: (checkpointId: string) => void;
 }) {
@@ -166,6 +170,7 @@ export function ToolStep(props: {
       {open && (
         <div className="tool-step-body">
           <code className="tool-identity">{call.toolName}</code>
+          {props.client && <ComputerObservation call={call} client={props.client} />}
           <ToolPayload label="输入" value={call.input} />
           {call.output !== undefined && call.output !== null && (
             <ToolPayload label="结果" value={call.output} />

@@ -162,7 +162,8 @@ fn build_messages(messages: &[ChatMessage]) -> Result<(String, Vec<Value>), Prov
                     vec![json!({
                         "type": "tool_result",
                         "tool_use_id": tool_use_id,
-                        "content": message.content,
+                        "content": if message.images.is_empty() { json!(message.content) }
+                            else { json!(content_blocks(message, "text")?) },
                         "is_error": is_error,
                     })],
                 );

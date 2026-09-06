@@ -19,8 +19,8 @@ pub use configured::{infer_protocol, ConfiguredProvider};
 pub use openai::OpenAiCompatProvider;
 pub use provider::{
     ApiProtocol, ChatDelta, ChatImage, ChatMessage, ChatRole, CompletionRequest, DeltaStream,
-    ModelCapabilities, ModelProvider, OutputTokenUsage, ProviderConfig, ProviderContext,
-    ProviderError, ToolCallRequest, ToolSpec,
+    ImageDetail, ModelCapabilities, ModelProvider, OutputTokenUsage, ProviderConfig,
+    ProviderContext, ProviderError, ToolCallRequest, ToolSpec,
 };
 pub use reasoning::reasoning_efforts;
 pub use responses::ResponsesProvider;

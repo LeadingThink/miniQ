@@ -118,8 +118,7 @@ pub enum ChatRole {
 pub struct ChatMessage {
     pub role: ChatRole,
     pub content: String,
-    /// Local images explicitly attached by the user. The OpenAI-compatible
-    /// adapter reads them only while building the provider request.
+    /// User attachments or trusted tool observations, read at request encoding.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<ChatImage>,
     /// Set on `Tool` messages: which call this result answers.
@@ -144,6 +143,16 @@ pub struct ProviderContext {
 pub struct ChatImage {
     pub path: String,
     pub mime_type: String,
+    #[serde(default)]
+    pub detail: ImageDetail,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageDetail {
+    #[default]
+    Auto,
+    High,
 }
 
 impl ChatMessage {
