@@ -179,6 +179,7 @@ async fn provider_wire_name_executes_registered_plugin_tool() {
         ctx: ToolContext::new(directory.path().to_path_buf()),
         cancel: CancellationToken::new(),
         permission_policy: PermissionPolicy::Inherit,
+        review_plan: Default::default(),
     };
     let wire_call = ToolCallRequest {
         id: "provider-call".into(),
