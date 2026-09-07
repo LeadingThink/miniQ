@@ -2,6 +2,16 @@ use miniq_protocol::*;
 use serde_json::json;
 
 #[test]
+fn checked_in_event_schema_matches_runtime_types() {
+    let bundle: serde_json::Value =
+        serde_json::from_str(include_str!("../../../schemas/protocol.schema.json")).unwrap();
+    assert_eq!(
+        bundle["event"],
+        serde_json::to_value(schemars::schema_for!(Event)).unwrap()
+    );
+}
+
+#[test]
 fn request_roundtrip() {
     let raw = json!({
         "jsonrpc": "2.0",

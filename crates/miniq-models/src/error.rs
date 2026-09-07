@@ -57,7 +57,9 @@ impl ProviderError {
 
     pub fn is_retryable(&self) -> bool {
         match self {
-            Self::Http(error) => error.is_timeout() || error.is_connect() || error.is_body(),
+            Self::Http(error) => {
+                error.is_timeout() || error.is_connect() || error.is_request() || error.is_body()
+            }
             Self::Api { status, body, .. } => {
                 let error = serde_json::from_str::<Value>(body)
                     .unwrap_or_else(|_| Value::String(body.clone()));
@@ -105,6 +107,11 @@ fn requires_user_action(error: &Value) -> bool {
         "authentication_error",
         "invalid_api_key",
         "permission_error",
+        "permission_denied",
+        "unauthenticated",
+        "invalid_request_error",
+        "invalid_argument",
+        "not_found_error",
     ]
     .iter()
     .any(|value| detail.contains(value))

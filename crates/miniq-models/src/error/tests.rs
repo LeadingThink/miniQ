@@ -19,11 +19,17 @@ fn transient_statuses_and_permanent_errors_are_distinguished() {
         json!({"code":"insufficient_quota"}),
         json!({"type":"billing_not_active"}),
         json!({"message":"Your credit balance is too low"}),
+        json!({"type":"invalid_request_error","message":"model temporarily unavailable for this request"}),
+        json!({"status":"INVALID_ARGUMENT"}),
     ] {
-        assert!(
-            !ProviderError::from_api_response(429, json!({"error":error}).to_string(), None)
-                .is_retryable()
-        );
+        for status in [429, 500, 503] {
+            assert!(!ProviderError::from_api_response(
+                status,
+                json!({"error":error}).to_string(),
+                None
+            )
+            .is_retryable());
+        }
     }
 }
 
@@ -40,6 +46,7 @@ fn stream_errors_preserve_codes_even_when_the_message_is_only_busy() {
     for error in [
         json!({"code":"invalid_api_key"}),
         json!({"type":"invalid_request_error","message":"invalid tools"}),
+        json!({"type":"invalid_request_error","message":"overloaded model is not enabled"}),
         json!({"code":"insufficient_quota","message":"overloaded"}),
     ] {
         assert!(!ProviderError::from_stream_error("test", &error).is_retryable());
@@ -64,6 +71,39 @@ fn retry_after_supports_delta_seconds_and_http_dates_without_shortening_long_hin
     for invalid in ["NaN", "-2", "invalid", ""] {
         assert_eq!(parse_retry_after(invalid, now), None);
     }
+}
+
+#[tokio::test]
+async fn connection_closed_before_response_headers_is_retryable() {
+    use tokio::io::AsyncReadExt;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = [0_u8; 1024];
+        assert!(socket.read(&mut request).await.unwrap() > 0);
+        // Drop an established connection without sending any response headers.
+    });
+    let error = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .unwrap()
+        .get(format!("http://{address}"))
+        .send()
+        .await
+        .unwrap_err();
+    server.await.unwrap();
+    assert!(error.is_request());
+    assert!(!error.is_connect() && !error.is_body() && !error.is_timeout());
+    assert!(ProviderError::Http(error).is_retryable());
+
+    let invalid = reqwest::Client::new()
+        .get("invalid URL")
+        .send()
+        .await
+        .unwrap_err();
+    assert!(!ProviderError::Http(invalid).is_retryable());
 }
 
 #[tokio::test]
