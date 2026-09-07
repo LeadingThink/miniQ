@@ -17,15 +17,13 @@ function compareTimestamps(a: string, b: string): number {
   const aFraction = fraction.exec(a)?.[1] ?? "";
   const bFraction = fraction.exec(b)?.[1] ?? "";
   const width = Math.max(aFraction.length, bFraction.length);
-  return aFraction
-    .padEnd(width, "0")
-    .localeCompare(bFraction.padEnd(width, "0"));
+  return aFraction.padEnd(width, "0").localeCompare(bFraction.padEnd(width, "0"));
 }
 
 export function createTimelineItems(
   messages: Message[],
   toolCalls: ToolCall[],
-  includeInternal = false
+  includeInternal = false,
 ): TimelineItem[] {
   return [
     ...messages
@@ -42,41 +40,20 @@ export function createTimelineItems(
 }
 
 export function payloadText(value: unknown): string {
-  return typeof value === "string"
-    ? value
-    : JSON.stringify(value, null, 2) ?? "";
+  return typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? "");
 }
 
-export function itemMatches(
-  item: TimelineItem,
-  filter: TimelineFilter,
-  query: string
-): boolean {
-  if (
-    filter === "answers" &&
-    (item.kind !== "message" || item.message.role === "tool")
-  )
-    return false;
-  if (
-    filter === "activity" &&
-    item.kind !== "tool" &&
-    item.message.role !== "tool"
-  )
-    return false;
-  if (
-    filter === "errors" &&
-    (item.kind !== "tool" ||
-      !["failed", "rejected", "cancelled"].includes(item.call.status))
-  )
+export function itemMatches(item: TimelineItem, filter: TimelineFilter, query: string): boolean {
+  if (filter === "answers" && (item.kind !== "message" || item.message.role === "tool")) return false;
+  if (filter === "activity" && item.kind !== "tool" && item.message.role !== "tool") return false;
+  if (filter === "errors" && (item.kind !== "tool" || !["failed", "rejected", "cancelled"].includes(item.call.status)))
     return false;
   const needle = query.trim().toLocaleLowerCase();
   if (!needle) return true;
   const text =
     item.kind === "message"
       ? item.message.content
-      : `${item.call.toolName}\n${payloadText(item.call.input)}\n${payloadText(
-          item.call.output
-        )}`;
+      : `${item.call.toolName}\n${payloadText(item.call.input)}\n${payloadText(item.call.output)}`;
   return text.toLocaleLowerCase().includes(needle);
 }
 
@@ -84,26 +61,17 @@ export function groupTimeline(items: TimelineItem[]): TimelineGroup[] {
   const groups: TimelineGroup[] = [];
   for (const item of items) {
     const previous = groups.at(-1);
-    if (item.kind === "tool" && previous?.kind === "tools")
-      previous.calls.push(item.call);
-    else if (item.kind === "tool")
-      groups.push({ kind: "tools", at: item.at, calls: [item.call] });
+    if (item.kind === "tool" && previous?.kind === "tools") previous.calls.push(item.call);
+    else if (item.kind === "tool") groups.push({ kind: "tools", at: item.at, calls: [item.call] });
     else groups.push(item);
   }
   return groups;
 }
 
-export function filterTimelineGroups(
-  groups: TimelineGroup[],
-  filter: TimelineFilter,
-  query: string
-): TimelineGroup[] {
+export function filterTimelineGroups(groups: TimelineGroup[], filter: TimelineFilter, query: string): TimelineGroup[] {
   return groups.flatMap((group): TimelineGroup[] => {
-    if (group.kind !== "tools")
-      return itemMatches(group, filter, query) ? [group] : [];
-    const calls = group.calls.filter((call) =>
-      itemMatches({ kind: "tool", at: call.createdAt, call }, filter, query)
-    );
+    if (group.kind !== "tools") return itemMatches(group, filter, query) ? [group] : [];
+    const calls = group.calls.filter((call) => itemMatches({ kind: "tool", at: call.createdAt, call }, filter, query));
     return calls.length ? [{ ...group, calls }] : [];
   });
 }
@@ -111,31 +79,36 @@ export function filterTimelineGroups(
 export function toolCounts(calls: ToolCall[]) {
   return {
     completed: calls.filter((call) => call.status === "succeeded").length,
-    running: calls.filter((call) =>
-      ["running", "pending", "waiting_approval"].includes(call.status)
-    ).length,
-    failed: calls.filter((call) =>
-      ["failed", "rejected", "cancelled"].includes(call.status)
-    ).length,
-    attention: calls.some(
-      (call) => call.status === "failed" || call.status === "waiting_approval"
-    ),
+    running: calls.filter((call) => ["running", "pending", "waiting_approval"].includes(call.status)).length,
+    failed: calls.filter((call) => ["failed", "rejected", "cancelled"].includes(call.status)).length,
+    attention: calls.some((call) => call.status === "failed" || call.status === "waiting_approval"),
   };
 }
 
-export function payloadPage(
-  text: string,
-  query: string,
-  page: number,
-  pageSize = 100
-) {
+export function currentExecution(messages: Message[], calls: ToolCall[]) {
+  let start: string | null = null;
+  for (const message of messages) {
+    if (message.role === "user" && (!start || compareTimestamps(message.createdAt, start) > 0)) {
+      start = message.createdAt;
+    }
+  }
+  const current = calls.filter(
+    (call) => call.toolName !== "task_update" && (!start || compareTimestamps(call.createdAt, start) >= 0),
+  );
+  return {
+    partial: !start,
+    completed: current.filter((call) => call.status === "succeeded").length,
+    failed: current.filter((call) => call.status === "failed").length,
+    cancelled: current.filter((call) => call.status === "cancelled" || call.status === "rejected").length,
+    running: current.filter((call) => call.status === "running" || call.status === "pending"),
+    waiting: current.filter((call) => call.status === "waiting_approval").length,
+  };
+}
+
+export function payloadPage(text: string, query: string, page: number, pageSize = 100) {
   const needle = query.toLocaleLowerCase();
-  const lines = text
-    .split("\n")
-    .map((text, index) => ({ text, number: index + 1 }));
-  const matches = needle
-    ? lines.filter((line) => line.text.toLocaleLowerCase().includes(needle))
-    : lines;
+  const lines = text.split("\n").map((text, index) => ({ text, number: index + 1 }));
+  const matches = needle ? lines.filter((line) => line.text.toLocaleLowerCase().includes(needle)) : lines;
   const pageCount = Math.max(1, Math.ceil(matches.length / pageSize));
   const current = Math.min(Math.max(0, page), pageCount - 1);
   return {

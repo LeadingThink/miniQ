@@ -1,13 +1,5 @@
-import {
-  Check,
-  ChevronRight,
-  CircleSlash,
-  CircleX,
-  LoaderCircle,
-  RotateCcw,
-  RefreshCw,
-} from "lucide-react";
-import { useEffect, useState } from "react";
+import { Check, ChevronRight, CircleSlash, CircleX, LoaderCircle, RotateCcw, RefreshCw } from "lucide-react";
+import { useEffect, useId, useState } from "react";
 import type { PlanTask, ToolCall, TurnProgress } from "../types";
 import { RetryNotice } from "./RetryNotice";
 import { ToolPayload } from "./ToolPayload";
@@ -76,15 +68,7 @@ function formatDuration(elapsed: number): string | null {
   return remainder ? `${minutes} 分 ${remainder} 秒` : `${minutes} 分`;
 }
 
-function LiveElapsed({
-  startedAt,
-  className,
-  prefix,
-}: {
-  startedAt: string;
-  className: string;
-  prefix?: string;
-}) {
+function LiveElapsed({ startedAt, className, prefix }: { startedAt: string; className: string; prefix?: string }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     setNow(Date.now());
@@ -111,14 +95,13 @@ function statusText(call: ToolCall): string | null {
   }
 }
 
-export function ToolStep(props: {
-  client?: RpcClient;
-  call: ToolCall;
-  onRollback: (checkpointId: string) => void;
-}) {
+export function ToolStep(props: { client?: RpcClient; call: ToolCall; onRollback: (checkpointId: string) => void }) {
   const needsAttention = props.call.status === "failed" && (!props.call.payloadDeferred || props.call.live === true);
   const [open, setOpen] = useState(needsAttention);
-  useEffect(() => { if (needsAttention) setOpen(true); }, [needsAttention]);
+  const detailId = useId();
+  useEffect(() => {
+    if (needsAttention) setOpen(true);
+  }, [needsAttention]);
   const detail = useToolDetail(props.client, props.call, open);
   const { call } = detail;
   const running = call.status === "running" || call.status === "waiting_approval";
@@ -137,6 +120,7 @@ export function ToolStep(props: {
           type="button"
           className="tool-step-toggle"
           aria-expanded={open}
+          aria-controls={detailId}
           onClick={() => setOpen((value) => !value)}
         >
           <span className="tool-step-marker" aria-hidden="true">
@@ -151,7 +135,11 @@ export function ToolStep(props: {
             )}
           </span>
           <span className="tool-action">{toolActionLabel(call.toolName, running)}</span>
-          {summary && <span className="tool-summary">{summary}</span>}
+          {summary && (
+            <span className="tool-summary" title={summary}>
+              {summary}
+            </span>
+          )}
           {state && <span className={`tool-step-state ${call.status}`}>{state}</span>}
           {running ? (
             <LiveElapsed startedAt={call.createdAt} className="tool-duration" />
@@ -173,15 +161,34 @@ export function ToolStep(props: {
         )}
       </div>
       {open && (
-        <div className="tool-step-body">
+        <div className="tool-step-body" id={detailId} role="region" aria-label={`${call.toolName} 执行详情`}>
           <code className="tool-identity">{call.toolName}</code>
-          {detail.loading && <div role="status"><LoaderCircle className="activity-spinner" size={14} /> 正在读取详情</div>}
-          {detail.error && <div role="alert">{detail.error}<button type="button" className="icon-button" title="重试读取详情" aria-label="重试读取详情" onClick={detail.retry}><RefreshCw size={14} /></button></div>}
-          {!call.payloadDeferred && <>
-            {props.client && <ComputerObservation call={call} client={props.client} />}
-            <ToolPayload label="输入" value={call.input} />
-            {call.output !== undefined && call.output !== null && <ToolPayload label="结果" value={call.output} />}
-          </>}
+          {detail.loading && (
+            <div role="status">
+              <LoaderCircle className="activity-spinner" size={14} /> 正在读取详情
+            </div>
+          )}
+          {detail.error && (
+            <div role="alert">
+              {detail.error}
+              <button
+                type="button"
+                className="icon-button"
+                title="重试读取详情"
+                aria-label="重试读取详情"
+                onClick={detail.retry}
+              >
+                <RefreshCw size={14} />
+              </button>
+            </div>
+          )}
+          {!call.payloadDeferred && (
+            <>
+              {props.client && <ComputerObservation call={call} client={props.client} />}
+              <ToolPayload label="输入" value={call.input} />
+              {call.output !== undefined && call.output !== null && <ToolPayload label="结果" value={call.output} />}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -196,12 +203,18 @@ export function PlanProgress({ plan, busy }: { plan: PlanTask[]; busy: boolean }
     <section className="execution-plan" aria-label={`任务进度 ${done}/${plan.length}`}>
       <div className="execution-plan-head">
         <strong>{done === plan.length ? "任务步骤已完成" : busy ? "任务进度" : "本轮已结束，步骤待核对"}</strong>
-        <span>{done}/{plan.length}{!busy && done < plan.length ? " 已确认" : ""}</span>
+        <span>
+          {done}/{plan.length}
+          {!busy && done < plan.length ? " 已确认" : ""}
+        </span>
       </div>
       <progress value={done} max={plan.length} aria-label="已完成任务步骤" />
       <ol>
         {plan.map((task, index) => (
-          <li key={`${index}-${task.content}`} className={!busy && task.status === "in_progress" ? "pending" : task.status}>
+          <li
+            key={`${index}-${task.content}`}
+            className={!busy && task.status === "in_progress" ? "pending" : task.status}
+          >
             <span className="plan-step-marker" aria-hidden="true">
               {task.status === "completed" ? (
                 <Check size={12} />
@@ -227,9 +240,7 @@ export function turnProgressLabel(progress: TurnProgress | null): string {
     case "compacting_context":
       return "正在整理较长的会话上下文";
     case "requesting_model":
-      return progress.modelStep === 1
-        ? "正在请求模型分析任务"
-        : "正在将执行结果交给模型";
+      return progress.modelStep === 1 ? "正在请求模型分析任务" : "正在将执行结果交给模型";
     case "receiving_model":
       return "模型正在生成响应";
     case "waiting_retry":
@@ -239,13 +250,7 @@ export function turnProgressLabel(progress: TurnProgress | null): string {
   }
 }
 
-export function ExecutionPrelude({
-  plan,
-  progress,
-}: {
-  plan: PlanTask[];
-  progress: TurnProgress | null;
-}) {
+export function ExecutionPrelude({ plan, progress }: { plan: PlanTask[]; progress: TurnProgress | null }) {
   const activeTask = plan.find((task) => task.status === "in_progress");
   return (
     <div className="execution-prelude" role="status" aria-live="polite">
@@ -256,19 +261,11 @@ export function ExecutionPrelude({
         {progress?.modelStep && (
           <span className="execution-phase-meta">
             第 {progress.modelStep} 轮
-            <LiveElapsed
-              startedAt={progress.startedAt}
-              className="execution-elapsed"
-              prefix="已等待"
-            />
+            <LiveElapsed startedAt={progress.startedAt} className="execution-elapsed" prefix="已等待" />
           </span>
         )}
         {progress && !progress.modelStep && (
-          <LiveElapsed
-            startedAt={progress.startedAt}
-            className="execution-elapsed"
-            prefix="已等待"
-          />
+          <LiveElapsed startedAt={progress.startedAt} className="execution-elapsed" prefix="已等待" />
         )}
         {activeTask && <span>{activeTask.content}</span>}
       </div>

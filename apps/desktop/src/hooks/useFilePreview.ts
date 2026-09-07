@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
-import {
-  readLocalFilePreview,
-  type LocalPreviewKind,
-  type LocalFileTarget,
-} from "../localFiles";
+import { readLocalFilePreview, type LocalPreviewKind, type LocalFileTarget } from "../localFiles";
+import { EMPTY_PREVIEW_TABS, removePreviewTab, selectPreviewTab, type PreviewTabsState } from "../previewTabs";
 
 export interface FilePreviewState {
   target: LocalFileTarget | null;
@@ -34,13 +31,28 @@ const EMPTY_PREVIEW: FilePreviewState = {
 
 const NO_PATHS: readonly string[] = [];
 
-export function useFilePreview(workspacePath?: string | null, sessionId?: string | null, workspacePaths: readonly string[] = NO_PATHS) {
+export function useFilePreview(
+  workspacePath?: string | null,
+  sessionId?: string | null,
+  workspacePaths: readonly string[] = NO_PATHS,
+) {
   const [state, setState] = useState<FilePreviewState>(EMPTY_PREVIEW);
+  const scope = JSON.stringify([sessionId ?? null, workspacePath ?? null, workspacePaths]);
+  const [stateScope, setStateScope] = useState(scope);
+  const [sessions, setSessions] = useState<Record<string, PreviewTabsState>>({});
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const tabs = sessions[scope] ?? EMPTY_PREVIEW_TABS;
   const requestSequence = useRef(0);
 
   const openFile = useCallback(
     async (target: LocalFileTarget) => {
       const requestId = ++requestSequence.current;
+      setStateScope(scope);
+      setSessions((current) => ({
+        ...current,
+        [scope]: selectPreviewTab(current[scope] ?? EMPTY_PREVIEW_TABS, target),
+      }));
       setState({
         target,
         resolvedPath: target.path,
@@ -56,6 +68,10 @@ export function useFilePreview(workspacePath?: string | null, sessionId?: string
       try {
         const file = await readLocalFilePreview(target.path, workspacePath, workspacePaths);
         if (requestId !== requestSequence.current) return;
+        setSessions((current) => ({
+          ...current,
+          [scope]: selectPreviewTab(current[scope] ?? EMPTY_PREVIEW_TABS, { ...target, path: file.path }, target.path),
+        }));
         setState({
           target: { ...target, path: file.path },
           resolvedPath: file.path,
@@ -77,18 +93,50 @@ export function useFilePreview(workspacePath?: string | null, sessionId?: string
         }));
       }
     },
-    [workspacePath, workspacePaths],
+    [workspacePath, workspacePaths, scope],
   );
 
   const close = useCallback(() => {
     requestSequence.current += 1;
+    setSessions((current) => ({
+      ...current,
+      [scope]: { ...(current[scope] ?? EMPTY_PREVIEW_TABS), open: false },
+    }));
     setState((current) => ({ ...current, open: false, loading: false }));
-  }, []);
+  }, [scope]);
+
+  const closeTab = useCallback(
+    (path: string) => {
+      const previous = sessionsRef.current[scope] ?? EMPTY_PREVIEW_TABS;
+      const next = removePreviewTab(previous, path);
+      setSessions((current) => ({ ...current, [scope]: next }));
+      if (previous.active !== path) return;
+      requestSequence.current++;
+      const target = next.targets.find((item) => item.path === next.active);
+      if (target) void openFile(target);
+      else setState(EMPTY_PREVIEW);
+    },
+    [scope, openFile],
+  );
 
   useEffect(() => {
     requestSequence.current += 1;
+    setStateScope(scope);
     setState(EMPTY_PREVIEW);
-  }, [workspacePath, sessionId, workspacePaths]);
+    const saved = sessionsRef.current[scope];
+    const target = saved?.targets.find((item) => item.path === saved.active);
+    // Keep only tab identities between sessions; large file payloads are re-read.
+    if (saved?.open && target) void openFile(target);
+    return () => {
+      requestSequence.current++;
+    };
+  }, [scope, openFile]);
 
-  return { state, openFile, close };
+  return {
+    state: stateScope === scope ? state : EMPTY_PREVIEW,
+    tabs: tabs.targets,
+    closeTab,
+    openFile,
+    close,
+  };
 }

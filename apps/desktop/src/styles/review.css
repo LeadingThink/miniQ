@@ -52,14 +52,17 @@
 .pdf-preview {
   width: 100%;
   height: 100%;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: #e8e9ec;
 }
 
 .pdf-toolbar {
   min-height: 42px;
   display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 6px;
@@ -73,6 +76,14 @@
 
 .pdf-toolbar .icon-button {
   color: #53545b;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
 }
 
 .pdf-toolbar-separator {
@@ -83,6 +94,7 @@
 }
 
 .pdf-stage {
+  flex: 1;
   position: relative;
   min-height: 0;
   padding: 20px 20px 28px;
@@ -146,13 +158,16 @@
 
 .spreadsheet-preview {
   height: 100%;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   background: var(--bg);
 }
 
 .sheet-tabs {
   display: flex;
+  flex-shrink: 0;
   gap: 2px;
   padding: 6px 8px 0;
   overflow-x: auto;
@@ -175,6 +190,7 @@
 }
 
 .sheet-table-wrap {
+  flex: 1;
   min-height: 0;
   overflow: auto;
 }
@@ -227,6 +243,7 @@
 
 .sheet-pagination {
   min-height: 42px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -506,7 +523,9 @@
   border-radius: 2px;
   background: transparent;
   content: "";
-  transition: background 120ms ease, box-shadow 120ms ease;
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .workbench-resizer:hover::after,

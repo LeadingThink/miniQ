@@ -28,6 +28,7 @@ pub(super) struct FocusedWindow {
 }
 
 pub(super) trait DesktopBackend: Send + Sync {
+    fn permissions(&self) -> miniq_protocol::ComputerPermissions;
     fn displays(&self) -> Result<Vec<Display>, String>;
     fn capture(&self, id: u32) -> Result<(Display, image::RgbaImage), String>;
     fn focus(&self) -> Result<Option<FocusedWindow>, String>;
@@ -55,6 +56,9 @@ fn display(monitor: &xcap::Monitor) -> Result<Display, xcap::XCapError> {
 }
 
 impl DesktopBackend for NativeDesktop {
+    fn permissions(&self) -> miniq_protocol::ComputerPermissions {
+        super::permissions::desktop_permissions()
+    }
     fn displays(&self) -> Result<Vec<Display>, String> {
         xcap::Monitor::all()
             .and_then(|monitors| monitors.iter().map(display).collect())

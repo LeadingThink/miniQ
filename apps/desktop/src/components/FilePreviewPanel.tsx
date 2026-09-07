@@ -1,19 +1,9 @@
-import Editor, { type OnMount } from "@monaco-editor/react";
-import {
-  Code2,
-  Eye,
-  ExternalLink,
-  FileCode2,
-  FolderOpen,
-  RotateCcw,
-  WrapText,
-  X,
-} from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { OnMount } from "@monaco-editor/react";
+import { Code2, Eye, ExternalLink, FileCode2, FolderOpen, RotateCcw, WrapText, X } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from "react";
 import type { editor } from "monaco-editor";
 import type { FilePreviewState } from "../hooks/useFilePreview";
 import { formatFileSize, openLocalFile, revealLocalFile } from "../localFiles";
-import "../monacoSetup";
 import {
   BlobPreview,
   DocxPreview,
@@ -26,7 +16,8 @@ import { MarkdownPreview } from "./MarkdownPreview";
 import { CopyButton } from "./CopyButton";
 import { HtmlPreview } from "./HtmlPreview";
 import { isHtmlFile } from "../htmlPreview";
-import { useEditorTheme } from "../hooks/useEditorTheme";
+import { PreviewTabs } from "./PreviewTabs";
+import type { LocalFileTarget } from "../localFiles";
 
 interface FilePreviewPanelProps {
   preview: FilePreviewState;
@@ -35,45 +26,11 @@ interface FilePreviewPanelProps {
   onClose: () => void;
   onOpenFile: (target: NonNullable<FilePreviewState["target"]>) => void;
   onRetry: () => void;
+  tabs?: LocalFileTarget[];
+  onCloseTab?: (path: string) => void;
 }
 
-const LANGUAGES: Record<string, string> = {
-  c: "cpp",
-  cc: "cpp",
-  cpp: "cpp",
-  cs: "csharp",
-  css: "css",
-  go: "go",
-  h: "cpp",
-  hpp: "cpp",
-  html: "html",
-  java: "java",
-  js: "javascript",
-  json: "json",
-  jsx: "javascript",
-  kt: "kotlin",
-  less: "less",
-  md: "markdown",
-  php: "php",
-  py: "python",
-  rb: "ruby",
-  rs: "rust",
-  scss: "scss",
-  sh: "shell",
-  sql: "sql",
-  swift: "swift",
-  toml: "ini",
-  ts: "typescript",
-  tsx: "typescript",
-  xml: "xml",
-  yaml: "yaml",
-  yml: "yaml",
-};
-
-function languageForPath(path: string): string {
-  const extension = path.split(/[\\/]/).at(-1)?.split(".").at(-1)?.toLowerCase();
-  return extension ? (LANGUAGES[extension] ?? "plaintext") : "plaintext";
-}
+const CodePreview = lazy(() => import("./CodePreview"));
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).at(-1) ?? path;
@@ -86,8 +43,10 @@ export function FilePreviewPanel({
   onClose,
   onOpenFile,
   onRetry,
+  tabs = [],
+  onCloseTab,
 }: FilePreviewPanelProps) {
-  const configureEditorTheme = useEditorTheme();
+  const contentId = useId();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -142,6 +101,9 @@ export function FilePreviewPanel({
 
   return (
     <aside className="file-preview-panel" aria-label="文件预览">
+      {onCloseTab && (
+        <PreviewTabs tabs={tabs} active={path} id={contentId} onSelect={onOpenFile} onClose={onCloseTab} />
+      )}
       <header className="file-preview-header">
         <FileCode2 size={17} />
         <div>
@@ -192,7 +154,16 @@ export function FilePreviewPanel({
           </button>
         )}
         <CopyButton content={path} label="复制文件路径" onError={setActionError} />
-        <button type="button" className="icon-button" title="重新读取文件" aria-label="重新读取文件" disabled={preview.loading || !path} onClick={onRetry}><RotateCcw size={15} /></button>
+        <button
+          type="button"
+          className="icon-button"
+          title="重新读取文件"
+          aria-label="重新读取文件"
+          disabled={preview.loading || !path}
+          onClick={onRetry}
+        >
+          <RotateCcw size={15} />
+        </button>
         <button
           className="icon-button"
           title="使用系统默认应用打开"
@@ -236,7 +207,12 @@ export function FilePreviewPanel({
           )}
         </div>
       )}
-      <div className="file-preview-content">
+      <div
+        className="file-preview-content"
+        id={contentId}
+        role={tabs.length ? "tabpanel" : undefined}
+        aria-label={tabs.length ? fileName(path) : undefined}
+      >
         {preview.loading ? (
           <div className="diff-empty">正在读取文件...</div>
         ) : preview.kind === "markdown" && preview.content !== null && !markdownSource ? (
@@ -249,33 +225,12 @@ export function FilePreviewPanel({
         ) : renderable && !markdownSource && preview.content !== null ? (
           <HtmlPreview key={path} content={preview.content} label={fileName(path)} />
         ) : sourceVisible && preview.content !== null ? (
-          <Editor
-            path={path}
-            value={preview.content}
-            language={languageForPath(path)}
-            onMount={handleMount}
-            beforeMount={configureEditorTheme}
-            theme="miniq"
-            options={{
-              automaticLayout: true,
-              readOnly: true,
-              domReadOnly: true,
-              minimap: { enabled: false },
-              renderLineHighlight: "all",
-              scrollBeyondLastLine: false,
-              smoothScrolling: true,
-              wordWrap: wrapCode ? "on" : "off",
-              fontFamily: "JetBrains Mono Variable, Consolas, monospace",
-              fontSize: 12.5,
-              lineHeight: 20,
-              padding: { top: 10, bottom: 16 },
-            }}
-          />
-        ) : preview.dataBase64 && preview.mimeType && (
-          preview.kind === "image" ||
-          preview.kind === "audio" ||
-          preview.kind === "video"
-        ) ? (
+          <Suspense fallback={<div className="diff-empty">正在加载代码视图...</div>}>
+            <CodePreview path={path} content={preview.content} wrap={wrapCode} onMount={handleMount} />
+          </Suspense>
+        ) : preview.dataBase64 &&
+          preview.mimeType &&
+          (preview.kind === "image" || preview.kind === "audio" || preview.kind === "video") ? (
           <BlobPreview
             dataBase64={preview.dataBase64}
             mimeType={preview.mimeType}
