@@ -41,6 +41,19 @@ pub enum AgentError {
     RepeatedToolLoop { repetitions: usize },
     #[error("failed to persist turn context: {0}")]
     Checkpoint(String),
+    #[error("自动重试已停止（{attempts}/{max_attempts} 次）：{reason}。最后错误：{last_error}")]
+    ModelRetryStopped {
+        attempts: usize,
+        max_attempts: usize,
+        reason: String,
+        last_error: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct RetryAttempt {
+    pub attempt: usize,
+    pub max_attempts: usize,
 }
 
 /// Events surfaced to the caller while a turn runs.
@@ -52,9 +65,11 @@ pub enum AgentEvent {
     TextReplaced(String),
     ModelRequestStarted {
         step: usize,
+        retry: Option<RetryAttempt>,
     },
     ModelResponseStarted {
         step: usize,
+        retry: Option<RetryAttempt>,
     },
     ModelRetryScheduled {
         step: usize,
@@ -286,7 +301,10 @@ async fn run_turn_inner(
                 max_output_tokens: None,
             };
             let _ = events
-                .send(AgentEvent::ModelRequestStarted { step: steps })
+                .send(AgentEvent::ModelRequestStarted {
+                    step: steps,
+                    retry: retries.progress(),
+                })
                 .await;
             // Race the provider call against cancellation so an interrupt
             // takes effect while connecting or waiting for the first byte.
@@ -321,7 +339,10 @@ async fn run_turn_inner(
                 }
             };
             let _ = events
-                .send(AgentEvent::ModelResponseStarted { step: steps })
+                .send(AgentEvent::ModelResponseStarted {
+                    step: steps,
+                    retry: retries.progress(),
+                })
                 .await;
 
             let mut text = String::new();
@@ -571,11 +592,17 @@ mod tests {
 
         assert!(matches!(
             receiver.try_recv().unwrap(),
-            AgentEvent::ModelRequestStarted { step: 1 }
+            AgentEvent::ModelRequestStarted {
+                step: 1,
+                retry: None
+            }
         ));
         assert!(matches!(
             receiver.try_recv().unwrap(),
-            AgentEvent::ModelResponseStarted { step: 1 }
+            AgentEvent::ModelResponseStarted {
+                step: 1,
+                retry: None
+            }
         ));
         assert!(matches!(
             receiver.try_recv().unwrap(),
@@ -707,7 +734,7 @@ mod tests {
         assert_eq!(provider.requests.lock().unwrap().len(), 129);
         let mut request_steps = Vec::new();
         while let Ok(event) = receiver.try_recv() {
-            if let AgentEvent::ModelRequestStarted { step } = event {
+            if let AgentEvent::ModelRequestStarted { step, .. } = event {
                 request_steps.push(step);
             }
         }
@@ -841,9 +868,10 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(error
-            .to_string()
-            .contains("empty completion after 11 attempts"));
+        assert!(
+            matches!(&error, AgentError::ModelRetryStopped { attempts: 10, max_attempts: 10, last_error, .. } if last_error == &ProviderError::EmptyResponse.to_string())
+        );
+        assert!(error.to_string().contains("已达到重试次数上限"));
     }
 
     struct LargeResultExecutor;

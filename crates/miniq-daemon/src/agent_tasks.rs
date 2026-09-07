@@ -90,6 +90,12 @@ impl DaemonAgentBridge {
             let drain = tokio::spawn(async move {
                 while let Some(event) = receiver.recv().await {
                     if let Some(progress) = crate::agent_progress::from_event(event) {
+                        crate::agent_progress::record_retry(
+                            &progress_state,
+                            &progress_record.session_id,
+                            Some(&progress_record.id),
+                            &progress,
+                        );
                         progress_state
                             .agent_tasks
                             .update_progress(&progress_record, progress)

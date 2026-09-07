@@ -369,6 +369,12 @@ async fn execute_turn(
                 }),
                 event => {
                     if let Some(progress) = crate::agent_progress::from_event(event) {
+                        crate::agent_progress::record_retry(
+                            &forward_state,
+                            &forward_session,
+                            None,
+                            &progress,
+                        );
                         forward_state.update_turn_progress(&forward_session, progress);
                     }
                 }

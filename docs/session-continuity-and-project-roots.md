@@ -72,4 +72,6 @@ records or project files are removed. Application version numbers are unchanged.
 
 The development-only `project-preview.html` exercises the directory editor with
 in-memory fixtures. It does not connect to the running daemon or modify projects.
-No public release, installation or restart is part of this change.
+The initial implementation did not install or restart the client. A subsequent
+user-authorized delivery includes these changes with the model-retry correction.
+No public release, application version change or updater manifest is included.

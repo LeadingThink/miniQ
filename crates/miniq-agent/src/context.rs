@@ -338,6 +338,20 @@ mod tests {
         assert_eq!(provider.requests.lock().unwrap()[0].temperature, None);
         assert!(matches!(
             receiver.recv().await,
+            Some(AgentEvent::ModelRequestStarted {
+                step: 0,
+                retry: None
+            })
+        ));
+        assert!(matches!(
+            receiver.recv().await,
+            Some(AgentEvent::ModelResponseStarted {
+                step: 0,
+                retry: None
+            })
+        ));
+        assert!(matches!(
+            receiver.recv().await,
             Some(AgentEvent::ContextCompacted { .. })
         ));
     }
