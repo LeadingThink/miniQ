@@ -9,6 +9,7 @@ interface ConnectionOptions {
   refreshWorkspaces: () => Promise<void>;
   refreshSessions: () => Promise<void>;
   onError: (message: string | null) => void;
+  paused?: boolean;
 }
 
 interface ConnectAttemptOptions extends ConnectionOptions {
@@ -34,6 +35,7 @@ async function connectWithRetry(
   for (let attempt = 1; !options.isDisposed(); attempt++) {
     try {
       const info = await resolveConnection();
+      if (options.isDisposed()) return;
       await options.client.connect(info);
       if (options.isDisposed()) return;
       options.onConnected(true);
@@ -68,9 +70,10 @@ export function useDaemonConnection(options: ConnectionOptions) {
   const [phase, setPhase] = useState<ConnectionPhase>("connecting");
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>("auto");
-  const { client, refreshWorkspaces, refreshSessions, onError } = options;
+  const { client, refreshWorkspaces, refreshSessions, onError, paused = false } = options;
 
   useEffect(() => {
+    if (paused) return;
     let disposed = false;
     let connectionLoopRunning = false;
     const connect = async (reconnecting: boolean) => {
@@ -109,7 +112,7 @@ export function useDaemonConnection(options: ConnectionOptions) {
       offStatus();
       offResync();
     };
-  }, [client, onError, refreshSessions, refreshWorkspaces]);
+  }, [client, onError, paused, refreshSessions, refreshWorkspaces]);
 
   const changeApprovalMode = useCallback(
     async (mode: ApprovalMode) => {

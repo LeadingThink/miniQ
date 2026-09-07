@@ -7,8 +7,10 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use super::daemon_process::DaemonProcess;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,22 +37,43 @@ fn read_connection_info() -> Option<ConnectionInfo> {
     serde_json::from_str(&raw).ok()
 }
 
-pub fn wait_for_exit() -> Result<(), String> {
-    let Some(info) = read_connection_info() else {
-        return Ok(());
-    };
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while Instant::now() < deadline {
-        if !health_ok(info.port) {
-            std::thread::sleep(Duration::from_millis(300));
-            return Ok(());
+#[derive(Default)]
+pub struct DaemonLifecycle {
+    update: Mutex<Option<DaemonProcess>>,
+}
+
+impl DaemonLifecycle {
+    pub fn ensure(&self) -> Result<ConnectionInfo, String> {
+        // Serialize startup with update preparation so an in-flight reconnect cannot respawn it.
+        let update = self.update.lock().map_err(|e| e.to_string())?;
+        if update.is_some() {
+            return Err("daemon startup is paused while installing an update".into());
         }
-        std::thread::sleep(Duration::from_millis(100));
+        ensure_daemon()
     }
-    Err(format!(
-        "miniq-daemon process {} did not exit within 10 seconds",
-        info.pid
-    ))
+
+    pub fn prepare_update(&self) -> Result<(), String> {
+        let mut update = self.update.lock().map_err(|e| e.to_string())?;
+        if update.is_some() {
+            return Err("a daemon update is already in progress".into());
+        }
+        let info = read_connection_info().ok_or("daemon connection information is unavailable")?;
+        *update = Some(DaemonProcess::open(info.pid)?);
+        Ok(())
+    }
+
+    pub fn wait_for_exit(&self) -> Result<(), String> {
+        let update = self.update.lock().map_err(|e| e.to_string())?;
+        update
+            .as_ref()
+            .ok_or("daemon update has not been prepared")?
+            .wait(Duration::from_secs(30))
+    }
+
+    pub fn cancel_update(&self) -> Result<(), String> {
+        self.update.lock().map_err(|e| e.to_string())?.take();
+        Ok(())
+    }
 }
 
 /// Minimal HTTP GET /health probe over a raw TCP socket (avoids pulling an
@@ -132,7 +155,7 @@ fn spawn_daemon() -> Result<(), String> {
 }
 
 /// Return connection info for a healthy daemon, starting one if needed.
-pub fn ensure_daemon() -> Result<ConnectionInfo, String> {
+fn ensure_daemon() -> Result<ConnectionInfo, String> {
     if let Some(info) = read_connection_info() {
         if health_ok(info.port) {
             return Ok(info);
@@ -150,4 +173,27 @@ pub fn ensure_daemon() -> Result<ConnectionInfo, String> {
         }
     }
     Err("daemon did not become healthy within 10s".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_guard_blocks_startup_until_cancelled() {
+        let lifecycle = DaemonLifecycle {
+            update: Mutex::new(Some(DaemonProcess::open(std::process::id()).unwrap())),
+        };
+        assert!(lifecycle.ensure().unwrap_err().contains("paused"));
+        assert!(lifecycle
+            .prepare_update()
+            .unwrap_err()
+            .contains("already in progress"));
+        lifecycle.cancel_update().unwrap();
+        assert!(lifecycle.update.lock().unwrap().is_none());
+        assert!(lifecycle
+            .wait_for_exit()
+            .unwrap_err()
+            .contains("not been prepared"));
+    }
 }

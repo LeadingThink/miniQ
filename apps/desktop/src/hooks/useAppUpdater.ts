@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import type { DownloadEvent, Update } from "@tauri-apps/plugin-updater";
 import { errorMessage } from "../errorMessage";
-import type { ConnectionInfo, RpcClient } from "../rpc";
+import type { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 
 const STARTUP_CHECK_DELAY_MS = 10_000;
@@ -67,12 +68,6 @@ export function applyDownloadEvent(
         downloadedBytes: state.totalBytes ?? state.downloadedBytes,
       };
   }
-}
-
-async function reconnectDaemon(client: RpcClient): Promise<void> {
-  const { invoke } = await import("@tauri-apps/api/core");
-  const info = await invoke<ConnectionInfo>("daemon_connection");
-  await client.connect(info);
 }
 
 export function useAppUpdater(client: RpcClient, onError: (message: string) => void) {
@@ -163,27 +158,37 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
 
   const install = useCallback(async () => {
     const update = updateRef.current;
-    if (!update || state.phase !== "available") return;
-    let daemonStopped = false;
+    if (!update || state.phase !== "available" || installRef.current) return;
+    let prepared = false;
+    let installerStarted = false;
     installRef.current = true;
     try {
       setState((current) => ({ ...current, phase: "downloading", error: null }));
       await update.download((event) => setState((current) => applyDownloadEvent(current, event)));
-      setState((current) => ({ ...current, phase: "installing" }));
-      await client.call("daemon.shutdown");
-      daemonStopped = true;
+      // Dispose reconnect effects before the native shutdown request can close the socket.
+      flushSync(() => setState((current) => ({ ...current, phase: "installing" })));
       const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("prepare_daemon_update");
+      prepared = true;
+      await client.call("daemon.shutdown");
       await invoke("wait_for_daemon_exit");
       await update.install();
+      installerStarted = true;
       const { relaunch } = await import("@tauri-apps/plugin-process");
       await relaunch();
     } catch (error) {
       const message = errorMessage(error);
-      if (daemonStopped) {
+      if (installerStarted) {
+        onError(`安装器已启动，请完成安装后重新打开 miniQ：${message}`);
+        return;
+      }
+      if (prepared) {
         try {
-          await reconnectDaemon(client);
-        } catch {
-          // The update error remains the primary actionable failure.
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke("cancel_daemon_update");
+        } catch (resumeError) {
+          onError(`更新失败：${message}；恢复后台连接失败：${errorMessage(resumeError)}`);
+          return;
         }
       }
       setState((current) => ({ ...current, phase: "error", error: message }));

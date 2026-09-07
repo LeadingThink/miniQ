@@ -607,13 +607,14 @@ export function useMiniqApp() {
   const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls);
   const preview = useFilePreview(catalog.currentWorkspace?.path, catalog.currentSessionId);
   useTaskNotifications(client, catalog.sessions);
+  const updater = useAppUpdater(client, setConnectionError);
   const connection = useDaemonConnection({
     client,
     refreshWorkspaces: catalog.refreshWorkspaces,
     refreshSessions: catalog.refreshSessions,
     onError: setConnectionError,
+    paused: updater.state.phase === "installing",
   });
-  const updater = useAppUpdater(client, setConnectionError);
   const navigationActions = useNavigationActions(catalog, navigation, feed);
   const workspaceActions = useWorkspaceActions(client, catalog, setError);
   const lifecycle = useSessionLifecycleActions(

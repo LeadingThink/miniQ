@@ -4,16 +4,41 @@
 
 mod browser;
 mod daemon;
+mod daemon_process;
 mod local_file;
 
+type DaemonState = std::sync::Arc<daemon::DaemonLifecycle>;
+
 #[tauri::command]
-fn daemon_connection() -> Result<daemon::ConnectionInfo, String> {
-    daemon::ensure_daemon().map_err(|e| e.to_string())
+async fn daemon_connection(
+    state: tauri::State<'_, DaemonState>,
+) -> Result<daemon::ConnectionInfo, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.ensure())
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-async fn wait_for_daemon_exit() -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(daemon::wait_for_exit)
+async fn prepare_daemon_update(state: tauri::State<'_, DaemonState>) -> Result<(), String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.prepare_update())
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn cancel_daemon_update(state: tauri::State<'_, DaemonState>) -> Result<(), String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.cancel_update())
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn wait_for_daemon_exit(state: tauri::State<'_, DaemonState>) -> Result<(), String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.wait_for_exit())
         .await
         .map_err(|error| error.to_string())?
 }
@@ -83,6 +108,7 @@ fn browser_close(app: tauri::AppHandle) -> Result<(), String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(DaemonState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -90,6 +116,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             daemon_connection,
+            prepare_daemon_update,
+            cancel_daemon_update,
             wait_for_daemon_exit,
             open_local_file,
             reveal_local_file,
