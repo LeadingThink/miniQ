@@ -32,7 +32,11 @@ const LABELS: Record<string, string> = {
   cancelled: "已取消",
 };
 
-export function AgentPanel({
+export function AgentPanel(props: { client: RpcClient; sessionId: string; busy: boolean }) {
+  return <SessionAgentPanel key={props.sessionId} {...props} />;
+}
+
+function SessionAgentPanel({
   client,
   sessionId,
   busy,

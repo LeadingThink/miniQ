@@ -45,6 +45,8 @@ async function connectWithRetry(
       if (settings.approvalMode) options.onApprovalMode(settings.approvalMode);
       await options.refreshWorkspaces();
       await options.refreshSessions();
+      if (options.isDisposed()) return;
+      if (!options.client.connected) throw new Error("连接在同步期间关闭");
       options.onError(null);
       options.onReady();
       return;
@@ -92,6 +94,7 @@ export function useDaemonConnection(options: ConnectionOptions) {
       connectionLoopRunning = false;
     };
     void connect(false);
+    const offResync = client.onResync(() => setConnectionEpoch((current) => current + 1));
     const offStatus = client.onStatus((isConnected) => {
       setConnected(isConnected);
       if (isConnected) {
@@ -104,6 +107,7 @@ export function useDaemonConnection(options: ConnectionOptions) {
     return () => {
       disposed = true;
       offStatus();
+      offResync();
     };
   }, [client, onError, refreshSessions, refreshWorkspaces]);
 

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RpcClient } from "./rpc";
+import { deriveRemoteIdentity, encryptRemotePayload } from "./remoteCrypto";
+import { RemotePayloadReader } from "./remotePayload";
 
 class FakeWebSocket {
   static readonly CONNECTING = 0;
@@ -49,6 +51,7 @@ describe("RpcClient timeouts", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -143,5 +146,64 @@ describe("RpcClient timeouts", () => {
 
     await expect(client.call("daemon.health")).rejects.toThrow("daemon 连接已关闭");
     await vi.advanceTimersByTimeAsync(60_000);
+  });
+
+  async function remoteClient() {
+    const client = new RpcClient();
+    const info = { kind: "remote" as const, apiKey: "test-only-key", relayUrl: "ws://relay.test/ws", deviceId: "mobile-test", deviceName: "test" };
+    const connected = client.connect(info);
+    const concurrent = client.connect(info);
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+    socket.receive({ type: "ready", desktopOnline: true });
+    await connected;
+    await concurrent;
+    const { encryptionKey } = await deriveRemoteIdentity(info.apiKey);
+    const receive = async (payload: unknown) => {
+      const encrypted = await encryptRemotePayload(encryptionKey, payload);
+      socket.receive({ type: "frame", ...encrypted });
+    };
+    return { client, socket, receive };
+  }
+
+  it("does not disconnect or stop other listeners when a UI event listener throws", async () => {
+    const { client, receive } = await remoteClient();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const received = vi.fn();
+    client.onEvent(() => { throw new Error("view failed"); });
+    client.onEvent(received);
+    await receive({ type: "remote_batch", items: [
+      { type: "turn_failed", sessionId: "a", error: "A error" },
+      { type: "turn_completed", sessionId: "b" },
+    ] });
+    await vi.waitFor(() => expect(received).toHaveBeenCalledTimes(2));
+    expect(client.connected).toBe(true);
+  });
+
+  it("extends only the matching RPC idle timeout while a large response arrives", async () => {
+    const { client, receive } = await remoteClient();
+    const response = client.call("session.open", { sessionId: "large" });
+    const expected = { id: "req_1", result: { text: "a large response" } };
+    const bytes = Buffer.from(JSON.stringify(expected));
+    const reader = vi.spyOn(RemotePayloadReader.prototype, "read");
+    await vi.advanceTimersByTimeAsync(40_000);
+    await receive({ type: "remote_chunk", transferId: "large", index: 0, totalBytes: bytes.length,
+      requestId: "req_1", data: bytes.subarray(0, 20).toString("base64url") });
+    await vi.waitFor(() => expect(reader).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(40_000);
+    await receive({ type: "remote_chunk", transferId: "large", index: 1, totalBytes: bytes.length,
+      requestId: "req_1", data: bytes.subarray(20).toString("base64url") });
+    await expect(response).resolves.toEqual(expected.result);
+    expect(client.connected).toBe(true);
+  });
+
+  it("requests a snapshot resync without closing a healthy remote connection", async () => {
+    const { client, receive } = await remoteClient();
+    const resync = vi.fn();
+    client.onResync(resync);
+    await receive({ type: "remote_resync" });
+    await vi.waitFor(() => expect(resync).toHaveBeenCalledOnce());
+    expect(client.connected).toBe(true);
   });
 });

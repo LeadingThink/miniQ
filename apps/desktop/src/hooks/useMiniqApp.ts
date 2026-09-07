@@ -21,6 +21,7 @@ import { useSessionModel } from "./useSessionModel";
 import type { SessionModelSettings } from "../modelSelection";
 import { useSessionDiff } from "./useSessionDiff";
 import { useTaskNotifications } from "./useTaskNotifications";
+import { useSessionError } from "./useSessionError";
 import { isSessionRunning, isSessionTerminal } from "../sessionStatus";
 
 export type AppPage = "schedule" | "skills" | "mcp" | "plugins" | null;
@@ -50,14 +51,24 @@ function useCatalog(client: RpcClient) {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [currentSessionId, setCurrentSessionState] = useState<string | null>(null);
   const navigationEpoch = useRef(0);
+  const sessionRefresh = useRef<Promise<void> | null>(null);
+  const sessionRefreshQueued = useRef(false);
   const setCurrentSessionId = useCallback((sessionId: string | null) => {
     navigationEpoch.current++;
     setCurrentSessionState(sessionId);
   }, []);
 
-  const refreshSessions = useCallback(async () => {
-    const result = await client.call<{ sessions: Session[] }>("session.list", {});
-    setSessions(result.sessions);
+  const refreshSessions = useCallback(() => {
+    sessionRefreshQueued.current = true;
+    if (sessionRefresh.current) return sessionRefresh.current;
+    sessionRefresh.current = (async () => {
+      do {
+        sessionRefreshQueued.current = false;
+        const result = await client.call<{ sessions: Session[] }>("session.list", {});
+        setSessions(result.sessions);
+      } while (sessionRefreshQueued.current);
+    })().finally(() => { sessionRefresh.current = null; });
+    return sessionRefresh.current;
   }, [client]);
 
   const refreshWorkspaces = useCallback(async () => {
@@ -152,17 +163,18 @@ function useNavigationActions(
 
   const newChat = useCallback(() => {
     setCurrentSessionId(null);
+    reset(null);
     setShowSettings(false);
     setShowSearch(false);
     setPage(null);
-  }, [setCurrentSessionId, setPage, setShowSearch, setShowSettings]);
+  }, [reset, setCurrentSessionId, setPage, setShowSearch, setShowSettings]);
 
   const selectWorkspace = useCallback(
     (workspaceId: string) => {
       setSelectedWorkspaceId(workspaceId);
       setCurrentSessionId(null);
       setPage(null);
-      reset();
+      reset(null);
     },
     [reset, setCurrentSessionId, setPage, setSelectedWorkspaceId],
   );
@@ -171,8 +183,9 @@ function useNavigationActions(
     (workspaceId: string) => {
       setSelectedWorkspaceId(workspaceId);
       setCurrentSessionId(null);
+      reset(null);
     },
-    [setCurrentSessionId, setSelectedWorkspaceId],
+    [reset, setCurrentSessionId, setSelectedWorkspaceId],
   );
 
   return { newChat, selectWorkspace, selectProject };
@@ -269,8 +282,8 @@ function useSessionLifecycleActions(
   catalog: Catalog,
   navigation: NavigationState,
   feed: SessionFeed,
-  setError: ErrorSetter,
   markSessionSeen: (sessionId: string) => void,
+  setSessionError: (sessionId: string, message: string | null) => void,
 ) {
   const {
     refreshSessions,
@@ -287,7 +300,7 @@ function useSessionLifecycleActions(
       setSelectedWorkspaceId(workspaceId);
       setCurrentSessionId(session.id);
       setPage(null);
-      reset();
+      reset(session.id);
       return session;
     },
     [client, refreshSessions, reset, setCurrentSessionId, setPage, setSelectedWorkspaceId],
@@ -297,16 +310,16 @@ function useSessionLifecycleActions(
     async (sessionId: string) => {
       setCurrentSessionId(sessionId);
       const epoch = catalog.navigationEpoch.current;
-      reset();
+      reset(sessionId);
       setPage(null);
       let result: OpenSessionResult;
       try { result = await client.call<OpenSessionResult>("session.open", { sessionId }); }
-      catch (cause) { if (epoch === catalog.navigationEpoch.current) setError(errorMessage(cause)); return; }
+      catch (cause) { setSessionError(sessionId, errorMessage(cause)); return; }
       if (epoch !== catalog.navigationEpoch.current) return;
       markSessionSeen(sessionId);
       setSelectedWorkspaceId(result.session.workspaceId);
       setPage(null);
-      load({
+      load(sessionId, {
         messages: result.messages,
         toolCalls: result.toolCalls,
         plan: result.plan ?? [],
@@ -318,7 +331,7 @@ function useSessionLifecycleActions(
         turnProgress: result.turnProgress ?? null,
       });
     },
-    [client, load, markSessionSeen, reset, setCurrentSessionId, setPage, setSelectedWorkspaceId, catalog.navigationEpoch, setError],
+    [client, load, markSessionSeen, reset, setCurrentSessionId, setPage, setSelectedWorkspaceId, catalog.navigationEpoch, setSessionError],
   );
 
   const deleteSession = useCallback(
@@ -328,14 +341,14 @@ function useSessionLifecycleActions(
         await refreshSessions();
         if (catalog.currentSessionId === sessionId) {
           setCurrentSessionId(null);
-          reset();
+          reset(null);
         }
       } catch (err) {
         console.error("Failed to delete session:", err);
-        setError(err instanceof Error ? err.message : "删除会话失败");
+        setSessionError(sessionId, errorMessage(err));
       }
     },
-    [client, catalog.currentSessionId, refreshSessions, reset, setCurrentSessionId, setError],
+    [client, catalog.currentSessionId, refreshSessions, reset, setCurrentSessionId, setSessionError],
   );
 
   const renameSession = useCallback(
@@ -345,10 +358,10 @@ function useSessionLifecycleActions(
         await refreshSessions();
       } catch (err) {
         console.error("Failed to rename session:", err);
-        setError(err instanceof Error ? err.message : "重命名会话失败");
+        setSessionError(sessionId, errorMessage(err));
       }
     },
-    [client, refreshSessions, setError],
+    [client, refreshSessions, setSessionError],
   );
 
   const setSessionPinned = useCallback(
@@ -358,10 +371,10 @@ function useSessionLifecycleActions(
         await refreshSessions();
       } catch (err) {
         console.error("Failed to pin/unpin session:", err);
-        setError(err instanceof Error ? err.message : "置顶会话失败");
+        setSessionError(sessionId, errorMessage(err));
       }
     },
-    [client, refreshSessions, setError],
+    [client, refreshSessions, setSessionError],
   );
 
   const setSessionArchived = useCallback(
@@ -371,14 +384,14 @@ function useSessionLifecycleActions(
         await refreshSessions();
         if (archived && catalog.currentSessionId === sessionId) {
           setCurrentSessionId(null);
-          reset();
+          reset(null);
         }
       } catch (err) {
         console.error("Failed to archive session:", err);
-        setError(err instanceof Error ? err.message : "归档会话失败");
+        setSessionError(sessionId, errorMessage(err));
       }
     },
-    [client, catalog.currentSessionId, refreshSessions, reset, setCurrentSessionId, setError],
+    [client, catalog.currentSessionId, refreshSessions, reset, setCurrentSessionId, setSessionError],
   );
 
   return {
@@ -535,9 +548,12 @@ function useInteractionActions(
 
 export function useMiniqApp() {
   const client = useRpcClient();
-  const [error, setError] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => new Set());
   const catalog = useCatalog(client);
+  const [sessionError, setError, setSessionError] = useSessionError(
+    catalog.currentSessionId ?? `draft:${catalog.selectedWorkspace?.id ?? ""}`,
+  );
   const sessionModel = useSessionModel(client, catalog.currentSessionId);
   const markSessionSeen = useCallback((sessionId: string) => {
     setUnreadSessionIds((current) => {
@@ -586,18 +602,18 @@ export function useMiniqApp() {
     refreshSessions: catalog.refreshSessions,
     onSessionStatusChanged: handleSessionStatusChanged,
     onSessionCompleted: handleSessionCompleted,
-    onError: setError,
+    onError: setSessionError,
   });
   const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls);
-  const preview = useFilePreview(catalog.currentWorkspace?.path);
+  const preview = useFilePreview(catalog.currentWorkspace?.path, catalog.currentSessionId);
   useTaskNotifications(client, catalog.sessions);
   const connection = useDaemonConnection({
     client,
     refreshWorkspaces: catalog.refreshWorkspaces,
     refreshSessions: catalog.refreshSessions,
-    onError: setError,
+    onError: setConnectionError,
   });
-  const updater = useAppUpdater(client, setError);
+  const updater = useAppUpdater(client, setConnectionError);
   const navigationActions = useNavigationActions(catalog, navigation, feed);
   const workspaceActions = useWorkspaceActions(client, catalog, setError);
   const lifecycle = useSessionLifecycleActions(
@@ -605,8 +621,8 @@ export function useMiniqApp() {
     catalog,
     navigation,
     feed,
-    setError,
     markSessionSeen,
+    setSessionError,
   );
   const turnActions = useTurnActions(client, catalog, lifecycle, setError, sessionModel.settings);
   const interactionActions = useInteractionActions(client, setError, review.refresh);
@@ -614,8 +630,9 @@ export function useMiniqApp() {
   useEffect(() => {
     const sessionId = catalog.currentSessionId;
     const epoch = connection.connectionEpoch;
-    if (!sessionId || epoch === 0 || epoch === lastResyncedConnection.current) return;
+    if (epoch === 0 || epoch === lastResyncedConnection.current) return;
     lastResyncedConnection.current = epoch;
+    if (!sessionId) return;
     void lifecycle.openSession(sessionId).catch((cause) => setError(errorMessage(cause)));
   }, [catalog.currentSessionId, connection.connectionEpoch, lifecycle, setError]);
   const busy =
@@ -625,8 +642,9 @@ export function useMiniqApp() {
   return {
     client,
     sessionModel,
-    error,
+    error: connectionError ?? sessionError,
     setError,
+    dismissError: () => { setConnectionError(null); setError(null); },
     busy,
     catalog,
     unreadSessionIds,

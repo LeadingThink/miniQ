@@ -40,7 +40,7 @@ export function AppStatusBar(props: {
         {connected
           ? `daemon v${health?.daemonVersion ?? "?"}`
           : app.connection.phase === "connecting"
-            ? "正在启动后台服务"
+            ? app.client.mode === "remote" ? "正在连接远程桌面" : "正在连接后台服务"
             : "连接中断，正在恢复"}
       </span>
       {currentSession && (
@@ -84,7 +84,7 @@ export function AppErrorBanner({ app }: { app: MiniqAppController }) {
         type="button"
         className="banner-close"
         aria-label="关闭错误提示"
-        onClick={() => app.setError(null)}
+        onClick={app.dismissError}
       >
         ✕
       </button>

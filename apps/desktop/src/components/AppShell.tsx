@@ -113,7 +113,7 @@ interface WorkbenchPageProps extends AppOnlyProps {
 function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
   return (
     <>
-      <AgentPanel key={app.catalog.currentSessionId} client={app.client} sessionId={app.catalog.currentSessionId!} busy={!!app.busy} />
+      <AgentPanel client={app.client} sessionId={app.catalog.currentSessionId!} busy={!!app.busy} />
       <Suspense
         fallback={
           <div className="timeline-loading">
@@ -124,7 +124,6 @@ function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
       >
         <Timeline
           client={app.client}
-          key={app.catalog.currentSessionId}
           title={app.catalog.currentSession?.title}
           messages={app.feed.messages}
           toolCalls={app.feed.toolCalls}
@@ -148,7 +147,6 @@ function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
         />
       </Suspense>
       <Composer
-        key={app.catalog.currentSessionId}
         modelSlot={<SessionModelControls client={app.client} model={app.sessionModel} busy={!!app.busy} />}
         sendBlocked={!app.sessionModel.ready || app.sessionModel.pending}
         busy={!!app.busy}
@@ -251,7 +249,7 @@ function MainPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
       return <PluginsPanel client={app.client} />;
     default:
       return app.catalog.currentSessionId ? (
-        <SessionPage app={app} onOpenFile={onOpenFile} onOpenUrl={onOpenUrl} />
+        <SessionPage key={app.catalog.currentSessionId} app={app} onOpenFile={onOpenFile} onOpenUrl={onOpenUrl} />
       ) : (
         <HeroPage app={app} />
       );
