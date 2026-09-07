@@ -73,6 +73,7 @@ impl DaemonAgentBridge {
                 ctx: self.child_context(workspace.clone(), &record.id, cancel.clone()),
                 cancel: cancel.clone(),
                 permission_policy: permission_policy(&request),
+                review_plan: Default::default(),
             };
             if request.mode.as_deref() == Some("plan") {
                 executor.ctx.set_plan_mode(true);

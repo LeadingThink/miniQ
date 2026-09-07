@@ -93,6 +93,14 @@ describe("Timeline execution flow", () => {
     expect(html).toContain("正在分析并准备下一步");
   });
 
+  it("restores an ended plan without claiming completion or spinning forever", () => {
+    const plan = [{ content: "render video", status: "in_progress" as const }];
+    expect(renderTimeline({ plan, busy: false })).toContain("本轮已结束，步骤待核对");
+    expect(renderTimeline({ plan, busy: false })).not.toContain("activity-spinner");
+    expect(renderTimeline({ plan, busy: true })).toContain("activity-spinner");
+    expect(renderTimeline({ plan, busy: true })).not.toContain("本轮已结束");
+  });
+
   it("shows retries alongside active tools but not for an idle session", () => {
     const turnProgress: TurnProgress = {
       phase: "waiting_retry",
