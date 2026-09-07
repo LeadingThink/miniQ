@@ -4,6 +4,7 @@ import type { DaemonEvent } from "./types";
 import { isTauriRuntime } from "./runtime";
 import { decryptRemotePayload, deriveRemoteIdentity, encryptRemotePayload } from "./remoteCrypto";
 import { loadRemoteCredentials, type RemoteCredentials } from "./remoteAccess";
+import { RemotePayloadReader } from "./remotePayload";
 
 export interface LocalConnectionInfo {
   kind: "local";
@@ -26,6 +27,7 @@ type Pending = {
   resolve: (value: unknown) => void;
   reject: (err: Error) => void;
   timer: number;
+  method: string;
 };
 
 const CONNECTION_TIMEOUT_MS = 15_000;
@@ -38,6 +40,7 @@ export class RpcClient {
   private nextId = 1;
   private eventListeners = new Set<(event: DaemonEvent) => void>();
   private statusListeners = new Set<(connected: boolean) => void>();
+  private resyncListeners = new Set<() => void>();
   private connectionMode: "local" | "remote" = "local";
   private remoteKey: CryptoKey | null = null;
 
@@ -46,6 +49,7 @@ export class RpcClient {
    * the second caller genuinely waits until the socket is open instead of
    * returning early and firing calls against a null socket. */
   async connect(info: ConnectionInfo): Promise<void> {
+    if (this.connectPromise) return this.connectPromise;
     if (this.ws?.readyState === WebSocket.OPEN) return;
     if (this.ws) {
       const staleSocket = this.ws;
@@ -54,7 +58,6 @@ export class RpcClient {
       staleSocket.close(4000, "stale connection");
       this.notifyStatus(false);
     }
-    if (this.connectPromise) return this.connectPromise;
     this.connectionMode = info.kind;
     this.connectPromise = info.kind === "remote" ? this.connectRemote(info) : this.connectLocal(info);
     try {
@@ -93,8 +96,9 @@ export class RpcClient {
     onOpen: (socket: WebSocket, resolve: () => void) => void,
     remoteKey?: CryptoKey,
   ): Promise<void> {
-    this.connectPromise = new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(url);
+      const reader = new RemotePayloadReader();
       let remoteMessageQueue: Promise<void> = Promise.resolve();
       let settled = false;
       const finish = () => {
@@ -127,6 +131,7 @@ export class RpcClient {
       };
       ws.onerror = () => {
         fail(new Error(this.connectionMode === "remote" ? "无法连接 miniQ relay" : "无法连接 miniQ daemon"));
+        ws.close(4000, "transport error");
       };
       ws.onclose = () => {
         window.clearTimeout(connectTimer);
@@ -134,12 +139,12 @@ export class RpcClient {
         if (this.ws === ws) {
           this.ws = null;
           this.remoteKey = null;
-          this.notifyStatus(false);
           for (const p of this.pending.values()) {
             window.clearTimeout(p.timer);
             p.reject(new Error("connection closed"));
           }
           this.pending.clear();
+          this.notifyStatus(false);
         }
       };
       ws.onmessage = (message) => {
@@ -176,7 +181,11 @@ export class RpcClient {
               String(envelope.ciphertext ?? ""),
             );
             if (this.ws !== ws) return;
-            this.onMessage(JSON.stringify(payload));
+            const completed = reader.read(payload);
+            if (payload.type === "remote_chunk" && payload.requestId != null) {
+              this.refreshTimeout(String(payload.requestId));
+            }
+            for (const item of completed) this.onMessage(JSON.stringify(item));
           })
           .catch((error) => {
             fail(error instanceof Error ? error : new Error(String(error)));
@@ -184,7 +193,6 @@ export class RpcClient {
           });
       };
     });
-    return this.connectPromise;
   }
 
   get connected(): boolean {
@@ -203,8 +211,12 @@ export class RpcClient {
       return;
     }
     if (typeof data.type === "string") {
+      if (data.type === "remote_resync") {
+        for (const listener of this.resyncListeners) this.deliver(listener);
+        return;
+      }
       for (const listener of this.eventListeners) {
-        listener(data as unknown as DaemonEvent);
+        this.deliver(() => listener(data as unknown as DaemonEvent));
       }
       return;
     }
@@ -231,7 +243,7 @@ export class RpcClient {
         if (!this.pending.delete(id)) return;
         reject(new Error(`请求 ${method} 超时`));
       }, RPC_TIMEOUT_MS);
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
+      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer, method });
       if (this.connectionMode === "local") {
         try {
           if (ws.readyState !== WebSocket.OPEN) throw new Error("daemon 连接已关闭");
@@ -274,9 +286,29 @@ export class RpcClient {
     return () => this.statusListeners.delete(listener);
   }
 
+  onResync(listener: () => void): () => void {
+    this.resyncListeners.add(listener);
+    return () => this.resyncListeners.delete(listener);
+  }
+
+  private refreshTimeout(id: string) {
+    const pending = this.pending.get(id);
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pending.timer = window.setTimeout(() => {
+      this.pending.delete(id);
+      pending.reject(new Error(`请求 ${pending.method} 超时`));
+    }, RPC_TIMEOUT_MS);
+  }
+
+  private deliver(listener: () => void) {
+    try { listener(); }
+    catch (error) { console.error("miniQ event listener failed", error); }
+  }
+
   private notifyStatus(connected: boolean) {
     for (const listener of this.statusListeners) {
-      listener(connected);
+      this.deliver(() => listener(connected));
     }
   }
 }

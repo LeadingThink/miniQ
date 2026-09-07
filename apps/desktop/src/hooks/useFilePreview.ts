@@ -32,7 +32,7 @@ const EMPTY_PREVIEW: FilePreviewState = {
   open: false,
 };
 
-export function useFilePreview(workspacePath?: string | null) {
+export function useFilePreview(workspacePath?: string | null, sessionId?: string | null) {
   const [state, setState] = useState<FilePreviewState>(EMPTY_PREVIEW);
   const requestSequence = useRef(0);
 
@@ -86,7 +86,7 @@ export function useFilePreview(workspacePath?: string | null) {
   useEffect(() => {
     requestSequence.current += 1;
     setState(EMPTY_PREVIEW);
-  }, [workspacePath]);
+  }, [workspacePath, sessionId]);
 
   return { state, openFile, close };
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { RpcClient } from "../rpc";
 import type {
   Approval,
@@ -47,6 +47,11 @@ type SessionFeedAction =
   | { kind: "reset" }
   | { kind: "load"; feed: LoadedSessionFeed }
   | { kind: "daemon"; event: DaemonEvent; receivedAt: string };
+
+interface ScopedFeed {
+  sessionId: string | null;
+  feed: SessionFeedState;
+}
 
 const EMPTY_FEED: SessionFeedState = {
   messages: [],
@@ -198,11 +203,17 @@ interface SessionFeedOptions {
   refreshSessions: () => Promise<void>;
   onSessionStatusChanged: (sessionId: string, status: SessionStatus) => void;
   onSessionCompleted: (sessionId: string) => void;
-  onError: (message: string) => void;
+  onError: (sessionId: string, message: string | null) => void;
 }
 
 export function useSessionFeed(options: SessionFeedOptions) {
-  const [state, dispatch] = useReducer(sessionFeedReducer, EMPTY_FEED);
+  const [state, dispatch] = useReducer(
+    (state: ScopedFeed, action: SessionFeedAction & { sessionId: string | null }): ScopedFeed => ({
+      sessionId: action.sessionId,
+      feed: sessionFeedReducer(state.sessionId === action.sessionId ? state.feed : EMPTY_FEED, action),
+    }),
+    { sessionId: null, feed: EMPTY_FEED },
+  );
   const {
     client,
     currentSessionId,
@@ -211,9 +222,14 @@ export function useSessionFeed(options: SessionFeedOptions) {
     onSessionCompleted,
     onError,
   } = options;
+  const activeSession = useRef(currentSessionId);
+  activeSession.current = currentSessionId;
 
   useEffect(() => {
     return client.onEvent((event) => {
+      if (activeSession.current !== currentSessionId) return;
+      if (event.type === "turn_failed") onError(event.sessionId, event.error);
+      if (event.type === "message_created" && event.message.role === "user") onError(event.sessionId, null);
       // Workspace-level events have no session context.
       if (
         event.type === "workspace_deleted" ||
@@ -248,20 +264,25 @@ export function useSessionFeed(options: SessionFeedOptions) {
       if (event.type === "session_status_changed") {
         onSessionStatusChanged(event.sessionId, event.status);
       }
-      if (event.type === "turn_failed") onError(event.error);
       dispatch({
         kind: "daemon",
+        sessionId: currentSessionId,
         event,
         receivedAt: new Date().toISOString(),
       });
     });
   }, [client, currentSessionId, onError, onSessionCompleted, onSessionStatusChanged, refreshSessions]);
 
-  const reset = useCallback(() => dispatch({ kind: "reset" }), []);
+  const reset = useCallback((sessionId: string | null = activeSession.current) => {
+    activeSession.current = sessionId;
+    dispatch({ kind: "reset", sessionId });
+  }, []);
   const load = useCallback(
-    (feed: LoadedSessionFeed) => dispatch({ kind: "load", feed }),
+    (sessionId: string, feed: LoadedSessionFeed) => {
+      if (sessionId === activeSession.current) dispatch({ kind: "load", sessionId, feed });
+    },
     [],
   );
 
-  return { ...state, reset, load };
+  return { ...(state.sessionId === currentSessionId ? state.feed : EMPTY_FEED), reset, load };
 }

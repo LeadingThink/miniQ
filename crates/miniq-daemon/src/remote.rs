@@ -11,12 +11,12 @@ use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use futures_util::{SinkExt, StreamExt};
 use miniq_protocol::{ErrorCode, RequestId, RpcError, RpcRequest, RpcResponse};
 use rand::distr::Alphanumeric;
 use rand::{Rng, RngCore};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+mod connection;
+mod transport;
 use sha2::{Digest, Sha256};
 use tokio_tungstenite::tungstenite::Message;
 
@@ -215,7 +215,7 @@ async fn connection_loop(state: AppState) {
             0,
             None,
         );
-        match run_connection(&state, &config).await {
+        match connection::run(&state, &config).await {
             Ok(()) => retry_seconds = 1,
             Err(error) => {
                 let message = sanitize_connection_error(&error.to_string());
@@ -254,141 +254,6 @@ impl ActiveConfig {
     }
 }
 
-async fn run_connection(state: &AppState, config: &ActiveConfig) -> anyhow::Result<()> {
-    let (mut socket, _) = tokio::time::timeout(
-        Duration::from_secs(15),
-        tokio_tungstenite::connect_async(&config.relay_url),
-    )
-    .await
-    .map_err(|_| anyhow::anyhow!("连接 relay 超时"))??;
-    let identity = derive_identity(&config.api_key);
-    socket
-        .send(Message::Text(
-            json!({
-                "type": "hello",
-                "protocol": PROTOCOL_VERSION,
-                "role": "desktop",
-                "roomId": identity.room_id,
-                "authToken": identity.auth_token,
-                "deviceId": config.device_id,
-                "deviceName": config.device_name,
-            })
-            .to_string()
-            .into(),
-        ))
-        .await?;
-
-    let first = tokio::time::timeout(Duration::from_secs(10), socket.next())
-        .await
-        .map_err(|_| anyhow::anyhow!("relay 握手超时"))?
-        .ok_or_else(|| anyhow::anyhow!("relay 在握手时关闭连接"))??;
-    let ready = parse_relay_text(first)?;
-    if ready.kind == "error" {
-        anyhow::bail!(ready.message);
-    }
-    if ready.kind != "ready" || !ready.desktop_online {
-        anyhow::bail!("relay 返回了无效握手响应");
-    }
-    set_status(
-        state,
-        RemoteConnectionState::Connected,
-        config.relay_url.clone(),
-        ready.mobile_clients,
-        None,
-    );
-    tracing::info!(relay = %config.relay_url, "miniQ remote relay connected");
-
-    let mut events = state.events.subscribe();
-    let mut config_check = tokio::time::interval(Duration::from_secs(2));
-    let mut seen = SeenNonces::default();
-    loop {
-        tokio::select! {
-            _ = state.shutdown.cancelled() => return Ok(()),
-            _ = config_check.tick() => {
-                if current_fingerprint(state) != Some(config.fingerprint) {
-                    return Ok(());
-                }
-            }
-            event = events.recv() => {
-                match event {
-                    Ok(event) => {
-                        let payload = serde_json::to_vec(&event)?;
-                        send_encrypted(&mut socket, &identity.cipher, "mobiles", &payload).await?;
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
-                        tracing::warn!(count, "remote client missed live events; durable RPC state remains available");
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return Ok(()),
-                }
-            }
-            incoming = socket.next() => {
-                let message = incoming.ok_or_else(|| anyhow::anyhow!("relay 已关闭连接"))??;
-                match message {
-                    Message::Text(_) => handle_relay_message(state, &mut socket, &identity.cipher, message, &mut seen).await?,
-                    Message::Ping(payload) => socket.send(Message::Pong(payload)).await?,
-                    Message::Close(_) => anyhow::bail!("relay 已关闭连接"),
-                    _ => {}
-                }
-            }
-        }
-    }
-}
-
-async fn handle_relay_message<S>(
-    state: &AppState,
-    socket: &mut tokio_tungstenite::WebSocketStream<S>,
-    cipher: &Aes256Gcm,
-    message: Message,
-    seen: &mut SeenNonces,
-) -> anyhow::Result<()>
-where
-    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
-{
-    let frame = parse_relay_text(message)?;
-    match frame.kind.as_str() {
-        "presence" => {
-            set_status(
-                state,
-                RemoteConnectionState::Connected,
-                status(state).relay_url,
-                frame.mobile_clients,
-                None,
-            );
-        }
-        "frame" if !frame.source.is_empty() => {
-            if !seen.insert(format!("{}:{}", frame.source, frame.nonce)) {
-                return Ok(());
-            }
-            let response =
-                match decrypt_payload(cipher, &frame.nonce, &frame.ciphertext).and_then(|raw| {
-                    serde_json::from_slice::<RpcRequest>(&raw).map_err(anyhow::Error::from)
-                }) {
-                    Ok(request) if remote_method_allowed(&request.method) => {
-                        crate::gateway::dispatch(state, request).await
-                    }
-                    Ok(request) => RpcResponse::err(
-                        request.id,
-                        RpcError::new(ErrorCode::Unauthorized, "该管理操作只能在桌面端执行"),
-                    ),
-                    Err(error) => RpcResponse::err(
-                        RequestId::Number(0),
-                        RpcError::new(ErrorCode::ParseError, format!("远程请求无效: {error}")),
-                    ),
-                };
-            send_encrypted(
-                socket,
-                cipher,
-                &frame.source,
-                &serde_json::to_vec(&response)?,
-            )
-            .await?;
-        }
-        "error" => anyhow::bail!(frame.message),
-        _ => {}
-    }
-    Ok(())
-}
-
 fn remote_method_allowed(method: &str) -> bool {
     !matches!(
         method,
@@ -406,31 +271,6 @@ fn parse_relay_text(message: Message) -> anyhow::Result<RelayFrame> {
         anyhow::bail!("relay 返回了非文本握手");
     };
     Ok(serde_json::from_str(&text)?)
-}
-
-async fn send_encrypted<S>(
-    socket: &mut tokio_tungstenite::WebSocketStream<S>,
-    cipher: &Aes256Gcm,
-    target: &str,
-    payload: &[u8],
-) -> anyhow::Result<()>
-where
-    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
-{
-    let (nonce, ciphertext) = encrypt_payload(cipher, payload)?;
-    socket
-        .send(Message::Text(
-            json!({
-                "type": "frame",
-                "target": target,
-                "nonce": nonce,
-                "ciphertext": ciphertext,
-            })
-            .to_string()
-            .into(),
-        ))
-        .await?;
-    Ok(())
 }
 
 fn derive_identity(api_key: &str) -> CryptoIdentity {

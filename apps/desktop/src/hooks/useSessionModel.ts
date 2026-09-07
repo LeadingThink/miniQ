@@ -5,6 +5,7 @@ import {
   type SessionModelSettings,
 } from "../modelSelection";
 import type { RpcClient } from "../rpc";
+import { useSessionError } from "./useSessionError";
 
 export function useSessionModel(client: RpcClient, sessionId: string | null) {
   const [result, setResult] = useState<SessionModelResult>({
@@ -17,11 +18,13 @@ export function useSessionModel(client: RpcClient, sessionId: string | null) {
   );
   const currentSession = useRef(sessionId);
   currentSession.current = sessionId;
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [pendingSessions, setPendingSessions] = useState(
+    new Set<string | null>()
+  );
+  const [error, setError] = useSessionError(sessionId ?? "draft");
   const newSessionSelection = useRef(DEFAULT_MODEL_SETTINGS);
   const generation = useRef(0);
-  const updatePending = useRef(false);
+  const updatePending = useRef(new Set<string | null>());
 
   const reload = useCallback(async () => {
     const request = ++generation.current;
@@ -57,7 +60,7 @@ export function useSessionModel(client: RpcClient, sessionId: string | null) {
     } catch (cause) {
       if (request === generation.current) setError(String(cause));
     }
-  }, [client, sessionId]);
+  }, [client, sessionId, setError]);
 
   useEffect(() => {
     if (client.connected) void reload();
@@ -83,10 +86,10 @@ export function useSessionModel(client: RpcClient, sessionId: string | null) {
   }, [client, reload, sessionId]);
 
   const update = async (settings: SessionModelSettings) => {
-    if (updatePending.current) return;
-    updatePending.current = true;
+    if (updatePending.current.has(sessionId)) return;
+    updatePending.current.add(sessionId);
     const request = generation.current;
-    setPending(true);
+    setPendingSessions(new Set(updatePending.current));
     try {
       if (sessionId) {
         const next = await client.call<SessionModelResult>(
@@ -103,14 +106,16 @@ export function useSessionModel(client: RpcClient, sessionId: string | null) {
       if (currentSession.current === sessionId) setError(String(cause));
       throw cause;
     } finally {
-      updatePending.current = false;
-      setPending(false);
+      updatePending.current.delete(sessionId);
+      setPendingSessions(new Set(updatePending.current));
     }
   };
   return {
-    ...result,
+    ...(loadedSession === sessionId
+      ? result
+      : { settings: DEFAULT_MODEL_SETTINGS, effective: null }),
     ready: ready && loadedSession === sessionId,
-    pending,
+    pending: pendingSessions.has(sessionId),
     error,
     update,
     reload,

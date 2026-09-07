@@ -151,3 +151,72 @@ it("shows a new-session protocol override even when the model is inherited", asy
   await act(async () => hook.result.current.update(DEFAULT_MODEL_SETTINGS));
   expect(hook.result.current.effective?.apiProtocol).toBe("responses");
 });
+
+it("hides the previous model and error while the next session is loading", async () => {
+  let resolveB!: (value: SessionModelResult) => void;
+  const call = vi.fn((method, params) => {
+    if (method === "session.modelUpdate")
+      return Promise.reject(new Error("A configuration failed"));
+    if (params.sessionId === "a") return Promise.resolve(result("model-a"));
+    return new Promise<SessionModelResult>((resolve) => {
+      resolveB = resolve;
+    });
+  });
+  const { client } = fakeClient(call);
+  const hook = renderHook(({ id }) => useSessionModel(client, id), {
+    initialProps: { id: "a" },
+  });
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  await act(async () => {
+    await hook.result.current.update(DEFAULT_MODEL_SETTINGS).catch(() => {});
+  });
+  expect(hook.result.current.error).toContain("A configuration failed");
+  hook.rerender({ id: "b" });
+  expect(hook.result.current.error).toBeNull();
+  expect(hook.result.current.effective).toBeNull();
+  expect(hook.result.current.settings.model).toBeNull();
+  await act(async () => {
+    resolveB(result("model-b"));
+  });
+  expect(hook.result.current.effective?.model).toBe("model-b");
+});
+
+it("does not let another session's pending update block or finish the current update", async () => {
+  const complete = new Map<string, (value: SessionModelResult) => void>();
+  const call = vi.fn((method, params) =>
+    method === "session.modelUpdate"
+      ? new Promise<SessionModelResult>((resolve) => {
+          complete.set(params.sessionId, resolve);
+        })
+      : Promise.resolve(result(params.sessionId))
+  );
+  const { client } = fakeClient(call);
+  const hook = renderHook(({ id }) => useSessionModel(client, id), {
+    initialProps: { id: "a" },
+  });
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  let updateA!: Promise<void>;
+  let updateB!: Promise<void>;
+  act(() => {
+    updateA = hook.result.current.update(DEFAULT_MODEL_SETTINGS);
+  });
+  hook.rerender({ id: "b" });
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  expect(hook.result.current.pending).toBe(false);
+  act(() => {
+    updateB = hook.result.current.update(DEFAULT_MODEL_SETTINGS);
+  });
+  expect(hook.result.current.pending).toBe(true);
+  await act(async () => {
+    complete.get("a")!(result("updated-a"));
+    await updateA;
+  });
+  expect(hook.result.current.pending).toBe(true);
+  expect(hook.result.current.effective?.model).toBe("b");
+  await act(async () => {
+    complete.get("b")!(result("updated-b"));
+    await updateB;
+  });
+  expect(hook.result.current.pending).toBe(false);
+  expect(hook.result.current.effective?.model).toBe("updated-b");
+});
