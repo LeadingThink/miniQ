@@ -173,7 +173,7 @@ it("acknowledges a viewed failure persistently without erasing task evidence or 
         session.id === "a" ? { ...session, status, updatedAt: "failure-1" } : session) };
     }
     if (method === "session.open" && params.sessionId === "a") {
-      return { ...result, session: { ...result.session, status, updatedAt: "failure-1" } };
+      return { ...result, canAcknowledgeFailure: true, session: { ...result.session, status, updatedAt: "failure-1" } };
     }
     return result;
   });
@@ -197,6 +197,7 @@ it("does not acknowledge background resyncs, failed loads, or a snapshot superse
   let resolveOpen!: (value: unknown) => void;
   const snapshot = await original("session.open", { sessionId: "a" });
   snapshot.session = { ...snapshot.session, status: "failed", updatedAt: "failure-1" };
+  snapshot.canAcknowledgeFailure = true;
   let mode = "resync";
   fake.call.mockImplementation((method, params) => {
     if (method !== "session.open" || params.sessionId !== "a") return original(method, params);
@@ -218,6 +219,22 @@ it("does not acknowledge background resyncs, failed loads, or a snapshot superse
   expect(hook.result.current.feed.streamingText).toBe("b live");
   expect(fake.call.mock.calls.filter(([method]) => method === "session.acknowledgeFailure")).toHaveLength(0);
   expect(fake.connect).toHaveBeenCalledTimes(1);
+});
+
+it("opens failures without unsupported requests while the desktop is awaiting its update", async () => {
+  const original = fake.call.getMockImplementation()!;
+  fake.call.mockImplementation(async (method, params) => {
+    const result = await original(method, params);
+    return method === "session.open"
+      ? { ...result, session: { ...result.session, status: "failed" } }
+      : result;
+  });
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
+  await act(async () => { await hook.result.current.actions.openSession("a"); });
+  expect(hook.result.current.error).toBeNull();
+  expect(hook.result.current.feed.plan).toHaveLength(1);
+  expect(fake.call.mock.calls.some(([method]) => method === "session.acknowledgeFailure")).toBe(false);
 });
 
 it("unmounts the complete session page without orphaned child-task DOM nodes", async () => {

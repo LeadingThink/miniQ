@@ -266,6 +266,7 @@ function useWorkspaceActions(
 
 interface OpenSessionResult {
   session: Session;
+  canAcknowledgeFailure?: boolean;
   messages: Message[];
   toolCalls: ToolCall[];
   artifacts: Artifact[];
@@ -330,7 +331,7 @@ function useSessionLifecycleActions(
         streamingText: result.streamingText ?? "",
         turnProgress: result.turnProgress ?? null,
       });
-      if (markSeen && result.session.status === "failed") {
+      if (markSeen && result.canAcknowledgeFailure && result.session.status === "failed") {
         try {
           await client.call("session.acknowledgeFailure", {
             sessionId,

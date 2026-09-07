@@ -59,6 +59,7 @@ async fn acknowledgement_is_persistent_scoped_and_keeps_history_and_progress() {
     // append_message can update metadata; acknowledge the actual opened snapshot.
     let opened = super::super::session::open(&state, Some(json!({"sessionId":a}))).unwrap();
     assert_eq!(opened["session"]["status"], "failed");
+    assert_eq!(opened["canAcknowledgeFailure"], true);
     let updated_at = opened["session"]["updatedAt"].as_str().unwrap();
     let mut events = state.events.subscribe();
     let request = serde_json::from_value::<RpcRequest>(json!({
