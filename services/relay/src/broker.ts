@@ -1,5 +1,6 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type WebSocket from "ws";
+import { MAX_BLOB_BYTES, type TicketIssuer } from "./blobStore.js";
 
 const MAX_MOBILES_PER_ROOM = 8;
 const MAX_MESSAGES_PER_MINUTE = 240;
@@ -25,11 +26,13 @@ interface FrameMessage {
 
 interface Peer {
   id: string;
+  connectionId: string;
   role: "desktop" | "mobile";
   roomId: string;
   socket: WebSocket;
   windowStartedAt: number;
   messagesInWindow: number;
+  objectBytesInWindow: number;
 }
 
 interface Room {
@@ -41,6 +44,7 @@ interface Room {
 export class RelayBroker {
   private readonly rooms = new Map<string, Room>();
   private readonly peers = new WeakMap<WebSocket, Peer>();
+  constructor(private readonly blobs?: TicketIssuer) {}
 
   register(socket: WebSocket, raw: unknown): boolean {
     const hello = parseHello(raw);
@@ -73,7 +77,7 @@ export class RelayBroker {
       };
       this.rooms.set(hello.roomId, room);
       this.peers.set(socket, peer);
-      send(socket, ready(peer.id, true, room.mobiles.size));
+      send(socket, { ...ready(peer.id, true, room.mobiles.size), blobStorage: this.blobs?.enabledFor(peer.roomId) ?? false });
       this.broadcastPresence(room);
       return true;
     }
@@ -90,7 +94,7 @@ export class RelayBroker {
     const peer = createPeer(socket, "mobile", hello.roomId, `mobile-${randomUUID()}`);
     existing.mobiles.set(peer.id, peer);
     this.peers.set(socket, peer);
-    send(socket, ready(peer.id, true, existing.mobiles.size));
+    send(socket, { ...ready(peer.id, true, existing.mobiles.size), desktopConnectionId: existing.desktop.connectionId });
     this.broadcastPresence(existing);
     return true;
   }
@@ -103,6 +107,10 @@ export class RelayBroker {
     }
     if (!consumeRateLimit(peer)) {
       this.reject(socket, "rate_limited", "消息过于频繁");
+      return;
+    }
+    if (isObject(raw) && raw.type === "blob_ticket") {
+      void this.objectTicket(peer, raw);
       return;
     }
     const frame = parseFrame(raw);
@@ -153,11 +161,31 @@ export class RelayBroker {
     return this.rooms.size;
   }
 
+  private async objectTicket(peer: Peer, raw: Record<string, unknown>): Promise<void> {
+    const requestId = raw.requestId;
+    const bytes = raw.bytes;
+    if (typeof requestId !== "string" || requestId.length > 80) return;
+    const room = this.rooms.get(peer.roomId);
+    if (peer.role !== "desktop" || room?.desktop !== peer || !this.blobs?.enabledFor(peer.roomId) || !Number.isSafeInteger(bytes) || (bytes as number) < 16 || (bytes as number) > MAX_BLOB_BYTES || peer.objectBytesInWindow + (bytes as number) > 128 * 1024 * 1024) {
+      send(peer.socket, { type: "blob_ticket", requestId, error: "Object transfer unavailable" });
+      return;
+    }
+    peer.objectBytesInWindow += bytes as number;
+    try {
+      const ticket = await this.blobs.ticket(peer.roomId, bytes as number);
+      if (this.rooms.get(peer.roomId)?.desktop === peer) send(peer.socket, { type: "blob_ticket", requestId, ticket });
+    } catch {
+      send(peer.socket, { type: "blob_ticket", requestId, error: "Object transfer unavailable" });
+    }
+  }
+
   private broadcastPresence(room: Room): void {
     const message = {
       type: "presence",
       desktopOnline: true,
+      desktopConnectionId: room.desktop.connectionId,
       mobileClients: room.mobiles.size,
+      mobileIds: [...room.mobiles.keys()],
     };
     send(room.desktop.socket, message);
     for (const mobile of room.mobiles.values()) send(mobile.socket, message);
@@ -194,7 +222,7 @@ function parseFrame(raw: unknown): FrameMessage | null {
 }
 
 function createPeer(socket: WebSocket, role: Peer["role"], roomId: string, id: string): Peer {
-  return { id, role, roomId, socket, windowStartedAt: Date.now(), messagesInWindow: 0 };
+  return { id, connectionId: randomUUID(), role, roomId, socket, windowStartedAt: Date.now(), messagesInWindow: 0, objectBytesInWindow: 0 };
 }
 
 function consumeRateLimit(peer: Peer): boolean {
@@ -202,6 +230,7 @@ function consumeRateLimit(peer: Peer): boolean {
   if (now - peer.windowStartedAt >= 60_000) {
     peer.windowStartedAt = now;
     peer.messagesInWindow = 0;
+    peer.objectBytesInWindow = 0;
   }
   peer.messagesInWindow += 1;
   return peer.messagesInWindow <= MAX_MESSAGES_PER_MINUTE;

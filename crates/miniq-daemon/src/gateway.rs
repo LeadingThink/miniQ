@@ -18,6 +18,7 @@ mod schedule;
 mod session;
 mod session_attention;
 mod session_diff;
+mod session_history;
 mod session_model;
 mod settings;
 mod skill;
@@ -66,6 +67,9 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.create" => session::create(state, req.params),
         "session.list" => session::list(state, req.params),
         "session.open" => session::open(state, req.params),
+        "session.history" => session_history::page(state, req.params),
+        "session.sync" => session_history::sync(state, req.params),
+        "tool.detail" => session_history::tool_detail(state, req.params),
         "session.acknowledgeFailure" => session_attention::acknowledge_failure(state, req.params),
         "session.modelGet" => session_model::get(state, req.params),
         "session.modelUpdate" => session_model::update(state, req.params).await,

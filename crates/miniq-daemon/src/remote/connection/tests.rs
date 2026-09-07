@@ -65,9 +65,16 @@ async fn next(socket: &mut Socket) -> Message {
 }
 
 async fn request(socket: &mut Socket, id: &str, method: &str, params: Value) {
+    send_value(
+        socket,
+        json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}),
+    )
+    .await;
+}
+
+async fn send_value(socket: &mut Socket, value: Value) {
     let identity = derive_identity("test-key");
-    let raw = serde_json::to_vec(&json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
-        .unwrap();
+    let raw = serde_json::to_vec(&value).unwrap();
     let (nonce, ciphertext) = encrypt_payload(&identity.cipher, &raw).unwrap();
     socket
         .send(Message::Text(
@@ -165,6 +172,11 @@ async fn opening_a_large_failed_session_keeps_the_socket_and_heartbeat_alive() {
 #[tokio::test]
 async fn rapid_task_events_are_batched_instead_of_consuming_the_relay_frame_budget() {
     let (state, mut socket, task) = start().await;
+    send_value(
+        &mut socket,
+        json!({"type":"remote_select", "sessionId":"running"}),
+    )
+    .await;
     request(&mut socket, "ready", "daemon.health", Value::Null).await;
     assert_eq!(decrypted(next(&mut socket).await)["id"], "ready");
     for i in 0..300 {
@@ -199,6 +211,11 @@ async fn mobile_acknowledgements_and_retry_output_preserve_the_remote_connection
         .update_session_status(&session.id, miniq_protocol::SessionStatus::Failed)
         .unwrap();
     let failed = state.store.get_session(&session.id).unwrap();
+    send_value(
+        &mut socket,
+        json!({"type":"remote_select", "sessionId":session.id}),
+    )
+    .await;
     request(
         &mut socket,
         "ack",

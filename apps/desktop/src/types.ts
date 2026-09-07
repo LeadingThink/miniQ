@@ -163,6 +163,15 @@ export interface ToolCall {
   status: ToolCallStatus;
   createdAt: string;
   completedAt?: string;
+  payloadDeferred?: boolean;
+  live?: boolean;
+}
+
+export interface HistoryCursor { at: string; id: string }
+export interface HistoryPage {
+  messages: Message[];
+  toolCalls: ToolCall[];
+  nextCursor: HistoryCursor | null;
 }
 
 export interface Approval {
@@ -292,7 +301,9 @@ export interface ScheduledTask {
   createdAt: string;
 }
 
-export type DaemonEvent =
+export interface EventCursor { epoch: string; sequence: number }
+
+export type DaemonEvent = { eventCursor?: EventCursor; payloadDeferred?: boolean } & (
   | { type: "model_settings_changed"; sessionId: string; settings: import("./modelSelection").SessionModelSettings }
   | { type: "session_status_changed"; sessionId: string; status: SessionStatus }
   | { type: "turn_progress_changed"; sessionId: string; progress: TurnProgress }
@@ -341,4 +352,4 @@ export type DaemonEvent =
   | { type: "session_pinned_changed"; sessionId: string; pinned: boolean }
   | { type: "session_archived_changed"; sessionId: string; archived: boolean }
   | { type: "queue_changed"; sessionId: string; queue: QueuedMessage[] }
-  | { type: "plugins_changed"; plugins: PluginInfo[] };
+  | { type: "plugins_changed"; plugins: PluginInfo[] });

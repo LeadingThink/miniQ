@@ -63,7 +63,7 @@ async fn ws_upgrade(
 async fn handle_socket(socket: WebSocket, state: AppState) {
     let shutdown = state.shutdown.clone();
     let (mut sink, mut stream) = socket.split();
-    let mut events = state.events.subscribe();
+    let mut events = state.live_events.subscribe();
     // Channel that serializes everything written to the sink: RPC responses
     // and broadcast events both go through here.
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(256);
@@ -81,15 +81,24 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         loop {
             match events.recv().await {
                 Ok(event) => {
-                    let Ok(text) = serde_json::to_string(&event) else {
+                    let Ok(mut value) = serde_json::to_value(&event.original) else {
                         continue;
                     };
+                    value["eventCursor"] = event.projected["eventCursor"].clone();
+                    let text = value.to_string();
                     if event_tx.send(text).await.is_err() {
                         break;
                     }
                 }
-                // Slow consumer: skip missed events, keep the connection.
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    if event_tx
+                        .send(serde_json::json!({"type":"remote_resync"}).to_string())
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             }
         }

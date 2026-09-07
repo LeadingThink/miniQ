@@ -1044,3 +1044,13 @@
   from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
 }
+ .history-pages, .history-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  font-size: 12px;
+ }
+ .history-pages > button { display: inline-flex; align-items: center; gap: 6px; }

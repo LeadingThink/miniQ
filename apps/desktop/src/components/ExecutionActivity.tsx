@@ -5,6 +5,7 @@ import {
   CircleX,
   LoaderCircle,
   RotateCcw,
+  RefreshCw,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { PlanTask, ToolCall, TurnProgress } from "../types";
@@ -12,6 +13,7 @@ import { RetryNotice } from "./RetryNotice";
 import { ToolPayload } from "./ToolPayload";
 import { ComputerObservation } from "./ComputerObservation";
 import type { RpcClient } from "../rpc";
+import { useToolDetail } from "../hooks/useToolDetail";
 
 interface ToolAction {
   running: string;
@@ -114,9 +116,11 @@ export function ToolStep(props: {
   call: ToolCall;
   onRollback: (checkpointId: string) => void;
 }) {
-  const [open, setOpen] = useState(props.call.status === "failed");
-  useEffect(() => { if (props.call.status === "failed") setOpen(true); }, [props.call.status]);
-  const { call } = props;
+  const needsAttention = props.call.status === "failed" && (!props.call.payloadDeferred || props.call.live === true);
+  const [open, setOpen] = useState(needsAttention);
+  useEffect(() => { if (needsAttention) setOpen(true); }, [needsAttention]);
+  const detail = useToolDetail(props.client, props.call, open);
+  const { call } = detail;
   const running = call.status === "running" || call.status === "waiting_approval";
   const checkpointId =
     call.output && typeof call.output === "object"
@@ -171,11 +175,13 @@ export function ToolStep(props: {
       {open && (
         <div className="tool-step-body">
           <code className="tool-identity">{call.toolName}</code>
-          {props.client && <ComputerObservation call={call} client={props.client} />}
-          <ToolPayload label="输入" value={call.input} />
-          {call.output !== undefined && call.output !== null && (
-            <ToolPayload label="结果" value={call.output} />
-          )}
+          {detail.loading && <div role="status"><LoaderCircle className="activity-spinner" size={14} /> 正在读取详情</div>}
+          {detail.error && <div role="alert">{detail.error}<button type="button" className="icon-button" title="重试读取详情" aria-label="重试读取详情" onClick={detail.retry}><RefreshCw size={14} /></button></div>}
+          {!call.payloadDeferred && <>
+            {props.client && <ComputerObservation call={call} client={props.client} />}
+            <ToolPayload label="输入" value={call.input} />
+            {call.output !== undefined && call.output !== null && <ToolPayload label="结果" value={call.output} />}
+          </>}
         </div>
       )}
     </div>

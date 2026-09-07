@@ -43,26 +43,14 @@ pub(super) fn list(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
     to_value(json!({ "sessions": sessions }))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OpenParams {
-    session_id: String,
-}
-
 pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
-    let input: OpenParams = params(raw)?;
+    let input: miniq_protocol::HistoryParams = params(raw)?;
+    let journal = state.event_journal.lock().unwrap();
     let session = state
         .store
         .get_session(&input.session_id)
         .map_err(store_err)?;
-    let messages = state
-        .store
-        .list_messages(&input.session_id)
-        .map_err(store_err)?;
-    let tool_calls = state
-        .store
-        .list_tool_calls(&input.session_id)
-        .map_err(store_err)?;
+    let history = state.store.history_page(&input).map_err(store_err)?;
     let artifacts = state
         .store
         .list_artifacts(&input.session_id)
@@ -93,9 +81,12 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
     let turn_progress = state.turn_progress(&input.session_id);
     to_value(json!({
         "canAcknowledgeFailure": true,
+        "eventCursor": journal.cursor(),
         "session": session,
-        "messages": messages,
-        "toolCalls": tool_calls,
+        "messages": history.messages,
+        "toolCalls": history.tool_calls,
+        "nextCursor": history.next_cursor,
+        "historyVersion": 1,
         "artifacts": artifacts,
         "plan": plan,
         "queue": queue,

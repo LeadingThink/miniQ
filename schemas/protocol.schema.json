@@ -1440,6 +1440,255 @@
     "title": "ExternalSessionScan",
     "type": "object"
   },
+  "historyPage": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "definitions": {
+      "HistoryCursor": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "id"
+        ],
+        "type": "object"
+      },
+      "HistoryToolCall": {
+        "properties": {
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "input": true,
+          "output": true,
+          "payloadDeferred": {
+            "type": "boolean"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/definitions/ToolCallStatus"
+          },
+          "toolName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "input",
+          "payloadDeferred",
+          "sessionId",
+          "status",
+          "toolName"
+        ],
+        "type": "object"
+      },
+      "Message": {
+        "properties": {
+          "attachments": {
+            "items": {
+              "$ref": "#/definitions/MessageAttachment"
+            },
+            "type": "array"
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/definitions/Role"
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "createdAt",
+          "id",
+          "role",
+          "sessionId"
+        ],
+        "type": "object"
+      },
+      "MessageAttachment": {
+        "description": "A local file explicitly attached to a user message. Image MIME types are sent to vision-capable models; other files remain available to the agent through their absolute paths.",
+        "properties": {
+          "mimeType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "type": "object"
+      },
+      "Role": {
+        "description": "Message author role.",
+        "enum": [
+          "user",
+          "assistant",
+          "system",
+          "tool"
+        ],
+        "type": "string"
+      },
+      "ToolCallStatus": {
+        "description": "Tool call lifecycle status.",
+        "enum": [
+          "pending",
+          "waiting_approval",
+          "running",
+          "succeeded",
+          "failed",
+          "rejected",
+          "cancelled"
+        ],
+        "type": "string"
+      }
+    },
+    "properties": {
+      "messages": {
+        "items": {
+          "$ref": "#/definitions/Message"
+        },
+        "type": "array"
+      },
+      "nextCursor": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/HistoryCursor"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "toolCalls": {
+        "items": {
+          "$ref": "#/definitions/HistoryToolCall"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "messages",
+      "toolCalls"
+    ],
+    "title": "HistoryPage",
+    "type": "object"
+  },
+  "historyParams": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "definitions": {
+      "HistoryCursor": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "id"
+        ],
+        "type": "object"
+      },
+      "HistoryFilter": {
+        "enum": [
+          "all",
+          "answers",
+          "activity",
+          "errors"
+        ],
+        "type": "string"
+      }
+    },
+    "properties": {
+      "before": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/HistoryCursor"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "filter": {
+        "allOf": [
+          {
+            "$ref": "#/definitions/HistoryFilter"
+          }
+        ],
+        "default": "all"
+      },
+      "includeInternal": {
+        "default": false,
+        "type": "boolean"
+      },
+      "includePayloads": {
+        "default": false,
+        "description": "Export reads the same paged history with complete tool payloads.",
+        "type": "boolean"
+      },
+      "limit": {
+        "default": 40,
+        "format": "uint32",
+        "maximum": 100.0,
+        "minimum": 1.0,
+        "type": "integer"
+      },
+      "query": {
+        "default": "",
+        "type": "string"
+      },
+      "sessionId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "sessionId"
+    ],
+    "title": "HistoryParams",
+    "type": "object"
+  },
   "nodeHelloParams": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "additionalProperties": false,
@@ -2441,6 +2690,24 @@
       "settings"
     ],
     "title": "SessionModelUpdate",
+    "type": "object"
+  },
+  "toolDetailParams": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "sessionId": {
+        "type": "string"
+      },
+      "toolCallId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "sessionId",
+      "toolCallId"
+    ],
+    "title": "ToolDetailParams",
     "type": "object"
   }
 }

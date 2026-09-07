@@ -3,6 +3,7 @@
 
 mod conversation;
 mod external_sessions;
+mod history;
 mod model_context;
 mod queue;
 mod records;

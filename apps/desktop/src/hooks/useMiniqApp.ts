@@ -3,19 +3,14 @@ import { errorMessage } from "../errorMessage";
 import { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 import type {
-  Artifact,
-  Message,
-  PlanTask,
-  QueuedMessage,
   Session,
   SessionStatus,
-  ToolCall,
-  TurnProgress,
   Workspace,
 } from "../types";
 import { useDaemonConnection } from "./useDaemonConnection";
 import { useAppUpdater } from "./useAppUpdater";
 import { useFilePreview } from "./useFilePreview";
+import { useSessionLifecycleActions } from "./useSessionLifecycleActions";
 import { useSessionFeed } from "./useSessionFeed";
 import { useSessionModel } from "./useSessionModel";
 import type { SessionModelSettings } from "../modelSelection";
@@ -147,9 +142,9 @@ function useNavigationState() {
   };
 }
 
-type Catalog = ReturnType<typeof useCatalog>;
-type NavigationState = ReturnType<typeof useNavigationState>;
-type SessionFeed = ReturnType<typeof useSessionFeed>;
+export type Catalog = ReturnType<typeof useCatalog>;
+export type NavigationState = ReturnType<typeof useNavigationState>;
+export type SessionFeed = ReturnType<typeof useSessionFeed>;
 type ErrorSetter = (message: string | null) => void;
 
 function useNavigationActions(
@@ -262,158 +257,6 @@ function useWorkspaceActions(
   );
 
   return { openWorkspace, createBlankProject, deleteWorkspace, renameWorkspace };
-}
-
-interface OpenSessionResult {
-  session: Session;
-  canAcknowledgeFailure?: boolean;
-  messages: Message[];
-  toolCalls: ToolCall[];
-  artifacts: Artifact[];
-  plan: PlanTask[];
-  queue: QueuedMessage[];
-  approvals: SessionFeed["approvals"];
-  questions: SessionFeed["questions"];
-  streamingText: string;
-  turnProgress: TurnProgress | null;
-}
-
-function useSessionLifecycleActions(
-  client: RpcClient,
-  catalog: Catalog,
-  navigation: NavigationState,
-  feed: SessionFeed,
-  markSessionSeen: (sessionId: string) => void,
-  setSessionError: (sessionId: string, message: string | null) => void,
-) {
-  const {
-    refreshSessions,
-    setSelectedWorkspaceId,
-    setCurrentSessionId,
-  } = catalog;
-  const { setPage } = navigation;
-  const { reset, load } = feed;
-
-  const createSession = useCallback(
-    async (workspaceId: string) => {
-      const session = await client.call<Session>("session.create", { workspaceId });
-      await refreshSessions();
-      setSelectedWorkspaceId(workspaceId);
-      setCurrentSessionId(session.id);
-      setPage(null);
-      reset(session.id);
-      return session;
-    },
-    [client, refreshSessions, reset, setCurrentSessionId, setPage, setSelectedWorkspaceId],
-  );
-
-  const openSession = useCallback(
-    async (sessionId: string, markSeen = true) => {
-      setCurrentSessionId(sessionId);
-      const epoch = catalog.navigationEpoch.current;
-      reset(sessionId);
-      setPage(null);
-      let result: OpenSessionResult;
-      try { result = await client.call<OpenSessionResult>("session.open", { sessionId }); }
-      catch (cause) { setSessionError(sessionId, errorMessage(cause)); return; }
-      if (epoch !== catalog.navigationEpoch.current) return;
-      if (markSeen) markSessionSeen(sessionId);
-      setSelectedWorkspaceId(result.session.workspaceId);
-      setPage(null);
-      load(sessionId, {
-        messages: result.messages,
-        toolCalls: result.toolCalls,
-        plan: result.plan ?? [],
-        artifacts: result.artifacts ?? [],
-        queue: result.queue ?? [],
-        approvals: result.approvals ?? [],
-        questions: result.questions ?? [],
-        streamingText: result.streamingText ?? "",
-        turnProgress: result.turnProgress ?? null,
-      });
-      if (markSeen && result.canAcknowledgeFailure && result.session.status === "failed") {
-        try {
-          await client.call("session.acknowledgeFailure", {
-            sessionId,
-            updatedAt: result.session.updatedAt,
-          });
-          await refreshSessions();
-        } catch (cause) {
-          setSessionError(sessionId, errorMessage(cause));
-        }
-      }
-    },
-    [client, load, markSessionSeen, refreshSessions, reset, setCurrentSessionId, setPage, setSelectedWorkspaceId, catalog.navigationEpoch, setSessionError],
-  );
-
-  const deleteSession = useCallback(
-    async (sessionId: string) => {
-      try {
-        await client.call("session.delete", { sessionId });
-        await refreshSessions();
-        if (catalog.currentSessionId === sessionId) {
-          setCurrentSessionId(null);
-          reset(null);
-        }
-      } catch (err) {
-        console.error("Failed to delete session:", err);
-        setSessionError(sessionId, errorMessage(err));
-      }
-    },
-    [client, catalog.currentSessionId, refreshSessions, reset, setCurrentSessionId, setSessionError],
-  );
-
-  const renameSession = useCallback(
-    async (sessionId: string, title: string) => {
-      try {
-        await client.call("session.rename", { sessionId, title });
-        await refreshSessions();
-      } catch (err) {
-        console.error("Failed to rename session:", err);
-        setSessionError(sessionId, errorMessage(err));
-      }
-    },
-    [client, refreshSessions, setSessionError],
-  );
-
-  const setSessionPinned = useCallback(
-    async (sessionId: string, pinned: boolean) => {
-      try {
-        await client.call("session.setPinned", { sessionId, pinned });
-        await refreshSessions();
-      } catch (err) {
-        console.error("Failed to pin/unpin session:", err);
-        setSessionError(sessionId, errorMessage(err));
-      }
-    },
-    [client, refreshSessions, setSessionError],
-  );
-
-  const setSessionArchived = useCallback(
-    async (sessionId: string, archived: boolean) => {
-      try {
-        await client.call("session.setArchived", { sessionId, archived });
-        await refreshSessions();
-        if (archived && catalog.currentSessionId === sessionId) {
-          setCurrentSessionId(null);
-          reset(null);
-        }
-      } catch (err) {
-        console.error("Failed to archive session:", err);
-        setSessionError(sessionId, errorMessage(err));
-      }
-    },
-    [client, catalog.currentSessionId, refreshSessions, reset, setCurrentSessionId, setSessionError],
-  );
-
-  return {
-    createSession,
-    openSession,
-    deleteSession,
-    renameSession,
-    setSessionPinned,
-    setSessionArchived,
-  };
 }
 
 type SessionLifecycle = ReturnType<typeof useSessionLifecycleActions>;
@@ -646,7 +489,7 @@ export function useMiniqApp() {
     if (epoch === 0 || epoch === lastResyncedConnection.current) return;
     lastResyncedConnection.current = epoch;
     if (!sessionId) return;
-    void lifecycle.openSession(sessionId, false).catch((cause) => setError(errorMessage(cause)));
+    void lifecycle.syncSession(sessionId).catch((cause) => setError(errorMessage(cause)));
   }, [catalog.currentSessionId, connection.connectionEpoch, lifecycle, setError]);
   const busy =
     catalog.currentSession?.status === "running" ||
