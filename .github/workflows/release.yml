@@ -12,6 +12,11 @@ on:
         required: false
         default: ""
         type: string
+      windows_only:
+        description: Build and publish only Windows
+        required: true
+        default: false
+        type: boolean
       draft:
         description: Create a draft release
         required: true
@@ -51,19 +56,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            bundles: nsis
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            bundles: dmg
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            bundles: dmg
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            bundles: deb,appimage
+        include: ${{ fromJSON(inputs.windows_only && '[{"os":"windows-latest","target":"x86_64-pc-windows-msvc","bundles":"nsis"}]' || '[{"os":"windows-latest","target":"x86_64-pc-windows-msvc","bundles":"nsis"},{"os":"macos-latest","target":"aarch64-apple-darwin","bundles":"dmg"},{"os":"macos-latest","target":"x86_64-apple-darwin","bundles":"dmg"},{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"}]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -187,6 +180,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
           RELEASE_NOTES: ${{ inputs.notes }}
           RELEASE_DRAFT: ${{ inputs.draft }}
+          WINDOWS_ONLY: ${{ inputs.windows_only }}
         run: |
           if ! gh release view "$RELEASE_TAG" --repo LeadingThink/miniQ-releases >/dev/null 2>&1; then
             args=(release create "$RELEASE_TAG" --repo LeadingThink/miniQ-releases \
@@ -195,7 +189,11 @@ jobs:
             if [ -n "$RELEASE_NOTES" ]; then
               args+=(--notes "$RELEASE_NOTES")
             else
-              args+=(--notes "miniQ desktop release for Windows, macOS, and Linux.")
+              if [ "$WINDOWS_ONLY" = "true" ]; then
+                args+=(--notes "miniQ desktop release for Windows.")
+              else
+                args+=(--notes "miniQ desktop release for Windows, macOS, and Linux.")
+              fi
             fi
             gh "${args[@]}"
           fi
