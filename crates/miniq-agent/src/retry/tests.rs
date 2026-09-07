@@ -119,8 +119,8 @@ async fn request_failures_retry_the_current_step_and_never_repeat_completed_tool
     assert!(retried);
 }
 
-#[tokio::test]
-async fn empty_stream_transient_failures_recover_but_partial_output_is_not_replayed() {
+#[tokio::test(start_paused = true)]
+async fn interrupted_responses_retry_without_executing_uncommitted_tools_or_context() {
     let provider = Scripted::new(vec![Ok(vec![Err(unavailable())]), finished()]);
     let (tx, _rx) = tokio::sync::mpsc::channel(32);
     assert!(run_turn(
@@ -144,17 +144,72 @@ async fn empty_stream_transient_failures_recover_but_partial_output_is_not_repla
             data: json!([{"type":"reasoning", "encrypted_content":"opaque-test-context"}]),
         }),
     ] {
-        let provider = Scripted::new(vec![Ok(vec![Ok(output), Err(unavailable())])]);
+        let provider = Scripted::new(vec![Ok(vec![Ok(output), Err(unavailable())]), finished()]);
         let writes = Writes(AtomicUsize::new(0));
-        let (tx, _rx) = tokio::sync::mpsc::channel(32);
-        assert!(
-            run_turn(&provider, &writes, vec![], tx, CancellationToken::new())
-                .await
-                .is_err()
-        );
-        assert_eq!(provider.requests.lock().unwrap().len(), 1);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(32);
+        let outcome = run_turn(&provider, &writes, vec![], tx, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(outcome.final_text, "done");
+        assert_eq!(provider.requests.lock().unwrap().len(), 2);
         assert_eq!(writes.0.load(Ordering::SeqCst), 0);
+        let mut displayed = String::new();
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                AgentEvent::TextDelta(text) => displayed.push_str(&text),
+                AgentEvent::TextReplaced(text) => displayed = text,
+                _ => {}
+            }
+        }
+        assert_eq!(displayed, "done");
+        assert!(outcome
+            .provider_history
+            .last()
+            .unwrap()
+            .provider_context
+            .is_none());
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn overloaded_partial_output_restores_previous_steps_and_retries_only_the_current_request() {
+    let provider = Scripted::new(vec![
+        Ok(vec![Ok(ChatDelta::Text("Verified work".into())), Ok(ChatDelta::ToolCall(ToolCallRequest {
+            id: "write".into(), name: "file_write".into(), arguments: json!({}),
+        })), Ok(ChatDelta::Finished)]),
+        Ok(vec![Ok(ChatDelta::Text("Unfinished response".into())), Err(ProviderError::Transient(
+            "Responses API error: Our servers are currently overloaded. Please try again later.".into()
+        ))]),
+        finished(),
+    ]);
+    let writes = Writes(AtomicUsize::new(0));
+    let (tx, mut rx) = tokio::sync::mpsc::channel(32);
+    let outcome = run_turn(&provider, &writes, vec![], tx, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(outcome.final_text, "done");
+    assert_eq!(writes.0.load(Ordering::SeqCst), 1);
+    let requests = provider.requests.lock().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(
+        serde_json::to_value(&requests[1].messages).unwrap(),
+        serde_json::to_value(&requests[2].messages).unwrap()
+    );
+    let mut displayed = String::new();
+    let mut replaced = false;
+    while let Ok(event) = rx.try_recv() {
+        match event {
+            AgentEvent::TextDelta(text) => displayed.push_str(&text),
+            AgentEvent::TextReplaced(text) => {
+                assert_eq!(text, "Verified work");
+                replaced = true;
+                displayed = text;
+            }
+            _ => {}
+        }
+    }
+    assert!(replaced);
+    assert_eq!(displayed, "Verified work\n\ndone");
 }
 
 #[tokio::test]
@@ -204,7 +259,7 @@ async fn retry_after_is_a_minimum_without_disabling_exponential_backoff() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn permanent_stream_errors_are_not_retried_and_transient_retries_are_bounded() {
     let provider = Scripted::new(vec![Ok(vec![Err(ProviderError::InvalidResponse(
         "invalid tools".into(),
@@ -220,8 +275,8 @@ async fn permanent_stream_errors_are_not_retried_and_transient_retries_are_bound
     .await
     .is_err());
     assert_eq!(provider.requests.lock().unwrap().len(), 1);
-    let provider = Scripted::new((0..5).map(|_| Err(unavailable())).collect());
-    let (tx, _rx) = tokio::sync::mpsc::channel(32);
+    let provider = Scripted::new((0..11).map(|_| Err(unavailable())).collect());
+    let (tx, mut rx) = tokio::sync::mpsc::channel(64);
     assert!(run_turn(
         &provider,
         &crate::NoTools,
@@ -231,7 +286,50 @@ async fn permanent_stream_errors_are_not_retried_and_transient_retries_are_bound
     )
     .await
     .is_err());
-    assert_eq!(provider.requests.lock().unwrap().len(), 5);
+    assert_eq!(provider.requests.lock().unwrap().len(), 11);
+    let mut attempts = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        if let AgentEvent::ModelRetryScheduled {
+            attempt,
+            max_attempts,
+            ..
+        } = event
+        {
+            assert_eq!(max_attempts, 10);
+            attempts.push(attempt);
+        }
+    }
+    assert_eq!(attempts, (1..=10).collect::<Vec<_>>());
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_tenth_retry_can_recover_without_repeating_a_completed_tool() {
+    let mut attempts = vec![Ok(vec![
+        Ok(ChatDelta::ToolCall(ToolCallRequest {
+            id: "write-once".into(),
+            name: "file_write".into(),
+            arguments: json!({}),
+        })),
+        Ok(ChatDelta::Finished),
+    ])];
+    attempts.extend((0..10).map(|_| Err(unavailable())));
+    attempts.push(finished());
+    let provider = Scripted::new(attempts);
+    let executor = Writes(AtomicUsize::new(0));
+    let (tx, _rx) = tokio::sync::mpsc::channel(64);
+    let outcome = run_turn(&provider, &executor, vec![], tx, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(outcome.final_text, "done");
+    assert_eq!(executor.0.load(Ordering::SeqCst), 1);
+    let requests = provider.requests.lock().unwrap();
+    assert_eq!(requests.len(), 12);
+    for request in &requests[2..] {
+        assert_eq!(
+            serde_json::to_value(&request.messages).unwrap(),
+            serde_json::to_value(&requests[1].messages).unwrap()
+        );
+    }
 }
 
 #[tokio::test]
@@ -281,8 +379,8 @@ async fn long_server_hints_and_exhausted_time_budgets_do_not_trigger_early_retri
     assert!(rx.try_recv().is_err());
 }
 
-#[tokio::test]
-async fn compaction_retries_transient_requests_without_replaying_partial_summaries() {
+#[tokio::test(start_paused = true)]
+async fn compaction_retries_transient_requests_and_discards_partial_summaries() {
     let policy = crate::ContextPolicy {
         soft_limit_tokens: 8,
         preserve_recent_messages: 1,
@@ -291,10 +389,13 @@ async fn compaction_retries_transient_requests_without_replaying_partial_summari
     };
     for partial in [false, true] {
         let attempts = if partial {
-            vec![Ok(vec![
-                Ok(ChatDelta::Text("partial".into())),
-                Err(unavailable()),
-            ])]
+            vec![
+                Ok(vec![
+                    Ok(ChatDelta::Text("partial".into())),
+                    Err(unavailable()),
+                ]),
+                finished(),
+            ]
         } else {
             vec![Err(unavailable()), Ok(vec![Err(unavailable())]), finished()]
         };
@@ -314,20 +415,22 @@ async fn compaction_retries_transient_requests_without_replaying_partial_summari
             &CancellationToken::new(),
         )
         .await;
-        if partial {
-            assert!(result.is_err());
-            assert_eq!(provider.requests.lock().unwrap().len(), 1);
-        } else {
-            assert!(result.unwrap().compacted);
-            assert_eq!(provider.requests.lock().unwrap().len(), 3);
-            assert!(matches!(
-                rx.try_recv().unwrap(),
-                AgentEvent::ModelRetryScheduled {
-                    step: 0,
-                    attempt: 1,
-                    ..
-                }
-            ));
-        }
+        let result = result.unwrap();
+        assert!(result.compacted);
+        assert!(!serde_json::to_string(&result.messages)
+            .unwrap()
+            .contains("partial"));
+        assert_eq!(
+            provider.requests.lock().unwrap().len(),
+            if partial { 2 } else { 3 }
+        );
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            AgentEvent::ModelRetryScheduled {
+                step: 0,
+                attempt: 1,
+                ..
+            }
+        ));
     }
 }

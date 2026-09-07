@@ -679,6 +679,33 @@
         "type": "object"
       },
       {
+        "description": "Restore committed streaming output before retrying a partial response.",
+        "properties": {
+          "messageId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "assistant_replaced"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "messageId",
+          "sessionId",
+          "text",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
         "description": "Old context was summarized or oversized tool results were pruned.",
         "properties": {
           "estimatedTokensAfter": {

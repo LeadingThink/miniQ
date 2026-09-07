@@ -46,7 +46,7 @@ async fn child_retry_progress_is_scoped_and_cleared_on_completion_or_cancel() {
                 let list = bridge.state.agent_tasks.list(&bridge.session_id).await;
                 if list[0]["progress"]["phase"] == "waiting_retry" {
                     assert_eq!(list[0]["progress"]["retry"]["attempt"], 1);
-                    assert_eq!(list[0]["progress"]["retry"]["maxAttempts"], 4);
+                    assert_eq!(list[0]["progress"]["retry"]["maxAttempts"], 10);
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(5)).await;

@@ -163,6 +163,17 @@ impl Store {
         Ok(())
     }
 
+    /// Acknowledge only the failure snapshot the client actually viewed.
+    /// Reading a session must not reorder it or overwrite a newer turn.
+    pub fn acknowledge_session_failure(&self, id: &str, updated_at: &str) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        Ok(conn.execute(
+            "UPDATE sessions SET status = 'idle'
+             WHERE id = ?1 AND status = 'failed' AND updated_at = ?2",
+            params![id, updated_at],
+        )? == 1)
+    }
+
     pub fn set_session_pinned(&self, id: &str, pinned: bool) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         // Never touch updated_at — keep the original session timestamp so the

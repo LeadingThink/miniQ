@@ -58,7 +58,11 @@ impl ProviderError {
     pub fn is_retryable(&self) -> bool {
         match self {
             Self::Http(error) => {
-                error.is_timeout() || error.is_connect() || error.is_request() || error.is_body()
+                error.is_timeout()
+                    || error.is_connect()
+                    || error.is_request()
+                    || error.is_body()
+                    || error.is_decode()
             }
             Self::Api { status, body, .. } => {
                 let error = serde_json::from_str::<Value>(body)

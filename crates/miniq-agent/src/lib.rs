@@ -42,6 +42,8 @@ pub enum AgentError {
 pub enum AgentEvent {
     /// Incremental assistant text.
     TextDelta(String),
+    /// Replace uncommitted output when retrying an interrupted model response.
+    TextReplaced(String),
     ModelRequestStarted {
         step: usize,
     },
@@ -139,7 +141,7 @@ impl Default for RunLimits {
         Self {
             max_steps: None,
             repeated_tool_batch_limit: 4,
-            max_model_retries: 4,
+            max_model_retries: 10,
             context_policy: ContextPolicy::default(),
         }
     }
@@ -228,8 +230,7 @@ pub async fn run_turn_with_limits(
     let mut steps = 0;
     let mut last_tool_batch = String::new();
     let mut repeated_tool_batch = 0;
-    let mut streamed_any_text = false;
-    let mut trailing_stream_newlines = 0;
+    let mut streamed_text = String::new();
 
     loop {
         if cancel.is_cancelled() {
@@ -254,6 +255,7 @@ pub async fn run_turn_with_limits(
 
         let mut retries = retry::ModelRetries::new(limits.max_model_retries);
         let (text, tool_calls, provider_context) = loop {
+            let committed_text = streamed_text.clone();
             let request = CompletionRequest {
                 messages: history.clone(),
                 tools: tools.clone(),
@@ -324,15 +326,16 @@ pub async fn run_turn_with_limits(
                             continue;
                         }
                         if !started_text_segment {
-                            if streamed_any_text {
-                                let separator = if trailing_stream_newlines >= 2 {
+                            if !streamed_text.is_empty() {
+                                let separator = if streamed_text.ends_with("\n\n") {
                                     ""
-                                } else if trailing_stream_newlines == 1 {
+                                } else if streamed_text.ends_with('\n') {
                                     "\n"
                                 } else {
                                     "\n\n"
                                 };
                                 if !separator.is_empty() {
+                                    streamed_text.push_str(separator);
                                     let _ = events
                                         .send(AgentEvent::TextDelta(separator.to_string()))
                                         .await;
@@ -341,14 +344,7 @@ pub async fn run_turn_with_limits(
                             started_text_segment = true;
                         }
                         text.push_str(&t);
-                        streamed_any_text = true;
-                        for character in t.chars() {
-                            trailing_stream_newlines = if character == '\n' {
-                                (trailing_stream_newlines + 1).min(2)
-                            } else {
-                                0
-                            };
-                        }
+                        streamed_text.push_str(&t);
                         let _ = events.send(AgentEvent::TextDelta(t)).await;
                     }
                     ChatDelta::ToolCall(call) => tool_calls.push(call),
@@ -380,9 +376,17 @@ pub async fn run_turn_with_limits(
                         retries.attempts += 1;
                         continue;
                     }
-                    if retries.wait(&error, steps, &events, &cancel).await? {
-                        continue;
+                }
+                // This response has not dispatched any tools yet. Retrying it
+                // keeps completed earlier steps and discards only this attempt.
+                if retries.wait(&error, steps, &events, &cancel).await? {
+                    if streamed_text != committed_text {
+                        streamed_text = committed_text;
+                        let _ = events
+                            .send(AgentEvent::TextReplaced(streamed_text.clone()))
+                            .await;
                     }
+                    continue;
                 }
                 return Err(AgentError::Provider(error));
             }
@@ -815,10 +819,10 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn returns_a_clear_error_when_empty_retries_are_exhausted() {
-        let provider = MockProvider::new(vec![Vec::new(); 5]);
-        let (events, _receiver) = tokio::sync::mpsc::channel(32);
+        let provider = MockProvider::new(vec![Vec::new(); 11]);
+        let (events, _receiver) = tokio::sync::mpsc::channel(64);
 
         let error = run_turn(
             &provider,
@@ -832,7 +836,7 @@ mod tests {
 
         assert!(error
             .to_string()
-            .contains("empty completion after 5 attempts"));
+            .contains("empty completion after 11 attempts"));
     }
 
     struct LargeResultExecutor;

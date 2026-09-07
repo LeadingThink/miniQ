@@ -47,6 +47,14 @@ pub enum Event {
         message_id: String,
         delta: String,
     },
+    /// Restore committed streaming output before retrying a partial response.
+    AssistantReplaced {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        #[serde(rename = "messageId")]
+        message_id: String,
+        text: String,
+    },
     /// Old context was summarized or oversized tool results were pruned.
     ContextCompacted {
         #[serde(rename = "sessionId")]
@@ -185,6 +193,7 @@ impl Event {
             | Event::TurnProgressChanged { session_id, .. }
             | Event::MessageCreated { session_id, .. }
             | Event::AssistantDelta { session_id, .. }
+            | Event::AssistantReplaced { session_id, .. }
             | Event::ContextCompacted { session_id, .. }
             | Event::ToolCallStarted { session_id, .. }
             | Event::ToolCallFinished { session_id, .. }

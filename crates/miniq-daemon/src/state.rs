@@ -265,6 +265,13 @@ impl AppState {
         self.streaming_texts.lock().unwrap().remove(session_id);
     }
 
+    pub fn replace_streaming_text(&self, session_id: &str, text: &str) {
+        self.streaming_texts
+            .lock()
+            .unwrap()
+            .insert(session_id.to_string(), text.to_string());
+    }
+
     pub fn set_turn_progress(&self, session_id: &str, phase: TurnPhase, model_step: Option<usize>) {
         let progress = TurnProgress {
             phase,
@@ -418,6 +425,11 @@ mod tests {
         state.append_streaming_text("session", "前半段");
         state.append_streaming_text("session", "后半段");
         assert_eq!(state.streaming_text("session"), "前半段后半段");
+
+        state.replace_streaming_text("session", "前半段");
+        state.append_streaming_text("session", "重试成功");
+        assert_eq!(state.streaming_text("session"), "前半段重试成功");
+        assert_eq!(state.streaming_text("other"), "");
 
         state.clear_streaming_text("session");
         assert_eq!(state.streaming_text("session"), "");

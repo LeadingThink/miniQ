@@ -101,6 +101,8 @@ function reduceDaemonEvent(
       return { ...state, turnProgress: event.progress };
     case "assistant_delta":
       return { ...state, streamingText: state.streamingText + event.delta };
+    case "assistant_replaced":
+      return { ...state, streamingText: event.text };
     case "tool_call_started":
       return {
         ...state,
@@ -171,6 +173,8 @@ function reduceDaemonEvent(
     case "plugins_changed":
     case "session_pinned_changed":
     case "session_archived_changed":
+      return state;
+    default:
       return state;
   }
 }
