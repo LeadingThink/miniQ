@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket, { type RawData } from "ws";
 import { createRelayServer } from "./server.js";
+import type { TicketIssuer } from "./blobStore.js";
 
 const servers: ReturnType<typeof createRelayServer>[] = [];
 const clients: WebSocket[] = [];
@@ -16,8 +17,8 @@ function identity(key: string) {
   return { roomId: derive("miniq-relay-room-v1"), authToken: derive("miniq-relay-auth-v1") };
 }
 
-async function start() {
-  const server = createRelayServer({ allowedOrigins: ["http://test.local"] });
+async function start(blobs?: TicketIssuer) {
+  const server = createRelayServer({ allowedOrigins: ["http://test.local"], blobs });
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -62,6 +63,30 @@ function hello(role: "desktop" | "mobile", key = "sk-shared", deviceId = "device
 }
 
 describe("miniQ relay", () => {
+  it("issues scoped object tickets only to the allowlisted active desktop", async () => {
+    const ticket = vi.fn(async () => ({putUrl:"https://objects.test/put",getUrl:"https://objects.test/get",expiresAt:Date.now()+300000}));
+    const url = await start({enabledFor:room=>room===identity("sk-shared").roomId,ticket});
+    const desktop=await connect(url);
+    desktop.send(JSON.stringify(hello("desktop")));
+    await expect(nextJson(desktop)).resolves.toMatchObject({blobStorage:true});
+    const mobile=await connect(url);
+    mobile.send(JSON.stringify(hello("mobile")));
+    await nextJson(mobile);
+    const denied=nextType(mobile,"blob_ticket");
+    mobile.send(JSON.stringify({type:"blob_ticket",requestId:"denied",bytes:1024}));
+    await expect(denied).resolves.toMatchObject({requestId:"denied",error:"Object transfer unavailable"});
+    expect(ticket).not.toHaveBeenCalled();
+    for(const bytes of [0,-1,1.5,64*1024*1024+1]) {
+      const rejected=nextType(desktop,"blob_ticket");
+      desktop.send(JSON.stringify({type:"blob_ticket",requestId:"size",bytes}));
+      await expect(rejected).resolves.toHaveProperty("error");
+    }
+    const allowed=nextType(desktop,"blob_ticket");
+    desktop.send(JSON.stringify({type:"blob_ticket",requestId:"allowed",bytes:1024}));
+    await expect(allowed).resolves.toMatchObject({requestId:"allowed",ticket:{getUrl:"https://objects.test/get"}});
+    expect(ticket).toHaveBeenCalledWith(identity("sk-shared").roomId,1024);
+    expect(mobile.readyState).toBe(WebSocket.OPEN);
+  });
   it("requires an online desktop before a mobile can join", async () => {
     const mobile = await connect(await start());
     const response = nextJson(mobile);

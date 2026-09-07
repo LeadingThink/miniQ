@@ -15,7 +15,9 @@ use miniq_protocol::{ErrorCode, RequestId, RpcError, RpcRequest, RpcResponse};
 use rand::distr::Alphanumeric;
 use rand::{Rng, RngCore};
 use serde::{Deserialize, Serialize};
+mod blob;
 mod connection;
+mod subscriptions;
 mod transport;
 use sha2::{Digest, Sha256};
 use tokio_tungstenite::tungstenite::Message;
@@ -143,6 +145,14 @@ struct RelayFrame {
     desktop_online: bool,
     #[serde(default)]
     mobile_clients: usize,
+    #[serde(default)]
+    mobile_ids: Option<Vec<String>>,
+    #[serde(default)]
+    blob_storage: bool,
+    #[serde(default)]
+    request_id: String,
+    #[serde(default)]
+    ticket: Option<blob::Ticket>,
     #[serde(default)]
     message: String,
 }
@@ -293,15 +303,20 @@ fn derive_key(api_key: &str, label: &[u8]) -> [u8; 32] {
 }
 
 fn encrypt_payload(cipher: &Aes256Gcm, payload: &[u8]) -> anyhow::Result<(String, String)> {
+    let (nonce, ciphertext) = encrypt_bytes(cipher, payload)?;
+    Ok((
+        URL_SAFE_NO_PAD.encode(nonce),
+        URL_SAFE_NO_PAD.encode(ciphertext),
+    ))
+}
+
+fn encrypt_bytes(cipher: &Aes256Gcm, payload: &[u8]) -> anyhow::Result<([u8; 12], Vec<u8>)> {
     let mut nonce = [0_u8; 12];
     rand::rng().fill_bytes(&mut nonce);
     let ciphertext = cipher
         .encrypt(Nonce::from_slice(&nonce), payload)
         .map_err(|_| anyhow::anyhow!("无法加密远程消息"))?;
-    Ok((
-        URL_SAFE_NO_PAD.encode(nonce),
-        URL_SAFE_NO_PAD.encode(ciphertext),
-    ))
+    Ok((nonce, ciphertext))
 }
 
 fn decrypt_payload(cipher: &Aes256Gcm, nonce: &str, ciphertext: &str) -> anyhow::Result<Vec<u8>> {

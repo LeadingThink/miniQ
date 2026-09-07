@@ -9,6 +9,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1127.0",
+    "@aws-sdk/s3-request-presigner": "^3.1127.0",
+    "qiniu": "^7.15.2",
     "ws": "^8.18.3"
   },
   "devDependencies": {

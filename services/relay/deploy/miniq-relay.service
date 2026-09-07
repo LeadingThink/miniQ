@@ -10,6 +10,7 @@ WorkingDirectory=/home/ubuntu/miniq-relay
 Environment=NODE_ENV=production
 Environment=MINIQ_RELAY_HOST=127.0.0.1
 Environment=MINIQ_RELAY_PORT=9200
+EnvironmentFile=-/etc/miniq-relay/blob.env
 ExecStart=/usr/bin/node dist/server.js
 Restart=always
 RestartSec=3

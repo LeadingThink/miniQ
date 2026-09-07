@@ -97,7 +97,11 @@ export function useDaemonConnection(options: ConnectionOptions) {
       connectionLoopRunning = false;
     };
     void connect(false);
-    const offResync = client.onResync(() => setConnectionEpoch((current) => current + 1));
+    const offResync = client.onResync(() => {
+      setConnectionEpoch((current) => current + 1);
+      void refreshSessions().catch((cause) => onError(errorMessage(cause)));
+      void refreshWorkspaces().catch((cause) => onError(errorMessage(cause)));
+    });
     const offStatus = client.onStatus((isConnected) => {
       setConnected(isConnected);
       if (isConnected) {

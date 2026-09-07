@@ -90,6 +90,8 @@ pub struct AppState {
     pub plugins: Arc<miniq_plugins::PluginManager>,
     pub skills: Arc<miniq_skills::SkillStore>,
     pub events: broadcast::Sender<Event>,
+    pub(crate) live_events: broadcast::Sender<Arc<crate::event_journal::LiveEvent>>,
+    pub(crate) event_journal: Arc<Mutex<crate::event_journal::EventJournal>>,
     pub started: Instant,
     pub token: String,
     /// Cancels the listener and connected clients during an app update.
@@ -176,6 +178,8 @@ impl AppState {
                 miniq_skills::bundled_skills(),
             )),
             events,
+            live_events: broadcast::channel(1024).0,
+            event_journal: Arc::new(Mutex::new(crate::event_journal::EventJournal::default())),
             started: Instant::now(),
             token,
             shutdown: CancellationToken::new(),
@@ -370,7 +374,33 @@ impl AppState {
     /// ignored: durable state is persisted in the store, events are a live
     /// view.
     pub fn emit(&self, event: Event) {
-        let _ = self.events.send(event);
+        let mut journal = self.event_journal.lock().unwrap();
+        match &event {
+            Event::AssistantDelta {
+                session_id, delta, ..
+            } => self.append_streaming_text(session_id, delta),
+            Event::AssistantReplaced {
+                session_id, text, ..
+            } => self.replace_streaming_text(session_id, text),
+            Event::MessageCreated {
+                session_id,
+                message,
+            } if message.role == miniq_protocol::Role::Assistant => {
+                self.clear_streaming_text(session_id)
+            }
+            Event::TurnCompleted { session_id } | Event::TurnFailed { session_id, .. } => {
+                self.clear_streaming_text(session_id)
+            }
+            _ => {}
+        }
+        let projected = journal.record(&event);
+        let _ = self.events.send(event.clone());
+        let _ = self
+            .live_events
+            .send(Arc::new(crate::event_journal::LiveEvent {
+                original: event,
+                projected,
+            }));
     }
 
     /// Register a new turn for a session. Different sessions may run in

@@ -1,4 +1,4 @@
-import { ArrowDown, Download, FileText, FolderOpen, Search, X, Zap } from "lucide-react";
+import { ArrowDown, ChevronUp, Download, LoaderCircle, RefreshCw, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Artifact,
@@ -10,11 +10,8 @@ import type {
   TurnProgress,
 } from "../types";
 import type { PendingApproval } from "../App";
-import {
-  resolveWorkspacePath,
-  revealLocalFile,
-  type LocalFileTarget,
-} from "../localFiles";
+import type { LocalFileTarget } from "../localFiles";
+import { ApprovalCard, QuestionCard, QueueBar, ArtifactsBar } from "./TimelineInteractions";
 import { Md } from "./Md";
 import { ExecutionPrelude, PlanProgress } from "./ExecutionActivity";
 import { createTimelineItems, groupTimeline, filterTimelineGroups, type TimelineFilter, type TimelineGroup } from "../timelineModel";
@@ -22,233 +19,16 @@ import { downloadSession } from "../sessionExport";
 import { CopyButton } from "./CopyButton";
 import { ToolGroup } from "./ToolGroup";
 import type { RpcClient } from "../rpc";
-
-function ApprovalCard({
-  item,
-  onResolve,
-}: {
-  item: PendingApproval;
-  onResolve: (approvalId: string, decision: string) => void;
-}) {
-  return (
-    <div className="card approval-card">
-      <div className="card-head">
-        <span>需要审批</span>
-        <span className="tool-name">{item.toolName}</span>
-        <span className={`badge ${item.approval.riskLevel}`}>
-          {item.approval.riskLevel}
-        </span>
-      </div>
-      <div style={{ marginTop: 6 }}>{item.approval.reason}</div>
-      <pre>{JSON.stringify(item.input, null, 2)}</pre>
-      <div className="approval-actions">
-        <button onClick={() => onResolve(item.approval.id, "approve")}>允许一次</button>
-        <button
-          className="secondary"
-          onClick={() => onResolve(item.approval.id, "approve_for_session")}
-        >
-          本会话允许
-        </button>
-        <button className="danger" onClick={() => onResolve(item.approval.id, "reject")}>
-          拒绝
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function QuestionCard({
-  question,
-  onResolve,
-}: {
-  question: Question;
-  onResolve: (questionId: string, answer: string) => void;
-}) {
-  const [custom, setCustom] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
-  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
-  useEffect(() => {
-    if (!question.autoContinueAfterSeconds) {
-      setRemainingSeconds(null);
-      return;
-    }
-    const deadline =
-      new Date(question.createdAt).getTime() + question.autoContinueAfterSeconds * 1_000;
-    const update = () =>
-      setRemainingSeconds(Math.max(0, Math.ceil((deadline - Date.now()) / 1_000)));
-    update();
-    const timer = window.setInterval(update, 1_000);
-    return () => window.clearInterval(timer);
-  }, [question.autoContinueAfterSeconds, question.createdAt]);
-
-  useEffect(() => {
-    setCustom("");
-    setSelected([]);
-  }, [question.id]);
-
-  const countdown =
-    remainingSeconds === null
-      ? null
-      : `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, "0")}`;
-  return (
-    <div className="card approval-card">
-      <div className="card-head">
-        <span>{question.header || "miniQ 想确认"}</span>
-      </div>
-      <div style={{ marginTop: 6 }}>{question.prompt}</div>
-      {countdown && (
-        <div className="question-timeout">
-          完全访问模式: {countdown} 后将采用
-          {question.defaultAnswer ? `“${question.defaultAnswer}”` : "默认方案"}继续
-        </div>
-      )}
-      <div className="approval-actions" style={{ flexWrap: "wrap" }}>
-        {question.options.map((opt) => {
-          const active = selected.includes(opt);
-          return (
-            <button
-              key={opt}
-              className={active ? "question-option-selected" : undefined}
-              aria-pressed={question.multiSelect ? active : undefined}
-              title={question.optionDescriptions?.[opt]}
-              onClick={() => {
-                if (!question.multiSelect) {
-                  onResolve(question.id, opt);
-                  return;
-                }
-                setSelected((current) =>
-                  current.includes(opt)
-                    ? current.filter((value) => value !== opt)
-                    : [...current, opt],
-                );
-              }}
-            >
-              <span>{opt}</span>
-              {question.optionDescriptions?.[opt] && (
-                <small>{question.optionDescriptions[opt]}</small>
-              )}
-            </button>
-          );
-        })}
-        {question.multiSelect && (
-          <button
-            className="secondary"
-            disabled={selected.length === 0}
-            onClick={() => onResolve(question.id, selected.join(", "))}
-          >
-            确认选择
-          </button>
-        )}
-      </div>
-      <div className="approval-actions">
-        <input
-          className="question-input"
-          value={custom}
-          placeholder="或者输入你的回答..."
-          onChange={(e) => setCustom(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229 && custom.trim()) {
-              onResolve(question.id, custom.trim());
-            }
-          }}
-        />
-        <button
-          className="secondary"
-          disabled={!custom.trim()}
-          onClick={() => onResolve(question.id, custom.trim())}
-        >
-          回答
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function QueueBar(props: {
-  queue: QueuedMessage[];
-  onSteer: (queuedMessageId: string) => void;
-  onRemove: (queuedMessageId: string) => void;
-}) {
-  if (props.queue.length === 0) return null;
-  return (
-    <div className="queue-bar">
-      <div className="queue-title">已排队 {props.queue.length} 条，当前任务结束后依次执行</div>
-      {props.queue.map((item) => (
-        <div key={item.id} className="queue-item">
-          <span className="queue-content" title={item.content}>
-            {item.content}
-          </span>
-          <button
-            className="ghost queue-steer"
-            title="调整方向：打断当前任务，立即执行这条消息"
-            onClick={() => props.onSteer(item.id)}
-          >
-            <Zap size={13} /> 调整方向
-          </button>
-          <button
-            className="ghost queue-remove"
-            title="从队列移除"
-            onClick={() => props.onRemove(item.id)}
-          >
-            <X size={13} />
-          </button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ArtifactsBar(props: {
-  artifacts: Artifact[];
-  workspacePath?: string | null;
-  onOpenFile: (target: LocalFileTarget) => void;
-  onError: (message: string) => void;
-}) {
-  const { artifacts, workspacePath, onOpenFile, onError } = props;
-  if (artifacts.length === 0) return null;
-  return (
-    <div className="artifacts-bar">
-      <div className="plan-progress">交付产物</div>
-      {artifacts.map((artifact) => {
-        const path = resolveWorkspacePath(artifact.path, workspacePath);
-        return (
-          <div key={artifact.id} className="artifact-item" title={path ?? artifact.path}>
-            <FileText size={18} aria-hidden="true" />
-            <button
-              type="button"
-              className="artifact-open"
-              disabled={!path}
-              onClick={() => {
-                if (path) onOpenFile({ path, line: null, column: null });
-              }}
-            >
-              <span className="artifact-title">{artifact.title}</span>
-              <span className="sub">{artifact.path}</span>
-            </button>
-            <span className="badge">{artifact.kind}</span>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={`在文件夹中显示 ${artifact.title}`}
-              title="在文件夹中显示"
-              disabled={!path}
-              onClick={() => {
-                if (path) void revealLocalFile(path, workspacePath).catch((cause) => {
-                  onError(`无法在文件夹中显示：${cause instanceof Error ? cause.message : String(cause)}`);
-                });
-              }}
-            >
-              <FolderOpen size={16} aria-hidden="true" />
-            </button>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+import { useHistorySearch } from "../hooks/useHistorySearch";
+import { readExportHistory } from "../historyExport";
 
 interface TimelineProps {
   client?: RpcClient;
+  sessionId?: string;
+  loading?: boolean;
+  hasOlder?: boolean;
+  loadingOlder?: boolean;
+  onLoadOlder?: () => Promise<void>;
   title?: string;
   messages: Message[];
   toolCalls: ToolCall[];
@@ -354,6 +134,27 @@ export function Timeline(props: TimelineProps) {
   const [showJump, setShowJump] = useState(false);
   const [filter, setFilter] = useState<TimelineFilter>("all");
   const [query, setQuery] = useState("");
+  const historySearch = useHistorySearch(props.client, props.sessionId, filter, query);
+  const [exporting, setExporting] = useState(false);
+  const exportRequest = useRef<AbortController | null>(null);
+  const scrollAnchor = useRef<{ top: number; height: number } | null>(null);
+  useEffect(() => () => exportRequest.current?.abort(), []);
+  const exportSession = async (format: "md" | "json") => {
+    if (exportRequest.current) return;
+    const request = new AbortController();
+    exportRequest.current = request;
+    setExporting(true);
+    try {
+      const history = props.client && props.sessionId
+        ? await readExportHistory(props.client, props.sessionId, request.signal)
+        : { messages: props.messages, toolCalls: props.toolCalls };
+      if (!request.signal.aborted) downloadSession({ title: props.title ?? "miniQ session", ...history, plan: props.plan, artifacts: props.artifacts }, format);
+    } catch (cause) {
+      if (!request.signal.aborted) props.onError(`导出失败: ${String(cause)}`);
+    } finally {
+      if (exportRequest.current === request) { exportRequest.current = null; setExporting(false); }
+    }
+  };
 
   // Track whether the user is reading history (not pinned to bottom).
   const onScroll = () => {
@@ -391,11 +192,30 @@ export function Timeline(props: TimelineProps) {
   ]);
 
   const groups = useMemo(() => groupTimeline(createTimelineItems(props.messages, props.toolCalls)), [props.messages, props.toolCalls]);
-  const items = useMemo(() => filterTimelineGroups(groups, filter, query), [groups, filter, query]);
+  const items = useMemo(() => historySearch.enabled
+    ? groupTimeline(createTimelineItems(historySearch.page?.messages ?? [], historySearch.page?.toolCalls ?? []))
+    : filterTimelineGroups(groups, filter, query), [groups, filter, query, historySearch.enabled, historySearch.page]);
+  useEffect(() => {
+    const el = scrollRef.current;
+    const anchor = scrollAnchor.current;
+    if (!el || !anchor) return;
+    el.scrollTop = anchor.top + el.scrollHeight - anchor.height;
+    scrollAnchor.current = null;
+  }, [items]);
+  const hasOlder = historySearch.enabled ? Boolean(historySearch.page?.nextCursor) : props.hasOlder;
+  const loadingOlder = historySearch.enabled ? historySearch.loading : props.loadingOlder;
+  const loadOlder = () => {
+    const el = scrollRef.current;
+    if (el) scrollAnchor.current = { top: el.scrollTop, height: el.scrollHeight };
+    pinnedToBottom.current = false;
+    if (historySearch.enabled) historySearch.loadOlder();
+    else void props.onLoadOlder?.();
+  };
   const hasRunningTool = props.toolCalls.some(
     (t) => t.status === "running" || t.status === "waiting_approval",
   );
   const thinking =
+    !props.loading &&
     props.busy &&
     (!hasRunningTool || props.turnProgress?.phase === "waiting_retry") &&
     props.approvals.length === 0 &&
@@ -408,13 +228,13 @@ export function Timeline(props: TimelineProps) {
           {([["all", "全部"], ["answers", "回答"], ["activity", "执行"], ["errors", "异常"]] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}
         </div>
         <label className="timeline-search"><Search size={14} /><input type="search" aria-label="搜索当前会话" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-        <details className="session-export"><summary title="导出会话" aria-label="导出会话"><Download size={16} /></summary><div>{(["md", "json"] as const).map((format) => <button type="button" key={format} onClick={() => {
-          try { downloadSession({ title: props.title ?? "miniQ session", messages: props.messages, toolCalls: props.toolCalls, plan: props.plan, artifacts: props.artifacts }, format); }
-          catch (cause) { props.onError(`导出失败: ${String(cause)}`); }
-        }}>{format === "md" ? "Markdown" : "JSON"}</button>)}</div></details>
+        <details className="session-export"><summary title="导出会话" aria-label="导出会话">{exporting ? <LoaderCircle size={16} className="activity-spinner" /> : <Download size={16} />}</summary><div>{(["md", "json"] as const).map((format) => <button type="button" key={format} disabled={exporting} onClick={() => void exportSession(format)}>{format === "md" ? "Markdown" : "JSON"}</button>)}</div></details>
       </div>
       <div className="timeline" ref={scrollRef} onScroll={onScroll}>
-        {items.length === 0 && (filter !== "all" || query) && <div className="diff-empty" role="status">没有匹配的记录</div>}
+        {(props.loading || historySearch.loading && !historySearch.page) && <div className="history-loading" role="status"><LoaderCircle size={16} className="activity-spinner" />正在加载会话</div>}
+        {historySearch.error && <div className="history-loading" role="alert">{historySearch.error}<button type="button" className="icon-button" title="重试搜索" aria-label="重试搜索" onClick={historySearch.retry}><RefreshCw size={16} /></button></div>}
+        {hasOlder && <div className="history-pages"><button type="button" className="ghost" disabled={loadingOlder} onClick={loadOlder}>{loadingOlder ? <LoaderCircle size={14} className="activity-spinner" /> : <ChevronUp size={14} />}更早的记录</button></div>}
+        {!props.loading && !historySearch.loading && !historySearch.error && items.length === 0 && (filter !== "all" || query) && <div className="diff-empty" role="status">没有匹配的记录</div>}
         <TimelineEntries
           client={props.client}
           items={items}

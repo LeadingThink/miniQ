@@ -6,6 +6,7 @@
 
 pub mod event;
 pub mod external;
+pub mod history;
 pub mod model;
 pub mod node_plugin;
 pub mod plugin;
@@ -14,6 +15,7 @@ pub mod types;
 
 pub use event::*;
 pub use external::*;
+pub use history::*;
 pub use model::*;
 pub use node_plugin::*;
 pub use plugin::*;

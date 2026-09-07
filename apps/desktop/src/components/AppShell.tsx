@@ -124,6 +124,11 @@ function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
       >
         <Timeline
           client={app.client}
+          sessionId={app.catalog.currentSessionId!}
+          loading={app.feed.loading}
+          hasOlder={Boolean(app.feed.nextCursor)}
+          loadingOlder={app.actions.loadingOlder}
+          onLoadOlder={app.actions.loadOlder}
           title={app.catalog.currentSession?.title}
           messages={app.feed.messages}
           toolCalls={app.feed.toolCalls}

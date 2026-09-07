@@ -317,7 +317,6 @@ async fn execute_turn(
         while let Some(event) = event_rx.recv().await {
             match event {
                 AgentEvent::TextDelta(delta) => {
-                    forward_state.append_streaming_text(&forward_session, &delta);
                     forward_state.emit(Event::AssistantDelta {
                         session_id: forward_session.clone(),
                         message_id: forward_message_id.clone(),
@@ -325,7 +324,6 @@ async fn execute_turn(
                     });
                 }
                 AgentEvent::TextReplaced(text) => {
-                    forward_state.replace_streaming_text(&forward_session, &text);
                     forward_state.emit(Event::AssistantReplaced {
                         session_id: forward_session.clone(),
                         message_id: forward_message_id.clone(),

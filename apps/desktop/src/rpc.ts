@@ -28,6 +28,7 @@ type Pending = {
   reject: (err: Error) => void;
   timer: number;
   method: string;
+  cleanup: () => void;
 };
 
 const CONNECTION_TIMEOUT_MS = 15_000;
@@ -43,6 +44,8 @@ export class RpcClient {
   private resyncListeners = new Set<() => void>();
   private connectionMode: "local" | "remote" = "local";
   private remoteKey: CryptoKey | null = null;
+  private reader: RemotePayloadReader | null = null;
+  private outgoing: Promise<void> = Promise.resolve();
 
   /** Idempotent: concurrent calls share one in-flight connection attempt, so
    * React StrictMode's double-mounted effects cannot open two sockets — and
@@ -98,9 +101,10 @@ export class RpcClient {
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(url);
-      const reader = new RemotePayloadReader();
+      const reader = new RemotePayloadReader(remoteKey, (id) => this.pending.has(id));
       let remoteMessageQueue: Promise<void> = Promise.resolve();
       let settled = false;
+      let desktopConnectionId = "";
       const finish = () => {
         if (settled) return;
         settled = true;
@@ -134,6 +138,7 @@ export class RpcClient {
         ws.close(4000, "transport error");
       };
       ws.onclose = () => {
+        reader.dispose();
         window.clearTimeout(connectTimer);
         fail(new Error(this.connectionMode === "remote" ? "桌面端未在线或远程连接已关闭" : "daemon 连接已关闭"));
         if (this.ws === ws) {
@@ -141,6 +146,7 @@ export class RpcClient {
           this.remoteKey = null;
           for (const p of this.pending.values()) {
             window.clearTimeout(p.timer);
+            p.cleanup();
             p.reject(new Error("connection closed"));
           }
           this.pending.clear();
@@ -158,9 +164,11 @@ export class RpcClient {
             if (settled && this.ws !== ws) return;
             const envelope = JSON.parse(String(message.data)) as Record<string, unknown>;
             if (envelope.type === "ready") {
+              desktopConnectionId = String(envelope.desktopConnectionId ?? "");
               if (envelope.desktopOnline !== true) throw new Error("桌面端尚未在线");
               this.remoteKey = remoteKey;
               this.ws = ws;
+              this.reader = reader;
               if (!settled) {
                 this.notifyStatus(true);
                 finish();
@@ -174,6 +182,11 @@ export class RpcClient {
               ws.close(1012, "desktop offline");
               return;
             }
+            if (envelope.type === "presence" && typeof envelope.desktopConnectionId === "string" && envelope.desktopConnectionId !== desktopConnectionId) {
+              desktopConnectionId = envelope.desktopConnectionId;
+              this.onMessage(JSON.stringify({ type: "remote_resync" }));
+              return;
+            }
             if (envelope.type !== "frame") return;
             const payload = await decryptRemotePayload<Record<string, unknown>>(
               remoteKey,
@@ -181,7 +194,24 @@ export class RpcClient {
               String(envelope.ciphertext ?? ""),
             );
             if (this.ws !== ws) return;
-            const completed = reader.read(payload);
+            if (payload.type === "remote_blob") {
+              const id = String(payload.requestId ?? "");
+              this.refreshTimeout(id);
+              // Object downloads must not hold the ordered WebSocket event queue.
+              void reader.readAsync(payload).then((items) => {
+                if (this.ws === ws) for (const item of items) this.onMessage(JSON.stringify(item));
+              }).catch((error) => {
+                if (this.ws !== ws) return;
+                const pending = this.pending.get(id);
+                if (!pending) return;
+                this.pending.delete(id);
+                window.clearTimeout(pending.timer);
+                pending.cleanup();
+                pending.reject(error instanceof Error ? error : new Error("远程下载失败，请重试"));
+              });
+              return;
+            }
+            const completed = await reader.readAsync(payload);
             if (payload.type === "remote_chunk" && payload.requestId != null) {
               this.refreshTimeout(String(payload.requestId));
             }
@@ -201,6 +231,12 @@ export class RpcClient {
 
   get mode(): "local" | "remote" {
     return this.connectionMode;
+  }
+
+  selectSession(sessionId: string | null) {
+    if (this.connectionMode === "remote" && this.ws && this.remoteKey) {
+      void this.sendRemote(this.ws, this.remoteKey, { type: "remote_select", sessionId, acceptEncoding: "gzip" }).catch(() => {});
+    }
   }
 
   private onMessage(raw: string) {
@@ -225,6 +261,7 @@ export class RpcClient {
     if (!pending) return;
     this.pending.delete(id);
     window.clearTimeout(pending.timer);
+    pending.cleanup();
     if (data.error) {
       const err = data.error as RpcError;
       pending.reject(new Error(`${err.message} (code ${err.code})`));
@@ -233,17 +270,33 @@ export class RpcClient {
     }
   }
 
-  call<T = unknown>(method: string, params?: unknown): Promise<T> {
+  call<T = unknown>(method: string, params?: unknown, options: { signal?: AbortSignal } = {}): Promise<T> {
+    if (options.signal?.aborted) return Promise.reject(new DOMException("Request cancelled", "AbortError"));
     const ws = this.ws;
     if (!ws) return Promise.reject(new Error("not connected"));
     const id = `req_${this.nextId++}`;
     const payload = JSON.stringify({ jsonrpc: "2.0", id, method, params });
     return new Promise<T>((resolve, reject) => {
       const timer = window.setTimeout(() => {
-        if (!this.pending.delete(id)) return;
+        const pending = this.pending.get(id);
+        if (!pending) return;
+        this.pending.delete(id);
+        pending.cleanup();
+        this.cancelRemoteRequest(id);
         reject(new Error(`请求 ${method} 超时`));
       }, RPC_TIMEOUT_MS);
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer, method });
+      const abort = () => {
+        const pending = this.pending.get(id);
+        if (!pending) return;
+        this.pending.delete(id);
+        window.clearTimeout(pending.timer);
+        pending.cleanup();
+        this.cancelRemoteRequest(id);
+        reject(new DOMException("Request cancelled", "AbortError"));
+      };
+      const cleanup = () => options.signal?.removeEventListener("abort", abort);
+      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer, method, cleanup });
+      options.signal?.addEventListener("abort", abort, { once: true });
       if (this.connectionMode === "local") {
         try {
           if (ws.readyState !== WebSocket.OPEN) throw new Error("daemon 连接已关闭");
@@ -251,6 +304,7 @@ export class RpcClient {
         } catch (error) {
           this.pending.delete(id);
           window.clearTimeout(timer);
+          cleanup();
           reject(error instanceof Error ? error : new Error(String(error)));
         }
         return;
@@ -259,21 +313,30 @@ export class RpcClient {
       if (!key) {
         this.pending.delete(id);
         window.clearTimeout(timer);
+        cleanup();
         reject(new Error("远程加密通道尚未就绪"));
         return;
       }
-      void encryptRemotePayload(key, JSON.parse(payload))
-        .then((encrypted) => {
-          if (!this.pending.has(id)) return;
-          if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) throw new Error("远程连接已关闭");
-          ws.send(JSON.stringify({ type: "frame", target: "desktop", ...encrypted }));
-        })
+      void this.sendRemote(ws, key, { ...JSON.parse(payload), acceptEncoding: "gzip", acceptBlob: true }, () => this.pending.has(id))
         .catch((error) => {
           this.pending.delete(id);
           window.clearTimeout(timer);
+          cleanup();
           reject(error instanceof Error ? error : new Error(String(error)));
         });
     });
+  }
+
+  private sendRemote(ws: WebSocket, key: CryptoKey, payload: unknown, current = () => true): Promise<void> {
+    const sending = this.outgoing.then(async () => {
+      if (!current()) return;
+      const encrypted = await encryptRemotePayload(key, payload);
+      if (!current()) return;
+      if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) throw new Error("远程连接已关闭");
+      ws.send(JSON.stringify({ type: "frame", target: "desktop", ...encrypted }));
+    });
+    this.outgoing = sending.catch(() => {});
+    return sending;
   }
 
   onEvent(listener: (event: DaemonEvent) => void): () => void {
@@ -297,8 +360,17 @@ export class RpcClient {
     window.clearTimeout(pending.timer);
     pending.timer = window.setTimeout(() => {
       this.pending.delete(id);
+      pending.cleanup();
+      this.cancelRemoteRequest(id);
       pending.reject(new Error(`请求 ${pending.method} 超时`));
     }, RPC_TIMEOUT_MS);
+  }
+
+  private cancelRemoteRequest(id: string) {
+    this.reader?.cancelRequest(id);
+    if (this.connectionMode === "remote" && this.ws && this.remoteKey) {
+      void this.sendRemote(this.ws, this.remoteKey, { type: "remote_cancel", requestId: id }).catch(() => {});
+    }
   }
 
   private deliver(listener: () => void) {

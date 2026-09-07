@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RpcClient } from "./rpc";
-import { deriveRemoteIdentity, encryptRemotePayload } from "./remoteCrypto";
+import { decryptRemotePayload, deriveRemoteIdentity, encryptRemotePayload } from "./remoteCrypto";
 import { RemotePayloadReader } from "./remotePayload";
 
 class FakeWebSocket {
@@ -204,6 +204,32 @@ describe("RpcClient timeouts", () => {
     client.onResync(resync);
     await receive({ type: "remote_resync" });
     await vi.waitFor(() => expect(resync).toHaveBeenCalledOnce());
+    expect(client.connected).toBe(true);
+  });
+
+  it("cancels old requests on the wire without cancelling a model task or closing the connection", async () => {
+    const {client,socket}=await remoteClient();
+    const controller=new AbortController();
+    const response=client.call("session.open",{sessionId:"old"},{signal:controller.signal});
+    const rejected=expect(response).rejects.toMatchObject({name:"AbortError"});
+    await vi.waitFor(()=>expect(socket.sent).toHaveLength(2));
+    controller.abort();
+    await rejected;
+    await vi.waitFor(()=>expect(socket.sent).toHaveLength(3));
+    const envelope=JSON.parse(socket.sent[2]);
+    const {encryptionKey}=await deriveRemoteIdentity("test-only-key");
+    await expect(decryptRemotePayload(encryptionKey,envelope.nonce,envelope.ciphertext)).resolves.toEqual({type:"remote_cancel",requestId:"req_1"});
+    expect(client.connected).toBe(true);
+  });
+
+  it("resyncs when the desktop reconnects while the mobile socket remains open", async () => {
+    const {client,socket}=await remoteClient();
+    const resync=vi.fn();client.onResync(resync);
+    socket.receive({type:"presence",desktopOnline:true,desktopConnectionId:"new-desktop-process"});
+    await vi.waitFor(()=>expect(resync).toHaveBeenCalledOnce());
+    socket.receive({type:"presence",desktopOnline:true,desktopConnectionId:"new-desktop-process"});
+    await vi.advanceTimersByTimeAsync(1);
+    expect(resync).toHaveBeenCalledOnce();
     expect(client.connected).toBe(true);
   });
 });

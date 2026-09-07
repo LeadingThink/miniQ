@@ -39,7 +39,10 @@ const snapshot: LoadedSessionFeed = {
 
 function setup() {
   const listeners = new Set<(event: DaemonEvent) => void>();
+  const statuses = new Set<(connected: boolean) => void>();
   const client = {
+    onStatus: (listener: (connected: boolean) => void) => { statuses.add(listener); return () => statuses.delete(listener); },
+    onResync: () => () => {},
     onEvent: (listener: (event: DaemonEvent) => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -63,6 +66,7 @@ function setup() {
     ...hook,
     onError,
     onSessionCompleted,
+    status: (connected: boolean) => act(() => statuses.forEach((listener) => listener(connected))),
     emit: (event: DaemonEvent) =>
       act(() => listeners.forEach((listener) => listener(event))),
   };
@@ -77,6 +81,32 @@ it("a new session immediately has no prior messages, tasks or streaming text", (
   expect(hook.result.current.toolCalls).toEqual([]);
   expect(hook.result.current.plan).toEqual([]);
   expect(hook.result.current.streamingText).toBe("");
+});
+
+it("reconciles events that arrived while a snapshot was in flight exactly once", () => {
+  const hook = setup();
+  const cursor = (sequence: number) => ({ epoch: "run", sequence });
+  const delta = (sequence: number, text: string): DaemonEvent => ({type:"assistant_delta", sessionId:"a", messageId:"m", delta:text, eventCursor:cursor(sequence)});
+  act(() => hook.result.current.reset("a"));
+  hook.emit(delta(10, "in snapshot"));
+  hook.emit(delta(11, " after snapshot"));
+  act(() => hook.result.current.load("a", {...snapshot, streamingText:"in snapshot", eventCursor:cursor(10)}));
+  hook.emit(delta(11, " after snapshot"));
+  expect(hook.result.current.streamingText).toBe("in snapshot after snapshot");
+});
+
+it("buffers reconnect events so they cannot advance past missing replay data", () => {
+  const hook = setup();
+  const cursor = (sequence: number) => ({epoch:"run", sequence});
+  const delta = (sequence: number, text: string): DaemonEvent => ({type:"assistant_delta", sessionId:"a", messageId:"m", delta:text, eventCursor:cursor(sequence)});
+  act(() => hook.result.current.load("a", {...snapshot, streamingText:"one", eventCursor:cursor(1)}));
+  hook.status(false);
+  hook.status(true);
+  hook.emit(delta(3, "three"));
+  expect(hook.result.current.eventCursor).toEqual(cursor(1));
+  act(() => hook.result.current.applyReplay("a", [delta(2, "two"), delta(3, "three")], cursor(3)));
+  expect(hook.result.current.streamingText).toBe("onetwothree");
+  expect(hook.result.current.buffered).toEqual([]);
 });
 
 it("late snapshots and events cannot put session A tasks into B", () => {

@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { RelayBroker } from "./broker.js";
+import { configuredBlobStore, type TicketIssuer } from "./blobStore.js";
 
 const DEFAULT_PORT = 9200;
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -14,8 +15,8 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "tauri://localhost",
 ];
 
-export function createRelayServer(options?: { allowedOrigins?: string[] }): Server {
-  const broker = new RelayBroker();
+export function createRelayServer(options?: { allowedOrigins?: string[]; blobs?: TicketIssuer }): Server {
+  const broker = new RelayBroker(options?.blobs ?? configuredBlobStore());
   const allowedOrigins = new Set(options?.allowedOrigins ?? configuredOrigins());
   const server = createServer((request, response) => {
     if (request.url === "/health") {
