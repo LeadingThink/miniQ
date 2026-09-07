@@ -35,7 +35,10 @@ def release_upload_plan(input_dir: Path, tag: str) -> list[UploadItem]:
     prefix = f"releases/miniq/{tag}"
     versioned = [UploadItem(path, f"{prefix}/{path.name}") for path in files]
     # Stable manifests are uploaded last, so clients never see metadata before assets exist.
-    return versioned + [UploadItem(latest, "releases/miniq/latest.json")]
+    return versioned + [
+        UploadItem(latest, "releases/miniq/latest.json"),
+        UploadItem(latest, "latest.json"),
+    ]
 
 
 def required_env(name: str) -> str:
@@ -82,6 +85,7 @@ def refresh_manifests(
 
     urls = [
         f"{primary_domain.rstrip('/')}/releases/miniq/latest.json",
+        f"{primary_domain.rstrip('/')}/latest.json",
         f"{legacy_domain.rstrip('/')}/latest.json",
     ]
     result, response = CdnManager(Auth(auth_key, secret_key)).refresh_urls(urls)

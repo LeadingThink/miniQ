@@ -21,6 +21,7 @@ class UploadPlanTest(unittest.TestCase):
                     "releases/miniq/v1.2.3/latest.json",
                     "releases/miniq/v1.2.3/miniQ_1.2.3_x64-setup.exe",
                     "releases/miniq/latest.json",
+                    "latest.json",
                 ],
             )
 

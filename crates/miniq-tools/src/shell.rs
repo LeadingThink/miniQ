@@ -280,10 +280,12 @@ fn blocked(reason: &str) -> Risk {
 
 #[cfg(windows)]
 pub(crate) fn shell_command(command: &str) -> tokio::process::Command {
+    // Flush PowerShell's deferred object formatting before exiting, retaining command status.
     let utf8_command = format!(
         "$OutputEncoding = [Console]::OutputEncoding = \
-         [System.Text.UTF8Encoding]::new($false); {command}\n\
-         $__miniqSucceeded = $?; $__miniqExitCode = $LASTEXITCODE; \
+         [System.Text.UTF8Encoding]::new($false); & {{ {command}\n\
+         $script:__miniqSucceeded = $?; $script:__miniqExitCode = $LASTEXITCODE \
+         }} | Out-Default; \
          if (-not $__miniqSucceeded) {{ \
              if ($null -ne $__miniqExitCode -and $__miniqExitCode -ne 0) {{ \
                  exit $__miniqExitCode \
@@ -334,7 +336,27 @@ mod tests {
             .execute(&ctx, json!({"command": "pwd", "cwd": "nested"}))
             .await
             .unwrap();
+        assert_eq!(out["exitCode"], 0);
         assert!(out["stdout"].as_str().unwrap().contains("nested"));
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn flushes_formatted_objects_before_exit() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = ToolContext::new(dir.path().to_path_buf());
+        let out = ShellRunTool
+            .execute(
+                &ctx,
+                json!({"command": "1..3 | ForEach-Object { [pscustomobject]@{ Name = \"item-$_\" } }"}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(out["exitCode"], 0);
+        let stdout = out["stdout"].as_str().unwrap();
+        for name in ["item-1", "item-2", "item-3"] {
+            assert!(stdout.contains(name), "missing {name}: {stdout}");
+        }
     }
 
     #[test]
