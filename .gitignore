@@ -7,3 +7,8 @@ apps/desktop/src-tauri/gen/
 *.log
 dist-release/
 scripts/
+!apps/desktop/scripts/
+apps/desktop/scripts/*
+!apps/desktop/scripts/android_release.py
+!apps/desktop/scripts/android_release_test.py
+dist-android/
