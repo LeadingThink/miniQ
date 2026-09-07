@@ -35,6 +35,7 @@ pub enum TurnPhase {
     CompactingContext,
     RequestingModel,
     ReceivingModel,
+    WaitingRetry,
     Finalizing,
 }
 
@@ -45,6 +46,16 @@ pub struct TurnProgress {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_step: Option<usize>,
     pub started_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry: Option<ModelRetryProgress>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRetryProgress {
+    pub attempt: usize,
+    pub max_attempts: usize,
+    pub delay_ms: u64,
 }
 
 impl SessionStatus {

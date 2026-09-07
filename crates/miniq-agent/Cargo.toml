@@ -8,6 +8,7 @@ license.workspace = true
 miniq-models = { path = "../miniq-models" }
 async-trait = { workspace = true }
 futures-util = { workspace = true }
+rand = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

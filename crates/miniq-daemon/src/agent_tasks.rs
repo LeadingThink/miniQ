@@ -78,7 +78,18 @@ impl DaemonAgentBridge {
                 executor.ctx.set_plan_mode(true);
             }
             let (events, mut receiver) = tokio::sync::mpsc::channel(128);
-            let drain = tokio::spawn(async move { while receiver.recv().await.is_some() {} });
+            let progress_state = self.state.clone();
+            let progress_record = record.clone();
+            let drain = tokio::spawn(async move {
+                while let Some(event) = receiver.recv().await {
+                    if let Some(progress) = crate::agent_progress::from_event(event) {
+                        progress_state
+                            .agent_tasks
+                            .update_progress(&progress_record, progress)
+                            .await;
+                    }
+                }
+            });
             let outcome = run_turn_with_limits(
                 provider.as_ref(),
                 &executor,

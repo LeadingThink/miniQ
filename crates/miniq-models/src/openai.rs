@@ -373,14 +373,9 @@ fn decode_sse_event(
         }
     };
     if let Some(error) = parsed.error {
-        let detail = error
-            .get("message")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .unwrap_or_else(|| error.to_string());
-        deltas.push(Err(ProviderError::from_stream_detail(
+        deltas.push(Err(ProviderError::from_stream_error(
             "provider stream error",
-            &detail,
+            &error,
         )));
         return (deltas, true);
     }
@@ -444,9 +439,7 @@ impl ModelProvider for OpenAiCompatProvider {
         }
         let response = req.send().await?;
         if !response.status().is_success() {
-            let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::from_api_response(status, body));
+            return Err(ProviderError::from_http_response(response).await);
         }
 
         Ok(sse::response_stream(

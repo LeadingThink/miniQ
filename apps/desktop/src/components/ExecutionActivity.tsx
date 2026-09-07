@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { PlanTask, ToolCall, TurnProgress } from "../types";
+import { RetryNotice } from "./RetryNotice";
 import { ToolPayload } from "./ToolPayload";
 import { ComputerObservation } from "./ComputerObservation";
 import type { RpcClient } from "../rpc";
@@ -225,6 +226,8 @@ export function turnProgressLabel(progress: TurnProgress | null): string {
         : "正在将执行结果交给模型";
     case "receiving_model":
       return "模型正在生成响应";
+    case "waiting_retry":
+      return "模型请求暂时失败，等待自动重试";
     case "finalizing":
       return "正在保存并整理结果";
   }
@@ -243,6 +246,7 @@ export function ExecutionPrelude({
       <LoaderCircle className="activity-spinner" size={15} />
       <div>
         <strong>{turnProgressLabel(progress)}</strong>
+        {progress?.phase === "waiting_retry" && <RetryNotice progress={progress} />}
         {progress?.modelStep && (
           <span className="execution-phase-meta">
             第 {progress.modelStep} 轮

@@ -375,12 +375,10 @@ fn append_string(value: &mut Value, field: &str, delta: &str) {
 }
 
 fn anthropic_error(event: &Value) -> ProviderError {
-    let detail = event
-        .pointer("/error/message")
-        .or_else(|| event.get("message"))
-        .and_then(Value::as_str)
-        .unwrap_or("provider returned an unspecified Anthropic error");
-    ProviderError::from_stream_detail("Anthropic Messages API error", detail)
+    ProviderError::from_stream_error(
+        "Anthropic Messages API error",
+        event.get("error").unwrap_or(event),
+    )
 }
 
 impl EventDecoder for AnthropicDecoder {
@@ -440,9 +438,7 @@ impl ModelProvider for AnthropicProvider {
         }
         let response = builder.send().await?;
         if !response.status().is_success() {
-            let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::from_api_response(status, body));
+            return Err(ProviderError::from_http_response(response).await);
         }
         Ok(sse::response_stream(response, AnthropicDecoder::default()))
     }

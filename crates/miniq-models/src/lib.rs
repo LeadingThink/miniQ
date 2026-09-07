@@ -6,6 +6,7 @@
 mod anthropic;
 mod compat_schema;
 mod configured;
+mod error;
 mod image;
 mod openai;
 mod provider;

@@ -322,16 +322,6 @@ async fn execute_turn(
                         delta,
                     });
                 }
-                AgentEvent::ModelRequestStarted { step } => forward_state.set_turn_progress(
-                    &forward_session,
-                    TurnPhase::RequestingModel,
-                    Some(step),
-                ),
-                AgentEvent::ModelResponseStarted { step } => forward_state.set_turn_progress(
-                    &forward_session,
-                    TurnPhase::ReceivingModel,
-                    Some(step),
-                ),
                 AgentEvent::ContextCompacted {
                     estimated_tokens_before,
                     estimated_tokens_after,
@@ -340,6 +330,11 @@ async fn execute_turn(
                     estimated_tokens_before,
                     estimated_tokens_after,
                 }),
+                event => {
+                    if let Some(progress) = crate::agent_progress::from_event(event) {
+                        forward_state.update_turn_progress(&forward_session, progress);
+                    }
+                }
             }
         }
     });

@@ -93,6 +93,21 @@ describe("Timeline execution flow", () => {
     expect(html).toContain("正在分析并准备下一步");
   });
 
+  it("shows retries alongside active tools but not for an idle session", () => {
+    const turnProgress: TurnProgress = {
+      phase: "waiting_retry",
+      modelStep: 2,
+      startedAt: new Date().toISOString(),
+      retry: { attempt: 1, maxAttempts: 4, delayMs: 60000 },
+    };
+    const toolCalls: ToolCall[] = [{
+      id: "background-tool", sessionId: "session-1", toolName: "agent_run",
+      input: {}, status: "running", createdAt: new Date().toISOString(),
+    }];
+    expect(renderTimeline({ busy: true, toolCalls, turnProgress })).toContain("自动重试 1/4");
+    expect(renderTimeline({ busy: false, toolCalls, turnProgress })).not.toContain("自动重试");
+  });
+
   it("keeps the real model phase visible after earlier streamed text", () => {
     const html = renderTimeline({
       busy: true,

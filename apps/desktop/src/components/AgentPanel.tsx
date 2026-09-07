@@ -5,9 +5,11 @@ import {
   RefreshCw,
   Square,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { RpcClient } from "../rpc";
 import { ToolPayload } from "./ToolPayload";
+import type { TurnProgress } from "../types";
+import { RetryNotice } from "./RetryNotice";
 
 interface AgentSummary {
   agentId: string;
@@ -20,6 +22,7 @@ interface AgentSummary {
   queuedMessages: number;
   error: string | null;
   result?: string | null;
+  progress?: TurnProgress | null;
 }
 
 const ACTIVE = new Set(["running", "stopping", "finalizing"]);
@@ -32,7 +35,11 @@ const LABELS: Record<string, string> = {
   cancelled: "已取消",
 };
 
-export function AgentPanel(props: { client: RpcClient; sessionId: string; busy: boolean }) {
+export function AgentPanel(props: {
+  client: RpcClient;
+  sessionId: string;
+  busy: boolean;
+}) {
   return <SessionAgentPanel key={props.sessionId} {...props} />;
 }
 
@@ -53,6 +60,7 @@ function SessionAgentPanel({
   const [result, setResult] = useState<AgentSummary | null>(null);
   const [pending, setPending] = useState(false);
   const actionEpoch = useRef(0);
+  const detailsId = useId();
 
   useEffect(() => {
     let stale = false;
@@ -104,6 +112,12 @@ function SessionAgentPanel({
 
   const act = async (agentId: string, stop: boolean) => {
     const epoch = ++actionEpoch.current;
+    if (!stop && selected === agentId) {
+      setSelected(null);
+      setResult(null);
+      setPending(false);
+      return;
+    }
     setSelected(agentId);
     setPending(true);
     setResult(null);
@@ -130,7 +144,7 @@ function SessionAgentPanel({
         className="agent-panel-toggle"
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => setOpen((current) => !current)}
       >
         <GitBranch size={15} />
         <strong>子任务</strong>
@@ -157,55 +171,72 @@ function SessionAgentPanel({
       {open && (
         <div className="agent-list">
           {agents.map((agent) => (
-            <div key={agent.agentId} className="agent-row">
-              <button
-                type="button"
-                className="agent-open"
-                title={agent.description}
-                aria-pressed={selected === agent.agentId}
-                onClick={() => void act(agent.agentId, false)}
-              >
-                {ACTIVE.has(agent.status) && (
-                  <LoaderCircle size={13} className="activity-spinner" />
-                )}
-                <strong>{agent.name}</strong>
-                <span>{agent.description}</span>
-                <small>
-                  {agent.parentId
-                    ? `${names.get(agent.parentId) ?? agent.parentId} / `
-                    : ""}
-                  {agent.model ?? "默认模型"} ·{" "}
-                  {LABELS[agent.status] ?? agent.status} ·{" "}
-                  {new Date(agent.createdAt).toLocaleTimeString()}
-                </small>
-              </button>
-              {ACTIVE.has(agent.status) && (
+            <div key={agent.agentId}>
+              <div className="agent-row">
                 <button
-                  className="icon-button"
                   type="button"
-                  title={`停止 ${agent.name}`}
-                  aria-label={`停止 ${agent.name}`}
-                  disabled={pending || agent.status !== "running"}
-                  onClick={() => void act(agent.agentId, true)}
+                  className="agent-open"
+                  title={agent.description}
+                  aria-expanded={selected === agent.agentId}
+                  aria-controls={`${detailsId}-${agent.agentId}`}
+                  onClick={() => void act(agent.agentId, false)}
                 >
-                  <Square size={13} />
+                  <ChevronRight
+                    size={14}
+                    className={selected === agent.agentId ? "open" : ""}
+                  />
+                  {ACTIVE.has(agent.status) && (
+                    <LoaderCircle size={13} className="activity-spinner" />
+                  )}
+                  <strong>{agent.name}</strong>
+                  <span>{agent.description}</span>
+                  <small>
+                    {agent.parentId
+                      ? `${names.get(agent.parentId) ?? agent.parentId} / `
+                      : ""}
+                    {agent.model ?? "默认模型"} ·{" "}
+                    {LABELS[agent.status] ?? agent.status} ·{" "}
+                    {new Date(agent.createdAt).toLocaleTimeString()}
+                  </small>
+                  {agent.progress?.phase === "waiting_retry" && (
+                    <RetryNotice progress={agent.progress} />
+                  )}
                 </button>
+                {ACTIVE.has(agent.status) && (
+                  <button
+                    className="icon-button"
+                    type="button"
+                    title={`停止 ${agent.name}`}
+                    aria-label={`停止 ${agent.name}`}
+                    disabled={pending || agent.status !== "running"}
+                    onClick={() => void act(agent.agentId, true)}
+                  >
+                    <Square size={13} />
+                  </button>
+                )}
+              </div>
+              {selected === agent.agentId && (
+                <div
+                  id={`${detailsId}-${agent.agentId}`}
+                  role="region"
+                  aria-label={`${agent.name} 详情`}
+                >
+                  {pending && <div role="status">正在读取子任务</div>}
+                  {result && (
+                    <ToolPayload
+                      label="子任务结果"
+                      value={
+                        result.result ??
+                        result.error ??
+                        LABELS[result.status] ??
+                        result.status
+                      }
+                    />
+                  )}
+                </div>
               )}
             </div>
           ))}
-          {pending && <div role="status">正在读取子任务</div>}
-          {result && (
-            <ToolPayload
-              key={result.agentId}
-              label="子任务结果"
-              value={
-                result.result ??
-                result.error ??
-                LABELS[result.status] ??
-                result.status
-              }
-            />
-          )}
         </div>
       )}
     </section>

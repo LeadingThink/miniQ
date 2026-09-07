@@ -152,6 +152,31 @@
         ],
         "type": "object"
       },
+      "ModelRetryProgress": {
+        "properties": {
+          "attempt": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "delayMs": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "maxAttempts": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "attempt",
+          "delayMs",
+          "maxAttempts"
+        ],
+        "type": "object"
+      },
       "PlanTask": {
         "description": "One step in the agent's plan for the current task.",
         "properties": {
@@ -494,6 +519,7 @@
           "compacting_context",
           "requesting_model",
           "receiving_model",
+          "waiting_retry",
           "finalizing"
         ],
         "type": "string"
@@ -510,6 +536,16 @@
           },
           "phase": {
             "$ref": "#/definitions/TurnPhase"
+          },
+          "retry": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ModelRetryProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "startedAt": {
             "type": "string"

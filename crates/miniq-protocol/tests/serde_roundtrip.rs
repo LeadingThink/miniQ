@@ -2,6 +2,16 @@ use miniq_protocol::*;
 use serde_json::json;
 
 #[test]
+fn checked_in_event_schema_matches_runtime_types() {
+    let bundle: serde_json::Value =
+        serde_json::from_str(include_str!("../../../schemas/protocol.schema.json")).unwrap();
+    assert_eq!(
+        bundle["event"],
+        serde_json::to_value(schemars::schema_for!(Event)).unwrap()
+    );
+}
+
+#[test]
 fn request_roundtrip() {
     let raw = json!({
         "jsonrpc": "2.0",
@@ -91,6 +101,7 @@ fn turn_progress_event_exposes_phase_step_and_timestamp() {
             phase: TurnPhase::RequestingModel,
             model_step: Some(2),
             started_at: "2026-09-03T02:00:00Z".into(),
+            retry: None,
         },
     };
     let value = serde_json::to_value(event).unwrap();
@@ -116,6 +127,26 @@ fn status_enums_snake_case() {
         serde_json::to_value(ToolCallStatus::Succeeded).unwrap(),
         json!("succeeded")
     );
+}
+
+#[test]
+fn retry_progress_roundtrip_and_optional_field() {
+    let raw = json!({
+        "type": "turn_progress_changed", "sessionId": "sess_01",
+        "progress": {
+            "phase": "waiting_retry", "modelStep": 2,
+            "startedAt": "2026-09-07T02:00:00Z",
+            "retry": {"attempt": 1, "maxAttempts": 4, "delayMs": 1100}
+        }
+    });
+    let event: Event = serde_json::from_value(raw.clone()).unwrap();
+    assert_eq!(event.session_id(), "sess_01");
+    assert_eq!(serde_json::to_value(event).unwrap(), raw);
+    let old =
+        json!({"phase":"requesting_model", "modelStep":1, "startedAt":"2026-09-07T02:00:00Z"});
+    let progress: TurnProgress = serde_json::from_value(old.clone()).unwrap();
+    assert!(progress.retry.is_none());
+    assert_eq!(serde_json::to_value(progress).unwrap(), old);
 }
 
 #[test]

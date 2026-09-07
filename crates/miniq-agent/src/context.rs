@@ -1,8 +1,10 @@
-use futures_util::StreamExt;
-use miniq_models::{ChatDelta, ChatMessage, ChatRole, CompletionRequest, ModelProvider, ToolSpec};
+use miniq_models::{ChatMessage, ChatRole, ModelProvider, ToolSpec};
 use tokio_util::sync::CancellationToken;
 
 use crate::{AgentError, AgentEvent};
+
+mod summary;
+use summary::summarize_batch;
 
 #[derive(Debug, Clone)]
 pub struct ContextPolicy {
@@ -183,68 +185,12 @@ fn batches(messages: &[ChatMessage], limit: usize) -> Vec<Vec<ChatMessage>> {
     result
 }
 
-async fn summarize_batch(
-    provider: &dyn ModelProvider,
-    messages: &[ChatMessage],
-    cancel: &CancellationToken,
-) -> Result<String, AgentError> {
-    let transcript = serde_json::to_string(messages).map_err(|error| {
-        AgentError::Provider(miniq_models::ProviderError::InvalidResponse(
-            error.to_string(),
-        ))
-    })?;
-    let request = CompletionRequest {
-        messages: vec![
-            ChatMessage::system(
-                "Compress the conversation into a precise working-memory handoff. Preserve user goals, decisions, constraints, file paths, commands, errors, completed work, pending work, and facts needed to continue. Omit pleasantries and repeated tool output. Do not invent anything.",
-            ),
-            ChatMessage::user(transcript),
-        ],
-        tools: Vec::new(),
-        // Provider defaults are the only portable choice here: thinking
-        // models may reject any explicit value other than 1.
-        temperature: None,
-        max_output_tokens: None,
-    };
-    let mut stream = tokio::select! {
-        _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-        stream = provider.stream_complete(request) => stream?,
-    };
-    let mut summary = String::new();
-    loop {
-        let delta = tokio::select! {
-            _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-            delta = stream.next() => delta,
-        };
-        let Some(delta) = delta else { break };
-        match delta? {
-            ChatDelta::Text(text) => summary.push_str(&text),
-            ChatDelta::ToolCall(_) => {
-                return Err(AgentError::Provider(
-                    miniq_models::ProviderError::InvalidResponse(
-                        "context compaction attempted a tool call".to_string(),
-                    ),
-                ));
-            }
-            ChatDelta::Context(_) => {}
-            ChatDelta::Finished => break,
-        }
-    }
-    if summary.trim().is_empty() {
-        return Err(AgentError::Provider(
-            miniq_models::ProviderError::InvalidResponse(
-                "context compaction returned an empty summary".to_string(),
-            ),
-        ));
-    }
-    Ok(summary)
-}
-
 pub async fn compact_history(
     provider: &dyn ModelProvider,
     mut messages: Vec<ChatMessage>,
     tools: &[ToolSpec],
     policy: &ContextPolicy,
+    max_model_retries: usize,
     events: &tokio::sync::mpsc::Sender<AgentEvent>,
     cancel: &CancellationToken,
 ) -> Result<ContextOutcome, AgentError> {
@@ -296,7 +242,7 @@ pub async fn compact_history(
 
     let mut summaries = Vec::new();
     for batch in batches(old, policy.summary_batch_tokens) {
-        summaries.push(summarize_batch(provider, &batch, cancel).await?);
+        summaries.push(summarize_batch(provider, &batch, max_model_retries, events, cancel).await?);
     }
     while estimate_text_tokens(&summaries.join("\n\n")) > policy.summary_batch_tokens
         && summaries.len() > 1
@@ -305,7 +251,16 @@ pub async fn compact_history(
             .drain(..)
             .map(ChatMessage::user)
             .collect::<Vec<_>>();
-        summaries = vec![summarize_batch(provider, &summary_messages, cancel).await?];
+        summaries = vec![
+            summarize_batch(
+                provider,
+                &summary_messages,
+                max_model_retries,
+                events,
+                cancel,
+            )
+            .await?,
+        ];
     }
 
     let mut compacted_messages = Vec::new();
@@ -335,7 +290,7 @@ pub async fn compact_history(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use miniq_models::mock::MockProvider;
+    use miniq_models::{mock::MockProvider, ChatDelta};
 
     #[test]
     fn provider_context_contributes_to_context_limits() {
@@ -370,6 +325,7 @@ mod tests {
             messages,
             &[],
             &policy,
+            4,
             &events,
             &CancellationToken::new(),
         )
@@ -422,6 +378,7 @@ mod tests {
             messages,
             &[],
             &policy,
+            4,
             &events,
             &CancellationToken::new(),
         )
@@ -464,6 +421,7 @@ mod tests {
             messages,
             &[],
             &policy,
+            4,
             &events,
             &CancellationToken::new(),
         )
