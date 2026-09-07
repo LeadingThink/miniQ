@@ -55,7 +55,9 @@ jobs:
         run: npm run release:check-version -- ${{ inputs.tag }}
       - name: Test release manifest builder
         working-directory: apps/desktop
-        run: npm run test:release-manifest
+        run: |
+          npm run test:release-manifest
+          npm run test:qiniu-publisher
 
   build:
     needs: validate
@@ -146,6 +148,9 @@ jobs:
 
   publish:
     needs: build
+    concurrency:
+      group: miniq-shared-download-manifest
+      cancel-in-progress: false
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -215,7 +220,7 @@ jobs:
     permissions:
       contents: read
     concurrency:
-      group: miniq-android-release
+      group: miniq-shared-download-manifest
       cancel-in-progress: false
     env:
       RELEASE_TAG: ${{ inputs.tag }}

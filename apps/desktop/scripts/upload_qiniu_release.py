@@ -5,9 +5,13 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import mimetypes
+import json
 import os
 from pathlib import Path
 import re
+import tempfile
+
+from desktop_download_manifest import MANIFEST_KEY, merge_manifest, read_manifest
 
 
 @dataclass(frozen=True)
@@ -84,12 +88,13 @@ def refresh_manifests(
     from qiniu import Auth, CdnManager
 
     urls = [
+        f"{primary_domain.rstrip('/')}/{MANIFEST_KEY}",
         f"{primary_domain.rstrip('/')}/releases/miniq/latest.json",
         f"{primary_domain.rstrip('/')}/latest.json",
         f"{legacy_domain.rstrip('/')}/latest.json",
     ]
     result, response = CdnManager(Auth(auth_key, secret_key)).refresh_urls(urls)
-    if response.status_code != 200 or not result:
+    if response.status_code != 200 or not result or result.get("code", 200) != 200:
         raise RuntimeError(f"Qiniu CDN refresh failed ({response.status_code})")
     print("refreshed miniQ stable manifests")
 
@@ -106,6 +111,11 @@ def main() -> int:
     primary_domain = required_env("QINIU_DOMAIN")
     legacy_bucket = required_env("QINIU_LEGACY_BUCKET")
     legacy_domain = required_env("QINIU_LEGACY_DOMAIN")
+    original = read_manifest(primary_domain)
+    latest = json.loads((args.input / "latest.json").read_text(encoding="utf-8"))
+    download_manifest = merge_manifest(
+        json.loads(original), latest, args.input, args.tag, primary_domain,
+    )
     publish(release_upload_plan(args.input, args.tag), bucket_name, access_key, secret_key)
     publish(
         [UploadItem(args.input.resolve() / "latest.json", "latest.json")],
@@ -113,6 +123,12 @@ def main() -> int:
         access_key,
         secret_key,
     )
+    if read_manifest(primary_domain) != original:
+        raise RuntimeError("shared download manifest changed during publication; retry from current metadata")
+    with tempfile.TemporaryDirectory() as directory:
+        manifest = Path(directory) / "manifest.json"
+        manifest.write_text(json.dumps(download_manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        publish([UploadItem(manifest, MANIFEST_KEY)], bucket_name, access_key, secret_key)
     refresh_manifests(access_key, secret_key, primary_domain, legacy_domain)
     return 0
 

@@ -71,6 +71,15 @@ release is published only after every target succeeds.
 The workflow also updates `https://miniq.zaiwenai.com/latest.json` in the legacy
 `miniq-zaiwenai` bucket so already-installed clients continue receiving updates.
 
+After uploading the installers, the desktop publisher updates the desktop entries
+in `https://oss.zaiwen.top/releases/manifest.json`, which powers the Zaiwen download
+page. URLs, byte sizes and SHA-256 values come from the built installers. Existing
+mobile entries, other products and installation guidance are preserved. Missing
+installers, a version downgrade or a concurrent shared-manifest edit stops
+publication instead of replacing valid download metadata. Desktop and Android
+publication jobs share a concurrency group; the publisher also refreshes the
+download-page manifest in the CDN.
+
 Tauri update signatures protect package integrity. Windows Authenticode signing
 is a separate requirement and should be added before broad public distribution
 to reduce SmartScreen warnings.
