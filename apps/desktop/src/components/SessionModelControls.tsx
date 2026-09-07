@@ -1,5 +1,5 @@
 import { Check, Cpu, RefreshCw, X } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import {
   EFFORT_LABELS,
   PROTOCOL_LABELS,
@@ -30,8 +30,37 @@ export function SessionModelControls({
   const [description, setDescription] = useState<ModelDescription | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [popoverMaxHeight, setPopoverMaxHeight] = useState<number | null>(null);
   const listId = useId();
   const disabled = busy || model.pending || !model.ready;
+
+  useEffect(() => {
+    if (!open) return;
+    const handleOutsideMouseDown = (event: MouseEvent) => {
+      const root = rootRef.current;
+      if (root && !root.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handleOutsideMouseDown);
+    return () => document.removeEventListener("mousedown", handleOutsideMouseDown);
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPopoverMaxHeight(null);
+      return;
+    }
+    const updatePopoverHeight = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const availableHeight = trigger.getBoundingClientRect().top - 26;
+      setPopoverMaxHeight(Math.max(120, Math.floor(availableHeight)));
+    };
+    updatePopoverHeight();
+    window.addEventListener("resize", updatePopoverHeight);
+    return () => window.removeEventListener("resize", updatePopoverHeight);
+  }, [open]);
 
   useEffect(() => {
     if (!model.effective) return;
@@ -76,10 +105,11 @@ export function SessionModelControls({
   }, [client, open, attempt]);
 
   return (
-    <div className="session-model-controls">
+    <div ref={rootRef} className="session-model-controls">
       <button
         type="button"
         className="model-trigger"
+        ref={triggerRef}
         disabled={disabled}
         aria-expanded={open}
         aria-label="选择会话模型"
@@ -139,6 +169,11 @@ export function SessionModelControls({
       {open && (
         <form
           className="session-model-popover"
+          style={
+            popoverMaxHeight === null
+              ? undefined
+              : { maxHeight: `${popoverMaxHeight}px` }
+          }
           aria-label="会话模型配置"
           onSubmit={(event) => {
             event.preventDefault();

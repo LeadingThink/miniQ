@@ -41,7 +41,8 @@
   left: 0;
   z-index: 70;
   width: min(340px, calc(100vw - 48px));
-  max-height: 60vh;
+  box-sizing: border-box;
+  max-height: calc(100dvh - 32px);
   overflow-y: auto;
   background: var(--bg);
   border: 1px solid var(--border-strong);
@@ -68,6 +69,7 @@
 .session-model-popover select {
   width: 100%;
   min-width: 0;
+  box-sizing: border-box;
   padding: 8px;
   border: 1px solid var(--border-strong);
   background: var(--bg);
