@@ -35,6 +35,6 @@ The host accepts components up to 16 MiB and creates a fresh Store and Component
 
 ## Development
 
-Use a Component-capable toolchain such as Rust's `wasm32-wasip2` target. The complete `examples/plugins/text-stats` project builds one pure-compute tool without host permissions. Copy its manifest and renamed `.wasm` output into the data directory layout above.
+Use a Component-capable toolchain such as Rust's `wasm32-wasip2` target. Copy the API v1 WIT from `crates/miniq-plugins/wit/v1/plugin.wit`, then place the manifest and compiled `.wasm` component in the data directory layout above.
 
 Open Settings to inspect discovered plugins, enable or disable them, and reload changed components. A failed plugin remains visible with a structured diagnostic and does not prevent other plugins or the daemon from loading.

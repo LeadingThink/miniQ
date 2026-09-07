@@ -169,8 +169,8 @@ mod tests {
 
     fn manifest() -> PluginManifest {
         PluginManifest {
-            id: "dev.miniq.text-stats".into(),
-            name: "Text Stats".into(),
+            id: "dev.miniq.fixture".into(),
+            name: "Fixture".into(),
             version: Version::new(1, 0, 0),
             api_version: Version::new(1, 0, 0),
             runtime: PluginRuntime::Wasm,
