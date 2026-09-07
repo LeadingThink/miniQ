@@ -80,6 +80,12 @@ publication instead of replacing valid download metadata. Desktop and Android
 publication jobs share a concurrency group; the publisher also refreshes the
 download-page manifest in the CDN.
 
+Linux desktop builds use Ubuntu 24.04. The screen capture dependency requires
+newer PipeWire headers than Ubuntu 22.04 provides. The build installs the system
+development dependencies documented by XCap, including PipeWire, Wayland, EGL,
+XCB and libclang. Linux installers target Ubuntu 24.04 or a compatible newer
+distribution; this requirement must accompany the download-page instructions.
+
 Tauri update signatures protect package integrity. Windows Authenticode signing
 is a separate requirement and should be added before broad public distribution
 to reduce SmartScreen warnings.
