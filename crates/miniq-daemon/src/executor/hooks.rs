@@ -16,11 +16,15 @@ pub(super) fn after_success(
                 .get("tasks")
                 .and_then(|tasks| serde_json::from_value(tasks.clone()).ok())
                 .unwrap_or_default();
-            publish_plan(executor, tasks);
+            publish_plan(executor, tasks, super::plan_review::ReviewPlan::Checklist);
         }
         "task_create" | "task_get" | "task_list" | "task_item_update" => {
             if let Some(tasks) = super::plan::task_graph_plan(output) {
-                publish_plan(executor, tasks);
+                publish_plan(
+                    executor,
+                    tasks,
+                    super::plan_review::ReviewPlan::Graph(output["tasks"].clone()),
+                );
             }
         }
         "doc_write" => {
@@ -43,7 +47,11 @@ pub(super) fn after_success(
     }
 }
 
-fn publish_plan(executor: &SessionToolExecutor, tasks: Vec<miniq_protocol::PlanTask>) {
+fn publish_plan(
+    executor: &SessionToolExecutor,
+    tasks: Vec<miniq_protocol::PlanTask>,
+    source: super::plan_review::ReviewPlan,
+) {
     // Child plans remain in their tool evidence; they must not replace the
     // parent's top-level checklist.
     if executor
@@ -60,10 +68,16 @@ fn publish_plan(executor: &SessionToolExecutor, tasks: Vec<miniq_protocol::PlanT
         .store
         .set_session_plan(&executor.session_id, &tasks)
     {
-        Ok(()) => executor.state.emit(Event::PlanUpdated {
-            session_id: executor.session_id.clone(),
-            tasks,
-        }),
+        Ok(()) => {
+            *executor
+                .review_plan
+                .lock()
+                .expect("plan review mutex poisoned") = Some(source);
+            executor.state.emit(Event::PlanUpdated {
+                session_id: executor.session_id.clone(),
+                tasks,
+            });
+        }
         Err(error) => tracing::error!(%error, "could not persist the session plan"),
     }
 }

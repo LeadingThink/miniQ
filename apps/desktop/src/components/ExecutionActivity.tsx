@@ -182,24 +182,24 @@ export function ToolStep(props: {
   );
 }
 
-export function PlanProgress({ plan }: { plan: PlanTask[] }) {
+export function PlanProgress({ plan, busy }: { plan: PlanTask[]; busy: boolean }) {
   if (plan.length === 0) return null;
   const done = plan.filter((task) => task.status === "completed").length;
 
   return (
     <section className="execution-plan" aria-label={`任务进度 ${done}/${plan.length}`}>
       <div className="execution-plan-head">
-        <strong>{done === plan.length ? "任务步骤已完成" : "任务进度"}</strong>
-        <span>{done}/{plan.length}</span>
+        <strong>{done === plan.length ? "任务步骤已完成" : busy ? "任务进度" : "本轮已结束，步骤待核对"}</strong>
+        <span>{done}/{plan.length}{!busy && done < plan.length ? " 已确认" : ""}</span>
       </div>
       <progress value={done} max={plan.length} aria-label="已完成任务步骤" />
       <ol>
         {plan.map((task, index) => (
-          <li key={`${index}-${task.content}`} className={task.status}>
+          <li key={`${index}-${task.content}`} className={!busy && task.status === "in_progress" ? "pending" : task.status}>
             <span className="plan-step-marker" aria-hidden="true">
               {task.status === "completed" ? (
                 <Check size={12} />
-              ) : task.status === "in_progress" ? (
+              ) : task.status === "in_progress" && busy ? (
                 <LoaderCircle className="activity-spinner" size={13} />
               ) : (
                 <span />
@@ -229,7 +229,7 @@ export function turnProgressLabel(progress: TurnProgress | null): string {
     case "waiting_retry":
       return "模型请求暂时失败，等待自动重试";
     case "finalizing":
-      return "正在保存并整理结果";
+      return "正在核对任务步骤并保存结果";
   }
 }
 

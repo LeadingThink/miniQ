@@ -41,6 +41,7 @@ describe("execution activity", () => {
   it("presents plans as an ordered inline progress list", () => {
     const html = renderToStaticMarkup(
       <PlanProgress
+        busy={true}
         plan={[
           { content: "检查现状", status: "completed" },
           { content: "调整时间线", status: "in_progress" },
@@ -52,6 +53,28 @@ describe("execution activity", () => {
     expect(html).toContain("1/3");
     expect(html.indexOf("检查现状")).toBeLessThan(html.indexOf("调整时间线"));
     expect(html.indexOf("调整时间线")).toBeLessThan(html.indexOf("验证客户端"));
+  });
+
+  it("stops stale plan spinners without inventing completion when a turn ends", () => {
+    const plan = [
+      { content: "检查现状", status: "completed" as const },
+      { content: "制作成片", status: "in_progress" as const },
+      { content: "核验交付", status: "pending" as const },
+    ];
+    const html = renderToStaticMarkup(<PlanProgress plan={plan} busy={false} />);
+    expect(html).toContain("本轮已结束，步骤待核对");
+    expect(html).toContain("1/3 已确认");
+    expect(html).not.toContain("activity-spinner");
+    expect(html).not.toContain('class="in_progress"');
+    expect(plan[1].status).toBe("in_progress");
+  });
+
+  it("shows verified completion and hides empty plans", () => {
+    const html = renderToStaticMarkup(<PlanProgress plan={[{ content: "交付", status: "completed" }]} busy={false} />);
+    expect(html).toContain("任务步骤已完成");
+    expect(html).toContain("1/1");
+    expect(html).not.toContain("待核对");
+    expect(renderToStaticMarkup(<PlanProgress plan={[]} busy={false} />)).toBe("");
   });
 
   it("describes the observable model phase and round", () => {

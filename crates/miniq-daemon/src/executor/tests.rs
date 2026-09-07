@@ -85,6 +85,7 @@ async fn unknown_tool_is_persisted_and_emits_a_failed_lifecycle() {
         ctx: ToolContext::new(directory.path().to_path_buf()),
         cancel: CancellationToken::new(),
         permission_policy: PermissionPolicy::Inherit,
+        review_plan: Default::default(),
     };
     let output = executor
         .execute(&ToolCallRequest {
@@ -162,6 +163,7 @@ fn native_alias_and_canonical_call_share_a_loop_fingerprint() {
         ctx: ToolContext::new(directory.path().to_path_buf()),
         cancel: CancellationToken::new(),
         permission_policy: PermissionPolicy::Inherit,
+        review_plan: Default::default(),
     };
     let native = ToolCallRequest {
         id: "native".into(),
@@ -200,6 +202,7 @@ async fn native_tool_search_executes_instead_of_returning_unknown_tool() {
         ctx: ToolContext::new(directory.path().to_path_buf()),
         cancel: CancellationToken::new(),
         permission_policy: PermissionPolicy::Inherit,
+        review_plan: Default::default(),
     };
 
     let output = executor
@@ -240,6 +243,7 @@ async fn plan_mode_blocks_workspace_writes_until_exit() {
         ctx,
         cancel: CancellationToken::new(),
         permission_policy: PermissionPolicy::Inherit,
+        review_plan: Default::default(),
     };
 
     let output = executor
@@ -306,6 +310,7 @@ async fn unapproved_desktop_operations_never_reach_the_backend() {
         ctx: ToolContext::new(directory.path().into()),
         cancel: CancellationToken::new(),
         permission_policy: PermissionPolicy::DontAsk,
+        review_plan: Default::default(),
     };
     for action in ["screenshot", "click", "type", "key", "drag", "scroll"] {
         let output = executor

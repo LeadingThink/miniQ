@@ -20,6 +20,7 @@ mod checkpoint;
 mod hooks;
 mod interaction;
 mod plan;
+mod plan_review;
 
 use adaptation::unknown_tool_output;
 
@@ -41,6 +42,7 @@ pub struct SessionToolExecutor {
     pub ctx: ToolContext,
     pub cancel: CancellationToken,
     pub(crate) permission_policy: PermissionPolicy,
+    pub(crate) review_plan: std::sync::Mutex<Option<plan_review::ReviewPlan>>,
 }
 
 impl SessionToolExecutor {

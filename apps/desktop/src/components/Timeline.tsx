@@ -282,6 +282,7 @@ function TimelineEntries(props: {
   streamingText: string;
   turnProgress: TurnProgress | null;
   thinking: boolean;
+  busy: boolean;
   onResolveApproval: TimelineProps["onResolveApproval"];
   onResolveQuestion: TimelineProps["onResolveQuestion"];
   onRollback: TimelineProps["onRollback"];
@@ -342,7 +343,7 @@ function TimelineEntries(props: {
       {props.thinking && (
         <ExecutionPrelude plan={props.plan} progress={props.turnProgress} />
       )}
-      <PlanProgress plan={props.plan} />
+      <PlanProgress plan={props.plan} busy={props.busy} />
     </div>
   );
 }
@@ -425,6 +426,7 @@ export function Timeline(props: TimelineProps) {
           streamingText={props.streamingText}
           turnProgress={props.turnProgress}
           thinking={thinking}
+          busy={props.busy}
           onResolveApproval={props.onResolveApproval}
           onResolveQuestion={props.onResolveQuestion}
           onRollback={props.onRollback}

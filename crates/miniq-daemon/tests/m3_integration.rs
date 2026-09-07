@@ -106,6 +106,15 @@ async fn plan_document_artifact_flow() {
             json!({"path": "out/report.docx", "content": "# 摘要\n一切正常。", "title": "数据摘要报告"}),
         )],
         vec![ChatDelta::Text("报告已生成".into())],
+        vec![tool_call(
+            "review",
+            "task_update",
+            json!({"tasks": [
+                {"content":"读取数据", "status":"completed"},
+                {"content":"生成报告", "status":"completed"}
+            ]}),
+        )],
+        vec![ChatDelta::Text("Progress reconciled".into())],
     ]));
     let (port, token) = start(provider).await;
     let mut ws = connect(port, &token).await;
@@ -153,12 +162,16 @@ async fn plan_document_artifact_flow() {
     let artifact = next_event_of(&mut ws, "artifact_created").await;
     assert_eq!(artifact["artifact"]["title"], "数据摘要报告");
     assert_eq!(artifact["artifact"]["kind"], "docx");
+    let reconciled = next_event_of(&mut ws, "plan_updated").await;
+    assert_eq!(reconciled["tasks"][1]["status"], "completed");
     next_event_of(&mut ws, "turn_completed").await;
     assert!(dir.path().join("out/report.docx").exists());
 
     // Reopening a completed turn retains the last published plan and artifacts.
     let resp = call(&mut ws, "r3", "session.open", json!({"sessionId": sess_id})).await;
-    assert_eq!(resp["result"]["plan"], plan["tasks"]);
+    assert_eq!(resp["result"]["plan"], reconciled["tasks"]);
+    let messages = resp["result"]["messages"].as_array().unwrap();
+    assert_eq!(messages.last().unwrap()["content"], "报告已生成");
     let artifacts = resp["result"]["artifacts"].as_array().unwrap();
     assert_eq!(artifacts.len(), 1);
     assert_eq!(artifacts[0]["path"], "out/report.docx");
