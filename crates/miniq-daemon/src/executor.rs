@@ -44,6 +44,15 @@ pub struct SessionToolExecutor {
 }
 
 impl SessionToolExecutor {
+    fn resolve_registered_call(&self, call: &ToolCallRequest) -> Option<ToolCallRequest> {
+        let name = self.router.resolve_registered_name(&call.name)?;
+        (name != call.name).then(|| ToolCallRequest {
+            id: call.id.clone(),
+            name,
+            arguments: call.arguments.clone(),
+        })
+    }
+
     fn audit(&self, event_type: &str, payload: Value) {
         if let Err(e) =
             self.state
@@ -285,6 +294,8 @@ impl ToolExecutor for SessionToolExecutor {
         call: &ToolCallRequest,
         output: &Value,
     ) -> Vec<miniq_models::ChatImage> {
+        let resolved = self.resolve_registered_call(call);
+        let call = resolved.as_ref().unwrap_or(call);
         let name = miniq_tools::canonical_native_tool_name(&call.name).unwrap_or(&call.name);
         self.router
             .get(name)
@@ -293,6 +304,8 @@ impl ToolExecutor for SessionToolExecutor {
     }
 
     fn execution_mode(&self, call: &ToolCallRequest) -> ToolExecutionMode {
+        let resolved = self.resolve_registered_call(call);
+        let call = resolved.as_ref().unwrap_or(call);
         let name = miniq_tools::canonical_native_tool_name(&call.name).unwrap_or(&call.name);
         match name {
             "file_read" | "file_list" | "file_glob" | "file_grep" | "git_status" | "git_diff"
@@ -302,6 +315,8 @@ impl ToolExecutor for SessionToolExecutor {
     }
 
     fn call_fingerprint(&self, call: &ToolCallRequest) -> String {
+        let resolved = self.resolve_registered_call(call);
+        let call = resolved.as_ref().unwrap_or(call);
         let adapted = miniq_tools::adapt_native_tool_call(call).ok().flatten();
         let call = adapted
             .as_ref()
@@ -311,6 +326,8 @@ impl ToolExecutor for SessionToolExecutor {
     }
 
     async fn execute(&self, call: &ToolCallRequest) -> Result<Value, AgentError> {
+        let resolved = self.resolve_registered_call(call);
+        let call = resolved.as_ref().unwrap_or(call);
         let adapted = match miniq_tools::adapt_native_tool_call(call) {
             Ok(adapted) => adapted,
             Err(error) => {

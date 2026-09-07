@@ -308,6 +308,18 @@ impl ToolRouter {
             .map(|entry| Arc::clone(&entry.tool))
     }
 
+    pub fn resolve_registered_name(&self, requested: &str) -> Option<String> {
+        let tools = self.tools.read().unwrap();
+        if tools.contains_key(requested) {
+            return Some(requested.to_string());
+        }
+        let mut matches = tools
+            .keys()
+            .filter(|name| name.replace('.', "_") == requested);
+        let resolved = matches.next()?.clone();
+        matches.next().is_none().then_some(resolved)
+    }
+
     pub fn origin(&self, name: &str) -> Option<ToolOrigin> {
         self.tools
             .read()
@@ -434,5 +446,61 @@ mod tests {
             Err(error) => error,
         };
         assert_eq!(error, RegistrationError::AlreadyRegistered("same".into()));
+    }
+
+    #[test]
+    fn resolves_provider_wire_names_only_when_unambiguous() {
+        let router = ToolRouter::new();
+        let dotted = router
+            .register(Arc::new(TestTool("dev.miniq.fixture.run")))
+            .unwrap();
+
+        assert_eq!(
+            router.resolve_registered_name("dev.miniq.fixture.run"),
+            Some("dev.miniq.fixture.run".into())
+        );
+        assert_eq!(
+            router.resolve_registered_name("dev_miniq_fixture_run"),
+            Some("dev.miniq.fixture.run".into())
+        );
+
+        let underscored = router
+            .register(Arc::new(TestTool("dev_miniq_fixture_run")))
+            .unwrap();
+        assert_eq!(
+            router.resolve_registered_name("dev_miniq_fixture_run"),
+            Some("dev_miniq_fixture_run".into())
+        );
+
+        let ambiguous = router
+            .register(Arc::new(TestTool("dev_miniq.fixture.run")))
+            .unwrap();
+        assert_eq!(
+            router.resolve_registered_name("dev_miniq_fixture_run"),
+            Some("dev_miniq_fixture_run".into())
+        );
+
+        drop(ambiguous);
+        drop(underscored);
+        drop(dotted);
+    }
+
+    #[test]
+    fn rejects_ambiguous_non_exact_wire_names() {
+        let router = ToolRouter::new();
+        let first = router
+            .register(Arc::new(TestTool("dev.miniq_fixture.run")))
+            .unwrap();
+        let second = router
+            .register(Arc::new(TestTool("dev_miniq.fixture.run")))
+            .unwrap();
+
+        assert_eq!(
+            router.resolve_registered_name("dev_miniq_fixture_run"),
+            None
+        );
+
+        drop(second);
+        drop(first);
     }
 }
