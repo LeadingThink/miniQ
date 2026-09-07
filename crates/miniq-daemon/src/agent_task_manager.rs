@@ -82,6 +82,19 @@ pub(crate) enum MessageDisposition {
 }
 
 impl AgentTaskManager {
+    pub(crate) async fn has_active(&self, session_id: &str) -> bool {
+        let records = self.records.lock().await;
+        for record in records
+            .values()
+            .filter(|record| record.session_id == session_id)
+        {
+            if record.state.lock().await.status.is_active() {
+                return true;
+            }
+        }
+        false
+    }
+
     pub(crate) async fn list(&self, session_id: &str) -> Vec<Value> {
         let records = self
             .records

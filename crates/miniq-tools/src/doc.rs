@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use miniq_docs::{read_document, read_pdf_pages, write_document, DocContent, DocOutput, SheetData};
 use miniq_protocol::RiskLevel;
-use miniq_sandbox::{resolve_in_workspace, Risk};
+use miniq_sandbox::Risk;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -65,7 +65,8 @@ impl Tool for DocReadTool {
     }
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: DocReadInput = parse_input(input)?;
-        let path = resolve_in_workspace(&ctx.workspace, &p.path)
+        let path = ctx
+            .resolve_path(&p.path)
             .map_err(|e| ToolError::SandboxDenied(e.to_string()))?;
         if let Some(selection) = p.pages.as_deref() {
             if !path
@@ -273,7 +274,8 @@ impl Tool for DocWriteTool {
     }
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: DocWriteInput = parse_input(input)?;
-        let path = resolve_in_workspace(&ctx.workspace, &p.path)
+        let path = ctx
+            .resolve_path(&p.path)
             .map_err(|e| ToolError::SandboxDenied(e.to_string()))?;
         let output = match (p.content, p.sheets) {
             (Some(content), None) => DocOutput::Text(content),

@@ -51,6 +51,7 @@ beforeEach(() => {
   const sessions = ["a", "b"].map((id) => ({
     id,
     workspaceId: "w",
+    workingDirectory: "/workspace",
     title: id,
     status: "running",
     createdAt: "2026-09-07",
@@ -64,7 +65,7 @@ beforeEach(() => {
       case "settings.get":
         return { approvalMode: "auto" };
       case "workspace.list":
-        return { workspaces: [{ id: "w", name: "test", path: "/workspace" }] };
+        return { workspaces: [{ id: "w", name: "test", path: "/workspace", additionalPaths: [] }] };
       case "session.list":
         return { sessions };
       case "session.modelGet":

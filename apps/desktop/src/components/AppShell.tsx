@@ -29,6 +29,7 @@ import { WorkbenchResizer } from "./WorkbenchResizer";
 import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 import { SessionModelControls } from "./SessionModelControls";
 import { AgentPanel } from "./AgentPanel";
+import { ProjectDirectories } from "./ProjectDirectories";
 
 interface AppOnlyProps {
   app: MiniqAppController;
@@ -60,8 +61,20 @@ function openFileTarget(app: MiniqAppController, target: LocalFileTarget) {
 }
 
 function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
+  const editingWorkspace = app.catalog.workspaces.find((workspace) => workspace.id === app.navigation.editingWorkspaceId);
   return (
     <>
+      {editingWorkspace && <ProjectDirectories
+        key={editingWorkspace.id}
+        workspace={editingWorkspace}
+        readOnly={app.client.mode === "remote"}
+        sessions={app.catalog.sessions.filter((session) => session.workspaceId === editingWorkspace.id)}
+        onClose={() => app.navigation.setEditingWorkspaceId(null)}
+        onSave={async (paths) => {
+          await app.client.call("workspace.updateRoots", { workspaceId: editingWorkspace.id, paths });
+          await app.catalog.refreshWorkspaces();
+        }}
+      />}
       {app.navigation.showSettings && (
         <SettingsPanel
           client={app.client}
@@ -137,7 +150,8 @@ function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
           plan={app.feed.plan}
           artifacts={app.feed.artifacts}
           queue={app.feed.queue}
-          workspacePath={app.catalog.currentWorkspace?.path}
+          workspacePath={app.catalog.currentSession?.workingDirectory}
+          workspacePaths={app.catalog.currentWorkspacePaths}
           streamingText={app.feed.streamingText}
           turnProgress={app.feed.turnProgress}
           busy={!!app.busy}
@@ -390,6 +404,7 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
         onCreateSession={(workspaceId) => void app.actions.createSession(workspaceId)}
         onDeleteWorkspace={(workspaceId) => void app.actions.deleteWorkspace(workspaceId)}
         onRenameWorkspace={(workspaceId, name) => void app.actions.renameWorkspace(workspaceId, name)}
+        onEditWorkspace={app.navigation.setEditingWorkspaceId}
         onSelectSession={(sessionId) => { closeMobileSidebar(); void app.actions.openSession(sessionId); }}
         onSessionSeen={app.markSessionSeen}
         onDeleteSession={(sessionId) => void app.actions.deleteSession(sessionId)}
@@ -457,7 +472,8 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
         >
           <FilePreviewPanel
             preview={app.preview.state}
-            workspacePath={app.catalog.currentWorkspace.path}
+            workspacePath={app.catalog.currentSession?.workingDirectory ?? app.catalog.currentWorkspace.path}
+            workspacePaths={app.catalog.currentWorkspacePaths}
             onClose={app.preview.close}
             onOpenFile={(target) => void app.preview.openFile(target)}
             onRetry={() => {

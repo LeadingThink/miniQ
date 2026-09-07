@@ -15,10 +15,16 @@ pub enum PathError {
 /// Resolve `requested` (absolute or workspace-relative) to an absolute path
 /// guaranteed to stay inside `workspace`.
 ///
-/// The check is purely lexical after normalization: `..` components are
-/// resolved without touching the filesystem so the rule also applies to
-/// files that do not exist yet.
 pub fn resolve_in_workspace(workspace: &Path, requested: &str) -> Result<PathBuf, PathError> {
+    resolve_in_roots(workspace, &[workspace.to_path_buf()], requested)
+}
+
+/// Relative paths use cwd; every target must belong to an explicitly attached root.
+pub fn resolve_in_roots(
+    cwd: &Path,
+    roots: &[PathBuf],
+    requested: &str,
+) -> Result<PathBuf, PathError> {
     if requested.trim().is_empty() {
         return Err(PathError::Invalid("empty path".into()));
     }
@@ -26,18 +32,55 @@ pub fn resolve_in_workspace(workspace: &Path, requested: &str) -> Result<PathBuf
     let joined = if requested_path.is_absolute() {
         requested_path.to_path_buf()
     } else {
-        workspace.join(requested_path)
+        cwd.join(requested_path)
     };
 
-    let normalized = normalize(&joined)?;
-    let workspace_norm = normalize(workspace)?;
-
-    if !normalized.starts_with(&workspace_norm) {
-        return Err(PathError::OutsideWorkspace(
-            normalized.to_string_lossy().to_string(),
-        ));
+    let resolved = canonical_target(&joined)?;
+    for root in roots {
+        if resolved.starts_with(canonical_target(root)?) {
+            return Ok(resolved);
+        }
     }
-    Ok(normalized)
+    Err(PathError::OutsideWorkspace(
+        resolved.to_string_lossy().to_string(),
+    ))
+}
+
+// Canonicalize the existing ancestor before normalizing a not-yet-created suffix.
+// This also rejects broken links and links that escape via an intermediate parent.
+fn canonical_target(path: &Path) -> Result<PathBuf, PathError> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|error| PathError::Invalid(error.to_string()))?
+            .join(path)
+    };
+    let mut ancestor = absolute.as_path();
+    let mut suffix = Vec::new();
+    loop {
+        match std::fs::symlink_metadata(ancestor) {
+            Ok(_) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let name = ancestor
+                    .components()
+                    .next_back()
+                    .ok_or_else(|| PathError::Invalid(absolute.display().to_string()))?;
+                suffix.push(name.as_os_str().to_owned());
+                ancestor = ancestor
+                    .parent()
+                    .ok_or_else(|| PathError::Invalid(absolute.display().to_string()))?;
+            }
+            Err(error) => return Err(PathError::Invalid(error.to_string())),
+        }
+    }
+    let mut resolved = ancestor
+        .canonicalize()
+        .map_err(|error| PathError::Invalid(error.to_string()))?;
+    for part in suffix.into_iter().rev() {
+        resolved.push(part);
+    }
+    normalize(&resolved)
 }
 
 /// Lexically normalize a path: resolve `.` and `..`, unify separators.
@@ -112,5 +155,49 @@ mod tests {
     #[test]
     fn empty_rejected() {
         assert!(resolve_in_workspace(&ws(), "  ").is_err());
+    }
+
+    #[test]
+    fn attached_roots_allow_absolute_targets_and_keep_relative_cwd() {
+        let primary = tempfile::tempdir().unwrap();
+        let extra = tempfile::tempdir().unwrap();
+        let roots = vec![primary.path().to_path_buf(), extra.path().to_path_buf()];
+        assert_eq!(
+            resolve_in_roots(primary.path(), &roots, "new/file").unwrap(),
+            primary.path().canonicalize().unwrap().join("new/file")
+        );
+        assert_eq!(
+            resolve_in_roots(
+                primary.path(),
+                &roots,
+                extra.path().join("new/file").to_str().unwrap()
+            )
+            .unwrap(),
+            extra.path().canonicalize().unwrap().join("new/file")
+        );
+        assert!(
+            resolve_in_roots(primary.path(), &roots[..1], extra.path().to_str().unwrap()).is_err()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_targets_and_nonexistent_children_cannot_escape() {
+        let primary = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), primary.path().join("link")).unwrap();
+        assert!(resolve_in_workspace(primary.path(), "link/new/file").is_err());
+        assert!(resolve_in_workspace(primary.path(), "link/../secret").is_err());
+        std::os::unix::fs::symlink(
+            outside.path().join("missing"),
+            primary.path().join("broken"),
+        )
+        .unwrap();
+        assert!(resolve_in_workspace(primary.path(), "broken/file").is_err());
+        let roots = vec![primary.path().to_path_buf(), outside.path().to_path_buf()];
+        assert_eq!(
+            resolve_in_roots(primary.path(), &roots, "link/new").unwrap(),
+            outside.path().canonicalize().unwrap().join("new")
+        );
     }
 }

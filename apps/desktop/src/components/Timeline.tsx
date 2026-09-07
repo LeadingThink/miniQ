@@ -23,6 +23,7 @@ import { useHistorySearch } from "../hooks/useHistorySearch";
 import { readExportHistory } from "../historyExport";
 
 interface TimelineProps {
+  workspacePaths?: readonly string[];
   client?: RpcClient;
   sessionId?: string;
   loading?: boolean;
@@ -272,6 +273,7 @@ export function Timeline(props: TimelineProps) {
         </button>
       )}
       <ArtifactsBar
+        workspacePaths={props.workspacePaths}
         artifacts={props.artifacts}
         workspacePath={props.workspacePath}
         onOpenFile={props.onOpenFile}

@@ -270,6 +270,7 @@ fn remote_method_allowed(method: &str) -> bool {
         "daemon.shutdown"
             | "settings.update"
             | "workspace.open"
+            | "workspace.updateRoots"
             | "externalSession.import"
             | "mcp.update"
             | "skill.delete"
@@ -433,6 +434,7 @@ mod tests {
         assert!(!remote_method_allowed("settings.update"));
         assert!(!remote_method_allowed("daemon.shutdown"));
         assert!(!remote_method_allowed("workspace.open"));
+        assert!(!remote_method_allowed("workspace.updateRoots"));
     }
 
     #[test]

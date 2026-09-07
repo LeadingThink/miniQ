@@ -47,6 +47,7 @@ function Fixture() {
         <FilePreviewPanel
           preview={preview}
           workspacePath="/fixture"
+          workspacePaths={["/fixture"]}
           onClose={() => {}}
           onOpenFile={(target) => setLine(target.line)}
           onRetry={() => setRefreshes((value) => value + 1)}

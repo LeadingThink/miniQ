@@ -94,9 +94,17 @@ pub(super) fn row_to_scheduled_task(row: &Row<'_>) -> rusqlite::Result<Scheduled
 }
 
 pub(super) fn row_to_workspace(row: &Row<'_>) -> rusqlite::Result<Workspace> {
+    let paths: String = row.get(5)?;
     Ok(Workspace {
         id: row.get(0)?,
         path: row.get(1)?,
+        additional_paths: serde_json::from_str(&paths).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                5,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
         name: row.get(2)?,
         created_at: row.get(3)?,
         updated_at: row.get(4)?,
@@ -111,6 +119,7 @@ pub(super) fn row_to_session(row: &Row<'_>) -> rusqlite::Result<Session> {
     Ok(Session {
         id: row.get(0)?,
         workspace_id: row.get(1)?,
+        working_directory: row.get(14)?,
         title: row.get(2)?,
         status: parse_session_status(&status)?,
         pinned: pinned != 0,

@@ -30,6 +30,7 @@ function setup() {
     connect: vi.fn().mockImplementation(async () => { client.connected = true; }),
     onStatus: (listener: (connected: boolean) => void) => { listeners.add(listener); return () => listeners.delete(listener); },
     onResync: () => () => {},
+    onEvent: () => () => {},
     call: vi.fn().mockImplementation(async (method: string) => {
       if (method === "daemon.shutdown") {
         client.connected = false;

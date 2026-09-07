@@ -3,7 +3,7 @@
 
 use async_trait::async_trait;
 use miniq_protocol::RiskLevel;
-use miniq_sandbox::{resolve_in_workspace, Risk};
+use miniq_sandbox::Risk;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -16,7 +16,7 @@ pub(crate) fn path_risk(ctx: &ToolContext, input: &Value, base: RiskLevel, reaso
             reason: "missing path".into(),
         };
     };
-    match resolve_in_workspace(&ctx.workspace, path) {
+    match ctx.resolve_path(path) {
         Ok(_) => Risk {
             level: base,
             reason: reason.to_string(),
@@ -73,7 +73,8 @@ impl Tool for FileReadTool {
                 "offset and limit must be positive integers".into(),
             ));
         }
-        let path = resolve_in_workspace(&ctx.workspace, &p.path)
+        let path = ctx
+            .resolve_path(&p.path)
             .map_err(|e| ToolError::SandboxDenied(e.to_string()))?;
         let content = tokio::fs::read_to_string(&path)
             .await
@@ -146,7 +147,8 @@ impl Tool for FileListTool {
     }
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: FileListInput = parse_input(input)?;
-        let path = resolve_in_workspace(&ctx.workspace, &p.path)
+        let path = ctx
+            .resolve_path(&p.path)
             .map_err(|e| ToolError::SandboxDenied(e.to_string()))?;
         let mut reader = tokio::fs::read_dir(&path)
             .await
@@ -221,7 +223,8 @@ impl Tool for FileWriteTool {
     }
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: FileWriteInput = parse_input(input)?;
-        let path = resolve_in_workspace(&ctx.workspace, &p.path)
+        let path = ctx
+            .resolve_path(&p.path)
             .map_err(|e| ToolError::SandboxDenied(e.to_string()))?;
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent)

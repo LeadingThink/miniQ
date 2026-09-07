@@ -10,7 +10,7 @@ impl Store {
         let now = now_iso();
         if let Some(workspace) = conn
             .query_row(
-                "SELECT id, path, name, created_at, updated_at FROM workspaces WHERE path = ?1",
+                "SELECT id, path, name, created_at, updated_at, additional_paths_json FROM workspaces WHERE path = ?1",
                 params![path],
                 row_to_workspace,
             )
@@ -21,6 +21,7 @@ impl Store {
         let workspace = Workspace {
             id: new_id("ws"),
             path: path.to_string(),
+            additional_paths: Vec::new(),
             name: name.to_string(),
             created_at: now.clone(),
             updated_at: now,
@@ -42,7 +43,7 @@ impl Store {
     pub fn get_workspace(&self, id: &str) -> Result<Workspace> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT id, path, name, created_at, updated_at FROM workspaces WHERE id = ?1",
+            "SELECT id, path, name, created_at, updated_at, additional_paths_json FROM workspaces WHERE id = ?1",
             params![id],
             row_to_workspace,
         )
@@ -53,7 +54,7 @@ impl Store {
     pub fn list_workspaces(&self) -> Result<Vec<Workspace>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, path, name, created_at, updated_at FROM workspaces ORDER BY updated_at DESC",
+            "SELECT id, path, name, created_at, updated_at, additional_paths_json FROM workspaces ORDER BY updated_at DESC",
         )?;
         let rows = stmt.query_map([], row_to_workspace)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -65,6 +66,11 @@ impl Store {
         let session = Session {
             id: new_id("sess"),
             workspace_id: workspace_id.to_string(),
+            working_directory: conn.query_row(
+                "SELECT path FROM workspaces WHERE id = ?1",
+                params![workspace_id],
+                |row| row.get(0),
+            )?,
             title: title.to_string(),
             status: SessionStatus::Idle,
             pinned: false,
@@ -95,7 +101,7 @@ impl Store {
             "SELECT s.id, s.workspace_id, s.title, s.status, s.created_at, s.updated_at,
                     s.pinned, s.archived,
                     e.provider, e.external_id, e.source_path, e.continuation_mode,
-                    e.imported_at, e.last_synced_at
+                    e.imported_at, e.last_synced_at, s.working_directory
              FROM sessions s
              LEFT JOIN external_session_links e ON e.session_id = s.id
              WHERE s.id = ?1",
@@ -114,7 +120,7 @@ impl Store {
                     "SELECT s.id, s.workspace_id, s.title, s.status, s.created_at, s.updated_at,
                             s.pinned, s.archived,
                             e.provider, e.external_id, e.source_path, e.continuation_mode,
-                            e.imported_at, e.last_synced_at
+                            e.imported_at, e.last_synced_at, s.working_directory
                      FROM sessions s
                      LEFT JOIN external_session_links e ON e.session_id = s.id
                      WHERE s.workspace_id = ?1
@@ -128,7 +134,7 @@ impl Store {
                     "SELECT s.id, s.workspace_id, s.title, s.status, s.created_at, s.updated_at,
                             s.pinned, s.archived,
                             e.provider, e.external_id, e.source_path, e.continuation_mode,
-                            e.imported_at, e.last_synced_at
+                            e.imported_at, e.last_synced_at, s.working_directory
                      FROM sessions s
                      LEFT JOIN external_session_links e ON e.session_id = s.id
                      ORDER BY s.pinned DESC, s.updated_at DESC",

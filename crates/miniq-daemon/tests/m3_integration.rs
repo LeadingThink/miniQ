@@ -115,6 +115,7 @@ async fn plan_document_artifact_flow() {
             ]}),
         )],
         vec![ChatDelta::Text("Progress reconciled".into())],
+        vec![ChatDelta::Text("Follow-up answer".into())],
     ]));
     let (port, token) = start(provider).await;
     let mut ws = connect(port, &token).await;
@@ -137,11 +138,7 @@ async fn plan_document_artifact_flow() {
     )
     .await;
 
-    // Every turn clears stale progress before publishing its own plan.
-    let reset = next_event_of(&mut ws, "plan_updated").await;
-    assert!(reset["tasks"].as_array().unwrap().is_empty());
-
-    // The new plan is then published in execution order.
+    // The first plan event is the actual plan, never an unconditional reset.
     let plan = next_event_of(&mut ws, "plan_updated").await;
     assert_eq!(plan["tasks"].as_array().unwrap().len(), 2);
     assert_eq!(plan["tasks"][1]["status"], "in_progress");
@@ -175,6 +172,35 @@ async fn plan_document_artifact_flow() {
     let artifacts = resp["result"]["artifacts"].as_array().unwrap();
     assert_eq!(artifacts.len(), 1);
     assert_eq!(artifacts[0]["path"], "out/report.docx");
+
+    call(
+        &mut ws,
+        "follow-up",
+        "session.sendMessage",
+        json!({"sessionId": sess_id, "message":{"role":"user","content":"Where is the report?"}}),
+    )
+    .await;
+    next_event_of(&mut ws, "turn_completed").await;
+    let follow_up = call(
+        &mut ws,
+        "reopen",
+        "session.open",
+        json!({"sessionId":sess_id}),
+    )
+    .await;
+    assert_eq!(follow_up["result"]["plan"], reconciled["tasks"]);
+    assert_eq!(
+        follow_up["result"]["artifacts"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(
+        follow_up["result"]["messages"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["content"],
+        "Follow-up answer"
+    );
 }
 
 #[tokio::test]

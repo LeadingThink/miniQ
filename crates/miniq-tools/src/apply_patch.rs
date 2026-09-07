@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use miniq_protocol::RiskLevel;
-use miniq_sandbox::{resolve_in_workspace, Risk};
+use miniq_sandbox::Risk;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -156,7 +156,7 @@ impl Tool for ApplyPatchTool {
             Err(error) => return blocked(&error.to_string()),
         };
         for path in paths {
-            if let Err(error) = resolve_in_workspace(&ctx.workspace, &path) {
+            if let Err(error) = ctx.resolve_path(&path) {
                 return blocked(&error.to_string());
             }
         }
@@ -173,8 +173,8 @@ impl Tool for ApplyPatchTool {
                 "patch has no file operations".into(),
             ));
         }
-        let workspace = ctx.workspace.clone();
-        tokio::task::spawn_blocking(move || apply_operations(&workspace, &operations))
+        let context = ctx.clone();
+        tokio::task::spawn_blocking(move || apply_operations(&context, &operations))
             .await
             .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?
     }
@@ -187,10 +187,13 @@ fn blocked(reason: &str) -> Risk {
     }
 }
 
-fn apply_operations(workspace: &Path, operations: &[PatchOperation]) -> Result<Value, ToolError> {
+fn apply_operations(
+    context: &ToolContext,
+    operations: &[PatchOperation],
+) -> Result<Value, ToolError> {
     let mut files = BTreeMap::<PathBuf, FileState>::new();
     for operation in operations {
-        stage_operation(workspace, operation, &mut files)?;
+        stage_operation(context, operation, &mut files)?;
     }
     let summaries = operations
         .iter()
@@ -240,13 +243,13 @@ fn file_state<'a>(
 }
 
 fn stage_operation(
-    workspace: &Path,
+    context: &ToolContext,
     operation: &PatchOperation,
     files: &mut BTreeMap<PathBuf, FileState>,
 ) -> Result<(), ToolError> {
     match operation {
         PatchOperation::Create { path, diff } => {
-            let path = resolve_path(workspace, path)?;
+            let path = resolve_path(context, path)?;
             let state = file_state(files, &path)?;
             if state.updated.is_some() {
                 return Err(ToolError::ExecutionFailed(format!(
@@ -257,7 +260,7 @@ fn stage_operation(
             state.updated = Some(create_content(diff).into_bytes());
         }
         PatchOperation::Update { path, diff } => {
-            let path = resolve_path(workspace, path)?;
+            let path = resolve_path(context, path)?;
             let state = file_state(files, &path)?;
             let current = state.updated.as_deref().ok_or_else(|| {
                 ToolError::ExecutionFailed(format!("update target not found: {}", path.display()))
@@ -265,7 +268,7 @@ fn stage_operation(
             state.updated = Some(apply_diff(current, diff)?.into_bytes());
         }
         PatchOperation::Delete { path } => {
-            let path = resolve_path(workspace, path)?;
+            let path = resolve_path(context, path)?;
             let state = file_state(files, &path)?;
             if state.updated.is_none() {
                 return Err(ToolError::ExecutionFailed(format!(
@@ -280,8 +283,8 @@ fn stage_operation(
             new_path,
             diff,
         } => {
-            let source = resolve_path(workspace, path)?;
-            let target = resolve_path(workspace, new_path)?;
+            let source = resolve_path(context, path)?;
+            let target = resolve_path(context, new_path)?;
             let current = file_state(files, &source)?.updated.clone().ok_or_else(|| {
                 ToolError::ExecutionFailed(format!("move source not found: {}", source.display()))
             })?;
@@ -303,8 +306,9 @@ fn stage_operation(
     Ok(())
 }
 
-fn resolve_path(workspace: &Path, path: &str) -> Result<PathBuf, ToolError> {
-    resolve_in_workspace(workspace, path)
+fn resolve_path(context: &ToolContext, path: &str) -> Result<PathBuf, ToolError> {
+    context
+        .resolve_path(path)
         .map_err(|error| ToolError::SandboxDenied(error.to_string()))
 }
 

@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use miniq_protocol::RiskLevel;
-use miniq_sandbox::{resolve_in_workspace, Risk};
+use miniq_sandbox::Risk;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
@@ -98,7 +98,8 @@ impl Tool for NotebookEditTool {
 
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let input: NotebookEditInput = parse_input(input)?;
-        let path = resolve_in_workspace(&ctx.workspace, &input.path)
+        let path = ctx
+            .resolve_path(&input.path)
             .map_err(|error| ToolError::SandboxDenied(error.to_string()))?;
         let content = tokio::fs::read(&path).await.map_err(|error| {
             ToolError::ExecutionFailed(format!("read {}: {error}", path.display()))

@@ -99,6 +99,8 @@ function useCatalog(client: RpcClient) {
       null,
     [workspaces, currentSession],
   );
+  const workspacePathsJson = JSON.stringify(currentWorkspace ? [currentWorkspace.path, ...currentWorkspace.additionalPaths] : []);
+  const currentWorkspacePaths = useMemo(() => JSON.parse(workspacePathsJson) as string[], [workspacePathsJson]);
 
   return {
     workspaces,
@@ -109,6 +111,7 @@ function useCatalog(client: RpcClient) {
     currentSession,
     selectedWorkspace,
     currentWorkspace,
+    currentWorkspacePaths,
     setSelectedWorkspaceId,
     setCurrentSessionId,
     refreshSessions,
@@ -118,6 +121,7 @@ function useCatalog(client: RpcClient) {
 }
 
 function useNavigationState() {
+  const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
   const [showExternalImport, setShowExternalImport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showDistill, setShowDistill] = useState(false);
@@ -127,6 +131,8 @@ function useNavigationState() {
   );
   const [page, setPage] = useState<AppPage>(null);
   return {
+    editingWorkspaceId,
+    setEditingWorkspaceId,
     showExternalImport,
     showSettings,
     showDistill,
@@ -460,7 +466,7 @@ export function useMiniqApp() {
     onError: setSessionError,
   });
   const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls);
-  const preview = useFilePreview(catalog.currentWorkspace?.path, catalog.currentSessionId);
+  const preview = useFilePreview(catalog.currentSession?.workingDirectory, catalog.currentSessionId, catalog.currentWorkspacePaths);
   useTaskNotifications(client, catalog.sessions);
   const updater = useAppUpdater(client, setConnectionError);
   const connection = useDaemonConnection({

@@ -32,7 +32,9 @@ const EMPTY_PREVIEW: FilePreviewState = {
   open: false,
 };
 
-export function useFilePreview(workspacePath?: string | null, sessionId?: string | null) {
+const NO_PATHS: readonly string[] = [];
+
+export function useFilePreview(workspacePath?: string | null, sessionId?: string | null, workspacePaths: readonly string[] = NO_PATHS) {
   const [state, setState] = useState<FilePreviewState>(EMPTY_PREVIEW);
   const requestSequence = useRef(0);
 
@@ -52,7 +54,7 @@ export function useFilePreview(workspacePath?: string | null, sessionId?: string
         open: true,
       });
       try {
-        const file = await readLocalFilePreview(target.path, workspacePath);
+        const file = await readLocalFilePreview(target.path, workspacePath, workspacePaths);
         if (requestId !== requestSequence.current) return;
         setState({
           target: { ...target, path: file.path },
@@ -75,7 +77,7 @@ export function useFilePreview(workspacePath?: string | null, sessionId?: string
         }));
       }
     },
-    [workspacePath],
+    [workspacePath, workspacePaths],
   );
 
   const close = useCallback(() => {
@@ -86,7 +88,7 @@ export function useFilePreview(workspacePath?: string | null, sessionId?: string
   useEffect(() => {
     requestSequence.current += 1;
     setState(EMPTY_PREVIEW);
-  }, [workspacePath, sessionId]);
+  }, [workspacePath, sessionId, workspacePaths]);
 
   return { state, openFile, close };
 }

@@ -191,6 +191,7 @@ function reduceDaemonEvent(
     case "workspace_deleted":
     case "session_renamed":
     case "workspace_renamed":
+    case "workspace_updated":
     case "plugins_changed":
     case "session_pinned_changed":
     case "session_archived_changed":
@@ -293,6 +294,7 @@ export function useSessionFeed(options: SessionFeedOptions) {
       if (
         event.type === "workspace_deleted" ||
         event.type === "workspace_renamed" ||
+        event.type === "workspace_updated" ||
         event.type === "plugins_changed"
       ) {
         if (event.type === "plugins_changed") return;

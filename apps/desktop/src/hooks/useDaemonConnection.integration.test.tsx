@@ -14,7 +14,7 @@ it("discards an in-flight connection lookup when installation pauses reconnect",
   resolveConnection.mockResolvedValue({ kind: "local", port: 1234, token: "test" });
   const client = {
     connected: true, connect: vi.fn().mockResolvedValue(undefined),
-    call: vi.fn().mockResolvedValue({}), onStatus: () => () => {}, onResync: () => () => {},
+    call: vi.fn().mockResolvedValue({}), onStatus: () => () => {}, onResync: () => () => {}, onEvent: () => () => {},
   } as unknown as RpcClient;
   const refresh = vi.fn().mockResolvedValue(undefined);
   const onError = vi.fn();

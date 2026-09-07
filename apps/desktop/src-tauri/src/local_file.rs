@@ -85,18 +85,21 @@ fn preview_format(path: &Path) -> (&'static str, &'static str) {
             "pptx",
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         ),
-        "bash" | "bat" | "c" | "cc" | "cjs" | "conf" | "cpp" | "cs" | "css"
-        | "csv" | "diff" | "env" | "fish" | "go" | "h" | "hpp" | "htm" | "html"
-        | "ini" | "java" | "js" | "json" | "jsonl" | "jsx" | "kt" | "kts" | "less"
-        | "lock" | "log" | "mjs" | "patch" | "php" | "ps1" | "py" | "pyi" | "rb"
-        | "rs" | "rst" | "sass" | "scss" | "sh" | "sql" | "svelte" | "swift"
-        | "toml" | "ts" | "tsv" | "tsx" | "txt" | "vue" | "xml" | "yaml" | "yml"
-        | "zsh" => ("text", "text/plain; charset=utf-8"),
+        "bash" | "bat" | "c" | "cc" | "cjs" | "conf" | "cpp" | "cs" | "css" | "csv" | "diff"
+        | "env" | "fish" | "go" | "h" | "hpp" | "htm" | "html" | "ini" | "java" | "js" | "json"
+        | "jsonl" | "jsx" | "kt" | "kts" | "less" | "lock" | "log" | "mjs" | "patch" | "php"
+        | "ps1" | "py" | "pyi" | "rb" | "rs" | "rst" | "sass" | "scss" | "sh" | "sql"
+        | "svelte" | "swift" | "toml" | "ts" | "tsv" | "tsx" | "txt" | "vue" | "xml" | "yaml"
+        | "yml" | "zsh" => ("text", "text/plain; charset=utf-8"),
         _ => ("unsupported", "application/octet-stream"),
     }
 }
 
-fn validated_file(path: &str, workspace_path: &str) -> Result<PathBuf, String> {
+fn validated_file(
+    path: &str,
+    workspace_path: &str,
+    workspace_paths: &[String],
+) -> Result<PathBuf, String> {
     let workspace = Path::new(workspace_path)
         .canonicalize()
         .map_err(|error| format!("无法访问工作区 {workspace_path}: {error}"))?;
@@ -104,34 +107,54 @@ fn validated_file(path: &str, workspace_path: &str) -> Result<PathBuf, String> {
         return Err(format!("工作区不是目录: {}", workspace.display()));
     }
 
-    let file = Path::new(path)
+    let file = workspace
+        .join(path)
         .canonicalize()
         .map_err(|error| format!("无法访问文件 {path}: {error}"))?;
     if !file.is_file() {
         return Err(format!("目标不是文件: {}", file.display()));
     }
-    if !file.starts_with(&workspace) {
+    let attached = workspace_paths.iter().any(|root| {
+        Path::new(root)
+            .canonicalize()
+            .is_ok_and(|root| root.is_dir() && file.starts_with(root))
+    });
+    if !file.starts_with(&workspace) && !attached {
         return Err(format!("拒绝打开工作区外的文件: {}", file.display()));
     }
     Ok(file)
 }
 
-pub fn open(app: &AppHandle, path: &str, workspace_path: &str) -> Result<(), String> {
-    let file = validated_file(path, workspace_path)?;
+pub fn open(
+    app: &AppHandle,
+    path: &str,
+    workspace_path: &str,
+    workspace_paths: &[String],
+) -> Result<(), String> {
+    let file = validated_file(path, workspace_path, workspace_paths)?;
     app.opener()
         .open_path(file.to_string_lossy(), None::<&str>)
         .map_err(|error| error.to_string())
 }
 
-pub fn reveal(app: &AppHandle, path: &str, workspace_path: &str) -> Result<(), String> {
-    let file = validated_file(path, workspace_path)?;
+pub fn reveal(
+    app: &AppHandle,
+    path: &str,
+    workspace_path: &str,
+    workspace_paths: &[String],
+) -> Result<(), String> {
+    let file = validated_file(path, workspace_path, workspace_paths)?;
     app.opener()
         .reveal_item_in_dir(file)
         .map_err(|error| error.to_string())
 }
 
-pub fn read_text(path: &str, workspace_path: &str) -> Result<LocalTextFile, String> {
-    let file = validated_file(path, workspace_path)?;
+pub fn read_text(
+    path: &str,
+    workspace_path: &str,
+    workspace_paths: &[String],
+) -> Result<LocalTextFile, String> {
+    let file = validated_file(path, workspace_path, workspace_paths)?;
     let content = std::fs::read_to_string(&file)
         .map_err(|error| format!("无法读取 UTF-8 文本文件 {}: {error}", file.display()))?;
     Ok(LocalTextFile {
@@ -140,8 +163,12 @@ pub fn read_text(path: &str, workspace_path: &str) -> Result<LocalTextFile, Stri
     })
 }
 
-pub fn read_preview(path: &str, workspace_path: &str) -> Result<LocalFilePreview, String> {
-    let file = validated_file(path, workspace_path)?;
+pub fn read_preview(
+    path: &str,
+    workspace_path: &str,
+    workspace_paths: &[String],
+) -> Result<LocalFilePreview, String> {
+    let file = validated_file(path, workspace_path, workspace_paths)?;
     let metadata = file
         .metadata()
         .map_err(|error| format!("无法读取文件信息 {}: {error}", file.display()))?;
@@ -183,6 +210,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn previews_attached_roots_and_preserves_relative_cwd() {
+        let primary = tempfile::tempdir().unwrap();
+        let extra = tempfile::tempdir().unwrap();
+        let file = extra.path().join("report.md");
+        std::fs::write(&file, "# Attached report\n").unwrap();
+        let roots = vec![extra.path().display().to_string()];
+        let preview = read_preview(
+            file.to_str().unwrap(),
+            primary.path().to_str().unwrap(),
+            &roots,
+        )
+        .unwrap();
+        assert_eq!(preview.kind, "markdown");
+        assert_eq!(preview.content.as_deref(), Some("# Attached report\n"));
+        assert!(read_preview(
+            file.to_str().unwrap(),
+            primary.path().to_str().unwrap(),
+            &[]
+        )
+        .is_err());
+        std::fs::write(primary.path().join("local.txt"), "cwd").unwrap();
+        assert_eq!(
+            read_text("local.txt", primary.path().to_str().unwrap(), &roots)
+                .unwrap()
+                .content,
+            "cwd"
+        );
+    }
+
+    #[test]
     fn accepts_files_inside_workspace_and_rejects_outside_paths() {
         let workspace = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
@@ -195,14 +252,16 @@ mod tests {
         assert_eq!(
             validated_file(
                 inside_file.to_str().unwrap(),
-                workspace.path().to_str().unwrap()
+                workspace.path().to_str().unwrap(),
+                &[]
             )
             .unwrap(),
             inside_file.canonicalize().unwrap()
         );
         assert!(validated_file(
             outside_file.to_str().unwrap(),
-            workspace.path().to_str().unwrap()
+            workspace.path().to_str().unwrap(),
+            &[]
         )
         .unwrap_err()
         .contains("工作区外"));
@@ -210,6 +269,7 @@ mod tests {
         let content = read_text(
             inside_file.to_str().unwrap(),
             workspace.path().to_str().unwrap(),
+            &[],
         )
         .unwrap();
         assert_eq!(content.content, "fn main() {}\n");
@@ -217,6 +277,7 @@ mod tests {
         let preview = read_preview(
             inside_file.to_str().unwrap(),
             workspace.path().to_str().unwrap(),
+            &[],
         )
         .unwrap();
         assert_eq!(preview.kind, "text");
@@ -248,6 +309,7 @@ mod tests {
         let preview = read_preview(
             path.to_str().unwrap(),
             workspace.path().to_str().unwrap(),
+            &[],
         )
         .unwrap();
 

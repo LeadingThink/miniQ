@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use miniq_protocol::RiskLevel;
-use miniq_sandbox::{resolve_in_workspace, Risk};
+use miniq_sandbox::Risk;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -31,7 +31,7 @@ fn low_risk(reason: &str) -> Risk {
 fn base_path_risk(ctx: &ToolContext, input: &Value, reason: &str) -> Risk {
     match input.get("path").and_then(|p| p.as_str()) {
         None => low_risk(reason),
-        Some(path) => match resolve_in_workspace(&ctx.workspace, path) {
+        Some(path) => match ctx.resolve_path(path) {
             Ok(_) => low_risk(reason),
             Err(e) => Risk {
                 level: RiskLevel::Blocked,
@@ -43,7 +43,8 @@ fn base_path_risk(ctx: &ToolContext, input: &Value, reason: &str) -> Risk {
 
 fn resolve_base(ctx: &ToolContext, path: Option<&str>) -> Result<PathBuf, ToolError> {
     match path {
-        Some(p) => resolve_in_workspace(&ctx.workspace, p)
+        Some(p) => ctx
+            .resolve_path(p)
             .map_err(|e| ToolError::SandboxDenied(e.to_string())),
         None => Ok(ctx.workspace.clone()),
     }

@@ -7,7 +7,7 @@
 
 use async_trait::async_trait;
 use miniq_protocol::RiskLevel;
-use miniq_sandbox::{resolve_in_workspace, Risk};
+use miniq_sandbox::Risk;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -66,7 +66,8 @@ impl Tool for FileEditTool {
                 "oldString and newString are identical".into(),
             ));
         }
-        let path = resolve_in_workspace(&ctx.workspace, &p.path)
+        let path = ctx
+            .resolve_path(&p.path)
             .map_err(|e| ToolError::SandboxDenied(e.to_string()))?;
         let content = tokio::fs::read_to_string(&path)
             .await

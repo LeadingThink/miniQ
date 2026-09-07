@@ -7,4 +7,4 @@ mod command;
 mod paths;
 
 pub use command::{classify_command, Risk};
-pub use paths::{resolve_in_workspace, PathError};
+pub use paths::{resolve_in_roots, resolve_in_workspace, PathError};
