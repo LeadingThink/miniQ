@@ -44,8 +44,9 @@ pub type ToolCatalog = Arc<dyn Fn() -> Vec<ToolSpec> + Send + Sync>;
 /// Everything a tool needs to run. Tools must not reach outside this context.
 #[derive(Clone)]
 pub struct ToolContext {
-    /// Absolute workspace root; all paths and cwd are constrained to it.
+    /// Stable default working directory for this session or child agent.
     pub workspace: PathBuf,
+    pub workspace_roots: Vec<PathBuf>,
     /// Skill store; `None` = skill_read unavailable.
     pub skills: Option<Arc<miniq_skills::SkillStore>>,
     /// SQLite store for memory tools; `None` = memory tools unavailable.
@@ -73,6 +74,7 @@ pub struct ToolContext {
 impl ToolContext {
     pub fn new(workspace: PathBuf) -> Self {
         Self {
+            workspace_roots: vec![workspace.clone()],
             workspace,
             skills: None,
             memory: None,
@@ -87,6 +89,15 @@ impl ToolContext {
             cancellation: tokio_util::sync::CancellationToken::new(),
             plan_mode: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    pub fn with_workspace_roots(mut self, roots: Vec<PathBuf>) -> Self {
+        self.workspace_roots = roots;
+        self
+    }
+
+    pub fn resolve_path(&self, requested: &str) -> Result<PathBuf, miniq_sandbox::PathError> {
+        miniq_sandbox::resolve_in_roots(&self.workspace, &self.workspace_roots, requested)
     }
 
     pub fn with_mcp(mut self, mcp: Option<Arc<dyn crate::mcp::McpBridge>>) -> Self {

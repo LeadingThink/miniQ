@@ -44,8 +44,30 @@ impl Store {
         history: &Value,
         model_identity: Option<&str>,
     ) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
+        self.save_context_with_message(session_id, last_message_id, history, model_identity, None)
+    }
+
+    pub fn save_context_with_message(
+        &self,
+        session_id: &str,
+        last_message_id: &str,
+        history: &Value,
+        model_identity: Option<&str>,
+        message: Option<&miniq_protocol::Message>,
+    ) -> Result<()> {
+        if message.is_some_and(|message| {
+            message.session_id != session_id || message.id != last_message_id
+        }) {
+            return Err(super::MemoryError::InvalidData(
+                "checkpoint message does not match its session and anchor".into(),
+            ));
+        }
+        let mut conn = self.conn.lock().unwrap();
+        let transaction = conn.transaction()?;
+        if let Some(message) = message {
+            super::conversation::insert_message(&transaction, message)?;
+        }
+        transaction.execute(
             "INSERT INTO model_context_snapshots
                (session_id, last_message_id, history_json, updated_at, model_identity)
              VALUES (?1, ?2, ?3, ?4, ?5)
@@ -62,6 +84,7 @@ impl Store {
                 model_identity
             ],
         )?;
+        transaction.commit()?;
         Ok(())
     }
 }
@@ -71,6 +94,67 @@ mod tests {
     use super::*;
     use miniq_protocol::Role;
     use serde_json::json;
+
+    #[test]
+    fn partial_message_and_snapshot_are_atomic_durable_and_session_scoped() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("context.db");
+        let store = Store::open(&database).unwrap();
+        let workspace = store.create_workspace("/work", "project").unwrap();
+        let session = store.create_session(&workspace.id, "first").unwrap();
+        let other = store.create_session(&workspace.id, "second").unwrap();
+        let input = store
+            .append_message(&session.id, Role::User, "task")
+            .unwrap();
+        store
+            .save_model_context(&session.id, &input.id, &json!([]), None)
+            .unwrap();
+        let mut partial = miniq_protocol::Message {
+            id: "partial".into(),
+            session_id: other.id.clone(),
+            role: Role::Assistant,
+            content: "interrupted output".into(),
+            attachments: Vec::new(),
+            created_at: now_iso(),
+        };
+        assert!(store
+            .save_context_with_message(
+                &session.id,
+                &partial.id,
+                &json!(["partial"]),
+                None,
+                Some(&partial)
+            )
+            .is_err());
+        partial.session_id = session.id.clone();
+        store
+            .save_context_with_message(
+                &session.id,
+                &partial.id,
+                &json!(["partial"]),
+                Some("model"),
+                Some(&partial),
+            )
+            .unwrap();
+        // A duplicate message insertion must not update the snapshot.
+        assert!(store
+            .save_context_with_message(
+                &session.id,
+                &partial.id,
+                &json!(["wrong"]),
+                None,
+                Some(&partial)
+            )
+            .is_err());
+        drop(store);
+        let store = Store::open(&database).unwrap();
+        let snapshot = store.get_model_context(&session.id).unwrap().unwrap();
+        assert_eq!(snapshot.history, json!(["partial"]));
+        assert_eq!(snapshot.last_message_id, partial.id);
+        assert_eq!(store.list_messages(&session.id).unwrap().len(), 2);
+        assert!(store.list_messages(&other.id).unwrap().is_empty());
+        assert!(store.get_model_context(&other.id).unwrap().is_none());
+    }
 
     #[test]
     fn model_context_round_trips_and_replaces_atomically() {

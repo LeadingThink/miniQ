@@ -45,6 +45,7 @@ export type ApprovalStatus =
 export interface Workspace {
   id: string;
   path: string;
+  additionalPaths: string[];
   name: string;
   createdAt: string;
   updatedAt: string;
@@ -53,6 +54,7 @@ export interface Workspace {
 export interface Session {
   id: string;
   workspaceId: string;
+  workingDirectory: string;
   title: string;
   status: SessionStatus;
   pinned: boolean;
@@ -349,6 +351,7 @@ export type DaemonEvent = { eventCursor?: EventCursor; payloadDeferred?: boolean
   | { type: "workspace_deleted"; workspaceId: string }
   | { type: "session_renamed"; sessionId: string; title: string }
   | { type: "workspace_renamed"; workspaceId: string; name: string }
+  | { type: "workspace_updated"; workspace: Workspace }
   | { type: "session_pinned_changed"; sessionId: string; pinned: boolean }
   | { type: "session_archived_changed"; sessionId: string; archived: boolean }
   | { type: "queue_changed"; sessionId: string; queue: QueuedMessage[] }

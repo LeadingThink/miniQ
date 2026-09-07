@@ -202,7 +202,7 @@ fn read_session(transaction: &Transaction<'_>, session_id: &str) -> Result<Sessi
             "SELECT s.id, s.workspace_id, s.title, s.status, s.created_at, s.updated_at,
                     s.pinned, s.archived,
                     e.provider, e.external_id, e.source_path, e.continuation_mode,
-                    e.imported_at, e.last_synced_at
+                    e.imported_at, e.last_synced_at, s.working_directory
              FROM sessions s
              LEFT JOIN external_session_links e ON e.session_id = s.id
              WHERE s.id = ?1",

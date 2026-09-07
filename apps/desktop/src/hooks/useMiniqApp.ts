@@ -42,7 +42,13 @@ function useRpcClient(): RpcClient {
 
 function useCatalog(client: RpcClient) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [sessions, setSessions] = useState<Session[]>([]);
+  type SessionRow = Omit<Session, "workingDirectory"> & { workingDirectory?: string };
+  const [sessionRows, setSessions] = useState<SessionRow[]>([]);
+  // The mobile website is updated before every connected desktop has migrated.
+  const sessions = useMemo<Session[]>(() => sessionRows.map((session) => ({
+    ...session,
+    workingDirectory: session.workingDirectory ?? workspaces.find((workspace) => workspace.id === session.workspaceId)?.path ?? "",
+  })), [sessionRows, workspaces]);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [currentSessionId, setCurrentSessionState] = useState<string | null>(null);
   const navigationEpoch = useRef(0);
@@ -59,7 +65,7 @@ function useCatalog(client: RpcClient) {
     sessionRefresh.current = (async () => {
       do {
         sessionRefreshQueued.current = false;
-        const result = await client.call<{ sessions: Session[] }>("session.list", {});
+        const result = await client.call<{ sessions: SessionRow[] }>("session.list", {});
         setSessions(result.sessions);
       } while (sessionRefreshQueued.current);
     })().finally(() => { sessionRefresh.current = null; });
@@ -67,8 +73,9 @@ function useCatalog(client: RpcClient) {
   }, [client]);
 
   const refreshWorkspaces = useCallback(async () => {
-    const result = await client.call<{ workspaces: Workspace[] }>("workspace.list");
-    setWorkspaces(result.workspaces);
+    type WorkspaceRow = Omit<Workspace, "additionalPaths"> & { additionalPaths?: string[] };
+    const result = await client.call<{ workspaces: WorkspaceRow[] }>("workspace.list");
+    setWorkspaces(result.workspaces.map((workspace) => ({ ...workspace, additionalPaths: workspace.additionalPaths ?? [] })));
   }, [client]);
 
   const updateSessionStatus = useCallback(
@@ -99,6 +106,8 @@ function useCatalog(client: RpcClient) {
       null,
     [workspaces, currentSession],
   );
+  const workspacePathsJson = JSON.stringify(currentWorkspace ? [currentWorkspace.path, ...currentWorkspace.additionalPaths] : []);
+  const currentWorkspacePaths = useMemo(() => JSON.parse(workspacePathsJson) as string[], [workspacePathsJson]);
 
   return {
     workspaces,
@@ -109,6 +118,7 @@ function useCatalog(client: RpcClient) {
     currentSession,
     selectedWorkspace,
     currentWorkspace,
+    currentWorkspacePaths,
     setSelectedWorkspaceId,
     setCurrentSessionId,
     refreshSessions,
@@ -118,6 +128,7 @@ function useCatalog(client: RpcClient) {
 }
 
 function useNavigationState() {
+  const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
   const [showExternalImport, setShowExternalImport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showDistill, setShowDistill] = useState(false);
@@ -127,6 +138,8 @@ function useNavigationState() {
   );
   const [page, setPage] = useState<AppPage>(null);
   return {
+    editingWorkspaceId,
+    setEditingWorkspaceId,
     showExternalImport,
     showSettings,
     showDistill,
@@ -460,7 +473,7 @@ export function useMiniqApp() {
     onError: setSessionError,
   });
   const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls);
-  const preview = useFilePreview(catalog.currentWorkspace?.path, catalog.currentSessionId);
+  const preview = useFilePreview(catalog.currentSession?.workingDirectory, catalog.currentSessionId, catalog.currentWorkspacePaths);
   useTaskNotifications(client, catalog.sessions);
   const updater = useAppUpdater(client, setConnectionError);
   const connection = useDaemonConnection({

@@ -180,6 +180,7 @@ export function QueueBar(props: {
 }
 
 export function ArtifactsBar(props: {
+  workspacePaths?: readonly string[];
   artifacts: Artifact[];
   workspacePath?: string | null;
   onOpenFile: (target: LocalFileTarget) => void;
@@ -214,7 +215,7 @@ export function ArtifactsBar(props: {
               title="在文件夹中显示"
               disabled={!path}
               onClick={() => {
-                if (path) void revealLocalFile(path, workspacePath).catch((cause) => {
+                if (path) void revealLocalFile(path, workspacePath, props.workspacePaths).catch((cause) => {
                   onError(`无法在文件夹中显示：${cause instanceof Error ? cause.message : String(cause)}`);
                 });
               }}

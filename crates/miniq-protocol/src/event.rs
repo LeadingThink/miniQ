@@ -161,6 +161,9 @@ pub enum Event {
         workspace_id: String,
         name: String,
     },
+    WorkspaceUpdated {
+        workspace: crate::types::Workspace,
+    },
     /// A session's pinned state changed.
     SessionPinnedChanged {
         #[serde(rename = "sessionId")]
@@ -212,6 +215,7 @@ impl Event {
             | Event::QueueChanged { session_id, .. } => session_id,
             Event::WorkspaceDeleted { .. }
             | Event::WorkspaceRenamed { .. }
+            | Event::WorkspaceUpdated { .. }
             | Event::PluginsChanged { .. } => "",
         }
     }

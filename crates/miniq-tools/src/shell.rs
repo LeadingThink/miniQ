@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use miniq_protocol::RiskLevel;
-use miniq_sandbox::{classify_command, resolve_in_workspace, Risk};
+use miniq_sandbox::{classify_command, Risk};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -67,7 +67,7 @@ impl Tool for ShellRunTool {
             };
         };
         if let Some(cwd) = input.get("cwd").and_then(Value::as_str) {
-            if let Err(error) = resolve_in_workspace(&ctx.workspace, cwd) {
+            if let Err(error) = ctx.resolve_path(cwd) {
                 return Risk {
                     level: RiskLevel::Blocked,
                     reason: error.to_string(),
@@ -86,7 +86,8 @@ impl Tool for ShellRunTool {
         }
 
         let cwd = match p.cwd.as_deref() {
-            Some(cwd) => resolve_in_workspace(&ctx.workspace, cwd)
+            Some(cwd) => ctx
+                .resolve_path(cwd)
                 .map_err(|error| ToolError::SandboxDenied(error.to_string()))?,
             None => ctx.workspace.clone(),
         };
@@ -201,7 +202,7 @@ impl Tool for ShellBatchTool {
             return blocked("commands must contain only non-empty strings");
         }
         if let Some(cwd) = input.get("workingDirectory").and_then(Value::as_str) {
-            if let Err(error) = resolve_in_workspace(&ctx.workspace, cwd) {
+            if let Err(error) = ctx.resolve_path(cwd) {
                 return blocked(&error.to_string());
             }
         }

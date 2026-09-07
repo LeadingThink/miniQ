@@ -33,6 +33,9 @@ mod tasks;
 mod web;
 mod web_search;
 
+#[cfg(test)]
+mod workspace_roots_tests;
+
 pub use agent::{
     AgentBridge, AgentMessageRequest, AgentMessageTool, AgentRunRequest, AgentRunTool,
 };

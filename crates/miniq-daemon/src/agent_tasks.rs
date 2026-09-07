@@ -24,6 +24,7 @@ pub(crate) struct DaemonAgentBridge {
     pub state: AppState,
     pub session_id: String,
     pub workspace: PathBuf,
+    pub workspace_roots: Vec<PathBuf>,
     pub workspace_id: String,
     pub depth: usize,
     pub agent_id: Option<String>,
@@ -70,7 +71,12 @@ impl DaemonAgentBridge {
                 state: self.state.clone(),
                 session_id: self.session_id.clone(),
                 router: self.state.router.clone(),
-                ctx: self.child_context(workspace.clone(), &record.id, cancel.clone()),
+                ctx: self.child_context(
+                    workspace.clone(),
+                    &record.id,
+                    cancel.clone(),
+                    worktree.is_some(),
+                ),
                 cancel: cancel.clone(),
                 permission_policy: permission_policy(&request),
                 review_plan: Default::default(),
@@ -84,6 +90,12 @@ impl DaemonAgentBridge {
             let drain = tokio::spawn(async move {
                 while let Some(event) = receiver.recv().await {
                     if let Some(progress) = crate::agent_progress::from_event(event) {
+                        crate::agent_progress::record_retry(
+                            &progress_state,
+                            &progress_record.session_id,
+                            Some(&progress_record.id),
+                            &progress,
+                        );
                         progress_state
                             .agent_tasks
                             .update_progress(&progress_record, progress)
@@ -98,6 +110,10 @@ impl DaemonAgentBridge {
                 events,
                 cancel.clone(),
                 RunLimits {
+                    checkpoint: Some(Arc::new(crate::turn_checkpoint::AgentCheckpoint {
+                        manager: self.state.agent_tasks.clone(),
+                        record: record.clone(),
+                    })),
                     max_steps: Some(request.max_turns.unwrap_or(32)),
                     ..RunLimits::default()
                 },
@@ -139,8 +155,11 @@ impl DaemonAgentBridge {
         workspace: PathBuf,
         agent_id: &str,
         cancel: CancellationToken,
+        isolated: bool,
     ) -> ToolContext {
+        let roots = self.child_roots(&workspace, isolated);
         ToolContext::new(workspace.clone())
+            .with_workspace_roots(roots.clone())
             .with_observations(self.state.observations_dir.clone())
             .with_skills(Some(self.state.skills.clone()))
             .with_memory(
@@ -157,11 +176,29 @@ impl DaemonAgentBridge {
                 state: self.state.clone(),
                 session_id: self.session_id.clone(),
                 workspace,
+                workspace_roots: roots,
                 workspace_id: self.workspace_id.clone(),
                 depth: self.depth + 1,
                 agent_id: Some(agent_id.to_owned()),
                 cancel,
             })))
+    }
+
+    fn child_roots(&self, workspace: &std::path::Path, isolated: bool) -> Vec<PathBuf> {
+        if !isolated {
+            return self.workspace_roots.clone();
+        }
+        // Even a worktree inside an attached parent must not grant the source checkout.
+        let mut roots = vec![workspace.to_path_buf()];
+        roots.extend(
+            self.workspace_roots
+                .iter()
+                .filter(|root| {
+                    !self.workspace.starts_with(root) && !root.starts_with(&self.workspace)
+                })
+                .cloned(),
+        );
+        roots
     }
 
     async fn resolve_workspace(
@@ -190,8 +227,10 @@ impl DaemonAgentBridge {
         }
 
         let workspace = match request.cwd.as_deref() {
-            Some(cwd) => miniq_sandbox::resolve_in_workspace(&self.workspace, cwd)
-                .map_err(|error| ToolError::SandboxDenied(error.to_string()))?,
+            Some(cwd) => {
+                miniq_sandbox::resolve_in_roots(&self.workspace, &self.workspace_roots, cwd)
+                    .map_err(|error| ToolError::SandboxDenied(error.to_string()))?
+            }
             None => self.workspace.clone(),
         };
         if !workspace.is_dir() {
@@ -263,9 +302,10 @@ impl DaemonAgentBridge {
             resumed_history
         } else {
             let system = format!(
-                "You are a miniQ child agent of type '{}'. Work only inside '{}'. Complete the delegated task and return a concise result to the parent. All tool calls remain subject to miniQ approvals and sandboxing.",
+                "You are a miniQ child agent of type '{}'. Default working directory: '{}'. Authorized project directories: {:?}. Use absolute paths for the other attached directories. Complete the delegated task and return a concise result to the parent. All tool calls remain subject to miniQ approvals and attached-directory sandboxing.",
                 request.subagent_type.as_deref().unwrap_or("general-purpose"),
-                workspace.display()
+                workspace.display(),
+                self.child_roots(&workspace, worktree.is_some())
             );
             vec![ChatMessage::system(system)]
         };

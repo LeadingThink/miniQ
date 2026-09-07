@@ -4,15 +4,26 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// A workspace is a local directory the agent is allowed to operate in.
+/// A project with a primary directory and explicitly attached directories.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Workspace {
     pub id: String,
     pub path: String,
+    #[serde(default)]
+    pub additional_paths: Vec<String>,
     pub name: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceRootsUpdate {
+    pub workspace_id: String,
+    /// Primary first, followed by the other authorized directories.
+    #[schemars(length(min = 1))]
+    pub paths: Vec<String>,
 }
 
 /// Session lifecycle status.
@@ -75,6 +86,7 @@ impl SessionStatus {
 pub struct Session {
     pub id: String,
     pub workspace_id: String,
+    pub working_directory: String,
     pub title: String,
     pub status: SessionStatus,
     #[serde(default)]

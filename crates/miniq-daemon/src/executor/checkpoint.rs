@@ -27,7 +27,7 @@ impl SessionToolExecutor {
     }
 
     fn take_checkpoint(&self, requested: &str, tool_call_id: &str) -> Option<String> {
-        let abs = miniq_sandbox::resolve_in_workspace(&self.ctx.workspace, requested).ok()?;
+        let abs = self.ctx.resolve_path(requested).ok()?;
         let existed = abs.is_file();
         let backup_path = if existed {
             let backup = self.state.checkpoints_dir.join(format!(

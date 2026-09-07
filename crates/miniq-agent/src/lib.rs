@@ -9,14 +9,18 @@
 //! daemon.
 
 use async_trait::async_trait;
+mod checkpoint;
 mod context;
 mod retry;
+mod tool_batch;
+
+pub use checkpoint::{CheckpointStore, TurnCheckpoint};
 
 pub use context::{
     compact_history, estimate_request_tokens, estimate_tokens, ContextOutcome, ContextPolicy,
 };
 
-use futures_util::{future::join_all, StreamExt};
+use futures_util::StreamExt;
 use miniq_models::{
     ChatDelta, ChatMessage, CompletionRequest, ModelCapabilities, ModelProvider, ProviderError,
     ToolCallRequest, ToolSpec,
@@ -35,6 +39,21 @@ pub enum AgentError {
     StepLimitExceeded { steps: usize },
     #[error("agent repeated the same tool batch {repetitions} times")]
     RepeatedToolLoop { repetitions: usize },
+    #[error("failed to persist turn context: {0}")]
+    Checkpoint(String),
+    #[error("自动重试已停止（{attempts}/{max_attempts} 次）：{reason}。最后错误：{last_error}")]
+    ModelRetryStopped {
+        attempts: usize,
+        max_attempts: usize,
+        reason: String,
+        last_error: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct RetryAttempt {
+    pub attempt: usize,
+    pub max_attempts: usize,
 }
 
 /// Events surfaced to the caller while a turn runs.
@@ -46,9 +65,11 @@ pub enum AgentEvent {
     TextReplaced(String),
     ModelRequestStarted {
         step: usize,
+        retry: Option<RetryAttempt>,
     },
     ModelResponseStarted {
         step: usize,
+        retry: Option<RetryAttempt>,
     },
     ModelRetryScheduled {
         step: usize,
@@ -128,6 +149,7 @@ pub struct TurnOutcome {
 
 #[derive(Debug, Clone)]
 pub struct RunLimits {
+    pub checkpoint: Option<std::sync::Arc<dyn CheckpointStore>>,
     /// Optional per-turn model-step budget. Interactive turns have no fixed
     /// ceiling; callers running bounded child tasks can supply one explicitly.
     pub max_steps: Option<usize>,
@@ -139,6 +161,7 @@ pub struct RunLimits {
 impl Default for RunLimits {
     fn default() -> Self {
         Self {
+            checkpoint: None,
             max_steps: None,
             repeated_tool_batch_limit: 4,
             max_model_retries: 10,
@@ -184,7 +207,7 @@ async fn recover_context_overflow(
         .min(before.saturating_mul(2) / 3);
     let outcome = compact_history(
         provider,
-        std::mem::take(history),
+        history.clone(),
         tools,
         &recovery_policy,
         max_model_retries,
@@ -219,18 +242,32 @@ pub async fn run_turn(
 pub async fn run_turn_with_limits(
     provider: &dyn ModelProvider,
     executor: &dyn ToolExecutor,
-    mut history: Vec<ChatMessage>,
+    history: Vec<ChatMessage>,
     events: tokio::sync::mpsc::Sender<AgentEvent>,
     cancel: CancellationToken,
     limits: RunLimits,
 ) -> Result<TurnOutcome, AgentError> {
+    let mut state = checkpoint::RunState::new(history);
+    let result = run_turn_inner(provider, executor, &mut state, events, cancel, &limits).await;
+    if result.is_err() {
+        state.save(&limits, true).await?;
+    }
+    result
+}
+
+async fn run_turn_inner(
+    provider: &dyn ModelProvider,
+    executor: &dyn ToolExecutor,
+    state: &mut checkpoint::RunState,
+    events: tokio::sync::mpsc::Sender<AgentEvent>,
+    cancel: CancellationToken,
+    limits: &RunLimits,
+) -> Result<TurnOutcome, AgentError> {
     let tools = executor.specs();
     let capabilities = provider.capabilities().await;
-    let mut appended: Vec<ChatMessage> = Vec::new();
     let mut steps = 0;
     let mut last_tool_batch = String::new();
     let mut repeated_tool_batch = 0;
-    let mut streamed_text = String::new();
 
     loop {
         if cancel.is_cancelled() {
@@ -243,7 +280,7 @@ pub async fn run_turn_with_limits(
         let context_policy = effective_context_policy(&limits.context_policy, &capabilities);
         let context = compact_history(
             provider,
-            history,
+            state.history.clone(),
             &tools,
             &context_policy,
             limits.max_model_retries,
@@ -251,19 +288,23 @@ pub async fn run_turn_with_limits(
             &cancel,
         )
         .await?;
-        history = context.messages;
+        state.history = context.messages;
 
         let mut retries = retry::ModelRetries::new(limits.max_model_retries);
         let (text, tool_calls, provider_context) = loop {
-            let committed_text = streamed_text.clone();
+            state.partial_text.clear();
+            let committed_text = state.streamed_text.clone();
             let request = CompletionRequest {
-                messages: history.clone(),
+                messages: state.history.clone(),
                 tools: tools.clone(),
                 temperature: None,
                 max_output_tokens: None,
             };
             let _ = events
-                .send(AgentEvent::ModelRequestStarted { step: steps })
+                .send(AgentEvent::ModelRequestStarted {
+                    step: steps,
+                    retry: retries.progress(),
+                })
                 .await;
             // Race the provider call against cancellation so an interrupt
             // takes effect while connecting or waiting for the first byte.
@@ -276,7 +317,7 @@ pub async fn run_turn_with_limits(
                 Err(ProviderError::ContextWindowExceeded) if retries.available() => {
                     if !recover_context_overflow(
                         provider,
-                        &mut history,
+                        &mut state.history,
                         &tools,
                         &context_policy,
                         limits.max_model_retries,
@@ -298,7 +339,10 @@ pub async fn run_turn_with_limits(
                 }
             };
             let _ = events
-                .send(AgentEvent::ModelResponseStarted { step: steps })
+                .send(AgentEvent::ModelResponseStarted {
+                    step: steps,
+                    retry: retries.progress(),
+                })
                 .await;
 
             let mut text = String::new();
@@ -326,16 +370,16 @@ pub async fn run_turn_with_limits(
                             continue;
                         }
                         if !started_text_segment {
-                            if !streamed_text.is_empty() {
-                                let separator = if streamed_text.ends_with("\n\n") {
+                            if !state.streamed_text.is_empty() {
+                                let separator = if state.streamed_text.ends_with("\n\n") {
                                     ""
-                                } else if streamed_text.ends_with('\n') {
+                                } else if state.streamed_text.ends_with('\n') {
                                     "\n"
                                 } else {
                                     "\n\n"
                                 };
                                 if !separator.is_empty() {
-                                    streamed_text.push_str(separator);
+                                    state.streamed_text.push_str(separator);
                                     let _ = events
                                         .send(AgentEvent::TextDelta(separator.to_string()))
                                         .await;
@@ -344,7 +388,8 @@ pub async fn run_turn_with_limits(
                             started_text_segment = true;
                         }
                         text.push_str(&t);
-                        streamed_text.push_str(&t);
+                        state.partial_text.push_str(&t);
+                        state.streamed_text.push_str(&t);
                         let _ = events.send(AgentEvent::TextDelta(t)).await;
                     }
                     ChatDelta::ToolCall(call) => tool_calls.push(call),
@@ -362,7 +407,7 @@ pub async fn run_turn_with_limits(
                     if matches!(&error, ProviderError::ContextWindowExceeded) {
                         if !recover_context_overflow(
                             provider,
-                            &mut history,
+                            &mut state.history,
                             &tools,
                             &context_policy,
                             limits.max_model_retries,
@@ -380,10 +425,10 @@ pub async fn run_turn_with_limits(
                 // This response has not dispatched any tools yet. Retrying it
                 // keeps completed earlier steps and discards only this attempt.
                 if retries.wait(&error, steps, &events, &cancel).await? {
-                    if streamed_text != committed_text {
-                        streamed_text = committed_text;
+                    if state.streamed_text != committed_text {
+                        state.streamed_text = committed_text;
                         let _ = events
-                            .send(AgentEvent::TextReplaced(streamed_text.clone()))
+                            .send(AgentEvent::TextReplaced(state.streamed_text.clone()))
                             .await;
                     }
                     continue;
@@ -410,13 +455,13 @@ pub async fn run_turn_with_limits(
         };
 
         if tool_calls.is_empty() {
-            let mut provider_history = history.clone();
+            let mut provider_history = state.history.clone();
             let mut assistant = ChatMessage::assistant(text.clone());
             assistant.provider_context = provider_context;
             provider_history.push(assistant);
             return Ok(TurnOutcome {
                 final_text: text,
-                appended,
+                appended: state.appended.clone(),
                 provider_history,
             });
         }
@@ -439,6 +484,7 @@ pub async fn run_turn_with_limits(
         }
 
         // Record the assistant message that requested the calls.
+        state.partial_text.clear();
         let assistant_msg = ChatMessage {
             role: miniq_models::ChatRole::Assistant,
             content: text,
@@ -447,31 +493,10 @@ pub async fn run_turn_with_limits(
             tool_calls: tool_calls.clone(),
             provider_context,
         };
-        history.push(assistant_msg.clone());
-        appended.push(assistant_msg);
+        state.history.push(assistant_msg.clone());
+        state.appended.push(assistant_msg);
 
-        let results = if tool_calls
-            .iter()
-            .all(|call| executor.execution_mode(call) == ToolExecutionMode::Parallel)
-        {
-            join_all(tool_calls.iter().map(|call| executor.execute(call))).await
-        } else {
-            let mut results = Vec::with_capacity(tool_calls.len());
-            for call in &tool_calls {
-                if cancel.is_cancelled() {
-                    return Err(AgentError::Cancelled);
-                }
-                results.push(executor.execute(call).await);
-            }
-            results
-        };
-        for (call, result) in tool_calls.iter().zip(results) {
-            let result = result?;
-            let mut result_msg = ChatMessage::tool_result(call.id.clone(), result.to_string());
-            result_msg.images = executor.result_images(call, &result);
-            history.push(result_msg.clone());
-            appended.push(result_msg);
-        }
+        tool_batch::execute(executor, &tool_calls, state, limits, &cancel).await?;
     }
 }
 
@@ -480,6 +505,9 @@ mod observation_tests;
 
 #[cfg(test)]
 mod run_limits_tests;
+
+#[cfg(test)]
+mod checkpoint_tests;
 
 #[cfg(test)]
 mod tests {
@@ -564,11 +592,17 @@ mod tests {
 
         assert!(matches!(
             receiver.try_recv().unwrap(),
-            AgentEvent::ModelRequestStarted { step: 1 }
+            AgentEvent::ModelRequestStarted {
+                step: 1,
+                retry: None
+            }
         ));
         assert!(matches!(
             receiver.try_recv().unwrap(),
-            AgentEvent::ModelResponseStarted { step: 1 }
+            AgentEvent::ModelResponseStarted {
+                step: 1,
+                retry: None
+            }
         ));
         assert!(matches!(
             receiver.try_recv().unwrap(),
@@ -700,7 +734,7 @@ mod tests {
         assert_eq!(provider.requests.lock().unwrap().len(), 129);
         let mut request_steps = Vec::new();
         while let Ok(event) = receiver.try_recv() {
-            if let AgentEvent::ModelRequestStarted { step } = event {
+            if let AgentEvent::ModelRequestStarted { step, .. } = event {
                 request_steps.push(step);
             }
         }
@@ -834,9 +868,10 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(error
-            .to_string()
-            .contains("empty completion after 11 attempts"));
+        assert!(
+            matches!(&error, AgentError::ModelRetryStopped { attempts: 10, max_attempts: 10, last_error, .. } if last_error == &ProviderError::EmptyResponse.to_string())
+        );
+        assert!(error.to_string().contains("已达到重试次数上限"));
     }
 
     struct LargeResultExecutor;

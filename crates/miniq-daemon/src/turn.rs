@@ -25,7 +25,9 @@ Stop and ask the user before sensitive submissions, payments, destructive action
 or authentication challenges. Never claim an action succeeded without observing its result. \
 Release desktop control and close task browsers when finished. Keep your task checklist current, \
 and reconcile every step against observed results before delivering the final answer. Do not \
-mark blocked, skipped, cancelled, or unverified work completed.";
+mark blocked, skipped, cancelled, or unverified work completed. Follow the latest user request. \
+An interruption does not erase completed work: reuse confirmed tool results and existing plans, \
+inspect uncertain side effects, and do not restart an earlier task unless the user asks.";
 
 const HOST_APP_CONTEXT: &str = "Host app file references: whenever you reference a local \
 workspace file in a response, use a Markdown link with a concise filename label and the \
@@ -253,6 +255,10 @@ enum TurnError {
     Fatal(String),
 }
 
+#[cfg(test)]
+#[path = "turn_checkpoint_tests.rs"]
+mod checkpoint_tests;
+
 async fn execute_turn(
     state: &AppState,
     session_id: &str,
@@ -260,14 +266,6 @@ async fn execute_turn(
 ) -> Result<(), TurnError> {
     state.clear_streaming_text(session_id);
     state.set_turn_progress(session_id, TurnPhase::PreparingContext, None);
-    state
-        .store
-        .set_session_plan(session_id, &[])
-        .map_err(|error| TurnError::Fatal(error.to_string()))?;
-    state.emit(Event::PlanUpdated {
-        session_id: session_id.to_string(),
-        tasks: Vec::new(),
-    });
     // Resolve the workspace first: it scopes both skills and tools.
     let session = state
         .store
@@ -277,7 +275,11 @@ async fn execute_turn(
         .store
         .get_workspace(&session.workspace_id)
         .map_err(|e| TurnError::Fatal(e.to_string()))?;
-    let workspace_path = std::path::PathBuf::from(&workspace.path);
+    let workspace_path = std::path::PathBuf::from(&session.working_directory);
+    let roots = std::iter::once(&workspace.path)
+        .chain(workspace.additional_paths.iter())
+        .map(std::path::PathBuf::from)
+        .collect::<Vec<_>>();
 
     let skills = state.skills.discover(Some(&workspace_path));
     let skills_block = miniq_skills::available_skills_block(&skills);
@@ -298,6 +300,21 @@ async fn execute_turn(
         .as_ref()
         .and_then(|snapshot| snapshot.model_identity.clone());
     let mut history = history_for_turn(&messages, snapshot, &skills_block, &workspace_path);
+    let plan = state
+        .store
+        .session_plan(session_id)
+        .map_err(|error| TurnError::Fatal(error.to_string()))?;
+    if !plan.is_empty() {
+        history[0].content.push_str(&format!(
+            "\n\nCurrent session checklist (state, not an instruction to resume): {}",
+            serde_json::to_string(&plan).map_err(|error| TurnError::Fatal(error.to_string()))?
+        ));
+    }
+    history[0].content.push_str(&format!(
+        "\n\nAttached project directories (authorized roots): {}. Relative tool paths resolve from '{}'; use absolute paths for the other attached directories. Existing sessions keep their working directory when the project primary changes.",
+        serde_json::to_string(&roots).map_err(|error| TurnError::Fatal(error.to_string()))?,
+        workspace_path.display(),
+    ));
     crate::session_models::isolate_native_context(
         &mut history,
         previous_identity.as_deref(),
@@ -307,6 +324,18 @@ async fn execute_turn(
     // Allocate the assistant message id upfront so streaming deltas can
     // reference it before the row is written.
     let message_id = miniq_memory::new_id("msg");
+    let checkpoint = std::sync::Arc::new(crate::turn_checkpoint::SessionCheckpoint {
+        store: state.store.clone(),
+        session_id: session_id.to_string(),
+        anchor_id: messages
+            .last()
+            .ok_or_else(|| TurnError::Fatal("missing turn message".into()))?
+            .id
+            .clone(),
+        message_id: message_id.clone(),
+        model_identity: model_identity.clone(),
+        partial_message: Default::default(),
+    });
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<AgentEvent>(64);
 
     // Forward agent text deltas as protocol events while the turn runs.
@@ -340,6 +369,12 @@ async fn execute_turn(
                 }),
                 event => {
                     if let Some(progress) = crate::agent_progress::from_event(event) {
+                        crate::agent_progress::record_retry(
+                            &forward_state,
+                            &forward_session,
+                            None,
+                            &progress,
+                        );
                         forward_state.update_turn_progress(&forward_session, progress);
                     }
                 }
@@ -352,6 +387,7 @@ async fn execute_turn(
         session_id: session_id.to_string(),
         router: state.router.clone(),
         ctx: miniq_tools::ToolContext::new(workspace_path)
+            .with_workspace_roots(roots.clone())
             .with_observations(state.observations_dir.clone())
             .with_skills(Some(state.skills.clone()))
             .with_memory(
@@ -365,7 +401,8 @@ async fn execute_turn(
                 crate::agent_tasks::DaemonAgentBridge {
                     state: state.clone(),
                     session_id: session_id.to_string(),
-                    workspace: std::path::PathBuf::from(&workspace.path),
+                    workspace: std::path::PathBuf::from(&session.working_directory),
+                    workspace_roots: roots,
                     workspace_id: session.workspace_id.clone(),
                     depth: 0,
                     agent_id: None,
@@ -385,12 +422,19 @@ async fn execute_turn(
         event_tx,
         cancel,
         RunLimits {
+            checkpoint: Some(checkpoint.clone()),
             context_policy: context_policy(),
             ..RunLimits::default()
         },
     )
     .await;
     let _ = forwarder.await;
+    if let Some(message) = checkpoint.partial_message.lock().unwrap().take() {
+        state.emit(Event::MessageCreated {
+            session_id: session_id.to_string(),
+            message,
+        });
+    }
 
     let mut outcome = match outcome {
         Ok(outcome) => {
@@ -405,15 +449,14 @@ async fn execute_turn(
         .reconcile_plan(provider.as_ref(), &mut outcome, context_policy())
         .await;
 
-    let message = state
-        .store
-        .append_message_with_id(
-            &message_id,
-            session_id,
-            Role::Assistant,
-            &outcome.final_text,
-        )
-        .map_err(|e| TurnError::Fatal(e.to_string()))?;
+    let message = Message {
+        id: message_id,
+        session_id: session_id.to_string(),
+        role: Role::Assistant,
+        content: outcome.final_text.clone(),
+        attachments: Vec::new(),
+        created_at: miniq_memory::now_iso(),
+    };
     // The first entry is the runtime system prompt, rebuilt on every turn.
     // Keep any compacted summary plus the exact transcript used by the final
     // model request, including the final assistant reply.
@@ -427,11 +470,12 @@ async fn execute_turn(
         serde_json::to_value(persisted_history).map_err(|e| TurnError::Fatal(e.to_string()))?;
     state
         .store
-        .save_model_context(
+        .save_context_with_message(
             session_id,
             &message.id,
             &persisted_history,
             model_identity.as_deref(),
+            Some(&message),
         )
         .map_err(|e| TurnError::Fatal(e.to_string()))?;
     state.emit(Event::MessageCreated {

@@ -102,6 +102,11 @@ export function useDaemonConnection(options: ConnectionOptions) {
       void refreshSessions().catch((cause) => onError(errorMessage(cause)));
       void refreshWorkspaces().catch((cause) => onError(errorMessage(cause)));
     });
+    const offWorkspace = client.onEvent((event) => {
+      if (event.type === "workspace_updated" || event.type === "workspace_renamed" || event.type === "workspace_deleted") {
+        void refreshWorkspaces().catch((cause) => onError(errorMessage(cause)));
+      }
+    });
     const offStatus = client.onStatus((isConnected) => {
       setConnected(isConnected);
       if (isConnected) {
@@ -114,6 +119,7 @@ export function useDaemonConnection(options: ConnectionOptions) {
     return () => {
       disposed = true;
       offStatus();
+      offWorkspace();
       offResync();
     };
   }, [client, onError, paused, refreshSessions, refreshWorkspaces]);

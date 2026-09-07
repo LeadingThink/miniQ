@@ -10,10 +10,10 @@ use serde_json::{json, Value};
 
 use crate::router::{parse_input, Tool, ToolContext, ToolError};
 
-async fn run_git(ctx: &ToolContext, args: &[&str]) -> Result<std::process::Output, ToolError> {
+async fn run_git(cwd: &std::path::Path, args: &[&str]) -> Result<std::process::Output, ToolError> {
     tokio::process::Command::new("git")
         .args(args)
-        .current_dir(&ctx.workspace)
+        .current_dir(cwd)
         .stdin(std::process::Stdio::null())
         .output()
         .await
@@ -31,6 +31,17 @@ fn low_risk(reason: &str) -> Risk {
 
 pub struct GitStatusTool;
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GitStatusInput {
+    cwd: Option<String>,
+}
+
+fn git_cwd(ctx: &ToolContext, cwd: Option<&str>) -> Result<std::path::PathBuf, ToolError> {
+    ctx.resolve_path(cwd.unwrap_or("."))
+        .map_err(|error| ToolError::SandboxDenied(error.to_string()))
+}
+
 #[async_trait]
 impl Tool for GitStatusTool {
     fn name(&self) -> &str {
@@ -40,13 +51,15 @@ impl Tool for GitStatusTool {
         "Show git working tree status (branch plus changed files)."
     }
     fn parameters_schema(&self) -> Value {
-        json!({"type": "object", "properties": {}})
+        json!({"type": "object", "additionalProperties":false, "properties": {"cwd":{"type":"string", "description":"Repository directory; defaults to the session working directory. May be an attached project directory."}}})
     }
     fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
         low_risk("read-only git status")
     }
-    async fn execute(&self, ctx: &ToolContext, _input: Value) -> Result<Value, ToolError> {
-        let output = run_git(ctx, &["status", "--porcelain=v1", "--branch"]).await?;
+    async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
+        let input: GitStatusInput = parse_input(input)?;
+        let cwd = git_cwd(ctx, input.cwd.as_deref())?;
+        let output = run_git(&cwd, &["status", "--porcelain=v1", "--branch"]).await?;
         if !output.status.success() {
             return Err(ToolError::ExecutionFailed(
                 String::from_utf8_lossy(&output.stderr).to_string(),
@@ -74,8 +87,9 @@ impl Tool for GitStatusTool {
 pub struct GitDiffTool;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct GitDiffInput {
+    cwd: Option<String>,
     #[serde(default)]
     staged: bool,
     #[serde(default)]
@@ -94,7 +108,9 @@ impl Tool for GitDiffTool {
     fn parameters_schema(&self) -> Value {
         json!({
             "type": "object",
+            "additionalProperties":false,
             "properties": {
+                "cwd": {"type":"string", "description":"Repository directory; defaults to the session working directory. May be an attached project directory."},
                 "staged": {"type": "boolean", "description": "Diff the staged index instead of the working tree"},
                 "path": {"type": "string", "description": "Limit the diff to this path"}
             }
@@ -105,18 +121,19 @@ impl Tool for GitDiffTool {
     }
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: GitDiffInput = parse_input(input)?;
+        let cwd = git_cwd(ctx, p.cwd.as_deref())?;
         let mut args: Vec<&str> = vec!["diff"];
         if p.staged {
             args.push("--cached");
         }
         if let Some(path) = &p.path {
             // Containment: the path filter must stay inside the workspace.
-            miniq_sandbox::resolve_in_workspace(&ctx.workspace, path)
+            miniq_sandbox::resolve_in_workspace(&cwd, path)
                 .map_err(|e| ToolError::SandboxDenied(e.to_string()))?;
             args.push("--");
             args.push(path);
         }
-        let output = run_git(ctx, &args).await?;
+        let output = run_git(&cwd, &args).await?;
         if !output.status.success() {
             return Err(ToolError::ExecutionFailed(
                 String::from_utf8_lossy(&output.stderr).to_string(),

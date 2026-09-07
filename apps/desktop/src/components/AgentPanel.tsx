@@ -198,7 +198,7 @@ function SessionAgentPanel({
                     {LABELS[agent.status] ?? agent.status} ·{" "}
                     {new Date(agent.createdAt).toLocaleTimeString()}
                   </small>
-                  {agent.progress?.phase === "waiting_retry" && (
+                  {agent.progress?.retry && (
                     <RetryNotice progress={agent.progress} />
                   )}
                 </button>

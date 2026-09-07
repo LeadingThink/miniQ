@@ -24,10 +24,6 @@ pub(super) fn get(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErro
         .store
         .get_session(&input.session_id)
         .map_err(store_err)?;
-    let workspace = state
-        .store
-        .get_workspace(&session.workspace_id)
-        .map_err(store_err)?;
     let checkpoints = state
         .store
         .list_checkpoints(&input.session_id)
@@ -37,7 +33,7 @@ pub(super) fn get(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErro
     let mut files = Vec::new();
     for checkpoint in checkpoints {
         if seen.insert(checkpoint.abs_path.clone()) {
-            if let Some(diff) = diff_checkpoint(&workspace.path, &checkpoint)? {
+            if let Some(diff) = diff_checkpoint(&session.working_directory, &checkpoint)? {
                 files.push(diff);
             }
         }

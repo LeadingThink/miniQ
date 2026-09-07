@@ -51,6 +51,7 @@ beforeEach(() => {
   const sessions = ["a", "b"].map((id) => ({
     id,
     workspaceId: "w",
+    workingDirectory: "/workspace",
     title: id,
     status: "running",
     createdAt: "2026-09-07",
@@ -64,7 +65,7 @@ beforeEach(() => {
       case "settings.get":
         return { approvalMode: "auto" };
       case "workspace.list":
-        return { workspaces: [{ id: "w", name: "test", path: "/workspace" }] };
+        return { workspaces: [{ id: "w", name: "test", path: "/workspace", additionalPaths: [] }] };
       case "session.list":
         return { sessions };
       case "session.modelGet":
@@ -156,6 +157,24 @@ it("switching failed, running and new sessions isolates state without reconnecti
   });
   expect(hook.result.current.error).toBe("B rename failed");
   logged.mockRestore();
+});
+
+it("loads single-directory desktops during a rolling mobile deployment", async () => {
+  const original = fake.call.getMockImplementation()!;
+  fake.call.mockImplementation(async (method, params) => {
+    const result = await original(method, params);
+    if (method === "workspace.list") return { workspaces: result.workspaces.map(({ additionalPaths: _paths, ...workspace }: Record<string, unknown>) => workspace) };
+    if (method === "session.list") return { sessions: result.sessions.map(({ workingDirectory: _cwd, ...session }: Record<string, unknown>) => session) };
+    return result;
+  });
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
+  await act(async () => { await hook.result.current.actions.openSession("a"); });
+  expect(hook.result.current.catalog.currentWorkspacePaths).toEqual(["/workspace"]);
+  expect(hook.result.current.catalog.currentSession?.workingDirectory).toBe("/workspace");
+  expect(hook.result.current.catalog.workspaces[0].additionalPaths).toEqual([]);
+  expect(hook.result.current.error).toBeNull();
+  expect(fake.connect).toHaveBeenCalledTimes(1);
 });
 
 it("acknowledges a viewed failure persistently without erasing task evidence or affecting another session", async () => {
@@ -300,5 +319,5 @@ it("coalesces session refreshes but reloads changes received during an in-flight
     resolveSnapshot({ sessions: [] });
     await refresh;
   });
-  expect(hook.result.current.catalog.sessions).toEqual([updated]);
+  expect(hook.result.current.catalog.sessions).toEqual([{ ...updated, workingDirectory: "/workspace" }]);
 });

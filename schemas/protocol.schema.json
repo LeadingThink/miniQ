@@ -556,6 +556,41 @@
           "startedAt"
         ],
         "type": "object"
+      },
+      "Workspace": {
+        "description": "A project with a primary directory and explicitly attached directories.",
+        "properties": {
+          "additionalPaths": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "name",
+          "path",
+          "updatedAt"
+        ],
+        "type": "object"
       }
     },
     "description": "An event pushed by the daemon over the WebSocket connection.\n\nEvents are distinguished from RPC responses by the presence of a `type` field instead of `id`/`result`.",
@@ -1071,6 +1106,24 @@
           "name",
           "type",
           "workspaceId"
+        ],
+        "type": "object"
+      },
+      {
+        "properties": {
+          "type": {
+            "enum": [
+              "workspace_updated"
+            ],
+            "type": "string"
+          },
+          "workspace": {
+            "$ref": "#/definitions/Workspace"
+          }
+        },
+        "required": [
+          "type",
+          "workspace"
         ],
         "type": "object"
       },
@@ -2602,6 +2655,9 @@
       "updatedAt": {
         "type": "string"
       },
+      "workingDirectory": {
+        "type": "string"
+      },
       "workspaceId": {
         "type": "string"
       }
@@ -2612,6 +2668,7 @@
       "status",
       "title",
       "updatedAt",
+      "workingDirectory",
       "workspaceId"
     ],
     "title": "Session",
@@ -2708,6 +2765,29 @@
       "toolCallId"
     ],
     "title": "ToolDetailParams",
+    "type": "object"
+  },
+  "workspaceRootsUpdate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "properties": {
+      "paths": {
+        "description": "Primary first, followed by the other authorized directories.",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1,
+        "type": "array"
+      },
+      "workspaceId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "paths",
+      "workspaceId"
+    ],
+    "title": "WorkspaceRootsUpdate",
     "type": "object"
   }
 }

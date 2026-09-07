@@ -14,6 +14,26 @@ pub struct PendingApprovalRequest {
     pub input: Value,
 }
 
+pub(super) fn insert_message(conn: &rusqlite::Connection, message: &Message) -> Result<()> {
+    conn.execute(
+        "INSERT INTO messages (id, session_id, role, content, attachments_json, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            message.id,
+            message.session_id,
+            message.role.as_str(),
+            message.content,
+            serde_json::to_string(&message.attachments)?,
+            message.created_at
+        ],
+    )?;
+    conn.execute(
+        "UPDATE sessions SET updated_at = ?2 WHERE id = ?1",
+        params![message.session_id, now_iso()],
+    )?;
+    Ok(())
+}
+
 impl Store {
     pub fn append_message(&self, session_id: &str, role: Role, content: &str) -> Result<Message> {
         self.append_message_with_attachments(session_id, role, content, &[])
@@ -64,22 +84,7 @@ impl Store {
             attachments: attachments.to_vec(),
             created_at: now_iso(),
         };
-        conn.execute(
-            "INSERT INTO messages (id, session_id, role, content, attachments_json, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                message.id,
-                message.session_id,
-                message.role.as_str(),
-                message.content,
-                serde_json::to_string(&message.attachments)?,
-                message.created_at
-            ],
-        )?;
-        conn.execute(
-            "UPDATE sessions SET updated_at = ?2 WHERE id = ?1",
-            params![session_id, now_iso()],
-        )?;
+        insert_message(&conn, &message)?;
         Ok(message)
     }
 

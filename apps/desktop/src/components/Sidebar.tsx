@@ -46,6 +46,7 @@ interface SidebarProps {
   onCreateSession: (workspaceId: string) => void;
   onDeleteWorkspace: (workspaceId: string) => void;
   onRenameWorkspace: (workspaceId: string, name: string) => void;
+  onEditWorkspace: (workspaceId: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSessionSeen: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
@@ -97,6 +98,7 @@ export function Sidebar(props: SidebarProps) {
             onCreateSession={props.onCreateSession}
             onDeleteWorkspace={props.onDeleteWorkspace}
             onRenameWorkspace={props.onRenameWorkspace}
+            onEditWorkspace={props.onEditWorkspace}
             onSelectSession={props.onSelectSession}
             onSessionSeen={props.onSessionSeen}
             onDeleteSession={props.onDeleteSession}
@@ -189,6 +191,7 @@ interface WorkspaceGroupProps {
   onCreateSession: (workspaceId: string) => void;
   onDeleteWorkspace: (workspaceId: string) => void;
   onRenameWorkspace: (workspaceId: string, name: string) => void;
+  onEditWorkspace: (workspaceId: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSessionSeen: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
@@ -256,12 +259,13 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
           <button
             type="button"
             className="workspace-select"
-            title={props.workspace.path}
+            title={[props.workspace.path, ...props.workspace.additionalPaths].join("\n")}
             aria-current={props.selected ? "true" : undefined}
             onClick={() => props.onSelectWorkspace(props.workspace.id)}
           >
             <Folder className="workspace-icon" size={15} />
             <span className="workspace-name">{props.workspace.name}</span>
+            {props.workspace.additionalPaths.length > 0 && <span className="workspace-root-count">{props.workspace.additionalPaths.length + 1}</span>}
           </button>
         )}
         <button
@@ -295,6 +299,12 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
             open={menuOpen}
             onClose={() => setMenuOpen(false)}
           >
+            <button type="button" className="dropdown-item" onClick={() => {
+              setMenuOpen(false);
+              props.onEditWorkspace(props.workspace.id);
+            }}>
+              <Folder size={13} /><span>项目目录</span>
+            </button>
             <button
               type="button"
               className="dropdown-item"

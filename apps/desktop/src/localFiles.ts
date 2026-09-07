@@ -197,21 +197,23 @@ export function resolveWorkspacePath(
 export async function readLocalTextFile(
   path: string,
   workspacePath?: string | null,
+  workspacePaths: readonly string[] = [],
 ): Promise<LocalTextFile> {
   if (!workspacePath) throw new Error("无法预览文件：当前会话没有工作区");
   if (!isTauriRuntime()) throw new Error("文件预览仅在 miniQ 桌面应用中可用");
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<LocalTextFile>("read_local_text_file", { path, workspacePath });
+  return invoke<LocalTextFile>("read_local_text_file", { path, workspacePath, workspacePaths });
 }
 
 export async function readLocalFilePreview(
   path: string,
   workspacePath?: string | null,
+  workspacePaths: readonly string[] = [],
 ): Promise<LocalFilePreview> {
   if (!workspacePath) throw new Error("无法预览文件：当前会话没有工作区");
   if (!isTauriRuntime()) throw new Error("文件预览仅在 miniQ 桌面应用中可用");
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<LocalFilePreview>("read_local_file_preview", { path, workspacePath });
+  return invoke<LocalFilePreview>("read_local_file_preview", { path, workspacePath, workspacePaths });
 }
 
 function browserFileUrl(path: string) {
@@ -222,11 +224,12 @@ function browserFileUrl(path: string) {
 export async function openLocalFile(
   path: string,
   workspacePath?: string | null,
+  workspacePaths: readonly string[] = [],
 ): Promise<void> {
   if (isTauriRuntime()) {
     if (!workspacePath) throw new Error("无法打开文件：当前会话没有工作区");
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("open_local_file", { path, workspacePath });
+    await invoke("open_local_file", { path, workspacePath, workspacePaths });
     return;
   }
   window.open(browserFileUrl(path), "_blank", "noopener,noreferrer");
@@ -235,10 +238,11 @@ export async function openLocalFile(
 export async function revealLocalFile(
   path: string,
   workspacePath?: string | null,
+  workspacePaths: readonly string[] = [],
 ): Promise<void> {
   if (isTauriRuntime()) {
     if (!workspacePath) throw new Error("无法定位文件：当前会话没有工作区");
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("reveal_local_file", { path, workspacePath });
+    await invoke("reveal_local_file", { path, workspacePath, workspacePaths });
   }
 }

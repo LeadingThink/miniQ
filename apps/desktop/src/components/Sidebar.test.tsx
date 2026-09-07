@@ -8,12 +8,14 @@ const workspace: Workspace = {
   id: "workspace-1",
   name: "miniQ",
   path: "/work/miniq",
+  additionalPaths: [],
   createdAt: "2026-09-03T00:00:00Z",
   updatedAt: "2026-09-03T00:00:00Z",
 };
 const session: Session = {
   id: "session-1",
   workspaceId: workspace.id,
+  workingDirectory: workspace.path,
   title: "完善预览",
   status: "running",
   pinned: false,
@@ -39,6 +41,7 @@ describe("Sidebar", () => {
         onCreateSession={noop}
         onDeleteWorkspace={noop}
         onRenameWorkspace={noop}
+        onEditWorkspace={noop}
         onSelectSession={noop}
         onSessionSeen={noop}
         onDeleteSession={noop}
@@ -77,6 +80,7 @@ describe("Sidebar", () => {
         onCreateSession={noop}
         onDeleteWorkspace={noop}
         onRenameWorkspace={noop}
+        onEditWorkspace={noop}
         onSelectSession={noop}
         onSessionSeen={noop}
         onDeleteSession={noop}

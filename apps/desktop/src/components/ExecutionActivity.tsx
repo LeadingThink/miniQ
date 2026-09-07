@@ -252,7 +252,7 @@ export function ExecutionPrelude({
       <LoaderCircle className="activity-spinner" size={15} />
       <div>
         <strong>{turnProgressLabel(progress)}</strong>
-        {progress?.phase === "waiting_retry" && <RetryNotice progress={progress} />}
+        {progress?.retry && <RetryNotice progress={progress} />}
         {progress?.modelStep && (
           <span className="execution-phase-meta">
             第 {progress.modelStep} 轮

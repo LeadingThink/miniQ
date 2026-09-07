@@ -23,6 +23,7 @@ import { useHistorySearch } from "../hooks/useHistorySearch";
 import { readExportHistory } from "../historyExport";
 
 interface TimelineProps {
+  workspacePaths?: readonly string[];
   client?: RpcClient;
   sessionId?: string;
   loading?: boolean;
@@ -217,7 +218,7 @@ export function Timeline(props: TimelineProps) {
   const thinking =
     !props.loading &&
     props.busy &&
-    (!hasRunningTool || props.turnProgress?.phase === "waiting_retry") &&
+    (!hasRunningTool || !!props.turnProgress?.retry) &&
     props.approvals.length === 0 &&
     props.questions.length === 0;
 
@@ -272,6 +273,7 @@ export function Timeline(props: TimelineProps) {
         </button>
       )}
       <ArtifactsBar
+        workspacePaths={props.workspacePaths}
         artifacts={props.artifacts}
         workspacePath={props.workspacePath}
         onOpenFile={props.onOpenFile}

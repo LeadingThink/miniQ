@@ -50,6 +50,7 @@ function AppearanceFixture() {
         <Suspense fallback={null}>
           <FilePreviewPanel
             workspacePath="/fixture"
+            workspacePaths={["/fixture"]}
             preview={{
               target: { path: "/fixture/theme.json", line: null, column: null },
               resolvedPath: "/fixture/theme.json",

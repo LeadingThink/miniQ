@@ -27,11 +27,12 @@ pub(super) async fn summarize_batch(
     };
     let mut retries = ModelRetries::new(max_model_retries);
     loop {
-        if retries.attempts > 0 {
-            let _ = events
-                .send(AgentEvent::ModelRequestStarted { step: 0 })
-                .await;
-        }
+        let _ = events
+            .send(AgentEvent::ModelRequestStarted {
+                step: 0,
+                retry: retries.progress(),
+            })
+            .await;
         let stream = tokio::select! {
             _ = cancel.cancelled() => return Err(AgentError::Cancelled),
             stream = provider.stream_complete(request.clone()) => stream,
@@ -45,6 +46,12 @@ pub(super) async fn summarize_batch(
                 return Err(error.into());
             }
         };
+        let _ = events
+            .send(AgentEvent::ModelResponseStarted {
+                step: 0,
+                retry: retries.progress(),
+            })
+            .await;
         let mut summary = String::new();
         let error = loop {
             let delta = tokio::select! {

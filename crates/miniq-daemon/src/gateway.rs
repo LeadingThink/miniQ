@@ -25,6 +25,7 @@ mod skill;
 mod system;
 mod voice;
 mod workspace;
+mod workspace_roots;
 
 use miniq_protocol::{ErrorCode, RpcError, RpcRequest, RpcResponse};
 
@@ -59,6 +60,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "workspace.open" => workspace::open(state, req.params),
         "workspace.create" => workspace::create(state, req.params),
         "workspace.list" => workspace::list(state),
+        "workspace.updateRoots" => workspace_roots::update(state, req.params).await,
         "schedule.create" => schedule::create(state, req.params),
         "schedule.list" => schedule::list(state),
         "schedule.toggle" => schedule::toggle(state, req.params),

@@ -18,13 +18,20 @@ type Attempt = Result<Vec<Result<ChatDelta, ProviderError>>, ProviderError>;
 struct Scripted {
     attempts: Mutex<VecDeque<Attempt>>,
     requests: Mutex<Vec<CompletionRequest>>,
+    request_delay: Duration,
 }
 impl Scripted {
     fn new(attempts: Vec<Attempt>) -> Self {
         Self {
             attempts: Mutex::new(attempts.into()),
             requests: Mutex::new(Vec::new()),
+            request_delay: Duration::ZERO,
         }
+    }
+
+    fn slow(mut self) -> Self {
+        self.request_delay = Duration::from_secs(95);
+        self
     }
 }
 #[async_trait]
@@ -34,6 +41,7 @@ impl ModelProvider for Scripted {
         request: CompletionRequest,
     ) -> Result<DeltaStream, ProviderError> {
         self.requests.lock().unwrap().push(request);
+        tokio::time::sleep(self.request_delay).await;
         let deltas = self
             .attempts
             .lock()
@@ -265,27 +273,37 @@ async fn permanent_stream_errors_are_not_retried_and_transient_retries_are_bound
         "invalid tools".into(),
     ))])]);
     let (tx, _rx) = tokio::sync::mpsc::channel(32);
-    assert!(run_turn(
+    let error = run_turn(
         &provider,
         &crate::NoTools,
         vec![],
         tx,
-        CancellationToken::new()
+        CancellationToken::new(),
     )
     .await
-    .is_err());
+    .unwrap_err();
+    assert!(matches!(error, AgentError::Provider(_)));
     assert_eq!(provider.requests.lock().unwrap().len(), 1);
     let provider = Scripted::new((0..11).map(|_| Err(unavailable())).collect());
     let (tx, mut rx) = tokio::sync::mpsc::channel(64);
-    assert!(run_turn(
+    let error = run_turn(
         &provider,
         &crate::NoTools,
         vec![],
         tx,
-        CancellationToken::new()
+        CancellationToken::new(),
     )
     .await
-    .is_err());
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        AgentError::ModelRetryStopped {
+            attempts: 10,
+            max_attempts: 10,
+            ..
+        }
+    ));
+    assert!(error.to_string().contains("已达到重试次数上限"));
     assert_eq!(provider.requests.lock().unwrap().len(), 11);
     let mut attempts = Vec::new();
     while let Ok(event) = rx.try_recv() {
@@ -314,7 +332,7 @@ async fn the_tenth_retry_can_recover_without_repeating_a_completed_tool() {
     ])];
     attempts.extend((0..10).map(|_| Err(unavailable())));
     attempts.push(finished());
-    let provider = Scripted::new(attempts);
+    let provider = Scripted::new(attempts).slow();
     let executor = Writes(AtomicUsize::new(0));
     let (tx, _rx) = tokio::sync::mpsc::channel(64);
     let outcome = run_turn(&provider, &executor, vec![], tx, CancellationToken::new())
@@ -359,7 +377,7 @@ async fn a_retry_wait_can_be_cancelled_immediately() {
 }
 
 #[tokio::test]
-async fn long_server_hints_and_exhausted_time_budgets_do_not_trigger_early_retries() {
+async fn long_server_hints_explain_why_automatic_retries_stopped() {
     let (tx, mut rx) = tokio::sync::mpsc::channel(8);
     let error = ProviderError::Api {
         status: 503,
@@ -367,16 +385,69 @@ async fn long_server_hints_and_exhausted_time_budgets_do_not_trigger_early_retri
         retry_after: Some(Duration::from_secs(600)),
     };
     let mut retries = ModelRetries::new(4);
-    assert!(!retries
+    let stopped = retries
         .wait(&error, 1, &tx, &CancellationToken::new())
         .await
-        .unwrap());
-    retries.started = Some(Instant::now() - Duration::from_secs(301));
-    assert!(!retries
-        .wait(&unavailable(), 1, &tx, &CancellationToken::new())
-        .await
-        .unwrap());
+        .unwrap_err();
+    assert!(matches!(
+        stopped,
+        AgentError::ModelRetryStopped {
+            attempts: 0,
+            max_attempts: 4,
+            ..
+        }
+    ));
+    assert!(stopped.to_string().contains("600 秒"));
     assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test(start_paused = true)]
+async fn slow_compaction_can_recover_on_the_tenth_retry() {
+    let mut attempts = (0..10)
+        .map(|_| {
+            Ok(vec![Err(ProviderError::Transient(
+        "Responses API error: Our servers are currently overloaded. Please try again later.".into()
+    ))])
+        })
+        .collect::<Vec<_>>();
+    attempts.push(finished());
+    let provider = Scripted::new(attempts).slow();
+    let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+    let policy = crate::ContextPolicy {
+        soft_limit_tokens: 8,
+        preserve_recent_messages: 1,
+        summary_batch_tokens: 1000,
+        ..crate::ContextPolicy::default()
+    };
+    let summary = crate::compact_history(
+        &provider,
+        vec![
+            ChatMessage::user("history"),
+            ChatMessage::assistant("previous answer"),
+            ChatMessage::user("continue"),
+        ],
+        &[],
+        &policy,
+        10,
+        &tx,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert!(summary.compacted);
+    assert_eq!(provider.requests.lock().unwrap().len(), 11);
+    let mut inflight_retries = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        if let AgentEvent::ModelRequestStarted {
+            step,
+            retry: Some(retry),
+        } = event
+        {
+            assert_eq!(step, 0);
+            inflight_retries.push(retry.attempt);
+        }
+    }
+    assert_eq!(inflight_retries, (1..=10).collect::<Vec<_>>());
 }
 
 #[tokio::test(start_paused = true)]
@@ -424,13 +495,13 @@ async fn compaction_retries_transient_requests_and_discards_partial_summaries() 
             provider.requests.lock().unwrap().len(),
             if partial { 2 } else { 3 }
         );
-        assert!(matches!(
-            rx.try_recv().unwrap(),
-            AgentEvent::ModelRetryScheduled {
-                step: 0,
-                attempt: 1,
-                ..
+        let mut retry_attempts = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            if let AgentEvent::ModelRetryScheduled { step, attempt, .. } = event {
+                assert_eq!(step, 0);
+                retry_attempts.push(attempt);
             }
-        ));
+        }
+        assert_eq!(retry_attempts, if partial { vec![1] } else { vec![1, 2] });
     }
 }

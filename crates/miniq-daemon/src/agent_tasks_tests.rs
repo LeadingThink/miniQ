@@ -121,11 +121,33 @@ fn bridge_with_provider(
         state: AppState::new(store, "token".into(), provider),
         session_id: session.id,
         workspace: directory.path().to_path_buf(),
+        workspace_roots: vec![directory.path().to_path_buf()],
         workspace_id: workspace.id,
         depth: 0,
         agent_id: None,
         cancel: CancellationToken::new(),
     }
+}
+
+#[test]
+fn isolated_children_keep_other_roots_without_regranting_the_source_checkout() {
+    let directory = tempfile::tempdir().unwrap();
+    let extra = tempfile::tempdir().unwrap();
+    let mut bridge = bridge_with_provider(
+        &directory,
+        Arc::new(miniq_models::mock::MockProvider::new(Vec::new())),
+    );
+    bridge.workspace_roots.push(directory.path().join("nested"));
+    bridge.workspace_roots.push(extra.path().to_path_buf());
+    let worktree = directory.path().join("isolated-worktree");
+    assert_eq!(
+        bridge.child_roots(&worktree, true),
+        [worktree, extra.path().to_path_buf()]
+    );
+    assert_eq!(
+        bridge.child_roots(extra.path(), false),
+        bridge.workspace_roots
+    );
 }
 
 struct GatedProvider {

@@ -31,6 +31,7 @@ import { useEditorTheme } from "../hooks/useEditorTheme";
 interface FilePreviewPanelProps {
   preview: FilePreviewState;
   workspacePath: string;
+  workspacePaths: readonly string[];
   onClose: () => void;
   onOpenFile: (target: NonNullable<FilePreviewState["target"]>) => void;
   onRetry: () => void;
@@ -81,6 +82,7 @@ function fileName(path: string): string {
 export function FilePreviewPanel({
   preview,
   workspacePath,
+  workspacePaths,
   onClose,
   onOpenFile,
   onRetry,
@@ -196,7 +198,7 @@ export function FilePreviewPanel({
           title="使用系统默认应用打开"
           aria-label="使用系统默认应用打开"
           disabled={!path}
-          onClick={() => void runAction(() => openLocalFile(path, workspacePath))}
+          onClick={() => void runAction(() => openLocalFile(path, workspacePath, workspacePaths))}
         >
           <ExternalLink size={16} />
         </button>
@@ -205,7 +207,7 @@ export function FilePreviewPanel({
           title="在文件夹中显示"
           aria-label="在文件夹中显示"
           disabled={!path}
-          onClick={() => void runAction(() => revealLocalFile(path, workspacePath))}
+          onClick={() => void runAction(() => revealLocalFile(path, workspacePath, workspacePaths))}
         >
           <FolderOpen size={16} />
         </button>

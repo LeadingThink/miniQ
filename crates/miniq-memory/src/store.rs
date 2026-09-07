@@ -10,6 +10,7 @@ mod records;
 mod row_mappers;
 mod scheduled_tasks;
 mod session_settings;
+mod workspace_roots;
 mod workspaces;
 
 pub use external_sessions::ExternalImportOutcome;
@@ -25,6 +26,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 const MIGRATIONS: &[(&str, &str)] = &[
+    // Entries are applied in order; append new migrations at the end.
     (
         "0001_init",
         include_str!("../../../migrations/0001_init.sql"),
@@ -60,6 +62,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0009_session_model_settings",
         include_str!("../../../migrations/0009_session_model_settings.sql"),
+    ),
+    (
+        "0010_workspace_roots",
+        include_str!("../../../migrations/0010_workspace_roots.sql"),
     ),
 ];
 
@@ -158,7 +164,7 @@ impl Store {
     }
 
     fn migrate(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap();
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS schema_migrations (
                 name TEXT PRIMARY KEY,
@@ -174,11 +180,13 @@ impl Store {
                 )
                 .optional()?;
             if applied.is_none() {
-                conn.execute_batch(sql)?;
-                conn.execute(
+                let transaction = conn.transaction()?;
+                transaction.execute_batch(sql)?;
+                transaction.execute(
                     "INSERT INTO schema_migrations (name, applied_at) VALUES (?1, ?2)",
                     params![name, now_iso()],
                 )?;
+                transaction.commit()?;
             }
         }
         Ok(())
