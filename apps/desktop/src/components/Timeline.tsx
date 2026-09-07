@@ -1,26 +1,25 @@
-import { ArrowDown, ChevronUp, Download, LoaderCircle, RefreshCw, Search } from "lucide-react";
+import { ArrowDown, ChevronUp, Download, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type {
-  Artifact,
-  Message,
-  PlanTask,
-  Question,
-  QueuedMessage,
-  ToolCall,
-  TurnProgress,
-} from "../types";
+import type { Artifact, Message, PlanTask, Question, QueuedMessage, ToolCall, TurnProgress } from "../types";
 import type { PendingApproval } from "../App";
 import type { LocalFileTarget } from "../localFiles";
 import { ApprovalCard, QuestionCard, QueueBar, ArtifactsBar } from "./TimelineInteractions";
 import { Md } from "./Md";
 import { ExecutionPrelude, PlanProgress } from "./ExecutionActivity";
-import { createTimelineItems, groupTimeline, filterTimelineGroups, type TimelineFilter, type TimelineGroup } from "../timelineModel";
+import {
+  createTimelineItems,
+  groupTimeline,
+  filterTimelineGroups,
+  type TimelineFilter,
+  type TimelineGroup,
+} from "../timelineModel";
 import { downloadSession } from "../sessionExport";
 import { CopyButton } from "./CopyButton";
 import { ToolGroup } from "./ToolGroup";
 import type { RpcClient } from "../rpc";
 import { useHistorySearch } from "../hooks/useHistorySearch";
 import { readExportHistory } from "../historyExport";
+import { ExecutionSummary } from "./ExecutionSummary";
 
 interface TimelineProps {
   workspacePaths?: readonly string[];
@@ -76,9 +75,18 @@ function TimelineEntries(props: {
       {props.items.map((item) =>
         item.kind === "message" ? (
           item.message.role === "user" ? (
-            <div key={item.message.id} className="bubble user" title={new Date(item.message.createdAt).toLocaleString()}>
+            <div
+              key={item.message.id}
+              className="bubble user"
+              title={new Date(item.message.createdAt).toLocaleString()}
+            >
               {item.message.content}
-              <CopyButton className="msg-copy" label="复制消息" content={item.message.content} onError={props.onError} />
+              <CopyButton
+                className="msg-copy"
+                label="复制消息"
+                content={item.message.content}
+                onError={props.onError}
+              />
             </div>
           ) : item.message.role === "tool" ? (
             <div key={item.message.id} className="bubble tool-transcript">
@@ -88,30 +96,37 @@ function TimelineEntries(props: {
               </Md>
             </div>
           ) : (
-            <div key={item.message.id} className="bubble assistant" title={new Date(item.message.createdAt).toLocaleString()}>
+            <div
+              key={item.message.id}
+              className="bubble assistant"
+              title={new Date(item.message.createdAt).toLocaleString()}
+            >
               <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile} onOpenUrl={props.onOpenUrl}>
                 {item.message.content}
               </Md>
-              <CopyButton className="msg-copy" label="复制消息" content={item.message.content} onError={props.onError} />
+              <CopyButton
+                className="msg-copy"
+                label="复制消息"
+                content={item.message.content}
+                onError={props.onError}
+              />
             </div>
           )
         ) : (
-          <ToolGroup key={item.calls[0].id} calls={item.calls} onRollback={props.onRollback} expanded={props.expandGroups} client={props.client} />
+          <ToolGroup
+            key={item.calls[0].id}
+            calls={item.calls}
+            onRollback={props.onRollback}
+            expanded={props.expandGroups}
+            client={props.client}
+          />
         ),
       )}
       {props.approvals.map((approval) => (
-        <ApprovalCard
-          key={approval.approval.id}
-          item={approval}
-          onResolve={props.onResolveApproval}
-        />
+        <ApprovalCard key={approval.approval.id} item={approval} onResolve={props.onResolveApproval} />
       ))}
       {props.questions.map((question) => (
-        <QuestionCard
-          key={question.id}
-          question={question}
-          onResolve={props.onResolveQuestion}
-        />
+        <QuestionCard key={question.id} question={question} onResolve={props.onResolveQuestion} />
       ))}
       {props.streamingText && (
         <div className="bubble assistant">
@@ -121,9 +136,7 @@ function TimelineEntries(props: {
           <span className="type-cursor" />
         </div>
       )}
-      {props.thinking && (
-        <ExecutionPrelude plan={props.plan} progress={props.turnProgress} />
-      )}
+      {props.thinking && <ExecutionPrelude plan={props.plan} progress={props.turnProgress} />}
       <PlanProgress plan={props.plan} busy={props.busy} />
     </div>
   );
@@ -146,14 +159,27 @@ export function Timeline(props: TimelineProps) {
     exportRequest.current = request;
     setExporting(true);
     try {
-      const history = props.client && props.sessionId
-        ? await readExportHistory(props.client, props.sessionId, request.signal)
-        : { messages: props.messages, toolCalls: props.toolCalls };
-      if (!request.signal.aborted) downloadSession({ title: props.title ?? "miniQ session", ...history, plan: props.plan, artifacts: props.artifacts }, format);
+      const history =
+        props.client && props.sessionId
+          ? await readExportHistory(props.client, props.sessionId, request.signal)
+          : { messages: props.messages, toolCalls: props.toolCalls };
+      if (!request.signal.aborted)
+        downloadSession(
+          {
+            title: props.title ?? "miniQ session",
+            ...history,
+            plan: props.plan,
+            artifacts: props.artifacts,
+          },
+          format,
+        );
     } catch (cause) {
       if (!request.signal.aborted) props.onError(`导出失败: ${String(cause)}`);
     } finally {
-      if (exportRequest.current === request) { exportRequest.current = null; setExporting(false); }
+      if (exportRequest.current === request) {
+        exportRequest.current = null;
+        setExporting(false);
+      }
     }
   };
 
@@ -169,7 +195,10 @@ export function Timeline(props: TimelineProps) {
   const jumpToBottom = () => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
     pinnedToBottom.current = true;
     setShowJump(false);
   };
@@ -192,10 +221,17 @@ export function Timeline(props: TimelineProps) {
     props.queue,
   ]);
 
-  const groups = useMemo(() => groupTimeline(createTimelineItems(props.messages, props.toolCalls)), [props.messages, props.toolCalls]);
-  const items = useMemo(() => historySearch.enabled
-    ? groupTimeline(createTimelineItems(historySearch.page?.messages ?? [], historySearch.page?.toolCalls ?? []))
-    : filterTimelineGroups(groups, filter, query), [groups, filter, query, historySearch.enabled, historySearch.page]);
+  const groups = useMemo(
+    () => groupTimeline(createTimelineItems(props.messages, props.toolCalls)),
+    [props.messages, props.toolCalls],
+  );
+  const items = useMemo(
+    () =>
+      historySearch.enabled
+        ? groupTimeline(createTimelineItems(historySearch.page?.messages ?? [], historySearch.page?.toolCalls ?? []))
+        : filterTimelineGroups(groups, filter, query),
+    [groups, filter, query, historySearch.enabled, historySearch.page],
+  );
   useEffect(() => {
     const el = scrollRef.current;
     const anchor = scrollAnchor.current;
@@ -212,9 +248,7 @@ export function Timeline(props: TimelineProps) {
     if (historySearch.enabled) historySearch.loadOlder();
     else void props.onLoadOlder?.();
   };
-  const hasRunningTool = props.toolCalls.some(
-    (t) => t.status === "running" || t.status === "waiting_approval",
-  );
+  const hasRunningTool = props.toolCalls.some((t) => t.status === "running" || t.status === "waiting_approval");
   const thinking =
     !props.loading &&
     props.busy &&
@@ -224,18 +258,101 @@ export function Timeline(props: TimelineProps) {
 
   return (
     <>
+      <ExecutionSummary
+        messages={props.messages}
+        calls={props.toolCalls}
+        progress={props.turnProgress}
+        plan={props.plan}
+        busy={props.busy}
+        approvals={props.approvals.length}
+        questions={props.questions.length}
+      />
       <div className="timeline-toolbar" aria-label="会话记录工具栏">
         <div className="timeline-modes" role="group" aria-label="记录类型">
-          {([["all", "全部"], ["answers", "回答"], ["activity", "执行"], ["errors", "异常"]] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}
+          {(
+            [
+              ["all", "全部"],
+              ["answers", "回答"],
+              ["activity", "执行"],
+              ["errors", "异常"],
+            ] as const
+          ).map(([value, label]) => (
+            <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
+              {label}
+            </button>
+          ))}
         </div>
-        <label className="timeline-search"><Search size={14} /><input type="search" aria-label="搜索当前会话" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-        <details className="session-export"><summary title="导出会话" aria-label="导出会话">{exporting ? <LoaderCircle size={16} className="activity-spinner" /> : <Download size={16} />}</summary><div>{(["md", "json"] as const).map((format) => <button type="button" key={format} disabled={exporting} onClick={() => void exportSession(format)}>{format === "md" ? "Markdown" : "JSON"}</button>)}</div></details>
+        <label className="timeline-search">
+          <Search size={14} />
+          <input
+            type="search"
+            aria-label="搜索当前会话"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {query && (
+            <button
+              type="button"
+              className="icon-button"
+              title="清空会话搜索"
+              aria-label="清空会话搜索"
+              onClick={() => setQuery("")}
+            >
+              <X size={13} />
+            </button>
+          )}
+        </label>
+        <details className="session-export">
+          <summary title="导出会话" aria-label="导出会话">
+            {exporting ? <LoaderCircle size={16} className="activity-spinner" /> : <Download size={16} />}
+          </summary>
+          <div>
+            {(["md", "json"] as const).map((format) => (
+              <button type="button" key={format} disabled={exporting} onClick={() => void exportSession(format)}>
+                {format === "md" ? "Markdown" : "JSON"}
+              </button>
+            ))}
+          </div>
+        </details>
       </div>
       <div className="timeline" ref={scrollRef} onScroll={onScroll}>
-        {(props.loading || historySearch.loading && !historySearch.page) && <div className="history-loading" role="status"><LoaderCircle size={16} className="activity-spinner" />正在加载会话</div>}
-        {historySearch.error && <div className="history-loading" role="alert">{historySearch.error}<button type="button" className="icon-button" title="重试搜索" aria-label="重试搜索" onClick={historySearch.retry}><RefreshCw size={16} /></button></div>}
-        {hasOlder && <div className="history-pages"><button type="button" className="ghost" disabled={loadingOlder} onClick={loadOlder}>{loadingOlder ? <LoaderCircle size={14} className="activity-spinner" /> : <ChevronUp size={14} />}更早的记录</button></div>}
-        {!props.loading && !historySearch.loading && !historySearch.error && items.length === 0 && (filter !== "all" || query) && <div className="diff-empty" role="status">没有匹配的记录</div>}
+        {(props.loading || (historySearch.loading && !historySearch.page)) && (
+          <div className="history-loading" role="status">
+            <LoaderCircle size={16} className="activity-spinner" />
+            正在加载会话
+          </div>
+        )}
+        {historySearch.error && (
+          <div className="history-loading" role="alert">
+            {historySearch.error}
+            <button
+              type="button"
+              className="icon-button"
+              title="重试搜索"
+              aria-label="重试搜索"
+              onClick={historySearch.retry}
+            >
+              <RefreshCw size={16} />
+            </button>
+          </div>
+        )}
+        {hasOlder && (
+          <div className="history-pages">
+            <button type="button" className="ghost" disabled={loadingOlder} onClick={loadOlder}>
+              {loadingOlder ? <LoaderCircle size={14} className="activity-spinner" /> : <ChevronUp size={14} />}
+              更早的记录
+            </button>
+          </div>
+        )}
+        {!props.loading &&
+          !historySearch.loading &&
+          !historySearch.error &&
+          items.length === 0 &&
+          (filter !== "all" || query) && (
+            <div className="diff-empty" role="status">
+              没有匹配的记录
+            </div>
+          )}
         <TimelineEntries
           client={props.client}
           items={items}
@@ -255,20 +372,10 @@ export function Timeline(props: TimelineProps) {
           onOpenUrl={props.onOpenUrl}
           workspacePath={props.workspacePath}
         />
-        <QueueBar
-          queue={props.queue}
-          onSteer={props.onSteerQueued}
-          onRemove={props.onRemoveQueued}
-        />
+        <QueueBar queue={props.queue} onSteer={props.onSteerQueued} onRemove={props.onRemoveQueued} />
       </div>
       {showJump && (
-        <button
-          type="button"
-          className="jump-to-bottom"
-          title="回到底部"
-          aria-label="回到底部"
-          onClick={jumpToBottom}
-        >
+        <button type="button" className="jump-to-bottom" title="回到底部" aria-label="回到底部" onClick={jumpToBottom}>
           <ArrowDown size={15} />
         </button>
       )}

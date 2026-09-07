@@ -225,6 +225,9 @@
   margin-top: 10px;
 }
 .tool-payload .icon-button,
+.preview-tabs .icon-button,
+.tool-group-jumps .icon-button,
+.computer-settings .icon-button,
 .agent-panel .icon-button,
 .session-model-controls .icon-button,
 .markdown-outline .icon-button,
@@ -241,6 +244,9 @@
   color: var(--text-mid);
 }
 .tool-payload .icon-button:hover,
+.preview-tabs .icon-button:hover,
+.tool-group-jumps .icon-button:hover,
+.computer-settings .icon-button:hover,
 .agent-panel .icon-button:hover,
 .session-model-controls .icon-button:hover,
 .markdown-outline .icon-button:hover,

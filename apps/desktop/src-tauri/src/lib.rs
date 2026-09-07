@@ -84,30 +84,51 @@ fn read_local_file_preview(
 #[tauri::command]
 fn browser_open(
     app: tauri::AppHandle,
+    view_id: String,
     url: String,
     bounds: browser::BrowserBounds,
 ) -> Result<browser::BrowserState, String> {
-    browser::open(&app, &url, bounds)
+    browser::open(&app, &view_id, &url, bounds)
 }
 
 #[tauri::command]
-fn browser_resize(app: tauri::AppHandle, bounds: browser::BrowserBounds) -> Result<(), String> {
-    browser::resize_current(&app, bounds)
+fn browser_resize(
+    app: tauri::AppHandle,
+    view_id: String,
+    bounds: browser::BrowserBounds,
+) -> Result<(), String> {
+    browser::resize_current(&app, &view_id, bounds)
 }
 
 #[tauri::command]
-fn browser_action(app: tauri::AppHandle, action: String) -> Result<browser::BrowserState, String> {
-    browser::action(&app, &action)
+fn browser_action(
+    app: tauri::AppHandle,
+    view_id: String,
+    action: String,
+) -> Result<browser::BrowserState, String> {
+    browser::action(&app, &view_id, &action)
 }
 
 #[tauri::command]
-fn browser_current(app: tauri::AppHandle) -> Result<browser::BrowserState, String> {
-    browser::current(&app)
+fn browser_current(
+    app: tauri::AppHandle,
+    view_id: String,
+) -> Result<browser::BrowserState, String> {
+    browser::current(&app, &view_id)
 }
 
 #[tauri::command]
-fn browser_close(app: tauri::AppHandle) -> Result<(), String> {
-    browser::close(&app)
+fn browser_close(app: tauri::AppHandle, view_id: String) -> Result<(), String> {
+    browser::close(&app, &view_id)
+}
+
+#[tauri::command]
+fn browser_set_visible(
+    app: tauri::AppHandle,
+    view_id: String,
+    visible: bool,
+) -> Result<(), String> {
+    browser::set_visible(&app, &view_id, visible)
 }
 
 pub fn run() {
@@ -131,7 +152,8 @@ pub fn run() {
             browser_resize,
             browser_action,
             browser_current,
-            browser_close
+            browser_close,
+            browser_set_visible
         ])
         .setup(|app| {
             setup_tray(app.handle())?;

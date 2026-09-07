@@ -2786,6 +2786,7 @@ version = "0.1.17"
 dependencies = [
  "async-trait",
  "axum",
+ "core-foundation",
  "core-graphics",
  "enigo",
  "futures-util",

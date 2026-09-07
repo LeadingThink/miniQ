@@ -8,6 +8,7 @@ use std::path::Path;
 
 mod agents;
 mod common;
+mod computer;
 mod external_session;
 mod external_workspace;
 mod interaction;
@@ -56,6 +57,8 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
     let id = req.id.clone();
     let result = match req.method.as_str() {
         "daemon.health" => system::health(state),
+        "computer.permissions" => computer::permissions().await,
+        "computer.requestPermission" => computer::request(req.params).await,
         "daemon.shutdown" => system::shutdown(state).await,
         "workspace.open" => workspace::open(state, req.params),
         "workspace.create" => workspace::create(state, req.params),

@@ -42,7 +42,7 @@ pub use agent::{
 pub use apply_patch::{affected_paths as apply_patch_affected_paths, ApplyPatchTool};
 pub use browser::BrowserAutomationTool;
 pub use catalog::ToolSearchTool;
-pub use computer::ComputerUseTool;
+pub use computer::{desktop_permissions, request_desktop_permission, ComputerUseTool};
 pub use doc::{DocReadTool, DocWriteTool};
 pub use edit::FileEditTool;
 pub use file::{FileListTool, FileReadTool, FileWriteTool};

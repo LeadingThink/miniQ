@@ -19,6 +19,8 @@ fn main() {
         "response": schema_for!(RpcResponse),
         "event": schema_for!(Event),
         "session": schema_for!(Session),
+        "computerPermissions": schema_for!(miniq_protocol::ComputerPermissions),
+        "computerPermissionRequest": schema_for!(miniq_protocol::ComputerPermissionRequest),
         "workspaceRootsUpdate": schema_for!(miniq_protocol::WorkspaceRootsUpdate),
         "historyParams": schema_for!(miniq_protocol::HistoryParams),
         "historyPage": schema_for!(miniq_protocol::HistoryPage),

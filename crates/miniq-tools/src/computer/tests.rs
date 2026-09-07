@@ -1,9 +1,12 @@
 use super::*;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 struct FakeDesktop {
     inputs: AtomicUsize,
     focus: AtomicU32,
+    denied: AtomicBool,
+    captures: AtomicUsize,
+    display_error: AtomicBool,
 }
 
 fn display() -> Display {
@@ -19,10 +22,28 @@ fn display() -> Display {
 }
 
 impl DesktopBackend for FakeDesktop {
+    fn permissions(&self) -> miniq_protocol::ComputerPermissions {
+        miniq_protocol::ComputerPermissions {
+            platform: "test".into(),
+            process_id: 0,
+            executable: "fake".into(),
+            screen_recording: if self.denied.load(Ordering::SeqCst) {
+                miniq_protocol::ComputerPermissionState::Denied
+            } else {
+                miniq_protocol::ComputerPermissionState::Granted
+            },
+            accessibility: miniq_protocol::ComputerPermissionState::Granted,
+            display_server: None,
+        }
+    }
     fn displays(&self) -> Result<Vec<Display>, String> {
+        if self.display_error.load(Ordering::SeqCst) {
+            return Err("no display".into());
+        }
         Ok(vec![display()])
     }
     fn capture(&self, _id: u32) -> Result<(Display, image::RgbaImage), String> {
+        self.captures.fetch_add(1, Ordering::SeqCst);
         Ok((display(), image::RgbaImage::new(120, 80)))
     }
     fn focus(&self) -> Result<Option<FocusedWindow>, String> {
@@ -114,6 +135,9 @@ async fn desktop_lease_rejects_other_tasks_stale_frames_and_changed_focus() {
     let backend = Arc::new(FakeDesktop {
         inputs: AtomicUsize::new(0),
         focus: AtomicU32::new(1),
+        denied: AtomicBool::new(false),
+        captures: AtomicUsize::new(0),
+        display_error: AtomicBool::new(false),
     });
     let tool = ComputerUseTool {
         lease: Arc::default(),
@@ -123,6 +147,18 @@ async fn desktop_lease_rejects_other_tasks_stale_frames_and_changed_focus() {
         .execute(&first, json!({"action":"screenshot"}))
         .await
         .unwrap();
+    let status = tool
+        .execute(&second, json!({"action":"status"}))
+        .await
+        .unwrap();
+    assert_eq!(status["inUse"], true);
+    assert_eq!(status["ownedByTask"], false);
+    assert!(status["leaseRemainingSeconds"].as_u64().unwrap() > 0);
+    assert_eq!(backend.captures.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        tool.lease.lock().unwrap().as_ref().unwrap().owner,
+        first.task_scope
+    );
     assert!(
         acquire_lock().is_err(),
         "a second process/handle must not acquire desktop input"
@@ -183,4 +219,40 @@ async fn desktop_lease_rejects_other_tasks_stale_frames_and_changed_focus() {
     .unwrap();
     assert!(tool.lease.lock().unwrap().is_none());
     assert!(acquire_lock().is_ok());
+}
+
+#[tokio::test]
+async fn denied_permissions_prevent_capture_and_input_but_not_diagnostics() {
+    let backend = Arc::new(FakeDesktop {
+        inputs: AtomicUsize::new(0),
+        focus: AtomicU32::new(1),
+        denied: AtomicBool::new(true),
+        captures: AtomicUsize::new(0),
+        display_error: AtomicBool::new(true),
+    });
+    let tool = ComputerUseTool {
+        lease: Arc::default(),
+        backend: backend.clone(),
+    };
+    let ctx = ToolContext::new(std::env::temp_dir());
+    let status = tool
+        .execute(&ctx, json!({"action":"status"}))
+        .await
+        .unwrap();
+    assert_eq!(status["permissions"]["screenRecording"], "denied");
+    assert_eq!(status["displayError"], "no display");
+    for input in [
+        json!({"action":"screenshot"}),
+        json!({"action":"key","key":"Enter","observationId":"old"}),
+    ] {
+        assert!(tool
+            .execute(&ctx, input)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("computer_permission_required"));
+    }
+    assert_eq!(backend.captures.load(Ordering::SeqCst), 0);
+    assert_eq!(backend.inputs.load(Ordering::SeqCst), 0);
+    assert!(tool.lease.lock().unwrap().is_none());
 }
