@@ -92,6 +92,7 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
     let streaming_text = state.streaming_text(&input.session_id);
     let turn_progress = state.turn_progress(&input.session_id);
     to_value(json!({
+        "canAcknowledgeFailure": true,
         "session": session,
         "messages": messages,
         "toolCalls": tool_calls,

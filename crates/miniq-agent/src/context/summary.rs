@@ -46,7 +46,6 @@ pub(super) async fn summarize_batch(
             }
         };
         let mut summary = String::new();
-        let mut saw_context = false;
         let error = loop {
             let delta = tokio::select! {
                 _ = cancel.cancelled() => return Err(AgentError::Cancelled),
@@ -54,7 +53,7 @@ pub(super) async fn summarize_batch(
             };
             match delta {
                 Some(Ok(ChatDelta::Text(text))) => summary.push_str(&text),
-                Some(Ok(ChatDelta::Context(_))) => saw_context = true,
+                Some(Ok(ChatDelta::Context(_))) => {}
                 Some(Ok(ChatDelta::ToolCall(_))) => {
                     return Err(ProviderError::InvalidResponse(
                         "context compaction attempted a tool call".into(),
@@ -70,7 +69,7 @@ pub(super) async fn summarize_batch(
                 }
             }
         };
-        if !summary.is_empty() || saw_context || !retries.wait(&error, 0, events, cancel).await? {
+        if !retries.wait(&error, 0, events, cancel).await? {
             return Err(error.into());
         }
     }

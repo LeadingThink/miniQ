@@ -298,6 +298,7 @@ export type DaemonEvent =
   | { type: "turn_progress_changed"; sessionId: string; progress: TurnProgress }
   | { type: "message_created"; sessionId: string; message: Message }
   | { type: "assistant_delta"; sessionId: string; messageId: string; delta: string }
+  | { type: "assistant_replaced"; sessionId: string; messageId: string; text: string }
   | {
       type: "context_compacted";
       sessionId: string;

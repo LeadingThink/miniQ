@@ -105,6 +105,28 @@ it("background failures keep their original session identity", () => {
   expect(hook.result.current.streamingText).toBe("");
 });
 
+it("retry replaces only interrupted output and remains isolated across sessions and reloads", () => {
+  const hook = setup();
+  act(() => hook.result.current.load("a", snapshot));
+  hook.emit({ type: "assistant_replaced", sessionId: "b", messageId: "b-stream", text: "other" });
+  expect(hook.result.current.streamingText).toBe("a streaming");
+  hook.emit({ type: "assistant_replaced", sessionId: "a", messageId: "a-stream", text: "committed" });
+  hook.emit({ type: "assistant_delta", sessionId: "a", messageId: "a-stream", delta: "\n\nrecovered" });
+  expect(hook.result.current.streamingText).toBe("committed\n\nrecovered");
+  expect(hook.result.current.toolCalls).toEqual(snapshot.toolCalls);
+  expect(hook.result.current.messages).toEqual(snapshot.messages);
+  act(() => hook.result.current.load("a", { ...snapshot, streamingText: "committed\n\nrecovered" }));
+  expect(hook.result.current.streamingText).toBe("committed\n\nrecovered");
+});
+
+it("unrecognized wire events cannot corrupt the current feed", () => {
+  const hook = setup();
+  act(() => hook.result.current.load("a", snapshot));
+  hook.emit({ type: "future_event", sessionId: "a" } as unknown as DaemonEvent);
+  expect(hook.result.current.streamingText).toBe(snapshot.streamingText);
+  expect(hook.result.current.messages).toEqual(snapshot.messages);
+});
+
 it("late action failures stay in their originating session, including drafts", () => {
   const hook = renderHook(({ id }) => useSessionError(id), {
     initialProps: { id: "a" },

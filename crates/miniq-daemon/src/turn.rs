@@ -324,6 +324,14 @@ async fn execute_turn(
                         delta,
                     });
                 }
+                AgentEvent::TextReplaced(text) => {
+                    forward_state.replace_streaming_text(&forward_session, &text);
+                    forward_state.emit(Event::AssistantReplaced {
+                        session_id: forward_session.clone(),
+                        message_id: forward_message_id.clone(),
+                        text,
+                    });
+                }
                 AgentEvent::ContextCompacted {
                     estimated_tokens_before,
                     estimated_tokens_after,

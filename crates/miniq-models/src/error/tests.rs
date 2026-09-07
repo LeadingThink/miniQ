@@ -107,6 +107,37 @@ async fn connection_closed_before_response_headers_is_retryable() {
 }
 
 #[tokio::test]
+async fn response_body_decode_failures_are_retryable() {
+    use axum::{routing::get, Router};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            Router::new().route(
+                "/",
+                get(|| async { ([("content-type", "application/json")], "{\"result\":") }),
+            ),
+        )
+        .await
+        .unwrap();
+    });
+    let response = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .unwrap()
+        .get(format!("http://{address}/"))
+        .send()
+        .await
+        .unwrap();
+    let error = response.json::<Value>().await.unwrap_err();
+    assert!(error.is_decode());
+    assert!(!error.is_body() && !error.is_request() && !error.is_timeout());
+    assert!(ProviderError::Http(error).is_retryable());
+    server.abort();
+}
+
+#[tokio::test]
 async fn every_wire_protocol_preserves_http_retry_metadata() {
     use crate::{
         AnthropicProvider, ChatMessage, CompletionRequest, ModelProvider, OpenAiCompatProvider,

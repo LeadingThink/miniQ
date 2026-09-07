@@ -158,6 +158,85 @@ it("switching failed, running and new sessions isolates state without reconnecti
   logged.mockRestore();
 });
 
+it("acknowledges a viewed failure persistently without erasing task evidence or affecting another session", async () => {
+  const original = fake.call.getMockImplementation()!;
+  let status = "failed";
+  fake.call.mockImplementation(async (method, params) => {
+    if (method === "session.acknowledgeFailure") {
+      expect(params).toEqual({ sessionId: "a", updatedAt: "failure-1" });
+      status = "idle";
+      return { acknowledged: true };
+    }
+    const result = await original(method, params);
+    if (method === "session.list") {
+      return { sessions: result.sessions.map((session: { id: string }) =>
+        session.id === "a" ? { ...session, status, updatedAt: "failure-1" } : session) };
+    }
+    if (method === "session.open" && params.sessionId === "a") {
+      return { ...result, canAcknowledgeFailure: true, session: { ...result.session, status, updatedAt: "failure-1" } };
+    }
+    return result;
+  });
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
+  await act(async () => { await hook.result.current.actions.openSession("a"); });
+  expect(hook.result.current.catalog.currentSession?.status).toBe("idle");
+  expect(hook.result.current.catalog.sessions.find((session) => session.id === "b")?.status).toBe("running");
+  expect(hook.result.current.feed.plan).toEqual([{ content: "a plan", status: "in_progress" }]);
+  expect(hook.result.current.feed.toolCalls).toHaveLength(1);
+  await act(async () => {
+    await hook.result.current.actions.openSession("b");
+    await hook.result.current.actions.openSession("a");
+  });
+  expect(fake.call.mock.calls.filter(([method]) => method === "session.acknowledgeFailure")).toHaveLength(1);
+  expect(fake.connect).toHaveBeenCalledTimes(1);
+});
+
+it("does not acknowledge background resyncs, failed loads, or a snapshot superseded by navigation", async () => {
+  const original = fake.call.getMockImplementation()!;
+  let resolveOpen!: (value: unknown) => void;
+  const snapshot = await original("session.open", { sessionId: "a" });
+  snapshot.session = { ...snapshot.session, status: "failed", updatedAt: "failure-1" };
+  snapshot.canAcknowledgeFailure = true;
+  let mode = "resync";
+  fake.call.mockImplementation((method, params) => {
+    if (method !== "session.open" || params.sessionId !== "a") return original(method, params);
+    if (mode === "error") return Promise.reject(new Error("load failed"));
+    if (mode === "delayed") return new Promise((resolve) => { resolveOpen = resolve; });
+    return Promise.resolve(snapshot);
+  });
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
+  await act(async () => { await hook.result.current.actions.openSession("a", false); });
+  mode = "error";
+  await act(async () => { await hook.result.current.actions.openSession("a"); });
+  mode = "delayed";
+  let opening!: Promise<void>;
+  act(() => { opening = hook.result.current.actions.openSession("a"); });
+  await act(async () => { await hook.result.current.actions.openSession("b"); });
+  await act(async () => { resolveOpen(snapshot); await opening; });
+  expect(hook.result.current.catalog.currentSession?.id).toBe("b");
+  expect(hook.result.current.feed.streamingText).toBe("b live");
+  expect(fake.call.mock.calls.filter(([method]) => method === "session.acknowledgeFailure")).toHaveLength(0);
+  expect(fake.connect).toHaveBeenCalledTimes(1);
+});
+
+it("opens failures without unsupported requests while the desktop is awaiting its update", async () => {
+  const original = fake.call.getMockImplementation()!;
+  fake.call.mockImplementation(async (method, params) => {
+    const result = await original(method, params);
+    return method === "session.open"
+      ? { ...result, session: { ...result.session, status: "failed" } }
+      : result;
+  });
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
+  await act(async () => { await hook.result.current.actions.openSession("a"); });
+  expect(hook.result.current.error).toBeNull();
+  expect(hook.result.current.feed.plan).toHaveLength(1);
+  expect(fake.call.mock.calls.some(([method]) => method === "session.acknowledgeFailure")).toBe(false);
+});
+
 it("unmounts the complete session page without orphaned child-task DOM nodes", async () => {
   const logged = vi.spyOn(console, "error").mockImplementation(() => {});
   function TestApp() {

@@ -188,3 +188,66 @@ async fn rapid_task_events_are_batched_instead_of_consuming_the_relay_frame_budg
     state.shutdown.cancel();
     task.await.unwrap().unwrap();
 }
+
+#[tokio::test]
+async fn mobile_acknowledgements_and_retry_output_preserve_the_remote_connection() {
+    let (state, mut socket, task) = start().await;
+    let workspace = state.store.create_workspace("/tmp", "test").unwrap();
+    let session = state.store.create_session(&workspace.id, "failed").unwrap();
+    state
+        .store
+        .update_session_status(&session.id, miniq_protocol::SessionStatus::Failed)
+        .unwrap();
+    let failed = state.store.get_session(&session.id).unwrap();
+    request(
+        &mut socket,
+        "ack",
+        "session.acknowledgeFailure",
+        json!({"sessionId":session.id,"updatedAt":failed.updated_at}),
+    )
+    .await;
+    loop {
+        let payload = next_payload(&mut socket).await;
+        if payload["id"] == "ack" {
+            assert_eq!(payload["result"]["acknowledged"], true);
+            assert_eq!(payload["result"]["session"]["status"], "idle");
+            break;
+        }
+    }
+    for event in [
+        Event::AssistantDelta {
+            session_id: session.id.clone(),
+            message_id: "stream".into(),
+            delta: "interrupted".into(),
+        },
+        Event::AssistantReplaced {
+            session_id: session.id.clone(),
+            message_id: "stream".into(),
+            text: String::new(),
+        },
+        Event::AssistantDelta {
+            session_id: session.id.clone(),
+            message_id: "stream".into(),
+            delta: "recovered".into(),
+        },
+    ] {
+        state.emit(event);
+    }
+    let mut kinds = Vec::new();
+    while kinds.len() < 3 {
+        let payload = next_payload(&mut socket).await;
+        for event in payload["items"].as_array().unwrap() {
+            if event["messageId"] == "stream" {
+                kinds.push(event["type"].as_str().unwrap().to_string());
+            }
+        }
+    }
+    assert_eq!(
+        kinds,
+        ["assistant_delta", "assistant_replaced", "assistant_delta"]
+    );
+    request(&mut socket, "health", "daemon.health", Value::Null).await;
+    assert_eq!(next_payload(&mut socket).await["id"], "health");
+    state.shutdown.cancel();
+    task.await.unwrap().unwrap();
+}

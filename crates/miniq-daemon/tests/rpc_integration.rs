@@ -10,6 +10,9 @@ use serde_json::{json, Value};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
+#[path = "rpc_integration/stream_retry.rs"]
+mod stream_retry;
+
 async fn start_daemon() -> (u16, String) {
     start_daemon_with(std::sync::Arc::new(miniq_models::mock::MockProvider::text(
         "hello from mock",

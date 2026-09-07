@@ -266,6 +266,7 @@ function useWorkspaceActions(
 
 interface OpenSessionResult {
   session: Session;
+  canAcknowledgeFailure?: boolean;
   messages: Message[];
   toolCalls: ToolCall[];
   artifacts: Artifact[];
@@ -307,7 +308,7 @@ function useSessionLifecycleActions(
   );
 
   const openSession = useCallback(
-    async (sessionId: string) => {
+    async (sessionId: string, markSeen = true) => {
       setCurrentSessionId(sessionId);
       const epoch = catalog.navigationEpoch.current;
       reset(sessionId);
@@ -316,7 +317,7 @@ function useSessionLifecycleActions(
       try { result = await client.call<OpenSessionResult>("session.open", { sessionId }); }
       catch (cause) { setSessionError(sessionId, errorMessage(cause)); return; }
       if (epoch !== catalog.navigationEpoch.current) return;
-      markSessionSeen(sessionId);
+      if (markSeen) markSessionSeen(sessionId);
       setSelectedWorkspaceId(result.session.workspaceId);
       setPage(null);
       load(sessionId, {
@@ -330,8 +331,19 @@ function useSessionLifecycleActions(
         streamingText: result.streamingText ?? "",
         turnProgress: result.turnProgress ?? null,
       });
+      if (markSeen && result.canAcknowledgeFailure && result.session.status === "failed") {
+        try {
+          await client.call("session.acknowledgeFailure", {
+            sessionId,
+            updatedAt: result.session.updatedAt,
+          });
+          await refreshSessions();
+        } catch (cause) {
+          setSessionError(sessionId, errorMessage(cause));
+        }
+      }
     },
-    [client, load, markSessionSeen, reset, setCurrentSessionId, setPage, setSelectedWorkspaceId, catalog.navigationEpoch, setSessionError],
+    [client, load, markSessionSeen, refreshSessions, reset, setCurrentSessionId, setPage, setSelectedWorkspaceId, catalog.navigationEpoch, setSessionError],
   );
 
   const deleteSession = useCallback(
@@ -634,7 +646,7 @@ export function useMiniqApp() {
     if (epoch === 0 || epoch === lastResyncedConnection.current) return;
     lastResyncedConnection.current = epoch;
     if (!sessionId) return;
-    void lifecycle.openSession(sessionId).catch((cause) => setError(errorMessage(cause)));
+    void lifecycle.openSession(sessionId, false).catch((cause) => setError(errorMessage(cause)));
   }, [catalog.currentSessionId, connection.connectionEpoch, lifecycle, setError]);
   const busy =
     catalog.currentSession?.status === "running" ||
