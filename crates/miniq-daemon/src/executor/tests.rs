@@ -123,6 +123,84 @@ async fn unknown_tool_is_persisted_and_emits_a_failed_lifecycle() {
     ));
 }
 
+struct PluginWireProbe;
+
+#[async_trait::async_trait]
+impl miniq_tools::Tool for PluginWireProbe {
+    fn name(&self) -> &str {
+        "dev.miniq.fixture.run"
+    }
+
+    fn description(&self) -> &str {
+        "Plugin wire-name probe"
+    }
+
+    fn parameters_schema(&self) -> Value {
+        json!({"type":"object"})
+    }
+
+    fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> miniq_sandbox::Risk {
+        miniq_sandbox::Risk {
+            level: RiskLevel::Low,
+            reason: "test".into(),
+        }
+    }
+
+    async fn execute(
+        &self,
+        _ctx: &ToolContext,
+        _input: Value,
+    ) -> Result<Value, miniq_tools::ToolError> {
+        Ok(json!({"characters": 11, "words": 2, "lines": 1}))
+    }
+}
+
+#[tokio::test]
+async fn provider_wire_name_executes_registered_plugin_tool() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = miniq_memory::Store::open_in_memory().unwrap();
+    let workspace = store
+        .create_workspace(directory.path().to_str().unwrap(), "workspace")
+        .unwrap();
+    let session = store.create_session(&workspace.id, "plugin call").unwrap();
+    let state = AppState::new(
+        store,
+        "token".to_string(),
+        std::sync::Arc::new(miniq_models::mock::MockProvider::new(Vec::new())),
+    );
+    state
+        .router
+        .register_builtin(std::sync::Arc::new(PluginWireProbe))
+        .unwrap();
+    let executor = SessionToolExecutor {
+        state: state.clone(),
+        session_id: session.id.clone(),
+        router: state.router.clone(),
+        ctx: ToolContext::new(directory.path().to_path_buf()),
+        cancel: CancellationToken::new(),
+        permission_policy: PermissionPolicy::Inherit,
+    };
+    let wire_call = ToolCallRequest {
+        id: "provider-call".into(),
+        name: "dev_miniq_fixture_run".into(),
+        arguments: json!({"text":"Hello miniQ"}),
+    };
+
+    let output = executor.execute(&wire_call).await.unwrap();
+
+    assert_eq!(output["words"], 2);
+    assert_eq!(
+        executor.call_fingerprint(&wire_call),
+        executor.call_fingerprint(&ToolCallRequest {
+            name: "dev.miniq.fixture.run".into(),
+            ..wire_call
+        })
+    );
+    let calls = state.store.list_tool_calls(&session.id).unwrap();
+    assert_eq!(calls[0].tool_name, "dev.miniq.fixture.run");
+    assert_eq!(calls[0].status, ToolCallStatus::Succeeded);
+}
+
 #[test]
 fn native_write_is_risk_checked_as_the_canonical_write_tool() {
     let directory = tempfile::tempdir().unwrap();

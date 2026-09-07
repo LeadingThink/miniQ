@@ -15,7 +15,6 @@ origin: bundled
    - `crates/miniq-plugins/src/manifest.rs`
    - `crates/miniq-plugins/wit/v1/plugin.wit`
    - `packages/node-plugin-host/src/index.ts`
-   - `examples/plugins/text-stats/`
 3. 复用现有 `PluginManager`、`manifest.toml`、权限、信任确认和 `ToolRouter`。不得建立第二套插件注册表、manifest、权限系统或插件管理 UI。
 4. 先明确工具输入、输出、错误语义和所需权限，再选择运行时。不要先写框架代码。
 
