@@ -210,7 +210,7 @@ fn surfaces_anthropic_errors_and_output_limits() {
         json!({"type":"error","error":{"type":"overloaded_error","message":"busy"}}),
     );
     assert!(
-        matches!(&error.items[0], Err(ProviderError::InvalidResponse(detail)) if detail.contains("busy"))
+        matches!(&error.items[0], Err(ProviderError::Transient(detail)) if detail.contains("busy"))
     );
 
     let limit = decode(

@@ -270,7 +270,12 @@ impl AppState {
             phase,
             model_step,
             started_at: miniq_memory::now_iso(),
+            retry: None,
         };
+        self.update_turn_progress(session_id, progress);
+    }
+
+    pub(crate) fn update_turn_progress(&self, session_id: &str, progress: TurnProgress) {
         self.turn_progresses
             .lock()
             .unwrap()

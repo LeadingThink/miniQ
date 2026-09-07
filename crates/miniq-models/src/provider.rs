@@ -15,7 +15,15 @@ pub enum ProviderError {
     #[error("http error: {0}")]
     Http(#[from] reqwest::Error),
     #[error("provider returned {status}: {body}")]
-    Api { status: u16, body: String },
+    Api {
+        status: u16,
+        body: String,
+        retry_after: Option<std::time::Duration>,
+    },
+    #[error("temporary provider error: {0}")]
+    Transient(String),
+    #[error("provider returned an empty completion")]
+    EmptyResponse,
     #[error("invalid response: {0}")]
     InvalidResponse(String),
     #[error("provider stopped because the output token limit was reached{0}")]
@@ -48,22 +56,6 @@ impl ProviderError {
                 .and_then(Value::as_u64),
         })
     }
-
-    pub(crate) fn from_api_response(status: u16, body: String) -> Self {
-        if indicates_context_window_overflow(&body) {
-            Self::ContextWindowExceeded
-        } else {
-            Self::Api { status, body }
-        }
-    }
-
-    pub(crate) fn from_stream_detail(prefix: &str, detail: &str) -> Self {
-        if indicates_context_window_overflow(detail) {
-            Self::ContextWindowExceeded
-        } else {
-            Self::InvalidResponse(format!("{prefix}: {detail}"))
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -94,7 +86,7 @@ impl fmt::Display for OutputTokenUsage {
     }
 }
 
-fn indicates_context_window_overflow(detail: &str) -> bool {
+pub(crate) fn indicates_context_window_overflow(detail: &str) -> bool {
     let detail = detail.to_ascii_lowercase();
     detail.contains("context_length_exceeded")
         || detail.contains("context window")
@@ -311,7 +303,7 @@ mod tests {
             "model_context_window_exceeded",
         ] {
             assert!(matches!(
-                ProviderError::from_stream_detail("provider error", detail),
+                ProviderError::from_stream_error("provider error", &Value::String(detail.into())),
                 ProviderError::ContextWindowExceeded
             ));
         }
@@ -319,7 +311,7 @@ mod tests {
 
     #[test]
     fn preserves_unrelated_api_errors() {
-        let error = ProviderError::from_api_response(429, "rate limited".into());
+        let error = ProviderError::from_api_response(429, "rate limited".into(), None);
         assert!(matches!(error, ProviderError::Api { status: 429, .. }));
     }
 }

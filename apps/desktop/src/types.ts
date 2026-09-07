@@ -13,12 +13,14 @@ export type TurnPhase =
   | "compacting_context"
   | "requesting_model"
   | "receiving_model"
+  | "waiting_retry"
   | "finalizing";
 
 export interface TurnProgress {
   phase: TurnPhase;
   modelStep?: number;
   startedAt: string;
+  retry?: { attempt: number; maxAttempts: number; delayMs: number };
 }
 
 export type Role = "user" | "assistant" | "system" | "tool";

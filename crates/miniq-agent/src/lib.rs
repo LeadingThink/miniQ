@@ -10,6 +10,7 @@
 
 use async_trait::async_trait;
 mod context;
+mod retry;
 
 pub use context::{
     compact_history, estimate_request_tokens, estimate_tokens, ContextOutcome, ContextPolicy,
@@ -46,6 +47,12 @@ pub enum AgentEvent {
     },
     ModelResponseStarted {
         step: usize,
+    },
+    ModelRetryScheduled {
+        step: usize,
+        attempt: usize,
+        max_attempts: usize,
+        delay_ms: u64,
     },
     ContextCompacted {
         estimated_tokens_before: usize,
@@ -132,7 +139,7 @@ impl Default for RunLimits {
         Self {
             max_steps: None,
             repeated_tool_batch_limit: 4,
-            max_model_retries: 2,
+            max_model_retries: 4,
             context_policy: ContextPolicy::default(),
         }
     }
@@ -161,6 +168,7 @@ async fn recover_context_overflow(
     history: &mut Vec<ChatMessage>,
     tools: &[ToolSpec],
     policy: &ContextPolicy,
+    max_model_retries: usize,
     events: &tokio::sync::mpsc::Sender<AgentEvent>,
     cancel: &CancellationToken,
 ) -> Result<bool, AgentError> {
@@ -177,6 +185,7 @@ async fn recover_context_overflow(
         std::mem::take(history),
         tools,
         &recovery_policy,
+        max_model_retries,
         events,
         cancel,
     )
@@ -231,11 +240,19 @@ pub async fn run_turn_with_limits(
         }
         steps += 1;
         let context_policy = effective_context_policy(&limits.context_policy, &capabilities);
-        let context =
-            compact_history(provider, history, &tools, &context_policy, &events, &cancel).await?;
+        let context = compact_history(
+            provider,
+            history,
+            &tools,
+            &context_policy,
+            limits.max_model_retries,
+            &events,
+            &cancel,
+        )
+        .await?;
         history = context.messages;
 
-        let mut model_retry = 0;
+        let mut retries = retry::ModelRetries::new(limits.max_model_retries);
         let (text, tool_calls, provider_context) = loop {
             let request = CompletionRequest {
                 messages: history.clone(),
@@ -254,14 +271,13 @@ pub async fn run_turn_with_limits(
             };
             let mut stream = match stream {
                 Ok(stream) => stream,
-                Err(ProviderError::ContextWindowExceeded)
-                    if model_retry < limits.max_model_retries =>
-                {
+                Err(ProviderError::ContextWindowExceeded) if retries.available() => {
                     if !recover_context_overflow(
                         provider,
                         &mut history,
                         &tools,
                         &context_policy,
+                        limits.max_model_retries,
                         &events,
                         &cancel,
                     )
@@ -269,10 +285,15 @@ pub async fn run_turn_with_limits(
                     {
                         return Err(AgentError::Provider(ProviderError::ContextWindowExceeded));
                     }
-                    model_retry += 1;
+                    retries.attempts += 1;
                     continue;
                 }
-                Err(error) => return Err(AgentError::Provider(error)),
+                Err(error) => {
+                    if retries.wait(&error, steps, &events, &cancel).await? {
+                        continue;
+                    }
+                    return Err(AgentError::Provider(error));
+                }
             };
             let _ = events
                 .send(AgentEvent::ModelResponseStarted { step: steps })
@@ -337,13 +358,18 @@ pub async fn run_turn_with_limits(
             }
 
             if let Some(error) = stream_error {
-                if text.is_empty() && model_retry < limits.max_model_retries {
+                if text.is_empty()
+                    && tool_calls.is_empty()
+                    && provider_context.is_none()
+                    && retries.available()
+                {
                     if matches!(&error, ProviderError::ContextWindowExceeded) {
                         if !recover_context_overflow(
                             provider,
                             &mut history,
                             &tools,
                             &context_policy,
+                            limits.max_model_retries,
                             &events,
                             &cancel,
                         )
@@ -351,37 +377,35 @@ pub async fn run_turn_with_limits(
                         {
                             return Err(AgentError::Provider(error));
                         }
-                        model_retry += 1;
+                        retries.attempts += 1;
                         continue;
                     }
-                    model_retry += 1;
-                    tokio::time::sleep(std::time::Duration::from_millis(250 * model_retry as u64))
-                        .await;
-                    continue;
+                    if retries.wait(&error, steps, &events, &cancel).await? {
+                        continue;
+                    }
                 }
                 return Err(AgentError::Provider(error));
             }
-            if text.trim().is_empty()
+            if text.is_empty()
                 && tool_calls.is_empty()
-                && model_retry < limits.max_model_retries
+                && provider_context.is_none()
+                && retries
+                    .wait(&ProviderError::EmptyResponse, steps, &events, &cancel)
+                    .await?
             {
-                model_retry += 1;
-                tokio::time::sleep(std::time::Duration::from_millis(250 * model_retry as u64))
-                    .await;
                 continue;
+            }
+            if tool_calls.is_empty() && text.trim().is_empty() {
+                return Err(ProviderError::InvalidResponse(format!(
+                    "provider returned an empty completion after {} attempts",
+                    retries.attempts + 1
+                ))
+                .into());
             }
             break (text, tool_calls, provider_context);
         };
 
         if tool_calls.is_empty() {
-            if text.trim().is_empty() {
-                return Err(AgentError::Provider(
-                    miniq_models::ProviderError::InvalidResponse(format!(
-                        "provider returned an empty completion after {} attempts",
-                        limits.max_model_retries + 1
-                    )),
-                ));
-            }
             let mut provider_history = history.clone();
             let mut assistant = ChatMessage::assistant(text.clone());
             assistant.provider_context = provider_context;
@@ -793,8 +817,8 @@ mod tests {
 
     #[tokio::test]
     async fn returns_a_clear_error_when_empty_retries_are_exhausted() {
-        let provider = MockProvider::new(vec![Vec::new(), Vec::new(), Vec::new()]);
-        let (events, _receiver) = tokio::sync::mpsc::channel(16);
+        let provider = MockProvider::new(vec![Vec::new(); 5]);
+        let (events, _receiver) = tokio::sync::mpsc::channel(32);
 
         let error = run_turn(
             &provider,
@@ -808,7 +832,7 @@ mod tests {
 
         assert!(error
             .to_string()
-            .contains("empty completion after 3 attempts"));
+            .contains("empty completion after 5 attempts"));
     }
 
     struct LargeResultExecutor;

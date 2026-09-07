@@ -396,7 +396,7 @@ export function Timeline(props: TimelineProps) {
   );
   const thinking =
     props.busy &&
-    !hasRunningTool &&
+    (!hasRunningTool || props.turnProgress?.phase === "waiting_retry") &&
     props.approvals.length === 0 &&
     props.questions.length === 0;
 

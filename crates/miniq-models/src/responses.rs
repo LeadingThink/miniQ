@@ -247,16 +247,6 @@ fn parse_arguments(tool: &str, arguments: &str) -> Result<Value, ProviderError> 
     })
 }
 
-fn error_detail(event: &Value) -> String {
-    event
-        .pointer("/response/error/message")
-        .or_else(|| event.pointer("/error/message"))
-        .or_else(|| event.get("message"))
-        .and_then(Value::as_str)
-        .unwrap_or("provider returned an unspecified Responses API error")
-        .to_string()
-}
-
 impl EventDecoder for ResponsesDecoder {
     fn decode(&mut self, raw_event: &str) -> DecodedEvent {
         let Some(data) = sse::event_data(raw_event) else {
@@ -340,10 +330,13 @@ impl EventDecoder for ResponsesDecoder {
                 DecodedEvent::terminal(vec![Err(error)])
             }
             "response.failed" | "error" => {
-                let detail = error_detail(&event);
-                DecodedEvent::terminal(vec![Err(ProviderError::from_stream_detail(
+                let error = event
+                    .pointer("/response/error")
+                    .or_else(|| event.get("error"))
+                    .unwrap_or(&event);
+                DecodedEvent::terminal(vec![Err(ProviderError::from_stream_error(
                     "Responses API error",
-                    &detail,
+                    error,
                 ))])
             }
             _ => DecodedEvent::continue_with(Vec::new()),
@@ -368,9 +361,7 @@ impl ModelProvider for ResponsesProvider {
         }
         let response = builder.send().await?;
         if !response.status().is_success() {
-            let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::from_api_response(status, body));
+            return Err(ProviderError::from_http_response(response).await);
         }
         Ok(sse::response_stream(response, ResponsesDecoder::default()))
     }

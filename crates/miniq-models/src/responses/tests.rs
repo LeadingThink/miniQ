@@ -283,7 +283,7 @@ fn maps_incomplete_and_failed_terminal_events_to_errors() {
         json!({"type":"response.failed","response":{"error":{"message":"overloaded"}}}),
     );
     assert!(
-        matches!(&failed.items[0], Err(ProviderError::InvalidResponse(detail)) if detail.contains("overloaded"))
+        matches!(&failed.items[0], Err(ProviderError::Transient(detail)) if detail.contains("overloaded"))
     );
 
     let context_overflow = decode(

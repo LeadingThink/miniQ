@@ -1,6 +1,7 @@
 //! miniq-daemon: local agent daemon exposing a JSON-RPC over WebSocket
 //! gateway on 127.0.0.1.
 
+mod agent_progress;
 mod agent_task_manager;
 mod agent_tasks;
 mod agent_worktree;

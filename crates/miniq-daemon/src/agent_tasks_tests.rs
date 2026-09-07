@@ -10,6 +10,9 @@ mod cancellation;
 #[path = "agent_tasks_tests/step_budget.rs"]
 mod step_budget;
 
+#[path = "agent_tasks_tests/retry.rs"]
+mod retry;
+
 fn request(prompt: &str) -> AgentRunRequest {
     AgentRunRequest {
         prompt: prompt.into(),

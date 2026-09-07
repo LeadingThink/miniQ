@@ -50,6 +50,7 @@ struct AgentRecordState {
     status: AgentStatus,
     result: Option<String>,
     error: Option<String>,
+    progress: Option<miniq_protocol::TurnProgress>,
     history: Option<Vec<ChatMessage>>,
     model_identity: Option<String>,
     inbox: VecDeque<String>,
@@ -138,6 +139,7 @@ impl AgentTaskManager {
                 status: AgentStatus::Running,
                 result: None,
                 error: None,
+                progress: None,
                 history: None,
                 model_identity: None,
                 inbox: VecDeque::new(),
@@ -199,6 +201,7 @@ impl AgentTaskManager {
         state.status = AgentStatus::Running;
         state.result = None;
         state.error = None;
+        state.progress = None;
         state.cancel = cancel;
         state.description = request
             .description
@@ -223,6 +226,7 @@ impl AgentTaskManager {
     ) -> Option<(String, Vec<ChatMessage>)> {
         let mut state = record.state.lock().await;
         state.result = Some(result);
+        state.progress = None;
         state.history = Some(history.clone());
         if state.cancel.is_cancelled() {
             state.inbox.clear();
@@ -235,6 +239,7 @@ impl AgentTaskManager {
 
     pub(crate) async fn complete(&self, record: &AgentRecord) {
         let mut state = record.state.lock().await;
+        state.progress = None;
         if matches!(
             state.status,
             AgentStatus::Finalizing | AgentStatus::Stopping
@@ -251,6 +256,7 @@ impl AgentTaskManager {
 
     pub(crate) async fn finish_error(&self, record: &AgentRecord, error: &AgentError) {
         let mut state = record.state.lock().await;
+        state.progress = None;
         let caller_stopped = state.status == AgentStatus::Stopping;
         state.status = if state.cancel.is_cancelled() || matches!(error, AgentError::Cancelled) {
             state.inbox.clear();
@@ -267,6 +273,7 @@ impl AgentTaskManager {
 
     pub(crate) async fn fail_start(&self, record: &AgentRecord, error: &ToolError) {
         let mut state = record.state.lock().await;
+        state.progress = None;
         state.status = AgentStatus::Failed;
         state.error = Some(error.to_string());
         drop(state);
@@ -288,6 +295,14 @@ impl AgentTaskManager {
 
     pub(crate) async fn save_history(&self, record: &AgentRecord, history: &[ChatMessage]) {
         record.state.lock().await.history = Some(history.to_vec());
+    }
+
+    pub(crate) async fn update_progress(
+        &self,
+        record: &AgentRecord,
+        progress: miniq_protocol::TurnProgress,
+    ) {
+        record.state.lock().await.progress = Some(progress);
     }
 
     pub(crate) async fn bind_model_context(
@@ -346,6 +361,7 @@ impl AgentTaskManager {
             "status": state.status.as_str(),
             "result": state.result,
             "error": state.error,
+            "progress": state.progress,
             "queuedMessages": state.inbox.len(),
             "worktreePath": state.worktree.as_ref().map(|worktree| worktree.path.display().to_string()),
             "worktreeBranch": state.worktree.as_ref().map(|worktree| worktree.branch.clone()),
