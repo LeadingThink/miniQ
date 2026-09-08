@@ -69,6 +69,7 @@ export interface QueuedMessage {
   id: string;
   sessionId: string;
   content: string;
+  attachments?: MessageAttachment[];
   position: number;
   createdAt: string;
 }

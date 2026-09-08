@@ -353,6 +353,65 @@
   white-space: nowrap;
 }
 
+.attach-image-chip {
+  position: relative;
+  display: inline-flex;
+  width: 76px;
+  height: 76px;
+  overflow: visible;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  cursor: zoom-in;
+  transform-origin: center center;
+  transition: transform 160ms ease, box-shadow 160ms ease, z-index 120ms ease;
+}
+
+.attach-image-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 7px;
+  object-fit: cover;
+  transition: box-shadow 160ms ease;
+}
+
+.attach-image-chip:hover,
+.attach-image-chip.zoomed {
+  z-index: 20;
+  transform: scale(4.2);
+  box-shadow: 0 16px 36px rgb(0 0 0 / 34%);
+}
+
+.attach-image-chip.zoomed {
+  cursor: zoom-out;
+}
+
+.attach-image-remove {
+  position: absolute;
+  top: -11px;
+  right: -11px;
+  width: 20px;
+  height: 20px;
+  justify-content: center;
+  border-radius: 50%;
+  color: #fff;
+  background: rgb(0 0 0 / 65%);
+  border: 2px solid var(--bg);
+  z-index: 2;
+}
+
+.attach-image-remove:hover {
+  color: #fff;
+  background: rgb(0 0 0 / 82%);
+}
+
+.attach-image-remove:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .attach-remove {
   display: inline-flex;
   align-items: center;
@@ -488,6 +547,32 @@
   max-width: 70%;
   /* User messages are plain text: preserve their line breaks. */
   white-space: pre-wrap;
+}
+
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.message-attachment-image {
+  display: block;
+  width: 180px;
+  max-width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.message-attachment-file {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-mid);
+  font-size: 12px;
 }
 
 .bubble.assistant {

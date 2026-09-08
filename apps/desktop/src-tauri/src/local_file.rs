@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
 const MAX_PREVIEW_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_PASTED_IMAGE_BYTES: usize = 20 * 1024 * 1024;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +23,89 @@ pub struct LocalFilePreview {
     content: Option<String>,
     data_base64: Option<String>,
     size: u64,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalImagePreview {
+    mime_type: &'static str,
+    data_base64: String,
+}
+
+fn pasted_image_format(mime_type: &str) -> Option<&'static str> {
+    match mime_type {
+        "image/png" => Some("png"),
+        "image/jpeg" => Some("jpg"),
+        "image/webp" => Some("webp"),
+        "image/gif" => Some("gif"),
+        _ => None,
+    }
+}
+
+fn image_format(path: &Path) -> Option<&'static str> {
+    match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "webp" => Some("image/webp"),
+        "gif" => Some("image/gif"),
+        _ => None,
+    }
+}
+
+pub fn save_pasted_image(
+    app: &AppHandle,
+    mime_type: &str,
+    data_base64: &str,
+) -> Result<String, String> {
+    let extension = pasted_image_format(mime_type)
+        .ok_or_else(|| "仅支持 PNG、JPEG、WebP 或 GIF 图片".to_string())?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_base64)
+        .map_err(|error| format!("无法解码剪贴板图片: {error}"))?;
+    if bytes.is_empty() {
+        return Err("剪贴板图片内容为空".to_string());
+    }
+    if bytes.len() > MAX_PASTED_IMAGE_BYTES {
+        return Err("图片不能超过 20 MB".to_string());
+    }
+
+    let directory = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("无法访问应用缓存目录: {error}"))?
+        .join("pasted-images");
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| format!("无法创建剪贴板图片目录: {error}"))?;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| format!("无法生成图片文件名: {error}"))?
+        .as_nanos();
+    let path = directory.join(format!("pasted-{}-{}.{}", timestamp, std::process::id(), extension));
+    std::fs::write(&path, bytes)
+        .map_err(|error| format!("无法保存剪贴板图片: {error}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+pub fn read_image_preview(path: &str) -> Result<LocalImagePreview, String> {
+    let file = Path::new(path)
+        .canonicalize()
+        .map_err(|error| format!("无法访问图片 {path}: {error}"))?;
+    let mime_type = image_format(&file).ok_or_else(|| "附件不是支持的图片格式".to_string())?;
+    let metadata = file
+        .metadata()
+        .map_err(|error| format!("无法读取图片信息 {}: {error}", file.display()))?;
+    if !metadata.is_file() {
+        return Err(format!("附件不是文件: {}", file.display()));
+    }
+    if metadata.len() > MAX_PASTED_IMAGE_BYTES as u64 {
+        return Err("图片不能超过 20 MB".to_string());
+    }
+    let bytes = std::fs::read(&file)
+        .map_err(|error| format!("无法读取图片 {}: {error}", file.display()))?;
+    Ok(LocalImagePreview {
+        mime_type,
+        data_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+    })
 }
 
 fn preview_format(path: &Path) -> (&'static str, &'static str) {
@@ -237,6 +321,21 @@ mod tests {
                 .content,
             "cwd"
         );
+    }
+
+    #[test]
+    fn accepts_image_formats_supported_by_the_daemon() {
+        assert_eq!(pasted_image_format("image/png"), Some("png"));
+        assert_eq!(pasted_image_format("image/jpeg"), Some("jpg"));
+        assert_eq!(pasted_image_format("image/webp"), Some("webp"));
+        assert_eq!(pasted_image_format("image/gif"), Some("gif"));
+    }
+
+    #[test]
+    fn rejects_unsupported_image_formats() {
+        assert_eq!(pasted_image_format("image/bmp"), None);
+        assert_eq!(pasted_image_format("image/svg+xml"), None);
+        assert_eq!(pasted_image_format("IMAGE/PNG"), None);
     }
 
     #[test]

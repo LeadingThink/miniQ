@@ -1,8 +1,17 @@
 import { ArrowDown, ChevronUp, Download, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Artifact, Message, PlanTask, Question, QueuedMessage, ToolCall, TurnProgress } from "../types";
+import type {
+  Artifact,
+  Message,
+  MessageAttachment,
+  PlanTask,
+  Question,
+  QueuedMessage,
+  ToolCall,
+  TurnProgress,
+} from "../types";
 import type { PendingApproval } from "../App";
-import type { LocalFileTarget } from "../localFiles";
+import { readImagePreview, type LocalFileTarget } from "../localFiles";
 import { ApprovalCard, QuestionCard, QueueBar, ArtifactsBar } from "./TimelineInteractions";
 import { Md } from "./Md";
 import { ExecutionPrelude, PlanProgress } from "./ExecutionActivity";
@@ -20,6 +29,31 @@ import type { RpcClient } from "../rpc";
 import { useHistorySearch } from "../hooks/useHistorySearch";
 import { readExportHistory } from "../historyExport";
 import { ExecutionSummary } from "./ExecutionSummary";
+
+function MessageAttachmentPreview({ attachment }: { attachment: MessageAttachment }) {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const isImage = Boolean(attachment.mimeType?.startsWith("image/"));
+
+  useEffect(() => {
+    if (!isImage) return;
+    let disposed = false;
+    void readImagePreview(attachment.path)
+      .then((preview) => {
+        if (!disposed) setImageUrl(`data:${preview.mimeType};base64,${preview.dataBase64}`);
+      })
+      .catch(() => {
+        if (!disposed) setImageUrl(null);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [attachment.path, isImage]);
+
+  if (imageUrl) {
+    return <img className="message-attachment-image" src={imageUrl} alt={attachment.name} />;
+  }
+  return <span className="message-attachment-file">{attachment.name}</span>;
+}
 
 interface TimelineProps {
   workspacePaths?: readonly string[];
@@ -80,7 +114,14 @@ function TimelineEntries(props: {
               className="bubble user"
               title={new Date(item.message.createdAt).toLocaleString()}
             >
-              {item.message.content}
+              {item.message.content && <div>{item.message.content}</div>}
+              {item.message.attachments && item.message.attachments.length > 0 && (
+                <div className="message-attachments">
+                  {item.message.attachments.map((attachment) => (
+                    <MessageAttachmentPreview key={attachment.path} attachment={attachment} />
+                  ))}
+                </div>
+              )}
               <CopyButton
                 className="msg-copy"
                 label="复制消息"

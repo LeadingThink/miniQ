@@ -119,7 +119,7 @@ struct IncomingMessage {
 pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: SendMessageParams = params(raw)?;
     let attachments = validate_message(&input.message)?;
-    let content = display_content(&input.message.content, &attachments);
+    let content = input.message.content.trim().to_string();
     let session = state
         .store
         .get_session(&input.session_id)
@@ -296,24 +296,6 @@ fn image_mime_type(path: &std::path::Path) -> Option<&'static str> {
         "webp" => Some("image/webp"),
         "gif" => Some("image/gif"),
         _ => None,
-    }
-}
-
-fn display_content(content: &str, attachments: &[MessageAttachment]) -> String {
-    let content = content.trim();
-    if attachments.is_empty() {
-        return content.to_string();
-    }
-    let files = attachments
-        .iter()
-        .map(|attachment| format!("- {}", attachment.path))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let block = format!("[用户附加的本地文件]\n{files}");
-    if content.is_empty() {
-        block
-    } else {
-        format!("{content}\n\n{block}")
     }
 }
 

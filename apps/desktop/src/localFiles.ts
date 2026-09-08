@@ -216,6 +216,46 @@ export async function readLocalFilePreview(
   return invoke<LocalFilePreview>("read_local_file_preview", { path, workspacePath, workspacePaths });
 }
 
+const PASTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const MAX_PASTED_IMAGE_BYTES = 20 * 1024 * 1024;
+
+export async function savePastedImage(file: File): Promise<string> {
+  if (!isTauriRuntime()) throw new Error("粘贴图片仅在 miniQ 桌面应用中可用");
+  if (!PASTED_IMAGE_TYPES.has(file.type.toLowerCase())) {
+    throw new Error("仅支持 PNG、JPEG、WebP 或 GIF 图片");
+  }
+  if (file.size === 0) throw new Error("剪贴板图片内容为空");
+  if (file.size > MAX_PASTED_IMAGE_BYTES) throw new Error("图片不能超过 20 MB");
+
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("图片读取失败"));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("图片读取失败"));
+    reader.readAsDataURL(file);
+  });
+  const separator = dataUrl.indexOf(",");
+  if (separator < 0) throw new Error("图片编码失败");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("save_pasted_image", {
+    mimeType: file.type.toLowerCase(),
+    dataBase64: dataUrl.slice(separator + 1),
+  });
+}
+
+export interface LocalImagePreview {
+  mimeType: string;
+  dataBase64: string;
+}
+
+export async function readImagePreview(path: string): Promise<LocalImagePreview> {
+  if (!isTauriRuntime()) throw new Error("图片预览仅在 miniQ 桌面应用中可用");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<LocalImagePreview>("read_image_preview", { path });
+}
+
 function browserFileUrl(path: string) {
   const normalized = path.replaceAll("\\", "/");
   return encodeURI(WINDOWS_DRIVE.test(normalized) ? `file:///${normalized}` : `file://${normalized}`);
