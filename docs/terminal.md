@@ -4,9 +4,9 @@ The `miniq` executable is a client of `miniq-daemon`, not a second agent engine.
 
 ## Installation
 
-This change supplies source installation and CI build artifacts. It does **not** publish a new application version, npm package, Homebrew formula, WinGet package or public installer URL. Do not run a guessed `curl | sh` installation command.
+Desktop releases from v0.1.19 include `miniQ_terminal_VERSION_TARGET.tar.gz` and a SHA-256 checksum for macOS Apple Silicon/Intel, Linux x86-64 and Windows x86-64. Download the matching archive from the [public release page](https://github.com/LeadingThink/miniQ-releases/releases), verify its checksum, extract it and put both executables in the same directory on PATH. Windows 10/11 can extract with `tar -xzf`; Unix extraction preserves executable permissions. Keep `miniq` and `miniq-daemon` together. There is no npm package, Homebrew formula or WinGet package; do not run guessed installation commands.
 
-Prerequisites: stable Rust (https://rustup.rs/), a C/C++ toolchain, and the repository. Node.js is not required for the terminal client or daemon itself; individual MCP servers/plugins may need it.
+Source installation prerequisites: stable Rust (https://rustup.rs/), a C/C++ toolchain, and the repository. Prebuilt archives do not require Rust or Node.js; individual tools/MCP servers/plugins may need additional dependencies. Linux archives are built on Ubuntu 24.04 and require compatible system libraries. PDF vision on every platform requires Poppler.
 
 macOS (Apple Silicon or Intel), from the checkout:
 

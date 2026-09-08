@@ -79,7 +79,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl \
             wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
             pkg-config libclang-dev libxcb1-dev libxrandr-dev libdbus-1-dev \
-            libpipewire-0.3-dev libwayland-dev libegl-dev libgbm-dev
+            libpipewire-0.3-dev libwayland-dev libegl-dev libgbm-dev libxkbcommon-dev
           pkg-config --exists libpipewire-0.3 wayland-client wayland-server egl gbm xcb
       - uses: actions/setup-node@v4
         with:
@@ -95,8 +95,22 @@ jobs:
           workspaces: |
             . -> target
             apps/desktop/src-tauri -> apps/desktop/src-tauri/target
-      - name: Build daemon sidecar
-        run: cargo build --release -p miniq-daemon --target ${{ matrix.target }}
+      - name: Build daemon and terminal client
+        run: cargo build --release --locked -p miniq-daemon -p miniq-cli --bin miniq-daemon --bin miniq --target ${{ matrix.target }}
+      - name: Test terminal on native platforms
+        if: matrix.target != 'x86_64-apple-darwin'
+        run: cargo test --locked -p miniq-cli -p miniq-local --target ${{ matrix.target }}
+      - name: Package terminal client and daemon
+        shell: bash
+        run: |
+          stage="$(mktemp -d)"
+          ext=""
+          if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
+          cp "target/${{ matrix.target }}/release/miniq${ext}" "$stage/"
+          cp "target/${{ matrix.target }}/release/miniq-daemon${ext}" "$stage/"
+          cp docs/terminal.md "$stage/README.md"
+          mkdir -p dist-terminal
+          tar -czf "dist-terminal/${{ matrix.target }}.terminal.tar.gz" -C "$stage" .
       - name: Place daemon sidecar
         shell: bash
         run: |
@@ -138,6 +152,7 @@ jobs:
         with:
           name: miniq-release-${{ matrix.target }}
           path: |
+            dist-terminal/*.terminal.tar.gz
             apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
             apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
             apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe.sig

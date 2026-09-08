@@ -70,4 +70,4 @@ cd apps/desktop; npx tauri build
 
 ## Terminal Client
 
-miniQ also provides `miniq`, a terminal client sharing the desktop daemon and mobile sessions. See [installation, platform prerequisites, interactive use, scripting, and visual files](docs/terminal.md). Source installers build both CLI and daemon without restarting running tasks; no new public CLI package is published by this change.
+miniQ also provides `miniq`, a terminal client sharing the desktop daemon and mobile sessions. See [installation, platform prerequisites, interactive use, scripting, and visual files](docs/terminal.md). Desktop releases include terminal archives for macOS, Windows and Linux; source installers build both CLI and daemon without restarting running tasks.

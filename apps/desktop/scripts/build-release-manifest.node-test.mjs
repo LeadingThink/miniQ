@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { createHash } from "node:crypto";
 import { buildRelease } from "./build-release-manifest.mjs";
 
 const targets = {
@@ -26,6 +27,9 @@ test("builds one signed update manifest for every desktop platform", () => {
   fixture(input, targets.macArm, [["miniQ.app.tar.gz"], ["miniQ.app.tar.gz.sig", "arm-signature"], ["miniQ_aarch64.dmg"]]);
   fixture(input, targets.macIntel, [["miniQ.app.tar.gz"], ["miniQ.app.tar.gz.sig", "intel-signature"], ["miniQ_x64.dmg"]]);
   fixture(input, targets.linux, [["miniQ.AppImage.tar.gz"], ["miniQ.AppImage.tar.gz.sig", "linux-signature"], ["miniQ.AppImage"], ["miniQ.deb"]]);
+  for (const target of Object.values(targets)) {
+    fixture(input, target, [[`${target}.terminal.tar.gz`, `terminal-${target}`]]);
+  }
 
   const manifest = buildRelease({
     input,
@@ -38,6 +42,13 @@ test("builds one signed update manifest for every desktop platform", () => {
   });
 
   assert.equal(manifest.version, "1.2.3");
+  for (const target of Object.values(targets)) {
+    const name = `miniQ_terminal_1.2.3_${target}.tar.gz`;
+    const content = readFileSync(join(output, name), "utf8");
+    assert.equal(content, `terminal-${target}`);
+    const digest = createHash("sha256").update(content).digest("hex");
+    assert.equal(readFileSync(join(output, `${name}.sha256`), "utf8"), `${digest}  ${name}\n`);
+  }
   assert.deepEqual(Object.keys(manifest.platforms), [
     "windows-x86_64",
     "darwin-aarch64",

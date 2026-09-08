@@ -80,9 +80,13 @@ pub fn save_pasted_image(
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|error| format!("无法生成图片文件名: {error}"))?
         .as_nanos();
-    let path = directory.join(format!("pasted-{}-{}.{}", timestamp, std::process::id(), extension));
-    std::fs::write(&path, bytes)
-        .map_err(|error| format!("无法保存剪贴板图片: {error}"))?;
+    let path = directory.join(format!(
+        "pasted-{}-{}.{}",
+        timestamp,
+        std::process::id(),
+        extension
+    ));
+    std::fs::write(&path, bytes).map_err(|error| format!("无法保存剪贴板图片: {error}"))?;
     Ok(path.to_string_lossy().into_owned())
 }
 

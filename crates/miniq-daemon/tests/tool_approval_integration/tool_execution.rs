@@ -149,6 +149,8 @@ async fn tool_list_reports_toolset() {
             "task_list",
             "task_update",
             "tool_search",
+            "view_image",
+            "view_pdf",
             "web_fetch",
             "web_search",
         ]
