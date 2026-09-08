@@ -29,6 +29,19 @@ afterEach(() => {
 });
 
 describe("appearance settings integration", () => {
+  it("ignores backdrop clicks and closes only from an explicit control", async () => {
+    const onClose = vi.fn();
+    render(<Fixture onClose={onClose} />);
+    await waitFor(() => expect(call).toHaveBeenCalledWith("settings.get"));
+
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(dialog.parentElement!);
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭设置" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("does not submit provider settings from theme selection, favorites, search or Enter", async () => {
     render(<Fixture />);
     await waitFor(() => expect(call).toHaveBeenCalledWith("settings.get"));
