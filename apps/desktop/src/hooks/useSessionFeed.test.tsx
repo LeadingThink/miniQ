@@ -95,6 +95,33 @@ it("reconciles events that arrived while a snapshot was in flight exactly once",
   expect(hook.result.current.streamingText).toBe("in snapshot after snapshot");
 });
 
+it("replaces an edited message and removes its old continuation", () => {
+  const hook = setup();
+  act(() => hook.result.current.load("a", {
+    ...snapshot,
+    messages: [
+      snapshot.messages[0],
+      { id: "m-old", sessionId: "a", role: "assistant", content: "old answer", createdAt: "2026-09-08" },
+    ],
+    artifacts: [{ id: "artifact-old", sessionId: "a", path: "old.txt", kind: "file", title: "old", createdAt: "2026-09-08" }],
+  }));
+
+  hook.emit({
+    type: "session_rewritten",
+    sessionId: "a",
+    message: { ...snapshot.messages[0], content: "edited" },
+    removedMessageIds: ["m-old"],
+    removedToolCallIds: ["tool-a"],
+    removedArtifactIds: ["artifact-old"],
+  });
+
+  expect(hook.result.current.messages).toEqual([{ ...snapshot.messages[0], content: "edited" }]);
+  expect(hook.result.current.toolCalls).toEqual([]);
+  expect(hook.result.current.artifacts).toEqual([]);
+  expect(hook.result.current.plan).toEqual([]);
+  expect(hook.result.current.streamingText).toBe("");
+});
+
 it("buffers reconnect events so they cannot advance past missing replay data", () => {
   const hook = setup();
   const cursor = (sequence: number) => ({epoch:"run", sequence});

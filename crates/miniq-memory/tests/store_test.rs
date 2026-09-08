@@ -47,6 +47,50 @@ fn session_message_roundtrip() {
 }
 
 #[test]
+fn rewrites_a_user_message_and_removes_the_old_branch() {
+    let store = Store::open_in_memory().unwrap();
+    let workspace = store.create_workspace("D:/tmp/proj", "proj").unwrap();
+    let session = store.create_session(&workspace.id, "chat").unwrap();
+    let first = store
+        .append_message(&session.id, Role::User, "first")
+        .unwrap();
+    store
+        .append_message(&session.id, Role::Assistant, "old answer")
+        .unwrap();
+    let edited = store
+        .append_message(&session.id, Role::User, "before")
+        .unwrap();
+    let tool = store
+        .create_tool_call(
+            &session.id,
+            "shell_run",
+            &json!({"command": "echo old"}),
+            ToolCallStatus::Succeeded,
+        )
+        .unwrap();
+    let old_answer = store
+        .append_message(&session.id, Role::Assistant, "replace me")
+        .unwrap();
+    store.enqueue_message(&session.id, "old queued").unwrap();
+
+    let rewrite = store
+        .rewrite_session_from_user_message(&session.id, &edited.id, "after", &[])
+        .unwrap();
+
+    assert_eq!(rewrite.message.id, edited.id);
+    assert_eq!(rewrite.message.content, "after");
+    assert_eq!(rewrite.removed_message_ids, vec![old_answer.id]);
+    assert_eq!(rewrite.removed_tool_call_ids, vec![tool.id]);
+    let messages = store.list_messages(&session.id).unwrap();
+    assert_eq!(messages.len(), 3);
+    assert_eq!(messages[0].id, first.id);
+    assert_eq!(messages[2].id, edited.id);
+    assert_eq!(messages[2].content, "after");
+    assert!(store.list_tool_calls(&session.id).unwrap().is_empty());
+    assert!(store.list_queued_messages(&session.id).unwrap().is_empty());
+}
+
+#[test]
 fn tool_call_lifecycle() {
     let store = Store::open_in_memory().unwrap();
     let ws = store.create_workspace("D:/tmp/proj", "proj").unwrap();

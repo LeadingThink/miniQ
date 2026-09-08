@@ -1,11 +1,15 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Message, Question, ToolCall, TurnProgress } from "../types";
 import type { PendingApproval } from "../hooks/useSessionFeed";
 import { Timeline } from "./Timeline";
 import { QueueBar } from "./TimelineInteractions";
 
 const noop = () => undefined;
+
+afterEach(cleanup);
 
 function renderTimeline(options: {
   messages?: Message[];
@@ -36,12 +40,187 @@ function renderTimeline(options: {
       onOpenUrl={noop}
       onSteerQueued={noop}
       onRemoveQueued={noop}
+      onRewrite={async () => true}
       onError={noop}
     />,
   );
 }
 
 describe("Timeline execution flow", () => {
+  it("renders copy controls after complete user and assistant content", () => {
+    const html = renderTimeline({
+      messages: [
+        {
+          id: "user-copy",
+          sessionId: "session-1",
+          role: "user",
+          content: "你好",
+          createdAt: "2026-09-08T00:00:00Z",
+        },
+        {
+          id: "assistant-copy",
+          sessionId: "session-1",
+          role: "assistant",
+          content: "你好，有什么需要我帮你处理的？",
+          createdAt: "2026-09-08T00:00:01Z",
+        },
+      ],
+    });
+
+    expect(html).toMatch(/class="bubble user"[^>]*><div>你好<\/div><div class="message-actions"><span class="copy-control">/);
+    expect(html).toContain('aria-label="修改消息"');
+    expect(html).toMatch(/你好，有什么需要我帮你处理的？<\/p><\/div><div class="message-actions assistant-actions"><span class="copy-control">/);
+    expect(html.indexOf('aria-label="复制消息"', html.indexOf("bubble assistant")))
+      .toBeLessThan(html.indexOf('aria-label="重新生成"'));
+  });
+
+  it("regenerates an assistant reply from its preceding user message", async () => {
+    const onRewrite = vi.fn().mockResolvedValue(true);
+    render(
+      <Timeline
+        messages={[
+          {
+            id: "user-source",
+            sessionId: "session-1",
+            role: "user",
+            content: "原问题",
+            attachments: [{ path: "C:\\work\\context.txt", name: "context.txt" }],
+            createdAt: "2026-09-08T00:00:00Z",
+          },
+          {
+            id: "assistant-reply",
+            sessionId: "session-1",
+            role: "assistant",
+            content: "原回答",
+            createdAt: "2026-09-08T00:00:01Z",
+          },
+        ]}
+        toolCalls={[]}
+        approvals={[]}
+        questions={[]}
+        plan={[]}
+        artifacts={[]}
+        queue={[]}
+        streamingText=""
+        turnProgress={null}
+        busy={false}
+        onResolveApproval={noop}
+        onResolveQuestion={noop}
+        onRollback={noop}
+        onOpenFile={noop}
+        onOpenUrl={noop}
+        onSteerQueued={noop}
+        onRemoveQueued={noop}
+        onRewrite={onRewrite}
+        onError={noop}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
+
+    await waitFor(() => expect(onRewrite).toHaveBeenCalledWith(
+      "user-source",
+      "原问题",
+      ["C:\\work\\context.txt"],
+    ));
+  });
+
+  it("disables message rewrites while a turn is active", () => {
+    const onRewrite = vi.fn().mockResolvedValue(true);
+    render(
+      <Timeline
+        messages={[
+          {
+            id: "user-source",
+            sessionId: "session-1",
+            role: "user",
+            content: "原问题",
+            createdAt: "2026-09-08T00:00:00Z",
+          },
+          {
+            id: "assistant-reply",
+            sessionId: "session-1",
+            role: "assistant",
+            content: "正在回答",
+            createdAt: "2026-09-08T00:00:01Z",
+          },
+        ]}
+        toolCalls={[]}
+        approvals={[]}
+        questions={[]}
+        plan={[]}
+        artifacts={[]}
+        queue={[]}
+        streamingText=""
+        turnProgress={null}
+        busy
+        onResolveApproval={noop}
+        onResolveQuestion={noop}
+        onRollback={noop}
+        onOpenFile={noop}
+        onOpenUrl={noop}
+        onSteerQueued={noop}
+        onRemoveQueued={noop}
+        onRewrite={onRewrite}
+        onError={noop}
+      />,
+    );
+
+    const editButton = screen.getByRole("button", { name: "修改消息" });
+    const regenerateButton = screen.getByRole("button", { name: "重新生成" });
+    expect((editButton as HTMLButtonElement).disabled).toBe(true);
+    expect((regenerateButton as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(editButton);
+    fireEvent.click(regenerateButton);
+    expect(onRewrite).not.toHaveBeenCalled();
+  });
+
+  it("rewrites a user message in place with its attachments", async () => {
+    const onRewrite = vi.fn().mockResolvedValue(true);
+    render(
+      <Timeline
+        messages={[{
+          id: "user-edit",
+          sessionId: "session-1",
+          role: "user",
+          content: "原内容",
+          attachments: [{ path: "C:\\work\\context.txt", name: "context.txt" }],
+          createdAt: "2026-09-08T00:00:00Z",
+        }]}
+        toolCalls={[]}
+        approvals={[]}
+        questions={[]}
+        plan={[]}
+        artifacts={[]}
+        queue={[]}
+        streamingText=""
+        turnProgress={null}
+        busy={false}
+        onResolveApproval={noop}
+        onResolveQuestion={noop}
+        onRollback={noop}
+        onOpenFile={noop}
+        onOpenUrl={noop}
+        onSteerQueued={noop}
+        onRemoveQueued={noop}
+        onRewrite={onRewrite}
+        onError={noop}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "修改消息" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "修改消息内容" }), {
+      target: { value: "修改后的内容" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送修改" }));
+
+    await waitFor(() => expect(onRewrite).toHaveBeenCalledWith(
+      "user-edit",
+      "修改后的内容",
+      ["C:\\work\\context.txt"],
+    ));
+  });
+
   it("shows attachment names for a queued attachment-only message", () => {
     const html = renderToStaticMarkup(
       <QueueBar

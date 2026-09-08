@@ -85,6 +85,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "agent.stop" => agents::action(state, req.params, true).await,
         "session.diff" => session_diff::get(state, req.params),
         "session.sendMessage" => session::send_message(state, req.params),
+        "session.rewriteMessage" => session::rewrite_message(state, req.params),
         "session.cancel" => session::cancel(state, req.params).await,
         "session.queueList" => session::queue_list(state, req.params),
         "session.queueRemove" => session::queue_remove(state, req.params),

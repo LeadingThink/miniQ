@@ -39,6 +39,18 @@ pub enum Event {
         session_id: String,
         message: Message,
     },
+    /// A user message was edited in place and its old continuation removed.
+    SessionRewritten {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        message: Message,
+        #[serde(rename = "removedMessageIds")]
+        removed_message_ids: Vec<String>,
+        #[serde(rename = "removedToolCallIds")]
+        removed_tool_call_ids: Vec<String>,
+        #[serde(rename = "removedArtifactIds")]
+        removed_artifact_ids: Vec<String>,
+    },
     /// Incremental assistant output token(s) for the current turn.
     AssistantDelta {
         #[serde(rename = "sessionId")]
@@ -195,6 +207,7 @@ impl Event {
             | Event::SessionStatusChanged { session_id, .. }
             | Event::TurnProgressChanged { session_id, .. }
             | Event::MessageCreated { session_id, .. }
+            | Event::SessionRewritten { session_id, .. }
             | Event::AssistantDelta { session_id, .. }
             | Event::AssistantReplaced { session_id, .. }
             | Event::ContextCompacted { session_id, .. }

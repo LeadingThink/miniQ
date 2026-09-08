@@ -116,6 +116,24 @@ function reduceDaemonEvent(
         plan: event.message.role === "user" ? [] : state.plan,
         turnProgress: event.message.role === "user" ? null : state.turnProgress,
       };
+    case "session_rewritten": {
+      const removedMessages = new Set(event.removedMessageIds);
+      const removedToolCalls = new Set(event.removedToolCallIds);
+      const removedArtifacts = new Set(event.removedArtifactIds);
+      return {
+        ...state,
+        messages: state.messages
+          .filter((message) => !removedMessages.has(message.id))
+          .map((message) => message.id === event.message.id ? event.message : message),
+        toolCalls: state.toolCalls.filter((toolCall) => !removedToolCalls.has(toolCall.id)),
+        artifacts: state.artifacts.filter((artifact) => !removedArtifacts.has(artifact.id)),
+        approvals: [],
+        questions: [],
+        plan: [],
+        streamingText: "",
+        turnProgress: null,
+      };
+    }
     case "turn_progress_changed":
       return { ...state, turnProgress: event.progress };
     case "assistant_delta":

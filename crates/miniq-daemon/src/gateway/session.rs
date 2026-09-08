@@ -153,9 +153,60 @@ pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value
         session_id: input.session_id.clone(),
         message: message.clone(),
     });
-    set_running(state, &input.session_id)?;
+    if let Err(error) = set_running(state, &input.session_id) {
+        state.end_turn(&input.session_id);
+        return Err(error);
+    }
     crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
     to_value(json!({ "message": message }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RewriteMessageParams {
+    session_id: String,
+    message_id: String,
+    message: IncomingMessage,
+}
+
+pub(super) fn rewrite_message(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: RewriteMessageParams = params(raw)?;
+    let attachments = validate_message(&input.message)?;
+    let content = input.message.content.trim().to_string();
+    state
+        .store
+        .get_session(&input.session_id)
+        .map_err(store_err)?;
+    let Some(cancel) = state.begin_turn(&input.session_id) else {
+        return Err(RpcError::new(
+            ErrorCode::SessionBusy,
+            "session already has an active turn",
+        ));
+    };
+
+    let rewrite = match state.store.rewrite_session_from_user_message(
+        &input.session_id,
+        &input.message_id,
+        &content,
+        &attachments,
+    ) {
+        Ok(rewrite) => rewrite,
+        Err(error) => {
+            state.end_turn(&input.session_id);
+            return Err(store_err(error));
+        }
+    };
+    state.emit(Event::SessionRewritten {
+        session_id: input.session_id.clone(),
+        message: rewrite.message.clone(),
+        removed_message_ids: rewrite.removed_message_ids,
+        removed_tool_call_ids: rewrite.removed_tool_call_ids,
+        removed_artifact_ids: rewrite.removed_artifact_ids,
+    });
+    emit_queue_changed(state, &input.session_id);
+    set_running(state, &input.session_id)?;
+    crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
+    to_value(json!({ "message": rewrite.message }))
 }
 
 pub(super) fn emit_queue_changed(state: &AppState, session_id: &str) {
@@ -500,4 +551,122 @@ pub(super) fn delete(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
         session_id: input.session_id,
     });
     Ok(json!({ "deleted": true }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use miniq_memory::Store;
+    use miniq_models::mock::MockProvider;
+    use std::sync::Arc;
+
+    fn setup() -> (AppState, String) {
+        let store = Store::open_in_memory().unwrap();
+        let workspace = store.create_workspace("/tmp", "test").unwrap();
+        let session_id = store.create_session(&workspace.id, "chat").unwrap().id;
+        (
+            AppState::new(
+                store,
+                "test-only".into(),
+                Arc::new(MockProvider::text("new answer")),
+            ),
+            session_id,
+        )
+    }
+
+    fn rewrite_params(session_id: &str, message_id: &str, content: &str) -> Option<Value> {
+        Some(json!({
+            "sessionId": session_id,
+            "messageId": message_id,
+            "message": {"role": "user", "content": content},
+        }))
+    }
+
+    #[tokio::test]
+    async fn rewrite_replaces_the_old_branch_and_starts_a_turn() {
+        let (state, session_id) = setup();
+        let user = state
+            .store
+            .append_message(&session_id, Role::User, "old question")
+            .unwrap();
+        let old_answer = state
+            .store
+            .append_message(&session_id, Role::Assistant, "old answer")
+            .unwrap();
+        state
+            .store
+            .enqueue_message(&session_id, "old queued")
+            .unwrap();
+        let mut events = state.events.subscribe();
+
+        let response = rewrite_message(
+            &state,
+            rewrite_params(&session_id, &user.id, "new question"),
+        )
+        .unwrap();
+
+        assert_eq!(response["message"]["id"], user.id);
+        assert_eq!(response["message"]["content"], "new question");
+        assert!(matches!(
+            events.try_recv().unwrap(),
+            Event::SessionRewritten { message, removed_message_ids, .. }
+                if message.id == user.id && removed_message_ids == vec![old_answer.id]
+        ));
+        assert!(matches!(
+            events.try_recv().unwrap(),
+            Event::QueueChanged { queue, .. } if queue.is_empty()
+        ));
+        assert!(matches!(
+            events.try_recv().unwrap(),
+            Event::SessionStatusChanged {
+                status: SessionStatus::Running,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn rewrite_rejects_busy_sessions_without_changing_history() {
+        let (state, session_id) = setup();
+        let user = state
+            .store
+            .append_message(&session_id, Role::User, "old question")
+            .unwrap();
+        let _active_turn = state.begin_turn(&session_id).unwrap();
+
+        let error = rewrite_message(
+            &state,
+            rewrite_params(&session_id, &user.id, "new question"),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.code, ErrorCode::SessionBusy as i64);
+        assert_eq!(
+            state.store.list_messages(&session_id).unwrap()[0].content,
+            "old question"
+        );
+        state.end_turn(&session_id);
+    }
+
+    #[test]
+    fn rewrite_releases_the_turn_slot_when_the_anchor_is_not_a_user_message() {
+        let (state, session_id) = setup();
+        let assistant = state
+            .store
+            .append_message(&session_id, Role::Assistant, "answer")
+            .unwrap();
+
+        rewrite_message(
+            &state,
+            rewrite_params(&session_id, &assistant.id, "new question"),
+        )
+        .unwrap_err();
+
+        assert!(state.begin_turn(&session_id).is_some());
+        assert_eq!(
+            state.store.list_messages(&session_id).unwrap()[0].content,
+            "answer"
+        );
+        state.end_turn(&session_id);
+    }
 }

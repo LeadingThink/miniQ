@@ -343,8 +343,30 @@
   display: flex;
   justify-content: flex-end;
 }
+.bubble.user,
+.bubble.assistant {
+  position: relative;
+  margin-bottom: 30px;
+}
+.bubble.assistant {
+  width: fit-content;
+}
+.message-actions {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.assistant-actions {
+  right: auto;
+  left: 0;
+}
 .bubble.user .msg-copy,
-.bubble.assistant .msg-copy {
+.bubble.assistant .msg-copy,
+.msg-action {
   position: static;
   display: inline-flex;
   align-items: center;
@@ -356,6 +378,27 @@
   border: 0;
   background: transparent;
   color: var(--text-dim);
+}
+.msg-action:hover,
+.bubble .msg-copy:hover {
+  color: var(--text);
+  background: var(--bg-subtle);
+}
+.msg-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.message-edit-input {
+  width: min(520px, 60vw);
+  min-width: 220px;
+  max-width: 100%;
+  resize: vertical;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  line-height: inherit;
 }
 .execution-plan progress {
   width: 100%;

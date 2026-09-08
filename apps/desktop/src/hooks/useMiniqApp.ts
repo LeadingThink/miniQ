@@ -302,6 +302,26 @@ function useTurnActions(
     [catalog.currentSessionId, catalog.refreshSessions, client, setError],
   );
 
+  const rewriteMessage = useCallback(
+    async (messageId: string, content: string, attachments: string[] = []) => {
+      if (!catalog.currentSessionId) return false;
+      setError(null);
+      try {
+        await client.call("session.rewriteMessage", {
+          sessionId: catalog.currentSessionId,
+          messageId,
+          message: { role: "user", content, attachments },
+        });
+        void catalog.refreshSessions();
+        return true;
+      } catch (error) {
+        setError(errorMessage(error));
+        return false;
+      }
+    },
+    [catalog.currentSessionId, catalog.refreshSessions, client, setError],
+  );
+
   const startTask = useCallback(
     async (content: string, attachments: string[] = []) => {
       if (!catalog.selectedWorkspace) {
@@ -365,7 +385,7 @@ function useTurnActions(
     [client, setError],
   );
 
-  return { sendMessage, startTask, cancelTurn, removeQueued, steerQueued };
+  return { sendMessage, rewriteMessage, startTask, cancelTurn, removeQueued, steerQueued };
 }
 
 function useInteractionActions(
