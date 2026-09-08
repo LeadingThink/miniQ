@@ -759,6 +759,50 @@
         "type": "object"
       },
       {
+        "description": "A user message was edited in place and its old continuation removed.",
+        "properties": {
+          "message": {
+            "$ref": "#/definitions/Message"
+          },
+          "removedArtifactIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removedMessageIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removedToolCallIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "session_rewritten"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "removedArtifactIds",
+          "removedMessageIds",
+          "removedToolCallIds",
+          "sessionId",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
         "description": "Incremental assistant output token(s) for the current turn.",
         "properties": {
           "delta": {

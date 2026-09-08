@@ -136,6 +136,14 @@ pub struct SessionRecovery {
     pub approvals_rejected: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct SessionRewrite {
+    pub message: miniq_protocol::Message,
+    pub removed_message_ids: Vec<String>,
+    pub removed_tool_call_ids: Vec<String>,
+    pub removed_artifact_ids: Vec<String>,
+}
+
 pub struct Store {
     conn: Mutex<Connection>,
 }

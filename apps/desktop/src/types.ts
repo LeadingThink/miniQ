@@ -311,6 +311,14 @@ export type DaemonEvent = { eventCursor?: EventCursor; payloadDeferred?: boolean
   | { type: "session_status_changed"; sessionId: string; status: SessionStatus }
   | { type: "turn_progress_changed"; sessionId: string; progress: TurnProgress }
   | { type: "message_created"; sessionId: string; message: Message }
+  | {
+      type: "session_rewritten";
+      sessionId: string;
+      message: Message;
+      removedMessageIds: string[];
+      removedToolCallIds: string[];
+      removedArtifactIds: string[];
+    }
   | { type: "assistant_delta"; sessionId: string; messageId: string; delta: string }
   | { type: "assistant_replaced"; sessionId: string; messageId: string; text: string }
   | {

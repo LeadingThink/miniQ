@@ -166,6 +166,7 @@ function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
           onOpenUrl={onOpenUrl}
           onSteerQueued={(id) => void app.actions.steerQueued(id)}
           onRemoveQueued={(id) => void app.actions.removeQueued(id)}
+          onRewrite={app.actions.rewriteMessage}
           onError={app.setError}
         />
       </Suspense>

@@ -1,4 +1,4 @@
-import { ArrowDown, ChevronUp, Download, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
+import { ArrowDown, Check, ChevronUp, Download, LoaderCircle, Pencil, RefreshCw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Artifact,
@@ -82,12 +82,14 @@ interface TimelineProps {
   onOpenUrl: (url: string) => void;
   onSteerQueued: (queuedMessageId: string) => void;
   onRemoveQueued: (queuedMessageId: string) => void;
+  onRewrite: (messageId: string, content: string, attachments?: string[]) => Promise<boolean>;
   onError: (message: string) => void;
 }
 
 function TimelineEntries(props: {
   client?: RpcClient;
   items: TimelineGroup[];
+  messages: Message[];
   expandGroups: boolean;
   onError: TimelineProps["onError"];
   approvals: PendingApproval[];
@@ -102,8 +104,63 @@ function TimelineEntries(props: {
   onRollback: TimelineProps["onRollback"];
   onOpenFile: TimelineProps["onOpenFile"];
   onOpenUrl: TimelineProps["onOpenUrl"];
+  onRewrite: TimelineProps["onRewrite"];
   workspacePath?: string | null;
 }) {
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const startEditing = (message: Message) => {
+    if (props.busy) return;
+    setEditingMessageId(message.id);
+    setDraft(message.content);
+  };
+  const cancelEditing = () => {
+    setEditingMessageId(null);
+    setDraft("");
+  };
+  const saveMessage = async (message: Message) => {
+    const content = draft.trim();
+    if (!content || saving || props.busy) return;
+    setSaving(true);
+    try {
+      const sent = await props.onRewrite(
+        message.id,
+        content,
+        message.attachments?.map((attachment) => attachment.path),
+      );
+      if (sent) cancelEditing();
+    } catch (cause) {
+      props.onError(`重新发送消息失败: ${String(cause)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const regenerateMessage = async (message: Message) => {
+    const messageIndex = props.messages.findIndex((candidate) => candidate.id === message.id);
+    let userMessage: Message | undefined;
+    for (let index = messageIndex - 1; index >= 0; index -= 1) {
+      if (props.messages[index].role === "user") {
+        userMessage = props.messages[index];
+        break;
+      }
+    }
+    if (!userMessage) {
+      props.onError("找不到这条回复对应的用户消息");
+      return;
+    }
+    try {
+      await props.onRewrite(
+        userMessage.id,
+        userMessage.content,
+        userMessage.attachments?.map((attachment) => attachment.path),
+      );
+    } catch (cause) {
+      props.onError(`重新生成回复失败: ${String(cause)}`);
+    }
+  };
+
   return (
     <div className="timeline-inner">
       {props.items.map((item) =>
@@ -114,7 +171,20 @@ function TimelineEntries(props: {
               className="bubble user"
               title={new Date(item.message.createdAt).toLocaleString()}
             >
-              {item.message.content && <div>{item.message.content}</div>}
+              {editingMessageId === item.message.id ? (
+                <textarea
+                  className="message-edit-input"
+                  aria-label="修改消息内容"
+                  value={draft}
+                  autoFocus
+                  rows={Math.max(2, draft.split("\n").length)}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") cancelEditing();
+                    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) void saveMessage(item.message);
+                  }}
+                />
+              ) : item.message.content ? <div>{item.message.content}</div> : null}
               {item.message.attachments && item.message.attachments.length > 0 && (
                 <div className="message-attachments">
                   {item.message.attachments.map((attachment) => (
@@ -122,12 +192,39 @@ function TimelineEntries(props: {
                   ))}
                 </div>
               )}
-              <CopyButton
-                className="msg-copy"
-                label="复制消息"
-                content={item.message.content}
-                onError={props.onError}
-              />
+              <div className="message-actions">
+                {editingMessageId === item.message.id ? (
+                  <>
+                    <button
+                      type="button"
+                      className="msg-action"
+                      title="发送修改"
+                      aria-label="发送修改"
+                      disabled={!draft.trim() || saving || props.busy}
+                      onClick={() => void saveMessage(item.message)}
+                    >
+                      {saving ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}
+                    </button>
+                    <button type="button" className="msg-action" title="取消修改" aria-label="取消修改" onClick={cancelEditing}>
+                      <X size={15} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <CopyButton className="msg-copy" label="复制消息" content={item.message.content} onError={props.onError} />
+                    <button
+                      type="button"
+                      className="msg-action"
+                      title="修改消息"
+                      aria-label="修改消息"
+                      disabled={props.busy}
+                      onClick={() => startEditing(item.message)}
+                    >
+                      <Pencil size={15} />
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           ) : item.message.role === "tool" ? (
             <div key={item.message.id} className="bubble tool-transcript">
@@ -145,12 +242,19 @@ function TimelineEntries(props: {
               <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile} onOpenUrl={props.onOpenUrl}>
                 {item.message.content}
               </Md>
-              <CopyButton
-                className="msg-copy"
-                label="复制消息"
-                content={item.message.content}
-                onError={props.onError}
-              />
+              <div className="message-actions assistant-actions">
+                <CopyButton className="msg-copy" label="复制消息" content={item.message.content} onError={props.onError} />
+                <button
+                  type="button"
+                  className="msg-action"
+                  title="重新生成"
+                  aria-label="重新生成"
+                  disabled={props.busy}
+                  onClick={() => void regenerateMessage(item.message)}
+                >
+                  <RefreshCw size={15} />
+                </button>
+              </div>
             </div>
           )
         ) : (
@@ -397,6 +501,7 @@ export function Timeline(props: TimelineProps) {
         <TimelineEntries
           client={props.client}
           items={items}
+          messages={props.messages}
           expandGroups={filter !== "all" || !!query}
           onError={props.onError}
           approvals={props.approvals}
@@ -411,6 +516,7 @@ export function Timeline(props: TimelineProps) {
           onRollback={props.onRollback}
           onOpenFile={props.onOpenFile}
           onOpenUrl={props.onOpenUrl}
+          onRewrite={props.onRewrite}
           workspacePath={props.workspacePath}
         />
         <QueueBar queue={props.queue} onSteer={props.onSteerQueued} onRemove={props.onRemoveQueued} />

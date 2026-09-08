@@ -5,7 +5,7 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
 use super::row_mappers::{row_to_approval, row_to_message, row_to_tool_call};
-use super::{new_id, now_iso, MemoryError, Result, Store};
+use super::{new_id, now_iso, MemoryError, Result, SessionRewrite, Store};
 
 #[derive(Debug, Clone)]
 pub struct PendingApprovalRequest {
@@ -103,6 +103,103 @@ impl Store {
         )?;
         let rows = stmt.query_map(params![session_id], row_to_message)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn rewrite_session_from_user_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        content: &str,
+        attachments: &[MessageAttachment],
+    ) -> Result<SessionRewrite> {
+        let mut conn = self.conn.lock().unwrap();
+        let transaction = conn.transaction()?;
+        let message = transaction
+            .query_row(
+                "SELECT id, session_id, role, content, attachments_json, created_at
+                 FROM messages WHERE id = ?1 AND session_id = ?2 AND role = 'user'",
+                params![message_id, session_id],
+                row_to_message,
+            )
+            .optional()?
+            .ok_or_else(|| MemoryError::NotFound(format!("user message {message_id}")))?;
+
+        let removed_message_ids = collect_ids_after(
+            &transaction,
+            "messages",
+            session_id,
+            &message.created_at,
+            message_id,
+        )?;
+        let removed_tool_call_ids =
+            collect_ids_since(&transaction, "tool_calls", session_id, &message.created_at)?;
+        let removed_artifact_ids =
+            collect_ids_since(&transaction, "artifacts", session_id, &message.created_at)?;
+
+        transaction.execute(
+            "DELETE FROM approvals WHERE tool_call_id IN (
+                 SELECT id FROM tool_calls WHERE session_id = ?1 AND created_at >= ?2
+             )",
+            params![session_id, message.created_at],
+        )?;
+        transaction.execute(
+            "DELETE FROM checkpoints WHERE tool_call_id IN (
+                 SELECT id FROM tool_calls WHERE session_id = ?1 AND created_at >= ?2
+             )",
+            params![session_id, message.created_at],
+        )?;
+        transaction.execute(
+            "DELETE FROM tool_calls WHERE session_id = ?1 AND created_at >= ?2",
+            params![session_id, message.created_at],
+        )?;
+        transaction.execute(
+            "DELETE FROM artifacts WHERE session_id = ?1 AND created_at >= ?2",
+            params![session_id, message.created_at],
+        )?;
+        transaction.execute(
+            "DELETE FROM model_context_snapshots WHERE session_id = ?1",
+            params![session_id],
+        )?;
+        transaction.execute(
+            "DELETE FROM messages WHERE session_id = ?1 AND
+             (created_at > ?2 OR (created_at = ?2 AND id > ?3))",
+            params![session_id, message.created_at, message_id],
+        )?;
+        transaction.execute(
+            "DELETE FROM session_plans WHERE session_id = ?1",
+            params![session_id],
+        )?;
+        transaction.execute(
+            "DELETE FROM queued_messages WHERE session_id = ?1",
+            params![session_id],
+        )?;
+        transaction.execute(
+            "UPDATE messages SET content = ?3, attachments_json = ?4
+             WHERE id = ?1 AND session_id = ?2",
+            params![
+                message_id,
+                session_id,
+                content,
+                serde_json::to_string(attachments)?
+            ],
+        )?;
+        transaction.execute(
+            "UPDATE sessions SET updated_at = ?2 WHERE id = ?1",
+            params![session_id, now_iso()],
+        )?;
+
+        let updated = Message {
+            content: content.to_string(),
+            attachments: attachments.to_vec(),
+            ..message
+        };
+        transaction.commit()?;
+        Ok(SessionRewrite {
+            message: updated,
+            removed_message_ids,
+            removed_tool_call_ids,
+            removed_artifact_ids,
+        })
     }
 
     /// Case-insensitive substring search across message contents. Returns the
@@ -295,4 +392,32 @@ impl Store {
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
+}
+
+fn collect_ids_after(
+    transaction: &rusqlite::Transaction<'_>,
+    table: &str,
+    session_id: &str,
+    created_at: &str,
+    id: &str,
+) -> Result<Vec<String>> {
+    let sql = format!(
+        "SELECT id FROM {table} WHERE session_id = ?1 AND
+         (created_at > ?2 OR (created_at = ?2 AND id > ?3))"
+    );
+    let mut statement = transaction.prepare(&sql)?;
+    let rows = statement.query_map(params![session_id, created_at, id], |row| row.get(0))?;
+    Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+}
+
+fn collect_ids_since(
+    transaction: &rusqlite::Transaction<'_>,
+    table: &str,
+    session_id: &str,
+    created_at: &str,
+) -> Result<Vec<String>> {
+    let sql = format!("SELECT id FROM {table} WHERE session_id = ?1 AND created_at >= ?2");
+    let mut statement = transaction.prepare(&sql)?;
+    let rows = statement.query_map(params![session_id, created_at], |row| row.get(0))?;
+    Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
 }

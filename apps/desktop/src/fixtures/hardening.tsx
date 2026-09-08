@@ -161,6 +161,7 @@ function Fixture() {
             onOpenUrl={() => {}}
             onSteerQueued={() => {}}
             onRemoveQueued={() => {}}
+            onRewrite={async () => true}
             onError={() => {}}
           />
         </>
