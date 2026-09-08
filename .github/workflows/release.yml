@@ -67,7 +67,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.windows_only && '[{"os":"windows-latest","target":"x86_64-pc-windows-msvc","bundles":"nsis"}]' || '[{"os":"windows-latest","target":"x86_64-pc-windows-msvc","bundles":"nsis"},{"os":"macos-latest","target":"aarch64-apple-darwin","bundles":"dmg"},{"os":"macos-latest","target":"x86_64-apple-darwin","bundles":"dmg"},{"os":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"}]') }}
+        include: ${{ fromJSON(inputs.windows_only && '[{"os":"windows-latest","target":"x86_64-pc-windows-msvc","bundles":"nsis"}]' || '[{"os":"windows-latest","target":"x86_64-pc-windows-msvc","bundles":"nsis"},{"os":"macos-latest","target":"aarch64-apple-darwin","bundles":"app,dmg"},{"os":"macos-latest","target":"x86_64-apple-darwin","bundles":"app,dmg"},{"os":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"}]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -160,8 +160,7 @@ jobs:
             apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
             apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
             apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
-            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage.tar.gz
-            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage.tar.gz.sig
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage.sig
           if-no-files-found: error
 
   publish:
@@ -191,6 +190,7 @@ jobs:
           --tag ${{ inputs.tag }}
           --asset-base-url https://oss.zaiwen.top/releases/miniq/${{ inputs.tag }}
           --mirror-base-url https://github.com/LeadingThink/miniQ-releases/releases/download/${{ inputs.tag }}
+          --required-platforms ${{ inputs.windows_only && 'windows-x86_64' || 'windows-x86_64,darwin-aarch64,darwin-x86_64,linux-x86_64' }}
       - name: Publish Qiniu primary download origin
         env:
           QINIU_ACCESS_KEY: ${{ secrets.QINIU_ACCESS_KEY }}

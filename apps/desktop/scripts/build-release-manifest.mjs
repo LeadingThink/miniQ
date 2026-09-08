@@ -76,7 +76,7 @@ function copyOptionalArtifact(directory, suffix, label, output, name) {
   if (artifact) copyArtifact(artifact, output, name);
 }
 
-export function buildRelease({ input, output, tag, assetBaseUrl, mirrorBaseUrl, notes = "", publishedAt = new Date().toISOString() }) {
+export function buildRelease({ input, output, tag, assetBaseUrl, mirrorBaseUrl, requiredPlatforms = [], notes = "", publishedAt = new Date().toISOString() }) {
   if (!/^v\d+\.\d+\.\d+$/.test(tag)) throw new Error(`invalid release tag: ${tag}`);
   if (!assetBaseUrl?.startsWith("https://")) throw new Error("assetBaseUrl must be an HTTPS URL");
   if (!mirrorBaseUrl?.startsWith("https://")) throw new Error("mirrorBaseUrl must be an HTTPS URL");
@@ -127,11 +127,11 @@ export function buildRelease({ input, output, tag, assetBaseUrl, mirrorBaseUrl, 
 
   const linuxEntry = optionalEntry(
     linux,
-    ".AppImage.tar.gz",
-    ".AppImage.tar.gz.sig",
+    ".AppImage",
+    ".AppImage.sig",
     "Linux",
     outputRoot,
-    `miniQ_${version}_x64.AppImage.tar.gz`,
+    `miniQ_${version}_x64.AppImage`,
     baseUrl,
   );
   if (linuxEntry) platforms["linux-x86_64"] = linuxEntry;
@@ -139,10 +139,11 @@ export function buildRelease({ input, output, tag, assetBaseUrl, mirrorBaseUrl, 
   if (Object.keys(platforms).length === 0) {
     throw new Error("expected at least one signed updater artifact");
   }
+  const missing = requiredPlatforms.filter(platform => !platforms[platform]);
+  if (missing.length) throw new Error(`missing required signed updater platforms: ${missing.join(", ")}`);
 
   copyOptionalArtifact(macArm, ".dmg", "Apple Silicon DMG", outputRoot, `miniQ_${version}_aarch64.dmg`);
   copyOptionalArtifact(macIntel, ".dmg", "Intel macOS DMG", outputRoot, `miniQ_${version}_x64.dmg`);
-  copyOptionalArtifact(linux, ".AppImage", "Linux AppImage", outputRoot, `miniQ_${version}_x64.AppImage`);
   copyOptionalArtifact(linux, ".deb", "Linux deb", outputRoot, `miniQ_${version}_amd64.deb`);
 
   for (const target of Object.values(TARGETS)) {
@@ -188,6 +189,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     tag: args.tag,
     assetBaseUrl: args["asset-base-url"],
     mirrorBaseUrl: args["mirror-base-url"],
+    requiredPlatforms: (args["required-platforms"] ?? "").split(",").filter(Boolean),
     notes: process.env.RELEASE_NOTES ?? "",
   });
 }

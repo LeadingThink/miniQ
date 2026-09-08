@@ -26,7 +26,7 @@ test("builds one signed update manifest for every desktop platform", () => {
   fixture(input, targets.windows, [["miniQ-setup.exe"], ["miniQ-setup.exe.sig", "windows-signature\n"]]);
   fixture(input, targets.macArm, [["miniQ.app.tar.gz"], ["miniQ.app.tar.gz.sig", "arm-signature"], ["miniQ_aarch64.dmg"]]);
   fixture(input, targets.macIntel, [["miniQ.app.tar.gz"], ["miniQ.app.tar.gz.sig", "intel-signature"], ["miniQ_x64.dmg"]]);
-  fixture(input, targets.linux, [["miniQ.AppImage.tar.gz"], ["miniQ.AppImage.tar.gz.sig", "linux-signature"], ["miniQ.AppImage"], ["miniQ.deb"]]);
+  fixture(input, targets.linux, [["miniQ.AppImage", "native-v2-appimage"], ["miniQ.AppImage.sig", "linux-signature"], ["miniQ.deb"]]);
   for (const target of Object.values(targets)) {
     fixture(input, target, [[`${target}.terminal.tar.gz`, `terminal-${target}`]]);
   }
@@ -38,6 +38,7 @@ test("builds one signed update manifest for every desktop platform", () => {
     assetBaseUrl: "https://oss.example.com/releases/miniq/v1.2.3",
     mirrorBaseUrl: "https://github.com/acme/releases/download/v1.2.3",
     notes: "Faster startup",
+    requiredPlatforms: ["windows-x86_64", "darwin-aarch64", "darwin-x86_64", "linux-x86_64"],
     publishedAt: "2026-08-30T00:00:00.000Z",
   });
 
@@ -57,7 +58,9 @@ test("builds one signed update manifest for every desktop platform", () => {
   ]);
   assert.equal(manifest.platforms["darwin-aarch64"].signature, "arm-signature");
   assert.match(manifest.platforms["windows-x86_64"].url, /^https:\/\/oss\.example\.com\//);
-  assert.match(manifest.platforms["linux-x86_64"].url, /miniQ_1\.2\.3_x64\.AppImage\.tar\.gz$/);
+  assert.match(manifest.platforms["linux-x86_64"].url, /miniQ_1\.2\.3_x64\.AppImage$/);
+  assert.equal(readFileSync(join(output, "miniQ_1.2.3_x64.AppImage"), "utf8"), "native-v2-appimage");
+  assert.equal(manifest.platforms["linux-x86_64"].signature, "linux-signature");
   assert.deepEqual(JSON.parse(readFileSync(join(output, "latest.json"), "utf8")), manifest);
   const mirrorManifest = JSON.parse(readFileSync(join(output, "latest.github.json"), "utf8"));
   assert.match(mirrorManifest.platforms["windows-x86_64"].url, /^https:\/\/github\.com\/acme\//);
@@ -93,6 +96,30 @@ test("fails when no signed updater artifacts exist", () => {
     () => buildRelease({ input: root, output: join(root, "out"), tag: "v1.2.3", assetBaseUrl: "https://oss.example.com/releases/miniq/v1.2.3", mirrorBaseUrl: "https://github.com/acme/releases/download/v1.2.3" }),
     /expected at least one signed updater artifact/,
   );
+});
+
+test("a full release cannot silently omit unsigned or missing platforms", () => {
+  const root = mkdtempSync(join(tmpdir(), "miniq-release-required-"));
+  const input = join(root, "input");
+  fixture(input, targets.windows, [["miniQ-setup.exe"], ["miniQ-setup.exe.sig", "windows-signature"]]);
+  fixture(input, targets.macArm, [["miniQ_aarch64.dmg"]]);
+  assert.throws(() => buildRelease({
+    input, output: join(root, "out"), tag: "v1.2.3",
+    assetBaseUrl: "https://oss.example.com/releases/miniq/v1.2.3",
+    mirrorBaseUrl: "https://github.com/acme/releases/download/v1.2.3",
+    requiredPlatforms: ["windows-x86_64", "darwin-aarch64", "darwin-x86_64", "linux-x86_64"],
+  }), /missing required signed updater platforms: darwin-aarch64, darwin-x86_64, linux-x86_64/);
+});
+
+test("native AppImage updates require the matching signature", () => {
+  const root = mkdtempSync(join(tmpdir(), "miniq-release-linux-unsigned-"));
+  const input = join(root, "input");
+  fixture(input, targets.linux, [["miniQ.AppImage"]]);
+  assert.throws(() => buildRelease({
+    input, output: join(root, "out"), tag: "v1.2.3",
+    assetBaseUrl: "https://oss.example.com/releases/miniq/v1.2.3",
+    mirrorBaseUrl: "https://github.com/acme/releases/download/v1.2.3",
+  }), /Linux signature: expected one \*\.AppImage.sig file, found 0/);
 });
 
 test("requires an HTTPS asset origin", () => {
