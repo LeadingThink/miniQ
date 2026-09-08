@@ -298,7 +298,12 @@ impl ToolExecutor for SessionToolExecutor {
     ) -> Vec<miniq_models::ChatImage> {
         let resolved = self.resolve_registered_call(call);
         let call = resolved.as_ref().unwrap_or(call);
-        let name = miniq_tools::canonical_native_tool_name(&call.name).unwrap_or(&call.name);
+        let adapted = miniq_tools::adapt_native_tool_call(call).ok().flatten();
+        let call = adapted
+            .as_ref()
+            .map(|adapted| &adapted.call)
+            .unwrap_or(call);
+        let name = &call.name;
         self.router
             .get(name)
             .map(|tool| tool.output_images(&self.ctx, output))

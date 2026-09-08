@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+miniq-local = { path = "../miniq-local" }
 miniq-protocol = { path = "../miniq-protocol" }
 miniq-memory = { path = "../miniq-memory" }
 miniq-session-connectors = { path = "../miniq-session-connectors" }

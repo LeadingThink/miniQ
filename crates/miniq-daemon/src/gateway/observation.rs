@@ -17,6 +17,8 @@ struct ReadInput {
     tool_call_id: String,
     #[serde(default)]
     offset: u64,
+    #[serde(default)]
+    image_index: usize,
 }
 
 pub(super) async fn read(state: &AppState, input: Option<Value>) -> Result<Value, RpcError> {
@@ -28,7 +30,7 @@ pub(super) async fn read(state: &AppState, input: Option<Value>) -> Result<Value
     if call.session_id != input.session_id
         || !matches!(
             call.tool_name.as_str(),
-            "computer_use" | "browser_automation"
+            "computer_use" | "browser_automation" | "view_image" | "view_pdf"
         )
     {
         return Err(RpcError::new(
@@ -36,10 +38,21 @@ pub(super) async fn read(state: &AppState, input: Option<Value>) -> Result<Value
             "observation does not belong to this tool call",
         ));
     }
-    let id = call
-        .output
-        .as_ref()
-        .and_then(|value| value.pointer("/screenshot/id"))
+    let screenshot = call.output.as_ref().and_then(|output| {
+        if call.tool_name == "view_pdf" {
+            output
+                .get("pages")?
+                .as_array()?
+                .get(input.image_index)?
+                .get("screenshot")
+        } else if input.image_index == 0 {
+            output.get("screenshot")
+        } else {
+            None
+        }
+    });
+    let id = screenshot
+        .and_then(|value| value.get("id"))
         .and_then(Value::as_str)
         .ok_or_else(|| RpcError::new(ErrorCode::InvalidParams, "tool call has no screenshot"))?;
     let path = miniq_tools::observation_path(&state.observations_dir, id)
@@ -177,5 +190,27 @@ mod tests {
         let mut wrong_tool = params;
         wrong_tool["toolCallId"] = json!(other.id);
         assert!(read(&state, Some(wrong_tool)).await.is_err());
+        let pdf = state
+            .store
+            .create_tool_call(
+                &session.id,
+                "view_pdf",
+                &json!({"path":"fixture.pdf"}),
+                miniq_protocol::ToolCallStatus::Running,
+            )
+            .unwrap();
+        state.store.finish_tool_call(&pdf.id, miniq_protocol::ToolCallStatus::Succeeded,
+            Some(&json!({"pages":[{"page":2,"screenshot":{"id":id}},{"page":5,"screenshot":{"id":id}}]}))).unwrap();
+        let selected = json!({"sessionId":session.id,"toolCallId":pdf.id,"imageIndex":1});
+        assert_eq!(
+            read(&state, Some(selected)).await.unwrap()["base64"],
+            "dGVzdA=="
+        );
+        assert!(read(
+            &state,
+            Some(json!({"sessionId":session.id,"toolCallId":pdf.id,"imageIndex":2}))
+        )
+        .await
+        .is_err());
     }
 }

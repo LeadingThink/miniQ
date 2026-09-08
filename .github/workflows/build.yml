@@ -22,7 +22,7 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             bundles: nsis
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             bundles: deb,appimage
     steps:
@@ -55,7 +55,22 @@ jobs:
             apps/desktop/src-tauri -> apps/desktop/src-tauri/target
 
       - name: Build daemon sidecar
-        run: cargo build --release -p miniq-daemon --target ${{ matrix.target }}
+        run: cargo build --release --locked -p miniq-daemon -p miniq-cli --bin miniq-daemon --bin miniq --target ${{ matrix.target }}
+
+      - name: Test terminal client on native targets
+        if: matrix.target != 'x86_64-apple-darwin'
+        run: cargo test --locked -p miniq-cli -p miniq-local --target ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: miniQ-terminal-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/release/miniq
+            target/${{ matrix.target }}/release/miniq.exe
+            target/${{ matrix.target }}/release/miniq-daemon
+            target/${{ matrix.target }}/release/miniq-daemon.exe
+            docs/terminal.md
+          if-no-files-found: error
 
       - name: Place sidecar for Tauri bundler
         shell: bash

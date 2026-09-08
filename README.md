@@ -65,5 +65,9 @@ cd apps/desktop; npx tauri build
 ## 安全模型
 
 - 所有工具调用经过 `ToolRouter`,写入 `tool_calls` 与 `audit_events`。
-- 路径一律约束在 workspace 内(`miniq-sandbox`)。
+- 工具路径约束在项目根目录内(`miniq-sandbox`);用户明确附加的项目外文件仅允许读取该文件,不授予写入或相邻目录访问权。
 - 命令按风险分级:`low` 自动执行;`medium/high` 需审批(允许一次 / 本会话允许 / 拒绝);`blocked` 直接拦截。
+
+## Terminal Client
+
+miniQ also provides `miniq`, a terminal client sharing the desktop daemon and mobile sessions. See [installation, platform prerequisites, interactive use, scripting, and visual files](docs/terminal.md). Desktop releases include terminal archives for macOS, Windows and Linux; source installers build both CLI and daemon without restarting running tasks.

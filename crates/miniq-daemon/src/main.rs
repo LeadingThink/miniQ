@@ -6,6 +6,14 @@ use miniq_memory::Store;
 async fn main() -> anyhow::Result<()> {
     let dir = data_dir();
     std::fs::create_dir_all(&dir)?;
+    let _instance = miniq_local::DaemonLock::acquire(&dir).map_err(|error| {
+        anyhow::anyhow!("another miniQ daemon owns this data directory: {error}")
+    })?;
+    // Older installed daemons predate the lock. Never recover their active database.
+    if miniq_local::read_connection_info(&dir).is_some_and(|info| miniq_local::health_ok(info.port))
+    {
+        anyhow::bail!("a miniQ daemon is already serving this data directory");
+    }
 
     // Logs go to stdout (visible in dev terminals) and to a daily-rotated
     // file so installed builds, which run without a console, stay debuggable.

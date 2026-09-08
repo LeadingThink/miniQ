@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createHash } from "node:crypto";
 
 const TARGETS = {
   windows: "x86_64-pc-windows-msvc",
@@ -143,6 +144,15 @@ export function buildRelease({ input, output, tag, assetBaseUrl, mirrorBaseUrl, 
   copyOptionalArtifact(macIntel, ".dmg", "Intel macOS DMG", outputRoot, `miniQ_${version}_x64.dmg`);
   copyOptionalArtifact(linux, ".AppImage", "Linux AppImage", outputRoot, `miniQ_${version}_x64.AppImage`);
   copyOptionalArtifact(linux, ".deb", "Linux deb", outputRoot, `miniQ_${version}_amd64.deb`);
+
+  for (const target of Object.values(TARGETS)) {
+    const archive = findOptionalOne(artifactDirectory(inputRoot, target), `${target}.terminal.tar.gz`, `${target} terminal`);
+    if (!archive) continue;
+    const name = `miniQ_terminal_${version}_${target}.tar.gz`;
+    copyArtifact(archive, outputRoot, name);
+    const digest = createHash("sha256").update(readFileSync(archive)).digest("hex");
+    writeFileSync(join(outputRoot, `${name}.sha256`), `${digest}  ${name}\n`);
+  }
 
   const manifest = { version, notes, pub_date: publishedAt, platforms };
   writeFileSync(join(outputRoot, "latest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

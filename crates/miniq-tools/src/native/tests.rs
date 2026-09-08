@@ -45,7 +45,7 @@ fn routes_native_document_reads_and_pdf_pages() {
     ))
     .unwrap()
     .unwrap();
-    assert_eq!(pdf.call.name, "doc_read");
+    assert_eq!(pdf.call.name, "view_pdf");
     assert_eq!(pdf.call.arguments["pages"], "1-3,5");
 
     let docx = adapt_native_tool_call(&call(

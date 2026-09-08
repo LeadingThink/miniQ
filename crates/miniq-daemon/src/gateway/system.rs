@@ -5,11 +5,13 @@ use super::common::to_value;
 use crate::state::AppState;
 
 pub(super) fn health(state: &AppState) -> Result<Value, RpcError> {
-    to_value(HealthStatus {
+    let mut health = to_value(HealthStatus {
         protocol_version: PROTOCOL_VERSION,
         daemon_version: env!("CARGO_PKG_VERSION").to_string(),
         uptime_secs: state.started.elapsed().as_secs(),
-    })
+    })?;
+    health["capabilities"] = json!({"rejectBusy": true, "visualFiles": true});
+    Ok(health)
 }
 
 pub(super) async fn shutdown(state: &AppState) -> Result<Value, RpcError> {

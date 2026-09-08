@@ -47,6 +47,8 @@ pub struct ToolContext {
     /// Stable default working directory for this session or child agent.
     pub workspace: PathBuf,
     pub workspace_roots: Vec<PathBuf>,
+    /// Explicit user attachments, readable without granting write access or sibling access.
+    readable_files: Vec<PathBuf>,
     /// Skill store; `None` = skill_read unavailable.
     pub skills: Option<Arc<miniq_skills::SkillStore>>,
     /// SQLite store for memory tools; `None` = memory tools unavailable.
@@ -75,6 +77,7 @@ impl ToolContext {
     pub fn new(workspace: PathBuf) -> Self {
         Self {
             workspace_roots: vec![workspace.clone()],
+            readable_files: Vec::new(),
             workspace,
             skills: None,
             memory: None,
@@ -98,6 +101,25 @@ impl ToolContext {
 
     pub fn resolve_path(&self, requested: &str) -> Result<PathBuf, miniq_sandbox::PathError> {
         miniq_sandbox::resolve_in_roots(&self.workspace, &self.workspace_roots, requested)
+    }
+
+    pub fn with_readable_files(mut self, files: Vec<PathBuf>) -> Self {
+        self.readable_files = files;
+        self
+    }
+
+    pub fn resolve_read_path(&self, requested: &str) -> Result<PathBuf, miniq_sandbox::PathError> {
+        self.resolve_path(requested).or_else(|error| {
+            let path = std::path::Path::new(requested);
+            if path.is_absolute() {
+                if let Ok(canonical) = path.canonicalize() {
+                    if canonical.is_file() && self.readable_files.contains(&canonical) {
+                        return Ok(canonical);
+                    }
+                }
+            }
+            Err(error)
+        })
     }
 
     pub fn with_mcp(mut self, mcp: Option<Arc<dyn crate::mcp::McpBridge>>) -> Self {

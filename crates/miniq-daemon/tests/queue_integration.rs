@@ -121,6 +121,42 @@ fn send_params(session: &str, content: &str) -> Value {
 }
 
 #[tokio::test]
+async fn cli_busy_guard_does_not_queue_or_append_another_message() {
+    let (_release, receiver) = tokio::sync::watch::channel(0u64);
+    let (port, token) = start(Arc::new(GatedProvider { release: receiver })).await;
+    let mut ws = connect(port, &token).await;
+    let (session, _dir) = setup_session(&mut ws).await;
+    let first = call(
+        &mut ws,
+        "first",
+        "session.sendMessage",
+        send_params(&session, "running"),
+    )
+    .await;
+    assert!(first["result"]["message"].is_object());
+    let mut guarded = send_params(&session, "must not run");
+    guarded["rejectIfBusy"] = json!(true);
+    let second = call(&mut ws, "second", "session.sendMessage", guarded).await;
+    assert!(second["error"].is_object());
+    let snapshot = call(
+        &mut ws,
+        "snapshot",
+        "session.open",
+        json!({"sessionId":session}),
+    )
+    .await;
+    assert_eq!(snapshot["result"]["queue"], json!([]));
+    assert_eq!(snapshot["result"]["messages"].as_array().unwrap().len(), 1);
+    call(
+        &mut ws,
+        "stop",
+        "session.cancel",
+        json!({"sessionId":session}),
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn queued_message_runs_after_turn_completes() {
     let (release_tx, release_rx) = tokio::sync::watch::channel(0u64);
     let provider: Arc<dyn ModelProvider> = Arc::new(GatedProvider {

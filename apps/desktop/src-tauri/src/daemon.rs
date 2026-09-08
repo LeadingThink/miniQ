@@ -4,37 +4,16 @@
 //! on startup. The shell reads it, health-checks the port, and spawns the
 //! daemon binary if nothing is running.
 
-use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use super::daemon_process::DaemonProcess;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConnectionInfo {
-    pub port: u16,
-    pub token: String,
-    #[serde(default)]
-    pub pid: u32,
-}
-
-fn data_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("MINIQ_DATA_DIR") {
-        return PathBuf::from(dir);
-    }
-    let base = std::env::var("LOCALAPPDATA")
-        .or_else(|_| std::env::var("HOME").map(|h| format!("{h}/.local/share")))
-        .unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(base).join("miniq")
-}
+pub use miniq_local::ConnectionInfo;
+use miniq_local::{data_dir, health_ok};
 
 fn read_connection_info() -> Option<ConnectionInfo> {
-    let raw = std::fs::read_to_string(data_dir().join("daemon.json")).ok()?;
-    serde_json::from_str(&raw).ok()
+    miniq_local::read_connection_info(&data_dir())
 }
 
 #[derive(Default)]
@@ -74,26 +53,6 @@ impl DaemonLifecycle {
         self.update.lock().map_err(|e| e.to_string())?.take();
         Ok(())
     }
-}
-
-/// Minimal HTTP GET /health probe over a raw TCP socket (avoids pulling an
-/// HTTP client into the shell).
-fn health_ok(port: u16) -> bool {
-    let addr = format!("127.0.0.1:{port}");
-    let Ok(mut stream) = TcpStream::connect_timeout(
-        &addr.parse().expect("valid loopback addr"),
-        Duration::from_millis(500),
-    ) else {
-        return false;
-    };
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(800)));
-    let request = format!("GET /health HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
-    if stream.write_all(request.as_bytes()).is_err() {
-        return false;
-    }
-    let mut response = String::new();
-    let _ = stream.read_to_string(&mut response);
-    response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200")
 }
 
 /// Candidate locations for the daemon binary.

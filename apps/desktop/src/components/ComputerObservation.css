@@ -7,3 +7,5 @@
 .computer-observation-image img { display: block; width: 100%; height: auto; }
 .computer-observation-image.original img { width: auto; max-width: none; }
 .computer-observation-image [role] { padding: 16px; overflow-wrap: anywhere; }
+.computer-observation .observation-page-count { align-self: center; min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
+.computer-observation .icon-button:disabled { opacity: 0.4; cursor: default; }

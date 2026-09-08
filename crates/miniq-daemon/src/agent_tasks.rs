@@ -160,6 +160,16 @@ impl DaemonAgentBridge {
         let roots = self.child_roots(&workspace, isolated);
         ToolContext::new(workspace.clone())
             .with_workspace_roots(roots.clone())
+            .with_readable_files(
+                self.state
+                    .store
+                    .list_messages(&self.session_id)
+                    .unwrap_or_default()
+                    .iter()
+                    .flat_map(|message| &message.attachments)
+                    .map(|attachment| PathBuf::from(&attachment.path))
+                    .collect(),
+            )
             .with_observations(self.state.observations_dir.clone())
             .with_skills(Some(self.state.skills.clone()))
             .with_memory(

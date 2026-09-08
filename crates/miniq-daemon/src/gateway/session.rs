@@ -83,6 +83,7 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         "canAcknowledgeFailure": true,
         "eventCursor": journal.cursor(),
         "session": session,
+        "lastTurn": state.store.last_turn_outcome(&input.session_id).map_err(store_err)?,
         "messages": history.messages,
         "toolCalls": history.tool_calls,
         "nextCursor": history.next_cursor,
@@ -102,6 +103,8 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
 struct SendMessageParams {
     session_id: String,
     message: IncomingMessage,
+    #[serde(default)]
+    reject_if_busy: bool,
 }
 
 #[derive(Deserialize)]
@@ -123,6 +126,12 @@ pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value
         .map_err(store_err)?;
 
     let Some(cancel) = state.begin_turn(&input.session_id) else {
+        if input.reject_if_busy {
+            return Err(RpcError::new(
+                ErrorCode::SessionBusy,
+                "session is already running; watch it or wait before sending",
+            ));
+        }
         // The session already has an active turn: queue the message instead of
         // rejecting it. It will run automatically when the current turn ends.
         let queued = state

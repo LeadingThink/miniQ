@@ -66,7 +66,7 @@ impl Tool for DocReadTool {
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: DocReadInput = parse_input(input)?;
         let path = ctx
-            .resolve_path(&p.path)
+            .resolve_read_path(&p.path)
             .map_err(|e| ToolError::SandboxDenied(e.to_string()))?;
         if let Some(selection) = p.pages.as_deref() {
             if !path
@@ -83,7 +83,7 @@ impl Tool for DocReadTool {
                     "pages cannot be combined with lineOffset or lineLimit".into(),
                 ));
             }
-            let selected_pages = parse_page_selection(selection)?;
+            let selected_pages = parse_page_selection(selection, 100)?;
             let read_path = path.clone();
             let pages = tokio::task::spawn_blocking(move || read_pdf_pages(&read_path))
                 .await
@@ -169,7 +169,10 @@ impl Tool for DocReadTool {
     }
 }
 
-fn parse_page_selection(selection: &str) -> Result<Vec<usize>, ToolError> {
+pub(crate) fn parse_page_selection(
+    selection: &str,
+    max_pages: usize,
+) -> Result<Vec<usize>, ToolError> {
     let mut pages = Vec::new();
     for part in selection
         .split(',')
@@ -184,8 +187,16 @@ fn parse_page_selection(selection: &str) -> Result<Vec<usize>, ToolError> {
                     "invalid descending page range: {part}"
                 )));
             }
+            if end - start >= max_pages || pages.len().saturating_add(end - start + 1) > max_pages {
+                return Err(ToolError::InvalidInput(format!("select at most {max_pages} pages per call; inspect remaining pages in another batch")));
+            }
             pages.extend(start..=end);
         } else {
+            if pages.len() >= max_pages {
+                return Err(ToolError::InvalidInput(format!(
+                    "select at most {max_pages} pages per call"
+                )));
+            }
             pages.push(parse_page_number(part)?);
         }
     }
@@ -334,9 +345,9 @@ mod tests {
 
     #[test]
     fn parses_pdf_page_ranges_without_duplicates() {
-        assert_eq!(parse_page_selection("3,1-2,2").unwrap(), vec![1, 2, 3]);
-        assert!(parse_page_selection("3-1").is_err());
-        assert!(parse_page_selection("0").is_err());
+        assert_eq!(parse_page_selection("3,1-2,2", 100).unwrap(), vec![1, 2, 3]);
+        assert!(parse_page_selection("3-1", 100).is_err());
+        assert!(parse_page_selection("0", 100).is_err());
     }
 
     #[tokio::test]

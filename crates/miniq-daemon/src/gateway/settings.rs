@@ -45,6 +45,8 @@ struct ProviderUpdate {
     api_protocol: ApiProtocol,
     #[serde(default)]
     api_key: Option<String>,
+    #[serde(default)]
+    clear_api_key: bool,
 }
 
 #[derive(Deserialize)]
@@ -64,10 +66,18 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
         let existing_key = settings
             .provider
             .as_ref()
+            .filter(|existing| {
+                existing.base_url.trim_end_matches('/')
+                    == provider.base_url.trim().trim_end_matches('/')
+            })
             .map(|existing| existing.api_key.clone());
         settings.provider = Some(miniq_models::ProviderConfig {
             base_url: provider.base_url.trim().to_string(),
-            api_key: merged_key(provider.api_key, existing_key),
+            api_key: if provider.clear_api_key {
+                String::new()
+            } else {
+                merged_key(provider.api_key, existing_key)
+            },
             model: provider.model.trim().to_string(),
             api_protocol: provider.api_protocol,
             reasoning_effort: None,
@@ -118,6 +128,17 @@ fn validate_remote(remote: &RemoteAccessUpdate) -> Result<(), RpcError> {
 }
 
 fn validate_provider(provider: &ProviderUpdate) -> Result<(), RpcError> {
+    if provider.clear_api_key
+        && provider
+            .api_key
+            .as_ref()
+            .is_some_and(|key| !key.trim().is_empty())
+    {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "clearApiKey cannot be combined with a new key",
+        ));
+    }
     if provider.base_url.trim().is_empty() || provider.model.trim().is_empty() {
         return Err(RpcError::new(
             ErrorCode::InvalidParams,
@@ -147,6 +168,59 @@ mod tests {
     use super::*;
 
     #[test]
+    fn endpoint_changes_never_reuse_another_endpoints_key_and_logout_clears_it() {
+        let state = AppState::new(
+            miniq_memory::Store::open_in_memory().unwrap(),
+            "fixture".into(),
+            std::sync::Arc::new(miniq_models::mock::MockProvider::new(Vec::new())),
+        );
+        update(&state, Some(json!({"provider":{"baseUrl":"https://one.test/v1","model":"fixture","apiKey":"secret"}}))).unwrap();
+        update(
+            &state,
+            Some(json!({"provider":{"baseUrl":"https://one.test/v1/","model":"new"}})),
+        )
+        .unwrap();
+        assert_eq!(
+            state
+                .settings
+                .lock()
+                .unwrap()
+                .provider
+                .as_ref()
+                .unwrap()
+                .api_key,
+            "secret"
+        );
+        update(
+            &state,
+            Some(json!({"provider":{"baseUrl":"https://two.test/v1","model":"fixture"}})),
+        )
+        .unwrap();
+        assert!(state
+            .settings
+            .lock()
+            .unwrap()
+            .provider
+            .as_ref()
+            .unwrap()
+            .api_key
+            .is_empty());
+        update(&state, Some(json!({"provider":{"baseUrl":"https://two.test/v1","model":"fixture","apiKey":"new-secret"}}))).unwrap();
+        let result = update(&state, Some(json!({"provider":{"baseUrl":"https://two.test/v1","model":"fixture","clearApiKey":true}}))).unwrap();
+        assert_eq!(result["provider"]["hasApiKey"], false);
+        assert!(state
+            .settings
+            .lock()
+            .unwrap()
+            .provider
+            .as_ref()
+            .unwrap()
+            .api_key
+            .is_empty());
+        assert!(update(&state, Some(json!({"provider":{"baseUrl":"https://two.test/v1","model":"fixture","apiKey":"conflict","clearApiKey":true}}))).is_err());
+    }
+
+    #[test]
     fn provider_validation_requires_an_http_url() {
         for base_url in ["not-a-url", "ftp://models.test/v1"] {
             let result = validate_provider(&ProviderUpdate {
@@ -154,6 +228,7 @@ mod tests {
                 model: "model".to_string(),
                 api_protocol: ApiProtocol::Auto,
                 api_key: None,
+                clear_api_key: false,
             });
             assert!(result.is_err(), "{base_url} should be rejected");
         }

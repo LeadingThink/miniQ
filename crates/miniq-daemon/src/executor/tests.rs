@@ -419,3 +419,37 @@ async fn unapproved_desktop_operations_never_reach_the_backend() {
         .iter()
         .all(|call| call.status == ToolCallStatus::Rejected));
 }
+
+#[test]
+fn native_visual_results_resolve_the_same_tool_as_execution() {
+    let directory = tempfile::tempdir().unwrap();
+    let state = AppState::new(
+        miniq_memory::Store::open_in_memory().unwrap(),
+        "fixture".into(),
+        std::sync::Arc::new(miniq_models::mock::MockProvider::new(Vec::new())),
+    );
+    let executor = SessionToolExecutor {
+        state,
+        session_id: "fixture".into(),
+        router: std::sync::Arc::new(miniq_tools::default_router()),
+        ctx: ToolContext::new(directory.path().into()),
+        cancel: CancellationToken::new(),
+        permission_policy: PermissionPolicy::Inherit,
+        review_plan: Default::default(),
+    };
+    let screenshot = json!({"id":"aa8091e1-3bf0-4b0f-b699-260f2ac9e081"});
+    for (path, output) in [
+        ("image.png", json!({"screenshot":screenshot})),
+        (
+            "scan.pdf",
+            json!({"pages":[{"page":1,"screenshot":screenshot}]}),
+        ),
+    ] {
+        let call = ToolCallRequest {
+            id: "read".into(),
+            name: "Read".into(),
+            arguments: json!({"file_path":path}),
+        };
+        assert_eq!(executor.result_images(&call, &output).len(), 1, "{path}");
+    }
+}

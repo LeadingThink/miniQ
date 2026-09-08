@@ -221,4 +221,64 @@ impl Store {
         )?;
         Ok(count)
     }
+
+    /// Record before admitting the next turn. Clearing a failure badge must
+    /// never change the durable outcome used by reconnecting clients.
+    pub fn record_turn_outcome(&self, session_id: &str, status: &str) -> Result<()> {
+        let anchor: String = self.conn.lock().unwrap().query_row(
+            "SELECT id FROM messages WHERE session_id = ?1 AND role = 'user' ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            [session_id], |row| row.get(0))?;
+        self.append_audit_event(
+            Some(session_id),
+            "turn_outcome",
+            &serde_json::json!({"anchorMessageId":anchor,"status":status}),
+        )
+    }
+
+    pub fn last_turn_outcome(&self, session_id: &str) -> Result<Option<Value>> {
+        let raw: Option<String> = self.conn.lock().unwrap().query_row(
+            "SELECT payload_json FROM audit_events WHERE session_id = ?1 AND event_type = 'turn_outcome'
+             AND json_extract(payload_json, '$.anchorMessageId') =
+                (SELECT id FROM messages WHERE session_id = ?1 AND role = 'user' ORDER BY created_at DESC, rowid DESC LIMIT 1)
+             ORDER BY rowid DESC LIMIT 1", [session_id], |row| row.get(0)).optional()?;
+        raw.map(|raw| serde_json::from_str(&raw).map_err(Into::into))
+            .transpose()
+    }
+}
+
+#[cfg(test)]
+mod turn_outcome_tests {
+    use super::*;
+    use miniq_protocol::{Role, SessionStatus};
+
+    #[test]
+    fn badges_and_partial_answers_cannot_turn_failure_into_success() {
+        let store = Store::open_in_memory().unwrap();
+        let workspace = store.create_workspace("/fixture", "fixture").unwrap();
+        let session = store.create_session(&workspace.id, "fixture").unwrap();
+        assert!(store.last_turn_outcome(&session.id).unwrap().is_none());
+        store
+            .append_message(&session.id, Role::User, "first")
+            .unwrap();
+        store
+            .append_message(&session.id, Role::Assistant, "partial")
+            .unwrap();
+        store.record_turn_outcome(&session.id, "failed").unwrap();
+        store
+            .update_session_status(&session.id, SessionStatus::Idle)
+            .unwrap();
+        assert_eq!(
+            store.last_turn_outcome(&session.id).unwrap().unwrap()["status"],
+            "failed"
+        );
+        store
+            .append_message(&session.id, Role::User, "second")
+            .unwrap();
+        assert!(store.last_turn_outcome(&session.id).unwrap().is_none());
+        store.record_turn_outcome(&session.id, "completed").unwrap();
+        assert_eq!(
+            store.last_turn_outcome(&session.id).unwrap().unwrap()["status"],
+            "completed"
+        );
+    }
 }
