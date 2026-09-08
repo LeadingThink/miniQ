@@ -162,6 +162,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
       setApiKey("");
       setRemoteStatus(res.remoteStatus ?? null);
       setStatus("已保存");
+      props.onClose();
     } catch (e) {
       setStatus(`保存失败：${errorMessage(e)}`);
     } finally {

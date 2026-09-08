@@ -14,9 +14,9 @@ const settings = {
 const call = vi.fn().mockResolvedValue(settings);
 const client = { call, mode: "local" } as unknown as RpcClient;
 
-function Fixture() {
+function Fixture({ onClose = () => {} }: { onClose?: () => void }) {
   const { theme } = useSyncExternalStore(subscribeAppearance, getAppearance);
-  return <SettingsPanel client={client} theme={theme} onThemeChange={storeTheme} onClose={() => {}} />;
+  return <SettingsPanel client={client} theme={theme} onThemeChange={storeTheme} onClose={onClose} />;
 }
 beforeEach(() => {
   localStorage.clear();
@@ -45,7 +45,8 @@ describe("appearance settings integration", () => {
   });
 
   it("keeps unsaved service fields when switching tabs and submits only on save", async () => {
-    render(<Fixture />);
+    const onClose = vi.fn();
+    render(<Fixture onClose={onClose} />);
     fireEvent.click(screen.getByRole("tab", { name: "服务与远程" }));
     const model = await screen.findByLabelText("Model");
     await waitFor(() => expect((model as HTMLInputElement).value).toBe("test"));
@@ -62,6 +63,22 @@ describe("appearance settings integration", () => {
         remoteAccess: { enabled: false, relayUrl: "wss://example.test", deviceName: "desktop" },
       })
     );
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps settings open when saving fails", async () => {
+    const onClose = vi.fn();
+    call.mockImplementation((method: string) =>
+      method === "settings.get" ? Promise.resolve(settings) : Promise.reject(new Error("update failed")),
+    );
+    render(<Fixture onClose={onClose} />);
+    fireEvent.click(screen.getByRole("tab", { name: "服务与远程" }));
+    await screen.findByLabelText("Model");
+
+    fireEvent.click(screen.getByRole("button", { name: "保存模型设置" }));
+
+    expect(await screen.findByText("保存失败：update failed")).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("supports tab keyboard navigation and restores focus on close", async () => {
