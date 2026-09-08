@@ -82,6 +82,20 @@ fn read_local_file_preview(
 }
 
 #[tauri::command]
+fn read_image_preview(path: String) -> Result<local_file::LocalImagePreview, String> {
+    local_file::read_image_preview(&path)
+}
+
+#[tauri::command]
+fn save_pasted_image(
+    app: tauri::AppHandle,
+    mime_type: String,
+    data_base64: String,
+) -> Result<String, String> {
+    local_file::save_pasted_image(&app, &mime_type, &data_base64)
+}
+
+#[tauri::command]
 fn browser_open(
     app: tauri::AppHandle,
     view_id: String,
@@ -148,6 +162,8 @@ pub fn run() {
             reveal_local_file,
             read_local_text_file,
             read_local_file_preview,
+            read_image_preview,
+            save_pasted_image,
             browser_open,
             browser_resize,
             browser_action,

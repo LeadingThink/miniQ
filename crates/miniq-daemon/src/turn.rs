@@ -58,9 +58,23 @@ fn visible_message_to_chat(message: &Message) -> Option<ChatMessage> {
         Role::System => ChatRole::System,
         Role::Tool => return None,
     };
+    let file_paths = message
+        .attachments
+        .iter()
+        .filter(|attachment| attachment.mime_type.is_none())
+        .map(|attachment| attachment.path.as_str())
+        .collect::<Vec<_>>();
+    let mut content = message.content.clone();
+    if !file_paths.is_empty() {
+        if !content.is_empty() {
+            content.push_str("\n\n");
+        }
+        content.push_str("Attached local files (use these exact absolute paths):\n");
+        content.push_str(&file_paths.join("\n"));
+    }
     Some(ChatMessage {
         role,
-        content: message.content.clone(),
+        content,
         images: message
             .attachments
             .iter()
@@ -488,6 +502,7 @@ async fn execute_turn(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use miniq_protocol::MessageAttachment;
 
     fn message(id: &str, role: Role, content: &str) -> Message {
         Message {
@@ -539,6 +554,31 @@ mod tests {
         assert!(runtime_index < skills_index);
         assert!(runtime_index < host_context_index);
         assert!(host_context_index < skills_index);
+    }
+
+    #[test]
+    fn exposes_regular_attachment_paths_and_keeps_images_structured() {
+        let mut input = message("user-1", Role::User, "Review these files");
+        input.attachments = vec![
+            MessageAttachment {
+                path: "C:\\work\\report.pdf".to_string(),
+                name: "report.pdf".to_string(),
+                mime_type: None,
+            },
+            MessageAttachment {
+                path: "C:\\work\\diagram.png".to_string(),
+                name: "diagram.png".to_string(),
+                mime_type: Some("image/png".to_string()),
+            },
+        ];
+
+        let chat = visible_message_to_chat(&input).unwrap();
+
+        assert!(chat.content.contains("Review these files"));
+        assert!(chat.content.contains("C:\\work\\report.pdf"));
+        assert!(!chat.content.contains("C:\\work\\diagram.png"));
+        assert_eq!(chat.images.len(), 1);
+        assert_eq!(chat.images[0].path, "C:\\work\\diagram.png");
     }
 
     #[test]

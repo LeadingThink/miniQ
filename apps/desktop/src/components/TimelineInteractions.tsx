@@ -154,27 +154,31 @@ export function QueueBar(props: {
   return (
     <div className="queue-bar">
       <div className="queue-title">已排队 {props.queue.length} 条，当前任务结束后依次执行</div>
-      {props.queue.map((item) => (
-        <div key={item.id} className="queue-item">
-          <span className="queue-content" title={item.content}>
-            {item.content}
-          </span>
-          <button
-            className="ghost queue-steer"
-            title="调整方向：打断当前任务，立即执行这条消息"
-            onClick={() => props.onSteer(item.id)}
-          >
-            <Zap size={13} /> 调整方向
-          </button>
-          <button
-            className="ghost queue-remove"
-            title="从队列移除"
-            onClick={() => props.onRemove(item.id)}
-          >
-            <X size={13} />
-          </button>
-        </div>
-      ))}
+      {props.queue.map((item) => {
+        const attachmentNames = item.attachments?.map((attachment) => attachment.name) ?? [];
+        const summary = item.content || attachmentNames.join("、");
+        return (
+          <div key={item.id} className="queue-item">
+            <span className="queue-content" title={summary}>
+              {summary}
+            </span>
+            <button
+              className="ghost queue-steer"
+              title="调整方向：打断当前任务，立即执行这条消息"
+              onClick={() => props.onSteer(item.id)}
+            >
+              <Zap size={13} /> 调整方向
+            </button>
+            <button
+              className="ghost queue-remove"
+              title="从队列移除"
+              onClick={() => props.onRemove(item.id)}
+            >
+              <X size={13} />
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Message, Question, ToolCall, TurnProgress } from "../types";
 import type { PendingApproval } from "../hooks/useSessionFeed";
 import { Timeline } from "./Timeline";
+import { QueueBar } from "./TimelineInteractions";
 
 const noop = () => undefined;
 
@@ -41,6 +42,28 @@ function renderTimeline(options: {
 }
 
 describe("Timeline execution flow", () => {
+  it("shows attachment names for a queued attachment-only message", () => {
+    const html = renderToStaticMarkup(
+      <QueueBar
+        queue={[{
+          id: "queued-1",
+          sessionId: "session-1",
+          content: "",
+          attachments: [
+            { path: "C:\\work\\report.pdf", name: "report.pdf" },
+            { path: "C:\\work\\notes.txt", name: "notes.txt" },
+          ],
+          position: 0,
+          createdAt: "2026-09-08T00:00:00Z",
+        }]}
+        onSteer={noop}
+        onRemove={noop}
+      />,
+    );
+
+    expect(html).toContain("report.pdf、notes.txt");
+  });
+
   it("keeps execution steps in chronological order below the request", () => {
     const messages: Message[] = [
       {
