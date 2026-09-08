@@ -58,6 +58,8 @@ pub fn canonical_name(name: &str) -> Option<&'static str> {
     match name {
         "Bash" | "bash" | "shell" | "shell_command" | "exec_command" => Some("shell_run"),
         "Read" | "read" | "read_file" => Some("file_read"),
+        "ViewImage" => Some("view_image"),
+        "ViewPDF" => Some("view_pdf"),
         "Write" | "write" | "write_file" => Some("file_write"),
         "Edit" | "edit" | "edit_file" => Some("file_edit"),
         "MultiEdit" | "multi_edit" => Some("file_patch"),

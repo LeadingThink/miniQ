@@ -1,0 +1,27 @@
+[package]
+name = "miniq-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "miniQ terminal client for the shared local agent daemon"
+
+[[bin]]
+name = "miniq"
+path = "src/main.rs"
+
+[dependencies]
+miniq-local = { path = "../miniq-local" }
+miniq-protocol = { path = "../miniq-protocol" }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
+url = { workspace = true }
+clap = { version = "4", features = ["derive", "env"] }
+clap_complete = "4"
+rustyline = "15"
+rpassword = "7"
+
+[dev-dependencies]
+tempfile = "3"

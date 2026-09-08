@@ -27,7 +27,8 @@ headless_chrome = { workspace = true }
 schemars = { workspace = true }
 uuid = { workspace = true }
 tokio-util = { workspace = true }
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
+tempfile = "3"
 enigo = "0.6.1"
 xcap = "0.8.2"
 
@@ -39,5 +40,5 @@ core-foundation = "0.10"
 windows = { version = "0.62", features = ["Win32_UI_HiDpi", "Win32_UI_WindowsAndMessaging"] }
 
 [dev-dependencies]
-tempfile = "3"
+lopdf = "0.34"
 axum = { workspace = true }

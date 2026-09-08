@@ -40,3 +40,17 @@ it("does not retain a late response after the panel closes", async () => {
   await act(async () => { complete(response); });
   expect(URL.createObjectURL).not.toHaveBeenCalled();
 });
+
+it("loads only the selected PDF page and revokes the previous image", async () => {
+  const client = {call:vi.fn().mockResolvedValue(response)} as unknown as RpcClient;
+  const screenshot = (call.output as {screenshot: object}).screenshot;
+  const pdfCall = {...call, toolName:"view_pdf", output:{pages:[{page:2,screenshot},{page:5,screenshot:{...screenshot,id:"bb8091e1-3bf0-4b0f-b699-260f2ac9e081"}}]}};
+  render(<ComputerObservation call={pdfCall} client={client} />);
+  await screen.findByAltText("PDF 第 2 页");
+  expect(client.call).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button",{name:"下一页"}));
+  await waitFor(() => expect(client.call).toHaveBeenLastCalledWith("observation.read",{sessionId:"session-1",toolCallId:"call-1",offset:0,imageIndex:1}));
+  await screen.findByAltText("PDF 第 5 页");
+  expect(URL.revokeObjectURL).toHaveBeenCalled();
+  expect(screen.getByRole("button",{name:"下一页"}).hasAttribute("disabled")).toBe(true);
+});

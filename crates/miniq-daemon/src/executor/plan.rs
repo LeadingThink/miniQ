@@ -5,10 +5,10 @@ use serde_json::Value;
 pub(super) fn plan_mode_allows(call: &ToolCallRequest, risk: RiskLevel) -> bool {
     match call.name.as_str() {
         "file_read" | "file_list" | "file_glob" | "file_grep" | "git_status" | "git_diff"
-        | "doc_read" | "skill_read" | "memory_search" | "tool_search" | "web_fetch"
-        | "web_search" | "ask_user" | "task_update" | "task_create" | "task_get" | "task_list"
-        | "task_item_update" | "plan_mode" | "process_output" | "process_kill"
-        | "agent_message" => true,
+        | "doc_read" | "view_image" | "view_pdf" | "skill_read" | "memory_search"
+        | "tool_search" | "web_fetch" | "web_search" | "ask_user" | "task_update"
+        | "task_create" | "task_get" | "task_list" | "task_item_update" | "plan_mode"
+        | "process_output" | "process_kill" | "agent_message" => true,
         "shell_run" | "shell_batch" => risk == RiskLevel::Low,
         "browser_automation" => matches!(
             call.arguments.get("action").and_then(Value::as_str),
@@ -50,6 +50,8 @@ mod tests {
     #[test]
     fn plan_mode_allows_observation_but_never_desktop_input() {
         for (name, action, allowed) in [
+            ("view_image", "", true),
+            ("view_pdf", "", true),
             ("computer_use", "screenshot", true),
             ("computer_use", "click", false),
             ("computer_use", "type", false),

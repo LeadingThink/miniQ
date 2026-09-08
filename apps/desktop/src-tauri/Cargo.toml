@@ -12,6 +12,7 @@ license = "MIT"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+miniq-local = { path = "../../../crates/miniq-local" }
 tauri = { version = "2", features = ["tray-icon", "unstable"] }
 tauri-plugin-dialog = "2"
 base64 = "0.22"

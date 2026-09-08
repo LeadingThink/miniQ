@@ -23,6 +23,7 @@ mod native;
 mod notebook;
 mod observation;
 mod patch;
+mod pdf_visual;
 mod plan_mode;
 mod process;
 mod router;
@@ -30,6 +31,7 @@ mod search;
 mod shell;
 mod skill;
 mod tasks;
+mod visual;
 mod web;
 mod web_search;
 
@@ -58,6 +60,7 @@ pub use native::{
 pub use notebook::NotebookEditTool;
 pub use observation::{observation_path, MAX_OBSERVATION_BYTES};
 pub use patch::FilePatchTool;
+pub use pdf_visual::ViewPdfTool;
 pub use plan_mode::PlanModeTool;
 pub use process::{ProcessKillTool, ProcessManager, ProcessOutputTool};
 pub use router::{
@@ -68,6 +71,7 @@ pub use search::{FileGlobTool, FileGrepTool};
 pub use shell::{ShellBatchTool, ShellRunTool};
 pub use skill::SkillReadTool;
 pub use tasks::{TaskCreateTool, TaskGetTool, TaskItemUpdateTool, TaskListTool, TaskManager};
+pub use visual::ViewImageTool;
 pub use web::WebFetchTool;
 pub use web_search::WebSearchTool;
 
@@ -80,6 +84,8 @@ pub fn default_router() -> ToolRouter {
     let router = ToolRouter::new();
     let tools: Vec<std::sync::Arc<dyn Tool>> = vec![
         std::sync::Arc::new(FileReadTool),
+        std::sync::Arc::new(ViewImageTool),
+        std::sync::Arc::new(ViewPdfTool),
         std::sync::Arc::new(FileListTool),
         std::sync::Arc::new(FileWriteTool),
         std::sync::Arc::new(FileEditTool),

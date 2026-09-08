@@ -16,7 +16,11 @@ pub(crate) fn path_risk(ctx: &ToolContext, input: &Value, base: RiskLevel, reaso
             reason: "missing path".into(),
         };
     };
-    match ctx.resolve_path(path) {
+    match if base == RiskLevel::Low {
+        ctx.resolve_read_path(path)
+    } else {
+        ctx.resolve_path(path)
+    } {
         Ok(_) => Risk {
             level: base,
             reason: reason.to_string(),
@@ -74,7 +78,7 @@ impl Tool for FileReadTool {
             ));
         }
         let path = ctx
-            .resolve_path(&p.path)
+            .resolve_read_path(&p.path)
             .map_err(|e| ToolError::SandboxDenied(e.to_string()))?;
         let content = tokio::fs::read_to_string(&path)
             .await

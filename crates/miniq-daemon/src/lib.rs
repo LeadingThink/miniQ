@@ -19,8 +19,6 @@ pub mod state;
 pub mod turn;
 mod turn_checkpoint;
 
-use std::path::PathBuf;
-
 use miniq_models::{ModelProvider, ProviderConfig};
 use rand::distr::Alphanumeric;
 use rand::Rng;
@@ -65,27 +63,7 @@ impl ModelProvider for UnconfiguredProvider {
     }
 }
 
-/// Connection info written next to the database so the desktop shell can
-/// discover a running daemon.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConnectionInfo {
-    pub port: u16,
-    pub token: String,
-    pub pid: u32,
-}
-
-/// Data directory for the daemon (db + connection file).
-/// Honors `MINIQ_DATA_DIR`, defaults to `<local appdata>/miniq`.
-pub fn data_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("MINIQ_DATA_DIR") {
-        return PathBuf::from(dir);
-    }
-    let base = std::env::var("LOCALAPPDATA")
-        .or_else(|_| std::env::var("HOME").map(|h| format!("{h}/.local/share")))
-        .unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(base).join("miniq")
-}
+pub use miniq_local::{data_dir, write_connection_info, ConnectionInfo};
 
 pub fn generate_token() -> String {
     rand::rng()
@@ -93,13 +71,6 @@ pub fn generate_token() -> String {
         .take(32)
         .map(char::from)
         .collect()
-}
-
-pub fn write_connection_info(dir: &std::path::Path, info: &ConnectionInfo) -> anyhow::Result<()> {
-    std::fs::create_dir_all(dir)?;
-    let path = dir.join("daemon.json");
-    std::fs::write(path, serde_json::to_string_pretty(info)?)?;
-    Ok(())
 }
 
 #[cfg(test)]

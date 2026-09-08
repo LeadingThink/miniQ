@@ -14,6 +14,8 @@ interface ToolAction {
 
 const TOOL_ACTIONS: Record<string, ToolAction> = {
   file_read: { running: "正在读取文件", finished: "读取了文件" },
+  view_image: { running: "正在查看图片", finished: "查看了图片" },
+  view_pdf: { running: "正在查看 PDF 页面", finished: "查看了 PDF 页面" },
   file_list: { running: "正在查看目录", finished: "查看了目录" },
   file_glob: { running: "正在查找文件", finished: "查找了文件" },
   file_grep: { running: "正在搜索代码", finished: "搜索了代码" },

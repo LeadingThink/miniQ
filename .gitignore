@@ -7,6 +7,10 @@ apps/desktop/src-tauri/gen/
 *.log
 dist-release/
 scripts/
+!/scripts/
+/scripts/*
+!/scripts/install-cli.sh
+!/scripts/install-cli.ps1
 !apps/desktop/scripts/
 apps/desktop/scripts/*
 !apps/desktop/scripts/android_release.py

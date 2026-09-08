@@ -3,6 +3,8 @@ pub fn native_aliases(canonical: &str) -> &'static [&'static str] {
         "shell_run" => &["Bash", "bash", "shell", "shell_command", "exec_command"],
         "shell_batch" => &["shell_call", "local_shell_call"],
         "file_read" => &["Read", "read", "read_file"],
+        "view_image" => &["ViewImage"],
+        "view_pdf" => &["ViewPDF"],
         "file_write" => &["Write", "write", "write_file"],
         "file_edit" => &["Edit", "edit", "edit_file"],
         "file_patch" => &["MultiEdit", "multi_edit"],

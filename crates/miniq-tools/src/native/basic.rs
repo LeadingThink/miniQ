@@ -186,6 +186,37 @@ pub(super) fn adapt_read(call: &ToolCallRequest) -> Result<(&'static str, Value)
     let extension = path
         .and_then(|path| path.rsplit_once('.').map(|(_, extension)| extension))
         .map(str::to_ascii_lowercase);
+    if extension
+        .as_deref()
+        .is_some_and(|ext| matches!(ext, "png" | "jpg" | "jpeg" | "gif" | "webp"))
+    {
+        return Ok((
+            "view_image",
+            remap(
+                call,
+                &[
+                    ("file_path", "path"),
+                    ("path", "path"),
+                    ("detail", "detail"),
+                ],
+                &[],
+            )?,
+        ));
+    }
+    if extension.as_deref() == Some("pdf")
+        && !["offset", "limit", "view_range"]
+            .iter()
+            .any(|key| input.contains_key(*key))
+    {
+        return Ok((
+            "view_pdf",
+            remap(
+                call,
+                &[("file_path", "path"), ("path", "path"), ("pages", "pages")],
+                &[],
+            )?,
+        ));
+    }
     let document = extension.as_deref().is_some_and(|extension| {
         matches!(
             extension,

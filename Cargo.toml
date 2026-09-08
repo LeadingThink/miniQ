@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/miniq-protocol",
+    "crates/miniq-local",
+    "crates/miniq-cli",
     "crates/miniq-memory",
     "crates/miniq-session-connectors",
     "crates/miniq-models",
