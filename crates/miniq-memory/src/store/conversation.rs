@@ -187,6 +187,17 @@ impl Store {
             "UPDATE sessions SET updated_at = ?2 WHERE id = ?1",
             params![session_id, now_iso()],
         )?;
+        // Rewrites reuse the user message ID, but not its previous turn result.
+        transaction.execute(
+            "INSERT INTO audit_events (id, session_id, event_type, payload_json, created_at)
+             VALUES (?1, ?2, 'turn_outcome', ?3, ?4)",
+            params![
+                new_id("audit"),
+                session_id,
+                serde_json::json!({"anchorMessageId":message_id,"status":"superseded"}).to_string(),
+                now_iso()
+            ],
+        )?;
 
         let updated = Message {
             content: content.to_string(),
