@@ -20,6 +20,7 @@
       }
     ],
     "security": {
+      "dangerousDisableAssetCspModification": ["style-src"],
       "csp": "default-src 'self' tauri: ipc: http://127.0.0.1:* ws://127.0.0.1:*; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' tauri: ipc: http://127.0.0.1:* ws://127.0.0.1:*; img-src 'self' data: blob: tauri: http://127.0.0.1:*; media-src blob:; object-src blob:; frame-src http: https: blob:; font-src 'self' data: blob:"
     }
   },

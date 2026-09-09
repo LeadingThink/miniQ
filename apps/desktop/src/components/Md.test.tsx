@@ -72,7 +72,9 @@ describe("Md file references", () => {
     );
 
     expect(html).toContain('class="file-reference-link"');
-    expect(html).toContain("D:\\work\\project\\backend\\mongo-dump\\alerts.json");
+    expect(html).toContain(
+      "D:\\work\\project\\backend\\mongo-dump\\alerts.json",
+    );
   });
 
   it("preserves absolute Windows paths in markdown link hrefs", () => {
@@ -131,7 +133,8 @@ describe("Md code blocks", () => {
     const html = render("```js\nconsole.log(1);\n```");
 
     expect(html).toContain('class="code-block"');
-    expect(html).toContain('class="code-copy "');
+    expect(html).toContain('aria-label="复制代码"');
+    expect(html).toContain('aria-label="代码自动换行"');
     expect(html).toContain("复制");
   });
 

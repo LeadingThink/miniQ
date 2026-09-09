@@ -13,6 +13,8 @@ import {
   FolderOpen,
   RotateCcw,
   WrapText,
+  Maximize2,
+  Minimize2,
   X,
 } from "lucide-react";
 import {
@@ -43,6 +45,7 @@ import { HtmlPreview } from "./HtmlPreview";
 import { isHtmlFile } from "../htmlPreview";
 import { PreviewTabs } from "./PreviewTabs";
 import type { LocalFileTarget } from "../localFiles";
+import "./PreviewFocus.css";
 import {
   PreviewViewProvider,
   PreviewViewStore,
@@ -63,6 +66,11 @@ interface FilePreviewPanelProps {
   onCloseTab?: (path: string) => void;
 }
 
+interface PreviewPanelContentProps extends FilePreviewPanelProps {
+  expanded: boolean;
+  onToggleExpanded: () => void;
+}
+
 const CodePreview = lazy(() => import("./CodePreview"));
 
 function fileName(path: string): string {
@@ -71,6 +79,7 @@ function fileName(path: string): string {
 
 export function FilePreviewPanel(props: FilePreviewPanelProps) {
   const [localStore] = useState(() => new PreviewViewStore());
+  const [expanded, setExpanded] = useState(false);
   const path = props.preview.resolvedPath ?? props.preview.target?.path ?? "";
   const scope = props.viewScope ?? props.workspacePath;
   return (
@@ -79,7 +88,11 @@ export function FilePreviewPanel(props: FilePreviewPanelProps) {
       scope={scope}
       path={path}
     >
-      <PreviewPanelContent {...props} />
+      <PreviewPanelContent
+        {...props}
+        expanded={expanded}
+        onToggleExpanded={() => setExpanded((value) => !value)}
+      />
     </PreviewViewProvider>
   );
 }
@@ -93,7 +106,9 @@ function PreviewPanelContent({
   onRetry,
   tabs = [],
   onCloseTab,
-}: FilePreviewPanelProps) {
+  expanded,
+  onToggleExpanded,
+}: PreviewPanelContentProps) {
   const contentId = useId();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -165,8 +180,7 @@ function PreviewPanelContent({
   const handleMount: OnMount = (instance) => {
     editorRef.current = instance;
     const saved = viewCache.get("codeState") as
-      | editor.ICodeEditorViewState
-      | undefined;
+      editor.ICodeEditorViewState | undefined;
     if (saved) instance.restoreViewState(saved);
     if (target?.line) locate();
     const save = () => viewCache.set("codeState", instance.saveViewState());
@@ -188,7 +202,17 @@ function PreviewPanelContent({
   };
 
   return (
-    <aside className="file-preview-panel" aria-label="文件预览">
+    <aside
+      className={`file-preview-panel${expanded ? " preview-expanded" : ""}`}
+      aria-label="文件预览"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && expanded && !event.defaultPrevented) {
+          event.preventDefault();
+          event.stopPropagation();
+          onToggleExpanded();
+        }
+      }}
+    >
       {onCloseTab && (
         <PreviewTabs
           tabs={tabs}
@@ -220,6 +244,21 @@ function PreviewPanelContent({
           <X size={17} />
         </button>
         <section className="file-preview-tools" aria-label="文件操作">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={expanded ? "恢复分栏预览" : "展开预览"}
+            title={expanded ? "恢复分栏预览 (Esc)" : "展开预览"}
+            aria-pressed={expanded}
+            onClick={(event) => {
+              // WebKit does not focus buttons on mouse clicks by default.
+              // Keep Escape inside the preview after expanding it.
+              event.currentTarget.focus({ preventScroll: true });
+              onToggleExpanded();
+            }}
+          >
+            {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
           {renderable && preview.content !== null && (
             <span
               className="preview-mode-toggle"

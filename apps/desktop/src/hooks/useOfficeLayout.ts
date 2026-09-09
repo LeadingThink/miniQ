@@ -46,12 +46,29 @@ export function useOfficeLayout(
   }, [ref, ready, scale]);
   const onPage = (value: number) => {
     const next = Math.max(1, Math.min(pages.length, value));
-    pages[next - 1]?.scrollIntoView({ block: "start", inline: "nearest" });
+    const stage = ref.current;
+    const target = pages[next - 1];
+    if (stage && target) {
+      // Scroll only the document, never the surrounding app or modal.
+      stage.scrollTop +=
+        target.getBoundingClientRect().top -
+        stage.getBoundingClientRect().top -
+        (parseFloat(getComputedStyle(stage).paddingTop) || 0);
+    }
     setPage(next);
   };
   const onScroll = () => {
     const stage = ref.current;
     if (!stage || !pages.length) return;
+    // A short last page can share the viewport with more of its predecessor.
+    // Once at the document bottom, navigation must still report the last page.
+    if (
+      stage.scrollTop > 0 &&
+      stage.scrollTop + stage.clientHeight >= stage.scrollHeight - 1
+    ) {
+      setPage(pages.length);
+      return;
+    }
     const viewport = stage.getBoundingClientRect();
     let active = 0;
     let mostVisible = -1;

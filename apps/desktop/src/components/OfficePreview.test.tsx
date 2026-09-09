@@ -38,12 +38,11 @@ it("fits real page widths and updates zoom and page navigation without reparsing
   const natural = vi
     .spyOn(HTMLElement.prototype, "offsetWidth", "get")
     .mockReturnValue(1000);
-  const navigate = vi.fn();
   mocks.render.mockImplementation(async (_bytes, target: HTMLElement) => {
     for (let index = 0; index < 3; index++) {
       const page = document.createElement("section");
       page.className = "docx";
-      page.scrollIntoView = navigate;
+      page.getBoundingClientRect = () => ({ top: index * 1000 }) as DOMRect;
       target.append(page);
     }
   });
@@ -59,7 +58,7 @@ it("fits real page widths and updates zoom and page navigation without reparsing
     view.container.querySelector<HTMLElement>(".office-document")?.style.zoom,
   ).toBe("0.3");
   fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-  expect(navigate).toHaveBeenCalled();
+  expect(view.container.querySelector(".office-preview")?.scrollTop).toBe(1000);
   expect((screen.getByLabelText("Word 页码") as HTMLInputElement).value).toBe(
     "2",
   );
@@ -71,6 +70,38 @@ it("fits real page widths and updates zoom and page navigation without reparsing
   measured.mockRestore();
   natural.mockRestore();
   vi.unstubAllGlobals();
+});
+
+it("keeps the last page active at the bottom even when a taller previous page is more visible", async () => {
+  mocks.render.mockImplementation(async (_bytes, target: HTMLElement) => {
+    for (const [top, bottom] of [
+      [-200, 350],
+      [350, 500],
+    ]) {
+      const page = document.createElement("section");
+      page.className = "docx";
+      page.getBoundingClientRect = () => ({ top, bottom }) as DOMRect;
+      target.append(page);
+    }
+  });
+  const view = render(<DocxPreview dataBase64="AA==" onError={vi.fn()} />);
+  await screen.findByRole("region", { name: "第 2 页" });
+  const stage = view.container.querySelector<HTMLElement>(".office-preview")!;
+  stage.getBoundingClientRect = () => ({ top: 0, bottom: 500 }) as DOMRect;
+  Object.defineProperties(stage, {
+    clientHeight: { value: 500 },
+    scrollHeight: { value: 1000 },
+  });
+  stage.scrollTop = 300;
+  fireEvent.scroll(stage);
+  expect((screen.getByLabelText("Word 页码") as HTMLInputElement).value).toBe(
+    "1",
+  );
+  stage.scrollTop = 500;
+  fireEvent.scroll(stage);
+  expect((screen.getByLabelText("Word 页码") as HTMLInputElement).value).toBe(
+    "2",
+  );
 });
 
 it("late Word parsing cannot overwrite a newly selected file", async () => {

@@ -534,10 +534,6 @@
   font-size: 14.5px;
 }
 
-.bubble {
-  animation: rise 0.18s ease;
-}
-
 .bubble.user {
   align-self: flex-end;
   background: var(--bg-subtle);
@@ -697,39 +693,6 @@
 
 .md .code-block {
   position: relative;
-}
-
-.md .code-block .code-copy {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  font-size: 11px;
-  color: var(--text-mid);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-
-.md .code-block:hover .code-copy,
-.md .code-block .code-copy.copied,
-.md .code-block .code-copy.error {
-  opacity: 1;
-}
-
-.md .code-block .code-copy.error {
-  color: var(--danger);
-}
-
-.md .code-block .code-copy:hover {
-  background: var(--bg-hover);
-  color: var(--text);
 }
 
 .md pre code {

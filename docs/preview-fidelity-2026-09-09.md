@@ -2,6 +2,8 @@
 
 本轮针对桌面右侧预览的渲染、格式兼容、窄面板适配与生命周期。代码基于 `19512bc`，在 `codex/artifact-preview-fidelity` 独立分支完成；没有改变应用版本、发布安装包或重启本机 miniQ。
 
+后续已获得本地安装授权，并完成原生运行验收和追加修复，见 [原生预览与阅读交互验收](native-preview-acceptance-2026-09-10.md)。下文保留本轮当时的验收记录。
+
 ## 对比依据
 
 只读检查了本机 `/Applications/ChatGPT.app/Contents/Resources/app.asar` 中的前端资源：`docx-preview-panel`、`pdf-preview-panel`、`use-pdf-pager`、`artifact-preview-header`、`use-binary-preview-source` 和 Mermaid 相关模块。可确认其中使用按页面尺寸适配的 Office 视图，以及带文字层的 PDF 渲染、缩放与页码控制。没有复制客户端代码，也不将可读取的前端模块当作完整后端实现。

@@ -7,6 +7,7 @@ import {
   Scan,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { clampDocumentZoom, clampPage } from "../documentPreviewModel";
 
 export function DocumentControls(props: {
@@ -21,6 +22,17 @@ export function DocumentControls(props: {
   children?: ReactNode;
 }) {
   const { label, page, count, onPage, scale, fit, onScale, onFit } = props;
+  const [pageDraft, setPageDraft] = useState(String(page));
+  useEffect(() => setPageDraft(String(page)), [page]);
+  const commitPage = () => {
+    const value = Number(pageDraft);
+    const next =
+      pageDraft.trim() && Number.isFinite(value)
+        ? clampPage(value, count)
+        : page;
+    setPageDraft(String(next));
+    if (next !== page) onPage(next);
+  };
   return (
     <div className="pdf-toolbar" aria-label={`${label} 控制栏`}>
       <button
@@ -39,11 +51,20 @@ export function DocumentControls(props: {
           type="number"
           min={1}
           max={Math.max(count, 1)}
-          value={page}
+          value={pageDraft}
           disabled={!count}
-          onChange={(event) => {
-            if (Number.isFinite(event.target.valueAsNumber))
-              onPage(clampPage(event.target.valueAsNumber, count));
+          onChange={(event) => setPageDraft(event.target.value)}
+          onBlur={commitPage}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commitPage();
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              setPageDraft(String(page));
+            }
           }}
         />{" "}
         / {count}
