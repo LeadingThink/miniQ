@@ -41,9 +41,8 @@ a weakened signing requirement. Tauri updater signatures are a separate mechanis
 
 ## Verification
 
-Implemented does not mean released. This batch targets 0.1.23, based on 0.1.22;
-release publication and deployment will be recorded only after verification.
-No production installer, signing identity, or production restart is implied yet.
+The first hardening batch was published and deployed as 0.1.23 on 2026-09-09.
+The follow-up idle-update guard below is merged separately and is not released.
 No production task is used as a write-test fixture. Existing user edits in the
 original miniQ checkout are preserved.
 
@@ -72,6 +71,40 @@ original miniQ checkout are preserved.
   Range/HEAD requests work; a 128 MiB media fixture streams bounded chunks and
   stops its response when revoked. Cross-directory and root-absolute asset URLs
   are not exposed implicitly; this is a static preview, not a backend dev server.
+
+## Release And Deployment
+
+- Source/tag: `3aacd1f2a299496fbdc17699e8c7b5b181e5ce50` / `v0.1.23`, PR #24.
+- Workflow https://github.com/LeadingThink/miniQ/actions/runs/34335502404
+  completed successfully, including all four desktop targets and publication.
+- Published non-draft mirror:
+  https://github.com/LeadingThink/miniQ-releases/releases/tag/v0.1.23.
+  Verified 20 assets, including Windows installer/signature, four updater targets,
+  both macOS architectures, Linux installers and four terminal archives/checksums.
+- All 19 versioned Qiniu assets exist with the same sizes as the mirror. Both
+  `https://oss.zaiwen.top/releases/miniq/latest.json` and
+  `https://oss.zaiwen.top/latest.json` return 0.1.23. The primary/mirror manifests
+  reference matching filenames and signatures under their respective release
+  URLs. Downloaded macOS ARM app archive, DMG and terminal archive match the
+  SHA-256 digests recorded by GitHub.
+- `https://oss.zaiwen.top/releases/manifest.json` now advertises desktop 0.1.23
+  for the Zaiwen download page; existing Android and other-product entries remain.
+- Mobile site on `119.29.21.235` now points to
+  `/var/www/miniq-mobile-v0.1.23-3aacd1f`. Previous assets and the previous service
+  directory remain for open tabs and rollback. The public index, entry JavaScript
+  (879578 decoded bytes) and CSS (133924 decoded bytes) match the built files by
+  SHA-256; ordinary HEAD sizes are not used to validate gzip-encoded assets.
+- Local app and terminal are installed at 0.1.23. Before replacement, all 60
+  sessions, children and queues were checked idle; the old daemon shutdown
+  confirmed zero cancelled turns and zero cancelled children. The old app,
+  terminal and complete daemon data are backed up in
+  `/Users/xuzhanwei/.local/share/miniq-backup-0.1.22-to-0.1.23.FEHQh2`, including
+  a consistent SQLite backup. Pre/post-install integrity checks returned `ok`.
+- Native UI shows daemon v0.1.23 and the new approval inbox. All 60 sessions
+  remain (48 idle, 12 historical failed); relay state is `connected`.
+- The new unsigned execution process reports Screen Recording and Accessibility
+  as denied. This is the actual OS preflight result, not stale UI state. No TCC
+  data or security setting was changed; stable signing remains deferred.
 
 ## Persistence And Isolation
 
@@ -104,7 +137,10 @@ scheduled runs, checks pending queues without loading their contents, and reject
 new admission after an idle shutdown succeeds. It never falls back to cancellation.
 Tests include a main/child lifecycle case, concurrent admission, retained queues,
 late submissions, and frontend updater refusal/reconnect. This addition is not
-part of tag v0.1.23 and must be released separately.
+part of tag v0.1.23 and must be released separately. It is merged in PR #25
+(`a883ac2`, implementation `4011ac1`). Daemon tests (130 library plus integration),
+memory tests (21 library plus 10 integration), 12 updater tests, TypeScript,
+workspace check, Rust formatting and diff checks passed.
 
 Browser page navigation/login persistence, shared automation/inspection tab
 identity, explicit takeover, and native macOS AX element control remain unfinished.
