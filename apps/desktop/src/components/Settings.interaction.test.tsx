@@ -107,12 +107,14 @@ describe("appearance settings integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "获取模型列表" }));
 
     await waitFor(() =>
-      expect(call).toHaveBeenCalledWith("settings.models", { baseUrl: "https://example.test/v1" }),
+      expect(call).toHaveBeenCalledWith("settings.models", { baseUrl: "https://example.test/v1" }, { signal: expect.any(AbortSignal) }),
     );
     const model = await screen.findByRole("combobox", { name: "Model" });
     fireEvent.change(model, { target: { value: "beta" } });
     expect((model as HTMLSelectElement).value).toBe("beta");
     expect(screen.getByText("已获取 2 个模型")).toBeTruthy();
+    fireEvent.change(model, { target: { value: "custom-provider-model" } });
+    expect((model as HTMLInputElement).value).toBe("custom-provider-model");
 
     fireEvent.change(screen.getByLabelText("Base URL"), { target: { value: "https://other.test" } });
     expect(screen.getByLabelText("Model").tagName).toBe("INPUT");

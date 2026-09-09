@@ -183,7 +183,7 @@ fn preview_format(path: &Path) -> (&'static str, &'static str) {
     }
 }
 
-fn validated_file(
+pub(crate) fn validated_file(
     path: &str,
     workspace_path: &str,
     workspace_paths: &[String],

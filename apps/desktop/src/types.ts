@@ -2,11 +2,7 @@
 // JSON Schema -> TS generation pipeline lands.
 
 export type SessionStatus =
-  | "idle"
-  | "running"
-  | "waiting_approval"
-  | "cancelling"
-  | "failed";
+  "idle" | "running" | "waiting_approval" | "cancelling" | "failed";
 
 export type TurnPhase =
   | "preparing_context"
@@ -37,10 +33,7 @@ export type ToolCallStatus =
 export type RiskLevel = "low" | "medium" | "high" | "blocked";
 
 export type ApprovalStatus =
-  | "pending"
-  | "approved"
-  | "approved_for_session"
-  | "rejected";
+  "pending" | "approved" | "approved_for_session" | "rejected";
 
 export interface Workspace {
   id: string;
@@ -77,9 +70,7 @@ export interface QueuedMessage {
 export type ExternalProvider = "codex" | "claude_code" | "opencode";
 
 export type ExternalContinuationMode =
-  | "native_resumable"
-  | "recreate_only"
-  | "read_only";
+  "native_resumable" | "recreate_only" | "read_only";
 
 export interface ExternalSessionLink {
   provider: ExternalProvider;
@@ -160,6 +151,7 @@ export interface MessageAttachment {
 export interface ToolCall {
   id: string;
   sessionId: string;
+  agentId?: string;
   toolName: string;
   input: unknown;
   output?: unknown;
@@ -170,7 +162,10 @@ export interface ToolCall {
   live?: boolean;
 }
 
-export interface HistoryCursor { at: string; id: string }
+export interface HistoryCursor {
+  at: string;
+  id: string;
+}
 export interface HistoryPage {
   messages: Message[];
   toolCalls: ToolCall[];
@@ -256,9 +251,11 @@ export interface HealthStatus {
   uptimeSecs: number;
 }
 
-export type PluginStatus = "discovered" | "disabled" | "loading" | "active" | "failed" | "unloading";
+export type PluginStatus =
+  "discovered" | "disabled" | "loading" | "active" | "failed" | "unloading";
 export type PluginRuntime = "wasm" | "node";
-export type PluginProcessState = "not_applicable" | "stopped" | "starting" | "running" | "failed";
+export type PluginProcessState =
+  "not_applicable" | "stopped" | "starting" | "running" | "failed";
 export interface PluginInfo {
   id: string;
   name: string;
@@ -304,10 +301,25 @@ export interface ScheduledTask {
   createdAt: string;
 }
 
-export interface EventCursor { epoch: string; sequence: number }
+export interface EventCursor {
+  epoch: string;
+  sequence: number;
+}
 
-export type DaemonEvent = { eventCursor?: EventCursor; payloadDeferred?: boolean } & (
-  | { type: "model_settings_changed"; sessionId: string; settings: import("./modelSelection").SessionModelSettings }
+export type DaemonEvent = {
+  eventCursor?: EventCursor;
+  payloadDeferred?: boolean;
+} & (
+  | {
+      type: "session_approval_changed";
+      sessionId: string;
+      mode: ApprovalMode | null;
+    }
+  | {
+      type: "model_settings_changed";
+      sessionId: string;
+      settings: import("./modelSelection").SessionModelSettings;
+    }
   | { type: "session_status_changed"; sessionId: string; status: SessionStatus }
   | { type: "turn_progress_changed"; sessionId: string; progress: TurnProgress }
   | { type: "message_created"; sessionId: string; message: Message }
@@ -319,8 +331,18 @@ export type DaemonEvent = { eventCursor?: EventCursor; payloadDeferred?: boolean
       removedToolCallIds: string[];
       removedArtifactIds: string[];
     }
-  | { type: "assistant_delta"; sessionId: string; messageId: string; delta: string }
-  | { type: "assistant_replaced"; sessionId: string; messageId: string; text: string }
+  | {
+      type: "assistant_delta";
+      sessionId: string;
+      messageId: string;
+      delta: string;
+    }
+  | {
+      type: "assistant_replaced";
+      sessionId: string;
+      messageId: string;
+      text: string;
+    }
   | {
       type: "context_compacted";
       sessionId: string;
@@ -330,6 +352,7 @@ export type DaemonEvent = { eventCursor?: EventCursor; payloadDeferred?: boolean
   | {
       type: "tool_call_started";
       sessionId: string;
+      agentId?: string;
       toolCallId: string;
       toolName: string;
       input: unknown;
@@ -352,7 +375,12 @@ export type DaemonEvent = { eventCursor?: EventCursor; payloadDeferred?: boolean
   | { type: "approval_resolved"; sessionId: string; approval: Approval }
   | { type: "plan_updated"; sessionId: string; tasks: PlanTask[] }
   | { type: "question_requested"; sessionId: string; question: Question }
-  | { type: "question_resolved"; sessionId: string; questionId: string; answer: string }
+  | {
+      type: "question_resolved";
+      sessionId: string;
+      questionId: string;
+      answer: string;
+    }
   | { type: "artifact_created"; sessionId: string; artifact: Artifact }
   | { type: "turn_completed"; sessionId: string }
   | { type: "turn_failed"; sessionId: string; error: string }
@@ -364,4 +392,5 @@ export type DaemonEvent = { eventCursor?: EventCursor; payloadDeferred?: boolean
   | { type: "session_pinned_changed"; sessionId: string; pinned: boolean }
   | { type: "session_archived_changed"; sessionId: string; archived: boolean }
   | { type: "queue_changed"; sessionId: string; queue: QueuedMessage[] }
-  | { type: "plugins_changed"; plugins: PluginInfo[] });
+  | { type: "plugins_changed"; plugins: PluginInfo[] }
+);

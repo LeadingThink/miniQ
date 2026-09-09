@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { RpcClient } from "../rpc";
 import { ComputerSettings } from "./ComputerSettings";
@@ -19,10 +26,12 @@ const makeClient = (call: ReturnType<typeof vi.fn>, mode = "local") =>
 it("checks without requesting access, and shows independent permission states", async () => {
   const call = vi.fn().mockResolvedValue(permissions);
   render(<ComputerSettings client={makeClient(call)} />);
-  expect(await screen.findByText("未授权")).toBeTruthy();
+  expect(await screen.findByText("当前进程未获授权")).toBeTruthy();
   expect(screen.getByText("已授权")).toBeTruthy();
   expect(screen.getByText(permissions.executable)).toBeTruthy();
-  expect(call.mock.calls.every(([method]) => method === "computer.permissions")).toBe(true);
+  expect(
+    call.mock.calls.every(([method]) => method === "computer.permissions"),
+  ).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "打开屏幕录制系统设置" }));
   await waitFor(() =>
     expect(call).toHaveBeenCalledWith("computer.requestPermission", {
@@ -34,9 +43,11 @@ it("checks without requesting access, and shows independent permission states", 
 it("remote diagnostics never offer system authorization controls", async () => {
   const call = vi.fn().mockResolvedValue(permissions);
   render(<ComputerSettings client={makeClient(call, "remote")} />);
-  await screen.findByText("未授权");
+  await screen.findByText("当前进程未获授权");
   expect(screen.queryByRole("button", { name: /系统设置/ })).toBeNull();
-  expect(call.mock.calls.every(([method]) => method === "computer.permissions")).toBe(true);
+  expect(
+    call.mock.calls.every(([method]) => method === "computer.permissions"),
+  ).toBe(true);
 });
 
 it("rechecks on focus, prevents overlapping requests, and recovers from errors", async () => {
@@ -72,10 +83,35 @@ it("ignores old client results after switching connections", async () => {
         }),
     ),
   );
-  const next = makeClient(vi.fn().mockResolvedValue({ ...permissions, executable: "new daemon" }));
+  const next = makeClient(
+    vi.fn().mockResolvedValue({ ...permissions, executable: "new daemon" }),
+  );
   const view = render(<ComputerSettings client={old} />);
   view.rerender(<ComputerSettings client={next} />);
   await screen.findByText("new daemon");
   await act(async () => resolve(permissions));
   expect(screen.queryByText(permissions.executable)).toBeNull();
+});
+
+it("rechecks after focus arrives during a stale permission request", async () => {
+  let resolve!: (value: unknown) => void;
+  const call = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    )
+    .mockResolvedValue({ ...permissions, screenRecording: "granted" });
+  render(<ComputerSettings client={makeClient(call)} />);
+  fireEvent.focus(window);
+  fireEvent.focus(window);
+  expect(call).toHaveBeenCalledTimes(1);
+  await act(async () => resolve(permissions));
+  await waitFor(() => expect(screen.getAllByText("已授权")).toHaveLength(2));
+  expect(call).toHaveBeenCalledTimes(2);
+  expect(
+    call.mock.calls.every(([method]) => method === "computer.permissions"),
+  ).toBe(true);
 });

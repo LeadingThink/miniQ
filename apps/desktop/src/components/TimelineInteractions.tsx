@@ -1,14 +1,21 @@
 import { FileText, FolderOpen, X, Zap } from "lucide-react";
 import type { Artifact, QueuedMessage } from "../types";
 import type { PendingApproval } from "../App";
-import { resolveWorkspacePath, revealLocalFile, type LocalFileTarget } from "../localFiles";
+import { ToolPayload } from "./ToolPayload";
+import {
+  resolveWorkspacePath,
+  revealLocalFile,
+  type LocalFileTarget,
+} from "../localFiles";
 
 export function ApprovalCard({
   item,
   onResolve,
+  pending = false,
 }: {
   item: PendingApproval;
   onResolve: (approvalId: string, decision: string) => void;
+  pending?: boolean;
 }) {
   return (
     <div className="card approval-card">
@@ -20,16 +27,26 @@ export function ApprovalCard({
         </span>
       </div>
       <div style={{ marginTop: 6 }}>{item.approval.reason}</div>
-      <pre>{JSON.stringify(item.input, null, 2)}</pre>
+      <ToolPayload label="待审批参数" value={item.input} />
       <div className="approval-actions">
-        <button onClick={() => onResolve(item.approval.id, "approve")}>允许一次</button>
+        <button
+          disabled={pending}
+          onClick={() => onResolve(item.approval.id, "approve")}
+        >
+          允许一次
+        </button>
         <button
           className="secondary"
+          disabled={pending}
           onClick={() => onResolve(item.approval.id, "approve_for_session")}
         >
           本会话允许
         </button>
-        <button className="danger" onClick={() => onResolve(item.approval.id, "reject")}>
+        <button
+          disabled={pending}
+          className="danger"
+          onClick={() => onResolve(item.approval.id, "reject")}
+        >
           拒绝
         </button>
       </div>
@@ -45,9 +62,12 @@ export function QueueBar(props: {
   if (props.queue.length === 0) return null;
   return (
     <div className="queue-bar">
-      <div className="queue-title">已排队 {props.queue.length} 条，当前任务结束后依次执行</div>
+      <div className="queue-title">
+        已排队 {props.queue.length} 条，当前任务结束后依次执行
+      </div>
       {props.queue.map((item) => {
-        const attachmentNames = item.attachments?.map((attachment) => attachment.name) ?? [];
+        const attachmentNames =
+          item.attachments?.map((attachment) => attachment.name) ?? [];
         const summary = item.content || attachmentNames.join("、");
         return (
           <div key={item.id} className="queue-item">
@@ -90,7 +110,11 @@ export function ArtifactsBar(props: {
       {artifacts.map((artifact) => {
         const path = resolveWorkspacePath(artifact.path, workspacePath);
         return (
-          <div key={artifact.id} className="artifact-item" title={path ?? artifact.path}>
+          <div
+            key={artifact.id}
+            className="artifact-item"
+            title={path ?? artifact.path}
+          >
             <FileText size={18} aria-hidden="true" />
             <button
               type="button"
@@ -111,9 +135,16 @@ export function ArtifactsBar(props: {
               title="在文件夹中显示"
               disabled={!path}
               onClick={() => {
-                if (path) void revealLocalFile(path, workspacePath, props.workspacePaths).catch((cause) => {
-                  onError(`无法在文件夹中显示：${cause instanceof Error ? cause.message : String(cause)}`);
-                });
+                if (path)
+                  void revealLocalFile(
+                    path,
+                    workspacePath,
+                    props.workspacePaths,
+                  ).catch((cause) => {
+                    onError(
+                      `无法在文件夹中显示：${cause instanceof Error ? cause.message : String(cause)}`,
+                    );
+                  });
               }}
             >
               <FolderOpen size={16} aria-hidden="true" />

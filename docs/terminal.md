@@ -83,7 +83,7 @@ miniq exec --session SESSION_ID "Check the previous result" --use-configured-per
 miniq exec "Write a summary" -o summary.txt --use-configured-permissions
 ```
 
-Scripts require either shared `approvalMode=alwaysAsk`, or explicit `--use-configured-permissions`. The latter inherits the daemon's current permissions, including full access if enabled: it is **not** a sandbox flag. The CLI never changes another task's permissions to make an unattended command run. `alwaysAsk` can be set deliberately in desktop settings or `miniq rpc settings.update '{"approvalMode":"alwaysAsk"}'`.
+Scripts require either the target session's effective `approvalMode=alwaysAsk`, or explicit `--use-configured-permissions`. The latter inherits that session's current permissions, including full access if enabled: it is **not** a sandbox flag. New sessions inherit the global default; existing sessions may override it. The CLI checks before preparing the session and again before sending, and never changes permissions to make an unattended command run. `alwaysAsk` can be set deliberately for one session in desktop controls or `miniq rpc session.approval.update '{"sessionId":"SESSION_ID","mode":"alwaysAsk"}'`.
 
 Without `--json`, progress is on stderr and only the final persisted answer is on stdout. `--json` emits session-scoped JSONL daemon events plus `cli_result`; reconnects add `cli_snapshot` with a paginated history snapshot. Consumers must honor `assistant_replaced`, use `message_created` as committed text and deduplicate by IDs/cursors. No base64 image is embedded in regular event output. `-o` creates a new file only on success; an existing file is never overwritten.
 

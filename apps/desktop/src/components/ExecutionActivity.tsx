@@ -1,4 +1,12 @@
-import { Check, ChevronRight, CircleSlash, CircleX, LoaderCircle, RotateCcw, RefreshCw } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  CircleSlash,
+  CircleX,
+  LoaderCircle,
+  RotateCcw,
+  RefreshCw,
+} from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import type { PlanTask, ToolCall, TurnProgress } from "../types";
 import { RetryNotice } from "./RetryNotice";
@@ -47,7 +55,16 @@ export function toolActionLabel(toolName: string, running: boolean): string {
 /** One-line human summary of the most relevant tool input. */
 export function toolInputSummary(call: ToolCall): string {
   const input = (call.input ?? {}) as Record<string, unknown>;
-  const keys = ["path", "command", "url", "query", "pattern", "name", "prompt", "action"];
+  const keys = [
+    "path",
+    "command",
+    "url",
+    "query",
+    "pattern",
+    "name",
+    "prompt",
+    "action",
+  ];
   for (const key of keys) {
     if (typeof input[key] === "string") return input[key];
   }
@@ -56,7 +73,8 @@ export function toolInputSummary(call: ToolCall): string {
 
 export function toolDuration(call: ToolCall): string | null {
   if (!call.completedAt) return null;
-  const elapsed = new Date(call.completedAt).getTime() - new Date(call.createdAt).getTime();
+  const elapsed =
+    new Date(call.completedAt).getTime() - new Date(call.createdAt).getTime();
   return formatDuration(elapsed);
 }
 
@@ -70,7 +88,15 @@ function formatDuration(elapsed: number): string | null {
   return remainder ? `${minutes} 分 ${remainder} 秒` : `${minutes} 分`;
 }
 
-function LiveElapsed({ startedAt, className, prefix }: { startedAt: string; className: string; prefix?: string }) {
+function LiveElapsed({
+  startedAt,
+  className,
+  prefix,
+}: {
+  startedAt: string;
+  className: string;
+  prefix?: string;
+}) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     setNow(Date.now());
@@ -79,7 +105,11 @@ function LiveElapsed({ startedAt, className, prefix }: { startedAt: string; clas
   }, [startedAt]);
   const duration = formatDuration(now - new Date(startedAt).getTime());
   if (!duration) return null;
-  return <span className={className}>{prefix ? `${prefix} ${duration}` : duration}</span>;
+  return (
+    <span className={className}>
+      {prefix ? `${prefix} ${duration}` : duration}
+    </span>
+  );
 }
 
 function statusText(call: ToolCall): string | null {
@@ -97,8 +127,14 @@ function statusText(call: ToolCall): string | null {
   }
 }
 
-export function ToolStep(props: { client?: RpcClient; call: ToolCall; onRollback: (checkpointId: string) => void }) {
-  const needsAttention = props.call.status === "failed" && (!props.call.payloadDeferred || props.call.live === true);
+export function ToolStep(props: {
+  client?: RpcClient;
+  call: ToolCall;
+  onRollback?: (checkpointId: string) => void;
+}) {
+  const needsAttention =
+    props.call.status === "failed" &&
+    (!props.call.payloadDeferred || props.call.live === true);
   const [open, setOpen] = useState(needsAttention);
   const detailId = useId();
   useEffect(() => {
@@ -106,17 +142,22 @@ export function ToolStep(props: { client?: RpcClient; call: ToolCall; onRollback
   }, [needsAttention]);
   const detail = useToolDetail(props.client, props.call, open);
   const { call } = detail;
-  const running = call.status === "running" || call.status === "waiting_approval";
+  const running =
+    call.status === "running" || call.status === "waiting_approval";
   const checkpointId =
     call.output && typeof call.output === "object"
-      ? ((call.output as Record<string, unknown>).checkpointId as string | undefined)
+      ? ((call.output as Record<string, unknown>).checkpointId as
+          string | undefined)
       : undefined;
   const summary = toolInputSummary(call);
   const duration = toolDuration(call);
   const state = statusText(call);
 
   return (
-    <div className={`tool-step ${call.status}`} aria-live={running ? "polite" : undefined}>
+    <div
+      className={`tool-step ${call.status}`}
+      aria-live={running ? "polite" : undefined}
+    >
       <div className="tool-step-head">
         <button
           type="button"
@@ -136,13 +177,17 @@ export function ToolStep(props: { client?: RpcClient; call: ToolCall; onRollback
               <CircleSlash size={14} />
             )}
           </span>
-          <span className="tool-action">{toolActionLabel(call.toolName, running)}</span>
+          <span className="tool-action">
+            {toolActionLabel(call.toolName, running)}
+          </span>
           {summary && (
             <span className="tool-summary" title={summary}>
               {summary}
             </span>
           )}
-          {state && <span className={`tool-step-state ${call.status}`}>{state}</span>}
+          {state && (
+            <span className={`tool-step-state ${call.status}`}>{state}</span>
+          )}
           {running ? (
             <LiveElapsed startedAt={call.createdAt} className="tool-duration" />
           ) : (
@@ -150,12 +195,12 @@ export function ToolStep(props: { client?: RpcClient; call: ToolCall; onRollback
           )}
           <ChevronRight className={`chevron ${open ? "open" : ""}`} size={14} />
         </button>
-        {checkpointId && call.status === "succeeded" && (
+        {checkpointId && props.onRollback && call.status === "succeeded" && (
           <button
             type="button"
             className="ghost tool-rollback"
             title="回滚这一步"
-            onClick={() => props.onRollback(checkpointId)}
+            onClick={() => props.onRollback?.(checkpointId)}
           >
             <RotateCcw size={12} />
             回滚
@@ -163,11 +208,20 @@ export function ToolStep(props: { client?: RpcClient; call: ToolCall; onRollback
         )}
       </div>
       {open && (
-        <div className="tool-step-body" id={detailId} role="region" aria-label={`${call.toolName} 执行详情`}>
+        <div
+          className="tool-step-body"
+          id={detailId}
+          role="region"
+          aria-label={`${call.toolName} 执行详情`}
+        >
           <code className="tool-identity">{call.toolName}</code>
+          {call.agentId && (
+            <span className="tool-identity">子任务 {call.agentId}</span>
+          )}
           {detail.loading && (
             <div role="status">
-              <LoaderCircle className="activity-spinner" size={14} /> 正在读取详情
+              <LoaderCircle className="activity-spinner" size={14} />{" "}
+              正在读取详情
             </div>
           )}
           {detail.error && (
@@ -186,9 +240,13 @@ export function ToolStep(props: { client?: RpcClient; call: ToolCall; onRollback
           )}
           {!call.payloadDeferred && (
             <>
-              {props.client && <ComputerObservation call={call} client={props.client} />}
+              {props.client && (
+                <ComputerObservation call={call} client={props.client} />
+              )}
               <ToolPayload label="输入" value={call.input} />
-              {call.output !== undefined && call.output !== null && <ToolPayload label="结果" value={call.output} />}
+              {call.output !== undefined && call.output !== null && (
+                <ToolPayload label="结果" value={call.output} />
+              )}
             </>
           )}
         </div>
@@ -197,14 +255,29 @@ export function ToolStep(props: { client?: RpcClient; call: ToolCall; onRollback
   );
 }
 
-export function PlanProgress({ plan, busy }: { plan: PlanTask[]; busy: boolean }) {
+export function PlanProgress({
+  plan,
+  busy,
+}: {
+  plan: PlanTask[];
+  busy: boolean;
+}) {
   if (plan.length === 0) return null;
   const done = plan.filter((task) => task.status === "completed").length;
 
   return (
-    <section className="execution-plan" aria-label={`任务进度 ${done}/${plan.length}`}>
+    <section
+      className="execution-plan"
+      aria-label={`任务进度 ${done}/${plan.length}`}
+    >
       <div className="execution-plan-head">
-        <strong>{done === plan.length ? "任务步骤已完成" : busy ? "任务进度" : "本轮已结束，步骤待核对"}</strong>
+        <strong>
+          {done === plan.length
+            ? "任务步骤已完成"
+            : busy
+              ? "任务进度"
+              : "本轮已结束，步骤待核对"}
+        </strong>
         <span>
           {done}/{plan.length}
           {!busy && done < plan.length ? " 已确认" : ""}
@@ -215,7 +288,9 @@ export function PlanProgress({ plan, busy }: { plan: PlanTask[]; busy: boolean }
         {plan.map((task, index) => (
           <li
             key={`${index}-${task.content}`}
-            className={!busy && task.status === "in_progress" ? "pending" : task.status}
+            className={
+              !busy && task.status === "in_progress" ? "pending" : task.status
+            }
           >
             <span className="plan-step-marker" aria-hidden="true">
               {task.status === "completed" ? (
@@ -242,7 +317,9 @@ export function turnProgressLabel(progress: TurnProgress | null): string {
     case "compacting_context":
       return "正在整理较长的会话上下文";
     case "requesting_model":
-      return progress.modelStep === 1 ? "正在请求模型分析任务" : "正在将执行结果交给模型";
+      return progress.modelStep === 1
+        ? "正在请求模型分析任务"
+        : "正在将执行结果交给模型";
     case "receiving_model":
       return "模型正在生成响应";
     case "waiting_retry":
@@ -252,7 +329,13 @@ export function turnProgressLabel(progress: TurnProgress | null): string {
   }
 }
 
-export function ExecutionPrelude({ plan, progress }: { plan: PlanTask[]; progress: TurnProgress | null }) {
+export function ExecutionPrelude({
+  plan,
+  progress,
+}: {
+  plan: PlanTask[];
+  progress: TurnProgress | null;
+}) {
   const activeTask = plan.find((task) => task.status === "in_progress");
   return (
     <div className="execution-prelude" role="status" aria-live="polite">
@@ -263,11 +346,19 @@ export function ExecutionPrelude({ plan, progress }: { plan: PlanTask[]; progres
         {progress?.modelStep && (
           <span className="execution-phase-meta">
             第 {progress.modelStep} 轮
-            <LiveElapsed startedAt={progress.startedAt} className="execution-elapsed" prefix="已等待" />
+            <LiveElapsed
+              startedAt={progress.startedAt}
+              className="execution-elapsed"
+              prefix="已等待"
+            />
           </span>
         )}
         {progress && !progress.modelStep && (
-          <LiveElapsed startedAt={progress.startedAt} className="execution-elapsed" prefix="已等待" />
+          <LiveElapsed
+            startedAt={progress.startedAt}
+            className="execution-elapsed"
+            prefix="已等待"
+          />
         )}
         {activeTask && <span>{activeTask.content}</span>}
       </div>

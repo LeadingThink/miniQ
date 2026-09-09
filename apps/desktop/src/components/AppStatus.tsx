@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { sessionStatusLabel } from "../sessionStatus";
+import { ApprovalInboxButton } from "./ApprovalInbox";
 
 export function AppStatusBar(props: {
   app: MiniqAppController;
@@ -28,19 +29,33 @@ export function AppStatusBar(props: {
         className="statusbar-icon-button"
         title={`${app.navigation.sidebarCollapsed ? "显示" : "隐藏"}侧栏 (⌘⇧S)`}
         aria-label={`${app.navigation.sidebarCollapsed ? "显示" : "隐藏"}侧栏`}
-        onClick={() => app.navigation.setSidebarCollapsed(!app.navigation.sidebarCollapsed)}
+        onClick={() =>
+          app.navigation.setSidebarCollapsed(!app.navigation.sidebarCollapsed)
+        }
       >
-        {app.navigation.sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+        {app.navigation.sidebarCollapsed ? (
+          <PanelLeftOpen size={16} />
+        ) : (
+          <PanelLeftClose size={16} />
+        )}
       </button>
       <span
         className={`connection-state ${connected ? "connected" : app.connection.phase}`}
-        title={connected ? "miniQ 后台服务运行正常" : "连接恢复后会自动同步会话"}
+        title={
+          connected ? "miniQ 后台服务运行正常" : "连接恢复后会自动同步会话"
+        }
       >
-        {connected ? <span className="dot ok" /> : <LoaderCircle className="connection-spinner" size={13} />}
+        {connected ? (
+          <span className="dot ok" />
+        ) : (
+          <LoaderCircle className="connection-spinner" size={13} />
+        )}
         {connected
           ? `daemon v${health?.daemonVersion ?? "?"}`
           : app.connection.phase === "connecting"
-            ? app.client.mode === "remote" ? "正在连接远程桌面" : "正在连接后台服务"
+            ? app.client.mode === "remote"
+              ? "正在连接远程桌面"
+              : "正在连接后台服务"
             : "连接中断，正在恢复"}
       </span>
       {currentSession && (
@@ -49,6 +64,10 @@ export function AppStatusBar(props: {
         </span>
       )}
       <span style={{ flex: 1 }} />
+      <ApprovalInboxButton
+        client={app.client}
+        onOpenSession={app.actions.openSession}
+      />
       <button
         type="button"
         className="statusbar-icon-button"
@@ -59,7 +78,12 @@ export function AppStatusBar(props: {
         <Globe2 size={16} />
       </button>
       {app.review.data.files.length > 0 && (
-        <button type="button" className="ghost review-toggle" title="查看本会话的代码修改" onClick={props.onToggleReview}>
+        <button
+          type="button"
+          className="ghost review-toggle"
+          title="查看本会话的代码修改"
+          onClick={props.onToggleReview}
+        >
           <FileDiff size={16} />
           审阅 {app.review.data.files.length}
           <span className="diff-add">+{app.review.data.additions}</span>
@@ -67,7 +91,11 @@ export function AppStatusBar(props: {
         </button>
       )}
       {canDistill && (
-        <button type="button" className="ghost" onClick={() => app.navigation.setShowDistill(true)}>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => app.navigation.setShowDistill(true)}
+        >
           ✦ 保存为技能
         </button>
       )}

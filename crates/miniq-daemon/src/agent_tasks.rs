@@ -36,24 +36,45 @@ impl DaemonAgentBridge {
         &self,
         record: Arc<AgentRecord>,
         request: AgentRunRequest,
-        mut history: Vec<ChatMessage>,
+        history: Vec<ChatMessage>,
         workspace: PathBuf,
         worktree: Option<AgentWorktree>,
     ) {
+        if let Err(error) = self
+            .execute_agent_inner(
+                record.clone(),
+                request,
+                history,
+                workspace,
+                worktree.clone(),
+            )
+            .await
+        {
+            if let Err(cleanup) = self
+                .state
+                .agent_tasks
+                .finalize_worktree(&record, worktree)
+                .await
+            {
+                tracing::error!(agent_id = record.id, %cleanup, "agent cleanup persistence failed");
+            }
+            self.state.agent_tasks.fail_start(&record, &error).await;
+        }
+    }
+
+    async fn execute_agent_inner(
+        &self,
+        record: Arc<AgentRecord>,
+        request: AgentRunRequest,
+        mut history: Vec<ChatMessage>,
+        workspace: PathBuf,
+        worktree: Option<AgentWorktree>,
+    ) -> Result<(), ToolError> {
         let cancel = self.state.agent_tasks.cancel_token(&record).await;
-        let config = match self
+        let config = self
             .state
             .provider_config_for_session(&self.session_id, request.model.as_deref())
-        {
-            Ok(config) => config,
-            Err(error) => {
-                self.state
-                    .agent_tasks
-                    .fail_start(&record, &ToolError::ExecutionFailed(error.to_string()))
-                    .await;
-                return;
-            }
-        };
+            .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?;
         self.state
             .agent_tasks
             .bind_model_context(
@@ -61,12 +82,23 @@ impl DaemonAgentBridge {
                 &mut history,
                 crate::session_models::model_identity(config.as_ref()),
             )
-            .await;
+            .await?;
         let provider = self.state.provider_from_config(config);
-        let mut prompt = request.prompt.clone();
+        history.push(ChatMessage::user(request.prompt.clone()));
         loop {
-            history.push(ChatMessage::user(prompt));
-            self.state.agent_tasks.save_history(&record, &history).await;
+            let turn_id = miniq_memory::new_id("turn");
+            let observed = crate::observed_provider::ObservedProvider::new(
+                provider.clone(),
+                self.state.store.clone(),
+                self.session_id.clone(),
+                Some(record.id.clone()),
+                turn_id.clone(),
+                None,
+            );
+            self.state
+                .agent_tasks
+                .save_history(&record, &history)
+                .await?;
             let executor = SessionToolExecutor {
                 state: self.state.clone(),
                 session_id: self.session_id.clone(),
@@ -87,8 +119,23 @@ impl DaemonAgentBridge {
             let (events, mut receiver) = tokio::sync::mpsc::channel(128);
             let progress_state = self.state.clone();
             let progress_record = record.clone();
+            let progress_cancel = cancel.clone();
             let drain = tokio::spawn(async move {
                 while let Some(event) = receiver.recv().await {
+                    if let miniq_agent::AgentEvent::ContextCompacted {
+                        estimated_tokens_before,
+                        estimated_tokens_after,
+                    } = &event
+                    {
+                        crate::agent_progress::record_compaction(
+                            &progress_state,
+                            &progress_record.session_id,
+                            Some(&progress_record.id),
+                            &turn_id,
+                            *estimated_tokens_before,
+                            *estimated_tokens_after,
+                        );
+                    }
                     if let Some(progress) = crate::agent_progress::from_event(event) {
                         crate::agent_progress::record_retry(
                             &progress_state,
@@ -96,15 +143,20 @@ impl DaemonAgentBridge {
                             Some(&progress_record.id),
                             &progress,
                         );
-                        progress_state
+                        if let Err(error) = progress_state
                             .agent_tasks
                             .update_progress(&progress_record, progress)
-                            .await;
+                            .await
+                        {
+                            progress_cancel.cancel();
+                            return Err(error);
+                        }
                     }
                 }
+                Ok::<(), ToolError>(())
             });
             let outcome = run_turn_with_limits(
-                provider.as_ref(),
+                &observed,
                 &executor,
                 history,
                 events,
@@ -119,32 +171,33 @@ impl DaemonAgentBridge {
                 },
             )
             .await;
-            let _ = drain.await;
+            drain
+                .await
+                .map_err(|error| ToolError::ExecutionFailed(error.to_string()))??;
             match outcome {
                 Ok(outcome) => {
                     let next = self
                         .state
                         .agent_tasks
                         .finish_turn(&record, outcome.final_text, outcome.provider_history)
-                        .await;
-                    let Some((message, next_history)) = next else {
+                        .await?;
+                    let Some(next_history) = next else {
                         self.state
                             .agent_tasks
                             .finalize_worktree(&record, worktree)
-                            .await;
-                        self.state.agent_tasks.complete(&record).await;
-                        return;
+                            .await?;
+                        self.state.agent_tasks.complete(&record).await?;
+                        return Ok(());
                     };
                     history = next_history;
-                    prompt = message;
                 }
                 Err(error) => {
                     self.state
                         .agent_tasks
                         .finalize_worktree(&record, worktree)
-                        .await;
-                    self.state.agent_tasks.finish_error(&record, &error).await;
-                    return;
+                        .await?;
+                    self.state.agent_tasks.finish_error(&record, &error).await?;
+                    return Ok(());
                 }
             }
         }
@@ -219,20 +272,15 @@ impl DaemonAgentBridge {
     ) -> Result<(PathBuf, Option<AgentWorktree>), ToolError> {
         if request.isolation.as_deref() == Some("worktree") {
             if let Some(worktree) = self.state.agent_tasks.worktree(record).await {
-                if worktree.path.is_dir() {
-                    return Ok((worktree.path.clone(), Some(worktree)));
-                }
-                return Err(ToolError::ExecutionFailed(format!(
-                    "retained agent worktree is missing: {}",
-                    worktree.path.display()
-                )));
+                agent_worktree::validate(&worktree, &self.workspace, &self.workspace_roots).await?;
+                return Ok((worktree.path.clone(), Some(worktree)));
             }
             let worktree = agent_worktree::create(&self.workspace, id).await?;
             let path = worktree.path.clone();
             self.state
                 .agent_tasks
                 .set_worktree(record, worktree.clone())
-                .await;
+                .await?;
             return Ok((path, Some(worktree)));
         }
 
@@ -289,22 +337,14 @@ impl DaemonAgentBridge {
                 (id, record, Vec::new())
             }
         };
-        if let Err(error) = validate_permission_mode(&self.state, &request) {
-            if resuming {
-                self.state.agent_tasks.fail_start(&record, &error).await;
-            } else {
-                self.state.agent_tasks.discard(&id, &record).await;
-            }
+        if let Err(error) = validate_permission_mode(&self.state, &self.session_id, &request) {
+            self.state.agent_tasks.fail_start(&record, &error).await;
             return Err(error);
         }
         let (workspace, worktree) = match self.resolve_workspace(&id, &record, &request).await {
             Ok(workspace) => workspace,
             Err(error) => {
-                if resuming {
-                    self.state.agent_tasks.fail_start(&record, &error).await;
-                } else {
-                    self.state.agent_tasks.discard(&id, &record).await;
-                }
+                self.state.agent_tasks.fail_start(&record, &error).await;
                 return Err(error);
             }
         };
@@ -378,9 +418,16 @@ impl AgentBridge for DaemonAgentBridge {
     }
 }
 
-fn validate_permission_mode(state: &AppState, request: &AgentRunRequest) -> Result<(), ToolError> {
+fn validate_permission_mode(
+    state: &AppState,
+    session_id: &str,
+    request: &AgentRunRequest,
+) -> Result<(), ToolError> {
     if request.mode.as_deref() == Some("bypassPermissions")
-        && state.settings.lock().unwrap().approval_mode != ApprovalMode::FullAccess
+        && state
+            .approval_mode_for_session(session_id)
+            .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?
+            != ApprovalMode::FullAccess
     {
         return Err(ToolError::SandboxDenied(
             "bypassPermissions requires miniQ Full Access mode".into(),

@@ -94,7 +94,13 @@ function updateFinishedToolCall(
   }
   return toolCalls.map((toolCall) =>
     toolCall.id === event.toolCallId
-      ? { ...toolCall, status: event.status, output: event.output, payloadDeferred: event.payloadDeferred, completedAt: receivedAt }
+      ? {
+          ...toolCall,
+          status: event.status,
+          output: event.output,
+          payloadDeferred: event.payloadDeferred,
+          completedAt: receivedAt,
+        }
       : toolCall,
   );
 }
@@ -108,7 +114,9 @@ function reduceDaemonEvent(
     case "message_created":
       return {
         ...state,
-        messages: state.messages.some((message) => message.id === event.message.id)
+        messages: state.messages.some(
+          (message) => message.id === event.message.id,
+        )
           ? state.messages
           : [...state.messages, event.message],
         streamingText:
@@ -124,9 +132,15 @@ function reduceDaemonEvent(
         ...state,
         messages: state.messages
           .filter((message) => !removedMessages.has(message.id))
-          .map((message) => message.id === event.message.id ? event.message : message),
-        toolCalls: state.toolCalls.filter((toolCall) => !removedToolCalls.has(toolCall.id)),
-        artifacts: state.artifacts.filter((artifact) => !removedArtifacts.has(artifact.id)),
+          .map((message) =>
+            message.id === event.message.id ? event.message : message,
+          ),
+        toolCalls: state.toolCalls.filter(
+          (toolCall) => !removedToolCalls.has(toolCall.id),
+        ),
+        artifacts: state.artifacts.filter(
+          (artifact) => !removedArtifacts.has(artifact.id),
+        ),
         approvals: [],
         questions: [],
         plan: [],
@@ -144,10 +158,13 @@ function reduceDaemonEvent(
       return {
         ...state,
         toolCalls: [
-          ...state.toolCalls.filter((toolCall) => toolCall.id !== event.toolCallId),
+          ...state.toolCalls.filter(
+            (toolCall) => toolCall.id !== event.toolCallId,
+          ),
           {
             id: event.toolCallId,
             sessionId: event.sessionId,
+            agentId: event.agentId,
             toolName: event.toolName,
             input: event.input,
             payloadDeferred: event.payloadDeferred,
@@ -166,13 +183,19 @@ function reduceDaemonEvent(
         ),
       };
     case "approval_requested":
-      return state.approvals.some((item) => item.approval.id === event.approval.id)
+      return state.approvals.some(
+        (item) => item.approval.id === event.approval.id,
+      )
         ? state
         : {
             ...state,
             approvals: [
               ...state.approvals,
-              { approval: event.approval, toolName: event.toolName, input: event.input },
+              {
+                approval: event.approval,
+                toolName: event.toolName,
+                input: event.input,
+              },
             ],
           };
     case "approval_resolved":
@@ -185,16 +208,22 @@ function reduceDaemonEvent(
     case "plan_updated":
       return { ...state, plan: event.tasks };
     case "question_requested":
-      return state.questions.some((question) => question.id === event.question.id)
+      return state.questions.some(
+        (question) => question.id === event.question.id,
+      )
         ? state
         : { ...state, questions: [...state.questions, event.question] };
     case "question_resolved":
       return {
         ...state,
-        questions: state.questions.filter((question) => question.id !== event.questionId),
+        questions: state.questions.filter(
+          (question) => question.id !== event.questionId,
+        ),
       };
     case "artifact_created":
-      return state.artifacts.some((artifact) => artifact.id === event.artifact.id)
+      return state.artifacts.some(
+        (artifact) => artifact.id === event.artifact.id,
+      )
         ? state
         : { ...state, artifacts: [...state.artifacts, event.artifact] };
     case "turn_completed":
@@ -224,14 +253,22 @@ function sessionFeedReducer(
   action: SessionFeedAction,
 ): SessionFeedState {
   if (action.kind === "reset") return { ...EMPTY_FEED, loading: true };
-  if (action.kind === "load_failed") return { ...state, loading: false, syncing: false, eventCursor: null, buffered: [] };
+  if (action.kind === "load_failed")
+    return {
+      ...state,
+      loading: false,
+      syncing: false,
+      eventCursor: null,
+      buffered: [],
+    };
   if (action.kind === "begin_sync") return { ...state, syncing: true };
-  if (action.kind === "prepend") return {
-    ...state,
-    messages: mergeHistory(action.page.messages, state.messages),
-    toolCalls: mergeHistory(action.page.toolCalls, state.toolCalls),
-    nextCursor: action.page.nextCursor,
-  };
+  if (action.kind === "prepend")
+    return {
+      ...state,
+      messages: mergeHistory(action.page.messages, state.messages),
+      toolCalls: mergeHistory(action.page.toolCalls, state.toolCalls),
+      nextCursor: action.page.nextCursor,
+    };
   if (action.kind === "load") {
     let loaded: SessionFeedState = {
       ...EMPTY_FEED,
@@ -247,25 +284,62 @@ function sessionFeedReducer(
       streamingText: action.feed.streamingText,
       turnProgress: action.feed.turnProgress,
     };
-    for (const item of state.buffered) loaded = applySequencedEvent(loaded, item.event, item.receivedAt);
+    for (const item of state.buffered)
+      loaded = applySequencedEvent(loaded, item.event, item.receivedAt);
     return loaded;
   }
   if (action.kind === "replay") {
     let loaded: SessionFeedState = { ...state, syncing: false, buffered: [] };
-    const pending = [...action.events.map((event) => ({event, receivedAt: new Date().toISOString()})), ...state.buffered]
-      .sort((a, b) => (a.event.eventCursor?.sequence ?? 0) - (b.event.eventCursor?.sequence ?? 0));
-    for (const {event, receivedAt} of pending) loaded = applySequencedEvent(loaded, event, receivedAt);
+    const pending = [
+      ...action.events.map((event) => ({
+        event,
+        receivedAt: new Date().toISOString(),
+      })),
+      ...state.buffered,
+    ].sort(
+      (a, b) =>
+        (a.event.eventCursor?.sequence ?? 0) -
+        (b.event.eventCursor?.sequence ?? 0),
+    );
+    for (const { event, receivedAt } of pending)
+      loaded = applySequencedEvent(loaded, event, receivedAt);
     const cursor = loaded.eventCursor;
-    return { ...loaded, eventCursor: cursor?.epoch === action.cursor.epoch && cursor.sequence > action.cursor.sequence ? cursor : action.cursor };
+    return {
+      ...loaded,
+      eventCursor:
+        cursor?.epoch === action.cursor.epoch &&
+        cursor.sequence > action.cursor.sequence
+          ? cursor
+          : action.cursor,
+    };
   }
-  if (state.loading || state.syncing) return { ...state, buffered: [...state.buffered, { event: action.event, receivedAt: action.receivedAt }] };
+  if (state.loading || state.syncing)
+    return {
+      ...state,
+      buffered: [
+        ...state.buffered,
+        { event: action.event, receivedAt: action.receivedAt },
+      ],
+    };
   return applySequencedEvent(state, action.event, action.receivedAt);
 }
 
-function applySequencedEvent(state: SessionFeedState, event: DaemonEvent, receivedAt: string): SessionFeedState {
+function applySequencedEvent(
+  state: SessionFeedState,
+  event: DaemonEvent,
+  receivedAt: string,
+): SessionFeedState {
   const cursor = event.eventCursor;
-  if (cursor && state.eventCursor?.epoch === cursor.epoch && cursor.sequence <= state.eventCursor.sequence) return state;
-  return { ...reduceDaemonEvent(state, event, receivedAt), eventCursor: cursor ?? state.eventCursor };
+  if (
+    cursor &&
+    state.eventCursor?.epoch === cursor.epoch &&
+    cursor.sequence <= state.eventCursor.sequence
+  )
+    return state;
+  return {
+    ...reduceDaemonEvent(state, event, receivedAt),
+    eventCursor: cursor ?? state.eventCursor,
+  };
 }
 
 interface SessionFeedOptions {
@@ -279,9 +353,15 @@ interface SessionFeedOptions {
 
 export function useSessionFeed(options: SessionFeedOptions) {
   const [state, dispatch] = useReducer(
-    (state: ScopedFeed, action: SessionFeedAction & { sessionId: string | null }): ScopedFeed => ({
+    (
+      state: ScopedFeed,
+      action: SessionFeedAction & { sessionId: string | null },
+    ): ScopedFeed => ({
       sessionId: action.sessionId,
-      feed: sessionFeedReducer(state.sessionId === action.sessionId ? state.feed : EMPTY_FEED, action),
+      feed: sessionFeedReducer(
+        state.sessionId === action.sessionId ? state.feed : EMPTY_FEED,
+        action,
+      ),
     }),
     { sessionId: null, feed: EMPTY_FEED },
   );
@@ -297,17 +377,24 @@ export function useSessionFeed(options: SessionFeedOptions) {
   activeSession.current = currentSessionId;
 
   useEffect(() => {
-    const pause = () => dispatch({ kind: "begin_sync", sessionId: activeSession.current });
-    const offStatus = client.onStatus((connected) => { if (!connected) pause(); });
+    const pause = () =>
+      dispatch({ kind: "begin_sync", sessionId: activeSession.current });
+    const offStatus = client.onStatus((connected) => {
+      if (!connected) pause();
+    });
     const offResync = client.onResync(pause);
-    return () => { offStatus(); offResync(); };
+    return () => {
+      offStatus();
+      offResync();
+    };
   }, [client]);
 
   useEffect(() => {
     return client.onEvent((event) => {
       if (activeSession.current !== currentSessionId) return;
       if (event.type === "turn_failed") onError(event.sessionId, event.error);
-      if (event.type === "message_created" && event.message.role === "user") onError(event.sessionId, null);
+      if (event.type === "message_created" && event.message.role === "user")
+        onError(event.sessionId, null);
       // Workspace-level events have no session context.
       if (
         event.type === "workspace_deleted" ||
@@ -335,7 +422,10 @@ export function useSessionFeed(options: SessionFeedOptions) {
         if (event.type === "session_status_changed") {
           onSessionStatusChanged(event.sessionId, event.status);
           void refreshSessions();
-        } else if (event.type === "turn_completed" || event.type === "turn_failed") {
+        } else if (
+          event.type === "turn_completed" ||
+          event.type === "turn_failed"
+        ) {
           onSessionCompleted(event.sessionId);
         }
         return;
@@ -350,30 +440,51 @@ export function useSessionFeed(options: SessionFeedOptions) {
         receivedAt: new Date().toISOString(),
       });
     });
-  }, [client, currentSessionId, onError, onSessionCompleted, onSessionStatusChanged, refreshSessions]);
+  }, [
+    client,
+    currentSessionId,
+    onError,
+    onSessionCompleted,
+    onSessionStatusChanged,
+    refreshSessions,
+  ]);
 
-  const reset = useCallback((sessionId: string | null = activeSession.current) => {
-    activeSession.current = sessionId;
-    dispatch({ kind: "reset", sessionId });
+  const reset = useCallback(
+    (sessionId: string | null = activeSession.current) => {
+      activeSession.current = sessionId;
+      dispatch({ kind: "reset", sessionId });
+    },
+    [],
+  );
+  const load = useCallback((sessionId: string, feed: LoadedSessionFeed) => {
+    if (sessionId === activeSession.current)
+      dispatch({ kind: "load", sessionId, feed });
   }, []);
-  const load = useCallback(
-    (sessionId: string, feed: LoadedSessionFeed) => {
-      if (sessionId === activeSession.current) dispatch({ kind: "load", sessionId, feed });
+
+  const prepend = useCallback((sessionId: string, page: HistoryPage) => {
+    if (sessionId === activeSession.current)
+      dispatch({ kind: "prepend", sessionId, page });
+  }, []);
+  const failLoad = useCallback((sessionId: string) => {
+    if (sessionId === activeSession.current)
+      dispatch({ kind: "load_failed", sessionId });
+  }, []);
+  const applyReplay = useCallback(
+    (sessionId: string, events: DaemonEvent[], cursor: EventCursor) => {
+      if (sessionId === activeSession.current)
+        dispatch({ kind: "replay", sessionId, events, cursor });
     },
     [],
   );
 
-  const prepend = useCallback((sessionId: string, page: HistoryPage) => {
-    if (sessionId === activeSession.current) dispatch({ kind: "prepend", sessionId, page });
-  }, []);
-  const failLoad = useCallback((sessionId: string) => {
-    if (sessionId === activeSession.current) dispatch({ kind: "load_failed", sessionId });
-  }, []);
-  const applyReplay = useCallback((sessionId: string, events: DaemonEvent[], cursor: EventCursor) => {
-    if (sessionId === activeSession.current) dispatch({ kind: "replay", sessionId, events, cursor });
-  }, []);
-
-  return { ...(state.sessionId === currentSessionId ? state.feed : EMPTY_FEED), reset, load, prepend, failLoad, applyReplay };
+  return {
+    ...(state.sessionId === currentSessionId ? state.feed : EMPTY_FEED),
+    reset,
+    load,
+    prepend,
+    failLoad,
+    applyReplay,
+  };
 }
 
 function mergeHistory<T extends { id: string }>(older: T[], current: T[]): T[] {

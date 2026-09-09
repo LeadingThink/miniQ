@@ -17,6 +17,8 @@ pub struct AnthropicProvider {
     client: reqwest::Client,
 }
 
+const DEFAULT_MAX_OUTPUT_TOKENS: u32 = 16_384;
+
 impl AnthropicProvider {
     pub fn new(config: ProviderConfig) -> Self {
         Self {
@@ -34,7 +36,7 @@ impl AnthropicProvider {
         let mut body = json!({
             "model": self.config.model,
             "messages": messages,
-            "max_tokens": request.max_output_tokens.unwrap_or(16_384),
+            "max_tokens": request.max_output_tokens.unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS),
             "stream": true,
         });
         crate::reasoning::apply_reasoning(&mut body, &self.config, ApiProtocol::AnthropicMessages);
@@ -395,19 +397,33 @@ impl EventDecoder for AnthropicDecoder {
             }
         };
         match event.get("type").and_then(Value::as_str).unwrap_or("") {
+            "message_start" => DecodedEvent::continue_with(
+                crate::response_info::response_info(event.get("message").unwrap_or(&event), None)
+                    .map(Ok)
+                    .into_iter()
+                    .collect(),
+            ),
             "content_block_start" => DecodedEvent::continue_with(self.start_block(&event)),
             "content_block_delta" => DecodedEvent::continue_with(self.apply_delta(&event)),
             "content_block_stop" => DecodedEvent::continue_with(self.stop_block(&event)),
             "message_delta" => {
                 let reason = event.pointer("/delta/stop_reason").and_then(Value::as_str);
-                match reason {
-                    Some("max_tokens") => {
-                        DecodedEvent::terminal(vec![Err(ProviderError::output_limit())])
-                    }
+                let mut items = crate::response_info::response_info(&event, reason)
+                    .map(Ok)
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                let error = match reason {
+                    Some("max_tokens") => Some(ProviderError::output_limit()),
                     Some("model_context_window_exceeded") => {
-                        DecodedEvent::terminal(vec![Err(ProviderError::ContextWindowExceeded)])
+                        Some(ProviderError::ContextWindowExceeded)
                     }
-                    _ => DecodedEvent::continue_with(Vec::new()),
+                    _ => None,
+                };
+                if let Some(error) = error {
+                    items.push(Err(error));
+                    DecodedEvent::terminal(items)
+                } else {
+                    DecodedEvent::continue_with(items)
                 }
             }
             "message_stop" => self.finish_message(),
@@ -423,6 +439,18 @@ impl EventDecoder for AnthropicDecoder {
 
 #[async_trait]
 impl ModelProvider for AnthropicProvider {
+    async fn execution_info(
+        &self,
+        max_output_tokens: Option<u32>,
+    ) -> Result<Option<miniq_protocol::ModelExecutionInfo>, ProviderError> {
+        Ok(Some(miniq_protocol::ModelExecutionInfo {
+            model: self.config.model.clone(),
+            api_protocol: ApiProtocol::AnthropicMessages,
+            reasoning_effort: self.config.reasoning_effort,
+            max_output_tokens: Some(max_output_tokens.unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS)),
+        }))
+    }
+
     async fn stream_complete(
         &self,
         request: CompletionRequest,

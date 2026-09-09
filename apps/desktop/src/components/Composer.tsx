@@ -7,7 +7,14 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import { ArrowUp, LoaderCircle, Paperclip, Sparkles, Square, X } from "lucide-react";
+import {
+  ArrowUp,
+  LoaderCircle,
+  Paperclip,
+  Sparkles,
+  Square,
+  X,
+} from "lucide-react";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import {
   canSendComposer,
@@ -36,9 +43,8 @@ function useDroppedFiles(
     let disposed = false;
     let unlisten: (() => void) | undefined;
     void (async () => {
-      const { getCurrentWebviewWindow } = await import(
-        "@tauri-apps/api/webviewWindow"
-      );
+      const { getCurrentWebviewWindow } =
+        await import("@tauri-apps/api/webviewWindow");
       const stop = await getCurrentWebviewWindow().onDragDropEvent((event) => {
         if (event.payload.type === "drop" && event.payload.paths.length > 0) {
           onFiles(event.payload.paths);
@@ -47,7 +53,9 @@ function useDroppedFiles(
       if (disposed) stop();
       else unlisten = stop;
     })().catch((error) => {
-      onError?.(`无法接收拖入文件: ${error instanceof Error ? error.message : String(error)}`);
+      onError?.(
+        `无法接收拖入文件: ${error instanceof Error ? error.message : String(error)}`,
+      );
     });
     return () => {
       disposed = true;
@@ -95,7 +103,8 @@ function AttachmentPreview(props: {
     let disposed = false;
     void readImagePreview(props.path)
       .then((preview) => {
-        if (!disposed) setImageUrl(`data:${preview.mimeType};base64,${preview.dataBase64}`);
+        if (!disposed)
+          setImageUrl(`data:${preview.mimeType};base64,${preview.dataBase64}`);
       })
       .catch(() => {
         if (!disposed) setImageUrl(null);
@@ -113,7 +122,11 @@ function AttachmentPreview(props: {
         title={props.path}
         onClick={() => setZoomed((current) => !current)}
       >
-        <img src={imageUrl} alt={fileName(props.path)} className="attach-image-preview" />
+        <img
+          src={imageUrl}
+          alt={fileName(props.path)}
+          className="attach-image-preview"
+        />
         <button
           type="button"
           className="attach-remove attach-image-remove"
@@ -173,20 +186,36 @@ function storeDraft(key: string | undefined, value: string) {
 function readAttachments(key?: string): string[] {
   if (!key) return [];
   try {
-    const value: unknown = JSON.parse(window.localStorage.getItem(`${DRAFT_PREFIX}${key}.attachments`) ?? "[]");
-    return Array.isArray(value) && value.every((path) => typeof path === "string") ? value : [];
-  } catch { return []; }
+    const value: unknown = JSON.parse(
+      window.localStorage.getItem(`${DRAFT_PREFIX}${key}.attachments`) ?? "[]",
+    );
+    return Array.isArray(value) &&
+      value.every((path) => typeof path === "string")
+      ? value
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 function storeAttachments(key: string | undefined, paths: string[]) {
   if (!key) return;
   try {
-    if (paths.length) window.localStorage.setItem(`${DRAFT_PREFIX}${key}.attachments`, JSON.stringify(paths));
+    if (paths.length)
+      window.localStorage.setItem(
+        `${DRAFT_PREFIX}${key}.attachments`,
+        JSON.stringify(paths),
+      );
     else window.localStorage.removeItem(`${DRAFT_PREFIX}${key}.attachments`);
-  } catch { /* Draft remains in memory when browser storage is unavailable. */ }
+  } catch {
+    /* Draft remains in memory when browser storage is unavailable. */
+  }
 }
 
-type SendMessage = (content: string, attachments?: string[]) => void | boolean | Promise<void | boolean>;
+type SendMessage = (
+  content: string,
+  attachments?: string[],
+) => void | boolean | Promise<void | boolean>;
 
 interface SlashSkill {
   name: string;
@@ -224,7 +253,12 @@ function SlashMenu(props: {
 }) {
   if (props.skills.length === 0) return null;
   return (
-    <div id={props.id} className="slash-menu" role="listbox" aria-label="可用技能">
+    <div
+      id={props.id}
+      className="slash-menu"
+      role="listbox"
+      aria-label="可用技能"
+    >
       <div className="slash-title">技能</div>
       {props.skills.map((skill, index) => (
         <button
@@ -267,6 +301,7 @@ export function ComposerCard(props: {
   /** Custom leading element in the bottom row (e.g. a project picker). */
   chipSlot?: ReactNode;
   modelSlot?: ReactNode;
+  permissionSlot?: ReactNode;
   autoFocus?: boolean;
   /** Persist unsent drafts under this key (restored on remount). */
   draftKey?: string;
@@ -283,11 +318,15 @@ export function ComposerCard(props: {
   sendBlockedReason?: string;
 }) {
   const [draft, setDraftState] = useState(() => readDraft(props.draftKey));
-  const [attachments, setAttachments] = useState<string[]>(() => readAttachments(props.draftKey));
+  const [attachments, setAttachments] = useState<string[]>(() =>
+    readAttachments(props.draftKey),
+  );
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [activeSkillIndex, setActiveSkillIndex] = useState(0);
-  const [dismissedSlashDraft, setDismissedSlashDraft] = useState<string | null>(null);
+  const [dismissedSlashDraft, setDismissedSlashDraft] = useState<string | null>(
+    null,
+  );
   const draftKeyRef = useRef(props.draftKey);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceRangeRef = useRef<TextRange>({ start: 0, end: 0 });
@@ -333,14 +372,17 @@ export function ComposerCard(props: {
     setActiveSkillIndex(0);
   }, [draft]);
 
-  const addAttachments = useCallback((paths: string[]) => {
-    if (sendingRef.current) return;
-    setAttachments((current) => {
-      const next = [...new Set([...current, ...paths])];
-      storeAttachments(props.draftKey, next);
-      return next;
-    });
-  }, [props.draftKey]);
+  const addAttachments = useCallback(
+    (paths: string[]) => {
+      if (sendingRef.current) return;
+      setAttachments((current) => {
+        const next = [...new Set([...current, ...paths])];
+        storeAttachments(props.draftKey, next);
+        return next;
+      });
+    },
+    [props.draftKey],
+  );
 
   useDroppedFiles(addAttachments, props.onError);
 
@@ -357,25 +399,39 @@ export function ComposerCard(props: {
     }
   };
 
-  const pasteImages = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  const pasteImages = async (
+    event: React.ClipboardEvent<HTMLTextAreaElement>,
+  ) => {
     if (sendingRef.current) return;
     const imageFiles = Array.from(event.clipboardData.items)
-      .filter((item) => item.kind === "file" && item.type.toLowerCase().startsWith("image/"))
+      .filter(
+        (item) =>
+          item.kind === "file" && item.type.toLowerCase().startsWith("image/"),
+      )
       .map((item) => item.getAsFile())
       .filter((file): file is File => file !== null);
     if (imageFiles.length === 0) return;
 
     event.preventDefault();
     try {
-      const paths = await Promise.all(imageFiles.map((file) => savePastedImage(file)));
+      const paths = await Promise.all(
+        imageFiles.map((file) => savePastedImage(file)),
+      );
       addAttachments(paths);
     } catch (error) {
-      props.onError?.(`无法粘贴图片: ${error instanceof Error ? error.message : String(error)}`);
+      props.onError?.(
+        `无法粘贴图片: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   };
 
   const send = async () => {
-    if (sendingRef.current || props.sendBlocked || !canSendComposer(draft, attachments)) return;
+    if (
+      sendingRef.current ||
+      props.sendBlocked ||
+      !canSendComposer(draft, attachments)
+    )
+      return;
     sendingRef.current = true;
     setSending(true);
     const key = props.draftKey;
@@ -389,8 +445,12 @@ export function ComposerCard(props: {
         setAttachments([]);
         setDismissedSlashDraft(null);
       }
-    } catch (cause) { props.onError?.(cause instanceof Error ? cause.message : String(cause)); }
-    finally { sendingRef.current = false; setSending(false); }
+    } catch (cause) {
+      props.onError?.(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
   };
 
   const pickSkill = (skill: SlashSkill) => {
@@ -439,11 +499,13 @@ export function ComposerCard(props: {
               key={path}
               path={path}
               sending={sending}
-              onRemove={() => setAttachments((current) => {
-                const next = current.filter((p) => p !== path);
-                storeAttachments(props.draftKey, next);
-                return next;
-              })}
+              onRemove={() =>
+                setAttachments((current) => {
+                  const next = current.filter((p) => p !== path);
+                  storeAttachments(props.draftKey, next);
+                  return next;
+                })
+              }
             />
           ))}
         </div>
@@ -454,7 +516,9 @@ export function ComposerCard(props: {
         ref={textareaRef}
         value={draft}
         autoFocus={props.autoFocus}
-        placeholder={props.busy ? "任务执行中，发送的消息会加入队列..." : props.placeholder}
+        placeholder={
+          props.busy ? "任务执行中，发送的消息会加入队列..." : props.placeholder
+        }
         rows={1}
         aria-autocomplete={slashActive ? "list" : undefined}
         aria-controls={slashActive ? slashMenuId : undefined}
@@ -491,9 +555,14 @@ export function ComposerCard(props: {
               );
               return;
             }
-            if ((e.key === "Enter" || e.key === "Tab") && !e.nativeEvent.isComposing) {
+            if (
+              (e.key === "Enter" || e.key === "Tab") &&
+              !e.nativeEvent.isComposing
+            ) {
               e.preventDefault();
-              pickSkill(visibleSlashSkills[activeSkillIndex] ?? visibleSlashSkills[0]);
+              pickSkill(
+                visibleSlashSkills[activeSkillIndex] ?? visibleSlashSkills[0],
+              );
               return;
             }
           }
@@ -537,10 +606,19 @@ export function ComposerCard(props: {
           />
         )}
         {props.approvalMode && props.onApprovalModeChange && (
-          <ApprovalModeSelect mode={props.approvalMode} onChange={props.onApprovalModeChange} />
+          <ApprovalModeSelect
+            mode={props.approvalMode}
+            onChange={props.onApprovalModeChange}
+          />
         )}
+        {props.permissionSlot}
         {props.busy && props.onCancel && (
-          <button type="button" className="send-btn stop" title="停止并清空队列 (⌘.)" onClick={props.onCancel}>
+          <button
+            type="button"
+            className="send-btn stop"
+            title="停止并清空队列 (⌘.)"
+            onClick={props.onCancel}
+          >
             <Square size={14} fill="currentColor" aria-label="停止任务" />
           </button>
         )}
@@ -550,15 +628,27 @@ export function ComposerCard(props: {
             className="send-btn"
             title={
               props.sendBlocked
-                ? props.sendBlockedReason ?? "当前无法发送"
+                ? (props.sendBlockedReason ?? "当前无法发送")
                 : props.busy
                   ? "加入队列，当前任务结束后执行"
                   : "发送"
             }
-            disabled={sending || props.sendBlocked || !canSendComposer(draft, attachments)}
+            disabled={
+              sending ||
+              props.sendBlocked ||
+              !canSendComposer(draft, attachments)
+            }
             onClick={send}
           >
-            {sending ? <LoaderCircle size={16} className="activity-spinner" aria-label="正在发送" /> : <ArrowUp size={18} aria-label="发送消息" />}
+            {sending ? (
+              <LoaderCircle
+                size={16}
+                className="activity-spinner"
+                aria-label="正在发送"
+              />
+            ) : (
+              <ArrowUp size={18} aria-label="发送消息" />
+            )}
           </button>
         )}
       </div>
@@ -571,6 +661,7 @@ export function Composer(props: {
   busy: boolean;
   chip?: string;
   modelSlot?: ReactNode;
+  permissionSlot?: ReactNode;
   sendBlocked?: boolean;
   draftKey?: string;
   client?: RpcClient;
@@ -587,6 +678,7 @@ export function Composer(props: {
         placeholder="随心输入,Enter 发送,/ 引用技能"
         chip={props.chip}
         modelSlot={props.modelSlot}
+        permissionSlot={props.permissionSlot}
         sendBlocked={props.sendBlocked}
         draftKey={props.draftKey}
         client={props.client}

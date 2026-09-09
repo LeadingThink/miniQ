@@ -1,15 +1,43 @@
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, FileWarning, Search, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  FileJson,
+  FileWarning,
+  ListFilter,
+  Search,
+  X,
+} from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { moveTabIndex, spreadsheetColumnLabel, spreadsheetRow } from "../documentPreviewModel";
+import {
+  moveTabIndex,
+  spreadsheetColumnLabel,
+  spreadsheetRow,
+} from "../documentPreviewModel";
 import { decodeBase64 } from "../previewBinary";
-import { cellText, spreadsheetView, type SheetCell, type SheetSort } from "../spreadsheetView";
+import {
+  cellText,
+  spreadsheetView,
+  type SheetCell,
+  type SheetSort,
+  type SheetFilters,
+} from "../spreadsheetView";
+import { spreadsheetCsv, spreadsheetJson } from "../spreadsheetExport";
+import { downloadBlob } from "../downloadBlob";
+import { exportFilename } from "../sessionExport";
 import { CopyButton } from "./CopyButton";
+import { usePreviewScroll, usePreviewValue } from "../previewViewState";
 import "./PreviewInspectors.css";
 
 export type PreviewSheet = { sheet: string; data: SheetCell[][] };
 const ROWS_PER_PAGE = 200;
 
-export function SpreadsheetPreview(props: { dataBase64: string; onError: (message: string) => void }) {
+export function SpreadsheetPreview(props: {
+  dataBase64: string;
+  onError: (message: string) => void;
+}) {
   const [sheets, setSheets] = useState<PreviewSheet[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -17,7 +45,9 @@ export function SpreadsheetPreview(props: { dataBase64: string; onError: (messag
     setLoading(true);
     setSheets([]);
     void import("read-excel-file/browser")
-      .then(({ default: readXlsxFile }) => readXlsxFile(new Blob([decodeBase64(props.dataBase64)])))
+      .then(({ default: readXlsxFile }) =>
+        readXlsxFile(new Blob([decodeBase64(props.dataBase64)])),
+      )
       .then((result) => {
         if (!cancelled) {
           setSheets(result as PreviewSheet[]);
@@ -41,40 +71,84 @@ export function SpreadsheetPreview(props: { dataBase64: string; onError: (messag
   );
 }
 
-export function SpreadsheetDataView(props: { sheets: PreviewSheet[]; onError: (message: string) => void }) {
+export function SpreadsheetDataView(props: {
+  sheets: PreviewSheet[];
+  onError: (message: string) => void;
+}) {
   const sheets = props.sheets;
-  const [sheetIndex, setSheetIndex] = useState(0);
-  const [page, setPage] = useState(0);
-  const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SheetSort>(null);
-  const [selected, setSelected] = useState<{
+  const [sheetName, setSheetName] = usePreviewValue<string | null>(
+    "sheetName",
+    null,
+  );
+  const sheetIndex = Math.max(
+    0,
+    sheets.findIndex((sheet) => sheet.sheet === sheetName),
+  );
+  const [page, setPage] = usePreviewValue("sheetPage", 0);
+  const [query, setQuery] = usePreviewValue("sheetQuery", "");
+  const [sort, setSort] = usePreviewValue<SheetSort>("sheetSort", null);
+  const [filters, setFilters] = usePreviewValue<SheetFilters>(
+    "sheetFilters",
+    {},
+  );
+  const [filtersOpen, setFiltersOpen] = usePreviewValue(
+    "sheetFiltersOpen",
+    false,
+  );
+  const [selected, setSelected] = usePreviewValue<{
     row: number;
     column: number;
-  } | null>(null);
+  } | null>("sheetSelection", null);
+  const scroll = usePreviewScroll<HTMLDivElement>(`sheet:${sheetName}:${page}`);
   const focusRequested = useRef(false);
   const tableId = useId();
   const sheet = sheets[sheetIndex];
-  const visible = useMemo(() => spreadsheetView(sheet?.data ?? [], query, sort), [sheet, query, sort]);
+  const visible = useMemo(
+    () => spreadsheetView(sheet?.data ?? [], query, sort, filters),
+    [sheet, query, sort, filters],
+  );
   const columnCount = useMemo(
-    () => sheet?.data.reduce((maximum, row) => Math.max(maximum, row.length), 0) ?? 0,
+    () =>
+      sheet?.data.reduce((maximum, row) => Math.max(maximum, row.length), 0) ??
+      0,
     [sheet],
   );
   const pageCount = Math.max(1, Math.ceil(visible.length / ROWS_PER_PAGE));
   const currentPage = Math.min(page, pageCount - 1);
-  const rows = visible.slice(currentPage * ROWS_PER_PAGE, (currentPage + 1) * ROWS_PER_PAGE);
-  const selectionVisible = selected && rows.some((row) => row.number === selected.row);
+  const rows = visible.slice(
+    currentPage * ROWS_PER_PAGE,
+    (currentPage + 1) * ROWS_PER_PAGE,
+  );
+  const selectionVisible =
+    selected && rows.some((row) => row.number === selected.row);
   const selectSheet = (index: number) => {
-    setSheetIndex(index);
+    setSheetName(sheets[index].sheet);
     setPage(0);
     setSort(null);
     setQuery("");
+    setFilters({});
     setSelected(null);
   };
   useEffect(() => {
     if (!focusRequested.current || !selected) return;
-    document.getElementById(`${tableId}-${selected.row}-${selected.column}`)?.focus();
+    document
+      .getElementById(`${tableId}-${selected.row}-${selected.column}`)
+      ?.focus();
     focusRequested.current = false;
   }, [selected, tableId]);
+
+  const exportData = (format: "csv" | "json") => {
+    try {
+      downloadBlob(
+        format === "csv"
+          ? spreadsheetCsv(visible, columnCount)
+          : spreadsheetJson(sheets),
+        `${exportFilename(sheet?.sheet ?? "workbook")}.${format}`,
+      );
+    } catch (error) {
+      props.onError(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   if (!sheet)
     return (
@@ -99,9 +173,14 @@ export function SpreadsheetDataView(props: { sheets: PreviewSheet[]; onError: (m
             className={index === sheetIndex ? "selected" : ""}
             onClick={() => selectSheet(index)}
             onKeyDown={(event) => {
-              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight")
+                return;
               event.preventDefault();
-              const next = moveTabIndex(sheetIndex, sheets.length, event.key === "ArrowLeft" ? -1 : 1);
+              const next = moveTabIndex(
+                sheetIndex,
+                sheets.length,
+                event.key === "ArrowLeft" ? -1 : 1,
+              );
               selectSheet(next);
               document.getElementById(`${tableId}-tab-${next}`)?.focus();
             }}
@@ -141,75 +220,172 @@ export function SpreadsheetDataView(props: { sheets: PreviewSheet[]; onError: (m
         <span role="status">
           {visible.length} / {sheet.data.length} 行
         </span>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="列筛选"
+          title="列筛选"
+          aria-pressed={filtersOpen}
+          onClick={() => setFiltersOpen((value) => !value)}
+        >
+          <ListFilter size={15} />
+        </button>
+        {Object.values(filters).some((value) => value.trim()) && (
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="清空列筛选"
+            title="清空列筛选"
+            onClick={() => {
+              setFilters({});
+              setPage(0);
+              setSelected(null);
+            }}
+          >
+            <X size={15} />
+          </button>
+        )}
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="导出筛选结果 CSV"
+          title="导出全部匹配行 CSV（公式字符串按文本处理）"
+          onClick={() => exportData("csv")}
+        >
+          <Download size={15} />
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="导出完整工作簿 JSON"
+          title="导出完整工作簿 JSON（保留原始值和日期类型）"
+          onClick={() => exportData("json")}
+        >
+          <FileJson size={15} />
+        </button>
       </div>
-      <div id={tableId} className="sheet-table-wrap" role="tabpanel" aria-labelledby={`${tableId}-tab-${sheetIndex}`}>
-        {visible.length === 0 ? (
-          <div className="diff-empty">{sheet.data.length === 0 ? "当前工作表为空" : "没有匹配的行"}</div>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th aria-label="行号" />
-                {Array.from({ length: columnCount }, (_, index) => (
-                  <th key={index} aria-sort={sort?.column === index ? sort.direction : "none"}>
-                    <button
-                      type="button"
-                      className="sheet-column-sort"
-                      title={`排序 ${spreadsheetColumnLabel(index)} 列`}
-                      aria-label={`排序 ${spreadsheetColumnLabel(index)} 列`}
-                      onClick={() => {
-                        setSort(
-                          sort?.column !== index
-                            ? { column: index, direction: "ascending" }
-                            : sort.direction === "ascending"
-                              ? { column: index, direction: "descending" }
-                              : null,
-                        );
+      <div
+        {...scroll}
+        id={tableId}
+        className="sheet-table-wrap"
+        role="tabpanel"
+        aria-labelledby={`${tableId}-tab-${sheetIndex}`}
+      >
+        <table>
+          <thead>
+            <tr>
+              <th aria-label="行号" />
+              {Array.from({ length: columnCount }, (_, index) => (
+                <th
+                  key={index}
+                  aria-sort={sort?.column === index ? sort.direction : "none"}
+                >
+                  <button
+                    type="button"
+                    className="sheet-column-sort"
+                    title={`排序 ${spreadsheetColumnLabel(index)} 列`}
+                    aria-label={`排序 ${spreadsheetColumnLabel(index)} 列`}
+                    onClick={() => {
+                      setSort(
+                        sort?.column !== index
+                          ? { column: index, direction: "ascending" }
+                          : sort.direction === "ascending"
+                            ? { column: index, direction: "descending" }
+                            : null,
+                      );
+                      setPage(0);
+                    }}
+                  >
+                    {spreadsheetColumnLabel(index)}
+                    {sort?.column === index &&
+                      (sort.direction === "ascending" ? (
+                        <ArrowUp size={12} />
+                      ) : (
+                        <ArrowDown size={12} />
+                      ))}
+                  </button>
+                  {filtersOpen && (
+                    <input
+                      className="sheet-column-filter"
+                      aria-label={`筛选 ${spreadsheetColumnLabel(index)} 列`}
+                      value={filters[index] ?? ""}
+                      onChange={(event) => {
+                        setFilters((current) => ({
+                          ...current,
+                          [index]: event.target.value,
+                        }));
                         setPage(0);
+                        setSelected(null);
                       }}
-                    >
-                      {spreadsheetColumnLabel(index)}
-                      {sort?.column === index &&
-                        (sort.direction === "ascending" ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
-                    </button>
-                  </th>
-                ))}
+                    />
+                  )}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {visible.length === 0 && (
+              <tr>
+                <td colSpan={columnCount + 1} className="diff-empty">
+                  {sheet.data.length === 0 ? "当前工作表为空" : "没有匹配的行"}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, rowIndex) => (
-                <tr key={row.number}>
-                  <th scope="row">{row.number}</th>
-                  {spreadsheetRow(row.cells, columnCount).map((cell, cellIndex) => (
+            )}
+            {rows.map((row, rowIndex) => (
+              <tr key={row.number}>
+                <th scope="row">{row.number}</th>
+                {spreadsheetRow(row.cells, columnCount).map(
+                  (cell, cellIndex) => (
                     <td
                       key={cellIndex}
                       id={`${tableId}-${row.number}-${cellIndex}`}
                       title={cellText(cell)}
                       tabIndex={
                         selectionVisible && selected
-                          ? selected.row === row.number && selected.column === cellIndex
+                          ? selected.row === row.number &&
+                            selected.column === cellIndex
                             ? 0
                             : -1
                           : rowIndex === 0 && cellIndex === 0
                             ? 0
                             : -1
                       }
-                      onClick={() => setSelected({ row: row.number, column: cellIndex })}
+                      onClick={() =>
+                        setSelected({ row: row.number, column: cellIndex })
+                      }
                       onKeyDown={(event) => {
-                        if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter"].includes(event.key)) return;
+                        if (
+                          ![
+                            "ArrowLeft",
+                            "ArrowRight",
+                            "ArrowUp",
+                            "ArrowDown",
+                            "Enter",
+                          ].includes(event.key)
+                        )
+                          return;
                         event.preventDefault();
                         const nextIndex = Math.min(
                           Math.max(
                             currentPage * ROWS_PER_PAGE +
                               rowIndex +
-                              (event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0),
+                              (event.key === "ArrowUp"
+                                ? -1
+                                : event.key === "ArrowDown"
+                                  ? 1
+                                  : 0),
                             0,
                           ),
                           visible.length - 1,
                         );
                         const column = Math.min(
                           Math.max(
-                            cellIndex + (event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0),
+                            cellIndex +
+                              (event.key === "ArrowLeft"
+                                ? -1
+                                : event.key === "ArrowRight"
+                                  ? 1
+                                  : 0),
                             0,
                           ),
                           columnCount - 1,
@@ -224,12 +400,12 @@ export function SpreadsheetDataView(props: { sheets: PreviewSheet[]; onError: (m
                     >
                       {cellText(cell)}
                     </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+                  ),
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
       {selected && (
         <div className="sheet-controls">
@@ -270,7 +446,9 @@ export function SpreadsheetDataView(props: { sheets: PreviewSheet[]; onError: (m
             aria-label="下一页"
             title="下一页"
             disabled={page + 1 >= pageCount}
-            onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}
+            onClick={() =>
+              setPage((value) => Math.min(pageCount - 1, value + 1))
+            }
           >
             <ChevronRight size={16} />
           </button>

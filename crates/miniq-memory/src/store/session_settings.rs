@@ -4,6 +4,47 @@ use rusqlite::{params, OptionalExtension};
 use super::{Result, Store};
 
 impl Store {
+    pub fn session_approval_mode(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<miniq_protocol::ApprovalMode>> {
+        self.get_session(session_id)?;
+        let raw: Option<String> = self
+            .conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT mode FROM session_approval_settings WHERE session_id = ?1",
+                params![session_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        raw.map(|raw| serde_json::from_value(serde_json::Value::String(raw)).map_err(Into::into))
+            .transpose()
+    }
+
+    pub fn set_session_approval_mode(
+        &self,
+        session_id: &str,
+        mode: Option<miniq_protocol::ApprovalMode>,
+    ) -> Result<()> {
+        self.get_session(session_id)?;
+        let conn = self.conn.lock().unwrap();
+        if let Some(mode) = mode {
+            conn.execute(
+                "INSERT INTO session_approval_settings (session_id, mode) VALUES (?1, ?2)
+              ON CONFLICT(session_id) DO UPDATE SET mode = excluded.mode",
+                params![session_id, serde_json::to_value(mode)?.as_str()],
+            )?;
+        } else {
+            conn.execute(
+                "DELETE FROM session_approval_settings WHERE session_id = ?1",
+                params![session_id],
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn session_plan(&self, session_id: &str) -> Result<Vec<miniq_protocol::PlanTask>> {
         self.get_session(session_id)?;
         let raw: Option<String> = self
@@ -85,6 +126,9 @@ mod tests {
             reasoning_effort: Some(ReasoningEffort::High),
         };
         store.set_session_model_settings(&a.id, &settings).unwrap();
+        store
+            .set_session_approval_mode(&a.id, Some(miniq_protocol::ApprovalMode::AlwaysAsk))
+            .unwrap();
         let plan = serde_json::from_value::<Vec<miniq_protocol::PlanTask>>(
             serde_json::json!([{ "content": "check", "status": "completed" }]),
         )
@@ -96,6 +140,11 @@ mod tests {
         );
         drop(store);
         let store = Store::open(&db).unwrap();
+        assert_eq!(
+            store.session_approval_mode(&a.id).unwrap(),
+            Some(miniq_protocol::ApprovalMode::AlwaysAsk)
+        );
+        assert_eq!(store.session_approval_mode(&b.id).unwrap(), None);
         assert_eq!(store.session_model_settings(&a.id).unwrap(), settings);
         assert_eq!(store.session_plan(&a.id).unwrap()[0].content, "check");
         assert!(store.session_plan(&b.id).unwrap().is_empty());

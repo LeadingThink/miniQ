@@ -1,22 +1,45 @@
-import { ChevronLeft, ChevronRight, Minus, Plus, RotateCcw } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Maximize,
+  Minus,
+  Plus,
+  RotateCcw,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { clampPage, clampPdfZoom, PDF_MAX_ZOOM, PDF_MIN_ZOOM, PDF_ZOOM_STEP } from "../documentPreviewModel";
+import {
+  clampPage,
+  clampPdfZoom,
+  pdfRasterSize,
+  PDF_MAX_ZOOM,
+  PDF_MIN_ZOOM,
+  PDF_ZOOM_STEP,
+} from "../documentPreviewModel";
 import { decodeBase64 } from "../previewBinary";
 import { PdfSearch } from "./PdfSearch";
 import { pdfText, type PdfTextPage } from "../pdfSearch";
 import "./PreviewInspectors.css";
+import { usePreviewScroll, usePreviewValue } from "../previewViewState";
 
-export function PdfPreview(props: { dataBase64: string; onError: (message: string) => void }) {
+export function PdfPreview(props: {
+  dataBase64: string;
+  onError: (message: string) => void;
+}) {
+  const onError = useRef(props.onError);
+  onError.current = props.onError;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const documentRef = useRef<PdfDocument | null>(null);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = usePreviewValue("pdfPage", 1);
   const [pageCount, setPageCount] = useState(0);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = usePreviewValue("pdfZoom", 1);
+  const [fit, setFit] = usePreviewValue("pdfFit", true);
   const [loading, setLoading] = useState(true);
   const [pageText, setPageText] = useState("");
   const [textError, setTextError] = useState<string | null>(null);
+  const [textLoading, setTextLoading] = useState(false);
   const [documentVersion, setDocumentVersion] = useState(0);
-  const [showText, setShowText] = useState(false);
+  const [showText, setShowText] = usePreviewValue("pdfText", false);
+  const stageScroll = usePreviewScroll<HTMLDivElement>(`pdf:${page}`, !loading);
   const renderPromise = useRef<Promise<void>>(Promise.resolve());
 
   interface PdfViewport {
@@ -29,7 +52,11 @@ export function PdfPreview(props: { dataBase64: string; onError: (message: strin
   }
   interface PdfPage extends PdfTextPage {
     getViewport: (options: { scale: number }) => PdfViewport;
-    render: (options: { canvas: HTMLCanvasElement; viewport: PdfViewport; transform?: number[] }) => PdfRenderTask;
+    render: (options: {
+      canvas: HTMLCanvasElement;
+      viewport: PdfViewport;
+      transform?: number[];
+    }) => PdfRenderTask;
   }
   interface PdfDocument {
     numPages: number;
@@ -45,11 +72,8 @@ export function PdfPreview(props: { dataBase64: string; onError: (message: strin
     } | null = null;
     let loadedDocument: PdfDocument | null = null;
     setLoading(true);
-    setPage(1);
     setPageCount(0);
-    setZoom(1);
     setPageText("");
-    setShowText(false);
     setTextError(null);
 
     void Promise.all([
@@ -71,20 +95,23 @@ export function PdfPreview(props: { dataBase64: string; onError: (message: strin
         documentRef.current = pdf;
         setDocumentVersion((value) => value + 1);
         setPageCount(pdf.numPages);
+        setPage((current) => clampPage(current, pdf.numPages));
       })
       .catch((cause) => {
         if (!cancelled) {
           setLoading(false);
-          props.onError(cause instanceof Error ? cause.message : String(cause));
+          onError.current(
+            cause instanceof Error ? cause.message : String(cause),
+          );
         }
       });
 
     return () => {
       cancelled = true;
       if (documentRef.current === loadedDocument) documentRef.current = null;
-      void documentTask?.destroy();
+      void documentTask?.destroy().catch(() => {});
     };
-  }, [props.dataBase64, props.onError]);
+  }, [props.dataBase64]);
 
   useEffect(() => {
     const pdf = documentRef.current;
@@ -93,49 +120,84 @@ export function PdfPreview(props: { dataBase64: string; onError: (message: strin
     let cancelled = false;
     let renderTask: PdfRenderTask | null = null;
     setLoading(true);
-    setPageText("");
-    setTextError(null);
     void pdf
       .getPage(clampPage(page, pageCount))
       .then(async (pdfPage) => {
-        await renderPromise.current.catch(() => {});
-        if (cancelled) return;
-        const viewport = pdfPage.getViewport({ scale: 1.35 * zoom });
-        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-        canvas.width = Math.floor(viewport.width * pixelRatio);
-        canvas.height = Math.floor(viewport.height * pixelRatio);
-        canvas.style.width = `${Math.floor(viewport.width)}px`;
-        canvas.style.height = `${Math.floor(viewport.height)}px`;
-        renderTask = pdfPage.render({
-          canvas,
-          viewport,
-          transform: pixelRatio === 1 ? undefined : [pixelRatio, 0, 0, pixelRatio, 0, 0],
-        });
-        renderPromise.current = renderTask.promise;
-        const text = pdfPage
-          .getTextContent()
-          .then((content) => {
-            if (!cancelled) setPageText(pdfText(content.items));
-          })
-          .catch((cause) => {
-            if (!cancelled) setTextError(`原文提取失败：${String(cause)}`);
+        try {
+          await renderPromise.current.catch(() => {});
+          if (cancelled) return;
+          const viewport = pdfPage.getViewport({ scale: 1.35 * zoom });
+          const raster = pdfRasterSize(
+            viewport.width,
+            viewport.height,
+            window.devicePixelRatio,
+          );
+          canvas.width = raster.width;
+          canvas.height = raster.height;
+          canvas.style.width = `${Math.floor(viewport.width)}px`;
+          canvas.style.height = `${Math.floor(viewport.height)}px`;
+          renderTask = pdfPage.render({
+            canvas,
+            viewport,
+            transform:
+              raster.ratio === 1
+                ? undefined
+                : [raster.ratio, 0, 0, raster.ratio, 0, 0],
           });
-        await Promise.all([renderTask.promise, text]);
+          renderPromise.current = renderTask.promise;
+          await renderTask.promise;
+        } finally {
+          pdfPage.cleanup?.();
+        }
       })
       .then(() => {
         if (!cancelled) setLoading(false);
       })
       .catch((cause) => {
-        if (!cancelled && cause instanceof Error && cause.name !== "RenderingCancelledException") {
+        if (
+          !cancelled &&
+          cause instanceof Error &&
+          cause.name !== "RenderingCancelledException"
+        ) {
           setLoading(false);
-          props.onError(cause.message);
+          onError.current(cause.message);
         }
       });
     return () => {
       cancelled = true;
       renderTask?.cancel();
     };
-  }, [page, pageCount, props.onError, zoom]);
+  }, [documentVersion, page, pageCount, zoom]);
+
+  useEffect(() => {
+    const pdf = documentRef.current;
+    let cancelled = false;
+    setPageText("");
+    setTextError(null);
+    setTextLoading(Boolean(showText && pdf));
+    if (showText && pdf) {
+      void pdf
+        .getPage(clampPage(page, pageCount))
+        .then(async (current) => {
+          try {
+            if (cancelled) return;
+            const text = pdfText((await current.getTextContent()).items);
+            if (!cancelled) setPageText(text);
+          } finally {
+            current.cleanup?.();
+          }
+        })
+        .catch((cause) => {
+          if (!cancelled) setTextError(`原文提取失败：${String(cause)}`);
+        })
+        .finally(() => {
+          if (!cancelled) setTextLoading(false);
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [documentVersion, page, pageCount, showText]);
 
   return (
     <div className="pdf-preview">
@@ -183,18 +245,24 @@ export function PdfPreview(props: { dataBase64: string; onError: (message: strin
           aria-label="缩小 PDF"
           title="缩小"
           disabled={zoom <= PDF_MIN_ZOOM}
-          onClick={() => setZoom((value) => clampPdfZoom(value - PDF_ZOOM_STEP))}
+          onClick={() => {
+            setFit(false);
+            setZoom((value) => clampPdfZoom(value - PDF_ZOOM_STEP));
+          }}
         >
           <Minus size={15} />
         </button>
-        <span>{Math.round(zoom * 100)}%</span>
+        <span>{fit ? "适配" : `${Math.round(zoom * 100)}%`}</span>
         <button
           type="button"
           className="icon-button"
           aria-label="放大 PDF"
           title="放大"
           disabled={zoom >= PDF_MAX_ZOOM}
-          onClick={() => setZoom((value) => clampPdfZoom(value + PDF_ZOOM_STEP))}
+          onClick={() => {
+            setFit(false);
+            setZoom((value) => clampPdfZoom(value + PDF_ZOOM_STEP));
+          }}
         >
           <Plus size={15} />
         </button>
@@ -203,25 +271,57 @@ export function PdfPreview(props: { dataBase64: string; onError: (message: strin
           className="icon-button"
           aria-label="重置 PDF 缩放"
           title="重置缩放"
-          disabled={zoom === 1}
-          onClick={() => setZoom(1)}
+          disabled={zoom === 1 && !fit}
+          onClick={() => {
+            setFit(false);
+            setZoom(1);
+          }}
         >
           <RotateCcw size={14} />
         </button>
+        <button
+          type="button"
+          className="icon-button"
+          title="适配 PDF 宽度"
+          aria-label="适配 PDF 宽度"
+          aria-pressed={fit}
+          onClick={() => {
+            setFit(true);
+            setZoom(1);
+          }}
+        >
+          <Maximize size={16} />
+        </button>
       </div>
-      <PdfSearch key={documentVersion} document={pageCount ? documentRef.current : null} onPage={setPage} />
+      <PdfSearch
+        key={documentVersion}
+        document={pageCount ? documentRef.current : null}
+        onPage={setPage}
+      />
       <label className="pdf-text-toggle">
-        <input type="checkbox" checked={showText} onChange={(event) => setShowText(event.target.checked)} />
+        <input
+          type="checkbox"
+          checked={showText}
+          onChange={(event) => setShowText(event.target.checked)}
+        />
         原文
       </label>
       {showText && (
         <pre className="pdf-extracted-text" aria-label={`第 ${page} 页原文`}>
-          {loading ? "正在读取原文" : textError || pageText || "当前页没有可提取文本"}
+          {textLoading
+            ? "正在读取原文"
+            : textError || pageText || "当前页没有可提取文本"}
         </pre>
       )}
-      <div className="pdf-stage" aria-busy={loading}>
-        {loading && <div className="document-loading">正在渲染第 {page} 页...</div>}
-        <section className="pdf-page" aria-label={`第 ${page} 页`}>
+      <div {...stageScroll} className="pdf-stage" aria-busy={loading}>
+        {loading && (
+          <div className="document-loading">正在渲染第 {page} 页...</div>
+        )}
+        <section
+          className="pdf-page"
+          data-fit={fit}
+          aria-label={`第 ${page} 页`}
+        >
           <canvas ref={canvasRef} />
         </section>
       </div>

@@ -5,6 +5,7 @@
 mod browser;
 mod daemon;
 mod daemon_process;
+mod html_preview;
 mod local_file;
 
 type DaemonState = std::sync::Arc<daemon::DaemonLifecycle>;
@@ -87,6 +88,27 @@ fn read_image_preview(path: String) -> Result<local_file::LocalImagePreview, Str
 }
 
 #[tauri::command]
+async fn open_html_preview(
+    state: tauri::State<'_, html_preview::HtmlPreviews>,
+    path: String,
+    workspace_path: String,
+    workspace_paths: Vec<String>,
+    network: bool,
+) -> Result<html_preview::PreviewHandle, String> {
+    state
+        .open(&path, &workspace_path, &workspace_paths, network)
+        .await
+}
+
+#[tauri::command]
+fn close_html_preview(
+    state: tauri::State<'_, html_preview::HtmlPreviews>,
+    id: String,
+) -> Result<(), String> {
+    state.close(&id)
+}
+
+#[tauri::command]
 fn save_pasted_image(
     app: tauri::AppHandle,
     mime_type: String,
@@ -148,6 +170,7 @@ fn browser_set_visible(
 pub fn run() {
     tauri::Builder::default()
         .manage(DaemonState::default())
+        .manage(html_preview::HtmlPreviews::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -162,6 +185,8 @@ pub fn run() {
             reveal_local_file,
             read_local_text_file,
             read_local_file_preview,
+            open_html_preview,
+            close_html_preview,
             read_image_preview,
             save_pasted_image,
             browser_open,

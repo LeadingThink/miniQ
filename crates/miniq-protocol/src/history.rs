@@ -50,6 +50,8 @@ fn page_size<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u32, D
 pub struct HistoryParams {
     pub session_id: String,
     #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
     pub before: Option<HistoryCursor>,
     #[serde(default = "default_page_size", deserialize_with = "page_size")]
     #[schemars(range(min = 1, max = 100))]

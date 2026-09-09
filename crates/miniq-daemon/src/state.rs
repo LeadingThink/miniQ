@@ -13,19 +13,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, oneshot};
 use tokio_util::sync::CancellationToken;
 
-/// How risky (medium/high) tool calls are gated. Blocked calls are always
-/// rejected regardless of mode.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ApprovalMode {
-    /// Ask before every risky action, even ones already approved this session.
-    AlwaysAsk,
-    /// Ask for risky actions unless approved for this session (default).
-    #[default]
-    Auto,
-    /// Never ask; every non-blocked action runs immediately.
-    FullAccess,
-}
+pub use miniq_protocol::ApprovalMode;
 
 /// Persisted daemon settings (data dir `settings.json`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -160,15 +148,17 @@ impl AppState {
             router.clone(),
             miniq_plugins::PluginLimits::default(),
         ));
+        let store = Arc::new(store);
+        let agent_tasks = Arc::new(crate::agent_tasks::AgentTaskManager::new(store.clone()));
         Self {
-            store: Arc::new(store),
+            store,
             provider_override,
             settings: Arc::new(Mutex::new(settings)),
             settings_path: settings_path.map(Arc::new),
             router,
             processes: Arc::new(miniq_tools::ProcessManager::default()),
             tasks: Arc::new(miniq_tools::TaskManager::default()),
-            agent_tasks: Arc::new(crate::agent_tasks::AgentTaskManager::default()),
+            agent_tasks,
             plugins,
             skills: Arc::new(miniq_skills::SkillStore::new(
                 &data_dir,
@@ -357,6 +347,16 @@ impl AppState {
             .entry(session_id.to_string())
             .or_default()
             .insert(pattern.to_string());
+    }
+
+    pub fn approval_mode_for_session(
+        &self,
+        session_id: &str,
+    ) -> Result<ApprovalMode, miniq_memory::MemoryError> {
+        Ok(self
+            .store
+            .session_approval_mode(session_id)?
+            .unwrap_or_else(|| self.settings.lock().unwrap().approval_mode))
     }
 
     pub fn is_allowed_for_session(&self, session_id: &str, pattern: &str) -> bool {

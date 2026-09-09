@@ -65,6 +65,7 @@ fn rewrites_a_user_message_and_removes_the_old_branch() {
             &session.id,
             "shell_run",
             &json!({"command": "echo old"}),
+            None,
             ToolCallStatus::Succeeded,
         )
         .unwrap();
@@ -109,7 +110,7 @@ fn tool_call_lifecycle() {
 
     let input = json!({"command": "git status"});
     let call = store
-        .create_tool_call(&sess.id, "shell_run", &input, ToolCallStatus::Running)
+        .create_tool_call(&sess.id, "shell_run", &input, None, ToolCallStatus::Running)
         .unwrap();
     store
         .finish_tool_call(
@@ -137,6 +138,7 @@ fn approval_resolve_only_once() {
             &sess.id,
             "file_write",
             &json!({"path": "a.txt"}),
+            None,
             ToolCallStatus::WaitingApproval,
         )
         .unwrap();
@@ -208,6 +210,7 @@ fn startup_recovery_atomically_terminates_process_owned_state() {
             &active.id,
             "shell_run",
             &json!({"command": "cargo test"}),
+            None,
             ToolCallStatus::WaitingApproval,
         )
         .unwrap();
@@ -261,6 +264,7 @@ fn session_recovery_only_terminates_the_requested_session() {
                 &session.id,
                 "plugin.tool",
                 &json!({}),
+                None,
                 ToolCallStatus::WaitingApproval,
             )
             .unwrap();

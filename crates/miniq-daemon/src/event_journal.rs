@@ -48,12 +48,13 @@ impl EventJournal {
         let mut value = match event {
             Event::ToolCallStarted {
                 session_id,
+                agent_id,
                 tool_call_id,
                 tool_name,
                 ..
             } => json!({
                 "type": "tool_call_started", "sessionId": session_id, "toolCallId": tool_call_id,
-                "toolName": tool_name, "input": null, "payloadDeferred": true,
+                "toolName": tool_name, "agentId": agent_id, "input": null, "payloadDeferred": true,
             }),
             Event::ToolCallFinished {
                 session_id,

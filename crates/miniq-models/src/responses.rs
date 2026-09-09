@@ -175,6 +175,12 @@ impl ResponsesDecoder {
                 data: Value::Array(context),
             })));
         }
+        if let Some(info) = crate::response_info::response_info(
+            event.get("response").unwrap_or(event),
+            Some("completed"),
+        ) {
+            items.push(Ok(info));
+        }
         items.push(Ok(ChatDelta::Finished));
         DecodedEvent::terminal(items)
     }
@@ -264,6 +270,12 @@ impl EventDecoder for ResponsesDecoder {
             }
         };
         match event.get("type").and_then(Value::as_str).unwrap_or("") {
+            "response.created" | "response.in_progress" => DecodedEvent::continue_with(
+                crate::response_info::response_info(event.get("response").unwrap_or(&event), None)
+                    .map(Ok)
+                    .into_iter()
+                    .collect(),
+            ),
             "response.output_text.delta" | "response.refusal.delta" => {
                 let text = event.get("delta").and_then(Value::as_str).unwrap_or("");
                 DecodedEvent::continue_with(
@@ -327,17 +339,18 @@ impl EventDecoder for ResponsesDecoder {
                         "Responses API returned an incomplete response: {reason}"
                     ))
                 };
-                DecodedEvent::terminal(vec![Err(error)])
+                response_failure(&event, reason, error)
             }
             "response.failed" | "error" => {
                 let error = event
                     .pointer("/response/error")
                     .or_else(|| event.get("error"))
                     .unwrap_or(&event);
-                DecodedEvent::terminal(vec![Err(ProviderError::from_stream_error(
-                    "Responses API error",
-                    error,
-                ))])
+                response_failure(
+                    &event,
+                    "failed",
+                    ProviderError::from_stream_error("Responses API error", error),
+                )
             }
             _ => DecodedEvent::continue_with(Vec::new()),
         }
@@ -348,8 +361,30 @@ impl EventDecoder for ResponsesDecoder {
     }
 }
 
+fn response_failure(event: &Value, reason: &str, error: ProviderError) -> DecodedEvent {
+    let mut items =
+        crate::response_info::response_info(event.get("response").unwrap_or(event), Some(reason))
+            .map(Ok)
+            .into_iter()
+            .collect::<Vec<_>>();
+    items.push(Err(error));
+    DecodedEvent::terminal(items)
+}
+
 #[async_trait]
 impl ModelProvider for ResponsesProvider {
+    async fn execution_info(
+        &self,
+        max_output_tokens: Option<u32>,
+    ) -> Result<Option<miniq_protocol::ModelExecutionInfo>, ProviderError> {
+        Ok(Some(miniq_protocol::ModelExecutionInfo {
+            model: self.config.model.clone(),
+            api_protocol: ApiProtocol::Responses,
+            reasoning_effort: self.config.reasoning_effort,
+            max_output_tokens,
+        }))
+    }
+
     async fn stream_complete(
         &self,
         request: CompletionRequest,

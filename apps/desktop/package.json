@@ -1,7 +1,7 @@
 {
   "name": "miniq-desktop",
   "private": true,
-  "version": "0.1.22",
+  "version": "0.1.23",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -52,7 +52,6 @@
   },
   "devDependencies": {
     "@capacitor/android": "^8.5.1",
-    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.5.1",
     "@capacitor/ios": "^8.5.1",
     "@tauri-apps/cli": "^2.9.0",
@@ -64,6 +63,18 @@
     "subset-font": "^2.5.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "monaco-editor": {
+      "dompurify": "^3.4.15"
+    },
+    "pptx-preview": {
+      "echarts": "^6.1.0",
+      "uuid": "^11.1.1"
+    },
+    "xcode": {
+      "uuid": "^11.1.1"
+    }
   }
 }

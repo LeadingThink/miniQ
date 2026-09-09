@@ -62,7 +62,12 @@ impl SessionToolExecutor {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        let unattended = self.state.settings.lock().unwrap().approval_mode
+        let unattended = self
+            .state
+            .approval_mode_for_session(&self.session_id)
+            .map_err(|error| {
+                AgentError::Checkpoint(format!("cannot read session approval policy: {error}"))
+            })?
             == crate::state::ApprovalMode::FullAccess;
         let default_answer = unattended.then(|| unattended_default(call, &options));
         let question = self.build_question(call, tool_call_id, options, default_answer.clone());

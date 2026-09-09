@@ -45,6 +45,27 @@ pub(crate) fn from_event(event: AgentEvent) -> Option<TurnProgress> {
     })
 }
 
+pub(crate) fn record_compaction(
+    state: &crate::state::AppState,
+    session_id: &str,
+    agent_id: Option<&str>,
+    turn_id: &str,
+    before: usize,
+    after: usize,
+) {
+    let payload = serde_json::json!({
+        "agentId": agent_id, "turnId": turn_id,
+        "estimatedTokensBefore": before, "estimatedTokensAfter": after,
+    });
+    if let Err(error) =
+        state
+            .store
+            .append_audit_event(Some(session_id), "context_compacted", &payload)
+    {
+        tracing::error!(session_id, agent_id, %error, "failed to persist compaction diagnostics");
+    }
+}
+
 fn in_flight_retry(retry: miniq_agent::RetryAttempt) -> ModelRetryProgress {
     ModelRetryProgress {
         attempt: retry.attempt,
@@ -155,5 +176,21 @@ mod tests {
         record_retry(&state, "one", None, &inflight);
         assert_eq!(state.store.count_audit_events("one").unwrap(), 1);
         assert_eq!(state.store.count_audit_events("two").unwrap(), 1);
+        record_compaction(&state, "two", Some("child"), "turn-1", 12000, 4000);
+        let page = state
+            .store
+            .execution_events_page(&miniq_protocol::ExecutionEventsParams {
+                session_id: "two".into(),
+                agent_id: Some("child".into()),
+                before: None,
+                limit: 20,
+            })
+            .unwrap();
+        assert_eq!(page.events.len(), 2);
+        let raw = serde_json::to_value(&page.events[0]).unwrap();
+        assert_eq!(raw["type"], "context_compacted");
+        assert_eq!(raw["data"]["estimatedTokensBefore"], 12000);
+        assert_eq!(raw["data"]["estimatedTokensAfter"], 4000);
+        assert_eq!(raw["data"]["turnId"], "turn-1");
     }
 }

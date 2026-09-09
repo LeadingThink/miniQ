@@ -99,6 +99,7 @@ impl SessionToolExecutor {
             events,
             self.cancel.clone(),
             RunLimits {
+                purpose: miniq_protocol::ModelCallPurpose::PlanReview,
                 max_steps: Some(3),
                 max_model_retries: 2,
                 context_policy,

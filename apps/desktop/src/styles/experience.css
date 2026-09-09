@@ -269,15 +269,16 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
+  flex-wrap: wrap;
 }
 .tool-payload header strong {
   font-weight: 500;
   flex: none;
 }
 .tool-payload input {
-  flex: 1;
+  flex: 1 1 120px;
   width: 100%;
-  min-width: 0;
+  min-width: min(100%, 120px);
   padding: 4px 6px;
   background: var(--bg);
   color: var(--text);
@@ -589,4 +590,17 @@
   .file-preview-content {
     scroll-behavior: auto !important;
   }
+}
+.session-permissions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+  gap: 4px;
+}
+.session-permissions [role="alert"] {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }

@@ -181,7 +181,8 @@ mod tests {
         state
             .agent_tasks
             .finish_error(&child, &miniq_agent::AgentError::Cancelled)
-            .await;
+            .await
+            .unwrap();
         assert!(update(&state, raw).await.is_ok());
     }
 }

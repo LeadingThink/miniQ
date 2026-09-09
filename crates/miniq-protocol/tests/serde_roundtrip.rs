@@ -58,6 +58,7 @@ fn response_err_shape() {
 fn event_tagged_serialization() {
     let ev = Event::ToolCallStarted {
         session_id: "sess_01".into(),
+        agent_id: Some("agent_01".into()),
         tool_call_id: "tool_01".into(),
         tool_name: "shell_run".into(),
         input: json!({"command": "cargo test"}),
@@ -65,6 +66,7 @@ fn event_tagged_serialization() {
     let v = serde_json::to_value(&ev).unwrap();
     assert_eq!(v["type"], "tool_call_started");
     assert_eq!(v["sessionId"], "sess_01");
+    assert_eq!(v["agentId"], "agent_01");
     assert_eq!(v["toolName"], "shell_run");
 
     let back: Event = serde_json::from_value(v).unwrap();

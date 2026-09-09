@@ -1,9 +1,14 @@
 //! SQLite store. One connection guarded by a mutex; the daemon wraps this in
 //! an `Arc` and calls it from blocking-friendly contexts.
 
+mod agent_history;
+mod agent_tasks;
+mod approval_inbox;
 mod conversation;
+mod execution_events;
 mod external_sessions;
 mod history;
+mod model_calls;
 mod model_context;
 mod queue;
 mod records;
@@ -13,6 +18,7 @@ mod session_settings;
 mod workspace_roots;
 mod workspaces;
 
+pub use agent_tasks::AgentTaskRow;
 pub use external_sessions::ExternalImportOutcome;
 pub use model_context::ModelContextSnapshot;
 
@@ -66,6 +72,18 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0010_workspace_roots",
         include_str!("../../../migrations/0010_workspace_roots.sql"),
+    ),
+    (
+        "0011_model_calls",
+        include_str!("../../../migrations/0011_model_calls.sql"),
+    ),
+    (
+        "0012_agent_tasks",
+        include_str!("../../../migrations/0012_agent_tasks.sql"),
+    ),
+    (
+        "0013_session_approval",
+        include_str!("../../../migrations/0013_session_approval.sql"),
     ),
 ];
 
@@ -206,6 +224,24 @@ impl Store {
         let mut conn = self.conn.lock().unwrap();
         let transaction = conn.transaction()?;
         let now = now_iso();
+        transaction.execute(
+            "UPDATE agent_tasks SET state_json = json_set(state_json,
+             '$.status', 'interrupted', '$.progress', NULL, '$.completedAt', ?1,
+             '$.timingComplete', json('false'),
+             '$.heldMessages', json((SELECT json_group_array(value) FROM (
+                SELECT value FROM json_each(agent_tasks.state_json, '$.heldMessages')
+                UNION ALL SELECT value FROM json_each(agent_tasks.state_json, '$.inbox')
+             ))), '$.inbox', json('[]'),
+             '$.error', 'daemon restarted; inspect recorded results before resuming')
+             WHERE json_extract(state_json, '$.status') IN ('running', 'stopping', 'finalizing')",
+            params![now],
+        )?;
+        transaction.execute(
+            "UPDATE model_calls SET status = 'interrupted',
+             record_json = json_set(record_json, '$.status', 'interrupted', '$.completedAt', ?1)
+             WHERE status = 'running'",
+            params![now],
+        )?;
         let sessions_failed = transaction.execute(
             "UPDATE sessions
              SET status = 'failed', updated_at = ?1

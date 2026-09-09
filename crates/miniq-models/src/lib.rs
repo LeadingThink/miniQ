@@ -11,6 +11,8 @@ mod image;
 mod openai;
 mod provider;
 mod reasoning;
+mod response_info;
+pub use miniq_protocol::{ModelCallPurpose, ModelCallTrace};
 mod responses;
 mod responses_request;
 mod sse;

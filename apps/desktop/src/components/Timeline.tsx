@@ -1,4 +1,15 @@
-import { ArrowDown, Check, ChevronUp, Download, LoaderCircle, Pencil, RefreshCw, Search, X } from "lucide-react";
+import {
+  Activity,
+  ArrowDown,
+  Check,
+  ChevronUp,
+  Download,
+  LoaderCircle,
+  Pencil,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Artifact,
@@ -30,8 +41,13 @@ import type { RpcClient } from "../rpc";
 import { useHistorySearch } from "../hooks/useHistorySearch";
 import { readExportHistory } from "../historyExport";
 import { ExecutionSummary } from "./ExecutionSummary";
+import { ModelDiagnostics } from "./ModelDiagnostics";
 
-function MessageAttachmentPreview({ attachment }: { attachment: MessageAttachment }) {
+function MessageAttachmentPreview({
+  attachment,
+}: {
+  attachment: MessageAttachment;
+}) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const isImage = Boolean(attachment.mimeType?.startsWith("image/"));
 
@@ -40,7 +56,8 @@ function MessageAttachmentPreview({ attachment }: { attachment: MessageAttachmen
     let disposed = false;
     void readImagePreview(attachment.path)
       .then((preview) => {
-        if (!disposed) setImageUrl(`data:${preview.mimeType};base64,${preview.dataBase64}`);
+        if (!disposed)
+          setImageUrl(`data:${preview.mimeType};base64,${preview.dataBase64}`);
       })
       .catch(() => {
         if (!disposed) setImageUrl(null);
@@ -51,7 +68,13 @@ function MessageAttachmentPreview({ attachment }: { attachment: MessageAttachmen
   }, [attachment.path, isImage]);
 
   if (imageUrl) {
-    return <img className="message-attachment-image" src={imageUrl} alt={attachment.name} />;
+    return (
+      <img
+        className="message-attachment-image"
+        src={imageUrl}
+        alt={attachment.name}
+      />
+    );
   }
   return <span className="message-attachment-file">{attachment.name}</span>;
 }
@@ -83,7 +106,11 @@ interface TimelineProps {
   onOpenUrl: (url: string) => void;
   onSteerQueued: (queuedMessageId: string) => void;
   onRemoveQueued: (queuedMessageId: string) => void;
-  onRewrite: (messageId: string, content: string, attachments?: string[]) => Promise<boolean>;
+  onRewrite: (
+    messageId: string,
+    content: string,
+    attachments?: string[],
+  ) => Promise<boolean>;
   onError: (message: string) => void;
 }
 
@@ -139,7 +166,9 @@ function TimelineEntries(props: {
     }
   };
   const regenerateMessage = async (message: Message) => {
-    const messageIndex = props.messages.findIndex((candidate) => candidate.id === message.id);
+    const messageIndex = props.messages.findIndex(
+      (candidate) => candidate.id === message.id,
+    );
     let userMessage: Message | undefined;
     for (let index = messageIndex - 1; index >= 0; index -= 1) {
       if (props.messages[index].role === "user") {
@@ -182,17 +211,27 @@ function TimelineEntries(props: {
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Escape") cancelEditing();
-                    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) void saveMessage(item.message);
+                    if (
+                      event.key === "Enter" &&
+                      (event.ctrlKey || event.metaKey)
+                    )
+                      void saveMessage(item.message);
                   }}
                 />
-              ) : item.message.content ? <div>{item.message.content}</div> : null}
-              {item.message.attachments && item.message.attachments.length > 0 && (
-                <div className="message-attachments">
-                  {item.message.attachments.map((attachment) => (
-                    <MessageAttachmentPreview key={attachment.path} attachment={attachment} />
-                  ))}
-                </div>
-              )}
+              ) : item.message.content ? (
+                <div>{item.message.content}</div>
+              ) : null}
+              {item.message.attachments &&
+                item.message.attachments.length > 0 && (
+                  <div className="message-attachments">
+                    {item.message.attachments.map((attachment) => (
+                      <MessageAttachmentPreview
+                        key={attachment.path}
+                        attachment={attachment}
+                      />
+                    ))}
+                  </div>
+                )}
               <div className="message-actions">
                 {editingMessageId === item.message.id ? (
                   <>
@@ -204,15 +243,30 @@ function TimelineEntries(props: {
                       disabled={!draft.trim() || saving || props.busy}
                       onClick={() => void saveMessage(item.message)}
                     >
-                      {saving ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}
+                      {saving ? (
+                        <LoaderCircle className="spin" size={15} />
+                      ) : (
+                        <Check size={15} />
+                      )}
                     </button>
-                    <button type="button" className="msg-action" title="取消修改" aria-label="取消修改" onClick={cancelEditing}>
+                    <button
+                      type="button"
+                      className="msg-action"
+                      title="取消修改"
+                      aria-label="取消修改"
+                      onClick={cancelEditing}
+                    >
                       <X size={15} />
                     </button>
                   </>
                 ) : (
                   <>
-                    <CopyButton className="msg-copy" label="复制消息" content={item.message.content} onError={props.onError} />
+                    <CopyButton
+                      className="msg-copy"
+                      label="复制消息"
+                      content={item.message.content}
+                      onError={props.onError}
+                    />
                     <button
                       type="button"
                       className="msg-action"
@@ -230,7 +284,11 @@ function TimelineEntries(props: {
           ) : item.message.role === "tool" ? (
             <div key={item.message.id} className="bubble tool-transcript">
               <span>工具记录</span>
-              <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile} onOpenUrl={props.onOpenUrl}>
+              <Md
+                workspacePath={props.workspacePath}
+                onOpenFile={props.onOpenFile}
+                onOpenUrl={props.onOpenUrl}
+              >
                 {item.message.content}
               </Md>
             </div>
@@ -240,11 +298,20 @@ function TimelineEntries(props: {
               className="bubble assistant"
               title={new Date(item.message.createdAt).toLocaleString()}
             >
-              <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile} onOpenUrl={props.onOpenUrl}>
+              <Md
+                workspacePath={props.workspacePath}
+                onOpenFile={props.onOpenFile}
+                onOpenUrl={props.onOpenUrl}
+              >
                 {item.message.content}
               </Md>
               <div className="message-actions assistant-actions">
-                <CopyButton className="msg-copy" label="复制消息" content={item.message.content} onError={props.onError} />
+                <CopyButton
+                  className="msg-copy"
+                  label="复制消息"
+                  content={item.message.content}
+                  onError={props.onError}
+                />
                 <button
                   type="button"
                   className="msg-action"
@@ -269,7 +336,11 @@ function TimelineEntries(props: {
         ),
       )}
       {props.approvals.map((approval) => (
-        <ApprovalCard key={approval.approval.id} item={approval} onResolve={props.onResolveApproval} />
+        <ApprovalCard
+          key={approval.approval.id}
+          item={approval}
+          onResolve={props.onResolveApproval}
+        />
       ))}
       {props.questions.map((question) => (
         <QuestionCard
@@ -283,25 +354,37 @@ function TimelineEntries(props: {
       ))}
       {props.streamingText && (
         <div className="bubble assistant">
-          <Md workspacePath={props.workspacePath} onOpenFile={props.onOpenFile} onOpenUrl={props.onOpenUrl}>
+          <Md
+            workspacePath={props.workspacePath}
+            onOpenFile={props.onOpenFile}
+            onOpenUrl={props.onOpenUrl}
+          >
             {props.streamingText}
           </Md>
           <span className="type-cursor" />
         </div>
       )}
-      {props.thinking && <ExecutionPrelude plan={props.plan} progress={props.turnProgress} />}
+      {props.thinking && (
+        <ExecutionPrelude plan={props.plan} progress={props.turnProgress} />
+      )}
       <PlanProgress plan={props.plan} busy={props.busy} />
     </div>
   );
 }
 
 export function Timeline(props: TimelineProps) {
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const [filter, setFilter] = useState<TimelineFilter>("all");
   const [query, setQuery] = useState("");
-  const historySearch = useHistorySearch(props.client, props.sessionId, filter, query);
+  const historySearch = useHistorySearch(
+    props.client,
+    props.sessionId,
+    filter,
+    query,
+  );
   const [exporting, setExporting] = useState(false);
   const exportRequest = useRef<AbortController | null>(null);
   const scrollAnchor = useRef<{ top: number; height: number } | null>(null);
@@ -314,7 +397,11 @@ export function Timeline(props: TimelineProps) {
     try {
       const history =
         props.client && props.sessionId
-          ? await readExportHistory(props.client, props.sessionId, request.signal)
+          ? await readExportHistory(
+              props.client,
+              props.sessionId,
+              request.signal,
+            )
           : { messages: props.messages, toolCalls: props.toolCalls };
       if (!request.signal.aborted)
         downloadSession(
@@ -350,7 +437,9 @@ export function Timeline(props: TimelineProps) {
     if (!el) return;
     el.scrollTo({
       top: el.scrollHeight,
-      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
     });
     pinnedToBottom.current = true;
     setShowJump(false);
@@ -381,7 +470,12 @@ export function Timeline(props: TimelineProps) {
   const items = useMemo(
     () =>
       historySearch.enabled
-        ? groupTimeline(createTimelineItems(historySearch.page?.messages ?? [], historySearch.page?.toolCalls ?? []))
+        ? groupTimeline(
+            createTimelineItems(
+              historySearch.page?.messages ?? [],
+              historySearch.page?.toolCalls ?? [],
+            ),
+          )
         : filterTimelineGroups(groups, filter, query),
     [groups, filter, query, historySearch.enabled, historySearch.page],
   );
@@ -392,16 +486,23 @@ export function Timeline(props: TimelineProps) {
     el.scrollTop = anchor.top + el.scrollHeight - anchor.height;
     scrollAnchor.current = null;
   }, [items]);
-  const hasOlder = historySearch.enabled ? Boolean(historySearch.page?.nextCursor) : props.hasOlder;
-  const loadingOlder = historySearch.enabled ? historySearch.loading : props.loadingOlder;
+  const hasOlder = historySearch.enabled
+    ? Boolean(historySearch.page?.nextCursor)
+    : props.hasOlder;
+  const loadingOlder = historySearch.enabled
+    ? historySearch.loading
+    : props.loadingOlder;
   const loadOlder = () => {
     const el = scrollRef.current;
-    if (el) scrollAnchor.current = { top: el.scrollTop, height: el.scrollHeight };
+    if (el)
+      scrollAnchor.current = { top: el.scrollTop, height: el.scrollHeight };
     pinnedToBottom.current = false;
     if (historySearch.enabled) historySearch.loadOlder();
     else void props.onLoadOlder?.();
   };
-  const hasRunningTool = props.toolCalls.some((t) => t.status === "running" || t.status === "waiting_approval");
+  const hasRunningTool = props.toolCalls.some(
+    (t) => t.status === "running" || t.status === "waiting_approval",
+  );
   const thinking =
     !props.loading &&
     props.busy &&
@@ -421,6 +522,17 @@ export function Timeline(props: TimelineProps) {
         questions={props.questions.length}
       />
       <div className="timeline-toolbar" aria-label="会话记录工具栏">
+        {props.client && props.sessionId && (
+          <button
+            type="button"
+            className="icon-button"
+            title="模型调用记录"
+            aria-label="模型调用记录"
+            onClick={() => setShowDiagnostics(true)}
+          >
+            <Activity size={16} />
+          </button>
+        )}
         <div className="timeline-modes" role="group" aria-label="记录类型">
           {(
             [
@@ -430,7 +542,12 @@ export function Timeline(props: TimelineProps) {
               ["errors", "异常"],
             ] as const
           ).map(([value, label]) => (
-            <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
+            <button
+              type="button"
+              key={value}
+              aria-pressed={filter === value}
+              onClick={() => setFilter(value)}
+            >
               {label}
             </button>
           ))}
@@ -457,17 +574,33 @@ export function Timeline(props: TimelineProps) {
         </label>
         <details className="session-export">
           <summary title="导出会话" aria-label="导出会话">
-            {exporting ? <LoaderCircle size={16} className="activity-spinner" /> : <Download size={16} />}
+            {exporting ? (
+              <LoaderCircle size={16} className="activity-spinner" />
+            ) : (
+              <Download size={16} />
+            )}
           </summary>
           <div>
             {(["md", "json"] as const).map((format) => (
-              <button type="button" key={format} disabled={exporting} onClick={() => void exportSession(format)}>
+              <button
+                type="button"
+                key={format}
+                disabled={exporting}
+                onClick={() => void exportSession(format)}
+              >
                 {format === "md" ? "Markdown" : "JSON"}
               </button>
             ))}
           </div>
         </details>
       </div>
+      {showDiagnostics && props.client && props.sessionId && (
+        <ModelDiagnostics
+          client={props.client}
+          sessionId={props.sessionId}
+          onClose={() => setShowDiagnostics(false)}
+        />
+      )}
       <div className="timeline" ref={scrollRef} onScroll={onScroll}>
         {(props.loading || (historySearch.loading && !historySearch.page)) && (
           <div className="history-loading" role="status">
@@ -491,8 +624,17 @@ export function Timeline(props: TimelineProps) {
         )}
         {hasOlder && (
           <div className="history-pages">
-            <button type="button" className="ghost" disabled={loadingOlder} onClick={loadOlder}>
-              {loadingOlder ? <LoaderCircle size={14} className="activity-spinner" /> : <ChevronUp size={14} />}
+            <button
+              type="button"
+              className="ghost"
+              disabled={loadingOlder}
+              onClick={loadOlder}
+            >
+              {loadingOlder ? (
+                <LoaderCircle size={14} className="activity-spinner" />
+              ) : (
+                <ChevronUp size={14} />
+              )}
               更早的记录
             </button>
           </div>
@@ -527,10 +669,20 @@ export function Timeline(props: TimelineProps) {
           onRewrite={props.onRewrite}
           workspacePath={props.workspacePath}
         />
-        <QueueBar queue={props.queue} onSteer={props.onSteerQueued} onRemove={props.onRemoveQueued} />
+        <QueueBar
+          queue={props.queue}
+          onSteer={props.onSteerQueued}
+          onRemove={props.onRemoveQueued}
+        />
       </div>
       {showJump && (
-        <button type="button" className="jump-to-bottom" title="回到底部" aria-label="回到底部" onClick={jumpToBottom}>
+        <button
+          type="button"
+          className="jump-to-bottom"
+          title="回到底部"
+          aria-label="回到底部"
+          onClick={jumpToBottom}
+        >
           <ArrowDown size={15} />
         </button>
       )}

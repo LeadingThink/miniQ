@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 
 use crate::router::{parse_input, Tool, ToolContext, ToolError};
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentRunRequest {
     pub prompt: String,

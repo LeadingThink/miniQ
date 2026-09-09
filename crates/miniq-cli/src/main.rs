@@ -126,11 +126,13 @@ async fn execute(client: &mut Client, options: &args::ChatOptions, exec: ExecArg
             );
         }
     }
-    let settings = client.call("settings.get", json!({})).await?;
-    if !exec.use_configured_permissions && settings["approvalMode"] != "alwaysAsk" {
-        bail!("unattended execution requires shared approvalMode=alwaysAsk, or explicitly --use-configured-permissions. Current mode: {}. Other sessions' permissions were not changed", settings["approvalMode"]);
+    if !exec.use_configured_permissions {
+        sessions::require_unattended_approval(client, exec.session.as_deref()).await?;
     }
     let id = sessions::prepare(client, options, exec.session.as_deref()).await?;
+    if !exec.use_configured_permissions {
+        sessions::require_unattended_approval(client, Some(&id)).await?;
+    }
     progress(&format!("Session: {id}"));
     let mut output = Output::new(exec.json);
     if let Err(error) = sessions::send(client, &id, &prompt, &options.attachments).await {

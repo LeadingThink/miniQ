@@ -1,9 +1,20 @@
-import { ChevronRight, GitBranch, LoaderCircle, RefreshCw, Search, Square } from "lucide-react";
+import {
+  Activity,
+  ChevronRight,
+  GitBranch,
+  LoaderCircle,
+  RefreshCw,
+  Search,
+  Square,
+} from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { RpcClient } from "../rpc";
 import { ToolPayload } from "./ToolPayload";
 import type { TurnProgress } from "../types";
 import { RetryNotice } from "./RetryNotice";
+import { ModelDiagnostics } from "./ModelDiagnostics";
+import { AgentActivity } from "./AgentActivity";
+import { AgentHistory } from "./AgentHistory";
 
 interface AgentSummary {
   agentId: string;
@@ -17,6 +28,10 @@ interface AgentSummary {
   error: string | null;
   result?: string | null;
   progress?: TurnProgress | null;
+  elapsedMs?: number;
+  timingComplete?: boolean;
+  heldMessagesCount?: number;
+  heldMessages?: string[];
 }
 
 const ACTIVE = new Set(["running", "stopping", "finalizing"]);
@@ -27,13 +42,26 @@ const LABELS: Record<string, string> = {
   completed: "已完成",
   failed: "失败",
   cancelled: "已取消",
+  interrupted: "已中断",
 };
 
-export function AgentPanel(props: { client: RpcClient; sessionId: string; busy: boolean }) {
+export function AgentPanel(props: {
+  client: RpcClient;
+  sessionId: string;
+  busy: boolean;
+}) {
   return <SessionAgentPanel key={props.sessionId} {...props} />;
 }
 
-function SessionAgentPanel({ client, sessionId, busy }: { client: RpcClient; sessionId: string; busy: boolean }) {
+function SessionAgentPanel({
+  client,
+  sessionId,
+  busy,
+}: {
+  client: RpcClient;
+  sessionId: string;
+  busy: boolean;
+}) {
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -46,6 +74,9 @@ function SessionAgentPanel({ client, sessionId, busy }: { client: RpcClient; ses
   const stoppingRef = useRef(false);
   const [filter, setFilter] = useState<"all" | "active" | "failed">("all");
   const [query, setQuery] = useState("");
+  const [diagnostics, setDiagnostics] = useState<string | null>(null);
+  const [activity, setActivity] = useState(false);
+  const [history, setHistory] = useState(false);
   const actionEpoch = useRef(0);
   const detailsId = useId();
 
@@ -61,7 +92,10 @@ function SessionAgentPanel({ client, sessionId, busy }: { client: RpcClient; ses
       }
       inFlight = true;
       try {
-        const response = await client.call<{ agents: AgentSummary[] }>("agent.list", { sessionId });
+        const response = await client.call<{ agents: AgentSummary[] }>(
+          "agent.list",
+          { sessionId },
+        );
         if (stale) return;
         setAgents(response.agents);
         setError(null);
@@ -120,9 +154,13 @@ function SessionAgentPanel({ client, sessionId, busy }: { client: RpcClient; ses
     setResult(null);
     setResultError(null);
     setPending(false);
+    setActivity(false);
+    setHistory(false);
     setSelected(selected === agentId ? null : agentId);
   };
-  const selectedStatus = agents.find((agent) => agent.agentId === selected)?.status;
+  const selectedStatus = agents.find(
+    (agent) => agent.agentId === selected,
+  )?.status;
   useEffect(() => {
     if (selected) void loadOutput(selected);
     return () => {
@@ -151,8 +189,13 @@ function SessionAgentPanel({ client, sessionId, busy }: { client: RpcClient; ses
   const needle = query.trim().toLocaleLowerCase();
   const visible = agents.filter(
     (agent) =>
-      (filter === "all" || (filter === "active" ? ACTIVE.has(agent.status) : agent.status === "failed")) &&
-      `${agent.name}\n${agent.description}\n${agent.model ?? ""}`.toLocaleLowerCase().includes(needle),
+      (filter === "all" ||
+        (filter === "active"
+          ? ACTIVE.has(agent.status)
+          : ["failed", "interrupted"].includes(agent.status))) &&
+      `${agent.name}\n${agent.description}\n${agent.model ?? ""}`
+        .toLocaleLowerCase()
+        .includes(needle),
   );
   return (
     <section className="agent-panel" aria-label="子任务">
@@ -165,7 +208,8 @@ function SessionAgentPanel({ client, sessionId, busy }: { client: RpcClient; ses
         <GitBranch size={15} />
         <strong>子任务</strong>
         <span>
-          {agents.filter((agent) => ACTIVE.has(agent.status)).length} 执行中 / {agents.length} 总计
+          {agents.filter((agent) => ACTIVE.has(agent.status)).length} 执行中 /{" "}
+          {agents.length} 总计
         </span>
         <ChevronRight size={14} className={open ? "open" : ""} />
       </button>
@@ -186,7 +230,11 @@ function SessionAgentPanel({ client, sessionId, busy }: { client: RpcClient; ses
       {open && (
         <div className="agent-list">
           <div className="agent-filters">
-            <div className="timeline-modes" role="group" aria-label="子任务状态">
+            <div
+              className="timeline-modes"
+              role="group"
+              aria-label="子任务状态"
+            >
               {(
                 [
                   ["all", "全部"],
@@ -194,7 +242,12 @@ function SessionAgentPanel({ client, sessionId, busy }: { client: RpcClient; ses
                   ["failed", "异常"],
                 ] as const
               ).map(([value, label]) => (
-                <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
+                <button
+                  type="button"
+                  key={value}
+                  aria-pressed={filter === value}
+                  onClick={() => setFilter(value)}
+                >
                   {label}
                 </button>
               ))}
@@ -225,16 +278,39 @@ function SessionAgentPanel({ client, sessionId, busy }: { client: RpcClient; ses
                   aria-controls={`${detailsId}-${agent.agentId}`}
                   onClick={() => select(agent.agentId)}
                 >
-                  <ChevronRight size={14} className={selected === agent.agentId ? "open" : ""} />
-                  {ACTIVE.has(agent.status) && <LoaderCircle size={13} className="activity-spinner" />}
+                  <ChevronRight
+                    size={14}
+                    className={selected === agent.agentId ? "open" : ""}
+                  />
+                  {ACTIVE.has(agent.status) && (
+                    <LoaderCircle size={13} className="activity-spinner" />
+                  )}
                   <strong>{agent.name}</strong>
                   <span>{agent.description}</span>
                   <small>
-                    {agent.parentId ? `${names.get(agent.parentId) ?? agent.parentId} / ` : ""}
-                    {agent.model ?? "默认模型"} · {LABELS[agent.status] ?? agent.status} ·{" "}
+                    {agent.parentId
+                      ? `${names.get(agent.parentId) ?? agent.parentId} / `
+                      : ""}
+                    {agent.model ?? "默认模型"} ·{" "}
+                    {LABELS[agent.status] ?? agent.status} ·{" "}
                     {new Date(agent.createdAt).toLocaleTimeString()}
+                    {agent.elapsedMs !== undefined &&
+                      ` · ${agent.timingComplete === false ? "至少 " : ""}${(agent.elapsedMs / 1000).toFixed(1)} 秒`}
+                    {!!agent.heldMessagesCount &&
+                      ` · ${agent.heldMessagesCount} 条待处理消息`}
                   </small>
-                  {agent.progress?.retry && <RetryNotice progress={agent.progress} />}
+                  {agent.progress?.retry && (
+                    <RetryNotice progress={agent.progress} />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
+                  title={`查看 ${agent.name} 模型调用`}
+                  aria-label={`查看 ${agent.name} 模型调用`}
+                  onClick={() => setDiagnostics(agent.agentId)}
+                >
+                  <Activity size={14} />
                 </button>
                 {ACTIVE.has(agent.status) && (
                   <button
@@ -250,7 +326,11 @@ function SessionAgentPanel({ client, sessionId, busy }: { client: RpcClient; ses
                 )}
               </div>
               {selected === agent.agentId && (
-                <div id={`${detailsId}-${agent.agentId}`} role="region" aria-label={`${agent.name} 详情`}>
+                <div
+                  id={`${detailsId}-${agent.agentId}`}
+                  role="region"
+                  aria-label={`${agent.name} 详情`}
+                >
                   {pending && <div role="status">正在读取子任务</div>}
                   <button
                     type="button"
@@ -266,14 +346,61 @@ function SessionAgentPanel({ client, sessionId, busy }: { client: RpcClient; ses
                   {result && (
                     <ToolPayload
                       label="子任务结果"
-                      value={result.result ?? result.error ?? LABELS[result.status] ?? result.status}
+                      value={
+                        result.result ??
+                        result.error ??
+                        LABELS[result.status] ??
+                        result.status
+                      }
                     />
                   )}
+                  {!!result?.heldMessages?.length && (
+                    <ToolPayload
+                      label="待处理消息"
+                      value={result.heldMessages}
+                    />
+                  )}
+                  <details
+                    open={activity}
+                    onToggle={(event) => setActivity(event.currentTarget.open)}
+                  >
+                    <summary>执行记录</summary>
+                    {activity && (
+                      <AgentActivity
+                        client={client}
+                        sessionId={sessionId}
+                        agentId={agent.agentId}
+                        status={agent.status}
+                      />
+                    )}
+                  </details>
+                  <details
+                    open={history}
+                    onToggle={(event) => setHistory(event.currentTarget.open)}
+                  >
+                    <summary>对话历史</summary>
+                    {history && (
+                      <AgentHistory
+                        client={client}
+                        sessionId={sessionId}
+                        agentId={agent.agentId}
+                        status={agent.status}
+                      />
+                    )}
+                  </details>
                 </div>
               )}
             </div>
           ))}
         </div>
+      )}
+      {diagnostics && (
+        <ModelDiagnostics
+          client={client}
+          sessionId={sessionId}
+          agentId={diagnostics}
+          onClose={() => setDiagnostics(null)}
+        />
       )}
     </section>
   );

@@ -150,6 +150,20 @@ fn extract_capabilities(payload: &Value) -> ModelCapabilities {
 
 #[async_trait]
 impl ModelProvider for ConfiguredProvider {
+    async fn execution_info(
+        &self,
+        max_output_tokens: Option<u32>,
+    ) -> Result<Option<miniq_protocol::ModelExecutionInfo>, ProviderError> {
+        match self.protocol().await? {
+            ApiProtocol::ChatCompletions => self.chat.execution_info(max_output_tokens).await,
+            ApiProtocol::Responses => self.responses.execution_info(max_output_tokens).await,
+            ApiProtocol::AnthropicMessages => {
+                self.anthropic.execution_info(max_output_tokens).await
+            }
+            ApiProtocol::Auto => unreachable!("resolved protocol"),
+        }
+    }
+
     async fn stream_complete(
         &self,
         request: CompletionRequest,

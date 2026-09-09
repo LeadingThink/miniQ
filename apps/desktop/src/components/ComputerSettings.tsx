@@ -1,4 +1,12 @@
-import { Check, ExternalLink, LoaderCircle, Monitor, MousePointer2, RefreshCw, ShieldAlert } from "lucide-react";
+import {
+  Check,
+  ExternalLink,
+  LoaderCircle,
+  Monitor,
+  MousePointer2,
+  RefreshCw,
+  ShieldAlert,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RpcClient } from "../rpc";
 import { errorMessage } from "../errorMessage";
@@ -17,9 +25,14 @@ export function ComputerSettings({ client }: { client: RpcClient }) {
   const [requested, setRequested] = useState(false);
   const epoch = useRef(0);
   const inFlight = useRef(false);
+  const recheckPending = useRef(false);
   const refresh = useCallback(
-    async (permission?: ComputerPermission) => {
-      if (inFlight.current || (permission && client.mode !== "local")) return;
+    async (permission?: ComputerPermission): Promise<void> => {
+      if (permission && client.mode !== "local") return;
+      if (inFlight.current) {
+        if (!permission) recheckPending.current = true;
+        return;
+      }
       inFlight.current = true;
       const id = ++epoch.current;
       setPending(true);
@@ -38,6 +51,10 @@ export function ComputerSettings({ client }: { client: RpcClient }) {
         if (id === epoch.current) {
           inFlight.current = false;
           setPending(false);
+          if (recheckPending.current) {
+            recheckPending.current = false;
+            void refresh();
+          }
         }
       }
     },
@@ -46,7 +63,9 @@ export function ComputerSettings({ client }: { client: RpcClient }) {
 
   useEffect(() => {
     inFlight.current = false;
+    recheckPending.current = false;
     setStatus(null);
+    setRequested(false);
     void refresh();
     const recheck = () => {
       if (document.visibilityState !== "hidden") void refresh();
@@ -65,7 +84,11 @@ export function ComputerSettings({ client }: { client: RpcClient }) {
   }, [client, refresh]);
 
   return (
-    <section className="computer-settings" aria-label="电脑控制权限" aria-busy={pending}>
+    <section
+      className="computer-settings"
+      aria-label="电脑控制权限"
+      aria-busy={pending}
+    >
       <div className="computer-settings-heading">
         <h3>Computer Use</h3>
         <button
@@ -76,7 +99,11 @@ export function ComputerSettings({ client }: { client: RpcClient }) {
           disabled={pending}
           onClick={() => void refresh()}
         >
-          {pending ? <LoaderCircle size={16} className="activity-spinner" /> : <RefreshCw size={16} />}
+          {pending ? (
+            <LoaderCircle size={16} className="activity-spinner" />
+          ) : (
+            <RefreshCw size={16} />
+          )}
         </button>
       </div>
       {error && (
@@ -101,13 +128,22 @@ export function ComputerSettings({ client }: { client: RpcClient }) {
           </dl>
           {(["screenRecording", "accessibility"] as const).map((permission) => {
             const ready = permissionReady(status[permission]);
-            const name = permission === "screenRecording" ? "屏幕录制" : "辅助功能";
+            const name =
+              permission === "screenRecording" ? "屏幕录制" : "辅助功能";
             return (
               <div className="computer-permission" key={permission}>
-                {permission === "screenRecording" ? <Monitor size={18} /> : <MousePointer2 size={18} />}
+                {permission === "screenRecording" ? (
+                  <Monitor size={18} />
+                ) : (
+                  <MousePointer2 size={18} />
+                )}
                 <div>
                   <strong>{name}</strong>
-                  <span className={ready ? "permission-ready" : "permission-attention"}>
+                  <span
+                    className={
+                      ready ? "permission-ready" : "permission-attention"
+                    }
+                  >
                     {ready ? <Check size={13} /> : <ShieldAlert size={13} />}
                     {permissionLabels[status[permission]]}
                   </span>
@@ -129,17 +165,32 @@ export function ComputerSettings({ client }: { client: RpcClient }) {
           })}
           {status.platform === "macos" && (
             <p className="computer-permission-note">
-              系统授权对象请核对 miniQ / miniq-daemon 与上方执行路径。系统权限与会话内的操作审批分别生效。
+              此处显示执行进程的实际权限，不是系统设置开关的副本。系统权限与会话内的操作审批分别生效。
             </p>
           )}
+          {status.platform === "macos" &&
+            (status.screenRecording === "denied" ||
+              status.accessibility === "denied") && (
+              <p className="computer-permission-note">
+                若系统开关已开启，后台进程可能尚未刷新，或升级后的应用签名与旧授权不匹配。
+                仅关闭窗口不会退出后台。未使用开发者证书签名的版本，升级后可能需要重新绑定授权。
+              </p>
+            )}
           {client.mode === "remote" && (
-            <p className="computer-permission-note">系统授权需要在这台电脑上由你确认，手机端不能代为授权。</p>
+            <p className="computer-permission-note">
+              系统授权需要在这台电脑上由你确认，手机端不能代为授权。
+            </p>
           )}
           {status.accessibility === "unsupported" && (
-            <p role="status">当前桌面环境不支持原生输入。Linux 请使用 X11；隔离浏览器自动化不受此限制。</p>
+            <p role="status">
+              当前桌面环境不支持原生输入。Linux 请使用
+              X11；隔离浏览器自动化不受此限制。
+            </p>
           )}
           {requested && (
-            <p role="status">系统设置已打开。完成授权后重新检查；若系统要求重新启动，先结束运行中的任务。</p>
+            <p role="status">
+              系统设置已打开。完成授权后重新检查；若系统要求重新启动，先结束运行中的任务。
+            </p>
           )}
         </>
       )}

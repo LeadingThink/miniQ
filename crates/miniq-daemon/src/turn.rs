@@ -233,39 +233,22 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
 /// If the session has queued messages, dequeue the head and start its turn.
 /// No-op when another turn already claimed the session.
 fn start_next_queued(state: &AppState, session_id: &str) {
-    let next = match state.store.dequeue_message(session_id) {
-        Ok(Some(next)) => next,
-        Ok(None) => return,
-        Err(err) => {
-            tracing::error!(session_id, %err, "failed to read message queue");
-            return;
-        }
-    };
     let Some(cancel) = state.begin_turn(session_id) else {
-        // Session got claimed in the meantime; put the message back in front.
-        if let Ok(requeued) = state.store.enqueue_message_with_attachments(
-            session_id,
-            &next.content,
-            &next.attachments,
-        ) {
-            let _ = state.store.promote_queued_message(&requeued.id);
-        }
         return;
     };
-    crate::gateway::emit_session_queue_changed(state, session_id);
-    let message = match state.store.append_message_with_attachments(
-        session_id,
-        Role::User,
-        &next.content,
-        &next.attachments,
-    ) {
-        Ok(message) => message,
+    let message = match state.store.start_queued_message(session_id) {
+        Ok(Some(message)) => message,
+        Ok(None) => {
+            state.end_turn(session_id);
+            return;
+        }
         Err(err) => {
-            tracing::error!(session_id, %err, "failed to persist queued message");
+            tracing::error!(session_id, %err, "failed to persist queued message; queue retained");
             state.end_turn(session_id);
             return;
         }
     };
+    crate::gateway::emit_session_queue_changed(state, session_id);
     state.emit(Event::MessageCreated {
         session_id: session_id.to_string(),
         message,
@@ -392,11 +375,21 @@ async fn execute_turn(
                 AgentEvent::ContextCompacted {
                     estimated_tokens_before,
                     estimated_tokens_after,
-                } => forward_state.emit(Event::ContextCompacted {
-                    session_id: forward_session.clone(),
-                    estimated_tokens_before,
-                    estimated_tokens_after,
-                }),
+                } => {
+                    crate::agent_progress::record_compaction(
+                        &forward_state,
+                        &forward_session,
+                        None,
+                        &forward_message_id,
+                        estimated_tokens_before,
+                        estimated_tokens_after,
+                    );
+                    forward_state.emit(Event::ContextCompacted {
+                        session_id: forward_session.clone(),
+                        estimated_tokens_before,
+                        estimated_tokens_after,
+                    });
+                }
                 event => {
                     if let Some(progress) = crate::agent_progress::from_event(event) {
                         crate::agent_progress::record_retry(
@@ -451,9 +444,20 @@ async fn execute_turn(
         review_plan: Default::default(),
     };
 
-    let provider = state.provider_from_config(config);
+    let provider = crate::observed_provider::ObservedProvider::new(
+        state.provider_from_config(config),
+        state.store.clone(),
+        session_id.to_owned(),
+        None,
+        message_id.clone(),
+        messages
+            .iter()
+            .rev()
+            .find(|message| message.role == Role::User)
+            .map(|message| message.id.clone()),
+    );
     let outcome = run_turn_with_limits(
-        provider.as_ref(),
+        &provider,
         &executor,
         history,
         event_tx,
@@ -483,7 +487,7 @@ async fn execute_turn(
     };
 
     executor
-        .reconcile_plan(provider.as_ref(), &mut outcome, context_policy())
+        .reconcile_plan(&provider, &mut outcome, context_policy())
         .await;
 
     let message = Message {

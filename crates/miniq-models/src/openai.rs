@@ -54,6 +54,7 @@ impl OpenAiCompatProvider {
             "model": self.config.model,
             "messages": messages,
             "stream": true,
+            "stream_options": {"include_usage": true},
         });
         crate::reasoning::apply_reasoning(
             &mut body,
@@ -186,6 +187,12 @@ struct PendingToolCall {
 
 #[derive(Deserialize)]
 struct StreamChunk {
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    usage: Option<Value>,
     #[serde(default)]
     choices: Vec<StreamChoice>,
     #[serde(default)]
@@ -320,6 +327,12 @@ fn decode_choice(
         return false;
     };
     *saw_finish_reason = true;
+    deltas.push(Ok(ChatDelta::ResponseInfo(
+        miniq_protocol::ProviderResponseInfo {
+            stop_reason: Some(reason.clone()),
+            ..Default::default()
+        },
+    )));
     match reason.as_str() {
         "stop" | "tool_calls" | "function_call" => deltas.extend(flush_tool_calls(pending)),
         "length" | "max_tokens" => {
@@ -379,6 +392,12 @@ fn decode_sse_event(
         )));
         return (deltas, true);
     }
+    if let Some(info) = crate::response_info::response_info(
+        &json!({"model": parsed.model, "id": parsed.id, "usage": parsed.usage}),
+        None,
+    ) {
+        deltas.push(Ok(info));
+    }
     for choice in parsed.choices {
         if decode_choice(choice, pending, saw_finish_reason, context, &mut deltas) {
             return (deltas, true);
@@ -392,6 +411,8 @@ struct ChatCompletionsDecoder {
     pending: Vec<PendingToolCall>,
     saw_finish_reason: bool,
     context: context::NativeContext,
+    response_info: miniq_protocol::ProviderResponseInfo,
+    terminal_errors: Vec<ProviderError>,
 }
 
 impl EventDecoder for ChatCompletionsDecoder {
@@ -402,14 +423,36 @@ impl EventDecoder for ChatCompletionsDecoder {
             &mut self.saw_finish_reason,
             &mut self.context,
         );
-        if terminal {
-            DecodedEvent::terminal(items)
+        let mut output = Vec::new();
+        for item in items {
+            match item {
+                Ok(ChatDelta::ResponseInfo(info)) => {
+                    if self.response_info.merge(info) {
+                        output.push(Ok(ChatDelta::ResponseInfo(self.response_info.clone())));
+                    }
+                }
+                Err(error) if self.saw_finish_reason => self.terminal_errors.push(error),
+                Ok(ChatDelta::Finished) => output.extend(self.terminal_items()),
+                other => output.push(other),
+            }
+        }
+        // Chat usage arrives after finish_reason. Consume that final frame
+        // even on length/content-filter failures, before exposing the error.
+        let waiting_for_usage = !self.terminal_errors.is_empty();
+        if waiting_for_usage {
+            self.pending.clear();
+        }
+        if terminal && !waiting_for_usage {
+            DecodedEvent::terminal(output)
         } else {
-            DecodedEvent::continue_with(items)
+            DecodedEvent::continue_with(output)
         }
     }
 
     fn finish(&mut self) -> Vec<Result<ChatDelta, ProviderError>> {
+        if !self.terminal_errors.is_empty() {
+            return self.terminal_items();
+        }
         if !self.saw_finish_reason {
             return vec![Err(ProviderError::IncompleteStream)];
         }
@@ -422,8 +465,33 @@ impl EventDecoder for ChatCompletionsDecoder {
     }
 }
 
+impl ChatCompletionsDecoder {
+    fn terminal_items(&mut self) -> Vec<Result<ChatDelta, ProviderError>> {
+        if self.terminal_errors.is_empty() {
+            vec![Ok(ChatDelta::Finished)]
+        } else {
+            std::mem::take(&mut self.terminal_errors)
+                .into_iter()
+                .map(Err)
+                .collect()
+        }
+    }
+}
+
 #[async_trait]
 impl ModelProvider for OpenAiCompatProvider {
+    async fn execution_info(
+        &self,
+        max_output_tokens: Option<u32>,
+    ) -> Result<Option<miniq_protocol::ModelExecutionInfo>, ProviderError> {
+        Ok(Some(miniq_protocol::ModelExecutionInfo {
+            model: self.config.model.clone(),
+            api_protocol: crate::ApiProtocol::ChatCompletions,
+            reasoning_effort: self.config.reasoning_effort,
+            max_output_tokens,
+        }))
+    }
+
     async fn stream_complete(
         &self,
         request: CompletionRequest,
