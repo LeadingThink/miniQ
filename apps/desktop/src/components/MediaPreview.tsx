@@ -54,14 +54,16 @@ export function BlobPreview({ dataBase64, mimeType, ...props }: Props) {
   );
 }
 
-function ImageInspector({
+export function ImageInspector({
   url,
   label,
   onError,
+  intrinsicSize,
 }: {
   url: string;
   label: string;
   onError: Props["onError"];
+  intrinsicSize?: { width: number; height: number };
 }) {
   const [mode, setMode] = usePreviewValue<"fit" | "zoom">("imageMode", "fit");
   const [zoom, setZoom] = usePreviewValue("imageZoom", 100);
@@ -156,10 +158,12 @@ function ImageInspector({
               : undefined
           }
           onLoad={(event) =>
-            setDimensions({
-              width: event.currentTarget.naturalWidth,
-              height: event.currentTarget.naturalHeight,
-            })
+            setDimensions(
+              intrinsicSize ?? {
+                width: event.currentTarget.naturalWidth,
+                height: event.currentTarget.naturalHeight,
+              },
+            )
           }
           onError={() => onError("图片解码失败")}
         />

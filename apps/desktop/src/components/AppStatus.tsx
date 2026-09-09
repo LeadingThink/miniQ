@@ -4,15 +4,20 @@ import {
   LoaderCircle,
   PanelLeftClose,
   PanelLeftOpen,
+  Sparkles,
 } from "lucide-react";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { sessionStatusLabel } from "../sessionStatus";
 import { ApprovalInboxButton } from "./ApprovalInbox";
+import { OpenPreviewButton } from "./OpenPreviewButton";
+import type { LocalFileTarget } from "../localFiles";
+import "./AppStatus.css";
 
 export function AppStatusBar(props: {
   app: MiniqAppController;
   onOpenBrowser: () => void;
   onToggleReview: () => void;
+  onOpenFile: (target: LocalFileTarget) => void;
 }) {
   const { app } = props;
   const { connected, health } = app.connection;
@@ -68,6 +73,17 @@ export function AppStatusBar(props: {
         client={app.client}
         onOpenSession={app.actions.openSession}
       />
+      {app.client.mode === "local" && (
+        <OpenPreviewButton
+          workspacePath={
+            currentSession?.workingDirectory ??
+            app.catalog.currentWorkspace?.path
+          }
+          scope={app.preview.viewScope}
+          onOpen={props.onOpenFile}
+          onError={app.setError}
+        />
+      )}
       <button
         type="button"
         className="statusbar-icon-button"
@@ -93,10 +109,12 @@ export function AppStatusBar(props: {
       {canDistill && (
         <button
           type="button"
-          className="ghost"
+          className="ghost distill-button"
+          title="保存为技能"
+          aria-label="保存为技能"
           onClick={() => app.navigation.setShowDistill(true)}
         >
-          ✦ 保存为技能
+          <Sparkles size={16} /> <span>保存为技能</span>
         </button>
       )}
     </div>

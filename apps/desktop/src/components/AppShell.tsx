@@ -549,6 +549,7 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
       <div className="main">
         <AppStatusBar
           app={app}
+          onOpenFile={openPreviewFile}
           onOpenBrowser={() => openBrowserUrl("https://www.bing.com/")}
           onToggleReview={() => {
             setBrowserUrl(null);

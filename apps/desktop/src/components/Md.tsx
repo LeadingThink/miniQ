@@ -1,5 +1,7 @@
-import { Check, Copy, FileText } from "lucide-react";
-import { isValidElement, useEffect, useRef, useState } from "react";
+import { FileText } from "lucide-react";
+import { isValidElement, useMemo, useRef } from "react";
+import { MarkdownImage } from "./MarkdownImage";
+import { MarkdownCodeBlock } from "./MarkdownCodeBlock";
 import type {
   AnchorHTMLAttributes,
   ComponentPropsWithoutRef,
@@ -44,7 +46,8 @@ function FileReference(props: {
 function nodeText(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(nodeText).join("");
-  if (isValidElement<{ children?: ReactNode }>(node)) return nodeText(node.props.children);
+  if (isValidElement<{ children?: ReactNode }>(node))
+    return nodeText(node.props.children);
   return "";
 }
 
@@ -70,7 +73,11 @@ function MarkdownLink(
   }
   const resolutionBase = referenceBasePath ?? workspacePath;
   const filePath = props.href
-    ? resolveLocalFileReference(props.href, resolutionBase, nodeText(props.children))
+    ? resolveLocalFileReference(
+        props.href,
+        resolutionBase,
+        nodeText(props.children),
+      )
     : null;
   if (filePath) {
     const handleFileClick = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -99,7 +106,10 @@ function MarkdownLink(
     // Open recognized external URLs in the system browser
     if (url) {
       event.preventDefault();
-      if (onOpenUrl && (url.protocol === "http:" || url.protocol === "https:")) {
+      if (
+        onOpenUrl &&
+        (url.protocol === "http:" || url.protocol === "https:")
+      ) {
         onOpenUrl(url.href);
       } else {
         void openExternalUrl(url).catch(() => undefined);
@@ -120,13 +130,16 @@ function MarkdownLink(
           let p = decodeURIComponent(fileUrl.pathname);
           if (/^\/[A-Za-z]:\//.test(p)) p = p.slice(1);
           candidatePath = p;
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       } else {
         candidatePath = resolveWorkspacePath(href, resolutionBase) ?? href;
       }
 
       if (candidatePath) {
-        if (onOpenFile) onOpenFile({ path: candidatePath, line: null, column: null });
+        if (onOpenFile)
+          onOpenFile({ path: candidatePath, line: null, column: null });
         else void openLocalFile(candidatePath, workspacePath);
       }
       return;
@@ -169,50 +182,6 @@ function MarkdownCode(
   return <code {...codeProps}>{children}</code>;
 }
 
-/** Fenced code block with a hover copy button (ChatGPT-style). */
-function MarkdownPre(props: ComponentPropsWithoutRef<"pre"> & { node?: unknown }) {
-  const { node: _node, ...preProps } = props;
-  const preRef = useRef<HTMLPreElement>(null);
-  const resetTimer = useRef<number | null>(null);
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
-
-  useEffect(() => () => {
-    if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
-  }, []);
-
-  const copy = async () => {
-    const text = preRef.current?.innerText ?? "";
-    if (!text) return;
-    try {
-      if (!navigator.clipboard) throw new Error("clipboard unavailable");
-      await navigator.clipboard.writeText(text);
-      setCopyState("copied");
-    } catch {
-      setCopyState("error");
-    }
-    if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
-    resetTimer.current = window.setTimeout(() => setCopyState("idle"), 1500);
-  };
-
-  const copied = copyState === "copied";
-  const label = copied ? "已复制" : copyState === "error" ? "复制失败" : "复制";
-
-  return (
-    <div className="code-block">
-      <button
-        type="button"
-        className={`code-copy ${copyState !== "idle" ? copyState : ""}`}
-        title={copyState === "error" ? "无法访问剪贴板" : "复制代码"}
-        onClick={() => void copy()}
-      >
-        {copied ? <Check size={13} /> : <Copy size={13} />}
-        {label}
-      </button>
-      <pre ref={preRef} {...preProps} />
-    </div>
-  );
-}
-
 /**
  * Custom URL transform that allows local file paths (Windows drive letters,
  * Unix absolute paths, relative paths) while keeping react-markdown's default
@@ -241,16 +210,67 @@ function localFileUrlTransform(value: string): string {
 }
 
 /** Markdown renderer for assistant output. */
+function DiagramMarkdownPre(
+  props: ComponentPropsWithoutRef<"pre"> & { node?: unknown },
+) {
+  return <MarkdownCodeBlock {...props} diagrams />;
+}
+
 export function Md(props: {
   children: string;
   workspacePath?: string | null;
   referenceBasePath?: string | null;
   headingAnchors?: boolean;
+  previewAssets?: { workspacePaths: readonly string[] };
   onOpenFile?: (target: LocalFileTarget) => void;
   onOpenUrl?: (url: string) => void;
 }) {
-  return (
-    <div className="md">
+  const { workspacePath, referenceBasePath } = props;
+  const callbacks = useRef({
+    onOpenFile: props.onOpenFile,
+    onOpenUrl: props.onOpenUrl,
+  });
+  callbacks.current = {
+    onOpenFile: props.onOpenFile,
+    onOpenUrl: props.onOpenUrl,
+  };
+  const handlers = useMemo(
+    () => ({
+      openFile: (target: LocalFileTarget) =>
+        callbacks.current.onOpenFile?.(target),
+      openUrl: (url: string) => callbacks.current.onOpenUrl?.(url),
+    }),
+    [],
+  );
+  const hasFileHandler = Boolean(props.onOpenFile);
+  const hasUrlHandler = Boolean(props.onOpenUrl);
+  const roots = props.previewAssets
+    ? JSON.stringify(props.previewAssets.workspacePaths)
+    : null;
+  const ImageRenderer = useMemo(() => {
+    if (!roots || !workspacePath || !referenceBasePath) return null;
+    const workspacePaths: string[] = JSON.parse(roots);
+    return function AssetImage({
+      src,
+      alt,
+      title,
+    }: ComponentPropsWithoutRef<"img">) {
+      return (
+        <MarkdownImage
+          src={src}
+          alt={alt}
+          title={title}
+          workspacePath={workspacePath!}
+          workspacePaths={workspacePaths}
+          referenceBasePath={referenceBasePath!}
+        />
+      );
+    };
+  }, [roots, workspacePath, referenceBasePath]);
+  // Completed messages keep their parsed subtree while another message streams.
+  // Stable event bridges still dispatch to the latest session's callbacks.
+  const rendered = useMemo(
+    () => (
       <ReactMarkdown
         urlTransform={localFileUrlTransform}
         components={{
@@ -259,8 +279,8 @@ export function Md(props: {
               {...linkProps}
               workspacePath={props.workspacePath}
               referenceBasePath={props.referenceBasePath}
-              onOpenFile={props.onOpenFile}
-              onOpenUrl={props.onOpenUrl}
+              onOpenFile={hasFileHandler ? handlers.openFile : undefined}
+              onOpenUrl={hasUrlHandler ? handlers.openUrl : undefined}
             />
           ),
           code: (codeProps) => (
@@ -268,16 +288,33 @@ export function Md(props: {
               {...codeProps}
               workspacePath={props.workspacePath}
               referenceBasePath={props.referenceBasePath}
-              onOpenFile={props.onOpenFile}
+              onOpenFile={hasFileHandler ? handlers.openFile : undefined}
             />
           ),
-          pre: MarkdownPre,
+          pre: props.previewAssets ? DiagramMarkdownPre : MarkdownCodeBlock,
+          ...(ImageRenderer ? { img: ImageRenderer } : {}),
         }}
         rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
-        remarkPlugins={props.headingAnchors ? [remarkGfm, remarkMath, remarkHeadingIds] : [remarkGfm, remarkMath]}
+        remarkPlugins={
+          props.headingAnchors
+            ? [remarkGfm, remarkMath, remarkHeadingIds]
+            : [remarkGfm, remarkMath]
+        }
       >
         {normalizeMathDelimiters(props.children)}
       </ReactMarkdown>
-    </div>
+    ),
+    [
+      props.children,
+      workspacePath,
+      referenceBasePath,
+      props.headingAnchors,
+      Boolean(props.previewAssets),
+      ImageRenderer,
+      handlers,
+      hasFileHandler,
+      hasUrlHandler,
+    ],
   );
+  return <div className="md">{rendered}</div>;
 }

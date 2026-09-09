@@ -1,0 +1,73 @@
+.statusbar {
+  container: statusbar / inline-size;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.statusbar > * {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.statusbar .connection-state {
+  white-space: nowrap;
+}
+.distill-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.open-preview-dialog {
+  white-space: normal;
+  width: min(520px, calc(100vw - 32px));
+  padding: 20px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+}
+.open-preview-dialog::backdrop {
+  background: #0005;
+}
+.open-preview-dialog form {
+  display: grid;
+  gap: 16px;
+}
+.open-preview-dialog header,
+.open-preview-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.open-preview-dialog label {
+  display: grid;
+  gap: 8px;
+}
+.open-preview-dialog input {
+  width: 100%;
+  padding: 10px;
+}
+.open-preview-dialog small {
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.timeline-toolbar {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.timeline-search {
+  flex: 1;
+  min-width: 100px;
+}
+.timeline-search input {
+  width: 100%;
+}
+@container statusbar (max-width: 620px) {
+  .distill-button span {
+    display: none;
+  }
+  .statusbar .review-toggle {
+    gap: 4px;
+  }
+}

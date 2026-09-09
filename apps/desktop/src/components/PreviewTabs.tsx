@@ -1,6 +1,7 @@
 import { File, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { LocalFileTarget } from "../localFiles";
+import { previewTabDirectories } from "../previewTabs";
 import "./PreviewTabs.css";
 
 export function PreviewTabs(props: {
@@ -11,11 +12,20 @@ export function PreviewTabs(props: {
   onClose: (path: string) => void;
 }) {
   const restoreFocus = useRef(false);
+  const directories = useMemo(
+    () => previewTabDirectories(props.tabs),
+    [props.tabs],
+  );
   useEffect(() => {
-    if (!restoreFocus.current) return;
-    restoreFocus.current = false;
-    const index = props.tabs.findIndex((target) => target.path === props.active);
-    if (index >= 0) document.getElementById(`${props.id}-${index}`)?.focus();
+    const index = props.tabs.findIndex(
+      (target) => target.path === props.active,
+    );
+    const active = document.getElementById(`${props.id}-${index}`);
+    active?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    if (restoreFocus.current) {
+      restoreFocus.current = false;
+      active?.focus({ preventScroll: true });
+    }
   }, [props.tabs, props.active, props.id]);
   if (!props.tabs.length) return null;
   return (
@@ -38,27 +48,41 @@ export function PreviewTabs(props: {
                 props.onClose(target.path);
                 return;
               }
-              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              if (
+                !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+              )
+                return;
               event.preventDefault();
               const next =
                 event.key === "Home"
                   ? 0
                   : event.key === "End"
                     ? props.tabs.length - 1
-                    : (index + (event.key === "ArrowLeft" ? -1 : 1) + props.tabs.length) % props.tabs.length;
+                    : (index +
+                        (event.key === "ArrowLeft" ? -1 : 1) +
+                        props.tabs.length) %
+                      props.tabs.length;
               props.onSelect(props.tabs[next]);
               document.getElementById(`${props.id}-${next}`)?.focus();
             }}
           >
             <File size={13} />
-            <span>{target.path.split(/[\\/]/).at(-1)}</span>
+            <span>
+              {target.path.split(/[\\/]/).at(-1)}
+              {directories.has(target.path) && (
+                <small>{directories.get(target.path)}</small>
+              )}
+            </span>
           </button>
           <button
             type="button"
             className="icon-button"
             title={`关闭 ${target.path}`}
             aria-label={`关闭文件 ${target.path}`}
-            onClick={() => props.onClose(target.path)}
+            onClick={() => {
+              restoreFocus.current = true;
+              props.onClose(target.path);
+            }}
           >
             <X size={12} />
           </button>

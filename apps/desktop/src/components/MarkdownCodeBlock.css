@@ -1,0 +1,41 @@
+.code-block {
+  min-width: 0;
+  max-width: 100%;
+}
+.code-block-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 4px 12px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: var(--bg-subtle);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.code-block-toolbar > span:first-child {
+  flex: 1;
+}
+.code-block-toolbar .icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-mid);
+  background: transparent;
+}
+.code-block-toolbar [aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+.md .code-block pre {
+  margin-top: 0;
+  border-radius: 0 0 8px 8px;
+}
+.md .code-block[data-wrap="true"] pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

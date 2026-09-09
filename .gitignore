@@ -17,4 +17,5 @@ apps/desktop/scripts/*
 !apps/desktop/scripts/android_release_test.py
 !apps/desktop/scripts/desktop_download_manifest.py
 !apps/desktop/scripts/desktop_download_manifest_test.py
+!apps/desktop/scripts/create-preview-fixtures.mjs
 dist-android/
