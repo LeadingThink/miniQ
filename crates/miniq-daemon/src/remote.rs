@@ -268,6 +268,7 @@ fn remote_method_allowed(method: &str) -> bool {
     !matches!(
         method,
         "daemon.shutdown"
+            | "daemon.shutdownIfIdle"
             | "computer.requestPermission"
             | "settings.update"
             | "workspace.open"
@@ -434,6 +435,7 @@ mod tests {
         assert!(remote_method_allowed("approval.resolve"));
         assert!(!remote_method_allowed("settings.update"));
         assert!(!remote_method_allowed("daemon.shutdown"));
+        assert!(!remote_method_allowed("daemon.shutdownIfIdle"));
         assert!(remote_method_allowed("computer.permissions"));
         assert!(!remote_method_allowed("computer.requestPermission"));
         assert!(!remote_method_allowed("workspace.open"));

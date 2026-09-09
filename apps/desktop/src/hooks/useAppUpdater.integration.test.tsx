@@ -32,7 +32,7 @@ function setup() {
     onResync: () => () => {},
     onEvent: () => () => {},
     call: vi.fn().mockImplementation(async (method: string) => {
-      if (method === "daemon.shutdown") {
+      if (method === "daemon.shutdownIfIdle") {
         client.connected = false;
         listeners.forEach((listener) => listener(false));
       }
@@ -71,7 +71,7 @@ it("blocks restart before shutdown and waits for the captured process before ins
   expect(fake.install).not.toHaveBeenCalled();
   expect(fake.resolveConnection).toHaveBeenCalledTimes(1);
   expect(fake.invoke.mock.invocationCallOrder[0]).toBeLessThan(
-    hook.client.call.mock.invocationCallOrder[hook.client.call.mock.calls.findIndex(([method]) => method === "daemon.shutdown")],
+    hook.client.call.mock.invocationCallOrder[hook.client.call.mock.calls.findIndex(([method]) => method === "daemon.shutdownIfIdle")],
   );
   await act(async () => { exited(); await pending; });
   expect(fake.install).toHaveBeenCalledOnce();
@@ -80,10 +80,10 @@ it("blocks restart before shutdown and waits for the captured process before ins
   expect(fake.invoke).not.toHaveBeenCalledWith("cancel_daemon_update");
 });
 
-it.each(["daemon.shutdown", "wait_for_daemon_exit", "install"])("restores normal reconnect after %s fails", async (stage) => {
+it.each(["daemon.shutdownIfIdle", "wait_for_daemon_exit", "install"])("restores normal reconnect after %s fails", async (stage) => {
   const hook = setup();
   await available(hook);
-  if (stage === "daemon.shutdown") {
+  if (stage === "daemon.shutdownIfIdle") {
     hook.client.call.mockImplementation(async (method: string) => {
       if (method === stage) throw new Error("shutdown failed");
       return {};
@@ -109,11 +109,11 @@ it("does not stop the daemon when downloading or preparing fails", async () => {
   fake.download.mockRejectedValueOnce(new Error("signature invalid"));
   await act(async () => { await hook.result.current.install(); });
   expect(fake.invoke).not.toHaveBeenCalled();
-  expect(hook.client.call).not.toHaveBeenCalledWith("daemon.shutdown");
+  expect(hook.client.call).not.toHaveBeenCalledWith("daemon.shutdownIfIdle");
   await act(async () => { await hook.result.current.checkNow(); });
   fake.invoke.mockRejectedValueOnce(new Error("cannot observe process"));
   await act(async () => { await hook.result.current.install(); });
-  expect(hook.client.call).not.toHaveBeenCalledWith("daemon.shutdown");
+  expect(hook.client.call).not.toHaveBeenCalledWith("daemon.shutdownIfIdle");
   expect(fake.install).not.toHaveBeenCalled();
 });
 
@@ -134,4 +134,16 @@ it("prevents duplicate installs and keeps restart blocked after the installer st
   expect(fake.invoke).not.toHaveBeenCalledWith("cancel_daemon_update");
   expect(fake.resolveConnection).toHaveBeenCalledTimes(1);
   expect(hook.onError).toHaveBeenCalled();
+});
+
+it("does not fall back to cancelling tasks when idle shutdown is busy or unsupported", async () => {
+  const hook = setup();
+  await available(hook);
+  hook.client.call.mockRejectedValue(new Error("tasks are active or idle shutdown is unsupported"));
+  await act(async () => { await hook.result.current.install(); });
+  expect(hook.client.call).toHaveBeenCalledWith("daemon.shutdownIfIdle");
+  expect(hook.client.call).not.toHaveBeenCalledWith("daemon.shutdown");
+  expect(fake.install).not.toHaveBeenCalled();
+  expect(fake.relaunch).not.toHaveBeenCalled();
+  expect(fake.invoke).toHaveBeenCalledWith("cancel_daemon_update");
 });

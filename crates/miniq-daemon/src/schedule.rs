@@ -131,6 +131,7 @@ pub fn next_run_iso(schedule: &Schedule, now_utc: OffsetDateTime) -> String {
 /// Fire one task now: create a session, send the prompt, spawn the turn.
 /// Returns the new session id.
 pub fn fire_task(state: &AppState, task: &ScheduledTask) -> Result<String, String> {
+    let _activity = state.activity.enter().map_err(|error| error.message)?;
     let session = state
         .store
         .create_session(&task.workspace_id, &task.name)
@@ -166,6 +167,9 @@ pub fn fire_task(state: &AppState, task: &ScheduledTask) -> Result<String, Strin
 }
 
 async fn run_due_tasks(state: &AppState) {
+    let Ok(_activity) = state.activity.enter() else {
+        return;
+    };
     let now = miniq_memory::now_iso();
     let due = match state.store.due_scheduled_tasks(&now) {
         Ok(due) => due,

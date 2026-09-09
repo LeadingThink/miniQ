@@ -48,6 +48,53 @@ async fn parent_turn_cancellation_reaches_background_children() {
 }
 
 #[tokio::test]
+async fn idle_update_never_cancels_a_child_after_its_parent_has_ended() {
+    let directory = tempfile::tempdir().unwrap();
+    let provider = Arc::new(GatedProvider::new());
+    let mut bridge = bridge_with_provider(&directory, provider.clone());
+    bridge.cancel = bridge.state.begin_turn(&bridge.session_id).unwrap();
+    let id = background(&bridge, "child").await;
+    wait_requests(&provider, 1).await;
+    bridge.state.end_turn(&bridge.session_id);
+
+    let response = crate::gateway::dispatch(
+        &bridge.state,
+        RpcRequest::new("update", "daemon.shutdownIfIdle", None),
+    )
+    .await;
+    assert_eq!(
+        response.error.unwrap().code,
+        miniq_protocol::ErrorCode::SessionBusy as i64
+    );
+    assert!(!bridge.state.shutdown.is_cancelled());
+    assert!(!bridge.cancel.is_cancelled());
+    assert_eq!(
+        bridge.output(&id, false, Duration::ZERO).await.unwrap()["status"],
+        "running"
+    );
+
+    bridge.stop(&id).await.unwrap();
+    assert_cancelled(&bridge, &id).await;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let response = crate::gateway::dispatch(
+                &bridge.state,
+                RpcRequest::new("update", "daemon.shutdownIfIdle", None),
+            )
+            .await;
+            if response.error.is_none() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(bridge.run(request("late child")).await.is_err());
+    assert_eq!(provider.requests.lock().await.len(), 1);
+}
+
+#[tokio::test]
 async fn dropping_cancelled_foreground_call_does_not_abandon_agent_cleanup() {
     for isolation in [None, Some("worktree")] {
         let directory = tempfile::tempdir().unwrap();
