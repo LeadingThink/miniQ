@@ -105,6 +105,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "tool.list" => system::list_tools(state),
         "observation.read" => observation::read(state, req.params).await,
         "settings.get" => settings::get(state),
+        "settings.models" => settings::models(state, req.params).await,
         "settings.update" => settings::update(state, req.params),
         "remote.status" => serde_json::to_value(crate::remote::status(state))
             .map_err(|error| RpcError::new(ErrorCode::InternalError, error.to_string())),

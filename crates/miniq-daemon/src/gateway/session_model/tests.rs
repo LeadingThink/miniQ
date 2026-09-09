@@ -23,6 +23,32 @@ fn state() -> (AppState, String, String) {
     (state, a, b)
 }
 
+#[test]
+fn model_catalog_url_adds_v1_only_for_a_bare_domain() {
+    assert_eq!(
+        model_catalog_url("https://models.test").unwrap().as_str(),
+        "https://models.test/v1/models"
+    );
+    assert_eq!(
+        model_catalog_url("https://models.test/v1/")
+            .unwrap()
+            .as_str(),
+        "https://models.test/v1/models"
+    );
+    assert_eq!(
+        model_catalog_url("https://models.test/custom/v1")
+            .unwrap()
+            .as_str(),
+        "https://models.test/custom/v1/models"
+    );
+    assert_eq!(
+        model_catalog_url("https://models.test?source=settings")
+            .unwrap()
+            .as_str(),
+        "https://models.test/v1/models"
+    );
+}
+
 #[tokio::test]
 async fn session_update_is_independent_and_never_exposes_credentials() {
     let (state, a, b) = state();

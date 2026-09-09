@@ -50,6 +50,14 @@ struct ProviderUpdate {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ModelsParams {
+    base_url: String,
+    #[serde(default)]
+    api_key: Option<String>,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RemoteAccessUpdate {
     enabled: bool,
@@ -101,6 +109,33 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
         .update_settings(settings)
         .map_err(|error| RpcError::new(ErrorCode::InternalError, error))?;
     get(state)
+}
+
+pub(super) async fn models(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: ModelsParams = params(raw)?;
+    let base_url = input.base_url.trim();
+    let saved = state.settings.lock().unwrap().provider.clone();
+    let api_key = input
+        .api_key
+        .filter(|key| !key.trim().is_empty())
+        .map(|key| key.trim().to_string())
+        .or_else(|| {
+            saved
+                .as_ref()
+                .filter(|provider| {
+                    provider.base_url.trim_end_matches('/') == base_url.trim_end_matches('/')
+                })
+                .map(|provider| provider.api_key.clone())
+        })
+        .unwrap_or_default();
+    let config = miniq_models::ProviderConfig {
+        base_url: base_url.to_string(),
+        api_key,
+        model: saved.map(|provider| provider.model).unwrap_or_default(),
+        api_protocol: ApiProtocol::Auto,
+        reasoning_effort: None,
+    };
+    super::session_model::catalog_for(&config).await
 }
 
 fn validate_remote(remote: &RemoteAccessUpdate) -> Result<(), RpcError> {
@@ -254,5 +289,42 @@ mod tests {
             merged_key(Some("  ".to_string()), Some("old-key".to_string())),
             "old-key"
         );
+    }
+
+    #[tokio::test]
+    async fn model_catalog_uses_unsaved_url_and_reuses_its_saved_key() {
+        use axum::{routing::get as route, Json, Router};
+        let app = Router::new().route(
+            "/v1/models",
+            route(|headers: axum::http::HeaderMap| async move {
+                assert_eq!(headers["authorization"], "Bearer secret");
+                Json(json!({"data":[{"id":"zeta"},{"id":"alpha"}]}))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let state = AppState::new(
+            miniq_memory::Store::open_in_memory().unwrap(),
+            "fixture".into(),
+            std::sync::Arc::new(miniq_models::mock::MockProvider::new(Vec::new())),
+        );
+        state.settings.lock().unwrap().provider = Some(miniq_models::ProviderConfig {
+            base_url: format!("http://{address}"),
+            api_key: "secret".into(),
+            model: "current".into(),
+            api_protocol: ApiProtocol::Auto,
+            reasoning_effort: None,
+        });
+
+        let result = models(
+            &state,
+            Some(json!({"baseUrl": format!("http://{address}/")})),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result["models"], json!(["alpha", "zeta"]));
+        assert!(!result.to_string().contains("secret"));
+        server.abort();
     }
 }

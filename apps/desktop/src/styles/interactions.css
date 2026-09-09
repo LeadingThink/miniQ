@@ -456,6 +456,24 @@
   font-family: inherit;
 }
 
+.provider-model-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+}
+
+.provider-model-control > input,
+.provider-model-control > select {
+  min-width: 0;
+  width: 100%;
+}
+
+.settings-panel .provider-model-list-button {
+  min-height: 36px;
+  padding-inline: 12px;
+  white-space: nowrap;
+}
+
 .settings-panel input:focus,
 .settings-panel select:focus {
   outline: 2px solid var(--focus-ring);
