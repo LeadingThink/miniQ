@@ -9,6 +9,7 @@ import {
   useState,
   type Dispatch,
   type ReactNode,
+  type RefObject,
   type SetStateAction,
   type UIEvent,
 } from "react";
@@ -92,18 +93,21 @@ export function usePreviewValue<T>(
 export function usePreviewScroll<T extends HTMLElement>(
   key: string,
   ready = true,
+  providedRef?: RefObject<T>,
 ) {
   const values = usePreviewCache();
-  const ref = useRef<T>(null);
+  const localRef = useRef<T>(null);
+  const ref = providedRef ?? localRef;
   useBrowserLayoutEffect(() => {
     const element = ref.current;
     const position = values.get(`scroll:${key}`) as
-      { top: number; left: number } | undefined;
+      | { top: number; left: number }
+      | undefined;
     if (ready && element) {
       element.scrollTop = position?.top ?? 0;
       element.scrollLeft = position?.left ?? 0;
     }
-  }, [values, key, ready]);
+  }, [values, key, ready, ref]);
   const onScroll = (event: UIEvent<T>) => {
     if (ready)
       values.set(`scroll:${key}`, {

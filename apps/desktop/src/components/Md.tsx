@@ -1,5 +1,7 @@
 import { Check, Copy, FileText } from "lucide-react";
-import { isValidElement, useEffect, useRef, useState } from "react";
+import { isValidElement, useEffect, useMemo, useRef, useState } from "react";
+import { MarkdownImage } from "./MarkdownImage";
+import { MermaidPreview } from "./MermaidPreview";
 import type {
   AnchorHTMLAttributes,
   ComponentPropsWithoutRef,
@@ -44,7 +46,8 @@ function FileReference(props: {
 function nodeText(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(nodeText).join("");
-  if (isValidElement<{ children?: ReactNode }>(node)) return nodeText(node.props.children);
+  if (isValidElement<{ children?: ReactNode }>(node))
+    return nodeText(node.props.children);
   return "";
 }
 
@@ -70,7 +73,11 @@ function MarkdownLink(
   }
   const resolutionBase = referenceBasePath ?? workspacePath;
   const filePath = props.href
-    ? resolveLocalFileReference(props.href, resolutionBase, nodeText(props.children))
+    ? resolveLocalFileReference(
+        props.href,
+        resolutionBase,
+        nodeText(props.children),
+      )
     : null;
   if (filePath) {
     const handleFileClick = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -99,7 +106,10 @@ function MarkdownLink(
     // Open recognized external URLs in the system browser
     if (url) {
       event.preventDefault();
-      if (onOpenUrl && (url.protocol === "http:" || url.protocol === "https:")) {
+      if (
+        onOpenUrl &&
+        (url.protocol === "http:" || url.protocol === "https:")
+      ) {
         onOpenUrl(url.href);
       } else {
         void openExternalUrl(url).catch(() => undefined);
@@ -120,13 +130,16 @@ function MarkdownLink(
           let p = decodeURIComponent(fileUrl.pathname);
           if (/^\/[A-Za-z]:\//.test(p)) p = p.slice(1);
           candidatePath = p;
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       } else {
         candidatePath = resolveWorkspacePath(href, resolutionBase) ?? href;
       }
 
       if (candidatePath) {
-        if (onOpenFile) onOpenFile({ path: candidatePath, line: null, column: null });
+        if (onOpenFile)
+          onOpenFile({ path: candidatePath, line: null, column: null });
         else void openLocalFile(candidatePath, workspacePath);
       }
       return;
@@ -170,15 +183,25 @@ function MarkdownCode(
 }
 
 /** Fenced code block with a hover copy button (ChatGPT-style). */
-function MarkdownPre(props: ComponentPropsWithoutRef<"pre"> & { node?: unknown }) {
-  const { node: _node, ...preProps } = props;
+function MarkdownPre(
+  props: ComponentPropsWithoutRef<"pre"> & {
+    node?: unknown;
+    diagrams?: boolean;
+  },
+) {
+  const { node: _node, diagrams, ...preProps } = props;
   const preRef = useRef<HTMLPreElement>(null);
   const resetTimer = useRef<number | null>(null);
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
+    "idle",
+  );
 
-  useEffect(() => () => {
-    if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
+    },
+    [],
+  );
 
   const copy = async () => {
     const text = preRef.current?.innerText ?? "";
@@ -196,6 +219,16 @@ function MarkdownPre(props: ComponentPropsWithoutRef<"pre"> & { node?: unknown }
 
   const copied = copyState === "copied";
   const label = copied ? "已复制" : copyState === "error" ? "复制失败" : "复制";
+
+  if (
+    diagrams &&
+    isValidElement<{ className?: string; children?: ReactNode }>(
+      props.children,
+    ) &&
+    props.children.props.className === "language-mermaid"
+  ) {
+    return <MermaidPreview source={nodeText(props.children)} />;
+  }
 
   return (
     <div className="code-block">
@@ -241,14 +274,45 @@ function localFileUrlTransform(value: string): string {
 }
 
 /** Markdown renderer for assistant output. */
+function DiagramMarkdownPre(
+  props: ComponentPropsWithoutRef<"pre"> & { node?: unknown },
+) {
+  return <MarkdownPre {...props} diagrams />;
+}
+
 export function Md(props: {
   children: string;
   workspacePath?: string | null;
   referenceBasePath?: string | null;
   headingAnchors?: boolean;
+  previewAssets?: { workspacePaths: readonly string[] };
   onOpenFile?: (target: LocalFileTarget) => void;
   onOpenUrl?: (url: string) => void;
 }) {
+  const { workspacePath, referenceBasePath } = props;
+  const roots = props.previewAssets
+    ? JSON.stringify(props.previewAssets.workspacePaths)
+    : null;
+  const ImageRenderer = useMemo(() => {
+    if (!roots || !workspacePath || !referenceBasePath) return null;
+    const workspacePaths: string[] = JSON.parse(roots);
+    return function AssetImage({
+      src,
+      alt,
+      title,
+    }: ComponentPropsWithoutRef<"img">) {
+      return (
+        <MarkdownImage
+          src={src}
+          alt={alt}
+          title={title}
+          workspacePath={workspacePath!}
+          workspacePaths={workspacePaths}
+          referenceBasePath={referenceBasePath!}
+        />
+      );
+    };
+  }, [roots, workspacePath, referenceBasePath]);
   return (
     <div className="md">
       <ReactMarkdown
@@ -271,10 +335,15 @@ export function Md(props: {
               onOpenFile={props.onOpenFile}
             />
           ),
-          pre: MarkdownPre,
+          pre: props.previewAssets ? DiagramMarkdownPre : MarkdownPre,
+          ...(ImageRenderer ? { img: ImageRenderer } : {}),
         }}
         rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
-        remarkPlugins={props.headingAnchors ? [remarkGfm, remarkMath, remarkHeadingIds] : [remarkGfm, remarkMath]}
+        remarkPlugins={
+          props.headingAnchors
+            ? [remarkGfm, remarkMath, remarkHeadingIds]
+            : [remarkGfm, remarkMath]
+        }
       >
         {normalizeMathDelimiters(props.children)}
       </ReactMarkdown>

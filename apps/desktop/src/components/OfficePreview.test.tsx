@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DocxPreview, PptxPreview } from "./OfficePreview";
 
@@ -11,6 +18,60 @@ beforeEach(() => {
   mocks.init.mockReset();
 });
 afterEach(cleanup);
+
+it("fits real page widths and updates zoom and page navigation without reparsing", async () => {
+  let width = 500;
+  const observers: Array<() => void> = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(callback: () => void) {
+        observers.push(callback);
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const measured = vi
+    .spyOn(HTMLElement.prototype, "clientWidth", "get")
+    .mockImplementation(() => width);
+  const natural = vi
+    .spyOn(HTMLElement.prototype, "offsetWidth", "get")
+    .mockReturnValue(1000);
+  const navigate = vi.fn();
+  mocks.render.mockImplementation(async (_bytes, target: HTMLElement) => {
+    for (let index = 0; index < 3; index++) {
+      const page = document.createElement("section");
+      page.className = "docx";
+      page.scrollIntoView = navigate;
+      target.append(page);
+    }
+  });
+  const view = render(<DocxPreview dataBase64="AA==" onError={vi.fn()} />);
+  await waitFor(() =>
+    expect(
+      view.container.querySelector<HTMLElement>(".office-document")?.style.zoom,
+    ).toBe("0.5"),
+  );
+  width = 300;
+  act(() => observers.forEach((callback) => callback()));
+  expect(
+    view.container.querySelector<HTMLElement>(".office-document")?.style.zoom,
+  ).toBe("0.3");
+  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  expect(navigate).toHaveBeenCalled();
+  expect((screen.getByLabelText("Word 页码") as HTMLInputElement).value).toBe(
+    "2",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "重置 Word 缩放" }));
+  expect(
+    view.container.querySelector<HTMLElement>(".office-document")?.style.zoom,
+  ).toBe("1");
+  expect(mocks.render).toHaveBeenCalledTimes(1);
+  measured.mockRestore();
+  natural.mockRestore();
+  vi.unstubAllGlobals();
+});
 
 it("late Word parsing cannot overwrite a newly selected file", async () => {
   let finish!: () => void;

@@ -4,6 +4,12 @@ import {
   Eye,
   ExternalLink,
   FileCode2,
+  FileText,
+  Image,
+  Music,
+  Video,
+  Table2,
+  Presentation,
   FolderOpen,
   RotateCcw,
   WrapText,
@@ -30,6 +36,8 @@ import {
   UnsupportedPreview,
 } from "./DocumentPreview";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { SvgPreview } from "./SvgPreview";
+import { DelimitedPreview } from "./DelimitedPreview";
 import { CopyButton } from "./CopyButton";
 import { HtmlPreview } from "./HtmlPreview";
 import { isHtmlFile } from "../htmlPreview";
@@ -123,7 +131,7 @@ function PreviewPanelContent({
     setRenderError(null);
     setRenderAttempt(0);
     if (target?.line) setMarkdownSource(true);
-  }, [path, target?.line]);
+  }, [path, target?.line, preview.content, preview.dataBase64]);
 
   const reportRenderError = useCallback(
     (message: string) => setRenderError(message),
@@ -131,7 +139,22 @@ function PreviewPanelContent({
   );
   const renderable =
     preview.kind === "markdown" ||
-    (preview.kind === "text" && isHtmlFile(path));
+    (preview.kind === "text" &&
+      (isHtmlFile(path) || /\.(svg|csv|tsv)$/i.test(path)));
+  const TypeIcon =
+    preview.kind === "image" || /\.svg$/i.test(path)
+      ? Image
+      : preview.kind === "audio"
+        ? Music
+        : preview.kind === "video"
+          ? Video
+          : preview.kind === "xlsx" || /\.(csv|tsv)$/i.test(path)
+            ? Table2
+            : preview.kind === "pptx"
+              ? Presentation
+              : ["markdown", "docx", "pdf"].includes(preview.kind ?? "")
+                ? FileText
+                : FileCode2;
   const sourceVisible =
     (preview.kind === "text" && !renderable) || (renderable && markdownSource);
 
@@ -142,7 +165,8 @@ function PreviewPanelContent({
   const handleMount: OnMount = (instance) => {
     editorRef.current = instance;
     const saved = viewCache.get("codeState") as
-      editor.ICodeEditorViewState | undefined;
+      | editor.ICodeEditorViewState
+      | undefined;
     if (saved) instance.restoreViewState(saved);
     if (target?.line) locate();
     const save = () => viewCache.set("codeState", instance.saveViewState());
@@ -175,7 +199,7 @@ function PreviewPanelContent({
         />
       )}
       <header className="file-preview-header">
-        <FileCode2 size={17} />
+        <TypeIcon size={17} />
         <div>
           <strong>{fileName(path) || "文件预览"}</strong>
           <span title={path}>{path}</span>
@@ -187,87 +211,6 @@ function PreviewPanelContent({
             {preview.size !== null ? formatFileSize(preview.size) : ""}
           </small>
         )}
-        {renderable && preview.content !== null && (
-          <span
-            className="preview-mode-toggle"
-            role="group"
-            aria-label="文件显示模式"
-          >
-            <button
-              type="button"
-              className={!markdownSource ? "selected" : ""}
-              title="渲染预览"
-              aria-label="渲染预览"
-              aria-pressed={!markdownSource}
-              onClick={() => setMarkdownSource(false)}
-            >
-              <Eye size={15} />
-            </button>
-            <button
-              type="button"
-              className={markdownSource ? "selected" : ""}
-              title="查看源码"
-              aria-label="查看源码"
-              aria-pressed={markdownSource}
-              onClick={() => setMarkdownSource(true)}
-            >
-              <Code2 size={15} />
-            </button>
-          </span>
-        )}
-        {sourceVisible && (
-          <button
-            type="button"
-            className={`icon-button${wrapCode ? " active" : ""}`}
-            title={wrapCode ? "关闭长行折行" : "开启长行折行"}
-            aria-label={wrapCode ? "关闭长行折行" : "开启长行折行"}
-            aria-pressed={wrapCode}
-            onClick={() => setWrapCode((value) => !value)}
-          >
-            <WrapText size={16} />
-          </button>
-        )}
-        <CopyButton
-          content={path}
-          label="复制文件路径"
-          onError={setActionError}
-        />
-        <button
-          type="button"
-          className="icon-button"
-          title="重新读取文件"
-          aria-label="重新读取文件"
-          disabled={preview.loading || !path}
-          onClick={onRetry}
-        >
-          <RotateCcw size={15} />
-        </button>
-        <button
-          className="icon-button"
-          title="使用系统默认应用打开"
-          aria-label="使用系统默认应用打开"
-          disabled={!path}
-          onClick={() =>
-            void runAction(() =>
-              openLocalFile(path, workspacePath, workspacePaths),
-            )
-          }
-        >
-          <ExternalLink size={16} />
-        </button>
-        <button
-          className="icon-button"
-          title="在文件夹中显示"
-          aria-label="在文件夹中显示"
-          disabled={!path}
-          onClick={() =>
-            void runAction(() =>
-              revealLocalFile(path, workspacePath, workspacePaths),
-            )
-          }
-        >
-          <FolderOpen size={16} />
-        </button>
         <button
           className="icon-button"
           title="关闭预览"
@@ -276,6 +219,89 @@ function PreviewPanelContent({
         >
           <X size={17} />
         </button>
+        <section className="file-preview-tools" aria-label="文件操作">
+          {renderable && preview.content !== null && (
+            <span
+              className="preview-mode-toggle"
+              role="group"
+              aria-label="文件显示模式"
+            >
+              <button
+                type="button"
+                className={!markdownSource ? "selected" : ""}
+                title="渲染预览"
+                aria-label="渲染预览"
+                aria-pressed={!markdownSource}
+                onClick={() => setMarkdownSource(false)}
+              >
+                <Eye size={15} />
+              </button>
+              <button
+                type="button"
+                className={markdownSource ? "selected" : ""}
+                title="查看源码"
+                aria-label="查看源码"
+                aria-pressed={markdownSource}
+                onClick={() => setMarkdownSource(true)}
+              >
+                <Code2 size={15} />
+              </button>
+            </span>
+          )}
+          {sourceVisible && (
+            <button
+              type="button"
+              className={`icon-button${wrapCode ? " active" : ""}`}
+              title={wrapCode ? "关闭长行折行" : "开启长行折行"}
+              aria-label={wrapCode ? "关闭长行折行" : "开启长行折行"}
+              aria-pressed={wrapCode}
+              onClick={() => setWrapCode((value) => !value)}
+            >
+              <WrapText size={16} />
+            </button>
+          )}
+          <CopyButton
+            content={path}
+            label="复制文件路径"
+            onError={setActionError}
+          />
+          <button
+            type="button"
+            className="icon-button"
+            title="重新读取文件"
+            aria-label="重新读取文件"
+            disabled={preview.loading || !path}
+            onClick={onRetry}
+          >
+            <RotateCcw size={15} />
+          </button>
+          <button
+            className="icon-button"
+            title="使用系统默认应用打开"
+            aria-label="使用系统默认应用打开"
+            disabled={!path}
+            onClick={() =>
+              void runAction(() =>
+                openLocalFile(path, workspacePath, workspacePaths),
+              )
+            }
+          >
+            <ExternalLink size={16} />
+          </button>
+          <button
+            className="icon-button"
+            title="在文件夹中显示"
+            aria-label="在文件夹中显示"
+            disabled={!path}
+            onClick={() =>
+              void runAction(() =>
+                revealLocalFile(path, workspacePath, workspacePaths),
+              )
+            }
+          >
+            <FolderOpen size={16} />
+          </button>
+        </section>
       </header>
       {(preview.error || actionError || renderError) && (
         <div className="review-error preview-error" role="alert">
@@ -312,8 +338,29 @@ function PreviewPanelContent({
           <MarkdownPreview
             content={preview.content}
             workspacePath={workspacePath}
+            workspacePaths={workspacePaths}
             currentFilePath={path}
             onOpenFile={onOpenFile}
+          />
+        ) : renderable &&
+          !markdownSource &&
+          preview.content !== null &&
+          /\.svg$/i.test(path) ? (
+          <SvgPreview
+            key={renderAttempt}
+            content={preview.content}
+            label={fileName(path)}
+            onError={reportRenderError}
+          />
+        ) : renderable &&
+          !markdownSource &&
+          preview.content !== null &&
+          /\.(csv|tsv)$/i.test(path) ? (
+          <DelimitedPreview
+            key={renderAttempt}
+            content={preview.content}
+            path={path}
+            onError={reportRenderError}
           />
         ) : renderable && !markdownSource && preview.content !== null ? (
           <HtmlPreview

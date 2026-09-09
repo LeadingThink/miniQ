@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { decodeBase64 } from "../previewBinary";
 import { usePreviewScroll } from "../previewViewState";
 import { acquirePresentationRenderer } from "../presentationRenderer";
+import { DocumentControls } from "./DocumentControls";
+import { useOfficeLayout } from "../hooks/useOfficeLayout";
 
 type Props = { dataBase64: string; onError: (message: string) => void };
 
@@ -22,7 +24,13 @@ function OfficePreview({
   const [status, setStatus] = useState<"loading" | "ready" | "failed">(
     "loading",
   );
-  const scroll = usePreviewScroll<HTMLDivElement>(kind, status === "ready");
+  const stageRef = useRef<HTMLDivElement>(null);
+  const layout = useOfficeLayout(stageRef, status === "ready", kind);
+  const scroll = usePreviewScroll(
+    kind,
+    status === "ready" && layout.count > 0,
+    stageRef,
+  );
 
   useEffect(() => {
     const container = scroll.ref.current;
@@ -80,7 +88,6 @@ function OfficePreview({
         document.body.append(staging);
         const preview = init(staging, {
           width: 960,
-          height: 540,
           mode: "list",
         });
         dispose = () => {
@@ -124,10 +131,17 @@ function OfficePreview({
   }, [dataBase64, kind, scroll.ref]);
 
   return (
-    <div
-      {...scroll}
-      className={`office-preview ${kind}-preview`}
-      aria-busy={status === "loading"}
-    />
+    <div className="office-viewer">
+      <DocumentControls label={kind === "docx" ? "Word" : "PPT"} {...layout} />
+      <div
+        {...scroll}
+        onScroll={(event) => {
+          scroll.onScroll(event);
+          layout.onScroll();
+        }}
+        className={`office-preview ${kind}-preview`}
+        aria-busy={status === "loading"}
+      />
+    </div>
   );
 }

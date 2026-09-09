@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
+import { useRef } from "react";
 import {
   PreviewViewProvider,
   PreviewViewStore,
@@ -46,4 +47,28 @@ it("restores view state per session and file without cross-session leakage", () 
   store.closeFile("one", "/a");
   view.rerender(element("one", "/a"));
   expect(screen.getByRole("button").textContent).toBe("100%");
+});
+
+it("restores a provided viewport only after document layout is ready", () => {
+  const store = new PreviewViewStore();
+  store
+    .forFile("session", "/paper.pdf")
+    .set("scroll:page", { top: 500, left: 60 });
+  function Document({ ready }: { ready: boolean }) {
+    const ref = useRef<HTMLDivElement>(null);
+    const scroll = usePreviewScroll("page", ready, ref);
+    return <div data-testid="document" {...scroll} />;
+  }
+  const element = (ready: boolean) => (
+    <PreviewViewProvider store={store} scope="session" path="/paper.pdf">
+      <Document ready={ready} />
+    </PreviewViewProvider>
+  );
+  const view = render(element(false));
+  const viewport = screen.getByTestId("document");
+  expect(viewport.scrollTop).toBe(0);
+  fireEvent.scroll(viewport);
+  view.rerender(element(true));
+  expect(viewport.scrollTop).toBe(500);
+  expect(viewport.scrollLeft).toBe(60);
 });

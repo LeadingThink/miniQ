@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clampPage,
-  clampPdfZoom,
+  clampDocumentZoom,
   moveTabIndex,
   spreadsheetColumnLabel,
   spreadsheetRow,
@@ -15,9 +15,10 @@ describe("document preview controls", () => {
   });
 
   it("keeps PDF zoom usable and stable", () => {
-    expect(clampPdfZoom(0.1)).toBe(0.6);
-    expect(clampPdfZoom(1.399999)).toBe(1.4);
-    expect(clampPdfZoom(4)).toBe(2);
+    expect(clampDocumentZoom(0)).toBe(0.1);
+    expect(clampDocumentZoom(1.399999)).toBe(1.4);
+    expect(clampDocumentZoom(5)).toBe(4);
+    expect(clampDocumentZoom(NaN)).toBe(1);
   });
 
   it("labels spreadsheet columns beyond Z", () => {

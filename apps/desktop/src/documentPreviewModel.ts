@@ -1,6 +1,3 @@
-export const PDF_MIN_ZOOM = 0.6;
-export const PDF_MAX_ZOOM = 2;
-export const PDF_ZOOM_STEP = 0.2;
 export const PDF_MAX_CANVAS_PIXELS = 16_777_216;
 export const PDF_MAX_CANVAS_SIDE = 8192;
 
@@ -38,9 +35,9 @@ export function clampPage(page: number, pageCount: number): number {
   );
 }
 
-export function clampPdfZoom(zoom: number): number {
-  const clamped = Math.min(Math.max(zoom, PDF_MIN_ZOOM), PDF_MAX_ZOOM);
-  return Math.round(clamped * 10) / 10;
+export function clampDocumentZoom(zoom: number): number {
+  if (!Number.isFinite(zoom)) return 1;
+  return Math.round(Math.min(Math.max(zoom, 0.1), 4) * 100) / 100;
 }
 
 export function spreadsheetColumnLabel(index: number): string {

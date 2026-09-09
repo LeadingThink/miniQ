@@ -54,7 +54,7 @@ export function BlobPreview({ dataBase64, mimeType, ...props }: Props) {
   );
 }
 
-function ImageInspector({
+export function ImageInspector({
   url,
   label,
   onError,

@@ -8,6 +8,7 @@ import { markdownOutline } from "../markdownOutline";
 export function MarkdownPreview(props: {
   content: string;
   workspacePath: string;
+  workspacePaths?: readonly string[];
   currentFilePath: string;
   onOpenFile: (target: LocalFileTarget) => void;
 }) {
@@ -104,6 +105,7 @@ export function MarkdownPreview(props: {
         workspacePath={props.workspacePath}
         referenceBasePath={referenceBasePath}
         headingAnchors
+        previewAssets={{ workspacePaths: props.workspacePaths ?? [] }}
         onOpenFile={props.onOpenFile}
       >
         {props.content}

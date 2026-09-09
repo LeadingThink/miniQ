@@ -1,6 +1,7 @@
 export interface PdfTextItem {
   str?: string;
   hasEOL?: boolean;
+  type?: string;
 }
 export interface PdfTextPage {
   getTextContent(): Promise<{ items: PdfTextItem[] }>;
