@@ -41,16 +41,18 @@ a weakened signing requirement. Tauri updater signatures are a separate mechanis
 
 ## Verification
 
-Implemented does not mean released. This batch is still based on 0.1.22; no new
-version, production installer, signing identity, or production restart is implied.
+Implemented does not mean released. This batch targets 0.1.23, based on 0.1.22;
+release publication and deployment will be recorded only after verification.
+No production installer, signing identity, or production restart is implied yet.
 No production task is used as a write-test fixture. Existing user edits in the
 original miniQ checkout are preserved.
 
-- Frontend: 71 Vitest files / 545 tests, 6 manifest tests and 26 Qiniu publisher
+- Frontend: 72 Vitest files / 549 tests, 6 manifest tests and 26 Qiniu publisher
   tests passed. TypeScript and production Vite build passed.
 - Rust: `cargo test -p miniq-daemon -p miniq-memory -p miniq-models
   -p miniq-protocol -p miniq-agent` passed, including integration tests.
-  Library counts: daemon 124, memory 21, models 63, protocol 5, agent 41.
+  Library counts after upstream integration: daemon 126, memory 21, models 63,
+  protocol 5, agent 41.
 - Desktop shell: 16 library tests passed, including five HTML resource tests.
 - `cargo check --workspace`, formatting checks and `git diff --check` passed.
 - Fresh audit against `https://registry.npmjs.org`: zero vulnerabilities.
@@ -85,8 +87,13 @@ original miniQ checkout are preserved.
 - Session approval overrides persist independently of global defaults. An explicit
   null restores inheritance; policy changes clear only that session's allowances.
   A child acceptEdits policy cannot override the session's AlwaysAsk requirement.
+  Unattended CLI submission also validates the effective session policy, not just
+  the global default, both before preparation and before sending.
 - The pending approval inbox is cursor-paginated and loads tool parameters only
   on expansion. Duplicate decisions are disabled; resolved/stale entries refresh.
+- Merged upstream model catalog change `5f23f74`, then preserved editable custom
+  model IDs with list suggestions and cancelled stale endpoint/key requests.
+  The integration and request-cancellation tests passed.
 
 ## Still Outstanding
 

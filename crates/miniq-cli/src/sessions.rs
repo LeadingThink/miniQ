@@ -215,6 +215,22 @@ pub async fn send(
     Ok(())
 }
 
+pub async fn require_unattended_approval(client: &mut Client, session: Option<&str>) -> Result<()> {
+    let mode = if let Some(id) = session {
+        let settings = client
+            .call("session.approval.get", json!({"sessionId": id}))
+            .await?;
+        settings["effective"].clone()
+    } else {
+        let settings = client.call("settings.get", json!({})).await?;
+        settings["approvalMode"].clone()
+    };
+    if mode != "alwaysAsk" {
+        bail!("unattended execution requires this session's effective approvalMode=alwaysAsk, or explicitly --use-configured-permissions. Current mode: {mode}. No permissions were changed");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

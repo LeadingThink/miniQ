@@ -35,7 +35,12 @@ impl Fixture {
         .unwrap();
         let requests = Arc::new(Mutex::new(Vec::new()));
         let recorded = requests.clone();
-        let root = dir.path().to_string_lossy().into_owned();
+        let root = dir
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
         let server = tokio::spawn(async move {
             loop {
                 let (stream, _) = listener.accept().await.unwrap();
@@ -49,7 +54,10 @@ impl Fixture {
                             json!({"protocolVersion":1,"capabilities":{"rejectBusy":mode != "old"}})
                         }
                         "settings.get" => {
-                            json!({"approvalMode":if mode == "full" {"fullAccess"} else {"alwaysAsk"}})
+                            json!({"approvalMode":if matches!(mode, "full" | "session-ask") {"fullAccess"} else {"alwaysAsk"}})
+                        }
+                        "session.approval.get" => {
+                            json!({"mode":null,"effective":if matches!(mode, "full" | "session-full") {"fullAccess"} else {"alwaysAsk"}})
                         }
                         "workspace.open" => {
                             json!({"id":"workspace-1","path":root,"additionalPaths":["retained-root"]})
@@ -253,7 +261,7 @@ async fn terminal_states_have_meaningful_exit_codes_and_do_not_resend() {
 
 #[tokio::test]
 async fn refuses_implicit_full_access_and_old_daemon_without_sending() {
-    for mode in ["full", "old"] {
+    for mode in ["full", "session-full", "old"] {
         let fixture = Fixture::new(mode).await;
         let result = fixture.run(&["exec", "fixture"], "").await;
         assert_eq!(result.status.code(), Some(1));
@@ -263,6 +271,33 @@ async fn refuses_implicit_full_access_and_old_daemon_without_sending() {
             .unwrap()
             .iter()
             .any(|request| request["method"] == "session.sendMessage"));
+    }
+}
+
+#[tokio::test]
+async fn resumed_session_approval_override_is_authoritative() {
+    for (mode, allowed) in [("session-full", false), ("session-ask", true)] {
+        let fixture = Fixture::new(mode).await;
+        let result = fixture
+            .run(&["exec", "--session", "session-1", "fixture"], "")
+            .await;
+        assert_eq!(
+            result.status.success(),
+            allowed,
+            "{mode}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let requests = fixture.requests.lock().unwrap();
+        assert_eq!(
+            requests
+                .iter()
+                .any(|request| request["method"] == "session.sendMessage"),
+            allowed
+        );
+        assert!(!requests
+            .iter()
+            .any(|request| request["method"] == "settings.update"
+                || request["method"] == "session.approval.update"));
     }
 }
 
