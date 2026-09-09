@@ -357,8 +357,8 @@ describe("Timeline execution flow", () => {
     expect(html).toContain("平台");
     expect(html).toContain("检查 Apple Silicon");
     expect(html).toContain("检查 x64 安装包");
-    expect(html).toContain("确认选择");
-    expect(html).toContain('aria-pressed="false"');
+    expect(html).toContain("确认回答");
+    expect(html).toContain('type="checkbox"');
   });
 
   it("renders actions for a pending tool approval", () => {

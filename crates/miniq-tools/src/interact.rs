@@ -211,15 +211,19 @@ impl Tool for AskUserTool {
         "ask_user"
     }
     fn description(&self) -> &str {
-        "Ask one or more clarifying questions and wait for answers. Supports option \
-         descriptions and multi-select questions."
+        "Ask the user only when a decision is needed, and wait for their answer. \
+         Send one final, concise user-facing question, not draft alternatives, \
+         self-corrections or repeated requests to choose. Put suggested answers \
+         in options instead of repeating an option list in prompt. Use questions \
+         only for distinct decisions. Do not ask again about a decision the user \
+         already answered. Supports Markdown, option descriptions and multi-select."
     }
     fn parameters_schema(&self) -> Value {
         json!({
             "type": "object",
             "properties": {
-                "prompt": {"type": "string", "description": "The question to ask"},
-                "options": {"type": "array", "items": {"type": "string"}, "description": "Suggested answers (the user can also type freely)"},
+                "prompt": {"type": "string", "description": "Final question and necessary context in Markdown. No draft labels, self-corrections or repeated options. Use links or inline code for file paths."},
+                "options": {"type": "array", "items": {"type": "string"}, "description": "Distinct suggested answer labels as strings, not objects. Supply choices here, not in prompt. The user can also type freely."},
                 "default": {"type": "string", "description": "The safest reasonable answer to use if the user does not respond"},
                 "header": {"type": "string", "description": "Short question heading"},
                 "optionDescriptions": {"type": "object", "additionalProperties": {"type": "string"}},
@@ -230,9 +234,9 @@ impl Tool for AskUserTool {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "prompt": {"type": "string"},
+                            "prompt": {"type": "string", "description": "One final Markdown question for a distinct decision; no draft alternatives or repeated option lists."},
                             "header": {"type": "string"},
-                            "options": {"type": "array", "items": {"type": "string"}},
+                            "options": {"type": "array", "items": {"type": "string"}, "description": "Suggested answer labels as strings, not objects; place all choices here."},
                             "optionDescriptions": {"type": "object", "additionalProperties": {"type": "string"}},
                             "multiSelect": {"type": "boolean"},
                             "default": {"type": "string"}

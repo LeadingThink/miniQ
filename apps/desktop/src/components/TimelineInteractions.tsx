@@ -1,6 +1,5 @@
 import { FileText, FolderOpen, X, Zap } from "lucide-react";
-import { useEffect, useState } from "react";
-import type { Artifact, Question, QueuedMessage } from "../types";
+import type { Artifact, QueuedMessage } from "../types";
 import type { PendingApproval } from "../App";
 import { resolveWorkspacePath, revealLocalFile, type LocalFileTarget } from "../localFiles";
 
@@ -32,113 +31,6 @@ export function ApprovalCard({
         </button>
         <button className="danger" onClick={() => onResolve(item.approval.id, "reject")}>
           拒绝
-        </button>
-      </div>
-    </div>
-  );
-}
-
-export function QuestionCard({
-  question,
-  onResolve,
-}: {
-  question: Question;
-  onResolve: (questionId: string, answer: string) => void;
-}) {
-  const [custom, setCustom] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
-  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
-  useEffect(() => {
-    if (!question.autoContinueAfterSeconds) {
-      setRemainingSeconds(null);
-      return;
-    }
-    const deadline =
-      new Date(question.createdAt).getTime() + question.autoContinueAfterSeconds * 1_000;
-    const update = () =>
-      setRemainingSeconds(Math.max(0, Math.ceil((deadline - Date.now()) / 1_000)));
-    update();
-    const timer = window.setInterval(update, 1_000);
-    return () => window.clearInterval(timer);
-  }, [question.autoContinueAfterSeconds, question.createdAt]);
-
-  useEffect(() => {
-    setCustom("");
-    setSelected([]);
-  }, [question.id]);
-
-  const countdown =
-    remainingSeconds === null
-      ? null
-      : `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, "0")}`;
-  return (
-    <div className="card approval-card">
-      <div className="card-head">
-        <span>{question.header || "miniQ 想确认"}</span>
-      </div>
-      <div style={{ marginTop: 6 }}>{question.prompt}</div>
-      {countdown && (
-        <div className="question-timeout">
-          完全访问模式: {countdown} 后将采用
-          {question.defaultAnswer ? `“${question.defaultAnswer}”` : "默认方案"}继续
-        </div>
-      )}
-      <div className="approval-actions" style={{ flexWrap: "wrap" }}>
-        {question.options.map((opt) => {
-          const active = selected.includes(opt);
-          return (
-            <button
-              key={opt}
-              className={active ? "question-option-selected" : undefined}
-              aria-pressed={question.multiSelect ? active : undefined}
-              title={question.optionDescriptions?.[opt]}
-              onClick={() => {
-                if (!question.multiSelect) {
-                  onResolve(question.id, opt);
-                  return;
-                }
-                setSelected((current) =>
-                  current.includes(opt)
-                    ? current.filter((value) => value !== opt)
-                    : [...current, opt],
-                );
-              }}
-            >
-              <span>{opt}</span>
-              {question.optionDescriptions?.[opt] && (
-                <small>{question.optionDescriptions[opt]}</small>
-              )}
-            </button>
-          );
-        })}
-        {question.multiSelect && (
-          <button
-            className="secondary"
-            disabled={selected.length === 0}
-            onClick={() => onResolve(question.id, selected.join(", "))}
-          >
-            确认选择
-          </button>
-        )}
-      </div>
-      <div className="approval-actions">
-        <input
-          className="question-input"
-          value={custom}
-          placeholder="或者输入你的回答..."
-          onChange={(e) => setCustom(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229 && custom.trim()) {
-              onResolve(question.id, custom.trim());
-            }
-          }}
-        />
-        <button
-          className="secondary"
-          disabled={!custom.trim()}
-          onClick={() => onResolve(question.id, custom.trim())}
-        >
-          回答
         </button>
       </div>
     </div>
