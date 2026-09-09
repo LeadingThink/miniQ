@@ -32,6 +32,29 @@ pub(super) fn page(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
     to_value(state.store.history_page(&input).map_err(store_err)?)
 }
 
+pub(super) fn model_calls(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: miniq_protocol::ModelCallsParams = params(raw)?;
+    state
+        .store
+        .get_session(&input.session_id)
+        .map_err(store_err)?;
+    to_value(state.store.model_calls_page(&input).map_err(store_err)?)
+}
+
+pub(super) fn execution_events(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: miniq_protocol::ExecutionEventsParams = params(raw)?;
+    state
+        .store
+        .get_session(&input.session_id)
+        .map_err(store_err)?;
+    to_value(
+        state
+            .store
+            .execution_events_page(&input)
+            .map_err(store_err)?,
+    )
+}
+
 pub(super) fn tool_detail(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: ToolDetailParams = params(raw)?;
     let call = state
@@ -68,6 +91,7 @@ mod tests {
                 &session.id,
                 "shell_run",
                 &json!({"command":"inspect"}),
+                None,
                 ToolCallStatus::Running,
             )
             .unwrap();
@@ -92,5 +116,11 @@ mod tests {
         )
         .is_err());
         assert!(page(&state, Some(json!({"sessionId":"missing"}))).is_err());
+        assert!(model_calls(&state, Some(json!({"sessionId":"missing"}))).is_err());
+        assert!(model_calls(&state, Some(json!({"sessionId":session.id,"limit":0}))).is_err());
+        assert_eq!(
+            model_calls(&state, Some(json!({"sessionId":session.id}))).unwrap()["calls"],
+            json!([])
+        );
     }
 }

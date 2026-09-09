@@ -57,6 +57,7 @@ fn provider() -> OpenAiCompatProvider {
 
 fn request(temperature: Option<f32>) -> CompletionRequest {
     CompletionRequest {
+        trace: Default::default(),
         messages: vec![ChatMessage::user("hello")],
         tools: Vec::new(),
         temperature,
@@ -226,7 +227,7 @@ fn output_limit_is_not_reported_as_success() {
         Ok(ChatDelta::Text(text)) if text == "partial"
     ));
     assert!(matches!(
-        deltas[1],
+        deltas[2],
         Err(ProviderError::OutputLimitReached(_))
     ));
 }
@@ -246,7 +247,7 @@ fn incomplete_tool_json_is_rejected_before_execution() {
     assert!(!terminal);
     assert!(matches!(
         deltas.as_slice(),
-        [Err(ProviderError::IncompleteToolArguments { tool, .. })] if tool == "file_write"
+        [Ok(ChatDelta::ResponseInfo(_)), Err(ProviderError::IncompleteToolArguments { tool, .. })] if tool == "file_write"
     ));
 }
 
@@ -268,7 +269,7 @@ fn crlf_event_body_is_parseable_after_transport_normalization() {
     assert!(saw_finish);
     assert!(matches!(
         deltas.as_slice(),
-        [Ok(ChatDelta::Text(text))] if text == "ok"
+        [Ok(ChatDelta::Text(text)), Ok(ChatDelta::ResponseInfo(_))] if text == "ok"
     ));
 }
 
@@ -290,7 +291,7 @@ fn joins_multiline_sse_data_before_decoding_json() {
     assert!(saw_finish);
     assert!(matches!(
         deltas.as_slice(),
-        [Ok(ChatDelta::Text(text))] if text == "ok"
+        [Ok(ChatDelta::Text(text)), Ok(ChatDelta::ResponseInfo(_))] if text == "ok"
     ));
 }
 
@@ -310,11 +311,53 @@ fn accepts_legacy_function_call_deltas() {
     assert!(!terminal);
     assert!(matches!(
         deltas.as_slice(),
-        [Ok(ChatDelta::ToolCall(call))]
+        [Ok(ChatDelta::ResponseInfo(_)), Ok(ChatDelta::ToolCall(call))]
             if call.name == "file_read"
                 && call.arguments == json!({"path": "README.md"})
                 && call.id.starts_with("miniq-call-")
     ));
+}
+
+#[test]
+fn deduplicates_identity_and_keeps_usage_after_a_length_failure() {
+    let mut decoder = ChatCompletionsDecoder::default();
+    let identity = r#"data: {"id":"chat-1","model":"actual-model","choices":[]}"#;
+    assert_eq!(decoder.decode(identity).items.len(), 1);
+    assert!(decoder.decode(identity).items.is_empty());
+    let limit = decoder.decode(r#"data: {"choices":[{"finish_reason":"length"}]}"#);
+    assert!(!limit.terminal);
+    assert!(limit.items.iter().all(Result::is_ok));
+    let usage = decoder.decode(r#"data: {"choices":[],"usage":{"prompt_tokens":1200,"completion_tokens":100,"completion_tokens_details":{"reasoning_tokens":90}}}"#);
+    let Ok(ChatDelta::ResponseInfo(info)) = &usage.items[0] else {
+        panic!("missing usage")
+    };
+    assert_eq!(info.model.as_deref(), Some("actual-model"));
+    assert_eq!(info.stop_reason.as_deref(), Some("length"));
+    assert_eq!(info.usage.as_ref().unwrap()["completion_tokens"], 100);
+    let done = decoder.decode("data: [DONE]");
+    assert!(done.terminal);
+    assert!(matches!(
+        done.items.as_slice(),
+        [Err(ProviderError::OutputLimitReached(_))]
+    ));
+}
+
+#[test]
+fn eof_retains_the_original_terminal_error_without_usage() {
+    let mut decoder = ChatCompletionsDecoder::default();
+    decoder.decode(r#"data: {"choices":[{"finish_reason":"content_filter"}]}"#);
+    assert!(
+        matches!(decoder.finish().as_slice(), [Err(ProviderError::InvalidResponse(error))] if error.contains("content_filter"))
+    );
+}
+
+#[test]
+fn requests_native_stream_usage_without_inventing_an_output_cap() {
+    let mut request = request(None);
+    request.max_output_tokens = None;
+    let body = provider().build_body(&request);
+    assert_eq!(body["stream_options"], json!({"include_usage":true}));
+    assert!(body.get("max_tokens").is_none());
 }
 
 #[test]

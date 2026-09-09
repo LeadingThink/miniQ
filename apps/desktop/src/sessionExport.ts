@@ -1,5 +1,6 @@
 import type { Artifact, Message, PlanTask, ToolCall } from "./types";
 import { createTimelineItems, payloadText } from "./timelineModel";
+import { downloadBlob } from "./downloadBlob";
 
 export interface SessionExport {
   title: string;
@@ -32,20 +33,21 @@ export function exportMarkdown(data: SessionExport): string {
         call.createdAt
       }\n\n### Input\n\n${fence(
         payloadText(call.input),
-        "json"
+        "json",
       )}\n\n### Output\n\n${fence(payloadText(call.output), "json")}`;
-    }
+    },
   );
   const plan = data.plan
     .map(
-      (task) => `- [${task.status === "completed" ? "x" : " "}] ${task.content}`
+      (task) =>
+        `- [${task.status === "completed" ? "x" : " "}] ${task.content}`,
     )
     .join("\n");
   const artifacts = data.artifacts
     .map((artifact) => `- ${artifact.title}: ${artifact.path}`)
     .join("\n");
   return `# ${data.title}\n\n${entries.join(
-    "\n\n"
+    "\n\n",
   )}\n\n## Plan\n\n${plan}\n\n## Artifacts\n\n${artifacts}\n`;
 }
 
@@ -67,17 +69,13 @@ export function exportFilename(title: string): string {
 export function downloadSession(data: SessionExport, format: "md" | "json") {
   const content =
     format === "md" ? exportMarkdown(data) : JSON.stringify(data, null, 2);
-  const url = URL.createObjectURL(
+  downloadBlob(
     new Blob([content], {
       type:
         format === "md"
           ? "text/markdown;charset=utf-8"
           : "application/json;charset=utf-8",
-    })
+    }),
+    `${exportFilename(data.title)}.${format}`,
   );
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${exportFilename(data.title)}.${format}`;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

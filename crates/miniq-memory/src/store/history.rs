@@ -14,13 +14,13 @@ impl Store {
         let mut statement = conn.prepare(
             "WITH timeline AS (
                 SELECT id, created_at, 'message' AS kind FROM messages
-                WHERE session_id = ?1 AND (?5 OR role != 'system')
+                WHERE session_id = ?1 AND ?8 IS NULL AND (?5 OR role != 'system')
                   AND (?6 = 'all' OR (?6 = 'answers' AND role IN ('user', 'assistant'))
                        OR (?6 = 'activity' AND role = 'tool'))
                   AND (?7 = '' OR instr(lower(content), lower(?7)) > 0)
                 UNION ALL
                 SELECT id, created_at, 'tool' AS kind FROM tool_calls
-                WHERE session_id = ?1 AND (?5 OR tool_name != 'task_update')
+                WHERE session_id = ?1 AND (?8 IS NULL OR agent_id = ?8) AND (?5 OR tool_name != 'task_update')
                   AND (?6 IN ('all', 'activity') OR (?6 = 'errors' AND status IN ('failed', 'rejected', 'cancelled')))
                   AND (?7 = '' OR instr(lower(tool_name || char(10) || input_json || char(10) || coalesce(output_json, '')), lower(?7)) > 0)
              ) SELECT id, created_at, kind FROM timeline
@@ -36,6 +36,7 @@ impl Store {
                 input.include_internal,
                 input.filter.as_str(),
                 input.query.trim(),
+                input.agent_id,
             ],
             |row| {
                 Ok((
@@ -71,9 +72,9 @@ impl Store {
                 )?);
             } else {
                 let query = if input.include_payloads {
-                    "SELECT id, session_id, tool_name, input_json, output_json, status, created_at, completed_at FROM tool_calls WHERE id = ?1 AND session_id = ?2"
+                    "SELECT id, session_id, tool_name, input_json, output_json, status, created_at, completed_at, agent_id FROM tool_calls WHERE id = ?1 AND session_id = ?2"
                 } else {
-                    "SELECT id, session_id, tool_name, 'null', NULL, status, created_at, completed_at FROM tool_calls WHERE id = ?1 AND session_id = ?2"
+                    "SELECT id, session_id, tool_name, 'null', NULL, status, created_at, completed_at, agent_id FROM tool_calls WHERE id = ?1 AND session_id = ?2"
                 };
                 page.tool_calls.push(HistoryToolCall {
                     call: conn.query_row(query, params![id, input.session_id], row_to_tool_call)?,

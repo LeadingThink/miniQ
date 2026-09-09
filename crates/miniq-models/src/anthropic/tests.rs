@@ -13,6 +13,7 @@ fn provider() -> AnthropicProvider {
 
 fn request(messages: Vec<ChatMessage>) -> CompletionRequest {
     CompletionRequest {
+        trace: Default::default(),
         messages,
         tools: vec![ToolSpec {
             name: "file.read".into(),
@@ -218,7 +219,7 @@ fn surfaces_anthropic_errors_and_output_limits() {
         json!({"type":"message_delta","delta":{"stop_reason":"max_tokens"}}),
     );
     assert!(matches!(
-        limit.items[0],
+        limit.items[1],
         Err(ProviderError::OutputLimitReached(_))
     ));
 
@@ -227,7 +228,7 @@ fn surfaces_anthropic_errors_and_output_limits() {
         json!({"type":"message_delta","delta":{"stop_reason":"model_context_window_exceeded"}}),
     );
     assert!(matches!(
-        context_limit.items[0],
+        context_limit.items[1],
         Err(ProviderError::ContextWindowExceeded)
     ));
 }

@@ -188,6 +188,7 @@ pub(super) fn row_to_tool_call(row: &Row<'_>) -> rusqlite::Result<ToolCall> {
     Ok(ToolCall {
         id: row.get(0)?,
         session_id: row.get(1)?,
+        agent_id: row.get(8)?,
         tool_name: row.get(2)?,
         input: parse_json(input_json)?,
         output: output_json.map(parse_json).transpose()?,

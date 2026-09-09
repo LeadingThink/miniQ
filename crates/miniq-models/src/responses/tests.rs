@@ -15,6 +15,7 @@ fn provider() -> ResponsesProvider {
 
 fn request(messages: Vec<ChatMessage>) -> CompletionRequest {
     CompletionRequest {
+        trace: Default::default(),
         messages,
         tools: vec![ToolSpec {
             name: "file.read".into(),
@@ -199,7 +200,8 @@ fn decodes_fragmented_function_calls_and_preserves_output_context() {
     assert!(
         matches!(&completed.items[0], Ok(ChatDelta::Context(context)) if context.data[0]["type"] == "reasoning")
     );
-    assert!(matches!(completed.items[1], Ok(ChatDelta::Finished)));
+    assert!(matches!(completed.items[1], Ok(ChatDelta::ResponseInfo(_))));
+    assert!(matches!(completed.items[2], Ok(ChatDelta::Finished)));
 }
 
 #[test]
@@ -266,13 +268,18 @@ fn maps_incomplete_and_failed_terminal_events_to_errors() {
             }
         }}),
     );
-    let Err(ProviderError::OutputLimitReached(usage)) = &incomplete.items[0] else {
+    let Ok(ChatDelta::ResponseInfo(info)) = &incomplete.items[0] else {
+        panic!("missing usage")
+    };
+    assert_eq!(info.stop_reason.as_deref(), Some("max_output_tokens"));
+    assert_eq!(info.usage.as_ref().unwrap()["output_tokens"], 16384);
+    let Err(ProviderError::OutputLimitReached(usage)) = &incomplete.items[1] else {
         panic!("expected output-limit error");
     };
     assert_eq!(usage.input_tokens, Some(1200));
     assert_eq!(usage.output_tokens, Some(16384));
     assert_eq!(usage.reasoning_tokens, Some(16000));
-    assert!(incomplete.items[0]
+    assert!(incomplete.items[1]
         .as_ref()
         .unwrap_err()
         .to_string()
@@ -283,7 +290,7 @@ fn maps_incomplete_and_failed_terminal_events_to_errors() {
         json!({"type":"response.failed","response":{"error":{"message":"overloaded"}}}),
     );
     assert!(
-        matches!(&failed.items[0], Err(ProviderError::Transient(detail)) if detail.contains("overloaded"))
+        matches!(&failed.items[1], Err(ProviderError::Transient(detail)) if detail.contains("overloaded"))
     );
 
     let context_overflow = decode(
@@ -294,7 +301,7 @@ fn maps_incomplete_and_failed_terminal_events_to_errors() {
         }),
     );
     assert!(matches!(
-        context_overflow.items[0],
+        context_overflow.items[1],
         Err(ProviderError::ContextWindowExceeded)
     ));
 }

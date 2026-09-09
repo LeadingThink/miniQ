@@ -89,7 +89,12 @@ async fn dropping_cancelled_foreground_call_does_not_abandon_agent_cleanup() {
             result = &mut call => panic!("agent returned before cancellation: {result:?}"),
             _ = wait_requests(&provider, 1) => {}
         }
-        let agents = bridge.state.agent_tasks.list(&bridge.session_id).await;
+        let agents = bridge
+            .state
+            .agent_tasks
+            .list(&bridge.session_id)
+            .await
+            .unwrap();
         let id = agents[0]["agentId"].as_str().unwrap();
         let worktree = agents[0]["worktreePath"].as_str().map(PathBuf::from);
         assert_eq!(worktree.is_some(), isolation.is_some());
@@ -159,8 +164,9 @@ async fn stopping_completed_parent_stops_descendants_without_stopping_siblings()
         .state
         .agent_tasks
         .finish_turn(&parent, "done".into(), vec![])
-        .await;
-    bridge.state.agent_tasks.complete(&parent).await;
+        .await
+        .unwrap();
+    bridge.state.agent_tasks.complete(&parent).await.unwrap();
     let child_bridge = DaemonAgentBridge {
         agent_id: Some(parent_id.clone()),
         cancel: token.clone(),
@@ -271,7 +277,8 @@ async fn cancellation_during_finalization_cannot_report_completed() {
         .state
         .agent_tasks
         .finish_turn(&record, "result".into(), vec![])
-        .await;
+        .await
+        .unwrap();
     assert_eq!(
         bridge
             .state
@@ -280,7 +287,7 @@ async fn cancellation_during_finalization_cannot_report_completed() {
             .await,
         1
     );
-    bridge.state.agent_tasks.complete(&record).await;
+    bridge.state.agent_tasks.complete(&record).await.unwrap();
     assert!(token.is_cancelled());
     assert_cancelled(&bridge, &id).await;
 }

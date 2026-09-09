@@ -174,6 +174,7 @@ async fn every_wire_protocol_preserves_http_retry_metadata() {
     for provider in providers {
         let response = provider
             .stream_complete(CompletionRequest {
+                trace: Default::default(),
                 messages: vec![ChatMessage::user("test")],
                 tools: vec![],
                 temperature: None,

@@ -199,6 +199,8 @@ pub struct ToolSpec {
 
 #[derive(Debug, Clone)]
 pub struct CompletionRequest {
+    /// Local diagnostics only; adapters never encode this in model input.
+    pub trace: miniq_protocol::ModelCallTrace,
     pub messages: Vec<ChatMessage>,
     pub tools: Vec<ToolSpec>,
     pub temperature: Option<f32>,
@@ -228,6 +230,8 @@ pub enum ChatDelta {
     ToolCall(ToolCallRequest),
     /// Complete provider-native assistant output for lossless replay.
     Context(ProviderContext),
+    /// Provider-reported identity, usage and terminal reason; never model input.
+    ResponseInfo(miniq_protocol::ProviderResponseInfo),
     /// Stream finished normally.
     Finished,
 }
@@ -274,6 +278,14 @@ impl ProviderConfig {
 
 #[async_trait]
 pub trait ModelProvider: Send + Sync {
+    /// Request settings without credentials or prompt content.
+    async fn execution_info(
+        &self,
+        _max_output_tokens: Option<u32>,
+    ) -> Result<Option<miniq_protocol::ModelExecutionInfo>, ProviderError> {
+        Ok(None)
+    }
+
     /// Stream a completion. The stream ends with `ChatDelta::Finished`.
     async fn stream_complete(
         &self,

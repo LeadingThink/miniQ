@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use miniq_tools::ToolError;
 use tokio::process::Command;
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AgentWorktree {
     pub path: PathBuf,
     pub branch: String,
@@ -16,6 +16,33 @@ pub(crate) struct AgentWorktree {
 pub(crate) struct FinalizeResult {
     pub retained: bool,
     pub error: Option<String>,
+}
+
+pub(crate) async fn validate(
+    worktree: &AgentWorktree,
+    workspace: &Path,
+    roots: &[PathBuf],
+) -> Result<(), ToolError> {
+    miniq_sandbox::resolve_in_roots(workspace, roots, &worktree.repo_root.to_string_lossy())
+        .map_err(|error| ToolError::SandboxDenied(error.to_string()))?;
+    let common = |path: PathBuf| async move {
+        let directory = git_text(
+            &path,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        )
+        .await?;
+        std::fs::canonicalize(directory)
+            .map_err(|error| ToolError::ExecutionFailed(error.to_string()))
+    };
+    let same_repo =
+        common(worktree.path.clone()).await? == common(worktree.repo_root.clone()).await?;
+    let branch = git_text(&worktree.path, &["symbolic-ref", "--short", "HEAD"]).await?;
+    if !same_repo || branch != worktree.branch {
+        return Err(ToolError::ExecutionFailed(
+            "retained agent worktree identity changed; inspect it before resuming".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) async fn create(workspace: &Path, agent_id: &str) -> Result<AgentWorktree, ToolError> {
@@ -199,6 +226,37 @@ mod tests {
         let result = finalize(&worktree).await;
         assert!(!result.retained, "{:?}", result.error);
         assert!(!worktree.path.exists());
+    }
+
+    #[tokio::test]
+    async fn retained_worktree_checks_branch_repository_and_current_authorized_roots() {
+        let repository = repository();
+        let other = tempfile::tempdir().unwrap();
+        let worktree = create(repository.path(), &miniq_memory::new_id("agent"))
+            .await
+            .unwrap();
+        let roots = [repository.path().to_path_buf()];
+        validate(&worktree, repository.path(), &roots)
+            .await
+            .unwrap();
+        assert!(
+            validate(&worktree, other.path(), &[other.path().to_path_buf()])
+                .await
+                .is_err()
+        );
+        git(&worktree.path, &["switch", "--detach"]);
+        assert!(validate(&worktree, repository.path(), &roots)
+            .await
+            .is_err());
+        git(&worktree.path, &["switch", &worktree.branch]);
+        let mut changed = worktree.clone();
+        changed.repo_root = other.path().to_path_buf();
+        assert!(
+            validate(&changed, other.path(), &[other.path().to_path_buf()])
+                .await
+                .is_err()
+        );
+        assert!(!finalize(&worktree).await.retained);
     }
 
     #[tokio::test]

@@ -13,6 +13,9 @@ mod step_budget;
 #[path = "agent_tasks_tests/retry.rs"]
 mod retry;
 
+#[path = "agent_tasks_tests/persistence.rs"]
+mod persistence;
+
 fn request(prompt: &str) -> AgentRunRequest {
     AgentRunRequest {
         prompt: prompt.into(),
@@ -68,7 +71,12 @@ async fn same_name_agents_are_session_scoped_for_every_operation() {
     let mut resume = request("intrude");
     resume.resume = Some(foreign.into());
     assert!(second.run(resume).await.is_err());
-    let listed = second.state.agent_tasks.list(&second.session_id).await;
+    let listed = second
+        .state
+        .agent_tasks
+        .list(&second.session_id)
+        .await
+        .unwrap();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0]["agentId"], two["agentId"]);
     assert!(listed[0].get("result").is_none());
@@ -95,7 +103,7 @@ async fn child_checklist_does_not_replace_parent_plan() {
         .store
         .set_session_plan(&bridge.session_id, &plan)
         .unwrap();
-    bridge.run(request("plan")).await.unwrap();
+    let agent = bridge.run(request("plan")).await.unwrap();
     assert_eq!(
         bridge.state.store.session_plan(&bridge.session_id).unwrap()[0].content,
         "parent work"
@@ -106,6 +114,7 @@ async fn child_checklist_does_not_replace_parent_plan() {
         .list_tool_calls(&bridge.session_id)
         .unwrap();
     assert_eq!(tools[0].status, miniq_protocol::ToolCallStatus::Succeeded);
+    assert_eq!(tools[0].agent_id.as_deref(), agent["agentId"].as_str());
 }
 
 fn bridge_with_provider(

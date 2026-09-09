@@ -25,7 +25,27 @@ pub(super) async fn list(state: &AppState, raw: Option<Value>) -> Result<Value, 
         .store
         .get_session(&input.session_id)
         .map_err(store_err)?;
-    to_value(json!({ "agents": state.agent_tasks.list(&input.session_id).await }))
+    let agents = state
+        .agent_tasks
+        .list(&input.session_id)
+        .await
+        .map_err(|error| RpcError::new(ErrorCode::InternalError, error.to_string()))?;
+    to_value(json!({ "agents": agents }))
+}
+
+pub(super) fn history(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: miniq_protocol::AgentHistoryParams = params(raw)?;
+    to_value(state.store.agent_history_page(&input).map_err(store_err)?)
+}
+
+pub(super) fn message(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: miniq_protocol::AgentMessageParams = params(raw)?;
+    to_value(
+        state
+            .store
+            .agent_history_message(&input)
+            .map_err(store_err)?,
+    )
 }
 
 pub(super) async fn action(

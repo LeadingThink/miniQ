@@ -53,6 +53,18 @@
 .approval-card {
   border-color: rgba(217, 119, 6, 0.4);
   background: var(--warn-bg);
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.approval-card .card-head { flex-wrap: wrap; }
+.approval-card .tool-name { overflow-wrap: anywhere; }
+.approval-card .approval-actions { flex-wrap: wrap; }
+.approval-card .approval-actions button { white-space: nowrap; }
+
+@container (max-width: 280px) {
+  .approval-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .approval-actions button { width: 100%; min-height: 36px; }
 }
 
 .approval-card pre {

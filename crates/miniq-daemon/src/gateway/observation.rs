@@ -153,6 +153,7 @@ mod tests {
                 &session.id,
                 "computer_use",
                 &json!({"action":"screenshot"}),
+                None,
                 miniq_protocol::ToolCallStatus::Running,
             )
             .unwrap();
@@ -176,6 +177,7 @@ mod tests {
                 &session.id,
                 "shell_run",
                 &json!({}),
+                None,
                 miniq_protocol::ToolCallStatus::Running,
             )
             .unwrap();
@@ -196,6 +198,7 @@ mod tests {
                 &session.id,
                 "view_pdf",
                 &json!({"path":"fixture.pdf"}),
+                None,
                 miniq_protocol::ToolCallStatus::Running,
             )
             .unwrap();

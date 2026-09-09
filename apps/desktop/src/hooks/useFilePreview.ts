@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
-import { readLocalFilePreview, type LocalPreviewKind, type LocalFileTarget } from "../localFiles";
-import { EMPTY_PREVIEW_TABS, removePreviewTab, selectPreviewTab, type PreviewTabsState } from "../previewTabs";
+import {
+  readLocalFilePreview,
+  type LocalPreviewKind,
+  type LocalFileTarget,
+} from "../localFiles";
+import {
+  EMPTY_PREVIEW_TABS,
+  removePreviewTab,
+  selectPreviewTab,
+  type PreviewTabsState,
+} from "../previewTabs";
+import { PreviewViewStore } from "../previewViewState";
 
 export interface FilePreviewState {
   target: LocalFileTarget | null;
@@ -37,9 +47,16 @@ export function useFilePreview(
   workspacePaths: readonly string[] = NO_PATHS,
 ) {
   const [state, setState] = useState<FilePreviewState>(EMPTY_PREVIEW);
-  const scope = JSON.stringify([sessionId ?? null, workspacePath ?? null, workspacePaths]);
+  const [views] = useState(() => new PreviewViewStore());
+  const scope = JSON.stringify([
+    sessionId ?? null,
+    workspacePath ?? null,
+    workspacePaths,
+  ]);
   const [stateScope, setStateScope] = useState(scope);
-  const [sessions, setSessions] = useState<Record<string, PreviewTabsState>>({});
+  const [sessions, setSessions] = useState<Record<string, PreviewTabsState>>(
+    {},
+  );
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
   const tabs = sessions[scope] ?? EMPTY_PREVIEW_TABS;
@@ -66,11 +83,19 @@ export function useFilePreview(
         open: true,
       });
       try {
-        const file = await readLocalFilePreview(target.path, workspacePath, workspacePaths);
+        const file = await readLocalFilePreview(
+          target.path,
+          workspacePath,
+          workspacePaths,
+        );
         if (requestId !== requestSequence.current) return;
         setSessions((current) => ({
           ...current,
-          [scope]: selectPreviewTab(current[scope] ?? EMPTY_PREVIEW_TABS, { ...target, path: file.path }, target.path),
+          [scope]: selectPreviewTab(
+            current[scope] ?? EMPTY_PREVIEW_TABS,
+            { ...target, path: file.path },
+            target.path,
+          ),
         }));
         setState({
           target: { ...target, path: file.path },
@@ -107,6 +132,7 @@ export function useFilePreview(
 
   const closeTab = useCallback(
     (path: string) => {
+      views.closeFile(scope, path);
       const previous = sessionsRef.current[scope] ?? EMPTY_PREVIEW_TABS;
       const next = removePreviewTab(previous, path);
       setSessions((current) => ({ ...current, [scope]: next }));
@@ -116,7 +142,7 @@ export function useFilePreview(
       if (target) void openFile(target);
       else setState(EMPTY_PREVIEW);
     },
-    [scope, openFile],
+    [scope, openFile, views],
   );
 
   useEffect(() => {
@@ -133,6 +159,8 @@ export function useFilePreview(
   }, [scope, openFile]);
 
   return {
+    views,
+    viewScope: scope,
     state: stateScope === scope ? state : EMPTY_PREVIEW,
     tabs: tabs.targets,
     closeTab,

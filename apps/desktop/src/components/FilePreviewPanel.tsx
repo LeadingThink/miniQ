@@ -1,6 +1,23 @@
 import type { OnMount } from "@monaco-editor/react";
-import { Code2, Eye, ExternalLink, FileCode2, FolderOpen, RotateCcw, WrapText, X } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  Code2,
+  Eye,
+  ExternalLink,
+  FileCode2,
+  FolderOpen,
+  RotateCcw,
+  WrapText,
+  X,
+} from "lucide-react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import type { editor } from "monaco-editor";
 import type { FilePreviewState } from "../hooks/useFilePreview";
 import { formatFileSize, openLocalFile, revealLocalFile } from "../localFiles";
@@ -18,8 +35,16 @@ import { HtmlPreview } from "./HtmlPreview";
 import { isHtmlFile } from "../htmlPreview";
 import { PreviewTabs } from "./PreviewTabs";
 import type { LocalFileTarget } from "../localFiles";
+import {
+  PreviewViewProvider,
+  PreviewViewStore,
+  usePreviewCache,
+  usePreviewValue,
+} from "../previewViewState";
 
 interface FilePreviewPanelProps {
+  viewStore?: PreviewViewStore;
+  viewScope?: string;
   preview: FilePreviewState;
   workspacePath: string;
   workspacePaths: readonly string[];
@@ -36,7 +61,22 @@ function fileName(path: string): string {
   return path.split(/[\\/]/).at(-1) ?? path;
 }
 
-export function FilePreviewPanel({
+export function FilePreviewPanel(props: FilePreviewPanelProps) {
+  const [localStore] = useState(() => new PreviewViewStore());
+  const path = props.preview.resolvedPath ?? props.preview.target?.path ?? "";
+  const scope = props.viewScope ?? props.workspacePath;
+  return (
+    <PreviewViewProvider
+      store={props.viewStore ?? localStore}
+      scope={scope}
+      path={path}
+    >
+      <PreviewPanelContent {...props} />
+    </PreviewViewProvider>
+  );
+}
+
+function PreviewPanelContent({
   preview,
   workspacePath,
   workspacePaths,
@@ -51,8 +91,12 @@ export function FilePreviewPanel({
   const [actionError, setActionError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [renderAttempt, setRenderAttempt] = useState(0);
-  const [markdownSource, setMarkdownSource] = useState(false);
-  const [wrapCode, setWrapCode] = useState(false);
+  const [markdownSource, setMarkdownSource] = usePreviewValue(
+    "source",
+    Boolean(preview.target?.line),
+  );
+  const [wrapCode, setWrapCode] = usePreviewValue("wrapCode", false);
+  const viewCache = usePreviewCache();
   const target = preview.target;
   const path = preview.resolvedPath ?? target?.path ?? "";
   const line = target?.line ?? 1;
@@ -61,25 +105,35 @@ export function FilePreviewPanel({
   const locate = () => {
     const instance = editorRef.current;
     if (!instance) return;
-    const lineNumber = Math.min(Math.max(line, 1), instance.getModel()?.getLineCount() ?? 1);
+    const lineNumber = Math.min(
+      Math.max(line, 1),
+      instance.getModel()?.getLineCount() ?? 1,
+    );
     instance.setPosition({ lineNumber, column: Math.max(column, 1) });
     instance.revealLineInCenter(lineNumber);
     instance.focus();
   };
 
-  useEffect(locate, [line, column, preview.content]);
+  useEffect(() => {
+    if (target?.line) locate();
+  }, [line, column, preview.content]);
 
   useEffect(() => {
     setActionError(null);
     setRenderError(null);
     setRenderAttempt(0);
-    setMarkdownSource(Boolean(target?.line));
-    setWrapCode(false);
+    if (target?.line) setMarkdownSource(true);
   }, [path, target?.line]);
 
-  const reportRenderError = useCallback((message: string) => setRenderError(message), []);
-  const renderable = preview.kind === "markdown" || (preview.kind === "text" && isHtmlFile(path));
-  const sourceVisible = (preview.kind === "text" && !renderable) || (renderable && markdownSource);
+  const reportRenderError = useCallback(
+    (message: string) => setRenderError(message),
+    [],
+  );
+  const renderable =
+    preview.kind === "markdown" ||
+    (preview.kind === "text" && isHtmlFile(path));
+  const sourceVisible =
+    (preview.kind === "text" && !renderable) || (renderable && markdownSource);
 
   useEffect(() => {
     if (!sourceVisible) editorRef.current = null;
@@ -87,7 +141,17 @@ export function FilePreviewPanel({
 
   const handleMount: OnMount = (instance) => {
     editorRef.current = instance;
-    locate();
+    const saved = viewCache.get("codeState") as
+      editor.ICodeEditorViewState | undefined;
+    if (saved) instance.restoreViewState(saved);
+    if (target?.line) locate();
+    const save = () => viewCache.set("codeState", instance.saveViewState());
+    const scroll = instance.onDidScrollChange(save);
+    const cursor = instance.onDidChangeCursorPosition(save);
+    instance.onDidDispose(() => {
+      scroll.dispose();
+      cursor.dispose();
+    });
   };
 
   const runAction = async (action: () => Promise<void>) => {
@@ -102,7 +166,13 @@ export function FilePreviewPanel({
   return (
     <aside className="file-preview-panel" aria-label="文件预览">
       {onCloseTab && (
-        <PreviewTabs tabs={tabs} active={path} id={contentId} onSelect={onOpenFile} onClose={onCloseTab} />
+        <PreviewTabs
+          tabs={tabs}
+          active={path}
+          id={contentId}
+          onSelect={onOpenFile}
+          onClose={onCloseTab}
+        />
       )}
       <header className="file-preview-header">
         <FileCode2 size={17} />
@@ -118,7 +188,11 @@ export function FilePreviewPanel({
           </small>
         )}
         {renderable && preview.content !== null && (
-          <span className="preview-mode-toggle" role="group" aria-label="文件显示模式">
+          <span
+            className="preview-mode-toggle"
+            role="group"
+            aria-label="文件显示模式"
+          >
             <button
               type="button"
               className={!markdownSource ? "selected" : ""}
@@ -153,7 +227,11 @@ export function FilePreviewPanel({
             <WrapText size={16} />
           </button>
         )}
-        <CopyButton content={path} label="复制文件路径" onError={setActionError} />
+        <CopyButton
+          content={path}
+          label="复制文件路径"
+          onError={setActionError}
+        />
         <button
           type="button"
           className="icon-button"
@@ -169,7 +247,11 @@ export function FilePreviewPanel({
           title="使用系统默认应用打开"
           aria-label="使用系统默认应用打开"
           disabled={!path}
-          onClick={() => void runAction(() => openLocalFile(path, workspacePath, workspacePaths))}
+          onClick={() =>
+            void runAction(() =>
+              openLocalFile(path, workspacePath, workspacePaths),
+            )
+          }
         >
           <ExternalLink size={16} />
         </button>
@@ -178,11 +260,20 @@ export function FilePreviewPanel({
           title="在文件夹中显示"
           aria-label="在文件夹中显示"
           disabled={!path}
-          onClick={() => void runAction(() => revealLocalFile(path, workspacePath, workspacePaths))}
+          onClick={() =>
+            void runAction(() =>
+              revealLocalFile(path, workspacePath, workspacePaths),
+            )
+          }
         >
           <FolderOpen size={16} />
         </button>
-        <button className="icon-button" title="关闭预览" aria-label="关闭预览" onClick={onClose}>
+        <button
+          className="icon-button"
+          title="关闭预览"
+          aria-label="关闭预览"
+          onClick={onClose}
+        >
           <X size={17} />
         </button>
       </header>
@@ -215,7 +306,9 @@ export function FilePreviewPanel({
       >
         {preview.loading ? (
           <div className="diff-empty">正在读取文件...</div>
-        ) : preview.kind === "markdown" && preview.content !== null && !markdownSource ? (
+        ) : preview.kind === "markdown" &&
+          preview.content !== null &&
+          !markdownSource ? (
           <MarkdownPreview
             content={preview.content}
             workspacePath={workspacePath}
@@ -223,15 +316,30 @@ export function FilePreviewPanel({
             onOpenFile={onOpenFile}
           />
         ) : renderable && !markdownSource && preview.content !== null ? (
-          <HtmlPreview key={path} content={preview.content} label={fileName(path)} />
+          <HtmlPreview
+            file={{ path, workspacePath, workspacePaths }}
+            key={path}
+            content={preview.content}
+            label={fileName(path)}
+          />
         ) : sourceVisible && preview.content !== null ? (
-          <Suspense fallback={<div className="diff-empty">正在加载代码视图...</div>}>
-            <CodePreview path={path} content={preview.content} wrap={wrapCode} onMount={handleMount} />
+          <Suspense
+            fallback={<div className="diff-empty">正在加载代码视图...</div>}
+          >
+            <CodePreview
+              path={path}
+              content={preview.content}
+              wrap={wrapCode}
+              onMount={handleMount}
+            />
           </Suspense>
         ) : preview.dataBase64 &&
           preview.mimeType &&
-          (preview.kind === "image" || preview.kind === "audio" || preview.kind === "video") ? (
+          (preview.kind === "image" ||
+            preview.kind === "audio" ||
+            preview.kind === "video") ? (
           <BlobPreview
+            key={`${path}:${renderAttempt}`}
             dataBase64={preview.dataBase64}
             mimeType={preview.mimeType}
             kind={preview.kind}
@@ -239,13 +347,29 @@ export function FilePreviewPanel({
             onError={reportRenderError}
           />
         ) : preview.kind === "pdf" && preview.dataBase64 ? (
-          <PdfPreview key={renderAttempt} dataBase64={preview.dataBase64} onError={reportRenderError} />
+          <PdfPreview
+            key={renderAttempt}
+            dataBase64={preview.dataBase64}
+            onError={reportRenderError}
+          />
         ) : preview.kind === "docx" && preview.dataBase64 ? (
-          <DocxPreview key={renderAttempt} dataBase64={preview.dataBase64} onError={reportRenderError} />
+          <DocxPreview
+            key={renderAttempt}
+            dataBase64={preview.dataBase64}
+            onError={reportRenderError}
+          />
         ) : preview.kind === "xlsx" && preview.dataBase64 ? (
-          <SpreadsheetPreview key={renderAttempt} dataBase64={preview.dataBase64} onError={reportRenderError} />
+          <SpreadsheetPreview
+            key={renderAttempt}
+            dataBase64={preview.dataBase64}
+            onError={reportRenderError}
+          />
         ) : preview.kind === "pptx" && preview.dataBase64 ? (
-          <PptxPreview key={renderAttempt} dataBase64={preview.dataBase64} onError={reportRenderError} />
+          <PptxPreview
+            key={renderAttempt}
+            dataBase64={preview.dataBase64}
+            onError={reportRenderError}
+          />
         ) : preview.kind === "unsupported" ? (
           <UnsupportedPreview />
         ) : null}

@@ -10,6 +10,7 @@ pub mod executor;
 pub mod gateway;
 pub mod learn;
 pub mod mcp;
+mod observed_provider;
 pub mod remote;
 pub mod schedule;
 mod security;

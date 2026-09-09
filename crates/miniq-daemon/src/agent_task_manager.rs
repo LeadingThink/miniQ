@@ -1,10 +1,9 @@
-//! In-memory state and lifecycle transitions for delegated agents.
+//! Session-scoped delegated agents with durable checkpoints and lazy results.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use miniq_agent::AgentError;
 use miniq_models::ChatMessage;
 use miniq_tools::{AgentRunRequest, ToolError};
 use serde_json::{json, Value};
@@ -14,8 +13,11 @@ use tokio_util::sync::CancellationToken;
 use crate::agent_worktree::{self, AgentWorktree};
 
 mod cancellation;
+mod lifecycle;
+mod persistence;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 enum AgentStatus {
     Running,
     Stopping,
@@ -23,6 +25,7 @@ enum AgentStatus {
     Completed,
     Failed,
     Cancelled,
+    Interrupted,
 }
 
 impl AgentStatus {
@@ -34,6 +37,7 @@ impl AgentStatus {
             Self::Completed => "completed",
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
+            Self::Interrupted => "interrupted",
         }
     }
 
@@ -42,23 +46,31 @@ impl AgentStatus {
     }
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AgentRecordState {
     description: String,
     name: String,
     agent_type: String,
     model: Option<String>,
     status: AgentStatus,
-    result: Option<String>,
     error: Option<String>,
     progress: Option<miniq_protocol::TurnProgress>,
-    history: Option<Vec<ChatMessage>>,
+    has_history: bool,
     model_identity: Option<String>,
     inbox: VecDeque<String>,
+    held_messages: Vec<String>,
+    #[serde(skip)]
     cancel: CancellationToken,
     request: AgentRunRequest,
     worktree: Option<AgentWorktree>,
     worktree_retained: bool,
     worktree_error: Option<String>,
+    elapsed_ms: u64,
+    completed_at: Option<String>,
+    timing_complete: bool,
+    #[serde(skip)]
+    active_since: Option<Instant>,
 }
 
 pub(crate) struct AgentRecord {
@@ -70,10 +82,11 @@ pub(crate) struct AgentRecord {
     changed: Notify,
 }
 
-#[derive(Default)]
 pub(crate) struct AgentTaskManager {
+    store: Arc<miniq_memory::Store>,
     records: Mutex<HashMap<String, Arc<AgentRecord>>>,
     names: Mutex<HashMap<(String, String), String>>,
+    loaded_sessions: Mutex<HashSet<String>>,
 }
 
 pub(crate) enum MessageDisposition {
@@ -95,7 +108,8 @@ impl AgentTaskManager {
         false
     }
 
-    pub(crate) async fn list(&self, session_id: &str) -> Vec<Value> {
+    pub(crate) async fn list(&self, session_id: &str) -> Result<Vec<Value>, ToolError> {
+        self.ensure_loaded(session_id).await?;
         let records = self
             .records
             .lock()
@@ -106,13 +120,10 @@ impl AgentTaskManager {
             .collect::<Vec<_>>();
         let mut entries = Vec::with_capacity(records.len());
         for record in records {
-            let mut snapshot = self.snapshot(&record.id, &record).await;
-            // Results are retrieved on demand, not re-sent on every status poll.
-            snapshot.as_object_mut().unwrap().remove("result");
-            entries.push(snapshot);
+            entries.push(self.snapshot(&record.id, &record).await);
         }
         entries.sort_by(|a, b| a["createdAt"].as_str().cmp(&b["createdAt"].as_str()));
-        entries
+        Ok(entries)
     }
 
     pub(crate) async fn create(
@@ -122,6 +133,7 @@ impl AgentTaskManager {
         request: &AgentRunRequest,
         cancel: CancellationToken,
     ) -> Result<(String, Arc<AgentRecord>), ToolError> {
+        self.ensure_loaded(session_id).await?;
         let id = miniq_memory::new_id("agent");
         let name = request.name.clone().unwrap_or_else(|| id.clone());
         let mut names = self.names.lock().await;
@@ -131,8 +143,6 @@ impl AgentTaskManager {
                 "agent name is already in use: {name}"
             )));
         }
-        names.insert(scoped_name, id.clone());
-        drop(names);
         let record = Arc::new(AgentRecord {
             id: id.clone(),
             session_id: session_id.to_string(),
@@ -150,21 +160,38 @@ impl AgentTaskManager {
                     .unwrap_or_else(|| "general-purpose".into()),
                 model: request.model.clone(),
                 status: AgentStatus::Running,
-                result: None,
                 error: None,
                 progress: None,
-                history: None,
+                has_history: false,
                 model_identity: None,
                 inbox: VecDeque::new(),
+                held_messages: Vec::new(),
                 cancel,
                 request: request.clone(),
                 worktree: None,
                 worktree_retained: false,
                 worktree_error: None,
+                elapsed_ms: 0,
+                completed_at: None,
+                timing_complete: true,
+                active_since: Some(Instant::now()),
             }),
             changed: Notify::new(),
         });
+        self.store
+            .create_agent_task(&miniq_memory::AgentTaskRow {
+                id: id.clone(),
+                session_id: session_id.into(),
+                name: scoped_name.1.clone(),
+                parent_id: record.parent_id.clone(),
+                created_at: record.created_at.clone(),
+                state: serde_json::to_value(&*record.state.lock().await)
+                    .map_err(persistence::storage_error)?,
+            })
+            .map_err(persistence::storage_error)?;
+        names.insert(scoped_name, id.clone());
         self.records.lock().await.insert(id.clone(), record.clone());
+        drop(names);
         Ok((id, record))
     }
 
@@ -173,6 +200,7 @@ impl AgentTaskManager {
         session_id: &str,
         id_or_name: &str,
     ) -> Result<(String, Arc<AgentRecord>), ToolError> {
+        self.ensure_loaded(session_id).await?;
         let id = self
             .names
             .lock()
@@ -199,7 +227,8 @@ impl AgentTaskManager {
         cancel: CancellationToken,
     ) -> Result<(String, Arc<AgentRecord>, Vec<ChatMessage>), ToolError> {
         let (id, record) = self.resolve(session_id, id_or_name).await?;
-        let mut state = record.state.lock().await;
+        let mut guard = record.state.lock().await;
+        let mut state = guard.clone();
         if state.status.is_active() {
             return Err(ToolError::InvalidInput(format!(
                 "agent is already running: {id}"
@@ -207,15 +236,23 @@ impl AgentTaskManager {
         }
         inherit_request(request, &state.request);
         request.validate()?;
-        let history = state
-            .history
-            .clone()
+        let mut history: Vec<ChatMessage> = self
+            .store
+            .agent_history(session_id, &id)
+            .map_err(persistence::storage_error)?
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(persistence::storage_error)?
             .ok_or_else(|| ToolError::ExecutionFailed("agent has no resumable history".into()))?;
+        if state.status == AgentStatus::Interrupted {
+            history.push(ChatMessage::system(crate::turn_checkpoint::UNFINISHED_TURN));
+        }
         state.status = AgentStatus::Running;
-        state.result = None;
         state.error = None;
         state.progress = None;
         state.cancel = cancel;
+        state.active_since = Some(Instant::now());
+        state.completed_at = None;
         state.description = request
             .description
             .clone()
@@ -226,96 +263,25 @@ impl AgentTaskManager {
             .unwrap_or_else(|| "general-purpose".into());
         state.model = request.model.clone();
         state.request = request.clone();
-        drop(state);
+        self.persist(&record, &state, None, Some(None))?;
+        *guard = state;
+        drop(guard);
         record.changed.notify_waiters();
         Ok((id, record, history))
-    }
-
-    pub(crate) async fn finish_turn(
-        &self,
-        record: &AgentRecord,
-        result: String,
-        history: Vec<ChatMessage>,
-    ) -> Option<(String, Vec<ChatMessage>)> {
-        let mut state = record.state.lock().await;
-        state.result = Some(result);
-        state.progress = None;
-        state.history = Some(history.clone());
-        if state.cancel.is_cancelled() {
-            state.inbox.clear();
-        } else if let Some(message) = state.inbox.pop_front() {
-            return Some((message, history));
-        }
-        state.status = AgentStatus::Finalizing;
-        None
-    }
-
-    pub(crate) async fn complete(&self, record: &AgentRecord) {
-        let mut state = record.state.lock().await;
-        state.progress = None;
-        if matches!(
-            state.status,
-            AgentStatus::Finalizing | AgentStatus::Stopping
-        ) {
-            state.status = if state.cancel.is_cancelled() {
-                AgentStatus::Cancelled
-            } else {
-                AgentStatus::Completed
-            };
-        }
-        drop(state);
-        record.changed.notify_waiters();
-    }
-
-    pub(crate) async fn finish_error(&self, record: &AgentRecord, error: &AgentError) {
-        let mut state = record.state.lock().await;
-        state.progress = None;
-        let caller_stopped = state.status == AgentStatus::Stopping;
-        state.status = if state.cancel.is_cancelled() || matches!(error, AgentError::Cancelled) {
-            state.inbox.clear();
-            AgentStatus::Cancelled
-        } else {
-            AgentStatus::Failed
-        };
-        if !caller_stopped {
-            state.error = Some(error.to_string());
-        }
-        drop(state);
-        record.changed.notify_waiters();
-    }
-
-    pub(crate) async fn fail_start(&self, record: &AgentRecord, error: &ToolError) {
-        let mut state = record.state.lock().await;
-        state.progress = None;
-        state.status = AgentStatus::Failed;
-        state.error = Some(error.to_string());
-        drop(state);
-        record.changed.notify_waiters();
-    }
-
-    pub(crate) async fn discard(&self, id: &str, record: &AgentRecord) {
-        let name = record.state.lock().await.name.clone();
-        self.records.lock().await.remove(id);
-        self.names
-            .lock()
-            .await
-            .remove(&(record.session_id.clone(), name));
     }
 
     pub(crate) async fn cancel_token(&self, record: &AgentRecord) -> CancellationToken {
         record.state.lock().await.cancel.clone()
     }
 
-    pub(crate) async fn save_history(&self, record: &AgentRecord, history: &[ChatMessage]) {
-        record.state.lock().await.history = Some(history.to_vec());
-    }
-
     pub(crate) async fn update_progress(
         &self,
         record: &AgentRecord,
         progress: miniq_protocol::TurnProgress,
-    ) {
-        record.state.lock().await.progress = Some(progress);
+    ) -> Result<(), ToolError> {
+        let mut state = record.state.lock().await;
+        state.progress = Some(progress);
+        self.persist(record, &state, None, None)
     }
 
     pub(crate) async fn bind_model_context(
@@ -323,7 +289,7 @@ impl AgentTaskManager {
         record: &AgentRecord,
         history: &mut [ChatMessage],
         identity: Option<String>,
-    ) {
+    ) -> Result<(), ToolError> {
         let mut state = record.state.lock().await;
         crate::session_models::isolate_native_context(
             history,
@@ -331,36 +297,48 @@ impl AgentTaskManager {
             identity.as_deref(),
         );
         state.model_identity = identity;
+        self.persist(record, &state, None, None)
     }
 
     pub(crate) async fn worktree(&self, record: &AgentRecord) -> Option<AgentWorktree> {
         record.state.lock().await.worktree.clone()
     }
 
-    pub(crate) async fn set_worktree(&self, record: &AgentRecord, worktree: AgentWorktree) {
+    pub(crate) async fn set_worktree(
+        &self,
+        record: &AgentRecord,
+        worktree: AgentWorktree,
+    ) -> Result<(), ToolError> {
         let mut state = record.state.lock().await;
         state.worktree = Some(worktree);
         state.worktree_retained = false;
         state.worktree_error = None;
+        self.persist(record, &state, None, None)
     }
 
     pub(crate) async fn finalize_worktree(
         &self,
         record: &AgentRecord,
         worktree: Option<AgentWorktree>,
-    ) {
+    ) -> Result<(), ToolError> {
         if let Some(worktree) = worktree {
             let outcome = agent_worktree::finalize(&worktree).await;
             let mut state = record.state.lock().await;
             state.worktree_retained = outcome.retained;
             state.worktree_error = outcome.error;
             state.worktree = outcome.retained.then_some(worktree);
+            self.persist(record, &state, None, None)?;
         }
         record.changed.notify_waiters();
+        Ok(())
     }
 
     pub(crate) async fn snapshot(&self, id: &str, record: &AgentRecord) -> Value {
         let state = record.state.lock().await;
+        Self::snapshot_state(id, record, &state)
+    }
+
+    fn snapshot_state(id: &str, record: &AgentRecord, state: &AgentRecordState) -> Value {
         json!({
             "agentId": id,
             "sessionId": record.session_id,
@@ -372,10 +350,14 @@ impl AgentTaskManager {
             "subagentType": state.agent_type,
             "model": state.model,
             "status": state.status.as_str(),
-            "result": state.result,
             "error": state.error,
             "progress": state.progress,
             "queuedMessages": state.inbox.len(),
+            "heldMessagesCount": state.held_messages.len(),
+            "resumable": state.has_history,
+            "completedAt": state.completed_at,
+            "elapsedMs": state.observed_elapsed_ms(),
+            "timingComplete": state.timing_complete,
             "worktreePath": state.worktree.as_ref().map(|worktree| worktree.path.display().to_string()),
             "worktreeBranch": state.worktree.as_ref().map(|worktree| worktree.branch.clone()),
             "worktreeRetained": state.worktree_retained,
@@ -403,7 +385,16 @@ impl AgentTaskManager {
                 }
             }
         }
-        Ok(self.snapshot(&id, &record).await)
+        let state = record.state.lock().await;
+        let mut snapshot = Self::snapshot_state(&id, &record, &state);
+        snapshot["result"] = self
+            .store
+            .agent_result(session_id, &id)
+            .map_err(persistence::storage_error)?
+            .into();
+        snapshot["heldMessages"] =
+            serde_json::to_value(&state.held_messages).map_err(persistence::storage_error)?;
+        Ok(snapshot)
     }
 
     pub(crate) async fn route_message(
@@ -418,6 +409,10 @@ impl AgentTaskManager {
             let mut state = record.state.lock().await;
             if state.status == AgentStatus::Running {
                 state.inbox.push_back(message);
+                if let Err(error) = self.persist(&record, &state, None, None) {
+                    state.inbox.pop_back();
+                    return Err(error);
+                }
                 let queued = state.inbox.len();
                 return Ok(MessageDisposition::Queued(
                     json!({"agentId": id, "status": "queued", "queuedMessages": queued}),
@@ -431,7 +426,7 @@ impl AgentTaskManager {
                 changed.await;
                 continue;
             }
-            if state.history.is_none() {
+            if !state.has_history {
                 return Err(ToolError::ExecutionFailed(format!(
                     "agent has no resumable history: {id}"
                 )));

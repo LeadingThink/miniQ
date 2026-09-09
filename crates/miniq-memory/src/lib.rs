@@ -7,6 +7,6 @@
 mod store;
 
 pub use store::{
-    new_id, now_iso, CheckpointRow, ExternalImportOutcome, MemoryError, MemoryRow,
+    new_id, now_iso, AgentTaskRow, CheckpointRow, ExternalImportOutcome, MemoryError, MemoryRow,
     ModelContextSnapshot, SessionRecovery, StartupRecovery, Store,
 };

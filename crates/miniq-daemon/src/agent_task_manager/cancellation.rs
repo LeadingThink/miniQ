@@ -24,7 +24,7 @@ impl AgentTaskManager {
             .collect::<Vec<_>>();
         let mut cancelled = 0;
         for record in records {
-            cancelled += usize::from(request_stop(&record).await);
+            cancelled += usize::from(self.request_stop(&record).await);
         }
         cancelled
     }
@@ -65,7 +65,7 @@ impl AgentTaskManager {
             .collect::<Vec<_>>();
         // Signal everyone before waiting, so one slow cleanup cannot delay others.
         for child in &descendants {
-            request_stop(child).await;
+            self.request_stop(child).await;
         }
         let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
         for child in descendants {
@@ -81,19 +81,21 @@ impl AgentTaskManager {
         }
         Ok(self.snapshot(&id, &record).await)
     }
-}
-
-async fn request_stop(record: &AgentRecord) -> bool {
-    let mut state = record.state.lock().await;
-    // Completed parents can still own background descendants.
-    state.cancel.cancel();
-    state.inbox.clear();
-    let active = state.status.is_active();
-    if matches!(state.status, AgentStatus::Running | AgentStatus::Finalizing) {
-        state.status = AgentStatus::Stopping;
-        state.error = Some("agent stopped by caller".into());
+    async fn request_stop(&self, record: &AgentRecord) -> bool {
+        let mut state = record.state.lock().await;
+        // Completed parents can still own background descendants.
+        state.cancel.cancel();
+        state.inbox.clear();
+        let active = state.status.is_active();
+        if matches!(state.status, AgentStatus::Running | AgentStatus::Finalizing) {
+            state.status = AgentStatus::Stopping;
+            state.error = Some("agent stopped by caller".into());
+        }
+        if let Err(error) = self.persist(record, &state, None, None) {
+            tracing::error!(agent_id = record.id, %error, "cannot persist agent cancellation");
+        }
+        drop(state);
+        record.changed.notify_waiters();
+        active
     }
-    drop(state);
-    record.changed.notify_waiters();
-    active
 }

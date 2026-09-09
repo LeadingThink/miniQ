@@ -28,6 +28,7 @@ import { StarterPrompts } from "./StarterPrompts";
 import { WorkbenchResizer } from "./WorkbenchResizer";
 import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 import { SessionModelControls } from "./SessionModelControls";
+import { SessionPermissionControls } from "./SessionPermissionControls";
 import { AgentPanel } from "./AgentPanel";
 import { ProjectDirectories } from "./ProjectDirectories";
 
@@ -71,7 +72,9 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
           key={editingWorkspace.id}
           workspace={editingWorkspace}
           readOnly={app.client.mode === "remote"}
-          sessions={app.catalog.sessions.filter((session) => session.workspaceId === editingWorkspace.id)}
+          sessions={app.catalog.sessions.filter(
+            (session) => session.workspaceId === editingWorkspace.id,
+          )}
           onClose={() => app.navigation.setEditingWorkspaceId(null)}
           onSave={async (paths) => {
             await app.client.call("workspace.updateRoots", {
@@ -96,7 +99,9 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
           workspaces={app.catalog.workspaces}
           commands={buildPaletteCommands(app)}
           client={app.client}
-          onSelectSession={(sessionId) => void app.actions.openSession(sessionId)}
+          onSelectSession={(sessionId) =>
+            void app.actions.openSession(sessionId)
+          }
           onClose={() => app.navigation.setShowSearch(false)}
         />
       )}
@@ -113,7 +118,10 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
           workspaces={app.catalog.workspaces}
           onClose={() => app.navigation.setShowExternalImport(false)}
           onImported={async () => {
-            await Promise.all([app.catalog.refreshWorkspaces(), app.catalog.refreshSessions()]);
+            await Promise.all([
+              app.catalog.refreshWorkspaces(),
+              app.catalog.refreshSessions(),
+            ]);
           }}
           onOpenSession={app.actions.openSession}
         />
@@ -130,7 +138,11 @@ interface WorkbenchPageProps extends AppOnlyProps {
 function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
   return (
     <>
-      <AgentPanel client={app.client} sessionId={app.catalog.currentSessionId!} busy={!!app.busy} />
+      <AgentPanel
+        client={app.client}
+        sessionId={app.catalog.currentSessionId!}
+        busy={!!app.busy}
+      />
       <Suspense
         fallback={
           <div className="timeline-loading">
@@ -171,14 +183,24 @@ function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
         />
       </Suspense>
       <Composer
-        modelSlot={<SessionModelControls client={app.client} model={app.sessionModel} busy={!!app.busy} />}
+        modelSlot={
+          <SessionModelControls
+            client={app.client}
+            model={app.sessionModel}
+            busy={!!app.busy}
+          />
+        }
         sendBlocked={!app.sessionModel.ready || app.sessionModel.pending}
         busy={!!app.busy}
         chip={app.catalog.currentWorkspace?.name}
         draftKey={app.catalog.currentSessionId ?? undefined}
         client={app.client}
-        approvalMode={app.connection.approvalMode}
-        onApprovalModeChange={app.connection.changeApprovalMode}
+        permissionSlot={
+          <SessionPermissionControls
+            client={app.client}
+            sessionId={app.catalog.currentSessionId!}
+          />
+        }
         onSend={app.actions.sendMessage}
         onCancel={app.actions.cancelTurn}
         onError={app.setError}
@@ -189,25 +211,43 @@ function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
 
 function HeroPage({ app }: AppOnlyProps) {
   const selectedWorkspace = app.catalog.selectedWorkspace;
-  const [draftRequest, setDraftRequest] = useState<{ id: number; content: string } | undefined>();
+  const [draftRequest, setDraftRequest] = useState<
+    { id: number; content: string } | undefined
+  >();
   return (
     <div className="hero">
-      <h1>{selectedWorkspace ? `要在 ${selectedWorkspace.name} 中完成什么?` : "今天想完成什么?"}</h1>
+      <h1>
+        {selectedWorkspace
+          ? `要在 ${selectedWorkspace.name} 中完成什么?`
+          : "今天想完成什么?"}
+      </h1>
       <div className="hero-composer">
         <ComposerCard
-          modelSlot={<SessionModelControls client={app.client} model={app.sessionModel} busy={false} />}
+          modelSlot={
+            <SessionModelControls
+              client={app.client}
+              model={app.sessionModel}
+              busy={false}
+            />
+          }
           busy={false}
           autoFocus
           draftKey="hero"
           draftRequest={draftRequest}
           client={app.client}
-          placeholder={selectedWorkspace ? "描述你的目标,例如:整理这份资料并生成周报" : "先选择一个项目,再描述你的目标"}
+          placeholder={
+            selectedWorkspace
+              ? "描述你的目标,例如:整理这份资料并生成周报"
+              : "先选择一个项目,再描述你的目标"
+          }
           chipSlot={
             <ProjectPicker
               workspaces={app.catalog.workspaces}
               selectedId={selectedWorkspace?.id ?? null}
               onSelect={app.actions.selectProject}
-              onCreateBlank={(name) => void app.actions.createBlankProject(name)}
+              onCreateBlank={(name) =>
+                void app.actions.createBlankProject(name)
+              }
               onOpenFolder={() => void app.actions.openWorkspace()}
             />
           }
@@ -215,25 +255,45 @@ function HeroPage({ app }: AppOnlyProps) {
           onApprovalModeChange={app.connection.changeApprovalMode}
           onSend={app.actions.startTask}
           onError={app.setError}
-          sendBlocked={!selectedWorkspace || !app.sessionModel.ready || app.sessionModel.pending}
+          sendBlocked={
+            !selectedWorkspace ||
+            !app.sessionModel.ready ||
+            app.sessionModel.pending
+          }
           sendBlockedReason="请先选择项目"
         />
       </div>
-      <StarterPrompts onSelect={(prompt) => setDraftRequest({ id: Date.now(), content: prompt.prompt })} />
+      <StarterPrompts
+        onSelect={(prompt) =>
+          setDraftRequest({ id: Date.now(), content: prompt.prompt })
+        }
+      />
       <div className="hero-cards">
-        <button type="button" className="hero-card" onClick={() => app.navigation.setPage("skills")}>
+        <button
+          type="button"
+          className="hero-card"
+          onClick={() => app.navigation.setPage("skills")}
+        >
           <div className="hero-card-title">
             <Sparkles size={14} />
             技能
           </div>
-          <div className="hero-card-sub">查看可复用的工作流,或从任务中学习新技能</div>
+          <div className="hero-card-sub">
+            查看可复用的工作流,或从任务中学习新技能
+          </div>
         </button>
-        <button type="button" className="hero-card" onClick={() => app.navigation.setPage("mcp")}>
+        <button
+          type="button"
+          className="hero-card"
+          onClick={() => app.navigation.setPage("mcp")}
+        >
           <div className="hero-card-title">
             <PlugZap size={14} />
             连接 MCP
           </div>
-          <div className="hero-card-sub">接入外部工具与服务,扩展 agent 能力</div>
+          <div className="hero-card-sub">
+            接入外部工具与服务,扩展 agent 能力
+          </div>
         </button>
       </div>
     </div>
@@ -253,14 +313,24 @@ function MainPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
         />
       );
     case "skills":
-      return <SkillsPanel client={app.client} workspaceId={app.catalog.selectedWorkspace?.id ?? null} />;
+      return (
+        <SkillsPanel
+          client={app.client}
+          workspaceId={app.catalog.selectedWorkspace?.id ?? null}
+        />
+      );
     case "mcp":
       return <McpPanel client={app.client} />;
     case "plugins":
       return <PluginsPanel client={app.client} />;
     default:
       return app.catalog.currentSessionId ? (
-        <SessionPage key={app.catalog.currentSessionId} app={app} onOpenFile={onOpenFile} onOpenUrl={onOpenUrl} />
+        <SessionPage
+          key={app.catalog.currentSessionId}
+          app={app}
+          onOpenFile={onOpenFile}
+          onOpenUrl={onOpenUrl}
+        />
       ) : (
         <HeroPage app={app} />
       );
@@ -305,16 +375,32 @@ function buildPaletteCommands(app: MiniqAppController): PaletteCommand[] {
 }
 
 export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
-  const browserScope = app.catalog.currentSessionId ?? `draft:${app.catalog.selectedWorkspaceId ?? ""}`;
-  const [browserSessions, setBrowserSessions] = useState<Record<string, string | null>>({});
+  const browserScope =
+    app.catalog.currentSessionId ??
+    `draft:${app.catalog.selectedWorkspaceId ?? ""}`;
+  const [browserSessions, setBrowserSessions] = useState<
+    Record<string, string | null>
+  >({});
   const browserUrl = browserSessions[browserScope] ?? null;
-  const setBrowserUrl = (url: string | null) => setBrowserSessions((current) => ({ ...current, [browserScope]: url }));
+  const setBrowserUrl = (url: string | null) =>
+    setBrowserSessions((current) => ({ ...current, [browserScope]: url }));
   const [workbenchWidth, setWorkbenchWidth] = useState(() =>
-    readWorkbenchWidth(window.localStorage, window.innerWidth, app.navigation.sidebarCollapsed),
+    readWorkbenchWidth(
+      window.localStorage,
+      window.innerWidth,
+      app.navigation.sidebarCollapsed,
+    ),
   );
-  const workbenchMax = maxWorkbenchWidth(window.innerWidth, app.navigation.sidebarCollapsed);
+  const workbenchMax = maxWorkbenchWidth(
+    window.innerWidth,
+    app.navigation.sidebarCollapsed,
+  );
   const resizeWorkbench = (width: number) => {
-    const next = clampWorkbenchWidth(width, window.innerWidth, app.navigation.sidebarCollapsed);
+    const next = clampWorkbenchWidth(
+      width,
+      window.innerWidth,
+      app.navigation.sidebarCollapsed,
+    );
     setWorkbenchWidth(next);
     window.localStorage.setItem(WORKBENCH_WIDTH_STORAGE_KEY, String(next));
   };
@@ -322,7 +408,11 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
   useEffect(() => {
     const handleResize = () => {
       setWorkbenchWidth((current) => {
-        const next = clampWorkbenchWidth(current, window.innerWidth, app.navigation.sidebarCollapsed);
+        const next = clampWorkbenchWidth(
+          current,
+          window.innerWidth,
+          app.navigation.sidebarCollapsed,
+        );
         window.localStorage.setItem(WORKBENCH_WIDTH_STORAGE_KEY, String(next));
         return next;
       });
@@ -347,25 +437,32 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
     onNewChat: app.actions.newChat,
     onSettings: () => app.navigation.setShowSettings(true),
     onStop: app.busy ? () => void app.actions.cancelTurn() : undefined,
-    onToggleSidebar: () => app.navigation.setSidebarCollapsed(!app.navigation.sidebarCollapsed),
+    onToggleSidebar: () =>
+      app.navigation.setSidebarCollapsed(!app.navigation.sidebarCollapsed),
   });
 
   const workbenchOpen = Boolean(
     browserUrl ||
-      (app.preview.state.open && app.catalog.currentWorkspace) ||
-      (app.review.open && app.catalog.currentWorkspace),
+    (app.preview.state.open && app.catalog.currentWorkspace) ||
+    (app.review.open && app.catalog.currentWorkspace),
   );
   const appStyle = {
     "--workbench-width": `${workbenchWidth}px`,
   } as CSSProperties;
   const closeMobileSidebar = () => {
-    if (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 720px)").matches) {
+    if (
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(max-width: 720px)").matches
+    ) {
       app.navigation.setSidebarCollapsed(true);
     }
   };
 
   return (
-    <div className={`app ${app.navigation.sidebarCollapsed ? "sidebar-collapsed" : ""}`} style={appStyle}>
+    <div
+      className={`app ${app.navigation.sidebarCollapsed ? "sidebar-collapsed" : ""}`}
+      style={appStyle}
+    >
       <Sidebar
         workspaces={app.catalog.workspaces}
         sessions={app.catalog.sessions}
@@ -392,19 +489,33 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
           app.actions.selectWorkspace(workspaceId);
           closeMobileSidebar();
         }}
-        onCreateSession={(workspaceId) => void app.actions.createSession(workspaceId)}
-        onDeleteWorkspace={(workspaceId) => void app.actions.deleteWorkspace(workspaceId)}
-        onRenameWorkspace={(workspaceId, name) => void app.actions.renameWorkspace(workspaceId, name)}
+        onCreateSession={(workspaceId) =>
+          void app.actions.createSession(workspaceId)
+        }
+        onDeleteWorkspace={(workspaceId) =>
+          void app.actions.deleteWorkspace(workspaceId)
+        }
+        onRenameWorkspace={(workspaceId, name) =>
+          void app.actions.renameWorkspace(workspaceId, name)
+        }
         onEditWorkspace={app.navigation.setEditingWorkspaceId}
         onSelectSession={(sessionId) => {
           closeMobileSidebar();
           void app.actions.openSession(sessionId);
         }}
         onSessionSeen={app.markSessionSeen}
-        onDeleteSession={(sessionId) => void app.actions.deleteSession(sessionId)}
-        onRenameSession={(sessionId, title) => void app.actions.renameSession(sessionId, title)}
-        onSetSessionPinned={(sessionId, pinned) => void app.actions.setSessionPinned(sessionId, pinned)}
-        onSetSessionArchived={(sessionId, archived) => void app.actions.setSessionArchived(sessionId, archived)}
+        onDeleteSession={(sessionId) =>
+          void app.actions.deleteSession(sessionId)
+        }
+        onRenameSession={(sessionId, title) =>
+          void app.actions.renameSession(sessionId, title)
+        }
+        onSetSessionPinned={(sessionId, pinned) =>
+          void app.actions.setSessionPinned(sessionId, pinned)
+        }
+        onSetSessionArchived={(sessionId, archived) =>
+          void app.actions.setSessionArchived(sessionId, archived)
+        }
         onShowSkills={() => {
           app.navigation.setPage("skills");
           closeMobileSidebar();
@@ -447,7 +558,11 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
         />
         <AppErrorBanner app={app} />
         <AppOverlays app={app} theme={theme} onThemeChange={onThemeChange} />
-        <MainPage app={app} onOpenUrl={openBrowserUrl} onOpenFile={openPreviewFile} />
+        <MainPage
+          app={app}
+          onOpenUrl={openBrowserUrl}
+          onOpenFile={openPreviewFile}
+        />
       </div>
       {workbenchOpen && (
         <WorkbenchResizer
@@ -489,11 +604,16 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
           }
         >
           <FilePreviewPanel
+            viewStore={app.preview.views}
+            viewScope={app.preview.viewScope}
             key={app.catalog.currentSessionId}
             preview={app.preview.state}
             tabs={app.preview.tabs}
             onCloseTab={app.preview.closeTab}
-            workspacePath={app.catalog.currentSession?.workingDirectory ?? app.catalog.currentWorkspace.path}
+            workspacePath={
+              app.catalog.currentSession?.workingDirectory ??
+              app.catalog.currentWorkspace.path
+            }
             workspacePaths={app.catalog.currentWorkspacePaths}
             onClose={app.preview.close}
             onOpenFile={(target) => void app.preview.openFile(target)}
@@ -504,7 +624,11 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
           />
         </Suspense>
       ) : app.review.open && app.catalog.currentWorkspace ? (
-        <ReviewPanel diff={app.review.data} onOpenFile={openPreviewFile} onClose={() => app.review.setOpen(false)} />
+        <ReviewPanel
+          diff={app.review.data}
+          onOpenFile={openPreviewFile}
+          onClose={() => app.review.setOpen(false)}
+        />
       ) : null}
     </div>
   );

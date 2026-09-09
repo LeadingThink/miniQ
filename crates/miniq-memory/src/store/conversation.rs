@@ -244,12 +244,26 @@ impl Store {
         session_id: &str,
         tool_name: &str,
         input: &Value,
+        agent_id: Option<&str>,
         status: ToolCallStatus,
     ) -> Result<ToolCall> {
         let conn = self.conn.lock().unwrap();
+        if let Some(agent_id) = agent_id {
+            let owns: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM agent_tasks WHERE id = ?1 AND session_id = ?2)",
+                params![agent_id, session_id],
+                |row| row.get(0),
+            )?;
+            if !owns {
+                return Err(MemoryError::InvalidData(
+                    "agent does not belong to this session".into(),
+                ));
+            }
+        }
         let tool_call = ToolCall {
             id: new_id("tool"),
             session_id: session_id.to_string(),
+            agent_id: agent_id.map(str::to_owned),
             tool_name: tool_name.to_string(),
             input: input.clone(),
             output: None,
@@ -258,15 +272,16 @@ impl Store {
             completed_at: None,
         };
         conn.execute(
-            "INSERT INTO tool_calls (id, session_id, tool_name, input_json, status, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO tool_calls (id, session_id, tool_name, input_json, status, created_at, agent_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 tool_call.id,
                 tool_call.session_id,
                 tool_call.tool_name,
                 serde_json::to_string(&tool_call.input)?,
                 tool_call.status.as_str(),
-                tool_call.created_at
+                tool_call.created_at,
+                tool_call.agent_id
             ],
         )?;
         Ok(tool_call)
@@ -305,7 +320,7 @@ impl Store {
     pub fn list_tool_calls(&self, session_id: &str) -> Result<Vec<ToolCall>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, session_id, tool_name, input_json, output_json, status, created_at, completed_at
+            "SELECT id, session_id, tool_name, input_json, output_json, status, created_at, completed_at, agent_id
              FROM tool_calls WHERE session_id = ?1 ORDER BY created_at ASC, id ASC",
         )?;
         let rows = stmt.query_map(params![session_id], row_to_tool_call)?;
@@ -315,7 +330,7 @@ impl Store {
 
     pub fn get_tool_call(&self, id: &str) -> Result<ToolCall> {
         self.conn.lock().unwrap().query_row(
-            "SELECT id, session_id, tool_name, input_json, output_json, status, created_at, completed_at FROM tool_calls WHERE id = ?1",
+            "SELECT id, session_id, tool_name, input_json, output_json, status, created_at, completed_at, agent_id FROM tool_calls WHERE id = ?1",
             params![id], row_to_tool_call,
         ).optional()?.ok_or_else(|| MemoryError::NotFound(format!("tool_call {id}")))
     }

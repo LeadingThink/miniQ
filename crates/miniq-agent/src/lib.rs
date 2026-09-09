@@ -149,6 +149,7 @@ pub struct TurnOutcome {
 
 #[derive(Debug, Clone)]
 pub struct RunLimits {
+    pub purpose: miniq_models::ModelCallPurpose,
     pub checkpoint: Option<std::sync::Arc<dyn CheckpointStore>>,
     /// Optional per-turn model-step budget. Interactive turns have no fixed
     /// ceiling; callers running bounded child tasks can supply one explicitly.
@@ -161,6 +162,7 @@ pub struct RunLimits {
 impl Default for RunLimits {
     fn default() -> Self {
         Self {
+            purpose: miniq_models::ModelCallPurpose::Task,
             checkpoint: None,
             max_steps: None,
             repeated_tool_batch_limit: 4,
@@ -295,6 +297,11 @@ async fn run_turn_inner(
             state.partial_text.clear();
             let committed_text = state.streamed_text.clone();
             let request = CompletionRequest {
+                trace: miniq_models::ModelCallTrace {
+                    purpose: limits.purpose,
+                    step: Some(steps),
+                    attempt: retries.attempts + 1,
+                },
                 messages: state.history.clone(),
                 tools: tools.clone(),
                 temperature: None,
@@ -394,6 +401,7 @@ async fn run_turn_inner(
                     }
                     ChatDelta::ToolCall(call) => tool_calls.push(call),
                     ChatDelta::Context(context) => provider_context = Some(context),
+                    ChatDelta::ResponseInfo(_) => {}
                     ChatDelta::Finished => break,
                 }
             }

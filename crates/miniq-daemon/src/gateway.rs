@@ -17,6 +17,7 @@ mod observation;
 mod plugin;
 mod schedule;
 mod session;
+mod session_approval;
 mod session_attention;
 mod session_diff;
 mod session_history;
@@ -73,6 +74,11 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.list" => session::list(state, req.params),
         "session.open" => session::open(state, req.params),
         "session.history" => session_history::page(state, req.params),
+        "session.modelCalls" => session_history::model_calls(state, req.params),
+        "session.approval.get" => session_approval::get(state, req.params),
+        "session.approval.update" => session_approval::update(state, req.params),
+        "session.executionEvents" => session_history::execution_events(state, req.params),
+        "approval.inbox" => interaction::approval_inbox(state, req.params),
         "session.sync" => session_history::sync(state, req.params),
         "tool.detail" => session_history::tool_detail(state, req.params),
         "session.acknowledgeFailure" => session_attention::acknowledge_failure(state, req.params),
@@ -82,6 +88,8 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "model.describe" => session_model::describe(state, req.params).await,
         "agent.list" => agents::list(state, req.params).await,
         "agent.output" => agents::action(state, req.params, false).await,
+        "agent.history" => agents::history(state, req.params),
+        "agent.message" => agents::message(state, req.params),
         "agent.stop" => agents::action(state, req.params, true).await,
         "session.diff" => session_diff::get(state, req.params),
         "session.sendMessage" => session::send_message(state, req.params),

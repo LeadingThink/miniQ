@@ -1,0 +1,129 @@
+// @vitest-environment jsdom
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { DocxPreview, PptxPreview } from "./OfficePreview";
+
+const mocks = vi.hoisted(() => ({ render: vi.fn(), init: vi.fn() }));
+vi.mock("docx-preview", () => ({ renderAsync: mocks.render }));
+vi.mock("pptx-preview", () => ({ init: mocks.init }));
+beforeEach(() => {
+  mocks.render.mockReset();
+  mocks.init.mockReset();
+});
+afterEach(cleanup);
+
+it("late Word parsing cannot overwrite a newly selected file", async () => {
+  let finish!: () => void;
+  mocks.render
+    .mockImplementationOnce(async (_bytes, target: HTMLElement) => {
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      target.textContent = "old document";
+    })
+    .mockImplementationOnce(async (_bytes, target: HTMLElement) => {
+      target.textContent = "new document";
+    });
+  const view = render(<DocxPreview dataBase64="AA==" onError={vi.fn()} />);
+  await waitFor(() => expect(mocks.render).toHaveBeenCalledTimes(1));
+  view.rerender(<DocxPreview dataBase64="AQ==" onError={vi.fn()} />);
+  await screen.findByText("new document");
+  await act(async () => finish());
+  expect(screen.queryByText("old document")).toBeNull();
+  expect(screen.getByText("new document")).toBeTruthy();
+});
+
+it("releases presentation renderer after a pending parse finishes on an unmounted view", async () => {
+  let finish!: () => void;
+  const destroy = vi.fn();
+  mocks.init.mockImplementation((target: HTMLElement) => ({
+    destroy,
+    preview: async () => {
+      expect(target.isConnected).toBe(true);
+      expect(target.style.visibility).toBe("hidden");
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      expect(target.isConnected).toBe(true);
+      target.textContent = "late slides";
+    },
+  }));
+  const view = render(<PptxPreview dataBase64="AA==" onError={vi.fn()} />);
+  await waitFor(() => expect(mocks.init).toHaveBeenCalledTimes(1));
+  view.unmount();
+  expect(destroy).not.toHaveBeenCalled();
+  await act(async () => finish());
+  await waitFor(() => expect(destroy).toHaveBeenCalledTimes(1));
+  expect(screen.queryByText("late slides")).toBeNull();
+  expect(
+    document.querySelector('[aria-hidden="true"][style*="960px"]'),
+  ).toBeNull();
+});
+
+it("does not reparse Word for callback identity changes and reports the current error handler", async () => {
+  let reject!: (error: Error) => void;
+  mocks.render.mockImplementation(
+    () =>
+      new Promise((_, fail) => {
+        reject = fail;
+      }),
+  );
+  const previous = vi.fn();
+  const current = vi.fn();
+  const view = render(<DocxPreview dataBase64="AA==" onError={previous} />);
+  await waitFor(() => expect(mocks.render).toHaveBeenCalledTimes(1));
+  view.rerender(<DocxPreview dataBase64="AA==" onError={current} />);
+  await act(async () => reject(new Error("invalid document")));
+  expect(previous).not.toHaveBeenCalled();
+  expect(current).toHaveBeenCalledWith("invalid document");
+  expect(mocks.render).toHaveBeenCalledTimes(1);
+  expect(
+    view.container.querySelector(".office-preview")?.getAttribute("aria-busy"),
+  ).toBe("false");
+});
+
+it("releases failed presentation parsing immediately and only once", async () => {
+  const destroy = vi.fn();
+  const onError = vi.fn();
+  mocks.init.mockReturnValue({
+    destroy,
+    preview: vi.fn().mockRejectedValue(new Error("invalid slides")),
+  });
+  const view = render(<PptxPreview dataBase64="AA==" onError={onError} />);
+  await waitFor(() => expect(onError).toHaveBeenCalledWith("invalid slides"));
+  expect(
+    view.container.querySelector(".office-preview")?.getAttribute("aria-busy"),
+  ).toBe("false");
+  expect(destroy).toHaveBeenCalledTimes(1);
+  view.unmount();
+  expect(destroy).toHaveBeenCalledTimes(1);
+});
+
+it("finishes old presentation cleanup before another file can initialize charts", async () => {
+  let finish!: () => void;
+  const order: string[] = [];
+  mocks.init
+    .mockImplementationOnce(() => ({
+      destroy: () => order.push("destroy old"),
+      preview: () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    }))
+    .mockImplementationOnce((target: HTMLElement) => {
+      order.push("init new");
+      return {
+        destroy: vi.fn(),
+        preview: async () => {
+          target.textContent = "new presentation";
+        },
+      };
+    });
+  const view = render(<PptxPreview dataBase64="AA==" onError={vi.fn()} />);
+  await waitFor(() => expect(mocks.init).toHaveBeenCalledTimes(1));
+  view.rerender(<PptxPreview dataBase64="AQ==" onError={vi.fn()} />);
+  expect(mocks.init).toHaveBeenCalledTimes(1);
+  await act(async () => finish());
+  await screen.findByText("new presentation");
+  expect(order).toEqual(["destroy old", "init new"]);
+});

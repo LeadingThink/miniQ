@@ -7,6 +7,11 @@ use serde_json::{json, Value};
 use super::common::{params, store_err};
 use crate::state::{AppState, ApprovalDecision};
 
+pub(super) fn approval_inbox(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: miniq_protocol::ApprovalInboxParams = params(raw)?;
+    super::common::to_value(state.store.approval_inbox(&input).map_err(store_err)?)
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ApprovalParams {

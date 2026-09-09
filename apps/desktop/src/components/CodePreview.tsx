@@ -36,14 +36,25 @@ const LANGUAGES: Record<string, string> = {
 };
 
 function languageForPath(path: string): string {
-  const extension = path.split(/[\\/]/).at(-1)?.split(".").at(-1)?.toLowerCase();
+  const extension = path
+    .split(/[\\/]/)
+    .at(-1)
+    ?.split(".")
+    .at(-1)
+    ?.toLowerCase();
   return extension ? (LANGUAGES[extension] ?? "plaintext") : "plaintext";
 }
 
-export default function CodePreview(props: { path: string; content: string; wrap: boolean; onMount: OnMount }) {
+export default function CodePreview(props: {
+  path: string;
+  content: string;
+  wrap: boolean;
+  onMount: OnMount;
+}) {
   const beforeMount = useEditorTheme();
   return (
     <Editor
+      saveViewState={false}
       value={props.content}
       path={props.path}
       language={languageForPath(props.path)}

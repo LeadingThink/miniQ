@@ -13,7 +13,12 @@ pub(super) async fn summarize_batch(
 ) -> Result<String, AgentError> {
     let transcript = serde_json::to_string(messages)
         .map_err(|error| ProviderError::InvalidResponse(error.to_string()))?;
-    let request = CompletionRequest {
+    let mut request = CompletionRequest {
+        trace: miniq_models::ModelCallTrace {
+            purpose: miniq_models::ModelCallPurpose::Compaction,
+            step: None,
+            attempt: 1,
+        },
         messages: vec![
             ChatMessage::system(
                 "Compress the conversation into a precise working-memory handoff. Preserve user goals, decisions, constraints, file paths, commands, errors, completed work, pending work, and facts needed to continue. Omit pleasantries and repeated tool output. Do not invent anything.",
@@ -27,6 +32,7 @@ pub(super) async fn summarize_batch(
     };
     let mut retries = ModelRetries::new(max_model_retries);
     loop {
+        request.trace.attempt = retries.attempts + 1;
         let _ = events
             .send(AgentEvent::ModelRequestStarted {
                 step: 0,
@@ -60,7 +66,7 @@ pub(super) async fn summarize_batch(
             };
             match delta {
                 Some(Ok(ChatDelta::Text(text))) => summary.push_str(&text),
-                Some(Ok(ChatDelta::Context(_))) => {}
+                Some(Ok(ChatDelta::Context(_) | ChatDelta::ResponseInfo(_))) => {}
                 Some(Ok(ChatDelta::ToolCall(_))) => {
                     return Err(ProviderError::InvalidResponse(
                         "context compaction attempted a tool call".into(),

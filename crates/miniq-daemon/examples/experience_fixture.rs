@@ -104,6 +104,7 @@ fn seed_tools(store: &Store, session: &str, count: usize, failed: bool) -> anyho
                 "shell_run"
             },
             &json!({"command":format!("check module {index}")}),
+            None,
             ToolCallStatus::Running,
         )?;
         let status = if failed && index == 2 {

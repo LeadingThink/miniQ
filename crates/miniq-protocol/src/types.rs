@@ -208,6 +208,8 @@ impl ToolCallStatus {
 pub struct ToolCall {
     pub id: String,
     pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
     pub tool_name: String,
     pub input: Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]

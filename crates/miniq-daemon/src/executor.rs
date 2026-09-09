@@ -19,6 +19,8 @@ mod adaptation;
 mod checkpoint;
 mod hooks;
 mod interaction;
+#[cfg(test)]
+mod permission_tests;
 mod plan;
 mod plan_review;
 
@@ -46,6 +48,12 @@ pub struct SessionToolExecutor {
 }
 
 impl SessionToolExecutor {
+    fn owner_agent_id(&self) -> Option<&str> {
+        self.ctx
+            .agents
+            .as_ref()
+            .and_then(|bridge| bridge.owner_agent_id())
+    }
     fn resolve_registered_call(&self, call: &ToolCallRequest) -> Option<ToolCallRequest> {
         let name = self.router.resolve_registered_name(&call.name)?;
         (name != call.name).then(|| ToolCallRequest {
@@ -207,6 +215,7 @@ impl SessionToolExecutor {
             .update_tool_call_status(tool_call_id, ToolCallStatus::Running);
         self.state.emit(Event::ToolCallStarted {
             session_id: self.session_id.clone(),
+            agent_id: self.owner_agent_id().map(str::to_owned),
             tool_call_id: tool_call_id.to_string(),
             tool_name: call.name.clone(),
             input: crate::security::redacted(call.arguments.clone()),
@@ -352,6 +361,7 @@ impl ToolExecutor for SessionToolExecutor {
                         &self.session_id,
                         &call.name,
                         &crate::security::redacted(call.arguments.clone()),
+                        self.owner_agent_id(),
                         ToolCallStatus::Pending,
                     )
                     .map_err(|e| {
@@ -363,6 +373,7 @@ impl ToolExecutor for SessionToolExecutor {
                 );
                 self.state.emit(Event::ToolCallStarted {
                     session_id: self.session_id.clone(),
+                    agent_id: self.owner_agent_id().map(str::to_owned),
                     tool_call_id: tool_call.id.clone(),
                     tool_name: call.name.clone(),
                     input: crate::security::redacted(call.arguments.clone()),
@@ -384,6 +395,7 @@ impl ToolExecutor for SessionToolExecutor {
                 &self.session_id,
                 &call.name,
                 &crate::security::redacted(call.arguments.clone()),
+                self.owner_agent_id(),
                 ToolCallStatus::Pending,
             )
             .map_err(|e| {
@@ -413,6 +425,7 @@ impl ToolExecutor for SessionToolExecutor {
                 );
                 self.state.emit(Event::ToolCallStarted {
                     session_id: self.session_id.clone(),
+                    agent_id: self.owner_agent_id().map(str::to_owned),
                     tool_call_id: tool_call.id.clone(),
                     tool_name: call.name.clone(),
                     input: crate::security::redacted(call.arguments.clone()),
@@ -449,31 +462,39 @@ impl ToolExecutor for SessionToolExecutor {
             }
             RiskLevel::Low => {}
             RiskLevel::Medium | RiskLevel::High => {
-                let mode = self.state.settings.lock().unwrap().approval_mode;
+                let mode = self
+                    .state
+                    .approval_mode_for_session(&self.session_id)
+                    .map_err(|error| {
+                        AgentError::Checkpoint(format!(
+                            "cannot read session approval policy: {error}"
+                        ))
+                    })?;
                 let pattern = self.approval_pattern(call);
                 let allowed_for_session = self
                     .state
                     .is_allowed_for_session(&self.session_id, &pattern);
-                let pre_approved = match self.permission_policy {
-                    PermissionPolicy::AcceptEdits => {
-                        risk.level == RiskLevel::Medium
-                            || mode == crate::state::ApprovalMode::FullAccess
-                            || allowed_for_session
-                    }
-                    PermissionPolicy::DontAsk => {
-                        mode == crate::state::ApprovalMode::FullAccess || allowed_for_session
-                    }
-                    PermissionPolicy::Inherit => match mode {
-                        crate::state::ApprovalMode::FullAccess => true,
-                        // Auto ("替我审批"): medium-risk actions (workspace writes,
-                        // build/test commands -- all checkpointed or reversible) run
-                        // without asking; only high risk needs the user once per pattern.
-                        crate::state::ApprovalMode::Auto => {
-                            risk.level == RiskLevel::Medium || allowed_for_session
+                let pre_approved = mode != crate::state::ApprovalMode::AlwaysAsk
+                    && match self.permission_policy {
+                        PermissionPolicy::AcceptEdits => {
+                            risk.level == RiskLevel::Medium
+                                || mode == crate::state::ApprovalMode::FullAccess
+                                || allowed_for_session
                         }
-                        crate::state::ApprovalMode::AlwaysAsk => false,
-                    },
-                };
+                        PermissionPolicy::DontAsk => {
+                            mode == crate::state::ApprovalMode::FullAccess || allowed_for_session
+                        }
+                        PermissionPolicy::Inherit => match mode {
+                            crate::state::ApprovalMode::FullAccess => true,
+                            // Auto ("替我审批"): medium-risk actions (workspace writes,
+                            // build/test commands -- all checkpointed or reversible) run
+                            // without asking; only high risk needs the user once per pattern.
+                            crate::state::ApprovalMode::Auto => {
+                                risk.level == RiskLevel::Medium || allowed_for_session
+                            }
+                            crate::state::ApprovalMode::AlwaysAsk => false,
+                        },
+                    };
                 if !pre_approved {
                     if self.permission_policy == PermissionPolicy::DontAsk {
                         let output = json!({

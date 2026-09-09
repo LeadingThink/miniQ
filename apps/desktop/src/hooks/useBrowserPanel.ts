@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import {
   browserAction,
   closeBrowser,
@@ -10,8 +16,15 @@ import {
 } from "../browserWorkbench";
 import { errorMessage } from "../errorMessage";
 import { isTauriRuntime } from "../runtime";
+import { useOpenDialog } from "./useOpenDialog";
 
-export function useBrowserPanel(url: string, surface: RefObject<HTMLDivElement>, suspended = false) {
+export function useBrowserPanel(
+  url: string,
+  surface: RefObject<HTMLDivElement>,
+  requestedSuspension = false,
+) {
+  const dialogOpen = useOpenDialog();
+  const suspended = requestedSuspension || dialogOpen;
   const [viewId] = useState(() => crypto.randomUUID());
   const [address, setAddress] = useState(url);
   const [activeUrl, setActiveUrl] = useState(url);
@@ -30,7 +43,9 @@ export function useBrowserPanel(url: string, surface: RefObject<HTMLDivElement>,
     const previous = active.current;
     active.current = next;
     setActiveUrl(next);
-    setAddress((value) => (shouldSyncBrowserAddress(editing.current, value, previous) ? next : value));
+    setAddress((value) =>
+      shouldSyncBrowserAddress(editing.current, value, previous) ? next : value,
+    );
   }, []);
   const load = useCallback(
     async (target: string) => {
@@ -107,7 +122,10 @@ export function useBrowserPanel(url: string, surface: RefObject<HTMLDivElement>,
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const rect = element.getBoundingClientRect();
-        void resizeBrowser({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }, viewId).catch((cause) => {
+        void resizeBrowser(
+          { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          viewId,
+        ).catch((cause) => {
           if (!disposed) setError(errorMessage(cause));
         });
       });
@@ -128,14 +146,22 @@ export function useBrowserPanel(url: string, surface: RefObject<HTMLDivElement>,
     let disposed = false;
     let polling = false;
     const refresh = async () => {
-      if (disposed || polling || inFlight.current || document.visibilityState === "hidden") return;
+      if (
+        disposed ||
+        polling ||
+        inFlight.current ||
+        document.visibilityState === "hidden"
+      )
+        return;
       polling = true;
       const request = sequence.current;
       try {
         const state = await currentBrowser(viewId);
-        if (!disposed && request === sequence.current && state) accept(state.url);
+        if (!disposed && request === sequence.current && state)
+          accept(state.url);
       } catch (cause) {
-        if (!disposed && request === sequence.current) setError(`无法同步浏览器状态：${errorMessage(cause)}`);
+        if (!disposed && request === sequence.current)
+          setError(`无法同步浏览器状态：${errorMessage(cause)}`);
       } finally {
         polling = false;
       }
@@ -169,7 +195,8 @@ export function useBrowserPanel(url: string, surface: RefObject<HTMLDivElement>,
         setError(null);
       }
     } catch (cause) {
-      if (mounted.current && request === sequence.current) setError(errorMessage(cause));
+      if (mounted.current && request === sequence.current)
+        setError(errorMessage(cause));
     } finally {
       if (mounted.current && request === sequence.current) {
         inFlight.current = false;

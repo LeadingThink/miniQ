@@ -6,6 +6,7 @@
 
 pub mod computer;
 pub mod event;
+pub mod execution;
 pub mod external;
 pub mod history;
 pub mod model;
@@ -16,12 +17,21 @@ pub mod types;
 
 pub use computer::*;
 pub use event::*;
+pub use execution::*;
+mod execution_events;
+pub use execution_events::*;
+mod agent_history;
+pub use agent_history::*;
+mod session_approval;
 pub use external::*;
 pub use history::*;
 pub use model::*;
 pub use node_plugin::*;
 pub use plugin::*;
 pub use rpc::*;
+pub use session_approval::*;
+mod approval_inbox;
+pub use approval_inbox::*;
 pub use types::*;
 
 /// Protocol schema version. Bumped on breaking changes; no compatibility

@@ -7,7 +7,7 @@ use miniq_protocol::{Message, Role};
 
 use crate::agent_task_manager::{AgentRecord, AgentTaskManager};
 
-const UNFINISHED_TURN: &str = "The preceding turn did not finish. Its recorded tool results are retained. Follow the latest user request, not an automatic replay of the interrupted task. Reuse confirmed results. For calls with unknown execution status, inspect actual state before retrying any side effect.";
+pub(crate) const UNFINISHED_TURN: &str = "The preceding turn did not finish. Its recorded tool results are retained. Follow the latest user request, not an automatic replay of the interrupted task. Reuse confirmed results. For calls with unknown execution status, inspect actual state before retrying any side effect.";
 
 pub(crate) struct SessionCheckpoint {
     pub store: Arc<miniq_memory::Store>,
@@ -83,7 +83,7 @@ impl CheckpointStore for AgentCheckpoint {
             .push(ChatMessage::system(UNFINISHED_TURN));
         self.manager
             .save_history(&self.record, &checkpoint.history)
-            .await;
-        Ok(())
+            .await
+            .map_err(|error| AgentError::Checkpoint(error.to_string()))
     }
 }

@@ -28,6 +28,10 @@
   text-align: center;
   font: inherit;
 }
+.pdf-page[data-fit="false"],
+.pdf-page[data-fit="false"] canvas {
+  max-width: none;
+}
 .pdf-text-toggle {
   display: flex;
   flex-shrink: 0;
@@ -60,6 +64,17 @@
   color: inherit;
   padding: 4px;
   font: inherit;
+}
+.sheet-column-filter {
+  width: 100%;
+  min-width: 65px;
+  max-width: 220px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  padding: 4px;
 }
 .sheet-cell-value {
   max-height: 150px;
