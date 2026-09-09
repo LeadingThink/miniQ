@@ -55,7 +55,10 @@ async fn attached_directory_supports_file_edit_patch_and_paginated_search() {
         .unwrap();
     assert_eq!(matches["total"], 1);
     let found = matches["files"][0].as_str().unwrap();
-    assert_eq!(std::path::Path::new(found), file.canonicalize().unwrap());
+    assert_eq!(
+        std::path::Path::new(found).canonicalize().unwrap(),
+        file.canonicalize().unwrap()
+    );
     assert!(FileReadTool
         .execute(&context, json!({"path":found}))
         .await

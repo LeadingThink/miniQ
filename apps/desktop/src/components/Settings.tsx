@@ -162,6 +162,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
       setApiKey("");
       setRemoteStatus(res.remoteStatus ?? null);
       setStatus("已保存");
+      props.onClose();
     } catch (e) {
       setStatus(`保存失败：${errorMessage(e)}`);
     } finally {
@@ -179,7 +180,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
   };
 
   return (
-    <div className="settings-overlay" onClick={props.onClose}>
+    <div className="settings-overlay">
       <form
         ref={panelRef}
         tabIndex={-1}
@@ -187,7 +188,6 @@ export function SettingsPanel(props: SettingsPanelProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
-        onClick={(event) => event.stopPropagation()}
         onSubmit={(event) => {
           event.preventDefault();
           if (tab === "services" && props.client.mode === "local") void save();
