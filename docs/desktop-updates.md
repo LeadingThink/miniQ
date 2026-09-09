@@ -7,19 +7,24 @@ private while installed clients fetch releases without embedded credentials.
 
 ## Client behavior
 
-- Packaged builds check for updates ten seconds after startup and every three hours.
+- Packaged builds check for updates ten seconds after startup and every ten minutes.
 - Development builds never contact the update endpoint.
 - An available version appears in the sidebar.
 - Clicking the update downloads and verifies the complete package before stopping the daemon.
-- The authenticated `daemon.shutdown` RPC cancels active turns and closes the local server.
+- The authenticated, local-only `daemon.shutdownIfIdle` RPC refuses an update while
+  main turns, child agents, queued messages or admitted requests remain. A shared
+  admission gate blocks new work atomically once the idle check succeeds. Refusal
+  leaves tasks and queues untouched and restores the desktop connection.
+- `daemon.shutdown` is an explicit cancelling shutdown command, never an updater
+  fallback. Older daemons without idle shutdown must be closed when idle before
+  manual installation; an unknown method must not trigger cancelling shutdown.
 - The desktop waits for the daemon port to close, installs the package, and relaunches.
 
 The first updater-enabled build must still be installed manually. Every later
 version can update from the signed release feed.
 
-The initial release may be published from a locally signed build by uploading
-the NSIS installer, its `.exe.sig` file, and a matching `latest.json`. Later
-releases should use the workflow below so metadata is generated automatically.
+Releases use the workflow below so artifacts and metadata are generated together.
+Do not bypass it with manually uploaded installers or updater manifests.
 
 ## Signing secrets
 
@@ -48,10 +53,12 @@ Formal macOS releases also require an active Apple Developer Program team and:
 - `APPLE_PASSWORD`: an app-specific password, not the Apple ID password
 - `APPLE_TEAM_ID`
 
-The release workflow fails before building macOS when any Apple value is missing.
-This prevents an unsigned, unnotarized DMG from being presented as a production
-download. The same Apple Developer Program team can later sign the 在问 iOS App;
-it does not require a second program membership.
+When these Apple values are incomplete, the current workflow explicitly warns
+and publishes an unsigned, unnotarized macOS build with installation guidance.
+The user has deferred Developer ID signing until an account/certificate is
+available. Ad-hoc code identity can change after upgrades and invalidate prior
+macOS Accessibility or Screen Recording grants. Updater signatures do not solve
+this. The same Apple Developer Program team can later sign the 在问 iOS App.
 
 ## Publishing
 

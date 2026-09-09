@@ -15,6 +15,11 @@ use tokio_util::sync::CancellationToken;
 
 pub use miniq_protocol::ApprovalMode;
 
+pub(crate) struct ActiveTurn {
+    cancellation: CancellationToken,
+    _activity: crate::activity::ActivityGuard,
+}
+
 /// Persisted daemon settings (data dir `settings.json`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,7 +87,8 @@ pub struct AppState {
     /// Cancels the listener and connected clients during an app update.
     pub shutdown: CancellationToken,
     /// Cancellation token per session with an active turn.
-    pub active_turns: Arc<Mutex<HashMap<String, CancellationToken>>>,
+    pub(crate) active_turns: Arc<Mutex<HashMap<String, ActiveTurn>>>,
+    pub(crate) activity: crate::activity::ActivityGate,
     /// Pending approvals waiting for a user decision (approval id -> waker).
     pub pending_approvals: Arc<Mutex<HashMap<String, oneshot::Sender<ApprovalDecision>>>>,
     /// Per-session allowlist of approved tool patterns ("approve for session").
@@ -171,6 +177,7 @@ impl AppState {
             token,
             shutdown: CancellationToken::new(),
             active_turns: Arc::new(Mutex::new(HashMap::new())),
+            activity: crate::activity::ActivityGate::default(),
             pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             session_allowlist: Arc::new(Mutex::new(HashMap::new())),
             pending_questions: Arc::new(Mutex::new(HashMap::new())),
@@ -403,12 +410,19 @@ impl AppState {
     /// Register a new turn for a session. Different sessions may run in
     /// parallel, including sessions that share a workspace.
     pub fn begin_turn(&self, session_id: &str) -> Option<CancellationToken> {
+        let activity = self.activity.enter().ok()?;
         let mut turns = self.active_turns.lock().unwrap();
         if turns.contains_key(session_id) {
             return None;
         }
         let token = CancellationToken::new();
-        turns.insert(session_id.to_string(), token.clone());
+        turns.insert(
+            session_id.to_string(),
+            ActiveTurn {
+                cancellation: token.clone(),
+                _activity: activity,
+            },
+        );
         Some(token)
     }
 
@@ -419,8 +433,8 @@ impl AppState {
     pub fn cancel_turn(&self, session_id: &str) -> bool {
         let turns = self.active_turns.lock().unwrap();
         match turns.get(session_id) {
-            Some(token) => {
-                token.cancel();
+            Some(turn) => {
+                turn.cancellation.cancel();
                 true
             }
             None => false,
@@ -429,8 +443,8 @@ impl AppState {
 
     pub fn cancel_all_turns(&self) -> usize {
         let turns = self.active_turns.lock().unwrap();
-        for token in turns.values() {
-            token.cancel();
+        for turn in turns.values() {
+            turn.cancellation.cancel();
         }
         turns.len()
     }

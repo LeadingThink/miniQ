@@ -24,6 +24,15 @@ fn row_to_queued(row: &rusqlite::Row<'_>) -> rusqlite::Result<QueuedMessage> {
 }
 
 impl Store {
+    /// Check pending work without loading any message payloads.
+    pub fn has_queued_messages(&self) -> Result<bool> {
+        Ok(self.conn.lock().unwrap().query_row(
+            "SELECT EXISTS(SELECT 1 FROM queued_messages)",
+            [],
+            |row| row.get(0),
+        )?)
+    }
+
     /// Append a message to the end of the session's queue.
     pub fn enqueue_message(&self, session_id: &str, content: &str) -> Result<QueuedMessage> {
         self.enqueue_message_with_attachments(session_id, content, &[])

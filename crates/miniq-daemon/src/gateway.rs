@@ -56,11 +56,23 @@ fn workspace_path_display(path: &Path) -> String {
 /// Dispatch one JSON-RPC request while preserving its request identifier.
 pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
     let id = req.id.clone();
+    let _activity = if matches!(
+        req.method.as_str(),
+        "daemon.health" | "daemon.shutdown" | "daemon.shutdownIfIdle"
+    ) {
+        None
+    } else {
+        match state.activity.enter() {
+            Ok(guard) => Some(guard),
+            Err(error) => return RpcResponse::err(id, error),
+        }
+    };
     let result = match req.method.as_str() {
         "daemon.health" => system::health(state),
         "computer.permissions" => computer::permissions().await,
         "computer.requestPermission" => computer::request(req.params).await,
         "daemon.shutdown" => system::shutdown(state).await,
+        "daemon.shutdownIfIdle" => system::shutdown_if_idle(state),
         "workspace.open" => workspace::open(state, req.params),
         "workspace.create" => workspace::create(state, req.params),
         "workspace.list" => workspace::list(state),

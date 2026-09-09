@@ -97,6 +97,15 @@ original miniQ checkout are preserved.
 
 ## Still Outstanding
 
+An additional post-0.1.23 fix adds atomic idle-only updater shutdown. The older
+`daemon.shutdown` command cancels tasks; it must not be described as idle-safe.
+The new admission gate covers requests, main turns, child startup/execution and
+scheduled runs, checks pending queues without loading their contents, and rejects
+new admission after an idle shutdown succeeds. It never falls back to cancellation.
+Tests include a main/child lifecycle case, concurrent admission, retained queues,
+late submissions, and frontend updater refusal/reconnect. This addition is not
+part of tag v0.1.23 and must be released separately.
+
 Browser page navigation/login persistence, shared automation/inspection tab
 identity, explicit takeover, and native macOS AX element control remain unfinished.
 Developer ID signing/notarization remains explicitly deferred by the user.

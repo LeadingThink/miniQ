@@ -142,13 +142,19 @@ pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value
         return to_value(json!({ "queued": queued }));
     };
 
-    let message = append_user_message(
+    let message = match append_user_message(
         state,
         &input.session_id,
         &content,
         &attachments,
         &session.title,
-    )?;
+    ) {
+        Ok(message) => message,
+        Err(error) => {
+            state.end_turn(&input.session_id);
+            return Err(error);
+        }
+    };
     state.emit(Event::MessageCreated {
         session_id: input.session_id.clone(),
         message: message.clone(),
@@ -204,7 +210,10 @@ pub(super) fn rewrite_message(state: &AppState, raw: Option<Value>) -> Result<Va
         removed_artifact_ids: rewrite.removed_artifact_ids,
     });
     emit_queue_changed(state, &input.session_id);
-    set_running(state, &input.session_id)?;
+    if let Err(error) = set_running(state, &input.session_id) {
+        state.end_turn(&input.session_id);
+        return Err(error);
+    }
     crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
     to_value(json!({ "message": rewrite.message }))
 }

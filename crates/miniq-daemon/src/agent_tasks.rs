@@ -301,6 +301,11 @@ impl DaemonAgentBridge {
     }
 
     async fn run_managed(&self, mut request: AgentRunRequest) -> Result<Value, ToolError> {
+        let activity = self
+            .state
+            .activity
+            .enter()
+            .map_err(|error| ToolError::ExecutionFailed(error.message))?;
         if self.cancel.is_cancelled() {
             return Err(ToolError::ExecutionFailed(
                 "parent agent is cancelled".into(),
@@ -363,6 +368,7 @@ impl DaemonAgentBridge {
         let bridge = self.clone();
         let background = request.run_in_background;
         let task = async move {
+            let _activity = activity;
             bridge
                 .execute_agent(record, request, history, workspace, worktree)
                 .await;

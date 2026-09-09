@@ -170,7 +170,7 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("prepare_daemon_update");
       prepared = true;
-      await client.call("daemon.shutdown");
+      await client.call("daemon.shutdownIfIdle");
       await invoke("wait_for_daemon_exit");
       await update.install();
       installerStarted = true;
