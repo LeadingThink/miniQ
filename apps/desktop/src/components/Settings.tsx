@@ -36,6 +36,11 @@ interface SettingsView {
   };
 }
 
+interface ModelsView {
+  models: string[];
+  defaultModel: string;
+}
+
 interface SettingsPanelProps {
   client: RpcClient;
   theme: ThemeId;
@@ -51,6 +56,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const [apiProtocol, setApiProtocol] = useState<ApiProtocol>("auto");
   const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -170,6 +177,25 @@ export function SettingsPanel(props: SettingsPanelProps) {
     }
   };
 
+  const loadModels = async () => {
+    if (loadingModels || !baseUrl.trim()) return;
+    setStatus(null);
+    setLoadingModels(true);
+    try {
+      const params: { baseUrl: string; apiKey?: string } = { baseUrl: baseUrl.trim() };
+      if (apiKey.trim()) params.apiKey = apiKey.trim();
+      const result = await props.client.call<ModelsView>("settings.models", params);
+      setModelOptions(result.models);
+      if (!model.trim() && result.defaultModel) setModel(result.defaultModel);
+      setStatus(result.models.length > 0 ? `已获取 ${result.models.length} 个模型` : "供应商未返回可用模型");
+    } catch (error) {
+      setModelOptions([]);
+      setStatus(`获取模型列表失败：${errorMessage(error)}`);
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
   const openZaiwenApiPortal = async () => {
     setStatus(null);
     try {
@@ -282,26 +308,55 @@ export function SettingsPanel(props: SettingsPanelProps) {
                   <div className="settings-section-title">模型服务</div>
                   <p className="settings-section-description">支持 OpenAI Chat、Responses 与 Anthropic Messages</p>
                 </div>
-                <label>
+                <label htmlFor="provider-base-url">
                   Base URL
                   <input
+                    id="provider-base-url"
                     value={baseUrl}
                     disabled={loading || saving}
                     inputMode="url"
                     spellCheck={false}
                     placeholder="https://api.openai.com/v1"
-                    onChange={(event) => setBaseUrl(event.target.value)}
+                    onChange={(event) => {
+                      setBaseUrl(event.target.value);
+                      setModelOptions([]);
+                    }}
                   />
                 </label>
                 <label>
                   Model
-                  <input
-                    value={model}
-                    disabled={loading || saving}
-                    spellCheck={false}
-                    placeholder="gpt-4o-mini"
-                    onChange={(event) => setModel(event.target.value)}
-                  />
+                  <span className="provider-model-control">
+                    {modelOptions.length > 0 ? (
+                      <select
+                        aria-label="Model"
+                        value={model}
+                        disabled={loading || saving || loadingModels}
+                        onChange={(event) => setModel(event.target.value)}
+                      >
+                        {model && !modelOptions.includes(model) && <option value={model}>{model}</option>}
+                        {modelOptions.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        aria-label="Model"
+                        value={model}
+                        disabled={loading || saving || loadingModels}
+                        spellCheck={false}
+                        placeholder="gpt-4o-mini"
+                        onChange={(event) => setModel(event.target.value)}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      className="provider-model-list-button"
+                      disabled={loading || saving || loadingModels || !baseUrl.trim()}
+                      onClick={() => void loadModels()}
+                    >
+                      <span>{loadingModels ? "正在获取" : "获取模型列表"}</span>
+                    </button>
+                  </span>
                 </label>
                 <label>
                   API 协议
@@ -356,6 +411,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                       className="secondary provider-base-url-button"
                       onClick={() => {
                         setBaseUrl(ZAIWEN_API_BASE_URL);
+                        setModelOptions([]);
                         setApiProtocol("auto");
                         setStatus("已填入在问 API 地址，请继续填写模型名称和 API Key");
                       }}

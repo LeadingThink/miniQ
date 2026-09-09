@@ -94,6 +94,30 @@ describe("appearance settings integration", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("fetches the provider model list and selects a returned model", async () => {
+    call.mockImplementation((method: string) =>
+      method === "settings.models"
+        ? Promise.resolve({ models: ["alpha", "beta"], defaultModel: "test" })
+        : Promise.resolve(settings),
+    );
+    render(<Fixture />);
+    fireEvent.click(screen.getByRole("tab", { name: "服务与远程" }));
+    await waitFor(() => expect((screen.getByLabelText("Model") as HTMLInputElement).value).toBe("test"));
+
+    fireEvent.click(screen.getByRole("button", { name: "获取模型列表" }));
+
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("settings.models", { baseUrl: "https://example.test/v1" }),
+    );
+    const model = await screen.findByRole("combobox", { name: "Model" });
+    fireEvent.change(model, { target: { value: "beta" } });
+    expect((model as HTMLSelectElement).value).toBe("beta");
+    expect(screen.getByText("已获取 2 个模型")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Base URL"), { target: { value: "https://other.test" } });
+    expect(screen.getByLabelText("Model").tagName).toBe("INPUT");
+  });
+
   it("supports tab keyboard navigation and restores focus on close", async () => {
     const trigger = document.createElement("button");
     document.body.append(trigger);

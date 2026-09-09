@@ -6,6 +6,8 @@ use serde_json::{json, Value};
 use super::common::{params, store_err, to_value};
 use crate::state::AppState;
 
+const MODEL_CATALOG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SessionParams {
@@ -100,11 +102,15 @@ pub(super) async fn catalog(state: &AppState) -> Result<Value, RpcError> {
         .ok_or_else(|| {
             RpcError::new(ErrorCode::InvalidParams, "configure a model provider first")
         })?;
+    catalog_for(&config).await
+}
+
+pub(super) async fn catalog_for(config: &miniq_models::ProviderConfig) -> Result<Value, RpcError> {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(MODEL_CATALOG_TIMEOUT)
         .build()
         .map_err(http_err)?;
-    let url = format!("{}/models", config.base_url.trim_end_matches('/'));
+    let url = model_catalog_url(&config.base_url)?;
     let mut request = client.get(url);
     if !config.api_key.is_empty() {
         request = request.bearer_auth(&config.api_key);
@@ -137,6 +143,27 @@ pub(super) async fn catalog(state: &AppState) -> Result<Value, RpcError> {
     models.sort_by_cached_key(|id| (id.to_lowercase(), id.clone()));
     models.dedup();
     to_value(json!({ "models": models, "defaultModel": config.model }))
+}
+
+fn model_catalog_url(base_url: &str) -> Result<url::Url, RpcError> {
+    let mut url = url::Url::parse(base_url.trim())
+        .map_err(|_| RpcError::new(ErrorCode::InvalidParams, "provider baseUrl is invalid"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "provider baseUrl must use http or https",
+        ));
+    }
+    let path = url.path().trim_end_matches('/');
+    let catalog_path = if path.is_empty() {
+        "/v1/models".to_string()
+    } else {
+        format!("{path}/models")
+    };
+    url.set_path(&catalog_path);
+    url.set_query(None);
+    url.set_fragment(None);
+    Ok(url)
 }
 
 #[derive(Deserialize)]
