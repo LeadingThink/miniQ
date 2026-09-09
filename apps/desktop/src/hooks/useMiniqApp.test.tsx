@@ -256,6 +256,29 @@ it("opens failures without unsupported requests while the desktop is awaiting it
   expect(fake.call.mock.calls.some(([method]) => method === "session.acknowledgeFailure")).toBe(false);
 });
 
+it("returns question delivery failures to the form and allows another attempt", async () => {
+  const original = fake.call.getMockImplementation()!;
+  const deliver = vi.fn()
+    .mockRejectedValueOnce(new Error("connection interrupted"))
+    .mockResolvedValueOnce(undefined);
+  fake.call.mockImplementation((method, params) => method === "question.resolve"
+    ? deliver(params)
+    : original(method, params));
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
+  await act(async () => {
+    await expect(hook.result.current.actions.resolveQuestion("q", "existing files\n/new/video.mp4"))
+      .rejects.toThrow("connection interrupted");
+  });
+  expect(hook.result.current.error).toBeNull();
+  await act(async () => {
+    await hook.result.current.actions.resolveQuestion("q", "existing files\n/new/video.mp4");
+  });
+  expect(deliver).toHaveBeenCalledTimes(2);
+  expect(deliver).toHaveBeenLastCalledWith({ questionId: "q", answer: "existing files\n/new/video.mp4" });
+  expect(fake.connect).toHaveBeenCalledTimes(1);
+});
+
 it("unmounts the complete session page without orphaned child-task DOM nodes", async () => {
   const logged = vi.spyOn(console, "error").mockImplementation(() => {});
   function TestApp() {

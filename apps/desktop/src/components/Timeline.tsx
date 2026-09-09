@@ -12,7 +12,8 @@ import type {
 } from "../types";
 import type { PendingApproval } from "../App";
 import { readImagePreview, type LocalFileTarget } from "../localFiles";
-import { ApprovalCard, QuestionCard, QueueBar, ArtifactsBar } from "./TimelineInteractions";
+import { ApprovalCard, QueueBar, ArtifactsBar } from "./TimelineInteractions";
+import { QuestionCard, type QuestionCardProps } from "./QuestionCard";
 import { Md } from "./Md";
 import { ExecutionPrelude, PlanProgress } from "./ExecutionActivity";
 import {
@@ -76,7 +77,7 @@ interface TimelineProps {
   turnProgress: TurnProgress | null;
   busy: boolean;
   onResolveApproval: (approvalId: string, decision: string) => void;
-  onResolveQuestion: (questionId: string, answer: string) => void;
+  onResolveQuestion: QuestionCardProps["onResolve"];
   onRollback: (checkpointId: string) => void;
   onOpenFile: (target: LocalFileTarget) => void;
   onOpenUrl: (url: string) => void;
@@ -271,7 +272,14 @@ function TimelineEntries(props: {
         <ApprovalCard key={approval.approval.id} item={approval} onResolve={props.onResolveApproval} />
       ))}
       {props.questions.map((question) => (
-        <QuestionCard key={question.id} question={question} onResolve={props.onResolveQuestion} />
+        <QuestionCard
+          key={question.id}
+          question={question}
+          onResolve={props.onResolveQuestion}
+          workspacePath={props.workspacePath}
+          onOpenFile={props.onOpenFile}
+          onOpenUrl={props.onOpenUrl}
+        />
       ))}
       {props.streamingText && (
         <div className="bubble assistant">

@@ -405,14 +405,9 @@ function useInteractionActions(
   );
 
   const resolveQuestion = useCallback(
-    async (questionId: string, answer: string) => {
-      try {
-        await client.call("question.resolve", { questionId, answer });
-      } catch (error) {
-        setError(errorMessage(error));
-      }
-    },
-    [client, setError],
+    (questionId: string, answer: string) =>
+      client.call<void>("question.resolve", { questionId, answer }),
+    [client],
   );
 
   const rollbackCheckpoint = useCallback(
