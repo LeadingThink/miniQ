@@ -50,16 +50,29 @@ fn model_catalog_url_adds_v1_only_for_a_bare_domain() {
 }
 
 #[tokio::test]
-async fn session_update_applies_to_the_workspace_and_never_exposes_credentials() {
+async fn global_update_applies_everywhere_and_never_exposes_credentials() {
     let (state, a, b) = state();
     let workspace_id = state.store.get_session(&a).unwrap().workspace_id;
-    let baseline = state.settings.lock().unwrap().provider.clone();
-    let response = update(&state, Some(json!({"sessionId":a,"settings":{"model":" custom/model ","apiProtocol":"chat_completions"}}))).await.unwrap();
+    let other_workspace = state.store.create_workspace("/other", "other").unwrap();
+    let other = state
+        .store
+        .create_session(&other_workspace.id, "other")
+        .unwrap();
+    let response = global_update(
+        &state,
+        Some(json!({"settings":{"model":" custom/model ","apiProtocol":"chat_completions"}})),
+    )
+    .await
+    .unwrap();
     assert_eq!(response["effective"]["model"], "custom/model");
     assert!(!response.to_string().contains("private-key"));
     assert!(!response.to_string().contains("baseUrl"));
     assert_eq!(
         state.store.session_model_settings(&b).unwrap(),
+        state.store.session_model_settings(&a).unwrap()
+    );
+    assert_eq!(
+        state.store.session_model_settings(&other.id).unwrap(),
         state.store.session_model_settings(&a).unwrap()
     );
     let next = state.store.create_session(&workspace_id, "next").unwrap();
@@ -71,20 +84,16 @@ async fn session_update_applies_to_the_workspace_and_never_exposes_credentials()
     assert_eq!(workspace["settings"]["model"], "custom/model");
     assert_eq!(workspace["effective"]["model"], "custom/model");
     assert!(!workspace.to_string().contains("private-key"));
-    assert_eq!(state.settings.lock().unwrap().provider, baseline);
-    let restored = update(&state, Some(json!({"sessionId":a,"settings":{}})))
-        .await
-        .unwrap();
-    assert_eq!(restored["effective"]["model"], "gpt-5.6-sol");
-    assert_eq!(
-        state.store.session_model_settings(&b).unwrap(),
-        SessionModelSettings::default()
-    );
+    let provider = state.settings.lock().unwrap().provider.clone().unwrap();
+    assert_eq!(provider.model, "custom/model");
+    assert_eq!(provider.api_protocol, ApiProtocol::ChatCompletions);
+    assert_eq!(provider.api_key, "private-key");
+    assert_eq!(provider.base_url, "http://127.0.0.1:1/v1");
     assert!(get(&state, Some(json!({"sessionId":"missing"}))).is_err());
 }
 
 #[tokio::test]
-async fn invalid_choices_and_active_turn_changes_are_rejected() {
+async fn invalid_choices_are_rejected_and_active_turns_keep_running() {
     let (state, a, _) = state();
     for settings in [
         json!({"model":" "}),
@@ -94,7 +103,7 @@ async fn invalid_choices_and_active_turn_changes_are_rejected() {
         json!({"unexpected":true}),
     ] {
         assert_eq!(
-            update(&state, Some(json!({"sessionId":a,"settings":settings})))
+            global_update(&state, Some(json!({"settings":settings})))
                 .await
                 .unwrap_err()
                 .code,
@@ -102,16 +111,16 @@ async fn invalid_choices_and_active_turn_changes_are_rejected() {
         );
     }
     state.begin_turn(&a).unwrap();
-    let error = update(
-        &state,
-        Some(json!({"sessionId":a,"settings":{"model":"another"}})),
-    )
-    .await
-    .unwrap_err();
-    assert_eq!(error.code, ErrorCode::SessionBusy as i64);
+    let changed = global_update(&state, Some(json!({"settings":{"model":"another"}})))
+        .await
+        .unwrap();
+    assert_eq!(changed["effective"]["model"], "another");
     assert_eq!(
         state.store.session_model_settings(&a).unwrap(),
-        SessionModelSettings::default()
+        SessionModelSettings {
+            model: Some("another".into()),
+            ..Default::default()
+        }
     );
 }
 
