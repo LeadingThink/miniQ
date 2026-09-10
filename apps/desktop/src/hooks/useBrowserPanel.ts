@@ -116,18 +116,16 @@ export function useBrowserPanel(
   useEffect(() => {
     const element = surface.current;
     if (!element || !isTauriRuntime()) return;
-    let frame = 0;
     let disposed = false;
     const resize = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const rect = element.getBoundingClientRect();
-        void resizeBrowser(
-          { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-          viewId,
-        ).catch((cause) => {
-          if (!disposed) setError(errorMessage(cause));
-        });
+      // ResizeObserver already batches layout. A second animation frame can
+      // stop in a hidden WebKit view, leaving its native child at stale bounds.
+      const rect = element.getBoundingClientRect();
+      void resizeBrowser(
+        { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        viewId,
+      ).catch((cause) => {
+        if (!disposed) setError(errorMessage(cause));
       });
     };
     const observer = new ResizeObserver(resize);
@@ -135,7 +133,6 @@ export function useBrowserPanel(
     window.addEventListener("resize", resize);
     return () => {
       disposed = true;
-      cancelAnimationFrame(frame);
       observer.disconnect();
       window.removeEventListener("resize", resize);
     };

@@ -2,16 +2,8 @@ import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
-import {
-  clampWorkbenchWidth,
-  DEFAULT_WORKBENCH_WIDTH,
-  maxWorkbenchWidth,
-  MIN_WORKBENCH_WIDTH,
-  readWorkbenchWidth,
-  WORKBENCH_WIDTH_STORAGE_KEY,
-} from "../workbenchWidth";
 import { LoaderCircle, PlugZap, Sparkles } from "lucide-react";
-import { lazy, Suspense, useEffect, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Composer, ComposerCard } from "./Composer";
 import { DistillModal } from "./Distill";
 import { ExternalSessionImportDialog } from "./ExternalSessionImport";
@@ -25,7 +17,7 @@ import { SettingsPanel } from "./Settings";
 import { Sidebar } from "./Sidebar";
 import { SkillsPanel } from "./Skills";
 import { StarterPrompts } from "./StarterPrompts";
-import { WorkbenchResizer } from "./WorkbenchResizer";
+import { WorkbenchPanel } from "./WorkbenchPanel";
 import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 import { SessionModelControls } from "./SessionModelControls";
 import { SessionPermissionControls } from "./SessionPermissionControls";
@@ -384,44 +376,6 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
   const browserUrl = browserSessions[browserScope] ?? null;
   const setBrowserUrl = (url: string | null) =>
     setBrowserSessions((current) => ({ ...current, [browserScope]: url }));
-  const [workbenchWidth, setWorkbenchWidth] = useState(() =>
-    readWorkbenchWidth(
-      window.localStorage,
-      window.innerWidth,
-      app.navigation.sidebarCollapsed,
-    ),
-  );
-  const workbenchMax = maxWorkbenchWidth(
-    window.innerWidth,
-    app.navigation.sidebarCollapsed,
-  );
-  const resizeWorkbench = (width: number) => {
-    const next = clampWorkbenchWidth(
-      width,
-      window.innerWidth,
-      app.navigation.sidebarCollapsed,
-    );
-    setWorkbenchWidth(next);
-    window.localStorage.setItem(WORKBENCH_WIDTH_STORAGE_KEY, String(next));
-  };
-
-  useEffect(() => {
-    const handleResize = () => {
-      setWorkbenchWidth((current) => {
-        const next = clampWorkbenchWidth(
-          current,
-          window.innerWidth,
-          app.navigation.sidebarCollapsed,
-        );
-        window.localStorage.setItem(WORKBENCH_WIDTH_STORAGE_KEY, String(next));
-        return next;
-      });
-    };
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [app.navigation.sidebarCollapsed]);
-
   const openBrowserUrl = (url: string) => {
     app.preview.close();
     app.review.setOpen(false);
@@ -446,9 +400,6 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
     (app.preview.state.open && app.catalog.currentWorkspace) ||
     (app.review.open && app.catalog.currentWorkspace),
   );
-  const appStyle = {
-    "--workbench-width": `${workbenchWidth}px`,
-  } as CSSProperties;
   const closeMobileSidebar = () => {
     if (
       typeof window.matchMedia === "function" &&
@@ -461,7 +412,6 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
   return (
     <div
       className={`app ${app.navigation.sidebarCollapsed ? "sidebar-collapsed" : ""}`}
-      style={appStyle}
     >
       <Sidebar
         workspaces={app.catalog.workspaces}
@@ -566,71 +516,66 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
         />
       </div>
       {workbenchOpen && (
-        <WorkbenchResizer
-          width={workbenchWidth}
-          min={MIN_WORKBENCH_WIDTH}
-          max={workbenchMax}
-          onResize={resizeWorkbench}
-          onReset={() => resizeWorkbench(DEFAULT_WORKBENCH_WIDTH)}
-        />
+        <WorkbenchPanel>
+          {browserUrl ? (
+            <Suspense
+              fallback={
+                <aside className="browser-panel">
+                  <div className="diff-empty">正在启动浏览器...</div>
+                </aside>
+              }
+            >
+              <BrowserPanel
+                key={browserScope}
+                url={browserUrl}
+                suspended={
+                  app.navigation.showSettings ||
+                  app.navigation.showSearch ||
+                  app.navigation.showDistill ||
+                  app.navigation.showExternalImport ||
+                  Boolean(app.navigation.editingWorkspaceId)
+                }
+                onNavigate={setBrowserUrl}
+                onClose={() => setBrowserUrl(null)}
+              />
+            </Suspense>
+          ) : app.preview.state.open && app.catalog.currentWorkspace ? (
+            <Suspense
+              fallback={
+                <aside className="file-preview-panel">
+                  <div className="diff-empty">正在加载编辑器...</div>
+                </aside>
+              }
+            >
+              <FilePreviewPanel
+                viewStore={app.preview.views}
+                viewScope={app.preview.viewScope}
+                key={app.catalog.currentSessionId}
+                preview={app.preview.state}
+                tabs={app.preview.tabs}
+                onCloseTab={app.preview.closeTab}
+                workspacePath={
+                  app.catalog.currentSession?.workingDirectory ??
+                  app.catalog.currentWorkspace.path
+                }
+                workspacePaths={app.catalog.currentWorkspacePaths}
+                onClose={app.preview.close}
+                onOpenFile={(target) => void app.preview.openFile(target)}
+                onRetry={() => {
+                  const target = app.preview.state.target;
+                  if (target) void app.preview.openFile(target);
+                }}
+              />
+            </Suspense>
+          ) : app.review.open && app.catalog.currentWorkspace ? (
+            <ReviewPanel
+              diff={app.review.data}
+              onOpenFile={openPreviewFile}
+              onClose={() => app.review.setOpen(false)}
+            />
+          ) : null}
+        </WorkbenchPanel>
       )}
-      {browserUrl ? (
-        <Suspense
-          fallback={
-            <aside className="browser-panel">
-              <div className="diff-empty">正在启动浏览器...</div>
-            </aside>
-          }
-        >
-          <BrowserPanel
-            key={browserScope}
-            url={browserUrl}
-            suspended={
-              app.navigation.showSettings ||
-              app.navigation.showSearch ||
-              app.navigation.showDistill ||
-              app.navigation.showExternalImport ||
-              Boolean(app.navigation.editingWorkspaceId)
-            }
-            onNavigate={setBrowserUrl}
-            onClose={() => setBrowserUrl(null)}
-          />
-        </Suspense>
-      ) : app.preview.state.open && app.catalog.currentWorkspace ? (
-        <Suspense
-          fallback={
-            <aside className="file-preview-panel">
-              <div className="diff-empty">正在加载编辑器...</div>
-            </aside>
-          }
-        >
-          <FilePreviewPanel
-            viewStore={app.preview.views}
-            viewScope={app.preview.viewScope}
-            key={app.catalog.currentSessionId}
-            preview={app.preview.state}
-            tabs={app.preview.tabs}
-            onCloseTab={app.preview.closeTab}
-            workspacePath={
-              app.catalog.currentSession?.workingDirectory ??
-              app.catalog.currentWorkspace.path
-            }
-            workspacePaths={app.catalog.currentWorkspacePaths}
-            onClose={app.preview.close}
-            onOpenFile={(target) => void app.preview.openFile(target)}
-            onRetry={() => {
-              const target = app.preview.state.target;
-              if (target) void app.preview.openFile(target);
-            }}
-          />
-        </Suspense>
-      ) : app.review.open && app.catalog.currentWorkspace ? (
-        <ReviewPanel
-          diff={app.review.data}
-          onOpenFile={openPreviewFile}
-          onClose={() => app.review.setOpen(false)}
-        />
-      ) : null}
     </div>
   );
 }

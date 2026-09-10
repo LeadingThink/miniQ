@@ -12,7 +12,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: max(22px, env(safe-area-inset-top)) 18px max(22px, env(safe-area-inset-bottom));
+  padding: max(22px, env(safe-area-inset-top)) 18px
+    max(22px, env(safe-area-inset-bottom));
 }
 
 .mobile-entry-brand {
@@ -520,20 +521,5 @@
 
   .card-grid {
     grid-template-columns: 1fr;
-  }
-
-  .workbench-resizer {
-    display: none;
-  }
-
-  .browser-panel,
-  .file-preview-panel,
-  .review-panel {
-    position: fixed;
-    inset: 0;
-    z-index: 60;
-    width: 100% !important;
-    height: 100dvh;
-    border-radius: 0;
   }
 }
