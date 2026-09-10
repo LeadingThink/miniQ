@@ -233,7 +233,8 @@
   background: var(--bg);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  font-size: 11.5px;
+  font-size: var(--model-font-size);
+  font-weight: var(--model-font-weight);
 }
 
 .mobile-chat-feed {

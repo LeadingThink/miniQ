@@ -12,6 +12,35 @@ fn migration_applies_once() {
 }
 
 #[test]
+fn migration_accepts_legacy_workspace_model_settings_name() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("legacy.db");
+    drop(Store::open(&database).unwrap());
+
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .execute(
+            "UPDATE schema_migrations SET name = '0011_workspace_model_settings'
+             WHERE name = '0014_workspace_model_settings'",
+            [],
+        )
+        .unwrap();
+    drop(connection);
+
+    drop(Store::open(&database).unwrap());
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    let applied: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM schema_migrations
+             WHERE name = '0014_workspace_model_settings'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(applied, 1);
+}
+
+#[test]
 fn workspace_dedup_by_path() {
     let store = Store::open_in_memory().unwrap();
     let a = store.create_workspace("D:/tmp/proj", "proj").unwrap();

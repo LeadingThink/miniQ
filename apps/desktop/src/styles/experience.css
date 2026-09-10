@@ -12,6 +12,8 @@
   align-items: center;
   gap: 5px;
   padding: 5px 6px;
+  font-size: var(--model-font-size);
+  font-weight: var(--model-font-weight);
   color: var(--text-mid);
   background: transparent;
   min-width: 0;
@@ -94,7 +96,9 @@
   background: var(--bg);
   border: 1px solid var(--border-strong);
   border-radius: 5px;
-  font: inherit;
+  font-family: inherit;
+  font-size: var(--model-font-size);
+  font-weight: var(--model-font-weight);
   text-align: left;
 }
 .session-model-select-trigger span,
@@ -123,7 +127,9 @@
   background: transparent;
   border: 0;
   border-radius: 4px;
-  font: inherit;
+  font-family: inherit;
+  font-size: var(--model-font-size);
+  font-weight: var(--model-font-weight);
   text-align: left;
 }
 .session-model-popover .session-model-list > button:hover,

@@ -39,6 +39,8 @@
   --glass: rgba(255, 255, 255, 0.82);
   --glass-blur: saturate(180%) blur(24px);
   --font-mono: "JetBrains Mono Variable", "MiSans VF", Consolas, "SF Mono", ui-monospace, monospace;
+  --model-font-size: 14px;
+  --model-font-weight: 400;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.05);
   --shadow-sheet: 0 1px 2px rgba(0, 0, 0, 0.03), 0 10px 32px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.05), 0 24px 64px rgba(0, 0, 0, 0.16);

@@ -210,6 +210,22 @@ impl Store {
                 )
                 .optional()?;
             if applied.is_none() {
+                if *name == "0014_workspace_model_settings"
+                    && conn
+                        .query_row(
+                            "SELECT 1 FROM schema_migrations WHERE name = '0011_workspace_model_settings'",
+                            [],
+                            |_| Ok(()),
+                        )
+                        .optional()?
+                        .is_some()
+                {
+                    conn.execute(
+                        "INSERT INTO schema_migrations (name, applied_at) VALUES (?1, ?2)",
+                        params![name, now_iso()],
+                    )?;
+                    continue;
+                }
                 let transaction = conn.transaction()?;
                 transaction.execute_batch(sql)?;
                 transaction.execute(

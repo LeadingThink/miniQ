@@ -497,7 +497,9 @@
   background: var(--bg);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  font: inherit;
+  font-family: inherit;
+  font-size: var(--model-font-size);
+  font-weight: var(--model-font-weight);
 }
 
 .provider-model-select-trigger span {
@@ -534,7 +536,9 @@
   background: transparent;
   border: 0;
   border-radius: 5px;
-  font: inherit;
+  font-family: inherit;
+  font-size: var(--model-font-size);
+  font-weight: var(--model-font-weight);
   text-align: left;
 }
 
