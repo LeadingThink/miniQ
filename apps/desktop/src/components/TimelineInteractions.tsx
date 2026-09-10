@@ -2,6 +2,8 @@ import { FileText, FolderOpen } from "lucide-react";
 import type { Artifact } from "../types";
 import type { PendingApproval } from "../App";
 import { ToolPayload } from "./ToolPayload";
+import { isTauriRuntime } from "../runtime";
+import { useSessionFileAccess } from "../sessionFileAccess";
 import {
   resolveWorkspacePath,
   revealLocalFile,
@@ -62,6 +64,8 @@ export function ArtifactsBar(props: {
   onError: (message: string) => void;
 }) {
   const { artifacts, workspacePath, onOpenFile, onError } = props;
+  const access = useSessionFileAccess();
+  const local = isTauriRuntime() && access?.client?.mode !== "remote";
   if (artifacts.length === 0) return null;
   return (
     <div className="artifacts-bar">
@@ -87,7 +91,7 @@ export function ArtifactsBar(props: {
               <span className="sub">{artifact.path}</span>
             </button>
             <span className="badge">{artifact.kind}</span>
-            <button
+            {local && <button
               type="button"
               className="icon-button"
               aria-label={`在文件夹中显示 ${artifact.title}`}
@@ -107,7 +111,7 @@ export function ArtifactsBar(props: {
               }}
             >
               <FolderOpen size={16} aria-hidden="true" />
-            </button>
+            </button>}
           </div>
         );
       })}

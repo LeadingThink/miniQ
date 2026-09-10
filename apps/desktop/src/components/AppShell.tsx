@@ -125,9 +125,11 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
 interface WorkbenchPageProps extends AppOnlyProps {
   onOpenFile: (target: LocalFileTarget) => void;
   onOpenUrl: (url: string) => void;
+  draftRequest?: { id: number; content: string; append?: boolean };
+  onDraftRequestApplied?: () => void;
 }
 
-function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
+function SessionPage({ app, onOpenFile, onOpenUrl, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
   return (
     <>
       <AgentPanel
@@ -187,6 +189,8 @@ function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
         busy={!!app.busy}
         chip={app.catalog.currentWorkspace?.name}
         draftKey={app.catalog.currentSessionId ?? undefined}
+        draftRequest={draftRequest}
+        onDraftRequestApplied={onDraftRequestApplied}
         client={app.client}
         permissionSlot={
           <SessionPermissionControls
@@ -293,7 +297,7 @@ function HeroPage({ app }: AppOnlyProps) {
   );
 }
 
-function MainPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
+function MainPage({ app, onOpenFile, onOpenUrl, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
   switch (app.navigation.page) {
     case "schedule":
       return (
@@ -323,6 +327,8 @@ function MainPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
           app={app}
           onOpenFile={onOpenFile}
           onOpenUrl={onOpenUrl}
+          draftRequest={draftRequest}
+          onDraftRequestApplied={onDraftRequestApplied}
         />
       ) : (
         <HeroPage app={app} />
@@ -374,6 +380,7 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
   const [browserSessions, setBrowserSessions] = useState<
     Record<string, string | null>
   >({});
+  const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
   const browserUrl = browserSessions[browserScope] ?? null;
   const setBrowserUrl = (url: string | null) =>
     setBrowserSessions((current) => ({ ...current, [browserScope]: url }));
@@ -514,6 +521,8 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
           app={app}
           onOpenUrl={openBrowserUrl}
           onOpenFile={openPreviewFile}
+          draftRequest={fileQuestion?.sessionId === app.catalog.currentSessionId ? fileQuestion : undefined}
+          onDraftRequestApplied={() => setFileQuestion(undefined)}
         />
       </div>
       {workbenchOpen && (
@@ -561,6 +570,12 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
                 }
                 workspacePaths={app.catalog.currentWorkspacePaths}
                 onClose={app.preview.close}
+                onDiscuss={(path) => {
+                  const sessionId = app.catalog.currentSessionId;
+                  if (!sessionId) return;
+                  setFileQuestion({ sessionId, id: Date.now(), content: `关于文件「${path}」：\n`, append: true });
+                  app.preview.close();
+                }}
                 onOpenFile={(target) => void app.preview.openFile(target)}
                 onRetry={() => {
                   const target = app.preview.state.target;

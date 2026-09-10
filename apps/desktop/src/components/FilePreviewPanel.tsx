@@ -15,6 +15,7 @@ import {
   WrapText,
   Maximize2,
   Minimize2,
+  MessageSquare,
   X,
 } from "lucide-react";
 import {
@@ -43,6 +44,9 @@ import { DelimitedPreview } from "./DelimitedPreview";
 import { CopyButton } from "./CopyButton";
 import { HtmlPreview } from "./HtmlPreview";
 import { isHtmlFile } from "../htmlPreview";
+import { isTauriRuntime } from "../runtime";
+import { useSessionFileAccess } from "../sessionFileAccess";
+import { RemoteFileDownload } from "./RemoteFileDownload";
 import { PreviewTabs } from "./PreviewTabs";
 import type { LocalFileTarget } from "../localFiles";
 import "./PreviewFocus.css";
@@ -64,6 +68,7 @@ interface FilePreviewPanelProps {
   onRetry: () => void;
   tabs?: LocalFileTarget[];
   onCloseTab?: (path: string) => void;
+  onDiscuss?: (path: string) => void;
 }
 
 interface PreviewPanelContentProps extends FilePreviewPanelProps {
@@ -106,10 +111,13 @@ function PreviewPanelContent({
   onRetry,
   tabs = [],
   onCloseTab,
+  onDiscuss,
   expanded,
   onToggleExpanded,
 }: PreviewPanelContentProps) {
   const contentId = useId();
+  const access = useSessionFileAccess();
+  const remote = !isTauriRuntime() || access?.client?.mode === "remote";
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -244,6 +252,7 @@ function PreviewPanelContent({
           <X size={17} />
         </button>
         <section className="file-preview-tools" aria-label="文件操作">
+          {onDiscuss && <button type="button" className="icon-button" aria-label="针对这个文件继续提问" title="针对这个文件继续提问" disabled={!path} onClick={() => onDiscuss(path)}><MessageSquare size={16} /></button>}
           <button
             type="button"
             className="icon-button"
@@ -314,7 +323,7 @@ function PreviewPanelContent({
           >
             <RotateCcw size={15} />
           </button>
-          <button
+          {remote ? <RemoteFileDownload path={path} onError={setActionError} /> : <button
             className="icon-button"
             title="使用系统默认应用打开"
             aria-label="使用系统默认应用打开"
@@ -326,8 +335,8 @@ function PreviewPanelContent({
             }
           >
             <ExternalLink size={16} />
-          </button>
-          <button
+          </button>}
+          {!remote && <button
             className="icon-button"
             title="在文件夹中显示"
             aria-label="在文件夹中显示"
@@ -339,7 +348,7 @@ function PreviewPanelContent({
             }
           >
             <FolderOpen size={16} />
-          </button>
+          </button>}
         </section>
       </header>
       {(preview.error || actionError || renderError) && (
@@ -370,7 +379,11 @@ function PreviewPanelContent({
         aria-label={tabs.length ? fileName(path) : undefined}
       >
         {preview.loading ? (
-          <div className="diff-empty">正在读取文件...</div>
+          <div className="file-preview-loading" role="status">
+            <span>正在读取文件…{preview.progress && ` ${formatFileSize(preview.progress.received)} / ${formatFileSize(preview.progress.total)}`}</span>
+            {preview.progress && <progress aria-label="文件加载进度" value={preview.progress.received} max={preview.progress.total || 1} />}
+            <button type="button" className="ghost" onClick={onClose}>取消加载</button>
+          </div>
         ) : preview.kind === "markdown" &&
           preview.content !== null &&
           !markdownSource ? (
@@ -457,7 +470,7 @@ function PreviewPanelContent({
             onError={reportRenderError}
           />
         ) : preview.kind === "unsupported" ? (
-          <UnsupportedPreview />
+          <UnsupportedPreview remote={remote} />
         ) : null}
       </div>
     </aside>

@@ -11,6 +11,7 @@ mod common;
 mod computer;
 mod external_session;
 mod external_workspace;
+mod files;
 mod interaction;
 mod mcp;
 mod observation;
@@ -70,6 +71,9 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
     };
     let result = match req.method.as_str() {
         "daemon.health" => system::health(state),
+        "file.describe" => files::describe(state, req.params).await,
+        "file.read" => files::read(state, req.params).await,
+        "file.list" => files::list(state, req.params).await,
         "computer.permissions" => computer::permissions().await,
         "computer.requestPermission" => computer::request(req.params).await,
         "daemon.shutdown" => system::shutdown(state).await,

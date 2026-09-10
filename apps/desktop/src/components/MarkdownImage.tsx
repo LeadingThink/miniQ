@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { readLocalFilePreview, resolveWorkspacePath } from "../localFiles";
 import { decodeBase64 } from "../previewBinary";
+import { useSessionFileAccess } from "../sessionFileAccess";
 
 export function MarkdownImage(props: {
   src?: string;
@@ -12,6 +13,7 @@ export function MarkdownImage(props: {
 }) {
   const { src = "", alt = "", title, workspacePath, referenceBasePath } = props;
   const roots = JSON.stringify(props.workspacePaths);
+  const access = useSessionFileAccess();
   const ref = useRef<HTMLSpanElement>(null);
   const [visible, setVisible] = useState(false);
   const [source, setSource] = useState<string | null>(null);
@@ -39,6 +41,7 @@ export function MarkdownImage(props: {
   useEffect(() => {
     if (remote || !visible) return;
     let cancelled = false;
+    const controller = new AbortController();
     let url: string | undefined;
     setSource(null);
     setError(null);
@@ -50,7 +53,7 @@ export function MarkdownImage(props: {
       setError("图片路径无效");
       return;
     }
-    void readLocalFilePreview(path, workspacePath, JSON.parse(roots))
+    void readLocalFilePreview(path, workspacePath, JSON.parse(roots), { ...access, signal: controller.signal })
       .then((file) => {
         if (cancelled) return;
         if (file.kind !== "image" && file.mimeType !== "image/svg+xml")
@@ -68,9 +71,10 @@ export function MarkdownImage(props: {
       });
     return () => {
       cancelled = true;
+      controller.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [src, remote, visible, referenceBasePath, workspacePath, roots, attempt]);
+  }, [src, remote, visible, referenceBasePath, workspacePath, roots, attempt, access]);
   return (
     <span ref={ref} className="markdown-image">
       {error ? (

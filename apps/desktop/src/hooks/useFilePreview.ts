@@ -12,6 +12,7 @@ import {
   type PreviewTabsState,
 } from "../previewTabs";
 import { PreviewViewStore } from "../previewViewState";
+import type { RpcClient } from "../rpc";
 
 export interface FilePreviewState {
   target: LocalFileTarget | null;
@@ -24,6 +25,7 @@ export interface FilePreviewState {
   loading: boolean;
   error: string | null;
   open: boolean;
+  progress?: { received: number; total: number };
 }
 
 const EMPTY_PREVIEW: FilePreviewState = {
@@ -45,6 +47,7 @@ export function useFilePreview(
   workspacePath?: string | null,
   sessionId?: string | null,
   workspacePaths: readonly string[] = NO_PATHS,
+  client?: RpcClient,
 ) {
   const [state, setState] = useState<FilePreviewState>(EMPTY_PREVIEW);
   const [views] = useState(() => new PreviewViewStore());
@@ -61,10 +64,14 @@ export function useFilePreview(
   sessionsRef.current = sessions;
   const tabs = sessions[scope] ?? EMPTY_PREVIEW_TABS;
   const requestSequence = useRef(0);
+  const requestController = useRef<AbortController>();
 
   const openFile = useCallback(
     async (target: LocalFileTarget) => {
       const requestId = ++requestSequence.current;
+      requestController.current?.abort();
+      const controller = new AbortController();
+      requestController.current = controller;
       setStateScope(scope);
       setSessions((current) => ({
         ...current,
@@ -87,6 +94,9 @@ export function useFilePreview(
           target.path,
           workspacePath,
           workspacePaths,
+          { client, sessionId, signal: controller.signal, onProgress: (received, total) => {
+            if (requestId === requestSequence.current) setState((current) => ({ ...current, progress: { received, total } }));
+          } },
         );
         if (requestId !== requestSequence.current) return;
         setSessions((current) => ({
@@ -118,11 +128,12 @@ export function useFilePreview(
         }));
       }
     },
-    [workspacePath, workspacePaths, scope],
+    [workspacePath, workspacePaths, scope, client, sessionId],
   );
 
   const close = useCallback(() => {
     requestSequence.current += 1;
+    requestController.current?.abort();
     setSessions((current) => ({
       ...current,
       [scope]: { ...(current[scope] ?? EMPTY_PREVIEW_TABS), open: false },
@@ -138,6 +149,7 @@ export function useFilePreview(
       setSessions((current) => ({ ...current, [scope]: next }));
       if (previous.active !== path) return;
       requestSequence.current++;
+      requestController.current?.abort();
       const target = next.targets.find((item) => item.path === next.active);
       if (target) void openFile(target);
       else setState(EMPTY_PREVIEW);
@@ -147,6 +159,7 @@ export function useFilePreview(
 
   useEffect(() => {
     requestSequence.current += 1;
+    requestController.current?.abort();
     setStateScope(scope);
     setState(EMPTY_PREVIEW);
     const saved = sessionsRef.current[scope];
@@ -155,6 +168,7 @@ export function useFilePreview(
     if (saved?.open && target) void openFile(target);
     return () => {
       requestSequence.current++;
+      requestController.current?.abort();
     };
   }, [scope, openFile]);
 

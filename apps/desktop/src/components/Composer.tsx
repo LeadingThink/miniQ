@@ -306,7 +306,8 @@ export function ComposerCard(props: {
   /** Persist unsent drafts under this key (restored on remount). */
   draftKey?: string;
   /** Replace the draft on an explicit user-selected starter action. */
-  draftRequest?: { id: number; content: string };
+  draftRequest?: { id: number; content: string; append?: boolean };
+  onDraftRequestApplied?: () => void;
   /** Enables `/` skill suggestions when provided. */
   client?: RpcClient;
   approvalMode?: ApprovalMode;
@@ -351,13 +352,16 @@ export function ComposerCard(props: {
 
   useEffect(() => {
     if (!props.draftRequest) return;
-    setDraft(props.draftRequest.content);
+    const content = props.draftRequest.append && draft
+      ? `${draft}\n\n${props.draftRequest.content}` : props.draftRequest.content;
+    setDraft(content);
+    props.onDraftRequestApplied?.();
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.focus();
       textarea.setSelectionRange(
-        props.draftRequest.content.length,
-        props.draftRequest.content.length,
+        content.length,
+        content.length,
       );
     }
     // The request id intentionally allows selecting the same starter twice.
@@ -664,6 +668,8 @@ export function Composer(props: {
   permissionSlot?: ReactNode;
   sendBlocked?: boolean;
   draftKey?: string;
+  draftRequest?: { id: number; content: string; append?: boolean };
+  onDraftRequestApplied?: () => void;
   client?: RpcClient;
   approvalMode?: ApprovalMode;
   onApprovalModeChange?: (mode: ApprovalMode) => void;
@@ -681,6 +687,8 @@ export function Composer(props: {
         permissionSlot={props.permissionSlot}
         sendBlocked={props.sendBlocked}
         draftKey={props.draftKey}
+        draftRequest={props.draftRequest}
+        onDraftRequestApplied={props.onDraftRequestApplied}
         client={props.client}
         approvalMode={props.approvalMode}
         onApprovalModeChange={props.onApprovalModeChange}

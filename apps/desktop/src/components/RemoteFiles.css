@@ -1,0 +1,70 @@
+.remote-file-browser {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.remote-file-browser select {
+  width: 100%;
+  min-width: 0;
+}
+.remote-file-location {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.remote-file-location span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.remote-file-list {
+  max-height: 35dvh;
+  overflow: auto;
+}
+.remote-file-list button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+}
+.remote-file-list button svg {
+  flex-shrink: 0;
+}
+.remote-file-list button span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.remote-file-list button small {
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+.file-preview-loading {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  padding: 24px;
+}
+.file-preview-loading progress {
+  max-width: 100%;
+  width: 240px;
+}
+@media (max-width: 600px) {
+  .open-preview-dialog {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    overflow: auto;
+    box-sizing: border-box;
+  }
+  .file-preview-tools {
+    flex-wrap: wrap;
+  }
+  .file-preview-tools > button,
+  .file-preview-tools .icon-button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}

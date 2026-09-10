@@ -31,7 +31,7 @@ it("resolves relative assets through the workspace-scoped reader and revokes URL
   await screen.findByRole("img");
   expect(read).toHaveBeenCalledWith("/work/docs/images/图.png", "/work", [
     "/attached",
-  ]);
+  ], expect.objectContaining({ signal: expect.any(AbortSignal) }));
   view.unmount();
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
 });

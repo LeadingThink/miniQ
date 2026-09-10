@@ -62,3 +62,36 @@ function viewportExpanded() {
     .getByRole("complementary", { name: "文件预览" })
     .classList.contains("preview-expanded");
 }
+
+it("offers mobile download and follow-up without desktop-only actions", () => {
+  const discuss = vi.fn();
+  render(
+    <FilePreviewPanel
+      preview={{
+        target: { path: "/workspace/output.zip", line: null, column: null },
+        resolvedPath: "/workspace/output.zip",
+        content: null,
+        kind: "unsupported",
+        mimeType: "application/zip",
+        dataBase64: null,
+        size: 40,
+        loading: false,
+        error: null,
+        open: true,
+      }}
+      workspacePath="/workspace"
+      workspacePaths={[]}
+      onClose={vi.fn()}
+      onOpenFile={vi.fn()}
+      onRetry={vi.fn()}
+      onDiscuss={discuss}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "下载到当前设备" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "在文件夹中显示" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "使用系统默认应用打开" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "针对这个文件继续提问" }));
+  expect(discuss).toHaveBeenCalledWith("/workspace/output.zip");
+});
