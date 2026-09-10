@@ -1,4 +1,5 @@
-.file-preview-panel.preview-expanded {
+.file-preview-panel.preview-expanded,
+.workbench-panel > .file-preview-panel.preview-expanded {
   position: fixed;
   inset: 10px;
   width: auto;
@@ -10,8 +11,4 @@
 .preview-expanded .markdown-preview > .md {
   max-width: 960px;
   margin-inline: auto;
-}
-.workbench-resizer:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
 }

@@ -67,10 +67,10 @@ fn resize(webview: &tauri::Webview, bounds: BrowserBounds) -> Result<(), String>
         return Ok(());
     }
     webview
-        .set_position(LogicalPosition::new(bounds.x, bounds.y))
-        .map_err(|error| error.to_string())?;
-    webview
-        .set_size(LogicalSize::new(bounds.width, bounds.height))
+        .set_bounds(tauri::Rect {
+            position: LogicalPosition::new(bounds.x, bounds.y).into(),
+            size: LogicalSize::new(bounds.width, bounds.height).into(),
+        })
         .map_err(|error| error.to_string())
 }
 

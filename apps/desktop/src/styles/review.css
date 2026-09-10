@@ -15,7 +15,7 @@
 .review-panel,
 .file-preview-panel,
 .browser-panel {
-  width: var(--workbench-width, 560px);
+  width: 560px;
   min-width: 380px;
   flex: none;
   margin: 10px 10px 10px 0;
@@ -299,12 +299,28 @@
 }
 
 .browser-toolbar {
+  flex: none;
   min-height: 52px;
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
+}
+
+.browser-toolbar .icon-button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  color: var(--text-mid);
+}
+
+.browser-toolbar .icon-button:hover {
+  background: var(--bg-hover);
 }
 
 .browser-toolbar > svg {
@@ -350,6 +366,7 @@
 }
 
 .browser-status {
+  flex: none;
   min-height: 26px;
   display: flex;
   align-items: center;
@@ -595,44 +612,6 @@
   color: inherit;
 }
 
-.workbench-resizer {
-  position: relative;
-  z-index: 7;
-  width: 12px;
-  flex: none;
-  margin: 10px -6px;
-  touch-action: none;
-  cursor: col-resize;
-  outline: none;
-}
-
-.workbench-resizer::after {
-  position: absolute;
-  top: 12px;
-  bottom: 12px;
-  left: 5px;
-  width: 2px;
-  border-radius: 2px;
-  background: transparent;
-  content: "";
-  transition:
-    background 120ms ease,
-    box-shadow 120ms ease;
-}
-
-.workbench-resizer:hover::after,
-.workbench-resizer:focus-visible::after,
-.workbench-resizer.dragging::after {
-  background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
-}
-
-body.workbench-resizing,
-body.workbench-resizing * {
-  cursor: col-resize !important;
-  user-select: none !important;
-}
-
 .review-header,
 .review-file-header {
   display: flex;
@@ -834,24 +813,4 @@ body.workbench-resizing * {
   color: var(--text-dim);
   text-align: center;
   font-size: 12.5px;
-}
-
-@media (max-width: 1100px) {
-  .workbench-resizer {
-    display: none;
-  }
-
-  .review-panel,
-  .file-preview-panel,
-  .browser-panel {
-    position: fixed;
-    z-index: 8;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(620px, calc(100vw - 24px));
-    min-width: 0;
-    margin: 10px;
-    box-shadow: var(--shadow-lg);
-  }
 }
