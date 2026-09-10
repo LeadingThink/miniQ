@@ -1,4 +1,5 @@
 import { isTauriRuntime } from "./runtime";
+import { readRemoteFile, type FileReadOptions } from "./remoteFiles";
 
 const NAMED_FILES = /^(?:Dockerfile|Makefile|README|LICENSE|CHANGELOG)(?:\.[A-Za-z0-9]+)?$/i;
 const URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
@@ -209,9 +210,10 @@ export async function readLocalFilePreview(
   path: string,
   workspacePath?: string | null,
   workspacePaths: readonly string[] = [],
+  options: FileReadOptions = {},
 ): Promise<LocalFilePreview> {
   if (!workspacePath) throw new Error("无法预览文件：当前会话没有工作区");
-  if (!isTauriRuntime()) throw new Error("文件预览仅在 miniQ 桌面应用中可用");
+  if (!isTauriRuntime() || options.client?.mode === "remote") return readRemoteFile(path, options);
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<LocalFilePreview>("read_local_file_preview", { path, workspacePath, workspacePaths });
 }

@@ -16,6 +16,50 @@ per page; failed historical groups are initially collapsed.
 The frontend and daemon must be updated together. Reload already-open mobile
 pages after deployment so the new history controls are available.
 
+## File previews and follow-up
+
+Browser clients use the same document renderers as the desktop. Session links,
+artifact cards, and the project-file picker open Markdown/text/code, PDF, DOCX,
+XLSX/CSV, PPTX, images, audio, video, and standalone HTML. The picker browses
+the selected session's working directory and attached project roots, with 100
+entries per page. Broken or unreadable entries remain visible as unavailable;
+symlinks leading outside the authorized roots are excluded.
+
+`file.describe {sessionId,path}` returns format, byte length, revision, and chunk
+size without sending file content. `file.read {sessionId,path,revision,offset}`
+returns at most 3 MiB of raw bytes encoded as base64. A revision change aborts the
+read rather than mixing file versions. `file.list {sessionId,path?,after?}` returns
+the next directory page. All three methods resolve authority from the persisted
+session/workspace; callers cannot inject allowed roots. They require the existing
+authenticated local or encrypted remote connection. No public file server or
+filesystem bridge is exposed. Bulk replies use the existing private-object data
+plane when available.
+
+File contents are fetched only when opened; closing a preview, opening another
+file, or changing sessions aborts further chunks. UTF-8 decoding is streamed
+across chunk boundaries. The mobile file preview/download limit is 64 MiB per
+file, with an explicit error and no partial content. Files above that limit need a
+smaller preview copy or splitting. This is chunked transfer into bounded browser
+memory, not HTTP range streaming for arbitrarily large videos. Media playback
+also depends on the browser's codec support.
+
+The download action saves original bytes to the current device. The follow-up
+action appends the exact file path to the current session's existing draft and
+focuses the composer; it never sends a model request automatically. Native-only
+open/reveal actions are hidden on browser clients.
+
+Remote HTML bundles ordinary relative images, media, stylesheets, CSS `url()`
+assets, and static script files into an iframe with `allow-scripts` but no shared
+origin or RPC access. Combined HTML/resources are limited to 64 MiB. External
+network access remains an explicit preview toggle. This is a standalone artifact
+preview, not a web-project dev server: module imports, dynamic relative fetches,
+CSS imports, and responsive `srcset` resources are not bundled.
+
+For isolated browser acceptance, run `cargo run -p miniq-daemon --example
+mobile_preview -- <fixture-directory>` and connect the frontend to the printed
+loopback port using the example's `isolated-preview` token. It uses an in-memory
+store and mock provider; user sessions and running tasks are untouched.
+
 ## Reconnect and Scheduling
 
 Each daemon process has an event epoch and monotonically increasing sequence.

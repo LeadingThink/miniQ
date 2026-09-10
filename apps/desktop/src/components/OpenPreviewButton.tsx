@@ -2,6 +2,9 @@ import { FolderOpen, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { isTauriRuntime } from "../runtime";
 import { resolveWorkspacePath, type LocalFileTarget } from "../localFiles";
+import { useSessionFileAccess } from "../sessionFileAccess";
+import { RemoteFileBrowser } from "./RemoteFileBrowser";
+import "./RemoteFiles.css";
 
 export function OpenPreviewButton(props: {
   workspacePath?: string;
@@ -12,6 +15,8 @@ export function OpenPreviewButton(props: {
   const [pending, setPending] = useState(false);
   const [visible, setVisible] = useState(false);
   const [path, setPath] = useState("");
+  const access = useSessionFileAccess();
+  const remote = !isTauriRuntime() || access?.client?.mode === "remote";
   const trigger = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const mounted = useRef(true);
@@ -33,7 +38,7 @@ export function OpenPreviewButton(props: {
     element.showModal();
     return () => element.close();
   }, [visible]);
-  if (!isTauriRuntime() || !props.workspacePath) return null;
+  if (!props.workspacePath || (remote && !access?.sessionId)) return null;
   const close = () => {
     setVisible(false);
     trigger.current?.focus();
@@ -111,10 +116,11 @@ export function OpenPreviewButton(props: {
                 <X size={16} />
               </button>
             </header>
+            {remote && access && <RemoteFileBrowser access={access} onOpen={submit} />}
             <label>
               文件路径
               <input
-                autoFocus
+                autoFocus={!remote}
                 aria-label="预览文件路径"
                 value={path}
                 placeholder="例如 docs/report.md，或粘贴完整路径"
@@ -125,14 +131,14 @@ export function OpenPreviewButton(props: {
               项目：{props.workspacePath}
             </small>
             <footer>
-              <button
+              {!remote && <button
                 type="button"
                 className="ghost"
                 disabled={pending}
                 onClick={() => void choose()}
               >
                 浏览文件…
-              </button>
+              </button>}
               <button type="submit" disabled={!path.trim()}>
                 打开预览
               </button>

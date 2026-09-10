@@ -493,7 +493,7 @@ export function useMiniqApp() {
     onError: setSessionError,
   });
   const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls);
-  const preview = useFilePreview(catalog.currentSession?.workingDirectory, catalog.currentSessionId, catalog.currentWorkspacePaths);
+  const preview = useFilePreview(catalog.currentSession?.workingDirectory, catalog.currentSessionId, catalog.currentWorkspacePaths, client);
   useTaskNotifications(client, catalog.sessions);
   const updater = useAppUpdater(client, setConnectionError);
   const connection = useDaemonConnection({

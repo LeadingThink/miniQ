@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { isolatedHtml } from "../htmlPreview";
 import { errorMessage } from "../errorMessage";
 import { isTauriRuntime } from "../runtime";
+import { useSessionFileAccess } from "../sessionFileAccess";
+import { prepareRemoteHtml } from "../remoteHtml";
 import {
   closeHtmlPreview,
   openHtmlPreview,
@@ -26,7 +28,19 @@ export function HtmlPreview({
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const local = isTauriRuntime() && !!file;
+  const access = useSessionFileAccess();
+  const [bundled, setBundled] = useState<{ content: string; path: string; value: string } | null>(null);
+  const local = isTauriRuntime() && access?.client?.mode !== "remote" && !!file;
+  const remote = !local && !!file && !!access?.client && !!access.sessionId;
+  useEffect(() => {
+    if (!remote || !file || !access) return;
+    const controller = new AbortController();
+    setBundled(null); setError(null);
+    void prepareRemoteHtml(content, file.path, { ...access, signal: controller.signal }).then((value) => {
+      if (!controller.signal.aborted) setBundled({ content, path: file.path, value });
+    }).catch((cause) => { if (!controller.signal.aborted) setError(errorMessage(cause)); });
+    return () => controller.abort();
+  }, [remote, file?.path, content, access, attempt]);
   const identity = JSON.stringify(file);
   const scope = JSON.stringify([identity, network, attempt]);
   const handle = openedState?.scope === scope ? openedState.handle : null;
@@ -56,8 +70,8 @@ export function HtmlPreview({
     };
   }, [local, identity, network, scope, content]);
   const source = useMemo(
-    () => (local ? undefined : isolatedHtml(content, network)),
-    [content, network, local],
+    () => (local ? undefined : isolatedHtml(remote ? bundled?.value ?? "" : content, network)),
+    [content, network, local, remote, bundled],
   );
   return (
     <section className="html-preview">
@@ -87,7 +101,8 @@ export function HtmlPreview({
         </div>
       )}
       {local && !handle && !error && <p role="status">正在加载 HTML 预览</p>}
-      {(!local || handle) && (
+      {remote && !bundled && !error && <p role="status">正在读取 HTML 与本地资源…</p>}
+      {(!local || handle) && (!remote || (bundled?.content === content && bundled.path === file?.path)) && (
         <iframe
           title={label}
           src={local ? handle?.url : undefined}
