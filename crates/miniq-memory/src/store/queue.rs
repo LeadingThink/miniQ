@@ -85,6 +85,45 @@ impl Store {
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
+    /// Edit only a still-pending message, under the same lock as queue draining.
+    /// Compare the original content to avoid overwriting another client's edit.
+    /// Attachments, identity, timestamp and execution order remain unchanged.
+    pub fn update_queued_message(
+        &self,
+        session_id: &str,
+        id: &str,
+        expected_content: &str,
+        content: &str,
+    ) -> Result<QueuedMessage> {
+        let conn = self.conn.lock().unwrap();
+        let mut message = conn
+            .query_row(
+                "SELECT id, session_id, content, attachments_json, position, created_at
+                 FROM queued_messages WHERE id = ?1 AND session_id = ?2",
+                params![id, session_id],
+                row_to_queued,
+            )
+            .optional()?
+            .ok_or_else(|| {
+                MemoryError::NotFound("排队消息已开始执行或已被移除，请保留编辑内容".into())
+            })?;
+        if message.content != expected_content {
+            return Err(MemoryError::InvalidData(
+                "这条排队消息已在其他设备更新，请查看最新内容后再编辑".into(),
+            ));
+        }
+        let content = content.trim();
+        if content.is_empty() && message.attachments.is_empty() {
+            return Err(MemoryError::InvalidData("消息内容不能为空".into()));
+        }
+        conn.execute(
+            "UPDATE queued_messages SET content = ?2 WHERE id = ?1",
+            params![id, content],
+        )?;
+        message.content = content.into();
+        Ok(message)
+    }
+
     /// Move the queue head into conversation history and record its origin in
     /// one transaction. Failed persistence leaves the original queue untouched.
     pub fn start_queued_message(&self, session_id: &str) -> Result<Option<Message>> {
@@ -190,6 +229,111 @@ mod tests {
         let workspace = store.create_workspace("/tmp/queue-test", "queue").unwrap();
         let session = store.create_session(&workspace.id, "queued").unwrap();
         (store, session.id)
+    }
+
+    #[test]
+    fn edit_preserves_identity_attachments_order_and_executes_the_saved_content() {
+        let (store, session_id) = store_with_session();
+        store.enqueue_message(&session_id, "first").unwrap();
+        let attachments = vec![MessageAttachment {
+            path: "/tmp/report.pdf".into(),
+            name: "report.pdf".into(),
+            mime_type: None,
+        }];
+        let queued = store
+            .enqueue_message_with_attachments(&session_id, "original", &attachments)
+            .unwrap();
+        let edited = store
+            .update_queued_message(&session_id, &queued.id, "original", "  new\n完整内容  ")
+            .unwrap();
+        assert_eq!(edited.id, queued.id);
+        assert_eq!(edited.position, queued.position);
+        assert_eq!(edited.created_at, queued.created_at);
+        assert_eq!(edited.attachments[0].path, attachments[0].path);
+        assert_eq!(
+            store.list_queued_messages(&session_id).unwrap()[1].content,
+            "new\n完整内容"
+        );
+        assert_eq!(
+            store
+                .start_queued_message(&session_id)
+                .unwrap()
+                .unwrap()
+                .content,
+            "first"
+        );
+        let started = store.start_queued_message(&session_id).unwrap().unwrap();
+        assert_eq!(started.content, "new\n完整内容");
+        assert_eq!(started.attachments[0].path, attachments[0].path);
+        assert!(store
+            .update_queued_message(&session_id, &queued.id, &edited.content, "too late")
+            .is_err());
+        assert_eq!(
+            store.list_messages(&session_id).unwrap()[1].content,
+            edited.content
+        );
+    }
+
+    #[test]
+    fn edit_rejects_cross_session_stale_or_blank_updates_without_mutating_queue() {
+        let (store, session_id) = store_with_session();
+        let queued = store.enqueue_message(&session_id, "original").unwrap();
+        for (session, expected, content) in [
+            ("other-session", "original", "cross-session"),
+            (session_id.as_str(), "stale", "would overwrite"),
+            (session_id.as_str(), "original", " \n "),
+        ] {
+            assert!(store
+                .update_queued_message(session, &queued.id, expected, content)
+                .is_err());
+            assert_eq!(
+                store.list_queued_messages(&session_id).unwrap()[0].content,
+                "original"
+            );
+        }
+        store
+            .update_queued_message(&session_id, &queued.id, "original", "mobile edit")
+            .unwrap();
+        assert!(store
+            .update_queued_message(&session_id, &queued.id, "original", "desktop edit")
+            .is_err());
+        assert_eq!(
+            store.list_queued_messages(&session_id).unwrap()[0].content,
+            "mobile edit"
+        );
+        store.remove_queued_message(&queued.id).unwrap();
+        assert!(store
+            .update_queued_message(&session_id, &queued.id, "mobile edit", "too late")
+            .is_err());
+        assert!(store.list_queued_messages(&session_id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn attachment_only_queue_edit_survives_store_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("queue.sqlite");
+        let store = Store::open(&path).unwrap();
+        let workspace = store
+            .create_workspace("/tmp/queue-persist", "persist")
+            .unwrap();
+        let session = store.create_session(&workspace.id, "queue").unwrap();
+        let attachments = vec![MessageAttachment {
+            path: "/tmp/pic.png".into(),
+            name: "pic.png".into(),
+            mime_type: None,
+        }];
+        let queued = store
+            .enqueue_message_with_attachments(&session.id, "caption", &attachments)
+            .unwrap();
+        store
+            .update_queued_message(&session.id, &queued.id, "caption", "")
+            .unwrap();
+        drop(store);
+        let store = Store::open(&path).unwrap();
+        let queue = store.list_queued_messages(&session.id).unwrap();
+        assert_eq!(queue[0].id, queued.id);
+        assert!(queue[0].content.is_empty());
+        assert_eq!(queue[0].attachments[0].path, "/tmp/pic.png");
     }
 
     #[test]

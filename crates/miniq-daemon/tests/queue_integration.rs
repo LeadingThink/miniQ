@@ -273,6 +273,135 @@ async fn steer_interrupts_running_turn_and_promotes_message() {
 }
 
 #[tokio::test]
+async fn queue_edit_is_broadcast_and_drains_saved_content_without_interrupting() {
+    let (release, receiver) = tokio::sync::watch::channel(0u64);
+    let (port, token) = start(Arc::new(GatedProvider { release: receiver })).await;
+    let mut ws = connect(port, &token).await;
+    let (session, dir) = setup_session(&mut ws).await;
+    call(
+        &mut ws,
+        "start",
+        "session.sendMessage",
+        send_params(&session, "running"),
+    )
+    .await;
+    let file = dir.path().join("evidence.txt");
+    std::fs::write(&file, "evidence").unwrap();
+    let mut message = send_params(&session, "original");
+    message["message"]["attachments"] = json!([file]);
+    let queued =
+        call(&mut ws, "queue", "session.sendMessage", message).await["result"]["queued"].clone();
+    let mut observer = connect(port, &token).await;
+    let edited = call(
+        &mut ws,
+        "edit",
+        "session.queueUpdate",
+        json!({
+            "sessionId": session, "queuedMessageId": queued["id"],
+            "expectedContent": "original", "content": "新要求\n执行这个",
+        }),
+    )
+    .await;
+    assert_eq!(
+        edited["result"]["updated"]["attachments"],
+        queued["attachments"]
+    );
+    assert_eq!(edited["result"]["updated"]["position"], queued["position"]);
+    let event = next_event_of(&mut observer, "queue_changed").await;
+    assert_eq!(event["sessionId"], session);
+    assert_eq!(event["queue"][0]["content"], "新要求\n执行这个");
+    let snapshot = call(
+        &mut ws,
+        "snapshot",
+        "session.open",
+        json!({"sessionId": session}),
+    )
+    .await;
+    assert_eq!(snapshot["result"]["session"]["status"], "running");
+    assert_eq!(snapshot["result"]["messages"].as_array().unwrap().len(), 1);
+    release.send(1).unwrap();
+    next_event_of(&mut ws, "turn_completed").await;
+    next_event_of(&mut ws, "queue_changed").await;
+    let started = next_event_of(&mut ws, "message_created").await;
+    assert_eq!(started["message"]["content"], "新要求\n执行这个");
+    assert_eq!(started["message"]["attachments"], queued["attachments"]);
+    let late = call(
+        &mut ws,
+        "late",
+        "session.queueUpdate",
+        json!({
+            "sessionId": session, "queuedMessageId": queued["id"],
+            "expectedContent": "新要求\n执行这个", "content": "too late",
+        }),
+    )
+    .await;
+    assert_eq!(late["error"]["code"], -32602);
+    call(
+        &mut ws,
+        "stop",
+        "session.cancel",
+        json!({"sessionId": session}),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn queue_edit_validates_parameters_and_detects_concurrent_client_changes() {
+    let (_release, receiver) = tokio::sync::watch::channel(0u64);
+    let (port, token) = start(Arc::new(GatedProvider { release: receiver })).await;
+    let mut ws = connect(port, &token).await;
+    let (session, _dir) = setup_session(&mut ws).await;
+    call(
+        &mut ws,
+        "start",
+        "session.sendMessage",
+        send_params(&session, "running"),
+    )
+    .await;
+    let queued = call(
+        &mut ws,
+        "queue",
+        "session.sendMessage",
+        send_params(&session, "original"),
+    )
+    .await["result"]["queued"]
+        .clone();
+    let valid = json!({ "sessionId": session, "queuedMessageId": queued["id"], "expectedContent": "original", "content": "edited" });
+    for (key, value) in [
+        ("sessionId", json!("other")),
+        ("content", json!(" \n ")),
+        ("content", json!(null)),
+        ("expectedContent", json!("stale")),
+        ("attachments", json!([])),
+    ] {
+        let mut invalid = valid.clone();
+        invalid[key] = value;
+        let rejected = call(&mut ws, "invalid", "session.queueUpdate", invalid).await;
+        assert_eq!(rejected["error"]["code"], -32602, "{rejected}");
+    }
+    let saved = call(&mut ws, "save", "session.queueUpdate", valid.clone()).await;
+    assert_eq!(saved["result"]["updated"]["content"], "edited");
+    let mut other = connect(port, &token).await;
+    let conflict = call(&mut other, "conflict", "session.queueUpdate", valid).await;
+    assert_eq!(conflict["error"]["code"], -32602);
+    let queue = call(
+        &mut other,
+        "list",
+        "session.queueList",
+        json!({"sessionId":session}),
+    )
+    .await;
+    assert_eq!(queue["result"]["queue"][0]["content"], "edited");
+    call(
+        &mut ws,
+        "stop",
+        "session.cancel",
+        json!({"sessionId":session}),
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn cancel_discards_queued_messages() {
     let (release_tx, release_rx) = tokio::sync::watch::channel(0u64);
     let provider: Arc<dyn ModelProvider> = Arc::new(GatedProvider {

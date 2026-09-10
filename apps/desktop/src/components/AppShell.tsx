@@ -168,8 +168,9 @@ function SessionPage({ app, onOpenFile, onOpenUrl }: WorkbenchPageProps) {
           onRollback={app.actions.rollbackCheckpoint}
           onOpenFile={onOpenFile}
           onOpenUrl={onOpenUrl}
-          onSteerQueued={(id) => void app.actions.steerQueued(id)}
-          onRemoveQueued={(id) => void app.actions.removeQueued(id)}
+          onSteerQueued={app.actions.steerQueued}
+          onRemoveQueued={app.actions.removeQueued}
+          onUpdateQueued={app.actions.updateQueued}
           onRewrite={app.actions.rewriteMessage}
           onError={app.setError}
         />
