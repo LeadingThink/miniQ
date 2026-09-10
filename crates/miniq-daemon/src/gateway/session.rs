@@ -218,69 +218,7 @@ pub(super) fn rewrite_message(state: &AppState, raw: Option<Value>) -> Result<Va
     to_value(json!({ "message": rewrite.message }))
 }
 
-pub(super) fn emit_queue_changed(state: &AppState, session_id: &str) {
-    let queue = state
-        .store
-        .list_queued_messages(session_id)
-        .unwrap_or_default();
-    state.emit(Event::QueueChanged {
-        session_id: session_id.to_string(),
-        queue,
-    });
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct QueueListParams {
-    session_id: String,
-}
-
-pub(super) fn queue_list(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
-    let input: QueueListParams = params(raw)?;
-    let queue = state
-        .store
-        .list_queued_messages(&input.session_id)
-        .map_err(store_err)?;
-    to_value(json!({ "queue": queue }))
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct QueueItemParams {
-    queued_message_id: String,
-}
-
-pub(super) fn queue_remove(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
-    let input: QueueItemParams = params(raw)?;
-    let removed = state
-        .store
-        .remove_queued_message(&input.queued_message_id)
-        .map_err(store_err)?;
-    emit_queue_changed(state, &removed.session_id);
-    to_value(json!({ "removed": removed }))
-}
-
-/// "调整方向": move a queued message to the front and interrupt the running
-/// turn so it executes immediately. The turn-end drain picks it up.
-pub(super) fn queue_steer(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
-    let input: QueueItemParams = params(raw)?;
-    let promoted = state
-        .store
-        .promote_queued_message(&input.queued_message_id)
-        .map_err(store_err)?;
-    emit_queue_changed(state, &promoted.session_id);
-    let interrupted = state.cancel_turn(&promoted.session_id);
-    if interrupted {
-        let _ = state
-            .store
-            .update_session_status(&promoted.session_id, SessionStatus::Cancelling);
-        state.emit(Event::SessionStatusChanged {
-            session_id: promoted.session_id.clone(),
-            status: SessionStatus::Cancelling,
-        });
-    }
-    to_value(json!({ "promoted": promoted, "interrupted": interrupted }))
-}
+use super::session_queue::emit_queue_changed;
 
 const MAX_ATTACHMENTS: usize = 10;
 const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;

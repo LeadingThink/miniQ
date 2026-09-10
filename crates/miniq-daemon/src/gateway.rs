@@ -22,6 +22,7 @@ mod session_attention;
 mod session_diff;
 mod session_history;
 mod session_model;
+mod session_queue;
 mod settings;
 mod skill;
 mod system;
@@ -36,7 +37,7 @@ use crate::state::AppState;
 /// Broadcast the session's current queue (used by the turn runner when it
 /// drains a queued message).
 pub fn emit_session_queue_changed(state: &AppState, session_id: &str) {
-    session::emit_queue_changed(state, session_id);
+    session_queue::emit_queue_changed(state, session_id);
 }
 
 fn canonical_workspace_path(path: &Path) -> Option<String> {
@@ -110,9 +111,10 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.sendMessage" => session::send_message(state, req.params),
         "session.rewriteMessage" => session::rewrite_message(state, req.params),
         "session.cancel" => session::cancel(state, req.params).await,
-        "session.queueList" => session::queue_list(state, req.params),
-        "session.queueRemove" => session::queue_remove(state, req.params),
-        "session.queueSteer" => session::queue_steer(state, req.params),
+        "session.queueList" => session_queue::list(state, req.params),
+        "session.queueUpdate" => session_queue::update(state, req.params),
+        "session.queueRemove" => session_queue::remove(state, req.params),
+        "session.queueSteer" => session_queue::steer(state, req.params),
         "session.rename" => session::rename(state, req.params),
         "session.setPinned" => session::set_pinned(state, req.params),
         "session.setArchived" => session::set_archived(state, req.params),

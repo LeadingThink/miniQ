@@ -343,8 +343,9 @@ function Fixture() {
             onRollback={() => {}}
             onOpenFile={() => {}}
             onOpenUrl={() => {}}
-            onSteerQueued={() => {}}
-            onRemoveQueued={() => {}}
+            onSteerQueued={async () => {}}
+            onRemoveQueued={async () => {}}
+            onUpdateQueued={async () => {}}
             onRewrite={async () => true}
             onError={() => {}}
           />

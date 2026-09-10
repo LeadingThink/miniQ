@@ -132,17 +132,112 @@
 
 .queue-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   font-size: 13px;
+  padding: 6px 0;
 }
 
 .queue-content {
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  max-height: 8em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
   color: var(--text);
+}
+
+.queue-list {
+  max-height: min(40vh, 360px);
+  overflow: auto;
+}
+.queue-position,
+.queue-attachments {
+  color: var(--text-dim);
+}
+.queue-actions,
+.queue-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.queue-actions {
+  flex-shrink: 0;
+}
+.queue-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+}
+.queue-editor {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.queue-editor label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.queue-editor textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 96px;
+  max-height: 40vh;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.5;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+.queue-editor textarea:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.queue-editor-actions {
+  justify-content: flex-end;
+}
+.queue-editor-hint {
+  margin-right: auto;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.queue-error {
+  color: var(--danger);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.queue-attachments {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .queue-item {
+    flex-direction: column;
+  }
+  .queue-content {
+    width: 100%;
+    flex: auto;
+  }
+  .queue-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .queue-actions button,
+  .queue-editor-actions button {
+    min-height: 40px;
+  }
+  .queue-editor-hint {
+    flex-basis: 100%;
+  }
 }
 
 .queue-steer {

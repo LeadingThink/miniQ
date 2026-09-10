@@ -3,6 +3,7 @@ import { errorMessage } from "../errorMessage";
 import { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 import type {
+  QueuedMessage,
   Session,
   SessionStatus,
   Workspace,
@@ -360,28 +361,32 @@ function useTurnActions(
   /** Remove a message from the pending queue. */
   const removeQueued = useCallback(
     async (queuedMessageId: string) => {
-      try {
-        await client.call("session.queueRemove", { queuedMessageId });
-      } catch (error) {
-        setError(errorMessage(error));
-      }
+      await client.call("session.queueRemove", { queuedMessageId });
     },
-    [client, setError],
+    [client],
   );
 
   /** "调整方向": promote a queued message and interrupt the running turn. */
   const steerQueued = useCallback(
     async (queuedMessageId: string) => {
-      try {
-        await client.call("session.queueSteer", { queuedMessageId });
-      } catch (error) {
-        setError(errorMessage(error));
-      }
+      await client.call("session.queueSteer", { queuedMessageId });
     },
-    [client, setError],
+    [client],
   );
 
-  return { sendMessage, rewriteMessage, startTask, cancelTurn, removeQueued, steerQueued };
+  const updateQueued = useCallback(
+    async (original: QueuedMessage, content: string) => {
+      await client.call("session.queueUpdate", {
+        sessionId: original.sessionId,
+        queuedMessageId: original.id,
+        expectedContent: original.content,
+        content,
+      });
+    },
+    [client],
+  );
+
+  return { sendMessage, rewriteMessage, startTask, cancelTurn, removeQueued, steerQueued, updateQueued };
 }
 
 function useInteractionActions(

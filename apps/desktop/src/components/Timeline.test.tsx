@@ -5,9 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Message, Question, ToolCall, TurnProgress } from "../types";
 import type { PendingApproval } from "../hooks/useSessionFeed";
 import { Timeline } from "./Timeline";
-import { QueueBar } from "./TimelineInteractions";
+import { QueueBar } from "./QueueBar";
 
 const noop = () => undefined;
+const asyncNoop = async () => undefined;
 
 afterEach(cleanup);
 
@@ -38,8 +39,9 @@ function renderTimeline(options: {
       onRollback={noop}
       onOpenFile={noop}
       onOpenUrl={noop}
-      onSteerQueued={noop}
-      onRemoveQueued={noop}
+      onSteerQueued={asyncNoop}
+      onRemoveQueued={asyncNoop}
+      onUpdateQueued={asyncNoop}
       onRewrite={async () => true}
       onError={noop}
     />,
@@ -109,8 +111,9 @@ describe("Timeline execution flow", () => {
         onRollback={noop}
         onOpenFile={noop}
         onOpenUrl={noop}
-        onSteerQueued={noop}
-        onRemoveQueued={noop}
+        onSteerQueued={asyncNoop}
+        onRemoveQueued={asyncNoop}
+        onUpdateQueued={asyncNoop}
         onRewrite={onRewrite}
         onError={noop}
       />,
@@ -159,8 +162,9 @@ describe("Timeline execution flow", () => {
         onRollback={noop}
         onOpenFile={noop}
         onOpenUrl={noop}
-        onSteerQueued={noop}
-        onRemoveQueued={noop}
+        onSteerQueued={asyncNoop}
+        onRemoveQueued={asyncNoop}
+        onUpdateQueued={asyncNoop}
         onRewrite={onRewrite}
         onError={noop}
       />,
@@ -201,8 +205,9 @@ describe("Timeline execution flow", () => {
         onRollback={noop}
         onOpenFile={noop}
         onOpenUrl={noop}
-        onSteerQueued={noop}
-        onRemoveQueued={noop}
+        onSteerQueued={asyncNoop}
+        onRemoveQueued={asyncNoop}
+        onUpdateQueued={asyncNoop}
         onRewrite={onRewrite}
         onError={noop}
       />,
@@ -235,8 +240,9 @@ describe("Timeline execution flow", () => {
           position: 0,
           createdAt: "2026-09-08T00:00:00Z",
         }]}
-        onSteer={noop}
-        onRemove={noop}
+        onSteer={asyncNoop}
+        onRemove={asyncNoop}
+        onUpdate={asyncNoop}
       />,
     );
 

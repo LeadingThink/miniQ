@@ -23,7 +23,8 @@ import type {
 } from "../types";
 import type { PendingApproval } from "../App";
 import { readImagePreview, type LocalFileTarget } from "../localFiles";
-import { ApprovalCard, QueueBar, ArtifactsBar } from "./TimelineInteractions";
+import { ApprovalCard, ArtifactsBar } from "./TimelineInteractions";
+import { QueueBar, type QueueActions } from "./QueueBar";
 import { QuestionCard, type QuestionCardProps } from "./QuestionCard";
 import { Md } from "./Md";
 import { ExecutionPrelude, PlanProgress } from "./ExecutionActivity";
@@ -104,8 +105,9 @@ interface TimelineProps {
   onRollback: (checkpointId: string) => void;
   onOpenFile: (target: LocalFileTarget) => void;
   onOpenUrl: (url: string) => void;
-  onSteerQueued: (queuedMessageId: string) => void;
-  onRemoveQueued: (queuedMessageId: string) => void;
+  onSteerQueued: QueueActions["onSteer"];
+  onRemoveQueued: QueueActions["onRemove"];
+  onUpdateQueued: QueueActions["onUpdate"];
   onRewrite: (
     messageId: string,
     content: string,
@@ -670,9 +672,11 @@ export function Timeline(props: TimelineProps) {
           workspacePath={props.workspacePath}
         />
         <QueueBar
+          key={props.sessionId}
           queue={props.queue}
           onSteer={props.onSteerQueued}
           onRemove={props.onRemoveQueued}
+          onUpdate={props.onUpdateQueued}
         />
       </div>
       {showJump && (

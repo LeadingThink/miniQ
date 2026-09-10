@@ -203,13 +203,40 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             // Closing the window hides to tray; Quit exits from the tray menu.
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
-                api.prevent_close();
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    if window.hide().is_ok() {
+                        api.prevent_close();
+                    }
+                }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running miniQ desktop");
+        .build(tauri::generate_context!())
+        .expect("error while building miniQ desktop")
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                show_main_window(_app);
+            }
+        });
+}
+
+/// Restore the existing window so its session and child webviews stay intact.
+fn show_main_window(app: &tauri::AppHandle) {
+    use tauri::Manager;
+
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    #[cfg(target_os = "macos")]
+    if let Err(error) = app.show() {
+        eprintln!("[miniq] could not show application: {error}");
+    }
+    for result in [window.show(), window.unminimize(), window.set_focus()] {
+        if let Err(error) = result {
+            eprintln!("[miniq] could not restore main window: {error}");
+        }
+    }
 }
 
 /// Alt+Space toggles the main window from anywhere, mirroring the
@@ -237,8 +264,7 @@ fn setup_global_shortcut(app: &tauri::AppHandle) {
                 if window.is_visible().unwrap_or(false) && focused {
                     let _ = window.hide();
                 } else {
-                    let _ = window.show();
-                    let _ = window.set_focus();
+                    show_main_window(app);
                 }
             })
             .build(),
@@ -267,7 +293,6 @@ fn setup_global_shortcut(app: &tauri::AppHandle) {
 fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
     use tauri::tray::TrayIconBuilder;
-    use tauri::Manager;
 
     let show = MenuItemBuilder::with_id("show", "Show miniQ").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
@@ -283,12 +308,7 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
-            "show" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-            }
+            "show" => show_main_window(app),
             "quit" => {
                 app.exit(0);
             }
