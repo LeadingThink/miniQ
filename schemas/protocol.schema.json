@@ -1071,10 +1071,54 @@
               "model_settings_changed"
             ],
             "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
           }
         },
         "required": [
           "sessionId",
+          "settings",
+          "type",
+          "workspaceId"
+        ],
+        "type": "object"
+      },
+      {
+        "properties": {
+          "settings": {
+            "$ref": "#/definitions/SessionModelSettings"
+          },
+          "type": {
+            "enum": [
+              "workspace_model_settings_changed"
+            ],
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "settings",
+          "type",
+          "workspaceId"
+        ],
+        "type": "object"
+      },
+      {
+        "properties": {
+          "settings": {
+            "$ref": "#/definitions/SessionModelSettings"
+          },
+          "type": {
+            "enum": [
+              "global_model_settings_changed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
           "settings",
           "type"
         ],
@@ -2336,6 +2380,77 @@
       "sessions"
     ],
     "title": "ExternalSessionScan",
+    "type": "object"
+  },
+  "globalModelUpdate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "definitions": {
+      "ApiProtocol": {
+        "enum": [
+          "auto",
+          "chat_completions",
+          "responses",
+          "anthropic_messages"
+        ],
+        "type": "string"
+      },
+      "ReasoningEffort": {
+        "enum": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ],
+        "type": "string"
+      },
+      "SessionModelSettings": {
+        "additionalProperties": false,
+        "description": "No credentials are stored in session preferences. Null model inherits the daemon default; null effort preserves the provider's native behavior.",
+        "properties": {
+          "apiProtocol": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/ApiProtocol"
+              }
+            ],
+            "default": "auto"
+          },
+          "model": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reasoningEffort": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ReasoningEffort"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "type": "object"
+      }
+    },
+    "properties": {
+      "settings": {
+        "$ref": "#/definitions/SessionModelSettings"
+      }
+    },
+    "required": [
+      "settings"
+    ],
+    "title": "GlobalModelUpdate",
     "type": "object"
   },
   "historyPage": {
@@ -4015,6 +4130,81 @@
       "toolCallId"
     ],
     "title": "ToolDetailParams",
+    "type": "object"
+  },
+  "workspaceModelUpdate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "definitions": {
+      "ApiProtocol": {
+        "enum": [
+          "auto",
+          "chat_completions",
+          "responses",
+          "anthropic_messages"
+        ],
+        "type": "string"
+      },
+      "ReasoningEffort": {
+        "enum": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ],
+        "type": "string"
+      },
+      "SessionModelSettings": {
+        "additionalProperties": false,
+        "description": "No credentials are stored in session preferences. Null model inherits the daemon default; null effort preserves the provider's native behavior.",
+        "properties": {
+          "apiProtocol": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/ApiProtocol"
+              }
+            ],
+            "default": "auto"
+          },
+          "model": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reasoningEffort": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ReasoningEffort"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "type": "object"
+      }
+    },
+    "properties": {
+      "settings": {
+        "$ref": "#/definitions/SessionModelSettings"
+      },
+      "workspaceId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "settings",
+      "workspaceId"
+    ],
+    "title": "WorkspaceModelUpdate",
     "type": "object"
   },
   "workspaceRootsUpdate": {

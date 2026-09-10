@@ -321,6 +321,15 @@ export type DaemonEvent = {
       workspaceId: string;
       settings: import("./modelSelection").SessionModelSettings;
     }
+  | {
+      type: "workspace_model_settings_changed";
+      workspaceId: string;
+      settings: import("./modelSelection").SessionModelSettings;
+    }
+  | {
+      type: "global_model_settings_changed";
+      settings: import("./modelSelection").SessionModelSettings;
+    }
   | { type: "session_status_changed"; sessionId: string; status: SessionStatus }
   | { type: "turn_progress_changed"; sessionId: string; progress: TurnProgress }
   | { type: "message_created"; sessionId: string; message: Message }

@@ -1,5 +1,8 @@
 use miniq_models::{ConfiguredProvider, ModelProvider};
-use miniq_protocol::{ApiProtocol, ErrorCode, Event, RpcError, SessionModelUpdate};
+use miniq_protocol::{
+    ApiProtocol, ErrorCode, Event, GlobalModelUpdate, RpcError, SessionModelSettings,
+    SessionModelUpdate, WorkspaceModelUpdate,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -60,12 +63,64 @@ pub(super) fn workspace_get(state: &AppState, raw: Option<Value>) -> Result<Valu
 }
 
 pub(super) async fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
-    let mut input: SessionModelUpdate = params(raw)?;
+    let input: SessionModelUpdate = params(raw)?;
     state
         .store
         .get_session(&input.session_id)
         .map_err(store_err)?;
-    if let Some(model) = &mut input.settings.model {
+    apply_global_update(state, input.settings).await
+}
+
+pub(super) async fn workspace_update(
+    state: &AppState,
+    raw: Option<Value>,
+) -> Result<Value, RpcError> {
+    let input: WorkspaceModelUpdate = params(raw)?;
+    state
+        .store
+        .get_workspace(&input.workspace_id)
+        .map_err(store_err)?;
+    apply_global_update(state, input.settings).await
+}
+
+pub(super) async fn global_update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: GlobalModelUpdate = params(raw)?;
+    apply_global_update(state, input.settings).await
+}
+
+async fn apply_global_update(
+    state: &AppState,
+    mut settings: SessionModelSettings,
+) -> Result<Value, RpcError> {
+    let baseline = state.settings.lock().unwrap().provider.clone();
+    validate_settings(&baseline, &mut settings).await?;
+    let mut daemon_settings = state.settings.lock().unwrap().clone();
+    if let Some(provider) = &mut daemon_settings.provider {
+        crate::session_models::apply_selection(provider, &settings);
+    }
+    state
+        .update_settings(daemon_settings)
+        .map_err(|error| RpcError::new(ErrorCode::InternalError, error))?;
+    state
+        .store
+        .set_global_model_settings(&settings)
+        .map_err(store_err)?;
+    state.emit(Event::GlobalModelSettingsChanged {
+        settings: settings.clone(),
+    });
+    let effective = state.settings.lock().unwrap().provider.clone();
+    to_value(
+        json!({ "settings": settings, "effective": effective.map(|config| json!({
+        "model": config.model, "apiProtocol": config.api_protocol, "reasoningEffort": config.reasoning_effort,
+    })) }),
+    )
+}
+
+async fn validate_settings(
+    baseline: &Option<miniq_models::ProviderConfig>,
+    settings: &mut SessionModelSettings,
+) -> Result<(), RpcError> {
+    if let Some(model) = &mut settings.model {
         *model = model.trim().to_string();
         if model.is_empty() || model.chars().any(char::is_control) {
             return Err(RpcError::new(
@@ -74,12 +129,11 @@ pub(super) async fn update(state: &AppState, raw: Option<Value>) -> Result<Value
             ));
         }
     }
-    let baseline = state.settings.lock().unwrap().provider.clone();
-    if let Some(effort) = input.settings.reasoning_effort {
+    if let Some(effort) = settings.reasoning_effort {
         let mut config = baseline.clone().ok_or_else(|| {
             RpcError::new(ErrorCode::InvalidParams, "configure a model provider first")
         })?;
-        crate::session_models::apply_selection(&mut config, &input.settings);
+        crate::session_models::apply_selection(&mut config, settings);
         let provider = ConfiguredProvider::new(config.clone());
         let protocol = provider.protocol().await.map_err(provider_err)?;
         let choices = provider
@@ -94,37 +148,7 @@ pub(super) async fn update(state: &AppState, raw: Option<Value>) -> Result<Value
             ));
         }
     }
-    // The same lock guards begin_turn, so configuration and a new turn cannot
-    // race between validation of the idle state and persistence.
-    let active = state.active_turns.lock().unwrap();
-    if active.contains_key(&input.session_id) {
-        return Err(RpcError::new(
-            ErrorCode::SessionBusy,
-            "wait for the current turn to finish before changing its model",
-        ));
-    }
-    if state.settings.lock().unwrap().provider != baseline {
-        return Err(RpcError::new(
-            ErrorCode::InvalidParams,
-            "provider settings changed; reload and retry",
-        ));
-    }
-    let workspace_id = state
-        .store
-        .get_session(&input.session_id)
-        .map_err(store_err)?
-        .workspace_id;
-    state
-        .store
-        .set_workspace_model_settings_for_session(&input.session_id, &input.settings)
-        .map_err(store_err)?;
-    drop(active);
-    state.emit(Event::ModelSettingsChanged {
-        session_id: input.session_id.clone(),
-        workspace_id,
-        settings: input.settings,
-    });
-    get(state, Some(json!({ "sessionId": input.session_id })))
+    Ok(())
 }
 
 pub(super) async fn catalog(state: &AppState) -> Result<Value, RpcError> {

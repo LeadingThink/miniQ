@@ -13,7 +13,6 @@ import { useFilePreview } from "./useFilePreview";
 import { useSessionLifecycleActions } from "./useSessionLifecycleActions";
 import { useSessionFeed } from "./useSessionFeed";
 import { useSessionModel } from "./useSessionModel";
-import type { SessionModelSettings } from "../modelSelection";
 import { useSessionDiff } from "./useSessionDiff";
 import { useTaskNotifications } from "./useTaskNotifications";
 import { useSessionError } from "./useSessionError";
@@ -279,7 +278,6 @@ function useTurnActions(
   catalog: Catalog,
   lifecycle: SessionLifecycle,
   setError: ErrorSetter,
-  modelSettings: SessionModelSettings,
 ) {
   const { openSession } = lifecycle;
 
@@ -332,7 +330,6 @@ function useTurnActions(
       try {
         const epoch = catalog.navigationEpoch.current;
         const session = await client.call<Session>("session.create", { workspaceId: catalog.selectedWorkspace.id });
-        await client.call("session.modelUpdate", { sessionId: session.id, settings: modelSettings });
         await client.call("session.sendMessage", {
           sessionId: session.id,
           message: { role: "user", content, attachments },
@@ -349,7 +346,6 @@ function useTurnActions(
       catalog.refreshSessions,
       catalog.selectedWorkspace,
       client,
-      modelSettings,
       catalog.navigationEpoch,
       openSession,
       setError,
@@ -512,7 +508,7 @@ export function useMiniqApp() {
     markSessionSeen,
     setSessionError,
   );
-  const turnActions = useTurnActions(client, catalog, lifecycle, setError, sessionModel.settings);
+  const turnActions = useTurnActions(client, catalog, lifecycle, setError);
   const interactionActions = useInteractionActions(client, setError, review.refresh);
   const lastResyncedConnection = useRef(0);
   useEffect(() => {

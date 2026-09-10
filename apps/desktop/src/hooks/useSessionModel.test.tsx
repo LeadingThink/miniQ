@@ -79,23 +79,80 @@ it("reloads sessions in the changed workspace on model-change broadcasts", async
   await waitFor(() => expect(hook.result.current.effective?.model).toBe("two"));
 });
 
-it("keeps new-session model choices local instead of changing the global provider", async () => {
-  const call = vi
-    .fn()
-    .mockResolvedValue({ provider: result("global").effective });
+it("reloads sessions on workspace model-change broadcasts", async () => {
+  const call = vi.fn().mockResolvedValue(result("one"));
+  const { client, emit } = fakeClient(call);
+  const hook = renderHook(() => useSessionModel(client, "a", "study"));
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  call.mockResolvedValue(result("two"));
+
+  act(() =>
+    emit({
+      type: "workspace_model_settings_changed",
+      workspaceId: "study",
+      settings: DEFAULT_MODEL_SETTINGS,
+    })
+  );
+
+  await waitFor(() => expect(hook.result.current.effective?.model).toBe("two"));
+});
+
+it("reloads sessions in any workspace on global model-change broadcasts", async () => {
+  const call = vi.fn().mockResolvedValue(result("one"));
+  const { client, emit } = fakeClient(call);
+  const hook = renderHook(() => useSessionModel(client, "a", "study"));
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  call.mockResolvedValue(result("global"));
+
+  act(() =>
+    emit({
+      type: "global_model_settings_changed",
+      settings: { ...DEFAULT_MODEL_SETTINGS, model: "global" },
+    })
+  );
+
+  await waitFor(() =>
+    expect(hook.result.current.effective?.model).toBe("global")
+  );
+});
+
+it("updates the global model from a project draft", async () => {
+  const call = vi.fn((method) =>
+    Promise.resolve(
+      method === "workspace.modelGet"
+        ? result("workspace-model")
+        : result("updated-model")
+    )
+  );
   const { client } = fakeClient(call);
-  const hook = renderHook(() => useSessionModel(client, null));
+  const hook = renderHook(() => useSessionModel(client, null, "study"));
   await waitFor(() => expect(hook.result.current.ready).toBe(true));
   await act(async () =>
     hook.result.current.update({
       ...DEFAULT_MODEL_SETTINGS,
-      model: "custom-oneapi-id",
+      model: "updated-model",
     })
   );
-  expect(hook.result.current.effective?.model).toBe("custom-oneapi-id");
-  expect(call.mock.calls.every(([method]) => method === "settings.get")).toBe(
-    true
-  );
+  expect(hook.result.current.effective?.model).toBe("updated-model");
+  expect(call).toHaveBeenLastCalledWith("model.update", {
+    settings: {
+      ...DEFAULT_MODEL_SETTINGS,
+      model: "updated-model",
+    },
+  });
+});
+
+it("updates the global model from an existing session", async () => {
+  const call = vi.fn().mockResolvedValue(result("updated-model"));
+  const { client } = fakeClient(call);
+  const hook = renderHook(() => useSessionModel(client, "session-a", "study"));
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+
+  await act(async () => hook.result.current.update(DEFAULT_MODEL_SETTINGS));
+
+  expect(call).toHaveBeenLastCalledWith("model.update", {
+    settings: DEFAULT_MODEL_SETTINGS,
+  });
 });
 
 it("loads the selected workspace model for a project draft", async () => {
@@ -138,7 +195,7 @@ it("does not show the previous workspace model while switching projects", async 
 it("does not display an old session's update failure in the newly selected session", async () => {
   let reject!: (cause: Error) => void;
   const call = vi.fn((method, params) =>
-    method === "session.modelUpdate"
+    method === "model.update"
       ? new Promise((_done, fail) => {
           reject = fail;
         })
@@ -165,13 +222,26 @@ it("does not display an old session's update failure in the newly selected sessi
 });
 
 it("shows a new-session protocol override even when the model is inherited", async () => {
-  const call = vi.fn().mockResolvedValue({
-    provider: {
-      model: "global",
-      apiProtocol: "responses",
-      reasoningEffort: null,
-    },
-  });
+  const call = vi.fn((method, params) =>
+    Promise.resolve(
+      method === "settings.get"
+        ? {
+            provider: {
+              model: "global",
+              apiProtocol: "responses",
+              reasoningEffort: null,
+            },
+          }
+        : {
+            settings: params.settings,
+            effective: {
+              model: "global",
+              apiProtocol: params.settings.apiProtocol,
+              reasoningEffort: null,
+            },
+          }
+    )
+  );
   const { client } = fakeClient(call);
   const hook = renderHook(() => useSessionModel(client, null));
   await waitFor(() => expect(hook.result.current.ready).toBe(true));
@@ -188,13 +258,13 @@ it("shows a new-session protocol override even when the model is inherited", asy
     reasoningEffort: null,
   });
   await act(async () => hook.result.current.update(DEFAULT_MODEL_SETTINGS));
-  expect(hook.result.current.effective?.apiProtocol).toBe("responses");
+  expect(hook.result.current.effective?.apiProtocol).toBe("auto");
 });
 
 it("hides the previous model and error while the next session is loading", async () => {
   let resolveB!: (value: SessionModelResult) => void;
   const call = vi.fn((method, params) => {
-    if (method === "session.modelUpdate")
+    if (method === "model.update")
       return Promise.reject(new Error("A configuration failed"));
     if (params.sessionId === "a") return Promise.resolve(result("model-a"));
     return new Promise<SessionModelResult>((resolve) => {
@@ -220,12 +290,12 @@ it("hides the previous model and error while the next session is loading", async
   expect(hook.result.current.effective?.model).toBe("model-b");
 });
 
-it("does not let another session's pending update block or finish the current update", async () => {
-  const complete = new Map<string, (value: SessionModelResult) => void>();
+it("blocks another global model update while one is pending", async () => {
+  let complete!: (value: SessionModelResult) => void;
   const call = vi.fn((method, params) =>
-    method === "session.modelUpdate"
+    method === "model.update"
       ? new Promise<SessionModelResult>((resolve) => {
-          complete.set(params.sessionId, resolve);
+          complete = resolve;
         })
       : Promise.resolve(result(params.sessionId))
   );
@@ -235,27 +305,17 @@ it("does not let another session's pending update block or finish the current up
   });
   await waitFor(() => expect(hook.result.current.ready).toBe(true));
   let updateA!: Promise<void>;
-  let updateB!: Promise<void>;
   act(() => {
     updateA = hook.result.current.update(DEFAULT_MODEL_SETTINGS);
   });
   hook.rerender({ id: "b" });
   await waitFor(() => expect(hook.result.current.ready).toBe(true));
-  expect(hook.result.current.pending).toBe(false);
-  act(() => {
-    updateB = hook.result.current.update(DEFAULT_MODEL_SETTINGS);
-  });
   expect(hook.result.current.pending).toBe(true);
+  await act(async () => hook.result.current.update(DEFAULT_MODEL_SETTINGS));
+  expect(call.mock.calls.filter(([method]) => method === "model.update")).toHaveLength(1);
   await act(async () => {
-    complete.get("a")!(result("updated-a"));
+    complete(result("updated-a"));
     await updateA;
   });
-  expect(hook.result.current.pending).toBe(true);
-  expect(hook.result.current.effective?.model).toBe("b");
-  await act(async () => {
-    complete.get("b")!(result("updated-b"));
-    await updateB;
-  });
   expect(hook.result.current.pending).toBe(false);
-  expect(hook.result.current.effective?.model).toBe("updated-b");
 });

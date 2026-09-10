@@ -400,9 +400,16 @@ export function useSessionFeed(options: SessionFeedOptions) {
         event.type === "workspace_deleted" ||
         event.type === "workspace_renamed" ||
         event.type === "workspace_updated" ||
+        event.type === "global_model_settings_changed" ||
+        event.type === "workspace_model_settings_changed" ||
         event.type === "plugins_changed"
       ) {
-        if (event.type === "plugins_changed") return;
+        if (
+          event.type === "plugins_changed" ||
+          event.type === "global_model_settings_changed" ||
+          event.type === "workspace_model_settings_changed"
+        )
+          return;
         void refreshSessions();
         return;
       }

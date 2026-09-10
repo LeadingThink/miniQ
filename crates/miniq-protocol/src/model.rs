@@ -50,3 +50,16 @@ pub struct SessionModelUpdate {
     pub session_id: String,
     pub settings: SessionModelSettings,
 }
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceModelUpdate {
+    pub workspace_id: String,
+    pub settings: SessionModelSettings,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GlobalModelUpdate {
+    pub settings: SessionModelSettings,
+}

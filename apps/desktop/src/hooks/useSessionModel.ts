@@ -21,13 +21,11 @@ export function useSessionModel(
   const [loadedContext, setLoadedContext] = useState<string | undefined>();
   const currentSession = useRef(sessionId);
   currentSession.current = sessionId;
-  const [pendingSessions, setPendingSessions] = useState(
-    new Set<string | null>()
-  );
+  const [pending, setPending] = useState(false);
   const [error, setError] = useSessionError(sessionId ?? "draft");
   const newSessionSelection = useRef(DEFAULT_MODEL_SETTINGS);
   const generation = useRef(0);
-  const updatePending = useRef(new Set<string | null>());
+  const updatePending = useRef(false);
 
   const reload = useCallback(async () => {
     const request = ++generation.current;
@@ -78,8 +76,10 @@ export function useSessionModel(
     });
     const stopEvents = client.onEvent((event) => {
       if (
-        event.type === "model_settings_changed" &&
-        (event.sessionId === sessionId || event.workspaceId === workspaceId)
+        event.type === "global_model_settings_changed" ||
+        ((event.type === "model_settings_changed" ||
+          event.type === "workspace_model_settings_changed") &&
+          event.workspaceId === workspaceId)
       )
         void reload();
     });
@@ -91,28 +91,23 @@ export function useSessionModel(
   }, [client, reload, sessionId, workspaceId]);
 
   const update = async (settings: SessionModelSettings) => {
-    if (updatePending.current.has(sessionId)) return;
-    updatePending.current.add(sessionId);
+    if (updatePending.current) return;
+    updatePending.current = true;
     const request = generation.current;
-    setPendingSessions(new Set(updatePending.current));
+    setPending(true);
     try {
-      if (sessionId) {
-        const next = await client.call<SessionModelResult>(
-          "session.modelUpdate",
-          { sessionId, settings }
-        );
-        if (request === generation.current) setResult(next);
-      } else {
-        newSessionSelection.current = settings;
-        await reload();
-      }
+      const next = await client.call<SessionModelResult>("model.update", {
+        settings,
+      });
+      newSessionSelection.current = settings;
+      if (request === generation.current) setResult(next);
       if (currentSession.current === sessionId) setError(null);
     } catch (cause) {
       if (currentSession.current === sessionId) setError(String(cause));
       throw cause;
     } finally {
-      updatePending.current.delete(sessionId);
-      setPendingSessions(new Set(updatePending.current));
+      updatePending.current = false;
+      setPending(false);
     }
   };
   return {
@@ -120,7 +115,7 @@ export function useSessionModel(
       ? result
       : { settings: DEFAULT_MODEL_SETTINGS, effective: null }),
     ready: ready && loadedContext === modelContext,
-    pending: pendingSessions.has(sessionId),
+    pending,
     error,
     update,
     reload,

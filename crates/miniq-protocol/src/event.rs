@@ -28,6 +28,14 @@ pub enum Event {
         workspace_id: String,
         settings: crate::SessionModelSettings,
     },
+    WorkspaceModelSettingsChanged {
+        #[serde(rename = "workspaceId")]
+        workspace_id: String,
+        settings: crate::SessionModelSettings,
+    },
+    GlobalModelSettingsChanged {
+        settings: crate::SessionModelSettings,
+    },
     /// Session status changed (idle/running/waiting_approval/...).
     SessionStatusChanged {
         #[serde(rename = "sessionId")]
@@ -236,7 +244,9 @@ impl Event {
             | Event::SessionPinnedChanged { session_id, .. }
             | Event::SessionArchivedChanged { session_id, .. }
             | Event::QueueChanged { session_id, .. } => session_id,
-            Event::WorkspaceDeleted { .. }
+            Event::GlobalModelSettingsChanged { .. }
+            | Event::WorkspaceModelSettingsChanged { .. }
+            | Event::WorkspaceDeleted { .. }
             | Event::WorkspaceRenamed { .. }
             | Event::WorkspaceUpdated { .. }
             | Event::PluginsChanged { .. } => "",

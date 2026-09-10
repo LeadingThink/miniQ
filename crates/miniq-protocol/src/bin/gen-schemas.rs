@@ -76,6 +76,14 @@ fn main() {
             schema_for!(miniq_protocol::SessionModelUpdate),
         ),
         (
+            "workspaceModelUpdate",
+            schema_for!(miniq_protocol::WorkspaceModelUpdate),
+        ),
+        (
+            "globalModelUpdate",
+            schema_for!(miniq_protocol::GlobalModelUpdate),
+        ),
+        (
             "sessionApprovalUpdate",
             schema_for!(miniq_protocol::SessionApprovalUpdate),
         ),
