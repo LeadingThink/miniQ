@@ -318,6 +318,7 @@ export type DaemonEvent = {
   | {
       type: "model_settings_changed";
       sessionId: string;
+      workspaceId: string;
       settings: import("./modelSelection").SessionModelSettings;
     }
   | { type: "session_status_changed"; sessionId: string; status: SessionStatus }

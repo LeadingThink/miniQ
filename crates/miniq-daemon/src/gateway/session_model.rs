@@ -14,6 +14,12 @@ struct SessionParams {
     session_id: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceParams {
+    workspace_id: String,
+}
+
 pub(super) fn get(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: SessionParams = params(raw)?;
     let settings = state
@@ -23,6 +29,29 @@ pub(super) fn get(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErro
     let effective = state
         .provider_config_for_session(&input.session_id, None)
         .map_err(store_err)?;
+    to_value(
+        json!({ "settings": settings, "effective": effective.map(|config| json!({
+        "model": config.model, "apiProtocol": config.api_protocol, "reasoningEffort": config.reasoning_effort,
+    })) }),
+    )
+}
+
+pub(super) fn workspace_get(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: WorkspaceParams = params(raw)?;
+    let settings = state
+        .store
+        .workspace_model_settings(&input.workspace_id)
+        .map_err(store_err)?;
+    let effective = state
+        .settings
+        .lock()
+        .unwrap()
+        .provider
+        .clone()
+        .map(|mut config| {
+            crate::session_models::apply_selection(&mut config, &settings);
+            config
+        });
     to_value(
         json!({ "settings": settings, "effective": effective.map(|config| json!({
         "model": config.model, "apiProtocol": config.api_protocol, "reasoningEffort": config.reasoning_effort,
@@ -80,13 +109,19 @@ pub(super) async fn update(state: &AppState, raw: Option<Value>) -> Result<Value
             "provider settings changed; reload and retry",
         ));
     }
+    let workspace_id = state
+        .store
+        .get_session(&input.session_id)
+        .map_err(store_err)?
+        .workspace_id;
     state
         .store
-        .set_session_model_settings(&input.session_id, &input.settings)
+        .set_workspace_model_settings_for_session(&input.session_id, &input.settings)
         .map_err(store_err)?;
     drop(active);
     state.emit(Event::ModelSettingsChanged {
         session_id: input.session_id.clone(),
+        workspace_id,
         settings: input.settings,
     });
     get(state, Some(json!({ "sessionId": input.session_id })))

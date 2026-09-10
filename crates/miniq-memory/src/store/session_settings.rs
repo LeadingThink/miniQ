@@ -90,6 +90,21 @@ impl Store {
             .map(Option::unwrap_or_default)
     }
 
+    pub fn workspace_model_settings(&self, workspace_id: &str) -> Result<SessionModelSettings> {
+        self.get_workspace(workspace_id)?;
+        let conn = self.conn.lock().unwrap();
+        let raw: Option<String> = conn
+            .query_row(
+                "SELECT settings_json FROM workspace_model_settings WHERE workspace_id = ?1",
+                params![workspace_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        raw.map(|raw| serde_json::from_str(&raw).map_err(Into::into))
+            .transpose()
+            .map(Option::unwrap_or_default)
+    }
+
     pub fn set_session_model_settings(
         &self,
         session_id: &str,
@@ -101,6 +116,37 @@ impl Store {
              ON CONFLICT(session_id) DO UPDATE SET settings_json = excluded.settings_json",
             params![session_id, serde_json::to_string(settings)?],
         )?;
+        Ok(())
+    }
+
+    pub fn set_workspace_model_settings_for_session(
+        &self,
+        session_id: &str,
+        settings: &SessionModelSettings,
+    ) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let transaction = conn.transaction()?;
+        let workspace_id: String = transaction
+            .query_row(
+                "SELECT workspace_id FROM sessions WHERE id = ?1",
+                params![session_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| super::MemoryError::NotFound(format!("session {session_id}")))?;
+        let settings_json = serde_json::to_string(settings)?;
+        transaction.execute(
+            "INSERT INTO session_model_settings (session_id, settings_json)
+             SELECT id, ?2 FROM sessions WHERE workspace_id = ?1
+             ON CONFLICT(session_id) DO UPDATE SET settings_json = excluded.settings_json",
+            params![workspace_id, settings_json],
+        )?;
+        transaction.execute(
+            "INSERT INTO workspace_model_settings (workspace_id, settings_json) VALUES (?1, ?2)
+             ON CONFLICT(workspace_id) DO UPDATE SET settings_json = excluded.settings_json",
+            params![workspace_id, settings_json],
+        )?;
+        transaction.commit()?;
         Ok(())
     }
 }
@@ -153,5 +199,45 @@ mod tests {
         assert!(store
             .set_session_model_settings("missing", &settings)
             .is_err());
+    }
+
+    #[test]
+    fn workspace_model_settings_apply_to_existing_and_new_sessions() {
+        let store = Store::open_in_memory().unwrap();
+        let first_workspace = store.create_workspace("/first", "first").unwrap();
+        let second_workspace = store.create_workspace("/second", "second").unwrap();
+        let first = store.create_session(&first_workspace.id, "first").unwrap();
+        let existing = store
+            .create_session(&first_workspace.id, "existing")
+            .unwrap();
+        let unrelated = store
+            .create_session(&second_workspace.id, "unrelated")
+            .unwrap();
+        let settings = SessionModelSettings {
+            model: Some("gpt-5.6-sol".into()),
+            api_protocol: ApiProtocol::Responses,
+            reasoning_effort: Some(ReasoningEffort::High),
+        };
+
+        store
+            .set_workspace_model_settings_for_session(&first.id, &settings)
+            .unwrap();
+        let inherited = store
+            .create_session(&first_workspace.id, "inherited")
+            .unwrap();
+
+        assert_eq!(store.session_model_settings(&first.id).unwrap(), settings);
+        assert_eq!(
+            store.session_model_settings(&inherited.id).unwrap(),
+            settings
+        );
+        assert_eq!(
+            store.session_model_settings(&existing.id).unwrap(),
+            settings
+        );
+        assert_eq!(
+            store.session_model_settings(&unrelated.id).unwrap(),
+            SessionModelSettings::default()
+        );
     }
 }

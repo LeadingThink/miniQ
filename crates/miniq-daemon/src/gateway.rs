@@ -95,6 +95,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "tool.detail" => session_history::tool_detail(state, req.params),
         "session.acknowledgeFailure" => session_attention::acknowledge_failure(state, req.params),
         "session.modelGet" => session_model::get(state, req.params),
+        "workspace.modelGet" => session_model::workspace_get(state, req.params),
         "session.modelUpdate" => session_model::update(state, req.params).await,
         "model.list" => session_model::catalog(state).await,
         "model.describe" => session_model::describe(state, req.params).await,

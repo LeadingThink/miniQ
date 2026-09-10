@@ -48,18 +48,14 @@ it.each(["baseUrl", "apiKey"] as const)(
     expect(oldSignal.aborted).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "获取模型列表" }));
     await waitFor(() =>
-      expect(
-        view.container.querySelector('option[value="new-model"]'),
-      ).not.toBeNull(),
+      expect(screen.getByRole("button", { name: "Model" })).toBeTruthy(),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Model" }));
+    expect(screen.getByRole("option", { name: "new-model" })).toBeTruthy();
     finishOld({ models: ["old-model"] });
     await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
-    expect(
-      view.container.querySelector('option[value="old-model"]'),
-    ).toBeNull();
-    expect((screen.getByLabelText("Model") as HTMLInputElement).value).toBe(
-      "custom",
-    );
+    expect(screen.queryByRole("option", { name: "old-model" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Model" }).textContent).toContain("custom");
     expect(props.onChange).not.toHaveBeenCalled();
   },
 );

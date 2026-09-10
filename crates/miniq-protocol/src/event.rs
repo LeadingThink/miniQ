@@ -24,6 +24,8 @@ pub enum Event {
     ModelSettingsChanged {
         #[serde(rename = "sessionId")]
         session_id: String,
+        #[serde(rename = "workspaceId")]
+        workspace_id: String,
         settings: crate::SessionModelSettings,
     },
     /// Session status changed (idle/running/waiting_approval/...).

@@ -50,8 +50,9 @@ fn model_catalog_url_adds_v1_only_for_a_bare_domain() {
 }
 
 #[tokio::test]
-async fn session_update_is_independent_and_never_exposes_credentials() {
+async fn session_update_applies_to_the_workspace_and_never_exposes_credentials() {
     let (state, a, b) = state();
+    let workspace_id = state.store.get_session(&a).unwrap().workspace_id;
     let baseline = state.settings.lock().unwrap().provider.clone();
     let response = update(&state, Some(json!({"sessionId":a,"settings":{"model":" custom/model ","apiProtocol":"chat_completions"}}))).await.unwrap();
     assert_eq!(response["effective"]["model"], "custom/model");
@@ -59,13 +60,26 @@ async fn session_update_is_independent_and_never_exposes_credentials() {
     assert!(!response.to_string().contains("baseUrl"));
     assert_eq!(
         state.store.session_model_settings(&b).unwrap(),
-        SessionModelSettings::default()
+        state.store.session_model_settings(&a).unwrap()
     );
+    let next = state.store.create_session(&workspace_id, "next").unwrap();
+    assert_eq!(
+        state.store.session_model_settings(&next.id).unwrap(),
+        state.store.session_model_settings(&a).unwrap()
+    );
+    let workspace = workspace_get(&state, Some(json!({"workspaceId": workspace_id}))).unwrap();
+    assert_eq!(workspace["settings"]["model"], "custom/model");
+    assert_eq!(workspace["effective"]["model"], "custom/model");
+    assert!(!workspace.to_string().contains("private-key"));
     assert_eq!(state.settings.lock().unwrap().provider, baseline);
     let restored = update(&state, Some(json!({"sessionId":a,"settings":{}})))
         .await
         .unwrap();
     assert_eq!(restored["effective"]["model"], "gpt-5.6-sol");
+    assert_eq!(
+        state.store.session_model_settings(&b).unwrap(),
+        SessionModelSettings::default()
+    );
     assert!(get(&state, Some(json!({"sessionId":"missing"}))).is_err());
 }
 

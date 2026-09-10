@@ -61,12 +61,13 @@ impl Store {
     }
 
     pub fn create_session(&self, workspace_id: &str, title: &str) -> Result<Session> {
-        let conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap();
+        let transaction = conn.transaction()?;
         let now = now_iso();
         let session = Session {
             id: new_id("sess"),
             workspace_id: workspace_id.to_string(),
-            working_directory: conn.query_row(
+            working_directory: transaction.query_row(
                 "SELECT path FROM workspaces WHERE id = ?1",
                 params![workspace_id],
                 |row| row.get(0),
@@ -79,7 +80,7 @@ impl Store {
             created_at: now.clone(),
             updated_at: now,
         };
-        conn.execute(
+        transaction.execute(
             "INSERT INTO sessions (id, workspace_id, title, status, pinned, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
@@ -92,6 +93,12 @@ impl Store {
                 session.updated_at
             ],
         )?;
+        transaction.execute(
+            "INSERT INTO session_model_settings (session_id, settings_json)
+             SELECT ?1, settings_json FROM workspace_model_settings WHERE workspace_id = ?2",
+            params![session.id, workspace_id],
+        )?;
+        transaction.commit()?;
         Ok(session)
     }
 

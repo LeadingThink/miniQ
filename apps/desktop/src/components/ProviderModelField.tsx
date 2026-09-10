@@ -1,5 +1,5 @@
-import { RefreshCw } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { Check, ChevronDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
 
@@ -20,12 +20,13 @@ export function ProviderModelField({
   onChange: (model: string) => void;
   onStatus: (status: string | null) => void;
 }) {
-  const listId = useId();
   const [models, setModels] = useState<string[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const request = useRef<AbortController | null>(null);
   useEffect(() => {
     setModels([]);
+    setMenuOpen(false);
     setLoading(false);
     return () => {
       request.current?.abort();
@@ -68,30 +69,65 @@ export function ProviderModelField({
   };
   return (
     <span className="provider-model-control">
-      <input
-        aria-label="Model"
-        list={models.length ? listId : undefined}
-        value={model}
-        disabled={disabled}
-        spellCheck={false}
-        placeholder="gpt-4o-mini"
-        onChange={(event) => onChange(event.target.value)}
-      />
-      <datalist id={listId}>
-        {models.map((value) => (
-          <option key={value} value={value} />
-        ))}
-      </datalist>
+      {models.length > 0 ? (
+        <span className="provider-model-select">
+          <button
+            type="button"
+            className="provider-model-select-trigger"
+            aria-label="Model"
+            aria-haspopup="listbox"
+            aria-expanded={menuOpen}
+            disabled={disabled || loading}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <span>{model}</span>
+            <ChevronDown size={15} />
+          </button>
+          {menuOpen && (
+            <span className="provider-model-menu" role="listbox" aria-label="模型列表">
+              {model && !models.includes(model) && (
+                <button type="button" role="option" aria-selected onClick={() => setMenuOpen(false)}>
+                  <span>{model}</span>
+                  <Check size={14} />
+                </button>
+              )}
+              {models.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="option"
+                  aria-selected={value === model}
+                  onClick={() => {
+                    onChange(value);
+                    setMenuOpen(false);
+                  }}
+                >
+                  <span>{value}</span>
+                  {value === model && <Check size={14} />}
+                </button>
+              ))}
+            </span>
+          )}
+        </span>
+      ) : (
+        <input
+          aria-label="Model"
+          value={model}
+          disabled={disabled || loading}
+          spellCheck={false}
+          placeholder="gpt-4o-mini"
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
       <button
         type="button"
-        className="icon-button provider-model-list-button"
-        title="获取模型列表"
+        className="provider-model-list-button"
         aria-label="获取模型列表"
         aria-busy={loading}
         disabled={disabled || loading || !baseUrl.trim()}
         onClick={() => void load()}
       >
-        <RefreshCw size={16} />
+        <span>{loading ? "正在获取" : "获取模型列表"}</span>
       </button>
     </span>
   );

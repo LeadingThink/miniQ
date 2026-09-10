@@ -85,6 +85,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0013_session_approval",
         include_str!("../../../migrations/0013_session_approval.sql"),
     ),
+    (
+        "0014_workspace_model_settings",
+        include_str!("../../../migrations/0014_workspace_model_settings.sql"),
+    ),
 ];
 
 #[derive(Debug, Error)]

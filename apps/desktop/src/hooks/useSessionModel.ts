@@ -7,15 +7,18 @@ import {
 import type { RpcClient } from "../rpc";
 import { useSessionError } from "./useSessionError";
 
-export function useSessionModel(client: RpcClient, sessionId: string | null) {
+export function useSessionModel(
+  client: RpcClient,
+  sessionId: string | null,
+  workspaceId: string | null = null
+) {
   const [result, setResult] = useState<SessionModelResult>({
     settings: DEFAULT_MODEL_SETTINGS,
     effective: null,
   });
   const [ready, setReady] = useState(false);
-  const [loadedSession, setLoadedSession] = useState<string | null | undefined>(
-    undefined
-  );
+  const modelContext = sessionId ? `session:${sessionId}` : `workspace:${workspaceId ?? ""}`;
+  const [loadedContext, setLoadedContext] = useState<string | undefined>();
   const currentSession = useRef(sessionId);
   currentSession.current = sessionId;
   const [pendingSessions, setPendingSessions] = useState(
@@ -33,6 +36,8 @@ export function useSessionModel(client: RpcClient, sessionId: string | null) {
       let next: SessionModelResult;
       if (sessionId)
         next = await client.call("session.modelGet", { sessionId });
+      else if (workspaceId)
+        next = await client.call("workspace.modelGet", { workspaceId });
       else {
         const defaults = await client.call<{
           provider: SessionModelResult["effective"];
@@ -54,13 +59,13 @@ export function useSessionModel(client: RpcClient, sessionId: string | null) {
       }
       if (request !== generation.current) return;
       setResult(next);
-      setLoadedSession(sessionId);
+      setLoadedContext(modelContext);
       setError(null);
       setReady(true);
     } catch (cause) {
       if (request === generation.current) setError(String(cause));
     }
-  }, [client, sessionId, setError]);
+  }, [client, modelContext, sessionId, setError, workspaceId]);
 
   useEffect(() => {
     if (client.connected) void reload();
@@ -74,7 +79,7 @@ export function useSessionModel(client: RpcClient, sessionId: string | null) {
     const stopEvents = client.onEvent((event) => {
       if (
         event.type === "model_settings_changed" &&
-        event.sessionId === sessionId
+        (event.sessionId === sessionId || event.workspaceId === workspaceId)
       )
         void reload();
     });
@@ -83,7 +88,7 @@ export function useSessionModel(client: RpcClient, sessionId: string | null) {
       stopStatus();
       stopEvents();
     };
-  }, [client, reload, sessionId]);
+  }, [client, reload, sessionId, workspaceId]);
 
   const update = async (settings: SessionModelSettings) => {
     if (updatePending.current.has(sessionId)) return;
@@ -111,10 +116,10 @@ export function useSessionModel(client: RpcClient, sessionId: string | null) {
     }
   };
   return {
-    ...(loadedSession === sessionId
+    ...(loadedContext === modelContext
       ? result
       : { settings: DEFAULT_MODEL_SETTINGS, effective: null }),
-    ready: ready && loadedSession === sessionId,
+    ready: ready && loadedContext === modelContext,
     pending: pendingSessions.has(sessionId),
     error,
     update,

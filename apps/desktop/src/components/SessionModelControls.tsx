@@ -1,10 +1,9 @@
-import { Check, Cpu, RefreshCw, X } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { Check, ChevronDown, Cpu, RefreshCw, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   EFFORT_LABELS,
   PROTOCOL_LABELS,
   DEFAULT_MODEL_SETTINGS,
-  filterModelIds,
   type ApiProtocol,
   type ModelDescription,
   type ReasoningEffort,
@@ -30,10 +29,11 @@ export function SessionModelControls({
   const [description, setDescription] = useState<ModelDescription | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [modelListOpen, setModelListOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const selectedModelRef = useRef<HTMLButtonElement>(null);
   const [popoverMaxHeight, setPopoverMaxHeight] = useState<number | null>(null);
-  const listId = useId();
   const disabled = busy || model.pending || !model.ready;
 
   useEffect(() => {
@@ -104,6 +104,14 @@ export function SessionModelControls({
     };
   }, [client, open, attempt]);
 
+  useLayoutEffect(() => {
+    if (!modelListOpen) return;
+    const selectedModel = selectedModelRef.current;
+    if (typeof selectedModel?.scrollIntoView === "function") {
+      selectedModel.scrollIntoView({ block: "start" });
+    }
+  }, [modelListOpen, models, query]);
+
   return (
     <div ref={rootRef} className="session-model-controls">
       <button
@@ -120,7 +128,8 @@ export function SessionModelControls({
         }
         onClick={() => {
           setOpen(!open);
-          setQuery(model.settings.model ?? "");
+          setModelListOpen(false);
+          setQuery(model.settings.model ?? model.effective?.model ?? "");
           setProtocol(model.settings.apiProtocol);
         }}
       >
@@ -189,7 +198,8 @@ export function SessionModelControls({
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.stopPropagation();
-              setOpen(false);
+              if (modelListOpen) setModelListOpen(false);
+              else setOpen(false);
             }
           }}
         >
@@ -207,20 +217,69 @@ export function SessionModelControls({
           </header>
           <label>
             模型 ID
-            <input
-              autoFocus
-              list={listId}
-              value={query}
-              placeholder={model.effective?.model ?? "模型 ID"}
-              onChange={(event) => setQuery(event.target.value)}
-              spellCheck={false}
-            />
+            {models.length > 0 ? (
+              <span className="session-model-select">
+                <button
+                  type="button"
+                  className="session-model-select-trigger"
+                  aria-label="模型 ID"
+                  aria-haspopup="listbox"
+                  aria-expanded={modelListOpen}
+                  onClick={() => setModelListOpen((value) => !value)}
+                >
+                  <span>{query}</span>
+                  <ChevronDown size={15} />
+                </button>
+                {modelListOpen && (
+                  <span
+                    className="session-model-list"
+                    role="listbox"
+                    aria-label="会话模型列表"
+                  >
+                    {query && !models.includes(query) && (
+                      <button
+                        ref={selectedModelRef}
+                        type="button"
+                        role="option"
+                        aria-selected="true"
+                        onClick={() => setModelListOpen(false)}
+                      >
+                        <span>{query}</span>
+                        <Check size={14} />
+                      </button>
+                    )}
+                    {models.map((id) => {
+                      const selected = id === query;
+                      return (
+                        <button
+                          key={id}
+                          ref={selected ? selectedModelRef : undefined}
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          onClick={() => {
+                            setQuery(id);
+                            setModelListOpen(false);
+                          }}
+                        >
+                          <span>{id}</span>
+                          {selected && <Check size={14} />}
+                        </button>
+                      );
+                    })}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <input
+                autoFocus
+                value={query}
+                placeholder={model.effective?.model ?? "模型 ID"}
+                onChange={(event) => setQuery(event.target.value)}
+                spellCheck={false}
+              />
+            )}
           </label>
-          <datalist id={listId}>
-            {filterModelIds(models, query).map((id) => (
-              <option key={id} value={id} />
-            ))}
-          </datalist>
           <label>
             API 协议
             <select
@@ -274,7 +333,6 @@ export function SessionModelControls({
               onClick={() =>
                 void model
                   .update(DEFAULT_MODEL_SETTINGS)
-                  .then(() => setOpen(false))
                   .catch(() => {})
               }
             >

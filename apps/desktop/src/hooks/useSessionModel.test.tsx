@@ -53,15 +53,16 @@ it("ignores stale model loads after switching sessions", async () => {
   expect(hook.result.current.effective?.model).toBe("model-b");
 });
 
-it("reloads only this session on model-change broadcasts", async () => {
+it("reloads sessions in the changed workspace on model-change broadcasts", async () => {
   const call = vi.fn().mockResolvedValue(result("one"));
   const { client, emit } = fakeClient(call);
-  const hook = renderHook(() => useSessionModel(client, "a"));
+  const hook = renderHook(() => useSessionModel(client, "a", "study"));
   await waitFor(() => expect(hook.result.current.ready).toBe(true));
   act(() =>
     emit({
       type: "model_settings_changed",
       sessionId: "b",
+      workspaceId: "other",
       settings: DEFAULT_MODEL_SETTINGS,
     })
   );
@@ -70,7 +71,8 @@ it("reloads only this session on model-change broadcasts", async () => {
   act(() =>
     emit({
       type: "model_settings_changed",
-      sessionId: "a",
+      sessionId: "b",
+      workspaceId: "study",
       settings: DEFAULT_MODEL_SETTINGS,
     })
   );
@@ -94,6 +96,43 @@ it("keeps new-session model choices local instead of changing the global provide
   expect(call.mock.calls.every(([method]) => method === "settings.get")).toBe(
     true
   );
+});
+
+it("loads the selected workspace model for a project draft", async () => {
+  const call = vi.fn().mockResolvedValue(result("workspace-model"));
+  const { client } = fakeClient(call);
+  const hook = renderHook(() => useSessionModel(client, null, "study"));
+
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+
+  expect(hook.result.current.effective?.model).toBe("workspace-model");
+  expect(call).toHaveBeenCalledWith("workspace.modelGet", {
+    workspaceId: "study",
+  });
+});
+
+it("does not show the previous workspace model while switching projects", async () => {
+  let resolveSecond!: (value: SessionModelResult) => void;
+  const call = vi.fn((_method, params) =>
+    params.workspaceId === "first"
+      ? Promise.resolve(result("first-model"))
+      : new Promise<SessionModelResult>((done) => {
+          resolveSecond = done;
+        })
+  );
+  const { client } = fakeClient(call);
+  const hook = renderHook(
+    ({ workspaceId }) => useSessionModel(client, null, workspaceId),
+    { initialProps: { workspaceId: "first" } }
+  );
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+
+  hook.rerender({ workspaceId: "second" });
+
+  expect(hook.result.current.ready).toBe(false);
+  expect(hook.result.current.effective).toBeNull();
+  await act(async () => resolveSecond(result("second-model")));
+  expect(hook.result.current.effective?.model).toBe("second-model");
 });
 
 it("does not display an old session's update failure in the newly selected session", async () => {

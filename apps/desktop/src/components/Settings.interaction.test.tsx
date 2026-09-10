@@ -109,9 +109,12 @@ describe("appearance settings integration", () => {
     await waitFor(() =>
       expect(call).toHaveBeenCalledWith("settings.models", { baseUrl: "https://example.test/v1" }, { signal: expect.any(AbortSignal) }),
     );
-    const model = await screen.findByRole("combobox", { name: "Model" });
-    fireEvent.change(model, { target: { value: "beta" } });
-    expect((model as HTMLSelectElement).value).toBe("beta");
+    const model = await screen.findByRole("button", { name: "Model" });
+    fireEvent.click(model);
+    const list = screen.getByRole("listbox", { name: "模型列表" });
+    expect(list.className).toContain("provider-model-menu");
+    fireEvent.click(screen.getByRole("option", { name: "beta" }));
+    expect(model.textContent).toContain("beta");
     expect(screen.getByText("已获取 2 个模型")).toBeTruthy();
     fireEvent.change(model, { target: { value: "custom-provider-model" } });
     expect((model as HTMLInputElement).value).toBe("custom-provider-model");

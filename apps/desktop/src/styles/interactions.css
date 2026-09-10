@@ -480,6 +480,74 @@
   width: 100%;
 }
 
+.provider-model-select {
+  position: relative;
+  min-width: 0;
+}
+
+.settings-panel .provider-model-select-trigger {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  padding: 9px 11px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.provider-model-select-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-model-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 80;
+  max-height: min(220px, calc(100dvh - 180px));
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+}
+
+.settings-panel .provider-model-menu > button {
+  width: 100%;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  padding: 7px 9px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  font: inherit;
+  text-align: left;
+}
+
+.settings-panel .provider-model-menu > button:hover,
+.settings-panel .provider-model-menu > button[aria-selected="true"] {
+  background: var(--bg-hover);
+}
+
+.provider-model-menu > button span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .settings-panel .provider-model-list-button {
   min-height: 36px;
   padding-inline: 12px;

@@ -437,7 +437,11 @@ export function useMiniqApp() {
   const [sessionError, setError, setSessionError] = useSessionError(
     catalog.currentSessionId ?? `draft:${catalog.selectedWorkspace?.id ?? ""}`,
   );
-  const sessionModel = useSessionModel(client, catalog.currentSessionId);
+  const sessionModel = useSessionModel(
+    client,
+    catalog.currentSessionId,
+    catalog.selectedWorkspaceId,
+  );
   const markSessionSeen = useCallback((sessionId: string) => {
     setUnreadSessionIds((current) => {
       if (!current.has(sessionId)) return current;
