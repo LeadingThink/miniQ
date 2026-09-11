@@ -134,6 +134,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MINIQ_SKIP_DAEMON_SIDECAR: "1"
         run: |
           if [ "${{ runner.os }}" = "macOS" ]; then
             apple_signing_ready=true

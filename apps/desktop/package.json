@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "prepare:daemon": "node scripts/prepare-daemon-sidecar.mjs",
     "mobile:sync": "npm run build && cap sync",
     "mobile:android": "npm run mobile:sync && cap build android",
     "mobile:ios": "npm run mobile:sync && cap open ios",

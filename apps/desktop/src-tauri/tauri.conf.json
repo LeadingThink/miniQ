@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "cargo build --manifest-path ../../Cargo.toml -p miniq-daemon && npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run prepare:daemon && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
