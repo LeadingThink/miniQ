@@ -115,6 +115,34 @@ async fn next_payload(socket: &mut Socket) -> Value {
 }
 
 #[tokio::test]
+async fn large_mobile_upload_keeps_health_responsive_between_chunks() {
+    let (state, mut socket, task) = start().await;
+    let payload = json!({"jsonrpc":"2.0", "id":"large-upload", "method":"daemon.health", "params":{"audio":"a".repeat(8 * 1024 * 1024)}});
+    let bytes = serde_json::to_vec(&payload).unwrap();
+    for (index, part) in bytes.chunks(transport::CHUNK_BYTES).enumerate() {
+        send_value(&mut socket, json!({"type":"remote_chunk", "transferId":"voice-recording", "requestId":"large-upload", "index":index, "totalBytes":bytes.len(), "data":URL_SAFE_NO_PAD.encode(part)})).await;
+        if index == 0 {
+            request(
+                &mut socket,
+                "health-during-upload",
+                "daemon.health",
+                Value::Null,
+            )
+            .await;
+            assert_eq!(
+                next_payload(&mut socket).await["id"],
+                "health-during-upload"
+            );
+        }
+    }
+    let response = next_payload(&mut socket).await;
+    assert_eq!(response["id"], "large-upload");
+    assert_eq!(response["result"]["protocolVersion"], 1);
+    state.shutdown.cancel();
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn opening_a_large_failed_session_keeps_the_socket_and_heartbeat_alive() {
     let (state, mut socket, task) = start().await;
     let workspace = state.store.create_workspace("/tmp", "test").unwrap();

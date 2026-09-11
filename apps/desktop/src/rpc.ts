@@ -5,6 +5,7 @@ import { isTauriRuntime } from "./runtime";
 import { decryptRemotePayload, deriveRemoteIdentity, encryptRemotePayload } from "./remoteCrypto";
 import { loadRemoteCredentials, type RemoteCredentials } from "./remoteAccess";
 import { RemotePayloadReader } from "./remotePayload";
+import { remoteUploadFrames } from "./remoteUpload";
 
 export interface LocalConnectionInfo {
   kind: "local";
@@ -330,10 +331,13 @@ export class RpcClient {
   private sendRemote(ws: WebSocket, key: CryptoKey, payload: unknown, current = () => true): Promise<void> {
     const sending = this.outgoing.then(async () => {
       if (!current()) return;
-      const encrypted = await encryptRemotePayload(key, payload);
-      if (!current()) return;
-      if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) throw new Error("远程连接已关闭");
-      ws.send(JSON.stringify({ type: "frame", target: "desktop", ...encrypted }));
+      for (const frame of remoteUploadFrames(payload)) {
+        if (!current()) return;
+        const encrypted = await encryptRemotePayload(key, frame);
+        if (!current()) return;
+        if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) throw new Error("远程连接已关闭");
+        ws.send(JSON.stringify({ type: "frame", target: "desktop", ...encrypted }));
+      }
     });
     this.outgoing = sending.catch(() => {});
     return sending;

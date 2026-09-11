@@ -31,6 +31,8 @@ import {
 } from "../textInputNavigation";
 import { insertTranscript, type TextRange } from "../voiceAudio";
 import { VoiceInput } from "./VoiceInput";
+import { VoiceTranscript } from "./VoiceTranscript";
+import type { VoicePreview } from "../voiceTranscription";
 import { readImagePreview, savePastedImage } from "../localFiles";
 
 /** Listen for native file drops (Tauri window-level drag & drop). */
@@ -331,6 +333,8 @@ export function ComposerCard(props: {
   const draftKeyRef = useRef(props.draftKey);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceRangeRef = useRef<TextRange>({ start: 0, end: 0 });
+  const voiceDraftRef = useRef("");
+  const [voicePreview, setVoicePreview] = useState<VoicePreview | null>(null);
   const slashMenuId = useId();
   const slashActive = draft.startsWith("/") && dismissedSlashDraft !== draft;
   const slashSkills = useSlashSkills(props.client, slashActive);
@@ -343,6 +347,7 @@ export function ComposerCard(props: {
     setDraftState(readDraft(props.draftKey));
     setAttachments(readAttachments(props.draftKey));
     setDismissedSlashDraft(null);
+    setVoicePreview(null);
   }, [props.draftKey]);
 
   const setDraft = (value: string) => {
@@ -432,6 +437,7 @@ export function ComposerCard(props: {
   const send = async () => {
     if (
       sendingRef.current ||
+      voicePreview !== null ||
       props.sendBlocked ||
       !canSendComposer(draft, attachments)
     )
@@ -464,6 +470,7 @@ export function ComposerCard(props: {
   };
 
   const rememberVoiceInsertion = () => {
+    voiceDraftRef.current = draft;
     const textarea = textareaRef.current;
     voiceRangeRef.current = {
       start: textarea?.selectionStart ?? draft.length,
@@ -474,7 +481,11 @@ export function ComposerCard(props: {
   const applyTranscription = (text: string) => {
     let cursor = 0;
     setDraftState((current) => {
-      const result = insertTranscript(current, text, voiceRangeRef.current);
+      // If the user edited the draft while dictating, insert at their current
+      // cursor instead of replacing a selection from an older draft.
+      const position = textareaRef.current?.selectionStart ?? current.length;
+      const range = current === voiceDraftRef.current ? voiceRangeRef.current : { start: position, end: position };
+      const result = insertTranscript(current, text, range);
       cursor = result.cursor;
       storeDraft(props.draftKey, result.value);
       return result.value;
@@ -487,6 +498,7 @@ export function ComposerCard(props: {
 
   return (
     <div className="composer-card">
+      {voicePreview && <VoiceTranscript preview={voicePreview} />}
       {slashActive && (
         <SlashMenu
           id={slashMenuId}
@@ -603,9 +615,12 @@ export function ComposerCard(props: {
         )}
         {props.client && (
           <VoiceInput
+            key={props.draftKey}
             client={props.client}
+            disabled={sending}
             onStart={rememberVoiceInsertion}
             onTranscribed={applyTranscription}
+            onPreview={setVoicePreview}
             onError={props.onError}
           />
         )}
@@ -639,6 +654,7 @@ export function ComposerCard(props: {
             }
             disabled={
               sending ||
+              voicePreview !== null ||
               props.sendBlocked ||
               !canSendComposer(draft, attachments)
             }

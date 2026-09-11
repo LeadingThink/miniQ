@@ -488,6 +488,19 @@
   animation: connection-spin 0.9s linear infinite;
 }
 
+.voice-transcript {
+  margin: 10px 12px 4px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 4%, var(--bg));
+}
+.voice-transcript > header { display: flex; gap: 7px; align-items: center; color: var(--text-mid); font-size: 12px; margin-bottom: 8px; }
+.voice-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.voice-transcript-text { max-height: 150px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; font-size: 14px; }
+.voice-transcript small { color: var(--text-mid); display: block; margin-top: 6px; }
+.voice-transcript [role=alert] { color: var(--danger); font-size: 12px; margin: 8px 0 0; }
+
 @keyframes voice-pulse {
   50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 12%, transparent); }
 }

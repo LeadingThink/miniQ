@@ -19,6 +19,7 @@ mod blob;
 mod connection;
 mod subscriptions;
 mod transport;
+mod upload;
 use sha2::{Digest, Sha256};
 use tokio_tungstenite::tungstenite::Message;
 
