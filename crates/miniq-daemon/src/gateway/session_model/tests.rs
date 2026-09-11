@@ -127,11 +127,11 @@ async fn invalid_choices_are_rejected_and_active_turns_keep_running() {
 #[tokio::test]
 async fn authenticated_metadata_controls_custom_model_effort_choices() {
     use axum::{routing::get as route, Json, Router};
-    let (state, a, _) = state();
+    let (state, a, b) = state();
     let app = Router::new()
         .route("/v1/models", route(|headers: axum::http::HeaderMap| async move {
             assert_eq!(headers["authorization"], "Bearer private-key");
-            Json(json!({"data":[{"id":"zeta"},{"id":"custom/model"},{"id":"Zeta"},{"id":"zeta"}]}))
+            Json(json!({"data":[{"id":"zeta","model_type":"chat"},{"id":"custom/model","model_type":"chat"},{"id":"Zeta","model_type":"chat"},{"id":"zeta","model_type":"chat"},{"id":"gpt-image-2","model_type":"image"}]}))
         }))
         .route("/v1/models/{*model}", route(|| async {
             Json(json!({"data":{"preferred_api_protocol":"responses","supported_reasoning_efforts":["low","high"],"max_output":128000}}))
@@ -169,6 +169,19 @@ async fn authenticated_metadata_controls_custom_model_effort_choices() {
     )
     .await
     .is_err());
+    assert_eq!(
+        state
+            .store
+            .session_model_settings(&a)
+            .unwrap()
+            .model
+            .as_deref(),
+        Some("custom/model")
+    );
+    assert_eq!(
+        state.store.session_model_settings(&b).unwrap(),
+        SessionModelSettings::default()
+    );
     server.abort();
 }
 

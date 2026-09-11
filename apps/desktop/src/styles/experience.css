@@ -83,6 +83,29 @@
   gap: 4px;
   min-width: 0;
 }
+.session-model-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.session-model-search input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding-right: 28px;
+}
+.session-model-search svg {
+  position: absolute;
+  right: 8px;
+  pointer-events: none;
+  color: var(--text-muted);
+}
+.session-model-empty {
+  display: block;
+  padding: 8px;
+  color: var(--text-muted);
+  font-size: var(--model-font-size);
+}
 .session-model-popover .session-model-select-trigger {
   width: 100%;
   min-width: 0;

@@ -298,7 +298,7 @@ mod tests {
             "/v1/models",
             route(|headers: axum::http::HeaderMap| async move {
                 assert_eq!(headers["authorization"], "Bearer secret");
-                Json(json!({"data":[{"id":"zeta"},{"id":"alpha"}]}))
+                Json(json!({"data":[{"id":"zeta","model_type":"chat"},{"id":"alpha","model_type":"chat"},{"id":"gpt-image-2","model_type":"image"}]}))
             }),
         );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

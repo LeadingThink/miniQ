@@ -53,7 +53,7 @@ it("ignores stale model loads after switching sessions", async () => {
   expect(hook.result.current.effective?.model).toBe("model-b");
 });
 
-it("reloads sessions in the changed workspace on model-change broadcasts", async () => {
+it("reloads only the matching session on session-model broadcasts", async () => {
   const call = vi.fn().mockResolvedValue(result("one"));
   const { client, emit } = fakeClient(call);
   const hook = renderHook(() => useSessionModel(client, "a", "study"));
@@ -71,7 +71,7 @@ it("reloads sessions in the changed workspace on model-change broadcasts", async
   act(() =>
     emit({
       type: "model_settings_changed",
-      sessionId: "b",
+      sessionId: "a",
       workspaceId: "study",
       settings: DEFAULT_MODEL_SETTINGS,
     })
@@ -134,7 +134,8 @@ it("updates the global model from a project draft", async () => {
     })
   );
   expect(hook.result.current.effective?.model).toBe("updated-model");
-  expect(call).toHaveBeenLastCalledWith("model.update", {
+  expect(call).toHaveBeenLastCalledWith("workspace.modelUpdate", {
+    workspaceId: "study",
     settings: {
       ...DEFAULT_MODEL_SETTINGS,
       model: "updated-model",
@@ -142,7 +143,7 @@ it("updates the global model from a project draft", async () => {
   });
 });
 
-it("updates the global model from an existing session", async () => {
+it("updates only the selected session model", async () => {
   const call = vi.fn().mockResolvedValue(result("updated-model"));
   const { client } = fakeClient(call);
   const hook = renderHook(() => useSessionModel(client, "session-a", "study"));
@@ -150,7 +151,8 @@ it("updates the global model from an existing session", async () => {
 
   await act(async () => hook.result.current.update(DEFAULT_MODEL_SETTINGS));
 
-  expect(call).toHaveBeenLastCalledWith("model.update", {
+  expect(call).toHaveBeenLastCalledWith("session.modelUpdate", {
+    sessionId: "session-a",
     settings: DEFAULT_MODEL_SETTINGS,
   });
 });
@@ -195,7 +197,7 @@ it("does not show the previous workspace model while switching projects", async 
 it("does not display an old session's update failure in the newly selected session", async () => {
   let reject!: (cause: Error) => void;
   const call = vi.fn((method, params) =>
-    method === "model.update"
+    method === "session.modelUpdate"
       ? new Promise((_done, fail) => {
           reject = fail;
         })
@@ -264,7 +266,7 @@ it("shows a new-session protocol override even when the model is inherited", asy
 it("hides the previous model and error while the next session is loading", async () => {
   let resolveB!: (value: SessionModelResult) => void;
   const call = vi.fn((method, params) => {
-    if (method === "model.update")
+    if (method === "session.modelUpdate")
       return Promise.reject(new Error("A configuration failed"));
     if (params.sessionId === "a") return Promise.resolve(result("model-a"));
     return new Promise<SessionModelResult>((resolve) => {
@@ -290,10 +292,10 @@ it("hides the previous model and error while the next session is loading", async
   expect(hook.result.current.effective?.model).toBe("model-b");
 });
 
-it("blocks another global model update while one is pending", async () => {
+it("blocks another session model update while one is pending", async () => {
   let complete!: (value: SessionModelResult) => void;
   const call = vi.fn((method, params) =>
-    method === "model.update"
+    method === "session.modelUpdate"
       ? new Promise<SessionModelResult>((resolve) => {
           complete = resolve;
         })
@@ -312,7 +314,7 @@ it("blocks another global model update while one is pending", async () => {
   await waitFor(() => expect(hook.result.current.ready).toBe(true));
   expect(hook.result.current.pending).toBe(true);
   await act(async () => hook.result.current.update(DEFAULT_MODEL_SETTINGS));
-  expect(call.mock.calls.filter(([method]) => method === "model.update")).toHaveLength(1);
+  expect(call.mock.calls.filter(([method]) => method === "session.modelUpdate")).toHaveLength(1);
   await act(async () => {
     complete(result("updated-a"));
     await updateA;

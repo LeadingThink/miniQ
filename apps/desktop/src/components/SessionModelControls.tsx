@@ -4,6 +4,7 @@ import {
   EFFORT_LABELS,
   PROTOCOL_LABELS,
   DEFAULT_MODEL_SETTINGS,
+  filterModelIds,
   type ApiProtocol,
   type ModelDescription,
   type ReasoningEffort,
@@ -129,7 +130,7 @@ export function SessionModelControls({
         onClick={() => {
           setOpen(!open);
           setModelListOpen(false);
-          setQuery(model.settings.model ?? model.effective?.model ?? "");
+          setQuery("");
           setProtocol(model.settings.apiProtocol);
         }}
       >
@@ -219,17 +220,21 @@ export function SessionModelControls({
             模型 ID
             {models.length > 0 ? (
               <span className="session-model-select">
-                <button
-                  type="button"
-                  className="session-model-select-trigger"
-                  aria-label="模型 ID"
-                  aria-haspopup="listbox"
-                  aria-expanded={modelListOpen}
-                  onClick={() => setModelListOpen((value) => !value)}
-                >
-                  <span>{query}</span>
+                <span className="session-model-search">
+                  <input
+                    autoFocus
+                    value={query}
+                    placeholder={model.effective?.model ?? "搜索模型"}
+                    aria-label="模型 ID"
+                    onFocus={() => setModelListOpen(true)}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setModelListOpen(true);
+                    }}
+                    spellCheck={false}
+                  />
                   <ChevronDown size={15} />
-                </button>
+                </span>
                 {modelListOpen && (
                   <span
                     className="session-model-list"
@@ -248,8 +253,8 @@ export function SessionModelControls({
                         <Check size={14} />
                       </button>
                     )}
-                    {models.map((id) => {
-                      const selected = id === query;
+                    {filterModelIds(models, query).map((id) => {
+                      const selected = id === (model.settings.model ?? model.effective?.model);
                       return (
                         <button
                           key={id}
@@ -267,6 +272,9 @@ export function SessionModelControls({
                         </button>
                       );
                     })}
+                    {filterModelIds(models, query).length === 0 && (
+                      <span className="session-model-empty">没有匹配的文本模型</span>
+                    )}
                   </span>
                 )}
               </span>

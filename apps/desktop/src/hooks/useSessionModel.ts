@@ -77,8 +77,8 @@ export function useSessionModel(
     const stopEvents = client.onEvent((event) => {
       if (
         event.type === "global_model_settings_changed" ||
-        ((event.type === "model_settings_changed" ||
-          event.type === "workspace_model_settings_changed") &&
+        (event.type === "model_settings_changed" && event.sessionId === sessionId) ||
+        (event.type === "workspace_model_settings_changed" &&
           event.workspaceId === workspaceId)
       )
         void reload();
@@ -96,9 +96,17 @@ export function useSessionModel(
     const request = generation.current;
     setPending(true);
     try {
-      const next = await client.call<SessionModelResult>("model.update", {
-        settings,
-      });
+      const method = sessionId
+        ? "session.modelUpdate"
+        : workspaceId
+          ? "workspace.modelUpdate"
+          : "model.update";
+      const params = sessionId
+        ? { sessionId, settings }
+        : workspaceId
+          ? { workspaceId, settings }
+          : { settings };
+      const next = await client.call<SessionModelResult>(method, params);
       newSessionSelection.current = settings;
       if (request === generation.current) setResult(next);
       if (currentSession.current === sessionId) setError(null);

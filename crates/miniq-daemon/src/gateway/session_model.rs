@@ -64,11 +64,30 @@ pub(super) fn workspace_get(state: &AppState, raw: Option<Value>) -> Result<Valu
 
 pub(super) async fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: SessionModelUpdate = params(raw)?;
-    state
+    let session = state
         .store
         .get_session(&input.session_id)
         .map_err(store_err)?;
-    apply_global_update(state, input.settings).await
+    let baseline = state.settings.lock().unwrap().provider.clone();
+    let mut settings = input.settings;
+    validate_settings(&baseline, &mut settings).await?;
+    state
+        .store
+        .set_session_model_settings(&input.session_id, &settings)
+        .map_err(store_err)?;
+    let effective = state
+        .provider_config_for_session(&input.session_id, None)
+        .map_err(store_err)?;
+    state.emit(Event::ModelSettingsChanged {
+        session_id: input.session_id,
+        workspace_id: session.workspace_id,
+        settings: settings.clone(),
+    });
+    to_value(
+        json!({ "settings": settings, "effective": effective.map(|config| json!({
+        "model": config.model, "apiProtocol": config.api_protocol, "reasoningEffort": config.reasoning_effort,
+    })) }),
+    )
 }
 
 pub(super) async fn workspace_update(
@@ -80,7 +99,32 @@ pub(super) async fn workspace_update(
         .store
         .get_workspace(&input.workspace_id)
         .map_err(store_err)?;
-    apply_global_update(state, input.settings).await
+    let baseline = state.settings.lock().unwrap().provider.clone();
+    let mut settings = input.settings;
+    validate_settings(&baseline, &mut settings).await?;
+    state
+        .store
+        .set_workspace_model_settings(&input.workspace_id, &settings)
+        .map_err(store_err)?;
+    state.emit(Event::WorkspaceModelSettingsChanged {
+        workspace_id: input.workspace_id.clone(),
+        settings: settings.clone(),
+    });
+    let effective = state
+        .settings
+        .lock()
+        .unwrap()
+        .provider
+        .clone()
+        .map(|mut config| {
+            crate::session_models::apply_selection(&mut config, &settings);
+            config
+        });
+    to_value(
+        json!({ "settings": settings, "effective": effective.map(|config| json!({
+        "model": config.model, "apiProtocol": config.api_protocol, "reasoningEffort": config.reasoning_effort,
+    })) }),
+    )
 }
 
 pub(super) async fn global_update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
@@ -196,6 +240,7 @@ pub(super) async fn catalog_for(config: &miniq_models::ProviderConfig) -> Result
         })?;
     let mut models = rows
         .iter()
+        .filter(|row| row.get("model_type").and_then(Value::as_str) == Some("chat"))
         .filter_map(|row| row.get("id").and_then(Value::as_str))
         .map(str::to_owned)
         .collect::<Vec<_>>();
