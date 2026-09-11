@@ -1,0 +1,32 @@
+[
+  {
+    "name": "desktop-goal",
+    "frame": 6,
+    "time": 1.5
+  },
+  {
+    "name": "approval-ready",
+    "frame": 6,
+    "time": 1.5
+  },
+  {
+    "name": "mobile-approve",
+    "frame": 16,
+    "time": 4
+  },
+  {
+    "name": "file-created",
+    "frame": 45,
+    "time": 11.25
+  },
+  {
+    "name": "mobile-send",
+    "frame": 55,
+    "time": 13.75
+  },
+  {
+    "name": "completed",
+    "frame": 68,
+    "time": 17
+  }
+]

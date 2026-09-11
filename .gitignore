@@ -19,3 +19,8 @@ apps/desktop/scripts/*
 !apps/desktop/scripts/desktop_download_manifest_test.py
 !apps/desktop/scripts/create-preview-fixtures.mjs
 dist-android/
+
+# Local macOS metadata and preview scratch output.
+promo/.DS_Store
+promo/out/.DS_Store
+promo/out/preview/ascii.txt

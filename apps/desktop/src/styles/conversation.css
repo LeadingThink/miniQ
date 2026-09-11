@@ -315,6 +315,14 @@
   padding: 0 6px;
 }
 
+.session-model-controls { position: relative; display: inline-flex; align-items: center; }
+.model-trigger { display: inline-flex; align-items: center; gap: 5px; background: transparent; color: var(--text-mid); padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px; max-width: 190px; }
+.model-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-model-popover { position: absolute; z-index: 20; bottom: calc(100% + 8px); left: 0; width: 250px; max-height: 300px; overflow: auto; padding: 8px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow-lg, 0 8px 24px #0003); display: flex; flex-direction: column; gap: 4px; }
+.session-model-popover input { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-subtle); color: var(--text); }
+.session-model-popover button { background: transparent; color: var(--text); text-align: left; padding: 7px 8px; border-radius: 6px; }
+.session-model-popover button:hover { background: var(--bg-hover); opacity: 1; }
+
 .chip {
   display: inline-flex;
   align-items: center;

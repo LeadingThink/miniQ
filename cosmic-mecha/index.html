@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#101211" />
+    <meta name="description" content="星尘防线：月背宙域的原创宇宙机甲战棋。" />
+    <title>星尘防线 · 宇宙机甲战棋</title>
+    <link rel="icon" href="assets/stardust.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="battle.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="brand">
+          <span class="insignia" aria-hidden="true">✦</span>
+          <div>
+            <small>STARDUST DEFENSE / 0087</small>
+            <h1>星尘防线</h1>
+          </div>
+        </div>
+        <div class="signal"><span></span> SIDE 07 · 月背宙域</div>
+        <div class="header-tools">
+          <a
+            class="icon-button"
+            href="星尘防线.md"
+            title="飞行员手册"
+            aria-label="飞行员手册"
+            ><svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"
+              /></svg
+          ></a>
+          <button
+            class="icon-button"
+            id="sound"
+            title="开启音效"
+            aria-label="开启音效"
+            aria-pressed="false"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"
+              />
+              <path class="sound-off" d="m16 9 6 6m0-6-6 6" />
+              <path
+                class="sound-on"
+                d="M16 9a5 5 0 0 1 0 6m3.364 3.364a9 9 0 0 0 0-12.728"
+              />
+            </svg>
+          </button>
+          <button
+            class="icon-button"
+            id="reset"
+            title="重新开始任务"
+            aria-label="重新开始任务"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5"
+              />
+            </svg>
+          </button>
+        </div>
+      </header>
+      <section class="mission" aria-label="任务目标">
+        <div>
+          <span class="eyebrow">OPERATION 014 / 黎明守望</span>
+          <h2>让这座城市，照常迎来早晨。</h2>
+          <p>四个敌方信号正在逼近。星尘号，灯塔七号的黎明交给你了。</p>
+        </div>
+        <div class="mission-count">
+          <strong id="kills">00 / 04</strong><span>敌机击破 / TARGETS</span>
+        </div>
+      </section>
+      <div class="workspace">
+        <section class="battle" aria-label="战场">
+          <div class="bar">
+            <span
+              ><i class="status-dot"></i>战术星图
+              <span class="muted">/ LUNAR ORBIT</span></span
+            ><span id="turn">回合 01</span>
+          </div>
+          <div class="space">
+            <div
+              id="board"
+              role="group"
+              aria-label="战术星图，方向键切换坐标，回车锁定"
+            ></div>
+            <svg id="effects" viewBox="0 0 800 600" aria-hidden="true"></svg
+            ><span class="map-caption" aria-hidden="true"
+              >SECTOR 07 / 48 NODES</span
+            >
+          </div>
+          <div class="legend">
+            <span><i class="ally"></i>星尘号</span
+            ><span><i class="enemy"></i>敌方机体</span
+            ><span><i class="selected"></i>锁定</span
+            ><span id="position">坐标 C6</span>
+          </div>
+        </section>
+        <aside>
+          <section class="pilot" aria-label="机体状态">
+            <div class="pilot-heading">
+              <span class="eyebrow">YOUR MOBILE SUIT</span
+              ><span class="serial">RX-SD / 01</span>
+            </div>
+            <div id="portrait">
+              <span class="spec-mark" aria-hidden="true">01</span
+              ><img
+                src="assets/stardust.svg"
+                width="360"
+                height="440"
+                alt="星尘号：白色装甲、金色天线，配备光束步枪与红白盾牌的原创机甲"
+              />
+            </div>
+            <h2>
+              星尘号 <small>STARDUST</small
+              ><span class="unit-status" id="unit-status">ONLINE</span>
+            </h2>
+            <div class="stat">
+              <label for="hp-meter">装甲完整度</label><strong id="hp"></strong>
+            </div>
+            <meter id="hp-meter" min="0" max="100" value="100">100</meter>
+            <div class="stat">
+              <label for="energy-meter">粒子能源</label
+              ><strong id="energy"></strong>
+            </div>
+            <meter id="energy-meter" min="0" max="100" value="100">100</meter>
+          </section>
+          <section class="command" aria-label="战术指令">
+            <div class="bar">
+              <span>战术指令</span><span id="target">未锁定</span>
+            </div>
+            <div class="actions">
+              <button id="move" title="推进至锁定空域，距离最多 2 格">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M12 2v20m3-3-3 3-3-3m10-10 3 3-3 3M2 12h20M5 9l-3 3 3 3m4-10 3-3 3 3"
+                  /></svg
+                ><span>推进移动</span><small>距离 ≤ 2</small>
+              </button>
+              <button
+                id="fire"
+                title="向锁定敌机射击，射程 4，伤害 40，消耗 30 能源"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M22 12h-4M6 12H2m10-6V2m0 20v-4" /></svg
+                ><span>光束射击</span><small>能源 −30</small>
+              </button>
+              <button
+                id="guard"
+                title="回复 35 能源，本回合每台敌机的伤害降至 2"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
+                  /></svg
+                ><span>防御充能</span><small>能源 +35</small>
+              </button>
+            </div>
+            <p id="hint" role="status">火控待命 · 等待指令</p>
+          </section>
+        </aside>
+      </div>
+      <section class="log-section" aria-label="舰桥通讯">
+        <div class="bar">
+          <span>舰桥通讯 <span class="muted">/ LIVE FEED</span></span
+          ><span class="live">● REC</span>
+        </div>
+        <ol id="log" tabindex="0" aria-label="完整战斗记录"></ol>
+      </section>
+      <footer>
+        <span>原创机体 · 高达风格同人小游戏 · 非官方作品</span
+        ><a href="星尘防线.md"
+          >飞行员手册
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 7h10v10M7 17 17 7" /></svg
+        ></a>
+      </footer>
+    </main>
+    <dialog
+      id="result"
+      aria-labelledby="result-title"
+      aria-describedby="result-text"
+    >
+      <span class="eyebrow">MISSION REPORT / 作战报告</span>
+      <h2 id="result-title"></h2>
+      <p id="result-text"></p>
+      <button id="again">
+        再次出击
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 7h10v10M7 17 17 7" />
+        </svg>
+      </button>
+    </dialog>
+    <script src="effects.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>

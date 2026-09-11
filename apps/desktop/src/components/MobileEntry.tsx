@@ -179,7 +179,9 @@ function MobileChat(props: { apiKey: string; onBack: () => void }) {
       const response = await fetch(`${API_BASE_URL}/chat/completions`, {
         method: "POST",
         headers: { Authorization: `Bearer ${props.apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages: history, stream: true, max_tokens: 4096 }),
+        // Do not impose a client-side output cap. Compatible gateways can
+        // expose the model's native limit and apply their own default.
+        body: JSON.stringify({ model, messages: history, stream: true }),
         signal: controller.signal,
       });
       if (!response.ok || !response.body) throw new Error(await responseError(response));

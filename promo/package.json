@@ -1,0 +1,13 @@
+{
+  "name": "miniq-promo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "capture": "node capture.mjs",
+    "audio": "python3 audio.py",
+    "build": "bash build.sh"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.15.0"
+  }
+}

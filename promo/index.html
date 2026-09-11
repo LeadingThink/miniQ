@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>miniQ promo</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="stage">
+    <div class="bg-glow" id="glow"></div>
+    <div class="bg-grid"></div>
+    <div class="vignette"></div>
+    <div class="grain"></div>
+    <div class="left-shade" id="shade"></div>
+    <div class="scrim" id="scrim"></div>
+    <div class="flash" id="flash"></div>
+
+    <div id="product-wrap">
+      <div class="window">
+        <div class="win-chrome">
+          <div class="traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+          <div class="win-title">miniQ</div>
+        </div>
+        <div class="app">
+          <aside class="sidebar">
+            <div class="brand"><img src="assets/icon.png" alt="" />miniQ</div>
+            <div class="nav-item" id="nav-new">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+              新对话
+            </div>
+            <div class="nav-item">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              搜索
+            </div>
+            <div class="nav-item" id="nav-sched">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              已安排
+            </div>
+            <div class="sidebar-section">项目</div>
+            <div class="workspace-item selected">
+              <svg class="workspace-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h16V8l-4-4H4z"/><path d="M4 10h16"/></svg>
+              miniQ
+            </div>
+            <div class="session-item" id="session-home">点击新对话开始协作</div>
+            <div class="session-item selected" id="session-chat">产品报告</div>
+            <div class="sidebar-footer">
+              <span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6 6l1.5 1.5M16.5 16.5 18 18M18 6l-1.5 1.5M7.5 16.5 6 18"/></svg>
+              </span>
+              <span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12h8M12 8v8"/></svg>
+              </span>
+              <span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 2.5 5 5.5.7-4 3.9.9 5.5L12 16l-4.9 2.1.9-5.5-4-3.9 5.5-.7Z"/></svg>
+              </span>
+            </div>
+          </aside>
+
+          <main class="main">
+            <!-- HOME -->
+            <section class="screen on" id="sc-home">
+              <div class="statusbar">
+                <span class="dot"></span>
+                <span>已连接</span>
+                <span class="spacer"></span>
+                <span class="mode-pill">替我审批</span>
+              </div>
+              <div class="hero">
+                <h1>下一步做什么？</h1>
+                <div class="starter-prompts">
+                  <div class="starter-prompt">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
+                    <span><strong>了解项目</strong><small>梳理结构、入口与关键链路</small></span>
+                  </div>
+                  <div class="starter-prompt">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 8v4l2 2"/><circle cx="12" cy="12" r="9"/></svg>
+                    <span><strong>定位并修复问题</strong><small>从复现、根因到验证一次完成</small></span>
+                  </div>
+                  <div class="starter-prompt">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 19 19 5M9 5h10v10"/></svg>
+                    <span><strong>开发新功能</strong><small>沿用现有架构完成实现</small></span>
+                  </div>
+                  <div class="starter-prompt">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 7h10v10H7z"/><path d="M7 12h10"/></svg>
+                    <span><strong>审查当前改动</strong><small>优先发现回归、风险与漏测</small></span>
+                  </div>
+                </div>
+              </div>
+              <div class="composer-outer">
+                <div class="composer-card" id="home-composer">
+                  <div class="composer-text"><span class="ph">随心输入,Enter 发送,/ 引用技能</span></div>
+                  <div class="composer-row">
+                    <span class="chip">🗂 miniQ</span>
+                    <span class="mode-pill" style="background:transparent">替我审批</span>
+                    <button class="send-btn" disabled style="opacity:.4">↑</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- CHAT / TOOLS / APPROVAL -->
+            <section class="screen" id="sc-chat">
+              <div class="statusbar">
+                <span class="dot"></span>
+                <span>产品报告</span>
+                <span class="spacer"></span>
+                <span class="mode-pill" id="mode-label">替我审批</span>
+              </div>
+              <div class="timeline" id="timeline">
+                <div class="msg user" id="user-msg">把这个仓库整理成产品报告，并生成一份周报文档</div>
+                <div class="tool-step" data-tool="0" data-run="正在读取" data-done="已读取">
+                  <div class="tool-step-toggle">
+                    <span class="tool-step-marker"></span>
+                    <span class="tool-action">正在读取</span>
+                    <span class="tool-summary">README.md</span>
+                  </div>
+                </div>
+                <div class="tool-step" data-tool="1" data-run="正在查看目录" data-done="已查看目录">
+                  <div class="tool-step-toggle">
+                    <span class="tool-step-marker"></span>
+                    <span class="tool-action">正在查看目录</span>
+                    <span class="tool-summary">crates / apps / docs</span>
+                  </div>
+                </div>
+                <div class="tool-step" data-tool="2" data-run="正在搜索" data-done="已搜索">
+                  <div class="tool-step-toggle">
+                    <span class="tool-step-marker"></span>
+                    <span class="tool-action">正在搜索</span>
+                    <span class="tool-summary">ToolRouter · 技能入口</span>
+                  </div>
+                </div>
+                <div class="tool-step" data-tool="3" data-run="正在生成文档" data-done="已生成文档">
+                  <div class="tool-step-toggle">
+                    <span class="tool-step-marker"></span>
+                    <span class="tool-action">正在生成文档</span>
+                    <span class="tool-summary">产品报告.docx</span>
+                  </div>
+                </div>
+                <div class="tool-step" data-tool="4" data-run="正在运行命令" data-done="已运行命令">
+                  <div class="tool-step-toggle">
+                    <span class="tool-step-marker"></span>
+                    <span class="tool-action">正在运行命令</span>
+                    <span class="tool-summary">git status</span>
+                  </div>
+                </div>
+                <div class="card approval-card" id="approval">
+                  <div class="card-head">
+                    <span>需要审批</span>
+                    <span class="tool-name">shell_run</span>
+                    <span class="badge high">high</span>
+                    <span class="badge waiting_approval" id="appr-badge">waiting_approval</span>
+                  </div>
+                  <div class="risk-note">联网访问和危险命令等高风险操作才询问</div>
+                  <pre>git push origin main</pre>
+                  <div class="approval-actions">
+                    <button id="btn-allow">允许一次</button>
+                    <button class="secondary">本会话允许</button>
+                    <button class="ghost">拒绝</button>
+                  </div>
+                </div>
+              </div>
+              <div class="artifacts-bar" id="art-bar">
+                <div class="artifact-chip">📄 <b>产品报告.docx</b></div>
+                <div class="artifact-chip">📊 <b>本周周报.xlsx</b></div>
+                <div class="artifact-chip">📝 <b>架构说明.md</b></div>
+              </div>
+              <div class="composer-outer">
+                <div class="composer-card" id="chat-composer">
+                  <div class="composer-text" id="typed"><span class="ph">随心输入,Enter 发送,/ 引用技能</span></div>
+                  <div class="composer-row">
+                    <span class="chip">🗂 miniQ</span>
+                    <span class="mode-pill" style="background:transparent">替我审批</span>
+                    <button class="send-btn" id="send">↑</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- DOCS -->
+            <section class="screen" id="sc-docs">
+              <div class="statusbar">
+                <span class="dot"></span>
+                <span>文档预览</span>
+                <span class="spacer"></span>
+                <span>产品报告.docx</span>
+              </div>
+              <div class="docs-layout">
+                <div class="doc-list">
+                  <div class="doc-item active">📄 产品报告.docx</div>
+                  <div class="doc-item">📊 本周周报.xlsx</div>
+                  <div class="doc-item">📝 架构说明.md</div>
+                </div>
+                <div class="doc-preview">
+                  <div class="doc-page">
+                    <h2>miniQ 产品报告</h2>
+                    <div class="muted">本周自动生成 · 工作区 miniQ</div>
+                    <p>miniQ 是桌面 AI 协作助手。你给出目标，它读取仓库、调用工具、在高风险操作前请求批准，并把结果写成可打开的文档。</p>
+                    <ul>
+                      <li>会话时间线：读取、搜索、生成、命令逐步可见</li>
+                      <li>审批模式：请求批准 / 替我审批 / 完全访问</li>
+                      <li>产物：docx / xlsx / md 直接落在工作区</li>
+                    </ul>
+                    <p>下一步：把本周流程沉淀成「周报生成」技能，并加入每日简报定时任务。</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- BROWSER -->
+            <section class="screen" id="sc-browser">
+              <div class="statusbar">
+                <span class="dot"></span>
+                <span>浏览器</span>
+                <span class="spacer"></span>
+                <span>真实页面 · 可点击 · 可填写</span>
+              </div>
+              <div class="browser-bar">
+                <span style="color:var(--text-dim);font-size:12px">← → ↻</span>
+                <div class="url">https://example.com/dashboard</div>
+              </div>
+              <div class="web-page">
+                <div class="web-hero">项目看板</div>
+                <div class="web-sub">本周 14 项已完成 · 3 项待审</div>
+                <div class="web-card" id="rpa-btn">
+                  <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px">发布状态</div>
+                  <button>发布周报</button>
+                </div>
+                <div class="rpa-tag" id="rpa-tag">#12 button</div>
+              </div>
+            </section>
+
+            <!-- SKILL -->
+            <section class="screen" id="sc-skill">
+              <div class="statusbar">
+                <span class="dot"></span>
+                <span>技能</span>
+                <span class="spacer"></span>
+                <span>/ 引用技能</span>
+              </div>
+              <div class="skill-layout">
+                <div class="skill-card">
+                  <div class="kicker" style="color:var(--text-dim);letter-spacing:.18em;font-size:11px">SKILL</div>
+                  <h3>周报生成</h3>
+                  <p style="color:var(--text-mid);font-size:13.5px;line-height:1.6">梳理工作区内这一周的产出与变化，总结完成事项、未完成事项和下周建议，输出为一份简洁的周报文档。</p>
+                  <div style="margin-top:16px;display:flex;gap:8px">
+                    <span class="t-badge">可复用</span>
+                    <span class="t-badge">工作区技能</span>
+                  </div>
+                </div>
+                <div>
+                  <div class="skill-md" id="skill-md">---<br/>name: weekly-report<br/>description: 写一份本周回顾<br/>---<br/><br/># 周报生成<br/><br/>1. 查看工作区最近改动<br/>2. 总结完成 / 未完成<br/>3. 输出周报文档</div>
+                </div>
+              </div>
+              <div class="composer-outer">
+                <div class="composer-card">
+                  <div class="slash-menu">
+                    <div class="slash-item active">
+                      <span>✦</span><span class="slash-name">weekly-report</span><span>写一份本周回顾</span>
+                    </div>
+                    <div class="slash-item">
+                      <span>✦</span><span class="slash-name">organize-directory</span><span>盘点一个目录</span>
+                    </div>
+                  </div>
+                  <div class="composer-text">/weekly-report</div>
+                </div>
+              </div>
+            </section>
+
+            <!-- SCHEDULE -->
+            <section class="screen" id="sc-schedule">
+              <div class="statusbar">
+                <span class="dot"></span>
+                <span>已安排</span>
+                <span class="spacer"></span>
+              </div>
+              <div class="schedule-body">
+                <h2>已安排</h2>
+                <div class="schedule-sub">到点自动执行，结果写回会话</div>
+                <div class="template-list">
+                  <div class="template">
+                    <div class="t-icon">🔔</div>
+                    <div><strong>每日简报</strong><small>每天早上总结昨日进展和今日重点</small></div>
+                    <div class="t-badge">每天 09:00</div>
+                  </div>
+                  <div class="template">
+                    <div class="t-icon">📋</div>
+                    <div><strong>每周回顾</strong><small>每周五梳理本周产出,生成周报文档</small></div>
+                    <div class="t-badge">每周五 17:00</div>
+                  </div>
+                  <div class="template">
+                    <div class="t-icon">🔎</div>
+                    <div><strong>项目监控</strong><small>定时巡检项目,发现异常及时汇报</small></div>
+                    <div class="t-badge">每 1 小时</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- REMOTE -->
+            <section class="screen" id="sc-remote">
+              <div class="statusbar">
+                <span class="dot"></span>
+                <span>远程桌面</span>
+                <span class="spacer"></span>
+                <span class="lock">AES-256-GCM</span>
+              </div>
+              <div class="remote-stage">
+                <div class="model-rail"><span class="rail-label">MODEL ROUTER</span><span>OpenAI-compatible</span><span>Anthropic</span><span>国内模型</span><span>本地模型</span><b>同一套工具流</b></div>
+                <div class="desk-mini">
+                  <div class="bar"><span>miniQ · 远程会话</span><span class="live-dot">● LIVE</span></div>
+                  <div class="body">
+                    同 Key 会话 · 实时桌面<br/><br/>
+                    当前：生成「本周周报.xlsx」<br/>
+                    <span class="remote-progress">████████░░ 80%</span>
+                  </div>
+                </div>
+                <div class="phone">
+                  <div class="phone-screen">
+                    <div class="phone-notch"></div>
+                    <div class="phone-head">miniQ</div>
+                    <div class="phone-card"><b>远程桌面已连接</b><span class="live-dot">● LIVE</span><small>同一把 Key · 实时同步</small></div>
+                    <div class="phone-card" style="background:var(--bg-subtle)"><b>你</b>把这个仓库整理成产品报告</div>
+                    <div class="phone-card"><b>miniQ</b>已生成 产品报告.docx，高风险命令等待批准。</div>
+                    <div class="remote-controls"><button id="remote-pause">Ⅱ 暂停</button><button id="remote-continue">▶ 继续工作</button><button id="remote-approve">✓ 允许一次</button></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </main>
+        </div>
+      </div>
+    </div>
+
+    <div id="copy">
+      <div class="kicker" id="kicker"></div>
+      <div class="hero-title" id="title"></div>
+      <div class="hero-sub" id="sub"></div>
+    </div>
+
+    <div id="punches">
+      <div class="punch" id="punch"></div>
+    </div>
+
+    <div class="end-mark" id="endcard" style="position:absolute;inset:0;z-index:21;display:none;align-items:center;justify-content:center">
+      <img src="assets/icon.png" alt="miniQ" />
+      <div class="end-word">miniQ</div>
+      <div class="end-tag">DESKTOP AI</div>
+      <div class="hero-sub" id="end-sub" style="margin-top:4px">你说目标，它来执行</div>
+    </div>
+
+    <svg id="cursor" viewBox="0 0 24 24">
+      <path d="M5 3.5 19 13.2l-6.2 1.2 2.4 6.3-2.7 1-2.4-6.2L5 18.8z" fill="#fff" stroke="#111" stroke-width="1.2" stroke-linejoin="round"/>
+    </svg>
+    <div class="click-ripple" id="ripple"></div>
+  </div>
+  <script src="timeline.js"></script>
+</body>
+</html>
