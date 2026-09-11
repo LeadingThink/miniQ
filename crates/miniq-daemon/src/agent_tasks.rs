@@ -212,6 +212,22 @@ impl DaemonAgentBridge {
     ) -> ToolContext {
         let roots = self.child_roots(&workspace, isolated);
         ToolContext::new(workspace.clone())
+            .with_media(
+                self.state
+                    .settings
+                    .lock()
+                    .ok()
+                    .and_then(|settings| settings.provider.clone())
+                    .map(|config| miniq_tools::MediaConfig {
+                        base_url: config.base_url,
+                        api_key: config.api_key,
+                        image_model: "gpt-image-2.5-flare".into(),
+                        video_model: "grok-imagine-video-1.5".into(),
+                        tts_model: "grok-tts".into(),
+                        transcription_model: "grok-transcribe".into(),
+                        music_model: "suno-v5".into(),
+                    }),
+            )
             .with_workspace_roots(roots.clone())
             .with_readable_files(
                 self.state

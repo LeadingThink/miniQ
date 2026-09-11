@@ -18,6 +18,7 @@ mod git;
 mod http;
 mod interact;
 mod mcp;
+mod media;
 mod memory;
 mod native;
 mod notebook;
@@ -52,6 +53,10 @@ pub use git::{GitDiffTool, GitStatusTool};
 pub use http::HttpRequestTool;
 pub use interact::{validate_ask_user_input, AskUserTool, TaskUpdateTool};
 pub use mcp::{McpBridge, McpCallTool};
+pub use media::{
+    EditImageTool, GenerateImageTool, GenerateMusicTool, GenerateVideoTool, SynthesizeSpeechTool,
+    TranscribeAudioTool,
+};
 pub use memory::{MemorySearchTool, MemoryWriteTool};
 pub use native::{
     adapt_native_tool_call, canonical_name as canonical_native_tool_name, native_aliases,
@@ -64,8 +69,8 @@ pub use pdf_visual::ViewPdfTool;
 pub use plan_mode::PlanModeTool;
 pub use process::{ProcessKillTool, ProcessManager, ProcessOutputTool};
 pub use router::{
-    RegistrationError, RegistrationHandle, Tool, ToolCatalog, ToolContext, ToolError, ToolOrigin,
-    ToolRouter,
+    MediaConfig, RegistrationError, RegistrationHandle, Tool, ToolCatalog, ToolContext, ToolError,
+    ToolOrigin, ToolRouter,
 };
 pub use search::{FileGlobTool, FileGrepTool};
 pub use shell::{ShellBatchTool, ShellRunTool};
@@ -120,6 +125,12 @@ pub fn default_router() -> ToolRouter {
         std::sync::Arc::new(McpCallTool),
         std::sync::Arc::new(BrowserAutomationTool::default()),
         std::sync::Arc::new(ComputerUseTool::default()),
+        std::sync::Arc::new(GenerateImageTool),
+        std::sync::Arc::new(EditImageTool),
+        std::sync::Arc::new(GenerateVideoTool),
+        std::sync::Arc::new(SynthesizeSpeechTool),
+        std::sync::Arc::new(TranscribeAudioTool),
+        std::sync::Arc::new(GenerateMusicTool),
     ];
     for tool in tools {
         router

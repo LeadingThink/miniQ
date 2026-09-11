@@ -43,6 +43,29 @@ pub(super) fn after_success(
                 });
             }
         }
+        "generate_image" | "edit_image" | "synthesize_speech" => {
+            if let Some(path) = output.get("path").and_then(Value::as_str) {
+                let kind = output
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or("media");
+                let title = std::path::Path::new(path)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("生成媒体");
+                if let Ok(artifact) =
+                    executor
+                        .state
+                        .store
+                        .create_artifact(&executor.session_id, path, kind, title)
+                {
+                    executor.state.emit(Event::ArtifactCreated {
+                        session_id: executor.session_id.clone(),
+                        artifact,
+                    });
+                }
+            }
+        }
         _ => {}
     }
 }

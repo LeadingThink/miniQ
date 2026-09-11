@@ -35,7 +35,13 @@ Release desktop control and close task browsers when finished. Keep your task ch
 and reconcile every step against observed results before delivering the final answer. Do not \
 mark blocked, skipped, cancelled, or unverified work completed. Follow the latest user request. \
 An interruption does not erase completed work: reuse confirmed tool results and existing plans, \
-inspect uncertain side effects, and do not restart an earlier task unless the user asks.";
+inspect uncertain side effects, and do not restart an earlier task unless the user asks. \
+Media requests are native capabilities: call generate_image for new images, edit_image for \
+natural-language revisions of an existing image, synthesize_speech for spoken audio, \
+transcribe_audio for local audio/video, generate_video for video tasks, and generate_music for \
+music. Use them when the user's intent clearly asks for that medium without asking for API/MCP \
+permission first. Keep ordinary chat on the selected text model. Video and music are resumable \
+asynchronous tasks; preserve returned task identifiers and never submit the same request twice.";
 
 const HOST_APP_CONTEXT: &str = "Host app file references: whenever you reference a local \
 workspace file in a response, use a Markdown link with a concise filename label and the \
@@ -410,6 +416,15 @@ async fn execute_turn(
         session_id: session_id.to_string(),
         router: state.router.clone(),
         ctx: miniq_tools::ToolContext::new(workspace_path)
+            .with_media(config.as_ref().map(|config| miniq_tools::MediaConfig {
+                base_url: config.base_url.clone(),
+                api_key: config.api_key.clone(),
+                image_model: "gpt-image-2.5-flare".into(),
+                video_model: "grok-imagine-video-1.5".into(),
+                tts_model: "grok-tts".into(),
+                transcription_model: "grok-transcribe".into(),
+                music_model: "suno-v5".into(),
+            }))
             .with_workspace_roots(roots.clone())
             .with_readable_files(
                 messages

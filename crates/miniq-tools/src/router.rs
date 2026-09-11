@@ -11,6 +11,19 @@ use miniq_sandbox::Risk;
 use serde_json::Value;
 use thiserror::Error;
 
+/// Credentials and defaults for media endpoints. The key never enters a tool
+/// schema or model-visible result; it is only used by the host HTTP client.
+#[derive(Clone, Default)]
+pub struct MediaConfig {
+    pub base_url: String,
+    pub api_key: String,
+    pub image_model: String,
+    pub video_model: String,
+    pub tts_model: String,
+    pub transcription_model: String,
+    pub music_model: String,
+}
+
 #[derive(Debug, Error)]
 pub enum ToolError {
     #[error("unknown tool: {0}")]
@@ -69,6 +82,7 @@ pub struct ToolContext {
     /// Host-owned screenshot storage, outside the model's workspace.
     pub observation_dir: PathBuf,
     pub cancellation: tokio_util::sync::CancellationToken,
+    pub media: Option<MediaConfig>,
     /// Plan-mode guard shared by the executor and plan_mode tool.
     plan_mode: Arc<AtomicBool>,
 }
@@ -90,6 +104,7 @@ impl ToolContext {
             observation_dir: std::env::temp_dir()
                 .join(format!("miniq-observations-{}", uuid::Uuid::new_v4())),
             cancellation: tokio_util::sync::CancellationToken::new(),
+            media: None,
             plan_mode: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -134,6 +149,11 @@ impl ToolContext {
 
     pub fn with_cancellation(mut self, token: tokio_util::sync::CancellationToken) -> Self {
         self.cancellation = token;
+        self
+    }
+
+    pub fn with_media(mut self, media: Option<MediaConfig>) -> Self {
+        self.media = media;
         self
     }
 

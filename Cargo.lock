@@ -2986,6 +2986,7 @@ version = "0.1.24"
 dependencies = [
  "async-trait",
  "axum",
+ "base64 0.22.1",
  "core-foundation",
  "core-graphics",
  "enigo",
