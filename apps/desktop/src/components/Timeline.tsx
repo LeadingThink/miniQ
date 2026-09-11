@@ -8,6 +8,7 @@ import {
   Pencil,
   RefreshCw,
   Search,
+  Share2,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -43,6 +44,7 @@ import { useHistorySearch } from "../hooks/useHistorySearch";
 import { readExportHistory } from "../historyExport";
 import { ExecutionSummary } from "./ExecutionSummary";
 import { ModelDiagnostics } from "./ModelDiagnostics";
+import { SessionShareDialog } from "./SessionShareDialog";
 
 function MessageAttachmentPreview({
   attachment,
@@ -375,6 +377,8 @@ function TimelineEntries(props: {
 }
 
 export function Timeline(props: TimelineProps) {
+  const [showShare, setShowShare] = useState(false);
+  useEffect(() => setShowShare(false), [props.sessionId]);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
@@ -524,6 +528,7 @@ export function Timeline(props: TimelineProps) {
         questions={props.questions.length}
       />
       <div className="timeline-toolbar" aria-label="会话记录工具栏">
+        {props.client && props.sessionId && <button type="button" className="icon-button" title="分享会话" aria-label="分享会话" onClick={() => setShowShare(true)}><Share2 size={16} /></button>}
         {props.client && props.sessionId && (
           <button
             type="button"
@@ -603,6 +608,7 @@ export function Timeline(props: TimelineProps) {
           onClose={() => setShowDiagnostics(false)}
         />
       )}
+      {showShare && props.client && props.sessionId && <SessionShareDialog client={props.client} sessionId={props.sessionId} title={props.title ?? "miniQ 会话"} artifacts={props.artifacts} onClose={() => setShowShare(false)} />}
       <div className="timeline" ref={scrollRef} onScroll={onScroll}>
         {(props.loading || (historySearch.loading && !historySearch.page)) && (
           <div className="history-loading" role="status">

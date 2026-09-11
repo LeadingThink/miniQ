@@ -270,7 +270,7 @@ export class RpcClient {
     }
   }
 
-  call<T = unknown>(method: string, params?: unknown, options: { signal?: AbortSignal } = {}): Promise<T> {
+  call<T = unknown>(method: string, params?: unknown, options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<T> {
     if (options.signal?.aborted) return Promise.reject(new DOMException("Request cancelled", "AbortError"));
     const ws = this.ws;
     if (!ws) return Promise.reject(new Error("not connected"));
@@ -284,7 +284,7 @@ export class RpcClient {
         pending.cleanup();
         this.cancelRemoteRequest(id);
         reject(new Error(`请求 ${method} 超时`));
-      }, RPC_TIMEOUT_MS);
+      }, options.timeoutMs ?? RPC_TIMEOUT_MS);
       const abort = () => {
         const pending = this.pending.get(id);
         if (!pending) return;

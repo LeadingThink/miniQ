@@ -1,10 +1,12 @@
-import { useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useState, useSyncExternalStore } from "react";
 import { AppShell } from "./components/AppShell";
 import { MobileEntry } from "./components/MobileEntry";
 import { useMiniqApp } from "./hooks/useMiniqApp";
 import { SessionFileAccess } from "./sessionFileAccess";
 import { isRemoteBrowserEntry } from "./remoteAccess";
 import { getAppearance, subscribeAppearance, storeTheme, type ThemeId } from "./theme";
+import { sharedSessionId } from "./sharing";
+const SharedSessionPage = lazy(() => import("./components/SharedSessionPage").then((module) => ({ default: module.SharedSessionPage })));
 
 export type { PendingApproval } from "./hooks/useSessionFeed";
 
@@ -18,6 +20,8 @@ function ConnectedApp(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) =
 export default function App() {
   const { theme } = useSyncExternalStore(subscribeAppearance, getAppearance, getAppearance);
   const [remoteActive, setRemoteActive] = useState(false);
+  const shareId = sharedSessionId();
+  if (shareId !== null) return <Suspense fallback={<p role="status">正在加载分享…</p>}><SharedSessionPage key={shareId} id={shareId} /></Suspense>;
 
   if (isRemoteBrowserEntry() && !remoteActive) {
     return <MobileEntry onRemote={() => setRemoteActive(true)} />;

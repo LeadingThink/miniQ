@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { RelayBroker } from "./broker.js";
 import { configuredBlobStore, type TicketIssuer } from "./blobStore.js";
+import { ShareStore } from "./shareStore.js";
+import { ShareHttp, oneApiShareAuth } from "./shareHttp.js";
 
 const DEFAULT_PORT = 9200;
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -15,10 +17,16 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "tauri://localhost",
 ];
 
-export function createRelayServer(options?: { allowedOrigins?: string[]; blobs?: TicketIssuer }): Server {
+export function createRelayServer(options?: { allowedOrigins?: string[]; blobs?: TicketIssuer; shares?: ShareHttp }): Server {
   const broker = new RelayBroker(options?.blobs ?? configuredBlobStore());
   const allowedOrigins = new Set(options?.allowedOrigins ?? configuredOrigins());
+  const shares = options?.shares ?? (process.env.MINIQ_SHARE_DIR ? new ShareHttp(new ShareStore(process.env.MINIQ_SHARE_DIR), oneApiShareAuth()) : undefined);
   const server = createServer((request, response) => {
+    if (request.url?.startsWith("/shares/")) {
+      if (shares) void shares.handle(request, response);
+      else response.writeHead(503, { "content-type": "application/json" }).end(JSON.stringify({ error: "分享服务尚未启用" }));
+      return;
+    }
     if (request.url === "/health") {
       response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       response.end(JSON.stringify({ ok: true, rooms: broker.roomCount() }));
@@ -26,6 +34,12 @@ export function createRelayServer(options?: { allowedOrigins?: string[]; blobs?:
     }
     response.writeHead(404).end();
   });
+  if (shares) {
+    const cleanup = () => void shares.store.cleanup().catch(() => console.error("Share cleanup failed"));
+    cleanup();
+    const timer = setInterval(cleanup, 3600000).unref();
+    server.on("close", () => clearInterval(timer));
+  }
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 });
 
   server.on("upgrade", (request, socket, head) => {

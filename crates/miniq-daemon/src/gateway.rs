@@ -25,6 +25,7 @@ mod session_history;
 mod session_model;
 mod session_queue;
 mod settings;
+mod share;
 mod skill;
 mod system;
 mod voice;
@@ -124,6 +125,9 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.setArchived" => session::set_archived(state, req.params),
         "session.delete" => session::delete(state, req.params),
         "session.search" => session::search(state, req.params),
+        "session.shareCreate" => share::create(state, req.params).await,
+        "session.shareList" => share::list(state, req.params).await,
+        "session.shareRevoke" => share::revoke(state, req.params).await,
         "workspace.rename" => workspace::rename(state, req.params),
         "workspace.delete" => workspace::delete(state, req.params),
         "externalSession.scan" => external_session::scan().await,
