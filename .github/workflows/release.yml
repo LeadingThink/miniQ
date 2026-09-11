@@ -25,6 +25,11 @@ on:
         required: true
         default: false
         type: boolean
+      include_linux:
+        description: Include Linux when building all desktop platforms
+        required: true
+        default: true
+        type: boolean
       draft:
         description: Create a draft release
         required: true
@@ -67,7 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.windows_only && '[{"os":"windows-latest","target":"x86_64-pc-windows-msvc","bundles":"nsis"}]' || '[{"os":"windows-latest","target":"x86_64-pc-windows-msvc","bundles":"nsis"},{"os":"macos-latest","target":"aarch64-apple-darwin","bundles":"app,dmg"},{"os":"macos-latest","target":"x86_64-apple-darwin","bundles":"app,dmg"},{"os":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"}]') }}
+        include: ${{ fromJSON(inputs.windows_only && '[{"os":"windows-latest","target":"x86_64-pc-windows-msvc","bundles":"nsis"}]' || inputs.include_linux && '[{"os":"windows-latest","target":"x86_64-pc-windows-msvc","bundles":"nsis"},{"os":"macos-latest","target":"aarch64-apple-darwin","bundles":"app,dmg"},{"os":"macos-latest","target":"x86_64-apple-darwin","bundles":"app,dmg"},{"os":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"}]' || '[{"os":"windows-latest","target":"x86_64-pc-windows-msvc","bundles":"nsis"},{"os":"macos-latest","target":"aarch64-apple-darwin","bundles":"app,dmg"},{"os":"macos-latest","target":"x86_64-apple-darwin","bundles":"app,dmg"}]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -191,7 +196,7 @@ jobs:
           --tag ${{ inputs.tag }}
           --asset-base-url https://oss.zaiwen.top/releases/miniq/${{ inputs.tag }}
           --mirror-base-url https://github.com/LeadingThink/miniQ-releases/releases/download/${{ inputs.tag }}
-          --required-platforms ${{ inputs.windows_only && 'windows-x86_64' || 'windows-x86_64,darwin-aarch64,darwin-x86_64,linux-x86_64' }}
+          --required-platforms ${{ inputs.windows_only && 'windows-x86_64' || inputs.include_linux && 'windows-x86_64,darwin-aarch64,darwin-x86_64,linux-x86_64' || 'windows-x86_64,darwin-aarch64,darwin-x86_64' }}
       - name: Publish Qiniu primary download origin
         env:
           QINIU_ACCESS_KEY: ${{ secrets.QINIU_ACCESS_KEY }}
@@ -214,6 +219,7 @@ jobs:
           RELEASE_NOTES: ${{ inputs.notes }}
           RELEASE_DRAFT: ${{ inputs.draft }}
           WINDOWS_ONLY: ${{ inputs.windows_only }}
+          INCLUDE_LINUX: ${{ inputs.include_linux }}
         run: |
           if ! gh release view "$RELEASE_TAG" --repo LeadingThink/miniQ-releases >/dev/null 2>&1; then
             args=(release create "$RELEASE_TAG" --repo LeadingThink/miniQ-releases \
@@ -224,8 +230,10 @@ jobs:
             else
               if [ "$WINDOWS_ONLY" = "true" ]; then
                 args+=(--notes "miniQ desktop release for Windows.")
-              else
+              elif [ "$INCLUDE_LINUX" = "true" ]; then
                 args+=(--notes "miniQ desktop release for Windows, macOS, and Linux.")
+              else
+                args+=(--notes "miniQ desktop release for Windows and macOS.")
               fi
             fi
             gh "${args[@]}"

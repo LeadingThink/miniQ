@@ -1,7 +1,7 @@
 {
   "name": "miniq-desktop",
   "private": true,
-  "version": "0.1.24",
+  "version": "0.1.25",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,9 +11,9 @@
     "mobile:android": "npm run mobile:sync && cap build android",
     "mobile:ios": "npm run mobile:sync && cap open ios",
     "release:check-version": "node scripts/check-release-version.mjs",
-    "test": "vitest run && npm run test:release-manifest && npm run test:qiniu-publisher",
+    "test": "vitest run --maxWorkers=4 --testTimeout=15000 && npm run test:release-manifest && npm run test:qiniu-publisher",
     "test:release-manifest": "node --test scripts/build-release-manifest.node-test.mjs",
-    "test:qiniu-publisher": "python3 -m unittest discover -s scripts -p '*_test.py'",
+    "test:qiniu-publisher": "python3 -m unittest discover -s scripts -p *_test.py",
     "preview": "vite preview",
     "tauri": "tauri"
   },
