@@ -76,6 +76,7 @@ pub(super) async fn run(state: &AppState, config: &ActiveConfig) -> anyhow::Resu
     )));
     let mut requests = JoinSet::new();
     let mut cancellations = HashMap::<(String, String), CancellationToken>::new();
+    let mut uploads = super::upload::Uploads::default();
     let mut events = state.live_events.subscribe();
     let mut subscriptions = super::subscriptions::Subscriptions::default();
     let mut flush = tokio::time::interval(Duration::from_millis(700));
@@ -89,6 +90,7 @@ pub(super) async fn run(state: &AppState, config: &ActiveConfig) -> anyhow::Resu
             result = &mut writer.0 => { return result?; },
             Some(result) = requests.join_next() => { result??; },
             _ = config_check.tick() => {
+                uploads.expire();
                 cancellations.retain(|_, token| !token.is_cancelled());
                 if current_fingerprint(state) != Some(config.fingerprint) { return Ok(()); }
             }
@@ -113,7 +115,7 @@ pub(super) async fn run(state: &AppState, config: &ActiveConfig) -> anyhow::Resu
                             "blob_ticket" => blobs.receive(&frame.request_id, frame.ticket),
                             "presence" => {
                                 mobile_clients = frame.mobile_clients;
-                                if let Some(ids) = &frame.mobile_ids { subscriptions.retain(ids); }
+                                if let Some(ids) = &frame.mobile_ids { subscriptions.retain(ids); uploads.retain_sources(ids); }
                                 set_status(state, RemoteConnectionState::Connected, config.relay_url.clone(), mobile_clients, None);
                             }
                             "error" => anyhow::bail!(frame.message),
@@ -126,10 +128,23 @@ pub(super) async fn run(state: &AppState, config: &ActiveConfig) -> anyhow::Resu
                                     };
                                 if value["type"] == "remote_cancel" {
                                     if let Some(id) = value["requestId"].as_str() {
+                                        uploads.cancel(&frame.source, id);
                                         if let Some(token) = cancellations.remove(&(frame.source.clone(), id.to_string())) { token.cancel(); }
                                     }
                                     continue;
                                 }
+                                let upload_request_id = value.get("requestId").cloned();
+                                let value = match uploads.read(&frame.source, value) {
+                                    Ok(Some(value)) => value,
+                                    Ok(None) => continue,
+                                    Err(error) => {
+                                        if let Some(id) = upload_request_id.and_then(|id| serde_json::from_value::<RequestId>(id).ok()) {
+                                            let reply = RpcResponse::err(id, RpcError::new(ErrorCode::InvalidParams, format!("远程上传无效：{error}")));
+                                            let _ = outbound.try_send(Outbound::new(frame.source, serde_json::to_value(reply)?));
+                                        }
+                                        continue;
+                                    }
+                                };
                                 subscriptions.observe(&frame.source, &value);
                                 if value["type"] == "remote_select" { continue; }
                                 cancellations.retain(|_, token| !token.is_cancelled());

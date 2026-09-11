@@ -67,7 +67,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     // Channel that serializes everything written to the sink: RPC responses
     // and broadcast events both go through here.
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(256);
-    let share_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(2));
+    let background_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
 
     let writer = tokio::spawn(async move {
         while let Some(text) = rx.recv().await {
@@ -117,14 +117,17 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             continue;
         };
         let request = serde_json::from_str::<RpcRequest>(&text);
-        // Publishing large files must not block health, cancellation, or navigation
-        // on this connection. An accepted upload can finish after the UI disconnects.
+        // Network-bound uploads and speech recognition must not block navigation
+        // or task cancellation on this connection.
         if let Ok(req) = &request {
             if matches!(
                 req.method.as_str(),
-                "session.shareCreate" | "session.shareList" | "session.shareRevoke"
+                "session.shareCreate"
+                    | "session.shareList"
+                    | "session.shareRevoke"
+                    | "voice.transcribe"
             ) {
-                if let Ok(permit) = share_slots.clone().try_acquire_owned() {
+                if let Ok(permit) = background_slots.clone().try_acquire_owned() {
                     let req = request.unwrap();
                     let state = state.clone();
                     let replies = tx.clone();
@@ -139,7 +142,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 }
                 let response = RpcResponse::err(
                     req.id.clone(),
-                    RpcError::new(ErrorCode::SessionBusy, "已有分享正在上传，请稍后重试"),
+                    RpcError::new(ErrorCode::SessionBusy, "后台请求繁忙，请稍后重试"),
                 );
                 if tx
                     .send(serde_json::to_string(&response).unwrap())

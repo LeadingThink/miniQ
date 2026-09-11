@@ -10,6 +10,7 @@ describe("VoiceInput", () => {
         client={{} as RpcClient}
         onStart={() => undefined}
         onTranscribed={() => undefined}
+        onPreview={() => undefined}
       />,
     );
 

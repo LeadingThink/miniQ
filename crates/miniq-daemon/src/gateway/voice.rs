@@ -18,6 +18,8 @@ struct TranscribeParams {
     audio_base64: String,
     #[serde(default = "default_filename")]
     filename: String,
+    #[serde(default)]
+    preview: bool,
 }
 
 #[derive(Deserialize)]
@@ -70,7 +72,7 @@ pub(super) async fn transcribe(state: &AppState, raw: Option<Value>) -> Result<V
     }
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(if input.preview { 15 } else { 120 }))
         .build()
         .map_err(provider_error)?;
     let url = format!(
@@ -80,11 +82,21 @@ pub(super) async fn transcribe(state: &AppState, raw: Option<Value>) -> Result<V
     let filename = safe_wav_filename(&input.filename);
     let mut last_error = None;
 
-    for delay in [0, 1, 3] {
+    let delays: &[u64] = if input.preview { &[0] } else { &[0, 1, 3] };
+    for &delay in delays {
         if delay > 0 {
             tokio::time::sleep(Duration::from_secs(delay)).await;
         }
-        match send_transcription(&client, &url, &provider.api_key, &filename, &audio).await {
+        match send_transcription(
+            &client,
+            &url,
+            &provider.api_key,
+            &filename,
+            &audio,
+            input.preview,
+        )
+        .await
+        {
             Ok(text) => return Ok(json!({ "text": text })),
             Err(failure) if !failure.retryable => return Err(failure.error),
             Err(failure) => last_error = Some(failure.error),
@@ -95,6 +107,12 @@ pub(super) async fn transcribe(state: &AppState, raw: Option<Value>) -> Result<V
 }
 
 fn decode_audio(encoded: &str) -> Result<Vec<u8>, RpcError> {
+    if encoded.len() > MAX_AUDIO_BYTES.div_ceil(3) * 4 {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "recording exceeds the 12 MB limit",
+        ));
+    }
     let audio = base64::engine::general_purpose::STANDARD
         .decode(encoded)
         .map_err(|_| RpcError::new(ErrorCode::InvalidParams, "audioBase64 is invalid"))?;
@@ -132,6 +150,7 @@ async fn send_transcription(
     api_key: &str,
     filename: &str,
     audio: &[u8],
+    preview: bool,
 ) -> Result<String, VoiceAttemptError> {
     let file = Part::bytes(audio.to_vec())
         .file_name(filename.to_string())
@@ -157,11 +176,7 @@ async fn send_transcription(
         return Err(VoiceAttemptError {
             error: RpcError::new(
                 ErrorCode::ProviderError,
-                format!(
-                    "voice provider returned {}: {}",
-                    status.as_u16(),
-                    body.chars().take(300).collect::<String>()
-                ),
+                format!("voice provider returned {}: {}", status.as_u16(), body),
             ),
             retryable: status.as_u16() == 408 || status.as_u16() == 429 || status.is_server_error(),
         });
@@ -175,7 +190,7 @@ async fn send_transcription(
             retryable: false,
         })?;
     let text = result.text.trim();
-    if text.is_empty() {
+    if text.is_empty() && !preview {
         return Err(VoiceAttemptError::final_error(
             "voice provider returned empty text",
         ));
