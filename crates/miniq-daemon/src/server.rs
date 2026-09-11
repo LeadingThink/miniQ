@@ -67,6 +67,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     // Channel that serializes everything written to the sink: RPC responses
     // and broadcast events both go through here.
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(256);
+    let share_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(2));
 
     let writer = tokio::spawn(async move {
         while let Some(text) = rx.recv().await {
@@ -115,7 +116,42 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         let WsMessage::Text(text) = msg else {
             continue;
         };
-        let response = match serde_json::from_str::<RpcRequest>(&text) {
+        let request = serde_json::from_str::<RpcRequest>(&text);
+        // Publishing large files must not block health, cancellation, or navigation
+        // on this connection. An accepted upload can finish after the UI disconnects.
+        if let Ok(req) = &request {
+            if matches!(
+                req.method.as_str(),
+                "session.shareCreate" | "session.shareList" | "session.shareRevoke"
+            ) {
+                if let Ok(permit) = share_slots.clone().try_acquire_owned() {
+                    let req = request.unwrap();
+                    let state = state.clone();
+                    let replies = tx.clone();
+                    tokio::spawn(async move {
+                        let _permit = permit;
+                        let response = gateway::dispatch(&state, req).await;
+                        if let Ok(text) = serde_json::to_string(&response) {
+                            let _ = replies.send(text).await;
+                        }
+                    });
+                    continue;
+                }
+                let response = RpcResponse::err(
+                    req.id.clone(),
+                    RpcError::new(ErrorCode::SessionBusy, "已有分享正在上传，请稍后重试"),
+                );
+                if tx
+                    .send(serde_json::to_string(&response).unwrap())
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+                continue;
+            }
+        }
+        let response = match request {
             Ok(req) => gateway::dispatch(&state, req).await,
             Err(e) => RpcResponse::err(
                 RequestId::Number(0),
