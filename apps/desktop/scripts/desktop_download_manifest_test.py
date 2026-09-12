@@ -68,6 +68,14 @@ class DesktopManifestTest(unittest.TestCase):
             self.assertEqual(result["products"]["miniq"]["platforms"][platform],
                              self.current["products"]["miniq"]["platforms"][platform])
 
+    def test_windows_and_macos_preserve_linux_downloads(self):
+        for suffix in self.suffixes[-2:]:
+            (self.root / f"miniQ_0.1.17_{suffix}").unlink()
+        result = self.merge()
+        self.assertEqual(result["products"]["miniq"]["platforms"]["linux"],
+                         self.current["products"]["miniq"]["platforms"]["linux"])
+        self.assertIn("/v0.1.17/", result["products"]["miniq"]["platforms"]["macos"]["url"])
+
     def test_incomplete_full_release_fails(self):
         (self.root / "miniQ_0.1.17_x64.dmg").unlink()
         with self.assertRaises(FileNotFoundError):

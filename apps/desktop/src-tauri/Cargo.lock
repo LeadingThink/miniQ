@@ -2176,7 +2176,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-desktop"
-version = "0.1.25"
+version = "0.1.26"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2206,7 +2206,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-local"
-version = "0.1.25"
+version = "0.1.26"
 dependencies = [
  "base64 0.22.1",
  "fs2",

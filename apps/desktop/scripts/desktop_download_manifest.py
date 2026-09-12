@@ -64,10 +64,9 @@ def merge_manifest(current: dict, latest: dict, root: Path, tag: str, domain: st
         "linux": [("AppImage", "x64", f"miniQ_{version}_x64.AppImage"),
                   ("deb", "amd64", f"miniQ_{version}_amd64.deb")],
     }
-    full_release = any((root / name).exists() for items in list(groups.values())[1:]
-                       for _, _, name in items)
     for platform, installers in groups.items():
-        if platform != "windows" and not full_release:
+        if platform != "windows" and not any((root / name).exists()
+                                              for _, _, name in installers):
             continue
         if not isinstance(platforms.get(platform), dict):
             raise ValueError(f"shared manifest is missing desktop platform: {platform}")
