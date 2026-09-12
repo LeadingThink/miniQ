@@ -6,8 +6,9 @@ import type { RpcClient } from "../rpc";
 import type { ThemeId } from "../theme";
 import { ThemePicker } from "./ThemePicker";
 import { ComputerSettings } from "./ComputerSettings";
+import { MobileUpdateCheck } from "./MobileUpdateCheck";
 import { ProviderModelField } from "./ProviderModelField";
-import { clearRemoteCredentials, DEFAULT_RELAY_URL } from "../remoteAccess";
+import { clearRemoteCredentials, DEFAULT_RELAY_URL, loadRemoteCredentials, storeRemoteCredentials } from "../remoteAccess";
 
 export const ZAIWEN_API_PORTAL_URL = "https://platform.zaiwenai.com/";
 export const ZAIWEN_API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
@@ -59,6 +60,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const [relayUrl, setRelayUrl] = useState(DEFAULT_RELAY_URL);
   const [deviceName, setDeviceName] = useState("我的电脑");
   const [remoteStatus, setRemoteStatus] = useState<SettingsView["remoteStatus"] | null>(null);
+  const [remoteKeyDraft, setRemoteKeyDraft] = useState("");
+  const [remoteKeyStatus, setRemoteKeyStatus] = useState<string | null>(null);
+  const [switchingKey, setSwitchingKey] = useState(false);
   const panelRef = useRef<HTMLFormElement>(null);
   const onCloseRef = useRef(props.onClose);
   onCloseRef.current = props.onClose;
@@ -171,6 +175,30 @@ export function SettingsPanel(props: SettingsPanelProps) {
     }
   };
 
+  const switchRemoteKey = async () => {
+    const key = remoteKeyDraft.trim();
+    if (!key || switchingKey) return;
+    setSwitchingKey(true);
+    setRemoteKeyStatus(null);
+    try {
+      const current = await loadRemoteCredentials();
+      await storeRemoteCredentials({
+        apiKey: key,
+        relayUrl: current?.relayUrl ?? DEFAULT_RELAY_URL,
+        deviceName: current?.deviceName ?? deviceName.trim() ?? "",
+      });
+      setRemoteKeyDraft("");
+      setRemoteKeyStatus("已保存，正在用新 Key 重新连接…");
+      // Dropping the socket makes the reconnect loop re-derive the room and
+      // encryption key from the new credentials.
+      props.client.disconnect();
+    } catch (error) {
+      setRemoteKeyStatus(`更换失败：${errorMessage(error)}`);
+    } finally {
+      setSwitchingKey(false);
+    }
+  };
+
   const openZaiwenApiPortal = async () => {
     setStatus(null);
     try {
@@ -265,16 +293,44 @@ export function SettingsPanel(props: SettingsPanelProps) {
                   <p>当前页面操作由桌面 miniQ 执行，relay 无法读取会话内容。</p>
                 </div>
               </div>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => {
-                  void clearRemoteCredentials().finally(() => window.location.reload());
-                }}
-              >
-                <WifiOff size={14} />
-                退出远程桌面
-              </button>
+              <label htmlFor="remote-api-key">
+                更换 API Key
+                <input
+                  id="remote-api-key"
+                  type="password"
+                  value={remoteKeyDraft}
+                  disabled={switchingKey}
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder="输入新的在问 API Key"
+                  onChange={(event) => {
+                    setRemoteKeyDraft(event.target.value);
+                    setRemoteKeyStatus(null);
+                  }}
+                />
+              </label>
+              <p className="settings-section-description">
+                保存后会立即用新 Key 重新建立加密连接，无需退出应用重新输入。
+              </p>
+              {remoteKeyStatus && <p role="status">{remoteKeyStatus}</p>}
+              <MobileUpdateCheck />
+              <div className="settings-actions">
+                <button type="button" disabled={switchingKey || !remoteKeyDraft.trim()} onClick={() => void switchRemoteKey()}>
+                  <KeyRound size={14} />
+                  {switchingKey ? "正在重连…" : "保存并重连"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={switchingKey}
+                  onClick={() => {
+                    void clearRemoteCredentials().finally(() => window.location.reload());
+                  }}
+                >
+                  <WifiOff size={14} />
+                  退出远程桌面
+                </button>
+              </div>
             </section>
           ) : (
             <>

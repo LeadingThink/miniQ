@@ -1,9 +1,9 @@
-import { lazy, Suspense, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
 import { AppShell } from "./components/AppShell";
 import { MobileEntry } from "./components/MobileEntry";
 import { useMiniqApp } from "./hooks/useMiniqApp";
 import { SessionFileAccess } from "./sessionFileAccess";
-import { isRemoteBrowserEntry } from "./remoteAccess";
+import { isRemoteBrowserEntry, loadRemoteCredentials } from "./remoteAccess";
 import { getAppearance, subscribeAppearance, storeTheme, type ThemeId } from "./theme";
 import { sharedSessionId } from "./sharing";
 const SharedSessionPage = lazy(() => import("./components/SharedSessionPage").then((module) => ({ default: module.SharedSessionPage })));
@@ -19,12 +19,30 @@ function ConnectedApp(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) =
 
 export default function App() {
   const { theme } = useSyncExternalStore(subscribeAppearance, getAppearance, getAppearance);
-  const [remoteActive, setRemoteActive] = useState(false);
   const shareId = sharedSessionId();
   if (shareId !== null) return <Suspense fallback={<p role="status">正在加载分享…</p>}><SharedSessionPage key={shareId} id={shareId} /></Suspense>;
 
-  if (isRemoteBrowserEntry() && !remoteActive) {
-    return <MobileEntry onRemote={() => setRemoteActive(true)} />;
-  }
+  if (isRemoteBrowserEntry()) return <RemoteGate theme={theme} onThemeChange={storeTheme} />;
   return <ConnectedApp theme={theme} onThemeChange={storeTheme} />;
+}
+
+/** Remembered credentials reconnect straight to the desktop, so the API key —
+ * which is painful to retype on a phone — is only entered once. */
+function RemoteGate(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) => void }) {
+  const [phase, setPhase] = useState<"restoring" | "entry" | "active">("restoring");
+
+  useEffect(() => {
+    let disposed = false;
+    const settle = (credentials: unknown) => {
+      if (!disposed) setPhase(credentials ? "active" : "entry");
+    };
+    void loadRemoteCredentials().then(settle, () => settle(null));
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  if (phase === "restoring") return <p role="status" className="remote-restoring">正在恢复远程连接…</p>;
+  if (phase === "entry") return <MobileEntry onRemote={() => setPhase("active")} />;
+  return <ConnectedApp theme={props.theme} onThemeChange={props.onThemeChange} />;
 }

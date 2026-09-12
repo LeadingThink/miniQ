@@ -2,7 +2,8 @@ import { ArrowLeft, Bot, ImagePlus, Laptop, Send, Square, Wifi, X } from "lucide
 import { useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import { isNativeMobileApp } from "../mobileRuntime";
-import { DEFAULT_RELAY_URL, loadRemoteCredentials, readRemoteCredentials, storeRemoteCredentials } from "../remoteAccess";
+import { DEFAULT_RELAY_URL, isRememberEnabled, loadRemoteCredentials, readRemoteCredentials, setRememberEnabled, storeRemoteCredentials } from "../remoteAccess";
+import { MobileUpdateCheck } from "./MobileUpdateCheck";
 import { Md } from "./Md";
 
 const API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
@@ -24,6 +25,7 @@ export function MobileEntry(props: { onRemote: () => void }) {
   const [apiKey, setApiKey] = useState(saved?.apiKey ?? "");
   const [deviceName, setDeviceName] = useState(saved?.deviceName ?? defaultDeviceName());
   const [error, setError] = useState<string | null>(null);
+  const [remember, setRemember] = useState(() => isRememberEnabled());
   const [loadingCredentials, setLoadingCredentials] = useState(isNativeMobileApp());
 
   useEffect(() => {
@@ -65,7 +67,10 @@ export function MobileEntry(props: { onRemote: () => void }) {
       return false;
     }
     try {
-      await storeRemoteCredentials({ apiKey: key, relayUrl: DEFAULT_RELAY_URL, deviceName: deviceName.trim() || defaultDeviceName() });
+      await storeRemoteCredentials(
+        { apiKey: key, relayUrl: DEFAULT_RELAY_URL, deviceName: deviceName.trim() || defaultDeviceName() },
+        { remember },
+      );
       setError(null);
       return true;
     } catch (cause) {
@@ -90,8 +95,22 @@ export function MobileEntry(props: { onRemote: () => void }) {
         <label className="mobile-entry-field">
           <span>在问 API Key</span>
           <input type="password" autoComplete="off" value={apiKey} placeholder="sk-..." disabled={loadingCredentials} onChange={(event) => setApiKey(event.target.value)} />
-          <small>{isNativeMobileApp() ? "Key 保存在系统安全存储中；relay 不接收 Key 原文。" : "Key 只保存在当前浏览器会话中；relay 不接收 Key 原文。"}</small>
+          <small>{isNativeMobileApp() ? "Key 保存在系统安全存储中，下次打开应用无需重新输入；relay 不接收 Key 原文。" : "relay 不接收 Key 原文。"}</small>
         </label>
+
+        {!isNativeMobileApp() && (
+          <label className="mobile-entry-remember">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(event) => {
+                setRemember(event.target.checked);
+                setRememberEnabled(event.target.checked);
+              }}
+            />
+            <span>在这台设备上记住 Key（下次打开无需重新输入）</span>
+          </label>
+        )}
 
         {section === "remote" && (
           <label className="mobile-entry-field">
@@ -119,6 +138,7 @@ export function MobileEntry(props: { onRemote: () => void }) {
           </div>
         )}
       </section>
+      <MobileUpdateCheck />
       <p className="mobile-entry-security">会话内容使用 AES-256-GCM 端到端加密，服务器只负责转发。</p>
     </main>
   );

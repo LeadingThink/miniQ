@@ -230,6 +230,18 @@ export class RpcClient {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
+  /** Drop the current socket so the next connect() re-derives identity from
+   * freshly stored credentials (used when the user swaps their API key). */
+  disconnect() {
+    const socket = this.ws;
+    this.ws = null;
+    this.remoteKey = null;
+    if (socket) {
+      socket.close(4000, "credentials changed");
+      this.notifyStatus(false);
+    }
+  }
+
   get mode(): "local" | "remote" {
     return this.connectionMode;
   }
