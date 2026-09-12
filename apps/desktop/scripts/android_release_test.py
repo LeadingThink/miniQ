@@ -43,11 +43,11 @@ class AndroidReleaseTests(unittest.TestCase):
     def test_invalid_tags_and_gradle_mismatch(self):
         gradle = (release.ROOT / "android/app/build.gradle").read_text()
         self.assertEqual(release.validate_version("android-v0.1.18", gradle), "0.1.18")
-        for tag in ["v0.1.18", "android-v01.1.17", "android-v0.1.18-beta", "android-v0.1.18\n", "android-v0.1.18", "main", "$(id)"]:
+        for tag in ["v0.1.18", "android-v01.1.17", "android-v0.1.18-beta", "android-v0.1.18\n", "android-v0.1.17", "main", "$(id)"]:
             with self.subTest(tag=tag), self.assertRaises(ValueError):
                 release.validate_version(tag, gradle)
         with self.assertRaises(ValueError):
-            release.validate_version("android-v0.1.18", gradle.replace("versionCode 18", "versionCode 1"))
+            release.validate_version("android-v0.1.18", gradle.replace('versionName "0.1.18"', 'versionName "0.1.17"'))
 
     def test_malformed_manifest_fails_closed(self):
         for current in [{}, {"products": {}}, {"products": {"miniq": {"platforms": []}}}]:
