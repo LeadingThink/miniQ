@@ -828,7 +828,10 @@ mod tests {
     async fn compacts_before_retrying_a_context_overflow() {
         let provider = FallibleProvider::new(vec![
             vec![Err(ProviderError::ContextWindowExceeded)],
-            vec![Ok(ChatDelta::Text("working summary".into()))],
+            vec![
+                Ok(ChatDelta::Text("working summary".into())),
+                Ok(ChatDelta::Finished),
+            ],
             vec![Ok(ChatDelta::Text("done".into()))],
         ]);
         let history = vec![

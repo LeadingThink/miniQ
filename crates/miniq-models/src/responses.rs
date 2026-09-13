@@ -40,7 +40,9 @@ impl ResponsesProvider {
         if let Some(max_output_tokens) = request.max_output_tokens {
             body["max_output_tokens"] = json!(max_output_tokens);
         }
-        if !request.tools.is_empty() {
+        if request.tools.is_empty() {
+            body["tool_choice"] = json!("none");
+        } else {
             body["tools"] = Value::Array(request.tools.iter().map(response_tool).collect());
         }
         Ok(body)

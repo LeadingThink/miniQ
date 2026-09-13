@@ -28,6 +28,19 @@ fn request(messages: Vec<ChatMessage>) -> CompletionRequest {
 }
 
 #[test]
+fn no_tools_explicitly_disables_tool_use_without_disabling_normal_tools() {
+    let mut completion = request(vec![ChatMessage::user("summarize")]);
+    assert!(provider()
+        .build_body(&completion)
+        .get("tool_choice")
+        .is_none());
+    completion.tools.clear();
+    let body = provider().build_body(&completion);
+    assert_eq!(body["tool_choice"], "none");
+    assert!(body.get("tools").is_none());
+}
+
+#[test]
 fn builds_native_responses_input_and_tools() {
     let body = provider().build_body(&request(vec![ChatMessage::user("hello")]));
     assert_eq!(body["input"][0]["content"][0]["type"], "input_text");

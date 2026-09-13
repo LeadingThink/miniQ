@@ -66,6 +66,22 @@ fn request(temperature: Option<f32>) -> CompletionRequest {
 }
 
 #[test]
+fn no_tools_explicitly_disables_tool_use_without_disabling_normal_tools() {
+    let mut completion = request(None);
+    let body = provider().build_body(&completion);
+    assert_eq!(body["tool_choice"], "none");
+    assert!(body.get("tools").is_none());
+    completion.tools.push(ToolSpec {
+        name: "file_read".into(),
+        description: "Read".into(),
+        parameters: json!({"type":"object"}),
+    });
+    let body = provider().build_body(&completion);
+    assert!(body.get("tool_choice").is_none());
+    assert_eq!(body["tools"][0]["function"]["name"], "file_read");
+}
+
+#[test]
 fn omits_temperature_when_the_caller_uses_provider_defaults() {
     let body = provider().build_body(&request(None));
     assert!(body.get("temperature").is_none());

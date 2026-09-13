@@ -67,7 +67,9 @@ impl OpenAiCompatProvider {
         if let Some(max_output_tokens) = request.max_output_tokens {
             body["max_tokens"] = json!(max_output_tokens);
         }
-        if !request.tools.is_empty() {
+        if request.tools.is_empty() {
+            body["tool_choice"] = json!("none");
+        } else {
             body["tools"] = Value::Array(
                 request
                     .tools

@@ -24,6 +24,8 @@ pub enum ProviderError {
     Transient(String),
     #[error("provider returned an empty completion")]
     EmptyResponse,
+    #[error("provider refused the request (stop_reason=refusal); unchanged requests will not be retried")]
+    Refusal,
     #[error("invalid response: {0}")]
     InvalidResponse(String),
     #[error("provider stopped because the output token limit was reached{0}")]

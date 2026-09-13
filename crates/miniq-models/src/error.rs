@@ -75,7 +75,10 @@ impl ProviderError {
             | Self::IncompleteStream
             | Self::OutputLimitReached(_)
             | Self::IncompleteToolArguments { .. } => true,
-            Self::InvalidResponse(_) | Self::ContextWindowExceeded | Self::Config(_) => false,
+            Self::Refusal
+            | Self::InvalidResponse(_)
+            | Self::ContextWindowExceeded
+            | Self::Config(_) => false,
         }
     }
 
