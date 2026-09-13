@@ -58,7 +58,8 @@ def prepare_signing() -> Path:
 
 
 def verify_apk(apk: Path, tag: str, tools: Path) -> None:
-    version = validate_version(tag, (ROOT / "android/app/build.gradle").read_text())
+    gradle = (ROOT / "android/app/build.gradle").read_text()
+    version = validate_version(tag, gradle)
     signing = subprocess.run([str(tools / "apksigner"), "verify", "--verbose", "--print-certs", str(apk)],
                              check=True, capture_output=True, text=True).stdout
     if not re.search(r"Signer #\d+ certificate DN:", signing) or re.search(r"Android Debug", signing, re.I):
@@ -68,10 +69,23 @@ def verify_apk(apk: Path, tag: str, tools: Path) -> None:
         raise ValueError("APK signing certificate does not match the pinned Android release certificate")
     badging = subprocess.run([str(tools / "aapt"), "dump", "badging", str(apk)],
                              check=True, capture_output=True, text=True).stdout
-    code = re.search(r"versionCode\s+(\d+)", (ROOT / "android/app/build.gradle").read_text()).group(1)
+    # validate_version already requires exactly one positive versionCode.
+    code = re.findall(r"^\s*versionCode\s+(\d+)\s*$", gradle, re.M)[0]
     if ("application-debuggable" in badging or f"versionName='{version}'" not in badging
             or f"versionCode='{code}'" not in badging or "name='com.leadingthink.miniq'" not in badging):
         raise ValueError("APK identity/version/debuggable verification failed")
+    if re.search(r"^native-code:", badging, re.M):
+        raise ValueError("universal WebView APK must not contain ABI-specific native libraries")
+
+
+def mirror_url(version: str) -> str:
+    return f"https://github.com/LeadingThink/miniQ-releases/releases/download/android-v{version}/miniQ_{version}_android.apk"
+
+
+def verify_mirror(version: str, data: bytes) -> None:
+    with urlopen(mirror_url(version), timeout=120) as response:
+        if response.read() != data:
+            raise RuntimeError("published GitHub mirror APK does not match local bytes")
 
 
 def merge_manifest(current: dict, version: str, digest: str, size: int, date: str) -> dict:
@@ -90,7 +104,10 @@ def merge_manifest(current: dict, version: str, digest: str, size: int, date: st
         "version": version,
         "releaseDate": date,
         "status": "available",
+        "label": "Android 7.0+",
+        "architecture": "Universal (WebView)",
         "url": f"{DOMAIN}/releases/miniq/android/v{version}/miniQ_{version}_android.apk",
+        "mirrors": [mirror_url(version)],
         "sha256": digest,
         "fileSize": size,
         "minAndroidVersion": "Android 7.0 (API 24)",
@@ -119,6 +136,7 @@ def publish_android(apk: Path, tag: str) -> None:
     current = json.loads(original)
     data = apk.read_bytes()
     digest = hashlib.sha256(data).hexdigest()
+    verify_mirror(version, data)
     metadata = merge_manifest(current, version, digest, len(data), datetime.now(timezone.utc).isoformat())
     key = f"releases/miniq/android/v{version}/{apk.name}"
     publish([UploadItem(apk, key)], *credentials)

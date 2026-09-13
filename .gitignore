@@ -21,7 +21,6 @@ apps/desktop/scripts/*
 !apps/desktop/scripts/prepare-daemon-sidecar.mjs
 dist-android/
 
-# Local macOS metadata and preview scratch output.
+# Local macOS metadata and generated promotional media.
 promo/.DS_Store
-promo/out/.DS_Store
-promo/out/preview/ascii.txt
+promo/out/

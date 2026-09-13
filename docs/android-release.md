@@ -72,7 +72,7 @@ checkout or publication, so they cannot expose an APK or change the public manif
 
 CI uses Node 22 and JDK 21, builds with `assembleRelease`, checks the APK with
 `apksigner` and `aapt` (pinned production certificate, non-debug signing,
-debuggable false, package and versions),
+debuggable false, package and versions, no ABI-specific native libraries),
 then retains the APK as an Actions artifact before publishing it to:
 
 - `https://oss.zaiwen.top/releases/miniq/android/v0.1.17/miniQ_0.1.17_android.apk`
@@ -80,11 +80,15 @@ then retains the APK as an Actions artifact before publishing it to:
 
 The mirror uses the identical APK and `--latest=false`, so Android never becomes
 the desktop's latest GitHub release. No desktop `latest.json` is written.
+CI publishes the GitHub mirror first. The Qiniu publisher downloads that public
+mirror and requires an exact byte match before uploading anything or advertising
+the mirror URL in the shared manifest.
 
 The publisher must successfully read `https://oss.zaiwen.top/releases/manifest.json`.
 It deep-merges only `products.miniq.platforms.android`, preserving other products,
 product versions, platforms and unknown Android fields. It sets `version`,
-`releaseDate`, `status`, `url`, `sha256`, `fileSize`, `minAndroidVersion`, and
+`releaseDate`, `status`, `label` (`Android 7.0+`), `architecture`
+(`Universal (WebView)`), `url`, `mirrors`, `sha256`, `fileSize`, `minAndroidVersion`, and
 `installationNotes` (an array of Chinese installation instructions).
 APK upload, storage size verification and downloaded SHA-256 verification precede
 the metadata write. A changed remote manifest aborts publication before overwriting

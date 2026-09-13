@@ -320,15 +320,6 @@ jobs:
           name: miniq-android-${{ inputs.tag }}
           path: dist-android/*.apk
           if-no-files-found: error
-      - name: Publish Android Qiniu origin and shared download manifest
-        env:
-          QINIU_ACCESS_KEY: ${{ secrets.QINIU_ACCESS_KEY }}
-          QINIU_SECRET_KEY: ${{ secrets.QINIU_SECRET_KEY }}
-          QINIU_BUCKET: ${{ secrets.QINIU_BUCKET }}
-        run: |
-          python3 -m pip install 'qiniu==7.18.0'
-          python3 scripts/android_release.py publish --tag "$RELEASE_TAG" \
-            --apk "../../dist-android/miniQ_${RELEASE_TAG#android-v}_android.apk"
       - name: Publish identical APK to public mirror without changing latest release
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
@@ -344,3 +335,12 @@ jobs:
           fi
           gh release upload "$RELEASE_TAG" "../../dist-android/miniQ_${RELEASE_TAG#android-v}_android.apk" \
             --repo LeadingThink/miniQ-releases --clobber
+      - name: Verify mirror and publish Android Qiniu origin and shared download manifest
+        env:
+          QINIU_ACCESS_KEY: ${{ secrets.QINIU_ACCESS_KEY }}
+          QINIU_SECRET_KEY: ${{ secrets.QINIU_SECRET_KEY }}
+          QINIU_BUCKET: ${{ secrets.QINIU_BUCKET }}
+        run: |
+          python3 -m pip install 'qiniu==7.18.0'
+          python3 scripts/android_release.py publish --tag "$RELEASE_TAG" \
+            --apk "../../dist-android/miniQ_${RELEASE_TAG#android-v}_android.apk"
