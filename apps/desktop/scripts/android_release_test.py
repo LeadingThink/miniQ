@@ -27,7 +27,7 @@ class AndroidReleaseTests(unittest.TestCase):
 
     def test_merge_preserves_other_products_versions_and_platforms(self):
         before = copy.deepcopy(self.current)
-        merged = release.merge_manifest(self.current, "0.1.18", "a" * 64, 42, "2026-01-01")
+        merged = release.merge_manifest(self.current, "0.1.19", "a" * 64, 42, "2026-01-01")
         self.assertEqual(self.current, before)
         android = merged["products"]["miniq"]["platforms"]["android"]
         self.assertEqual(android["sha256"], "a" * 64)
@@ -36,23 +36,23 @@ class AndroidReleaseTests(unittest.TestCase):
         self.assertIsInstance(android["installationNotes"], list)
         self.assertTrue(all(isinstance(note, str) and note for note in android["installationNotes"]))
         self.assertEqual(android["minAndroidVersion"], "Android 7.0 (API 24)")
-        self.assertEqual(android["url"], "https://oss.zaiwen.top/releases/miniq/android/v0.1.18/miniQ_0.1.18_android.apk")
+        self.assertEqual(android["url"], "https://oss.zaiwen.top/releases/miniq/android/v0.1.19/miniQ_0.1.19_android.apk")
         merged["products"]["miniq"]["platforms"]["android"] = before["products"]["miniq"]["platforms"]["android"]
         self.assertEqual(merged, before)
 
     def test_invalid_tags_and_gradle_mismatch(self):
         gradle = (release.ROOT / "android/app/build.gradle").read_text()
-        self.assertEqual(release.validate_version("android-v0.1.18", gradle), "0.1.18")
-        for tag in ["v0.1.18", "android-v01.1.17", "android-v0.1.18-beta", "android-v0.1.18\n", "android-v0.1.17", "main", "$(id)"]:
+        self.assertEqual(release.validate_version("android-v0.1.19", gradle), "0.1.19")
+        for tag in ["v0.1.19", "android-v01.1.17", "android-v0.1.19-beta", "android-v0.1.19\n", "android-v0.1.17", "main", "$(id)"]:
             with self.subTest(tag=tag), self.assertRaises(ValueError):
                 release.validate_version(tag, gradle)
         with self.assertRaises(ValueError):
-            release.validate_version("android-v0.1.18", gradle.replace('versionName "0.1.18"', 'versionName "0.1.17"'))
+            release.validate_version("android-v0.1.19", gradle.replace('versionName "0.1.19"', 'versionName "0.1.17"'))
 
     def test_malformed_manifest_fails_closed(self):
         for current in [{}, {"products": {}}, {"products": {"miniq": {"platforms": []}}}]:
             with self.assertRaises(ValueError):
-                release.merge_manifest(current, "0.1.18", "a" * 64, 1, "date")
+                release.merge_manifest(current, "0.1.19", "a" * 64, 1, "date")
 
     def test_each_missing_signing_secret_fails_before_writing(self):
         env = {name: "value" for name in ["ANDROID_KEYSTORE_BASE64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD"]}
@@ -68,14 +68,14 @@ class AndroidReleaseTests(unittest.TestCase):
 
     def test_apk_debug_certificate_and_debuggable_rejected(self):
         valid = f"Signer #1 certificate DN: CN=miniQ Release\nSigner #1 certificate SHA-256 digest: {release.SIGNING_CERT_SHA256}"
-        badging = "package: name='com.leadingthink.miniq' versionCode='18' versionName='0.1.18'"
+        badging = "package: name='com.leadingthink.miniq' versionCode='18' versionName='0.1.19'"
         for certificate, package in [("Signer #1 certificate DN: CN=Android Debug", badging), (valid, badging + "\napplication-debuggable"), ("", badging)]:
             outputs = [subprocess.CompletedProcess([], 0, certificate), subprocess.CompletedProcess([], 0, package)]
             with patch.object(release.subprocess, "run", side_effect=outputs), self.assertRaises(ValueError):
-                release.verify_apk(Path("release.apk"), "android-v0.1.18", Path("tools"))
+                release.verify_apk(Path("release.apk"), "android-v0.1.19", Path("tools"))
 
     def test_apk_certificate_must_match_pinned_production_key(self):
-        badging = "package: name='com.leadingthink.miniq' versionCode='18' versionName='0.1.18'"
+        badging = "package: name='com.leadingthink.miniq' versionCode='18' versionName='0.1.19'"
         for digest in [None, "a" * 64, release.SIGNING_CERT_SHA256.lower()]:
             signing = "Signer #1 certificate DN: CN=miniQ Release"
             if digest:
@@ -83,23 +83,23 @@ class AndroidReleaseTests(unittest.TestCase):
             outputs = [subprocess.CompletedProcess([], 0, signing), subprocess.CompletedProcess([], 0, badging)]
             with self.subTest(digest=digest), patch.object(release.subprocess, "run", side_effect=outputs):
                 if digest == release.SIGNING_CERT_SHA256.lower():
-                    release.verify_apk(Path("release.apk"), "android-v0.1.18", Path("tools"))
+                    release.verify_apk(Path("release.apk"), "android-v0.1.19", Path("tools"))
                 else:
                     with self.assertRaisesRegex(ValueError, "pinned"):
-                        release.verify_apk(Path("release.apk"), "android-v0.1.18", Path("tools"))
+                        release.verify_apk(Path("release.apk"), "android-v0.1.19", Path("tools"))
 
     def test_failed_manifest_read_never_uploads(self):
         with tempfile.TemporaryDirectory() as directory:
-            apk = Path(directory) / "miniQ_0.1.18_android.apk"
+            apk = Path(directory) / "miniQ_0.1.19_android.apk"
             apk.write_bytes(b"apk")
             with patch.object(release, "required_env", return_value="unused"), patch.object(release, "read_remote", side_effect=OSError("offline")), patch.object(release, "publish") as upload:
                 with self.assertRaises(OSError):
-                    release.publish_android(apk, "android-v0.1.18")
+                    release.publish_android(apk, "android-v0.1.19")
                 upload.assert_not_called()
 
     def test_apk_verified_before_shared_manifest_and_no_latest_json(self):
         with tempfile.TemporaryDirectory() as directory:
-            apk = Path(directory) / "miniQ_0.1.18_android.apk"
+            apk = Path(directory) / "miniQ_0.1.19_android.apk"
             apk.write_bytes(b"apk")
             original = json.dumps(self.current).encode()
             uploads = []
@@ -107,22 +107,22 @@ class AndroidReleaseTests(unittest.TestCase):
                 uploads.extend(item.object_key for item in items)
             with patch.object(release, "required_env", return_value="unused"), patch.object(release, "read_remote", side_effect=[original, b"corrupted"]), patch.object(release, "publish", side_effect=upload):
                 with self.assertRaisesRegex(RuntimeError, "SHA-256"):
-                    release.publish_android(apk, "android-v0.1.18")
-            self.assertEqual(uploads, ["releases/miniq/android/v0.1.18/miniQ_0.1.18_android.apk"])
+                    release.publish_android(apk, "android-v0.1.19")
+            self.assertEqual(uploads, ["releases/miniq/android/v0.1.19/miniQ_0.1.19_android.apk"])
 
     def test_concurrent_manifest_change_aborts_metadata_write(self):
         with tempfile.TemporaryDirectory() as directory:
-            apk = Path(directory) / "miniQ_0.1.18_android.apk"
+            apk = Path(directory) / "miniQ_0.1.19_android.apk"
             apk.write_bytes(b"apk")
             original = json.dumps(self.current).encode()
             with patch.object(release, "required_env", return_value="unused"), patch.object(release, "read_remote", side_effect=[original, b"apk", b"changed"]), patch.object(release, "publish") as upload:
                 with self.assertRaisesRegex(RuntimeError, "changed"):
-                    release.publish_android(apk, "android-v0.1.18")
+                    release.publish_android(apk, "android-v0.1.19")
                 self.assertEqual(upload.call_count, 1)
 
     def test_success_only_uploads_android_apk_then_merged_shared_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
-            apk = Path(directory) / "miniQ_0.1.18_android.apk"
+            apk = Path(directory) / "miniQ_0.1.19_android.apk"
             apk.write_bytes(b"apk")
             original = json.dumps(self.current).encode()
             events = []
@@ -148,8 +148,8 @@ class AndroidReleaseTests(unittest.TestCase):
 
             qiniu = SimpleNamespace(Auth=lambda *args: None, CdnManager=lambda auth: SimpleNamespace(refresh_urls=refresh))
             with patch.object(release, "required_env", return_value="unused"), patch.object(release, "read_remote", side_effect=read), patch.object(release, "publish", side_effect=upload), patch.dict(sys.modules, {"qiniu": qiniu}):
-                release.publish_android(apk, "android-v0.1.18")
-            key = "releases/miniq/android/v0.1.18/miniQ_0.1.18_android.apk"
+                release.publish_android(apk, "android-v0.1.19")
+            key = "releases/miniq/android/v0.1.19/miniQ_0.1.19_android.apk"
             self.assertEqual(events, [("read", release.MANIFEST_KEY), ("upload", key), ("read", key), ("read", release.MANIFEST_KEY), ("upload", release.MANIFEST_KEY)])
 
     def test_workflow_keeps_desktop_default_and_isolates_android(self):
