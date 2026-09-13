@@ -232,12 +232,12 @@ export class RpcClient {
 
   /** Drop the current socket so the next connect() re-derives identity from
    * freshly stored credentials (used when the user swaps their API key). */
-  disconnect() {
+  disconnect(reason = "disconnected") {
     const socket = this.ws;
     this.ws = null;
     this.remoteKey = null;
     if (socket) {
-      socket.close(4000, "credentials changed");
+      socket.close(4000, reason);
       this.notifyStatus(false);
     }
   }
@@ -296,6 +296,7 @@ export class RpcClient {
         this.pending.delete(id);
         pending.cleanup();
         this.cancelRemoteRequest(id);
+        if (method !== "daemon.health") this.disconnect("rpc timeout");
         reject(new Error(`请求 ${method} 超时`));
       }, options.timeoutMs ?? RPC_TIMEOUT_MS);
       const abort = () => {

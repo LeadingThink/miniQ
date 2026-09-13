@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { App } from "@capacitor/app";
 import { errorMessage } from "../errorMessage";
 import { resolveConnection } from "../rpc";
 import type { RpcClient } from "../rpc";
@@ -97,6 +98,32 @@ export function useDaemonConnection(options: ConnectionOptions) {
       connectionLoopRunning = false;
     };
     void connect(false);
+    const recover = async () => {
+      if (disposed) return;
+      try {
+        if (!client.connected) {
+          client.disconnect("foreground recovery");
+          void connect(true);
+          return;
+        }
+        await client.call("daemon.health", undefined, { timeoutMs: 10_000 });
+        await refreshWorkspaces();
+        await refreshSessions();
+        if (!disposed) setConnectionEpoch((current) => current + 1);
+      } catch (error) {
+        if (disposed) return;
+        onError(errorMessage(error));
+        client.disconnect("foreground health check failed");
+        void connect(true);
+      }
+    };
+    const appStateListener = App.addListener("appStateChange", ({ isActive }) => {
+      if (isActive) void recover();
+    });
+    const visibilityListener = () => {
+      if (document.visibilityState === "visible") void recover();
+    };
+    document.addEventListener("visibilitychange", visibilityListener);
     const offResync = client.onResync(() => {
       setConnectionEpoch((current) => current + 1);
       void refreshSessions().catch((cause) => onError(errorMessage(cause)));
@@ -121,6 +148,8 @@ export function useDaemonConnection(options: ConnectionOptions) {
       offStatus();
       offWorkspace();
       offResync();
+      document.removeEventListener("visibilitychange", visibilityListener);
+      void appStateListener.then((listener) => listener.remove());
     };
   }, [client, onError, paused, refreshSessions, refreshWorkspaces]);
 
