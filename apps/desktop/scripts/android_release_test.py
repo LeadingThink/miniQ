@@ -68,14 +68,14 @@ class AndroidReleaseTests(unittest.TestCase):
 
     def test_apk_debug_certificate_and_debuggable_rejected(self):
         valid = f"Signer #1 certificate DN: CN=miniQ Release\nSigner #1 certificate SHA-256 digest: {release.SIGNING_CERT_SHA256}"
-        badging = "package: name='com.leadingthink.miniq' versionCode='18' versionName='0.1.19'"
+        badging = "package: name='com.leadingthink.miniq' versionCode='19' versionName='0.1.19'"
         for certificate, package in [("Signer #1 certificate DN: CN=Android Debug", badging), (valid, badging + "\napplication-debuggable"), ("", badging)]:
             outputs = [subprocess.CompletedProcess([], 0, certificate), subprocess.CompletedProcess([], 0, package)]
             with patch.object(release.subprocess, "run", side_effect=outputs), self.assertRaises(ValueError):
                 release.verify_apk(Path("release.apk"), "android-v0.1.19", Path("tools"))
 
     def test_apk_certificate_must_match_pinned_production_key(self):
-        badging = "package: name='com.leadingthink.miniq' versionCode='18' versionName='0.1.19'"
+        badging = "package: name='com.leadingthink.miniq' versionCode='19' versionName='0.1.19'"
         for digest in [None, "a" * 64, release.SIGNING_CERT_SHA256.lower()]:
             signing = "Signer #1 certificate DN: CN=miniQ Release"
             if digest:
