@@ -18,6 +18,14 @@
 
 ## 重建
 
+`out/` 是本地录制与渲染产物目录，不再纳入 Git 跟踪。制作源码、脚本与静态资源继续保留在仓库。
+2026-09-13 清理时已有成品和录制证据仍保留在原本地目录；新检出仓库如需重建这版成片，
+可先从清理前的提交恢复原始素材（在仓库根目录执行）：
+
+```sh
+git archive 4bbb16a0cea3f1bc9a823598dcf06bd485df51c5 promo/out | tar -x
+```
+
 在仓库根目录安装 promo/package.json 中的依赖；需要 Chrome、ffmpeg、Python 3 与 NumPy。保留现有 out/miniq-promo.mp4 作为动效源，以及 out/live 录制素材。
 
 ```sh

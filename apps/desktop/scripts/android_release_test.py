@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
+from typing import Any
 import unittest
 from unittest.mock import patch
 
@@ -17,7 +18,10 @@ import android_release as release
 
 class AndroidReleaseTests(unittest.TestCase):
     def setUp(self):
-        self.current = {"version": "schema-1", "products": {
+        self.mirror_patch = patch.object(release, "verify_mirror")
+        self.mirror = self.mirror_patch.start()
+        self.addCleanup(self.mirror_patch.stop)
+        self.current: dict[str, Any] = {"version": "schema-1", "products": {
             "app": {"version": "9", "platforms": {"android": {"url": "app.apk"}}},
             "miniq": {"version": "0.1.16", "history": ["0.1.15"], "platforms": {
                 "windows": {"version": "0.1.16", "url": "desktop.exe"},
@@ -32,6 +36,9 @@ class AndroidReleaseTests(unittest.TestCase):
         android = merged["products"]["miniq"]["platforms"]["android"]
         self.assertEqual(android["sha256"], "a" * 64)
         self.assertEqual(android["fileSize"], 42)
+        self.assertEqual(android["label"], "Android 7.0+")
+        self.assertEqual(android["architecture"], "Universal (WebView)")
+        self.assertEqual(android["mirrors"], ["https://github.com/LeadingThink/miniQ-releases/releases/download/android-v0.1.19/miniQ_0.1.19_android.apk"])
         self.assertEqual(android["custom"], "retained")
         self.assertIsInstance(android["installationNotes"], list)
         self.assertTrue(all(isinstance(note, str) and note for note in android["installationNotes"]))
@@ -97,6 +104,35 @@ class AndroidReleaseTests(unittest.TestCase):
                     release.publish_android(apk, "android-v0.1.19")
                 upload.assert_not_called()
 
+    def test_mirror_download_must_match_exact_bytes(self):
+        self.mirror_patch.stop()
+        for data in [b"apk", b"wrong"]:
+            with patch.object(release, "urlopen") as request:
+                request.return_value.__enter__.return_value.read.return_value = data
+                if data == b"apk":
+                    release.verify_mirror("0.1.19", b"apk")
+                else:
+                    with self.assertRaisesRegex(RuntimeError, "mirror"):
+                        release.verify_mirror("0.1.19", b"apk")
+                request.assert_called_once_with(release.mirror_url("0.1.19"), timeout=120)
+
+    def test_failed_mirror_never_uploads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "miniQ_0.1.19_android.apk"
+            apk.write_bytes(b"apk")
+            self.mirror.side_effect = RuntimeError("mirror mismatch")
+            with patch.object(release, "required_env", return_value="unused"), patch.object(release, "read_remote", return_value=json.dumps(self.current).encode()), patch.object(release, "publish") as upload:
+                with self.assertRaisesRegex(RuntimeError, "mirror"):
+                    release.publish_android(apk, "android-v0.1.19")
+                upload.assert_not_called()
+
+    def test_abi_specific_apk_rejected(self):
+        signing = f"Signer #1 certificate DN: CN=miniQ Release\nSigner #1 certificate SHA-256 digest: {release.SIGNING_CERT_SHA256}"
+        badging = "package: name='com.leadingthink.miniq' versionCode='19' versionName='0.1.19'\nnative-code: 'arm64-v8a'"
+        outputs = [subprocess.CompletedProcess([], 0, signing), subprocess.CompletedProcess([], 0, badging)]
+        with patch.object(release.subprocess, "run", side_effect=outputs), self.assertRaisesRegex(ValueError, "ABI-specific"):
+            release.verify_apk(Path("release.apk"), "android-v0.1.19", Path("tools"))
+
     def test_apk_verified_before_shared_manifest_and_no_latest_json(self):
         with tempfile.TemporaryDirectory() as directory:
             apk = Path(directory) / "miniQ_0.1.19_android.apk"
@@ -161,6 +197,7 @@ class AndroidReleaseTests(unittest.TestCase):
         self.assertNotIn("latest.json", android)
         self.assertNotIn("tauri", android)
         self.assertIn("--latest=false", android)
+        self.assertLess(android.index('gh release upload'), android.index('scripts/android_release.py publish'))
         self.assertIn("fetch-depth: 0", android)
         self.assertIn('if [ "$RELEASE_DRAFT" != "false" ]; then', android)
         self.assertLess(android.index("Reject Android draft publication"), android.index("actions/checkout@v4"))
