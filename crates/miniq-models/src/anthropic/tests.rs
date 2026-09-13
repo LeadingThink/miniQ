@@ -26,6 +26,40 @@ fn request(messages: Vec<ChatMessage>) -> CompletionRequest {
 }
 
 #[test]
+fn no_tools_explicitly_disables_native_tool_use_without_disabling_normal_tools() {
+    let mut completion = request(vec![ChatMessage::user("summarize")]);
+    assert!(provider()
+        .build_body(&completion)
+        .get("tool_choice")
+        .is_none());
+    completion.tools.clear();
+    let body = provider().build_body(&completion);
+    assert_eq!(body["tool_choice"], json!({"type":"none"}));
+    assert!(body.get("tools").is_none());
+}
+
+#[test]
+fn refusal_retains_diagnostics_and_is_not_an_empty_completion_retry() {
+    let mut decoder = AnthropicDecoder::default();
+    let event = decode(
+        &mut decoder,
+        json!({
+            "type":"message_delta", "delta":{"stop_reason":"refusal"},
+            "usage":{"output_tokens":0}
+        }),
+    );
+    assert!(event.terminal);
+    assert!(event.items.iter().any(|item| matches!(item,
+        Ok(ChatDelta::ResponseInfo(info)) if info.stop_reason.as_deref() == Some("refusal")
+    )));
+    assert!(event
+        .items
+        .iter()
+        .any(|item| matches!(item, Err(ProviderError::Refusal))));
+    assert!(!ProviderError::Refusal.is_retryable());
+}
+
+#[test]
 fn builds_messages_system_tools_and_grouped_tool_results() {
     let body = provider().build_body(&request(vec![
         ChatMessage::system("system"),

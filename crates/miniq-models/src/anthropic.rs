@@ -46,7 +46,9 @@ impl AnthropicProvider {
         if let Some(temperature) = request.temperature {
             body["temperature"] = json!(temperature);
         }
-        if !request.tools.is_empty() {
+        if request.tools.is_empty() {
+            body["tool_choice"] = json!({"type": "none"});
+        } else {
             body["tools"] = Value::Array(
                 request
                     .tools
@@ -413,6 +415,7 @@ impl EventDecoder for AnthropicDecoder {
                     .into_iter()
                     .collect::<Vec<_>>();
                 let error = match reason {
+                    Some("refusal") => Some(ProviderError::Refusal),
                     Some("max_tokens") => Some(ProviderError::output_limit()),
                     Some("model_context_window_exceeded") => {
                         Some(ProviderError::ContextWindowExceeded)
