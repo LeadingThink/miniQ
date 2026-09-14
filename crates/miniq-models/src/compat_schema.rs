@@ -258,6 +258,39 @@ mod tests {
     }
 
     #[test]
+    fn scalar_value_object_union_keeps_concrete_types_for_compat_providers() {
+        let normalized = compatible_tool_schema(&json!({
+            "type": "object",
+            "properties": {
+                "value": {
+                    "anyOf": [
+                        {"type":"object","properties":{"text":{"type":"string","maxLength":10000}},"required":["text"],"additionalProperties":false},
+                        {"type":"object","properties":{"number":{"type":"number"}},"required":["number"],"additionalProperties":false},
+                        {"type":"object","properties":{"boolean":{"type":"boolean"}},"required":["boolean"],"additionalProperties":false}
+                    ]
+                }
+            },
+            "required": ["value"]
+        }));
+
+        let value = &normalized["properties"]["value"];
+        assert_eq!(normalized["required"], json!(["value"]));
+        assert_eq!(value["type"], "object");
+        assert_eq!(value["additionalProperties"], false);
+        assert!(value.get("anyOf").is_none());
+        // The host enforces exactly one value; normalization must not require all three.
+        assert!(value.get("required").is_none());
+        for (field, kind) in [
+            ("text", "string"),
+            ("number", "number"),
+            ("boolean", "boolean"),
+        ] {
+            assert_eq!(value["properties"][field]["type"], kind);
+        }
+        assert_eq!(value["properties"]["text"]["maxLength"], 10000);
+    }
+
+    #[test]
     fn all_of_keeps_every_required_field() {
         let normalized = compatible_tool_schema(&json!({
             "allOf": [

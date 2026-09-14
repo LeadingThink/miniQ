@@ -9,6 +9,7 @@ const call: ToolCall = { id:"call-1", sessionId:"session-1", toolName:"computer_
 describe("computer observations", () => {
   it("only renders valid host-generated observations", () => {
     expect(observationImage(call)).toEqual(screenshot);
+    expect(observationImage({...call, toolName:"app_automation"})).toEqual(screenshot);
     expect(observationImage({...call, toolName:"shell_run"})).toBeNull();
     for (const value of [{id:"../../secret"}, {bytes:0}, {bytes:30_000_000}, {width:-1}, {height:NaN}]) {
       expect(observationImage({...call, output:{screenshot:{...screenshot,...value}}})).toBeNull();

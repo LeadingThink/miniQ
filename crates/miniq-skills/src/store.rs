@@ -375,6 +375,40 @@ mod tests {
     }
 
     #[test]
+    fn bundled_upgrade_is_immediate_and_never_overwrites_user_skills() {
+        const UPDATED: &str = "---\nname: bundled-demo\ndescription: updated bundled skill\nversion: 2\norigin: bundled\n---\n\nupdated bundled body\n";
+        let data = tempfile::tempdir().unwrap();
+        assert_eq!(
+            store(data.path())
+                .read(None, "bundled-demo")
+                .unwrap()
+                .skill
+                .meta
+                .version,
+            1
+        );
+
+        let upgraded = SkillStore::new(data.path(), vec![BundledSkill { content: UPDATED }]);
+        let detail = upgraded.read(None, "bundled-demo").unwrap();
+        assert_eq!(detail.skill.meta.version, 2);
+        assert_eq!(detail.skill.source, SkillSource::Bundled);
+        assert!(detail.body.contains("updated bundled body"));
+        assert!(!data.path().join("skills").exists());
+
+        write_skill(
+            &data.path().join("skills"),
+            "bundled-demo",
+            "user-authored instructions",
+        );
+        let restarted = SkillStore::new(data.path(), vec![BundledSkill { content: UPDATED }]);
+        let user = restarted.read(None, "bundled-demo").unwrap();
+        assert_eq!(user.skill.source, SkillSource::User);
+        assert_eq!(user.skill.meta.version, 1);
+        assert_eq!(user.skill.meta.description, "user-authored instructions");
+        assert!(user.body.contains("body of bundled-demo"));
+    }
+
+    #[test]
     fn enable_disable_persists() {
         let data = tempfile::tempdir().unwrap();
         {

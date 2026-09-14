@@ -2,6 +2,10 @@
 
 Date: 2026-09-06. Baseline: `4c62c6607ee88cfea3165e675fb8b8fd2152511f`.
 
+Later macOS application-scoped control and native acceptance are documented in
+[the September 14 comparison](macos-background-control-2026-09-14.md). The rest of
+this file records the original foreground implementation and its validation.
+
 ## Comparison Basis
 
 The previous miniQ implementation was primarily a DOM-based browser tool with one

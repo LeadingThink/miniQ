@@ -30,7 +30,7 @@ pub(super) async fn read(state: &AppState, input: Option<Value>) -> Result<Value
     if call.session_id != input.session_id
         || !matches!(
             call.tool_name.as_str(),
-            "computer_use" | "browser_automation" | "view_image" | "view_pdf"
+            "computer_use" | "app_automation" | "browser_automation" | "view_image" | "view_pdf"
         )
     {
         return Err(RpcError::new(
@@ -147,30 +147,37 @@ mod tests {
             "test",
         )
         .unwrap();
-        let call = state
-            .store
-            .create_tool_call(
-                &session.id,
-                "computer_use",
-                &json!({"action":"screenshot"}),
-                None,
-                miniq_protocol::ToolCallStatus::Running,
-            )
-            .unwrap();
-        state
-            .store
-            .finish_tool_call(
-                &call.id,
-                miniq_protocol::ToolCallStatus::Succeeded,
-                Some(&json!({"screenshot":{"id":id}})),
-            )
-            .unwrap();
-        let params = json!({"sessionId":session.id,"toolCallId":call.id});
-        let result = read(&state, Some(params.clone())).await.unwrap();
-        assert_eq!(result["base64"], "dGVzdA==");
-        let mut wrong_session = params.clone();
-        wrong_session["sessionId"] = json!("other");
-        assert!(read(&state, Some(wrong_session)).await.is_err());
+        for tool_name in ["computer_use", "app_automation"] {
+            let call = state
+                .store
+                .create_tool_call(
+                    &session.id,
+                    tool_name,
+                    &json!({"action":"screenshot"}),
+                    None,
+                    miniq_protocol::ToolCallStatus::Running,
+                )
+                .unwrap();
+            state
+                .store
+                .finish_tool_call(
+                    &call.id,
+                    miniq_protocol::ToolCallStatus::Succeeded,
+                    Some(&json!({"screenshot":{"id":id}})),
+                )
+                .unwrap();
+            let params = json!({"sessionId":session.id,"toolCallId":call.id});
+            assert_eq!(
+                read(&state, Some(params.clone())).await.unwrap()["base64"],
+                "dGVzdA=="
+            );
+            let mut wrong_session = params.clone();
+            wrong_session["sessionId"] = json!("other");
+            assert!(read(&state, Some(wrong_session)).await.is_err());
+            let mut wrong_image = params;
+            wrong_image["imageIndex"] = json!(1);
+            assert!(read(&state, Some(wrong_image)).await.is_err());
+        }
         let other = state
             .store
             .create_tool_call(
@@ -189,8 +196,7 @@ mod tests {
                 Some(&json!({"screenshot":{"id":id}})),
             )
             .unwrap();
-        let mut wrong_tool = params;
-        wrong_tool["toolCallId"] = json!(other.id);
+        let wrong_tool = json!({"sessionId":session.id,"toolCallId":other.id});
         assert!(read(&state, Some(wrong_tool)).await.is_err());
         let pdf = state
             .store

@@ -1,6 +1,38 @@
 use super::*;
 use crate::state::{ApprovalDecision, ApprovalMode};
 
+#[test]
+fn missing_app_target_approval_cannot_grant_another_call_or_all_apps() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = miniq_memory::Store::open_in_memory().unwrap();
+    let state = AppState::new(
+        store,
+        "test".into(),
+        std::sync::Arc::new(miniq_models::mock::MockProvider::text("unused")),
+    );
+    let executor = SessionToolExecutor {
+        state: state.clone(),
+        session_id: "session".into(),
+        router: state.router.clone(),
+        ctx: ToolContext::new(directory.path().into()),
+        cancel: CancellationToken::new(),
+        permission_policy: PermissionPolicy::Inherit,
+        review_plan: Default::default(),
+    };
+    let mut call = ToolCallRequest {
+        id: "missing-target".into(),
+        name: "app_automation".into(),
+        arguments: json!({"action":"invoke","axAction":"AXPress"}),
+    };
+    let pattern = executor.approval_pattern(&call);
+    assert_eq!(pattern, "app_automation:call:missing-target");
+    state.allow_for_session("session", &pattern);
+    call.id = "different-call".into();
+    assert!(!state.is_allowed_for_session("session", &executor.approval_pattern(&call)));
+    assert!(!state.is_allowed_for_session("session", "app_automation"));
+    assert!(!state.is_allowed_for_session("session", "computer_use:click"));
+}
+
 #[tokio::test]
 async fn child_policies_cannot_bypass_a_sessions_always_ask_mode() {
     for policy in [
