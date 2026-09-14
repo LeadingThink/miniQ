@@ -26,3 +26,6 @@ dist-android/
 # Local macOS metadata and generated promotional media.
 promo/.DS_Store
 promo/out/
+
+# Local App Store submission screenshots and signing materials.
+/苹果注册/
