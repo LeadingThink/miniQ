@@ -89,6 +89,49 @@ pub enum ToolExecutionMode {
     Parallel,
 }
 
+fn is_stream_placeholder(text: &str) -> bool {
+    let trimmed = text.trim();
+    !trimmed.is_empty()
+        && trimmed.chars().count() <= 3
+        && trimmed
+            .chars()
+            .all(|character| matches!(character, '.' | '…' | '⋯'))
+}
+
+async fn append_text_delta(
+    state: &mut checkpoint::RunState,
+    text: &mut String,
+    started_text_segment: &mut bool,
+    events: &tokio::sync::mpsc::Sender<AgentEvent>,
+    delta: String,
+) {
+    if delta.is_empty() {
+        return;
+    }
+    if !*started_text_segment {
+        if !state.streamed_text.is_empty() {
+            let separator = if state.streamed_text.ends_with("\n\n") {
+                ""
+            } else if state.streamed_text.ends_with('\n') {
+                "\n"
+            } else {
+                "\n\n"
+            };
+            if !separator.is_empty() {
+                state.streamed_text.push_str(separator);
+                let _ = events
+                    .send(AgentEvent::TextDelta(separator.to_string()))
+                    .await;
+            }
+        }
+        *started_text_segment = true;
+    }
+    text.push_str(&delta);
+    state.partial_text.push_str(&delta);
+    state.streamed_text.push_str(&delta);
+    let _ = events.send(AgentEvent::TextDelta(delta)).await;
+}
+
 /// Executes tool calls on behalf of the agent. Implementations own risk
 /// evaluation, approval, persistence and audit.
 #[async_trait]
@@ -293,16 +336,23 @@ async fn run_turn_inner(
         state.history = context.messages;
 
         let mut retries = retry::ModelRetries::new(limits.max_model_retries);
+        let mut placeholder_recovery_used = false;
         let (text, tool_calls, provider_context) = loop {
             state.partial_text.clear();
             let committed_text = state.streamed_text.clone();
+            let mut request_messages = state.history.clone();
+            if placeholder_recovery_used {
+                request_messages.push(ChatMessage::system(
+                    "上一轮只返回了占位省略号。请根据已完成工具结果直接给出简短最终总结，不要输出省略号占位。",
+                ));
+            }
             let request = CompletionRequest {
                 trace: miniq_models::ModelCallTrace {
                     purpose: limits.purpose,
                     step: Some(steps),
                     attempt: retries.attempts + 1,
                 },
-                messages: state.history.clone(),
+                messages: request_messages,
                 tools: tools.clone(),
                 temperature: None,
                 max_output_tokens: None,
@@ -356,6 +406,9 @@ async fn run_turn_inner(
             let mut tool_calls: Vec<ToolCallRequest> = Vec::new();
             let mut provider_context = None;
             let mut started_text_segment = false;
+            // Gemini-compatible gateways sometimes emit a short placeholder
+            // before a tool call. Hold it until the turn type is known.
+            let mut deferred_placeholder = String::new();
             let mut stream_error = None;
 
             loop {
@@ -376,30 +429,31 @@ async fn run_turn_inner(
                         if t.is_empty() {
                             continue;
                         }
-                        if !started_text_segment {
-                            if !state.streamed_text.is_empty() {
-                                let separator = if state.streamed_text.ends_with("\n\n") {
-                                    ""
-                                } else if state.streamed_text.ends_with('\n') {
-                                    "\n"
-                                } else {
-                                    "\n\n"
-                                };
-                                if !separator.is_empty() {
-                                    state.streamed_text.push_str(separator);
-                                    let _ = events
-                                        .send(AgentEvent::TextDelta(separator.to_string()))
-                                        .await;
-                                }
+                        if text.is_empty() {
+                            let candidate = format!("{deferred_placeholder}{t}");
+                            if candidate.chars().count() <= 3 && is_stream_placeholder(&candidate) {
+                                deferred_placeholder = candidate;
+                                continue;
                             }
-                            started_text_segment = true;
                         }
-                        text.push_str(&t);
-                        state.partial_text.push_str(&t);
-                        state.streamed_text.push_str(&t);
-                        let _ = events.send(AgentEvent::TextDelta(t)).await;
+                        if !deferred_placeholder.is_empty() {
+                            let placeholder = std::mem::take(&mut deferred_placeholder);
+                            append_text_delta(
+                                state,
+                                &mut text,
+                                &mut started_text_segment,
+                                &events,
+                                placeholder,
+                            )
+                            .await;
+                        }
+                        append_text_delta(state, &mut text, &mut started_text_segment, &events, t)
+                            .await;
                     }
-                    ChatDelta::ToolCall(call) => tool_calls.push(call),
+                    ChatDelta::ToolCall(call) => {
+                        deferred_placeholder.clear();
+                        tool_calls.push(call);
+                    }
                     ChatDelta::Context(context) => provider_context = Some(context),
                     ChatDelta::ResponseInfo(_) => {}
                     ChatDelta::Finished => break,
@@ -443,6 +497,16 @@ async fn run_turn_inner(
                 }
                 return Err(AgentError::Provider(error));
             }
+            if !deferred_placeholder.is_empty() && tool_calls.is_empty() {
+                append_text_delta(
+                    state,
+                    &mut text,
+                    &mut started_text_segment,
+                    &events,
+                    std::mem::take(&mut deferred_placeholder),
+                )
+                .await;
+            }
             if text.is_empty()
                 && tool_calls.is_empty()
                 && provider_context.is_none()
@@ -457,6 +521,33 @@ async fn run_turn_inner(
                     "provider returned an empty completion after {} attempts",
                     retries.attempts + 1
                 ))
+                .into());
+            }
+            // Some OpenAI-compatible Gemini gateways return an ellipsis as
+            // the entire response after a tool round. Treat that as empty
+            // and retry, while preserving a deliberate ellipsis in a normal
+            // conversation with no preceding tool round.
+            let has_tool_round = state
+                .appended
+                .iter()
+                .any(|message| !message.tool_calls.is_empty());
+            if tool_calls.is_empty() && has_tool_round && is_stream_placeholder(&text) {
+                if !placeholder_recovery_used {
+                    placeholder_recovery_used = true;
+                    if retries
+                        .wait(&ProviderError::EmptyResponse, steps, &events, &cancel)
+                        .await?
+                    {
+                        state.streamed_text = committed_text;
+                        let _ = events
+                            .send(AgentEvent::TextReplaced(state.streamed_text.clone()))
+                            .await;
+                        continue;
+                    }
+                }
+                return Err(ProviderError::InvalidResponse(
+                    "provider returned only a placeholder after tool execution".into(),
+                )
                 .into());
             }
             break (text, tool_calls, provider_context);
@@ -616,6 +707,66 @@ mod tests {
             receiver.try_recv().unwrap(),
             AgentEvent::TextDelta(delta) if delta == "完成"
         ));
+    }
+
+    #[tokio::test]
+    async fn hides_gemini_placeholder_before_tool_calls_but_keeps_final_ellipsis() {
+        let provider = MockProvider::new(vec![
+            vec![
+                ChatDelta::Text(".".into()),
+                ChatDelta::Text("..".into()),
+                ChatDelta::ToolCall(ToolCallRequest {
+                    id: "call-0".into(),
+                    name: "continue_work".into(),
+                    arguments: serde_json::json!({}),
+                }),
+            ],
+            vec![ChatDelta::Text("...".into())],
+            vec![ChatDelta::Text("完成".into())],
+        ]);
+        let (events, mut receiver) = tokio::sync::mpsc::channel(16);
+        run_turn(
+            &provider,
+            &TestExecutor,
+            Vec::new(),
+            events,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let mut displayed = String::new();
+        while let Ok(event) = receiver.try_recv() {
+            match event {
+                AgentEvent::TextDelta(text) => displayed.push_str(&text),
+                AgentEvent::TextReplaced(text) => displayed = text,
+                _ => {}
+            }
+        }
+        assert_eq!(displayed, "完成");
+
+        let provider = MockProvider::new(vec![vec![ChatDelta::Text("...".into())]]);
+        let (events, mut receiver) = tokio::sync::mpsc::channel(8);
+        let outcome = run_turn(
+            &provider,
+            &TestExecutor,
+            Vec::new(),
+            events,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome.final_text, "...");
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            AgentEvent::ModelRequestStarted { .. }
+        ));
+        while let Ok(event) = receiver.try_recv() {
+            if let AgentEvent::TextDelta(text) = event {
+                assert_eq!(text, "...");
+                return;
+            }
+        }
+        panic!("final ellipsis was not streamed");
     }
 
     #[tokio::test]
