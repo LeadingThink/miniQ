@@ -10,6 +10,12 @@ mod local_file;
 
 type DaemonState = std::sync::Arc<daemon::DaemonLifecycle>;
 
+/// Set when the user picks Quit from the tray menu. While false, closing the
+/// main window only hides to tray; while true, the close is allowed so
+/// `app.exit()` can actually terminate the process.
+static QUIT_REQUESTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 #[tauri::command]
 async fn daemon_connection(
     state: tauri::State<'_, DaemonState>,
@@ -205,6 +211,9 @@ pub fn run() {
             // Closing the window hides to tray; Quit exits from the tray menu.
             if window.label() == "main" {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    if QUIT_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
+                        return;
+                    }
                     if window.hide().is_ok() {
                         api.prevent_close();
                     }
@@ -310,6 +319,7 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => show_main_window(app),
             "quit" => {
+                QUIT_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
                 app.exit(0);
             }
             _ => {}
