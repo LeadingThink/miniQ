@@ -13,11 +13,25 @@ export function BrowserPanel(props: {
   onClose: () => void;
 }) {
   const surface = useRef<HTMLDivElement>(null);
+  const addressInput = useRef<HTMLInputElement>(null);
   const browser = useBrowserPanel(props.url, surface, props.suspended);
   const native = isTauriRuntime();
   const reloadAction = native && browser.loading ? "stop" : "reload";
   return (
-    <aside className="browser-panel" aria-label="网页浏览器">
+    <aside
+      className="browser-panel"
+      aria-label="网页浏览器"
+      onKeyDown={(event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "l") {
+          event.preventDefault();
+          addressInput.current?.focus();
+          addressInput.current?.select();
+        } else if (event.key === "Escape" && native && browser.loading) {
+          event.preventDefault();
+          void browser.action("stop");
+        }
+      }}
+    >
       <header className="browser-toolbar">
         <Globe2 size={17} />
         <button
@@ -45,7 +59,7 @@ export function BrowserPanel(props: {
           className="icon-button"
           title={reloadAction === "stop" ? "停止加载" : "刷新"}
           aria-label={reloadAction === "stop" ? "停止加载" : "刷新"}
-          disabled={browser.pending}
+          disabled={browser.pending && reloadAction !== "stop"}
           onClick={() => void browser.action(reloadAction)}
         >
           {reloadAction === "stop" ? <Square size={13} /> : <RefreshCw size={15} />}
@@ -63,6 +77,7 @@ export function BrowserPanel(props: {
           }}
         >
           <input
+            ref={addressInput}
             aria-label="网址"
             value={browser.address}
             onChange={(event) => browser.setAddress(event.target.value)}
@@ -76,6 +91,7 @@ export function BrowserPanel(props: {
             spellCheck={false}
             autoCapitalize="none"
             autoCorrect="off"
+            placeholder="输入网址"
           />
         </form>
         <button
@@ -114,7 +130,12 @@ export function BrowserPanel(props: {
           </button>
         </div>
       )}
-      <div ref={surface} className="browser-surface">
+      <div
+        ref={surface}
+        className="browser-surface"
+        aria-busy={browser.loading}
+        aria-label={browser.loading ? "网页加载中" : "网页内容"}
+      >
         {!native && (
           <iframe
             key={browser.revision}
@@ -129,7 +150,7 @@ export function BrowserPanel(props: {
           />
         )}
       </div>
-      <footer className="browser-status">
+      <footer className="browser-status" role="status" aria-live="polite">
         <span className={browser.loading ? "browser-loading" : ""} />
         <span>{browser.loading ? "正在加载" : native ? "内置浏览器" : "网页预览"}</span>
         <code title={browser.activeUrl}>{browser.activeUrl}</code>

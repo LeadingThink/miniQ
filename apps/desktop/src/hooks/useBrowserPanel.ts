@@ -173,7 +173,9 @@ export function useBrowserPanel(
   }, [viewId, accept]);
 
   const action = async (command: "back" | "forward" | "reload" | "stop") => {
-    if (inFlight.current) return;
+    // Stopping is deliberately allowed while another navigation is in flight;
+    // otherwise the toolbar's stop affordance would be inert during loading.
+    if (inFlight.current && command !== "stop") return;
     if (!isTauriRuntime()) {
       if (command === "reload") {
         setLoading(true);
@@ -182,9 +184,12 @@ export function useBrowserPanel(
       }
       return;
     }
-    const request = ++sequence.current;
-    inFlight.current = true;
-    setPending(true);
+    const request = command === "stop" ? sequence.current : ++sequence.current;
+    if (command !== "stop") {
+      inFlight.current = true;
+      setPending(true);
+      setLoading(true);
+    }
     try {
       const state = await browserAction(command, viewId);
       if (mounted.current && request === sequence.current) {

@@ -4,6 +4,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useBrowserPanel } from "./useBrowserPanel";
 import {
+  browserAction,
   closeBrowser,
   currentBrowser,
   openBrowser,
@@ -147,4 +148,24 @@ it("hides the native child behind settings without discarding the page", async (
   rerender({ suspended: false });
   expect(setBrowserVisible).toHaveBeenLastCalledWith(viewId, true);
   expect(openBrowser).toHaveBeenCalledTimes(1);
+});
+
+it("allows stopping a native navigation while it is pending", async () => {
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  let finish!: (value: { url: string }) => void;
+  vi.mocked(openBrowser).mockImplementationOnce(
+    () => new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  vi.mocked(browserAction).mockResolvedValueOnce({ url: "https://example.test/" });
+  const ref = surface();
+  const { result } = renderHook(() => useBrowserPanel("https://example.test/", ref));
+  await act(async () => {
+    await result.current.action("stop");
+  });
+  expect(browserAction).toHaveBeenCalledWith("stop", expect.any(String));
+  expect(result.current.pending).toBe(false);
+  expect(result.current.loading).toBe(false);
+  await act(async () => finish({ url: "https://example.test/" }));
 });
