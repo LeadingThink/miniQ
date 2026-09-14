@@ -105,6 +105,7 @@
   padding: 20px 20px 28px;
   overflow: auto;
   scrollbar-gutter: stable;
+  touch-action: pan-x pan-y pinch-zoom;
 }
 .pdf-stage > .document-loading {
   position: absolute;
@@ -158,6 +159,7 @@
   color: #171717;
   color-scheme: light;
   scrollbar-gutter: stable;
+  touch-action: pan-x pan-y pinch-zoom;
 }
 .office-document {
   width: max-content;
@@ -457,6 +459,7 @@
   overflow: auto;
   max-height: 600px;
   background: #fff;
+  touch-action: pan-x pan-y pinch-zoom;
 }
 .mermaid-viewport > img {
   display: block;

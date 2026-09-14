@@ -12,6 +12,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: max(22px, env(safe-area-inset-top)) 18px
     max(22px, env(safe-area-inset-bottom));
 }
@@ -310,6 +313,9 @@
 }
 
 .native-mobile body {
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
   overscroll-behavior: none;
   -webkit-user-select: none;
   user-select: none;
@@ -317,9 +323,19 @@
 
 .native-mobile input,
 .native-mobile textarea,
+.native-mobile select,
 .native-mobile .md {
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* iOS zooms the page when a focused control is below 16px.  The resulting
+   visual viewport is not restored reliably when focus leaves the control.
+   Keep controls at the platform's no-zoom minimum in the packaged app. */
+.native-mobile input,
+.native-mobile textarea,
+.native-mobile select {
+  font-size: 16px;
 }
 
 .mobile-chat-empty {
@@ -487,9 +503,18 @@
 }
 
 @media (max-width: 720px) {
+  /* Match the native shell on Safari and other mobile browsers.  A 16px
+     control avoids focus zoom while preserving normal pinch zoom for users
+     who need it outside the packaged app. */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
   .app {
     width: 100%;
-    height: 100dvh;
+    height: var(--app-height, 100dvh);
     min-height: 0;
     overflow: hidden;
   }
@@ -525,7 +550,7 @@
   .app .main,
   .app.sidebar-collapsed .main {
     width: 100%;
-    height: 100dvh;
+    height: var(--app-height, 100dvh);
     margin: 0;
     border: 0;
     border-radius: 0;

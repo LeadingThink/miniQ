@@ -161,6 +161,7 @@ export function ImageInspector({
       <div
         {...scroll}
         className={`image-inspector-viewport ${mode}`}
+        data-pinch-zoom="true"
         tabIndex={0}
         aria-label="图片画布"
       >

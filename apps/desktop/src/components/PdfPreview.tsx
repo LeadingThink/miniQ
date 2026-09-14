@@ -87,7 +87,7 @@ export function PdfPreview(props: {
             : rendered.text || "当前页没有可提取文本"}
         </pre>
       )}
-      <div {...scroll} className="pdf-stage" aria-busy={!password && loading}>
+      <div {...scroll} className="pdf-stage" data-pinch-zoom="true" aria-busy={!password && loading}>
         {password && (
           <form
             className="pdf-password"

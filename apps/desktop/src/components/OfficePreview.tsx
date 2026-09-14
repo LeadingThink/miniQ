@@ -140,6 +140,7 @@ function OfficePreview({
           layout.onScroll();
         }}
         className={`office-preview ${kind}-preview`}
+        data-pinch-zoom="true"
         aria-busy={status === "loading"}
       />
     </div>

@@ -45,6 +45,7 @@
   overflow: auto;
   padding: 12px;
   box-sizing: border-box;
+  touch-action: pan-x pan-y pinch-zoom;
 }
 .image-inspector-viewport.fit {
   display: flex;

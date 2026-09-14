@@ -19,8 +19,10 @@ import "./styles/theme-picker.css";
 import "./external-sessions.css";
 import { initializeAppearance } from "./theme";
 import { initializeMobileRuntime } from "./mobileRuntime";
+import { initializeMobileViewport } from "./mobileViewport";
 
 initializeAppearance();
+initializeMobileViewport();
 void initializeMobileRuntime();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

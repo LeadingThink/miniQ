@@ -54,7 +54,7 @@ export function MermaidPreview({ source }: { source: string }) {
     <div className="mermaid-preview">
       {url && (
         <>
-          <div className="mermaid-viewport">
+          <div className="mermaid-viewport" data-pinch-zoom="true">
             <img
               src={url}
               alt="Mermaid 图表"
