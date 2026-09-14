@@ -3,7 +3,7 @@ import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
 import { LoaderCircle, PlugZap, Sparkles } from "lucide-react";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Composer, ComposerCard } from "./Composer";
 import { DistillModal } from "./Distill";
 import { ExternalSessionImportDialog } from "./ExternalSessionImport";
@@ -389,6 +389,28 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
     app.review.setOpen(false);
     setBrowserUrl(url);
   };
+  useEffect(() => {
+    const latest = [...app.feed.toolCalls].reverse().find((call) => {
+      if (call.toolName !== "browser_automation") return false;
+      if (call.status !== "running" && call.status !== "succeeded") return false;
+      const input = call.input as Record<string, unknown> | undefined;
+      const output = call.output as Record<string, unknown> | undefined;
+      return typeof input?.url === "string" || typeof output?.url === "string";
+    });
+    if (!latest) return;
+    const input = latest.input as Record<string, unknown> | undefined;
+    const output = latest.output as Record<string, unknown> | undefined;
+    const url = typeof input?.url === "string" ? input.url : output?.url;
+    if (typeof url === "string" && url.trim()) setBrowserUrl(url);
+  }, [app.feed.toolCalls]);
+  useEffect(() => {
+    const openFromObservation = (event: Event) => {
+      const url = (event as CustomEvent<{ url?: unknown }>).detail?.url;
+      if (typeof url === "string" && url.trim()) openBrowserUrl(url);
+    };
+    window.addEventListener("miniq:open-browser", openFromObservation);
+    return () => window.removeEventListener("miniq:open-browser", openFromObservation);
+  }, [browserScope]);
   const openPreviewFile = (target: LocalFileTarget) => {
     setBrowserUrl(null);
     openFileTarget(app, target);

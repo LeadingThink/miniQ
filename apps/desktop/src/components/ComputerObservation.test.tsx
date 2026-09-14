@@ -22,6 +22,18 @@ it("loads lazily, supports original size and releases its blob on unmount", asyn
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:test");
 });
 
+it("offers to open the observed browser URL in the right-side workbench", async () => {
+  const client = {call:vi.fn().mockResolvedValue(response)} as unknown as RpcClient;
+  const open = vi.fn();
+  window.addEventListener("miniq:open-browser", open);
+  render(<ComputerObservation call={{...call, input:{action:"open", url:"https://example.test"}}} client={client} />);
+  await screen.findByAltText("操作后的网页截图");
+  fireEvent.click(screen.getByRole("button", {name:"在右侧内置浏览器打开"}));
+  expect(open).toHaveBeenCalledTimes(1);
+  expect((open.mock.calls[0][0] as CustomEvent).detail).toEqual({url:"https://example.test"});
+  window.removeEventListener("miniq:open-browser", open);
+});
+
 it("shows errors and retries", async () => {
   const client = {call:vi.fn().mockRejectedValueOnce(new Error("连接已断开")).mockResolvedValue(response)} as unknown as RpcClient;
   render(<ComputerObservation call={call} client={client} />);

@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Download, Maximize, Minimize, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, ExternalLink, Maximize, Minimize, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { loadObservation, observationImage, observationPages } from "../computerObservation";
 import type { RpcClient } from "../rpc";
@@ -15,6 +15,11 @@ export function ComputerObservation({ call, client }: { call: ToolCall; client: 
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [original, setOriginal] = useState(false);
+  const input = call.input as Record<string, unknown> | undefined;
+  const output = call.output as Record<string, unknown> | undefined;
+  const browserUrl = call.toolName === "browser_automation"
+    ? (typeof input?.url === "string" ? input.url : typeof output?.url === "string" ? output.url : null)
+    : null;
   useEffect(() => { setPage(0); setOriginal(false); }, [call.id]);
   useEffect(() => {
     if (!image) return;
@@ -47,6 +52,7 @@ export function ComputerObservation({ call, client }: { call: ToolCall; client: 
         {original ? <Minimize size={15} /> : <Maximize size={15} />}
       </button>
       {url && <a className="icon-button" title="下载截图" aria-label="下载截图" href={url} download={`miniq-observation-${image.id}.png`}><Download size={15} /></a>}
+      {browserUrl && <button type="button" className="icon-button" title="在右侧内置浏览器打开" aria-label="在右侧内置浏览器打开" onClick={() => window.dispatchEvent(new CustomEvent("miniq:open-browser", { detail: { url: browserUrl } }))}><ExternalLink size={15} /></button>}
       <button type="button" className="icon-button" title="重新加载截图" aria-label="重新加载截图" onClick={() => setAttempt(value => value + 1)}><RefreshCw size={15} /></button>
       </div>
     </figcaption>
