@@ -55,10 +55,11 @@ Formal macOS releases also require an active Apple Developer Program team and:
 
 When these Apple values are incomplete, the current workflow explicitly warns
 and publishes an unsigned, unnotarized macOS build with installation guidance.
-The user has deferred Developer ID signing until an account/certificate is
-available. Ad-hoc code identity can change after upgrades and invalidate prior
-macOS Accessibility or Screen Recording grants. Updater signatures do not solve
-this. The same Apple Developer Program team can later sign the 在问 iOS App.
+Before calling a macOS release signed, verify the build's Developer ID signing,
+notarization and stapling results; the existence of secret names alone is not
+proof. Ad-hoc code identity can change after upgrades and invalidate prior macOS
+Accessibility or Screen Recording grants. Updater signatures do not solve this.
+The same Apple Developer Program team can sign the 在问 iOS App.
 
 ## Publishing
 
@@ -79,13 +80,26 @@ The workflow also updates `https://miniq.zaiwenai.com/latest.json` in the legacy
 `miniq-zaiwenai` bucket so already-installed clients continue receiving updates.
 
 After uploading the installers, the desktop publisher updates the desktop entries
-in `https://oss.zaiwen.top/releases/manifest.json`, which powers the Zaiwen download
-page. URLs, byte sizes and SHA-256 values come from the built installers. Existing
+in `https://oss.zaiwen.top/releases/manifest.json`, the Zaiwen download page's OSS
+source. URLs, byte sizes and SHA-256 values come from the built installers. Existing
 mobile entries, other products and installation guidance are preserved. Missing
 installers, a version downgrade or a concurrent shared-manifest edit stops
 publication instead of replacing valid download metadata. Desktop and Android
 publication jobs share a concurrency group; the publisher also refreshes the
 download-page manifest in the CDN.
+
+The deployed Zaiwen download page currently tries its same-origin
+`/downloads/releases.json` before the OSS source. This is a static file, so
+updating Qiniu alone does not update the page's preferred manifest. After the
+workflow succeeds, merge the newly published miniQ desktop entries into the
+same-origin manifest while preserving other products and mobile entries. Keep
+the Zaiwen repository's `web/public/downloads/releases.json` and
+`FALLBACK_MANIFEST` in `web/src/views/download/release-manifest.ts` aligned, so a
+later site deployment cannot restore old installer links. Deploy the public
+manifest atomically under the website's existing release lock, retaining a
+recoverable copy. Verify both public manifest URLs and their installer versions,
+sizes and hashes before reporting the download page updated; a full website
+rebuild or restart is unnecessary for the static manifest.
 
 Linux desktop builds use Ubuntu 24.04. The screen capture dependency requires
 newer PipeWire headers than Ubuntu 22.04 provides. The build installs the system
