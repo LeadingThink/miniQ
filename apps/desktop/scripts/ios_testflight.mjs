@@ -139,14 +139,45 @@ function writeOutput(name, value) {
   appendFileSync(output, `${name}=${value}\n`);
 }
 
+function readProfileValue(path, key) {
+  return execFileSync("/usr/libexec/PlistBuddy", ["-c", `Print ${key}`, path], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+}
+
+function readOptionalProfileValue(path, key) {
+  try {
+    return readProfileValue(path, key);
+  } catch {
+    return undefined;
+  }
+}
+
+function readProfile(path) {
+  const boolean = (key) => readProfileValue(path, key) === "true";
+  return {
+    Name: readProfileValue(path, ":Name"),
+    UUID: readProfileValue(path, ":UUID"),
+    TeamIdentifier: [readProfileValue(path, ":TeamIdentifier:0")],
+    ExpirationDate: readProfileValue(path, ":ExpirationDate"),
+    Entitlements: {
+      "application-identifier": readProfileValue(path, ":Entitlements:application-identifier"),
+      "com.apple.developer.team-identifier": readProfileValue(
+        path,
+        ":Entitlements:com.apple.developer.team-identifier",
+      ),
+      "get-task-allow": boolean(":Entitlements:get-task-allow"),
+      "beta-reports-active": boolean(":Entitlements:beta-reports-active"),
+    },
+    ProvisionedDevices: readOptionalProfileValue(path, ":ProvisionedDevices"),
+    ProvisionsAllDevices: readOptionalProfileValue(path, ":ProvisionsAllDevices") === "true",
+  };
+}
+
 function prepareProfile() {
   requireEnvironment(process.env, ["APPLE_TEAM_ID", "IOS_PROFILE_PLIST", "IOS_EXPORT_OPTIONS", "IOS_SIGNING_IDENTITY"]);
-  const json = execFileSync(
-    "plutil",
-    ["-convert", "json", "-o", "-", process.env.IOS_PROFILE_PLIST],
-    { encoding: "utf8" },
-  );
-  const profile = validateProfile(JSON.parse(json), process.env.APPLE_TEAM_ID);
+  const profile = validateProfile(readProfile(process.env.IOS_PROFILE_PLIST), process.env.APPLE_TEAM_ID);
   const options = buildExportOptions({
     teamId: process.env.APPLE_TEAM_ID,
     profileName: profile.name,
