@@ -18,6 +18,8 @@ apps/desktop/scripts/*
 !apps/desktop/scripts/desktop_download_manifest.py
 !apps/desktop/scripts/desktop_download_manifest_test.py
 !apps/desktop/scripts/create-preview-fixtures.mjs
+!apps/desktop/scripts/ios_testflight.mjs
+!apps/desktop/scripts/ios_testflight.node-test.mjs
 !apps/desktop/scripts/prepare-daemon-sidecar.mjs
 dist-android/
 
