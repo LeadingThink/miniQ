@@ -103,6 +103,11 @@ impl SessionToolExecutor {
                 // No observed origin: approval is for this call only.
                 format!("browser_automation:call:{}", call.id)
             }
+            "app_automation" => {
+                // Only the tool can establish a valid app/window scope. An
+                // absent scope must never grant access to every application.
+                format!("app_automation:call:{}", call.id)
+            }
             "mcp_call" => {
                 let server = call
                     .arguments

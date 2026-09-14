@@ -18,6 +18,10 @@ pub(super) fn plan_mode_allows(call: &ToolCallRequest, risk: RiskLevel) -> bool 
             call.arguments.get("action").and_then(Value::as_str),
             Some("status" | "screenshot" | "release")
         ),
+        "app_automation" => matches!(
+            call.arguments.get("action").and_then(Value::as_str),
+            Some("status" | "windows" | "inspect" | "screenshot" | "release")
+        ),
         "agent_run" => call.arguments.get("mode").and_then(Value::as_str) == Some("plan"),
         _ => false,
     }
@@ -55,6 +59,18 @@ mod tests {
             ("computer_use", "screenshot", true),
             ("computer_use", "click", false),
             ("computer_use", "type", false),
+            ("app_automation", "status", true),
+            ("app_automation", "windows", true),
+            ("app_automation", "inspect", true),
+            ("app_automation", "screenshot", true),
+            ("app_automation", "release", true),
+            ("app_automation", "invoke", false),
+            ("app_automation", "select", false),
+            ("app_automation", "setValue", false),
+            ("app_automation", "key", false),
+            ("app_automation", "type", false),
+            ("app_automation", "click", false),
+            ("app_automation", "scroll", false),
             ("browser_automation", "snapshot", true),
             ("browser_automation", "type", false),
             ("browser_automation", "open", false),

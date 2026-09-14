@@ -7,6 +7,7 @@ import {
   ToolStep,
   toolActionLabel,
   toolDuration,
+  toolInputSummary,
   turnProgressLabel,
 } from "./ExecutionActivity";
 
@@ -36,6 +37,19 @@ describe("execution activity", () => {
   it("shows a useful elapsed time for completed steps", () => {
     expect(toolDuration(toolCall())).toBe("4 秒");
     expect(toolDuration(toolCall({ completedAt: undefined }))).toBeNull();
+  });
+
+  it("distinguishes background app actions from observations and foreground desktop control", () => {
+    expect(toolActionLabel("app_automation", true, {action:"inspect"})).toBe("正在观察应用");
+    expect(toolActionLabel("app_automation", false, {action:"invoke",axAction:"AXPress"})).toBe("后台应用操作");
+    expect(toolActionLabel("computer_use", true, {action:"click"})).toBe("正在操作桌面");
+    const call = toolCall({toolName:"app_automation", input:{action:"setValue",windowId:42},
+      output:{target:{windowId:42,pid:17,appName:"网易邮箱大师",title:"撰写邮件"}}});
+    expect(toolInputSummary(call)).toBe("网易邮箱大师 · 撰写邮件");
+    const html = renderToStaticMarkup(<ToolStep call={call} />);
+    expect(html).toContain("后台应用操作");
+    expect(html).toContain("网易邮箱大师 · 撰写邮件");
+    expect(html).not.toContain("操作了桌面");
   });
 
   it("presents plans as an ordered inline progress list", () => {

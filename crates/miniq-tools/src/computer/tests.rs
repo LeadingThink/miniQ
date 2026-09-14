@@ -88,7 +88,9 @@ fn retina_and_negative_monitor_origins_map_correctly() {
 
 #[test]
 fn keys_are_validated_before_pressing_modifiers() {
-    for key in ["Enter", "Escape", "ArrowUp", "F12", "a", "中"] {
+    for key in [
+        "Enter", "Escape", "ArrowUp", "F12", "a", "中", "space", "SPACE", "return",
+    ] {
         assert!(native::parse_key(key).is_ok());
     }
     for key in ["", "Ctrl+A", "unknown"] {

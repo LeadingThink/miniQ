@@ -38,6 +38,7 @@ const TOOL_ACTIONS: Record<string, ToolAction> = {
   http_request: { running: "正在请求接口", finished: "请求了接口" },
   browser_automation: { running: "正在操作浏览器", finished: "操作了浏览器" },
   computer_use: { running: "正在操作桌面", finished: "操作了桌面" },
+  app_automation: { running: "正在后台操作应用", finished: "后台应用操作" },
   doc_read: { running: "正在读取文档", finished: "读取了文档" },
   doc_write: { running: "正在生成文档", finished: "生成了文档" },
   memory_search: { running: "正在检索记忆", finished: "检索了记忆" },
@@ -46,7 +47,14 @@ const TOOL_ACTIONS: Record<string, ToolAction> = {
   ask_user: { running: "正在准备确认问题", finished: "确认了下一步" },
 };
 
-export function toolActionLabel(toolName: string, running: boolean): string {
+export function toolActionLabel(toolName: string, running: boolean, input?: unknown): string {
+  if (toolName === "app_automation") {
+    const action = (input as { action?: unknown } | null)?.action;
+    if (action === "inspect" || action === "screenshot") return running ? "正在观察应用" : "观察了应用";
+    if (action === "windows") return running ? "正在查找应用窗口" : "查看了应用窗口";
+    if (action === "status") return running ? "正在检查应用控制状态" : "检查了应用控制状态";
+    if (action === "release") return running ? "正在释放应用控制" : "已释放应用控制";
+  }
   const action = TOOL_ACTIONS[toolName];
   if (action) return running ? action.running : action.finished;
   return running ? `正在执行 ${toolName}` : `已执行 ${toolName}`;
@@ -55,6 +63,12 @@ export function toolActionLabel(toolName: string, running: boolean): string {
 /** One-line human summary of the most relevant tool input. */
 export function toolInputSummary(call: ToolCall): string {
   const input = (call.input ?? {}) as Record<string, unknown>;
+  if (call.toolName === "app_automation") {
+    const target = (call.output as { target?: { appName?: unknown; title?: unknown } } | null)?.target;
+    const name = [target?.appName, target?.title].filter((value): value is string => typeof value === "string" && value.length > 0);
+    if (name.length) return name.join(" · ");
+    if (typeof input.windowId === "number") return `窗口 ${input.windowId}`;
+  }
   const keys = [
     "path",
     "command",
@@ -178,7 +192,7 @@ export function ToolStep(props: {
             )}
           </span>
           <span className="tool-action">
-            {toolActionLabel(call.toolName, running)}
+            {toolActionLabel(call.toolName, running, call.input)}
           </span>
           {summary && (
             <span className="tool-summary" title={summary}>

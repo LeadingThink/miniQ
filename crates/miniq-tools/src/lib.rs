@@ -6,11 +6,13 @@
 //! daemon) around `dispatch`.
 
 mod agent;
+mod app;
 mod apply_patch;
 mod apply_patch_diff;
 mod browser;
 mod catalog;
 mod computer;
+mod desktop_lock;
 mod doc;
 mod edit;
 mod file;
@@ -42,6 +44,7 @@ mod workspace_roots_tests;
 pub use agent::{
     AgentBridge, AgentMessageRequest, AgentMessageTool, AgentRunRequest, AgentRunTool,
 };
+pub use app::AppAutomationTool;
 pub use apply_patch::{affected_paths as apply_patch_affected_paths, ApplyPatchTool};
 pub use browser::BrowserAutomationTool;
 pub use catalog::ToolSearchTool;
@@ -125,6 +128,7 @@ pub fn default_router() -> ToolRouter {
         std::sync::Arc::new(McpCallTool),
         std::sync::Arc::new(BrowserAutomationTool::default()),
         std::sync::Arc::new(ComputerUseTool::default()),
+        std::sync::Arc::new(AppAutomationTool::default()),
         std::sync::Arc::new(GenerateImageTool),
         std::sync::Arc::new(EditImageTool),
         std::sync::Arc::new(GenerateVideoTool),

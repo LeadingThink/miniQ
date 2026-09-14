@@ -34,6 +34,16 @@ it("offers to open the observed browser URL in the right-side workbench", async 
   window.removeEventListener("miniq:open-browser", open);
 });
 
+it("identifies an app-scoped screenshot without presenting desktop takeover or browser controls", async () => {
+  const client = {call:vi.fn().mockResolvedValue(response)} as unknown as RpcClient;
+  render(<ComputerObservation call={{...call, toolName:"app_automation", output:{...call.output as object,
+    target:{windowId:42,pid:17,appName:"网易邮箱大师",title:"撰写邮件"},interactionMode:"background-app"}}} client={client} />);
+  await screen.findByAltText("网易邮箱大师窗口截图");
+  expect(screen.getByText("应用观察 · 网易邮箱大师").title).toBe("撰写邮件");
+  expect(screen.queryByText("桌面观察")).toBeNull();
+  expect(screen.queryByRole("button", {name:"在右侧内置浏览器打开"})).toBeNull();
+});
+
 it("shows errors and retries", async () => {
   const client = {call:vi.fn().mockRejectedValueOnce(new Error("连接已断开")).mockResolvedValue(response)} as unknown as RpcClient;
   render(<ComputerObservation call={call} client={client} />);

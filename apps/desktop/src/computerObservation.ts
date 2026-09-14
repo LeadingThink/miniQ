@@ -10,7 +10,7 @@ export function observationPages(call: ToolCall): number[] {
 }
 
 export function observationImage(call: ToolCall, imageIndex = 0): ObservationImage | null {
-  if (!["computer_use", "browser_automation", "view_image", "view_pdf"].includes(call.toolName)) return null;
+  if (!["computer_use", "app_automation", "browser_automation", "view_image", "view_pdf"].includes(call.toolName)) return null;
   const output = call.output as { screenshot?: Partial<ObservationImage>; pages?: Array<{ screenshot?: Partial<ObservationImage> }> } | null;
   const value = call.toolName === "view_pdf" ? output?.pages?.[imageIndex]?.screenshot : imageIndex === 0 ? output?.screenshot : null;
   if (!value || typeof value.id !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value.id)

@@ -9,8 +9,10 @@ export function ComputerObservation({ call, client }: { call: ToolCall; client: 
   const [page, setPage] = useState(0);
   const pages = observationPages(call);
   const image = observationImage(call, page);
-  const title = call.toolName === "computer_use" ? "桌面观察" : call.toolName === "view_pdf" ? `PDF 第 ${pages[page]} 页` : call.toolName === "view_image" ? "图片观察" : "浏览器观察";
-  const alt = call.toolName === "computer_use" ? "操作后的桌面截图" : call.toolName === "browser_automation" ? "操作后的网页截图" : title;
+  const target = (call.output as { target?: { appName?: unknown; title?: unknown } } | null)?.target;
+  const appName = call.toolName === "app_automation" && typeof target?.appName === "string" ? target.appName : "";
+  const title = call.toolName === "app_automation" ? `应用观察${appName ? ` · ${appName}` : ""}` : call.toolName === "computer_use" ? "桌面观察" : call.toolName === "view_pdf" ? `PDF 第 ${pages[page]} 页` : call.toolName === "view_image" ? "图片观察" : "浏览器观察";
+  const alt = call.toolName === "app_automation" ? `${appName || "目标应用"}窗口截图` : call.toolName === "computer_use" ? "操作后的桌面截图" : call.toolName === "browser_automation" ? "操作后的网页截图" : title;
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -39,7 +41,7 @@ export function ComputerObservation({ call, client }: { call: ToolCall; client: 
   if (!image) return null;
   return <figure className="computer-observation">
     <figcaption>
-      <strong>{title}</strong>
+      <strong title={typeof target?.title === "string" ? target.title : undefined}>{title}</strong>
       <span className="observation-size">{image.width} × {image.height}</span>
       <div className="observation-actions" role="toolbar" aria-label="截图操作">
       {pages.length > 1 && <>
