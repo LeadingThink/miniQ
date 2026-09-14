@@ -25,3 +25,5 @@ ANDROID_HOME="$HOME/Library/Android/sdk" \
 APK 输出在 `apps/desktop/android/app/build/outputs/apk/debug/app-debug.apk`。
 
 iOS 工程位于 `apps/desktop/ios/App/App.xcodeproj`。安装完整 Xcode 后执行 `npm run mobile:ios`，在 Xcode 中选择 Apple Developer Team，再进行真机归档和签名。
+
+通过 GitHub Actions 上传内部测试构建的配置和操作步骤见 [miniQ TestFlight 发布](ios-testflight.md)。内部 TestFlight 不要求先准备 App Store 商品页截图。
