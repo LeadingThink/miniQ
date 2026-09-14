@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BlobPreview } from "./MediaPreview";
+import { Capacitor } from "@capacitor/core";
 
 beforeEach(() => {
   let sequence = 0;
@@ -136,4 +137,46 @@ it("uses an inline, metadata-only video player and reports decode errors", () =>
   expect(video.autoplay).toBe(false);
   fireEvent.error(video);
   expect(onError).toHaveBeenCalledWith("视频解码失败");
+});
+
+it("falls back to a data URL when Android WebView cannot decode a blob URL", () => {
+  const platform = vi.spyOn(Capacitor, "getPlatform").mockReturnValue("android");
+  const onError = vi.fn();
+  render(
+    <BlobPreview
+      dataBase64="AQID"
+      mimeType="video/mp4"
+      kind="video"
+      label="mobile clip"
+      onError={onError}
+    />,
+  );
+  const video = screen.getByLabelText("mobile clip") as HTMLVideoElement;
+  expect(video.src).toContain("blob:media-");
+  fireEvent.error(video);
+  const fallback = screen.getByLabelText("mobile clip") as HTMLVideoElement;
+  expect(fallback.src).toBe("data:video/mp4;base64,AQID");
+  fireEvent.error(fallback);
+  expect(onError).toHaveBeenCalledWith("视频解码失败");
+  platform.mockRestore();
+});
+
+it("falls back from blob media to a data URL on Android", async () => {
+  const platform = vi.spyOn(Capacitor, "getPlatform").mockReturnValue("android");
+  const onError = vi.fn();
+  render(
+    <BlobPreview
+      dataBase64="AA=="
+      mimeType="audio/mpeg"
+      kind="audio"
+      label="clip"
+      onError={onError}
+    />,
+  );
+  const audio = await screen.findByLabelText("clip");
+  expect(audio.getAttribute("src")).toBe("blob:media-1");
+  fireEvent.error(audio);
+  expect((await screen.findByLabelText("clip")).getAttribute("src")).toBe("data:audio/mpeg;base64,AA==");
+  expect(onError).not.toHaveBeenCalled();
+  platform.mockRestore();
 });

@@ -43,8 +43,8 @@ function FilePreview({ shareId, file, onClose }: { shareId: string; file: Shared
   const [error, setError] = useState<string | null>(null);
   const limited = file.size > 64 * 1024 * 1024;
   const image = ["png", "jpg", "jpeg", "webp", "gif"].includes(ext);
-  const video = ["mp4", "webm", "mov"].includes(ext);
-  const audio = ["mp3", "m4a", "wav"].includes(ext);
+  const video = ["avi", "m4v", "mkv", "mp4", "webm", "mov"].includes(ext);
+  const audio = ["aac", "flac", "mp3", "m4a", "oga", "ogg", "opus", "wav"].includes(ext);
   useEffect(() => {
     if ((!TEXT.has(ext) && !BINARY.has(ext)) || limited) return;
     const controller = new AbortController();

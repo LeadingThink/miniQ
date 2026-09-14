@@ -1,5 +1,6 @@
 import { Maximize, Scan, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import { decodeBase64 } from "../previewBinary";
 import "./MediaPreview.css";
 import {
@@ -23,14 +24,23 @@ export function BlobPreview({ dataBase64, mimeType, ...props }: Props) {
     data: string;
     mime: string;
     url: string;
+    fallbackUrl?: string;
   } | null>(null);
+  const [useFallback, setUseFallback] = useState(false);
   useEffect(() => {
     let url: string | undefined;
     try {
-      url = URL.createObjectURL(
-        new Blob([decodeBase64(dataBase64)], { type: mimeType }),
-      );
-      setSource({ data: dataBase64, mime: mimeType, url });
+      const bytes = decodeBase64(dataBase64);
+      url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+      // Android WebView versions in the field occasionally fail to hand a
+      // blob: URL to the media decoder. Keep a data URL fallback ready for
+      // small assets; larger files still use the memory-efficient blob URL.
+      const fallbackUrl =
+        Capacitor.getPlatform() === "android" && bytes.byteLength <= 16 * 1024 * 1024
+          ? `data:${mimeType};base64,${dataBase64}`
+          : undefined;
+      setUseFallback(false);
+      setSource({ data: dataBase64, mime: mimeType, url, fallbackUrl });
     } catch (error) {
       setSource(null);
       onError.current(error instanceof Error ? error.message : String(error));
@@ -42,15 +52,23 @@ export function BlobPreview({ dataBase64, mimeType, ...props }: Props) {
   if (!source || source.data !== dataBase64 || source.mime !== mimeType) {
     return <div className="diff-empty">正在读取媒体...</div>;
   }
+  const sourceUrl = useFallback && source.fallbackUrl ? source.fallbackUrl : source.url;
+  const retryWithFallback = () => {
+    if (source.fallbackUrl && !useFallback) {
+      setUseFallback(true);
+      return;
+    }
+    props.onError(props.kind === "image" ? "图片解码失败" : props.kind === "video" ? "视频解码失败" : "音频解码失败");
+  };
   return props.kind === "image" ? (
     <ImageInspector
-      key={source.url}
-      url={source.url}
+      key={sourceUrl}
+      url={sourceUrl}
       label={props.label}
-      onError={props.onError}
+      onError={retryWithFallback}
     />
   ) : (
-    <TimeMediaInspector key={source.url} url={source.url} {...props} />
+    <TimeMediaInspector key={sourceUrl} url={sourceUrl} {...props} onError={retryWithFallback} />
   );
 }
 
