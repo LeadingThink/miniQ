@@ -117,6 +117,7 @@ async fn tool_list_reports_toolset() {
         vec![
             "agent_message",
             "agent_run",
+            "app_automation",
             "apply_patch",
             "ask_user",
             "browser_automation",

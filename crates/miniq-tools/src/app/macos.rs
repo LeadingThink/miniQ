@@ -309,7 +309,7 @@ impl Snapshot {
         if self.keyboard_window()? != self.elements[0] {
             return Err("background_action_unsupported: coordinate events require the exact key-window screenshot; use the attached sheet's AX controls".into());
         }
-        events::pointer(self.target.pid, self.target.window_id, input, point)?;
+        events::pointer(&self.target, input, point)?;
         Ok(
             json!({"method":"processEvent","dispatched":true,"verification":"inspect the updated target state"}),
         )

@@ -20,12 +20,6 @@ key, a click whose screenshot coordinates come from observed bounds, and two-axi
 scroll delivery. It verifies actual handler results and unchanged foreground,
 pointer and keyboard modifiers after every action. Passing compilation alone does
 not establish native delivery or isolation; run this opt-in case on the target Mac.
-An additional custom `NSView` fixture records real AppKit `keyDown`, `mouseDown`,
-and `scrollWheel` delivery. That test checks Unicode input across Quartz batches,
-Shift+ArrowLeft, screenshot-derived click coordinates, and both scroll axes. Each
-step must use the tool's `processEvent` route, read back its effect, and preserve the
-foreground process, pointer, and actual keyboard modifiers. It does not substitute
-AXPress or manually forward events to make the test pass.
 
 ## Run
 
@@ -36,6 +30,13 @@ cargo test -p miniq-tools --test app_automation_macos --no-run
 MINIQ_RUN_APP_AUTOMATION_UI_TEST=1 cargo test -p miniq-tools \
   --test app_automation_macos -- --ignored --test-threads=1 --nocapture
 ```
+
+Final native acceptance on this Mac passed all four cases in 11.76 seconds,
+including attachment basename readback, a nonblank target screenshot, complete
+Unicode text, Shift+ArrowLeft, the actual click location, both scroll axes, and
+unchanged foreground, pointer, and keyboard modifiers. Temporary event monitors
+were removed before that run. These synthetic checks establish the tested native
+paths; they do not establish support for every third-party control or mail delivery.
 
 The tests are ignored during ordinary test runs because they create native fixture
 windows. The environment variable explicitly opts in to those windows. Keep the
@@ -112,3 +113,22 @@ Application support still matters: custom canvas controls may not expose usable 
 elements, and some applications reject background events. An explicit unsupported
 result must never silently fall back to global mouse or keyboard input. No acceptance
 test should use a real mailbox, send messages, or change user documents.
+
+## Process-directed pointer events
+
+The custom-view acceptance test caught a real dispatch defect: ordinary Quartz
+mouse events reached the correct process but arrived with `NSEvent.windowNumber`
+equal to zero. Setting the public under-pointer window fields alone did not bind
+the AppKit event to its window. The backend now uses the public AppKit mouse-event
+constructor to encode the target window, retains a private event source, and posts
+only to the selected process. Scroll events reuse that window binding and set their
+type and deltas through public Quartz APIs.
+
+Coordinate preparation is also covered by the real handler readback. The observed
+screenshot point becomes a position relative to the target window's top-left
+corner; the AppKit factory's screen-axis conversion is accounted for before
+construction. Calling `CGEventSetLocation` afterward invalidated the encoded local
+position during diagnosis, so that competing coordinate write was removed. The
+final fixture receives the intended window-local point while the user's global
+pointer remains unchanged. No private event fields, event forwarding, or global
+input fallback are used.

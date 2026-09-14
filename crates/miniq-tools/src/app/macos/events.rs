@@ -1,13 +1,24 @@
 //! Process-directed events with an isolated source. No HID, activation or clipboard.
 
 use core_graphics::{
-    event::{CGEvent, CGEventFlags, CGEventType, CGMouseButton, EventField, ScrollEventUnit},
+    display::CGDisplay,
+    event::{CGEvent, CGEventFlags, EventField},
     event_source::{CGEventSource, CGEventSourceStateID},
     geometry::CGPoint,
 };
+use objc2::rc::{autoreleasepool, Retained};
+use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
+use objc2_core_graphics::{
+    CGEvent as WindowEvent, CGEventField, CGEventSource as WindowEventSource,
+    CGEventSourceStateID as WindowSourceState, CGEventType as WindowEventType,
+};
+use objc2_foundation::{NSPoint, NSProcessInfo};
 
 use crate::{
-    app::input::{Action, AppInput, Modifier},
+    app::{
+        backend::AppWindow,
+        input::{Action, AppInput, Modifier},
+    },
     observation, ToolContext,
 };
 
@@ -125,70 +136,167 @@ pub(super) fn text(
     Ok(())
 }
 
-pub(super) fn pointer(
-    pid: i32,
-    window_id: u32,
+fn window_event(
+    target: &AppWindow,
     input: &AppInput,
     point: CGPoint,
-) -> Result<(), String> {
-    let source = source()?;
-    let events = if input.action == Action::Click {
-        vec![
-            CGEvent::new_mouse_event(
-                source.clone(),
-                CGEventType::LeftMouseDown,
-                point,
-                CGMouseButton::Left,
-            ),
-            CGEvent::new_mouse_event(source, CGEventType::LeftMouseUp, point, CGMouseButton::Left),
-        ]
-    } else {
-        let vertical = input
-            .scroll_y
+    kind: NSEventType,
+    source: &WindowEventSource,
+) -> Result<Retained<WindowEvent>, String> {
+    // The public under-pointer CG fields do not set NSEvent.windowNumber.
+    // Let AppKit encode that association through its public constructor; no
+    // undocumented event fields or foreground activation are needed.
+    let local_x = point.x - target.x as f64;
+    let local_top_y = point.y - target.y as f64;
+    // This process does not own the destination NSWindow. The factory flips
+    // its Cocoa point around the main display; undo that flip so the encoded
+    // event carries window-relative top-left coordinates. Destination AppKit
+    // then applies its own window-height flip. Observed target bounds handle
+    // other displays and negative desktop origins without hardcoded heights.
+    let main_height = CGDisplay::main().bounds().size.height;
+    if !main_height.is_finite() || main_height <= 0. {
+        return Err("application event main-display geometry unavailable".into());
+    }
+    let local = NSPoint::new(local_x, main_height - local_top_y);
+    let native = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+        kind, local, NSEventModifierFlags(flags(&input.modifiers).bits() as usize),
+        NSProcessInfo::processInfo().systemUptime(), target.window_id as isize,
+        None, 0, 1, if kind == NSEventType::LeftMouseDown { 1. } else { 0. },
+    ).ok_or("cannot create window-bound AppKit event")?;
+    let event = native
+        .CGEvent()
+        .ok_or("AppKit event has no Quartz representation")?;
+    WindowEvent::set_source(Some(&event), Some(source));
+    // Preserve the constructor's window-relative payload. CGEventSetLocation
+    // invalidates that encoded position before process-directed delivery.
+    WindowEvent::set_integer_value_field(
+        Some(&event),
+        CGEventField::EventTargetUnixProcessID,
+        target.pid.into(),
+    );
+    for field in [
+        CGEventField::MouseEventWindowUnderMousePointer,
+        CGEventField::MouseEventWindowUnderMousePointerThatCanHandleThisEvent,
+    ] {
+        WindowEvent::set_integer_value_field(Some(&event), field, target.window_id.into());
+    }
+    Ok(event)
+}
+
+fn pointer_events(
+    target: &AppWindow,
+    input: &AppInput,
+    point: CGPoint,
+) -> Result<Vec<Retained<WindowEvent>>, String> {
+    let source = WindowEventSource::new(WindowSourceState::Private)
+        .ok_or("application event source unavailable")?;
+    if input.action == Action::Click {
+        return Ok(vec![
+            window_event(target, input, point, NSEventType::LeftMouseDown, &source)?,
+            window_event(target, input, point, NSEventType::LeftMouseUp, &source)?,
+        ]);
+    }
+    // NSEvent's mouse constructor rejects scrollWheel. Seed a window-bound
+    // mouse event, then use public CG APIs to define a discrete scroll event.
+    let event = window_event(target, input, point, NSEventType::MouseMoved, &source)?;
+    WindowEvent::set_type(Some(&event), WindowEventType::ScrollWheel);
+    for (steps, integer, fixed) in [
+        (
+            input.scroll_y,
+            CGEventField::ScrollWheelEventDeltaAxis1,
+            CGEventField::ScrollWheelEventFixedPtDeltaAxis1,
+        ),
+        (
+            input.scroll_x,
+            CGEventField::ScrollWheelEventDeltaAxis2,
+            CGEventField::ScrollWheelEventFixedPtDeltaAxis2,
+        ),
+    ] {
+        let delta = steps
             .checked_neg()
-            .ok_or("scrollY is outside the native event range")?;
-        let horizontal = input
-            .scroll_x
-            .checked_neg()
-            .ok_or("scrollX is outside the native event range")?;
-        vec![CGEvent::new_scroll_event(
-            source,
-            ScrollEventUnit::LINE,
-            2,
-            vertical,
-            horizontal,
-            0,
-        )]
-    };
-    let events = events
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|()| "cannot create target pointer events")?;
-    for event in &events {
-        event.set_location(point);
-        event.set_flags(flags(&input.modifiers));
-        event.set_integer_value_field(EventField::EVENT_TARGET_UNIX_PROCESS_ID, pid.into());
-        event.set_integer_value_field(
-            EventField::MOUSE_EVENT_WINDOW_UNDER_MOUSE_POINTER,
-            window_id.into(),
-        );
-        event.set_integer_value_field(
-            EventField::MOUSE_EVENT_WINDOW_UNDER_MOUSE_POINTER_THAT_CAN_HANDLE_THIS_EVENT,
-            window_id.into(),
-        );
-        if input.action == Action::Click {
-            event.set_integer_value_field(EventField::MOUSE_EVENT_CLICK_STATE, 1);
+            .ok_or("scroll is outside the native event range")?;
+        WindowEvent::set_integer_value_field(Some(&event), integer, delta.into());
+        WindowEvent::set_double_value_field(Some(&event), fixed, delta.into());
+    }
+    WindowEvent::set_integer_value_field(
+        Some(&event),
+        CGEventField::ScrollWheelEventIsContinuous,
+        0,
+    );
+    Ok(vec![event])
+}
+
+pub(super) fn pointer(target: &AppWindow, input: &AppInput, point: CGPoint) -> Result<(), String> {
+    autoreleasepool(|_| {
+        // Build the complete pair before posting. Cancellation cannot leave a
+        // pressed button behind, and no event is sent to the global HID stream.
+        for event in pointer_events(target, input, point)? {
+            WindowEvent::post_to_pid(target.pid, Some(&event));
         }
-    }
-    for event in events {
-        event.post_to_pid(pid);
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pointer_events_roundtrip_with_target_window_and_private_source() {
+        autoreleasepool(|_| {
+            let target = AppWindow {
+                window_id: 12345,
+                pid: 123,
+                process_instance: "test".into(),
+                unavailable_reason: None,
+                app_name: "Test".into(),
+                title: String::new(),
+                x: -200,
+                y: 100,
+                width: 640,
+                height: 480,
+            };
+            for action in ["click", "scroll"] {
+                let input = AppInput::parse(serde_json::json!({
+                    "action":action, "windowId":target.window_id, "pid":target.pid,
+                    "observationId":"test", "x":30, "y":40, "scrollX":2, "scrollY":3,
+                }))
+                .unwrap();
+                let point = CGPoint::new(-170., 140.);
+                let events = pointer_events(&target, &input, point).unwrap();
+                assert_eq!(events.len(), if action == "click" { 2 } else { 1 });
+                for event in events {
+                    let native = NSEvent::eventWithCGEvent(&event).unwrap();
+                    assert_eq!(native.windowNumber(), target.window_id as isize);
+                    // Receiver AppKit owns the destination window and decodes
+                    // this top-left position using that window's own height.
+                    assert_eq!(WindowEvent::location(Some(&event)), NSPoint::new(30., 40.));
+                    let source_id = WindowEvent::integer_value_field(
+                        Some(&event),
+                        CGEventField::EventSourceStateID,
+                    );
+                    // Private creates a unique state table ID, not the -1
+                    // creation request constant or either shared table (0/1).
+                    assert!(![0, 1].contains(&source_id));
+                    assert_eq!(
+                        WindowEvent::integer_value_field(
+                            Some(&event),
+                            CGEventField::EventTargetUnixProcessID
+                        ),
+                        target.pid as i64
+                    );
+                    if action == "scroll" {
+                        assert_eq!(native.r#type(), NSEventType::ScrollWheel);
+                        assert_eq!(
+                            (native.scrollingDeltaX(), native.scrollingDeltaY()),
+                            (-2., -3.)
+                        );
+                        assert!(!native.hasPreciseScrollingDeltas());
+                    }
+                }
+            }
+        });
+    }
 
     #[test]
     fn all_advertised_printable_keys_have_native_mappings() {
