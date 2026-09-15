@@ -1,3 +1,4 @@
+// Run with Node's test runner; keep this outside Vitest's *.test.* discovery.
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { readFileSync } = require("node:fs");
