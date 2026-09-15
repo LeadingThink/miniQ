@@ -255,3 +255,20 @@ it("bridges open observations into a following observation-bound click", async (
   expect(vi.mocked(evaluateBrowser).mock.calls[1][1]).toContain(documentId);
   expect(evaluateBrowser).toHaveBeenCalledTimes(2);
 });
+
+it("stops polling hidden tabs and resumes without reloading their page", async () => {
+  vi.useFakeTimers();
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  const ref = surface();
+  const { rerender } = renderHook(({ suspended }) => useBrowserPanel("https://example.test/", ref, suspended), { initialProps: { suspended: false } });
+  await act(async () => {});
+  await act(() => vi.advanceTimersByTimeAsync(1500));
+  expect(currentBrowser).toHaveBeenCalledTimes(1);
+  rerender({ suspended: true });
+  await act(() => vi.advanceTimersByTimeAsync(6000));
+  expect(currentBrowser).toHaveBeenCalledTimes(1);
+  rerender({ suspended: false });
+  await act(() => vi.advanceTimersByTimeAsync(1500));
+  expect(currentBrowser).toHaveBeenCalledTimes(2);
+  expect(openBrowser).toHaveBeenCalledTimes(1);
+});

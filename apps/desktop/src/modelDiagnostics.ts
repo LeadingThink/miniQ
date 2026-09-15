@@ -42,7 +42,7 @@ export interface ModelCallRecord {
   turnId: string;
   sourceMessageId: string | null;
   trace: {
-    purpose: "task" | "compaction" | "planReview" | "skillLearning";
+    purpose: "task" | "compaction" | "planReview" | "skillLearning" | "sessionTitle";
     step: number | null;
     attempt: number;
   };

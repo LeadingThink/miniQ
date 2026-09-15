@@ -199,12 +199,13 @@ export function useBrowserPanel(
 
   useEffect(() => {
     const element = surface.current;
-    if (!element || !isTauriRuntime()) return;
+    if (!element || !isTauriRuntime() || suspended) return;
     let disposed = false;
     const resize = () => {
       // ResizeObserver already batches layout. A second animation frame can
       // stop in a hidden WebKit view, leaving its native child at stale bounds.
       const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
       void resizeBrowser(
         { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
         viewId,
@@ -214,16 +215,17 @@ export function useBrowserPanel(
     };
     const observer = new ResizeObserver(resize);
     observer.observe(element);
+    resize();
     window.addEventListener("resize", resize);
     return () => {
       disposed = true;
       observer.disconnect();
       window.removeEventListener("resize", resize);
     };
-  }, [surface, viewId]);
+  }, [surface, viewId, suspended]);
 
   useEffect(() => {
-    if (!isTauriRuntime()) return;
+    if (!isTauriRuntime() || suspended) return;
     let disposed = false;
     let polling = false;
     const refresh = async () => {
@@ -254,7 +256,7 @@ export function useBrowserPanel(
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [viewId, accept]);
+  }, [viewId, accept, suspended]);
 
   const action = async (command: "back" | "forward" | "reload" | "stop") => {
     // Stopping is deliberately allowed while another navigation is in flight;

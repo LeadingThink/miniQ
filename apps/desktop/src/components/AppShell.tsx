@@ -24,6 +24,8 @@ import { SessionPermissionControls } from "./SessionPermissionControls";
 import { AgentPanel } from "./AgentPanel";
 import { ProjectDirectories } from "./ProjectDirectories";
 import { resolveBrowserDriverRequest } from "../embeddedBrowserDriver";
+import { BrowserTabs } from "./BrowserTabs";
+import { closeBrowserTab, EMPTY_BROWSER_TABS, openBrowserTab, updateBrowserTab, type BrowserTabsState } from "../browserTabs";
 
 interface AppOnlyProps {
   app: MiniqAppController;
@@ -378,12 +380,6 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
   const browserScope =
     app.catalog.currentSessionId ??
     `draft:${app.catalog.selectedWorkspaceId ?? ""}`;
-  const [browserSessions, setBrowserSessions] = useState<
-    Record<string, { url: string; viewId?: string; browserSessionId?: string } | null>
-  >({});
-  const [automationBrowsers, setAutomationBrowsers] = useState<
-    Record<string, { sessionId: string; url: string; viewId: string }>
-  >({});
   const browserViewIds = useRef(new Map<string, string>());
   const getBrowserViewId = (browserSessionId: string) => {
     const existing = browserViewIds.current.get(browserSessionId);
@@ -392,24 +388,22 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
     browserViewIds.current.set(browserSessionId, viewId);
     return viewId;
   };
+  const [browserSessions, setBrowserSessions] = useState<Record<string, BrowserTabsState>>({});
   const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
-  const browserState = browserSessions[browserScope] ?? null;
-  const browserUrl = browserState?.url ?? null;
-  const setBrowserUrl = (url: string | null) =>
-    setBrowserSessions((current) => ({
-      ...current,
-        [browserScope]: url
-          ? {
-              url,
-              viewId: current[browserScope]?.viewId,
-              browserSessionId: current[browserScope]?.browserSessionId,
-            }
-          : null,
-    }));
+  const browserState = browserSessions[browserScope] ?? EMPTY_BROWSER_TABS;
+  const activeBrowserTab = browserState.tabs.find((tab) => tab.id === browserState.activeId) ?? null;
+  const browserUrl = browserState.open ? activeBrowserTab?.url ?? null : null;
+  const setBrowserUrl = (url: string | null) => setBrowserSessions((current) => {
+    const state = current[browserScope] ?? EMPTY_BROWSER_TABS;
+    if (url === null) return { ...current, [browserScope]: { ...state, open: false } };
+    const active = state.activeId ? state.tabs.find((tab) => tab.id === state.activeId) : undefined;
+    return { ...current, [browserScope]: active ? updateBrowserTab(state, active.id, url) : openBrowserTab(state, url) };
+  });
+  const openNewBrowserTab = (url = "https://www.bing.com/") => setBrowserSessions((current) => ({ ...current, [browserScope]: openBrowserTab(current[browserScope] ?? EMPTY_BROWSER_TABS, url) }));
   const openBrowserUrl = (url: string) => {
     app.preview.close();
     app.review.setOpen(false);
-    setBrowserUrl(url);
+    openNewBrowserTab(url);
   };
   useEffect(() => app.client.onEvent((event) => {
     if (event.type !== "browser_driver_requested") return;
@@ -424,37 +418,45 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
         return;
       }
       const viewId = getBrowserViewId(request.browserSessionId);
-      setAutomationBrowsers((current) => ({
-        ...current,
-        [request.browserSessionId]: {
-          sessionId: request.sessionId,
-          url: requestedUrl,
-          viewId,
-        },
-      }));
       setBrowserSessions((current) => ({
         ...current,
-        [request.sessionId]: {
-          url: requestedUrl,
-          viewId,
-          browserSessionId: request.browserSessionId,
-        },
+        [request.sessionId]: (() => {
+          const state = current[request.sessionId] ?? EMPTY_BROWSER_TABS;
+          const existing = state.tabs.find(
+            (tab) => tab.browserSessionId === request.browserSessionId,
+          );
+          const tab = existing ?? {
+            id: crypto.randomUUID(),
+            url: requestedUrl,
+            viewId,
+            browserSessionId: request.browserSessionId,
+          };
+          return {
+            tabs: existing
+              ? state.tabs.map((candidate) =>
+                  candidate.id === existing.id
+                    ? { ...candidate, url: requestedUrl }
+                    : candidate,
+                )
+              : [...state.tabs, tab],
+            activeId: tab.id,
+            open: true,
+          };
+        })(),
       }));
     }
     void resolveBrowserDriverRequest(app.client, request).finally(() => {
       if (request.operation !== "close") return;
-      const viewId = browserViewIds.current.get(request.browserSessionId);
       browserViewIds.current.delete(request.browserSessionId);
-      setAutomationBrowsers((current) => {
-        const next = { ...current };
-        delete next[request.browserSessionId];
-        return next;
+      setBrowserSessions((current) => {
+        const state = current[request.sessionId];
+        const tab = state?.tabs.find(
+          (candidate) => candidate.browserSessionId === request.browserSessionId,
+        );
+        return tab
+          ? { ...current, [request.sessionId]: closeBrowserTab(state, tab.id) }
+          : current;
       });
-      setBrowserSessions((current) =>
-        current[request.sessionId]?.viewId === viewId
-          ? { ...current, [request.sessionId]: null }
-          : current,
-      );
     });
   }), [app.client]);
   useEffect(() => {
@@ -598,7 +600,12 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
         <AppStatusBar
           app={app}
           onOpenFile={openPreviewFile}
-          onOpenBrowser={() => openBrowserUrl("https://www.bing.com/")}
+          onOpenBrowser={() => {
+            app.preview.close();
+            app.review.setOpen(false);
+            if (activeBrowserTab) setBrowserSessions((current) => ({ ...current, [browserScope]: { ...browserState, open: true } }));
+            else openNewBrowserTab();
+          }}
           onToggleReview={() => {
             setBrowserUrl(null);
             app.preview.close();
@@ -615,9 +622,9 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
           onDraftRequestApplied={() => setFileQuestion(undefined)}
         />
       </div>
-      {workbenchOpen && (
-        <WorkbenchPanel>
-          {browserUrl ? (
+      {(workbenchOpen || Object.values(browserSessions).some((state) => state.tabs.length)) && (
+        <WorkbenchPanel hidden={!workbenchOpen}>
+          {Object.values(browserSessions).some((state) => state.tabs.length) && (
             <Suspense
               fallback={
                 <aside className="browser-panel">
@@ -625,11 +632,20 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
                 </aside>
               }
             >
-              <BrowserPanel
-                key={browserScope}
-                url={browserUrl}
-                viewId={browserState?.viewId}
-                browserSessionId={browserState?.browserSessionId}
+              <div className="browser-workbench" hidden={!browserUrl}>
+              <BrowserTabs
+                tabs={browserState.tabs}
+                activeId={browserState.activeId}
+                onSelect={(id) => setBrowserSessions((current) => ({ ...current, [browserScope]: { ...(current[browserScope] ?? EMPTY_BROWSER_TABS), activeId: id } }))}
+                onClose={(id) => setBrowserSessions((current) => ({ ...current, [browserScope]: closeBrowserTab(current[browserScope] ?? EMPTY_BROWSER_TABS, id) }))}
+                onNew={() => openNewBrowserTab()}
+              />
+              {Object.entries(browserSessions).flatMap(([scope, state]) => state.tabs.map((tab) => <BrowserPanel
+                key={tab.id}
+                url={tab.url}
+                viewId={tab.viewId}
+                browserSessionId={tab.browserSessionId}
+                active={scope === browserScope && tab.id === browserState.activeId && !!browserUrl}
                 suspended={
                   app.navigation.showSettings ||
                   app.navigation.showSearch ||
@@ -637,11 +653,13 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
                   app.navigation.showExternalImport ||
                   Boolean(app.navigation.editingWorkspaceId)
                 }
-                onNavigate={setBrowserUrl}
-                onClose={() => setBrowserUrl(null)}
-              />
+                onNavigate={(url) => setBrowserSessions((current) => ({ ...current, [scope]: updateBrowserTab(current[scope] ?? EMPTY_BROWSER_TABS, tab.id, url) }))}
+                onClose={() => setBrowserSessions((current) => ({ ...current, [scope]: closeBrowserTab(current[scope] ?? EMPTY_BROWSER_TABS, tab.id) }))}
+              />))}
+              </div>
             </Suspense>
-          ) : app.preview.state.open && app.catalog.currentWorkspace ? (
+          )}
+          {!browserUrl && app.preview.state.open && app.catalog.currentWorkspace ? (
             <Suspense
               fallback={
                 <aside className="file-preview-panel">
@@ -683,22 +701,6 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
             />
           ) : null}
         </WorkbenchPanel>
-      )}
-      {Object.entries(automationBrowsers).map(([browserSessionId, state]) =>
-        state && state.viewId !== browserState?.viewId ? (
-          <div className="background-browser-host" key={browserSessionId} aria-hidden="true">
-            <Suspense fallback={null}>
-              <BrowserPanel
-                url={state.url}
-                viewId={state.viewId}
-                browserSessionId={browserSessionId}
-                suspended
-                onNavigate={() => {}}
-                onClose={() => {}}
-              />
-            </Suspense>
-          </div>
-        ) : null,
       )}
     </div>
   );

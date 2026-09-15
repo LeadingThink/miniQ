@@ -279,6 +279,7 @@ function useTurnActions(
   catalog: Catalog,
   lifecycle: SessionLifecycle,
   setError: ErrorSetter,
+  sessionModel: ReturnType<typeof useSessionModel>,
 ) {
   const { openSession } = lifecycle;
 
@@ -323,6 +324,7 @@ function useTurnActions(
 
   const startTask = useCallback(
     async (content: string, attachments: string[] = []) => {
+      if (!sessionModel.ready || sessionModel.pending) return false;
       if (!catalog.selectedWorkspace) {
         setError("请先选择一个项目(或新建一个)");
         return false;
@@ -330,11 +332,15 @@ function useTurnActions(
       setError(null);
       try {
         const epoch = catalog.navigationEpoch.current;
-        const session = await client.call<Session>("session.create", { workspaceId: catalog.selectedWorkspace.id });
+        const session = await client.call<Session>("session.create", {
+          workspaceId: catalog.selectedWorkspace.id,
+          modelSettings: sessionModel.effective ?? sessionModel.settings,
+        });
         await client.call("session.sendMessage", {
           sessionId: session.id,
           message: { role: "user", content, attachments },
         });
+        sessionModel.clearDraft();
         if (epoch === catalog.navigationEpoch.current) await openSession(session.id);
         void catalog.refreshSessions();
         return true;
@@ -350,6 +356,7 @@ function useTurnActions(
       catalog.navigationEpoch,
       openSession,
       setError,
+      sessionModel,
     ],
   );
 
@@ -441,7 +448,7 @@ export function useMiniqApp() {
   const sessionModel = useSessionModel(
     client,
     catalog.currentSessionId,
-    catalog.selectedWorkspaceId,
+    catalog.selectedWorkspace?.id ?? null,
   );
   const markSessionSeen = useCallback((sessionId: string) => {
     setUnreadSessionIds((current) => {
@@ -513,7 +520,7 @@ export function useMiniqApp() {
     markSessionSeen,
     setSessionError,
   );
-  const turnActions = useTurnActions(client, catalog, lifecycle, setError);
+  const turnActions = useTurnActions(client, catalog, lifecycle, setError, sessionModel);
   const interactionActions = useInteractionActions(client, setError, review.refresh);
   const lastResyncedConnection = useRef(0);
   useEffect(() => {

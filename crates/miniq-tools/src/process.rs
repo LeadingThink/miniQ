@@ -221,7 +221,7 @@ impl Tool for ProcessOutputTool {
     }
 
     fn description(&self) -> &str {
-        "Read complete stdout, stderr and status from a managed background shell process."
+        "Read the complete result and status of a managed background process or child agent using its returned id/agentId. Use block=true with a bounded timeout when waiting, after launching other independent work; avoid rapid polling. A running status is not completion."
     }
 
     fn parameters_schema(&self) -> Value {

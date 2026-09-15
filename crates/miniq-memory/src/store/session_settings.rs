@@ -119,56 +119,17 @@ impl Store {
         Ok(())
     }
 
-    pub fn set_workspace_model_settings_for_session(
-        &self,
-        session_id: &str,
-        settings: &SessionModelSettings,
-    ) -> Result<()> {
-        let workspace_id = self.get_session(session_id)?.workspace_id;
-        self.set_workspace_model_settings(&workspace_id, settings)
-    }
-
     pub fn set_workspace_model_settings(
         &self,
         workspace_id: &str,
         settings: &SessionModelSettings,
     ) -> Result<()> {
         self.get_workspace(workspace_id)?;
-        let mut conn = self.conn.lock().unwrap();
-        let transaction = conn.transaction()?;
-        let settings_json = serde_json::to_string(settings)?;
-        transaction.execute(
-            "INSERT INTO session_model_settings (session_id, settings_json)
-             SELECT id, ?2 FROM sessions WHERE workspace_id = ?1
-             ON CONFLICT(session_id) DO UPDATE SET settings_json = excluded.settings_json",
-            params![workspace_id, settings_json],
-        )?;
-        transaction.execute(
+        self.conn.lock().unwrap().execute(
             "INSERT INTO workspace_model_settings (workspace_id, settings_json) VALUES (?1, ?2)
              ON CONFLICT(workspace_id) DO UPDATE SET settings_json = excluded.settings_json",
-            params![workspace_id, settings_json],
+            params![workspace_id, serde_json::to_string(settings)?],
         )?;
-        transaction.commit()?;
-        Ok(())
-    }
-
-    pub fn set_global_model_settings(&self, settings: &SessionModelSettings) -> Result<()> {
-        let mut conn = self.conn.lock().unwrap();
-        let transaction = conn.transaction()?;
-        let settings_json = serde_json::to_string(settings)?;
-        transaction.execute(
-            "INSERT INTO workspace_model_settings (workspace_id, settings_json)
-             SELECT id, ?1 FROM workspaces WHERE true
-             ON CONFLICT(workspace_id) DO UPDATE SET settings_json = excluded.settings_json",
-            params![settings_json],
-        )?;
-        transaction.execute(
-            "INSERT INTO session_model_settings (session_id, settings_json)
-             SELECT id, ?1 FROM sessions WHERE true
-             ON CONFLICT(session_id) DO UPDATE SET settings_json = excluded.settings_json",
-            params![settings_json],
-        )?;
-        transaction.commit()?;
         Ok(())
     }
 }
@@ -224,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_model_settings_apply_to_existing_and_new_sessions() {
+    fn workspace_defaults_only_apply_to_new_sessions() {
         let store = Store::open_in_memory().unwrap();
         let first_workspace = store.create_workspace("/first", "first").unwrap();
         let second_workspace = store.create_workspace("/second", "second").unwrap();
@@ -240,6 +201,14 @@ mod tests {
             api_protocol: ApiProtocol::Responses,
             reasoning_effort: Some(ReasoningEffort::High),
         };
+        let explicit = SessionModelSettings {
+            model: Some("claude-sonnet-4.6".into()),
+            api_protocol: ApiProtocol::AnthropicMessages,
+            reasoning_effort: None,
+        };
+        store
+            .set_session_model_settings(&first.id, &explicit)
+            .unwrap();
 
         store
             .set_workspace_model_settings(&first_workspace.id, &settings)
@@ -248,14 +217,14 @@ mod tests {
             .create_session(&first_workspace.id, "inherited")
             .unwrap();
 
-        assert_eq!(store.session_model_settings(&first.id).unwrap(), settings);
+        assert_eq!(store.session_model_settings(&first.id).unwrap(), explicit);
         assert_eq!(
             store.session_model_settings(&inherited.id).unwrap(),
             settings
         );
         assert_eq!(
             store.session_model_settings(&existing.id).unwrap(),
-            settings
+            SessionModelSettings::default()
         );
         assert_eq!(
             store.session_model_settings(&unrelated.id).unwrap(),
@@ -264,33 +233,37 @@ mod tests {
     }
 
     #[test]
-    fn global_model_settings_apply_to_every_workspace_and_session() {
-        let store = Store::open_in_memory().unwrap();
+    fn session_creation_persists_its_own_model_without_changing_defaults_or_siblings() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("sessions.db");
+        let store = Store::open(&db).unwrap();
         let first_workspace = store.create_workspace("/first", "first").unwrap();
-        let second_workspace = store.create_workspace("/second", "second").unwrap();
         let first = store.create_session(&first_workspace.id, "first").unwrap();
-        let second = store
-            .create_session(&second_workspace.id, "second")
-            .unwrap();
         let settings = SessionModelSettings {
-            model: Some("global-model".into()),
+            model: Some("new-session-model".into()),
             api_protocol: ApiProtocol::Responses,
             reasoning_effort: Some(ReasoningEffort::High),
         };
 
-        store.set_global_model_settings(&settings).unwrap();
+        let second = store
+            .create_session_with_model_settings(&first_workspace.id, "second", Some(&settings))
+            .unwrap();
+        drop(store);
+        let store = Store::open(&db).unwrap();
 
         assert_eq!(
             store.workspace_model_settings(&first_workspace.id).unwrap(),
-            settings
+            SessionModelSettings::default()
         );
         assert_eq!(
-            store
-                .workspace_model_settings(&second_workspace.id)
-                .unwrap(),
-            settings
+            store.session_model_settings(&first.id).unwrap(),
+            SessionModelSettings::default()
         );
-        assert_eq!(store.session_model_settings(&first.id).unwrap(), settings);
         assert_eq!(store.session_model_settings(&second.id).unwrap(), settings);
+        let third = store.create_session(&first_workspace.id, "third").unwrap();
+        assert_eq!(
+            store.session_model_settings(&third.id).unwrap(),
+            SessionModelSettings::default()
+        );
     }
 }

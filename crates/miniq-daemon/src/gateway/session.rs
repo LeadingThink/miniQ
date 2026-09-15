@@ -11,19 +11,40 @@ struct CreateParams {
     workspace_id: String,
     #[serde(default)]
     title: Option<String>,
+    #[serde(default)]
+    model_settings: Option<miniq_protocol::SessionModelSettings>,
 }
 
-pub(super) fn create(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+pub(super) async fn create(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: CreateParams = params(raw)?;
     state
         .store
         .get_workspace(&input.workspace_id)
         .map_err(store_err)?;
+    let baseline = state.settings.lock().unwrap().provider.clone();
+    let selection = match input.model_settings {
+        Some(mut settings) => {
+            super::session_model::validate_settings(&baseline, &mut settings).await?;
+            settings
+        }
+        None => state
+            .store
+            .workspace_model_settings(&input.workspace_id)
+            .map_err(store_err)?,
+    };
+    let selection = crate::session_models::snapshot_selection(baseline, selection);
+    let automatic_title = input.title.is_none();
     let title = input.title.unwrap_or_else(|| "New session".to_string());
     let session = state
         .store
-        .create_session(&input.workspace_id, &title)
+        .create_session_with_model_settings(&input.workspace_id, &title, Some(&selection))
         .map_err(store_err)?;
+    if automatic_title {
+        state
+            .store
+            .enable_automatic_title(&session.id)
+            .map_err(store_err)?;
+    }
     to_value(session)
 }
 
@@ -120,7 +141,7 @@ pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value
     let input: SendMessageParams = params(raw)?;
     let attachments = validate_message(&input.message)?;
     let content = input.message.content.trim().to_string();
-    let session = state
+    state
         .store
         .get_session(&input.session_id)
         .map_err(store_err)?;
@@ -142,13 +163,7 @@ pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value
         return to_value(json!({ "queued": queued }));
     };
 
-    let message = match append_user_message(
-        state,
-        &input.session_id,
-        &content,
-        &attachments,
-        &session.title,
-    ) {
+    let message = match append_user_message(state, &input.session_id, &content, &attachments) {
         Ok(message) => message,
         Err(error) => {
             state.end_turn(&input.session_id);
@@ -163,6 +178,7 @@ pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value
         state.end_turn(&input.session_id);
         return Err(error);
     }
+    crate::session_titles::spawn(state, &input.session_id);
     crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
     to_value(json!({ "message": message }))
 }
@@ -302,7 +318,6 @@ fn append_user_message(
     session_id: &str,
     content: &str,
     attachments: &[MessageAttachment],
-    current_title: &str,
 ) -> Result<miniq_protocol::Message, RpcError> {
     let message = state
         .store
@@ -312,12 +327,6 @@ fn append_user_message(
             store_err(error)
         })?;
 
-    if current_title == "New session" {
-        let title: String = content.trim().chars().take(30).collect();
-        if !title.is_empty() {
-            let _ = state.store.update_session_title(session_id, &title);
-        }
-    }
     Ok(message)
 }
 

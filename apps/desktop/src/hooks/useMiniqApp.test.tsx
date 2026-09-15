@@ -12,6 +12,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DaemonEvent } from "../types";
 import { useMiniqApp } from "./useMiniqApp";
 import { AppShell } from "../components/AppShell";
+import { DEFAULT_MODEL_SETTINGS, type SessionModelSettings } from "../modelSelection";
 
 const fake = vi.hoisted(() => ({
   call: vi.fn(),
@@ -70,6 +71,8 @@ beforeEach(() => {
         return { sessions };
       case "session.modelGet":
         return { settings: {}, effective: {} };
+      case "workspace.modelGet":
+        return { settings: DEFAULT_MODEL_SETTINGS, effective: null };
       case "session.diff":
         return { files: [], additions: 0, deletions: 0 };
       case "model.describe":
@@ -112,6 +115,65 @@ beforeEach(() => {
         throw new Error(`unexpected method ${method}`);
     }
   });
+});
+
+it("creates a task with its draft model before sending and preserves sibling model selections", async () => {
+  const original = fake.call.getMockImplementation()!;
+  const selections = new Map<string, SessionModelSettings>([
+    ["a", { model: "gpt", apiProtocol: "responses", reasoningEffort: "high" }],
+    ["b", { model: "claude", apiProtocol: "anthropic_messages", reasoningEffort: null }],
+  ]);
+  const projectDefault = { model: "gemini", apiProtocol: "auto", reasoningEffort: null } as const;
+  fake.call.mockImplementation(async (method, params) => {
+    if (method === "workspace.modelGet") return { settings: projectDefault, effective: projectDefault };
+    if (method === "session.modelGet") return { settings: selections.get(params.sessionId), effective: selections.get(params.sessionId) };
+    if (method === "session.create") {
+      selections.set("new", params.modelSettings);
+      return { id: "new", workspaceId: params.workspaceId };
+    }
+    if (method === "session.sendMessage") {
+      expect(params.sessionId).toBe("new");
+      expect(selections.get("new")).toEqual({ model: "new-model", apiProtocol: "responses", reasoningEffort: "low" });
+      return {};
+    }
+    if (method === "session.open" && params.sessionId === "new") {
+      const snapshot = await original("session.open", { sessionId: "a" });
+      return { ...snapshot, session: { ...snapshot.session, id: "new" } };
+    }
+    return original(method, params);
+  });
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.catalog.selectedWorkspace?.id).toBe("w"));
+  await waitFor(() => expect(hook.result.current.sessionModel.ready).toBe(true));
+  // The automatically selected project must supply the same defaults as an explicit selection.
+  expect(hook.result.current.sessionModel.effective?.model).toBe("gemini");
+  await act(async () => hook.result.current.sessionModel.update({ model: "new-model", apiProtocol: "responses", reasoningEffort: "low" }));
+  await act(async () => expect(await hook.result.current.actions.startTask("test task")).toBe(true));
+  expect(fake.call).toHaveBeenCalledWith("session.create", {
+    workspaceId: "w",
+    modelSettings: { model: "new-model", apiProtocol: "responses", reasoningEffort: "low" },
+  });
+  for (const [id, expectedModel] of [["a", "gpt"], ["b", "claude"], ["new", "new-model"]]) {
+    await act(async () => hook.result.current.actions.openSession(id));
+    await waitFor(() => expect(hook.result.current.sessionModel.effective?.model).toBe(expectedModel));
+  }
+  act(() => hook.result.current.actions.newChat());
+  await waitFor(() => expect(hook.result.current.sessionModel.effective?.model).toBe("gemini"));
+  expect(fake.call.mock.calls.some(([method]) => ["model.update", "workspace.modelUpdate"].includes(method))).toBe(false);
+});
+
+it("keeps the draft and sends no message when creating its model configuration fails", async () => {
+  const original = fake.call.getMockImplementation()!;
+  fake.call.mockImplementation((method, params) => method === "session.create"
+    ? Promise.reject(new Error("model configuration rejected")) : original(method, params));
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.catalog.selectedWorkspace?.id).toBe("w"));
+  await waitFor(() => expect(hook.result.current.sessionModel.ready).toBe(true));
+  await act(async () => hook.result.current.sessionModel.update({ ...DEFAULT_MODEL_SETTINGS, model: "draft" }));
+  await act(async () => expect(await hook.result.current.actions.startTask("test")).toBe(false));
+  expect(hook.result.current.sessionModel.settings.model).toBe("draft");
+  expect(hook.result.current.error).toContain("model configuration rejected");
+  expect(fake.call.mock.calls.some(([method]) => method === "session.sendMessage")).toBe(false);
 });
 
 it("switching failed, running and new sessions isolates state without reconnecting the transport", async () => {

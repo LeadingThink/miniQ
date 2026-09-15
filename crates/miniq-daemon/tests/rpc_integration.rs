@@ -15,6 +15,9 @@ mod stream_retry;
 #[path = "rpc_integration/voice.rs"]
 mod voice;
 
+#[path = "rpc_integration/session_models.rs"]
+mod session_models;
+
 async fn start_daemon() -> (u16, String) {
     start_daemon_with(std::sync::Arc::new(miniq_models::mock::MockProvider::text(
         "hello from mock",
@@ -203,8 +206,9 @@ async fn chat_turn_streams_and_persists() {
     assert_eq!(messages[1]["content"], "hello from mock");
     assert_eq!(resp["result"]["session"]["status"], "idle");
     assert!(resp["result"]["turnProgress"].is_null());
-    // The first message auto-names the session.
-    assert_eq!(resp["result"]["session"]["title"], "hi");
+    // Without a configured title model, leave naming pending and do not
+    // consume task-provider responses or substitute the message prefix.
+    assert_eq!(resp["result"]["session"]["title"], "New session");
 }
 
 #[tokio::test]

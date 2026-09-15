@@ -116,7 +116,7 @@ it("reloads sessions in any workspace on global model-change broadcasts", async 
   );
 });
 
-it("updates the global model from a project draft", async () => {
+it("keeps a project's draft selection local instead of updating other sessions", async () => {
   const call = vi.fn((method) =>
     Promise.resolve(
       method === "workspace.modelGet"
@@ -134,13 +134,9 @@ it("updates the global model from a project draft", async () => {
     })
   );
   expect(hook.result.current.effective?.model).toBe("updated-model");
-  expect(call).toHaveBeenLastCalledWith("workspace.modelUpdate", {
-    workspaceId: "study",
-    settings: {
-      ...DEFAULT_MODEL_SETTINGS,
-      model: "updated-model",
-    },
-  });
+  expect(call.mock.calls.map(([method]) => method)).toEqual(["workspace.modelGet"]);
+  await act(async () => hook.result.current.reload());
+  expect(hook.result.current.effective?.model).toBe("updated-model");
 });
 
 it("updates only the selected session model", async () => {
@@ -260,7 +256,62 @@ it("shows a new-session protocol override even when the model is inherited", asy
     reasoningEffort: null,
   });
   await act(async () => hook.result.current.update(DEFAULT_MODEL_SETTINGS));
-  expect(hook.result.current.effective?.apiProtocol).toBe("auto");
+  expect(hook.result.current.effective?.apiProtocol).toBe("responses");
+  expect(call.mock.calls.map(([method]) => method)).toEqual(["settings.get"]);
+});
+
+it("isolates draft choices by project and resets consumed drafts to the project defaults", async () => {
+  const call = vi.fn((_method, params) => Promise.resolve(result(`${params.workspaceId}-default`)));
+  const { client } = fakeClient(call);
+  const hook = renderHook(({ workspaceId }) => useSessionModel(client, null, workspaceId), {
+    initialProps: { workspaceId: "first" },
+  });
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  const selection = { ...DEFAULT_MODEL_SETTINGS, model: "gpt", reasoningEffort: "high" as const };
+  await act(async () => hook.result.current.update(selection));
+  hook.rerender({ workspaceId: "second" });
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  expect(hook.result.current.effective?.model).toBe("second-default");
+  await act(async () => hook.result.current.update({ ...DEFAULT_MODEL_SETTINGS, model: "claude" }));
+  hook.rerender({ workspaceId: "first" });
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  expect(hook.result.current.settings).toEqual(selection);
+  act(() => hook.result.current.clearDraft());
+  await act(async () => hook.result.current.reload());
+  expect(hook.result.current.effective?.model).toBe("first-default");
+  expect(call.mock.calls.every(([method]) => method === "workspace.modelGet")).toBe(true);
+});
+
+it("does not clear a newer draft choice when an earlier task finishes starting", async () => {
+  const { client } = fakeClient(vi.fn().mockResolvedValue(result("default")));
+  const hook = renderHook(() => useSessionModel(client, null, "study"));
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  await act(async () => hook.result.current.update(result("first").settings));
+  const clearEarlierDraft = hook.result.current.clearDraft;
+  await act(async () => hook.result.current.update(result("second").settings));
+  act(clearEarlierDraft);
+  await act(async () => hook.result.current.reload());
+  expect(hook.result.current.effective?.model).toBe("second");
+});
+
+it("does not leak a delayed session update into the new-conversation draft", async () => {
+  let complete!: (value: SessionModelResult) => void;
+  const call = vi.fn((method) => method === "session.modelUpdate"
+    ? new Promise<SessionModelResult>((resolve) => { complete = resolve; })
+    : Promise.resolve(result("project-default")));
+  const { client } = fakeClient(call);
+  const hook = renderHook(({ id }: { id: string | null }) => useSessionModel(client, id, "w"), {
+    initialProps: { id: "a" as string | null },
+  });
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  let updating!: Promise<void>;
+  act(() => { updating = hook.result.current.update(result("updated-a").settings); });
+  hook.rerender({ id: null });
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  await act(async () => { complete(result("updated-a")); await updating; });
+  expect(hook.result.current.effective?.model).toBe("project-default");
+  await act(async () => hook.result.current.reload());
+  expect(hook.result.current.effective?.model).toBe("project-default");
 });
 
 it("hides the previous model and error while the next session is loading", async () => {

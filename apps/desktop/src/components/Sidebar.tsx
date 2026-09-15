@@ -27,6 +27,7 @@ import { sessionStatusLabel } from "../sessionStatus";
 import { PROVIDER_LABELS, PROVIDER_MARKS } from "./externalSessionImportModel";
 import { UpdateNotice } from "./UpdateNotice";
 import { DropdownMenu } from "./DropdownMenu";
+import { SidebarPanel } from "./SidebarPanel";
 
 const COLLAPSED_SESSION_COUNT = 3;
 const FEEDBACK_FORM_URL =
@@ -68,7 +69,7 @@ export function Sidebar(props: SidebarProps) {
   const [showArchived, setShowArchived] = useState(false);
   const archivedSessions = props.sessions.filter((session) => session.archived);
   return (
-    <div className="sidebar">
+    <SidebarPanel>
       <div className="brand">miniQ</div>
       <button type="button" className="nav-item sidebar-nav-button" onClick={props.onNewChat}>
         <PencilLine className="nav-icon" size={16} /> 新对话
@@ -177,7 +178,7 @@ export function Sidebar(props: SidebarProps) {
           <Settings className="nav-icon" size={16} /> 设置
         </button>
       </div>
-    </div>
+    </SidebarPanel>
   );
 }
 

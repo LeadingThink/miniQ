@@ -1,4 +1,4 @@
-use miniq_protocol::{Session, SessionStatus, Workspace};
+use miniq_protocol::{Session, SessionModelSettings, SessionStatus, Workspace};
 use rusqlite::{params, OptionalExtension};
 
 use super::row_mappers::{row_to_session, row_to_workspace};
@@ -61,6 +61,15 @@ impl Store {
     }
 
     pub fn create_session(&self, workspace_id: &str, title: &str) -> Result<Session> {
+        self.create_session_with_model_settings(workspace_id, title, None)
+    }
+
+    pub fn create_session_with_model_settings(
+        &self,
+        workspace_id: &str,
+        title: &str,
+        model_settings: Option<&SessionModelSettings>,
+    ) -> Result<Session> {
         let mut conn = self.conn.lock().unwrap();
         let transaction = conn.transaction()?;
         let now = now_iso();
@@ -95,8 +104,8 @@ impl Store {
         )?;
         transaction.execute(
             "INSERT INTO session_model_settings (session_id, settings_json)
-             SELECT ?1, settings_json FROM workspace_model_settings WHERE workspace_id = ?2",
-            params![session.id, workspace_id],
+             SELECT ?1, COALESCE(?3, (SELECT settings_json FROM workspace_model_settings WHERE workspace_id = ?2), '{}')",
+            params![session.id, workspace_id, model_settings.map(serde_json::to_string).transpose()?],
         )?;
         transaction.commit()?;
         Ok(session)
@@ -167,7 +176,7 @@ impl Store {
     pub fn update_session_title(&self, id: &str, title: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let updated = conn.execute(
-            "UPDATE sessions SET title = ?2, updated_at = ?3 WHERE id = ?1",
+            "UPDATE sessions SET title = ?2, title_auto_pending = 0, updated_at = ?3 WHERE id = ?1",
             params![id, title, now_iso()],
         )?;
         if updated == 0 {

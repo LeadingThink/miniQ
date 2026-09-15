@@ -62,6 +62,8 @@ pub struct ToolContext {
     pub workspace_roots: Vec<PathBuf>,
     /// Explicit user attachments, readable without granting write access or sibling access.
     readable_files: Vec<PathBuf>,
+    /// Full Access explicitly allows absolute paths outside attached roots.
+    external_paths_allowed: bool,
     /// Skill store; `None` = skill_read unavailable.
     pub skills: Option<Arc<miniq_skills::SkillStore>>,
     /// SQLite store for memory tools; `None` = memory tools unavailable.
@@ -94,6 +96,7 @@ impl ToolContext {
         Self {
             workspace_roots: vec![workspace.clone()],
             readable_files: Vec::new(),
+            external_paths_allowed: false,
             workspace,
             skills: None,
             memory: None,
@@ -117,7 +120,15 @@ impl ToolContext {
         self
     }
 
+    pub fn with_external_paths_allowed(mut self, allowed: bool) -> Self {
+        self.external_paths_allowed = allowed;
+        self
+    }
+
     pub fn resolve_path(&self, requested: &str) -> Result<PathBuf, miniq_sandbox::PathError> {
+        if self.external_paths_allowed && std::path::Path::new(requested).is_absolute() {
+            return miniq_sandbox::resolve_external(requested);
+        }
         miniq_sandbox::resolve_in_roots(&self.workspace, &self.workspace_roots, requested)
     }
 

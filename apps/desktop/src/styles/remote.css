@@ -503,6 +503,7 @@
 }
 
 @media (max-width: 720px) {
+  .sidebar > .workbench-resizer { display: none; }
   /* Match the native shell on Safari and other mobile browsers.  A 16px
      control avoids focus zoom while preserving normal pinch zoom for users
      who need it outside the packaged app. */
@@ -523,7 +524,7 @@
     position: fixed;
     inset: 0 auto 0 0;
     z-index: 51;
-    width: min(86vw, 320px);
+    width: min(86vw, 320px) !important;
     padding-top: max(14px, env(safe-area-inset-top));
     padding-bottom: max(10px, env(safe-area-inset-bottom));
     box-shadow: var(--shadow-lg);
