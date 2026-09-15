@@ -8,18 +8,19 @@ import { useBrowserPanel } from "../hooks/useBrowserPanel";
 
 export function BrowserPanel(props: {
   url: string;
+  active?: boolean;
   suspended?: boolean;
   onNavigate: (url: string) => void;
   onClose: () => void;
 }) {
   const surface = useRef<HTMLDivElement>(null);
   const addressInput = useRef<HTMLInputElement>(null);
-  const browser = useBrowserPanel(props.url, surface, props.suspended);
+  const browser = useBrowserPanel(props.url, surface, props.suspended || props.active === false);
   const native = isTauriRuntime();
   const reloadAction = native && browser.loading ? "stop" : "reload";
   return (
     <aside
-      className="browser-panel"
+      className={`browser-panel${props.active === false ? " browser-panel-inactive" : ""}`}
       aria-label="网页浏览器"
       onKeyDown={(event) => {
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "l") {

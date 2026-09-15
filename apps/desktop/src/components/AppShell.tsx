@@ -23,6 +23,8 @@ import { SessionModelControls } from "./SessionModelControls";
 import { SessionPermissionControls } from "./SessionPermissionControls";
 import { AgentPanel } from "./AgentPanel";
 import { ProjectDirectories } from "./ProjectDirectories";
+import { BrowserTabs } from "./BrowserTabs";
+import { closeBrowserTab, EMPTY_BROWSER_TABS, openBrowserTab, updateBrowserTab, type BrowserTabsState } from "../browserTabs";
 
 interface AppOnlyProps {
   app: MiniqAppController;
@@ -377,17 +379,22 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
   const browserScope =
     app.catalog.currentSessionId ??
     `draft:${app.catalog.selectedWorkspaceId ?? ""}`;
-  const [browserSessions, setBrowserSessions] = useState<
-    Record<string, string | null>
-  >({});
+  const [browserSessions, setBrowserSessions] = useState<Record<string, BrowserTabsState>>({});
   const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
-  const browserUrl = browserSessions[browserScope] ?? null;
-  const setBrowserUrl = (url: string | null) =>
-    setBrowserSessions((current) => ({ ...current, [browserScope]: url }));
+  const browserState = browserSessions[browserScope] ?? EMPTY_BROWSER_TABS;
+  const activeBrowserTab = browserState.tabs.find((tab) => tab.id === browserState.activeId) ?? null;
+  const browserUrl = browserState.open ? activeBrowserTab?.url ?? null : null;
+  const setBrowserUrl = (url: string | null) => setBrowserSessions((current) => {
+    const state = current[browserScope] ?? EMPTY_BROWSER_TABS;
+    if (url === null) return { ...current, [browserScope]: { ...state, open: false } };
+    const active = state.activeId ? state.tabs.find((tab) => tab.id === state.activeId) : undefined;
+    return { ...current, [browserScope]: active ? updateBrowserTab(state, active.id, url) : openBrowserTab(state, url) };
+  });
+  const openNewBrowserTab = (url = "https://www.bing.com/") => setBrowserSessions((current) => ({ ...current, [browserScope]: openBrowserTab(current[browserScope] ?? EMPTY_BROWSER_TABS, url) }));
   const openBrowserUrl = (url: string) => {
     app.preview.close();
     app.review.setOpen(false);
-    setBrowserUrl(url);
+    openNewBrowserTab(url);
   };
   useEffect(() => {
     const latest = [...app.feed.toolCalls].reverse().find((call) => {
@@ -530,7 +537,12 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
         <AppStatusBar
           app={app}
           onOpenFile={openPreviewFile}
-          onOpenBrowser={() => openBrowserUrl("https://www.bing.com/")}
+          onOpenBrowser={() => {
+            app.preview.close();
+            app.review.setOpen(false);
+            if (activeBrowserTab) setBrowserSessions((current) => ({ ...current, [browserScope]: { ...browserState, open: true } }));
+            else openNewBrowserTab();
+          }}
           onToggleReview={() => {
             setBrowserUrl(null);
             app.preview.close();
@@ -547,9 +559,9 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
           onDraftRequestApplied={() => setFileQuestion(undefined)}
         />
       </div>
-      {workbenchOpen && (
-        <WorkbenchPanel>
-          {browserUrl ? (
+      {(workbenchOpen || Object.values(browserSessions).some((state) => state.tabs.length)) && (
+        <WorkbenchPanel hidden={!workbenchOpen}>
+          {Object.values(browserSessions).some((state) => state.tabs.length) && (
             <Suspense
               fallback={
                 <aside className="browser-panel">
@@ -557,9 +569,18 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
                 </aside>
               }
             >
-              <BrowserPanel
-                key={browserScope}
-                url={browserUrl}
+              <div className="browser-workbench" hidden={!browserUrl}>
+              <BrowserTabs
+                tabs={browserState.tabs}
+                activeId={browserState.activeId}
+                onSelect={(id) => setBrowserSessions((current) => ({ ...current, [browserScope]: { ...(current[browserScope] ?? EMPTY_BROWSER_TABS), activeId: id } }))}
+                onClose={(id) => setBrowserSessions((current) => ({ ...current, [browserScope]: closeBrowserTab(current[browserScope] ?? EMPTY_BROWSER_TABS, id) }))}
+                onNew={() => openNewBrowserTab()}
+              />
+              {Object.entries(browserSessions).flatMap(([scope, state]) => state.tabs.map((tab) => <BrowserPanel
+                key={tab.id}
+                url={tab.url}
+                active={scope === browserScope && tab.id === browserState.activeId && !!browserUrl}
                 suspended={
                   app.navigation.showSettings ||
                   app.navigation.showSearch ||
@@ -567,11 +588,13 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
                   app.navigation.showExternalImport ||
                   Boolean(app.navigation.editingWorkspaceId)
                 }
-                onNavigate={setBrowserUrl}
-                onClose={() => setBrowserUrl(null)}
-              />
+                onNavigate={(url) => setBrowserSessions((current) => ({ ...current, [scope]: updateBrowserTab(current[scope] ?? EMPTY_BROWSER_TABS, tab.id, url) }))}
+                onClose={() => setBrowserSessions((current) => ({ ...current, [scope]: closeBrowserTab(current[scope] ?? EMPTY_BROWSER_TABS, tab.id) }))}
+              />))}
+              </div>
             </Suspense>
-          ) : app.preview.state.open && app.catalog.currentWorkspace ? (
+          )}
+          {!browserUrl && app.preview.state.open && app.catalog.currentWorkspace ? (
             <Suspense
               fallback={
                 <aside className="file-preview-panel">

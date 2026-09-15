@@ -169,3 +169,20 @@ it("allows stopping a native navigation while it is pending", async () => {
   expect(result.current.loading).toBe(false);
   await act(async () => finish({ url: "https://example.test/" }));
 });
+
+it("stops polling hidden tabs and resumes without reloading their page", async () => {
+  vi.useFakeTimers();
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  const ref = surface();
+  const { rerender } = renderHook(({ suspended }) => useBrowserPanel("https://example.test/", ref, suspended), { initialProps: { suspended: false } });
+  await act(async () => {});
+  await act(() => vi.advanceTimersByTimeAsync(1500));
+  expect(currentBrowser).toHaveBeenCalledTimes(1);
+  rerender({ suspended: true });
+  await act(() => vi.advanceTimersByTimeAsync(6000));
+  expect(currentBrowser).toHaveBeenCalledTimes(1);
+  rerender({ suspended: false });
+  await act(() => vi.advanceTimersByTimeAsync(1500));
+  expect(currentBrowser).toHaveBeenCalledTimes(2);
+  expect(openBrowser).toHaveBeenCalledTimes(1);
+});

@@ -453,3 +453,64 @@ fn native_visual_results_resolve_the_same_tool_as_execution() {
         assert_eq!(executor.result_images(&call, &output).len(), 1, "{path}");
     }
 }
+
+#[test]
+fn parallel_execution_keeps_native_and_canonical_mutations_as_barriers() {
+    let state = AppState::new(
+        miniq_memory::Store::open_in_memory().unwrap(),
+        "fixture".into(),
+        std::sync::Arc::new(miniq_models::mock::MockProvider::new(Vec::new())),
+    );
+    let executor = SessionToolExecutor {
+        router: state.router.clone(),
+        state,
+        session_id: "fixture".into(),
+        ctx: ToolContext::new(std::env::temp_dir()),
+        cancel: CancellationToken::new(),
+        permission_policy: PermissionPolicy::Inherit,
+        review_plan: Default::default(),
+    };
+    for name in [
+        "file_read",
+        "Read",
+        "doc_read",
+        "file_grep",
+        "Grep",
+        "git_diff",
+    ] {
+        assert_eq!(
+            executor.execution_mode(&ToolCallRequest {
+                id: name.into(),
+                name: name.into(),
+                arguments: json!({}),
+            }),
+            ToolExecutionMode::Parallel,
+            "{name}"
+        );
+    }
+    for name in [
+        "file_write",
+        "Write",
+        "Edit",
+        "Bash",
+        "shell_batch",
+        "browser_automation",
+        "app_automation",
+        "computer_use",
+        "ask_user",
+        "agent_run",
+        "Task",
+        "mcp_call",
+        "unknown",
+    ] {
+        assert_eq!(
+            executor.execution_mode(&ToolCallRequest {
+                id: name.into(),
+                name: name.into(),
+                arguments: json!({}),
+            }),
+            ToolExecutionMode::Sequential,
+            "{name}"
+        );
+    }
+}

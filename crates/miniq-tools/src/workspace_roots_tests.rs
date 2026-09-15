@@ -81,6 +81,28 @@ async fn unregistered_paths_are_rejected_before_writes() {
 }
 
 #[tokio::test]
+async fn full_access_allows_explicit_external_absolute_paths() {
+    let workspace = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let restricted = ToolContext::new(workspace.path().to_path_buf());
+    let full_access =
+        ToolContext::new(workspace.path().to_path_buf()).with_external_paths_allowed(true);
+    let file = outside.path().join("creative-review.md");
+    let input = json!({"path":file,"content":"review"});
+
+    assert_eq!(
+        FileWriteTool.evaluate_risk(&restricted, &input).level,
+        miniq_protocol::RiskLevel::Blocked
+    );
+    assert_eq!(
+        FileWriteTool.evaluate_risk(&full_access, &input).level,
+        miniq_protocol::RiskLevel::Medium
+    );
+    FileWriteTool.execute(&full_access, input).await.unwrap();
+    assert_eq!(std::fs::read_to_string(file).unwrap(), "review");
+}
+
+#[tokio::test]
 async fn attached_repository_can_be_selected_without_changing_default_cwd() {
     let primary = tempfile::tempdir().unwrap();
     let extra = tempfile::tempdir().unwrap();
