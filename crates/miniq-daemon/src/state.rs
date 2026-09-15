@@ -97,6 +97,12 @@ pub struct AppState {
     pub session_allowlist: Arc<Mutex<HashMap<String, HashSet<String>>>>,
     /// Pending ask_user questions (question id -> answer waker).
     pub pending_questions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
+    /// Browser requests waiting for the active miniQ client WebView driver.
+    pub pending_browser_requests: Arc<
+        Mutex<
+            HashMap<String, oneshot::Sender<Result<miniq_protocol::BrowserDriverResult, String>>>,
+        >,
+    >,
     /// Details retained so a reconnected UI can restore pending questions.
     pub pending_question_details: Arc<Mutex<HashMap<String, miniq_protocol::Question>>>,
     /// In-progress assistant text retained across UI reconnects.
@@ -184,6 +190,7 @@ impl AppState {
             pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             session_allowlist: Arc::new(Mutex::new(HashMap::new())),
             pending_questions: Arc::new(Mutex::new(HashMap::new())),
+            pending_browser_requests: Arc::new(Mutex::new(HashMap::new())),
             pending_question_details: Arc::new(Mutex::new(HashMap::new())),
             streaming_texts: Arc::new(Mutex::new(HashMap::new())),
             turn_progresses: Arc::new(Mutex::new(HashMap::new())),
@@ -229,6 +236,42 @@ impl AppState {
             .lock()
             .unwrap()
             .remove(question_id);
+    }
+
+    pub fn register_browser_request(
+        &self,
+        request_id: &str,
+    ) -> oneshot::Receiver<Result<miniq_protocol::BrowserDriverResult, String>> {
+        let (sender, receiver) = oneshot::channel();
+        self.pending_browser_requests
+            .lock()
+            .unwrap()
+            .insert(request_id.to_string(), sender);
+        receiver
+    }
+
+    pub fn finish_browser_request(&self, request_id: &str) {
+        self.pending_browser_requests
+            .lock()
+            .unwrap()
+            .remove(request_id);
+    }
+
+    pub fn deliver_browser_result(
+        &self,
+        resolution: miniq_protocol::BrowserDriverResolution,
+    ) -> bool {
+        let result = match (resolution.result, resolution.error) {
+            (Some(result), None) => Ok(result),
+            (None, Some(error)) if !error.trim().is_empty() => Err(error),
+            _ => return false,
+        };
+        let sender = self
+            .pending_browser_requests
+            .lock()
+            .unwrap()
+            .remove(&resolution.request_id);
+        sender.is_some_and(|sender| sender.send(result).is_ok())
     }
 
     pub fn pending_questions_for_session(&self, session_id: &str) -> Vec<miniq_protocol::Question> {
@@ -494,5 +537,41 @@ mod tests {
 
         state.clear_turn_progress("session");
         assert!(state.turn_progress("session").is_none());
+    }
+
+    #[tokio::test]
+    async fn malformed_browser_resolution_does_not_consume_pending_request() {
+        let state = AppState::new(
+            Store::open_in_memory().unwrap(),
+            "token".to_string(),
+            Arc::new(MockProvider::new(Vec::new())),
+        );
+        let receiver = state.register_browser_request("browser-1");
+        assert!(
+            !state.deliver_browser_result(miniq_protocol::BrowserDriverResolution {
+                request_id: "browser-1".into(),
+                result: None,
+                error: None,
+            })
+        );
+        let result = miniq_protocol::BrowserDriverResult {
+            capabilities: miniq_protocol::BrowserCapabilities::default(),
+            result: serde_json::json!({"url":"https://example.com/"}),
+        };
+        assert!(
+            state.deliver_browser_result(miniq_protocol::BrowserDriverResolution {
+                request_id: "browser-1".into(),
+                result: Some(result),
+                error: None,
+            })
+        );
+        assert!(receiver.await.unwrap().is_ok());
+        assert!(
+            !state.deliver_browser_result(miniq_protocol::BrowserDriverResolution {
+                request_id: "browser-1".into(),
+                result: None,
+                error: Some("late error".into()),
+            })
+        );
     }
 }

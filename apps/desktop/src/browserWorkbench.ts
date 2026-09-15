@@ -1,4 +1,5 @@
 import { isTauriRuntime } from "./runtime";
+import type { BrowserCapabilities } from "./types";
 
 export interface BrowserBounds {
   x: number;
@@ -34,13 +35,19 @@ export function normalizeBrowserUrl(value: string): string {
   return url.href;
 }
 
-export async function openBrowser(url: string, bounds: BrowserBounds, viewId: string): Promise<BrowserState> {
+export async function openBrowser(
+  url: string,
+  bounds: BrowserBounds,
+  viewId: string,
+  visible = true,
+): Promise<BrowserState> {
   const normalized = normalizeBrowserUrl(url);
   if (!isTauriRuntime()) return { url: normalized };
   return invokeBrowser<BrowserState>("browser_open", {
     url: normalized,
     bounds,
     viewId,
+    visible,
   });
 }
 
@@ -67,4 +74,22 @@ export async function closeBrowser(viewId: string): Promise<void> {
 export async function setBrowserVisible(viewId: string, visible: boolean): Promise<void> {
   if (!isTauriRuntime()) return;
   await invokeBrowser("browser_set_visible", { viewId, visible });
+}
+
+export async function evaluateBrowser(viewId: string, script: string): Promise<string> {
+  if (!isTauriRuntime()) throw new Error("此平台不支持内嵌浏览器 DOM 自动化");
+  return invokeBrowser<string>("browser_evaluate", { viewId, script });
+}
+
+export async function browserCapabilities(): Promise<BrowserCapabilities> {
+  if (!isTauriRuntime()) return {
+    navigationControl: false,
+    domSnapshot: false,
+    screenshot: false,
+    tabs: false,
+    pointerInput: false,
+    keyboardInput: false,
+    selectInput: false,
+  };
+  return invokeBrowser<BrowserCapabilities>("browser_capabilities");
 }

@@ -55,7 +55,6 @@ zip = "2"
 quick-xml = "0.37"
 csv = "1"
 similar = "2"
-headless_chrome = "1.0.22"
 aes-gcm = "0.10"
 sha2 = "0.10"
 semver = { version = "1", features = ["serde"] }

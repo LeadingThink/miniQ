@@ -454,6 +454,12 @@ async fn execute_turn(
             )
             .with_mcp(state.mcp_bridge())
             .with_processes(state.processes.clone())
+            .with_browser(Some(std::sync::Arc::new(
+                crate::browser_driver::DaemonBrowserDriver {
+                    state: state.clone(),
+                    session_id: session_id.to_string(),
+                },
+            )))
             .with_tasks(state.tasks.clone(), session_id)
             .with_agents(Some(std::sync::Arc::new(
                 crate::agent_tasks::DaemonAgentBridge {

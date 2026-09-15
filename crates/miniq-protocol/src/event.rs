@@ -16,6 +16,9 @@ use crate::types::{
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
+    BrowserDriverRequested {
+        request: crate::BrowserDriverRequest,
+    },
     SessionApprovalChanged {
         #[serde(rename = "sessionId")]
         session_id: String,
@@ -220,6 +223,7 @@ pub enum Event {
 impl Event {
     pub fn session_id(&self) -> &str {
         match self {
+            Event::BrowserDriverRequested { request } => &request.session_id,
             Event::ModelSettingsChanged { session_id, .. }
             | Event::SessionApprovalChanged { session_id, .. }
             | Event::SessionStatusChanged { session_id, .. }

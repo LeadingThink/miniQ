@@ -13,8 +13,7 @@ type DaemonState = std::sync::Arc<daemon::DaemonLifecycle>;
 /// Set when the user picks Quit from the tray menu. While false, closing the
 /// main window only hides to tray; while true, the close is allowed so
 /// `app.exit()` can actually terminate the process.
-static QUIT_REQUESTED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static QUIT_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[tauri::command]
 async fn daemon_connection(
@@ -124,13 +123,18 @@ fn save_pasted_image(
 }
 
 #[tauri::command]
-fn browser_open(
+async fn browser_open(
     app: tauri::AppHandle,
     view_id: String,
     url: String,
     bounds: browser::BrowserBounds,
+    visible: bool,
 ) -> Result<browser::BrowserState, String> {
-    browser::open(&app, &view_id, &url, bounds)
+    tauri::async_runtime::spawn_blocking(move || {
+        browser::open(&app, &view_id, &url, bounds, visible)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -173,6 +177,20 @@ fn browser_set_visible(
     browser::set_visible(&app, &view_id, visible)
 }
 
+#[tauri::command]
+async fn browser_evaluate(
+    app: tauri::AppHandle,
+    view_id: String,
+    script: String,
+) -> Result<String, String> {
+    browser::evaluate(&app, &view_id, script).await
+}
+
+#[tauri::command]
+fn browser_capabilities() -> browser::BrowserCapabilities {
+    browser::capabilities()
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(DaemonState::default())
@@ -200,7 +218,9 @@ pub fn run() {
             browser_action,
             browser_current,
             browser_close,
-            browser_set_visible
+            browser_set_visible,
+            browser_evaluate,
+            browser_capabilities
         ])
         .setup(|app| {
             setup_tray(app.handle())?;

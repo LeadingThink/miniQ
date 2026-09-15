@@ -306,6 +306,24 @@ export interface EventCursor {
   sequence: number;
 }
 
+export interface BrowserCapabilities {
+  navigationControl: boolean;
+  domSnapshot: boolean;
+  screenshot: boolean;
+  tabs: boolean;
+  pointerInput: boolean;
+  keyboardInput: boolean;
+  selectInput: boolean;
+}
+
+export interface BrowserDriverRequest {
+  id: string;
+  sessionId: string;
+  browserSessionId: string;
+  operation: string;
+  arguments: Record<string, unknown>;
+}
+
 export type DaemonEvent = {
   eventCursor?: EventCursor;
   payloadDeferred?: boolean;
@@ -402,5 +420,6 @@ export type DaemonEvent = {
   | { type: "session_pinned_changed"; sessionId: string; pinned: boolean }
   | { type: "session_archived_changed"; sessionId: string; archived: boolean }
   | { type: "queue_changed"; sessionId: string; queue: QueuedMessage[] }
+  | { type: "browser_driver_requested"; request: BrowserDriverRequest }
   | { type: "plugins_changed"; plugins: PluginInfo[] }
 );

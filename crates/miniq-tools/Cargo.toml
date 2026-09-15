@@ -24,7 +24,6 @@ base64 = "0.22"
 futures-util = { workspace = true }
 html2text = { workspace = true }
 url = { workspace = true }
-headless_chrome = { workspace = true }
 schemars = { workspace = true }
 uuid = { workspace = true }
 tokio-util = { workspace = true }

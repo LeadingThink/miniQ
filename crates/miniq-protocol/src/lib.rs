@@ -4,6 +4,7 @@
 //! This crate only contains protocol types. It must not depend on UI, agent
 //! runtime, tools or storage.
 
+pub mod browser;
 pub mod computer;
 pub mod event;
 pub mod execution;
@@ -15,6 +16,7 @@ pub mod plugin;
 pub mod rpc;
 pub mod types;
 
+pub use browser::*;
 pub use computer::*;
 pub use event::*;
 pub use execution::*;

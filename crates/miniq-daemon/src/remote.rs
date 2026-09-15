@@ -268,7 +268,8 @@ impl ActiveConfig {
 fn remote_method_allowed(method: &str) -> bool {
     !matches!(
         method,
-        "daemon.shutdown"
+        "browser.resolve"
+            | "daemon.shutdown"
             | "daemon.shutdownIfIdle"
             | "computer.requestPermission"
             | "settings.update"
@@ -434,6 +435,7 @@ mod tests {
     fn remote_management_does_not_expose_local_configuration() {
         assert!(remote_method_allowed("session.sendMessage"));
         assert!(remote_method_allowed("approval.resolve"));
+        assert!(!remote_method_allowed("browser.resolve"));
         assert!(!remote_method_allowed("settings.update"));
         assert!(!remote_method_allowed("daemon.shutdown"));
         assert!(!remote_method_allowed("daemon.shutdownIfIdle"));

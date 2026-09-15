@@ -75,6 +75,8 @@ pub struct ToolContext {
     pub processes: Arc<crate::process::ProcessManager>,
     /// Host-provided child-agent runtime. None outside daemon sessions.
     pub agents: Option<Arc<dyn crate::agent::AgentBridge>>,
+    /// Host-provided embedded WebView driver. It must never attach to a user's browser.
+    pub browser: Option<Arc<dyn crate::browser::BrowserDriver>>,
     /// Structured task graph shared by all executors in the daemon.
     pub tasks: Arc<crate::tasks::TaskManager>,
     /// Namespace used to isolate task graphs between sessions.
@@ -99,6 +101,7 @@ impl ToolContext {
             mcp: None,
             processes: Arc::new(crate::process::ProcessManager::default()),
             agents: None,
+            browser: None,
             tasks: Arc::new(crate::tasks::TaskManager::default()),
             task_scope: uuid::Uuid::new_v4().to_string(),
             observation_dir: std::env::temp_dir()
@@ -179,6 +182,11 @@ impl ToolContext {
 
     pub fn with_agents(mut self, agents: Option<Arc<dyn crate::agent::AgentBridge>>) -> Self {
         self.agents = agents;
+        self
+    }
+
+    pub fn with_browser(mut self, browser: Option<Arc<dyn crate::browser::BrowserDriver>>) -> Self {
+        self.browser = browser;
         self
     }
 

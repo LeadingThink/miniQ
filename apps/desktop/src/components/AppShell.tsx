@@ -3,7 +3,7 @@ import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
 import { LoaderCircle, PlugZap, Sparkles } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Composer, ComposerCard } from "./Composer";
 import { DistillModal } from "./Distill";
 import { ExternalSessionImportDialog } from "./ExternalSessionImport";
@@ -23,6 +23,7 @@ import { SessionModelControls } from "./SessionModelControls";
 import { SessionPermissionControls } from "./SessionPermissionControls";
 import { AgentPanel } from "./AgentPanel";
 import { ProjectDirectories } from "./ProjectDirectories";
+import { resolveBrowserDriverRequest } from "../embeddedBrowserDriver";
 
 interface AppOnlyProps {
   app: MiniqAppController;
@@ -378,17 +379,84 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
     app.catalog.currentSessionId ??
     `draft:${app.catalog.selectedWorkspaceId ?? ""}`;
   const [browserSessions, setBrowserSessions] = useState<
-    Record<string, string | null>
+    Record<string, { url: string; viewId?: string; browserSessionId?: string } | null>
   >({});
+  const [automationBrowsers, setAutomationBrowsers] = useState<
+    Record<string, { sessionId: string; url: string; viewId: string }>
+  >({});
+  const browserViewIds = useRef(new Map<string, string>());
+  const getBrowserViewId = (browserSessionId: string) => {
+    const existing = browserViewIds.current.get(browserSessionId);
+    if (existing) return existing;
+    const viewId = crypto.randomUUID().replaceAll("-", "");
+    browserViewIds.current.set(browserSessionId, viewId);
+    return viewId;
+  };
   const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
-  const browserUrl = browserSessions[browserScope] ?? null;
+  const browserState = browserSessions[browserScope] ?? null;
+  const browserUrl = browserState?.url ?? null;
   const setBrowserUrl = (url: string | null) =>
-    setBrowserSessions((current) => ({ ...current, [browserScope]: url }));
+    setBrowserSessions((current) => ({
+      ...current,
+        [browserScope]: url
+          ? {
+              url,
+              viewId: current[browserScope]?.viewId,
+              browserSessionId: current[browserScope]?.browserSessionId,
+            }
+          : null,
+    }));
   const openBrowserUrl = (url: string) => {
     app.preview.close();
     app.review.setOpen(false);
     setBrowserUrl(url);
   };
+  useEffect(() => app.client.onEvent((event) => {
+    if (event.type !== "browser_driver_requested") return;
+    const { request } = event;
+    const requestedUrl = request.arguments.url;
+    if (request.operation === "open" || request.operation === "navigate") {
+      if (typeof requestedUrl !== "string") {
+        void app.client.call("browser.resolve", {
+          requestId: request.id,
+          error: "浏览器导航缺少 URL",
+        });
+        return;
+      }
+      const viewId = getBrowserViewId(request.browserSessionId);
+      setAutomationBrowsers((current) => ({
+        ...current,
+        [request.browserSessionId]: {
+          sessionId: request.sessionId,
+          url: requestedUrl,
+          viewId,
+        },
+      }));
+      setBrowserSessions((current) => ({
+        ...current,
+        [request.sessionId]: {
+          url: requestedUrl,
+          viewId,
+          browserSessionId: request.browserSessionId,
+        },
+      }));
+    }
+    void resolveBrowserDriverRequest(app.client, request).finally(() => {
+      if (request.operation !== "close") return;
+      const viewId = browserViewIds.current.get(request.browserSessionId);
+      browserViewIds.current.delete(request.browserSessionId);
+      setAutomationBrowsers((current) => {
+        const next = { ...current };
+        delete next[request.browserSessionId];
+        return next;
+      });
+      setBrowserSessions((current) =>
+        current[request.sessionId]?.viewId === viewId
+          ? { ...current, [request.sessionId]: null }
+          : current,
+      );
+    });
+  }), [app.client]);
   useEffect(() => {
     const latest = [...app.feed.toolCalls].reverse().find((call) => {
       if (call.toolName !== "browser_automation") return false;
@@ -560,6 +628,8 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
               <BrowserPanel
                 key={browserScope}
                 url={browserUrl}
+                viewId={browserState?.viewId}
+                browserSessionId={browserState?.browserSessionId}
                 suspended={
                   app.navigation.showSettings ||
                   app.navigation.showSearch ||
@@ -613,6 +683,22 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
             />
           ) : null}
         </WorkbenchPanel>
+      )}
+      {Object.entries(automationBrowsers).map(([browserSessionId, state]) =>
+        state && state.viewId !== browserState?.viewId ? (
+          <div className="background-browser-host" key={browserSessionId} aria-hidden="true">
+            <Suspense fallback={null}>
+              <BrowserPanel
+                url={state.url}
+                viewId={state.viewId}
+                browserSessionId={browserSessionId}
+                suspended
+                onNavigate={() => {}}
+                onClose={() => {}}
+              />
+            </Suspense>
+          </div>
+        ) : null,
       )}
     </div>
   );

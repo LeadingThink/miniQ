@@ -46,7 +46,10 @@ pub use agent::{
 };
 pub use app::AppAutomationTool;
 pub use apply_patch::{affected_paths as apply_patch_affected_paths, ApplyPatchTool};
-pub use browser::BrowserAutomationTool;
+pub use browser::{
+    BrowserAutomationTool, BrowserCapabilities, BrowserDriver, BrowserDriverRequest,
+    BrowserDriverResponse,
+};
 pub use catalog::ToolSearchTool;
 pub use computer::{desktop_permissions, request_desktop_permission, ComputerUseTool};
 pub use doc::{DocReadTool, DocWriteTool};

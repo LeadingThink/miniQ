@@ -96,7 +96,7 @@ pub(super) async fn run(state: &AppState, config: &ActiveConfig) -> anyhow::Resu
             }
             _ = flush.tick() => subscriptions.flush(&outbound),
             event = events.recv() => match event {
-                Ok(event) if mobile_clients > 0 => subscriptions.event(event.projected.clone()),
+                Ok(event) if mobile_clients > 0 && !matches!(event.original, miniq_protocol::Event::BrowserDriverRequested { .. }) => subscriptions.event(event.projected.clone()),
                 Ok(_) => {},
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
                     tracing::warn!(count, "remote client missed live events; requesting state resync");

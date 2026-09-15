@@ -397,6 +397,7 @@ export function useSessionFeed(options: SessionFeedOptions) {
         onError(event.sessionId, null);
       // Workspace-level events have no session context.
       if (
+        event.type === "browser_driver_requested" ||
         event.type === "workspace_deleted" ||
         event.type === "workspace_renamed" ||
         event.type === "workspace_updated" ||
@@ -405,6 +406,7 @@ export function useSessionFeed(options: SessionFeedOptions) {
         event.type === "plugins_changed"
       ) {
         if (
+          event.type === "browser_driver_requested" ||
           event.type === "plugins_changed" ||
           event.type === "global_model_settings_changed" ||
           event.type === "workspace_model_settings_changed"

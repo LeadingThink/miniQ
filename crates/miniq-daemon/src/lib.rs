@@ -6,6 +6,7 @@ mod agent_progress;
 mod agent_task_manager;
 mod agent_tasks;
 mod agent_worktree;
+mod browser_driver;
 mod event_journal;
 pub mod executor;
 pub mod gateway;
