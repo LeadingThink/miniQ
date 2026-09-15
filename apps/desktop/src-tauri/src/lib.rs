@@ -13,8 +13,7 @@ type DaemonState = std::sync::Arc<daemon::DaemonLifecycle>;
 /// Set when the user picks Quit from the tray menu. While false, closing the
 /// main window only hides to tray; while true, the close is allowed so
 /// `app.exit()` can actually terminate the process.
-static QUIT_REQUESTED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static QUIT_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[tauri::command]
 async fn daemon_connection(
@@ -173,6 +172,22 @@ fn browser_set_visible(
     browser::set_visible(&app, &view_id, visible)
 }
 
+/// Open only the local device's microphone privacy pane. No caller-supplied
+/// URL or daemon RPC: remote clients must manage their own microphone access.
+#[tauri::command]
+fn open_microphone_settings(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let url = match std::env::consts::OS {
+        "macos" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+        "windows" => "ms-settings:privacy-microphone",
+        _ => return Err("请在系统设置中手动开启麦克风权限".into()),
+    };
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(DaemonState::default())
@@ -200,7 +215,8 @@ pub fn run() {
             browser_action,
             browser_current,
             browser_close,
-            browser_set_visible
+            browser_set_visible,
+            open_microphone_settings
         ])
         .setup(|app| {
             setup_tray(app.handle())?;
