@@ -111,7 +111,11 @@ async fn parallel_failure_retains_successful_siblings_and_checkpoints_each_resul
     assert!(state.history[2].content.contains("unknown"));
     assert!(state.history[3].content.contains("completed"));
     assert!(state.history[4].content.contains("completed"));
-    assert_eq!(store.0.lock().unwrap().len(), 5);
+    let checkpoints = store.0.lock().unwrap();
+    assert_eq!(checkpoints.len(), 7);
+    // Dispatch states are persisted individually before each bounded call.
+    assert!(checkpoints[1].history[2].content.contains("unknown"));
+    assert!(checkpoints[1].history[3].content.contains("not_started"));
 }
 
 struct PartialProvider;

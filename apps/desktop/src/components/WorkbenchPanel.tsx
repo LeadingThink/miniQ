@@ -16,7 +16,7 @@ import {
 import "./WorkbenchPanel.css";
 
 /** Owns layout updates so dragging never rerenders the conversation tree. */
-export function WorkbenchPanel({ children }: { children: ReactNode }) {
+export function WorkbenchPanel({ children, hidden = false }: { children: ReactNode; hidden?: boolean }) {
   const container = useRef<HTMLDivElement>(null);
   const [preferredWidth, setPreferredWidth] = useState(() =>
     readWorkbenchWidth(window.localStorage),
@@ -69,7 +69,7 @@ export function WorkbenchPanel({ children }: { children: ReactNode }) {
       ref={container}
       className="workbench-panel"
       data-layout={layout.mode}
-      style={{ width }}
+      style={{ width, display: hidden ? "none" : undefined }}
     >
       {layout.mode !== "mobile" && (
         <WorkbenchResizer

@@ -139,6 +139,9 @@ pub trait ToolExecutor: Send + Sync {
     /// Tool specs advertised to the model.
     fn specs(&self) -> Vec<ToolSpec>;
 
+    /// Parallel calls can overlap adjacent parallel calls. Sequential calls
+    /// are barriers: all preceding calls finish before one starts, and later
+    /// calls start only after it finishes. Unknown/mutating tools stay serial.
     fn execution_mode(&self, _call: &ToolCallRequest) -> ToolExecutionMode {
         ToolExecutionMode::Sequential
     }

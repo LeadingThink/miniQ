@@ -135,7 +135,7 @@ impl Tool for AgentRunTool {
     }
 
     fn description(&self) -> &str {
-        "Delegate a focused task to a child agent using the current OneAPI provider. Child tool calls keep the same workspace, approval, audit, and sandbox controls."
+        "Delegate a substantial, independent task to a child agent using the current OneAPI provider. Use runInBackground=true to overlap independent branches, start the cohort before collecting process_output (id=agentId), and give each child distinct inputs, common criteria, and separate outputs. Keep dependent or shared-resource operations sequential; avoid delegation for tiny tasks. Child tool calls keep the same workspace, approval, audit, and sandbox controls."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -147,7 +147,7 @@ impl Tool for AgentRunTool {
                 "subagentType": {"type": "string"},
                 "model": {"type": "string"},
                 "resume": {"type": "string"},
-                "runInBackground": {"type": "boolean"},
+                "runInBackground": {"type": "boolean", "default": false, "description": "Return the agent ID immediately so independent tasks can overlap; collect the result with process_output (id=agentId) before reporting completion"},
                 "maxTurns": {"type": "integer", "minimum": 1, "maximum": 96},
                 "name": {"type": "string"},
                 "mode": {"type": "string", "enum": ["default", "acceptEdits", "dontAsk", "bypassPermissions", "plan", "auto"]},

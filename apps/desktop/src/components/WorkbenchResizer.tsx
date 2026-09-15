@@ -7,6 +7,8 @@ import {
 import { clampWorkbenchWidth } from "../workbenchWidth";
 
 interface WorkbenchResizerProps {
+  edge?: "left" | "right";
+  label?: string;
   width: number;
   min: number;
   max: number;
@@ -33,7 +35,7 @@ function captureDrag(
     // Rebase at the bounds so reversing direction responds immediately.
     // Keep fractional pointer deltas; rounding each event accumulates drift.
     width = Math.min(
-      Math.max(width + x - event.clientX, current.current.min),
+      Math.max(width + (x - event.clientX) * (current.current.edge === "right" ? -1 : 1), current.current.min),
       current.current.max,
     );
     x = event.clientX;
@@ -103,7 +105,7 @@ export function WorkbenchResizer(props: WorkbenchResizerProps) {
     <div
       className={`workbench-resizer ${dragging ? "dragging" : ""}`}
       role="separator"
-      aria-label="调整右侧预览区宽度"
+      aria-label={props.label ?? "调整右侧预览区宽度"}
       aria-orientation="vertical"
       aria-valuemin={props.min}
       aria-valuemax={props.max}
@@ -126,8 +128,9 @@ export function WorkbenchResizer(props: WorkbenchResizerProps) {
         if (dragging) return;
         const step = event.shiftKey ? 48 : 12;
         let width: number;
-        if (event.key === "ArrowLeft") width = props.width + step;
-        else if (event.key === "ArrowRight") width = props.width - step;
+        const direction = props.edge === "right" ? -1 : 1;
+        if (event.key === "ArrowLeft") width = props.width + step * direction;
+        else if (event.key === "ArrowRight") width = props.width - step * direction;
         else if (event.key === "Home") width = props.min;
         else if (event.key === "End") width = props.max;
         else if (event.key === "Enter") {

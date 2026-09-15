@@ -84,6 +84,7 @@ impl DaemonAgentBridge {
             )
             .await?;
         let provider = self.state.provider_from_config(config);
+        crate::parallel_policy::refresh_child_policy(&mut history);
         history.push(ChatMessage::user(request.prompt.clone()));
         loop {
             let turn_id = miniq_memory::new_id("turn");
@@ -211,6 +212,10 @@ impl DaemonAgentBridge {
         isolated: bool,
     ) -> ToolContext {
         let roots = self.child_roots(&workspace, isolated);
+        let external_paths_allowed = self
+            .state
+            .approval_mode_for_session(&self.session_id)
+            .is_ok_and(|mode| mode == ApprovalMode::FullAccess);
         ToolContext::new(workspace.clone())
             .with_media(
                 self.state
@@ -229,6 +234,7 @@ impl DaemonAgentBridge {
                     }),
             )
             .with_workspace_roots(roots.clone())
+            .with_external_paths_allowed(external_paths_allowed)
             .with_readable_files(
                 self.state
                     .store
@@ -302,8 +308,16 @@ impl DaemonAgentBridge {
 
         let workspace = match request.cwd.as_deref() {
             Some(cwd) => {
-                miniq_sandbox::resolve_in_roots(&self.workspace, &self.workspace_roots, cwd)
-                    .map_err(|error| ToolError::SandboxDenied(error.to_string()))?
+                let full_access = self
+                    .state
+                    .approval_mode_for_session(&self.session_id)
+                    .is_ok_and(|mode| mode == ApprovalMode::FullAccess);
+                if full_access && std::path::Path::new(cwd).is_absolute() {
+                    miniq_sandbox::resolve_external(cwd)
+                } else {
+                    miniq_sandbox::resolve_in_roots(&self.workspace, &self.workspace_roots, cwd)
+                }
+                .map_err(|error| ToolError::SandboxDenied(error.to_string()))?
             }
             None => self.workspace.clone(),
         };

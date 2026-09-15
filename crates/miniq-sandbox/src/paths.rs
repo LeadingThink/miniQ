@@ -46,6 +46,19 @@ pub fn resolve_in_roots(
     ))
 }
 
+/// Resolve an absolute path without workspace containment. Callers must only
+/// expose this when the user has explicitly selected unrestricted access.
+pub fn resolve_external(requested: &str) -> Result<PathBuf, PathError> {
+    if requested.trim().is_empty() {
+        return Err(PathError::Invalid("empty path".into()));
+    }
+    let path = Path::new(requested);
+    if !path.is_absolute() {
+        return Err(PathError::Invalid("external paths must be absolute".into()));
+    }
+    canonical_target(path)
+}
+
 // Canonicalize the existing ancestor before normalizing a not-yet-created suffix.
 // This also rejects broken links and links that escape via an intermediate parent.
 fn canonical_target(path: &Path) -> Result<PathBuf, PathError> {
@@ -150,6 +163,19 @@ mod tests {
             "/other/file"
         };
         assert!(resolve_in_workspace(&ws(), outside).is_err());
+    }
+
+    #[test]
+    fn external_absolute_path_is_resolved_only_by_explicit_external_api() {
+        let outside = tempfile::tempdir().unwrap();
+        let file = outside.path().join("review.md");
+        std::fs::write(&file, "review").unwrap();
+        assert!(resolve_in_workspace(&ws(), file.to_str().unwrap()).is_err());
+        assert_eq!(
+            resolve_external(file.to_str().unwrap()).unwrap(),
+            file.canonicalize().unwrap()
+        );
+        assert!(resolve_external("relative/file").is_err());
     }
 
     #[test]

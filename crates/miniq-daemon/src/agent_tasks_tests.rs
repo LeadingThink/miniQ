@@ -16,6 +16,9 @@ mod retry;
 #[path = "agent_tasks_tests/persistence.rs"]
 mod persistence;
 
+#[path = "agent_tasks_tests/parallel.rs"]
+mod parallel;
+
 fn request(prompt: &str) -> AgentRunRequest {
     AgentRunRequest {
         prompt: prompt.into(),
@@ -218,6 +221,19 @@ async fn foreground_agent_completes_and_resumes_with_preserved_history() {
 
     let requests = provider.requests.lock().unwrap();
     assert_eq!(requests.len(), 2);
+    for request in requests.iter() {
+        assert_eq!(
+            request
+                .messages
+                .iter()
+                .filter(|message| {
+                    message.role == miniq_models::ChatRole::System
+                        && message.content == crate::parallel_policy::PARALLEL_POLICY
+                })
+                .count(),
+            1
+        );
+    }
     assert!(requests[1]
         .messages
         .iter()

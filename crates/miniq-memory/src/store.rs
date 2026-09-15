@@ -15,6 +15,7 @@ mod records;
 mod row_mappers;
 mod scheduled_tasks;
 mod session_settings;
+mod session_titles;
 mod workspace_roots;
 mod workspaces;
 
@@ -88,6 +89,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0014_workspace_model_settings",
         include_str!("../../../migrations/0014_workspace_model_settings.sql"),
+    ),
+    (
+        "0015_session_titles",
+        include_str!("../../../migrations/0015_session_titles.sql"),
     ),
 ];
 

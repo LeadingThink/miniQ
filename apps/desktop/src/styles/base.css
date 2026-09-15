@@ -126,6 +126,8 @@ body {
   gap: 2px;
   overflow: hidden;
 }
+.sidebar { position: relative; }
+.sidebar > .workbench-resizer { left:auto; right:0; width:12px; }
 
 .app.sidebar-collapsed .sidebar {
   display: none;

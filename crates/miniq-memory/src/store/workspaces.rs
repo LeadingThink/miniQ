@@ -167,7 +167,7 @@ impl Store {
     pub fn update_session_title(&self, id: &str, title: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let updated = conn.execute(
-            "UPDATE sessions SET title = ?2, updated_at = ?3 WHERE id = ?1",
+            "UPDATE sessions SET title = ?2, title_auto_pending = 0, updated_at = ?3 WHERE id = ?1",
             params![id, title, now_iso()],
         )?;
         if updated == 0 {

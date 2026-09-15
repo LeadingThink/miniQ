@@ -205,6 +205,7 @@ const purpose = {
   compaction: "上下文压缩",
   planReview: "计划核对",
   skillLearning: "技能提炼",
+  sessionTitle: "会话标题",
 };
 const amount = (value: number | null) =>
   value === null ? "未返回" : value.toLocaleString();

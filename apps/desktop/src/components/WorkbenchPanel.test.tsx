@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WorkbenchPanel } from "./WorkbenchPanel";
+import { SidebarPanel } from "./SidebarPanel";
 import { WORKBENCH_WIDTH_STORAGE_KEY as key } from "../workbenchWidth";
 
 let viewport = 1400;
@@ -85,6 +86,23 @@ function mount(child = <aside className="file-preview-panel">Document</aside>) {
 }
 const handle = () => screen.getByRole("separator");
 const width = () => Number(handle().getAttribute("aria-valuenow"));
+it("resizes the sidebar in the opposite direction and persists only a finished drag", () => {
+  render(<SidebarPanel><span>Sessions</span></SidebarPanel>);
+  expect(width()).toBe(264);
+  start();
+  move(850);
+  tick();
+  expect(width()).toBe(314);
+  expect(writes).not.toHaveBeenCalled();
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(width()).toBe(264);
+  start();
+  finish(900);
+  expect(width()).toBe(364);
+  expect(writes).toHaveBeenLastCalledWith("miniq.sidebar.width", "364");
+  fireEvent.keyDown(handle(), { key: "ArrowLeft" });
+  expect(width()).toBe(352);
+});
 function tick() {
   act(() => {
     const callback = flush;

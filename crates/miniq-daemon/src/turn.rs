@@ -68,7 +68,8 @@ the link. When a source line matters, put it in the label, for example \
 
 fn system_message(skills_block: &str, workspace_path: &Path) -> ChatMessage {
     let mut system = format!(
-        "{SYSTEM_PROMPT}\n\n{}\n\n{HOST_APP_CONTEXT}",
+        "{SYSTEM_PROMPT}\n\n{}\n\n{}\n\n{HOST_APP_CONTEXT}",
+        crate::parallel_policy::PARALLEL_POLICY,
         runtime_context(workspace_path)
     );
     if !skills_block.is_empty() {
@@ -327,6 +328,10 @@ async fn execute_turn(
     let config = state
         .provider_config_for_session(session_id, None)
         .map_err(|error| TurnError::Fatal(error.to_string()))?;
+    let external_paths_allowed = state
+        .approval_mode_for_session(session_id)
+        .map_err(|error| TurnError::Fatal(error.to_string()))?
+        == crate::state::ApprovalMode::FullAccess;
     let model_identity = crate::session_models::model_identity(config.as_ref());
     let previous_identity = snapshot
         .as_ref()
@@ -342,10 +347,16 @@ async fn execute_turn(
             serde_json::to_string(&plan).map_err(|error| TurnError::Fatal(error.to_string()))?
         ));
     }
+    let path_scope = if external_paths_allowed {
+        "Full Access is enabled for this session: absolute paths outside these roots are allowed when the user explicitly names them."
+    } else {
+        "Only these attached roots are allowed; paths outside them must be attached before use."
+    };
     history[0].content.push_str(&format!(
-        "\n\nAttached project directories (authorized roots): {}. Relative tool paths resolve from '{}'; use absolute paths for the other attached directories. Existing sessions keep their working directory when the project primary changes.",
+        "\n\nAttached project directories (authorized roots): {}. Relative tool paths resolve from '{}'; use absolute paths for the other attached directories. Existing sessions keep their working directory when the project primary changes. {}",
         serde_json::to_string(&roots).map_err(|error| TurnError::Fatal(error.to_string()))?,
         workspace_path.display(),
+        path_scope,
     ));
     crate::session_models::isolate_native_context(
         &mut history,
@@ -439,6 +450,7 @@ async fn execute_turn(
                 music_model: "suno-v5".into(),
             }))
             .with_workspace_roots(roots.clone())
+            .with_external_paths_allowed(external_paths_allowed)
             .with_readable_files(
                 messages
                     .iter()
@@ -609,6 +621,14 @@ mod tests {
         assert!(runtime_index < skills_index);
         assert!(runtime_index < host_context_index);
         assert!(host_context_index < skills_index);
+    }
+
+    #[test]
+    fn every_parent_turn_includes_shared_parallel_policy() {
+        let history = history_for_turn(&[], None, "", Path::new("workspace"));
+        assert!(history[0]
+            .content
+            .contains(crate::parallel_policy::PARALLEL_POLICY));
     }
 
     #[test]
