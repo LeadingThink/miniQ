@@ -88,7 +88,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "schedule.toggle" => schedule::toggle(state, req.params),
         "schedule.delete" => schedule::delete(state, req.params),
         "schedule.runNow" => schedule::run_now(state, req.params),
-        "session.create" => session::create(state, req.params),
+        "session.create" => session::create(state, req.params).await,
         "session.list" => session::list(state, req.params),
         "session.open" => session::open(state, req.params),
         "session.history" => session_history::page(state, req.params),

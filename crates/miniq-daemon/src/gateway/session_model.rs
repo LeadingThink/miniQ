@@ -71,6 +71,7 @@ pub(super) async fn update(state: &AppState, raw: Option<Value>) -> Result<Value
     let baseline = state.settings.lock().unwrap().provider.clone();
     let mut settings = input.settings;
     validate_settings(&baseline, &mut settings).await?;
+    let settings = crate::session_models::snapshot_selection(baseline, settings);
     state
         .store
         .set_session_model_settings(&input.session_id, &settings)
@@ -145,10 +146,6 @@ async fn apply_global_update(
     state
         .update_settings(daemon_settings)
         .map_err(|error| RpcError::new(ErrorCode::InternalError, error))?;
-    state
-        .store
-        .set_global_model_settings(&settings)
-        .map_err(store_err)?;
     state.emit(Event::GlobalModelSettingsChanged {
         settings: settings.clone(),
     });
@@ -160,7 +157,7 @@ async fn apply_global_update(
     )
 }
 
-async fn validate_settings(
+pub(super) async fn validate_settings(
     baseline: &Option<miniq_models::ProviderConfig>,
     settings: &mut SessionModelSettings,
 ) -> Result<(), RpcError> {

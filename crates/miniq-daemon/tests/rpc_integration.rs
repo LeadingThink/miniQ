@@ -15,6 +15,9 @@ mod stream_retry;
 #[path = "rpc_integration/voice.rs"]
 mod voice;
 
+#[path = "rpc_integration/session_models.rs"]
+mod session_models;
+
 async fn start_daemon() -> (u16, String) {
     start_daemon_with(std::sync::Arc::new(miniq_models::mock::MockProvider::text(
         "hello from mock",

@@ -50,13 +50,22 @@ fn model_catalog_url_adds_v1_only_for_a_bare_domain() {
 }
 
 #[tokio::test]
-async fn global_update_applies_everywhere_and_never_exposes_credentials() {
+async fn global_update_changes_defaults_without_overwriting_session_or_project_choices() {
     let (state, a, b) = state();
     let workspace_id = state.store.get_session(&a).unwrap().workspace_id;
-    let other_workspace = state.store.create_workspace("/other", "other").unwrap();
-    let other = state
+    let selected = SessionModelSettings {
+        model: Some("claude-sonnet-4.6".into()),
+        api_protocol: ApiProtocol::AnthropicMessages,
+        reasoning_effort: None,
+    };
+    state
         .store
-        .create_session(&other_workspace.id, "other")
+        .set_session_model_settings(&a, &selected)
+        .unwrap();
+    let other_workspace = state.store.create_workspace("/other", "other").unwrap();
+    state
+        .store
+        .set_workspace_model_settings(&other_workspace.id, &selected)
         .unwrap();
     let response = global_update(
         &state,
@@ -67,21 +76,20 @@ async fn global_update_applies_everywhere_and_never_exposes_credentials() {
     assert_eq!(response["effective"]["model"], "custom/model");
     assert!(!response.to_string().contains("private-key"));
     assert!(!response.to_string().contains("baseUrl"));
+    assert_eq!(state.store.session_model_settings(&a).unwrap(), selected);
     assert_eq!(
         state.store.session_model_settings(&b).unwrap(),
-        state.store.session_model_settings(&a).unwrap()
+        SessionModelSettings::default()
     );
     assert_eq!(
-        state.store.session_model_settings(&other.id).unwrap(),
-        state.store.session_model_settings(&a).unwrap()
-    );
-    let next = state.store.create_session(&workspace_id, "next").unwrap();
-    assert_eq!(
-        state.store.session_model_settings(&next.id).unwrap(),
-        state.store.session_model_settings(&a).unwrap()
+        state
+            .store
+            .workspace_model_settings(&other_workspace.id)
+            .unwrap(),
+        selected
     );
     let workspace = workspace_get(&state, Some(json!({"workspaceId": workspace_id}))).unwrap();
-    assert_eq!(workspace["settings"]["model"], "custom/model");
+    assert_eq!(workspace["settings"]["model"], Value::Null);
     assert_eq!(workspace["effective"]["model"], "custom/model");
     assert!(!workspace.to_string().contains("private-key"));
     let provider = state.settings.lock().unwrap().provider.clone().unwrap();
@@ -117,11 +125,135 @@ async fn invalid_choices_are_rejected_and_active_turns_keep_running() {
     assert_eq!(changed["effective"]["model"], "another");
     assert_eq!(
         state.store.session_model_settings(&a).unwrap(),
-        SessionModelSettings {
-            model: Some("another".into()),
-            ..Default::default()
-        }
+        SessionModelSettings::default()
     );
+    assert!(state.active_turns.lock().unwrap().contains_key(&a));
+}
+
+#[tokio::test]
+async fn creating_and_updating_sessions_isolates_models_protocols_and_effort() {
+    let (state, a, b) = state();
+    let workspace_id = state.store.get_session(&a).unwrap().workspace_id;
+    let before_a = get(&state, Some(json!({"sessionId":a}))).unwrap();
+    let before_b = get(&state, Some(json!({"sessionId":b}))).unwrap();
+    let created = super::super::session::create(&state, Some(json!({
+        "workspaceId":workspace_id,
+        "modelSettings":{"model":"gpt-5.6-sol", "apiProtocol":"responses", "reasoningEffort":"high"}
+    }))).await.unwrap();
+    let id = created["id"].as_str().unwrap();
+    let chosen = get(&state, Some(json!({"sessionId":id}))).unwrap();
+    assert_eq!(chosen["effective"]["reasoningEffort"], "high");
+    assert_eq!(
+        state
+            .provider_config_for_session(id, None)
+            .unwrap()
+            .unwrap()
+            .reasoning_effort,
+        Some(miniq_protocol::ReasoningEffort::High)
+    );
+    assert_eq!(get(&state, Some(json!({"sessionId":a}))).unwrap(), before_a);
+    assert_eq!(get(&state, Some(json!({"sessionId":b}))).unwrap(), before_b);
+    assert_eq!(
+        state.store.workspace_model_settings(&workspace_id).unwrap(),
+        SessionModelSettings::default()
+    );
+
+    workspace_update(
+        &state,
+        Some(json!({"workspaceId": workspace_id, "settings":{"model":"gemini-3.8-flash"}})),
+    )
+    .await
+    .unwrap();
+    assert_eq!(get(&state, Some(json!({"sessionId":id}))).unwrap(), chosen);
+    let next = super::super::session::create(&state, Some(json!({"workspaceId":workspace_id})))
+        .await
+        .unwrap();
+    let next_id = next["id"].as_str().unwrap();
+    let next_settings = get(&state, Some(json!({"sessionId":next_id}))).unwrap();
+    assert_eq!(next_settings["effective"]["model"], "gemini-3.8-flash");
+    assert_eq!(next_settings["effective"]["reasoningEffort"], Value::Null);
+    global_update(&state, Some(json!({"settings":{"model":"new-global"}})))
+        .await
+        .unwrap();
+    assert_eq!(get(&state, Some(json!({"sessionId":id}))).unwrap(), chosen);
+    assert_eq!(
+        get(&state, Some(json!({"sessionId":next_id}))).unwrap(),
+        next_settings
+    );
+    update(&state, Some(json!({"sessionId":id,"settings":{"model":"claude-sonnet-4.6","apiProtocol":"anthropic_messages"}}))).await.unwrap();
+    let config = state
+        .provider_config_for_session(id, None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(config.model, "claude-sonnet-4.6");
+    assert_eq!(config.api_protocol, ApiProtocol::AnthropicMessages);
+    assert_eq!(config.reasoning_effort, None);
+    assert_eq!(
+        get(&state, Some(json!({"sessionId":next_id}))).unwrap(),
+        next_settings
+    );
+}
+
+#[tokio::test]
+async fn invalid_draft_settings_do_not_create_a_partial_session() {
+    let (state, a, _) = state();
+    let workspace_id = state.store.get_session(&a).unwrap().workspace_id;
+    let before = state
+        .store
+        .list_sessions(Some(&workspace_id))
+        .unwrap()
+        .len();
+    for settings in [
+        json!({"model":" "}),
+        json!({"model":"bad\nmodel"}),
+        json!({"apiProtocol":"invalid"}),
+    ] {
+        let error = super::super::session::create(
+            &state,
+            Some(json!({"workspaceId":workspace_id, "modelSettings":settings})),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidParams as i64);
+        assert_eq!(
+            state
+                .store
+                .list_sessions(Some(&workspace_id))
+                .unwrap()
+                .len(),
+            before
+        );
+    }
+}
+
+#[tokio::test]
+async fn sessions_created_with_defaults_keep_their_model_when_global_defaults_change() {
+    let (state, a, _) = state();
+    let workspace_id = state.store.get_session(&a).unwrap().workspace_id;
+    let created = super::super::session::create(&state, Some(json!({"workspaceId":workspace_id})))
+        .await
+        .unwrap();
+    let id = created["id"].as_str().unwrap();
+    let before = get(&state, Some(json!({"sessionId":id}))).unwrap();
+    global_update(&state, Some(json!({"settings":{"model":"new-global"}})))
+        .await
+        .unwrap();
+    assert_eq!(get(&state, Some(json!({"sessionId":id}))).unwrap(), before);
+    let next = super::super::session::create(&state, Some(json!({"workspaceId":workspace_id})))
+        .await
+        .unwrap();
+    assert_eq!(
+        get(&state, Some(json!({"sessionId":next["id"]}))).unwrap()["effective"]["model"],
+        "new-global"
+    );
+    let reset = update(&state, Some(json!({"sessionId":id,"settings":{}})))
+        .await
+        .unwrap();
+    assert_eq!(reset["effective"]["model"], "new-global");
+    global_update(&state, Some(json!({"settings":{"model":"another-global"}})))
+        .await
+        .unwrap();
+    assert_eq!(get(&state, Some(json!({"sessionId":id}))).unwrap(), reset);
 }
 
 #[tokio::test]

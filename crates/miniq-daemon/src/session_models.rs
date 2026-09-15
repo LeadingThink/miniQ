@@ -17,6 +17,19 @@ pub(crate) fn apply_selection(config: &mut ProviderConfig, selection: &SessionMo
     config.reasoning_effort = selection.reasoning_effort;
 }
 
+pub(crate) fn snapshot_selection(
+    baseline: Option<ProviderConfig>,
+    mut selection: SessionModelSettings,
+) -> SessionModelSettings {
+    // Persist resolved defaults so later default changes cannot move this session.
+    if let Some(mut config) = baseline {
+        apply_selection(&mut config, &selection);
+        selection.model = Some(config.model);
+        selection.api_protocol = config.api_protocol;
+    }
+    selection
+}
+
 impl AppState {
     pub(crate) fn provider_config_for_session(
         &self,
