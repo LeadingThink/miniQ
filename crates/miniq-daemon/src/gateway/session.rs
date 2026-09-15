@@ -230,6 +230,7 @@ pub(super) fn rewrite_message(state: &AppState, raw: Option<Value>) -> Result<Va
         state.end_turn(&input.session_id);
         return Err(error);
     }
+    crate::session_titles::spawn(state, &input.session_id);
     crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
     to_value(json!({ "message": rewrite.message }))
 }

@@ -206,9 +206,9 @@ async fn chat_turn_streams_and_persists() {
     assert_eq!(messages[1]["content"], "hello from mock");
     assert_eq!(resp["result"]["session"]["status"], "idle");
     assert!(resp["result"]["turnProgress"].is_null());
-    // Without a configured title model, leave naming pending and do not
-    // consume task-provider responses or substitute the message prefix.
-    assert_eq!(resp["result"]["session"]["title"], "New session");
+    // Without a configured title model, the message prefix remains available
+    // and naming stays pending without consuming task-provider responses.
+    assert_eq!(resp["result"]["session"]["title"], "hi");
 }
 
 #[tokio::test]
