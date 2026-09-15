@@ -1,10 +1,10 @@
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{router::parse_input, ToolError};
 
-#[derive(Clone, Copy, Deserialize, JsonSchema, PartialEq, Eq)]
+#[derive(Clone, Copy, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(super) enum Action {
     Open,
@@ -12,6 +12,7 @@ pub(super) enum Action {
     Snapshot,
     Screenshot,
     Status,
+    CurrentUrl,
     Tabs,
     NewTab,
     SwitchTab,
@@ -27,11 +28,14 @@ pub(super) enum Action {
     Back,
     Forward,
     Reload,
+    Stop,
+    SetVisible,
+    Resize,
     Wait,
     Close,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct BrowserInput {
     pub action: Action,
@@ -63,6 +67,11 @@ pub(super) struct BrowserInput {
     pub end_x: Option<f64>,
     #[schemars(range(min = 0))]
     pub end_y: Option<f64>,
+    #[schemars(range(min = 1))]
+    pub width: Option<f64>,
+    #[schemars(range(min = 1))]
+    pub height: Option<f64>,
+    pub visible: Option<bool>,
     #[serde(default)]
     pub button: MouseButton,
     #[serde(default)]
@@ -79,7 +88,7 @@ pub(super) struct BrowserInput {
     pub milliseconds: u64,
 }
 
-#[derive(Clone, Copy, Default, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub(super) enum MouseButton {
     #[default]
@@ -88,7 +97,7 @@ pub(super) enum MouseButton {
     Middle,
 }
 
-#[derive(Clone, Copy, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub(super) enum Modifier {
     Alt,
@@ -111,6 +120,27 @@ fn wait_default() -> u64 {
 }
 
 impl BrowserInput {
+    pub fn produces_observation(&self) -> bool {
+        !matches!(self.action, Action::Close | Action::Tabs | Action::CloseTab)
+    }
+
+    pub fn requires_observation(&self) -> bool {
+        matches!(
+            self.action,
+            Action::Click
+                | Action::DoubleClick
+                | Action::Move
+                | Action::Drag
+                | Action::Type
+                | Action::Select
+                | Action::Press
+                | Action::Scroll
+                | Action::Back
+                | Action::Forward
+                | Action::Reload
+        )
+    }
+
     pub fn parse(value: Value) -> Result<Self, ToolError> {
         if value
             .as_object()
@@ -128,6 +158,15 @@ impl BrowserInput {
         {
             return Err(ToolError::InvalidInput(
                 "coordinates must be finite and nonnegative".into(),
+            ));
+        }
+        if [input.width, input.height]
+            .into_iter()
+            .flatten()
+            .any(|dimension| !dimension.is_finite() || dimension < 1.)
+        {
+            return Err(ToolError::InvalidInput(
+                "browser dimensions must be finite and at least 1".into(),
             ));
         }
         if !(1..=500).contains(&input.limit) || input.milliseconds > 5000 {
@@ -159,6 +198,8 @@ impl BrowserInput {
             ) && input.url.is_none())
             || (matches!(input.action, Action::SwitchTab | Action::CloseTab)
                 && input.tab_id.is_none())
+            || (input.action == Action::Resize && (input.width.is_none() || input.height.is_none()))
+            || (input.action == Action::SetVisible && input.visible.is_none())
         {
             return Err(ToolError::InvalidInput(
                 "action is missing a required URL, target, coordinates, text, key or tabId".into(),
@@ -187,6 +228,39 @@ impl BrowserInput {
     }
 }
 
+impl Action {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Navigate => "navigate",
+            Self::Snapshot => "snapshot",
+            Self::Screenshot => "screenshot",
+            Self::Status => "status",
+            Self::CurrentUrl => "currentUrl",
+            Self::Tabs => "tabs",
+            Self::NewTab => "newTab",
+            Self::SwitchTab => "switchTab",
+            Self::CloseTab => "closeTab",
+            Self::Click => "click",
+            Self::DoubleClick => "doubleClick",
+            Self::Move => "move",
+            Self::Drag => "drag",
+            Self::Type => "type",
+            Self::Press => "press",
+            Self::Scroll => "scroll",
+            Self::Select => "select",
+            Self::Back => "back",
+            Self::Forward => "forward",
+            Self::Reload => "reload",
+            Self::Stop => "stop",
+            Self::SetVisible => "setVisible",
+            Self::Resize => "resize",
+            Self::Wait => "wait",
+            Self::Close => "close",
+        }
+    }
+}
+
 pub(super) fn schema() -> Value {
     let mut settings = schemars::gen::SchemaSettings::draft07();
     settings.inline_subschemas = true;
@@ -198,7 +272,7 @@ pub(super) fn schema() -> Value {
     )
     .expect("browser input schema");
     schema["oneOf"] = serde_json::json!([
-        {"properties":{"action":{"enum":["snapshot","screenshot","status","tabs","wait","close"]}}},
+        {"properties":{"action":{"enum":["snapshot","screenshot","status","currentUrl","tabs","stop","wait","close"]}}},
         {"properties":{"action":{"enum":["open","navigate","newTab"]}},"required":["url"]},
         {"properties":{"action":{"enum":["switchTab","closeTab"]}},"required":["tabId"]},
         {"properties":{"action":{"enum":["click"]}},"required":["observationId"],"anyOf":[{"required":["target"]},{"required":["x","y"]}]},
@@ -206,7 +280,9 @@ pub(super) fn schema() -> Value {
         {"properties":{"action":{"enum":["drag"]}},"required":["observationId","x","y","endX","endY"]},
         {"properties":{"action":{"enum":["type","select"]}},"required":["observationId","target","text"]},
         {"properties":{"action":{"enum":["press"]}},"required":["observationId","key"]},
-        {"properties":{"action":{"enum":["back","forward","reload"]}},"required":["observationId"]}
+        {"properties":{"action":{"enum":["back","forward","reload"]}},"required":["observationId"]},
+        {"properties":{"action":{"enum":["setVisible"]}},"required":["visible"]},
+        {"properties":{"action":{"enum":["resize"]}},"required":["width","height"]}
     ]);
     schema
 }

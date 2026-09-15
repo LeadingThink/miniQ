@@ -1,5 +1,71 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use super::*;
-use axum::{response::Html, routing::get, Router};
+
+#[derive(Default)]
+struct MockDriver {
+    requests: Mutex<Vec<BrowserDriverRequest>>,
+    closed: AtomicBool,
+}
+
+impl MockDriver {
+    fn requests(&self) -> Vec<BrowserDriverRequest> {
+        self.requests.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl BrowserDriver for MockDriver {
+    async fn execute(
+        &self,
+        request: BrowserDriverRequest,
+        cancellation: tokio_util::sync::CancellationToken,
+    ) -> Result<BrowserDriverResponse, String> {
+        if cancellation.is_cancelled() {
+            return Err("cancelled".into());
+        }
+        self.requests.lock().unwrap().push(request.clone());
+        if request.operation == "close" {
+            self.closed.store(true, Ordering::SeqCst);
+            return Ok(BrowserDriverResponse {
+                capabilities: capabilities(),
+                result: json!({"closed": true}),
+            });
+        }
+        let observation_id = request.arguments["nextObservationId"]
+            .as_str()
+            .unwrap_or("observation")
+            .to_string();
+        Ok(BrowserDriverResponse {
+            capabilities: capabilities(),
+            result: json!({
+                "observationId": observation_id,
+                "url": request.arguments.get("url").and_then(Value::as_str).unwrap_or("https://example.com/"),
+                "tabId": "embedded-main",
+                "documentId": "document-1",
+                "viewport": {"width": 1024.0, "height": 768.0, "scrollX": 0.0, "scrollY": 0.0},
+                "items": [],
+                "textLines": [],
+            }),
+        })
+    }
+}
+
+fn capabilities() -> BrowserCapabilities {
+    BrowserCapabilities {
+        navigation_control: true,
+        dom_snapshot: true,
+        screenshot: false,
+        tabs: false,
+        pointer_input: true,
+        keyboard_input: true,
+        select_input: true,
+    }
+}
+
+fn context(driver: Arc<MockDriver>) -> ToolContext {
+    ToolContext::new(std::env::temp_dir()).with_browser(Some(driver))
+}
 
 #[test]
 fn url_policy_allows_only_web_pages() {
@@ -47,6 +113,9 @@ fn validates_schema_limits_without_silent_clamping() {
         json!({"action":"snapshot","invented":true}),
         json!({"action":"click","x":-1,"y":0,"observationId":"frame"}),
         json!({"action":"snapshot","limit":null}),
+        json!({"action":"resize","width":0,"height":100}),
+        json!({"action":"resize","width":100}),
+        json!({"action":"setVisible"}),
     ] {
         assert!(BrowserInput::parse(input).is_err());
     }
@@ -58,239 +127,165 @@ fn validates_schema_limits_without_silent_clamping() {
 }
 
 #[tokio::test]
-async fn tasks_never_reuse_each_others_browser_slots() {
+async fn delegates_browser_management_operations() {
+    let driver = Arc::new(MockDriver::default());
+    let context = context(driver.clone());
     let tool = BrowserAutomationTool::default();
-    let first = ToolContext::new(std::env::temp_dir());
-    let second = ToolContext::new(std::env::temp_dir());
-    tool.execute(&first, json!({"action":"close"}))
+    tool.execute(&context, json!({"action":"currentUrl"}))
         .await
         .unwrap();
-    tool.execute(&second, json!({"action":"close"}))
+    tool.execute(&context, json!({"action":"stop"}))
         .await
         .unwrap();
-    let sessions = tool.sessions.lock().unwrap();
-    assert!(!Arc::ptr_eq(
-        &sessions[&first.task_scope],
-        &sessions[&second.task_scope]
-    ));
-}
-
-#[tokio::test]
-async fn cancelled_open_does_not_launch_chrome() {
-    let context = ToolContext::new(std::env::temp_dir());
-    context.cancellation.cancel();
-    let tool = BrowserAutomationTool::default();
-    let result = tool
-        .execute(
-            &context,
-            json!({"action":"open","url":"https://example.com"}),
-        )
-        .await;
-    assert!(result.unwrap_err().to_string().contains("cancelled"));
-}
-
-#[tokio::test]
-#[ignore = "requires locally installed Chrome; only opens an isolated test fixture"]
-async fn visible_browser_roundtrip() {
-    let app = Router::new().route("/", get(|| async { Html(include_str!("fixture.html")) }));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let directory = tempfile::tempdir().unwrap();
-    let context =
-        ToolContext::new(directory.path().into()).with_observations(directory.path().into());
-    let tool = BrowserAutomationTool::default();
-    let page = tool
-        .execute(
-            &context,
-            json!({"action":"open","url":format!("http://{address}/"),"includeScreenshot":true}),
-        )
+    tool.execute(&context, json!({"action":"setVisible","visible":false}))
         .await
         .unwrap();
-    assert!(page["screenshot"]["width"].as_u64().unwrap() > 500);
-    let attachments = tool.output_images(&context, &page);
-    let scope = tool.approval_scope(&context, &json!({"action":"click","observationId":page["observationId"],"url":"https://spoofed.invalid"})).unwrap();
-    assert_eq!(scope, format!("click:http://{address}"));
-    let screenshot = image::open(&attachments[0].path).unwrap().to_rgb8();
-    assert!(screenshot
-        .pixels()
-        .any(|pixel| i16::from(pixel.0[0]) - i16::from(pixel.0[1]) > 50));
-    if let Ok(path) = std::env::var("MINIQ_BROWSER_TEST_ARTIFACTS") {
-        std::fs::create_dir_all(&path).unwrap();
-        std::fs::copy(
-            &attachments[0].path,
-            std::path::Path::new(&path).join("browser-observation.png"),
-        )
-        .unwrap();
-    }
-    let target = |page: &Value, tag: &str| {
-        page["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|item| item["tag"] == tag)
-            .unwrap()["target"]
-            .clone()
-    };
-    let clicked = tool.execute(&context, json!({"action":"click","target":target(&page,"button"),"observationId":page["observationId"]})).await.unwrap();
-    assert!(tool.output_images(&context, &clicked).is_empty());
-    assert!(clicked["textLines"].to_string().contains("Completed"));
-    assert!(tool.execute(&context, json!({"action":"click","target":target(&page,"button"),"observationId":page["observationId"]})).await.is_err());
-    let page = tool
-        .execute(&context, json!({"action":"snapshot"}))
-        .await
-        .unwrap();
-    let typed = tool.execute(&context, json!({"action":"type","target":target(&page,"input"),"text":"你好 miniQ","observationId":page["observationId"]})).await.unwrap();
-    assert!(typed["textLines"].to_string().contains("你好 miniQ"));
-    let selected = tool.execute(&context, json!({"action":"select","target":target(&typed,"select"),"text":"b","observationId":typed["observationId"]})).await.unwrap();
-    assert!(selected["textLines"].to_string().contains("Selected b"));
-    let page = tool
-        .execute(&context, json!({"action":"snapshot","limit":1,"offset":0}))
-        .await
-        .unwrap();
-    assert_eq!(page["items"].as_array().unwrap().len(), 1);
-    assert_eq!(page["hasMore"], true);
-    let second = tool
-        .execute(
-            &context,
-            json!({"action":"newTab","url":format!("http://{address}/")}),
-        )
-        .await
-        .unwrap();
-    assert_ne!(second["tabId"], page["tabId"]);
-    let tabs = tool
-        .execute(&context, json!({"action":"tabs"}))
-        .await
-        .unwrap();
-    assert!(tabs["tabs"].as_array().unwrap().len() >= 2);
-    let switched = tool
-        .execute(
-            &context,
-            json!({"action":"switchTab","tabId":page["tabId"]}),
-        )
-        .await
-        .unwrap();
-    assert!(switched["textLines"].to_string().contains("Completed"));
-    check_visual_actions(&tool, &context, switched).await;
-    check_changed_document(&tool, &context).await;
     tool.execute(
         &context,
-        json!({"action":"closeTab","tabId":second["tabId"]}),
+        json!({"action":"resize","width":800,"height":600}),
     )
     .await
     .unwrap();
-    tool.execute(&context, json!({"action":"close"}))
-        .await
-        .unwrap();
-    server.abort();
+    let operations = driver
+        .requests()
+        .into_iter()
+        .map(|request| request.operation)
+        .collect::<Vec<_>>();
+    assert_eq!(operations, ["currentUrl", "stop", "setVisible", "resize"]);
 }
 
-async fn check_changed_document(tool: &BrowserAutomationTool, context: &ToolContext) {
-    let page = tool
-        .execute(context, json!({"action":"snapshot"}))
-        .await
-        .unwrap();
-    let tab = tool.sessions.lock().unwrap()[&context.task_scope]
-        .lock()
-        .unwrap()
-        .as_ref()
-        .unwrap()
-        .tab
-        .clone();
-    tab.evaluate("scrollTo(0,0)", false).unwrap();
-    assert!(tool
+#[tokio::test]
+async fn delegates_to_the_embedded_driver_and_forwards_expected_observation() {
+    let driver = Arc::new(MockDriver::default());
+    let context = context(driver.clone());
+    let tool = BrowserAutomationTool::default();
+    let opened = tool
         .execute(
-            context,
-            json!({"action":"click","x":1,"y":1,"observationId":page["observationId"]})
+            &context,
+            json!({"action":"open","url":"https://example.com/"}),
         )
         .await
-        .unwrap_err()
-        .to_string()
-        .contains("scroll"));
-    let page = tool
-        .execute(context, json!({"action":"snapshot"}))
-        .await
         .unwrap();
-    tab.reload(false, None).unwrap();
-    tab.wait_until_navigated().unwrap();
-    assert!(tool
-        .execute(
-            context,
-            json!({"action":"click","x":1,"y":1,"observationId":page["observationId"]})
-        )
-        .await
-        .unwrap_err()
-        .to_string()
-        .contains("document"));
-    let page = tool
-        .execute(context, json!({"action":"snapshot"}))
-        .await
-        .unwrap();
-    let target = page["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|item| item["label"] == "Read-only field")
-        .unwrap()["target"]
-        .clone();
-    assert!(tool.execute(context, json!({"action":"type","target":target,"text":"unsafe","observationId":page["observationId"]})).await.unwrap_err().to_string().contains("editable"));
-    tab.evaluate("scrollTo(0,document.body.scrollHeight)", false)
-        .unwrap();
-    let page = tool
-        .execute(context, json!({"action":"screenshot"}))
-        .await
-        .unwrap();
-    let image = image::open(&tool.output_images(context, &page)[0].path)
-        .unwrap()
-        .to_rgb8();
-    assert!(
-        image.pixels().any(|pixel| pixel.0 == [112, 45, 189]),
-        "screenshot must show the scrolled viewport, not the document top"
+    assert_eq!(opened["previewMode"], "embedded-webview");
+    assert_eq!(opened["browserSessionId"], context.task_scope);
+
+    tool.execute(
+        &context,
+        json!({
+            "action":"click",
+            "target":"button-1",
+            "observationId":opened["observationId"],
+        }),
+    )
+    .await
+    .unwrap();
+    let requests = driver.requests();
+    assert_eq!(requests[0].session_id, context.task_scope);
+    assert_eq!(
+        requests[1].arguments["expectedObservation"]["url"],
+        "https://example.com/"
+    );
+    assert_eq!(
+        requests[1].arguments["expectedObservation"]["tabId"],
+        "embedded-main"
+    );
+    assert_eq!(
+        requests[1].arguments["expectedObservation"]["documentId"],
+        "document-1"
+    );
+    assert_eq!(
+        requests[1].arguments["expectedObservation"]["viewport"]["width"],
+        1024.0
     );
 }
 
-async fn check_visual_actions(
-    tool: &BrowserAutomationTool,
-    context: &ToolContext,
-    mut page: Value,
-) {
-    let target = page["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|item| item["text"] == "Coordinate target")
-        .unwrap();
-    let x = target["bounds"]["x"].as_f64().unwrap() + 30.;
-    let y = target["bounds"]["y"].as_f64().unwrap() + 30.;
-    for (action, expected) in [
-        ("click", "Coordinate clicked"),
-        ("doubleClick", "Double clicked"),
-        ("drag", "Dragged"),
-    ] {
-        page = tool.execute(context,json!({"action":action,"x":x,"y":y,"endX":x+120.,"endY":y+20.,"observationId":page["observationId"],"includeScreenshot":true})).await.unwrap();
-        assert!(
-            page["textLines"].to_string().contains(expected),
-            "{action}: {page}"
-        );
-        assert_eq!(tool.output_images(context, &page).len(), 1);
-    }
-    let target = page["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|item| item["text"] == "Editable content")
-        .unwrap()["target"]
-        .clone();
-    page = tool.execute(context,json!({"action":"type","target":target,"text":"Edited rich text","observationId":page["observationId"]})).await.unwrap();
-    assert!(page["textLines"].to_string().contains("Edited rich text"));
-    assert!(!page["items"].to_string().contains("not-in-dom-snapshot"));
-    page = tool.execute(context,json!({"action":"scroll","x":x,"y":y,"deltaY":500,"observationId":page["observationId"]})).await.unwrap();
-    assert!(page["viewport"]["scrollY"].as_f64().unwrap() > 0.);
-    assert!(tool
+#[tokio::test]
+async fn rejects_stale_observations_before_delegating() {
+    let driver = Arc::new(MockDriver::default());
+    let context = context(driver.clone());
+    let tool = BrowserAutomationTool::default();
+    tool.execute(
+        &context,
+        json!({"action":"open","url":"https://example.com/"}),
+    )
+    .await
+    .unwrap();
+    let error = tool
         .execute(
-            context,
-            json!({"action":"click","x":-1,"y":0,"observationId":page["observationId"]})
+            &context,
+            json!({"action":"click","target":"button-1","observationId":"old"}),
         )
         .await
-        .is_err());
+        .unwrap_err();
+    assert!(error.to_string().contains("stale observation"));
+    assert_eq!(driver.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn rejects_capabilities_the_driver_does_not_offer() {
+    let driver = Arc::new(MockDriver::default());
+    let context = context(driver.clone());
+    let tool = BrowserAutomationTool::default();
+    tool.execute(
+        &context,
+        json!({"action":"open","url":"https://example.com/"}),
+    )
+    .await
+    .unwrap();
+    let error = tool
+        .execute(&context, json!({"action":"screenshot"}))
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("does not support screenshot"));
+    assert_eq!(driver.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn task_scopes_are_forwarded_without_sharing_observations() {
+    let driver = Arc::new(MockDriver::default());
+    let first = context(driver.clone());
+    let second = context(driver.clone());
+    let tool = BrowserAutomationTool::default();
+    let first_page = tool
+        .execute(
+            &first,
+            json!({"action":"open","url":"https://example.com/"}),
+        )
+        .await
+        .unwrap();
+    tool.execute(
+        &second,
+        json!({"action":"open","url":"https://example.org/"}),
+    )
+    .await
+    .unwrap();
+    let error = tool
+        .execute(
+            &second,
+            json!({"action":"click","target":"button-1","observationId":first_page["observationId"]}),
+        )
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("stale observation"));
+    let requests = driver.requests();
+    assert_ne!(requests[0].session_id, requests[1].session_id);
+}
+
+#[tokio::test]
+async fn cancelled_calls_do_not_reach_the_driver() {
+    let driver = Arc::new(MockDriver::default());
+    let context = context(driver.clone());
+    context.cancellation.cancel();
+    let error = BrowserAutomationTool::default()
+        .execute(
+            &context,
+            json!({"action":"open","url":"https://example.com/"}),
+        )
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("cancelled"));
+    let requests = driver.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].operation, "close");
+    assert!(driver.closed.load(Ordering::SeqCst));
 }

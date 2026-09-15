@@ -3,7 +3,7 @@ import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
 import { LoaderCircle, PlugZap, Sparkles } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Composer, ComposerCard } from "./Composer";
 import { DistillModal } from "./Distill";
 import { ExternalSessionImportDialog } from "./ExternalSessionImport";
@@ -23,6 +23,7 @@ import { SessionModelControls } from "./SessionModelControls";
 import { SessionPermissionControls } from "./SessionPermissionControls";
 import { AgentPanel } from "./AgentPanel";
 import { ProjectDirectories } from "./ProjectDirectories";
+import { resolveBrowserDriverRequest } from "../embeddedBrowserDriver";
 import { BrowserTabs } from "./BrowserTabs";
 import { closeBrowserTab, EMPTY_BROWSER_TABS, openBrowserTab, updateBrowserTab, type BrowserTabsState } from "../browserTabs";
 
@@ -379,6 +380,14 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
   const browserScope =
     app.catalog.currentSessionId ??
     `draft:${app.catalog.selectedWorkspaceId ?? ""}`;
+  const browserViewIds = useRef(new Map<string, string>());
+  const getBrowserViewId = (browserSessionId: string) => {
+    const existing = browserViewIds.current.get(browserSessionId);
+    if (existing) return existing;
+    const viewId = crypto.randomUUID().replaceAll("-", "");
+    browserViewIds.current.set(browserSessionId, viewId);
+    return viewId;
+  };
   const [browserSessions, setBrowserSessions] = useState<Record<string, BrowserTabsState>>({});
   const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
   const browserState = browserSessions[browserScope] ?? EMPTY_BROWSER_TABS;
@@ -396,6 +405,60 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
     app.review.setOpen(false);
     openNewBrowserTab(url);
   };
+  useEffect(() => app.client.onEvent((event) => {
+    if (event.type !== "browser_driver_requested") return;
+    const { request } = event;
+    const requestedUrl = request.arguments.url;
+    if (request.operation === "open" || request.operation === "navigate") {
+      if (typeof requestedUrl !== "string") {
+        void app.client.call("browser.resolve", {
+          requestId: request.id,
+          error: "浏览器导航缺少 URL",
+        });
+        return;
+      }
+      const viewId = getBrowserViewId(request.browserSessionId);
+      setBrowserSessions((current) => ({
+        ...current,
+        [request.sessionId]: (() => {
+          const state = current[request.sessionId] ?? EMPTY_BROWSER_TABS;
+          const existing = state.tabs.find(
+            (tab) => tab.browserSessionId === request.browserSessionId,
+          );
+          const tab = existing ?? {
+            id: crypto.randomUUID(),
+            url: requestedUrl,
+            viewId,
+            browserSessionId: request.browserSessionId,
+          };
+          return {
+            tabs: existing
+              ? state.tabs.map((candidate) =>
+                  candidate.id === existing.id
+                    ? { ...candidate, url: requestedUrl }
+                    : candidate,
+                )
+              : [...state.tabs, tab],
+            activeId: tab.id,
+            open: true,
+          };
+        })(),
+      }));
+    }
+    void resolveBrowserDriverRequest(app.client, request).finally(() => {
+      if (request.operation !== "close") return;
+      browserViewIds.current.delete(request.browserSessionId);
+      setBrowserSessions((current) => {
+        const state = current[request.sessionId];
+        const tab = state?.tabs.find(
+          (candidate) => candidate.browserSessionId === request.browserSessionId,
+        );
+        return tab
+          ? { ...current, [request.sessionId]: closeBrowserTab(state, tab.id) }
+          : current;
+      });
+    });
+  }), [app.client]);
   useEffect(() => {
     const latest = [...app.feed.toolCalls].reverse().find((call) => {
       if (call.toolName !== "browser_automation") return false;
@@ -580,6 +643,8 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
               {Object.entries(browserSessions).flatMap(([scope, state]) => state.tabs.map((tab) => <BrowserPanel
                 key={tab.id}
                 url={tab.url}
+                viewId={tab.viewId}
+                browserSessionId={tab.browserSessionId}
                 active={scope === browserScope && tab.id === browserState.activeId && !!browserUrl}
                 suspended={
                   app.navigation.showSettings ||

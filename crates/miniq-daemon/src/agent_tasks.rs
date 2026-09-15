@@ -253,6 +253,10 @@ impl DaemonAgentBridge {
             )
             .with_mcp(self.state.mcp_bridge())
             .with_processes(self.state.processes.clone())
+            .with_browser(Some(Arc::new(crate::browser_driver::DaemonBrowserDriver {
+                state: self.state.clone(),
+                session_id: self.session_id.clone(),
+            })))
             .with_tasks(
                 self.state.tasks.clone(),
                 format!("{}:{agent_id}", self.session_id),

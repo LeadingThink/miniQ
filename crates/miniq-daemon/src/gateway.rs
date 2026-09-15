@@ -134,6 +134,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "externalSession.import" => external_session::import(state, req.params).await,
         "approval.resolve" => interaction::resolve_approval(state, req.params),
         "question.resolve" => interaction::resolve_question(state, req.params),
+        "browser.resolve" => interaction::resolve_browser_request(state, req.params),
         "checkpoint.rollback" => interaction::rollback_checkpoint(state, req.params),
         "tool.list" => system::list_tools(state),
         "observation.read" => observation::read(state, req.params).await,

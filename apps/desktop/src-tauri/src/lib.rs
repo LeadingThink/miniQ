@@ -123,13 +123,18 @@ fn save_pasted_image(
 }
 
 #[tauri::command]
-fn browser_open(
+async fn browser_open(
     app: tauri::AppHandle,
     view_id: String,
     url: String,
     bounds: browser::BrowserBounds,
+    visible: bool,
 ) -> Result<browser::BrowserState, String> {
-    browser::open(&app, &view_id, &url, bounds)
+    tauri::async_runtime::spawn_blocking(move || {
+        browser::open(&app, &view_id, &url, bounds, visible)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -188,6 +193,20 @@ fn open_microphone_settings(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+async fn browser_evaluate(
+    app: tauri::AppHandle,
+    view_id: String,
+    script: String,
+) -> Result<String, String> {
+    browser::evaluate(&app, &view_id, script).await
+}
+
+#[tauri::command]
+fn browser_capabilities() -> browser::BrowserCapabilities {
+    browser::capabilities()
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(DaemonState::default())
@@ -216,7 +235,9 @@ pub fn run() {
             browser_current,
             browser_close,
             browser_set_visible,
-            open_microphone_settings
+            open_microphone_settings,
+            browser_evaluate,
+            browser_capabilities
         ])
         .setup(|app| {
             setup_tray(app.handle())?;

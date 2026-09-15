@@ -61,6 +61,20 @@ pub(super) fn resolve_question(state: &AppState, raw: Option<Value>) -> Result<V
     Ok(json!({ "resolved": true }))
 }
 
+pub(super) fn resolve_browser_request(
+    state: &AppState,
+    raw: Option<Value>,
+) -> Result<Value, RpcError> {
+    let input: miniq_protocol::BrowserDriverResolution = params(raw)?;
+    if !state.deliver_browser_result(input) {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "browser request not found, already resolved, or malformed",
+        ));
+    }
+    Ok(json!({ "resolved": true }))
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RollbackParams {

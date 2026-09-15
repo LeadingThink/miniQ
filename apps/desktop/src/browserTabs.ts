@@ -1,6 +1,8 @@
 export interface BrowserTab {
   id: string;
   url: string;
+  viewId?: string;
+  browserSessionId?: string;
 }
 
 export interface BrowserTabsState {

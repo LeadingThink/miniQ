@@ -8,6 +8,8 @@ import { useBrowserPanel } from "../hooks/useBrowserPanel";
 
 export function BrowserPanel(props: {
   url: string;
+  viewId?: string;
+  browserSessionId?: string;
   active?: boolean;
   suspended?: boolean;
   onNavigate: (url: string) => void;
@@ -15,7 +17,13 @@ export function BrowserPanel(props: {
 }) {
   const surface = useRef<HTMLDivElement>(null);
   const addressInput = useRef<HTMLInputElement>(null);
-  const browser = useBrowserPanel(props.url, surface, props.suspended || props.active === false);
+  const browser = useBrowserPanel(
+    props.url,
+    surface,
+    props.suspended || props.active === false,
+    props.viewId,
+    props.browserSessionId,
+  );
   const native = isTauriRuntime();
   const reloadAction = native && browser.loading ? "stop" : "reload";
   return (

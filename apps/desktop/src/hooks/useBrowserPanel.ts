@@ -7,13 +7,20 @@ import {
 } from "react";
 import {
   browserAction,
+  browserCapabilities,
   closeBrowser,
   currentBrowser,
+  evaluateBrowser,
   openBrowser,
   resizeBrowser,
   setBrowserVisible,
   shouldSyncBrowserAddress,
 } from "../browserWorkbench";
+import {
+  buildBrowserAutomationScript,
+  parseBrowserScriptResult,
+} from "../browserAutomationScript";
+import { registerEmbeddedBrowser } from "../embeddedBrowserDriver";
 import { errorMessage } from "../errorMessage";
 import { isTauriRuntime } from "../runtime";
 import { useOpenDialog } from "./useOpenDialog";
@@ -22,10 +29,12 @@ export function useBrowserPanel(
   url: string,
   surface: RefObject<HTMLDivElement>,
   requestedSuspension = false,
+  requestedViewId?: string,
+  requestedBrowserSessionId?: string,
 ) {
   const dialogOpen = useOpenDialog();
   const suspended = requestedSuspension || dialogOpen;
-  const [viewId] = useState(() => crypto.randomUUID());
+  const [viewId] = useState(() => requestedViewId ?? crypto.randomUUID());
   const [address, setAddress] = useState(url);
   const [activeUrl, setActiveUrl] = useState(url);
   const active = useRef(url);
@@ -63,6 +72,7 @@ export function useBrowserPanel(
           target,
           { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
           viewId,
+          !suspendedRef.current,
         );
         if (!mounted.current) {
           await closeBrowser(viewId);
@@ -79,6 +89,7 @@ export function useBrowserPanel(
           setError(errorMessage(cause));
           setLoading(false);
         }
+        throw cause;
       } finally {
         if (mounted.current && request === sequence.current) {
           inFlight.current = false;
@@ -100,8 +111,81 @@ export function useBrowserPanel(
     };
   }, [viewId]);
   useEffect(() => {
-    void load(url);
-  }, [url, load]);
+    if (!requestedBrowserSessionId) return;
+    return registerEmbeddedBrowser(requestedBrowserSessionId, {
+      capabilities: browserCapabilities,
+      execute: async (operation, arguments_) => {
+        const observe = async () => parseBrowserScriptResult(await evaluateBrowser(
+          viewId,
+          buildBrowserAutomationScript("snapshot", arguments_, viewId),
+        ));
+        if (operation === "close") {
+          await closeBrowser(viewId);
+          return { closed: true };
+        }
+        if (operation === "open" || operation === "navigate") {
+          const target = arguments_.url;
+          if (typeof target !== "string") throw new Error("浏览器导航缺少 URL");
+          await load(target);
+          return observe();
+        }
+        if (operation === "status" || operation === "wait") {
+          if (operation === "wait") {
+            const milliseconds = Number(arguments_.milliseconds ?? 250);
+            await new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+          }
+          return observe();
+        }
+        if (operation === "currentUrl") {
+          return observe();
+        }
+        if (operation === "stop") {
+          await browserAction("stop", viewId);
+          return observe();
+        }
+        if (operation === "setVisible") {
+          if (typeof arguments_.visible !== "boolean")
+            throw new Error("setVisible 缺少 visible 参数");
+          await setBrowserVisible(viewId, arguments_.visible);
+          return observe();
+        }
+        if (operation === "resize") {
+          const width = Number(arguments_.width);
+          const height = Number(arguments_.height);
+          if (!Number.isFinite(width) || width < 1 || !Number.isFinite(height) || height < 1)
+            throw new Error("resize 需要大于等于 1 的有限 width 和 height");
+          const rect = surface.current?.getBoundingClientRect();
+          await resizeBrowser(
+            { x: rect?.x ?? 0, y: rect?.y ?? 0, width, height },
+            viewId,
+          );
+          return observe();
+        }
+        if ([
+          "snapshot",
+          "click",
+          "doubleClick",
+          "move",
+          "drag",
+          "type",
+          "press",
+          "scroll",
+          "select",
+        ].includes(operation)) {
+          const raw = await evaluateBrowser(
+            viewId,
+            buildBrowserAutomationScript(operation, arguments_, viewId),
+          );
+          return parseBrowserScriptResult(raw);
+        }
+        throw new Error(`此平台的内嵌浏览器不支持 ${operation}`);
+      },
+    });
+  }, [load, requestedBrowserSessionId, surface, viewId]);
+  useEffect(() => {
+    if (requestedViewId) return;
+    void load(url).catch(() => {});
+  }, [url, load, requestedViewId]);
 
   useEffect(() => {
     let disposed = false;
