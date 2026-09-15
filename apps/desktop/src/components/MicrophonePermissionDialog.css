@@ -1,0 +1,52 @@
+.microphone-permission-dialog {
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  background: var(--bg);
+  color: var(--text);
+}
+.microphone-permission-dialog::backdrop {
+  background: #0007;
+  backdrop-filter: blur(4px);
+}
+.microphone-permission-dialog header,
+.microphone-permission-dialog footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.microphone-permission-dialog h2 { flex: 1; margin: 0; font-size: 18px; }
+.microphone-permission-dialog p,
+.microphone-permission-dialog li { color: var(--text-mid); font-size: 14px; line-height: 1.7; }
+.microphone-permission-dialog ol { padding-left: 22px; }
+.microphone-permission-dialog li + li { margin-top: 8px; }
+.microphone-permission-dialog footer { justify-content: flex-end; flex-wrap: wrap; margin-top: 24px; }
+.microphone-permission-dialog button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.microphone-permission-dialog button:hover { background: var(--bg-hover); }
+.microphone-permission-dialog button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.microphone-permission-dialog button.close-button { min-width: 40px; padding: 8px; border: 0; }
+.microphone-permission-dialog button:disabled { opacity: .5; cursor: default; }
+.microphone-permission-dialog button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.microphone-permission-dialog [role="alert"] { color: var(--danger); }
+@media (max-width: 480px) {
+  .microphone-permission-dialog { padding: 20px; }
+  .microphone-permission-dialog footer { flex-direction: column; align-items: stretch; }
+  .microphone-permission-dialog button { min-height: 44px; }
+}

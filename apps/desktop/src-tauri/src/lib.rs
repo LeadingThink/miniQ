@@ -177,6 +177,22 @@ fn browser_set_visible(
     browser::set_visible(&app, &view_id, visible)
 }
 
+/// Open only the local device's microphone privacy pane. No caller-supplied
+/// URL or daemon RPC: remote clients must manage their own microphone access.
+#[tauri::command]
+fn open_microphone_settings(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let url = match std::env::consts::OS {
+        "macos" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+        "windows" => "ms-settings:privacy-microphone",
+        _ => return Err("请在系统设置中手动开启麦克风权限".into()),
+    };
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 async fn browser_evaluate(
     app: tauri::AppHandle,
@@ -219,6 +235,7 @@ pub fn run() {
             browser_current,
             browser_close,
             browser_set_visible,
+            open_microphone_settings,
             browser_evaluate,
             browser_capabilities
         ])

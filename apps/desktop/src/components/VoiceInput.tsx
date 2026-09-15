@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import type { RpcClient } from "../rpc";
 import { startVoiceCapture, type VoiceCapture } from "../voiceCapture";
 import { VoiceTranscription, type VoicePreview } from "../voiceTranscription";
+import { isMicrophonePermissionError } from "../microphonePermission";
+import { MicrophonePermissionDialog } from "./MicrophonePermissionDialog";
 
 interface Props {
   client: RpcClient;
@@ -24,6 +26,8 @@ interface Recording {
 export function VoiceInput(props: Props) {
   const [state, setState] = useState<"idle" | VoicePreview["phase"]>("idle");
   const [seconds, setSeconds] = useState(0);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   const current = useRef<Recording | null>(null);
   const callbacks = useRef(props); callbacks.current = props;
   const cancel = () => {
@@ -86,14 +90,20 @@ export function VoiceInput(props: Props) {
       }, 250);
     } catch (error) {
       if (current.current !== recording) return;
-      cancel(); callbacks.current.onError?.(friendlyError(error));
+      cancel();
+      if (isMicrophonePermissionError(error)) setPermissionDenied(true);
+      else callbacks.current.onError?.(friendlyError(error));
     }
   };
 
+  const closePermissionDialog = () => {
+    setPermissionDenied(false);
+    trigger.current?.focus();
+  };
   const active = state !== "idle";
   const label = state === "recording" ? "结束录音" : state === "failed" ? "重试语音识别" : state === "idle" ? "语音输入" : state === "starting" ? "正在请求麦克风权限" : "正在校正转录";
   return <div className={`voice-input${active ? " active" : ""}`}>
-    <button type="button" className={`attach-btn voice-btn ${state}`} title={label} aria-label={label}
+    <button ref={trigger} type="button" className={`attach-btn voice-btn ${state}`} title={label} aria-label={label}
       aria-pressed={state === "recording"} aria-busy={state === "starting" || state === "transcribing"}
       disabled={props.disabled || state === "starting" || state === "transcribing"}
       onClick={() => { if (current.current) void finish(current.current); else void start(); }}>
@@ -102,6 +112,11 @@ export function VoiceInput(props: Props) {
     </button>
     {active && <><span className="voice-state">{state === "recording" ? `正在听 ${duration(seconds)}` : label}</span>
       <button type="button" className="attach-btn" aria-label="取消语音输入" title="取消语音输入" onClick={cancel}><X size={14} /></button></>}
+    {permissionDenied && <MicrophonePermissionDialog
+      disabled={props.disabled}
+      onClose={closePermissionDialog}
+      onRetry={() => { closePermissionDialog(); void start(); }}
+    />}
   </div>;
 }
 
@@ -112,7 +127,6 @@ function release(recording: Recording) {
 function duration(seconds: number) { return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; }
 function friendlyError(error: unknown): string {
   const name = error instanceof DOMException ? error.name : "";
-  if (name === "NotAllowedError" || name === "SecurityError") return "麦克风权限被拒绝，请在系统设置中允许 miniQ 使用麦克风";
   if (name === "NotFoundError") return "没有检测到麦克风设备";
   if (name === "NotReadableError") return "麦克风正被其他程序占用";
   const message = error instanceof Error ? error.message : String(error);
