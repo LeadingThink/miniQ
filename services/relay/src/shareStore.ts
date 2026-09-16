@@ -12,10 +12,23 @@ export class ShareError extends Error {
 export interface ShareMessage { role: "user" | "assistant"; content: string; createdAt: string }
 export interface ShareFile { id: string; name: string; size: number; sha256: string }
 export interface ShareInput { scope: string; title: string; expiresInDays: number; messages: ShareMessage[]; files: ShareFile[] }
+export interface ShareReport { reason: "sexual_content" | "violence" | "hate_or_harassment" | "illegal_activity" | "privacy" | "copyright" | "other"; detail: string }
 export interface ShareMeta {
   id: string; owner: string; scope: string; title: string; createdAt: string;
   expiresAt: string; published: boolean; messageCount: number; files: ShareFile[];
   fingerprint: string;
+}
+
+export function parseReport(raw: unknown): ShareReport {
+  const value = raw as Partial<ShareReport> | null;
+  const reasons = new Set<ShareReport["reason"]>(["sexual_content", "violence", "hate_or_harassment", "illegal_activity", "privacy", "copyright", "other"]);
+  if (!value || typeof value.reason !== "string" || !reasons.has(value.reason as ShareReport["reason"]) ||
+      (value.detail !== undefined && typeof value.detail !== "string"))
+    throw new ShareError(400, "请选择有效的举报原因");
+  const detail = (value.detail ?? "").trim();
+  if (detail.length > 1000 || (value.reason === "other" && !detail))
+    throw new ShareError(400, "其他原因需要填写说明，且不能超过 1000 个字符");
+  return { reason: value.reason as ShareReport["reason"], detail };
 }
 
 // Whitelist the public schema: tool payloads, model configuration and local paths
@@ -79,6 +92,8 @@ export class ShareStore {
 
   private async createSnapshot(id: string, owner: string, input: ShareInput): Promise<ShareMeta> {
     await mkdir(this.root, { recursive: true, mode: 0o700 });
+    if (await stat(join(this.root, `.reported-${id}`)).then(() => true, () => false))
+      throw new ShareError(409, "此分享已被举报下架，请检查内容后创建新的分享");
     const fingerprint = createHash("sha256").update(JSON.stringify(input)).digest("hex");
     try {
       const existing = await this.meta(id, owner);
@@ -163,6 +178,18 @@ export class ShareStore {
     await rm(tombstone, { recursive: true, force: true });
   }
 
+  async report(id: string, report: ShareReport) {
+    const meta = await this.meta(id);
+    const quarantine = join(this.root, `.reported-${id}`);
+    await rename(this.path(id, ""), quarantine);
+    await writeFile(join(quarantine, "report.json"), JSON.stringify({
+      id,
+      title: meta.title,
+      reportedAt: new Date().toISOString(),
+      ...report,
+    }), { mode: 0o600 });
+  }
+
   async cleanup() {
     const entries = await readdir(this.root).catch(() => []);
     let failed = false;
@@ -171,6 +198,10 @@ export class ShareStore {
         if (/^\.(draft|deleted)-[a-f0-9]{32}$/.test(id)) {
           const path = join(this.root, id);
           if ((await stat(path)).mtimeMs < Date.now() - 86400000)
+            await rm(path, { recursive: true, force: true });
+        } else if (/^\.reported-[a-f0-9]{32}$/.test(id)) {
+          const path = join(this.root, id);
+          if ((await stat(path)).mtimeMs < Date.now() - 30 * 86400000)
             await rm(path, { recursive: true, force: true });
         } else if (SHARE_ID.test(id)) {
           await this.exclusive(id, async () => {

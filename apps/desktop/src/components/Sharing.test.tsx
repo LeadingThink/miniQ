@@ -85,3 +85,24 @@ it("clears the previous page while loading the next page of a public share", asy
   await screen.findByText("第二页内容");
   expect(screen.getByText("第 2 页")).toBeTruthy();
 });
+
+it("reports a public share without credentials and removes its content immediately", async () => {
+  const page = { ...link, messages: [messages[0]], nextPage: null };
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify(page), { status: 200 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+  vi.stubGlobal("fetch", fetcher);
+  render(<SharedSessionPage id={id} />);
+  await screen.findByText("帮我做报告");
+
+  fireEvent.click(screen.getByText("举报或投诉此分享"));
+  fireEvent.click(screen.getByRole("button", { name: "提交并立即下架" }));
+
+  await screen.findByText("举报已提交");
+  expect(screen.queryByText("帮我做报告")).toBeNull();
+  expect(fetcher).toHaveBeenLastCalledWith(`/miniq-relay/shares/${id}/report`, expect.objectContaining({
+    method: "POST",
+    credentials: "omit",
+    body: JSON.stringify({ reason: "privacy", detail: "" }),
+  }));
+});

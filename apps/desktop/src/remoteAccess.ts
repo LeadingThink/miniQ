@@ -105,14 +105,11 @@ export async function storeRemoteCredentials(
 export async function clearRemoteCredentials(): Promise<void> {
   safeRemove(window.sessionStorage, STORAGE_KEY);
   safeRemove(window.localStorage, PERSIST_KEY);
+  safeRemove(window.localStorage, REMEMBER_KEY);
   if (Capacitor.isNativePlatform()) {
-    try {
-      const keys = await SecureStoragePlugin.keys();
-      if (keys.value.includes(NATIVE_STORAGE_KEY)) {
-        await SecureStoragePlugin.remove({ key: NATIVE_STORAGE_KEY });
-      }
-    } catch {
-      // The web session is already cleared even if native storage is unavailable.
+    const keys = await SecureStoragePlugin.keys();
+    if (keys.value.includes(NATIVE_STORAGE_KEY)) {
+      await SecureStoragePlugin.remove({ key: NATIVE_STORAGE_KEY });
     }
   }
 }

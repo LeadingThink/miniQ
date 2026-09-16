@@ -206,6 +206,7 @@ const purpose = {
   planReview: "计划核对",
   skillLearning: "技能提炼",
   sessionTitle: "会话标题",
+  shareModeration: "分享审核",
 };
 const amount = (value: number | null) =>
   value === null ? "未返回" : value.toLocaleString();

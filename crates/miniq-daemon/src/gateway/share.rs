@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{collections::HashSet, io::Read, time::Duration};
 
+mod moderation;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -129,10 +130,14 @@ pub(super) async fn create(state: &AppState, raw: Option<Value>) -> Result<Value
     }
     let (client, key, scope) = connection(state, &input.session_id)?;
     let state = state.clone();
+    let snapshot_state = state.clone();
+    let session_id = input.session_id.clone();
     let id = input.id.clone();
-    let snapshot = tokio::task::spawn_blocking(move || Snapshot::build(&state, &input, scope))
-        .await
-        .map_err(invalid)??;
+    let snapshot =
+        tokio::task::spawn_blocking(move || Snapshot::build(&snapshot_state, &input, scope))
+            .await
+            .map_err(invalid)??;
+    moderation::review(&state, &session_id, &snapshot).await?;
     publish(&client, &key, SHARE_API, &id, snapshot)
         .await
         .and_then(with_url)

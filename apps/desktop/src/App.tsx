@@ -6,6 +6,7 @@ import { SessionFileAccess } from "./sessionFileAccess";
 import { isRemoteBrowserEntry, loadRemoteCredentials } from "./remoteAccess";
 import { getAppearance, subscribeAppearance, storeTheme, type ThemeId } from "./theme";
 import { sharedSessionId } from "./sharing";
+import { hasMobilePrivacyConsent } from "./mobilePrivacy";
 const SharedSessionPage = lazy(() => import("./components/SharedSessionPage").then((module) => ({ default: module.SharedSessionPage })));
 
 export type { PendingApproval } from "./hooks/useSessionFeed";
@@ -34,7 +35,7 @@ function RemoteGate(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) => 
   useEffect(() => {
     let disposed = false;
     const settle = (credentials: unknown) => {
-      if (!disposed) setPhase(credentials ? "active" : "entry");
+      if (!disposed) setPhase(credentials && hasMobilePrivacyConsent() ? "active" : "entry");
     };
     void loadRemoteCredentials().then(settle, () => settle(null));
     return () => {

@@ -20,4 +20,19 @@ describe("SettingsPanel", () => {
     expect(html).toContain(`href="${ZAIWEN_API_PORTAL_URL}"`);
     expect(ZAIWEN_API_BASE_URL).toBe("https://oneapi.zaiwenai.com/v1");
   });
+
+  it("keeps privacy and support available after a mobile remote connection", () => {
+    const html = renderToStaticMarkup(
+      <SettingsPanel
+        client={{ mode: "remote" } as RpcClient}
+        theme="jade"
+        onThemeChange={() => undefined}
+        onClose={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('href="https://chat.zaiwenai.com/miniq/privacy"');
+    expect(html).toContain('href="https://chat.zaiwenai.com/miniq/support"');
+    expect(html).toContain("HTTPS 加密传输");
+  });
 });

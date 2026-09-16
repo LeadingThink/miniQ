@@ -2683,6 +2683,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "miniq-agent",
+ "miniq-docs",
  "miniq-local",
  "miniq-memory",
  "miniq-models",

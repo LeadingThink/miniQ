@@ -694,6 +694,25 @@
   margin-top: 4px;
 }
 
+.settings-policy-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.settings-policy-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.settings-policy-links a:hover {
+  text-decoration: underline;
+}
+
 /* Skills */
 .skills-panel {
   width: 580px;

@@ -84,6 +84,7 @@ pub enum ModelCallPurpose {
     PlanReview,
     SkillLearning,
     SessionTitle,
+    ShareModeration,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

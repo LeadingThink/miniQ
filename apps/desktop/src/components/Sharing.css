@@ -47,6 +47,13 @@
 .shared-pagination button, .shared-empty button { display: inline-flex; align-items: center; gap: 4px; }
 .shared-footer { text-align: center; font-size: 12px; padding: 28px 0; color: var(--text-muted); }
 .shared-empty { padding: 70px 0; text-align: center; }
+.shared-report { margin: 28px 0; padding: 14px; border: 1px solid var(--border); border-radius: 8px; }
+.shared-report summary { display: flex; align-items: center; gap: 7px; color: var(--text-muted); cursor: pointer; font-size: 12px; }
+.shared-report form { display: grid; gap: 12px; margin-top: 14px; }
+.shared-report label { display: grid; gap: 6px; color: var(--text-muted); font-size: 12px; }
+.shared-report select, .shared-report textarea { width: 100%; padding: 8px 10px; color: var(--text); background: var(--bg-panel, var(--bg)); border: 1px solid var(--border); border-radius: 7px; font: inherit; }
+.shared-report form > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.shared-report a { color: var(--accent); font-size: 12px; }
 .shared-preview { width: 48%; min-width: 0; border-left: 1px solid var(--border); display: flex; flex-direction: column; background: var(--bg); }
 .shared-preview > header { padding: 14px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); }
 .shared-preview > header strong { flex: 1; overflow-wrap: anywhere; }

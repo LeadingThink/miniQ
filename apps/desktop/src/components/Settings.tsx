@@ -9,6 +9,7 @@ import { ComputerSettings } from "./ComputerSettings";
 import { MobileUpdateCheck } from "./MobileUpdateCheck";
 import { ProviderModelField } from "./ProviderModelField";
 import { clearRemoteCredentials, DEFAULT_RELAY_URL, loadRemoteCredentials, storeRemoteCredentials } from "../remoteAccess";
+import { MINIQ_PRIVACY_URL, MINIQ_SUPPORT_URL } from "../mobilePrivacy";
 
 export const ZAIWEN_API_PORTAL_URL = "https://platform.zaiwenai.com/";
 export const ZAIWEN_API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
@@ -63,6 +64,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const [remoteKeyDraft, setRemoteKeyDraft] = useState("");
   const [remoteKeyStatus, setRemoteKeyStatus] = useState<string | null>(null);
   const [switchingKey, setSwitchingKey] = useState(false);
+  const [exitingRemote, setExitingRemote] = useState(false);
   const panelRef = useRef<HTMLFormElement>(null);
   const onCloseRef = useRef(props.onClose);
   onCloseRef.current = props.onClose;
@@ -199,6 +201,19 @@ export function SettingsPanel(props: SettingsPanelProps) {
     }
   };
 
+  const exitRemote = async () => {
+    if (exitingRemote) return;
+    setExitingRemote(true);
+    setRemoteKeyStatus(null);
+    try {
+      await clearRemoteCredentials();
+      window.location.reload();
+    } catch (error) {
+      setRemoteKeyStatus(`退出失败，连接信息未能从系统安全存储移除：${errorMessage(error)}`);
+      setExitingRemote(false);
+    }
+  };
+
   const openZaiwenApiPortal = async () => {
     setStatus(null);
     try {
@@ -312,6 +327,13 @@ export function SettingsPanel(props: SettingsPanelProps) {
               <p className="settings-section-description">
                 保存后会立即用新 Key 重新建立加密连接，无需退出应用重新输入。
               </p>
+              <p className="settings-section-description">
+                API Key 与 AI 请求通过 HTTPS 加密传输；远程桌面业务内容另使用 AES-256-GCM 端到端加密，relay 只转发密文。
+              </p>
+              <div className="settings-policy-links">
+                <a href={MINIQ_PRIVACY_URL} target="_blank" rel="noreferrer"><ExternalLink size={13} />隐私政策</a>
+                <a href={MINIQ_SUPPORT_URL} target="_blank" rel="noreferrer"><ExternalLink size={13} />技术支持</a>
+              </div>
               {remoteKeyStatus && <p role="status">{remoteKeyStatus}</p>}
               <MobileUpdateCheck />
               <div className="settings-actions">
@@ -322,13 +344,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 <button
                   type="button"
                   className="secondary"
-                  disabled={switchingKey}
-                  onClick={() => {
-                    void clearRemoteCredentials().finally(() => window.location.reload());
-                  }}
+                  disabled={switchingKey || exitingRemote}
+                  onClick={() => void exitRemote()}
                 >
                   <WifiOff size={14} />
-                  退出远程桌面
+                  {exitingRemote ? "正在移除…" : "退出远程桌面"}
                 </button>
               </div>
             </section>

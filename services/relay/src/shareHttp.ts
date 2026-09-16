@@ -4,7 +4,7 @@ import { rename, rm } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { MAX_FILE_BYTES, MAX_SNAPSHOT_BYTES, parseShare, publicMeta, SHARE_ID, ShareError, ShareStore, shareOwner } from "./shareStore.js";
+import { MAX_FILE_BYTES, MAX_SNAPSHOT_BYTES, parseReport, parseShare, publicMeta, SHARE_ID, ShareError, ShareStore, shareOwner } from "./shareStore.js";
 
 export type ShareAuth = (key: string) => Promise<boolean>;
 
@@ -29,6 +29,7 @@ export function oneApiShareAuth(): ShareAuth {
 
 export class ShareHttp {
   private readonly rate = new Map<string, { until: number; count: number }>();
+  private readonly reportRate = new Map<string, { until: number; count: number }>();
   constructor(readonly store: ShareStore, private readonly authenticate: ShareAuth) {}
 
   async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -48,6 +49,12 @@ export class ShareHttp {
     const url = new URL(request.url!, "http://relay.local");
     const parts = url.pathname.split("/").filter(Boolean);
     const id = parts[1];
+    if (request.method === "POST" && id && SHARE_ID.test(id) && parts.length === 3 && parts[2] === "report") {
+      this.consumeReport(request.socket.remoteAddress ?? "unknown");
+      const report = parseReport(await readJson(request, 8 * 1024));
+      await this.store.exclusive(id, () => this.store.report(id, report));
+      return sendJson(response, 200, { ok: true });
+    }
     if (request.method === "GET" && id && id !== "manage") {
       if (parts.length === 2) {
         const page = url.searchParams.get("page") ?? "0";
@@ -71,7 +78,7 @@ export class ShareHttp {
     if (!id || !SHARE_ID.test(id)) throw new ShareError(404, "分享不存在或已失效");
     await this.store.exclusive(id, async () => {
       if (request.method === "PUT" && parts.length === 2) {
-        const body = await readJson(request);
+        const body = await readJson(request, MAX_SNAPSHOT_BYTES);
         return sendJson(response, 200, publicMeta(await this.store.create(id, owner, parseShare(body))));
       }
       if (request.method === "PUT" && parts.length === 4 && parts[2] === "files") {
@@ -98,6 +105,16 @@ export class ShareHttp {
       this.rate.set(owner, { until: now + 60000, count: 0 });
     }
     if (++this.rate.get(owner)!.count > 120) throw new ShareError(429, "分享请求过多，请稍后重试");
+  }
+
+  private consumeReport(source: string) {
+    const now = Date.now();
+    for (const [key, value] of this.reportRate) if (value.until <= now) this.reportRate.delete(key);
+    if (!this.reportRate.has(source)) {
+      if (this.reportRate.size >= 2000) throw new ShareError(429, "举报请求过多，请稍后重试");
+      this.reportRate.set(source, { until: now + 60000, count: 0 });
+    }
+    if (++this.reportRate.get(source)!.count > 30) throw new ShareError(429, "举报请求过多，请稍后重试");
   }
 
   private async upload(id: string, fileId: string, owner: string, request: IncomingMessage) {
@@ -158,11 +175,11 @@ function publicFileType(name: string): string {
   return types[name.split(".").pop()!.toLowerCase()] ?? "application/octet-stream";
 }
 
-async function readJson(request: IncomingMessage): Promise<unknown> {
+async function readJson(request: IncomingMessage, limit: number): Promise<unknown> {
   const chunks: Buffer[] = []; let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > MAX_SNAPSHOT_BYTES) throw new ShareError(413, "正文超过 16 MB，请选择部分消息分享");
+    if (size > limit) throw new ShareError(413, limit === MAX_SNAPSHOT_BYTES ? "正文超过 16 MB，请选择部分消息分享" : "请求内容过大");
     chunks.push(chunk);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }

@@ -34,3 +34,20 @@ export async function loadShare(id: string, page: number, signal: AbortSignal): 
       (value.nextPage !== null && value.nextPage !== page + 1)) throw new Error("分享内容格式无效。");
   return value;
 }
+
+export type ShareReportReason = "sexual_content" | "violence" | "hate_or_harassment" | "illegal_activity" | "privacy" | "copyright" | "other";
+
+export async function reportShare(id: string, reason: ShareReportReason, detail: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`/miniq-relay/shares/${encodeURIComponent(id)}/report`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ reason, detail }),
+    credentials: "omit",
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) {
+    const value = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(value?.error ?? `举报失败（${response.status}）`);
+  }
+}

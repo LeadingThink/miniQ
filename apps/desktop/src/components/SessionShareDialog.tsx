@@ -121,12 +121,12 @@ function ShareDialog({ client, sessionId, title: initialTitle, artifacts, onClos
         {artifacts.map((artifact) => <label key={artifact.id}><input type="checkbox" checked={files.has(artifact.id)} onChange={() => toggle(artifact.id, files, setFiles)} />{artifact.title || artifact.path.split(/[\\/]/).pop()}</label>)}
         <small>所选文件将上传完整副本，可由访客预览或下载。单个上限 256 MB，总计 512 MB。</small></div>}
     </fieldset>
-    <p className="share-note">仅分享勾选的正文和文件。请在展开预览中确认内容；工具日志、系统提示和其他本地文件不会公开。</p>
+    <p className="share-note">仅分享勾选的正文和文件。生成链接前会使用你当前的 OneAPI Key 调用审核模型；未通过或无法完整审核的内容不会发布。访客举报后链接会立即下架。</p>
     {error && <p role="alert">{error}</p>}
     {result && <div className="share-result" role="status"><strong>链接已生成</strong><input readOnly aria-label="分享链接" value={result.url} onFocus={(event) => event.target.select()} />
       <CopyButton content={result.url} label="复制分享链接" /><button type="button" onClick={() => void openExternalUrl(new URL(result.url)).catch((cause) => setError(errorMessage(cause)))}>打开分享</button></div>}
-    <footer><span>{publishing ? "正在处理，请勿关闭。大文件上传可能需要几分钟。" : `${selected.size} 条消息 · ${files.size} 个文件`}</span>
-      <button type="button" className="primary" disabled={publishing || loading || !selected.size || !title.trim()} onClick={() => void publish()}>{publishing ? "处理中…" : "生成分享链接"}</button></footer>
+    <footer><span>{publishing ? "正在审核并发布，请勿关闭。大文件上传可能需要几分钟。" : `${selected.size} 条消息 · ${files.size} 个文件`}</span>
+      <button type="button" className="primary" disabled={publishing || loading || !selected.size || !title.trim()} onClick={() => void publish()}>{publishing ? "正在审核…" : "生成分享链接"}</button></footer>
     <section className="share-existing"><h3>此会话的分享链接</h3><button type="button" disabled={publishing} onClick={() => void refreshLinks().catch((cause) => setError(errorMessage(cause)))}>刷新链接</button>
       {links.map((link) => <div key={link.id}><span>{link.title} · {link.published ? `${new Date(link.expiresAt).toLocaleDateString()} 到期` : "上传未完成"}</span>
         {link.published && <CopyButton content={link.url} label="复制已有分享链接" />}

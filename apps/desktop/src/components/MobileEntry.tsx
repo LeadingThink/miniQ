@@ -1,10 +1,11 @@
-import { ArrowLeft, Bot, ImagePlus, Laptop, Send, Square, Wifi, X } from "lucide-react";
+import { ArrowLeft, Bot, ExternalLink, ImagePlus, Laptop, LifeBuoy, Send, ShieldCheck, Square, Wifi, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import { isNativeMobileApp } from "../mobileRuntime";
 import { DEFAULT_RELAY_URL, isRememberEnabled, loadRemoteCredentials, readRemoteCredentials, setRememberEnabled, storeRemoteCredentials } from "../remoteAccess";
 import { MobileUpdateCheck } from "./MobileUpdateCheck";
 import { Md } from "./Md";
+import { clearMobilePrivacyConsent, hasMobilePrivacyConsent, MINIQ_PRIVACY_URL, MINIQ_SUPPORT_URL, recordMobilePrivacyConsent } from "../mobilePrivacy";
 
 const API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
 const CHAT_STORAGE_KEY = "miniq.mobile.chat.v1";
@@ -27,6 +28,7 @@ export function MobileEntry(props: { onRemote: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [remember, setRemember] = useState(() => isRememberEnabled());
   const [loadingCredentials, setLoadingCredentials] = useState(isNativeMobileApp());
+  const [privacyAccepted, setPrivacyAccepted] = useState(hasMobilePrivacyConsent);
 
   useEffect(() => {
     if (!isNativeMobileApp()) return;
@@ -66,7 +68,12 @@ export function MobileEntry(props: { onRemote: () => void }) {
       setError("请输入在问 API Key");
       return false;
     }
+    if (!privacyAccepted) {
+      setError("请先阅读并同意《miniQ 隐私政策》");
+      return false;
+    }
     try {
+      recordMobilePrivacyConsent();
       await storeRemoteCredentials(
         { apiKey: key, relayUrl: DEFAULT_RELAY_URL, deviceName: deviceName.trim() || defaultDeviceName() },
         { remember },
@@ -112,6 +119,21 @@ export function MobileEntry(props: { onRemote: () => void }) {
           </label>
         )}
 
+        <div className="mobile-entry-consent">
+          <input
+            id="mobile-privacy-consent"
+            type="checkbox"
+            checked={privacyAccepted}
+            onChange={(event) => {
+              setPrivacyAccepted(event.target.checked);
+              if (!event.target.checked) clearMobilePrivacyConsent();
+              setError(null);
+            }}
+          />
+          <label htmlFor="mobile-privacy-consent">我已阅读并同意</label>
+          <a href={MINIQ_PRIVACY_URL} target="_blank" rel="noreferrer">《miniQ 隐私政策》<ExternalLink size={12} /></a>
+        </div>
+
         {section === "remote" && (
           <label className="mobile-entry-field">
             <span>这台设备的名称</span>
@@ -122,7 +144,7 @@ export function MobileEntry(props: { onRemote: () => void }) {
 
         {section === "home" ? (
           <div className="mobile-entry-actions">
-            <button type="button" className="mobile-mode-card primary" disabled={loadingCredentials} onClick={() => { void persist().then((ready) => { if (ready) setSection("chat"); }); }}>
+            <button type="button" className="mobile-mode-card primary" disabled={loadingCredentials || !privacyAccepted} onClick={() => { void persist().then((ready) => { if (ready) setSection("chat"); }); }}>
               <span className="mobile-mode-icon"><Bot size={21} /></span>
               <span><strong>移动问答</strong><small>桌面不在线也能使用，支持流式回答和历史保留</small></span>
             </button>
@@ -134,12 +156,16 @@ export function MobileEntry(props: { onRemote: () => void }) {
         ) : (
           <div className="mobile-entry-footer">
             <button type="button" className="secondary" onClick={() => { setError(null); setSection("home"); }}><ArrowLeft size={15} />返回</button>
-            <button type="button" onClick={() => { void persist().then((ready) => { if (ready) props.onRemote(); }); }}><Wifi size={15} />连接桌面端</button>
-          </div>
+              <button type="button" disabled={!privacyAccepted} onClick={() => { void persist().then((ready) => { if (ready) props.onRemote(); }); }}><Wifi size={15} />连接桌面端</button>
+            </div>
         )}
       </section>
       <MobileUpdateCheck />
-      <p className="mobile-entry-security">会话内容使用 AES-256-GCM 端到端加密，服务器只负责转发。</p>
+      <div className="mobile-entry-links">
+        <a href={MINIQ_PRIVACY_URL} target="_blank" rel="noreferrer"><ShieldCheck size={13} />隐私政策</a>
+        <a href={MINIQ_SUPPORT_URL} target="_blank" rel="noreferrer"><LifeBuoy size={13} />技术支持</a>
+      </div>
+      <p className="mobile-entry-security">API Key 与 AI 请求通过 HTTPS 加密传输，并由所选模型服务处理。远程桌面内容另使用 AES-256-GCM 端到端加密，relay 只转发密文。</p>
     </main>
   );
 }

@@ -77,3 +77,16 @@ at startup and hourly. Limits fail explicitly: 16 MiB message JSON, 30 files,
 256 MiB/file, 512 MiB/share, 100 active snapshots and 2 GiB files per author.
 Only selected user/assistant text and selected files are published; tool payloads,
 system prompts, session credentials, and subsequent messages are excluded.
+
+Before upload, the desktop uses the author's configured OneAPI key to run a
+fail-closed AI review of every selected message and each supported attachment.
+Text and extractable Office/PDF content are reviewed in complete batches;
+supported static images are reviewed with vision. Content that is blocked,
+cannot be reviewed, times out, or returns an invalid decision is not published.
+
+Public readers can POST a reason and optional detail to `/shares/:id/report`.
+The first valid report atomically moves the snapshot out of the public
+namespace, so pages and files immediately return 404. The quarantined snapshot
+and `report.json` are retained for 30 days for complaint handling, then cleanup
+removes them. The report endpoint is bounded and rate-limited; it never asks a
+reporter to submit an API key.

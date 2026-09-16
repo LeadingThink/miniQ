@@ -160,3 +160,53 @@ fn idempotent_snapshot_and_only_oneapi_credentials_are_used() {
     assert!(!valid_id("../secret"));
     assert!(!valid_id(&"A".repeat(32)));
 }
+
+#[tokio::test]
+async fn selected_share_content_is_reviewed_with_the_authors_provider_before_upload() {
+    let (mut state, _dir, session, message) = setup();
+    let provider = Arc::new(miniq_models::mock::MockProvider::text("ALLOW"));
+    state.provider_override = Some(provider.clone());
+    state.settings.lock().unwrap().provider = Some(miniq_models::ProviderConfig {
+        base_url: "https://oneapi.zaiwenai.com/v1".into(),
+        api_key: "test-owner-key".into(),
+        model: "original-model".into(),
+        api_protocol: Default::default(),
+        reasoning_effort: None,
+    });
+    let snapshot = Snapshot::build(&state, &input(&session, &message), "scope".into()).unwrap();
+
+    moderation::review(&state, &session, &snapshot)
+        .await
+        .unwrap();
+
+    let requests = provider.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].trace.purpose,
+        miniq_protocol::ModelCallPurpose::ShareModeration
+    );
+    assert!(requests[0].tools.is_empty());
+    assert!(requests[0].messages[1].content.contains("Delivered result"));
+}
+
+#[tokio::test]
+async fn blocked_share_content_never_passes_moderation() {
+    let (mut state, _dir, session, message) = setup();
+    state.provider_override = Some(Arc::new(miniq_models::mock::MockProvider::text(
+        "BLOCK: 包含公开凭证",
+    )));
+    state.settings.lock().unwrap().provider = Some(miniq_models::ProviderConfig {
+        base_url: "https://oneapi.zaiwenai.com/v1".into(),
+        api_key: "test-owner-key".into(),
+        model: "original-model".into(),
+        api_protocol: Default::default(),
+        reasoning_effort: None,
+    });
+    let snapshot = Snapshot::build(&state, &input(&session, &message), "scope".into()).unwrap();
+
+    let error = moderation::review(&state, &session, &snapshot)
+        .await
+        .unwrap_err();
+
+    assert!(error.message.contains("未通过公开分享审核"));
+}

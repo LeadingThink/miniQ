@@ -67,6 +67,40 @@ describe("public session shares", () => {
     expect((await fetch(`${base}/${id}`)).status).toBe(404);
   });
 
+  it("takes a reported share and its files offline immediately without requiring a key", async () => {
+    const { call, base, root } = await start();
+    const bytes = Buffer.from("reported-file");
+    const data = { ...input(), files: [{ id: fileId, name: "report.txt", size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") }] };
+    await call(`/${id}`, "PUT", data);
+    await fetch(`${base}/${id}/files/${fileId}`, { method: "PUT", headers: { authorization: "Bearer test-owner-key" }, body: bytes });
+    await call(`/${id}/publish`, "POST");
+
+    const report = await fetch(`${base}/${id}/report`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "privacy", detail: "包含不应公开的信息" }),
+    });
+
+    expect(report.status).toBe(200);
+    expect((await fetch(`${base}/${id}`)).status).toBe(404);
+    expect((await fetch(`${base}/${id}/files/${fileId}`)).status).toBe(404);
+    const saved = JSON.parse(await readFile(join(root, `.reported-${id}`, "report.json"), "utf8"));
+    expect(saved).toMatchObject({ id, reason: "privacy", detail: "包含不应公开的信息" });
+    expect((await call(`/${id}`, "PUT", data)).status).toBe(409);
+  });
+
+  it("validates public report reasons before taking a share offline", async () => {
+    const { call, base } = await start();
+    await call(`/${id}`, "PUT", input());
+    await call(`/${id}/publish`, "POST");
+    const report = (body: unknown) => fetch(`${base}/${id}/report`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    expect((await report({ reason: "unknown" })).status).toBe(400);
+    expect((await report({ reason: "other", detail: "" })).status).toBe(400);
+    expect((await fetch(`${base}/${id}`)).status).toBe(200);
+  });
+
   it("verifies file bytes before publication, supports video ranges, and never permits changing published files", async () => {
     const { call, base } = await start(); const bytes = Buffer.from("test-video-content");
     const data = { ...input(), files: [{ id: fileId, name: "演示.mp4", size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") }] };
