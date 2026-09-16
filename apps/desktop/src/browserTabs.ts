@@ -14,7 +14,11 @@ export interface BrowserTabsState {
 export const EMPTY_BROWSER_TABS: BrowserTabsState = { tabs: [], activeId: null, open: false };
 
 export function openBrowserTab(state: BrowserTabsState, url: string): BrowserTabsState {
-  const tab = { id: crypto.randomUUID(), url };
+  const tab = {
+    id: crypto.randomUUID(),
+    url,
+    viewId: crypto.randomUUID().replaceAll("-", ""),
+  };
   return { tabs: [...state.tabs, tab], activeId: tab.id, open: true };
 }
 
