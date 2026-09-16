@@ -7,12 +7,12 @@ import type { ThemeId } from "../theme";
 import { ThemePicker } from "./ThemePicker";
 import { ComputerSettings } from "./ComputerSettings";
 import { MobileUpdateCheck } from "./MobileUpdateCheck";
-import { ProviderModelField } from "./ProviderModelField";
 import { clearRemoteCredentials, DEFAULT_RELAY_URL, loadRemoteCredentials, storeRemoteCredentials } from "../remoteAccess";
 import { MINIQ_PRIVACY_URL, MINIQ_SUPPORT_URL } from "../mobilePrivacy";
 
 export const ZAIWEN_API_PORTAL_URL = "https://platform.zaiwenai.com/";
 export const ZAIWEN_API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
+export const DEFAULT_PROVIDER_MODEL = "gpt-5.6-sol";
 
 interface ProviderView {
   baseUrl: string;
@@ -44,21 +44,20 @@ interface SettingsPanelProps {
   theme: ThemeId;
   onThemeChange: (theme: ThemeId) => void;
   onClose: () => void;
+  onProviderConfigured?: () => void;
 }
 
 export function SettingsPanel(props: SettingsPanelProps) {
-  const settingsTabs = ["appearance", "services", "computer"] as const;
-  const [tab, setTab] = useState<(typeof settingsTabs)[number]>("appearance");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [model, setModel] = useState("");
-  const [apiProtocol, setApiProtocol] = useState<ApiProtocol>("auto");
+  const settingsTabs = ["services", "appearance", "computer"] as const;
+  const [tab, setTab] = useState<(typeof settingsTabs)[number]>("services");
+  const [baseUrl, setBaseUrl] = useState(ZAIWEN_API_BASE_URL);
+  const [defaultModel, setDefaultModel] = useState(DEFAULT_PROVIDER_MODEL);
   const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [remoteEnabled, setRemoteEnabled] = useState(false);
-  const [relayUrl, setRelayUrl] = useState(DEFAULT_RELAY_URL);
   const [deviceName, setDeviceName] = useState("我的电脑");
   const [remoteStatus, setRemoteStatus] = useState<SettingsView["remoteStatus"] | null>(null);
   const [remoteKeyDraft, setRemoteKeyDraft] = useState("");
@@ -75,13 +74,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
       .then((res) => {
         if (res.provider) {
           setBaseUrl(res.provider.baseUrl);
-          setModel(res.provider.model);
-          setApiProtocol(res.provider.apiProtocol ?? "auto");
+          setDefaultModel(res.provider.model || DEFAULT_PROVIDER_MODEL);
           setHasKey(res.provider.hasApiKey);
         }
         if (res.remoteAccess) {
           setRemoteEnabled(res.remoteAccess.enabled);
-          setRelayUrl(res.remoteAccess.relayUrl);
           setDeviceName(res.remoteAccess.deviceName);
         }
         setRemoteStatus(res.remoteStatus ?? null);
@@ -150,18 +147,18 @@ export function SettingsPanel(props: SettingsPanelProps) {
     setSaving(true);
     try {
       const params: Record<string, unknown> = {};
-      if (baseUrl.trim() && model.trim()) {
+      if (baseUrl.trim()) {
         const provider: Record<string, unknown> = {
           baseUrl: baseUrl.trim(),
-          model: model.trim(),
-          apiProtocol,
+          model: defaultModel.trim() || DEFAULT_PROVIDER_MODEL,
+          apiProtocol: "auto",
         };
-        if (apiKey) provider.apiKey = apiKey;
+        if (apiKey.trim()) provider.apiKey = apiKey.trim();
         params.provider = provider;
       }
       params.remoteAccess = {
         enabled: remoteEnabled,
-        relayUrl: relayUrl.trim(),
+        relayUrl: DEFAULT_RELAY_URL,
         deviceName: deviceName.trim(),
       };
       const res = await props.client.call<SettingsView>("settings.update", params);
@@ -169,6 +166,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
       setApiKey("");
       setRemoteStatus(res.remoteStatus ?? null);
       setStatus("已保存");
+      props.onProviderConfigured?.();
       props.onClose();
     } catch (e) {
       setStatus(`保存失败：${errorMessage(e)}`);
@@ -186,7 +184,6 @@ export function SettingsPanel(props: SettingsPanelProps) {
       const current = await loadRemoteCredentials();
       await storeRemoteCredentials({
         apiKey: key,
-        relayUrl: current?.relayUrl ?? DEFAULT_RELAY_URL,
         deviceName: current?.deviceName ?? deviceName.trim() ?? "",
       });
       setRemoteKeyDraft("");
@@ -356,51 +353,26 @@ export function SettingsPanel(props: SettingsPanelProps) {
             <>
               <section className="settings-section provider-settings">
                 <div>
-                  <div className="settings-section-title">模型服务</div>
-                  <p className="settings-section-description">支持 OpenAI Chat、Responses 与 Anthropic Messages</p>
+                  <div className="settings-section-title">
+                    <KeyRound size={15} />
+                    <span>连接在问</span>
+                  </div>
+                  <p className="settings-section-description">填写 API Key 后即可开始使用，模型和接口协议会自动适配。</p>
                 </div>
-                <label htmlFor="provider-base-url">
-                  Base URL
+                <label htmlFor="provider-api-key">
+                  在问 API Key {hasKey && <span className="badge">已保存</span>}
                   <input
-                    id="provider-base-url"
-                    value={baseUrl}
-                    disabled={loading || saving}
-                    inputMode="url"
-                    spellCheck={false}
-                    placeholder="https://api.openai.com/v1"
-                    onChange={(event) => {
-                      setBaseUrl(event.target.value);
-                      setStatus(null);
-                    }}
-                  />
-                </label>
-                <label>
-                  Model
-                  <ProviderModelField client={props.client} baseUrl={baseUrl} apiKey={apiKey} model={model} disabled={loading || saving} onChange={setModel} onStatus={setStatus} />
-                </label>
-                <label>
-                  API 协议
-                  <select
-                    value={apiProtocol}
-                    disabled={loading || saving}
-                    onChange={(event) => setApiProtocol(event.target.value as ApiProtocol)}
-                  >
-                    <option value="auto">自动识别</option>
-                    <option value="responses">OpenAI Responses</option>
-                    <option value="anthropic_messages">Anthropic Messages</option>
-                    <option value="chat_completions">OpenAI Chat Completions</option>
-                  </select>
-                </label>
-                <label>
-                  API key {hasKey && <span className="badge">已保存</span>}
-                  <input
+                    id="provider-api-key"
                     type="password"
                     autoComplete="off"
                     spellCheck={false}
                     value={apiKey}
                     disabled={loading || saving}
-                    placeholder={hasKey ? "留空以保留当前密钥" : "sk-..."}
-                    onChange={(event) => setApiKey(event.target.value)}
+                    placeholder={hasKey ? "已连接；留空可保留当前 Key" : "sk-..."}
+                    onChange={(event) => {
+                      setApiKey(event.target.value);
+                      setStatus(null);
+                    }}
                   />
                 </label>
                 <div className="provider-purchase">
@@ -409,8 +381,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
                       <KeyRound size={16} />
                     </span>
                     <div>
-                      <strong>需要 API Key？</strong>
-                      <p>前往在问商用 API 获取 Key，购买后即可用于 miniQ。</p>
+                      <strong>还没有 API Key？</strong>
+                      <p>前往在问商用 API 获取，购买后可直接用于 miniQ。</p>
                     </div>
                   </div>
                   <div className="provider-purchase-actions">
@@ -426,20 +398,24 @@ export function SettingsPanel(props: SettingsPanelProps) {
                       获取在问 API Key
                       <ExternalLink size={13} />
                     </a>
-                    <button
-                      type="button"
-                      className="secondary provider-base-url-button"
-                      onClick={() => {
-                        setBaseUrl(ZAIWEN_API_BASE_URL);
-                        setApiProtocol("auto");
-                        setStatus("已填入在问 API 地址，请继续填写模型名称和 API Key");
-                      }}
-                    >
-                      <Server size={13} />
-                      填入接口地址
-                    </button>
                   </div>
                 </div>
+                <label htmlFor="provider-base-url">
+                  服务地址
+                  <input
+                    id="provider-base-url"
+                    value={baseUrl}
+                    disabled={loading || saving}
+                    inputMode="url"
+                    spellCheck={false}
+                    placeholder={ZAIWEN_API_BASE_URL}
+                    onChange={(event) => {
+                      setBaseUrl(event.target.value);
+                      setStatus(null);
+                    }}
+                  />
+                  <small>默认使用在问服务，一般无需修改。</small>
+                </label>
               </section>
               <section className="settings-section provider-settings">
                 <div>
@@ -475,16 +451,6 @@ export function SettingsPanel(props: SettingsPanelProps) {
                         }}
                       />
                     </label>
-                    <label>
-                      Relay URL
-                      <input
-                        value={relayUrl}
-                        inputMode="url"
-                        spellCheck={false}
-                        disabled={loading || saving}
-                        onChange={(event) => setRelayUrl(event.target.value)}
-                      />
-                    </label>
                     {remoteStatus && (
                       <div className={`remote-access-summary ${remoteStatus.state === "connected" ? "connected" : ""}`}>
                         {remoteStatus.state === "connected" ? <Wifi size={17} /> : <WifiOff size={17} />}
@@ -505,7 +471,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
           )}
           {(loading || status) && (
             <div className="settings-status" role="status" aria-live="polite">
-              {loading ? "正在读取模型设置..." : status}
+              {loading ? "正在读取设置..." : status}
             </div>
           )}
         </div>
@@ -513,9 +479,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
           {tab === "services" && props.client.mode === "local" && (
             <button
               type="submit"
-              disabled={loading || saving || !baseUrl.trim() || !model.trim() || !relayUrl.trim() || !deviceName.trim()}
+              disabled={loading || saving || !baseUrl.trim() || (!hasKey && !apiKey.trim()) || !deviceName.trim()}
             >
-              {saving ? "正在保存..." : "保存模型设置"}
+              {saving ? "正在保存..." : "保存并开始使用"}
             </button>
           )}
           <button type="button" className="secondary" onClick={props.onClose}>

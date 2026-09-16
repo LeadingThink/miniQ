@@ -40,7 +40,7 @@ it("opens the bounded catalog at the current model and allows switching", async 
     ready: true,
     pending: false,
     error: null,
-    update: vi.fn(),
+    update: vi.fn().mockResolvedValue(undefined),
     reload: vi.fn(),
   } as unknown as ReturnType<typeof useSessionModel>;
 
@@ -62,6 +62,11 @@ it("opens the bounded catalog at the current model and allows switching", async 
 
   fireEvent.click(screen.getByRole("option", { name: "claude-sonnet" }));
   expect((screen.getByRole("textbox", { name: "模型 ID" }) as HTMLInputElement).value).toBe("claude-sonnet");
+  expect(screen.queryByText("API 协议")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "应用" }));
+  await waitFor(() => expect(model.update).toHaveBeenCalledWith({
+    model: "claude-sonnet", apiProtocol: "auto", reasoningEffort: null,
+  }));
 });
 
 it("filters the model catalog as the user types", async () => {

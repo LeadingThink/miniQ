@@ -2,7 +2,7 @@ import { ArrowLeft, Bot, ExternalLink, ImagePlus, Laptop, LifeBuoy, Send, Shield
 import { useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import { isNativeMobileApp } from "../mobileRuntime";
-import { DEFAULT_RELAY_URL, isRememberEnabled, loadRemoteCredentials, readRemoteCredentials, setRememberEnabled, storeRemoteCredentials } from "../remoteAccess";
+import { isRememberEnabled, loadRemoteCredentials, readRemoteCredentials, setRememberEnabled, storeRemoteCredentials } from "../remoteAccess";
 import { MobileUpdateCheck } from "./MobileUpdateCheck";
 import { Md } from "./Md";
 import { clearMobilePrivacyConsent, hasMobilePrivacyConsent, MINIQ_PRIVACY_URL, MINIQ_SUPPORT_URL, recordMobilePrivacyConsent } from "../mobilePrivacy";
@@ -75,7 +75,7 @@ export function MobileEntry(props: { onRemote: () => void }) {
     try {
       recordMobilePrivacyConsent();
       await storeRemoteCredentials(
-        { apiKey: key, relayUrl: DEFAULT_RELAY_URL, deviceName: deviceName.trim() || defaultDeviceName() },
+        { apiKey: key, deviceName: deviceName.trim() || defaultDeviceName() },
         { remember },
       );
       setError(null);

@@ -2,10 +2,8 @@ import { Check, ChevronDown, Cpu, RefreshCw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   EFFORT_LABELS,
-  PROTOCOL_LABELS,
   DEFAULT_MODEL_SETTINGS,
   filterModelIds,
-  type ApiProtocol,
   type ModelDescription,
   type ReasoningEffort,
 } from "../modelSelection";
@@ -26,7 +24,6 @@ export function SessionModelControls({
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
-  const [protocol, setProtocol] = useState<ApiProtocol>("auto");
   const [description, setDescription] = useState<ModelDescription | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -131,7 +128,6 @@ export function SessionModelControls({
           setOpen(!open);
           setModelListOpen(false);
           setQuery("");
-          setProtocol(model.settings.apiProtocol);
         }}
       >
         <Cpu size={14} />
@@ -150,6 +146,7 @@ export function SessionModelControls({
           void model
             .update({
               ...model.settings,
+              apiProtocol: "auto",
               reasoningEffort: (event.target.value as ReasoningEffort) || null,
             })
             .catch(() => {})
@@ -190,7 +187,7 @@ export function SessionModelControls({
             void model
               .update({
                 model: query.trim() || null,
-                apiProtocol: protocol,
+                apiProtocol: "auto",
                 reasoningEffort: null,
               })
               .then(() => setOpen(false))
@@ -288,21 +285,6 @@ export function SessionModelControls({
               />
             )}
           </label>
-          <label>
-            API 协议
-            <select
-              value={protocol}
-              onChange={(event) =>
-                setProtocol(event.target.value as ApiProtocol)
-              }
-            >
-              {Object.entries(PROTOCOL_LABELS).map(([id, label]) => (
-                <option key={id} value={id}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
           {loading && <span role="status">正在读取模型列表</span>}
           {catalogError && (
             <div role="alert">
@@ -320,8 +302,6 @@ export function SessionModelControls({
           )}
           {description && (
             <dl className="model-capabilities">
-              <dt>当前协议</dt>
-              <dd>{PROTOCOL_LABELS[description.apiProtocol]}</dd>
               <dt>上下文上限</dt>
               <dd>
                 {description.maxContextTokens?.toLocaleString() ?? "未提供"}

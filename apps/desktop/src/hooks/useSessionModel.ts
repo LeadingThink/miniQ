@@ -51,9 +51,15 @@ export function useSessionModel(
     setReady(false);
     try {
       let next: SessionModelResult;
-      if (sessionId)
+      if (sessionId) {
         next = await client.call("session.modelGet", { sessionId });
-      else if (workspaceId)
+        if (next.settings.apiProtocol && next.settings.apiProtocol !== "auto") {
+          next = await client.call("session.modelUpdate", {
+            sessionId,
+            settings: { ...next.settings, apiProtocol: "auto" },
+          });
+        }
+      } else if (workspaceId)
         next = await client.call("workspace.modelGet", { workspaceId });
       else {
         const defaults = await client.call<{

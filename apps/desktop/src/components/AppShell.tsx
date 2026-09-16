@@ -85,6 +85,7 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
           client={app.client}
           theme={theme}
           onThemeChange={onThemeChange}
+          onProviderConfigured={() => void app.connection.refreshProviderConfiguration()}
           onClose={() => app.navigation.setShowSettings(false)}
         />
       )}

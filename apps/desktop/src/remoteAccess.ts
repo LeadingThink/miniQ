@@ -47,8 +47,13 @@ export function setRememberEnabled(enabled: boolean): void {
 function parseCredentials(raw: string | null): RemoteCredentials | null {
   try {
     const parsed = JSON.parse(raw ?? "null") as RemoteCredentials | null;
-    if (!parsed?.apiKey || !parsed.relayUrl || !parsed.deviceId) return null;
-    return parsed;
+    if (!parsed?.apiKey || !parsed.deviceId) return null;
+    return {
+      apiKey: parsed.apiKey,
+      relayUrl: DEFAULT_RELAY_URL,
+      deviceId: parsed.deviceId,
+      deviceName: parsed.deviceName ?? "",
+    };
   } catch {
     return null;
   }
@@ -83,13 +88,17 @@ export async function loadRemoteCredentials(): Promise<RemoteCredentials | null>
 }
 
 export async function storeRemoteCredentials(
-  value: Omit<RemoteCredentials, "deviceId">,
+  value: Omit<RemoteCredentials, "deviceId" | "relayUrl">,
   options: { remember?: boolean } = {},
 ): Promise<RemoteCredentials> {
   if (options.remember !== undefined && !Capacitor.isNativePlatform()) {
     setRememberEnabled(options.remember);
   }
-  const credentials = { ...value, deviceId: readDeviceId() };
+  const credentials = {
+    ...value,
+    relayUrl: DEFAULT_RELAY_URL,
+    deviceId: readDeviceId(),
+  };
   const serialized = JSON.stringify(credentials);
   safeWrite(window.sessionStorage, STORAGE_KEY, serialized);
   if (Capacitor.isNativePlatform()) {

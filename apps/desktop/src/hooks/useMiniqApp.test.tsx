@@ -18,13 +18,17 @@ const fake = vi.hoisted(() => ({
   call: vi.fn(),
   connect: vi.fn(),
   events: new Set<(event: DaemonEvent) => void>(),
+  mode: "remote" as "local" | "remote",
+  providerHasApiKey: true,
 }));
 vi.mock("../rpc", () => ({
   RpcClient: class {
     call = fake.call;
     connect = fake.connect;
     connected = true;
-    mode = "remote";
+    get mode() {
+      return fake.mode;
+    }
     onStatus() {
       return () => {};
     }
@@ -48,7 +52,10 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  localStorage.clear();
   Element.prototype.scrollIntoView = vi.fn();
+  fake.mode = "remote";
+  fake.providerHasApiKey = true;
   const sessions = ["a", "b"].map((id) => ({
     id,
     workspaceId: "w",
@@ -64,7 +71,10 @@ beforeEach(() => {
       case "daemon.health":
         return { daemonVersion: "test" };
       case "settings.get":
-        return { approvalMode: "auto" };
+        return {
+          approvalMode: "auto",
+          provider: { hasApiKey: fake.providerHasApiKey },
+        };
       case "workspace.list":
         return { workspaces: [{ id: "w", name: "test", path: "/workspace", additionalPaths: [] }] };
       case "session.list":
@@ -127,13 +137,17 @@ it("creates a task with its draft model before sending and preserves sibling mod
   fake.call.mockImplementation(async (method, params) => {
     if (method === "workspace.modelGet") return { settings: projectDefault, effective: projectDefault };
     if (method === "session.modelGet") return { settings: selections.get(params.sessionId), effective: selections.get(params.sessionId) };
+    if (method === "session.modelUpdate") {
+      selections.set(params.sessionId, params.settings);
+      return { settings: params.settings, effective: params.settings };
+    }
     if (method === "session.create") {
       selections.set("new", params.modelSettings);
       return { id: "new", workspaceId: params.workspaceId };
     }
     if (method === "session.sendMessage") {
       expect(params.sessionId).toBe("new");
-      expect(selections.get("new")).toEqual({ model: "new-model", apiProtocol: "responses", reasoningEffort: "low" });
+      expect(selections.get("new")).toEqual({ model: "new-model", apiProtocol: "auto", reasoningEffort: "low" });
       return {};
     }
     if (method === "session.open" && params.sessionId === "new") {
@@ -151,7 +165,7 @@ it("creates a task with its draft model before sending and preserves sibling mod
   await act(async () => expect(await hook.result.current.actions.startTask("test task")).toBe(true));
   expect(fake.call).toHaveBeenCalledWith("session.create", {
     workspaceId: "w",
-    modelSettings: { model: "new-model", apiProtocol: "responses", reasoningEffort: "low" },
+    modelSettings: { model: "new-model", apiProtocol: "auto", reasoningEffort: "low" },
   });
   for (const [id, expectedModel] of [["a", "gpt"], ["b", "claude"], ["new", "new-model"]]) {
     await act(async () => hook.result.current.actions.openSession(id));
@@ -160,6 +174,40 @@ it("creates a task with its draft model before sending and preserves sibling mod
   act(() => hook.result.current.actions.newChat());
   await waitFor(() => expect(hook.result.current.sessionModel.effective?.model).toBe("gemini"));
   expect(fake.call.mock.calls.some(([method]) => ["model.update", "workspace.modelUpdate"].includes(method))).toBe(false);
+});
+
+it("opens first-run provider setup automatically on a local desktop without an API key", async () => {
+  fake.mode = "local";
+  fake.providerHasApiKey = false;
+  const hook = renderHook(useMiniqApp);
+
+  await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
+  await waitFor(() => expect(hook.result.current.navigation.showSettings).toBe(true));
+  expect(localStorage.getItem("miniq.providerOnboarding.v1")).toBe("seen");
+});
+
+it("reopens provider setup and sends nothing when a local task has no API key", async () => {
+  fake.mode = "local";
+  fake.providerHasApiKey = false;
+  localStorage.setItem("miniq.providerOnboarding.v1", "seen");
+  const hook = renderHook(useMiniqApp);
+
+  await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
+  expect(hook.result.current.navigation.showSettings).toBe(false);
+  await act(async () => {
+    expect(await hook.result.current.actions.startTask("keep this draft")).toBe(false);
+  });
+  expect(hook.result.current.navigation.showSettings).toBe(true);
+  expect(fake.call.mock.calls.some(([method]) => method === "session.create")).toBe(false);
+  expect(fake.call.mock.calls.some(([method]) => method === "session.sendMessage")).toBe(false);
+
+  act(() => hook.result.current.navigation.setShowSettings(false));
+  await act(async () => { await hook.result.current.actions.openSession("a"); });
+  await act(async () => {
+    expect(await hook.result.current.actions.sendMessage("keep this follow-up")).toBe(false);
+  });
+  expect(hook.result.current.navigation.showSettings).toBe(true);
+  expect(fake.call.mock.calls.some(([method]) => method === "session.sendMessage")).toBe(false);
 });
 
 it("keeps the draft and sends no message when creating its model configuration fails", async () => {

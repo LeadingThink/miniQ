@@ -153,6 +153,48 @@ it("updates only the selected session model", async () => {
   });
 });
 
+it("migrates a legacy session protocol to automatic without changing its model or effort", async () => {
+  const legacy: SessionModelResult = {
+    settings: {
+      model: "claude-sonnet-4.6",
+      apiProtocol: "anthropic_messages",
+      reasoningEffort: "high",
+    },
+    effective: {
+      model: "claude-sonnet-4.6",
+      apiProtocol: "anthropic_messages",
+      reasoningEffort: "high",
+    },
+  };
+  const call = vi.fn((method, params) => {
+    if (method === "session.modelGet") return Promise.resolve(legacy);
+    if (method === "session.modelUpdate") {
+      return Promise.resolve({
+        settings: params.settings,
+        effective: params.settings,
+      });
+    }
+    throw new Error(`unexpected method ${method}`);
+  });
+  const { client } = fakeClient(call);
+  const hook = renderHook(() => useSessionModel(client, "legacy", "study"));
+
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  expect(call).toHaveBeenLastCalledWith("session.modelUpdate", {
+    sessionId: "legacy",
+    settings: {
+      model: "claude-sonnet-4.6",
+      apiProtocol: "auto",
+      reasoningEffort: "high",
+    },
+  });
+  expect(hook.result.current.settings).toEqual({
+    model: "claude-sonnet-4.6",
+    apiProtocol: "auto",
+    reasoningEffort: "high",
+  });
+});
+
 it("loads the selected workspace model for a project draft", async () => {
   const call = vi.fn().mockResolvedValue(result("workspace-model"));
   const { client } = fakeClient(call);

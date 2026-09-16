@@ -20,6 +20,7 @@ import { useSessionError } from "./useSessionError";
 import { isSessionRunning, isSessionTerminal } from "../sessionStatus";
 
 export type AppPage = "schedule" | "skills" | "mcp" | "plugins" | null;
+const PROVIDER_ONBOARDING_KEY = "miniq.providerOnboarding.v1";
 
 async function pickDirectory(): Promise<string | null> {
   if (isTauriRuntime()) {
@@ -280,12 +281,14 @@ function useTurnActions(
   lifecycle: SessionLifecycle,
   setError: ErrorSetter,
   sessionModel: ReturnType<typeof useSessionModel>,
+  ensureProviderConfigured: () => Promise<boolean>,
 ) {
   const { openSession } = lifecycle;
 
   const sendMessage = useCallback(
     async (content: string, attachments: string[] = []) => {
       if (!catalog.currentSessionId) return false;
+      if (!await ensureProviderConfigured()) return false;
       setError(null);
       try {
         await client.call("session.sendMessage", {
@@ -299,12 +302,13 @@ function useTurnActions(
         return false;
       }
     },
-    [catalog.currentSessionId, catalog.refreshSessions, client, setError],
+    [catalog.currentSessionId, catalog.refreshSessions, client, ensureProviderConfigured, setError],
   );
 
   const rewriteMessage = useCallback(
     async (messageId: string, content: string, attachments: string[] = []) => {
       if (!catalog.currentSessionId) return false;
+      if (!await ensureProviderConfigured()) return false;
       setError(null);
       try {
         await client.call("session.rewriteMessage", {
@@ -319,11 +323,12 @@ function useTurnActions(
         return false;
       }
     },
-    [catalog.currentSessionId, catalog.refreshSessions, client, setError],
+    [catalog.currentSessionId, catalog.refreshSessions, client, ensureProviderConfigured, setError],
   );
 
   const startTask = useCallback(
     async (content: string, attachments: string[] = []) => {
+      if (!await ensureProviderConfigured()) return false;
       if (!sessionModel.ready || sessionModel.pending) return false;
       if (!catalog.selectedWorkspace) {
         setError("请先选择一个项目(或新建一个)");
@@ -334,7 +339,11 @@ function useTurnActions(
         const epoch = catalog.navigationEpoch.current;
         const session = await client.call<Session>("session.create", {
           workspaceId: catalog.selectedWorkspace.id,
-          modelSettings: sessionModel.effective ?? sessionModel.settings,
+          modelSettings: {
+            model: sessionModel.settings.model ?? sessionModel.effective?.model ?? null,
+            apiProtocol: "auto",
+            reasoningEffort: sessionModel.settings.reasoningEffort,
+          },
         });
         await client.call("session.sendMessage", {
           sessionId: session.id,
@@ -354,6 +363,7 @@ function useTurnActions(
       catalog.selectedWorkspace,
       client,
       catalog.navigationEpoch,
+      ensureProviderConfigured,
       openSession,
       setError,
       sessionModel,
@@ -510,6 +520,33 @@ export function useMiniqApp() {
     onError: setConnectionError,
     paused: updater.state.phase === "installing",
   });
+  const ensureProviderConfigured = useCallback(async () => {
+    if (client.mode !== "local") return true;
+    try {
+      const configured = connection.providerConfigured === true
+        || await connection.refreshProviderConfiguration();
+      if (configured) return true;
+      navigation.setShowSettings(true);
+      return false;
+    } catch (error) {
+      setConnectionError(`无法检查模型服务设置：${errorMessage(error)}`);
+      return false;
+    }
+  }, [client.mode, connection.providerConfigured, connection.refreshProviderConfiguration, navigation.setShowSettings]);
+  useEffect(() => {
+    if (
+      client.mode !== "local" ||
+      connection.connectionEpoch === 0 ||
+      connection.providerConfigured !== false
+    ) return;
+    try {
+      if (window.localStorage.getItem(PROVIDER_ONBOARDING_KEY) === "seen") return;
+      window.localStorage.setItem(PROVIDER_ONBOARDING_KEY, "seen");
+    } catch {
+      // Storage can be unavailable; showing the setup screen is still safe.
+    }
+    navigation.setShowSettings(true);
+  }, [client.mode, connection.connectionEpoch, connection.providerConfigured, navigation.setShowSettings]);
   const navigationActions = useNavigationActions(catalog, navigation, feed);
   const workspaceActions = useWorkspaceActions(client, catalog, setError);
   const lifecycle = useSessionLifecycleActions(
@@ -520,7 +557,14 @@ export function useMiniqApp() {
     markSessionSeen,
     setSessionError,
   );
-  const turnActions = useTurnActions(client, catalog, lifecycle, setError, sessionModel);
+  const turnActions = useTurnActions(
+    client,
+    catalog,
+    lifecycle,
+    setError,
+    sessionModel,
+    ensureProviderConfigured,
+  );
   const interactionActions = useInteractionActions(client, setError, review.refresh);
   const lastResyncedConnection = useRef(0);
   useEffect(() => {

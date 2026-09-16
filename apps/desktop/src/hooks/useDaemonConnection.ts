@@ -18,6 +18,7 @@ interface ConnectAttemptOptions extends ConnectionOptions {
   onConnected: (connected: boolean) => void;
   onHealth: (health: HealthStatus) => void;
   onApprovalMode: (mode: ApprovalMode) => void;
+  onProviderConfigured: (configured: boolean) => void;
   onPhase: (phase: ConnectionPhase) => void;
   onReady: () => void;
 }
@@ -42,10 +43,14 @@ async function connectWithRetry(
       options.onConnected(true);
       options.onPhase("connected");
       options.onHealth(await options.client.call<HealthStatus>("daemon.health"));
-      const settings = await options.client.call<{ approvalMode?: ApprovalMode }>(
+      const settings = await options.client.call<{
+        approvalMode?: ApprovalMode;
+        provider?: { hasApiKey?: boolean } | null;
+      }>(
         "settings.get",
       );
       if (settings.approvalMode) options.onApprovalMode(settings.approvalMode);
+      options.onProviderConfigured(Boolean(settings.provider?.hasApiKey));
       await options.refreshWorkspaces();
       await options.refreshSessions();
       if (options.isDisposed()) return;
@@ -71,6 +76,7 @@ export function useDaemonConnection(options: ConnectionOptions) {
   const [phase, setPhase] = useState<ConnectionPhase>("connecting");
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>("auto");
+  const [providerConfigured, setProviderConfigured] = useState<boolean | null>(null);
   const { client, refreshWorkspaces, refreshSessions, onError, paused = false } = options;
 
   useEffect(() => {
@@ -90,6 +96,7 @@ export function useDaemonConnection(options: ConnectionOptions) {
           onConnected: setConnected,
           onHealth: setHealth,
           onApprovalMode: setApprovalMode,
+          onProviderConfigured: setProviderConfigured,
           onPhase: setPhase,
           onReady: () => setConnectionEpoch((current) => current + 1),
         },
@@ -167,12 +174,23 @@ export function useDaemonConnection(options: ConnectionOptions) {
     [approvalMode, client, onError],
   );
 
+  const refreshProviderConfiguration = useCallback(async () => {
+    const settings = await client.call<{
+      provider?: { hasApiKey?: boolean } | null;
+    }>("settings.get");
+    const configured = Boolean(settings.provider?.hasApiKey);
+    setProviderConfigured(configured);
+    return configured;
+  }, [client]);
+
   return {
     connected,
     phase,
     connectionEpoch,
     health,
     approvalMode,
+    providerConfigured,
+    refreshProviderConfiguration,
     changeApprovalMode,
   };
 }
