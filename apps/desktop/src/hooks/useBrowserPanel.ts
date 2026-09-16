@@ -60,6 +60,7 @@ export function useBrowserPanel(
     async (target: string) => {
       const element = surface.current;
       if (!element) return;
+      if (inFlight.current) return;
       const request = ++sequence.current;
       inFlight.current = true;
       setPending(true);
@@ -183,9 +184,9 @@ export function useBrowserPanel(
     });
   }, [load, requestedBrowserSessionId, surface, viewId]);
   useEffect(() => {
-    if (requestedViewId) return;
+    if (requestedBrowserSessionId) return;
     void load(url).catch(() => {});
-  }, [url, load, requestedViewId]);
+  }, [url, load, requestedBrowserSessionId]);
 
   useEffect(() => {
     let disposed = false;
