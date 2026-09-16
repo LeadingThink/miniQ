@@ -31,35 +31,35 @@ class AndroidReleaseTests(unittest.TestCase):
 
     def test_merge_preserves_other_products_versions_and_platforms(self):
         before = copy.deepcopy(self.current)
-        merged = release.merge_manifest(self.current, "0.1.20", "a" * 64, 42, "2026-01-01")
+        merged = release.merge_manifest(self.current, "0.1.21", "a" * 64, 42, "2026-01-01")
         self.assertEqual(self.current, before)
         android = merged["products"]["miniq"]["platforms"]["android"]
         self.assertEqual(android["sha256"], "a" * 64)
         self.assertEqual(android["fileSize"], 42)
         self.assertEqual(android["label"], "Android 7.0+")
         self.assertEqual(android["architecture"], "Universal (WebView)")
-        self.assertEqual(android["mirrors"], ["https://github.com/LeadingThink/miniQ-releases/releases/download/android-v0.1.20/miniQ_0.1.20_android.apk"])
+        self.assertEqual(android["mirrors"], ["https://github.com/LeadingThink/miniQ-releases/releases/download/android-v0.1.21/miniQ_0.1.21_android.apk"])
         self.assertEqual(android["custom"], "retained")
         self.assertIsInstance(android["installationNotes"], list)
         self.assertTrue(all(isinstance(note, str) and note for note in android["installationNotes"]))
         self.assertEqual(android["minAndroidVersion"], "Android 7.0 (API 24)")
-        self.assertEqual(android["url"], "https://oss.zaiwen.top/releases/miniq/android/v0.1.20/miniQ_0.1.20_android.apk")
+        self.assertEqual(android["url"], "https://oss.zaiwen.top/releases/miniq/android/v0.1.21/miniQ_0.1.21_android.apk")
         merged["products"]["miniq"]["platforms"]["android"] = before["products"]["miniq"]["platforms"]["android"]
         self.assertEqual(merged, before)
 
     def test_invalid_tags_and_gradle_mismatch(self):
         gradle = (release.ROOT / "android/app/build.gradle").read_text()
-        self.assertEqual(release.validate_version("android-v0.1.20", gradle), "0.1.20")
-        for tag in ["v0.1.20", "android-v01.1.17", "android-v0.1.20-beta", "android-v0.1.20\n", "android-v0.1.17", "main", "$(id)"]:
+        self.assertEqual(release.validate_version("android-v0.1.21", gradle), "0.1.21")
+        for tag in ["v0.1.21", "android-v01.1.17", "android-v0.1.21-beta", "android-v0.1.21\n", "android-v0.1.17", "main", "$(id)"]:
             with self.subTest(tag=tag), self.assertRaises(ValueError):
                 release.validate_version(tag, gradle)
         with self.assertRaises(ValueError):
-            release.validate_version("android-v0.1.20", gradle.replace('versionName "0.1.20"', 'versionName "0.1.17"'))
+            release.validate_version("android-v0.1.21", gradle.replace('versionName "0.1.21"', 'versionName "0.1.17"'))
 
     def test_malformed_manifest_fails_closed(self):
         for current in [{}, {"products": {}}, {"products": {"miniq": {"platforms": []}}}]:
             with self.assertRaises(ValueError):
-                release.merge_manifest(current, "0.1.20", "a" * 64, 1, "date")
+                release.merge_manifest(current, "0.1.21", "a" * 64, 1, "date")
 
     def test_each_missing_signing_secret_fails_before_writing(self):
         env = {name: "value" for name in ["ANDROID_KEYSTORE_BASE64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD"]}
@@ -75,14 +75,14 @@ class AndroidReleaseTests(unittest.TestCase):
 
     def test_apk_debug_certificate_and_debuggable_rejected(self):
         valid = f"Signer #1 certificate DN: CN=miniQ Release\nSigner #1 certificate SHA-256 digest: {release.SIGNING_CERT_SHA256}"
-        badging = "package: name='com.leadingthink.miniq' versionCode='20' versionName='0.1.20'"
+        badging = "package: name='com.leadingthink.miniq' versionCode='21' versionName='0.1.21'"
         for certificate, package in [("Signer #1 certificate DN: CN=Android Debug", badging), (valid, badging + "\napplication-debuggable"), ("", badging)]:
             outputs = [subprocess.CompletedProcess([], 0, certificate), subprocess.CompletedProcess([], 0, package)]
             with patch.object(release.subprocess, "run", side_effect=outputs), self.assertRaises(ValueError):
-                release.verify_apk(Path("release.apk"), "android-v0.1.20", Path("tools"))
+                release.verify_apk(Path("release.apk"), "android-v0.1.21", Path("tools"))
 
     def test_apk_certificate_must_match_pinned_production_key(self):
-        badging = "package: name='com.leadingthink.miniq' versionCode='20' versionName='0.1.20'"
+        badging = "package: name='com.leadingthink.miniq' versionCode='21' versionName='0.1.21'"
         for digest in [None, "a" * 64, release.SIGNING_CERT_SHA256.lower()]:
             signing = "Signer #1 certificate DN: CN=miniQ Release"
             if digest:
@@ -90,18 +90,18 @@ class AndroidReleaseTests(unittest.TestCase):
             outputs = [subprocess.CompletedProcess([], 0, signing), subprocess.CompletedProcess([], 0, badging)]
             with self.subTest(digest=digest), patch.object(release.subprocess, "run", side_effect=outputs):
                 if digest == release.SIGNING_CERT_SHA256.lower():
-                    release.verify_apk(Path("release.apk"), "android-v0.1.20", Path("tools"))
+                    release.verify_apk(Path("release.apk"), "android-v0.1.21", Path("tools"))
                 else:
                     with self.assertRaisesRegex(ValueError, "pinned"):
-                        release.verify_apk(Path("release.apk"), "android-v0.1.20", Path("tools"))
+                        release.verify_apk(Path("release.apk"), "android-v0.1.21", Path("tools"))
 
     def test_failed_manifest_read_never_uploads(self):
         with tempfile.TemporaryDirectory() as directory:
-            apk = Path(directory) / "miniQ_0.1.20_android.apk"
+            apk = Path(directory) / "miniQ_0.1.21_android.apk"
             apk.write_bytes(b"apk")
             with patch.object(release, "required_env", return_value="unused"), patch.object(release, "read_remote", side_effect=OSError("offline")), patch.object(release, "publish") as upload:
                 with self.assertRaises(OSError):
-                    release.publish_android(apk, "android-v0.1.20")
+                    release.publish_android(apk, "android-v0.1.21")
                 upload.assert_not_called()
 
     def test_mirror_download_must_match_exact_bytes(self):
@@ -110,32 +110,32 @@ class AndroidReleaseTests(unittest.TestCase):
             with patch.object(release, "urlopen") as request:
                 request.return_value.__enter__.return_value.read.return_value = data
                 if data == b"apk":
-                    release.verify_mirror("0.1.20", b"apk")
+                    release.verify_mirror("0.1.21", b"apk")
                 else:
                     with self.assertRaisesRegex(RuntimeError, "mirror"):
-                        release.verify_mirror("0.1.20", b"apk")
-                request.assert_called_once_with(release.mirror_url("0.1.20"), timeout=120)
+                        release.verify_mirror("0.1.21", b"apk")
+                request.assert_called_once_with(release.mirror_url("0.1.21"), timeout=120)
 
     def test_failed_mirror_never_uploads(self):
         with tempfile.TemporaryDirectory() as directory:
-            apk = Path(directory) / "miniQ_0.1.20_android.apk"
+            apk = Path(directory) / "miniQ_0.1.21_android.apk"
             apk.write_bytes(b"apk")
             self.mirror.side_effect = RuntimeError("mirror mismatch")
             with patch.object(release, "required_env", return_value="unused"), patch.object(release, "read_remote", return_value=json.dumps(self.current).encode()), patch.object(release, "publish") as upload:
                 with self.assertRaisesRegex(RuntimeError, "mirror"):
-                    release.publish_android(apk, "android-v0.1.20")
+                    release.publish_android(apk, "android-v0.1.21")
                 upload.assert_not_called()
 
     def test_abi_specific_apk_rejected(self):
         signing = f"Signer #1 certificate DN: CN=miniQ Release\nSigner #1 certificate SHA-256 digest: {release.SIGNING_CERT_SHA256}"
-        badging = "package: name='com.leadingthink.miniq' versionCode='20' versionName='0.1.20'\nnative-code: 'arm64-v8a'"
+        badging = "package: name='com.leadingthink.miniq' versionCode='21' versionName='0.1.21'\nnative-code: 'arm64-v8a'"
         outputs = [subprocess.CompletedProcess([], 0, signing), subprocess.CompletedProcess([], 0, badging)]
         with patch.object(release.subprocess, "run", side_effect=outputs), self.assertRaisesRegex(ValueError, "ABI-specific"):
-            release.verify_apk(Path("release.apk"), "android-v0.1.20", Path("tools"))
+            release.verify_apk(Path("release.apk"), "android-v0.1.21", Path("tools"))
 
     def test_apk_verified_before_shared_manifest_and_no_latest_json(self):
         with tempfile.TemporaryDirectory() as directory:
-            apk = Path(directory) / "miniQ_0.1.20_android.apk"
+            apk = Path(directory) / "miniQ_0.1.21_android.apk"
             apk.write_bytes(b"apk")
             original = json.dumps(self.current).encode()
             uploads = []
@@ -143,22 +143,22 @@ class AndroidReleaseTests(unittest.TestCase):
                 uploads.extend(item.object_key for item in items)
             with patch.object(release, "required_env", return_value="unused"), patch.object(release, "read_remote", side_effect=[original, b"corrupted"]), patch.object(release, "publish", side_effect=upload):
                 with self.assertRaisesRegex(RuntimeError, "SHA-256"):
-                    release.publish_android(apk, "android-v0.1.20")
-            self.assertEqual(uploads, ["releases/miniq/android/v0.1.20/miniQ_0.1.20_android.apk"])
+                    release.publish_android(apk, "android-v0.1.21")
+            self.assertEqual(uploads, ["releases/miniq/android/v0.1.21/miniQ_0.1.21_android.apk"])
 
     def test_concurrent_manifest_change_aborts_metadata_write(self):
         with tempfile.TemporaryDirectory() as directory:
-            apk = Path(directory) / "miniQ_0.1.20_android.apk"
+            apk = Path(directory) / "miniQ_0.1.21_android.apk"
             apk.write_bytes(b"apk")
             original = json.dumps(self.current).encode()
             with patch.object(release, "required_env", return_value="unused"), patch.object(release, "read_remote", side_effect=[original, b"apk", b"changed"]), patch.object(release, "publish") as upload:
                 with self.assertRaisesRegex(RuntimeError, "changed"):
-                    release.publish_android(apk, "android-v0.1.20")
+                    release.publish_android(apk, "android-v0.1.21")
                 self.assertEqual(upload.call_count, 1)
 
     def test_success_only_uploads_android_apk_then_merged_shared_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
-            apk = Path(directory) / "miniQ_0.1.20_android.apk"
+            apk = Path(directory) / "miniQ_0.1.21_android.apk"
             apk.write_bytes(b"apk")
             original = json.dumps(self.current).encode()
             events = []
@@ -184,8 +184,8 @@ class AndroidReleaseTests(unittest.TestCase):
 
             qiniu = SimpleNamespace(Auth=lambda *args: None, CdnManager=lambda auth: SimpleNamespace(refresh_urls=refresh))
             with patch.object(release, "required_env", return_value="unused"), patch.object(release, "read_remote", side_effect=read), patch.object(release, "publish", side_effect=upload), patch.dict(sys.modules, {"qiniu": qiniu}):
-                release.publish_android(apk, "android-v0.1.20")
-            key = "releases/miniq/android/v0.1.20/miniQ_0.1.20_android.apk"
+                release.publish_android(apk, "android-v0.1.21")
+            key = "releases/miniq/android/v0.1.21/miniQ_0.1.21_android.apk"
             self.assertEqual(events, [("read", release.MANIFEST_KEY), ("upload", key), ("read", key), ("read", release.MANIFEST_KEY), ("upload", release.MANIFEST_KEY)])
 
     def test_workflow_keeps_desktop_default_and_isolates_android(self):
@@ -199,6 +199,7 @@ class AndroidReleaseTests(unittest.TestCase):
         self.assertIn("--latest=false", android)
         self.assertLess(android.index('gh release upload'), android.index('scripts/android_release.py publish'))
         self.assertIn("fetch-depth: 0", android)
+        self.assertIn("packages: platform-tools", android)
         self.assertIn('if [ "$RELEASE_DRAFT" != "false" ]; then', android)
         self.assertLess(android.index("Reject Android draft publication"), android.index("actions/checkout@v4"))
         guard = android.split("actions/checkout@v4", 1)[0]
