@@ -85,7 +85,7 @@ async fn recognition_uses_configured_provider_without_blocking_connection() {
     )
     .await
     .expect("recognition must not block health");
-    assert_eq!(health["result"]["protocolVersion"], 1);
+    assert_eq!(health["result"]["protocolVersion"], 2);
     release.notify_one();
     let response = tokio::time::timeout(Duration::from_secs(3), ws.next())
         .await

@@ -51,7 +51,7 @@ impl Fixture {
                     let method = request["method"].as_str().unwrap();
                     let result = match method {
                         "daemon.health" => {
-                            json!({"protocolVersion":1,"capabilities":{"rejectBusy":mode != "old"}})
+                            json!({"protocolVersion":2,"capabilities":{"rejectBusy":mode != "old"}})
                         }
                         "settings.get" => {
                             json!({"approvalMode":if matches!(mode, "full" | "session-ask") {"fullAccess"} else {"alwaysAsk"}})

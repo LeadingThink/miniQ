@@ -2,11 +2,12 @@
 //! Run with: cargo run -p miniq-protocol --bin gen-schemas
 
 use miniq_protocol::{
-    Event, ExternalSessionImportRequest, ExternalSessionImportResult, ExternalSessionScan,
-    NodeHelloParams, NodeInitializeParams, NodePluginLogParams, NodePluginMessage,
-    NodeToolCancelParams, NodeToolExecuteParams, NodeToolResultParams, NodeToolsRegisterParams,
-    NodeToolsUnregisterParams, PluginDiagnosticsResult, PluginIdParams, PluginInstallParams,
-    PluginListResult, PluginSetEnabledParams, RpcRequest, RpcResponse, Session,
+    Event, ExternalSessionImportJob, ExternalSessionImportRequest,
+    ExternalSessionImportStatusRequest, ExternalSessionScan, NodeHelloParams, NodeInitializeParams,
+    NodePluginLogParams, NodePluginMessage, NodeToolCancelParams, NodeToolExecuteParams,
+    NodeToolResultParams, NodeToolsRegisterParams, NodeToolsUnregisterParams,
+    PluginDiagnosticsResult, PluginIdParams, PluginInstallParams, PluginListResult,
+    PluginSetEnabledParams, RpcRequest, RpcResponse, Session,
 };
 use schemars::schema_for;
 use serde_json::json;
@@ -105,8 +106,12 @@ fn main() {
             schema_for!(ExternalSessionImportRequest),
         ),
         (
-            "externalSessionImportResult",
-            schema_for!(ExternalSessionImportResult),
+            "externalSessionImportJob",
+            schema_for!(ExternalSessionImportJob),
+        ),
+        (
+            "externalSessionImportStatusRequest",
+            schema_for!(ExternalSessionImportStatusRequest),
         ),
         ("pluginListResult", schema_for!(PluginListResult)),
         ("pluginIdParams", schema_for!(PluginIdParams)),

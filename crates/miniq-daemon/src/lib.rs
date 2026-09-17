@@ -9,6 +9,7 @@ mod agent_worktree;
 mod browser_driver;
 mod event_journal;
 pub mod executor;
+mod external_import_jobs;
 pub mod gateway;
 pub mod learn;
 pub mod mcp;

@@ -137,7 +137,7 @@ async fn large_mobile_upload_keeps_health_responsive_between_chunks() {
     }
     let response = next_payload(&mut socket).await;
     assert_eq!(response["id"], "large-upload");
-    assert_eq!(response["result"]["protocolVersion"], 1);
+    assert_eq!(response["result"]["protocolVersion"], 2);
     state.shutdown.cancel();
     task.await.unwrap().unwrap();
 }

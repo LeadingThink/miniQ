@@ -54,9 +54,25 @@ fn read_titles(database: &Path) -> Option<HashMap<String, String>> {
     let connection =
         Connection::open_with_flags(database, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
     connection.busy_timeout(BUSY_TIMEOUT).ok()?;
-    let mut statement = connection
-        .prepare("SELECT id, title FROM threads WHERE title IS NOT NULL AND title != ''")
-        .ok()?;
+    let has_name_column = connection
+        .prepare("PRAGMA table_info(threads)")
+        .ok()?
+        .query_map([], |row| row.get::<_, String>(1))
+        .ok()?
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?
+        .iter()
+        .any(|column| column == "name");
+    // Codex uses `name` for the sidebar label and keeps the original prompt in `title`.
+    // Older databases do not have `name`, so keep the title-only query for them.
+    let query = if has_name_column {
+        "SELECT id, COALESCE(NULLIF(name, ''), title) FROM threads
+         WHERE COALESCE(NULLIF(name, ''), title) IS NOT NULL
+           AND COALESCE(NULLIF(name, ''), title) != ''"
+    } else {
+        "SELECT id, title FROM threads WHERE title IS NOT NULL AND title != ''"
+    };
+    let mut statement = connection.prepare(query).ok()?;
     let rows = statement
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -64,4 +80,38 @@ fn read_titles(database: &Path) -> Option<HashMap<String, String>> {
         .ok()?;
     let titles: Result<Vec<_>, _> = rows.collect();
     Some(titles.ok()?.into_iter().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use rusqlite::{params, Connection};
+
+    use super::CodexTitleCatalog;
+
+    #[test]
+    fn prefers_sidebar_name_and_falls_back_to_original_title() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = temp.path().join("state_1.sqlite");
+        let connection = Connection::open(&database).unwrap();
+        connection
+            .execute_batch("CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT, name TEXT)")
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO threads (id, title, name) VALUES (?1, ?2, ?3)",
+                params!["named", "long original prompt", "简洁的侧栏名称"],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO threads (id, title, name) VALUES (?1, ?2, ?3)",
+                params!["unnamed", "fallback title", ""],
+            )
+            .unwrap();
+        drop(connection);
+
+        let catalog = CodexTitleCatalog::load(temp.path());
+        assert_eq!(catalog.get("named"), Some("简洁的侧栏名称"));
+        assert_eq!(catalog.get("unnamed"), Some("fallback title"));
+    }
 }

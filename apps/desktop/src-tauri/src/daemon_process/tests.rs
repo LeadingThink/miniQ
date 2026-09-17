@@ -60,6 +60,17 @@ mod windows {
     }
 
     #[test]
+    fn stops_a_daemon_that_ignores_the_graceful_timeout() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut child = start_daemon(directory.path());
+        let process = DaemonProcess::open(child.0.id()).unwrap();
+
+        process.stop(Duration::ZERO).unwrap();
+
+        assert!(!child.0.wait().unwrap().success());
+    }
+
+    #[test]
     fn installer_stops_only_daemons_in_the_target_installation() {
         let directory = tempfile::tempdir().unwrap();
         let target = directory.path().join("install ' quoted & path");

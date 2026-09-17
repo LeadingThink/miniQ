@@ -12,8 +12,8 @@ use serde_json::Value;
 mod title_catalog;
 
 use crate::common::{
-    collect_files, content_text, env_root, first_and_last_timestamp, first_string, raw_event,
-    read_jsonl, string_at, timestamp_at,
+    content_text, env_root, first_and_last_timestamp, first_string, raw_event, read_jsonl,
+    string_at, timestamp_at, SessionFileIndex,
 };
 use crate::projection::projected_content;
 use crate::{ConnectorScan, ExternalSessionSnapshot, SessionConnector};
@@ -21,7 +21,7 @@ use title_catalog::CodexTitleCatalog;
 
 pub(crate) struct CodexConnector {
     root: PathBuf,
-    files: OnceLock<Vec<PathBuf>>,
+    files: OnceLock<SessionFileIndex>,
     titles: OnceLock<CodexTitleCatalog>,
 }
 
@@ -43,11 +43,11 @@ impl CodexConnector {
         }
     }
 
-    fn session_files(&self) -> Result<&[PathBuf], crate::ConnectorError> {
+    fn session_files(&self) -> Result<&SessionFileIndex, crate::ConnectorError> {
         if let Some(files) = self.files.get() {
             return Ok(files);
         }
-        let files = collect_files(
+        let files = SessionFileIndex::collect(
             &[
                 self.root.join("sessions"),
                 self.root.join("archived_sessions"),
@@ -95,13 +95,9 @@ impl CodexConnector {
         external_id: &str,
         source_path: &str,
     ) -> Result<Option<ExternalSessionSnapshot>, crate::ConnectorError> {
-        let path = self
-            .session_files()?
-            .iter()
-            .find(|path| path.to_string_lossy() == source_path)
-            .ok_or_else(|| {
-                crate::ConnectorError::InvalidData("Codex source path is not registered".to_owned())
-            })?;
+        let path = self.session_files()?.get(source_path).ok_or_else(|| {
+            crate::ConnectorError::InvalidData("Codex source path is not registered".to_owned())
+        })?;
         let snapshot = self.parse_session(path)?;
         if snapshot
             .as_ref()
@@ -124,6 +120,12 @@ impl SessionConnector for CodexConnector {
         &self.root
     }
 
+    fn prepare(&self) -> Result<(), crate::ConnectorError> {
+        self.session_files()?;
+        self.title_catalog();
+        Ok(())
+    }
+
     fn scan(&self) -> ConnectorScan {
         if !self.root.is_dir() {
             return ConnectorScan::unavailable(self.provider(), self.root.clone());
@@ -134,6 +136,7 @@ impl SessionConnector for CodexConnector {
             Ok(files) => {
                 let titles = self.title_catalog();
                 let parsed: Vec<_> = files
+                    .files()
                     .par_iter()
                     .map(|file| self.parse_session_with_titles(file, titles))
                     .collect();
@@ -193,20 +196,18 @@ impl CodexParseState {
                 &["payload", "session_id"],
             ],
         );
-        let event = raw_event(
-            value.clone(),
-            sequence,
-            raw_id,
-            event_type.clone(),
-            occurred_at.clone(),
-        );
+        let event_id = raw_id
+            .as_ref()
+            .map(|id| format!("{sequence}:{id}"))
+            .unwrap_or_else(|| sequence.to_string());
         match event_type.as_str() {
             "session_meta" => self.consume_metadata(&value),
-            "response_item" => self.consume_response_item(&value, &event.event_id, occurred_at),
-            "event_msg" => self.consume_event_message(&value, &event.event_id, occurred_at),
+            "response_item" => self.consume_response_item(&value, &event_id, occurred_at.clone()),
+            "event_msg" => self.consume_event_message(&value, &event_id, occurred_at.clone()),
             _ => {}
         }
-        self.events.push(event);
+        self.events
+            .push(raw_event(value, sequence, raw_id, event_type, occurred_at));
     }
 
     fn consume_metadata(&mut self, value: &Value) {

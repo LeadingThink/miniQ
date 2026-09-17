@@ -2694,6 +2694,7 @@ dependencies = [
  "miniq-skills",
  "miniq-tools",
  "rand 0.9.4",
+ "rayon",
  "regex",
  "reqwest",
  "serde",

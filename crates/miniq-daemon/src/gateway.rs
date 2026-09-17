@@ -132,6 +132,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "workspace.delete" => workspace::delete(state, req.params),
         "externalSession.scan" => external_session::scan().await,
         "externalSession.import" => external_session::import(state, req.params).await,
+        "externalSession.importStatus" => external_session::import_status(state, req.params),
         "approval.resolve" => interaction::resolve_approval(state, req.params),
         "question.resolve" => interaction::resolve_question(state, req.params),
         "browser.resolve" => interaction::resolve_browser_request(state, req.params),

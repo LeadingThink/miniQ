@@ -19,40 +19,67 @@ impl Store {
     ) -> Result<ExternalImportOutcome> {
         let mut conn = self.conn.lock().unwrap();
         let transaction = conn.transaction()?;
-        let existing_id = find_external_session(&transaction, snapshot)?;
-        let created = existing_id.is_none();
-        let session_id = existing_id.unwrap_or_else(|| new_id("sess"));
-        let synced_at = now_iso();
-        if created {
-            insert_session(
+        let outcome = import_external_session_in_transaction(&transaction, workspace_id, snapshot)?;
+        transaction.commit()?;
+        Ok(outcome)
+    }
+
+    pub fn import_external_sessions(
+        &self,
+        imports: &[(String, ExternalSessionSnapshot)],
+    ) -> Result<Vec<ExternalImportOutcome>> {
+        let mut conn = self.conn.lock().unwrap();
+        let transaction = conn.transaction()?;
+        let mut outcomes = Vec::with_capacity(imports.len());
+        for (workspace_id, snapshot) in imports {
+            outcomes.push(import_external_session_in_transaction(
                 &transaction,
-                &session_id,
                 workspace_id,
                 snapshot,
-                &synced_at,
-            )?;
-        } else {
-            update_session_title(&transaction, &session_id, snapshot)?;
+            )?);
         }
-        upsert_link(&transaction, &session_id, snapshot, &synced_at)?;
-        insert_events(&transaction, &session_id, snapshot)?;
-        let imported_messages = project_messages(&transaction, &session_id, snapshot, &synced_at)?;
-        if imported_messages > 0 && !created {
-            transaction.execute(
-                "UPDATE sessions
+        transaction.commit()?;
+        Ok(outcomes)
+    }
+}
+
+fn import_external_session_in_transaction(
+    transaction: &Transaction<'_>,
+    workspace_id: &str,
+    snapshot: &ExternalSessionSnapshot,
+) -> Result<ExternalImportOutcome> {
+    let existing_id = find_external_session(&transaction, snapshot)?;
+    let created = existing_id.is_none();
+    let session_id = existing_id.unwrap_or_else(|| new_id("sess"));
+    let synced_at = now_iso();
+    if created {
+        insert_session(
+            &transaction,
+            &session_id,
+            workspace_id,
+            snapshot,
+            &synced_at,
+        )?;
+    } else {
+        update_session_title(&transaction, &session_id, snapshot)?;
+    }
+    upsert_link(&transaction, &session_id, snapshot, &synced_at)?;
+    insert_events(&transaction, &session_id, snapshot)?;
+    let imported_messages = project_messages(&transaction, &session_id, snapshot, &synced_at)?;
+    if imported_messages > 0 && !created {
+        transaction.execute(
+            "UPDATE sessions
                  SET updated_at = CASE WHEN updated_at > ?2 THEN updated_at ELSE ?2 END
                  WHERE id = ?1",
-                params![session_id, synced_at],
-            )?;
-        }
-        let session = read_session(&transaction, &session_id)?;
-        transaction.commit()?;
-        Ok(ExternalImportOutcome {
-            session,
-            imported_messages,
-            created,
-        })
+            params![session_id, synced_at],
+        )?;
     }
+    let session = read_session(&transaction, &session_id)?;
+    Ok(ExternalImportOutcome {
+        session,
+        imported_messages,
+        created,
+    })
 }
 
 fn find_external_session(
@@ -136,20 +163,20 @@ fn insert_events(
     session_id: &str,
     snapshot: &ExternalSessionSnapshot,
 ) -> Result<()> {
+    let mut statement = transaction.prepare_cached(
+        "INSERT OR IGNORE INTO external_session_events (
+            session_id, event_id, sequence, event_type, payload_json, occurred_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+    )?;
     for event in &snapshot.events {
-        transaction.execute(
-            "INSERT OR IGNORE INTO external_session_events (
-                session_id, event_id, sequence, event_type, payload_json, occurred_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                session_id,
-                event.event_id,
-                event.sequence,
-                event.event_type,
-                serde_json::to_string(&event.payload)?,
-                event.occurred_at
-            ],
-        )?;
+        statement.execute(params![
+            session_id,
+            event.event_id,
+            event.sequence,
+            event.event_type,
+            serde_json::to_string(&event.payload)?,
+            event.occurred_at
+        ])?;
     }
     Ok(())
 }
@@ -161,36 +188,35 @@ fn project_messages(
     now: &str,
 ) -> Result<usize> {
     let mut imported = 0;
+    let mut find_projection = transaction.prepare_cached(
+        "SELECT projected_message_id FROM external_session_events
+         WHERE session_id = ?1 AND event_id = ?2",
+    )?;
+    let mut insert_message = transaction.prepare_cached(
+        "INSERT INTO messages (id, session_id, role, content, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+    )?;
+    let mut update_projection = transaction.prepare_cached(
+        "UPDATE external_session_events SET projected_message_id = ?3
+         WHERE session_id = ?1 AND event_id = ?2",
+    )?;
     for message in &snapshot.messages {
-        let projected: Option<String> = transaction
-            .query_row(
-                "SELECT projected_message_id FROM external_session_events
-                 WHERE session_id = ?1 AND event_id = ?2",
-                params![session_id, message.event_id],
-                |row| row.get(0),
-            )
+        let projected: Option<String> = find_projection
+            .query_row(params![session_id, message.event_id], |row| row.get(0))
             .optional()?
             .flatten();
         if projected.is_some() {
             continue;
         }
         let message_id = new_id("msg");
-        transaction.execute(
-            "INSERT INTO messages (id, session_id, role, content, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                message_id,
-                session_id,
-                message.role.as_str(),
-                message.content,
-                message.occurred_at.as_deref().unwrap_or(now)
-            ],
-        )?;
-        transaction.execute(
-            "UPDATE external_session_events SET projected_message_id = ?3
-             WHERE session_id = ?1 AND event_id = ?2",
-            params![session_id, message.event_id, message_id],
-        )?;
+        insert_message.execute(params![
+            message_id,
+            session_id,
+            message.role.as_str(),
+            message.content,
+            message.occurred_at.as_deref().unwrap_or(now)
+        ])?;
+        update_projection.execute(params![session_id, message.event_id, message_id])?;
         imported += 1;
     }
     Ok(imported)
@@ -314,6 +340,40 @@ mod tests {
                 "continue in miniQ",
             ]
         );
+    }
+
+    #[test]
+    fn imports_multiple_sessions_in_one_batch_transaction() {
+        let store = Store::open_in_memory().unwrap();
+        let workspace = store.create_workspace("C:/work", "work").unwrap();
+        let first = snapshot();
+        let mut second = snapshot();
+        second.summary.external_id = "external-2".to_owned();
+        second.summary.source_path = "C:/data/session-2.jsonl".to_owned();
+        for (index, event) in second.events.iter_mut().enumerate() {
+            event.event_id = format!("second-event-{index}");
+        }
+        for (index, message) in second.messages.iter_mut().enumerate() {
+            message.event_id = format!("second-event-{index}");
+        }
+
+        let outcomes = store
+            .import_external_sessions(&[
+                (workspace.id.clone(), first),
+                (workspace.id.clone(), second),
+            ])
+            .unwrap();
+
+        assert_eq!(outcomes.len(), 2);
+        assert!(outcomes.iter().all(|outcome| outcome.created));
+        assert_eq!(
+            outcomes
+                .iter()
+                .map(|item| item.imported_messages)
+                .sum::<usize>(),
+            4
+        );
+        assert_eq!(store.list_sessions(None).unwrap().len(), 2);
     }
 
     fn snapshot() -> ExternalSessionSnapshot {

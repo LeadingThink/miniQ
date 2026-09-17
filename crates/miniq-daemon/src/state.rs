@@ -92,6 +92,7 @@ pub struct AppState {
     /// Bound snapshot hashing and uploads across desktop and mobile connections.
     pub(crate) share_uploads: Arc<tokio::sync::Semaphore>,
     pub(crate) title_jobs: Arc<Mutex<HashSet<String>>>,
+    pub(crate) external_import_jobs: Arc<crate::external_import_jobs::ExternalImportJobs>,
     /// Pending approvals waiting for a user decision (approval id -> waker).
     pub pending_approvals: Arc<Mutex<HashMap<String, oneshot::Sender<ApprovalDecision>>>>,
     /// Per-session allowlist of approved tool patterns ("approve for session").
@@ -189,6 +190,9 @@ impl AppState {
             activity: crate::activity::ActivityGate::default(),
             share_uploads: Arc::new(tokio::sync::Semaphore::new(2)),
             title_jobs: Arc::new(Mutex::new(HashSet::new())),
+            external_import_jobs: Arc::new(
+                crate::external_import_jobs::ExternalImportJobs::default(),
+            ),
             pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             session_allowlist: Arc::new(Mutex::new(HashMap::new())),
             pending_questions: Arc::new(Mutex::new(HashMap::new())),

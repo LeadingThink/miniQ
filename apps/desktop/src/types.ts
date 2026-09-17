@@ -124,6 +124,7 @@ export interface ExternalSessionSelection {
 export interface ExternalImportError {
   provider: ExternalProvider;
   externalId: string | null;
+  workspaceRequired: boolean;
   message: string;
 }
 
@@ -131,6 +132,19 @@ export interface ExternalSessionImportResult {
   importedSessionIds: string[];
   importedMessages: number;
   errors: ExternalImportError[];
+}
+
+export type ExternalSessionImportState = "running" | "completed" | "failed";
+
+export interface ExternalSessionImportJob {
+  id: string;
+  state: ExternalSessionImportState;
+  totalSessions: number;
+  processedSessions: number;
+  importedMessages: number;
+  errorCount: number;
+  result: ExternalSessionImportResult | null;
+  failure: string | null;
 }
 
 export interface Message {

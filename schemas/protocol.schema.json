@@ -532,6 +532,31 @@
         ],
         "type": "object"
       },
+      "BrowserDriverRequest": {
+        "properties": {
+          "arguments": true,
+          "browserSessionId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "arguments",
+          "browserSessionId",
+          "id",
+          "operation",
+          "sessionId"
+        ],
+        "type": "object"
+      },
       "Message": {
         "properties": {
           "attachments": {
@@ -1030,6 +1055,24 @@
     },
     "description": "An event pushed by the daemon over the WebSocket connection.\n\nEvents are distinguished from RPC responses by the presence of a `type` field instead of `id`/`result`.",
     "oneOf": [
+      {
+        "properties": {
+          "request": {
+            "$ref": "#/definitions/BrowserDriverRequest"
+          },
+          "type": {
+            "enum": [
+              "browser_driver_requested"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "request",
+          "type"
+        ],
+        "type": "object"
+      },
       {
         "properties": {
           "mode": {
@@ -2113,6 +2156,133 @@
     "title": "ModelCallsParams",
     "type": "object"
   },
+  "externalSessionImportJob": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "definitions": {
+      "ExternalImportError": {
+        "properties": {
+          "externalId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/definitions/ExternalProvider"
+          },
+          "workspaceRequired": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "message",
+          "provider",
+          "workspaceRequired"
+        ],
+        "type": "object"
+      },
+      "ExternalProvider": {
+        "enum": [
+          "codex",
+          "claude_code",
+          "opencode"
+        ],
+        "type": "string"
+      },
+      "ExternalSessionImportResult": {
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/definitions/ExternalImportError"
+            },
+            "type": "array"
+          },
+          "importedMessages": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "importedSessionIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "errors",
+          "importedMessages",
+          "importedSessionIds"
+        ],
+        "type": "object"
+      },
+      "ExternalSessionImportState": {
+        "enum": [
+          "running",
+          "completed",
+          "failed"
+        ],
+        "type": "string"
+      }
+    },
+    "properties": {
+      "errorCount": {
+        "format": "uint",
+        "minimum": 0.0,
+        "type": "integer"
+      },
+      "failure": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "id": {
+        "type": "string"
+      },
+      "importedMessages": {
+        "format": "uint",
+        "minimum": 0.0,
+        "type": "integer"
+      },
+      "processedSessions": {
+        "format": "uint",
+        "minimum": 0.0,
+        "type": "integer"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExternalSessionImportResult"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "state": {
+        "$ref": "#/definitions/ExternalSessionImportState"
+      },
+      "totalSessions": {
+        "format": "uint",
+        "minimum": 0.0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "errorCount",
+      "id",
+      "importedMessages",
+      "processedSessions",
+      "state",
+      "totalSessions"
+    ],
+    "title": "ExternalSessionImportJob",
+    "type": "object"
+  },
   "externalSessionImportRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "definitions": {
@@ -2165,64 +2335,18 @@
     "title": "ExternalSessionImportRequest",
     "type": "object"
   },
-  "externalSessionImportResult": {
+  "externalSessionImportStatusRequest": {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "definitions": {
-      "ExternalImportError": {
-        "properties": {
-          "externalId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "message": {
-            "type": "string"
-          },
-          "provider": {
-            "$ref": "#/definitions/ExternalProvider"
-          }
-        },
-        "required": [
-          "message",
-          "provider"
-        ],
-        "type": "object"
-      },
-      "ExternalProvider": {
-        "enum": [
-          "codex",
-          "claude_code",
-          "opencode"
-        ],
+    "properties": {
+      "jobId": {
+        "minLength": 1,
         "type": "string"
       }
     },
-    "properties": {
-      "errors": {
-        "items": {
-          "$ref": "#/definitions/ExternalImportError"
-        },
-        "type": "array"
-      },
-      "importedMessages": {
-        "format": "uint",
-        "minimum": 0.0,
-        "type": "integer"
-      },
-      "importedSessionIds": {
-        "items": {
-          "type": "string"
-        },
-        "type": "array"
-      }
-    },
     "required": [
-      "errors",
-      "importedMessages",
-      "importedSessionIds"
+      "jobId"
     ],
-    "title": "ExternalSessionImportResult",
+    "title": "ExternalSessionImportStatusRequest",
     "type": "object"
   },
   "externalSessionScan": {
@@ -2748,7 +2872,9 @@
           "task",
           "compaction",
           "planReview",
-          "skillLearning"
+          "skillLearning",
+          "sessionTitle",
+          "shareModeration"
         ],
         "type": "string"
       },
@@ -3758,7 +3884,7 @@
     "title": "PluginSetEnabledParams",
     "type": "object"
   },
-  "protocolVersion": 1,
+  "protocolVersion": 2,
   "request": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "definitions": {

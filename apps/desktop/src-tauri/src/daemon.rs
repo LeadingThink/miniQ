@@ -5,8 +5,13 @@
 //! daemon binary if nothing is running.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+use futures_util::{SinkExt, StreamExt};
+use serde_json::Value;
+use tokio_tungstenite::tungstenite::Message;
 
 use super::daemon_process::DaemonProcess;
 pub use miniq_local::ConnectionInfo;
@@ -22,12 +27,19 @@ fn read_connection_info() -> Option<ConnectionInfo> {
 #[derive(Default)]
 pub struct DaemonLifecycle {
     update: Mutex<Option<DaemonProcess>>,
+    exiting: AtomicBool,
 }
 
 impl DaemonLifecycle {
     pub fn ensure(&self) -> Result<ConnectionInfo, String> {
+        if self.exiting.load(Ordering::SeqCst) {
+            return Err("daemon startup is blocked while miniQ is exiting".into());
+        }
         // Serialize startup with update preparation so an in-flight reconnect cannot respawn it.
         let update = self.update.lock().map_err(|e| e.to_string())?;
+        if self.exiting.load(Ordering::SeqCst) {
+            return Err("daemon startup is blocked while miniQ is exiting".into());
+        }
         if update.is_some() {
             return Err("daemon startup is paused while installing an update".into());
         }
@@ -56,6 +68,75 @@ impl DaemonLifecycle {
         self.update.lock().map_err(|e| e.to_string())?.take();
         Ok(())
     }
+
+    pub fn begin_shutdown(&self) {
+        self.exiting.store(true, Ordering::SeqCst);
+    }
+
+    pub async fn shutdown(&self) -> Result<(), String> {
+        self.begin_shutdown();
+        // Wait for an ensure() that already passed the exit check. Once its
+        // startup lock is released, daemon.json points at the process to stop.
+        {
+            let _startup = self.update.lock().map_err(|error| error.to_string())?;
+        }
+        let Some(info) = read_connection_info() else {
+            return Ok(());
+        };
+        let process = DaemonProcess::open(info.pid)?;
+        request_shutdown(&info).await?;
+        tauri::async_runtime::spawn_blocking(move || process.stop(Duration::from_secs(10)))
+            .await
+            .map_err(|error| error.to_string())?
+    }
+}
+
+async fn request_shutdown(info: &ConnectionInfo) -> Result<(), String> {
+    let mut url = url::Url::parse(&format!("ws://127.0.0.1:{}/ws", info.port))
+        .map_err(|_| "invalid daemon shutdown URL".to_owned())?;
+    url.query_pairs_mut().append_pair("token", &info.token);
+    let (mut socket, _) = tokio::time::timeout(
+        Duration::from_secs(3),
+        tokio_tungstenite::connect_async(url.as_str()),
+    )
+    .await
+    .map_err(|_| "daemon shutdown connection timed out".to_owned())?
+    .map_err(|_| "daemon shutdown connection failed".to_owned())?;
+    socket
+        .send(Message::text(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": "desktop-quit",
+                "method": "daemon.shutdown"
+            })
+            .to_string(),
+        ))
+        .await
+        .map_err(|_| "daemon shutdown request failed".to_owned())?;
+
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while let Some(message) = socket.next().await {
+            let message = message.map_err(|_| "daemon shutdown response failed".to_owned())?;
+            let Message::Text(text) = message else {
+                continue;
+            };
+            let response: Value = serde_json::from_str(&text)
+                .map_err(|_| "daemon returned an invalid shutdown response".to_owned())?;
+            if response["id"] != "desktop-quit" {
+                continue;
+            }
+            if let Some(error) = response.get("error") {
+                return Err(format!(
+                    "daemon rejected shutdown: {}",
+                    error["message"].as_str().unwrap_or("unknown error")
+                ));
+            }
+            return Ok(());
+        }
+        Err("daemon disconnected before confirming shutdown".to_owned())
+    })
+    .await
+    .map_err(|_| "daemon shutdown response timed out".to_owned())?
 }
 
 /// Candidate locations for the daemon binary.
@@ -160,11 +241,15 @@ fn daemon_process_alive(pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+    use tokio_tungstenite::tungstenite::Message;
 
     #[test]
     fn update_guard_blocks_startup_until_cancelled() {
         let lifecycle = DaemonLifecycle {
             update: Mutex::new(Some(DaemonProcess::open(std::process::id()).unwrap())),
+            exiting: AtomicBool::new(false),
         };
         assert!(lifecycle.ensure().unwrap_err().contains("paused"));
         assert!(lifecycle
@@ -177,6 +262,53 @@ mod tests {
             .wait_for_exit()
             .unwrap_err()
             .contains("not been prepared"));
+        lifecycle.begin_shutdown();
+        assert!(lifecycle.ensure().unwrap_err().contains("exiting"));
+    }
+
+    #[tokio::test]
+    async fn shutdown_request_is_authenticated_and_waits_for_confirmation() {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_hdr_async(
+                stream,
+                |request: &Request, response: Response| {
+                    assert_eq!(request.uri().query(), Some("token=test-token"));
+                    Ok(response)
+                },
+            )
+            .await
+            .unwrap();
+            let Message::Text(request) = socket.next().await.unwrap().unwrap() else {
+                panic!("expected a text shutdown request");
+            };
+            let request: Value = serde_json::from_str(&request).unwrap();
+            assert_eq!(request["method"], "daemon.shutdown");
+            socket
+                .send(Message::text(
+                    serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": "desktop-quit",
+                        "result": {"accepted": true}
+                    })
+                    .to_string(),
+                ))
+                .await
+                .unwrap();
+        });
+
+        request_shutdown(&ConnectionInfo {
+            port,
+            token: "test-token".to_owned(),
+            pid: std::process::id(),
+        })
+        .await
+        .unwrap();
+        server.await.unwrap();
     }
 
     #[test]

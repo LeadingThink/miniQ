@@ -36,6 +36,7 @@ reqwest = { workspace = true }
 base64 = "0.22"
 flate2 = "1"
 regex = { workspace = true }
+rayon = "1"
 aes-gcm = { workspace = true }
 sha2 = { workspace = true }
 

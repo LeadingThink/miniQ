@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -5,6 +6,40 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::{ConnectorError, ExternalSessionEvent};
+
+pub(crate) struct SessionFileIndex {
+    files: Vec<PathBuf>,
+    by_source_path: HashMap<String, usize>,
+}
+
+impl SessionFileIndex {
+    pub(crate) fn collect(
+        roots: &[PathBuf],
+        extension: &str,
+        skipped_prefixes: &[&str],
+    ) -> Result<Self, ConnectorError> {
+        let files = collect_files(roots, extension, skipped_prefixes)?;
+        let by_source_path = files
+            .iter()
+            .enumerate()
+            .map(|(index, path)| (path.to_string_lossy().into_owned(), index))
+            .collect();
+        Ok(Self {
+            files,
+            by_source_path,
+        })
+    }
+
+    pub(crate) fn files(&self) -> &[PathBuf] {
+        &self.files
+    }
+
+    pub(crate) fn get(&self, source_path: &str) -> Option<&Path> {
+        self.by_source_path
+            .get(source_path)
+            .map(|index| self.files[*index].as_path())
+    }
+}
 
 pub(crate) fn user_home() -> Option<PathBuf> {
     std::env::var_os("HOME")
