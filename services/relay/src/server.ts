@@ -17,8 +17,16 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "tauri://localhost",
 ];
 
-export function createRelayServer(options?: { allowedOrigins?: string[]; blobs?: TicketIssuer; shares?: ShareHttp }): Server {
-  const broker = new RelayBroker(options?.blobs ?? configuredBlobStore());
+export function createRelayServer(options?: {
+  allowedOrigins?: string[];
+  blobs?: TicketIssuer;
+  shares?: ShareHttp;
+  desktopReconnectGraceMs?: number;
+}): Server {
+  const broker = new RelayBroker(
+    options?.blobs ?? configuredBlobStore(),
+    options?.desktopReconnectGraceMs,
+  );
   const allowedOrigins = new Set(options?.allowedOrigins ?? configuredOrigins());
   const shares = options?.shares ?? (process.env.MINIQ_SHARE_DIR ? new ShareHttp(new ShareStore(process.env.MINIQ_SHARE_DIR), oneApiShareAuth()) : undefined);
   const server = createServer((request, response) => {
@@ -40,6 +48,7 @@ export function createRelayServer(options?: { allowedOrigins?: string[]; blobs?:
     const timer = setInterval(cleanup, 3600000).unref();
     server.on("close", () => clearInterval(timer));
   }
+  server.on("close", () => broker.close());
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 });
 
   server.on("upgrade", (request, socket, head) => {

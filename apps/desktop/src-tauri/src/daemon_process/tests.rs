@@ -6,6 +6,14 @@ fn missing_pid_is_not_accepted_as_an_exited_daemon() {
     assert!(DaemonProcess::open(u32::MAX).is_err());
 }
 
+#[test]
+fn current_process_is_running() {
+    assert!(DaemonProcess::open(std::process::id())
+        .unwrap()
+        .is_running()
+        .unwrap());
+}
+
 #[cfg(windows)]
 mod windows {
     use super::*;

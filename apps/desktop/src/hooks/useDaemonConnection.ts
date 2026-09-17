@@ -29,6 +29,11 @@ export function connectionRetryDelay(attempt: number): number {
   return Math.min(500 * 2 ** Math.max(0, attempt - 1), 5_000);
 }
 
+export function connectionFailureMessage(error: unknown, reconnecting: boolean): string {
+  const suffix = reconnecting ? "miniQ 正在自动重连" : "正在继续尝试连接 miniQ 服务";
+  return `${errorMessage(error)}，${suffix}`;
+}
+
 async function connectWithRetry(
   options: ConnectAttemptOptions,
   reconnecting: boolean,
@@ -61,7 +66,7 @@ async function connectWithRetry(
     } catch (error) {
       if (options.isDisposed()) return;
       if (attempt === 3) {
-        options.onError(`${errorMessage(error)}，miniQ 正在自动重连`);
+        options.onError(connectionFailureMessage(error, reconnecting));
       }
       await new Promise((resolve) =>
         setTimeout(resolve, connectionRetryDelay(attempt)),

@@ -296,7 +296,14 @@ export class RpcClient {
         this.pending.delete(id);
         pending.cleanup();
         this.cancelRemoteRequest(id);
-        if (method !== "daemon.health") this.disconnect("rpc timeout");
+        // A slow remote history/file response is an RPC failure, not a
+        // transport failure. Keep the remote WebSocket alive so heartbeats
+        // and subsequent requests can continue while the relay/desktop
+        // recovers. A local timeout still tears down the socket so a wedged
+        // daemon can be rediscovered on the next attempt.
+        if (method !== "daemon.health" && this.connectionMode !== "remote") {
+          this.disconnect("rpc timeout");
+        }
         reject(new Error(`请求 ${method} 超时`));
       }, options.timeoutMs ?? RPC_TIMEOUT_MS);
       const abort = () => {

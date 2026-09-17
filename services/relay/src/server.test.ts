@@ -17,8 +17,12 @@ function identity(key: string) {
   return { roomId: derive("miniq-relay-room-v1"), authToken: derive("miniq-relay-auth-v1") };
 }
 
-async function start(blobs?: TicketIssuer) {
-  const server = createRelayServer({ allowedOrigins: ["http://test.local"], blobs });
+async function start(blobs?: TicketIssuer, desktopReconnectGraceMs?: number) {
+  const server = createRelayServer({
+    allowedOrigins: ["http://test.local"],
+    blobs,
+    desktopReconnectGraceMs,
+  });
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -209,6 +213,62 @@ describe("miniQ relay", () => {
       clientId: "desktop-next",
       desktopOnline: true,
     });
+  });
+
+  it("keeps mobiles connected across a transient desktop disconnect", async () => {
+    const url = await start();
+    const firstDesktop = await connect(url);
+    firstDesktop.send(JSON.stringify(hello("desktop", "sk-shared", "desktop-first")));
+    await nextJson(firstDesktop);
+    const mobile = await connect(url);
+    mobile.send(JSON.stringify(hello("mobile")));
+    const mobileReady = await nextJson(mobile);
+
+    const disconnected = nextClose(firstDesktop);
+    firstDesktop.close();
+    await disconnected;
+    expect(mobile.readyState).toBe(WebSocket.OPEN);
+
+    const reconnectedDesktop = await connect(url);
+    const ready = nextJson(reconnectedDesktop);
+    reconnectedDesktop.send(JSON.stringify(hello("desktop", "sk-shared", "desktop-first")));
+    await expect(ready).resolves.toMatchObject({ type: "ready", mobileClients: 1 });
+
+    const forwarded = nextType(reconnectedDesktop, "frame");
+    mobile.send(JSON.stringify({
+      type: "frame",
+      target: "desktop",
+      nonce: "CCCCCCCCCCCCCCCC",
+      ciphertext: "request-after-transient-disconnect",
+    }));
+    await expect(forwarded).resolves.toMatchObject({
+      type: "frame",
+      source: mobileReady.clientId,
+      ciphertext: "request-after-transient-disconnect",
+    });
+  });
+
+  it("does not let an unauthorized reconnect cancel offline cleanup", async () => {
+    const url = await start(undefined, 25);
+    const desktop = await connect(url);
+    desktop.send(JSON.stringify(hello("desktop")));
+    await nextJson(desktop);
+    const mobile = await connect(url);
+    mobile.send(JSON.stringify(hello("mobile")));
+    await nextJson(mobile);
+
+    const disconnected = nextClose(desktop);
+    desktop.close();
+    await disconnected;
+
+    const attacker = await connect(url);
+    const rejected = nextJson(attacker);
+    const forged = hello("desktop");
+    forged.authToken = identity("sk-wrong").authToken;
+    attacker.send(JSON.stringify(forged));
+    await expect(rejected).resolves.toMatchObject({ type: "error", code: "unauthorized" });
+
+    await expect(nextClose(mobile)).resolves.toBeUndefined();
   });
 
   it("counts Unicode device names consistently with the desktop daemon", async () => {

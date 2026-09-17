@@ -12,6 +12,9 @@ use super::daemon_process::DaemonProcess;
 pub use miniq_local::ConnectionInfo;
 use miniq_local::{data_dir, health_ok};
 
+const DAEMON_STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
+const DAEMON_HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(250);
+
 fn read_connection_info() -> Option<ConnectionInfo> {
     miniq_local::read_connection_info(&data_dir())
 }
@@ -119,19 +122,39 @@ fn ensure_daemon() -> Result<ConnectionInfo, String> {
         if health_ok(info.port) {
             return Ok(info);
         }
+
+        // A daemon can have written its connection file before its HTTP
+        // health endpoint is ready. Reusing that process avoids launching a
+        // second daemon, which would lose the startup race on daemon.lock and
+        // leave the shell waiting on stale connection information.
+        if daemon_process_alive(info.pid) {
+            return wait_for_healthy(DAEMON_STARTUP_TIMEOUT);
+        }
     }
     spawn_daemon()?;
-    // Wait for the fresh daemon.json + a passing health check.
-    let deadline = Instant::now() + Duration::from_secs(10);
+    wait_for_healthy(DAEMON_STARTUP_TIMEOUT)
+}
+
+fn wait_for_healthy(timeout: Duration) -> Result<ConnectionInfo, String> {
+    let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(250));
+        std::thread::sleep(DAEMON_HEALTH_POLL_INTERVAL);
         if let Some(info) = read_connection_info() {
             if health_ok(info.port) {
                 return Ok(info);
             }
         }
     }
-    Err("daemon did not become healthy within 10s".to_string())
+    Err(format!(
+        "本地后台服务在 {} 秒内未就绪；这与远程中继无关，请重试或查看 miniQ 日志",
+        timeout.as_secs()
+    ))
+}
+
+fn daemon_process_alive(pid: u32) -> bool {
+    DaemonProcess::open(pid)
+        .and_then(|process| process.is_running())
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -154,5 +177,11 @@ mod tests {
             .wait_for_exit()
             .unwrap_err()
             .contains("not been prepared"));
+    }
+
+    #[test]
+    fn process_liveness_rejects_missing_pid_and_accepts_current_process() {
+        assert!(!daemon_process_alive(0));
+        assert!(daemon_process_alive(std::process::id()));
     }
 }

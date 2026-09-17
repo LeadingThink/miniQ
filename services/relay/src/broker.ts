@@ -4,6 +4,10 @@ import { MAX_BLOB_BYTES, type TicketIssuer } from "./blobStore.js";
 
 const MAX_MOBILES_PER_ROOM = 8;
 const MAX_MESSAGES_PER_MINUTE = 240;
+// A desktop relay socket can drop briefly during Wi-Fi/TLS changes. Keep
+// mobile sockets in place while the same room reconnects instead of forcing
+// every phone to restart its session for a transient transport event.
+const DESKTOP_RECONNECT_GRACE_MS = 15_000;
 const HASH_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const DEVICE_PATTERN = /^[A-Za-z0-9_-]{8,80}$/;
 
@@ -44,7 +48,16 @@ interface Room {
 export class RelayBroker {
   private readonly rooms = new Map<string, Room>();
   private readonly peers = new WeakMap<WebSocket, Peer>();
-  constructor(private readonly blobs?: TicketIssuer) {}
+  private readonly desktopDisconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  constructor(
+    private readonly blobs?: TicketIssuer,
+    private readonly desktopReconnectGraceMs = DESKTOP_RECONNECT_GRACE_MS,
+  ) {}
+
+  close(): void {
+    for (const timer of this.desktopDisconnectTimers.values()) clearTimeout(timer);
+    this.desktopDisconnectTimers.clear();
+  }
 
   register(socket: WebSocket, raw: unknown): boolean {
     const hello = parseHello(raw);
@@ -67,6 +80,11 @@ export class RelayBroker {
           "desktop_conflict",
           "同一个 Key 已有另一台桌面在线，请先在那台电脑上关闭远程访问",
         );
+      }
+      const pendingDisconnect = this.desktopDisconnectTimers.get(hello.roomId);
+      if (pendingDisconnect) {
+        clearTimeout(pendingDisconnect);
+        this.desktopDisconnectTimers.delete(hello.roomId);
       }
       existing?.desktop.socket.close(4001, "desktop reconnected");
       const peer = createPeer(socket, "desktop", hello.roomId, hello.deviceId);
@@ -146,11 +164,18 @@ export class RelayBroker {
     const room = this.rooms.get(peer.roomId);
     if (!room) return;
     if (peer.role === "desktop" && room.desktop.socket === socket) {
-      for (const mobile of room.mobiles.values()) {
-        send(mobile.socket, { type: "presence", desktopOnline: false, mobileClients: 0 });
-        mobile.socket.close(1012, "desktop offline");
-      }
-      this.rooms.delete(peer.roomId);
+      const timer = setTimeout(() => {
+        this.desktopDisconnectTimers.delete(peer.roomId);
+        const current = this.rooms.get(peer.roomId);
+        if (!current || current.desktop.socket !== socket) return;
+        for (const mobile of current.mobiles.values()) {
+          send(mobile.socket, { type: "presence", desktopOnline: false, mobileClients: 0 });
+          mobile.socket.close(1012, "desktop offline");
+        }
+        this.rooms.delete(peer.roomId);
+      }, this.desktopReconnectGraceMs);
+      timer.unref?.();
+      this.desktopDisconnectTimers.set(peer.roomId, timer);
       return;
     }
     room.mobiles.delete(peer.id);

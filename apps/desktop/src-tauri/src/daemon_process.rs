@@ -35,6 +35,48 @@ impl DaemonProcess {
         }
     }
 
+    pub fn is_running(&self) -> Result<bool, String> {
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::AsRawHandle;
+            use windows_sys::Win32::Foundation::{WAIT_OBJECT_0, WAIT_TIMEOUT};
+            use windows_sys::Win32::System::Threading::WaitForSingleObject;
+
+            let Some(handle) = &self.handle else {
+                return Ok(false);
+            };
+            return match unsafe { WaitForSingleObject(handle.as_raw_handle(), 0) } {
+                WAIT_OBJECT_0 => Ok(false),
+                WAIT_TIMEOUT => Ok(true),
+                _ => Err(format!(
+                    "cannot observe daemon process {}: {}",
+                    self.pid,
+                    std::io::Error::last_os_error()
+                )),
+            };
+        }
+        #[cfg(unix)]
+        {
+            if unsafe { libc::waitpid(self.pid as i32, std::ptr::null_mut(), libc::WNOHANG) }
+                == self.pid as i32
+            {
+                return Ok(false);
+            }
+            if unsafe { libc::kill(self.pid as i32, 0) } == 0 {
+                return Ok(true);
+            }
+            let error = std::io::Error::last_os_error();
+            match error.raw_os_error() {
+                Some(libc::ESRCH) => Ok(false),
+                Some(libc::EPERM) => Ok(true),
+                _ => Err(format!(
+                    "cannot observe daemon process {}: {error}",
+                    self.pid
+                )),
+            }
+        }
+    }
+
     pub fn wait(&self, timeout: Duration) -> Result<(), String> {
         #[cfg(windows)]
         {
@@ -62,20 +104,8 @@ impl DaemonProcess {
         {
             let deadline = std::time::Instant::now() + timeout;
             loop {
-                if unsafe { libc::waitpid(self.pid as i32, std::ptr::null_mut(), libc::WNOHANG) }
-                    == self.pid as i32
-                {
+                if !self.is_running()? {
                     return Ok(());
-                }
-                if unsafe { libc::kill(self.pid as i32, 0) } != 0 {
-                    let error = std::io::Error::last_os_error();
-                    if error.raw_os_error() == Some(libc::ESRCH) {
-                        return Ok(());
-                    }
-                    return Err(format!(
-                        "cannot observe daemon process {}: {error}",
-                        self.pid
-                    ));
                 }
                 if std::time::Instant::now() >= deadline {
                     break;

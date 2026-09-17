@@ -198,6 +198,17 @@ describe("RpcClient timeouts", () => {
     expect(client.connected).toBe(true);
   });
 
+  it("keeps a remote socket alive when one request times out", async () => {
+    const { client } = await remoteClient();
+    const response = client.call("session.open", { sessionId: "slow" });
+    const rejected = expect(response).rejects.toThrow("请求 session.open 超时");
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    await rejected;
+    expect(client.connected).toBe(true);
+  });
+
   it("requests a snapshot resync without closing a healthy remote connection", async () => {
     const { client, receive } = await remoteClient();
     const resync = vi.fn();
