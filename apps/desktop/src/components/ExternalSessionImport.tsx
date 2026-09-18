@@ -15,7 +15,7 @@ import {
 import { localDateTime } from "../time";
 import type {
   ExternalProvider,
-  ExternalSessionImportResult,
+  ExternalSessionImportJob,
   ExternalSessionScan,
   Workspace,
 } from "../types";
@@ -83,7 +83,9 @@ export function ExternalSessionImportDialog(props: ExternalSessionImportProps) {
         </header>
 
         {state.result ? (
-          <ImportResult result={state.result} />
+          <ImportResult state={state} workspaces={props.workspaces} />
+        ) : state.job ? (
+          <ImportProgress job={state.job} />
         ) : (
           <>
             <ImportToolbar
@@ -125,6 +127,8 @@ function ImportFooter(props: {
       <span>
         {state.result
           ? `${state.result.importedMessages} 条新消息`
+          : state.job
+            ? `${state.job.processedSessions} / ${state.job.totalSessions} 个会话`
           : `${state.selected.size} 个会话`}
       </span>
       <div>
@@ -150,7 +154,7 @@ function ImportFooter(props: {
             ) : (
               <Download size={15} />
             )}
-            导入
+            {state.importing ? "导入中" : "导入"}
           </button>
         )}
       </div>
@@ -304,7 +308,12 @@ function ProviderMark({ provider }: { provider: ExternalProvider }) {
   );
 }
 
-function ImportResult({ result }: { result: ExternalSessionImportResult }) {
+function ImportResult(props: {
+  state: ExternalSessionImportState;
+  workspaces: Workspace[];
+}) {
+  const { result } = props.state;
+  if (!result) return null;
   return (
     <div className="external-import-result">
       <Check size={28} />
@@ -312,9 +321,47 @@ function ImportResult({ result }: { result: ExternalSessionImportResult }) {
       <span>{result.importedMessages} 条新消息</span>
       {result.errors.map((item, index) => (
         <div className="external-scan-warning" key={`${item.provider}-${item.externalId}-${index}`}>
-          {PROVIDER_LABELS[item.provider]}: {item.message}
+          {PROVIDER_LABELS[item.provider]}: {item.workspaceRequired
+            ? "原项目目录不可用，请选择目标项目后重试"
+            : item.message}
         </div>
       ))}
+      {props.state.retryableFailureCount > 0 && (
+        <div className="external-import-retry">
+          <select
+            aria-label="失败会话的目标项目"
+            value={props.state.workspaceId}
+            onChange={(event) => props.state.setWorkspaceId(event.target.value)}
+          >
+            <option value="">选择目标项目</option>
+            {props.workspaces.map((workspace) => (
+              <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
+            ))}
+          </select>
+          <button
+            className="primary"
+            disabled={!props.state.workspaceId || props.state.importing}
+            onClick={() => void props.state.retryWorkspaceFailures()}
+          >
+            <RefreshCw size={15} /> 重试失败项
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ImportProgress({ job }: { job: ExternalSessionImportJob }) {
+  return (
+    <div className="external-import-progress" role="status">
+      <LoaderCircle className="external-spin" size={28} />
+      <strong>正在导入会话</strong>
+      <span>{job.processedSessions} / {job.totalSessions}</span>
+      <progress value={job.processedSessions} max={job.totalSessions} />
+      <small>
+        {job.importedMessages} 条新消息
+        {job.errorCount > 0 ? ` · ${job.errorCount} 个错误` : ""}
+      </small>
     </div>
   );
 }

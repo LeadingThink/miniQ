@@ -105,6 +105,7 @@ pub struct ExternalSessionImportRequest {
 pub struct ExternalImportError {
     pub provider: ExternalProvider,
     pub external_id: Option<String>,
+    pub workspace_required: bool,
     pub message: String,
 }
 
@@ -114,6 +115,34 @@ pub struct ExternalSessionImportResult {
     pub imported_session_ids: Vec<String>,
     pub imported_messages: usize,
     pub errors: Vec<ExternalImportError>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalSessionImportState {
+    Running,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalSessionImportJob {
+    pub id: String,
+    pub state: ExternalSessionImportState,
+    pub total_sessions: usize,
+    pub processed_sessions: usize,
+    pub imported_messages: usize,
+    pub error_count: usize,
+    pub result: Option<ExternalSessionImportResult>,
+    pub failure: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalSessionImportStatusRequest {
+    #[schemars(length(min = 1))]
+    pub job_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -156,7 +185,9 @@ pub struct ExternalSessionSnapshot {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExternalProvider, ExternalSessionImportRequest};
+    use super::{
+        ExternalProvider, ExternalSessionImportRequest, ExternalSessionImportStatusRequest,
+    };
 
     #[test]
     fn opencode_wire_value_matches_provider_id() {
@@ -171,5 +202,13 @@ mod tests {
         let schema =
             serde_json::to_value(schemars::schema_for!(ExternalSessionImportRequest)).unwrap();
         assert_eq!(schema["properties"]["sessions"]["minItems"], 1);
+    }
+
+    #[test]
+    fn import_status_schema_requires_a_job_id() {
+        let schema =
+            serde_json::to_value(schemars::schema_for!(ExternalSessionImportStatusRequest))
+                .unwrap();
+        assert_eq!(schema["properties"]["jobId"]["minLength"], 1);
     }
 }

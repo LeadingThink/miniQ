@@ -9,15 +9,15 @@ use rayon::prelude::*;
 use serde_json::Value;
 
 use crate::common::{
-    collect_files, env_root, first_and_last_timestamp, first_string, raw_event, read_jsonl,
-    string_at, timestamp_at,
+    env_root, first_and_last_timestamp, first_string, raw_event, read_jsonl, string_at,
+    timestamp_at, SessionFileIndex,
 };
 use crate::projection::project_claude_message;
 use crate::{ConnectorScan, ExternalSessionSnapshot, SessionConnector};
 
 pub(crate) struct ClaudeConnector {
     root: PathBuf,
-    files: OnceLock<Vec<PathBuf>>,
+    files: OnceLock<SessionFileIndex>,
 }
 
 impl ClaudeConnector {
@@ -36,11 +36,11 @@ impl ClaudeConnector {
         }
     }
 
-    fn session_files(&self) -> Result<&[PathBuf], crate::ConnectorError> {
+    fn session_files(&self) -> Result<&SessionFileIndex, crate::ConnectorError> {
         if let Some(files) = self.files.get() {
             return Ok(files);
         }
-        let files = collect_files(
+        let files = SessionFileIndex::collect(
             &[self.root.join("projects")],
             "jsonl",
             &["agent-", "subagents"],
@@ -72,15 +72,11 @@ impl ClaudeConnector {
         external_id: &str,
         source_path: &str,
     ) -> Result<Option<ExternalSessionSnapshot>, crate::ConnectorError> {
-        let path = self
-            .session_files()?
-            .iter()
-            .find(|path| path.to_string_lossy() == source_path)
-            .ok_or_else(|| {
-                crate::ConnectorError::InvalidData(
-                    "Claude Code source path is not registered".to_owned(),
-                )
-            })?;
+        let path = self.session_files()?.get(source_path).ok_or_else(|| {
+            crate::ConnectorError::InvalidData(
+                "Claude Code source path is not registered".to_owned(),
+            )
+        })?;
         let snapshot = self.parse_session(path)?;
         if snapshot
             .as_ref()
@@ -103,6 +99,10 @@ impl SessionConnector for ClaudeConnector {
         &self.root
     }
 
+    fn prepare(&self) -> Result<(), crate::ConnectorError> {
+        self.session_files().map(|_| ())
+    }
+
     fn scan(&self) -> ConnectorScan {
         if !self.root.is_dir() {
             return ConnectorScan::unavailable(self.provider(), self.root.clone());
@@ -112,6 +112,7 @@ impl SessionConnector for ClaudeConnector {
         match self.session_files() {
             Ok(files) => {
                 let parsed: Vec<_> = files
+                    .files()
                     .par_iter()
                     .map(|file| self.parse_session(file))
                     .collect();
@@ -171,17 +172,15 @@ impl ClaudeParseState {
                 &["session_id"],
             ],
         );
-        let event = raw_event(
-            value.clone(),
-            sequence,
-            raw_id,
-            event_type.clone(),
-            occurred_at.clone(),
-        );
+        let event_id = raw_id
+            .as_ref()
+            .map(|id| format!("{sequence}:{id}"))
+            .unwrap_or_else(|| sequence.to_string());
         self.consume_identity(&value);
         self.consume_title(&value, &event_type);
-        self.consume_message(&value, &event_type, &event.event_id, occurred_at);
-        self.events.push(event);
+        self.consume_message(&value, &event_type, &event_id, occurred_at.clone());
+        self.events
+            .push(raw_event(value, sequence, raw_id, event_type, occurred_at));
     }
 
     fn consume_identity(&mut self, value: &Value) {

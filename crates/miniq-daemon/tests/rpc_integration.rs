@@ -77,7 +77,7 @@ async fn health_check() {
     let (port, token) = start_daemon().await;
     let mut ws = connect(port, &token).await;
     let resp = call(&mut ws, "r1", "daemon.health", Value::Null).await;
-    assert_eq!(resp["result"]["protocolVersion"], 1);
+    assert_eq!(resp["result"]["protocolVersion"], 2);
     assert!(resp["result"]["daemonVersion"].is_string());
 }
 

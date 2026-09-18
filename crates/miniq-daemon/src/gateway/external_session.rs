@@ -1,20 +1,24 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use miniq_memory::Store;
 use miniq_protocol::{
     ErrorCode, ExternalImportError, ExternalProvider, ExternalScanError,
-    ExternalSessionImportRequest, ExternalSessionImportResult, ExternalSessionScan,
+    ExternalSessionImportRequest, ExternalSessionImportStatusRequest, ExternalSessionScan,
     ExternalSessionSelection, ExternalSessionSnapshot, RpcError,
 };
 use miniq_session_connectors::{
     builtin_registry, ConnectorError, ConnectorRegistry, ConnectorScan,
 };
+use rayon::prelude::*;
 use serde_json::Value;
 
 use super::common::{params, store_err, to_value};
 use super::external_workspace::resolve_implicit_workspace;
 use crate::state::AppState;
+
+const IMPORT_BATCH_SIZE: usize = 12;
 
 pub(super) async fn scan() -> Result<Value, RpcError> {
     let scans = tokio::task::spawn_blocking(|| builtin_registry().scan_all())
@@ -31,11 +35,39 @@ pub(super) async fn import(state: &AppState, raw: Option<Value>) -> Result<Value
             "at least one external session must be selected",
         ));
     }
+    let job = state.external_import_jobs.start(request.sessions.len())?;
+    let job_id = job.id.clone();
+    let jobs = state.external_import_jobs.clone();
+    let failure_jobs = jobs.clone();
+    let failure_job_id = job_id.clone();
     let store = state.store.clone();
-    let result = tokio::task::spawn_blocking(move || import_selected(store, request.sessions))
-        .await
-        .map_err(join_error)?;
-    to_value(result)
+    let shutdown = state.shutdown.clone();
+    let activity = state.activity.enter()?;
+    tokio::spawn(async move {
+        let worker = tokio::task::spawn_blocking(move || {
+            let _activity = activity;
+            import_selected(store, jobs, &job_id, request.sessions, shutdown);
+        })
+        .await;
+        if let Err(error) = worker {
+            failure_jobs.fail(
+                &failure_job_id,
+                format!("external session task failed: {error}"),
+            );
+        }
+    });
+    to_value(job)
+}
+
+pub(super) fn import_status(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let request: ExternalSessionImportStatusRequest = params(raw)?;
+    if request.job_id.trim().is_empty() {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "jobId must not be empty",
+        ));
+    }
+    to_value(state.external_import_jobs.status(&request.job_id)?)
 }
 
 fn scan_response(scans: Vec<ConnectorScan>) -> ExternalSessionScan {
@@ -62,50 +94,124 @@ fn scan_response(scans: Vec<ConnectorScan>) -> ExternalSessionScan {
 
 fn import_selected(
     store: Arc<Store>,
+    jobs: Arc<crate::external_import_jobs::ExternalImportJobs>,
+    job_id: &str,
     selections: Vec<ExternalSessionSelection>,
-) -> ExternalSessionImportResult {
+    shutdown: tokio_util::sync::CancellationToken,
+) {
     let registry = builtin_registry();
-    let mut errors = Vec::new();
-    let mut imported_session_ids = Vec::new();
-    let mut imported_messages = 0;
-    for selection in selections {
-        match import_one(&store, &registry, &selection) {
-            Ok((session_id, message_count)) => {
-                imported_session_ids.push(session_id);
-                imported_messages += message_count;
-            }
-            Err(message) => errors.push(ExternalImportError {
-                provider: selection.provider,
-                external_id: Some(selection.external_id),
-                message,
-            }),
+    if let Err(error) = registry.prepare() {
+        jobs.fail(job_id, error.to_string());
+        return;
+    }
+    let mut workspaces = HashMap::new();
+    for batch in selections.chunks(IMPORT_BATCH_SIZE) {
+        if shutdown.is_cancelled() {
+            jobs.fail(
+                job_id,
+                "external session import was cancelled during shutdown".to_owned(),
+            );
+            return;
         }
+        let loaded: Vec<_> = batch
+            .par_iter()
+            .map(|selection| {
+                let snapshot = if shutdown.is_cancelled() {
+                    Err("external session import was cancelled during shutdown".to_owned())
+                } else {
+                    load_snapshot(&registry, selection)
+                };
+                (selection.clone(), snapshot)
+            })
+            .collect();
+        if shutdown.is_cancelled() {
+            jobs.fail(
+                job_id,
+                "external session import was cancelled during shutdown".to_owned(),
+            );
+            return;
+        }
+        let mut errors = Vec::new();
+        let mut imports = Vec::new();
+        for (selection, snapshot) in loaded {
+            match snapshot {
+                Ok(snapshot) => {
+                    match resolve_workspace_cached(&store, &selection, &snapshot, &mut workspaces) {
+                        Ok(workspace_id) => imports.push((workspace_id, snapshot)),
+                        Err(message) => errors.push(import_error(&selection, message, true)),
+                    }
+                }
+                Err(message) => errors.push(import_error(&selection, message, false)),
+            }
+        }
+        let outcomes = match store.import_external_sessions(&imports) {
+            Ok(outcomes) => outcomes,
+            Err(error) => {
+                jobs.fail(job_id, store_err(error).message);
+                return;
+            }
+        };
+        let imported = outcomes
+            .into_iter()
+            .map(|outcome| (outcome.session.id, outcome.imported_messages))
+            .collect();
+        jobs.record_batch(job_id, batch.len(), imported, errors);
     }
-    ExternalSessionImportResult {
-        imported_session_ids,
-        imported_messages,
-        errors,
-    }
+    jobs.complete(job_id);
 }
 
-fn import_one(
-    store: &Store,
+fn load_snapshot(
     registry: &ConnectorRegistry,
     selection: &ExternalSessionSelection,
-) -> Result<(String, usize), String> {
-    let snapshot = registry
+) -> Result<ExternalSessionSnapshot, String> {
+    registry
         .load(
             selection.provider,
             &selection.external_id,
             &selection.source_path,
         )
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| "external session was not found during import".to_owned())?;
-    let workspace_id = resolve_workspace(store, selection, &snapshot)?;
-    let outcome = store
-        .import_external_session(&workspace_id, &snapshot)
-        .map_err(|error| store_err(error).message)?;
-    Ok((outcome.session.id, outcome.imported_messages))
+        .ok_or_else(|| "external session was not found during import".to_owned())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum WorkspaceCacheKey {
+    Explicit(String),
+    Implicit(ExternalProvider, String),
+}
+
+fn resolve_workspace_cached(
+    store: &Store,
+    selection: &ExternalSessionSelection,
+    snapshot: &ExternalSessionSnapshot,
+    cache: &mut HashMap<WorkspaceCacheKey, Result<String, String>>,
+) -> Result<String, String> {
+    let key = match selection.workspace_id.as_ref() {
+        Some(workspace_id) => WorkspaceCacheKey::Explicit(workspace_id.clone()),
+        None => WorkspaceCacheKey::Implicit(
+            selection.provider,
+            snapshot.summary.cwd.clone().unwrap_or_default(),
+        ),
+    };
+    if let Some(result) = cache.get(&key) {
+        return result.clone();
+    }
+    let result = resolve_workspace(store, selection, snapshot);
+    cache.insert(key, result.clone());
+    result
+}
+
+fn import_error(
+    selection: &ExternalSessionSelection,
+    message: String,
+    workspace_required: bool,
+) -> ExternalImportError {
+    ExternalImportError {
+        provider: selection.provider,
+        external_id: Some(selection.external_id.clone()),
+        workspace_required,
+        message,
+    }
 }
 
 fn resolve_workspace(

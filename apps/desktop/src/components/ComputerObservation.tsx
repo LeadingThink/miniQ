@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Download, ExternalLink, Maximize, Minimize, RefreshCw } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Download, ExternalLink, Maximize, Minimize, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { loadObservation, observationImage, observationPages } from "../computerObservation";
 import type { RpcClient } from "../rpc";
@@ -19,6 +19,8 @@ export function ComputerObservation({ call, client }: { call: ToolCall; client: 
   const [original, setOriginal] = useState(false);
   const input = call.input as Record<string, unknown> | undefined;
   const output = call.output as Record<string, unknown> | undefined;
+  const observationError = typeof output?.observationError === "string" ? output.observationError : null;
+  const needsVerification = output?.actionDispatched === true && observationError !== null;
   const browserUrl = call.toolName === "browser_automation"
     ? (typeof input?.url === "string" ? input.url : typeof output?.url === "string" ? output.url : null)
     : null;
@@ -38,7 +40,17 @@ export function ComputerObservation({ call, client }: { call: ToolCall; client: 
     });
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [client, call.id, call.sessionId, image?.id, attempt, page]);
-  if (!image) return null;
+  if (!image) {
+    if (!needsVerification || (call.toolName !== "computer_use" && call.toolName !== "app_automation")) return null;
+    return <div className="computer-observation-pending" role="status">
+      <AlertTriangle size={18} aria-hidden="true" />
+      <div>
+        <strong>动作已发出，结果待核验</strong>
+        <span>{observationError}</span>
+        <span>请重新观察当前界面，不要仅因观察失败而重复该动作。</span>
+      </div>
+    </div>;
+  }
   return <figure className="computer-observation">
     <figcaption>
       <strong title={typeof target?.title === "string" ? target.title : undefined}>{title}</strong>

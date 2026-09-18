@@ -1,5 +1,62 @@
 # Computer Use Implementation Audit
 
+## 2026-09-18 UI-TARS Desktop production-code comparison
+
+The comparison used the production loop, parser, operators, and desktop wiring in
+`reference-repos/UI-TARS-desktop`, not only its README. The reference repository
+remained read-only. UI-TARS has a dedicated GUI-agent loop that captures a screenshot,
+validates and optionally resizes it, invokes a GUI model with recent image/action
+history, parses model-specific box coordinates, executes an operator action, and then
+starts the next observation. It exposes local/remote computer and local/remote browser
+operators behind one GUI-agent interface, with pause, stop, call-user, bounded loop,
+and screenshot/model/execution retry controls.
+
+miniQ deliberately keeps different boundaries. `browser_automation` owns embedded web
+pages, `app_automation` owns application-scoped native control, and `computer_use` owns
+foreground desktop takeover. GUI understanding arrives through normal multimodal model
+messages and typed function tools. Every real action still passes the daemon's risk
+evaluation and approval flow, Rust input/schema validation, OS permission checks,
+task/OS locking, observation freshness checks, and the native executor. Unlike the
+reference NutJS operator, miniQ does not use the shared clipboard for Windows typing,
+does not accept model text directly in an operator, and does not merge browser and
+desktop execution into one control path.
+
+### Ranked gaps
+
+| Priority | Gap | Success / Windows value | Reuse, verification, and risk |
+| --- | --- | --- | --- |
+| 1 | Preserve a dispatched desktop action when the mandatory follow-up observation fails | Prevents duplicate clicks, submissions, typing, and hotkeys on all platforms; especially important for Windows foreground takeover | Fully reuses the existing backend, approval, freshness, and fake-backend test seam; small regression surface; delivered below |
+| 2 | GUI-model adapter for UI-TARS/OpenCUA coordinate/action dialects | Could improve visual grounding for apps without useful accessibility data | Must translate into the existing `ComputerInput` schema before approval and execution. Provider capability/configuration design and model fixtures are still required; a direct operator adapter would create an unsafe second path |
+| 3 | Repeatable Windows native acceptance and task benchmark | Highest confidence gain for software launch, menus, dialogs, mixed-DPI multi-monitor layouts, cancellation, and user takeover | Fake tests cover mapping and state transitions, but signed Windows builds and representative app fixtures are needed for machine-level evidence |
+| 4 | Explicit pause/takeover product state | Helps users coordinate with foreground automation | Cancellation and leases exist; pause/resume needs a daemon state contract that cannot leave an approved action queued against an old observation |
+| 5 | Bounded visual-history policy specialized for GUI work | Can improve recovery from navigation errors and repeated states | Current provider history already preserves tool results and images and agent retries never repeat completed tools. A new policy needs evaluation fixtures before replacing general context management |
+
+Strongly typed GUI actions, generated JSON Schema, screenshot-pixel coordinates,
+Retina/negative-origin mapping, Windows per-monitor DPI awareness, multi-display identity,
+freshness/focus/layout checks, cancellation, permissions, and risk approval were already
+present in miniQ. They were therefore not reimplemented from UI-TARS. The reference
+parser's free-form action text and aliases are useful at its model boundary, but are not
+a safer runtime contract than miniQ's `schemars`-derived input model.
+
+### Delivered recovery loop
+
+`computer_use` now consumes the observation ID before dispatch, performs the approved
+input exactly once, and records `actionDispatched: true`. It then waits briefly and
+attempts a fresh capture. A successful capture is merged into the result with a new
+observation ID. If capture, focus verification, cancellation, or screenshot persistence
+fails after dispatch, the tool returns a successful structured result containing
+`observationError` and `nextAction`, with no observation ID. The old observation remains
+consumed, so repeating the old call is rejected. The model must call `screenshot` to
+inspect current state and must not infer that the original action failed.
+
+The desktop timeline displays this state as “动作已发出，结果待核验”, including the
+observation failure and an instruction to observe rather than repeat. It deliberately
+does not provide an automatic retry button or trigger an RPC itself. Errors before
+native dispatch remain ordinary tool failures, and native dispatch errors remain
+ambiguous failures with the observation already consumed. Risk classification,
+approval scopes, permission checks, credential/authentication handoff, and executor
+selection are unchanged.
+
 Date: 2026-09-06. Baseline: `4c62c6607ee88cfea3165e675fb8b8fd2152511f`.
 
 Later macOS application-scoped control and native acceptance are documented in

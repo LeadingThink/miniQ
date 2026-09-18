@@ -14,7 +14,7 @@ miniQ 可以从本机发现并导入 Codex、Claude Code 和 OpenCode 会话。�
 
 OpenCode 仅支持当前 SQLite `session/message/part` 数据库。旧版 `storage/*.json` 已由 OpenCode 自身迁移，不提供旧格式兼容分支。
 
-Codex 标题优先读取 `CODEX_HOME` 中最高版本 `state_<n>.sqlite` 的 `threads.title`，不存在时使用完整首条真实用户消息。Claude Code 的 `subagents/agent-*.jsonl` 是主会话内部执行记录，不作为独立会话展示。
+Codex 标题优先读取 `CODEX_HOME` 中最高版本 `state_<n>.sqlite` 的 `threads.name`（与 Codex 侧栏一致），为空时使用 `threads.title`，数据库没有标题记录时再使用完整首条真实用户消息。Claude Code 的 `subagents/agent-*.jsonl` 是主会话内部执行记录，不作为独立会话展示。
 
 ## 数据流
 
@@ -22,11 +22,13 @@ Codex 标题优先读取 `CODEX_HOME` 中最高版本 `state_<n>.sqlite` 的 `th
 SessionConnector
   -> externalSession.scan (仅返回全量摘要)
   -> 用户选择来源会话和目标 workspace
-  -> externalSession.import (按 source_path 精确加载)
-  -> 单个 SQLite 事务
-       sessions / messages            UI 与 miniQ runtime 投影
-       external_session_links          来源与同步身份
-       external_session_events         完整原始事件 JSON
+  -> externalSession.import (立即返回后台任务 ID)
+  -> 按 12 个会话分批并行解析 source_path
+  -> 每批使用一个 SQLite 事务
+       sessions / messages             UI 与 miniQ runtime 投影
+       external_session_links           来源与同步身份
+       external_session_events          完整原始事件 JSON
+  -> externalSession.importStatus (进度与最终结果)
 ```
 
 连接器只负责发现和解析供应商数据，不依赖 `ModelProvider`。`ModelProvider` 继续只处理 miniQ 的模型调用，原生 miniQ 会话不经过连接器。
@@ -51,6 +53,7 @@ SessionConnector
 - 非 Git 目录使用其规范化绝对路径。
 - 用户 home 和 Codex 的 `~/Documents/Codex/**` 临时目录不会被自动注册；必须显式选择 miniQ 项目。
 - cwd 缺失或目录已不存在时，也必须显式选择 miniQ 项目。
+- 此类失败会以 `workspaceRequired` 标记返回；结果页允许选择目标项目，并且只重试失败的会话，不重复提交已成功导入的会话。
 
 Windows 路径统一去掉 `\\?\` 前缀并使用 `/` 分隔，避免与 miniQ 已有项目重复。
 
@@ -59,6 +62,8 @@ Windows 路径统一去掉 `\\?\` 前缀并使用 `/` 分隔，避免与 miniQ �
 新的来源实现 `miniq_session_connectors::SessionConnector`：
 
 - `scan` 返回所有可导入会话的摘要，不返回或截取原始事件。
+- 导入任务脱离单次 RPC 生命周期运行；客户端通过任务 ID 查询已处理会话数、新消息数和错误数。
+- Codex 和 Claude Code 的来源文件在每次任务内建立路径索引，按 `source_path` 常数时间定位，不为每个会话重复遍历文件列表。
 - `load` 根据扫描得到的 `external_id + source_path` 精确加载完整快照。
 - `load` 必须验证 `source_path` 属于连接器自己的数据根目录或数据库。
 - 供应商原始数据写入 `ExternalSessionEvent.payload`；已知文本内容投影为 `ExternalSessionMessage`。

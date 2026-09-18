@@ -53,6 +53,19 @@ it("shows errors and retries", async () => {
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
+it("shows dispatched actions that still need verification without retrying them", () => {
+  const client = {call:vi.fn()} as unknown as RpcClient;
+  render(<ComputerObservation call={{...call, toolName:"computer_use", output:{
+    actionDispatched:true,
+    observationError:"screen capture failed",
+    nextAction:"Call screenshot; do not repeat the input.",
+  }}} client={client} />);
+  expect(screen.getByRole("status").textContent).toContain("动作已发出，结果待核验");
+  expect(screen.getByRole("status").textContent).toContain("screen capture failed");
+  expect(screen.getByRole("status").textContent).toContain("不要仅因观察失败而重复该动作");
+  expect(client.call).not.toHaveBeenCalled();
+});
+
 it("does not retain a late response after the panel closes", async () => {
   let complete!: (value: typeof response) => void;
   const client = {call:vi.fn(() => new Promise(resolve => {complete = resolve;}))} as unknown as RpcClient;

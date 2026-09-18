@@ -11,6 +11,9 @@ use crate::{ConnectorError, ConnectorScan, ExternalSessionSnapshot};
 pub trait SessionConnector: Send + Sync {
     fn provider(&self) -> ExternalProvider;
     fn root(&self) -> &Path;
+    fn prepare(&self) -> Result<(), ConnectorError> {
+        Ok(())
+    }
     fn scan(&self) -> ConnectorScan;
     fn load(
         &self,
@@ -33,6 +36,13 @@ impl ConnectorRegistry {
             .par_iter()
             .map(|connector| connector.scan())
             .collect()
+    }
+
+    pub fn prepare(&self) -> Result<(), ConnectorError> {
+        for connector in &self.connectors {
+            connector.prepare()?;
+        }
+        Ok(())
     }
 
     pub fn scan_provider(&self, provider: ExternalProvider) -> Option<ConnectorScan> {

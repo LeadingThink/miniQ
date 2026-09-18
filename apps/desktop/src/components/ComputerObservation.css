@@ -9,3 +9,7 @@
 .computer-observation-image [role] { padding: 16px; overflow-wrap: anywhere; }
 .computer-observation .observation-page-count { align-self: center; min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
 .computer-observation .icon-button:disabled { opacity: 0.4; cursor: default; }
+.computer-observation-pending { display: flex; gap: 10px; margin: 12px 0; padding: 12px; border: 1px solid #c98719; border-radius: 6px; background: #fff8e8; color: #5f430f; }
+.computer-observation-pending > svg { flex: none; margin-top: 1px; }
+.computer-observation-pending > div { display: grid; gap: 4px; min-width: 0; }
+.computer-observation-pending span { font-size: 12px; overflow-wrap: anywhere; }

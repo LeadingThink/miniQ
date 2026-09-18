@@ -15,9 +15,11 @@ impl DaemonProcess {
         {
             use std::os::windows::io::FromRawHandle;
             use windows_sys::Win32::Foundation::ERROR_INVALID_PARAMETER;
-            use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SYNCHRONIZE};
+            use windows_sys::Win32::System::Threading::{
+                OpenProcess, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+            };
 
-            let raw = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, pid) };
+            let raw = unsafe { OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_TERMINATE, 0, pid) };
             let handle = if raw.is_null() {
                 let error = std::io::Error::last_os_error();
                 if error.raw_os_error() != Some(ERROR_INVALID_PARAMETER as i32) {
@@ -118,6 +120,46 @@ impl DaemonProcess {
             self.pid,
             timeout.as_secs()
         ))
+    }
+
+    pub fn stop(self, graceful_timeout: Duration) -> Result<(), String> {
+        if self.wait(graceful_timeout).is_ok() {
+            return Ok(());
+        }
+        self.terminate()?;
+        self.wait(Duration::from_secs(5))
+    }
+
+    fn terminate(&self) -> Result<(), String> {
+        #[cfg(windows)]
+        {
+            use std::os::windows::io::AsRawHandle;
+            use windows_sys::Win32::System::Threading::TerminateProcess;
+
+            let Some(handle) = &self.handle else {
+                return Ok(());
+            };
+            if unsafe { TerminateProcess(handle.as_raw_handle(), 1) } == 0 {
+                return Err(format!(
+                    "cannot terminate daemon process {}: {}",
+                    self.pid,
+                    std::io::Error::last_os_error()
+                ));
+            }
+        }
+        #[cfg(unix)]
+        {
+            if unsafe { libc::kill(self.pid as i32, libc::SIGKILL) } != 0 {
+                let error = std::io::Error::last_os_error();
+                if error.raw_os_error() != Some(libc::ESRCH) {
+                    return Err(format!(
+                        "cannot terminate daemon process {}: {error}",
+                        self.pid
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 }
 

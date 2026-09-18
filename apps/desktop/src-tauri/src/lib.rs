@@ -356,11 +356,27 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => show_main_window(app),
             "quit" => {
-                QUIT_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
-                app.exit(0);
+                request_quit(app);
             }
             _ => {}
         })
         .build(app)?;
     Ok(())
+}
+
+fn request_quit(app: &tauri::AppHandle) {
+    use tauri::Manager;
+
+    if QUIT_REQUESTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let state = app.state::<DaemonState>().inner().clone();
+    state.begin_shutdown();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = state.shutdown().await {
+            eprintln!("[miniq] could not stop daemon during exit: {error}");
+        }
+        app.exit(0);
+    });
 }

@@ -257,7 +257,8 @@
 }
 
 .external-import-empty,
-.external-import-result {
+.external-import-result,
+.external-import-progress {
   min-height: 280px;
   flex: 1;
   display: flex;
@@ -275,6 +276,27 @@
   gap: 8px;
 }
 
+.external-import-progress {
+  flex-direction: column;
+  gap: 9px;
+}
+
+.external-import-progress strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.external-import-progress progress {
+  width: min(360px, calc(100% - 48px));
+  height: 7px;
+  accent-color: var(--accent);
+}
+
+.external-import-progress small {
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
 .external-import-result svg {
   color: var(--ok);
 }
@@ -282,6 +304,24 @@
 .external-import-result strong {
   color: var(--text);
   font-size: 15px;
+}
+
+.external-import-retry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, 520px);
+}
+
+.external-import-retry select {
+  min-width: 0;
+  flex: 1;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 10px;
 }
 
 .external-scan-warning,
@@ -380,6 +420,11 @@
   .external-import-controls select {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+
+  .external-import-retry {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .external-session-row time {
