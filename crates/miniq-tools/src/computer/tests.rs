@@ -1,11 +1,15 @@
 use super::*;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::Mutex;
+
+static DESKTOP_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 struct FakeDesktop {
     inputs: AtomicUsize,
     focus: AtomicU32,
     denied: AtomicBool,
     captures: AtomicUsize,
+    fail_capture_after: AtomicUsize,
     display_error: AtomicBool,
 }
 
@@ -43,7 +47,10 @@ impl DesktopBackend for FakeDesktop {
         Ok(vec![display()])
     }
     fn capture(&self, _id: u32) -> Result<(Display, image::RgbaImage), String> {
-        self.captures.fetch_add(1, Ordering::SeqCst);
+        let capture = self.captures.fetch_add(1, Ordering::SeqCst) + 1;
+        if capture > self.fail_capture_after.load(Ordering::SeqCst) {
+            return Err("capture failed".into());
+        }
         Ok((display(), image::RgbaImage::new(120, 80)))
     }
     fn focus(&self) -> Result<Option<FocusedWindow>, String> {
@@ -130,6 +137,7 @@ fn desktop_screenshots_are_private_high_risk() {
 
 #[tokio::test]
 async fn desktop_lease_rejects_other_tasks_stale_frames_and_changed_focus() {
+    let _desktop_test_lock = DESKTOP_TEST_LOCK.lock().unwrap();
     let directory = tempfile::tempdir().unwrap();
     let first =
         ToolContext::new(directory.path().into()).with_observations(directory.path().into());
@@ -139,6 +147,7 @@ async fn desktop_lease_rejects_other_tasks_stale_frames_and_changed_focus() {
         focus: AtomicU32::new(1),
         denied: AtomicBool::new(false),
         captures: AtomicUsize::new(0),
+        fail_capture_after: AtomicUsize::new(usize::MAX),
         display_error: AtomicBool::new(false),
     });
     let tool = ComputerUseTool {
@@ -224,12 +233,65 @@ async fn desktop_lease_rejects_other_tasks_stale_frames_and_changed_focus() {
 }
 
 #[tokio::test]
+async fn dispatched_input_survives_a_failed_follow_up_observation_without_replay() {
+    let _desktop_test_lock = DESKTOP_TEST_LOCK.lock().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let ctx = ToolContext::new(directory.path().into()).with_observations(directory.path().into());
+    let backend = Arc::new(FakeDesktop {
+        inputs: AtomicUsize::new(0),
+        focus: AtomicU32::new(1),
+        denied: AtomicBool::new(false),
+        captures: AtomicUsize::new(0),
+        fail_capture_after: AtomicUsize::new(1),
+        display_error: AtomicBool::new(false),
+    });
+    let tool = ComputerUseTool {
+        lease: Arc::default(),
+        backend: backend.clone(),
+    };
+    let frame = tool
+        .execute(&ctx, json!({"action":"screenshot"}))
+        .await
+        .unwrap();
+
+    let output = tool
+        .execute(
+            &ctx,
+            json!({"action":"click","x":1,"y":1,"observationId":frame["observationId"]}),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(output["actionDispatched"], true);
+    assert_eq!(output["observationError"], "capture failed");
+    assert!(output.get("observationId").is_none());
+    assert_eq!(backend.inputs.load(Ordering::SeqCst), 1);
+    assert!(tool
+        .execute(
+            &ctx,
+            json!({"action":"click","x":1,"y":1,"observationId":frame["observationId"]}),
+        )
+        .await
+        .is_err());
+    assert_eq!(backend.inputs.load(Ordering::SeqCst), 1);
+    ctx.cancellation.cancel();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while tool.lease.lock().unwrap().is_some() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn denied_permissions_prevent_capture_and_input_but_not_diagnostics() {
     let backend = Arc::new(FakeDesktop {
         inputs: AtomicUsize::new(0),
         focus: AtomicU32::new(1),
         denied: AtomicBool::new(true),
         captures: AtomicUsize::new(0),
+        fail_capture_after: AtomicUsize::new(usize::MAX),
         display_error: AtomicBool::new(true),
     });
     let tool = ComputerUseTool {
