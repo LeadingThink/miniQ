@@ -56,65 +56,57 @@ export function ApprovalCard({
   );
 }
 
-export function ArtifactsBar(props: {
+export function ArtifactCard(props: {
   workspacePaths?: readonly string[];
-  artifacts: Artifact[];
+  artifact: Artifact;
   workspacePath?: string | null;
   onOpenFile: (target: LocalFileTarget) => void;
   onError: (message: string) => void;
 }) {
-  const { artifacts, workspacePath, onOpenFile, onError } = props;
+  const { artifact, workspacePath, onOpenFile, onError } = props;
   const access = useSessionFileAccess();
   const local = isTauriRuntime() && access?.client?.mode !== "remote";
-  if (artifacts.length === 0) return null;
+  const path = resolveWorkspacePath(artifact.path, workspacePath);
   return (
-    <div className="artifacts-bar">
-      <div className="plan-progress">交付产物</div>
-      {artifacts.map((artifact) => {
-        const path = resolveWorkspacePath(artifact.path, workspacePath);
-        return (
-          <div
-            key={artifact.id}
-            className="artifact-item"
-            title={path ?? artifact.path}
-          >
-            <FileText size={18} aria-hidden="true" />
-            <button
-              type="button"
-              className="artifact-open"
-              disabled={!path}
-              onClick={() => {
-                if (path) onOpenFile({ path, line: null, column: null });
-              }}
-            >
-              <span className="artifact-title">{artifact.title}</span>
-              <span className="sub">{artifact.path}</span>
-            </button>
-            <span className="badge">{artifact.kind}</span>
-            {local && <button
-              type="button"
-              className="icon-button"
-              aria-label={`在文件夹中显示 ${artifact.title}`}
-              title="在文件夹中显示"
-              disabled={!path}
-              onClick={() => {
-                if (path)
-                  void revealLocalFile(
-                    path,
-                    workspacePath,
-                    props.workspacePaths,
-                  ).catch((cause) => {
-                    onError(
-                      `无法在文件夹中显示：${cause instanceof Error ? cause.message : String(cause)}`,
-                    );
-                  });
-              }}
-            >
-              <FolderOpen size={16} aria-hidden="true" />
-            </button>}
-          </div>
-        );
-      })}
-    </div>
+    <section className="artifact-card" aria-label="交付产物">
+      <div className="artifact-card-label">交付产物</div>
+      <div className="artifact-item" title={path ?? artifact.path}>
+        <FileText size={18} aria-hidden="true" />
+        <button
+          type="button"
+          className="artifact-open"
+          aria-label={`打开 ${artifact.title}`}
+          disabled={!path}
+          onClick={() => {
+            if (path) onOpenFile({ path, line: null, column: null });
+          }}
+        >
+          <span className="artifact-title">{artifact.title}</span>
+          <span className="sub">{artifact.path}</span>
+        </button>
+        <span className="badge">{artifact.kind}</span>
+        {local && <button
+          type="button"
+          className="icon-button"
+          aria-label={`在文件夹中显示 ${artifact.title}`}
+          title="在文件夹中显示"
+          disabled={!path}
+          onClick={() => {
+            if (path)
+              void revealLocalFile(
+                path,
+                workspacePath,
+                props.workspacePaths,
+              ).catch((cause) => {
+                onError(
+                  `无法在文件夹中显示：${cause instanceof Error ? cause.message : String(cause)}`,
+                );
+              });
+          }}
+        >
+          <FolderOpen size={16} aria-hidden="true" />
+        </button>}
+      </div>
+    </section>
   );
 }

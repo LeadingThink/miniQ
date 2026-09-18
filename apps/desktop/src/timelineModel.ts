@@ -1,10 +1,14 @@
-import type { Message, ToolCall } from "./types";
+import type { Artifact, Message, ToolCall } from "./types";
 
 export type TimelineItem =
   | { kind: "message"; at: string; message: Message }
   | { kind: "tool"; at: string; call: ToolCall };
+export type ConversationTimelineItem =
+  | TimelineItem
+  | { kind: "artifact"; at: string; artifact: Artifact };
 export type TimelineGroup =
   | Extract<TimelineItem, { kind: "message" }>
+  | { kind: "artifact"; at: string; artifact: Artifact }
   | { kind: "tools"; at: string; calls: ToolCall[] };
 export type TimelineFilter = "all" | "answers" | "activity" | "errors";
 
@@ -39,11 +43,45 @@ export function createTimelineItems(
   ].sort((a, b) => compareTimestamps(a.at, b.at));
 }
 
+/**
+ * Add generated files to the same chronological stream as messages and tool
+ * calls. Artifacts used to be rendered in a separate footer, which made a
+ * file created halfway through a long task appear detached from the answer
+ * that produced it.
+ */
+export function createTimelineItemsWithArtifacts(
+  messages: Message[],
+  toolCalls: ToolCall[],
+  artifacts: Artifact[],
+  { includeInternal = false, hasOlder = false }: { includeInternal?: boolean; hasOlder?: boolean } = {},
+): ConversationTimelineItem[] {
+  const history = createTimelineItems(messages, toolCalls, includeInternal);
+  // session.open returns all artifacts but only the newest history page.
+  // Reveal older artifacts with their surrounding history instead of placing
+  // them above a partial page and moving them when older records arrive.
+  const visibleArtifacts = hasOlder
+    ? artifacts.filter((artifact) => history.length > 0 && compareTimestamps(artifact.createdAt, history[0].at) >= 0)
+    : artifacts;
+  return [
+    ...history,
+    ...visibleArtifacts.map((artifact) => ({
+      kind: "artifact" as const,
+      at: artifact.createdAt,
+      artifact,
+    })),
+  ].sort((a, b) => compareTimestamps(a.at, b.at));
+}
+
 export function payloadText(value: unknown): string {
   return typeof value === "string" ? value : (JSON.stringify(value, null, 2) ?? "");
 }
 
-export function itemMatches(item: TimelineItem, filter: TimelineFilter, query: string): boolean {
+export function itemMatches(item: ConversationTimelineItem, filter: TimelineFilter, query: string): boolean {
+  if (item.kind === "artifact") {
+    if (filter === "activity" || filter === "errors") return false;
+    const needle = query.trim().toLocaleLowerCase();
+    return !needle || `${item.artifact.title}\n${item.artifact.path}\n${item.artifact.kind}`.toLocaleLowerCase().includes(needle);
+  }
   if (filter === "answers" && (item.kind !== "message" || item.message.role === "tool")) return false;
   if (filter === "activity" && item.kind !== "tool" && item.message.role !== "tool") return false;
   if (filter === "errors" && (item.kind !== "tool" || !["failed", "rejected", "cancelled"].includes(item.call.status)))
@@ -57,7 +95,7 @@ export function itemMatches(item: TimelineItem, filter: TimelineFilter, query: s
   return text.toLocaleLowerCase().includes(needle);
 }
 
-export function groupTimeline(items: TimelineItem[]): TimelineGroup[] {
+export function groupTimeline(items: ConversationTimelineItem[]): TimelineGroup[] {
   const groups: TimelineGroup[] = [];
   for (const item of items) {
     const previous = groups.at(-1);

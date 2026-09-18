@@ -6,6 +6,7 @@ import type { ToolCall } from "../types";
 import { ToolGroup } from "./ToolGroup";
 import { useToolDetail } from "../hooks/useToolDetail";
 import { useHistorySearch } from "../hooks/useHistorySearch";
+import { Timeline } from "./Timeline";
 
 afterEach(cleanup);
 const tool: ToolCall = {id:"tool", sessionId:"session", toolName:"shell_run", input:null, status:"failed", createdAt:"2026-09-07", payloadDeferred:true};
@@ -51,4 +52,47 @@ it("searches on the server and resets pagination when the query changes", async 
   hook.rerender({query:"second"});
   await waitFor(() => expect(call).toHaveBeenCalledTimes(3));
   expect(call.mock.calls[2][1]).toMatchObject({query:"second", before:null});
+});
+
+it("keeps server matches with deferred tool payloads and searches older artifacts separately", async () => {
+  const call = vi.fn().mockResolvedValue({ messages: [], toolCalls: [tool], nextCursor: null });
+  const client = { call } as unknown as RpcClient;
+  const noop = vi.fn();
+  const asyncNoop = async () => undefined;
+  render(<Timeline
+    client={client}
+    sessionId="session"
+    messages={[{ id: "latest", sessionId: "session", role: "user", content: "latest request", createdAt: "2026-09-08" }]}
+    toolCalls={[]}
+    hasOlder
+    artifacts={[
+      { id: "matching", sessionId: "session", path: "/work/needle.pdf", title: "needle.pdf", kind: "pdf", createdAt: "2026-09-06" },
+      { id: "unrelated", sessionId: "session", path: "/work/other.pdf", title: "other.pdf", kind: "pdf", createdAt: "2026-09-08" },
+    ]}
+    approvals={[]}
+    questions={[]}
+    plan={[]}
+    queue={[]}
+    streamingText=""
+    turnProgress={null}
+    busy={false}
+    onResolveApproval={noop}
+    onResolveQuestion={noop}
+    onRollback={noop}
+    onOpenFile={noop}
+    onOpenUrl={noop}
+    onSteerQueued={asyncNoop}
+    onRemoveQueued={asyncNoop}
+    onUpdateQueued={asyncNoop}
+    onRewrite={async () => true}
+    onError={noop}
+  />);
+  expect(screen.queryByRole("button", { name: "打开 needle.pdf" })).toBeNull();
+  fireEvent.change(screen.getByRole("searchbox", { name: "搜索当前会话" }), { target: { value: "needle" } });
+  await waitFor(() => expect(document.querySelectorAll(".tool-step")).toHaveLength(1));
+  expect(call.mock.calls[0][0]).toBe("session.history");
+  expect(call.mock.calls[0][1]).toMatchObject({ query: "needle", filter: "all" });
+  expect(screen.getByRole("button", { name: "打开 needle.pdf" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "打开 other.pdf" })).toBeNull();
+  expect(screen.queryByText("没有匹配的记录")).toBeNull();
 });

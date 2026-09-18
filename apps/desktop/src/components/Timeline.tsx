@@ -24,17 +24,18 @@ import type {
 } from "../types";
 import type { PendingApproval } from "../App";
 import { readImagePreview, type LocalFileTarget } from "../localFiles";
-import { ApprovalCard, ArtifactsBar } from "./TimelineInteractions";
+import { ApprovalCard, ArtifactCard } from "./TimelineInteractions";
 import { QueueBar, type QueueActions } from "./QueueBar";
 import { QuestionCard, type QuestionCardProps } from "./QuestionCard";
 import { Md } from "./Md";
 import { ExecutionPrelude, PlanProgress } from "./ExecutionActivity";
 import {
-  createTimelineItems,
   groupTimeline,
   filterTimelineGroups,
+  itemMatches,
   type TimelineFilter,
   type TimelineGroup,
+  createTimelineItemsWithArtifacts,
 } from "../timelineModel";
 import { downloadSession } from "../sessionExport";
 import { CopyButton } from "./CopyButton";
@@ -138,6 +139,7 @@ function TimelineEntries(props: {
   onOpenUrl: TimelineProps["onOpenUrl"];
   onRewrite: TimelineProps["onRewrite"];
   workspacePath?: string | null;
+  workspacePaths?: readonly string[];
 }) {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -329,6 +331,15 @@ function TimelineEntries(props: {
               </div>
             </div>
           )
+        ) : item.kind === "artifact" ? (
+          <ArtifactCard
+            key={item.artifact.id}
+            artifact={item.artifact}
+            workspacePath={props.workspacePath}
+            workspacePaths={props.workspacePaths}
+            onOpenFile={props.onOpenFile}
+            onError={props.onError}
+          />
         ) : (
           <ToolGroup
             key={item.calls[0].id}
@@ -463,6 +474,7 @@ export function Timeline(props: TimelineProps) {
     props.approvals,
     props.questions,
     props.plan,
+    props.artifacts,
     props.streamingText,
     props.turnProgress,
     props.busy,
@@ -470,20 +482,33 @@ export function Timeline(props: TimelineProps) {
   ]);
 
   const groups = useMemo(
-    () => groupTimeline(createTimelineItems(props.messages, props.toolCalls)),
-    [props.messages, props.toolCalls],
+    () =>
+      groupTimeline(
+        createTimelineItemsWithArtifacts(
+          props.messages,
+          props.toolCalls,
+          props.artifacts,
+          { hasOlder: props.hasOlder },
+        ),
+      ),
+    [props.messages, props.toolCalls, props.artifacts, props.hasOlder],
   );
   const items = useMemo(
     () =>
       historySearch.enabled
         ? groupTimeline(
-            createTimelineItems(
+            createTimelineItemsWithArtifacts(
+              // These records already matched the server's full-text search.
+              // Deferred tool payloads cannot be searched again locally.
               historySearch.page?.messages ?? [],
               historySearch.page?.toolCalls ?? [],
+              props.artifacts.filter((artifact) =>
+                itemMatches({ kind: "artifact", at: artifact.createdAt, artifact }, filter, query),
+              ),
             ),
           )
         : filterTimelineGroups(groups, filter, query),
-    [groups, filter, query, historySearch.enabled, historySearch.page],
+    [groups, filter, query, historySearch.enabled, historySearch.page, props.artifacts],
   );
   useEffect(() => {
     const el = scrollRef.current;
@@ -676,6 +701,7 @@ export function Timeline(props: TimelineProps) {
           onOpenUrl={props.onOpenUrl}
           onRewrite={props.onRewrite}
           workspacePath={props.workspacePath}
+          workspacePaths={props.workspacePaths}
         />
         <QueueBar
           key={props.sessionId}
@@ -696,13 +722,6 @@ export function Timeline(props: TimelineProps) {
           <ArrowDown size={15} />
         </button>
       )}
-      <ArtifactsBar
-        workspacePaths={props.workspacePaths}
-        artifacts={props.artifacts}
-        workspacePath={props.workspacePath}
-        onOpenFile={props.onOpenFile}
-        onError={props.onError}
-      />
     </>
   );
 }

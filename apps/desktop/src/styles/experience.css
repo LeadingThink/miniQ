@@ -398,10 +398,6 @@
   align-items: center;
   gap: 4px;
 }
-.artifacts-bar {
-  max-height: min(25vh, 240px);
-  overflow-y: auto;
-}
 .artifact-open > .sub,
 .artifact-open > .artifact-title {
   max-width: 100%;

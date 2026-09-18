@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createTimelineItems,
+  createTimelineItemsWithArtifacts,
   filterTimelineGroups,
   groupTimeline,
   payloadPage,
@@ -10,7 +11,7 @@ import {
 import { exportFilename, exportMarkdown } from "./sessionExport";
 import { markdownOutline } from "./markdownOutline";
 import { filterModelIds } from "./modelSelection";
-import type { Message, ToolCall } from "./types";
+import type { Artifact, Message, ToolCall } from "./types";
 
 const message: Message = {
   id: "m",
@@ -43,6 +44,60 @@ function tool(
 }
 
 describe("long task evidence", () => {
+  it("keeps generated artifacts in chronological order with the conversation", () => {
+    const artifact: Artifact = {
+      id: "report",
+      sessionId: "s",
+      path: "/work/report.pdf",
+      kind: "pdf",
+      title: "report.pdf",
+      createdAt: "2026-09-06T01:00:02.123456Z",
+    };
+    const items = createTimelineItemsWithArtifacts(
+      [message],
+      [tool("before", 2)],
+      [artifact],
+    );
+    expect(items.map((item) => item.kind === "message" ? item.message.id : item.kind === "tool" ? item.call.id : item.artifact.id)).toEqual([
+      "m",
+      "before",
+      "report",
+    ]);
+  });
+
+  it("includes artifacts in answer searches but excludes them from activity and error views", () => {
+    const artifact: Artifact = {
+      id: "report",
+      sessionId: "s",
+      path: "/work/report.pdf",
+      kind: "pdf",
+      title: "report.pdf",
+      createdAt: "2026-09-06T01:00:02Z",
+    };
+    const groups = groupTimeline(createTimelineItemsWithArtifacts([], [], [artifact]));
+    expect(filterTimelineGroups(groups, "answers", "report")).toHaveLength(1);
+    expect(filterTimelineGroups(groups, "activity", "report")).toHaveLength(0);
+    expect(filterTimelineGroups(groups, "errors", "report")).toHaveLength(0);
+  });
+
+  it("reveals older artifacts only when their surrounding history has loaded", () => {
+    const artifact: Artifact = {
+      id: "older-report",
+      sessionId: "s",
+      path: "/work/report.pdf",
+      kind: "pdf",
+      title: "report.pdf",
+      createdAt: "2026-09-06T01:00:01Z",
+    };
+    const partial = createTimelineItemsWithArtifacts([message], [], [artifact], { hasOlder: true });
+    expect(partial.map((item) => item.kind)).toEqual(["message"]);
+    const olderPage = createTimelineItemsWithArtifacts([message], [tool("older", 0)], [artifact], { hasOlder: true });
+    expect(olderPage.map((item) => item.kind)).toEqual(["tool", "artifact", "message"]);
+    const complete = createTimelineItemsWithArtifacts([message], [], [artifact]);
+    expect(complete.map((item) => item.kind)).toEqual(["artifact", "message"]);
+    expect(createTimelineItemsWithArtifacts([], [], [artifact], { hasOlder: true })).toEqual([]);
+  });
+
   it("preserves sub-millisecond tool ordering before and after an answer", () => {
     const answer = { ...message, createdAt: "2026-09-06T01:00:02.123456Z" };
     const before = {

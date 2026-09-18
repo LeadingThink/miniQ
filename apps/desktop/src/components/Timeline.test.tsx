@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Message, Question, ToolCall, TurnProgress } from "../types";
+import type { Artifact, Message, Question, ToolCall, TurnProgress } from "../types";
 import type { PendingApproval } from "../hooks/useSessionFeed";
 import { Timeline } from "./Timeline";
 import { QueueBar } from "./QueueBar";
@@ -21,6 +21,7 @@ function renderTimeline(options: {
   plan?: { content: string; status: "pending" | "in_progress" | "completed" }[];
   questions?: Question[];
   approvals?: PendingApproval[];
+  artifacts?: Artifact[];
 }) {
   return renderToStaticMarkup(
     <Timeline
@@ -29,7 +30,7 @@ function renderTimeline(options: {
       approvals={options.approvals ?? []}
       questions={options.questions ?? []}
       plan={options.plan ?? []}
-      artifacts={[]}
+      artifacts={options.artifacts ?? []}
       queue={[]}
       streamingText={options.streamingText ?? ""}
       turnProgress={options.turnProgress ?? null}
@@ -49,6 +50,81 @@ function renderTimeline(options: {
 }
 
 describe("Timeline execution flow", () => {
+  it("places generated artifacts at their creation point instead of a fixed footer", () => {
+    const html = renderTimeline({
+      messages: [
+        {
+          id: "user-artifact",
+          sessionId: "session-1",
+          role: "user",
+          content: "生成报告",
+          createdAt: "2026-09-08T00:00:00Z",
+        },
+        {
+          id: "assistant-after-artifact",
+          sessionId: "session-1",
+          role: "assistant",
+          content: "报告已经生成",
+          createdAt: "2026-09-08T00:00:02Z",
+        },
+      ],
+      artifacts: [{
+        id: "artifact-inline",
+        sessionId: "session-1",
+        path: "/work/report.pdf",
+        kind: "pdf",
+        title: "report.pdf",
+        createdAt: "2026-09-08T00:00:01Z",
+      }],
+    });
+
+    expect(html.indexOf("生成报告")).toBeLessThan(html.indexOf("交付产物"));
+    expect(html.indexOf("交付产物")).toBeLessThan(html.indexOf("报告已经生成"));
+    expect(html).not.toContain("artifacts-bar");
+  });
+
+  it("opens an inline artifact from the delivery card", () => {
+    const onOpenFile = vi.fn();
+    render(
+      <Timeline
+        messages={[]}
+        toolCalls={[]}
+        approvals={[]}
+        questions={[]}
+        plan={[]}
+        artifacts={[{
+          id: "artifact-open",
+          sessionId: "session-1",
+          path: "/work/report.pdf",
+          kind: "pdf",
+          title: "report.pdf",
+          createdAt: "2026-09-08T00:00:00Z",
+        }]}
+        queue={[]}
+        streamingText=""
+        turnProgress={null}
+        busy={false}
+        onResolveApproval={noop}
+        onResolveQuestion={noop}
+        onRollback={noop}
+        onOpenFile={onOpenFile}
+        onOpenUrl={noop}
+        onSteerQueued={asyncNoop}
+        onRemoveQueued={asyncNoop}
+        onUpdateQueued={asyncNoop}
+        onRewrite={async () => true}
+        onError={noop}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "打开 report.pdf" }));
+    expect(onOpenFile).toHaveBeenCalledWith({
+      path: "/work/report.pdf",
+      line: null,
+      column: null,
+    });
+  });
+
   it("renders copy controls after complete user and assistant content", () => {
     const html = renderTimeline({
       messages: [
