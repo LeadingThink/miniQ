@@ -121,6 +121,10 @@ impl ResponsesDecoder {
                     .to_string();
                 }
             }
+            "computer_call" => {
+                call.name = "computer_use".into();
+                call.arguments = computer_call_arguments(item).to_string();
+            }
             _ => {
                 self.calls.remove(&index);
             }
@@ -213,6 +217,141 @@ fn shell_arguments(item: &Value) -> Value {
         }
     }
     arguments
+}
+
+/// Convert the Responses computer-use action vocabulary to miniQ's guarded
+/// desktop tool. The native marker lets the tool accept the provider's
+/// observation protocol while execution still requires an active lease.
+fn computer_call_arguments(item: &Value) -> Value {
+    let action = item.get("action").unwrap_or(&Value::Null);
+    let kind = action.get("type").and_then(Value::as_str).unwrap_or("");
+    let mut result = serde_json::Map::new();
+    result.insert("nativeCall".into(), json!(true));
+    match kind {
+        "click" => {
+            result.insert("action".into(), json!("click"));
+            copy_value(action, &mut result, "x");
+            copy_value(action, &mut result, "y");
+            copy_value(action, &mut result, "button");
+        }
+        "double_click" | "doubleClick" => {
+            result.insert("action".into(), json!("doubleClick"));
+            copy_value(action, &mut result, "x");
+            copy_value(action, &mut result, "y");
+        }
+        "drag" => {
+            result.insert("action".into(), json!("drag"));
+            if let Some(path) = action.get("path").and_then(Value::as_array) {
+                if let Some(start) = path.first().and_then(Value::as_array) {
+                    if start.len() >= 2 {
+                        result.insert("x".into(), start[0].clone());
+                        result.insert("y".into(), start[1].clone());
+                    }
+                }
+                if let Some(end) = path.last().and_then(Value::as_array) {
+                    if end.len() >= 2 {
+                        result.insert("endX".into(), end[0].clone());
+                        result.insert("endY".into(), end[1].clone());
+                    }
+                }
+            } else {
+                copy_value(action, &mut result, "x");
+                copy_value(action, &mut result, "y");
+                copy_value(action, &mut result, "endX");
+                copy_value(action, &mut result, "endY");
+            }
+        }
+        "scroll" => {
+            result.insert("action".into(), json!("scroll"));
+            copy_value(action, &mut result, "x");
+            copy_value(action, &mut result, "y");
+            if action.get("scrollX").is_some() {
+                copy_value(action, &mut result, "scrollX");
+            } else {
+                copy_value_alias(action, &mut result, "scroll_x", "scrollX");
+            }
+            if action.get("scrollY").is_some() {
+                copy_value(action, &mut result, "scrollY");
+            } else {
+                copy_value_alias(action, &mut result, "scroll_y", "scrollY");
+            }
+        }
+        "type" => {
+            result.insert("action".into(), json!("type"));
+            copy_value(action, &mut result, "text");
+        }
+        "keypress" | "key" => {
+            result.insert("action".into(), json!("key"));
+            let keys = action.get("keys").and_then(Value::as_array);
+            if let Some(keys) = keys {
+                if let Some(key) = keys.last().and_then(Value::as_str) {
+                    result.insert("key".into(), json!(normalize_key(key)));
+                }
+                let modifiers = keys
+                    .iter()
+                    .take(keys.len().saturating_sub(1))
+                    .filter_map(Value::as_str)
+                    .filter_map(normalize_modifier)
+                    .map(|value| json!(value))
+                    .collect::<Vec<_>>();
+                if !modifiers.is_empty() {
+                    result.insert("modifiers".into(), Value::Array(modifiers));
+                }
+            } else {
+                copy_value(action, &mut result, "key");
+            }
+        }
+        "wait" => {
+            result.insert("action".into(), json!("wait"));
+            copy_value(action, &mut result, "milliseconds");
+        }
+        "screenshot" => {
+            result.insert("action".into(), json!("screenshot"));
+        }
+        _ => {
+            result.insert("action".into(), json!(kind));
+        }
+    }
+    Value::Object(result)
+}
+
+fn copy_value(source: &Value, target: &mut serde_json::Map<String, Value>, key: &str) {
+    if let Some(value) = source.get(key) {
+        target.insert(key.into(), value.clone());
+    }
+}
+
+fn copy_value_alias(
+    source: &Value,
+    target: &mut serde_json::Map<String, Value>,
+    source_key: &str,
+    target_key: &str,
+) {
+    if let Some(value) = source.get(source_key) {
+        target.insert(target_key.into(), value.clone());
+    }
+}
+
+fn normalize_key(key: &str) -> String {
+    match key.to_ascii_uppercase().as_str() {
+        "RETURN" => "Enter".into(),
+        "ESC" => "Escape".into(),
+        "CTRL" | "CONTROL" => "Control".into(),
+        "CMD" | "COMMAND" => "Meta".into(),
+        "OPTION" => "Alt".into(),
+        "" => "Space".into(),
+        _ => key.into(),
+    }
+}
+
+fn normalize_modifier(key: &str) -> Option<&'static str> {
+    match key.to_ascii_lowercase().as_str() {
+        "ctrl" | "control" => Some("ctrl"),
+        "cmd" | "command" | "meta" | "win" => Some("meta"),
+        "alt" | "option" => Some("alt"),
+        "shift" => Some("shift"),
+        _ => None,
+    }
 }
 
 fn argv_command(arguments: &[Value]) -> Option<String> {

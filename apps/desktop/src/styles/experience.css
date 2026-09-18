@@ -295,6 +295,9 @@
 .group-running {
   color: var(--blue);
 }
+.group-automation {
+  color: var(--text-dim);
+}
 .group-failed {
   color: var(--danger);
 }

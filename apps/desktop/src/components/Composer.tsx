@@ -1,27 +1,20 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useLayoutEffect,
   useRef,
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import {
-  ArrowUp,
-  LoaderCircle,
-  Paperclip,
-  Sparkles,
-  Square,
-  X,
-} from "lucide-react";
+import { ArrowUp, LoaderCircle, Paperclip, Square, X } from "lucide-react";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import {
   canSendComposer,
   isComposerSendKey,
   shouldShowComposerSend,
 } from "../composerInput";
-import { moveMenuIndex } from "../menuNavigation";
+import { useComposerSlash } from "../hooks/useComposerSlash";
+import type { ComposerSlashCommand } from "../composerSlash";
 import type { ApprovalMode } from "../types";
 import type { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
@@ -219,76 +212,6 @@ type SendMessage = (
   attachments?: string[],
 ) => void | boolean | Promise<void | boolean>;
 
-interface SlashSkill {
-  name: string;
-  description: string;
-  enabled: boolean;
-}
-
-/** Slash-command suggestions: type `/` to reference an enabled skill. */
-function useSlashSkills(client: RpcClient | undefined, active: boolean) {
-  const [skills, setSkills] = useState<SlashSkill[]>([]);
-  useEffect(() => {
-    if (!active || !client) return;
-    let stale = false;
-    client
-      .call<{ skills: SlashSkill[] }>("skill.list", {})
-      .then((result) => {
-        if (!stale) setSkills(result.skills.filter((s) => s.enabled));
-      })
-      .catch(() => {
-        if (!stale) setSkills([]);
-      });
-    return () => {
-      stale = true;
-    };
-  }, [active, client]);
-  return skills;
-}
-
-function SlashMenu(props: {
-  id: string;
-  skills: SlashSkill[];
-  activeIndex: number;
-  onActiveIndexChange: (index: number) => void;
-  onPick: (skill: SlashSkill) => void;
-}) {
-  if (props.skills.length === 0) return null;
-  return (
-    <div
-      id={props.id}
-      className="slash-menu"
-      role="listbox"
-      aria-label="可用技能"
-    >
-      <div className="slash-title">技能</div>
-      {props.skills.map((skill, index) => (
-        <button
-          key={skill.name}
-          type="button"
-          role="option"
-          aria-selected={index === props.activeIndex}
-          className={`slash-item${index === props.activeIndex ? " active" : ""}`}
-          onMouseEnter={() => props.onActiveIndexChange(index)}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => props.onPick(skill)}
-        >
-          <Sparkles size={13} />
-          <span className="slash-name">{skill.name}</span>
-          <span className="slash-desc">{skill.description}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function filterSlashSkills(skills: SlashSkill[], query: string): SlashSkill[] {
-  const normalized = query.trim().toLowerCase();
-  return skills
-    .filter((skill) => skill.name.toLowerCase().includes(normalized))
-    .slice(0, 8);
-}
-
 function resizeComposer(textarea: HTMLTextAreaElement | null) {
   if (!textarea) return;
   textarea.style.height = "auto";
@@ -310,8 +233,11 @@ export function ComposerCard(props: {
   /** Replace the draft on an explicit user-selected starter action. */
   draftRequest?: { id: number; content: string; append?: boolean };
   onDraftRequestApplied?: () => void;
-  /** Enables `/` skill suggestions when provided. */
+  /** Load enabled skills from the current workspace. */
   client?: RpcClient;
+  workspaceId?: string;
+  /** Available application actions for the slash menu. */
+  slashCommands?: ComposerSlashCommand[];
   approvalMode?: ApprovalMode;
   onApprovalModeChange?: (mode: ApprovalMode) => void;
   onSend: SendMessage;
@@ -321,53 +247,45 @@ export function ComposerCard(props: {
   sendBlockedReason?: string;
 }) {
   const [draft, setDraftState] = useState(() => readDraft(props.draftKey));
+  const draftValueRef = useRef(draft);
+  draftValueRef.current = draft;
   const [attachments, setAttachments] = useState<string[]>(() =>
     readAttachments(props.draftKey),
   );
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
-  const [activeSkillIndex, setActiveSkillIndex] = useState(0);
-  const [dismissedSlashDraft, setDismissedSlashDraft] = useState<string | null>(
-    null,
-  );
   const draftKeyRef = useRef(props.draftKey);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceRangeRef = useRef<TextRange>({ start: 0, end: 0 });
   const voiceDraftRef = useRef("");
   const [voicePreview, setVoicePreview] = useState<VoicePreview | null>(null);
-  const slashMenuId = useId();
-  const slashActive = draft.startsWith("/") && dismissedSlashDraft !== draft;
-  const slashSkills = useSlashSkills(props.client, slashActive);
-  const visibleSlashSkills = filterSlashSkills(slashSkills, draft.slice(1));
-
   // When the draft key changes (e.g. switching sessions), load that key's draft.
   useEffect(() => {
     if (draftKeyRef.current === props.draftKey) return;
     draftKeyRef.current = props.draftKey;
     setDraftState(readDraft(props.draftKey));
     setAttachments(readAttachments(props.draftKey));
-    setDismissedSlashDraft(null);
     setVoicePreview(null);
   }, [props.draftKey]);
 
   const setDraft = (value: string) => {
+    draftValueRef.current = value;
     setDraftState(value);
     storeDraft(props.draftKey, value);
   };
 
   useEffect(() => {
     if (!props.draftRequest) return;
-    const content = props.draftRequest.append && draft
-      ? `${draft}\n\n${props.draftRequest.content}` : props.draftRequest.content;
+    const content =
+      props.draftRequest.append && draft
+        ? `${draft}\n\n${props.draftRequest.content}`
+        : props.draftRequest.content;
     setDraft(content);
     props.onDraftRequestApplied?.();
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.focus();
-      textarea.setSelectionRange(
-        content.length,
-        content.length,
-      );
+      textarea.setSelectionRange(content.length, content.length);
     }
     // The request id intentionally allows selecting the same starter twice.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -375,10 +293,6 @@ export function ComposerCard(props: {
 
   useLayoutEffect(() => {
     resizeComposer(textareaRef.current);
-  }, [draft]);
-
-  useEffect(() => {
-    setActiveSkillIndex(0);
   }, [draft]);
 
   const addAttachments = useCallback(
@@ -437,6 +351,7 @@ export function ComposerCard(props: {
   const send = async () => {
     if (
       sendingRef.current ||
+      slash.pending ||
       voicePreview !== null ||
       props.sendBlocked ||
       !canSendComposer(draft, attachments)
@@ -453,7 +368,6 @@ export function ComposerCard(props: {
       if (draftKeyRef.current === key) {
         setDraftState("");
         setAttachments([]);
-        setDismissedSlashDraft(null);
       }
     } catch (cause) {
       props.onError?.(cause instanceof Error ? cause.message : String(cause));
@@ -463,11 +377,49 @@ export function ComposerCard(props: {
     }
   };
 
-  const pickSkill = (skill: SlashSkill) => {
-    setDraft(`使用技能「${skill.name}」：`);
-    setDismissedSlashDraft(null);
-    requestAnimationFrame(() => textareaRef.current?.focus());
-  };
+  const slash = useComposerSlash({
+    draft,
+    scope: props.draftKey,
+    workspaceId: props.workspaceId,
+    client: props.client,
+    commands: [
+      ...(props.slashCommands ?? []),
+      ...(isTauriRuntime()
+        ? [
+            {
+              id: "attach",
+              name: "附加文件",
+              description: "选择图片或文件作为当前消息的附件",
+              group: "工具",
+              icon: "file" as const,
+              keywords: ["attach", "file", "附件", "文件"],
+              onSelect: pickFiles,
+            },
+          ]
+        : []),
+    ],
+    inputRef: textareaRef,
+    setDraft,
+    onPick: async (command) => {
+      const key = props.draftKey;
+      const previous = draft;
+      const replacement = command.insertText ?? "";
+      setDraft(replacement);
+      try {
+        await command.onSelect?.();
+      } catch (cause) {
+        if (
+          draftKeyRef.current === key &&
+          draftValueRef.current === replacement
+        ) {
+          setDraft(previous);
+        }
+        props.onError?.(cause instanceof Error ? cause.message : String(cause));
+      }
+      if (command.insertText !== undefined)
+        requestAnimationFrame(() => textareaRef.current?.focus());
+    },
+  });
 
   const rememberVoiceInsertion = () => {
     voiceDraftRef.current = draft;
@@ -484,7 +436,10 @@ export function ComposerCard(props: {
       // If the user edited the draft while dictating, insert at their current
       // cursor instead of replacing a selection from an older draft.
       const position = textareaRef.current?.selectionStart ?? current.length;
-      const range = current === voiceDraftRef.current ? voiceRangeRef.current : { start: position, end: position };
+      const range =
+        current === voiceDraftRef.current
+          ? voiceRangeRef.current
+          : { start: position, end: position };
       const result = insertTranscript(current, text, range);
       cursor = result.cursor;
       storeDraft(props.draftKey, result.value);
@@ -499,15 +454,7 @@ export function ComposerCard(props: {
   return (
     <div className="composer-card">
       {voicePreview && <VoiceTranscript preview={voicePreview} />}
-      {slashActive && (
-        <SlashMenu
-          id={slashMenuId}
-          skills={visibleSlashSkills}
-          activeIndex={activeSkillIndex}
-          onActiveIndexChange={setActiveSkillIndex}
-          onPick={pickSkill}
-        />
-      )}
+      {slash.menu}
       {attachments.length > 0 && (
         <div className="attach-row">
           {attachments.map((path) => (
@@ -527,7 +474,7 @@ export function ComposerCard(props: {
         </div>
       )}
       <textarea
-        readOnly={sending}
+        readOnly={sending || slash.pending}
         aria-label="消息"
         ref={textareaRef}
         value={draft}
@@ -536,9 +483,7 @@ export function ComposerCard(props: {
           props.busy ? "任务执行中，发送的消息会加入队列..." : props.placeholder
         }
         rows={1}
-        aria-autocomplete={slashActive ? "list" : undefined}
-        aria-controls={slashActive ? slashMenuId : undefined}
-        aria-expanded={slashActive ? visibleSlashSkills.length > 0 : undefined}
+        {...slash.inputAttributes}
         onBeforeInput={(e) => {
           const data = (e.nativeEvent as InputEvent).data;
           if (data && containsUnsupportedInput(data)) e.preventDefault();
@@ -559,34 +504,7 @@ export function ComposerCard(props: {
           }
         }}
         onKeyDown={(e) => {
-          if (slashActive && visibleSlashSkills.length > 0) {
-            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-              e.preventDefault();
-              setActiveSkillIndex((index) =>
-                moveMenuIndex(
-                  index,
-                  visibleSlashSkills.length,
-                  e.key === "ArrowDown" ? 1 : -1,
-                ),
-              );
-              return;
-            }
-            if (
-              (e.key === "Enter" || e.key === "Tab") &&
-              !e.nativeEvent.isComposing
-            ) {
-              e.preventDefault();
-              pickSkill(
-                visibleSlashSkills[activeSkillIndex] ?? visibleSlashSkills[0],
-              );
-              return;
-            }
-          }
-          if (e.key === "Escape" && slashActive) {
-            e.preventDefault();
-            setDismissedSlashDraft(draft);
-            return;
-          }
+          if (slash.onKeyDown(e)) return;
           if (
             isComposerSendKey(
               e.key,
@@ -617,7 +535,7 @@ export function ComposerCard(props: {
           <VoiceInput
             key={props.draftKey}
             client={props.client}
-            disabled={sending}
+            disabled={sending || slash.pending}
             onStart={rememberVoiceInsertion}
             onTranscribed={applyTranscription}
             onPreview={setVoicePreview}
@@ -654,6 +572,7 @@ export function ComposerCard(props: {
             }
             disabled={
               sending ||
+              slash.pending ||
               voicePreview !== null ||
               props.sendBlocked ||
               !canSendComposer(draft, attachments)
@@ -687,6 +606,8 @@ export function Composer(props: {
   draftRequest?: { id: number; content: string; append?: boolean };
   onDraftRequestApplied?: () => void;
   client?: RpcClient;
+  workspaceId?: string;
+  slashCommands?: ComposerSlashCommand[];
   approvalMode?: ApprovalMode;
   onApprovalModeChange?: (mode: ApprovalMode) => void;
   onSend: SendMessage;
@@ -697,7 +618,7 @@ export function Composer(props: {
     <div className="composer-outer">
       <ComposerCard
         busy={props.busy}
-        placeholder="随心输入,Enter 发送,/ 引用技能"
+        placeholder="随心输入，Enter 发送，/ 使用命令与技能"
         chip={props.chip}
         modelSlot={props.modelSlot}
         permissionSlot={props.permissionSlot}
@@ -706,6 +627,8 @@ export function Composer(props: {
         draftRequest={props.draftRequest}
         onDraftRequestApplied={props.onDraftRequestApplied}
         client={props.client}
+        workspaceId={props.workspaceId}
+        slashCommands={props.slashCommands}
         approvalMode={props.approvalMode}
         onApprovalModeChange={props.onApprovalModeChange}
         onSend={props.onSend}

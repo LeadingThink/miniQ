@@ -14,6 +14,12 @@ import { ToolPayload } from "./ToolPayload";
 import { ComputerObservation } from "./ComputerObservation";
 import type { RpcClient } from "../rpc";
 import { useToolDetail } from "../hooks/useToolDetail";
+import {
+  automationActionLabel,
+  automationInputSummary,
+  automationResultLabel,
+  isAutomationCall,
+} from "./automationActivity";
 
 interface ToolAction {
   running: string;
@@ -48,13 +54,8 @@ const TOOL_ACTIONS: Record<string, ToolAction> = {
 };
 
 export function toolActionLabel(toolName: string, running: boolean, input?: unknown): string {
-  if (toolName === "app_automation") {
-    const action = (input as { action?: unknown } | null)?.action;
-    if (action === "inspect" || action === "screenshot") return running ? "正在观察应用" : "观察了应用";
-    if (action === "windows") return running ? "正在查找应用窗口" : "查看了应用窗口";
-    if (action === "status") return running ? "正在检查应用控制状态" : "检查了应用控制状态";
-    if (action === "release") return running ? "正在释放应用控制" : "已释放应用控制";
-  }
+  const automation = automationActionLabel(toolName, input, running);
+  if (automation) return automation;
   const action = TOOL_ACTIONS[toolName];
   if (action) return running ? action.running : action.finished;
   return running ? `正在执行 ${toolName}` : `已执行 ${toolName}`;
@@ -62,13 +63,9 @@ export function toolActionLabel(toolName: string, running: boolean, input?: unkn
 
 /** One-line human summary of the most relevant tool input. */
 export function toolInputSummary(call: ToolCall): string {
+  const automation = automationInputSummary(call);
+  if (automation) return automation;
   const input = (call.input ?? {}) as Record<string, unknown>;
-  if (call.toolName === "app_automation") {
-    const target = (call.output as { target?: { appName?: unknown; title?: unknown } } | null)?.target;
-    const name = [target?.appName, target?.title].filter((value): value is string => typeof value === "string" && value.length > 0);
-    if (name.length) return name.join(" · ");
-    if (typeof input.windowId === "number") return `窗口 ${input.windowId}`;
-  }
   const keys = [
     "path",
     "command",
@@ -145,15 +142,19 @@ export function ToolStep(props: {
   client?: RpcClient;
   call: ToolCall;
   onRollback?: (checkpointId: string) => void;
+  defaultExpanded?: boolean;
 }) {
   const needsAttention =
     props.call.status === "failed" &&
     (!props.call.payloadDeferred || props.call.live === true);
-  const [open, setOpen] = useState(needsAttention);
+  const [open, setOpen] = useState(needsAttention || props.defaultExpanded === true);
   const detailId = useId();
   useEffect(() => {
     if (needsAttention) setOpen(true);
   }, [needsAttention]);
+  useEffect(() => {
+    if (props.defaultExpanded) setOpen(true);
+  }, [props.defaultExpanded]);
   const detail = useToolDetail(props.client, props.call, open);
   const { call } = detail;
   const running =
@@ -166,6 +167,8 @@ export function ToolStep(props: {
   const summary = toolInputSummary(call);
   const duration = toolDuration(call);
   const state = statusText(call);
+  const automation = isAutomationCall(call);
+  const resultLabel = automationResultLabel(call);
 
   return (
     <div
@@ -254,12 +257,31 @@ export function ToolStep(props: {
           )}
           {!call.payloadDeferred && (
             <>
+              {automation && (
+                <div className="automation-step-summary">
+                  <strong>{toolActionLabel(call.toolName, running, call.input)}</strong>
+                  {summary && <span>{summary}</span>}
+                  {resultLabel && <small>{resultLabel}</small>}
+                </div>
+              )}
               {props.client && (
                 <ComputerObservation call={call} client={props.client} />
               )}
-              <ToolPayload label="输入" value={call.input} />
-              {call.output !== undefined && call.output !== null && (
-                <ToolPayload label="结果" value={call.output} />
+              {automation ? (
+                <details className="automation-raw-data">
+                  <summary>查看调用数据</summary>
+                  <ToolPayload label="输入" value={call.input} />
+                  {call.output !== undefined && call.output !== null && (
+                    <ToolPayload label="结果" value={call.output} />
+                  )}
+                </details>
+              ) : (
+                <>
+                  <ToolPayload label="输入" value={call.input} />
+                  {call.output !== undefined && call.output !== null && (
+                    <ToolPayload label="结果" value={call.output} />
+                  )}
+                </>
               )}
             </>
           )}

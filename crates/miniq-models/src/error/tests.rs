@@ -54,6 +54,19 @@ fn stream_errors_preserve_codes_even_when_the_message_is_only_busy() {
 }
 
 #[test]
+fn stream_read_failures_are_retryable() {
+    for error in [
+        json!({"type":"stream_read_error"}),
+        json!({"code":"stream_read_error"}),
+        json!({"message":"Responses API error: stream_read_error"}),
+        json!("stream read error"),
+        json!({"message":"upstream closed with premature EOF"}),
+    ] {
+        assert!(ProviderError::from_stream_error("test", &error).is_retryable());
+    }
+}
+
+#[test]
 fn retry_after_supports_delta_seconds_and_http_dates_without_shortening_long_hints() {
     let now = httpdate::parse_http_date("Wed, 21 Oct 2015 07:28:00 GMT").unwrap();
     assert_eq!(

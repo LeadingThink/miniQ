@@ -121,6 +121,14 @@ fn desktop_screenshots_are_private_high_risk() {
             .is_err()
     );
     assert!(ComputerInput::parse(json!({"action":"screenshot","displayId":null})).is_err());
+    assert!(!input::schema()["properties"]
+        .as_object()
+        .unwrap()
+        .contains_key("nativeCall"));
+    assert!(ComputerInput::parse(json!({
+        "action":"click","x":10,"y":20,"nativeCall":true
+    }))
+    .is_ok());
     assert_eq!(input::schema()["properties"]["x"]["minimum"], 0.0);
     assert_eq!(
         input::schema()["properties"]["milliseconds"]["maximum"],

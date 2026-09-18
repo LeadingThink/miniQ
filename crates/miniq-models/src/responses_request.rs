@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde_json::{json, Value};
 
 use crate::image::encode_image;
-use crate::provider::{ApiProtocol, ChatMessage, ChatRole, ProviderError, ToolSpec};
+use crate::provider::{ApiProtocol, ChatImage, ChatMessage, ChatRole, ProviderError, ToolSpec};
 
 pub(crate) fn response_tool(tool: &ToolSpec) -> Value {
     // Runtime schemas include optional/defaulted fields and action-dependent
@@ -103,7 +103,8 @@ pub(crate) fn build_input(messages: &[ChatMessage]) -> Result<Vec<Value>, Provid
                     call_id,
                     &message.content,
                     native_calls.get(call_id).map(String::as_str),
-                );
+                    &message.images,
+                )?;
                 if !message.images.is_empty() && result["type"] == "function_call_output" {
                     result["output"] = json!(message_content(message, "input_text")?);
                 }
@@ -114,32 +115,55 @@ pub(crate) fn build_input(messages: &[ChatMessage]) -> Result<Vec<Value>, Provid
     Ok(input)
 }
 
-fn tool_result_item(call_id: &str, content: &str, call_type: Option<&str>) -> Value {
+fn tool_result_item(
+    call_id: &str,
+    content: &str,
+    call_type: Option<&str>,
+    images: &[ChatImage],
+) -> Result<Value, ProviderError> {
     match call_type {
         Some("apply_patch_call") => {
             let payload = serde_json::from_str::<Value>(content).unwrap_or(Value::Null);
             let failed = payload.get("error").is_some()
                 || payload.get("rejected").is_some()
                 || payload.get("status").and_then(Value::as_str) == Some("failed");
-            json!({
+            Ok(json!({
                 "type": "apply_patch_call_output",
                 "call_id": call_id,
                 "status": if failed { "failed" } else { "completed" },
                 "output": content,
-            })
+            }))
         }
-        Some("shell_call") => shell_result_item(call_id, content),
-        Some("local_shell_call") => json!({
+        Some("shell_call") => Ok(shell_result_item(call_id, content)),
+        Some("local_shell_call") => Ok(json!({
             "type": "local_shell_call_output",
             "call_id": call_id,
             "output": content,
-        }),
-        _ => json!({
+        })),
+        Some("computer_call") => computer_result_item(call_id, images),
+        _ => Ok(json!({
             "type": "function_call_output",
             "call_id": call_id,
             "output": content,
-        }),
+        })),
     }
+}
+
+fn computer_result_item(call_id: &str, images: &[ChatImage]) -> Result<Value, ProviderError> {
+    let Some(image) = images.first() else {
+        return Err(ProviderError::InvalidResponse(format!(
+            "computer_call {call_id} completed without a screenshot"
+        )));
+    };
+    let image = encode_image(image)?;
+    Ok(json!({
+        "type": "computer_call_output",
+        "call_id": call_id,
+        "output": {
+            "type": "computer_screenshot",
+            "image_url": format!("data:{};base64,{}", image.mime_type, image.base64),
+        },
+    }))
 }
 
 pub(crate) fn shell_result_item(call_id: &str, content: &str) -> Value {

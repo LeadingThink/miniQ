@@ -24,6 +24,11 @@ pub(super) enum Action {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct ComputerInput {
     pub action: Action,
+    /// Internal marker for Responses API computer_call adaptation. It is not
+    /// advertised in the public tool schema.
+    #[serde(default, rename = "nativeCall")]
+    #[schemars(skip)]
+    pub native_call: bool,
     pub display_id: Option<u32>,
     /// Required for input and wait. Use the most recent screenshot's observationId.
     pub observation_id: Option<String>,
@@ -123,10 +128,12 @@ impl ComputerInput {
                 "action is missing required coordinates, text or key".into(),
             ));
         }
-        if !matches!(
-            input.action,
-            Action::Status | Action::Screenshot | Action::Release
-        ) && input.observation_id.is_none()
+        if !input.native_call
+            && !matches!(
+                input.action,
+                Action::Status | Action::Screenshot | Action::Release
+            )
+            && input.observation_id.is_none()
         {
             return Err(ToolError::InvalidInput(
                 "observationId is required for desktop actions".into(),

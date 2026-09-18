@@ -252,6 +252,72 @@ fn decodes_native_patch_and_shell_calls() {
 }
 
 #[test]
+fn decodes_native_computer_calls_into_guarded_desktop_actions() {
+    let drag = decode(
+        &mut ResponsesDecoder::default(),
+        json!({
+            "type":"response.output_item.done","output_index":0,
+            "item":{"type":"computer_call","id":"cc-1","call_id":"computer-1",
+                "action":{"type":"drag","path":[[120,80],[120,580]]}}
+        }),
+    );
+    assert!(matches!(
+        &drag.items[0],
+        Ok(ChatDelta::ToolCall(call))
+            if call.id == "computer-1"
+                && call.name == "computer_use"
+                && call.arguments["nativeCall"] == true
+                && call.arguments["action"] == "drag"
+                && call.arguments["x"] == 120
+                && call.arguments["endY"] == 580
+    ));
+
+    let scroll = decode(
+        &mut ResponsesDecoder::default(),
+        json!({
+            "type":"response.output_item.done","output_index":0,
+            "item":{"type":"computer_call","id":"cc-2","call_id":"computer-2",
+                "action":{"type":"scroll","x":120,"y":80,"scroll_x":0,"scroll_y":640}}
+        }),
+    );
+    assert!(matches!(
+        &scroll.items[0],
+        Ok(ChatDelta::ToolCall(call))
+            if call.arguments["action"] == "scroll"
+                && call.arguments["scrollY"] == 640
+    ));
+}
+
+#[test]
+fn encodes_native_computer_results_as_screenshot_outputs() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("computer.png");
+    std::fs::write(&path, [0x89_u8, b'P', b'N', b'G']).unwrap();
+    let mut assistant = ChatMessage::assistant("");
+    assistant.provider_context = Some(ProviderContext {
+        protocol: ApiProtocol::Responses,
+        data: json!([{
+            "type":"computer_call","call_id":"computer-1",
+            "action":{"type":"screenshot"}
+        }]),
+    });
+    let mut result = ChatMessage::tool_result("computer-1", "observed");
+    result.images.push(ChatImage {
+        path: path.to_string_lossy().into_owned(),
+        mime_type: "image/png".into(),
+        detail: crate::ImageDetail::Auto,
+    });
+    let body = provider().build_body(&request(vec![assistant, result]));
+    assert_eq!(body["input"][0]["type"], "computer_call");
+    assert_eq!(body["input"][1]["type"], "computer_call_output");
+    assert_eq!(body["input"][1]["output"]["type"], "computer_screenshot");
+    assert!(body["input"][1]["output"]["image_url"]
+        .as_str()
+        .unwrap()
+        .starts_with("data:image/png;base64,"));
+}
+
+#[test]
 fn quotes_legacy_local_shell_argv_without_losing_argument_boundaries() {
     let arguments = shell_arguments(&json!({
         "action":{"command":["printf", "%s", "two words"]}

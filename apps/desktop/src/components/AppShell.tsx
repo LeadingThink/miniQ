@@ -5,6 +5,8 @@ import { type LocalFileTarget } from "../localFiles";
 import { LoaderCircle, PlugZap, Sparkles } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Composer, ComposerCard } from "./Composer";
+import type { ComposerSlashCommand } from "../composerSlash";
+import { useAppSlashCommands } from "../hooks/useAppSlashCommands";
 import { DistillModal } from "./Distill";
 import { ExternalSessionImportDialog } from "./ExternalSessionImport";
 import { McpPanel } from "./Mcp";
@@ -127,13 +129,14 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
 }
 
 interface WorkbenchPageProps extends AppOnlyProps {
+  slashCommands: ComposerSlashCommand[];
   onOpenFile: (target: LocalFileTarget) => void;
   onOpenUrl: (url: string) => void;
   draftRequest?: { id: number; content: string; append?: boolean };
   onDraftRequestApplied?: () => void;
 }
 
-function SessionPage({ app, onOpenFile, onOpenUrl, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
+function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
   return (
     <>
       <AgentPanel
@@ -182,6 +185,8 @@ function SessionPage({ app, onOpenFile, onOpenUrl, draftRequest, onDraftRequestA
         />
       </Suspense>
       <Composer
+        slashCommands={slashCommands}
+        workspaceId={app.catalog.currentWorkspace?.id}
         modelSlot={
           <SessionModelControls
             client={app.client}
@@ -210,7 +215,7 @@ function SessionPage({ app, onOpenFile, onOpenUrl, draftRequest, onDraftRequestA
   );
 }
 
-function HeroPage({ app }: AppOnlyProps) {
+function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: ComposerSlashCommand[] }) {
   const selectedWorkspace = app.catalog.selectedWorkspace;
   const [draftRequest, setDraftRequest] = useState<
     { id: number; content: string } | undefined
@@ -224,6 +229,8 @@ function HeroPage({ app }: AppOnlyProps) {
       </h1>
       <div className="hero-composer">
         <ComposerCard
+          slashCommands={slashCommands}
+          workspaceId={selectedWorkspace?.id}
           modelSlot={
             <SessionModelControls
               client={app.client}
@@ -301,7 +308,7 @@ function HeroPage({ app }: AppOnlyProps) {
   );
 }
 
-function MainPage({ app, onOpenFile, onOpenUrl, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
+function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
   switch (app.navigation.page) {
     case "schedule":
       return (
@@ -329,13 +336,14 @@ function MainPage({ app, onOpenFile, onOpenUrl, draftRequest, onDraftRequestAppl
         <SessionPage
           key={app.catalog.currentSessionId}
           app={app}
+          slashCommands={slashCommands}
           onOpenFile={onOpenFile}
           onOpenUrl={onOpenUrl}
           draftRequest={draftRequest}
           onDraftRequestApplied={onDraftRequestApplied}
         />
       ) : (
-        <HeroPage app={app} />
+        <HeroPage app={app} slashCommands={slashCommands} />
       );
   }
 }
@@ -487,6 +495,15 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
     openFileTarget(app, target);
   };
 
+  const slash = useAppSlashCommands(app, {
+    onOpenBrowser: () => openBrowserUrl("https://www.bing.com/"),
+    onOpenReview: () => {
+      setBrowserUrl(null);
+      app.preview.close();
+      app.review.setOpen(true);
+    },
+  });
+
   useGlobalShortcuts({
     onPalette: () => app.navigation.setShowSearch(!app.navigation.showSearch),
     onNewChat: app.actions.newChat,
@@ -615,8 +632,10 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
         />
         <AppErrorBanner app={app} />
         <AppOverlays app={app} theme={theme} onThemeChange={onThemeChange} />
+        {slash.dialogs}
         <MainPage
           app={app}
+          slashCommands={slash.commands}
           onOpenUrl={openBrowserUrl}
           onOpenFile={openPreviewFile}
           draftRequest={fileQuestion?.sessionId === app.catalog.currentSessionId ? fileQuestion : undefined}

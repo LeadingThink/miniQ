@@ -140,6 +140,7 @@ fn is_transient_error(error: &Value) -> bool {
                     | "internal_server_error"
                     | "resource_exhausted"
                     | "unavailable"
+                    | "stream_read_error"
                     | "deadline_exceeded"
             )
         });
@@ -149,7 +150,12 @@ fn is_transient_error(error: &Value) -> bool {
         .or_else(|| error.as_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    transient_code || detail.contains("overloaded") || detail.contains("temporarily unavailable")
+    transient_code
+        || detail.contains("overloaded")
+        || detail.contains("temporarily unavailable")
+        || detail.contains("stream_read_error")
+        || detail.contains("stream read error")
+        || detail.contains("premature eof")
 }
 
 #[cfg(test)]

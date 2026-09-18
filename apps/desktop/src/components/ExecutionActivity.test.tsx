@@ -42,14 +42,32 @@ describe("execution activity", () => {
   it("distinguishes background app actions from observations and foreground desktop control", () => {
     expect(toolActionLabel("app_automation", true, {action:"inspect"})).toBe("正在观察应用");
     expect(toolActionLabel("app_automation", false, {action:"invoke",axAction:"AXPress"})).toBe("后台应用操作");
-    expect(toolActionLabel("computer_use", true, {action:"click"})).toBe("正在操作桌面");
+    expect(toolActionLabel("computer_use", true, {action:"click"})).toBe("正在点击桌面");
     const call = toolCall({toolName:"app_automation", input:{action:"setValue",windowId:42},
       output:{target:{windowId:42,pid:17,appName:"网易邮箱大师",title:"撰写邮件"}}});
     expect(toolInputSummary(call)).toBe("网易邮箱大师 · 撰写邮件");
     const html = renderToStaticMarkup(<ToolStep call={call} />);
-    expect(html).toContain("后台应用操作");
+    expect(html).toContain("设置了应用内容");
     expect(html).toContain("网易邮箱大师 · 撰写邮件");
     expect(html).not.toContain("操作了桌面");
+  });
+
+  it("describes desktop actions with direction, distance and coordinates", () => {
+    const call = toolCall({
+      toolName: "computer_use",
+      input: { action: "drag", x: 420, y: 180, endX: 420, endY: 680 },
+    });
+    expect(toolActionLabel(call.toolName, false, call.input)).toBe("拖拽了桌面");
+    expect(toolInputSummary(call)).toBe("向下拖动 500 px · (420, 180) -> (420, 680)");
+  });
+
+  it("summarizes typed text without exposing its content", () => {
+    const call = toolCall({
+      toolName: "browser_automation",
+      input: { action: "type", text: "private input" },
+    });
+    expect(toolInputSummary(call)).toBe("13 个字符");
+    expect(toolInputSummary(call)).not.toContain("private input");
   });
 
   it("presents plans as an ordered inline progress list", () => {
