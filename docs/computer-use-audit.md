@@ -139,9 +139,23 @@ fixture screenshot. The test never attaches to a personal Chrome profile.
 
 ## Remaining Boundaries
 
-- Native provider `computer_call` / Anthropic beta computer-tool declarations are
-  not enabled by this change. Portable function tools are implemented; full native
-  protocol parity is not claimed.
+- Portable function tools remain the advertised interface. The September 18
+  integration also decodes single-action Responses `computer_call` items returned
+  by upstream gateways; native tool declarations and full protocol parity,
+  including multi-action computer batches and Anthropic beta tools, are not claimed.
+  Native actions bind to the actual computer screenshot in request history and
+  still pass ownership, observation freshness and focus checks. Pending native
+  safety checks stop execution rather than being silently acknowledged.
+- Native drag paths preserve every waypoint. Native scroll pixels are converted
+  to wheel steps using the official integration example's 100 pixels/step
+  approximation; OS/application wheel settings still affect the actual distance,
+  so the returned screenshot must be checked. See the
+  [action-handler examples](https://developers.openai.com/api/docs/guides/tools-computer-use-integration).
+- When a native computer result has no usable screenshot (denial, interruption or
+  capture failure), its call/result pair is replayed as the corresponding
+  `computer_use` function call with the actual error. No screenshot is fabricated.
+  Successful native screenshots retain supplemental tool text and additional
+  images, including warnings that an input was dispatched but remains unverified.
 - Windows/Linux desktop execution and OS permission flows need dedicated machine
   validation. macOS native input was intentionally not exercised on the user's
   active desktop. Linux native input requires X11; Wayland input returns an

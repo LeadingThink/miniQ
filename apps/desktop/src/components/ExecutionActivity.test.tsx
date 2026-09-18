@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { ToolCall } from "../types";
+import { automationResultLabel } from "./automationActivity";
 import {
   ExecutionPrelude,
   PlanProgress,
@@ -68,6 +69,37 @@ describe("execution activity", () => {
     });
     expect(toolInputSummary(call)).toBe("13 个字符");
     expect(toolInputSummary(call)).not.toContain("private input");
+  });
+
+  it("distinguishes browser pixel scrolling from desktop wheel steps", () => {
+    const input = { action: "scroll", deltaX: -120, deltaY: 640 };
+    expect(
+      toolInputSummary(toolCall({ toolName: "browser_automation", input })),
+    ).toBe("向下 640 px、向左 120 px");
+    expect(
+      toolInputSummary(toolCall({
+        toolName: "browser_automation", input: { action: "scroll" },
+      })),
+    ).toBe("向下 640 px");
+    expect(
+      toolInputSummary(toolCall({
+        toolName: "computer_use", input: { action: "scroll", scrollY: -3 },
+      })),
+    ).toBe("向上 3 格");
+  });
+
+  it("keeps unverified actions distinct from observed interface state", () => {
+    expect(
+      automationResultLabel(toolCall({
+        toolName: "computer_use",
+        output: { actionDispatched: true, observationError: "capture failed" },
+      })),
+    ).toBe("动作已发出，结果待核验");
+    expect(
+      automationResultLabel(toolCall({
+        toolName: "app_automation", output: { observationId: "ax-observation" },
+      })),
+    ).toBe("已取得操作后的界面状态");
   });
 
   it("presents plans as an ordered inline progress list", () => {

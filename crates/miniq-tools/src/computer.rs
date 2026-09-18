@@ -163,7 +163,7 @@ fn execute(
     let active = lease
         .as_ref()
         .ok_or("call screenshot before desktop input")?;
-    if !input.native_call && input.observation_id.as_deref() != Some(active.id.as_str()) {
+    if active.id.is_empty() || input.observation_id.as_deref() != Some(active.id.as_str()) {
         return Err("stale observation; call screenshot before acting".into());
     }
     if matches!(input.action, Action::Type | Action::Key)

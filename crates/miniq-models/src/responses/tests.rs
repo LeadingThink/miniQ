@@ -253,12 +253,16 @@ fn decodes_native_patch_and_shell_calls() {
 
 #[test]
 fn decodes_native_computer_calls_into_guarded_desktop_actions() {
+    let mut decoder = ResponsesDecoder {
+        computer_observation: Some("observed-screen".into()),
+        ..Default::default()
+    };
     let drag = decode(
-        &mut ResponsesDecoder::default(),
+        &mut decoder,
         json!({
             "type":"response.output_item.done","output_index":0,
             "item":{"type":"computer_call","id":"cc-1","call_id":"computer-1",
-                "action":{"type":"drag","path":[[120,80],[120,580]]}}
+                "action":{"type":"drag","path":[{"x":120,"y":80},{"x":320,"y":90},{"x":120,"y":580}]}}
         }),
     );
     assert!(matches!(
@@ -266,7 +270,9 @@ fn decodes_native_computer_calls_into_guarded_desktop_actions() {
         Ok(ChatDelta::ToolCall(call))
             if call.id == "computer-1"
                 && call.name == "computer_use"
-                && call.arguments["nativeCall"] == true
+                && call.arguments.get("nativeCall").is_none()
+                && call.arguments["observationId"] == "observed-screen"
+                && call.arguments["path"].as_array().unwrap().len() == 3
                 && call.arguments["action"] == "drag"
                 && call.arguments["x"] == 120
                 && call.arguments["endY"] == 580
@@ -284,8 +290,28 @@ fn decodes_native_computer_calls_into_guarded_desktop_actions() {
         &scroll.items[0],
         Ok(ChatDelta::ToolCall(call))
             if call.arguments["action"] == "scroll"
-                && call.arguments["scrollY"] == 640
+                && call.arguments["scrollY"] == 6
+                && call.arguments.get("observationId").is_none()
     ));
+}
+
+#[test]
+fn native_computer_safety_checks_are_not_silently_acknowledged() {
+    let decoded = decode(
+        &mut ResponsesDecoder::default(),
+        json!({"type":"response.output_item.done","output_index":0,
+            "item":{"type":"computer_call","id":"cc-unsafe","call_id":"unsafe",
+                "action":{"type":"click","x":10,"y":20},
+                "pending_safety_checks":[{"id":"sc-1","code":"malicious_instructions"}]}}),
+    );
+    assert!(
+        matches!(&decoded.items[0], Err(ProviderError::InvalidResponse(reason))
+        if reason.contains("pending safety checks"))
+    );
+    assert!(!decoded
+        .items
+        .iter()
+        .any(|item| matches!(item, Ok(ChatDelta::ToolCall(_)))));
 }
 
 #[test]

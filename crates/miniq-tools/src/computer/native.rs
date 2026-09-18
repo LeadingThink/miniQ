@@ -167,12 +167,10 @@ fn pointer(
     display: &Display,
     size: (u32, u32),
 ) -> Result<(), String> {
+    if input.action == Action::Drag {
+        return drag(enigo, ctx, input, display, size, move_pointer);
+    }
     let at = coordinates(display, size, input.x, input.y)?;
-    let end = if input.action == Action::Drag {
-        coordinates(display, size, input.end_x, input.end_y)?
-    } else {
-        at
-    };
     let button = match input.button {
         Button::Left => enigo::Button::Left,
         Button::Right => enigo::Button::Right,
@@ -190,23 +188,6 @@ fn pointer(
                 .scroll(input.scroll_y, Axis::Vertical)
                 .map_err(|error| error.to_string())
         }
-        Action::Drag => {
-            enigo
-                .button(button, Direction::Press)
-                .map_err(|error| error.to_string())?;
-            let movement = (1..=10).try_for_each(|step| {
-                observation::pause(ctx, 20)?;
-                move_pointer(
-                    enigo,
-                    at.0 + (end.0 - at.0) * step / 10,
-                    at.1 + (end.1 - at.1) * step / 10,
-                )
-            });
-            let release = enigo
-                .button(button, Direction::Release)
-                .map_err(|error| error.to_string());
-            movement.and(release)
-        }
         _ => {
             enigo
                 .button(button, Direction::Click)
@@ -220,6 +201,58 @@ fn pointer(
             Ok(())
         }
     }
+}
+
+pub(super) fn drag<M: Mouse>(
+    mouse: &mut M,
+    ctx: &ToolContext,
+    input: &ComputerInput,
+    display: &Display,
+    size: (u32, u32),
+    mut move_to: impl FnMut(&mut M, i32, i32) -> Result<(), String>,
+) -> Result<(), String> {
+    // Validate every waypoint before input, so an invalid middle point cannot
+    // leave a partially dispatched drag or a held mouse button.
+    let points = if let Some(path) = &input.path {
+        path.iter()
+            .map(|point| coordinates(display, size, Some(point.x), Some(point.y)))
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        vec![
+            coordinates(display, size, input.x, input.y)?,
+            coordinates(display, size, input.end_x, input.end_y)?,
+        ]
+    };
+    observation::check_cancelled(ctx)?;
+    move_to(mouse, points[0].0, points[0].1)?;
+    let button = match input.button {
+        Button::Left => enigo::Button::Left,
+        Button::Right => enigo::Button::Right,
+        Button::Middle => enigo::Button::Middle,
+    };
+    let pause = 200 / ((points.len() - 1) as u64 * 10);
+    let movement = (|| {
+        mouse
+            .button(button, Direction::Press)
+            .map_err(|error| error.to_string())?;
+        for segment in points.windows(2) {
+            let (start, end) = (segment[0], segment[1]);
+            for step in 1..=10 {
+                observation::pause(ctx, pause)?;
+                move_to(
+                    mouse,
+                    start.0 + (end.0 - start.0) * step / 10,
+                    start.1 + (end.1 - start.1) * step / 10,
+                )?;
+            }
+        }
+        Ok(())
+    })();
+    // Release even when pressing, moving or cancellation returned an error.
+    let release = mouse
+        .button(button, Direction::Release)
+        .map_err(|error| error.to_string());
+    movement.and(release)
 }
 
 fn move_pointer(enigo: &mut Enigo, x: i32, y: i32) -> Result<(), String> {

@@ -73,7 +73,9 @@ function number(value: unknown): number | null {
 function point(x: unknown, y: unknown): string | null {
   const left = number(x);
   const top = number(y);
-  return left === null || top === null ? null : `(${Math.round(left)}, ${Math.round(top)})`;
+  return left === null || top === null
+    ? null
+    : `(${Math.round(left)}, ${Math.round(top)})`;
 }
 
 function pointerSummary(input: Record<string, unknown>): string | null {
@@ -89,25 +91,38 @@ function pointerSummary(input: Record<string, unknown>): string | null {
   const dx = endX - startX;
   const dy = endY - startY;
   const distance = Math.round(Math.hypot(dx, dy));
-  const direction = Math.abs(dy) >= Math.abs(dx)
-    ? dy >= 0 ? "向下" : "向上"
-    : dx >= 0 ? "向右" : "向左";
+  const direction =
+    Math.abs(dy) >= Math.abs(dx)
+      ? dy >= 0
+        ? "向下"
+        : "向上"
+      : dx >= 0
+        ? "向右"
+        : "向左";
   return `${direction}拖动 ${distance} px · ${start} -> ${end}`;
 }
 
-function scrollSummary(input: Record<string, unknown>): string | null {
-  const x = number(input.scrollX) ?? 0;
-  const y = number(input.scrollY) ?? 0;
+function scrollSummary(
+  input: Record<string, unknown>,
+  toolName: string,
+): string | null {
+  const browser = toolName === "browser_automation";
+  const x = number(browser ? input.deltaX : input.scrollX) ?? 0;
+  const y =
+    number(browser ? input.deltaY : input.scrollY) ?? (browser ? 640 : 0);
+  const unit = browser ? "px" : "格";
   const parts = [];
-  if (y) parts.push(`${y > 0 ? "向下" : "向上"} ${Math.abs(y)} 格`);
-  if (x) parts.push(`${x > 0 ? "向右" : "向左"} ${Math.abs(x)} 格`);
+  if (y) parts.push(`${y > 0 ? "向下" : "向上"} ${Math.abs(y)} ${unit}`);
+  if (x) parts.push(`${x > 0 ? "向右" : "向左"} ${Math.abs(x)} ${unit}`);
   return parts.length ? parts.join("、") : null;
 }
 
 function keySummary(input: Record<string, unknown>): string | null {
   if (typeof input.key !== "string") return null;
   const modifiers = Array.isArray(input.modifiers)
-    ? input.modifiers.filter((value): value is string => typeof value === "string")
+    ? input.modifiers.filter(
+        (value): value is string => typeof value === "string",
+      )
     : [];
   return [...modifiers, input.key].join(" + ");
 }
@@ -153,7 +168,7 @@ export function automationInputSummary(call: ToolCall): string | null {
     const at = pointerSummary(input);
     if (at) parts.push(at);
   } else if (action === "scroll") {
-    const direction = scrollSummary(input);
+    const direction = scrollSummary(input, call.toolName);
     if (direction) parts.push(direction);
   } else if (["type", "setValue"].includes(action)) {
     const length = textLength(input) ?? textLength(record(input.value));
@@ -163,8 +178,10 @@ export function automationInputSummary(call: ToolCall): string | null {
     if (key) parts.push(key);
   } else if (typeof input.url === "string") parts.push(input.url);
   else if (typeof input.target === "string") parts.push(input.target);
-  else if (typeof input.elementId === "string") parts.push(`控件 ${input.elementId}`);
-  else if (typeof input.windowId === "number") parts.push(`窗口 ${input.windowId}`);
+  else if (typeof input.elementId === "string")
+    parts.push(`控件 ${input.elementId}`);
+  else if (typeof input.windowId === "number")
+    parts.push(`窗口 ${input.windowId}`);
 
   if (action === "wait" && typeof input.milliseconds === "number") {
     parts.push(`${input.milliseconds} ms`);
@@ -184,7 +201,8 @@ export function automationInputSummary(call: ToolCall): string | null {
 export function automationGroupSummary(calls: ToolCall[]): string | null {
   const counts = { computer_use: 0, browser_automation: 0, app_automation: 0 };
   for (const call of calls) {
-    if (call.toolName in counts) counts[call.toolName as keyof typeof counts] += 1;
+    if (call.toolName in counts)
+      counts[call.toolName as keyof typeof counts] += 1;
   }
   const labels = [
     counts.computer_use ? `${counts.computer_use} 次桌面` : null,
@@ -195,9 +213,20 @@ export function automationGroupSummary(calls: ToolCall[]): string | null {
 }
 
 export function automationResultLabel(call: ToolCall): string | null {
-  if (!isAutomationCall(call) || call.output === undefined || call.output === null) return null;
+  if (
+    !isAutomationCall(call) ||
+    call.output === undefined ||
+    call.output === null
+  )
+    return null;
   const output = record(call.output);
-  if (typeof output.observationId === "string") return "已取得操作后画面，可继续安全操作";
+  if (
+    output.actionDispatched === true &&
+    typeof output.observationError === "string"
+  ) {
+    return "动作已发出，结果待核验";
+  }
+  if (typeof output.observationId === "string") return "已取得操作后的界面状态";
   if (output.released === true) return "控制已释放";
   if (call.status === "succeeded") return "操作结果已返回";
   return null;

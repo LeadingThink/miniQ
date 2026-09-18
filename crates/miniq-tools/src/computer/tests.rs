@@ -103,6 +103,17 @@ fn keys_are_validated_before_pressing_modifiers() {
     for key in ["", "Ctrl+A", "unknown"] {
         assert!(native::parse_key(key).is_err());
     }
+    assert!(ComputerInput::parse(json!({"action":"click","x":1,"y":2,
+        "observationId":"frame","modifiers":["shift"]}))
+    .is_err());
+    assert!(ComputerInput::parse(json!({"action":"key","key":"A",
+        "observationId":"frame","modifiers":["shift"]}))
+    .is_ok());
+    for branch in input::schema()["oneOf"].as_array().unwrap() {
+        if branch["properties"]["action"]["enum"] != json!(["key"]) {
+            assert_eq!(branch["properties"]["modifiers"]["maxItems"], 0);
+        }
+    }
 }
 
 #[test]
@@ -135,12 +146,156 @@ fn desktop_screenshots_are_private_high_risk() {
     assert!(ComputerInput::parse(json!({
         "action":"click","x":10,"y":20,"nativeCall":true
     }))
-    .is_ok());
+    .is_err());
+    assert!(ComputerInput::parse(json!({
+        "action":"click","x":10,"y":20,"observationId":"frame","nativeCall":true
+    }))
+    .is_err());
+    assert!(ComputerInput::parse(json!({"action":"click","x":10,"y":20})).is_err());
     assert_eq!(input::schema()["properties"]["x"]["minimum"], 0.0);
     assert_eq!(
         input::schema()["properties"]["milliseconds"]["maximum"],
         5000.0
     );
+}
+
+fn drag_input() -> Value {
+    json!({"action":"drag","observationId":"frame","x":1,"y":2,"endX":7,"endY":8,
+        "path":[{"x":1,"y":2},{"x":4,"y":20},{"x":7,"y":8}]})
+}
+
+#[test]
+fn drag_path_schema_and_runtime_validate_waypoints() {
+    let schema = input::schema();
+    assert_eq!(schema["properties"]["path"]["minItems"], 2);
+    assert_eq!(
+        schema["properties"]["path"]["items"]["properties"]["x"]["minimum"],
+        0.0
+    );
+    assert_eq!(
+        schema["properties"]["path"]["items"]["additionalProperties"],
+        false
+    );
+    assert!(ComputerInput::parse(drag_input()).is_ok());
+    for path in [
+        json!([]),
+        json!([{"x":1,"y":2}]),
+        json!([{"x":0,"y":2},{"x":7,"y":8}]),
+        json!([{"x":1,"y":2},{"x":7,"y":0}]),
+        json!([{"x":1,"y":2},{"x":-1,"y":5},{"x":7,"y":8}]),
+        json!([{"x":1,"y":2},{"x":4,"y":null},{"x":7,"y":8}]),
+        json!([[1, 2], [7, 8]]),
+    ] {
+        let mut value = drag_input();
+        value["path"] = path;
+        assert!(ComputerInput::parse(value).is_err());
+    }
+    let mut value = drag_input();
+    value["action"] = json!("move");
+    assert!(ComputerInput::parse(value).is_err());
+    let mut value = drag_input();
+    value.as_object_mut().unwrap().remove("path");
+    assert!(ComputerInput::parse(value).is_ok());
+}
+
+#[derive(Default)]
+struct DragMouse {
+    buttons: Vec<enigo::Direction>,
+    points: Vec<(i32, i32)>,
+    fail_press: bool,
+}
+
+impl enigo::Mouse for DragMouse {
+    fn button(&mut self, _: enigo::Button, direction: enigo::Direction) -> enigo::InputResult<()> {
+        self.buttons.push(direction);
+        if self.fail_press && direction == enigo::Direction::Press {
+            return Err(enigo::InputError::Simulate("partial press failure"));
+        }
+        Ok(())
+    }
+    fn move_mouse(&mut self, _: i32, _: i32, _: enigo::Coordinate) -> enigo::InputResult<()> {
+        panic!("tests must use the injected pointer implementation")
+    }
+    fn scroll(&mut self, _: i32, _: enigo::Axis) -> enigo::InputResult<()> {
+        unreachable!()
+    }
+    fn main_display(&self) -> enigo::InputResult<(i32, i32)> {
+        unreachable!()
+    }
+    fn location(&self) -> enigo::InputResult<(i32, i32)> {
+        unreachable!()
+    }
+}
+
+#[test]
+fn drag_follows_every_waypoint_and_releases_on_errors_and_cancellation() {
+    for mode in ["complete", "endpoints", "press-error", "error", "cancel"] {
+        let ctx = ToolContext::new(std::env::temp_dir());
+        let mut value = drag_input();
+        if mode == "endpoints" {
+            value.as_object_mut().unwrap().remove("path");
+        }
+        let input = ComputerInput::parse(value).unwrap();
+        let mut mouse = DragMouse {
+            fail_press: mode == "press-error",
+            ..Default::default()
+        };
+        let result = native::drag(
+            &mut mouse,
+            &ctx,
+            &input,
+            &display(),
+            (120, 80),
+            |mouse, x, y| {
+                mouse.points.push((x, y));
+                if mouse.points.len() == 2 {
+                    if mode == "error" {
+                        return Err("movement failed".into());
+                    }
+                    if mode == "cancel" {
+                        ctx.cancellation.cancel();
+                    }
+                }
+                Ok(())
+            },
+        );
+        assert_eq!(
+            mouse.buttons,
+            vec![enigo::Direction::Press, enigo::Direction::Release]
+        );
+        assert_eq!(result.is_ok(), matches!(mode, "complete" | "endpoints"));
+        if result.is_ok() {
+            assert_eq!(mouse.points.first(), Some(&(-1190, 120)));
+            if mode == "complete" {
+                assert!(mouse.points.contains(&(-1160, 300)));
+            }
+            assert_eq!(mouse.points.last(), Some(&(-1130, 180)));
+        }
+    }
+}
+
+#[test]
+fn invalid_middle_waypoint_causes_no_pointer_input() {
+    for invalid in [120., -1., f64::NAN, f64::INFINITY] {
+        let ctx = ToolContext::new(std::env::temp_dir());
+        let mut input = ComputerInput::parse(drag_input()).unwrap();
+        input.path.as_mut().unwrap()[1].x = invalid;
+        let mut mouse = DragMouse::default();
+        assert!(native::drag(
+            &mut mouse,
+            &ctx,
+            &input,
+            &display(),
+            (120, 80),
+            |mouse, x, y| {
+                mouse.points.push((x, y));
+                Ok(())
+            }
+        )
+        .is_err());
+        assert!(mouse.buttons.is_empty());
+        assert!(mouse.points.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -274,6 +429,15 @@ async fn dispatched_input_survives_a_failed_follow_up_observation_without_replay
     assert_eq!(output["observationError"], "capture failed");
     assert!(output.get("observationId").is_none());
     assert_eq!(backend.inputs.load(Ordering::SeqCst), 1);
+    assert!(tool
+        .execute(
+            &ctx,
+            json!({"action":"click","x":1,"y":1,"observationId":""}),
+        )
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("stale observation"));
     assert!(tool
         .execute(
             &ctx,
