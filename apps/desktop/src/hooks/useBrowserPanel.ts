@@ -116,10 +116,69 @@ export function useBrowserPanel(
     return registerEmbeddedBrowser(requestedBrowserSessionId, {
       capabilities: browserCapabilities,
       execute: async (operation, arguments_) => {
-        const observe = async () => parseBrowserScriptResult(await evaluateBrowser(
+        const observe = async (snapshotArguments = arguments_) => parseBrowserScriptResult(await evaluateBrowser(
           viewId,
-          buildBrowserAutomationScript("snapshot", arguments_, viewId),
+          buildBrowserAutomationScript("snapshot", snapshotArguments, viewId),
         ));
+        const freshSnapshotArguments = () => ({
+          nextObservationId: arguments_.nextObservationId,
+          offset: arguments_.offset,
+          limit: arguments_.limit,
+        });
+        const observeAfterMutation = async () => {
+          // A click on a submit/next button may start a full navigation or an
+          // async SPA update. The first evaluation can still see the old
+          // document, so wait for a short DOM-stability window and bind the
+          // next action to the last fresh observation. This deliberately does
+          // not wait for network-idle: pages can keep analytics/websocket
+          // requests open forever, and DOM stability is the only signal this
+          // adapter can establish without pretending that navigation finished.
+          const settleDeadline = Date.now() + 1_800;
+          const stableSamplesRequired = 3;
+          await new Promise((resolve) => window.setTimeout(resolve, 80));
+          let latest: ReturnType<typeof parseBrowserScriptResult> | undefined;
+          let previousSignature: string | undefined;
+          let stableSamples = 0;
+          let lastError: unknown;
+          while (Date.now() < settleDeadline) {
+            try {
+              const candidate = await observe(freshSnapshotArguments());
+              latest = candidate;
+              const signature = JSON.stringify({
+                documentId: candidate.documentId,
+                url: candidate.url,
+                title: candidate.title,
+                readyState: candidate.readyState,
+                items: candidate.items,
+                textLines: candidate.textLines,
+                total: candidate.total,
+                totalTextLines: candidate.totalTextLines,
+              });
+              if (candidate.readyState !== "loading" && signature === previousSignature) {
+                stableSamples += 1;
+              } else {
+                previousSignature = signature;
+                stableSamples = 1;
+              }
+              if (candidate.readyState !== "loading" && stableSamples >= stableSamplesRequired) {
+                return candidate;
+              }
+            } catch (cause) {
+              // A document navigation can briefly make evaluate() fail. Retry
+              // only the observation; the user action has already dispatched
+              // and must never be replayed after an observation error.
+              lastError = cause;
+              previousSignature = undefined;
+              stableSamples = 0;
+            }
+            const remaining = settleDeadline - Date.now();
+            if (remaining <= 0) break;
+            await new Promise((resolve) => window.setTimeout(resolve, Math.min(120, remaining)));
+          }
+          if (latest) return latest;
+          if (lastError) throw lastError;
+          throw new Error("浏览器动作后未能获取新的页面观察");
+        };
         if (operation === "close") {
           await closeBrowser(viewId);
           return { closed: true };
@@ -128,7 +187,7 @@ export function useBrowserPanel(
           const target = arguments_.url;
           if (typeof target !== "string") throw new Error("浏览器导航缺少 URL");
           await load(target);
-          return observe();
+          return observeAfterMutation();
         }
         if (operation === "status" || operation === "wait") {
           if (operation === "wait") {
@@ -139,6 +198,12 @@ export function useBrowserPanel(
         }
         if (operation === "currentUrl") {
           return observe();
+        }
+        if (operation === "back" || operation === "forward" || operation === "reload") {
+          await browserAction(operation, viewId);
+          const result = await observeAfterMutation();
+          accept(result.url);
+          return result;
         }
         if (operation === "stop") {
           await browserAction("stop", viewId);
@@ -177,7 +242,11 @@ export function useBrowserPanel(
             viewId,
             buildBrowserAutomationScript(operation, arguments_, viewId),
           );
-          return parseBrowserScriptResult(raw);
+          const result = parseBrowserScriptResult(raw);
+          if (["click", "doubleClick", "drag", "select", "type", "press"].includes(operation)) {
+            return observeAfterMutation();
+          }
+          return result;
         }
         throw new Error(`此平台的内嵌浏览器不支持 ${operation}`);
       },

@@ -409,4 +409,18 @@ fn maps_incomplete_and_failed_terminal_events_to_errors() {
         context_overflow.items[1],
         Err(ProviderError::ContextWindowExceeded)
     ));
+
+    for reason in ["stream_read_error", "premature EOF"] {
+        let interrupted = decode(
+            &mut ResponsesDecoder::default(),
+            json!({
+                "type":"response.incomplete",
+                "response":{"incomplete_details":{"reason":reason}}
+            }),
+        );
+        assert!(
+            matches!(&interrupted.items[1], Err(ProviderError::Transient(detail)) if detail.contains(reason)),
+            "expected {reason} to be retryable"
+        );
+    }
 }

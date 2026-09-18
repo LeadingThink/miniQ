@@ -45,5 +45,14 @@ webview2-com = "0.38.2"
 windows = "0.61.3"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# WKWebView's completion handler is an Objective-C block.  Keep these
+# bindings target-specific so Linux and Windows builds do not gain an
+# unnecessary Apple framework dependency.
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSObject", "NSError", "NSString"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "WKWebView", "block2"] }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

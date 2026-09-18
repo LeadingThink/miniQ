@@ -6,6 +6,7 @@ use super::*;
 struct MockDriver {
     requests: Mutex<Vec<BrowserDriverRequest>>,
     closed: AtomicBool,
+    fail_next_click: AtomicBool,
 }
 
 impl MockDriver {
@@ -25,6 +26,9 @@ impl BrowserDriver for MockDriver {
             return Err("cancelled".into());
         }
         self.requests.lock().unwrap().push(request.clone());
+        if request.operation == "click" && self.fail_next_click.swap(false, Ordering::SeqCst) {
+            return Err("embedded browser navigation interrupted after dispatch".into());
+        }
         if request.operation == "close" {
             self.closed.store(true, Ordering::SeqCst);
             return Ok(BrowserDriverResponse {
@@ -122,8 +126,31 @@ fn validates_schema_limits_without_silent_clamping() {
     let schema = input::schema();
     assert_eq!(schema["properties"]["limit"]["maximum"], 500.0);
     assert_eq!(schema["properties"]["limit"]["default"], 100);
+    assert_eq!(schema["properties"]["values"]["items"]["type"], "string");
     assert_eq!(schema["additionalProperties"], false);
     assert_eq!(schema["properties"]["x"]["minimum"], 0.0);
+}
+
+#[test]
+fn select_accepts_explicit_values_for_multi_selects() {
+    let input = BrowserInput::parse(json!({
+        "action": "select",
+        "observationId": "frame",
+        "target": "rpa-frame-1",
+        "values": ["early", "growth"]
+    }))
+    .unwrap();
+    assert_eq!(
+        input.values.as_deref(),
+        Some(["early".to_owned(), "growth".to_owned()].as_slice())
+    );
+    assert!(BrowserInput::parse(json!({
+        "action": "select",
+        "observationId": "frame",
+        "target": "rpa-frame-1",
+        "text": ["early", "growth"]
+    }))
+    .is_err());
 }
 
 #[tokio::test]
@@ -219,6 +246,40 @@ async fn rejects_stale_observations_before_delegating() {
         .unwrap_err();
     assert!(error.to_string().contains("stale observation"));
     assert_eq!(driver.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn invalidates_an_observation_when_a_mutation_fails_after_dispatch() {
+    let driver = Arc::new(MockDriver::default());
+    let context = context(driver.clone());
+    let tool = BrowserAutomationTool::default();
+    let opened = tool
+        .execute(
+            &context,
+            json!({"action":"open","url":"https://example.com/"}),
+        )
+        .await
+        .unwrap();
+    driver.fail_next_click.store(true, Ordering::SeqCst);
+    let error = tool
+        .execute(
+            &context,
+            json!({"action":"click","target":"button-1","observationId":opened["observationId"]}),
+        )
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("navigation interrupted"));
+
+    // The click may already have reached the page, so replaying the same
+    // observation must be rejected until the model obtains a fresh snapshot.
+    let retry = tool
+        .execute(
+            &context,
+            json!({"action":"click","target":"button-1","observationId":opened["observationId"]}),
+        )
+        .await
+        .unwrap_err();
+    assert!(retry.to_string().contains("observe the page before acting"));
 }
 
 #[tokio::test]

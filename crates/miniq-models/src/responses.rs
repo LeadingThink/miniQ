@@ -357,9 +357,14 @@ impl EventDecoder for ResponsesDecoder {
                         event.get("response").unwrap_or(&event),
                     )
                 } else {
-                    ProviderError::InvalidResponse(format!(
-                        "Responses API returned an incomplete response: {reason}"
-                    ))
+                    // Compatible gateways also report interrupted streams as
+                    // incomplete reasons. Classify them through the same path
+                    // as response.failed, without retrying content filters or
+                    // arbitrary invalid responses.
+                    ProviderError::from_stream_error(
+                        "Responses API returned an incomplete response",
+                        &Value::String(reason.into()),
+                    )
                 };
                 response_failure(&event, reason, error)
             }

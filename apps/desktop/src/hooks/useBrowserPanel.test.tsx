@@ -188,20 +188,16 @@ it("allows stopping a native navigation while it is pending", async () => {
 
 it("bridges open observations into a following observation-bound click", async () => {
   vi.mocked(isTauriRuntime).mockReturnValue(true);
-  const documentId = crypto.randomUUID();
   document.body.innerHTML = '<button id="save">Save</button>';
   const button = document.querySelector("button")!;
   Object.defineProperty(document.body, "innerText", { configurable: true, value: "Save" });
   Object.defineProperty(button, "innerText", { configurable: true, value: "Save" });
   button.getBoundingClientRect = () =>
     ({ x: 10, y: 20, width: 80, height: 30, top: 20, left: 10, right: 90, bottom: 50 }) as DOMRect;
-  vi.mocked(evaluateBrowser).mockImplementationOnce(async (_viewId, script) => {
+  vi.mocked(evaluateBrowser).mockImplementation(async (_viewId, script) => {
     const result = JSON.parse(eval(script)) as Record<string, unknown>;
-    return JSON.stringify(JSON.stringify({ ...result, documentId }));
-  }).mockImplementationOnce(async () => JSON.stringify(JSON.stringify({
-    ...observation,
-    observationId: "observation-2",
-  })));
+    return JSON.stringify(JSON.stringify(result));
+  });
   const ref = surface();
   renderHook(() => useBrowserPanel(
     "https://example.test/",
@@ -237,7 +233,6 @@ it("bridges open observations into a following observation-bound click", async (
   const observation = openResponse.result.result;
   expect(observation).toEqual(expect.objectContaining({
     observationId: "observation-1",
-    documentId,
     tabId: "view-1",
   }));
 
@@ -252,8 +247,102 @@ it("bridges open observations into a following observation-bound click", async (
     requestId: "click",
     result: expect.any(Object),
   }));
-  expect(vi.mocked(evaluateBrowser).mock.calls[1][1]).toContain(documentId);
-  expect(evaluateBrowser).toHaveBeenCalledTimes(2);
+  // The click is followed by a fresh DOM snapshot so submit/next-page
+  // navigation cannot leave the agent bound to the pre-click document.
+  // Open and click each wait for a stable post-mutation observation. The
+  // exact number is an implementation detail; assert that the click caused
+  // additional snapshots instead of replaying the click.
+  expect(vi.mocked(evaluateBrowser).mock.calls.length).toBeGreaterThanOrEqual(6);
+});
+
+it("routes history actions through the native browser and settles delayed SPA updates", async () => {
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  const ref = surface();
+  let snapshots = 0;
+  let backSnapshots = 0;
+  let phase: "open" | "back" = "open";
+  const observation = (url: string, text: string, documentId: string) => ({
+    observationId: "stable-observation",
+    url,
+    tabId: "view-history",
+    documentId,
+    title: "Survey",
+    viewport: {
+      width: 900,
+      height: 600,
+      deviceScaleFactor: 1,
+      scrollX: 0,
+      scrollY: 0,
+    },
+    total: 1,
+    offset: 0,
+    limit: 100,
+    items: [{ text }],
+    textLines: [text],
+    totalTextLines: 1,
+    hasMore: false,
+    readyState: "complete",
+  });
+  vi.mocked(evaluateBrowser).mockImplementation(async () => {
+    // Open settles on three identical snapshots. Back first sees the old SPA
+    // DOM, then the new route; the hook must wait for the new DOM to settle.
+    const value = phase === "open" || backSnapshots++ === 0
+      ? observation("https://example.test/first", "First page", "document-a")
+      : observation("https://example.test/second", "Second page", "document-b");
+    snapshots += 1;
+    return JSON.stringify(JSON.stringify(value));
+  });
+  vi.mocked(browserAction).mockImplementation(async () => {
+    phase = "back";
+    return { url: "https://example.test/second" };
+  });
+  renderHook(() => useBrowserPanel(
+    "https://example.test/first",
+    ref,
+    false,
+    "view-history",
+    "browser-history",
+  ));
+  const call = vi.fn(async (
+    _method: string,
+    _params: Record<string, unknown>,
+  ) => ({ resolved: true }));
+  const client = { call } as unknown as RpcClient;
+  const request = (id: string, operation: string) => ({
+    id,
+    sessionId: "session-history",
+    browserSessionId: "browser-history",
+    operation,
+    arguments: {
+      nextObservationId: "stable-observation",
+      observationId: "stable-observation",
+      expectedObservation: {
+        observationId: "stable-observation",
+        url: "https://example.test/first",
+        tabId: "view-history",
+        documentId: "document-a",
+        viewport: { width: 900, height: 600, scrollX: 0, scrollY: 0 },
+      },
+    },
+  }) satisfies BrowserDriverRequest;
+
+  await resolveBrowserDriverRequest(client, request("open", "open"));
+  await resolveBrowserDriverRequest(client, request("back", "back"));
+
+  expect(browserAction).toHaveBeenCalledWith("back", "view-history");
+  expect(browserAction).toHaveBeenCalledTimes(1);
+  const response = call.mock.calls.at(-1)?.[1] as {
+    result?: { result?: Record<string, unknown> };
+  };
+  expect(response.result?.result).toEqual(expect.objectContaining({
+    url: "https://example.test/second",
+    textLines: ["Second page"],
+  }));
+  // The open and history action each need a fresh observation; the history
+  // action must also sample the settled SPA DOM instead of trusting the first
+  // response. The exact number of samples is intentionally an implementation
+  // detail of the quiet-window debounce.
+  expect(snapshots).toBeGreaterThanOrEqual(4);
 });
 
 it("stops polling hidden tabs and resumes without reloading their page", async () => {

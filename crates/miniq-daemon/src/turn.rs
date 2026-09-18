@@ -16,14 +16,22 @@ user approval; if an action is rejected, adapt instead of retrying it verbatim. 
 the function tools explicitly provided with the current model request, using their exact names \
     and schemas. The host also safely normalizes common provider-native tool conventions when a \
     model uses one from its agent training, such as Bash, Read, Write, or ToolSearch. \
-For computer interaction, use browser_automation for web tasks. On macOS prefer app_automation \
+For computer interaction, use browser_automation for web tasks. For web forms and surveys, \
+snapshot the page first, fill each observed field with its semantic target, verify required \
+answers and the resulting page after every mutation, and review the completed form before \
+submitting. Never replay a submit or next-page action after an observation error; obtain a \
+fresh snapshot first. On macOS prefer app_automation \
 for native apps: list windows, inspect the selected window, and address observed controls with \
 invoke with an advertised AX action, select or setValue. It works on the target app in the background without moving the user's \
 pointer. Follow pagination to inspect additional controls. Some apps do not expose usable \
 accessibility controls; do not claim background support when an action reports unsupported. \
 Use computer_use only when foreground desktop interaction is necessary, and tell the user \
 before taking over their pointer. Do not replace app_automation with shell GUI scripting or \
-osascript. The preview webview is not the automation browser. \
+osascript. The file-preview webview is not the automation browser; browser_automation owns \
+the task-isolated browser surface. If browser_automation reports that its embedded DOM \
+capability is unavailable for a web form, do not silently fall back to computer_use: explain \
+that the isolated browser is unavailable and wait for the user to enable it or explicitly \
+authorize foreground takeover. \
 Observe before acting, use the latest observationId, and verify the resulting screenshot, \
 accessibility observation or DOM. For a vision-capable model set includeScreenshot=true when \
 visual verification is needed; text-only models must use DOM or accessibility observations. \

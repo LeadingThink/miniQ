@@ -51,6 +51,13 @@ pub(super) struct BrowserInput {
     pub target: Option<String>,
     #[schemars(length(max = 10000))]
     pub text: Option<String>,
+    /// Values for a multi-select. `text` remains the shorthand for one value
+    /// and for text inputs; keeping the two fields explicit prevents an array
+    /// from being accepted by the runtime while the generated schema says it
+    /// is a string.
+    #[serde(default)]
+    #[schemars(length(max = 100))]
+    pub values: Option<Vec<String>>,
     pub key: Option<String>,
     #[serde(default)]
     pub modifiers: Vec<Modifier>,
@@ -189,8 +196,10 @@ impl BrowserInput {
         ) || (input.action == Action::Click && input.target.is_none());
         if (pointer && (input.x.is_none() || input.y.is_none()))
             || (input.action == Action::Drag && (input.end_x.is_none() || input.end_y.is_none()))
-            || (matches!(input.action, Action::Type | Action::Select)
-                && (input.text.is_none() || input.target.is_none()))
+            || (input.action == Action::Type && (input.text.is_none() || input.target.is_none()))
+            || (input.action == Action::Select
+                && (input.target.is_none()
+                    || (input.text.is_none() && input.values.as_ref().is_none_or(Vec::is_empty))))
             || (input.action == Action::Press && input.key.is_none())
             || (matches!(
                 input.action,
@@ -278,7 +287,8 @@ pub(super) fn schema() -> Value {
         {"properties":{"action":{"enum":["click"]}},"required":["observationId"],"anyOf":[{"required":["target"]},{"required":["x","y"]}]},
         {"properties":{"action":{"enum":["doubleClick","move","scroll"]}},"required":["observationId","x","y"]},
         {"properties":{"action":{"enum":["drag"]}},"required":["observationId","x","y","endX","endY"]},
-        {"properties":{"action":{"enum":["type","select"]}},"required":["observationId","target","text"]},
+        {"properties":{"action":{"enum":["type"]}},"required":["observationId","target","text"]},
+        {"properties":{"action":{"enum":["select"]}},"required":["observationId","target"],"anyOf":[{"required":["text"]},{"required":["values"]}]},
         {"properties":{"action":{"enum":["press"]}},"required":["observationId","key"]},
         {"properties":{"action":{"enum":["back","forward","reload"]}},"required":["observationId"]},
         {"properties":{"action":{"enum":["setVisible"]}},"required":["visible"]},
