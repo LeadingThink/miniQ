@@ -476,9 +476,19 @@
 }
 
 /* ============ Timeline ============ */
+.timeline-shell {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
 .timeline {
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-gutter: stable;
   padding: 12px 20px;
   display: flex;
   flex-direction: column;
@@ -492,6 +502,16 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* Invisible anchor used to prefetch older pages as the reader reaches the
+   start of a conversation. It keeps the remote history paged without making
+   the user operate a pagination button. */
+.history-top-sentinel {
+  flex: 0 0 1px;
+  width: 100%;
+  height: 1px;
+  pointer-events: none;
 }
 
 .bubble {

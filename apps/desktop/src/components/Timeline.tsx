@@ -11,7 +11,7 @@ import {
   Share2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   Artifact,
   Message,
@@ -46,6 +46,7 @@ import { readExportHistory } from "../historyExport";
 import { ExecutionSummary } from "./ExecutionSummary";
 import { ModelDiagnostics } from "./ModelDiagnostics";
 import { SessionShareDialog } from "./SessionShareDialog";
+import { ConversationNavigationRail } from "./ConversationNavigationRail";
 
 function MessageAttachmentPreview({
   attachment,
@@ -205,6 +206,7 @@ function TimelineEntries(props: {
             <div
               key={item.message.id}
               className="bubble user"
+              data-user-message-id={item.message.id}
               title={new Date(item.message.createdAt).toLocaleString()}
             >
               {editingMessageId === item.message.id ? (
@@ -392,6 +394,7 @@ export function Timeline(props: TimelineProps) {
   useEffect(() => setShowShare(false), [props.sessionId]);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const historyTopRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const [filter, setFilter] = useState<TimelineFilter>("all");
@@ -438,15 +441,6 @@ export function Timeline(props: TimelineProps) {
         setExporting(false);
       }
     }
-  };
-
-  // Track whether the user is reading history (not pinned to bottom).
-  const onScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    pinnedToBottom.current = nearBottom;
-    setShowJump(!nearBottom);
   };
 
   const jumpToBottom = () => {
@@ -523,14 +517,41 @@ export function Timeline(props: TimelineProps) {
   const loadingOlder = historySearch.enabled
     ? historySearch.loading
     : props.loadingOlder;
-  const loadOlder = () => {
+  const loadOlder = useCallback(() => {
+    if (!hasOlder || loadingOlder) return;
     const el = scrollRef.current;
     if (el)
       scrollAnchor.current = { top: el.scrollTop, height: el.scrollHeight };
     pinnedToBottom.current = false;
     if (historySearch.enabled) historySearch.loadOlder();
     else void props.onLoadOlder?.();
+  }, [hasOlder, historySearch.enabled, historySearch.loadOlder, loadingOlder, props.onLoadOlder]);
+
+  // Track whether the user is reading history (not pinned to bottom).
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    pinnedToBottom.current = nearBottom;
+    setShowJump(!nearBottom);
+    // History remains paged for remote sessions, but reaching the top should
+    // feel like one continuous conversation. The request is still serialized
+    // by the lifecycle hook, so a burst of scroll events cannot duplicate it.
+    if (el.scrollTop <= 80 && hasOlder && !loadingOlder) void loadOlder();
   };
+  useEffect(() => {
+    const root = scrollRef.current;
+    const sentinel = historyTopRef.current;
+    if (!root || !sentinel || !hasOlder || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting && !loadingOlder) void loadOlder();
+      },
+      { root, rootMargin: "160px 0px 0px", threshold: 0 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasOlder, loadingOlder, loadOlder]);
   const hasRunningTool = props.toolCalls.some(
     (t) => t.status === "running" || t.status === "waiting_approval",
   );
@@ -634,7 +655,10 @@ export function Timeline(props: TimelineProps) {
         />
       )}
       {showShare && props.client && props.sessionId && <SessionShareDialog client={props.client} sessionId={props.sessionId} title={props.title ?? "miniQ 会话"} artifacts={props.artifacts} onClose={() => setShowShare(false)} />}
-      <div className="timeline" ref={scrollRef} onScroll={onScroll}>
+      <div className="timeline-shell">
+        <ConversationNavigationRail messages={props.messages} scrollRef={scrollRef} />
+        <div className="timeline" ref={scrollRef} onScroll={onScroll}>
+          <div ref={historyTopRef} className="history-top-sentinel" aria-hidden="true" />
         {(props.loading || (historySearch.loading && !historySearch.page)) && (
           <div className="history-loading" role="status">
             <LoaderCircle size={16} className="activity-spinner" />
@@ -703,13 +727,14 @@ export function Timeline(props: TimelineProps) {
           workspacePath={props.workspacePath}
           workspacePaths={props.workspacePaths}
         />
-        <QueueBar
-          key={props.sessionId}
-          queue={props.queue}
-          onSteer={props.onSteerQueued}
-          onRemove={props.onRemoveQueued}
-          onUpdate={props.onUpdateQueued}
-        />
+          <QueueBar
+            key={props.sessionId}
+            queue={props.queue}
+            onSteer={props.onSteerQueued}
+            onRemove={props.onRemoveQueued}
+            onUpdate={props.onUpdateQueued}
+          />
+        </div>
       </div>
       {showJump && (
         <button

@@ -76,7 +76,17 @@ export function useSessionLifecycleActions(
       reset(sessionId);
       setPage(null);
       let result: OpenSessionResult;
-      try { result = await client.call<OpenSessionResult>("session.open", { sessionId }, { signal: request.signal }); }
+      // The desktop daemon is local and can afford a larger first page. Keep
+      // remote opens small; Timeline will transparently fetch older pages as
+      // the reader reaches the top.
+      const initialHistoryLimit = client.mode === "local" ? 100 : 40;
+      try {
+        result = await client.call<OpenSessionResult>(
+          "session.open",
+          { sessionId, limit: initialHistoryLimit },
+          { signal: request.signal },
+        );
+      }
       catch (cause) {
         if (!request.signal.aborted) { failLoad(sessionId); setSessionError(sessionId, errorMessage(cause)); }
         return;

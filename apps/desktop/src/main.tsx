@@ -9,6 +9,7 @@ import "./styles/base.css";
 import "./styles/themes.css";
 import "./styles/theme-patterns.css";
 import "./styles/conversation.css";
+import "./components/ConversationNavigationRail.css";
 import "./styles/interactions.css";
 import "./styles/review.css";
 import "./styles/pages.css";

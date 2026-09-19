@@ -1,0 +1,66 @@
+.conversation-navigation-rail {
+  position: absolute;
+  z-index: 20;
+  top: 50%;
+  left: 6px;
+  transform: translateY(-50%);
+  opacity: 0.42;
+  transition: opacity 140ms ease;
+}
+
+.timeline-shell:hover .conversation-navigation-rail,
+.conversation-navigation-rail:focus-within {
+  opacity: 1;
+}
+
+.conversation-navigation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: min(70vh, 40rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding: 2px;
+}
+
+.conversation-navigation-list::-webkit-scrollbar {
+  display: none;
+}
+
+.conversation-navigation-marker {
+  width: 30px;
+  height: 8px;
+  flex: 0 0 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--border-strong);
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.conversation-navigation-marker:hover,
+.conversation-navigation-marker:focus-visible {
+  background: var(--text-mid);
+  transform: scaleX(1.1);
+  outline: none;
+}
+
+.conversation-navigation-marker[aria-current="true"] {
+  background: var(--accent);
+  transform: scaleX(1.12);
+}
+
+@media (max-width: 900px), (pointer: coarse) {
+  .conversation-navigation-rail {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-navigation-rail,
+  .conversation-navigation-marker {
+    transition: none;
+  }
+}
