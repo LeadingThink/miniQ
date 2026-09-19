@@ -43,6 +43,19 @@ class FakeWebSocket {
   }
 }
 
+function useLegacyAbortController() {
+  class LegacyAbortController extends AbortController {
+    constructor() {
+      super();
+      Object.defineProperties(this.signal, {
+        throwIfAborted: { value: undefined },
+        reason: { value: undefined },
+      });
+    }
+  }
+  vi.stubGlobal("AbortController", LegacyAbortController);
+}
+
 describe("RpcClient timeouts", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -276,6 +289,29 @@ describe("RpcClient timeouts", () => {
     };
     return { client, socket, receive };
   }
+
+  it("connects and cancels requests on iOS signals without modern abort methods", async () => {
+    useLegacyAbortController();
+    const { client, socket } = await remoteClient();
+    const controller = new AbortController();
+    const pending = client.call("session.open", { sessionId: "old" }, { signal: controller.signal });
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await rejected;
+    expect(client.connected).toBe(true);
+    client.disconnect();
+    expect(socket.readyState).toBe(FakeWebSocket.CLOSED);
+  });
+
+  it("rejects cancelled handshakes with an error when signals have no reason", async () => {
+    useLegacyAbortController();
+    const client = new RpcClient();
+    const pending = client.connect({ kind: "local", port: 9000, token: "token" });
+    const rejected = expect(pending).rejects.toBeInstanceOf(Error);
+    client.disconnect();
+    await rejected;
+    expect(FakeWebSocket.instances[0].readyState).toBe(FakeWebSocket.CLOSED);
+  });
 
   it("does not disconnect or stop other listeners when a UI event listener throws", async () => {
     const { client, receive } = await remoteClient();

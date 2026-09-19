@@ -1,4 +1,5 @@
 import type { RpcClient } from "./rpc";
+import { throwIfAborted } from "./abortSignal";
 import type { LocalFilePreview, LocalPreviewKind } from "./localFiles";
 import { decodeBase64 } from "./previewBinary";
 
@@ -40,14 +41,14 @@ export async function readRemoteFile(
 ): Promise<LocalFilePreview> {
   const { client, sessionId, signal, onProgress } = options;
   if (!client || !sessionId) throw new Error("请先连接桌面并打开一个会话");
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   const description = await client.call<FileDescription>(
     "file.describe",
     { sessionId, path },
     { signal },
   );
   const { size, revision, kind } = description;
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   if (
     !Number.isSafeInteger(size) ||
     size < 0 ||
@@ -75,13 +76,13 @@ export async function readRemoteFile(
   let offset = 0;
   onProgress?.(0, size);
   while (offset < size) {
-    signal?.throwIfAborted();
+    throwIfAborted(signal);
     const chunk = await client.call<FileChunk>(
       "file.read",
       { sessionId, path: description.path, revision, offset },
       { signal },
     );
-    signal?.throwIfAborted();
+    throwIfAborted(signal);
     const bytes = decodeBase64(chunk.dataBase64);
     if (
       chunk.revision !== revision ||
@@ -101,7 +102,7 @@ export async function readRemoteFile(
     offset = chunk.nextOffset;
     onProgress?.(offset, size);
   }
-  signal?.throwIfAborted();
+  throwIfAborted(signal);
   if (text) {
     parts.push(decoder.decode());
     file.content = parts.join("");

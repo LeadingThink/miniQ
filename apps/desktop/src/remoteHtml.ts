@@ -1,4 +1,5 @@
 import { resolveWorkspacePath } from "./localFiles";
+import { throwIfAborted } from "./abortSignal";
 import { readRemoteFile, type FileReadOptions } from "./remoteFiles";
 import { decodeBase64 } from "./previewBinary";
 
@@ -80,13 +81,13 @@ function createResourceReader(
       await new Promise<void>((resolve) => waiting.push(resolve));
     else active++;
     try {
-      access.signal?.throwIfAborted();
+      throwIfAborted(access.signal);
       const file = await readRemoteFile(resolved, {
         ...access,
         download: true,
         reserveBytes,
       });
-      access.signal?.throwIfAborted();
+      throwIfAborted(access.signal);
       const data = file.dataBase64 ?? "";
       return { data, url: `data:${file.mimeType};base64,${data}` };
     } finally {
@@ -224,7 +225,7 @@ async function bundleHtml(
   path: string,
   access: FileReadOptions,
 ) {
-  access.signal?.throwIfAborted();
+  throwIfAborted(access.signal);
   const doc = new DOMParser().parseFromString(content, "text/html");
   const declaredBase = doc.querySelector("base[href]")?.getAttribute("href")?.trim();
   if (declaredBase) {
@@ -311,7 +312,7 @@ async function bundleHtml(
       element.setAttribute("srcset", values.join(", "));
     }),
   ]);
-  access.signal?.throwIfAborted();
+  throwIfAborted(access.signal);
   return `<!doctype html>\n${doc.documentElement.outerHTML}`;
 }
 

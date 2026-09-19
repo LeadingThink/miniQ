@@ -1,4 +1,5 @@
 import type { RpcClient } from "./rpc";
+import { throwIfAborted } from "./abortSignal";
 import { bytesToBase64, encodeVoiceWav } from "./voiceAudio";
 
 // The 2-second timer fires just before the final audio callback on some devices.
@@ -76,7 +77,7 @@ export class VoiceTranscription {
   async finish(): Promise<string> {
     this.finishing = true;
     await this.pending;
-    this.abort.signal.throwIfAborted();
+    throwIfAborted(this.abort.signal);
     return this.request(this.segments.flatMap((segment) => segment.chunks), false);
   }
   cancel() { this.abort.abort(); this.segments = []; }

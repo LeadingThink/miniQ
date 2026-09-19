@@ -1,6 +1,7 @@
 // JSON-RPC over WebSocket client for the miniQ daemon.
 
 import type { DaemonEvent } from "./types";
+import { throwIfAborted } from "./abortSignal";
 import { isTauriRuntime } from "./runtime";
 import { decryptRemotePayload, deriveRemoteIdentity, encryptRemotePayload } from "./remoteCrypto";
 import { loadRemoteCredentials, type RemoteCredentials } from "./remoteAccess";
@@ -66,7 +67,7 @@ export class RpcClient {
     this.connectController = controller;
     let cancel!: () => void;
     const cancelled = new Promise<never>((_resolve, reject) => {
-      cancel = () => reject(controller.signal.reason);
+      cancel = () => reject(controller.signal.reason ?? new DOMException("Request cancelled", "AbortError"));
       controller.signal.addEventListener("abort", cancel, { once: true });
     });
     const connecting = info.kind === "remote"
@@ -97,7 +98,7 @@ export class RpcClient {
 
   private async connectRemote(info: RemoteConnectionInfo, signal: AbortSignal): Promise<void> {
     const identity = await deriveRemoteIdentity(info.apiKey);
-    signal.throwIfAborted();
+    throwIfAborted(signal);
     return this.openSocket(info.relayUrl, (ws) => {
       ws.send(JSON.stringify({
         type: "hello",
@@ -118,7 +119,7 @@ export class RpcClient {
     remoteKey?: CryptoKey,
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      signal.throwIfAborted();
+      throwIfAborted(signal);
       const ws = new WebSocket(url);
       const reader = new RemotePayloadReader(remoteKey, (id) => this.pending.has(id));
       let remoteMessageQueue: Promise<void> = Promise.resolve();

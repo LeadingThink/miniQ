@@ -1,3 +1,5 @@
+import { throwIfAborted } from "./abortSignal";
+
 export const MAX_DECODED_BYTES = 256 * 1024 * 1024;
 
 export async function readBounded(stream: ReadableStream<Uint8Array>, expected: number, signal?: AbortSignal): Promise<Uint8Array> {
@@ -9,14 +11,14 @@ export async function readBounded(stream: ReadableStream<Uint8Array>, expected: 
   signal?.addEventListener("abort", abort, { once: true });
   try {
     while (true) {
-      signal?.throwIfAborted();
+      throwIfAborted(signal);
       const { value, done } = await reader.read();
       if (done) break;
       size += value.length;
       if (size > expected) throw new Error("远程数据超出声明长度");
       chunks.push(value);
     }
-    signal?.throwIfAborted();
+    throwIfAborted(signal);
     if (size !== expected) throw new Error("远程数据不完整");
     const result = new Uint8Array(size);
     let offset = 0;

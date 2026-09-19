@@ -1,4 +1,5 @@
 import { Download, Share2, Square } from "lucide-react";
+import { throwIfAborted } from "../abortSignal";
 import { useEffect, useRef, useState } from "react";
 import { readRemoteFile, type FileReadOptions } from "../remoteFiles";
 import { useSessionFileAccess } from "../sessionFileAccess";
@@ -59,7 +60,7 @@ function useRemoteDownload({ path, preview, onError }: DownloadProps) {
             onProgress: (received, total) =>
               setProgress(total ? Math.round((received / total) * 100) : 100),
           });
-      controller.signal.throwIfAborted();
+      throwIfAborted(controller.signal);
       const name = path.split(/[\\/]/).at(-1) || "download";
       const downloadable = new File(
         [file.content ?? decodeBase64(file.dataBase64 ?? "")],

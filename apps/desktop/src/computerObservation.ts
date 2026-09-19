@@ -1,4 +1,5 @@
 import type { RpcClient } from "./rpc";
+import { throwIfAborted } from "./abortSignal";
 import type { ToolCall } from "./types";
 
 export interface ObservationImage { id: string; width: number; height: number; bytes: number }
@@ -28,10 +29,10 @@ export async function loadObservation(client: RpcClient, call: ToolCall, signal:
   const chunks: ArrayBuffer[] = [];
   let offset = 0;
   while (offset < image.bytes) {
-    signal.throwIfAborted();
+    throwIfAborted(signal);
     const chunk = await client.call<Chunk>("observation.read", { sessionId: call.sessionId, toolCallId: call.id, offset,
       ...(call.toolName === "view_pdf" ? { imageIndex } : {}) }, { signal });
-    signal.throwIfAborted();
+    throwIfAborted(signal);
     if (typeof chunk.base64 !== "string" || chunk.base64.length > 349_528) throw new Error("截图分块大小无效");
     const bytes = Uint8Array.from(atob(chunk.base64), character => character.charCodeAt(0));
     if (chunk.offset !== offset || chunk.totalBytes !== image.bytes || chunk.mimeType !== "image/png"

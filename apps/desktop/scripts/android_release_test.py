@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -15,9 +16,24 @@ from unittest.mock import patch
 
 import android_release as release
 
+SOURCE_ROOT = release.ROOT
+
 
 class AndroidReleaseTests(unittest.TestCase):
     def setUp(self):
+        # Test a fixed release fixture independently of the next production
+        # version. Validation still checks the real signing/build directives.
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        gradle = (SOURCE_ROOT / "android/app/build.gradle").read_text()
+        gradle = re.sub(r'(?m)^(\s*versionName\s+)"[^"]+"', r'\1"0.1.21"', gradle)
+        gradle = re.sub(r"(?m)^(\s*versionCode\s+)\d+", r"\g<1>21", gradle)
+        (root / "android/app").mkdir(parents=True)
+        (root / "android/app/build.gradle").write_text(gradle)
+        root_patch = patch.object(release, "ROOT", root)
+        root_patch.start()
+        self.addCleanup(root_patch.stop)
         self.mirror_patch = patch.object(release, "verify_mirror")
         self.mirror = self.mirror_patch.start()
         self.addCleanup(self.mirror_patch.stop)
@@ -189,7 +205,7 @@ class AndroidReleaseTests(unittest.TestCase):
             self.assertEqual(events, [("read", release.MANIFEST_KEY), ("upload", key), ("read", key), ("read", release.MANIFEST_KEY), ("upload", release.MANIFEST_KEY)])
 
     def test_workflow_keeps_desktop_default_and_isolates_android(self):
-        workflow = (release.ROOT.parents[1] / ".github/workflows/release.yml").read_text()
+        workflow = (SOURCE_ROOT.parents[1] / ".github/workflows/release.yml").read_text()
         self.assertIn("default: desktop", workflow)
         self.assertIn("if: ${{ inputs.platform != 'android' }}", workflow)
         android = workflow.split("\n  android:\n", 1)[1]
