@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createRef } from "react";
+import { createRef, StrictMode } from "react";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useBrowserPanel } from "./useBrowserPanel";
@@ -13,10 +13,8 @@ import {
   screenshotBrowser,
   setBrowserVisible,
 } from "../browserWorkbench";
-import { resolveBrowserDriverRequest } from "../embeddedBrowserDriver";
+import { executeEmbeddedBrowserRequest } from "../embeddedBrowserDriver";
 import { isTauriRuntime } from "../runtime";
-import type { RpcClient } from "../rpc";
-import type { BrowserDriverRequest } from "../types";
 
 vi.mock("../runtime", () => ({ isTauriRuntime: vi.fn(() => false) }));
 vi.mock("../browserWorkbench", async (original) => ({
@@ -210,47 +208,23 @@ it("bridges open observations into a following observation-bound click", async (
     "view-1",
     "browser-session-1",
   ));
-  const call = vi.fn(async (
-    _method: string,
-    _params: Record<string, unknown>,
-  ) => ({ resolved: true }));
-  const client = { call } as unknown as RpcClient;
-  const request = (id: string, operation: string, arguments_: Record<string, unknown>) => ({
-    id,
-    sessionId: "session-1",
-    browserSessionId: "browser-session-1",
-    operation,
-    arguments: arguments_,
-  }) satisfies BrowserDriverRequest;
-
-  await resolveBrowserDriverRequest(client, request("open", "open", {
+  const opened = await executeEmbeddedBrowserRequest("view-1", "open", {
     url: "https://example.test/",
     nextObservationId: "observation-1",
-  }));
-  expect(call).toHaveBeenCalledWith("browser.resolve", expect.objectContaining({
-    requestId: "open",
-    result: expect.any(Object),
-  }));
-  const openResponse = call.mock.calls[0]?.[1] as {
-    result: { result: Record<string, unknown> };
-  };
-  const observation = openResponse.result.result;
+  });
+  const observation = opened.result;
   expect(observation).toEqual(expect.objectContaining({
     observationId: "observation-1",
     tabId: "view-1",
   }));
 
-  await resolveBrowserDriverRequest(client, request("click", "click", {
+  const clicked = await executeEmbeddedBrowserRequest("view-1", "click", {
     nextObservationId: "observation-2",
     observationId: "observation-1",
     target: "rpa-observation-1-0",
     expectedObservation: observation,
-  }));
-
-  expect(call).toHaveBeenLastCalledWith("browser.resolve", expect.objectContaining({
-    requestId: "click",
-    result: expect.any(Object),
-  }));
+  });
+  expect(clicked.result).toMatchObject({ observationId: "observation-2", tabId: "view-1" });
   // The click is followed by a fresh DOM snapshot so submit/next-page
   // navigation cannot leave the agent bound to the pre-click document.
   // Open and click each wait for a stable post-mutation observation. The
@@ -307,17 +281,7 @@ it("routes history actions through the native browser and settles delayed SPA up
     "view-history",
     "browser-history",
   ));
-  const call = vi.fn(async (
-    _method: string,
-    _params: Record<string, unknown>,
-  ) => ({ resolved: true }));
-  const client = { call } as unknown as RpcClient;
-  const request = (id: string, operation: string) => ({
-    id,
-    sessionId: "session-history",
-    browserSessionId: "browser-history",
-    operation,
-    arguments: {
+  const arguments_ = {
       nextObservationId: "stable-observation",
       observationId: "stable-observation",
       expectedObservation: {
@@ -327,18 +291,13 @@ it("routes history actions through the native browser and settles delayed SPA up
         documentId: "document-a",
         viewport: { width: 900, height: 600, scrollX: 0, scrollY: 0 },
       },
-    },
-  }) satisfies BrowserDriverRequest;
-
-  await resolveBrowserDriverRequest(client, request("open", "open"));
-  await resolveBrowserDriverRequest(client, request("back", "back"));
+  };
+  await executeEmbeddedBrowserRequest("view-history", "open", { url: "https://example.test/first", nextObservationId: "stable-observation" });
+  const response = await executeEmbeddedBrowserRequest("view-history", "back", arguments_);
 
   expect(browserAction).toHaveBeenCalledWith("back", "view-history");
   expect(browserAction).toHaveBeenCalledTimes(1);
-  const response = call.mock.calls.at(-1)?.[1] as {
-    result?: { result?: Record<string, unknown> };
-  };
-  expect(response.result?.result).toEqual(expect.objectContaining({
+  expect(response.result).toEqual(expect.objectContaining({
     url: "https://example.test/second",
     textLines: ["Second page"],
   }));
@@ -410,17 +369,11 @@ it.each([
   };
   vi.mocked(evaluateBrowser).mockResolvedValue(JSON.stringify(JSON.stringify(observation)));
   renderHook(() => useBrowserPanel("https://example.test/", surface(), false, "view-visual", "browser-visual"));
-  const call = vi.fn(async (_method: string, _params: Record<string, unknown>) => ({ resolved: true }));
-  await resolveBrowserDriverRequest({ call } as unknown as RpcClient, {
-    id: "visual-request", sessionId: "session-visual", browserSessionId: "browser-visual", operation,
-    arguments: { nextObservationId: "visual-observation", includeScreenshot },
-  });
+  const response = await executeEmbeddedBrowserRequest("view-visual", operation, { nextObservationId: "visual-observation", includeScreenshot });
   expect(screenshotBrowser).toHaveBeenCalledTimes(captures);
-  expect(call).toHaveBeenCalledWith("browser.resolve", expect.objectContaining({
-    result: expect.objectContaining({ result: captures
+  expect(response.result).toEqual(captures
       ? { ...observation, screenshotBase64: "native-png-base64" }
-      : observation }),
-  }));
+      : observation);
 });
 
 it("does not let an automation visibility request expose a suspended tab", async () => {
@@ -428,10 +381,120 @@ it("does not let an automation visibility request expose a suspended tab", async
     observationId: "observation-hidden", documentId: "document-hidden", url: "https://example.test/",
   })));
   renderHook(() => useBrowserPanel("https://example.test/", surface(), true, "view-hidden", "browser-hidden"));
-  const call = vi.fn(async () => ({ resolved: true }));
-  await resolveBrowserDriverRequest({ call } as unknown as RpcClient, {
-    id: "visibility", sessionId: "session-hidden", browserSessionId: "browser-hidden",
-    operation: "setVisible", arguments: { visible: true, nextObservationId: "observation-hidden" },
-  });
+  await executeEmbeddedBrowserRequest("view-hidden", "setVisible", { visible: true, nextObservationId: "observation-hidden" });
   expect(setBrowserVisible).not.toHaveBeenCalledWith("view-hidden", true);
+});
+
+it("queues a second navigation instead of silently dropping it while opening", async () => {
+  let finish!: (value: { url: string }) => void;
+  vi.mocked(openBrowser).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  const ref = surface();
+  const { result } = renderHook(() => useBrowserPanel("https://first.test/", ref, false, "view-queue"));
+  let queued!: Promise<void>;
+  act(() => { queued = result.current.load("https://second.test/"); });
+  expect(openBrowser).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    finish({ url: "https://first.test/" });
+    await queued;
+  });
+  expect(openBrowser).toHaveBeenCalledTimes(2);
+  expect(openBrowser).toHaveBeenLastCalledWith("https://second.test/", expect.any(Object), "view-queue", false);
+  expect(result.current.activeUrl).toBe("https://second.test/");
+});
+
+it("lets the agent observe a manual tab after native creation and delayed page readiness", async () => {
+  vi.useFakeTimers();
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  let finish!: (value: { url: string }) => void;
+  vi.mocked(openBrowser).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  let page = {
+    observationId: "adopted", documentId: "empty", tabId: "manual-view", url: "about:blank",
+    readyState: "complete", items: [], textLines: [],
+    viewport: { width: 500, height: 600, deviceScaleFactor: 1, scrollX: 0, scrollY: 0 },
+  };
+  vi.mocked(evaluateBrowser).mockImplementation(async () => JSON.stringify(JSON.stringify(page)));
+  const ref = surface();
+  renderHook(() => useBrowserPanel("https://manual.test/", ref, false, "manual-view"));
+  const waiting = executeEmbeddedBrowserRequest("manual-view", "snapshot", { nextObservationId: "adopted" });
+  const completed = vi.fn();
+  void waiting.then(completed);
+  expect(evaluateBrowser).not.toHaveBeenCalled();
+  await act(async () => { finish({ url: "https://manual.test/" }); });
+  await act(() => vi.advanceTimersByTimeAsync(2_000));
+  expect(completed).not.toHaveBeenCalled();
+  page = { ...page, documentId: "manual-document", url: "https://manual.test/" };
+  await act(() => vi.advanceTimersByTimeAsync(500));
+  await expect(waiting).resolves.toMatchObject({ result: { url: "https://manual.test/", documentId: "manual-document" } });
+  expect(openBrowser).toHaveBeenCalledOnce();
+});
+
+it("does not reload a manual page when its observed URL metadata changes", async () => {
+  const ref = surface();
+  const { result, rerender } = renderHook(({ url }) => useBrowserPanel(url, ref, false, "manual-metadata"), {
+    initialProps: { url: "https://example.test/login" },
+  });
+  await waitFor(() => expect(result.current.pending).toBe(false));
+  rerender({ url: "https://example.test/account" });
+  await act(async () => {});
+  expect(openBrowser).toHaveBeenCalledOnce();
+});
+
+it("keeps native page ownership through StrictMode's immediate effect remount", async () => {
+  const ref = surface();
+  const { result, unmount } = renderHook(
+    () => useBrowserPanel("https://example.test/", ref, false, "strict-view"),
+    { wrapper: StrictMode },
+  );
+  await waitFor(() => expect(result.current.pending).toBe(false));
+  expect(closeBrowser).not.toHaveBeenCalledWith("strict-view");
+  expect(result.current.activeUrl).toBe("https://example.test/");
+  unmount();
+  await act(async () => {});
+  expect(closeBrowser).toHaveBeenCalledWith("strict-view");
+});
+
+it.each([true, false])("retries explicit navigation when the old JS context disappears (cached identity: %s)", async (cached) => {
+  vi.useFakeTimers();
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  let page = {
+    observationId: "retry-observation", documentId: "old-document", tabId: "retry-view", url: "https://old.test/",
+    readyState: "complete", items: [], textLines: [],
+    viewport: { width: 500, height: 600, deviceScaleFactor: 1, scrollX: 0, scrollY: 0 },
+  };
+  vi.mocked(evaluateBrowser).mockImplementation(async () => JSON.stringify(JSON.stringify(page)));
+  vi.mocked(currentBrowser).mockImplementation(async () => ({ url: page.url }));
+  const ref = surface();
+  renderHook(() => useBrowserPanel(page.url, ref, false, "retry-view"));
+  await act(async () => {});
+  if (cached) {
+    const observed = executeEmbeddedBrowserRequest("retry-view", "snapshot", { nextObservationId: "before-retry" });
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    await observed;
+  }
+  vi.mocked(evaluateBrowser).mockRejectedValueOnce(new Error("JavaScript context is no longer available"));
+  const retry = executeEmbeddedBrowserRequest("retry-view", "navigate", {
+    url: "https://requested.test/", nextObservationId: "retry-observation",
+  });
+  const completed = vi.fn();
+  void retry.then(completed);
+  await act(() => vi.advanceTimersByTimeAsync(2_000));
+  expect(openBrowser).toHaveBeenCalledTimes(2);
+  expect(completed).not.toHaveBeenCalled();
+  page = { ...page, documentId: "new-document", url: "https://redirected.test/" };
+  await act(() => vi.advanceTimersByTimeAsync(500));
+  await expect(retry).resolves.toMatchObject({ result: { url: "https://redirected.test/", documentId: "new-document" } });
+});
+
+it.each(["back", "forward", "reload"])("rejects stale observations before dispatching native %s", async (operation) => {
+  vi.mocked(evaluateBrowser).mockImplementation(async (_viewId, script) => JSON.stringify(eval(script)));
+  const ref = surface();
+  renderHook(() => useBrowserPanel("https://example.test/", ref, false, "stale-history", "task-history"));
+  await expect(executeEmbeddedBrowserRequest("stale-history", operation, {
+    nextObservationId: "next-history", observationId: "stale-history",
+    expectedObservation: {
+      observationId: "stale-history", url: "https://previous.test/", documentId: "previous-document", tabId: "stale-history",
+      viewport: { width: 900, height: 600, scrollX: 0, scrollY: 0 },
+    },
+  })).rejects.toThrow("stale observation");
+  expect(browserAction).not.toHaveBeenCalled();
 });

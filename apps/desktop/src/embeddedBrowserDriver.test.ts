@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RpcClient } from "./rpc";
-import type { BrowserCapabilities, BrowserDriverRequest } from "./types";
+import type { BrowserCapabilities } from "./types";
 import {
   registerEmbeddedBrowser,
-  resolveBrowserDriverRequest,
+  executeEmbeddedBrowserRequest,
 } from "./embeddedBrowserDriver";
 
 const capabilities: BrowserCapabilities = {
@@ -17,96 +16,67 @@ const capabilities: BrowserCapabilities = {
   selectInput: true,
 };
 
-const request = (id: string, browserSessionId: string): BrowserDriverRequest => ({
-  id,
-  sessionId: "session-1",
-  browserSessionId,
-  operation: "snapshot",
-  arguments: { nextObservationId: `observation-${id}` },
-});
-
-const rpc = () => {
-  const call = vi.fn(async () => ({ resolved: true }));
-  return { call, client: { call } as unknown as RpcClient };
-};
-
 afterEach(() => {
   vi.useRealTimers();
 });
 
 describe("embedded BrowserDriver bridge", () => {
-  it("routes a request by browser session and returns native capabilities", async () => {
+  it("uses the selected real page and preserves the adapter's result", async () => {
+    const execute = vi.fn(async () => ({ tabId: "manual-page", loggedIn: true }));
+    const unregister = registerEmbeddedBrowser("manual-page", {
+      execute, capabilities: async () => capabilities,
+    });
+    const response = await executeEmbeddedBrowserRequest("manual-page", "snapshot", { nextObservationId: "observation-manual-request" });
+    expect(execute).toHaveBeenCalledWith("snapshot", { nextObservationId: "observation-manual-request" });
+    expect(response).toEqual({ capabilities, result: { tabId: "manual-page", loggedIn: true } });
+    unregister();
+  });
+
+  it("returns native capabilities alongside the latest page observation", async () => {
     const execute = vi.fn(async () => ({ observationId: "observation-request-1" }));
     const unregister = registerEmbeddedBrowser("task-1", {
       execute,
       capabilities: async () => capabilities,
     });
-    const { call, client } = rpc();
-
-    const result = await resolveBrowserDriverRequest(client, request("request-1", "task-1"));
-    expect(result).toEqual({ observationId: "observation-request-1" });
+    const response = await executeEmbeddedBrowserRequest("task-1", "snapshot", { nextObservationId: "observation-request-1" });
+    expect(response).toEqual({ capabilities, result: { observationId: "observation-request-1" } });
 
     expect(execute).toHaveBeenCalledWith("snapshot", {
       nextObservationId: "observation-request-1",
-    });
-    expect(call).toHaveBeenCalledWith("browser.resolve", {
-      requestId: "request-1",
-      result: {
-        capabilities,
-        result: { observationId: "observation-request-1" },
-      },
     });
     unregister();
   });
 
   it("waits for the matching hidden browser host to register", async () => {
-    const { call, client } = rpc();
-    const resolving = resolveBrowserDriverRequest(client, request("request-2", "task-2"));
+    const resolved = vi.fn();
+    const resolving = executeEmbeddedBrowserRequest("task-2", "snapshot", {});
+    void resolving.then(resolved);
     await Promise.resolve();
-    expect(call).not.toHaveBeenCalled();
+    expect(resolved).not.toHaveBeenCalled();
 
     const unregister = registerEmbeddedBrowser("task-2", {
       execute: async () => ({ ready: true }),
       capabilities: async () => capabilities,
     });
-    await resolving;
-
-    expect(call).toHaveBeenCalledWith("browser.resolve", expect.objectContaining({
-      requestId: "request-2",
-      result: expect.objectContaining({ result: { ready: true } }),
-    }));
+    await expect(resolving).resolves.toEqual({ capabilities, result: { ready: true } });
     unregister();
   });
 
-  it("returns only an error when adapter execution fails", async () => {
+  it("rejects without fabricating a result when adapter execution fails", async () => {
     const unregister = registerEmbeddedBrowser("task-3", {
       execute: async () => { throw new Error("script rejected"); },
       capabilities: async () => capabilities,
     });
-    const { call, client } = rpc();
-
-    expect(await resolveBrowserDriverRequest(client, request("request-3", "task-3"))).toBeUndefined();
-
-    expect(call).toHaveBeenCalledWith("browser.resolve", {
-      requestId: "request-3",
-      error: "script rejected",
-    });
+    await expect(executeEmbeddedBrowserRequest("task-3", "snapshot", {})).rejects.toThrow("script rejected");
     unregister();
   });
 
   it("cleans a timed-out waiter before a later adapter registers", async () => {
     vi.useFakeTimers();
-    const first = rpc();
-    const timedOut = resolveBrowserDriverRequest(
-      first.client,
-      request("request-4", "task-4"),
-    );
+    const timedOut = executeEmbeddedBrowserRequest("task-4", "snapshot", {});
+    const assertion = expect(timedOut).rejects.toThrow("内嵌浏览器面板未能在 5 秒内就绪");
     await vi.advanceTimersByTimeAsync(5000);
-    await timedOut;
-    expect(first.call).toHaveBeenCalledWith("browser.resolve", {
-      requestId: "request-4",
-      error: "内嵌浏览器面板未能在 5 秒内就绪",
-    });
+    await assertion;
 
     const execute = vi.fn(async () => ({ ready: true }));
     const unregister = registerEmbeddedBrowser("task-4", {
@@ -114,8 +84,7 @@ describe("embedded BrowserDriver bridge", () => {
       capabilities: async () => capabilities,
     });
     expect(execute).not.toHaveBeenCalled();
-    const second = rpc();
-    await resolveBrowserDriverRequest(second.client, request("request-5", "task-4"));
+    await executeEmbeddedBrowserRequest("task-4", "snapshot", {});
     expect(execute).toHaveBeenCalledTimes(1);
     unregister();
   });

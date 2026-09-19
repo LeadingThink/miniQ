@@ -18,6 +18,7 @@ import { useSessionDiff } from "./useSessionDiff";
 import { useTaskNotifications } from "./useTaskNotifications";
 import { useSessionError } from "./useSessionError";
 import { isSessionRunning, isSessionTerminal } from "../sessionStatus";
+import { BROWSER_DRAFT_CREATED_EVENT, type BrowserDraftCreatedDetail } from "../browserTabs";
 
 export type AppPage = "schedule" | "skills" | "mcp" | "plugins" | null;
 const PROVIDER_ONBOARDING_KEY = "miniq.providerOnboarding.v1";
@@ -345,6 +346,11 @@ function useTurnActions(
             reasoningEffort: sessionModel.settings.reasoningEffort,
           },
         });
+        if (epoch === catalog.navigationEpoch.current) {
+          window.dispatchEvent(new CustomEvent<BrowserDraftCreatedDetail>(BROWSER_DRAFT_CREATED_EVENT, {
+            detail: { workspaceId: catalog.selectedWorkspace.id, sessionId: session.id },
+          }));
+        }
         await client.call("session.sendMessage", {
           sessionId: session.id,
           message: { role: "user", content, attachments },

@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, ExternalLink, Globe2, RefreshCw, Square, X } from "lucide-react";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { openExternalUrl } from "../externalLinks";
 import { errorMessage } from "../errorMessage";
 import { isTauriRuntime } from "../runtime";
@@ -25,6 +25,14 @@ export function BrowserPanel(props: {
     props.browserSessionId,
   );
   const native = isTauriRuntime();
+  const onNavigate = useRef(props.onNavigate);
+  onNavigate.current = props.onNavigate;
+  const reportedUrl = useRef(props.url);
+  useEffect(() => {
+    if (reportedUrl.current === browser.activeUrl) return;
+    reportedUrl.current = browser.activeUrl;
+    onNavigate.current(browser.activeUrl);
+  }, [browser.activeUrl]);
   const reloadAction = native && browser.loading ? "stop" : "reload";
   return (
     <aside
@@ -78,10 +86,9 @@ export function BrowserPanel(props: {
             event.preventDefault();
             try {
               const url = normalizeBrowserUrl(browser.address);
-              // Automation-owned tabs do not navigate from metadata updates:
-              // the driver already dispatched those. A user's address-bar
-              // submission must explicitly navigate that same native tab.
-              if (url === props.url || props.browserSessionId) void browser.load(url).catch(() => {});
+              // URL metadata also changes after redirects and observations.
+              // Only this explicit user action should navigate the page.
+              void browser.load(url).catch(() => {});
               if (url !== props.url) props.onNavigate(url);
             } catch (cause) {
               browser.setError(errorMessage(cause));

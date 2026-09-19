@@ -1,5 +1,4 @@
-import type { RpcClient } from "./rpc";
-import type { BrowserCapabilities, BrowserDriverRequest } from "./types";
+import type { BrowserCapabilities } from "./types";
 
 export interface EmbeddedBrowserAdapter {
   execute(operation: string, arguments_: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -41,23 +40,13 @@ function waitForBrowser(browserSessionId: string): Promise<EmbeddedBrowserAdapte
   });
 }
 
-export async function resolveBrowserDriverRequest(
-  client: RpcClient,
-  request: BrowserDriverRequest,
-): Promise<Record<string, unknown> | undefined> {
-  try {
-    const adapter = await waitForBrowser(request.browserSessionId);
-    const [result, capabilities] = await Promise.all([
-      adapter.execute(request.operation, request.arguments),
-      adapter.capabilities(),
-    ]);
-    await client.call("browser.resolve", {
-      requestId: request.id,
-      result: { capabilities, result },
-    });
-    return result;
-  } catch (cause) {
-    const error = cause instanceof Error ? cause.message : String(cause);
-    await client.call("browser.resolve", { requestId: request.id, error }).catch(() => {});
-  }
+export async function executeEmbeddedBrowserRequest(
+  viewId: string, operation: string, arguments_: Record<string, unknown>,
+): Promise<{ result: Record<string, unknown>; capabilities: BrowserCapabilities }> {
+  const adapter = await waitForBrowser(viewId);
+  const [result, capabilities] = await Promise.all([
+    adapter.execute(operation, arguments_),
+    adapter.capabilities(),
+  ]);
+  return { result, capabilities };
 }

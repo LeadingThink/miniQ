@@ -34,6 +34,21 @@ it("offers to open the observed browser URL in the right-side workbench", async 
   window.removeEventListener("miniq:open-browser", open);
 });
 
+it("reopens the exact observed page and uses its final URL after redirects", async () => {
+  const client = {call:vi.fn().mockResolvedValue(response)} as unknown as RpcClient;
+  const open = vi.fn();
+  window.addEventListener("miniq:open-browser", open);
+  try {
+    render(<ComputerObservation call={{...call, input:{action:"open", url:"https://before.test/"},
+      output:{...call.output as object, url:"https://after.test/form", tabId:"live-view-id"}}} client={client} />);
+    await screen.findByAltText("操作后的网页截图");
+    fireEvent.click(screen.getByRole("button", {name:"在右侧内置浏览器打开"}));
+    expect((open.mock.calls[0][0] as CustomEvent).detail).toEqual({url:"https://after.test/form", tabId:"live-view-id"});
+  } finally {
+    window.removeEventListener("miniq:open-browser", open);
+  }
+});
+
 it("identifies an app-scoped screenshot without presenting desktop takeover or browser controls", async () => {
   const client = {call:vi.fn().mockResolvedValue(response)} as unknown as RpcClient;
   render(<ComputerObservation call={{...call, toolName:"app_automation", output:{...call.output as object,

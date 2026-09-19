@@ -17,9 +17,9 @@
 }
 .browser-workbench { display:flex; flex-direction:column; width:100%; min-width:0; min-height:0; }
 .browser-workbench > .browser-tabs { flex:none; }
-.browser-workbench > .browser-panel { flex:1; min-height:0; width:100%; margin:0; border-radius:0 0 var(--radius-lg) var(--radius-lg); }
+.browser-workbench > .browser-panel { flex:1; min-width:0; min-height:0; width:100%; margin:0; border-radius:0 0 var(--radius-lg) var(--radius-lg); }
 .browser-workbench[hidden] { display:none; }
-.browser-workbench > .browser-panel-inactive { position:absolute; visibility:hidden; pointer-events:none; }
+.browser-workbench > .browser-panel-inactive { position:absolute; inset:0; visibility:hidden; pointer-events:none; }
 .workbench-panel[data-layout="overlay"],
 .workbench-panel[data-layout="mobile"] {
   position: fixed;

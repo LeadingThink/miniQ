@@ -19,9 +19,11 @@ import {
 import {
   buildBrowserAutomationScript,
   parseBrowserScriptResult,
+  type BrowserScriptResult,
 } from "../browserAutomationScript";
 import { registerEmbeddedBrowser } from "../embeddedBrowserDriver";
 import { captureBrowserObservation } from "../browserVisualObservation";
+import { waitForBrowserObservation, type BrowserNavigationExpectation } from "../browserObservationWait";
 import { errorMessage } from "../errorMessage";
 import { isTauriRuntime } from "../runtime";
 import { useOpenDialog } from "./useOpenDialog";
@@ -47,11 +49,22 @@ export function useBrowserPanel(
   const mounted = useRef(false);
   const sequence = useRef(0);
   const inFlight = useRef(false);
+  const opened = useRef(false);
+  const pendingLoad = useRef<Promise<void> | null>(null);
+  const pendingNavigation = useRef<BrowserNavigationExpectation | undefined>(undefined);
+  const lastObservation = useRef<BrowserScriptResult | undefined>(undefined);
+  const initialUrl = useRef(url);
+  const initialLoadStarted = useRef(false);
   const surfaceSequence = useRef(0);
   const suspendedRef = useRef(suspended);
   suspendedRef.current = suspended;
+  const rememberObservation = useCallback((result: BrowserScriptResult) => {
+    if (result.readyState !== "loading" && /^https?:\/\//i.test(result.url)) lastObservation.current = result;
+    return result;
+  }, []);
   const accept = useCallback((next: string) => {
     const previous = active.current;
+    if (lastObservation.current?.url !== next) lastObservation.current = undefined;
     active.current = next;
     setActiveUrl(next);
     setAddress((value) =>
@@ -72,49 +85,80 @@ export function useBrowserPanel(
     await setBrowserVisible(viewId, mounted.current && !suspendedRef.current);
   }, [surface, viewId]);
   const load = useCallback(
-    async (target: string) => {
-      const element = surface.current;
-      if (!element) return;
-      if (inFlight.current) return;
-      const request = ++sequence.current;
-      inFlight.current = true;
-      setPending(true);
-      setLoading(true);
-      setError(null);
-      setAddress(target);
-      try {
-        const rect = element.getBoundingClientRect();
-        const state = await openBrowser(
-          target,
-          { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-          viewId,
-          false,
-        );
-        if (!mounted.current) {
-          await closeBrowser(viewId);
-          return;
+    (target: string) => {
+      const previousLoad = pendingLoad.current;
+      const operation = (async () => {
+        // A requested navigation must not silently succeed without dispatch.
+        // Serialize address-bar/agent requests against any pending native open.
+        if (previousLoad) await previousLoad.catch(() => {});
+        const element = surface.current;
+        if (!element || !mounted.current) throw new Error("浏览器面板已关闭");
+        if (inFlight.current) throw new Error("浏览器正在执行另一个操作，请稍后重试导航");
+        const request = ++sequence.current;
+        inFlight.current = true;
+        setPending(true);
+        setLoading(true);
+        setError(null);
+        setAddress(target);
+        try {
+          const navigation: BrowserNavigationExpectation = { url: target };
+          if (opened.current && isTauriRuntime()) {
+            try {
+              navigation.previous = rememberObservation(parseBrowserScriptResult(
+                await evaluateBrowser(viewId, buildBrowserAutomationScript("snapshot", {}, viewId)),
+              ));
+            } catch {
+              // A provisional navigation can destroy the old JS context.
+              // Reading it must not prevent the user's explicit retry.
+              navigation.previous = lastObservation.current;
+              if (!navigation.previous) {
+                const state = await currentBrowser(viewId).catch(() => null);
+                if (state) navigation.previous = { url: state.url };
+                else navigation.previousUnavailable = true;
+              }
+            }
+          }
+          pendingNavigation.current = navigation;
+          const rect = element.getBoundingClientRect();
+          const state = await openBrowser(
+            target,
+            { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+            viewId,
+            false,
+          );
+          opened.current = true;
+          if (!mounted.current) {
+            await closeBrowser(viewId);
+            return;
+          }
+          if (request !== sequence.current) return;
+          await reconcileSurface();
+          if (!mounted.current || request !== sequence.current) return;
+          accept(state.url);
+          setAddress(state.url);
+          setRevision((value) => value + 1);
+        } catch (cause) {
+          pendingNavigation.current = undefined;
+          if (mounted.current && request === sequence.current) {
+            setError(errorMessage(cause));
+            setLoading(false);
+          }
+          throw cause;
+        } finally {
+          if (mounted.current && request === sequence.current) {
+            inFlight.current = false;
+            setPending(false);
+            if (isTauriRuntime()) setLoading(false);
+          }
         }
-        if (request !== sequence.current) return;
-        await reconcileSurface();
-        if (!mounted.current || request !== sequence.current) return;
-        accept(state.url);
-        setAddress(state.url);
-        setRevision((value) => value + 1);
-      } catch (cause) {
-        if (mounted.current && request === sequence.current) {
-          setError(errorMessage(cause));
-          setLoading(false);
-        }
-        throw cause;
-      } finally {
-        if (mounted.current && request === sequence.current) {
-          inFlight.current = false;
-          setPending(false);
-          if (isTauriRuntime()) setLoading(false);
-        }
-      }
+      })();
+      pendingLoad.current = operation;
+      void operation.finally(() => {
+        if (pendingLoad.current === operation) pendingLoad.current = null;
+      }).catch(() => {});
+      return operation;
     },
-    [surface, viewId, accept, reconcileSurface],
+    [surface, viewId, accept, reconcileSurface, rememberObservation],
   );
 
   useEffect(() => {
@@ -122,78 +166,44 @@ export function useBrowserPanel(
     return () => {
       mounted.current = false;
       sequence.current++;
-      // An obsolete panel can close only its own child webview.
-      void closeBrowser(viewId).catch(() => {});
+      inFlight.current = false;
+      initialLoadStarted.current = false;
+      // StrictMode's immediate effect remount still owns this same view. Real
+      // disposal closes it after that ownership check, including late opens.
+      queueMicrotask(() => {
+        if (!mounted.current) void closeBrowser(viewId).catch(() => {});
+      });
     };
   }, [viewId]);
   useEffect(() => {
-    if (!requestedBrowserSessionId) return;
-    return registerEmbeddedBrowser(requestedBrowserSessionId, {
+    return registerEmbeddedBrowser(viewId, {
       capabilities: browserCapabilities,
       execute: async (operation, arguments_) => {
-        const observe = async (snapshotArguments = arguments_) => parseBrowserScriptResult(await evaluateBrowser(
+        if (operation !== "stop" && pendingLoad.current) await pendingLoad.current;
+        const observe = async (snapshotArguments = arguments_) => rememberObservation(parseBrowserScriptResult(await evaluateBrowser(
           viewId,
           buildBrowserAutomationScript("snapshot", snapshotArguments, viewId),
-        ));
+        )));
         const freshSnapshotArguments = () => ({
           nextObservationId: arguments_.nextObservationId,
           offset: arguments_.offset,
           limit: arguments_.limit,
         });
-        const observeAfterMutation = async () => {
-          // A click on a submit/next button may start a full navigation or an
-          // async SPA update. The first evaluation can still see the old
-          // document, so wait for a short DOM-stability window and bind the
-          // next action to the last fresh observation. This deliberately does
-          // not wait for network-idle: pages can keep analytics/websocket
-          // requests open forever, and DOM stability is the only signal this
-          // adapter can establish without pretending that navigation finished.
-          const settleDeadline = Date.now() + 1_800;
-          const stableSamplesRequired = 3;
-          await new Promise((resolve) => window.setTimeout(resolve, 80));
-          let latest: ReturnType<typeof parseBrowserScriptResult> | undefined;
-          let previousSignature: string | undefined;
-          let stableSamples = 0;
-          let lastError: unknown;
-          while (Date.now() < settleDeadline) {
-            try {
-              const candidate = await observe(freshSnapshotArguments());
-              latest = candidate;
-              const signature = JSON.stringify({
-                documentId: candidate.documentId,
-                url: candidate.url,
-                title: candidate.title,
-                readyState: candidate.readyState,
-                items: candidate.items,
-                textLines: candidate.textLines,
-                total: candidate.total,
-                totalTextLines: candidate.totalTextLines,
-              });
-              if (candidate.readyState !== "loading" && signature === previousSignature) {
-                stableSamples += 1;
-              } else {
-                previousSignature = signature;
-                stableSamples = 1;
-              }
-              if (candidate.readyState !== "loading" && stableSamples >= stableSamplesRequired) {
-                return candidate;
-              }
-            } catch (cause) {
-              // A document navigation can briefly make evaluate() fail. Retry
-              // only the observation; the user action has already dispatched
-              // and must never be replayed after an observation error.
-              lastError = cause;
-              previousSignature = undefined;
-              stableSamples = 0;
-            }
-            const remaining = settleDeadline - Date.now();
-            if (remaining <= 0) break;
-            await new Promise((resolve) => window.setTimeout(resolve, Math.min(120, remaining)));
+        const observeAfterMutation = () => waitForBrowserObservation(() => observe(freshSnapshotArguments()));
+        const observeNavigation = async () => {
+          const navigation = pendingNavigation.current;
+          try {
+            return await waitForBrowserObservation(() => observe(freshSnapshotArguments()), navigation);
+          } finally {
+            if (pendingNavigation.current === navigation) pendingNavigation.current = undefined;
           }
-          if (latest) return latest;
-          if (lastError) throw lastError;
-          throw new Error("浏览器动作后未能获取新的页面观察");
         };
+        // A user may hand an already-visible tab to the agent while its first
+        // native page is still connecting. Share that navigation's readiness
+        // check rather than observing an empty/old document during adoption.
+        if (pendingNavigation.current && !["open", "navigate", "close", "stop"].includes(operation)) {
+          await observeNavigation();
+        }
         const execute = async () => {
           if (operation === "close") {
             await closeBrowser(viewId);
@@ -203,7 +213,7 @@ export function useBrowserPanel(
             const target = arguments_.url;
             if (typeof target !== "string") throw new Error("浏览器导航缺少 URL");
             await load(target);
-            return observeAfterMutation();
+            return observeNavigation();
           }
           if (operation === "status" || operation === "wait") {
             if (operation === "wait") {
@@ -216,13 +226,17 @@ export function useBrowserPanel(
             return observe();
           }
           if (operation === "back" || operation === "forward" || operation === "reload") {
+            // Validate the caller's document/tab/viewport before changing
+            // history; a fresh snapshot alone would discard that protection.
+            const previous = await observe(arguments_);
             await browserAction(operation, viewId);
-            const result = await observeAfterMutation();
+            const result = await waitForBrowserObservation(() => observe(freshSnapshotArguments()), { previous });
             accept(result.url);
             return result;
           }
           if (operation === "stop") {
             await browserAction("stop", viewId);
+            pendingNavigation.current = undefined;
             return observe();
           }
           if (operation === "setVisible") {
@@ -260,7 +274,7 @@ export function useBrowserPanel(
               viewId,
               buildBrowserAutomationScript(operation, arguments_, viewId),
             );
-            const result = parseBrowserScriptResult(raw);
+            const result = rememberObservation(parseBrowserScriptResult(raw));
             if (["click", "doubleClick", "drag", "select", "type", "press"].includes(operation)) {
               return observeAfterMutation();
             }
@@ -278,11 +292,12 @@ export function useBrowserPanel(
         return result;
       },
     });
-  }, [load, requestedBrowserSessionId, surface, viewId]);
+  }, [load, rememberObservation, requestedBrowserSessionId, surface, viewId]);
   useEffect(() => {
-    if (requestedBrowserSessionId) return;
-    void load(url).catch(() => {});
-  }, [url, load, requestedBrowserSessionId]);
+    if (requestedBrowserSessionId || initialLoadStarted.current) return;
+    initialLoadStarted.current = true;
+    void load(initialUrl.current).catch(() => {});
+  }, [load, requestedBrowserSessionId]);
 
   useEffect(() => {
     const element = surface.current;
