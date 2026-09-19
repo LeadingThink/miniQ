@@ -42,7 +42,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38.2"
-windows = "0.61.3"
+windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage"] }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -51,8 +51,9 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 # unnecessary Apple framework dependency.
 block2 = "0.6"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSObject", "NSError", "NSString"] }
-objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "WKWebView", "block2"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSObject", "NSError", "NSString", "NSData", "NSDictionary"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSImage", "NSImageRep", "NSBitmapImageRep"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "WKWebView", "WKSnapshotConfiguration", "block2"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

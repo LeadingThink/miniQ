@@ -11,6 +11,7 @@
 use async_trait::async_trait;
 mod checkpoint;
 mod context;
+mod response_language;
 mod retry;
 mod tool_batch;
 
@@ -325,7 +326,14 @@ async fn run_turn_inner(
             return Err(AgentError::StepLimitExceeded { steps });
         }
         steps += 1;
-        let context_policy = effective_context_policy(&limits.context_policy, &capabilities);
+        let mut context_policy = effective_context_policy(&limits.context_policy, &capabilities);
+        context_policy.soft_limit_tokens =
+            context_policy
+                .soft_limit_tokens
+                .saturating_sub(response_language::token_overhead(
+                    &state.history,
+                    limits.purpose,
+                ));
         let context = compact_history(
             provider,
             state.history.clone(),
@@ -343,7 +351,8 @@ async fn run_turn_inner(
         let (text, tool_calls, provider_context) = loop {
             state.partial_text.clear();
             let committed_text = state.streamed_text.clone();
-            let mut request_messages = state.history.clone();
+            let mut request_messages =
+                response_language::request_messages(&state.history, limits.purpose);
             if placeholder_recovery_used {
                 request_messages.push(ChatMessage::system(
                     "上一轮只返回了占位省略号。请根据已完成工具结果直接给出简短最终总结，不要输出省略号占位。",
@@ -865,7 +874,12 @@ mod tests {
             Some(tool_context.clone())
         );
         assert_eq!(
-            provider.requests.lock().unwrap()[1].messages[1].provider_context,
+            provider.requests.lock().unwrap()[1]
+                .messages
+                .iter()
+                .find(|message| !message.tool_calls.is_empty())
+                .unwrap()
+                .provider_context,
             Some(tool_context)
         );
         assert_eq!(
@@ -1059,9 +1073,12 @@ mod tests {
             vec![ChatDelta::Text("finished".to_string())],
         ]);
         let (events, mut receiver) = tokio::sync::mpsc::channel(32);
+        let history = vec![ChatMessage::user("work")];
+        let request_budget =
+            300 + response_language::token_overhead(&history, miniq_models::ModelCallPurpose::Task);
         let limits = RunLimits {
             context_policy: ContextPolicy {
-                soft_limit_tokens: 300,
+                soft_limit_tokens: request_budget,
                 preserve_recent_messages: 0,
                 prune_tool_results_over_tokens: 10,
                 summary_batch_tokens: 100,
@@ -1072,7 +1089,7 @@ mod tests {
         let outcome = run_turn_with_limits(
             &provider,
             &LargeResultExecutor,
-            vec![ChatMessage::user("work")],
+            history,
             events,
             CancellationToken::new(),
             limits,
@@ -1086,6 +1103,9 @@ mod tests {
             .find(|message| message.role == miniq_models::ChatRole::Tool)
             .unwrap();
         assert!(tool_result.content.contains("oversized_tool_result"));
+        assert!(provider.requests.lock().unwrap().iter().all(|request| {
+            estimate_request_tokens(&request.messages, &request.tools) <= request_budget
+        }));
         let mut saw_compaction = false;
         while let Ok(event) = receiver.try_recv() {
             saw_compaction |= matches!(event, AgentEvent::ContextCompacted { .. });

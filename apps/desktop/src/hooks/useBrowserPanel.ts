@@ -21,6 +21,7 @@ import {
   parseBrowserScriptResult,
 } from "../browserAutomationScript";
 import { registerEmbeddedBrowser } from "../embeddedBrowserDriver";
+import { captureBrowserObservation } from "../browserVisualObservation";
 import { errorMessage } from "../errorMessage";
 import { isTauriRuntime } from "../runtime";
 import { useOpenDialog } from "./useOpenDialog";
@@ -46,6 +47,7 @@ export function useBrowserPanel(
   const mounted = useRef(false);
   const sequence = useRef(0);
   const inFlight = useRef(false);
+  const surfaceSequence = useRef(0);
   const suspendedRef = useRef(suspended);
   suspendedRef.current = suspended;
   const accept = useCallback((next: string) => {
@@ -56,6 +58,19 @@ export function useBrowserPanel(
       shouldSyncBrowserAddress(editing.current, value, previous) ? next : value,
     );
   }, []);
+  const reconcileSurface = useCallback(async () => {
+    const request = ++surfaceSequence.current;
+    const rect = surface.current?.getBoundingClientRect();
+    if (!mounted.current || suspendedRef.current || !rect || rect.width <= 0 || rect.height <= 0) {
+      await setBrowserVisible(viewId, false);
+      return;
+    }
+    // A panel may have moved or become visible since its page was opened in
+    // the background. Move the native child before exposing it to the user.
+    await resizeBrowser({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }, viewId);
+    if (request !== surfaceSequence.current) return;
+    await setBrowserVisible(viewId, mounted.current && !suspendedRef.current);
+  }, [surface, viewId]);
   const load = useCallback(
     async (target: string) => {
       const element = surface.current;
@@ -73,14 +88,14 @@ export function useBrowserPanel(
           target,
           { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
           viewId,
-          !suspendedRef.current,
+          false,
         );
         if (!mounted.current) {
           await closeBrowser(viewId);
           return;
         }
         if (request !== sequence.current) return;
-        await setBrowserVisible(viewId, !suspendedRef.current);
+        await reconcileSurface();
         if (!mounted.current || request !== sequence.current) return;
         accept(state.url);
         setAddress(state.url);
@@ -99,7 +114,7 @@ export function useBrowserPanel(
         }
       }
     },
-    [surface, viewId, accept],
+    [surface, viewId, accept, reconcileSurface],
   );
 
   useEffect(() => {
@@ -179,76 +194,88 @@ export function useBrowserPanel(
           if (lastError) throw lastError;
           throw new Error("浏览器动作后未能获取新的页面观察");
         };
-        if (operation === "close") {
-          await closeBrowser(viewId);
-          return { closed: true };
-        }
-        if (operation === "open" || operation === "navigate") {
-          const target = arguments_.url;
-          if (typeof target !== "string") throw new Error("浏览器导航缺少 URL");
-          await load(target);
-          return observeAfterMutation();
-        }
-        if (operation === "status" || operation === "wait") {
-          if (operation === "wait") {
-            const milliseconds = Number(arguments_.milliseconds ?? 250);
-            await new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+        const execute = async () => {
+          if (operation === "close") {
+            await closeBrowser(viewId);
+            return { closed: true };
           }
-          return observe();
-        }
-        if (operation === "currentUrl") {
-          return observe();
-        }
-        if (operation === "back" || operation === "forward" || operation === "reload") {
-          await browserAction(operation, viewId);
-          const result = await observeAfterMutation();
-          accept(result.url);
-          return result;
-        }
-        if (operation === "stop") {
-          await browserAction("stop", viewId);
-          return observe();
-        }
-        if (operation === "setVisible") {
-          if (typeof arguments_.visible !== "boolean")
-            throw new Error("setVisible 缺少 visible 参数");
-          await setBrowserVisible(viewId, arguments_.visible);
-          return observe();
-        }
-        if (operation === "resize") {
-          const width = Number(arguments_.width);
-          const height = Number(arguments_.height);
-          if (!Number.isFinite(width) || width < 1 || !Number.isFinite(height) || height < 1)
-            throw new Error("resize 需要大于等于 1 的有限 width 和 height");
-          const rect = surface.current?.getBoundingClientRect();
-          await resizeBrowser(
-            { x: rect?.x ?? 0, y: rect?.y ?? 0, width, height },
-            viewId,
-          );
-          return observe();
-        }
-        if ([
-          "snapshot",
-          "click",
-          "doubleClick",
-          "move",
-          "drag",
-          "type",
-          "press",
-          "scroll",
-          "select",
-        ].includes(operation)) {
-          const raw = await evaluateBrowser(
-            viewId,
-            buildBrowserAutomationScript(operation, arguments_, viewId),
-          );
-          const result = parseBrowserScriptResult(raw);
-          if (["click", "doubleClick", "drag", "select", "type", "press"].includes(operation)) {
+          if (operation === "open" || operation === "navigate") {
+            const target = arguments_.url;
+            if (typeof target !== "string") throw new Error("浏览器导航缺少 URL");
+            await load(target);
             return observeAfterMutation();
           }
-          return result;
+          if (operation === "status" || operation === "wait") {
+            if (operation === "wait") {
+              const milliseconds = Number(arguments_.milliseconds ?? 250);
+              await new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+            }
+            return observe();
+          }
+          if (operation === "currentUrl") {
+            return observe();
+          }
+          if (operation === "back" || operation === "forward" || operation === "reload") {
+            await browserAction(operation, viewId);
+            const result = await observeAfterMutation();
+            accept(result.url);
+            return result;
+          }
+          if (operation === "stop") {
+            await browserAction("stop", viewId);
+            return observe();
+          }
+          if (operation === "setVisible") {
+            if (typeof arguments_.visible !== "boolean")
+              throw new Error("setVisible 缺少 visible 参数");
+            // AppShell changes the owning tab's UI visibility. The normal
+            // lifecycle reconciles native bounds/visibility, so an automation
+            // request cannot paint over another session or an open dialog.
+            return observe();
+          }
+          if (operation === "resize") {
+            const width = Number(arguments_.width);
+            const height = Number(arguments_.height);
+            if (!Number.isFinite(width) || width < 1 || !Number.isFinite(height) || height < 1)
+              throw new Error("resize 需要大于等于 1 的有限 width 和 height");
+            const rect = surface.current?.getBoundingClientRect();
+            await resizeBrowser(
+              { x: rect?.x ?? 0, y: rect?.y ?? 0, width, height },
+              viewId,
+            );
+            return observe();
+          }
+          if ([
+            "snapshot",
+            "click",
+            "doubleClick",
+            "move",
+            "drag",
+            "type",
+            "press",
+            "scroll",
+            "select",
+          ].includes(operation)) {
+            const raw = await evaluateBrowser(
+              viewId,
+              buildBrowserAutomationScript(operation, arguments_, viewId),
+            );
+            const result = parseBrowserScriptResult(raw);
+            if (["click", "doubleClick", "drag", "select", "type", "press"].includes(operation)) {
+              return observeAfterMutation();
+            }
+            return result;
+          }
+          throw new Error(`此平台的内嵌浏览器不支持 ${operation}`);
+        };
+        if (operation === "screenshot") {
+          return captureBrowserObservation(viewId, () => observe(freshSnapshotArguments()));
         }
-        throw new Error(`此平台的内嵌浏览器不支持 ${operation}`);
+        const result = await execute();
+        if (operation !== "close" && arguments_.includeScreenshot === true) {
+          return captureBrowserObservation(viewId, () => observe(freshSnapshotArguments()));
+        }
+        return result;
       },
     });
   }, [load, requestedBrowserSessionId, surface, viewId]);
@@ -258,28 +285,13 @@ export function useBrowserPanel(
   }, [url, load, requestedBrowserSessionId]);
 
   useEffect(() => {
-    let disposed = false;
-    void setBrowserVisible(viewId, !suspended).catch((cause) => {
-      if (!disposed) setError(errorMessage(cause));
-    });
-    return () => {
-      disposed = true;
-    };
-  }, [viewId, suspended]);
-
-  useEffect(() => {
     const element = surface.current;
-    if (!element || !isTauriRuntime() || suspended) return;
+    if (!element) return;
     let disposed = false;
     const resize = () => {
       // ResizeObserver already batches layout. A second animation frame can
       // stop in a hidden WebKit view, leaving its native child at stale bounds.
-      const rect = element.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-      void resizeBrowser(
-        { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-        viewId,
-      ).catch((cause) => {
+      void reconcileSurface().catch((cause) => {
         if (!disposed) setError(errorMessage(cause));
       });
     };
@@ -292,7 +304,7 @@ export function useBrowserPanel(
       observer.disconnect();
       window.removeEventListener("resize", resize);
     };
-  }, [surface, viewId, suspended]);
+  }, [surface, reconcileSurface, suspended]);
 
   useEffect(() => {
     if (!isTauriRuntime() || suspended) return;

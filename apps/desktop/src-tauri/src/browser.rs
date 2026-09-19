@@ -2,6 +2,10 @@ use tauri::{
     webview::NewWindowResponse, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl,
 };
 
+#[path = "browser_capture.rs"]
+mod capture;
+pub use capture::capture as screenshot;
+
 fn browser_label(view_id: &str) -> Result<String, String> {
     if view_id.is_empty()
         || view_id.len() > 64
@@ -44,11 +48,8 @@ pub struct BrowserCapabilities {
 pub fn capabilities() -> BrowserCapabilities {
     BrowserCapabilities {
         navigation_control: cfg!(any(windows, target_os = "macos")),
-        // Both WebView2 and WKWebView expose the same DOM automation surface
-        // through `evaluate`.  Keep screenshot separate: the macOS path does
-        // not currently provide a native capture implementation.
         dom_snapshot: cfg!(any(windows, target_os = "macos")),
-        screenshot: false,
+        screenshot: cfg!(any(windows, target_os = "macos")),
         tabs: false,
         pointer_input: cfg!(any(windows, target_os = "macos")),
         keyboard_input: cfg!(any(windows, target_os = "macos")),
@@ -461,13 +462,13 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn macos_browser_advertises_dom_automation_without_screenshot_support() {
+    fn macos_browser_advertises_dom_and_native_screenshot_support() {
         let flags = capabilities();
         assert!(flags.navigation_control);
         assert!(flags.dom_snapshot);
         assert!(flags.pointer_input);
         assert!(flags.keyboard_input);
         assert!(flags.select_input);
-        assert!(!flags.screenshot);
+        assert!(flags.screenshot);
     }
 }

@@ -81,6 +81,11 @@ export async function evaluateBrowser(viewId: string, script: string): Promise<s
   return invokeBrowser<string>("browser_evaluate", { viewId, script });
 }
 
+export async function screenshotBrowser(viewId: string): Promise<string> {
+  if (!isTauriRuntime()) throw new Error("此平台不支持内嵌浏览器截图");
+  return invokeBrowser<string>("browser_screenshot", { viewId });
+}
+
 export async function browserCapabilities(): Promise<BrowserCapabilities> {
   if (!isTauriRuntime()) return {
     navigationControl: false,

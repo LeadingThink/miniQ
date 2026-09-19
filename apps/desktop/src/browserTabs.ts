@@ -26,6 +26,24 @@ export function updateBrowserTab(state: BrowserTabsState, id: string, url: strin
   return { ...state, tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, url } : tab)) };
 }
 
+export function openTaskBrowserTab(state: BrowserTabsState, browserSessionId: string, url: string): BrowserTabsState {
+  const existing = state.tabs.find((tab) => tab.browserSessionId === browserSessionId);
+  if (existing) {
+    return { ...updateBrowserTab(state, existing.id, url), activeId: existing.id, open: true };
+  }
+  const opened = openBrowserTab(state, url);
+  return {
+    ...opened,
+    tabs: opened.tabs.map((tab) => tab.id === opened.activeId ? { ...tab, browserSessionId } : tab),
+  };
+}
+
+export function setTaskBrowserVisible(state: BrowserTabsState, browserSessionId: string, visible: boolean): BrowserTabsState {
+  const tab = state.tabs.find((candidate) => candidate.browserSessionId === browserSessionId);
+  if (!tab || (!visible && state.activeId !== tab.id)) return state;
+  return { ...state, activeId: tab.id, open: visible };
+}
+
 export function closeBrowserTab(state: BrowserTabsState, id: string): BrowserTabsState {
   const index = state.tabs.findIndex((tab) => tab.id === id);
   if (index < 0) return state;

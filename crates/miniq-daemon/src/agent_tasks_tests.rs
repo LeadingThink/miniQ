@@ -223,12 +223,22 @@ async fn foreground_agent_completes_and_resumes_with_preserved_history() {
     assert_eq!(requests.len(), 2);
     for request in requests.iter() {
         assert_eq!(
+            request.messages[0]
+                .content
+                .matches("Response language:")
+                .count(),
+            1,
+            "new and resumed child tasks receive one shared language policy"
+        );
+        assert_eq!(
             request
                 .messages
                 .iter()
                 .filter(|message| {
                     message.role == miniq_models::ChatRole::System
-                        && message.content == crate::parallel_policy::PARALLEL_POLICY
+                        && message
+                            .content
+                            .starts_with(crate::parallel_policy::PARALLEL_POLICY)
                 })
                 .count(),
             1

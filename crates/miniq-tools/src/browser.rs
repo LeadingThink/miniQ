@@ -170,8 +170,18 @@ impl BrowserAutomationTool {
         }
         if input.produces_observation() {
             arguments["nextObservationId"] = json!(uuid::Uuid::new_v4().to_string());
+            // The adapter can issue a new DOM observation or dispatch an
+            // action before capture/transport fails. Retire the old token
+            // before dispatch so every failure path requires a fresh view.
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| "browser sessions lock poisoned")?;
+            if let Some(session) = sessions.get_mut(&ctx.task_scope) {
+                session.observation = None;
+            }
         }
-        let response = match driver
+        let response = driver
             .execute(
                 BrowserDriverRequest {
                     session_id: ctx.task_scope.clone(),
@@ -180,25 +190,7 @@ impl BrowserAutomationTool {
                 },
                 ctx.cancellation.clone(),
             )
-            .await
-        {
-            Ok(response) => response,
-            Err(error) => {
-                // A pointer or keyboard event may already have reached the
-                // page when the embedded driver reports a navigation/stream
-                // error.  Retaining the old observation would allow a retry
-                // to replay a submit or payment click.  Force a new snapshot
-                // so the next model step can inspect the actual page state.
-                if input.requires_observation() {
-                    if let Ok(mut sessions) = self.sessions.lock() {
-                        if let Some(session) = sessions.get_mut(&ctx.task_scope) {
-                            session.observation = None;
-                        }
-                    }
-                }
-                return Err(error);
-            }
-        };
+            .await?;
         observation::check_cancelled(ctx)?;
 
         let mut result = response.result;

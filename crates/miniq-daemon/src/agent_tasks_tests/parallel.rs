@@ -27,10 +27,11 @@ async fn background_cohort_starts_before_any_child_finishes_and_preserves_each_r
     .await
     .expect("every child must start while the others are still blocked");
     assert!(provider.requests.lock().await.iter().all(|request| {
-        request
-            .messages
-            .iter()
-            .any(|message| message.content == crate::parallel_policy::PARALLEL_POLICY)
+        request.messages.iter().any(|message| {
+            message
+                .content
+                .starts_with(crate::parallel_policy::PARALLEL_POLICY)
+        })
     }));
     provider.gate.add_permits(3);
     let mut results = Vec::new();
