@@ -1,9 +1,10 @@
-import { AlertTriangle, ChevronLeft, ChevronRight, Download, ExternalLink, Maximize, Minimize, RefreshCw } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Download, Expand, ExternalLink, Maximize, Minimize, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { loadObservation, observationImage, observationPages } from "../computerObservation";
 import type { RpcClient } from "../rpc";
 import type { ToolCall } from "../types";
 import "./ComputerObservation.css";
+import { ObservationViewer } from "./ObservationViewer";
 
 export function ComputerObservation({ call, client }: { call: ToolCall; client: RpcClient }) {
   const [page, setPage] = useState(0);
@@ -17,6 +18,7 @@ export function ComputerObservation({ call, client }: { call: ToolCall; client: 
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [original, setOriginal] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const input = call.input as Record<string, unknown> | undefined;
   const output = call.output as Record<string, unknown> | undefined;
   const observationError = typeof output?.observationError === "string" ? output.observationError : null;
@@ -25,7 +27,7 @@ export function ComputerObservation({ call, client }: { call: ToolCall; client: 
     ? (typeof output?.url === "string" ? output.url : typeof input?.url === "string" ? input.url : null)
     : null;
   const browserTabId = call.toolName === "browser_automation" && typeof output?.tabId === "string" ? output.tabId : undefined;
-  useEffect(() => { setPage(0); setOriginal(false); }, [call.id]);
+  useEffect(() => { setPage(0); setOriginal(false); setExpanded(false); }, [call.id, call.sessionId]);
   useEffect(() => {
     if (!image) return;
     const controller = new AbortController();
@@ -67,14 +69,20 @@ export function ComputerObservation({ call, client }: { call: ToolCall; client: 
         {original ? <Minimize size={15} /> : <Maximize size={15} />}
       </button>
       {url && <a className="icon-button" title="下载截图" aria-label="下载截图" href={url} download={`miniq-observation-${image.id}.png`}><Download size={15} /></a>}
-      {browserUrl && <button type="button" className="icon-button" title="在右侧内置浏览器打开" aria-label="在右侧内置浏览器打开" onClick={() => window.dispatchEvent(new CustomEvent("miniq:open-browser", { detail: { url: browserUrl, ...(browserTabId ? { tabId: browserTabId } : {}) } }))}><ExternalLink size={15} /></button>}
+      {url && <button type="button" className="icon-button" title="全屏查看截图" aria-label="全屏查看截图" onClick={() => setExpanded(true)}><Expand size={15} /></button>}
+      {browserUrl && (client.mode === "remote"
+        ? <a className="icon-button" href={/^https?:\/\//i.test(browserUrl) ? browserUrl : undefined} target="_blank" rel="noopener noreferrer" title="在本机浏览器打开（不共享桌面登录状态）" aria-label="在本机浏览器打开"><ExternalLink size={15} /></a>
+        : <button type="button" className="icon-button" title="在右侧内置浏览器打开" aria-label="在右侧内置浏览器打开" onClick={() => window.dispatchEvent(new CustomEvent("miniq:open-browser", { detail: { url: browserUrl, ...(browserTabId ? { tabId: browserTabId } : {}) } }))}><ExternalLink size={15} /></button>)}
       <button type="button" className="icon-button" title="重新加载截图" aria-label="重新加载截图" onClick={() => setAttempt(value => value + 1)}><RefreshCw size={15} /></button>
       </div>
     </figcaption>
     <div className={`computer-observation-image ${original ? "original" : ""}`} style={{ aspectRatio: `${image.width} / ${image.height}` }}>
       {error ? <div role="alert">{error}</div> : url
-        ? <img src={url} alt={alt} width={image.width} height={image.height} onError={() => setError("截图无法显示，请重新加载")} />
+        ? <img src={url} alt={alt} width={image.width} height={image.height} decoding="async" onError={() => setError("截图无法显示，请重新加载")} />
         : <div role="status">正在加载截图</div>}
     </div>
+    {expanded && url && <ObservationViewer key={`${call.id}:${page}:${url}`} url={url} title={title}
+      width={image.width} height={image.height} filename={`miniq-observation-${image.id}.png`}
+      onClose={() => setExpanded(false)} onError={(message) => { setExpanded(false); setError(message); }} />}
   </figure>;
 }

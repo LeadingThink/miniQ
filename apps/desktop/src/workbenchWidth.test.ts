@@ -15,10 +15,14 @@ describe("workbench width", () => {
     [320, 320, "mobile", 296],
     [2200, 2464, "split", 1850],
   ])("fits available %i in viewport %i", (available, viewport, mode, max) => {
-    const layout = workbenchLayout(available, viewport);
+    const layout = workbenchLayout(available, viewport, viewport <= 720);
     expect(layout).toEqual({ mode, min: Math.min(320, max), max });
     expect(clampWorkbenchWidth(9999, layout.min, layout.max)).toBe(max);
     expect(clampWorkbenchWidth(0, layout.min, layout.max)).toBe(layout.min);
+  });
+
+  it("uses a full mobile panel for a landscape phone even when its width exceeds 720px", () => {
+    expect(workbenchLayout(844, 844, true)).toEqual({ mode: "mobile", min: 320, max: 820 });
   });
 
   it("keeps the preferred width independent of temporary layout bounds", () => {

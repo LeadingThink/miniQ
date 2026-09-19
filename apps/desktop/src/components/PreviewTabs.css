@@ -2,6 +2,7 @@
   display: flex;
   gap: 1px;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
   min-width: 0;

@@ -87,8 +87,9 @@ export function AppStatusBar(props: {
       <button
         type="button"
         className="statusbar-icon-button"
-        title="打开内置浏览器"
-        aria-label="打开内置浏览器"
+        title={app.client.mode === "remote" ? "查看桌面网页记录" : "打开内置浏览器"}
+        aria-label={app.client.mode === "remote" ? "查看桌面网页记录" : "打开内置浏览器"}
+        disabled={app.client.mode === "remote" && !currentSession}
         onClick={props.onOpenBrowser}
       >
         <Globe2 size={16} />

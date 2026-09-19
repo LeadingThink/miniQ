@@ -1,6 +1,7 @@
 // JSON-RPC over WebSocket client for the miniQ daemon.
 
 import type { DaemonEvent } from "./types";
+import { throwIfAborted } from "./abortSignal";
 import { isTauriRuntime } from "./runtime";
 import { decryptRemotePayload, deriveRemoteIdentity, encryptRemotePayload } from "./remoteCrypto";
 import { loadRemoteCredentials, type RemoteCredentials } from "./remoteAccess";
@@ -38,6 +39,7 @@ const RPC_TIMEOUT_MS = 60_000;
 export class RpcClient {
   private ws: WebSocket | null = null;
   private connectPromise: Promise<void> | null = null;
+  private connectController: AbortController | null = null;
   private pending = new Map<string, Pending>();
   private nextId = 1;
   private eventListeners = new Set<(event: DaemonEvent) => void>();
@@ -56,32 +58,47 @@ export class RpcClient {
     if (this.connectPromise) return this.connectPromise;
     if (this.ws?.readyState === WebSocket.OPEN) return;
     if (this.ws) {
-      const staleSocket = this.ws;
-      this.ws = null;
-      this.remoteKey = null;
-      staleSocket.close(4000, "stale connection");
-      this.notifyStatus(false);
+      this.disconnect("stale connection");
+      // A status listener may synchronously begin the replacement connection.
+      if (this.connectPromise) return this.connectPromise;
     }
     this.connectionMode = info.kind;
-    this.connectPromise = info.kind === "remote" ? this.connectRemote(info) : this.connectLocal(info);
+    const controller = new AbortController();
+    this.connectController = controller;
+    let cancel!: () => void;
+    const cancelled = new Promise<never>((_resolve, reject) => {
+      cancel = () => reject(controller.signal.reason ?? new DOMException("Request cancelled", "AbortError"));
+      controller.signal.addEventListener("abort", cancel, { once: true });
+    });
+    const connecting = info.kind === "remote"
+      ? this.connectRemote(info, controller.signal)
+      : this.connectLocal(info, controller.signal);
+    const promise = Promise.race([connecting, cancelled]);
+    this.connectPromise = promise;
     try {
-      await this.connectPromise;
+      await promise;
     } finally {
-      this.connectPromise = null;
+      controller.signal.removeEventListener("abort", cancel);
+      // An aborted attempt can finish after the replacement has started.
+      if (this.connectController === controller) {
+        this.connectController = null;
+        this.connectPromise = null;
+      }
     }
   }
 
-  private connectLocal(info: LocalConnectionInfo): Promise<void> {
+  private connectLocal(info: LocalConnectionInfo, signal: AbortSignal): Promise<void> {
     const url = `ws://127.0.0.1:${info.port}/ws?token=${encodeURIComponent(info.token)}`;
     return this.openSocket(url, (ws, resolve) => {
       this.ws = ws;
       this.notifyStatus(true);
       resolve();
-    });
+    }, signal);
   }
 
-  private async connectRemote(info: RemoteConnectionInfo): Promise<void> {
+  private async connectRemote(info: RemoteConnectionInfo, signal: AbortSignal): Promise<void> {
     const identity = await deriveRemoteIdentity(info.apiKey);
+    throwIfAborted(signal);
     return this.openSocket(info.relayUrl, (ws) => {
       ws.send(JSON.stringify({
         type: "hello",
@@ -92,15 +109,17 @@ export class RpcClient {
         deviceId: info.deviceId,
         deviceName: info.deviceName,
       }));
-    }, identity.encryptionKey);
+    }, signal, identity.encryptionKey);
   }
 
   private openSocket(
     url: string,
     onOpen: (socket: WebSocket, resolve: () => void) => void,
+    signal: AbortSignal,
     remoteKey?: CryptoKey,
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
+      throwIfAborted(signal);
       const ws = new WebSocket(url);
       const reader = new RemotePayloadReader(remoteKey, (id) => this.pending.has(id));
       let remoteMessageQueue: Promise<void> = Promise.resolve();
@@ -110,14 +129,22 @@ export class RpcClient {
         if (settled) return;
         settled = true;
         window.clearTimeout(connectTimer);
+        signal.removeEventListener("abort", abort);
         resolve();
       };
       const fail = (error: Error) => {
         if (settled) return;
         settled = true;
         window.clearTimeout(connectTimer);
+        signal.removeEventListener("abort", abort);
         reject(error);
       };
+      const abort = () => {
+        fail(new Error("connection closed"));
+        reader.dispose();
+        ws.close(4000, "connection cancelled");
+      };
+      signal.addEventListener("abort", abort, { once: true });
       const connectTimer = window.setTimeout(() => {
         fail(new Error(this.connectionMode === "remote" ? "连接 miniQ relay 超时" : "连接 miniQ daemon 超时"));
         ws.close(4000, "connect timeout");
@@ -145,12 +172,8 @@ export class RpcClient {
         if (this.ws === ws) {
           this.ws = null;
           this.remoteKey = null;
-          for (const p of this.pending.values()) {
-            window.clearTimeout(p.timer);
-            p.cleanup();
-            p.reject(new Error("connection closed"));
-          }
-          this.pending.clear();
+          this.reader = null;
+          this.rejectPending();
           this.notifyStatus(false);
         }
       };
@@ -213,6 +236,7 @@ export class RpcClient {
               return;
             }
             const completed = await reader.readAsync(payload);
+            if (this.ws !== ws) return;
             if (payload.type === "remote_chunk" && payload.requestId != null) {
               this.refreshTimeout(String(payload.requestId));
             }
@@ -234,11 +258,33 @@ export class RpcClient {
    * freshly stored credentials (used when the user swaps their API key). */
   disconnect(reason = "disconnected") {
     const socket = this.ws;
+    const connecting = this.connectController;
+    this.connectController = null;
+    this.connectPromise = null;
     this.ws = null;
     this.remoteKey = null;
+    this.reader?.dispose();
+    this.reader = null;
+    // onclose ignores detached sockets so it cannot tear down a newer one.
+    // Settle this connection's requests here, before reconnecting; otherwise
+    // their stale timers can later fail or disconnect the new connection.
+    this.rejectPending();
+    // Includes key derivation and sockets that have opened but have not yet
+    // received the relay's ready acknowledgement. Neither is in this.ws yet.
+    connecting?.abort(new Error("connection closed"));
     if (socket) {
       socket.close(4000, reason);
-      this.notifyStatus(false);
+    }
+    if (socket || connecting) this.notifyStatus(false);
+  }
+
+  private rejectPending() {
+    const pending = [...this.pending.values()];
+    this.pending.clear();
+    for (const request of pending) {
+      window.clearTimeout(request.timer);
+      request.cleanup();
+      request.reject(new Error("connection closed"));
     }
   }
 

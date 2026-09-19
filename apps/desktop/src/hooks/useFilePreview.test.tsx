@@ -72,3 +72,27 @@ it("clears previews between sessions in the same workspace and ignores a late fi
   });
   expect(hook.result.current.state.content).toBeNull();
 });
+
+it("releases the payload on close while preserving tab identities for reopening", async () => {
+  vi.mocked(readLocalFilePreview).mockResolvedValue({
+    path: "/workspace/movie.mp4",
+    kind: "video",
+    mimeType: "video/mp4",
+    size: 100,
+    content: null,
+    dataBase64: "large-payload",
+  });
+  const hook = renderHook(() => useFilePreview("/workspace", "a"));
+  await act(async () =>
+    hook.result.current.openFile({
+      path: "/workspace/movie.mp4",
+      line: null,
+      column: null,
+    }),
+  );
+  expect(hook.result.current.state.dataBase64).toBe("large-payload");
+  act(() => hook.result.current.close());
+  expect(hook.result.current.state.dataBase64).toBeNull();
+  expect(hook.result.current.state.open).toBe(false);
+  expect(hook.result.current.tabs).toHaveLength(1);
+});

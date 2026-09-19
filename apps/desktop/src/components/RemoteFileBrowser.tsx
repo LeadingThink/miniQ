@@ -1,5 +1,5 @@
 import { FileText, Folder, ArrowUp, RefreshCw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import { formatFileSize } from "../localFiles";
 import type { FileReadOptions, RemoteDirectory } from "../remoteFiles";
@@ -11,44 +11,80 @@ export function RemoteFileBrowser({
   access: FileReadOptions;
   onOpen: (path: string) => void;
 }) {
-  const [path, setPath] = useState("");
-  const [page, setPage] = useState<RemoteDirectory | null>(null);
+  const { client, sessionId } = access;
+  const [location, setLocation] = useState({ client, sessionId, path: "" });
+  const path =
+    location.client === client && location.sessionId === sessionId
+      ? location.path
+      : "";
+  const setPath = (value: string) =>
+    setLocation({ client, sessionId, path: value });
+  const [loaded, setLoaded] = useState<{
+    client: FileReadOptions["client"];
+    sessionId: FileReadOptions["sessionId"];
+    path: string;
+    page: RemoteDirectory;
+  } | null>(null);
+  const page =
+    loaded &&
+    loaded.client === client &&
+    loaded.sessionId === sessionId &&
+    loaded.path === path
+      ? loaded.page
+      : null;
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [attempt, setAttempt] = useState(0);
+  const [failedCursor, setFailedCursor] = useState<string>();
   const request = useRef<AbortController>();
-  const { client, sessionId } = access;
 
-  async function load(after?: string) {
-    request.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    setLoading(true);
-    setError(null);
-    try {
-      if (!client || !sessionId) throw new Error("请先打开会话");
-      const next = await client.call<RemoteDirectory>(
-        "file.list",
-        { sessionId, path, after },
-        { signal: controller.signal },
-      );
-      if (!controller.signal.aborted)
-        setPage((previous) =>
-          after && previous
-            ? { ...next, entries: [...previous.entries, ...next.entries] }
-            : next,
+  const load = useCallback(
+    async (after?: string) => {
+      request.current?.abort();
+      const controller = new AbortController();
+      request.current = controller;
+      setLoading(true);
+      setError(null);
+      setFailedCursor(undefined);
+      try {
+        if (!client || !sessionId) throw new Error("请先打开会话");
+        const next = await client.call<RemoteDirectory>(
+          "file.list",
+          { sessionId, path, after },
+          { signal: controller.signal },
         );
-    } catch (cause) {
-      if (!controller.signal.aborted) setError(errorMessage(cause));
-    } finally {
-      if (!controller.signal.aborted) setLoading(false);
-    }
-  }
+        if (!controller.signal.aborted)
+          setLoaded((previous) => ({
+            client,
+            sessionId,
+            path,
+            page:
+              after &&
+              previous &&
+              previous.client === client &&
+              previous.sessionId === sessionId &&
+              previous.path === path
+                ? {
+                    ...next,
+                    entries: [...previous.page.entries, ...next.entries],
+                  }
+                : next,
+          }));
+      } catch (cause) {
+        if (!controller.signal.aborted) {
+          setError(errorMessage(cause));
+          setFailedCursor(after);
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    },
+    [client, sessionId, path],
+  );
   useEffect(() => {
-    setPage(null);
+    setLoaded(null);
     void load();
     return () => request.current?.abort();
-  }, [path, client, sessionId, attempt]);
+  }, [load]);
 
   return (
     <section
@@ -88,7 +124,7 @@ export function RemoteFileBrowser({
               className="icon-button"
               aria-label="刷新文件列表"
               disabled={loading}
-              onClick={() => setAttempt((value) => value + 1)}
+              onClick={() => void load()}
             >
               <RefreshCw size={15} />
             </button>
@@ -137,10 +173,7 @@ export function RemoteFileBrowser({
       {error && (
         <div role="alert">
           {error}
-          <button
-            type="button"
-            onClick={() => setAttempt((value) => value + 1)}
-          >
+          <button type="button" onClick={() => void load(failedCursor)}>
             重试
           </button>
         </div>

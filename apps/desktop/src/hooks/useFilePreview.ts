@@ -94,9 +94,18 @@ export function useFilePreview(
           target.path,
           workspacePath,
           workspacePaths,
-          { client, sessionId, signal: controller.signal, onProgress: (received, total) => {
-            if (requestId === requestSequence.current) setState((current) => ({ ...current, progress: { received, total } }));
-          } },
+          {
+            client,
+            sessionId,
+            signal: controller.signal,
+            onProgress: (received, total) => {
+              if (requestId === requestSequence.current)
+                setState((current) => ({
+                  ...current,
+                  progress: { received, total },
+                }));
+            },
+          },
         );
         if (requestId !== requestSequence.current) return;
         setSessions((current) => ({
@@ -138,7 +147,9 @@ export function useFilePreview(
       ...current,
       [scope]: { ...(current[scope] ?? EMPTY_PREVIEW_TABS), open: false },
     }));
-    setState((current) => ({ ...current, open: false, loading: false }));
+    // Keep tab identities separately, but release large media payloads as soon
+    // as the panel closes, particularly on memory-constrained mobile devices.
+    setState(EMPTY_PREVIEW);
   }, [scope]);
 
   const closeTab = useCallback(

@@ -1,3 +1,5 @@
+import { throwIfAborted } from "./abortSignal";
+
 export interface PdfTextItem {
   str?: string;
   hasEOL?: boolean;
@@ -34,14 +36,14 @@ export async function searchPdf(
   if (!needle) return [];
   const matches: PdfMatch[] = [];
   for (let page = 1; page <= document.numPages; page++) {
-    signal.throwIfAborted();
+    throwIfAborted(signal);
     const current = await document.getPage(page);
     try {
-      signal.throwIfAborted();
+      throwIfAborted(signal);
       const text = pdfText(
         (await current.getTextContent()).items,
       ).toLocaleLowerCase();
-      signal.throwIfAborted();
+      throwIfAborted(signal);
       let count = 0;
       for (
         let position = text.indexOf(needle);

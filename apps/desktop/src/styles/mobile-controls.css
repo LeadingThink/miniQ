@@ -1,0 +1,220 @@
+/* Touch targets and editable controls share one policy across mobile web,
+   iPhone/iPad, and Android. Keep deliberate browser zoom available. */
+@media (max-width: 720px), (pointer: coarse) {
+  #root :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), textarea, select) {
+    font-size: 16px;
+  }
+
+  #root :is(.browser-tabs, .preview-tabs, .browser-toolbar, .file-preview-header, .pdf-toolbar, .media-inspector-controls, .settings-header, .mobile-chat-header) .icon-button {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+  }
+
+  .browser-tab > button:first-child,
+  .preview-tab [role="tab"],
+  .settings-tabs button,
+  .mobile-entry-links a,
+  .mobile-entry-remember,
+  .mobile-entry-consent label {
+    min-height: 44px;
+  }
+  .mobile-entry-consent label {
+    display: inline-flex;
+    align-items: center;
+  }
+  .mobile-chat-image-chip button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .workspace-item .new-session,
+  .workspace-item .menu-trigger,
+  .session-item .menu-trigger {
+    opacity: 1;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .sidebar :is(.nav-item, .workspace-select, .session-select, .session-toggle),
+  .dropdown-item {
+    min-height: 44px;
+  }
+
+  .preview-mode-toggle {
+    height: 44px;
+  }
+  .preview-mode-toggle button {
+    width: 40px;
+    height: 38px;
+  }
+
+  .file-preview-tools {
+    flex-wrap: nowrap;
+    gap: 4px;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+  .file-preview-tools > * {
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .browser-toolbar {
+    display: grid;
+    grid-template-columns: repeat(3, 44px) minmax(0, 1fr) 44px 44px;
+    padding: 4px 8px 8px;
+  }
+  .browser-toolbar > svg {
+    display: none;
+  }
+  .browser-toolbar form {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .browser-toolbar .icon-button:nth-last-child(2) {
+    grid-column: 5;
+    grid-row: 1;
+  }
+  .browser-toolbar .icon-button:last-child {
+    grid-column: 6;
+    grid-row: 1;
+  }
+  .browser-toolbar input {
+    height: 44px;
+  }
+
+  .settings-overlay .settings-panel {
+    width: 100%;
+    max-height: 100%;
+    min-width: 0;
+  }
+  .settings-tabs {
+    gap: 16px;
+    overflow-x: auto;
+  }
+  .settings-tabs button {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  .file-preview-header {
+    gap: 6px;
+    padding: 4px 8px;
+  }
+  .file-preview-header > div {
+    min-width: 0;
+  }
+  .file-preview-header > small {
+    max-width: 24%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .markdown-preview {
+    padding: 16px 14px 28px;
+  }
+  .media-preview,
+  .pdf-stage {
+    padding: 8px;
+  }
+  .html-preview,
+  .html-preview iframe {
+    min-height: 0;
+  }
+  .preview-error {
+    flex-wrap: wrap;
+  }
+  .preview-error span {
+    overflow: visible;
+    overflow-wrap: anywhere;
+  }
+}
+
+.mobile-chat-model-picker {
+  position: relative;
+  min-width: 0;
+}
+.mobile-chat-model-trigger {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+}
+.mobile-chat-model-popover {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(360px, calc(100vw - max(24px, env(safe-area-inset-left)) - max(24px, env(safe-area-inset-right))));
+  max-height: min(420px, calc(var(--app-height, 100dvh) - 96px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--shadow-lg);
+}
+.mobile-chat-model-search {
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  color: var(--text);
+  font-size: 16px;
+}
+.mobile-chat-model-results {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.mobile-chat-model-results [role="option"] {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  background: transparent;
+  color: var(--text);
+}
+.mobile-chat-model-results [aria-selected="true"] {
+  background: var(--bg-active);
+}
+.mobile-chat-history,
+.mobile-chat-jump {
+  display: block;
+  min-height: 44px;
+  margin: 10px auto;
+}
+.mobile-chat-jump {
+  position: sticky;
+  z-index: 2;
+  bottom: 4px;
+  box-shadow: var(--shadow);
+}
+.mobile-chat-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-block: 8px;
+  overflow-wrap: anywhere;
+  color: var(--text-mid);
+}
+.mobile-chat-retry {
+  min-height: 44px;
+}

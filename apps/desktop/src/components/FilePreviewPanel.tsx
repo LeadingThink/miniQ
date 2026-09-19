@@ -323,7 +323,8 @@ function PreviewPanelContent({
           >
             <RotateCcw size={15} />
           </button>
-          {remote ? <RemoteFileDownload path={path} onError={setActionError} /> : <button
+          {remote ? <RemoteFileDownload path={path} onError={setActionError}
+            preview={preview.mimeType ? { path, mimeType: preview.mimeType, content: preview.content, dataBase64: preview.dataBase64 } : undefined} /> : <button
             className="icon-button"
             title="使用系统默认应用打开"
             aria-label="使用系统默认应用打开"

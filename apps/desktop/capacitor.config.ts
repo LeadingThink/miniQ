@@ -16,7 +16,7 @@ const config: CapacitorConfig = {
       disableBackButtonHandler: true,
     },
     Keyboard: {
-      resize: "body",
+      resize: "native",
       resizeOnFullScreen: true,
     },
     StatusBar: {

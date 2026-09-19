@@ -28,6 +28,8 @@ import { AgentPanel } from "./AgentPanel";
 import { ProjectDirectories } from "./ProjectDirectories";
 import { useBrowserDriverEvents } from "../hooks/useBrowserDriverEvents";
 import { BrowserTabs } from "./BrowserTabs";
+import { openExternalUrl } from "../externalLinks";
+import { isMobileLayout } from "../mobileViewport";
 import { adoptDraftBrowserTabs, BROWSER_DRAFT_CREATED_EVENT, browserDraftScope, closeBrowserTab, EMPTY_BROWSER_TABS, openBrowserTab, updateBrowserTab, type BrowserDraftCreatedDetail, type BrowserTabsState } from "../browserTabs";
 
 interface AppOnlyProps {
@@ -47,6 +49,11 @@ const FilePreviewPanel = lazy(async () => {
 const BrowserPanel = lazy(async () => {
   const module = await import("./BrowserPanel");
   return { default: module.BrowserPanel };
+});
+
+const RemoteBrowserPanel = lazy(async () => {
+  const module = await import("./RemoteBrowserPanel");
+  return { default: module.RemoteBrowserPanel };
 });
 
 const Timeline = lazy(async () => {
@@ -391,19 +398,35 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
     app.catalog.currentSessionId ??
     browserDraftScope(app.catalog.selectedWorkspace?.id);
   const [browserSessions, setBrowserSessions] = useState<Record<string, BrowserTabsState>>({});
+  const [remoteBrowserSession, setRemoteBrowserSession] = useState<string | null>(null);
+  const remoteBrowserOpen = app.client.mode === "remote" && remoteBrowserSession !== null && remoteBrowserSession === app.catalog.currentSessionId;
   const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
   const browserState = browserSessions[browserScope] ?? EMPTY_BROWSER_TABS;
   const activeBrowserTab = browserState.tabs.find((tab) => tab.id === browserState.activeId) ?? null;
   const browserUrl = browserState.open ? activeBrowserTab?.url ?? null : null;
-  const hideBrowserPanel = () => setBrowserSessions((current) => {
-    const state = current[browserScope] ?? EMPTY_BROWSER_TABS;
-    return { ...current, [browserScope]: { ...state, open: false } };
-  });
+  const hideBrowserPanel = () => {
+    setRemoteBrowserSession(null);
+    setBrowserSessions((current) => {
+      const state = current[browserScope] ?? EMPTY_BROWSER_TABS;
+      return { ...current, [browserScope]: { ...state, open: false } };
+    });
+  };
   const openNewBrowserTab = (url = "https://www.bing.com/") => setBrowserSessions((current) => ({ ...current, [browserScope]: openBrowserTab(current[browserScope] ?? EMPTY_BROWSER_TABS, url) }));
   const openBrowserUrl = (url: string) => {
+    if (app.client.mode === "remote") {
+      if (/^https?:\/\//i.test(url)) void openExternalUrl(url).catch((error) => app.setError(String(error)));
+      return;
+    }
     app.preview.close();
     app.review.setOpen(false);
     openNewBrowserTab(url);
+  };
+  const openBrowserWorkbench = () => {
+    app.preview.close();
+    app.review.setOpen(false);
+    if (app.client.mode === "remote") setRemoteBrowserSession(app.catalog.currentSessionId);
+    else if (activeBrowserTab) setBrowserSessions((current) => ({ ...current, [browserScope]: { ...browserState, open: true } }));
+    else openNewBrowserTab();
   };
   useBrowserDriverEvents(app.client, browserSessions, setBrowserSessions);
   useEffect(() => {
@@ -422,6 +445,7 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
       const detail = (event as CustomEvent<{ url?: unknown; tabId?: unknown }>).detail;
       const url = detail?.url;
       if (typeof url !== "string" || !url.trim()) return;
+      if (app.client.mode === "remote") return;
       app.preview.close();
       app.review.setOpen(false);
       setBrowserSessions((current) => {
@@ -441,7 +465,7 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
   };
 
   const slash = useAppSlashCommands(app, {
-    onOpenBrowser: () => openBrowserUrl("https://www.bing.com/"),
+    onOpenBrowser: openBrowserWorkbench,
     onOpenReview: () => {
       hideBrowserPanel();
       app.preview.close();
@@ -459,15 +483,12 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
   });
 
   const workbenchOpen = Boolean(
-    browserUrl ||
+    browserUrl || remoteBrowserOpen ||
     (app.preview.state.open && app.catalog.currentWorkspace) ||
     (app.review.open && app.catalog.currentWorkspace),
   );
   const closeMobileSidebar = () => {
-    if (
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(max-width: 720px)").matches
-    ) {
+    if (isMobileLayout()) {
       app.navigation.setSidebarCollapsed(true);
     }
   };
@@ -563,12 +584,7 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
         <AppStatusBar
           app={app}
           onOpenFile={openPreviewFile}
-          onOpenBrowser={() => {
-            app.preview.close();
-            app.review.setOpen(false);
-            if (activeBrowserTab) setBrowserSessions((current) => ({ ...current, [browserScope]: { ...browserState, open: true } }));
-            else openNewBrowserTab();
-          }}
+          onOpenBrowser={openBrowserWorkbench}
           onToggleReview={() => {
             hideBrowserPanel();
             app.preview.close();
@@ -589,6 +605,15 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
       </div>
       {(workbenchOpen || Object.values(browserSessions).some((state) => state.tabs.length)) && (
         <WorkbenchPanel hidden={!workbenchOpen}>
+          {remoteBrowserOpen && app.catalog.currentSessionId && <Suspense fallback={<div role="status">正在加载网页记录…</div>}>
+            <RemoteBrowserPanel key={app.catalog.currentSessionId} client={app.client} sessionId={app.catalog.currentSessionId}
+              calls={app.feed.toolCalls} hasOlder={Boolean(app.feed.nextCursor)} loadingOlder={app.actions.loadingOlder}
+              onLoadOlder={() => void app.actions.loadOlder()} onClose={hideBrowserPanel}
+              onDiscuss={(content) => {
+                setFileQuestion({ sessionId: app.catalog.currentSessionId!, id: Date.now(), content, append: true });
+                hideBrowserPanel();
+              }} />
+          </Suspense>}
           {Object.values(browserSessions).some((state) => state.tabs.length) && (
             <Suspense
               fallback={

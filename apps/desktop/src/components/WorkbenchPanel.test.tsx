@@ -317,6 +317,22 @@ it("keeps the handle usable in narrow desktop overlays and hides it only on mobi
   expect(width()).toBe(660);
 });
 
+it("treats landscape phones as mobile and reacts when the input device changes", () => {
+  viewport = 844;
+  const media = Object.assign(new EventTarget(), { matches: true });
+  vi.stubGlobal("matchMedia", () => media);
+  const view = mount();
+  const panel = view.container.querySelector(".workbench-panel");
+  expect(panel?.getAttribute("data-layout")).toBe("mobile");
+  expect(screen.queryByRole("separator")).toBeNull();
+  act(() => {
+    media.matches = false;
+    media.dispatchEvent(new Event("change"));
+  });
+  expect(panel?.getAttribute("data-layout")).toBe("overlay");
+  expect(screen.getByRole("separator")).toBeTruthy();
+});
+
 it("supports keyboard adjustment, bounds, reset, and persistence across reopen", () => {
   const view = mount();
   fireEvent.keyDown(handle(), { key: "ArrowLeft" });

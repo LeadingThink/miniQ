@@ -82,13 +82,13 @@ it("shows same-name directories and keeps the active tab visible and focused aft
     render(<Fixture />);
     expect(screen.getByText("a")).toBeTruthy();
     expect(screen.getByText("b")).toBeTruthy();
-    expect(scroll.mock.instances.at(-1)).toBe(screen.getAllByRole("tab")[1]);
+    expect(scroll.mock.instances.at(-1)).toBe(screen.getAllByRole("tab")[1].parentElement);
     fireEvent.click(
       screen.getByRole("button", { name: "关闭文件 /b/report.md" }),
     );
     const active = screen.getByRole("tab", { name: "notes.txt" });
     expect(document.activeElement).toBe(active);
-    expect(scroll.mock.instances.at(-1)).toBe(active);
+    expect(scroll.mock.instances.at(-1)).toBe(active.parentElement);
     expect(screen.queryByText("a")).toBeNull();
   } finally {
     if (descriptor)

@@ -27,9 +27,26 @@
   inset: 10px 10px 10px auto;
   margin: 0;
 }
-.workbench-panel[data-layout="mobile"] {
-  z-index: 60;
-  width: calc(100% - 20px) !important;
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .workbench-panel[data-layout] {
+    position: fixed;
+    margin: 0;
+    z-index: 60;
+    --workbench-top: max(6px, env(safe-area-inset-top));
+    --workbench-bottom: max(6px, env(safe-area-inset-bottom));
+    inset: calc(var(--app-offset-top, 0px) + var(--workbench-top))
+      max(6px, env(safe-area-inset-right)) auto max(6px, env(safe-area-inset-left));
+    width: auto !important;
+    height: calc(var(--app-height, 100dvh) - var(--workbench-top) - var(--workbench-bottom));
+  }
+  .workbench-panel[data-layout] > .file-preview-panel.preview-expanded {
+    position: relative;
+    inset: auto;
+    width: 100%;
+  }
+  .workbench-panel > .workbench-resizer {
+    display: none;
+  }
 }
 .workbench-panel:has(.preview-expanded) > .workbench-resizer {
   display: none;

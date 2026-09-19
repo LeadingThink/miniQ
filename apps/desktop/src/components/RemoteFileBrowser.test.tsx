@@ -95,3 +95,62 @@ it("aborts the previous session and ignores its late directory response", async 
   await act(async () => finish(page([entry("old.md")])));
   expect(screen.queryByRole("button", { name: /old.md/ })).toBeNull();
 });
+
+it("starts at the new session root instead of requesting the previous session's folder", async () => {
+  const call = vi
+    .fn()
+    .mockResolvedValueOnce(page([entry("docs", true)]))
+    .mockResolvedValueOnce({
+      ...page([entry("private.md")]),
+      path: "/project/docs",
+    })
+    .mockResolvedValueOnce({
+      ...page([entry("new.md")]),
+      path: "/other",
+      roots: ["/other"],
+    });
+  const client = { mode: "remote", call } as FileReadOptions["client"];
+  const view = render(
+    <RemoteFileBrowser
+      access={{ client, sessionId: "one" }}
+      onOpen={vi.fn()}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: /docs\s*文件夹/ }));
+  await screen.findByRole("button", { name: /private.md/ });
+  view.rerender(
+    <RemoteFileBrowser
+      access={{ client, sessionId: "two" }}
+      onOpen={vi.fn()}
+    />,
+  );
+  expect(screen.queryByRole("button", { name: /private.md/ })).toBeNull();
+  await screen.findByRole("button", { name: /new.md/ });
+  expect(call.mock.calls[2][1]).toMatchObject({ sessionId: "two", path: "" });
+});
+
+it("retries the failed page without discarding already downloaded directory entries", async () => {
+  const call = vi
+    .fn()
+    .mockResolvedValueOnce(page([entry("a.md")], "a.md"))
+    .mockRejectedValueOnce(new Error("connection interrupted"))
+    .mockResolvedValueOnce(page([entry("b.md")]));
+  const client = { mode: "remote", call } as FileReadOptions["client"];
+  render(
+    <RemoteFileBrowser
+      access={{ client, sessionId: "one" }}
+      onOpen={vi.fn()}
+    />,
+  );
+  await screen.findByRole("button", { name: /a.md/ });
+  fireEvent.click(screen.getByRole("button", { name: "加载更多文件" }));
+  await screen.findByRole("alert");
+  fireEvent.click(screen.getByRole("button", { name: "重试" }));
+  expect(screen.getByRole("button", { name: /a.md/ })).toBeTruthy();
+  await screen.findByRole("button", { name: /b.md/ });
+  expect(call.mock.calls[2][1]).toMatchObject({
+    sessionId: "one",
+    after: "a.md",
+  });
+  expect(screen.getByRole("button", { name: /a.md/ })).toBeTruthy();
+});

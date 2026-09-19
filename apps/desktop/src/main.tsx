@@ -17,6 +17,7 @@ import "./styles/remote.css";
 import "./styles/experience.css";
 import "./styles/theme-picker.css";
 import "./external-sessions.css";
+import "./styles/mobile-controls.css";
 import { initializeAppearance } from "./theme";
 import { initializeMobileRuntime } from "./mobileRuntime";
 import { initializeMobileViewport } from "./mobileViewport";

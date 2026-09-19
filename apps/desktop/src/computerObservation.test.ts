@@ -20,7 +20,7 @@ describe("computer observations", () => {
       .mockResolvedValueOnce({offset:3,nextOffset:6,totalBytes:6,done:true,mimeType:"image/png",base64:btoa("def")});
     const blob = await loadObservation({call:rpc} as unknown as RpcClient, call, new AbortController().signal);
     expect(await blob.text()).toBe("abcdef");
-    expect(rpc).toHaveBeenNthCalledWith(2,"observation.read",{sessionId:"session-1",toolCallId:"call-1",offset:3});
+    expect(rpc).toHaveBeenNthCalledWith(2,"observation.read",{sessionId:"session-1",toolCallId:"call-1",offset:3},{signal:expect.any(AbortSignal)});
   });
   it("rejects missing, mismatched or zero-length chunks", async () => {
     for (const patch of [{offset:1},{nextOffset:2},{totalBytes:4},{done:true},{mimeType:"text/html"},{base64:""}]) {

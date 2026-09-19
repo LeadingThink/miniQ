@@ -10,6 +10,7 @@ const fake = vi.hoisted(() => ({
   relaunch: vi.fn(), resolveConnection: vi.fn(), close: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: fake.invoke }));
+vi.mock("@tauri-apps/api/app", () => ({ getVersion: async () => "0.1.36" }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: fake.check }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: fake.relaunch }));
 vi.mock("../rpc", () => ({ resolveConnection: fake.resolveConnection }));
@@ -57,6 +58,14 @@ async function available(hook: ReturnType<typeof setup>) {
   await act(async () => { await hook.result.current.checkNow(); });
   expect(hook.result.current.state.phase).toBe("available");
 }
+
+it("shows the installed version when a manual check finds no update", async () => {
+  fake.check.mockResolvedValue(null);
+  const hook = setup();
+  await act(async () => { await hook.result.current.checkNow(); });
+  expect(hook.result.current.state).toMatchObject({ phase: "up-to-date", version: "0.1.36" });
+  expect(hook.onError).toHaveBeenLastCalledWith(null);
+});
 
 it("blocks restart before shutdown and waits for the captured process before installing", async () => {
   const hook = setup();

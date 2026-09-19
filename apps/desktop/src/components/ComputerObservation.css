@@ -13,3 +13,7 @@
 .computer-observation-pending > svg { flex: none; margin-top: 1px; }
 .computer-observation-pending > div { display: grid; gap: 4px; min-width: 0; }
 .computer-observation-pending span { font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 720px), (pointer: coarse) {
+  .computer-observation .icon-button { width: 44px; height: 44px; }
+  .computer-observation .observation-actions { max-width: 100%; flex-wrap: wrap; }
+}

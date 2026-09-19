@@ -1,3 +1,5 @@
+import { throwIfAborted } from "./abortSignal";
+
 export interface VoiceCapture { stop: () => void }
 
 export async function startVoiceCapture(signal: AbortSignal,
@@ -21,15 +23,15 @@ export async function startVoiceCapture(signal: AbortSignal,
   };
   signal.addEventListener("abort", stop, { once: true });
   try {
-    signal.throwIfAborted();
+    throwIfAborted(signal);
     // Resume during the button's user gesture, before awaiting permission.
     // Safari/WebView may otherwise keep the audio context suspended.
     const ready = context.state === "suspended" ? context.resume() : Promise.resolve();
     void ready.catch(() => {});
     stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
-    signal.throwIfAborted();
+    throwIfAborted(signal);
     await ready;
-    signal.throwIfAborted();
+    throwIfAborted(signal);
     source = context.createMediaStreamSource(stream);
     processor = context.createScriptProcessor(4096, 1, 1);
     output = context.createGain(); output.gain.value = 0;

@@ -26,6 +26,14 @@ export function UpdateNotice({ supported, state, onCheck, onInstall }: UpdateNot
     );
   }
 
+  if (state.phase === "up-to-date") {
+    return <button type="button" className="nav-item sidebar-nav-button" onClick={onCheck}
+      title="已完成检查，点击可再次检查更新">
+      <RefreshCw className="nav-icon" size={16} />
+      <span role="status">已是最新版本{state.version ? ` v${state.version}` : ""}</span>
+    </button>;
+  }
+
   if (state.phase === "available") {
     return (
       <button type="button" className="nav-item sidebar-nav-button update-notice" onClick={onInstall}>

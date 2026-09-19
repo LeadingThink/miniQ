@@ -1,8 +1,24 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { deriveRemoteIdentity, encryptRemotePayload } from "./remoteCrypto";
-import { readRemoteBlob } from "./remoteBlob";
+import { readBounded, readRemoteBlob } from "./remoteBlob";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("cancels a pending stream read with legacy iOS abort signals", async () => {
+  const controller = new AbortController();
+  Object.defineProperties(controller.signal, {
+    throwIfAborted: { value: undefined },
+    reason: { value: undefined },
+  });
+  const cancel = vi.fn();
+  const stream = new ReadableStream<Uint8Array>({ cancel });
+  const pending = readBounded(stream, 1, controller.signal);
+  const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  controller.abort();
+  await rejected;
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(stream.locked).toBe(false);
+});
 
 async function fixture() {
   const {encryptionKey} = await deriveRemoteIdentity("fixture-only");

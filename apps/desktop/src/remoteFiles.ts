@@ -1,4 +1,5 @@
 import type { RpcClient } from "./rpc";
+import { throwIfAborted } from "./abortSignal";
 import type { LocalFilePreview, LocalPreviewKind } from "./localFiles";
 import { decodeBase64 } from "./previewBinary";
 
@@ -7,6 +8,8 @@ export interface FileReadOptions {
   sessionId?: string | null;
   signal?: AbortSignal;
   onProgress?: (received: number, total: number) => void;
+  /** Reserve aggregate memory before downloading a resource in a bundle. */
+  reserveBytes?: (size: number) => void;
   download?: boolean;
 }
 
@@ -38,12 +41,14 @@ export async function readRemoteFile(
 ): Promise<LocalFilePreview> {
   const { client, sessionId, signal, onProgress } = options;
   if (!client || !sessionId) throw new Error("请先连接桌面并打开一个会话");
+  throwIfAborted(signal);
   const description = await client.call<FileDescription>(
     "file.describe",
     { sessionId, path },
     { signal },
   );
   const { size, revision, kind } = description;
+  throwIfAborted(signal);
   if (
     !Number.isSafeInteger(size) ||
     size < 0 ||
@@ -64,19 +69,20 @@ export async function readRemoteFile(
     throw new Error(
       "当前手机单文件预览与下载上限为 64 MB，请让 AI 生成较小的预览版或拆分文件",
     );
+  options.reserveBytes?.(size);
   const text = (kind === "text" || kind === "markdown") && !options.download;
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const parts: string[] = [];
   let offset = 0;
   onProgress?.(0, size);
   while (offset < size) {
-    signal?.throwIfAborted();
+    throwIfAborted(signal);
     const chunk = await client.call<FileChunk>(
       "file.read",
       { sessionId, path: description.path, revision, offset },
       { signal },
     );
-    signal?.throwIfAborted();
+    throwIfAborted(signal);
     const bytes = decodeBase64(chunk.dataBase64);
     if (
       chunk.revision !== revision ||
@@ -96,6 +102,7 @@ export async function readRemoteFile(
     offset = chunk.nextOffset;
     onProgress?.(offset, size);
   }
+  throwIfAborted(signal);
   if (text) {
     parts.push(decoder.decode());
     file.content = parts.join("");

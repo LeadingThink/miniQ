@@ -9,7 +9,7 @@ export function isolatedHtml(content: string, network: boolean): string {
   policy.httpEquiv = "Content-Security-Policy";
   policy.content = [
     "default-src 'none'",
-    `script-src 'unsafe-inline' 'unsafe-eval'${external}`,
+    `script-src 'unsafe-inline' 'unsafe-eval' data:${external}`,
     `style-src 'unsafe-inline'${external}`,
     `img-src data: blob:${external}`,
     `font-src data:${external}`,

@@ -2,9 +2,8 @@ export const DEFAULT_WORKBENCH_WIDTH = 560;
 export const MIN_WORKBENCH_WIDTH = 320;
 export const WORKBENCH_WIDTH_STORAGE_KEY = "miniq.workbench.width";
 
-export function workbenchLayout(availableWidth: number, viewportWidth: number) {
+export function workbenchLayout(availableWidth: number, viewportWidth: number, mobile: boolean) {
   // Leave 320px for the conversation and up to 30px for inter-panel margins.
-  const mobile = viewportWidth <= 720;
   const split = !mobile && availableWidth >= MIN_WORKBENCH_WIDTH + 350;
   const max = Math.max(0, split ? availableWidth - 350 : viewportWidth - 24);
   return {
