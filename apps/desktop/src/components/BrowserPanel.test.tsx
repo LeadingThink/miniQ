@@ -20,10 +20,10 @@ it("explicitly navigates an automation-owned tab when the user submits a new add
   expect(onNavigate).toHaveBeenCalledExactlyOnceWith("https://next.test/");
 });
 
-it("lets a manual tab's URL effect navigate once", () => {
+it("explicitly navigates a manual tab without relying on URL metadata effects", () => {
   const onNavigate = vi.fn();
   const view = render(<BrowserPanel url="https://first.test/" onNavigate={onNavigate} onClose={vi.fn()} />);
   fireEvent.submit(view.getByLabelText("网址").closest("form")!);
-  expect(load).not.toHaveBeenCalled();
+  expect(load).toHaveBeenCalledExactlyOnceWith("https://next.test/");
   expect(onNavigate).toHaveBeenCalledExactlyOnceWith("https://next.test/");
 });

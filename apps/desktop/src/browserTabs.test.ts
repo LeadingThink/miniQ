@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closeBrowserTab, EMPTY_BROWSER_TABS, openBrowserTab, openTaskBrowserTab, setTaskBrowserVisible, updateBrowserTab } from "./browserTabs";
+import { adoptDraftBrowserTabs, browserDraftScope, closeBrowserTab, EMPTY_BROWSER_TABS, openBrowserTab, resolveTaskBrowserTab, selectTaskBrowserTab, taskBrowserTabs, updateBrowserTab } from "./browserTabs";
 
 describe("browser tabs", () => {
   it("keeps independent URLs and selects the newest tab", () => {
@@ -10,6 +10,25 @@ describe("browser tabs", () => {
     expect(updateBrowserTab(second, second.tabs[0].id, "https://changed.example/").tabs[0].url).toBe("https://changed.example/");
   });
 
+  it("moves only the originating draft to its new session without rebuilding pages", () => {
+    const draft = openBrowserTab(EMPTY_BROWSER_TABS, "https://form.example/");
+    const other = openBrowserTab(EMPTY_BROWSER_TABS, "https://other.example/");
+    const sessions = { [browserDraftScope("project")]: draft, [browserDraftScope("other")]: other };
+    const adopted = adoptDraftBrowserTabs(sessions, "project", "created-session");
+    expect(adopted["created-session"]).toBe(draft);
+    expect(adopted["created-session"].tabs[0]).toBe(draft.tabs[0]);
+    expect(adopted[browserDraftScope("project")]).toBeUndefined();
+    expect(adopted[browserDraftScope("other")]).toBe(other);
+    expect(adoptDraftBrowserTabs(adopted, "project", "another-session")).toBe(adopted);
+  });
+
+  it("does not overwrite browser state that already belongs to an existing session", () => {
+    const draft = openBrowserTab(EMPTY_BROWSER_TABS, "https://draft.example/");
+    const existing = openBrowserTab(EMPTY_BROWSER_TABS, "https://existing.example/");
+    const sessions = { [browserDraftScope("project")]: draft, existing };
+    expect(adoptDraftBrowserTabs(sessions, "project", "existing")).toBe(sessions);
+  });
+
   it("selects a neighbor and closes the browser when its last tab closes", () => {
     const state = openBrowserTab(openBrowserTab(EMPTY_BROWSER_TABS, "https://one.example/"), "https://two.example/");
     const remaining = closeBrowserTab(state, state.tabs[1].id);
@@ -17,27 +36,24 @@ describe("browser tabs", () => {
     expect(closeBrowserTab(remaining, remaining.tabs[0].id)).toEqual(EMPTY_BROWSER_TABS);
   });
 
-  it("presents the same task page after hiding and navigating without creating a separate preview", () => {
-    const opened = openTaskBrowserTab(EMPTY_BROWSER_TABS, "task-1", "https://one.example/");
-    const taskTab = opened.tabs[0];
-    const hidden = setTaskBrowserVisible(opened, "task-1", false);
-    expect(hidden.open).toBe(false);
-    expect(hidden.tabs[0]).toBe(taskTab);
-    const shown = setTaskBrowserVisible(hidden, "task-1", true);
-    expect(shown.open).toBe(true);
-    expect(shown.activeId).toBe(taskTab.id);
-    const navigated = openTaskBrowserTab(shown, "task-1", "https://two.example/");
-    expect(navigated.tabs).toEqual([{ ...taskTab, url: "https://two.example/" }]);
+  it("shares selected manual pages with only the main task", () => {
+    const first = openBrowserTab(EMPTY_BROWSER_TABS, "https://one.example/");
+    const state = openBrowserTab(first, "https://two.example/");
+    expect(resolveTaskBrowserTab(state, "session", "session")).toBe(state.tabs[1]);
+    expect(resolveTaskBrowserTab(state, "session", "session", state.tabs[0].viewId)).toBe(state.tabs[0]);
+    expect(taskBrowserTabs(state, "session", "session:child")).toEqual([]);
+    expect(() => resolveTaskBrowserTab(state, "session", "session:child", state.tabs[0].viewId)).toThrow("不属于当前任务");
   });
 
-  it("never hides a different active page when a background task requests invisibility", () => {
-    const first = openTaskBrowserTab(EMPTY_BROWSER_TABS, "task-1", "https://one.example/");
-    const manual = openBrowserTab(first, "https://manual.example/");
-    expect(setTaskBrowserVisible(manual, "task-1", false)).toBe(manual);
-    expect(setTaskBrowserVisible(manual, "missing-task", true)).toBe(manual);
-    const shown = setTaskBrowserVisible(manual, "task-1", true);
-    expect(shown.activeId).toBe(first.activeId);
-    expect(shown.tabs).toBe(manual.tabs);
-    expect(shown.open).toBe(true);
+  it("keeps a child task's selected page while users browse another page", () => {
+    const first = openBrowserTab(EMPTY_BROWSER_TABS, "https://one.example/", "session:child");
+    const second = openBrowserTab(first, "https://two.example/", "session:child");
+    const selected = selectTaskBrowserTab(second, "session:child", first.tabs[0], true);
+    const manual = openBrowserTab(selected, "https://manual.example/");
+    expect(resolveTaskBrowserTab(manual, "session", "session:child")).toBe(first.tabs[0]);
+    expect(resolveTaskBrowserTab(manual, "session", "session")).toBe(manual.tabs[2]);
+    const closed = closeBrowserTab(manual, first.tabs[0].id);
+    expect(resolveTaskBrowserTab(closed, "session", "session:child")).toBe(second.tabs[1]);
+    expect(closed.taskActiveIds?.["session:child"]).toBeUndefined();
   });
 });

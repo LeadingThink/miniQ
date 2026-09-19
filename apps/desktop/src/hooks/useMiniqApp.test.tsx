@@ -7,6 +7,7 @@ import {
   renderHook,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DaemonEvent } from "../types";
@@ -416,6 +417,167 @@ it("unmounts the complete session page without orphaned child-task DOM nodes", a
     )
   ).toEqual([]);
   logged.mockRestore();
+});
+
+it("gives the task browser the workbench without a competing review panel", async () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  const original = fake.call.getMockImplementation()!;
+  fake.call.mockImplementation((method, params) => method === "session.diff"
+    ? Promise.resolve({ files: [{ path: "qa.txt", absolutePath: "/workspace/qa.txt", oldExists: true, newExists: true, binary: false, additions: 1, deletions: 0, hunks: [] }], additions: 1, deletions: 0 })
+    : original(method, params));
+  let app!: ReturnType<typeof useMiniqApp>;
+  function TestApp() {
+    app = useMiniqApp();
+    return <AppShell app={app} theme="grid" onThemeChange={() => {}} />;
+  }
+  try {
+    render(<TestApp />);
+    await screen.findByRole("button", { name: "a，执行中" });
+    await act(async () => { await app.actions.openSession("a"); });
+    await waitFor(() => expect(app.review.data.files).toHaveLength(1));
+    act(() => app.review.setOpen(true));
+    expect(await screen.findByRole("complementary", { name: "代码修改审阅" })).toBeTruthy();
+    act(() => {
+      for (const listener of fake.events) listener({
+        type: "browser_driver_requested",
+        request: {
+          id: "open-task-page", sessionId: "a", browserSessionId: "a",
+          operation: "open", arguments: { url: "https://example.test/form" },
+        },
+      });
+    });
+    expect(await screen.findByRole("complementary", { name: "网页浏览器" })).toBeTruthy();
+    expect(screen.queryByRole("complementary", { name: "代码修改审阅" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "关闭浏览器" }));
+    expect(await screen.findByRole("complementary", { name: "代码修改审阅" })).toBeTruthy();
+  } finally {
+    cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("adopts a default-project draft browser before its first task can request that page", async () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  const original = fake.call.getMockImplementation()!;
+  let resolvedTabs: { result: { tabs: Array<{ tabId: string; url: string }> } } | undefined;
+  fake.call.mockImplementation(async (method, params) => {
+    if (method === "session.create") return { id: "created", workspaceId: params.workspaceId };
+    if (method === "browser.resolve") {
+      if (params.requestId === "first-request-tabs") resolvedTabs = params.result;
+      return { resolved: true };
+    }
+    if (method === "session.sendMessage") {
+      // The task can issue a browser request before session.open finishes.
+      for (const listener of fake.events) listener({
+        type: "browser_driver_requested",
+        request: { id: "first-request-tabs", sessionId: "created", browserSessionId: "created", operation: "tabs", arguments: {} },
+      });
+      await waitFor(() => expect(resolvedTabs?.result.tabs).toHaveLength(1));
+      return {};
+    }
+    if (method === "session.open" && params.sessionId === "created") {
+      const snapshot = await original("session.open", { sessionId: "a" });
+      return { ...snapshot, session: { ...snapshot.session, id: "created" } };
+    }
+    return original(method, params);
+  });
+  let app!: ReturnType<typeof useMiniqApp>;
+  function TestApp() {
+    app = useMiniqApp();
+    return <AppShell app={app} theme="grid" onThemeChange={() => {}} />;
+  }
+  try {
+    render(<TestApp />);
+    await waitFor(() => expect(app.sessionModel.ready).toBe(true));
+    expect(app.catalog.selectedWorkspaceId).toBeNull();
+    expect(app.catalog.selectedWorkspace?.id).toBe("w");
+    act(() => window.dispatchEvent(new CustomEvent("miniq:open-browser", { detail: { url: "https://form.test/unsaved" } })));
+    await screen.findByTitle("网页预览");
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" }).hasAttribute("disabled")).toBe(false));
+    const page = screen.getByTitle("网页预览");
+    // Selecting an existing conversation must not adopt unrelated draft pages.
+    await act(async () => { await app.actions.openSession("a"); });
+    expect(screen.queryByRole("complementary", { name: "网页浏览器" })).toBeNull();
+    act(() => app.actions.newChat());
+    await waitFor(() => expect(app.sessionModel.ready).toBe(true));
+    expect(screen.getByTitle("网页预览")).toBe(page);
+    await act(async () => { expect(await app.actions.startTask("请查看已经打开的表单")).toBe(true); });
+    expect(resolvedTabs?.result.tabs[0].url).toBe("https://form.test/unsaved");
+    expect(app.catalog.currentSessionId).toBe("created");
+    expect(screen.getByTitle("网页预览")).toBe(page);
+    expect(screen.getByRole("complementary", { name: "网页浏览器" })).toBeTruthy();
+    act(() => app.actions.newChat());
+    expect(screen.queryByRole("complementary", { name: "网页浏览器" })).toBeNull();
+  } finally {
+    cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("reveals observation pages by their exact id without reopening or crossing conversations", async () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  const original = fake.call.getMockImplementation()!;
+  const replies = new Map<string, { tabs: Array<{ tabId: string; url: string }> }>();
+  fake.call.mockImplementation((method, params) => {
+    if (method === "browser.resolve") {
+      replies.set(params.requestId, params.result.result);
+      return Promise.resolve({ resolved: true });
+    }
+    return original(method, params);
+  });
+  let app!: ReturnType<typeof useMiniqApp>;
+  let sequence = 0;
+  const tabs = async (sessionId: string) => {
+    const id = `inspect-tabs-${++sequence}`;
+    await act(async () => { for (const listener of fake.events) listener({
+      type: "browser_driver_requested", request: { id, sessionId, browserSessionId: sessionId, operation: "tabs", arguments: {} },
+    }); });
+    await waitFor(() => expect(replies.has(id)).toBe(true));
+    return replies.get(id)!.tabs;
+  };
+  const reveal = (url: string, tabId?: string) => act(() => {
+    window.dispatchEvent(new CustomEvent("miniq:open-browser", { detail: { url, tabId } }));
+  });
+  const activePanel = () => document.querySelector<HTMLElement>(".browser-panel:not(.browser-panel-inactive)")!;
+  function TestApp() {
+    app = useMiniqApp();
+    return <AppShell app={app} theme="grid" onThemeChange={() => {}} />;
+  }
+  try {
+    render(<TestApp />);
+    await waitFor(() => expect(app.sessionModel.ready).toBe(true));
+    await act(async () => { await app.actions.openSession("a"); });
+    reveal("https://form.test/current");
+    await screen.findByTitle("网页预览");
+    await waitFor(() => expect(within(activePanel()).getByRole("button", { name: "刷新" }).hasAttribute("disabled")).toBe(false));
+    const originalPage = activePanel().querySelector("iframe");
+    const firstTab = (await tabs("a"))[0];
+    fireEvent.click(within(activePanel()).getByRole("button", { name: "关闭浏览器" }));
+    reveal("https://form.test/older-observation", firstTab.tabId);
+    expect(activePanel().querySelector("iframe")).toBe(originalPage);
+    expect(originalPage?.getAttribute("src")).toBe("https://form.test/current");
+    expect(await tabs("a")).toHaveLength(1);
+    // The same URL is not an identity: manually opening it creates another page.
+    reveal("https://form.test/current");
+    expect(await tabs("a")).toHaveLength(2);
+    reveal("https://form.test/older-observation", firstTab.tabId);
+    expect(activePanel().querySelector("iframe")).toBe(originalPage);
+    await act(async () => { await app.actions.openSession("b"); });
+    reveal("https://form.test/current", firstTab.tabId);
+    const otherTab = (await tabs("b"))[0];
+    expect(otherTab.tabId).not.toBe(firstTab.tabId);
+    expect(activePanel().querySelector("iframe")).not.toBe(originalPage);
+    // A closed historical page is recreated at its recorded URL with a new id.
+    fireEvent.click(screen.getByRole("button", { name: "关闭网页标签" }));
+    reveal("https://form.test/history", otherTab.tabId);
+    const recreated = (await tabs("b"))[0];
+    expect(recreated.tabId).not.toBe(otherTab.tabId);
+    expect(recreated.url).toBe("https://form.test/history");
+    expect(await tabs("a")).toHaveLength(2);
+  } finally {
+    cleanup();
+    vi.unstubAllGlobals();
+  }
 });
 
 it("coalesces session refreshes but reloads changes received during an in-flight snapshot", async () => {

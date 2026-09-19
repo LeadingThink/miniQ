@@ -9,6 +9,7 @@ struct MockDriver {
     fail_next_click: AtomicBool,
     fail_next_observation: AtomicBool,
     screenshot: Option<String>,
+    tabs: bool,
 }
 
 impl MockDriver {
@@ -56,6 +57,7 @@ impl BrowserDriver for MockDriver {
         });
         let mut capabilities = capabilities();
         capabilities.screenshot = self.screenshot.is_some();
+        capabilities.tabs = self.tabs;
         if request.operation == "screenshot"
             || request.arguments["includeScreenshot"] == json!(true)
         {
@@ -313,6 +315,67 @@ async fn rejects_capabilities_the_driver_does_not_offer() {
         .await
         .unwrap_err();
     assert!(error.to_string().contains("does not support screenshot"));
+    assert_eq!(driver.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn discovers_an_existing_user_page_before_any_model_open() {
+    let driver = Arc::new(MockDriver {
+        tabs: true,
+        ..Default::default()
+    });
+    let context = context(driver.clone());
+    let tool = BrowserAutomationTool::default();
+    tool.execute(&context, json!({"action":"tabs"}))
+        .await
+        .unwrap();
+    let observed = tool
+        .execute(
+            &context,
+            json!({"action":"snapshot","tabId":"embedded-main"}),
+        )
+        .await
+        .unwrap();
+    // Listing tabs does not invalidate the page that was just observed.
+    tool.execute(&context, json!({"action":"tabs"}))
+        .await
+        .unwrap();
+    tool.execute(
+        &context,
+        json!({"action":"click","target":"button-1","observationId":observed["observationId"]}),
+    )
+    .await
+    .unwrap();
+    let requests = driver.requests();
+    assert_eq!(
+        requests
+            .iter()
+            .map(|request| request.operation.as_str())
+            .collect::<Vec<_>>(),
+        ["tabs", "snapshot", "tabs", "click"]
+    );
+    assert_eq!(requests[1].arguments["tabId"], "embedded-main");
+    assert_eq!(
+        requests[3].arguments["expectedObservation"]["tabId"],
+        "embedded-main"
+    );
+}
+
+#[tokio::test]
+async fn first_snapshot_discovers_capabilities_without_navigating() {
+    let driver = Arc::new(MockDriver::default());
+    let context = context(driver.clone());
+    let tool = BrowserAutomationTool::default();
+    tool.execute(&context, json!({"action":"snapshot"}))
+        .await
+        .unwrap();
+    assert_eq!(driver.requests()[0].operation, "snapshot");
+    assert!(tool
+        .execute(&context, json!({"action":"screenshot"}))
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("does not support screenshot"));
     assert_eq!(driver.requests().len(), 1);
 }
 

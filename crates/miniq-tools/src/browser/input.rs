@@ -44,6 +44,8 @@ pub(super) struct BrowserInput {
     #[serde(default)]
     pub include_screenshot: bool,
     pub url: Option<String>,
+    /// Page identifier returned by tabs or an observation. Omit to use the
+    /// user's selected page in the main task, or the child task's own page.
     pub tab_id: Option<String>,
     /// Required for all page interactions, copied from the latest observation.
     pub observation_id: Option<String>,

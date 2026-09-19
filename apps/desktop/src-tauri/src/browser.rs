@@ -94,12 +94,56 @@ fn resize(webview: &tauri::Webview, bounds: BrowserBounds) -> Result<(), String>
     if bounds.width < 1.0 || bounds.height < 1.0 {
         return Ok(());
     }
+    let bounds = viewport_bounds(webview.app_handle(), bounds)?;
     webview
         .set_bounds(tauri::Rect {
             position: LogicalPosition::new(bounds.x, bounds.y).into(),
             size: LogicalSize::new(bounds.width, bounds.height).into(),
         })
         .map_err(|error| error.to_string())
+}
+
+fn viewport_bounds(app: &tauri::AppHandle, bounds: BrowserBounds) -> Result<BrowserBounds, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let main = app
+            .get_webview("main")
+            .ok_or_else(|| "找不到 miniQ 主页面".to_string())?;
+        let scale = main
+            .window()
+            .scale_factor()
+            .map_err(|error| error.to_string())?;
+        let origin = main
+            .bounds()
+            .map_err(|error| error.to_string())?
+            .position
+            .to_logical::<f64>(scale);
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        main.with_webview(move |platform| {
+            let view: &objc2_web_kit::WKWebView = unsafe { &*platform.inner().cast() };
+            let safe_area = view.safeAreaInsets();
+            let _ = sender.send((safe_area.left, safe_area.top));
+        })
+        .map_err(|error| error.to_string())?;
+        // Wry runs with_webview immediately on the main thread and dispatches
+        // it there for worker callers, matching its synchronous bounds getter.
+        let (left, top) = receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .map_err(|_| "无法读取主页面显示区域".to_string())?;
+        // DOM client rects start below WKWebView's safe area. Child WebViews
+        // use the window content view, including that area. Read the actual
+        // insets each time so titlebars/fullscreen changes stay aligned.
+        Ok(BrowserBounds {
+            x: origin.x + left + bounds.x,
+            y: origin.y + top + bounds.y,
+            ..bounds
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Ok(bounds)
+    }
 }
 
 fn initial_size(bounds: BrowserBounds) -> LogicalSize<f64> {
@@ -156,7 +200,9 @@ pub fn open(
     std::fs::create_dir_all(&data_directory).map_err(|error| error.to_string())?;
     let navigation_app = app.clone();
     let navigation_label = label.clone();
-    let builder = WebviewBuilder::new(&label, WebviewUrl::App("index.html".into()))
+    // Start at the requested remote page. Loading the application shell first
+    // exposes an unrelated complete document before remote navigation commits.
+    let builder = WebviewBuilder::new(&label, WebviewUrl::External(url.clone()))
         .initialization_script(include_str!("browser_links.js"))
         .data_directory(data_directory)
         .incognito(true)
@@ -182,19 +228,17 @@ pub fn open(
             }
             NewWindowResponse::Deny
         });
+    let native_bounds = viewport_bounds(app, bounds)?;
     let webview = window
         .add_child(
             builder,
-            LogicalPosition::new(bounds.x, bounds.y),
+            LogicalPosition::new(native_bounds.x, native_bounds.y),
             initial_size(bounds),
         )
         .map_err(|error| error.to_string())?;
     if !visible {
         webview.hide().map_err(|error| error.to_string())?;
     }
-    webview
-        .navigate(url.clone())
-        .map_err(|error| error.to_string())?;
     Ok(BrowserState {
         url: url.to_string(),
     })

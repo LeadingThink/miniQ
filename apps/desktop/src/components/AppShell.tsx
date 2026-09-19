@@ -4,6 +4,7 @@ import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
 import { LoaderCircle, PlugZap, Sparkles } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 import { Composer, ComposerCard } from "./Composer";
 import type { ComposerSlashCommand } from "../composerSlash";
 import { useAppSlashCommands } from "../hooks/useAppSlashCommands";
@@ -27,7 +28,7 @@ import { AgentPanel } from "./AgentPanel";
 import { ProjectDirectories } from "./ProjectDirectories";
 import { useBrowserDriverEvents } from "../hooks/useBrowserDriverEvents";
 import { BrowserTabs } from "./BrowserTabs";
-import { closeBrowserTab, EMPTY_BROWSER_TABS, openBrowserTab, updateBrowserTab, type BrowserTabsState } from "../browserTabs";
+import { adoptDraftBrowserTabs, BROWSER_DRAFT_CREATED_EVENT, browserDraftScope, closeBrowserTab, EMPTY_BROWSER_TABS, openBrowserTab, updateBrowserTab, type BrowserDraftCreatedDetail, type BrowserTabsState } from "../browserTabs";
 
 interface AppOnlyProps {
   app: MiniqAppController;
@@ -388,7 +389,7 @@ function buildPaletteCommands(app: MiniqAppController): PaletteCommand[] {
 export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
   const browserScope =
     app.catalog.currentSessionId ??
-    `draft:${app.catalog.selectedWorkspaceId ?? ""}`;
+    browserDraftScope(app.catalog.selectedWorkspace?.id);
   const [browserSessions, setBrowserSessions] = useState<Record<string, BrowserTabsState>>({});
   const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
   const browserState = browserSessions[browserScope] ?? EMPTY_BROWSER_TABS;
@@ -404,11 +405,32 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
     app.review.setOpen(false);
     openNewBrowserTab(url);
   };
-  useBrowserDriverEvents(app.client, setBrowserSessions);
+  useBrowserDriverEvents(app.client, browserSessions, setBrowserSessions);
+  useEffect(() => {
+    const adoptDraft = (event: Event) => {
+      const detail = (event as CustomEvent<BrowserDraftCreatedDetail>).detail;
+      if (!detail || typeof detail.workspaceId !== "string" || typeof detail.sessionId !== "string") return;
+      // Adopt before session.sendMessage can produce browser-driver requests.
+      // Stable tab/view keys retain the native page and its unsaved form state.
+      flushSync(() => setBrowserSessions((current) => adoptDraftBrowserTabs(current, detail.workspaceId, detail.sessionId)));
+    };
+    window.addEventListener(BROWSER_DRAFT_CREATED_EVENT, adoptDraft);
+    return () => window.removeEventListener(BROWSER_DRAFT_CREATED_EVENT, adoptDraft);
+  }, []);
   useEffect(() => {
     const openFromObservation = (event: Event) => {
-      const url = (event as CustomEvent<{ url?: unknown }>).detail?.url;
-      if (typeof url === "string" && url.trim()) openBrowserUrl(url);
+      const detail = (event as CustomEvent<{ url?: unknown; tabId?: unknown }>).detail;
+      const url = detail?.url;
+      if (typeof url !== "string" || !url.trim()) return;
+      app.preview.close();
+      app.review.setOpen(false);
+      setBrowserSessions((current) => {
+        const state = current[browserScope] ?? EMPTY_BROWSER_TABS;
+        const existing = typeof detail.tabId === "string" ? state.tabs.find((tab) => tab.viewId === detail.tabId) : undefined;
+        return { ...current, [browserScope]: existing
+          ? { ...state, activeId: existing.id, open: true }
+          : openBrowserTab(state, url) };
+      });
     };
     window.addEventListener("miniq:open-browser", openFromObservation);
     return () => window.removeEventListener("miniq:open-browser", openFromObservation);
@@ -636,7 +658,7 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
                 }}
               />
             </Suspense>
-          ) : app.review.open && app.catalog.currentWorkspace ? (
+          ) : !browserUrl && app.review.open && app.catalog.currentWorkspace ? (
             <ReviewPanel
               diff={app.review.data}
               onOpenFile={openPreviewFile}
