@@ -64,7 +64,7 @@ it("keeps server matches with deferred tool payloads and searches older artifact
     sessionId="session"
     messages={[{ id: "latest", sessionId: "session", role: "user", content: "latest request", createdAt: "2026-09-08" }]}
     toolCalls={[]}
-    hasOlder
+    historyCursor={{ at: "2026-09-08", id: "latest" }}
     artifacts={[
       { id: "matching", sessionId: "session", path: "/work/needle.pdf", title: "needle.pdf", kind: "pdf", createdAt: "2026-09-06" },
       { id: "unrelated", sessionId: "session", path: "/work/other.pdf", title: "other.pdf", kind: "pdf", createdAt: "2026-09-08" },
@@ -95,4 +95,24 @@ it("keeps server matches with deferred tool payloads and searches older artifact
   expect(screen.getByRole("button", { name: "打开 needle.pdf" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "打开 other.pdf" })).toBeNull();
   expect(screen.queryByText("没有匹配的记录")).toBeNull();
+});
+
+it("retries a failed search page with the same cursor without losing loaded matches", async () => {
+  const cursor = { at: "2026-09-07", id: "tool" };
+  const call = vi.fn()
+    .mockResolvedValueOnce({ messages: [], toolCalls: [tool], nextCursor: cursor })
+    .mockRejectedValueOnce(new Error("connection interrupted"))
+    .mockResolvedValueOnce({ messages: [], toolCalls: [{ ...tool, id: "older" }], nextCursor: null });
+  const client = { call } as unknown as RpcClient;
+  const hook = renderHook(() => useHistorySearch(client, "session", "errors", ""));
+  await waitFor(() => expect(hook.result.current.page?.toolCalls).toHaveLength(1));
+  act(() => hook.result.current.loadOlder());
+  await waitFor(() => expect(hook.result.current.error).toContain("connection interrupted"));
+  expect(hook.result.current.page?.toolCalls).toHaveLength(1);
+  act(() => hook.result.current.loadOlder());
+  await waitFor(() => expect(hook.result.current.page?.toolCalls).toHaveLength(2));
+  expect(call).toHaveBeenCalledTimes(3);
+  expect(call.mock.calls[1][1]).toMatchObject({ before: cursor });
+  expect(call.mock.calls[2][1]).toMatchObject({ before: cursor });
+  expect(hook.result.current.error).toBeNull();
 });

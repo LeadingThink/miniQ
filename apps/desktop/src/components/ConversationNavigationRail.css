@@ -1,0 +1,105 @@
+.conversation-navigation-rail {
+  position: absolute;
+  z-index: 20;
+  top: 50%;
+  left: 6px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - 24px);
+  transform: translateY(-50%);
+  opacity: 0.42;
+  transition: opacity 140ms ease;
+}
+
+.timeline-shell:hover .conversation-navigation-rail,
+.conversation-navigation-rail:focus-within {
+  opacity: 1;
+}
+
+.conversation-navigation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: min(70vh, 40rem);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding: 2px;
+}
+
+.conversation-navigation-list::-webkit-scrollbar {
+  display: none;
+}
+
+.conversation-navigation-marker {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 24px;
+  flex: 0 0 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.conversation-navigation-marker::before {
+  content: "";
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.conversation-navigation-marker:hover::before,
+.conversation-navigation-marker:focus-visible::before {
+  background: var(--text-mid);
+  transform: scaleX(1.1);
+}
+
+.conversation-navigation-marker:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-radius: 4px;
+}
+
+.conversation-navigation-marker[aria-current="true"]::before {
+  background: var(--accent);
+  transform: scaleX(1.12);
+}
+
+.conversation-navigation-preview {
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  transform: translateY(-50%);
+  width: min(26rem, 55vw);
+  max-height: min(50vh, 22rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@media (max-width: 900px), (pointer: coarse) {
+  .conversation-navigation-rail {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-navigation-rail,
+  .conversation-navigation-marker::before {
+    transition: none;
+  }
+}

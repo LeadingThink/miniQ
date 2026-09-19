@@ -468,4 +468,47 @@ describe("Timeline execution flow", () => {
     expect(html).toContain("本会话允许");
     expect(html).toContain("拒绝");
   });
+
+  it("loads earlier history automatically when the conversation reaches the top", () => {
+    const onLoadOlder = vi.fn().mockResolvedValue(undefined);
+    const { container } = render(
+      <Timeline
+        sessionId="session-1"
+        messages={[{
+          id: "latest",
+          sessionId: "session-1",
+          role: "assistant",
+          content: "最新消息",
+          createdAt: "2026-09-08T00:00:00Z",
+        }]}
+        toolCalls={[]}
+        historyCursor={{ at: "2026-09-08T00:00:00Z", id: "latest" }}
+        loadingOlder={false}
+        onLoadOlder={onLoadOlder}
+        approvals={[]}
+        questions={[]}
+        plan={[]}
+        artifacts={[]}
+        queue={[]}
+        streamingText=""
+        turnProgress={null}
+        busy={false}
+        onResolveApproval={noop}
+        onResolveQuestion={noop}
+        onRollback={noop}
+        onOpenFile={noop}
+        onOpenUrl={noop}
+        onSteerQueued={asyncNoop}
+        onRemoveQueued={asyncNoop}
+        onUpdateQueued={asyncNoop}
+        onRewrite={async () => true}
+        onError={noop}
+      />,
+    );
+
+    const timeline = container.querySelector(".timeline");
+    expect(timeline).toBeTruthy();
+    fireEvent.scroll(timeline!, { target: { scrollTop: 0 } });
+    expect(onLoadOlder).toHaveBeenCalledOnce();
+  });
 });
