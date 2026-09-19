@@ -13,7 +13,7 @@ const settings = {
   remoteStatus: { state: "disabled", relayUrl: "", mobileClients: 0 },
 };
 const call = vi.fn().mockResolvedValue(settings);
-const client = { call, mode: "local" } as unknown as RpcClient;
+const client = { call, mode: "local", onStatus: () => () => {} } as unknown as RpcClient;
 
 function Fixture({ onClose = () => {} }: { onClose?: () => void }) {
   const { theme } = useSyncExternalStore(subscribeAppearance, getAppearance);
@@ -113,17 +113,34 @@ describe("appearance settings integration", () => {
   });
 
   it("supports tab keyboard navigation and restores focus on close", async () => {
+    call.mockImplementation((method: string) => Promise.resolve(method === "computer.permissions" ? {
+      platform: "macos",
+      processId: 123,
+      executable: "/Applications/miniQ.app/Contents/MacOS/miniq-daemon",
+      screenRecording: "granted",
+      accessibility: "granted",
+      displayServer: null,
+    } : settings));
     const trigger = document.createElement("button");
     document.body.append(trigger);
     trigger.focus();
     const { unmount } = render(<Fixture />);
     await waitFor(() => expect(call).toHaveBeenCalledTimes(1));
+    expect(screen.getAllByRole("tab").map((element) => element.textContent)).toEqual([
+      "服务与远程", "电脑控制", "外观",
+    ]);
     fireEvent.keyDown(screen.getByRole("tab", { name: "服务与远程" }), { key: "ArrowRight" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "电脑控制" }));
+    expect(screen.getByRole("region", { name: "电脑控制权限" })).toBeTruthy();
+    await waitFor(() => expect(screen.getAllByText("已授权")).toHaveLength(2));
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    fireEvent.keyDown(document.activeElement!, { key: "End" });
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "外观" }));
-    expect(screen.getByRole("searchbox")).toBeTruthy();
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "电脑控制" }));
     fireEvent.keyDown(document.activeElement!, { key: "Home" });
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "服务与远程" }));
-    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.getByRole("button", { name: "保存并开始使用" })).toBeTruthy();
     unmount();
     expect(document.activeElement).toBe(trigger);
     trigger.remove();

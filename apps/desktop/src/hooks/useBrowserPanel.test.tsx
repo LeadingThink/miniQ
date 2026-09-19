@@ -10,6 +10,7 @@ import {
   evaluateBrowser,
   openBrowser,
   resizeBrowser,
+  screenshotBrowser,
   setBrowserVisible,
 } from "../browserWorkbench";
 import { resolveBrowserDriverRequest } from "../embeddedBrowserDriver";
@@ -38,6 +39,7 @@ vi.mock("../browserWorkbench", async (original) => ({
   evaluateBrowser: vi.fn(async (_viewId: string, script: string) =>
     JSON.stringify(eval(script)),
   ),
+  screenshotBrowser: vi.fn(async () => "native-png-base64"),
 }));
 beforeEach(() => {
   vi.clearAllMocks();
@@ -58,6 +60,8 @@ afterEach(() => {
 const surface = () => {
   const ref = createRef<HTMLDivElement>();
   Object.assign(ref, { current: document.createElement("div") });
+  ref.current!.getBoundingClientRect = () =>
+    ({ x: 600, y: 90, width: 500, height: 650 }) as DOMRect;
   return ref;
 };
 
@@ -162,7 +166,7 @@ it("hides the native child behind settings without discarding the page", async (
   rerender({ suspended: true });
   expect(setBrowserVisible).toHaveBeenLastCalledWith(viewId, false);
   rerender({ suspended: false });
-  expect(setBrowserVisible).toHaveBeenLastCalledWith(viewId, true);
+  await waitFor(() => expect(setBrowserVisible).toHaveBeenLastCalledWith(viewId, true));
   expect(openBrowser).toHaveBeenCalledTimes(1);
 });
 
@@ -360,4 +364,74 @@ it("stops polling hidden tabs and resumes without reloading their page", async (
   await act(() => vi.advanceTimersByTimeAsync(1500));
   expect(currentBrowser).toHaveBeenCalledTimes(2);
   expect(openBrowser).toHaveBeenCalledTimes(1);
+});
+
+it("opens native pages hidden and uses the latest panel bounds before showing", async () => {
+  let finish!: (value: { url: string }) => void;
+  vi.mocked(openBrowser).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  const ref = surface();
+  const { result } = renderHook(() => useBrowserPanel("https://example.test/", ref, false, "view-geometry"));
+  expect(openBrowser).toHaveBeenCalledWith("https://example.test/", expect.any(Object), "view-geometry", false);
+  ref.current!.getBoundingClientRect = () => ({ x: 700, y: 100, width: 450, height: 550 }) as DOMRect;
+  await act(async () => { finish({ url: "https://example.test/" }); });
+  await waitFor(() => expect(result.current.pending).toBe(false));
+  expect(resizeBrowser).toHaveBeenLastCalledWith({ x: 700, y: 100, width: 450, height: 550 }, "view-geometry");
+  expect(setBrowserVisible).toHaveBeenLastCalledWith("view-geometry", true);
+  expect(vi.mocked(resizeBrowser).mock.invocationCallOrder.at(-1))
+    .toBeLessThan(vi.mocked(setBrowserVisible).mock.invocationCallOrder.at(-1)!);
+});
+
+it("does not expose a zero-sized or newly suspended panel after a late resize", async () => {
+  const ref = surface();
+  ref.current!.getBoundingClientRect = () => ({ x: 0, y: 0, width: 0, height: 0 }) as DOMRect;
+  const { result, rerender } = renderHook(({ suspended }) =>
+    useBrowserPanel("https://example.test/", ref, suspended, "view-hidden"),
+  { initialProps: { suspended: false } });
+  await waitFor(() => expect(result.current.pending).toBe(false));
+  expect(setBrowserVisible).not.toHaveBeenCalledWith("view-hidden", true);
+  let resized!: () => void;
+  vi.mocked(resizeBrowser).mockImplementationOnce(() => new Promise((resolve) => { resized = resolve; }));
+  ref.current!.getBoundingClientRect = () => ({ x: 600, y: 100, width: 500, height: 600 }) as DOMRect;
+  act(() => window.dispatchEvent(new Event("resize")));
+  rerender({ suspended: true });
+  await act(async () => { resized(); });
+  expect(setBrowserVisible).not.toHaveBeenCalledWith("view-hidden", true);
+});
+
+it.each([
+  { operation: "snapshot", includeScreenshot: false, captures: 0 },
+  { operation: "snapshot", includeScreenshot: true, captures: 1 },
+  { operation: "screenshot", includeScreenshot: false, captures: 1 },
+])("captures native pixels only on explicit visual requests: $operation/$includeScreenshot", async ({ operation, includeScreenshot, captures }) => {
+  const observation = {
+    observationId: "visual-observation", documentId: "visual-document", tabId: "view-visual",
+    url: "https://example.test/", readyState: "complete", items: [], textLines: [],
+    viewport: { width: 500, height: 600, deviceScaleFactor: 2, scrollX: 0, scrollY: 0 },
+  };
+  vi.mocked(evaluateBrowser).mockResolvedValue(JSON.stringify(JSON.stringify(observation)));
+  renderHook(() => useBrowserPanel("https://example.test/", surface(), false, "view-visual", "browser-visual"));
+  const call = vi.fn(async (_method: string, _params: Record<string, unknown>) => ({ resolved: true }));
+  await resolveBrowserDriverRequest({ call } as unknown as RpcClient, {
+    id: "visual-request", sessionId: "session-visual", browserSessionId: "browser-visual", operation,
+    arguments: { nextObservationId: "visual-observation", includeScreenshot },
+  });
+  expect(screenshotBrowser).toHaveBeenCalledTimes(captures);
+  expect(call).toHaveBeenCalledWith("browser.resolve", expect.objectContaining({
+    result: expect.objectContaining({ result: captures
+      ? { ...observation, screenshotBase64: "native-png-base64" }
+      : observation }),
+  }));
+});
+
+it("does not let an automation visibility request expose a suspended tab", async () => {
+  vi.mocked(evaluateBrowser).mockResolvedValue(JSON.stringify(JSON.stringify({
+    observationId: "observation-hidden", documentId: "document-hidden", url: "https://example.test/",
+  })));
+  renderHook(() => useBrowserPanel("https://example.test/", surface(), true, "view-hidden", "browser-hidden"));
+  const call = vi.fn(async () => ({ resolved: true }));
+  await resolveBrowserDriverRequest({ call } as unknown as RpcClient, {
+    id: "visibility", sessionId: "session-hidden", browserSessionId: "browser-hidden",
+    operation: "setVisible", arguments: { visible: true, nextObservationId: "observation-hidden" },
+  });
+  expect(setBrowserVisible).not.toHaveBeenCalledWith("view-hidden", true);
 });

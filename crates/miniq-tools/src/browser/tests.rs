@@ -7,6 +7,8 @@ struct MockDriver {
     requests: Mutex<Vec<BrowserDriverRequest>>,
     closed: AtomicBool,
     fail_next_click: AtomicBool,
+    fail_next_observation: AtomicBool,
+    screenshot: Option<String>,
 }
 
 impl MockDriver {
@@ -29,6 +31,9 @@ impl BrowserDriver for MockDriver {
         if request.operation == "click" && self.fail_next_click.swap(false, Ordering::SeqCst) {
             return Err("embedded browser navigation interrupted after dispatch".into());
         }
+        if self.fail_next_observation.swap(false, Ordering::SeqCst) {
+            return Err("page changed while capturing screenshot".into());
+        }
         if request.operation == "close" {
             self.closed.store(true, Ordering::SeqCst);
             return Ok(BrowserDriverResponse {
@@ -40,17 +45,27 @@ impl BrowserDriver for MockDriver {
             .as_str()
             .unwrap_or("observation")
             .to_string();
+        let mut result = json!({
+            "observationId": observation_id,
+            "url": request.arguments.get("url").and_then(Value::as_str).unwrap_or("https://example.com/"),
+            "tabId": "embedded-main",
+            "documentId": "document-1",
+            "viewport": {"width": 1024.0, "height": 768.0, "scrollX": 0.0, "scrollY": 0.0},
+            "items": [],
+            "textLines": [],
+        });
+        let mut capabilities = capabilities();
+        capabilities.screenshot = self.screenshot.is_some();
+        if request.operation == "screenshot"
+            || request.arguments["includeScreenshot"] == json!(true)
+        {
+            if let Some(encoded) = &self.screenshot {
+                result["screenshotBase64"] = json!(encoded);
+            }
+        }
         Ok(BrowserDriverResponse {
-            capabilities: capabilities(),
-            result: json!({
-                "observationId": observation_id,
-                "url": request.arguments.get("url").and_then(Value::as_str).unwrap_or("https://example.com/"),
-                "tabId": "embedded-main",
-                "documentId": "document-1",
-                "viewport": {"width": 1024.0, "height": 768.0, "scrollX": 0.0, "scrollY": 0.0},
-                "items": [],
-                "textLines": [],
-            }),
+            capabilities,
+            result,
         })
     }
 }
@@ -299,6 +314,87 @@ async fn rejects_capabilities_the_driver_does_not_offer() {
         .unwrap_err();
     assert!(error.to_string().contains("does not support screenshot"));
     assert_eq!(driver.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn failed_visual_observation_invalidates_previous_click_targets() {
+    let driver = Arc::new(MockDriver {
+        screenshot: Some(String::new()),
+        ..Default::default()
+    });
+    let context = context(driver.clone());
+    let tool = BrowserAutomationTool::default();
+    let opened = tool
+        .execute(
+            &context,
+            json!({"action":"open","url":"https://example.com/"}),
+        )
+        .await
+        .unwrap();
+    driver.fail_next_observation.store(true, Ordering::SeqCst);
+    let error = tool
+        .execute(&context, json!({"action":"screenshot"}))
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("page changed"));
+    let error = tool
+        .execute(
+            &context,
+            json!({
+                "action":"click", "target":"button-1", "observationId":opened["observationId"],
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("observe the page before acting"));
+    assert_eq!(driver.requests().len(), 2);
+}
+
+#[tokio::test]
+async fn screenshot_requests_deliver_image_attachments_without_base64_in_model_text() {
+    let directory = tempfile::tempdir().unwrap();
+    let image = image::RgbaImage::new(32, 24);
+    let mut png = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut png, image::ImageFormat::Png).unwrap();
+    let driver = Arc::new(MockDriver {
+        screenshot: Some(base64::engine::general_purpose::STANDARD.encode(png.get_ref())),
+        ..Default::default()
+    });
+    let context = context(driver).with_observations(directory.path().into());
+    let tool = BrowserAutomationTool::default();
+    let opened = tool
+        .execute(
+            &context,
+            json!({"action":"open","url":"https://example.com/"}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(opened["capabilities"]["screenshot"], true);
+    assert_eq!(opened["imageAttached"], false);
+    assert!(tool.output_images(&context, &opened).is_empty());
+
+    for input in [
+        json!({"action":"screenshot"}),
+        json!({"action":"snapshot","includeScreenshot":true}),
+    ] {
+        let output = tool.execute(&context, input).await.unwrap();
+        assert_eq!(output["imageAttached"], true);
+        assert_eq!(output["screenshot"]["width"], 32);
+        assert_eq!(output["screenshot"]["height"], 24);
+        assert!(output.get("screenshotBase64").is_none());
+        let attachments = tool.output_images(&context, &output);
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0].mime_type, "image/png");
+        assert_eq!(std::fs::read(&attachments[0].path).unwrap(), *png.get_ref());
+        tool.execute(
+            &context,
+            json!({
+                "action":"click", "target":"button-1", "observationId":output["observationId"],
+            }),
+        )
+        .await
+        .unwrap();
+    }
 }
 
 #[tokio::test]

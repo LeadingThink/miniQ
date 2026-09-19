@@ -207,6 +207,11 @@ fn browser_capabilities() -> browser::BrowserCapabilities {
     browser::capabilities()
 }
 
+#[tauri::command]
+async fn browser_screenshot(app: tauri::AppHandle, view_id: String) -> Result<String, String> {
+    browser::screenshot(&app, &view_id).await
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(DaemonState::default())
@@ -237,6 +242,7 @@ pub fn run() {
             browser_set_visible,
             open_microphone_settings,
             browser_evaluate,
+            browser_screenshot,
             browser_capabilities
         ])
         .setup(|app| {

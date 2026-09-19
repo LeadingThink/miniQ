@@ -43,7 +43,8 @@ describe("embedded BrowserDriver bridge", () => {
     });
     const { call, client } = rpc();
 
-    await resolveBrowserDriverRequest(client, request("request-1", "task-1"));
+    const result = await resolveBrowserDriverRequest(client, request("request-1", "task-1"));
+    expect(result).toEqual({ observationId: "observation-request-1" });
 
     expect(execute).toHaveBeenCalledWith("snapshot", {
       nextObservationId: "observation-request-1",
@@ -84,7 +85,7 @@ describe("embedded BrowserDriver bridge", () => {
     });
     const { call, client } = rpc();
 
-    await resolveBrowserDriverRequest(client, request("request-3", "task-3"));
+    expect(await resolveBrowserDriverRequest(client, request("request-3", "task-3"))).toBeUndefined();
 
     expect(call).toHaveBeenCalledWith("browser.resolve", {
       requestId: "request-3",

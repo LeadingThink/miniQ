@@ -3,7 +3,7 @@ import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
 import { LoaderCircle, PlugZap, Sparkles } from "lucide-react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Composer, ComposerCard } from "./Composer";
 import type { ComposerSlashCommand } from "../composerSlash";
 import { useAppSlashCommands } from "../hooks/useAppSlashCommands";
@@ -25,7 +25,7 @@ import { SessionModelControls } from "./SessionModelControls";
 import { SessionPermissionControls } from "./SessionPermissionControls";
 import { AgentPanel } from "./AgentPanel";
 import { ProjectDirectories } from "./ProjectDirectories";
-import { resolveBrowserDriverRequest } from "../embeddedBrowserDriver";
+import { useBrowserDriverEvents } from "../hooks/useBrowserDriverEvents";
 import { BrowserTabs } from "./BrowserTabs";
 import { closeBrowserTab, EMPTY_BROWSER_TABS, openBrowserTab, updateBrowserTab, type BrowserTabsState } from "../browserTabs";
 
@@ -389,24 +389,14 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
   const browserScope =
     app.catalog.currentSessionId ??
     `draft:${app.catalog.selectedWorkspaceId ?? ""}`;
-  const browserViewIds = useRef(new Map<string, string>());
-  const getBrowserViewId = (browserSessionId: string) => {
-    const existing = browserViewIds.current.get(browserSessionId);
-    if (existing) return existing;
-    const viewId = crypto.randomUUID().replaceAll("-", "");
-    browserViewIds.current.set(browserSessionId, viewId);
-    return viewId;
-  };
   const [browserSessions, setBrowserSessions] = useState<Record<string, BrowserTabsState>>({});
   const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
   const browserState = browserSessions[browserScope] ?? EMPTY_BROWSER_TABS;
   const activeBrowserTab = browserState.tabs.find((tab) => tab.id === browserState.activeId) ?? null;
   const browserUrl = browserState.open ? activeBrowserTab?.url ?? null : null;
-  const setBrowserUrl = (url: string | null) => setBrowserSessions((current) => {
+  const hideBrowserPanel = () => setBrowserSessions((current) => {
     const state = current[browserScope] ?? EMPTY_BROWSER_TABS;
-    if (url === null) return { ...current, [browserScope]: { ...state, open: false } };
-    const active = state.activeId ? state.tabs.find((tab) => tab.id === state.activeId) : undefined;
-    return { ...current, [browserScope]: active ? updateBrowserTab(state, active.id, url) : openBrowserTab(state, url) };
+    return { ...current, [browserScope]: { ...state, open: false } };
   });
   const openNewBrowserTab = (url = "https://www.bing.com/") => setBrowserSessions((current) => ({ ...current, [browserScope]: openBrowserTab(current[browserScope] ?? EMPTY_BROWSER_TABS, url) }));
   const openBrowserUrl = (url: string) => {
@@ -414,74 +404,7 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
     app.review.setOpen(false);
     openNewBrowserTab(url);
   };
-  useEffect(() => app.client.onEvent((event) => {
-    if (event.type !== "browser_driver_requested") return;
-    const { request } = event;
-    const requestedUrl = request.arguments.url;
-    if (request.operation === "open" || request.operation === "navigate") {
-      if (typeof requestedUrl !== "string") {
-        void app.client.call("browser.resolve", {
-          requestId: request.id,
-          error: "浏览器导航缺少 URL",
-        });
-        return;
-      }
-      const viewId = getBrowserViewId(request.browserSessionId);
-      setBrowserSessions((current) => ({
-        ...current,
-        [request.sessionId]: (() => {
-          const state = current[request.sessionId] ?? EMPTY_BROWSER_TABS;
-          const existing = state.tabs.find(
-            (tab) => tab.browserSessionId === request.browserSessionId,
-          );
-          const tab = existing ?? {
-            id: crypto.randomUUID(),
-            url: requestedUrl,
-            viewId,
-            browserSessionId: request.browserSessionId,
-          };
-          return {
-            tabs: existing
-              ? state.tabs.map((candidate) =>
-                  candidate.id === existing.id
-                    ? { ...candidate, url: requestedUrl }
-                    : candidate,
-                )
-              : [...state.tabs, tab],
-            activeId: tab.id,
-            open: true,
-          };
-        })(),
-      }));
-    }
-    void resolveBrowserDriverRequest(app.client, request).finally(() => {
-      if (request.operation !== "close") return;
-      browserViewIds.current.delete(request.browserSessionId);
-      setBrowserSessions((current) => {
-        const state = current[request.sessionId];
-        const tab = state?.tabs.find(
-          (candidate) => candidate.browserSessionId === request.browserSessionId,
-        );
-        return tab
-          ? { ...current, [request.sessionId]: closeBrowserTab(state, tab.id) }
-          : current;
-      });
-    });
-  }), [app.client]);
-  useEffect(() => {
-    const latest = [...app.feed.toolCalls].reverse().find((call) => {
-      if (call.toolName !== "browser_automation") return false;
-      if (call.status !== "running" && call.status !== "succeeded") return false;
-      const input = call.input as Record<string, unknown> | undefined;
-      const output = call.output as Record<string, unknown> | undefined;
-      return typeof input?.url === "string" || typeof output?.url === "string";
-    });
-    if (!latest) return;
-    const input = latest.input as Record<string, unknown> | undefined;
-    const output = latest.output as Record<string, unknown> | undefined;
-    const url = typeof input?.url === "string" ? input.url : output?.url;
-    if (typeof url === "string" && url.trim()) setBrowserUrl(url);
-  }, [app.feed.toolCalls]);
+  useBrowserDriverEvents(app.client, setBrowserSessions);
   useEffect(() => {
     const openFromObservation = (event: Event) => {
       const url = (event as CustomEvent<{ url?: unknown }>).detail?.url;
@@ -491,14 +414,14 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
     return () => window.removeEventListener("miniq:open-browser", openFromObservation);
   }, [browserScope]);
   const openPreviewFile = (target: LocalFileTarget) => {
-    setBrowserUrl(null);
+    hideBrowserPanel();
     openFileTarget(app, target);
   };
 
   const slash = useAppSlashCommands(app, {
     onOpenBrowser: () => openBrowserUrl("https://www.bing.com/"),
     onOpenReview: () => {
-      setBrowserUrl(null);
+      hideBrowserPanel();
       app.preview.close();
       app.review.setOpen(true);
     },
@@ -625,7 +548,7 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
             else openNewBrowserTab();
           }}
           onToggleReview={() => {
-            setBrowserUrl(null);
+            hideBrowserPanel();
             app.preview.close();
             app.review.setOpen(!app.review.open);
           }}
@@ -674,7 +597,7 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
                   Boolean(app.navigation.editingWorkspaceId)
                 }
                 onNavigate={(url) => setBrowserSessions((current) => ({ ...current, [scope]: updateBrowserTab(current[scope] ?? EMPTY_BROWSER_TABS, tab.id, url) }))}
-                onClose={() => setBrowserSessions((current) => ({ ...current, [scope]: closeBrowserTab(current[scope] ?? EMPTY_BROWSER_TABS, tab.id) }))}
+                onClose={() => setBrowserSessions((current) => ({ ...current, [scope]: { ...(current[scope] ?? EMPTY_BROWSER_TABS), open: false } }))}
               />))}
               </div>
             </Suspense>

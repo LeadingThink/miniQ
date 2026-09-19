@@ -78,8 +78,11 @@ export function BrowserPanel(props: {
             event.preventDefault();
             try {
               const url = normalizeBrowserUrl(browser.address);
-              if (url === props.url) void browser.load(url);
-              else props.onNavigate(url);
+              // Automation-owned tabs do not navigate from metadata updates:
+              // the driver already dispatched those. A user's address-bar
+              // submission must explicitly navigate that same native tab.
+              if (url === props.url || props.browserSessionId) void browser.load(url).catch(() => {});
+              if (url !== props.url) props.onNavigate(url);
             } catch (cause) {
               browser.setError(errorMessage(cause));
             }
@@ -133,7 +136,7 @@ export function BrowserPanel(props: {
             aria-label="重试打开网页"
             title="重试打开网页"
             disabled={browser.pending}
-            onClick={() => void browser.load(browser.activeUrl)}
+            onClick={() => void browser.load(browser.activeUrl).catch(() => {})}
           >
             <RefreshCw size={16} />
           </button>

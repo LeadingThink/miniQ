@@ -48,7 +48,7 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel(props: SettingsPanelProps) {
-  const settingsTabs = ["services", "appearance", "computer"] as const;
+  const settingsTabs = ["services", "computer", "appearance"] as const;
   const [tab, setTab] = useState<(typeof settingsTabs)[number]>("services");
   const [baseUrl, setBaseUrl] = useState(ZAIWEN_API_BASE_URL);
   const [defaultModel, setDefaultModel] = useState(DEFAULT_PROVIDER_MODEL);

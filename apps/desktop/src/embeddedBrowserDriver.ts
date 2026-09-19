@@ -44,7 +44,7 @@ function waitForBrowser(browserSessionId: string): Promise<EmbeddedBrowserAdapte
 export async function resolveBrowserDriverRequest(
   client: RpcClient,
   request: BrowserDriverRequest,
-): Promise<void> {
+): Promise<Record<string, unknown> | undefined> {
   try {
     const adapter = await waitForBrowser(request.browserSessionId);
     const [result, capabilities] = await Promise.all([
@@ -55,6 +55,7 @@ export async function resolveBrowserDriverRequest(
       requestId: request.id,
       result: { capabilities, result },
     });
+    return result;
   } catch (cause) {
     const error = cause instanceof Error ? cause.message : String(cause);
     await client.call("browser.resolve", { requestId: request.id, error }).catch(() => {});
