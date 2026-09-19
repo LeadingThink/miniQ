@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Timeline } from "../components/Timeline";
 import type { Message } from "../types";
+import type { RpcClient } from "../rpc";
+import { itemMatches, type TimelineFilter } from "../timelineModel";
 import "../styles/base.css";
 import "../styles/themes.css";
 import "../styles/conversation.css";
@@ -21,6 +23,19 @@ const messages: Message[] = Array.from({ length: 120 }, (_, index) => ({
 }));
 const noop = () => undefined;
 const asyncNoop = async () => undefined;
+const remote = new URLSearchParams(window.location.search).get("mode") === "remote";
+const client = remote ? {
+  mode: "remote",
+  call: async (method: string, params: { before?: { id: string }; filter?: TimelineFilter; query?: string }) => {
+    if (method !== "session.history") throw new Error("独立历史样例仅支持记录检索");
+    const matching = messages.filter((message) => itemMatches(
+      { kind: "message", at: message.createdAt, message }, params.filter ?? "all", params.query ?? "",
+    ));
+    const end = params.before ? matching.findIndex((message) => message.id === params.before?.id) : matching.length;
+    const begin = Math.max(0, end - 40);
+    return { messages: matching.slice(begin, end), toolCalls: [], nextCursor: begin ? { id: matching[begin].id, at: matching[begin].createdAt } : null };
+  },
+} as unknown as RpcClient : undefined;
 
 function Fixture() {
   const [start, setStart] = useState(100);
@@ -51,6 +66,7 @@ function Fixture() {
     <main style={{ height: "100dvh", display: "flex", flexDirection: "column", padding: "12px 20px", boxSizing: "border-box" }}>
       <header style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", paddingBottom: 12 }}>
         <strong>连续会话验收</strong>
+        <a href={remote ? "?" : "?mode=remote"}>{remote ? "移动远程（点击加载）" : "本地桌面（连续滚动）"}</a>
         <output data-testid="page-status">已加载 {120 - start}/120 条 · 请求 {requests} 次</output>
         <button onClick={() => setFailNext(true)}>下一页模拟失败</button>
         <button onClick={() => setStream((value) => `${value}\n\n最新任务仍在输出，历史阅读位置应保持稳定。`)}>追加流式输出</button>
@@ -59,6 +75,7 @@ function Fixture() {
       {notice && <div role="status">{notice}</div>}
       <section style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, width: narrow ? "min(100%, 700px)" : "100%", margin: "0 auto" }}>
         <Timeline
+          client={client}
           sessionId="history-fixture"
           messages={messages.slice(start)}
           toolCalls={[]}

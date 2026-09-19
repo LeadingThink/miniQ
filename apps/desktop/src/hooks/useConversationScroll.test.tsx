@@ -15,6 +15,7 @@ let nextFrame = 0;
 function Harness({
   viewKey = "session-a",
   cursorKey = "cursor-1",
+  autoLoadOlder = true,
   hasOlder = true,
   loadingOlder = false,
   loading = false,
@@ -24,6 +25,7 @@ function Harness({
 }: {
   viewKey?: string;
   cursorKey?: string | null;
+  autoLoadOlder?: boolean;
   hasOlder?: boolean;
   loadingOlder?: boolean;
   loading?: boolean;
@@ -32,7 +34,7 @@ function Harness({
   loadOlder?: () => void | Promise<void>;
 }) {
   const scroll = useConversationScroll({
-    viewKey, cursorKey, hasOlder, loadingOlder, loading, loadOlder,
+    viewKey, cursorKey, autoLoadOlder, hasOlder, loadingOlder, loading, loadOlder,
     contentVersion: `${prepend}:${tail}:${loading}`,
   });
   return <>
@@ -111,6 +113,47 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("useConversationScroll", () => {
+  it("keeps remote history manual and anchors each requested page without fetching the next one", async () => {
+    let resolve!: () => void;
+    const loadOlder = vi.fn().mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }))
+      .mockResolvedValue(undefined);
+    const { rerender } = render(<Harness autoLoadOlder={false} loadOlder={loadOlder} />);
+    scrollTo(40);
+    scrollTo(0);
+    resize();
+    flushFrames();
+    expect(observers).toHaveLength(0);
+    expect(loadOlder).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Load manually" }));
+    fireEvent.click(screen.getByRole("button", { name: "Load manually" }));
+    expect(loadOlder).toHaveBeenCalledTimes(1);
+    scrollTo(50);
+    await act(async () => { resolve(); });
+    rerender(<Harness autoLoadOlder={false} loadOlder={loadOlder} cursorKey="cursor-2" prepend={600} tail={800} />);
+    expect(screen.getByTestId("viewport").scrollTop).toBe(650);
+    scrollTo(0);
+    expect(loadOlder).toHaveBeenCalledTimes(1);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Load manually" })); });
+    expect(loadOlder).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops stale automatic callbacks after switching to remote and resumes local scrolling", async () => {
+    const loadOlder = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(<Harness loadOlder={loadOlder} />);
+    const staleObserver = observers.at(-1)!;
+    rerender(<Harness autoLoadOlder={false} loadOlder={loadOlder} />);
+    intersect(staleObserver);
+    scrollTo(40);
+    expect(loadOlder).not.toHaveBeenCalled();
+    expect(observers).toHaveLength(1);
+    rerender(<Harness loadOlder={loadOlder} />);
+    await act(async () => { intersect(); });
+    expect(loadOlder).toHaveBeenCalledTimes(1);
+    intersect(staleObserver);
+    expect(loadOlder).toHaveBeenCalledTimes(1);
+  });
+
   it("coalesces font, image and viewport layout changes while following the bottom", () => {
     render(<Harness hasOlder={false} />);
     const viewport = screen.getByTestId("viewport");

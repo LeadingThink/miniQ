@@ -77,8 +77,8 @@ export function useSessionLifecycleActions(
       setPage(null);
       let result: OpenSessionResult;
       // The desktop daemon is local and can afford a larger first page. Keep
-      // remote opens small; Timeline will transparently fetch older pages as
-      // the reader reaches the top.
+      // remote opens small and older pages explicit. Local Timeline scrolling
+      // transparently fetches older pages as the reader reaches the top.
       const initialHistoryLimit = client.mode === "local" ? 100 : 40;
       try {
         result = await client.call<OpenSessionResult>(

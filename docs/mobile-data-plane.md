@@ -2,11 +2,25 @@
 
 ## History
 
-`session.open` returns session state and the newest 40 timeline records. Its
+`session.open` returns session state and a bounded page of timeline records. The
+local desktop asks for 100 records initially and automatically loads older pages
+as the reader scrolls upward. Remote clients ask for 40 records initially and
+load another page only when the reader selects **更早的记录**; reaching the top,
+resizing the viewport, or receiving live output never prefetches remote history.
+This policy follows the connection mode rather than the window width, so a tablet
+or a resized browser cannot accidentally enable bulk remote loading. The
 `nextCursor` is passed as `before` to `session.history`; limits are 1 through 100.
 The stable cursor contains the timestamp and record ID, so ties do not lose data.
 Tool records are headers with `payloadDeferred: true`. `tool.detail` requires both
 the session ID and tool ID and returns the complete payload after ownership checks.
+
+Both modes preserve the visible record while a page loads, including when live
+output arrives or the reader continues scrolling. A failed cursor is not retried
+automatically; the history control permits an explicit retry. Desktop navigation
+markers preview and jump between loaded user messages when the conversation has
+enough room, and extend as older pages are loaded. They issue no model requests
+or history prefetches. Use `conversation-preview.html` and its `?mode=remote`
+variant with the frontend dev server for isolated scroll/bandwidth acceptance.
 
 History filters (`all`, `answers`, `activity`, `errors`) and text search run against
 the complete stored history. Export iterates pages with `includePayloads` and

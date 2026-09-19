@@ -4,6 +4,8 @@ interface ConversationScrollOptions {
   viewKey: string;
   /** The actual history cursor, serialized when it is an object. */
   cursorKey: string | null;
+  /** Local history scrolls continuously; remote history needs an explicit request. */
+  autoLoadOlder: boolean;
   hasOlder?: boolean;
   loadingOlder?: boolean;
   loading?: boolean;
@@ -66,6 +68,9 @@ export function useConversationScroll(options: ConversationScrollOptions) {
 
   const requestOlder = useCallback((automatic: boolean) => {
     const current = latest.current;
+    // Check the current policy here as well as when attaching observers: a
+    // queued scroll/intersection callback may outlive a connection-mode change.
+    if (automatic && !current.autoLoadOlder) return;
     if (
       !current.hasOlder || current.loading ||
       current.loadingOlder || !current.loadOlder
@@ -154,7 +159,7 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     const root = scrollRef.current;
     const sentinel = historyTopRef.current;
     if (
-      !root || !sentinel || !options.hasOlder ||
+      !root || !sentinel || !options.hasOlder || !options.autoLoadOlder ||
       typeof IntersectionObserver === "undefined"
     ) return;
     let active = true;
@@ -164,7 +169,7 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     observer.observe(sentinel);
     return () => { active = false; observer.disconnect(); };
   }, [
-    options.viewKey, options.cursorKey, options.hasOlder,
+    options.viewKey, options.cursorKey, options.hasOlder, options.autoLoadOlder,
     options.loading, options.loadingOlder, requestOlder,
   ]);
 
