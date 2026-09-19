@@ -38,7 +38,13 @@ export function useHistorySearch(client: RpcClient | undefined, sessionId: strin
     page: result?.key === key ? result.page : null,
     loading: enabled && (loading || (!error && result?.key !== key)),
     error: enabled ? error : null,
-    loadOlder: () => { if (!loading && result?.key === key) setBefore(result.page.nextCursor); },
+    loadOlder: () => {
+      if (loading || result?.key !== key || !result.page.nextCursor) return;
+      // A failed page keeps its cursor. Retrying that same cursor must issue a
+      // new request rather than setting React state to the unchanged value.
+      if (error) setRevision((value) => value + 1);
+      else setBefore(result.page.nextCursor);
+    },
     retry: useCallback(() => setRevision((value) => value + 1), []),
   };
 }

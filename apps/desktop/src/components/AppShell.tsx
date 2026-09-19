@@ -164,7 +164,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
           client={app.client}
           sessionId={app.catalog.currentSessionId!}
           loading={app.feed.loading}
-          hasOlder={Boolean(app.feed.nextCursor)}
+          historyCursor={app.feed.nextCursor}
           loadingOlder={app.actions.loadingOlder}
           onLoadOlder={app.actions.loadOlder}
           title={app.catalog.currentSession?.title}

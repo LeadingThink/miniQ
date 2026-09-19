@@ -482,7 +482,7 @@ describe("Timeline execution flow", () => {
           createdAt: "2026-09-08T00:00:00Z",
         }]}
         toolCalls={[]}
-        hasOlder
+        historyCursor={{ at: "2026-09-08T00:00:00Z", id: "latest" }}
         loadingOlder={false}
         onLoadOlder={onLoadOlder}
         approvals={[]}

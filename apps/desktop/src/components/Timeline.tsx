@@ -11,9 +11,10 @@ import {
   Share2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Artifact,
+  HistoryCursor,
   Message,
   MessageAttachment,
   PlanTask,
@@ -47,6 +48,7 @@ import { ExecutionSummary } from "./ExecutionSummary";
 import { ModelDiagnostics } from "./ModelDiagnostics";
 import { SessionShareDialog } from "./SessionShareDialog";
 import { ConversationNavigationRail } from "./ConversationNavigationRail";
+import { useConversationScroll } from "../hooks/useConversationScroll";
 
 function MessageAttachmentPreview({
   attachment,
@@ -89,7 +91,7 @@ interface TimelineProps {
   client?: RpcClient;
   sessionId?: string;
   loading?: boolean;
-  hasOlder?: boolean;
+  historyCursor?: HistoryCursor | null;
   loadingOlder?: boolean;
   onLoadOlder?: () => Promise<void>;
   title?: string;
@@ -207,6 +209,7 @@ function TimelineEntries(props: {
               key={item.message.id}
               className="bubble user"
               data-user-message-id={item.message.id}
+              data-history-anchor={`message:${item.message.id}`}
               title={new Date(item.message.createdAt).toLocaleString()}
             >
               {editingMessageId === item.message.id ? (
@@ -290,7 +293,11 @@ function TimelineEntries(props: {
               </div>
             </div>
           ) : item.message.role === "tool" ? (
-            <div key={item.message.id} className="bubble tool-transcript">
+            <div
+              key={item.message.id}
+              className="bubble tool-transcript"
+              data-history-anchor={`message:${item.message.id}`}
+            >
               <span>工具记录</span>
               <Md
                 workspacePath={props.workspacePath}
@@ -304,6 +311,7 @@ function TimelineEntries(props: {
             <div
               key={item.message.id}
               className="bubble assistant"
+              data-history-anchor={`message:${item.message.id}`}
               title={new Date(item.message.createdAt).toLocaleString()}
             >
               <Md
@@ -334,22 +342,30 @@ function TimelineEntries(props: {
             </div>
           )
         ) : item.kind === "artifact" ? (
-          <ArtifactCard
+          <div
             key={item.artifact.id}
-            artifact={item.artifact}
-            workspacePath={props.workspacePath}
-            workspacePaths={props.workspacePaths}
-            onOpenFile={props.onOpenFile}
-            onError={props.onError}
-          />
+            data-history-anchor={`artifact:${item.artifact.id}`}
+          >
+            <ArtifactCard
+              artifact={item.artifact}
+              workspacePath={props.workspacePath}
+              workspacePaths={props.workspacePaths}
+              onOpenFile={props.onOpenFile}
+              onError={props.onError}
+            />
+          </div>
         ) : (
-          <ToolGroup
+          <div
             key={item.calls[0].id}
-            calls={item.calls}
-            onRollback={props.onRollback}
-            expanded={props.expandGroups}
-            client={props.client}
-          />
+            data-history-anchor={`tool:${item.calls[0].id}`}
+          >
+            <ToolGroup
+              calls={item.calls}
+              onRollback={props.onRollback}
+              expanded={props.expandGroups}
+              client={props.client}
+            />
+          </div>
         ),
       )}
       {props.approvals.map((approval) => (
@@ -393,10 +409,6 @@ export function Timeline(props: TimelineProps) {
   const [showShare, setShowShare] = useState(false);
   useEffect(() => setShowShare(false), [props.sessionId]);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const historyTopRef = useRef<HTMLDivElement>(null);
-  const pinnedToBottom = useRef(true);
-  const [showJump, setShowJump] = useState(false);
   const [filter, setFilter] = useState<TimelineFilter>("all");
   const [query, setQuery] = useState("");
   const historySearch = useHistorySearch(
@@ -407,7 +419,6 @@ export function Timeline(props: TimelineProps) {
   );
   const [exporting, setExporting] = useState(false);
   const exportRequest = useRef<AbortController | null>(null);
-  const scrollAnchor = useRef<{ top: number; height: number } | null>(null);
   useEffect(() => () => exportRequest.current?.abort(), []);
   const exportSession = async (format: "md" | "json") => {
     if (exportRequest.current) return;
@@ -443,38 +454,6 @@ export function Timeline(props: TimelineProps) {
     }
   };
 
-  const jumpToBottom = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTo({
-      top: el.scrollHeight,
-      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-        ? "auto"
-        : "smooth",
-    });
-    pinnedToBottom.current = true;
-    setShowJump(false);
-  };
-
-  // Auto-follow only while pinned to the bottom.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el && pinnedToBottom.current) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [
-    props.messages,
-    props.toolCalls,
-    props.approvals,
-    props.questions,
-    props.plan,
-    props.artifacts,
-    props.streamingText,
-    props.turnProgress,
-    props.busy,
-    props.queue,
-  ]);
-
   const groups = useMemo(
     () =>
       groupTimeline(
@@ -482,10 +461,10 @@ export function Timeline(props: TimelineProps) {
           props.messages,
           props.toolCalls,
           props.artifacts,
-          { hasOlder: props.hasOlder },
+          { hasOlder: Boolean(props.historyCursor) },
         ),
       ),
-    [props.messages, props.toolCalls, props.artifacts, props.hasOlder],
+    [props.messages, props.toolCalls, props.artifacts, props.historyCursor],
   );
   const items = useMemo(
     () =>
@@ -504,54 +483,31 @@ export function Timeline(props: TimelineProps) {
         : filterTimelineGroups(groups, filter, query),
     [groups, filter, query, historySearch.enabled, historySearch.page, props.artifacts],
   );
-  useEffect(() => {
-    const el = scrollRef.current;
-    const anchor = scrollAnchor.current;
-    if (!el || !anchor) return;
-    el.scrollTop = anchor.top + el.scrollHeight - anchor.height;
-    scrollAnchor.current = null;
-  }, [items]);
-  const hasOlder = historySearch.enabled
-    ? Boolean(historySearch.page?.nextCursor)
-    : props.hasOlder;
+  const historyCursor = historySearch.enabled
+    ? historySearch.page?.nextCursor
+    : props.historyCursor;
+  const hasOlder = Boolean(historyCursor);
   const loadingOlder = historySearch.enabled
     ? historySearch.loading
     : props.loadingOlder;
-  const loadOlder = useCallback(() => {
-    if (!hasOlder || loadingOlder) return;
-    const el = scrollRef.current;
-    if (el)
-      scrollAnchor.current = { top: el.scrollTop, height: el.scrollHeight };
-    pinnedToBottom.current = false;
-    if (historySearch.enabled) historySearch.loadOlder();
-    else void props.onLoadOlder?.();
-  }, [hasOlder, historySearch.enabled, historySearch.loadOlder, loadingOlder, props.onLoadOlder]);
-
-  // Track whether the user is reading history (not pinned to bottom).
-  const onScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    pinnedToBottom.current = nearBottom;
-    setShowJump(!nearBottom);
-    // History remains paged for remote sessions, but reaching the top should
-    // feel like one continuous conversation. The request is still serialized
-    // by the lifecycle hook, so a burst of scroll events cannot duplicate it.
-    if (el.scrollTop <= 80 && hasOlder && !loadingOlder) void loadOlder();
-  };
-  useEffect(() => {
-    const root = scrollRef.current;
-    const sentinel = historyTopRef.current;
-    if (!root || !sentinel || !hasOlder || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry?.isIntersecting && !loadingOlder) void loadOlder();
-      },
-      { root, rootMargin: "160px 0px 0px", threshold: 0 },
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasOlder, loadingOlder, loadOlder]);
+  const contentVersion = useMemo(() => [
+    items, props.approvals, props.questions, props.plan, props.streamingText,
+    props.turnProgress, props.busy, props.queue,
+  ], [items, props.approvals, props.questions, props.plan, props.streamingText,
+    props.turnProgress, props.busy, props.queue]);
+  const { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump } = useConversationScroll({
+    viewKey: JSON.stringify([props.sessionId, filter, query.trim()]),
+    cursorKey: historyCursor ? JSON.stringify(historyCursor) : null,
+    hasOlder,
+    loadingOlder,
+    loading: props.loading || (historySearch.loading && !historySearch.page),
+    loadOlder: historySearch.enabled ? historySearch.loadOlder : props.onLoadOlder,
+    contentVersion,
+  });
+  const navigationMessages = useMemo(
+    () => items.flatMap((item) => item.kind === "message" ? [item.message] : []),
+    [items],
+  );
   const hasRunningTool = props.toolCalls.some(
     (t) => t.status === "running" || t.status === "waiting_approval",
   );
@@ -656,7 +612,7 @@ export function Timeline(props: TimelineProps) {
       )}
       {showShare && props.client && props.sessionId && <SessionShareDialog client={props.client} sessionId={props.sessionId} title={props.title ?? "miniQ 会话"} artifacts={props.artifacts} onClose={() => setShowShare(false)} />}
       <div className="timeline-shell">
-        <ConversationNavigationRail messages={props.messages} scrollRef={scrollRef} />
+        <ConversationNavigationRail messages={navigationMessages} scrollRef={scrollRef} />
         <div className="timeline" ref={scrollRef} onScroll={onScroll}>
           <div ref={historyTopRef} className="history-top-sentinel" aria-hidden="true" />
         {(props.loading || (historySearch.loading && !historySearch.page)) && (
