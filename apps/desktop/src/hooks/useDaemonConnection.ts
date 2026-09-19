@@ -88,6 +88,7 @@ export function useDaemonConnection(options: ConnectionOptions) {
     if (paused) return;
     let disposed = false;
     let connectionLoopRunning = false;
+    let recovering = false;
     const connect = async (reconnecting: boolean) => {
       if (connectionLoopRunning || disposed) return;
       connectionLoopRunning = true;
@@ -111,22 +112,36 @@ export function useDaemonConnection(options: ConnectionOptions) {
     };
     void connect(false);
     const recover = async () => {
-      if (disposed) return;
+      // Capacitor and the DOM both signal a foreground transition. A single
+      // probe prevents duplicate transfers and competing reconnect attempts.
+      if (disposed || recovering || connectionLoopRunning) return;
+      recovering = true;
       try {
         if (!client.connected) {
           client.disconnect("foreground recovery");
           void connect(true);
           return;
         }
-        await client.call("daemon.health", undefined, { timeoutMs: 10_000 });
-        await refreshWorkspaces();
-        await refreshSessions();
-        if (!disposed) setConnectionEpoch((current) => current + 1);
-      } catch (error) {
+        try {
+          const latest = await client.call<HealthStatus>("daemon.health", undefined, { timeoutMs: 10_000 });
+          if (disposed) return;
+          setHealth(latest);
+        } catch (error) {
+          if (disposed) return;
+          onError(errorMessage(error));
+          client.disconnect("foreground health check failed");
+          void connect(true);
+          return;
+        }
+        // A failed catalog read does not mean the authenticated socket failed.
+        // Keep it alive so the user can retry without losing pending work.
+        const results = await Promise.allSettled([refreshWorkspaces(), refreshSessions()]);
         if (disposed) return;
-        onError(errorMessage(error));
-        client.disconnect("foreground health check failed");
-        void connect(true);
+        const failed = results.find((result) => result.status === "rejected");
+        onError(failed?.status === "rejected" ? `同步失败：${errorMessage(failed.reason)}` : null);
+        setConnectionEpoch((current) => current + 1);
+      } finally {
+        recovering = false;
       }
     };
     const appStateListener = App.addListener("appStateChange", ({ isActive }) => {

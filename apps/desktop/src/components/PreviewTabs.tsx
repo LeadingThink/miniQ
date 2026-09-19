@@ -21,7 +21,7 @@ export function PreviewTabs(props: {
       (target) => target.path === props.active,
     );
     const active = document.getElementById(`${props.id}-${index}`);
-    active?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    active?.parentElement?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
     if (restoreFocus.current) {
       restoreFocus.current = false;
       active?.focus({ preventScroll: true });

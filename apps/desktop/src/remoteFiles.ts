@@ -7,6 +7,8 @@ export interface FileReadOptions {
   sessionId?: string | null;
   signal?: AbortSignal;
   onProgress?: (received: number, total: number) => void;
+  /** Reserve aggregate memory before downloading a resource in a bundle. */
+  reserveBytes?: (size: number) => void;
   download?: boolean;
 }
 
@@ -38,12 +40,14 @@ export async function readRemoteFile(
 ): Promise<LocalFilePreview> {
   const { client, sessionId, signal, onProgress } = options;
   if (!client || !sessionId) throw new Error("请先连接桌面并打开一个会话");
+  signal?.throwIfAborted();
   const description = await client.call<FileDescription>(
     "file.describe",
     { sessionId, path },
     { signal },
   );
   const { size, revision, kind } = description;
+  signal?.throwIfAborted();
   if (
     !Number.isSafeInteger(size) ||
     size < 0 ||
@@ -64,6 +68,7 @@ export async function readRemoteFile(
     throw new Error(
       "当前手机单文件预览与下载上限为 64 MB，请让 AI 生成较小的预览版或拆分文件",
     );
+  options.reserveBytes?.(size);
   const text = (kind === "text" || kind === "markdown") && !options.download;
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const parts: string[] = [];
@@ -96,6 +101,7 @@ export async function readRemoteFile(
     offset = chunk.nextOffset;
     onProgress?.(offset, size);
   }
+  signal?.throwIfAborted();
   if (text) {
     parts.push(decoder.decode());
     file.content = parts.join("");

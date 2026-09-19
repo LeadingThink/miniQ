@@ -77,6 +77,7 @@ export function useAppSlashCommands(
     sessionId: string;
   } | null>(null);
   const session = app.catalog.currentSession;
+  const remote = app.client.mode === "remote";
   const commands: ComposerSlashCommand[] = [
     ...buildModelSlashCommands(app.client, app.sessionModel, Boolean(app.busy)),
     ...buildComposerSlashCommands(app, {
@@ -86,12 +87,14 @@ export function useAppSlashCommands(
     }),
     {
       id: "browser",
-      name: "打开内置浏览器",
+      name: remote ? "查看桌面网页记录" : "打开内置浏览器",
       group: "工具",
       icon: "browser",
-      description: "在右侧打开浏览器，保留当前会话",
+      description: remote ? "查看当前任务保存的网页观察与截图" : "在右侧打开浏览器，保留当前会话",
       keywords: ["browser", "web", "网页", "浏览器"],
       onSelect: options.onOpenBrowser,
+      disabled: remote && !session,
+      disabledReason: remote && !session ? "请先打开一个桌面会话" : undefined,
     },
     {
       id: "task",

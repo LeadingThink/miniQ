@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { WorkbenchResizer } from "./WorkbenchResizer";
+import { isMobileLayout, MOBILE_LAYOUT_QUERY } from "../mobileViewport";
 import {
   clampWorkbenchWidth,
   DEFAULT_WORKBENCH_WIDTH,
@@ -25,6 +26,7 @@ export function WorkbenchPanel({ children, hidden = false }: { children: ReactNo
   const [space, setSpace] = useState({
     available: window.innerWidth,
     viewport: window.innerWidth,
+    mobile: isMobileLayout(),
   });
   useLayoutEffect(() => {
     const app = container.current?.parentElement;
@@ -34,10 +36,11 @@ export function WorkbenchPanel({ children, hidden = false }: { children: ReactNo
       const available =
         app.clientWidth - (sidebar?.getBoundingClientRect().width ?? 0);
       const viewport = window.innerWidth;
+      const mobile = isMobileLayout();
       setSpace((previous) =>
-        previous.available === available && previous.viewport === viewport
+        previous.available === available && previous.viewport === viewport && previous.mobile === mobile
           ? previous
-          : { available, viewport },
+          : { available, viewport, mobile },
       );
     };
     measure();
@@ -45,12 +48,15 @@ export function WorkbenchPanel({ children, hidden = false }: { children: ReactNo
     observer.observe(app);
     if (sidebar) observer.observe(sidebar);
     window.addEventListener("resize", measure);
+    const media = window.matchMedia?.(MOBILE_LAYOUT_QUERY);
+    media?.addEventListener("change", measure);
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", measure);
+      media?.removeEventListener("change", measure);
     };
   }, []);
-  const layout = workbenchLayout(space.available, space.viewport);
+  const layout = workbenchLayout(space.available, space.viewport, space.mobile);
   useEffect(() => {
     if (layout.mode === "mobile") setDragWidth(null);
   }, [layout.mode]);

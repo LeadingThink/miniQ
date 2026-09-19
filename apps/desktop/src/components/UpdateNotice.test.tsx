@@ -12,6 +12,14 @@ const IDLE: AppUpdaterState = {
 };
 
 describe("UpdateNotice", () => {
+  it("reports a completed no-update check with the installed version", () => {
+    const html = renderToStaticMarkup(<UpdateNotice supported
+      state={{ ...IDLE, phase: "up-to-date", version: "0.1.36" }}
+      onCheck={() => undefined} onInstall={() => undefined} />);
+    expect(html).toContain("已是最新版本");
+    expect(html).toContain("v0.1.36");
+    expect(html).toContain('role="status"');
+  });
   it("offers a manual update check in packaged desktop builds", () => {
     const html = renderToStaticMarkup(
       <UpdateNotice

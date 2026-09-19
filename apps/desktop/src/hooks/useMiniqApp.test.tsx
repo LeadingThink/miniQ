@@ -420,6 +420,7 @@ it("unmounts the complete session page without orphaned child-task DOM nodes", a
 });
 
 it("gives the task browser the workbench without a competing review panel", async () => {
+  fake.mode = "local";
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   const original = fake.call.getMockImplementation()!;
   fake.call.mockImplementation((method, params) => method === "session.diff"
@@ -456,7 +457,29 @@ it("gives the task browser the workbench without a competing review panel", asyn
   }
 });
 
+it("opens desktop observations on remote clients without launching a separate iframe session", async () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  let app!: ReturnType<typeof useMiniqApp>;
+  function TestApp() {
+    app = useMiniqApp();
+    return <AppShell app={app} theme="grid" onThemeChange={() => {}} />;
+  }
+  try {
+    render(<TestApp />);
+    await screen.findByRole("button", { name: "a，执行中" });
+    await act(async () => { await app.actions.openSession("a"); });
+    fireEvent.click(screen.getByRole("button", { name: "查看桌面网页记录" }));
+    await screen.findByRole("complementary", { name: "桌面网页记录" });
+    expect(screen.queryByTitle("网页预览")).toBeNull();
+    await act(async () => { await app.actions.openSession("b"); });
+    expect(screen.queryByRole("complementary", { name: "桌面网页记录" })).toBeNull();
+    act(() => window.dispatchEvent(new CustomEvent("miniq:open-browser", { detail: { url: "https://example.test" } })));
+    expect(screen.queryByTitle("网页预览")).toBeNull();
+  } finally { cleanup(); vi.unstubAllGlobals(); }
+});
+
 it("adopts a default-project draft browser before its first task can request that page", async () => {
+  fake.mode = "local";
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   const original = fake.call.getMockImplementation()!;
   let resolvedTabs: { result: { tabs: Array<{ tabId: string; url: string }> } } | undefined;
@@ -515,6 +538,7 @@ it("adopts a default-project draft browser before its first task can request tha
 });
 
 it("reveals observation pages by their exact id without reopening or crossing conversations", async () => {
+  fake.mode = "local";
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   const original = fake.call.getMockImplementation()!;
   const replies = new Map<string, { tabs: Array<{ tabId: string; url: string }> }>();
@@ -568,7 +592,7 @@ it("reveals observation pages by their exact id without reopening or crossing co
     expect(otherTab.tabId).not.toBe(firstTab.tabId);
     expect(activePanel().querySelector("iframe")).not.toBe(originalPage);
     // A closed historical page is recreated at its recorded URL with a new id.
-    fireEvent.click(screen.getByRole("button", { name: "关闭网页标签" }));
+    fireEvent.click(screen.getByRole("button", { name: /^关闭网页标签 / }));
     reveal("https://form.test/history", otherTab.tabId);
     const recreated = (await tabs("b"))[0];
     expect(recreated.tabId).not.toBe(otherTab.tabId);

@@ -30,7 +30,7 @@ export async function loadObservation(client: RpcClient, call: ToolCall, signal:
   while (offset < image.bytes) {
     signal.throwIfAborted();
     const chunk = await client.call<Chunk>("observation.read", { sessionId: call.sessionId, toolCallId: call.id, offset,
-      ...(call.toolName === "view_pdf" ? { imageIndex } : {}) });
+      ...(call.toolName === "view_pdf" ? { imageIndex } : {}) }, { signal });
     signal.throwIfAborted();
     if (typeof chunk.base64 !== "string" || chunk.base64.length > 349_528) throw new Error("截图分块大小无效");
     const bytes = Uint8Array.from(atob(chunk.base64), character => character.charCodeAt(0));

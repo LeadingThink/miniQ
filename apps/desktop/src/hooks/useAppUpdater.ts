@@ -11,6 +11,7 @@ const FOCUS_CHECK_INTERVAL_MS = 60_000;
 
 export type UpdatePhase =
   | "idle"
+  | "up-to-date"
   | "checking"
   | "unavailable"
   | "available"
@@ -74,6 +75,7 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
   const [state, setState] = useState<AppUpdaterState>(INITIAL_STATE);
   const updateRef = useRef<Update | null>(null);
   const checkRef = useRef<Promise<void> | null>(null);
+  const explicitCheckRef = useRef(false);
   const installRef = useRef(false);
   const lastCheckedAtRef = useRef(Date.now());
   const supported = isTauriRuntime() && !import.meta.env.DEV;
@@ -82,17 +84,26 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
     async (silent: boolean) => {
       if (!supported) return;
       if (installRef.current) return;
+      if (!silent) {
+        explicitCheckRef.current = true;
+        setState((current) => ({ ...current, phase: "checking", error: null }));
+      }
       if (checkRef.current) return checkRef.current;
       const task = (async () => {
         lastCheckedAtRef.current = Date.now();
-        if (!silent) setState((current) => ({ ...current, phase: "checking", error: null }));
         try {
           const { check } = await import("@tauri-apps/plugin-updater");
           const update = await check({ timeout: 30_000 });
           if (!update) {
             if (updateRef.current) await updateRef.current.close();
             updateRef.current = null;
-            setState(INITIAL_STATE);
+            if (explicitCheckRef.current) {
+              const { getVersion } = await import("@tauri-apps/api/app");
+              const version = await getVersion().catch(() => null);
+              setState({ ...INITIAL_STATE, phase: "up-to-date", version });
+            } else {
+              setState((current) => current.phase === "up-to-date" ? current : INITIAL_STATE);
+            }
             return;
           }
           if (updateRef.current) await updateRef.current.close();
@@ -111,7 +122,7 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
             return;
           }
           setState((current) => ({ ...current, phase: "error", error: message }));
-          if (!silent) onError(`检查更新失败：${message}`);
+          if (explicitCheckRef.current) onError(`检查更新失败：${message}`);
         }
       })();
       checkRef.current = task;
@@ -119,6 +130,7 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
         await task;
       } finally {
         checkRef.current = null;
+        explicitCheckRef.current = false;
       }
     },
     [onError, supported],

@@ -86,7 +86,9 @@ it("does not retain a late response after the panel closes", async () => {
   const client = {call:vi.fn(() => new Promise(resolve => {complete = resolve;}))} as unknown as RpcClient;
   const view = render(<ComputerObservation call={call} client={client} />);
   await waitFor(() => expect(client.call).toHaveBeenCalled());
+  const signal = vi.mocked(client.call).mock.calls[0][2]?.signal;
   view.unmount();
+  expect(signal?.aborted).toBe(true);
   await act(async () => { complete(response); });
   expect(URL.createObjectURL).not.toHaveBeenCalled();
 });
@@ -99,8 +101,23 @@ it("loads only the selected PDF page and revokes the previous image", async () =
   await screen.findByAltText("PDF 第 2 页");
   expect(client.call).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button",{name:"下一页"}));
-  await waitFor(() => expect(client.call).toHaveBeenLastCalledWith("observation.read",{sessionId:"session-1",toolCallId:"call-1",offset:0,imageIndex:1}));
+  await waitFor(() => expect(client.call).toHaveBeenLastCalledWith("observation.read",{sessionId:"session-1",toolCallId:"call-1",offset:0,imageIndex:1},{signal:expect.any(AbortSignal)}));
   await screen.findByAltText("PDF 第 5 页");
   expect(URL.revokeObjectURL).toHaveBeenCalled();
   expect(screen.getByRole("button",{name:"下一页"}).hasAttribute("disabled")).toBe(true);
+});
+
+it("uses the loaded screenshot for fullscreen zoom and closes without downloading again", async () => {
+  HTMLDialogElement.prototype.showModal = vi.fn(function(this: HTMLDialogElement) { this.setAttribute("open", ""); });
+  HTMLDialogElement.prototype.close = vi.fn(function(this: HTMLDialogElement) { this.removeAttribute("open"); });
+  const client = { mode: "remote", call: vi.fn().mockResolvedValue(response) } as unknown as RpcClient;
+  render(<ComputerObservation client={client} call={{ ...call, input: { url: "https://example.test/form" } }} />);
+  await screen.findByAltText("操作后的网页截图");
+  expect(screen.queryByRole("button", { name: "在右侧内置浏览器打开" })).toBeNull();
+  expect(screen.getByRole("link", { name: "在本机浏览器打开" }).getAttribute("href")).toBe("https://example.test/form");
+  fireEvent.click(screen.getByRole("button", { name: "全屏查看截图" }));
+  expect(screen.getByRole("dialog").textContent).toContain("浏览器观察");
+  fireEvent.click(screen.getByRole("button", { name: "关闭截图预览" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(client.call).toHaveBeenCalledTimes(1);
 });

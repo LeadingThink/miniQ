@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
+import { isMobileLayout } from "../mobileViewport";
 import type {
   QueuedMessage,
   Session,
@@ -135,9 +136,7 @@ function useNavigationState() {
   const [showSettings, setShowSettings] = useState(false);
   const [showDistill, setShowDistill] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
-    typeof window.matchMedia === "function" && window.matchMedia("(max-width: 720px)").matches,
-  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(isMobileLayout);
   const [page, setPage] = useState<AppPage>(null);
   return {
     editingWorkspaceId,

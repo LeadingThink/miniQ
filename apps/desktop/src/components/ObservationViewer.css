@@ -1,0 +1,10 @@
+.observation-viewer { width: min(1200px, 100%); height: calc(var(--app-height, 100dvh) - 24px); max-width: calc(100% - 24px); max-height: none; margin: auto; padding: 0; border: 1px solid var(--border); border-radius: 12px; color: var(--text); background: var(--bg); }
+.observation-viewer[open] { display: flex; flex-direction: column; }
+.observation-viewer::backdrop { background: var(--scrim); }
+.observation-viewer > header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.observation-viewer > header strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.observation-viewer > header :is(button,a) { display: grid; place-items: center; min-width: 44px; min-height: 44px; color: inherit; background: transparent; }
+.observation-viewer .media-inspector { flex: 1; min-height: 0; }
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .observation-viewer { width: 100%; max-width: 100%; height: var(--app-height, 100dvh); border: 0; border-radius: 0; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+}

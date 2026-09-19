@@ -124,4 +124,30 @@ describe("remote artifact reads", () => {
     ).rejects.toThrow("64 MB");
     expect(client.call).toHaveBeenCalledTimes(1);
   });
+  it("reserves bundle capacity before requesting file data", async () => {
+    const client = source(new Uint8Array(19));
+    await expect(
+      readRemoteFile("file.pdf", {
+        client,
+        sessionId: "s1",
+        reserveBytes: () => {
+          throw new Error("bundle too large");
+        },
+      }),
+    ).rejects.toThrow("bundle too large");
+    expect(client.call).toHaveBeenCalledTimes(1);
+  });
+  it("does not start a request that was already cancelled", async () => {
+    const client = source(new Uint8Array(0));
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      readRemoteFile("empty.pdf", {
+        client,
+        sessionId: "s1",
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(client.call).not.toHaveBeenCalled();
+  });
 });

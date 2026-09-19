@@ -1,22 +1,13 @@
 import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
-import { AppShell } from "./components/AppShell";
 import { MobileEntry } from "./components/MobileEntry";
-import { useMiniqApp } from "./hooks/useMiniqApp";
-import { SessionFileAccess } from "./sessionFileAccess";
 import { isRemoteBrowserEntry, loadRemoteCredentials } from "./remoteAccess";
 import { getAppearance, subscribeAppearance, storeTheme, type ThemeId } from "./theme";
 import { sharedSessionId } from "./sharing";
 import { hasMobilePrivacyConsent } from "./mobilePrivacy";
 const SharedSessionPage = lazy(() => import("./components/SharedSessionPage").then((module) => ({ default: module.SharedSessionPage })));
+const ConnectedApp = lazy(() => import("./ConnectedApp"));
 
 export type { PendingApproval } from "./hooks/useSessionFeed";
-
-function ConnectedApp(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) => void }) {
-  const app = useMiniqApp();
-  return <SessionFileAccess client={app.client} sessionId={app.catalog.currentSessionId}>
-    <AppShell app={app} theme={props.theme} onThemeChange={props.onThemeChange} />
-  </SessionFileAccess>;
-}
 
 export default function App() {
   const { theme } = useSyncExternalStore(subscribeAppearance, getAppearance, getAppearance);
@@ -24,7 +15,7 @@ export default function App() {
   if (shareId !== null) return <Suspense fallback={<p role="status">正在加载分享…</p>}><SharedSessionPage key={shareId} id={shareId} /></Suspense>;
 
   if (isRemoteBrowserEntry()) return <RemoteGate theme={theme} onThemeChange={storeTheme} />;
-  return <ConnectedApp theme={theme} onThemeChange={storeTheme} />;
+  return <Suspense fallback={<p role="status" className="remote-restoring">正在加载工作台…</p>}><ConnectedApp theme={theme} onThemeChange={storeTheme} /></Suspense>;
 }
 
 /** Remembered credentials reconnect straight to the desktop, so the API key —
@@ -45,5 +36,5 @@ function RemoteGate(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) => 
 
   if (phase === "restoring") return <p role="status" className="remote-restoring">正在恢复远程连接…</p>;
   if (phase === "entry") return <MobileEntry onRemote={() => setPhase("active")} />;
-  return <ConnectedApp theme={props.theme} onThemeChange={props.onThemeChange} />;
+  return <Suspense fallback={<p role="status" className="remote-restoring">正在加载远程工作台…</p>}><ConnectedApp theme={props.theme} onThemeChange={props.onThemeChange} /></Suspense>;
 }
