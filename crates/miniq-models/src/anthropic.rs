@@ -433,11 +433,12 @@ impl ModelProvider for AnthropicProvider {
         request: CompletionRequest,
     ) -> Result<DeltaStream, ProviderError> {
         let url = format!("{}/messages", self.config.base_url.trim_end_matches('/'));
+        let body = self.try_build_body(&request)?;
         let mut builder = self
             .client
             .post(url)
             .header("anthropic-version", "2023-06-01")
-            .json(&self.try_build_body(&request)?);
+            .json(&crate::ModelFirstRequest(&body));
         if !self.config.api_key.is_empty() {
             builder = builder.header("x-api-key", &self.config.api_key);
         }

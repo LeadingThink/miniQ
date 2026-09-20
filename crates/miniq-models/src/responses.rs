@@ -425,7 +425,7 @@ impl ModelProvider for ResponsesProvider {
             ),
             ..Default::default()
         };
-        let mut builder = self.client.post(url).json(&body);
+        let mut builder = self.client.post(url).json(&crate::ModelFirstRequest(&body));
         if !self.config.api_key.is_empty() {
             builder = builder.bearer_auth(&self.config.api_key);
         }

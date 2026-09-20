@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 use base64::Engine;
-use miniq_models::ChatImage;
+use miniq_models::{ChatImage, ModelFirstRequest};
 use miniq_protocol::RiskLevel;
 use miniq_sandbox::Risk;
 use schemars::JsonSchema;
@@ -254,7 +254,7 @@ impl Tool for GenerateImageTool {
         let response = http
             .post(url(media, "/images/generations"))
             .bearer_auth(&media.api_key)
-            .json(&body)
+            .json(&ModelFirstRequest(&body))
             .send()
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("image request: {e}")))?;
@@ -351,7 +351,7 @@ impl Tool for SynthesizeSpeechTool {
         let response = client()?
             .post(url(media, "/audio/speech"))
             .bearer_auth(&media.api_key)
-            .json(&body)
+            .json(&ModelFirstRequest(&body))
             .send()
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("speech request: {e}")))?;
@@ -476,7 +476,7 @@ impl Tool for GenerateVideoTool {
             client()?
                 .post(url(media, "/videos/generations"))
                 .bearer_auth(&media.api_key)
-                .json(&body)
+                .json(&ModelFirstRequest(&body))
                 .send()
                 .await
                 .map_err(|e| ToolError::ExecutionFailed(format!("video request: {e}")))?,
@@ -512,7 +512,7 @@ impl Tool for GenerateMusicTool {
             client()?
                 .post(url(media, "/music/generations"))
                 .bearer_auth(&media.api_key)
-                .json(&body)
+                .json(&ModelFirstRequest(&body))
                 .send()
                 .await
                 .map_err(|e| ToolError::ExecutionFailed(format!("music request: {e}")))?,
@@ -521,6 +521,10 @@ impl Tool for GenerateMusicTool {
         Ok(json!({"kind":"music_task","task":value,"resume":true}))
     }
 }
+
+#[cfg(test)]
+#[path = "media_request_tests.rs"]
+mod request_tests;
 
 #[cfg(test)]
 mod tests {

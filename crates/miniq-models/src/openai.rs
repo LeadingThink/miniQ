@@ -503,7 +503,10 @@ impl ModelProvider for OpenAiCompatProvider {
             self.config.base_url.trim_end_matches('/')
         );
         let body = self.try_build_body(&request)?;
-        let mut req = self.client.post(&url).json(&body);
+        let mut req = self
+            .client
+            .post(&url)
+            .json(&crate::ModelFirstRequest(&body));
         if !self.config.api_key.is_empty() {
             req = req.bearer_auth(&self.config.api_key);
         }

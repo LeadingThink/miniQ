@@ -11,6 +11,7 @@ mod image;
 mod openai;
 mod provider;
 mod reasoning;
+mod request_body;
 mod response_info;
 pub use miniq_protocol::{ModelCallPurpose, ModelCallTrace};
 mod responses;
@@ -28,6 +29,10 @@ pub use provider::{
     OutputTokenUsage, ProviderConfig, ProviderContext, ProviderError, ToolCallRequest, ToolSpec,
 };
 pub use reasoning::reasoning_efforts;
+pub use request_body::ModelFirstRequest;
 pub use responses::ResponsesProvider;
 
 pub mod mock;
+
+#[cfg(test)]
+mod request_wire_tests;

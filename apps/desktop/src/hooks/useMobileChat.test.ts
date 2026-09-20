@@ -27,7 +27,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-it("records message dates and monotonic elapsed time, excluding timing from provider requests", async () => {
+it("records dates and monotonic time while sending model first without timing metadata", async () => {
   const stream = streamResponse();
   const fetcher = vi.fn().mockResolvedValue(stream.response);
   vi.stubGlobal("fetch", fetcher);
@@ -42,7 +42,11 @@ it("records message dates and monotonic elapsed time, excluding timing from prov
   const answer = result.current.messages[1];
   expect(answer).toMatchObject({ createdAt: start, completedAt: "2026-09-20T07:59:00.000Z", elapsedMs: 72_000 });
   expect(readMobileChat()[1]).toEqual(answer);
-  expect(JSON.parse(fetcher.mock.calls[0][1].body).messages).toEqual([{ role: "user", content: "问题" }]);
+  const requestBody = fetcher.mock.calls[0][1].body;
+  expect(requestBody.startsWith('{"model":"test-model",')).toBe(true);
+  expect(JSON.parse(requestBody)).toEqual({
+    model: "test-model", messages: [{ role: "user", content: "问题" }], stream: true,
+  });
 });
 
 it("freezes failed timing and gives retries their own start while preserving the question's date", async () => {
