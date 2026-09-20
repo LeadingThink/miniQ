@@ -110,6 +110,7 @@ export function useAppWorkbench(app: MiniqAppController) {
       const detail = (event as CustomEvent<BrowserDraftCreatedDetail>).detail;
       if (
         !detail ||
+        detail.hostId !== app.client.sshHost ||
         typeof detail.workspaceId !== "string" ||
         typeof detail.sessionId !== "string"
       )
@@ -123,7 +124,7 @@ export function useAppWorkbench(app: MiniqAppController) {
     window.addEventListener(BROWSER_DRAFT_CREATED_EVENT, adoptDraft);
     return () =>
       window.removeEventListener(BROWSER_DRAFT_CREATED_EVENT, adoptDraft);
-  }, []);
+  }, [app.client.sshHost]);
   useEffect(() => {
     const openFromObservation = (event: Event) => {
       const detail = (event as CustomEvent<{ url?: unknown; tabId?: unknown }>)

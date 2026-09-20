@@ -45,6 +45,10 @@ pub(super) async fn create(state: &AppState, raw: Option<Value>) -> Result<Value
             .enable_automatic_title(&session.id)
             .map_err(store_err)?;
     }
+    state.emit(Event::SessionStatusChanged {
+        session_id: session.id.clone(),
+        status: session.status,
+    });
     to_value(session)
 }
 

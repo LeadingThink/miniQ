@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
 struct Peer {
+    host: Option<String>,
     session: Option<String>,
     compress: bool,
     pending: Vec<Value>,
@@ -18,22 +19,28 @@ impl Subscriptions {
     pub fn observe(&mut self, source: &str, value: &Value) {
         let peer = self.0.entry(source.to_string()).or_default();
         peer.compress = value["acceptEncoding"] == "gzip";
+        let routed = value["method"] == "host.call";
+        let request = if routed { &value["params"] } else { value };
         if value["type"] == "remote_select"
             || matches!(
-                value["method"].as_str(),
+                request["method"].as_str(),
                 Some("session.open" | "session.sync")
             )
         {
             let session = if value["type"] == "remote_select" {
                 &value["sessionId"]
             } else {
-                &value["params"]["sessionId"]
+                &request["params"]["sessionId"]
+            };
+            peer.host = if value["type"] == "remote_select" || routed {
+                request["hostId"].as_str().map(str::to_string)
+            } else {
+                None
             };
             peer.session = session.as_str().map(str::to_string);
-            peer.pending.retain(|event| {
-                crate::event_journal::sidebar_event(event)
-                    || event["sessionId"].as_str() == peer.session.as_deref()
-            });
+            let host = peer.host.as_deref();
+            let session = peer.session.as_deref();
+            peer.pending.retain(|event| visible(event, host, session));
             peer.bytes = peer
                 .pending
                 .iter()
@@ -53,9 +60,7 @@ impl Subscriptions {
             if peer.resync {
                 continue;
             }
-            if !crate::event_journal::sidebar_event(&event)
-                && event["sessionId"].as_str() != peer.session.as_deref()
-            {
+            if !visible(&event, peer.host.as_deref(), peer.session.as_deref()) {
                 continue;
             }
             peer.bytes += size;
@@ -97,3 +102,21 @@ impl Subscriptions {
         }
     }
 }
+
+fn visible(value: &Value, host: Option<&str>, session: Option<&str>) -> bool {
+    if value["type"] == "host_changed" {
+        return true;
+    }
+    let (event_host, event) = if value["type"] == "host_event" {
+        (value["hostId"].as_str(), &value["event"])
+    } else {
+        (None, value)
+    };
+    crate::event_journal::sidebar_event(event)
+        || (host == event_host
+            && (event["type"] == "remote_resync"
+                || (session.is_some() && event["sessionId"].as_str() == session)))
+}
+
+#[cfg(test)]
+mod tests;

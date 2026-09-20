@@ -71,6 +71,8 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         }
     };
     let result = match req.method.as_str() {
+        "host.list" | "host.save" | "host.remove" | "host.connect" | "host.disconnect"
+        | "host.call" => state.ssh_hosts.dispatch(&req.method, req.params).await,
         "daemon.health" => system::health(state),
         "file.describe" => files::describe(state, req.params).await,
         "file.read" => files::read(state, req.params).await,

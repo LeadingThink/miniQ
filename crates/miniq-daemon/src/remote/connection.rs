@@ -78,6 +78,7 @@ pub(super) async fn run(state: &AppState, config: &ActiveConfig) -> anyhow::Resu
     let mut cancellations = HashMap::<(String, String), CancellationToken>::new();
     let mut uploads = super::upload::Uploads::default();
     let mut events = state.live_events.subscribe();
+    let mut host_events = state.ssh_hosts.subscribe();
     let mut subscriptions = super::subscriptions::Subscriptions::default();
     let mut flush = tokio::time::interval(Duration::from_millis(700));
     flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -102,6 +103,14 @@ pub(super) async fn run(state: &AppState, config: &ActiveConfig) -> anyhow::Resu
                     tracing::warn!(count, "remote client missed live events; requesting state resync");
                     subscriptions.resync();
                 }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return Ok(()),
+            },
+            event = host_events.recv() => match event {
+                Ok(event) if mobile_clients > 0 => {
+                    if let Some(event) = project_host_event(event) { subscriptions.event(event); }
+                },
+                Ok(_) => {},
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => subscriptions.resync(),
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => return Ok(()),
             },
             message = incoming.next() => {
@@ -196,7 +205,7 @@ pub(super) async fn run(state: &AppState, config: &ActiveConfig) -> anyhow::Resu
 
 async fn dispatch(state: &AppState, request: anyhow::Result<RpcRequest>) -> RpcResponse {
     match request {
-        Ok(request) if remote_method_allowed(&request.method) => {
+        Ok(request) if remote_request_allowed(&request) => {
             crate::gateway::dispatch(state, request).await
         }
         Ok(request) => RpcResponse::err(
@@ -210,5 +219,18 @@ async fn dispatch(state: &AppState, request: anyhow::Result<RpcRequest>) -> RpcR
     }
 }
 
+fn project_host_event(mut envelope: Value) -> Option<Value> {
+    if envelope["type"] == "host_event" {
+        if envelope["event"]["type"] == "browser_driver_requested" {
+            return None;
+        }
+        envelope["event"] = crate::event_journal::project_event(envelope["event"].take());
+    }
+    Some(envelope)
+}
+
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
+
+#[cfg(test)]
+mod host_tests;

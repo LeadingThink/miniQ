@@ -16,7 +16,7 @@ use rand::distr::Alphanumeric;
 use rand::{Rng, RngCore};
 use serde::{Deserialize, Serialize};
 mod blob;
-mod connection;
+pub(crate) mod connection;
 mod subscriptions;
 mod transport;
 mod upload;
@@ -278,7 +278,24 @@ fn remote_method_allowed(method: &str) -> bool {
             | "externalSession.import"
             | "mcp.update"
             | "skill.delete"
+            | "host.save"
+            | "host.remove"
     )
+}
+
+/// The outer tunnel must not turn a desktop-only operation into a mobile RPC.
+fn remote_request_allowed(request: &RpcRequest) -> bool {
+    if !remote_method_allowed(&request.method) {
+        return false;
+    }
+    if request.method != "host.call" {
+        return true;
+    }
+    request
+        .params
+        .as_ref()
+        .and_then(|params| params["method"].as_str())
+        .is_some_and(|method| !method.starts_with("host.") && remote_method_allowed(method))
 }
 
 fn parse_relay_text(message: Message) -> anyhow::Result<RelayFrame> {

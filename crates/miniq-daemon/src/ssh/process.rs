@@ -14,7 +14,7 @@ const REMOTE_COMMAND: &str = "/bin/sh -lc 'export PATH=\"$HOME/.local/bin:$HOME/
 
 pub struct Bridge {
     pub child: Child,
-    pub input: ChildStdin,
+    pub input: Option<ChildStdin>,
     pub output: FrameReader<BufReader<ChildStdout>>,
     pub version: String,
     stderr: tokio::task::JoinHandle<()>,
@@ -97,7 +97,7 @@ pub async fn start(mut command: Command) -> Result<Bridge, String> {
     match version {
         Ok(version) => Ok(Bridge {
             child,
-            input,
+            input: Some(input),
             output,
             version,
             stderr: stderr_task,

@@ -86,6 +86,8 @@ pub struct AppState {
     pub token: String,
     /// Cancels the listener and connected clients during an app update.
     pub shutdown: CancellationToken,
+    /// Saved SSH hosts and independent daemon-owned connections.
+    pub ssh_hosts: Arc<crate::ssh::SshHostManager>,
     /// Cancellation token per session with an active turn.
     pub(crate) active_turns: Arc<Mutex<HashMap<String, ActiveTurn>>>,
     pub(crate) activity: crate::activity::ActivityGate,
@@ -166,6 +168,8 @@ impl AppState {
         ));
         let store = Arc::new(store);
         let agent_tasks = Arc::new(crate::agent_tasks::AgentTaskManager::new(store.clone()));
+        let shutdown = CancellationToken::new();
+        let ssh_hosts = Arc::new(crate::ssh::SshHostManager::new(&data_dir, shutdown.clone()));
         Self {
             store,
             provider_override,
@@ -185,7 +189,8 @@ impl AppState {
             event_journal: Arc::new(Mutex::new(crate::event_journal::EventJournal::default())),
             started: Instant::now(),
             token,
-            shutdown: CancellationToken::new(),
+            shutdown,
+            ssh_hosts,
             active_turns: Arc::new(Mutex::new(HashMap::new())),
             activity: crate::activity::ActivityGate::default(),
             share_uploads: Arc::new(tokio::sync::Semaphore::new(2)),

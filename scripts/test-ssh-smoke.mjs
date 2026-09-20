@@ -33,7 +33,7 @@ const timeout = (promise, label, ms = 20_000) => {
   ]).finally(() => clearTimeout(timer));
 };
 
-function processFor(command, args) {
+function processFor(command, args, overrides = {}) {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(
       ([name]) =>
@@ -41,7 +41,11 @@ function processFor(command, args) {
         !/^(OPENAI|ANTHROPIC|GEMINI)_API_KEY$/.test(name),
     ),
   );
-  const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"], env });
+  const child = spawn(command, args, {
+    cwd: repository,
+    stdio: ["pipe", "pipe", "pipe"],
+    env: { ...env, ...overrides },
+  });
   children.add(child);
   child.once("exit", () => children.delete(child));
   return child;
@@ -71,6 +75,49 @@ async function unusedPort() {
   const port = server.address().port;
   await new Promise((resolve) => server.close(resolve));
   return port;
+}
+
+async function checkDaemonHostPool(workspaceId, sessionId) {
+  const child = processFor(
+    "cargo",
+    [
+      "test",
+      "-p",
+      "miniq-daemon",
+      "ssh::smoke::real_loopback_ssh_bridge",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture",
+    ],
+    {
+      MINIQ_SSH_SMOKE_CONFIG: sshConfig,
+      MINIQ_SSH_SMOKE_WORKSPACE: workspaceId,
+      MINIQ_SSH_SMOKE_SESSION: sessionId,
+      MINIQ_SSH_SMOKE_PROJECT: project,
+    },
+  );
+  child.stdin.end();
+  let output = "";
+  child.stdout.on("data", (part) => {
+    output += part;
+    process.stdout.write(part);
+  });
+  child.stderr.on("data", (part) => process.stderr.write(part));
+  const code = await timeout(
+    new Promise((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", resolve);
+    }),
+    "daemon host pool SSH smoke",
+    180_000,
+  );
+  assert.equal(code, 0, "daemon multi-host SSH smoke failed");
+  assert.match(
+    output,
+    /test result: ok\. 1 passed; 0 failed;/,
+    "the exact daemon SSH test must execute, not silently select zero tests",
+  );
 }
 
 async function connect() {
@@ -212,7 +259,7 @@ try {
   );
   await writeFile(
     sshConfig,
-    `Host miniq-smoke\n HostName 127.0.0.1\n Port ${port}\n User ${userInfo().username}\n IdentityFile ${root}/client\n IdentitiesOnly yes\n UserKnownHostsFile ${root}/known_hosts\n StrictHostKeyChecking yes\n BatchMode yes\n LogLevel ERROR\n`,
+    `Host miniq-smoke miniq-smoke-two\n HostName 127.0.0.1\n Port ${port}\n User ${userInfo().username}\n IdentityFile ${root}/client\n IdentitiesOnly yes\n UserKnownHostsFile ${root}/known_hosts\n StrictHostKeyChecking yes\n BatchMode yes\n LogLevel ERROR\n`,
     { mode: 0o600 },
   );
   const daemonConfig = path.join(root, "sshd_config");
@@ -297,6 +344,9 @@ try {
     resumed.messages.filter((message) => message.role === "user").length,
     1,
   );
+  // Hold the synthetic model response until the daemon/relay/SSH pool has also
+  // detached and reattached. Any accidental task cancellation is then visible.
+  await checkDaemonHostPool(workspace.id, session.id);
   releaseAnswer();
   let completed;
   await timeout(
@@ -328,7 +378,7 @@ try {
     "PASS: real SSH authentication, bridge/RPC, active task survives detach, reconnect recovers final output, exactly one provider request.",
   );
   if (process.argv.includes("--keep")) {
-    console.log(`Native smoke fixture: MINIQ_SSH_SMOKE_CONFIG=${sshConfig}`);
+    console.log(`Daemon smoke fixture: MINIQ_SSH_SMOKE_CONFIG=${sshConfig}`);
     console.log(
       `Fixture process PID: ${process.pid}; SIGTERM finishes cleanup.`,
     );

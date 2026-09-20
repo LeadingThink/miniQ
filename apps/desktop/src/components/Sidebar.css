@@ -136,3 +136,9 @@
     padding-inline: 6px;
   }
 }
+.sidebar-host { margin-top: 14px; }
+.sidebar-host-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; color: var(--text-dim); background: transparent; text-align: left; font-size: 12px; cursor: pointer; }
+.sidebar-host-heading[aria-current] { color: var(--text); background: var(--bg-hover); }
+.sidebar-host-heading span { overflow-wrap: anywhere; }
+.sidebar-host-heading small { white-space: nowrap; font-size: 10px; }
+.sidebar-host-error { padding: 0 10px; color: var(--danger); font-size: 11px; overflow-wrap: anywhere; }

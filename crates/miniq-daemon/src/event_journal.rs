@@ -44,43 +44,7 @@ impl EventJournal {
     }
 
     pub fn record(&mut self, event: &Event) -> Value {
-        // Tool bodies are fetched through tool.detail, including for live events.
-        let mut value = match event {
-            Event::ToolCallStarted {
-                session_id,
-                agent_id,
-                tool_call_id,
-                tool_name,
-                created_at,
-                ..
-            } => {
-                let mut value = json!({
-                "type": "tool_call_started", "sessionId": session_id, "toolCallId": tool_call_id,
-                "toolName": tool_name, "agentId": agent_id, "input": null, "payloadDeferred": true,
-                });
-                if let Some(created_at) = created_at {
-                    value["createdAt"] = created_at.clone().into();
-                }
-                value
-            }
-            Event::ToolCallFinished {
-                session_id,
-                tool_call_id,
-                status,
-                completed_at,
-                ..
-            } => {
-                let mut value = json!({
-                "type": "tool_call_finished", "sessionId": session_id, "toolCallId": tool_call_id,
-                "status": status, "output": null, "payloadDeferred": true,
-                });
-                if let Some(completed_at) = completed_at {
-                    value["completedAt"] = completed_at.clone().into();
-                }
-                value
-            }
-            _ => serde_json::to_value(event).expect("event serialization"),
-        };
+        let mut value = project_event(serde_json::to_value(event).expect("event serialization"));
         self.cursor.sequence += 1;
         value["eventCursor"] = json!(self.cursor);
         let bytes = serde_json::to_vec(&value)
@@ -121,6 +85,19 @@ impl EventJournal {
     }
 }
 
+/// Share the mobile projection with SSH events without assigning a local cursor.
+/// The original payload remains available from the owning daemon's tool.detail.
+pub(crate) fn project_event(mut value: Value) -> Value {
+    let field = match value["type"].as_str() {
+        Some("tool_call_started") => "input",
+        Some("tool_call_finished") => "output",
+        _ => return value,
+    };
+    value[field] = Value::Null;
+    value["payloadDeferred"] = Value::Bool(true);
+    value
+}
+
 pub(crate) fn sidebar_event(event: &Value) -> bool {
     matches!(
         event["type"].as_str(),
@@ -132,6 +109,9 @@ pub(crate) fn sidebar_event(event: &Value) -> bool {
                 | "session_archived_changed"
                 | "workspace_deleted"
                 | "workspace_renamed"
+                | "workspace_updated"
+                | "workspace_model_settings_changed"
+                | "global_model_settings_changed"
                 | "plugins_changed"
                 | "turn_completed"
                 | "turn_failed"

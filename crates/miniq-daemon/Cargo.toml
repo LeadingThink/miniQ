@@ -43,6 +43,9 @@ regex = { workspace = true }
 rayon = "1"
 aes-gcm = { workspace = true }
 sha2 = { workspace = true }
+uuid = { workspace = true }
+glob = "0.3"
+shlex = "2"
 
 [dev-dependencies]
 tempfile = "3"

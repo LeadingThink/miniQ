@@ -71,14 +71,14 @@ export function applyDownloadEvent(
   }
 }
 
-export function useAppUpdater(client: RpcClient, onError: (message: string) => void) {
+export function useAppUpdater(client: RpcClient, onError: (message: string) => void, pauseTransport?: (paused: boolean) => void) {
   const [state, setState] = useState<AppUpdaterState>(INITIAL_STATE);
   const updateRef = useRef<Update | null>(null);
   const checkRef = useRef<Promise<void> | null>(null);
   const explicitCheckRef = useRef(false);
   const installRef = useRef(false);
   const lastCheckedAtRef = useRef(Date.now());
-  const supported = isTauriRuntime() && !import.meta.env.DEV;
+  const supported = isTauriRuntime() && !client.sshHost && !import.meta.env.DEV;
 
   const runCheck = useCallback(
     async (silent: boolean) => {
@@ -182,7 +182,10 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
       setState((current) => ({ ...current, phase: "downloading", error: null }));
       await update.download((event) => setState((current) => applyDownloadEvent(current, event)));
       // Dispose reconnect effects before the native shutdown request can close the socket.
-      flushSync(() => setState((current) => ({ ...current, phase: "installing" })));
+      flushSync(() => {
+        pauseTransport?.(true);
+        setState((current) => ({ ...current, phase: "installing" }));
+      });
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("prepare_daemon_update");
       prepared = true;
@@ -208,11 +211,12 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
         }
       }
       setState((current) => ({ ...current, phase: "error", error: message }));
+      pauseTransport?.(false);
       onError(`更新失败：${message}`);
     } finally {
       installRef.current = false;
     }
-  }, [client, onError, state.phase]);
+  }, [client, onError, state.phase, pauseTransport]);
 
   return {
     state,

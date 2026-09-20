@@ -8,9 +8,9 @@ use tokio_tungstenite::{
     accept_async_with_config, tungstenite::protocol::WebSocketConfig, WebSocketStream,
 };
 
-type Socket = WebSocketStream<TcpStream>;
+pub(crate) type Socket = WebSocketStream<TcpStream>;
 
-async fn start() -> (AppState, Socket, JoinHandle<anyhow::Result<()>>) {
+pub(crate) async fn start() -> (AppState, Socket, JoinHandle<anyhow::Result<()>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let remote = RemoteAccessSettings {
         enabled: true,
@@ -64,7 +64,7 @@ async fn next(socket: &mut Socket) -> Message {
         .unwrap()
 }
 
-async fn request(socket: &mut Socket, id: &str, method: &str, params: Value) {
+pub(crate) async fn request(socket: &mut Socket, id: &str, method: &str, params: Value) {
     send_value(
         socket,
         json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}),
@@ -72,7 +72,7 @@ async fn request(socket: &mut Socket, id: &str, method: &str, params: Value) {
     .await;
 }
 
-async fn send_value(socket: &mut Socket, value: Value) {
+pub(crate) async fn send_value(socket: &mut Socket, value: Value) {
     let identity = derive_identity("test-key");
     let raw = serde_json::to_vec(&value).unwrap();
     let (nonce, ciphertext) = encrypt_payload(&identity.cipher, &raw).unwrap();
@@ -104,7 +104,7 @@ fn decrypted(message: Message) -> Value {
     .unwrap()
 }
 
-async fn next_payload(socket: &mut Socket) -> Value {
+pub(crate) async fn next_payload(socket: &mut Socket) -> Value {
     loop {
         let message = next(socket).await;
         if matches!(message, Message::Pong(_)) {

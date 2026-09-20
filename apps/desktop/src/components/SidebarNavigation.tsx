@@ -46,7 +46,8 @@ export function sidebarGroups(
   return { groups, archived, counts, filtering };
 }
 
-/** Project identifiers are unique across local and remote desktops. */
+/** The unified sidebar supplies a [hostId, workspaceId] key so identical IDs
+ * on two computers retain independent disclosure preferences. */
 export function useProjectDisclosure(workspaceId: string) {
   const key = `miniq.sidebar.project.${workspaceId}.collapsed`;
   const [open, setOpen] = useState(() => {

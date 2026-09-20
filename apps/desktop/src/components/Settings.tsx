@@ -51,7 +51,7 @@ interface SettingsPanelProps {
 
 export function SettingsPanel(props: SettingsPanelProps) {
   const desktop = useDesktopHost();
-  const canConfigureProvider = props.client.mode === "local" || !!props.client.sshHost;
+  const canConfigureProvider = (desktop?.root ?? props.client).mode === "local";
   const settingsTabs = ["services", "computer", "appearance"] as const;
   const [tab, setTab] = useState<(typeof settingsTabs)[number]>("services");
   const [baseUrl, setBaseUrl] = useState(ZAIWEN_API_BASE_URL);
@@ -476,7 +476,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
           )}
           {desktop && <details className="settings-section" open={!!desktop.host}>
             <summary>SSH 连接 · 远程开发</summary>
-            <SshConnections activeHost={desktop.host} pending={desktop.pending} error={desktop.error} onSelectHost={(host) => void desktop.selectHost(host)} />
+            <SshConnections {...desktop.registry} activeHost={desktop.host} pending={desktop.pending} error={desktop.error} canManage={desktop.root.mode === "local"} onSelectHost={(host) => void desktop.selectHost(host)} onSave={desktop.saveHost} onRemove={desktop.removeHost} onDisconnect={desktop.disconnectHost} onRefresh={desktop.refreshHosts} />
           </details>}
           {(loading || status) && (
             <div className="settings-status" role="status" aria-live="polite">

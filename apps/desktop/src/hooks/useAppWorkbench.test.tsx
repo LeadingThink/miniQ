@@ -8,6 +8,7 @@ import type { MiniqAppController } from "./useMiniqApp";
 import type { RpcClient } from "../rpc";
 import { readLocalFilePreview } from "../localFiles";
 import { openExternalUrl } from "../externalLinks";
+import { BROWSER_DRAFT_CREATED_EVENT, browserDraftScope, type BrowserDraftCreatedDetail } from "../browserTabs";
 
 vi.mock("./useBrowserDriverEvents", () => ({
   useBrowserDriverEvents: vi.fn(),
@@ -28,7 +29,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 const paths = ["/project"];
-const client = { mode: "local" } as RpcClient;
+const client = { mode: "local", sshHost: null } as RpcClient;
 const target = { path: "/project/report.md", line: null, column: null };
 
 function useHarness(session: string | null, remote = false) {
@@ -113,4 +114,15 @@ it("remote browsing opens records without creating a local live browser", async 
   expect(openExternalUrl).toHaveBeenCalledTimes(1);
   act(() => result.current.workbench.select("overview"));
   expect(result.current.workbench.remoteBrowserOpen).toBe(false);
+});
+
+it("does not adopt a local browser draft when another host creates the same workspace ID", () => {
+  const { result } = renderHook(() => useHarness(null));
+  act(() => result.current.workbench.openUrl("https://example.test/local-draft"));
+  const draft = result.current.workbench.browserState.tabs[0];
+  act(() => window.dispatchEvent(new CustomEvent<BrowserDraftCreatedDetail>(BROWSER_DRAFT_CREATED_EVENT, { detail: { hostId: "ssh-host", workspaceId: "project", sessionId: "remote-session" } })));
+  expect(result.current.workbench.browserSessions[browserDraftScope("project")].tabs).toEqual([draft]);
+  expect(result.current.workbench.browserSessions["remote-session"]).toBeUndefined();
+  act(() => window.dispatchEvent(new CustomEvent<BrowserDraftCreatedDetail>(BROWSER_DRAFT_CREATED_EVENT, { detail: { hostId: null, workspaceId: "project", sessionId: "local-session" } })));
+  expect(result.current.workbench.browserSessions["local-session"].tabs).toEqual([draft]);
 });

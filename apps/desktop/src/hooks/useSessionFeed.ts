@@ -388,7 +388,14 @@ export function useSessionFeed(options: SessionFeedOptions) {
     onError,
   } = options;
   const activeSession = useRef(currentSessionId);
-  activeSession.current = currentSessionId;
+  const renderedSession = useRef(currentSessionId);
+  // reset() can select the next session before React commits its catalog state.
+  // A concurrent host/connection render with the old ID must not undo that
+  // selection and discard an already-returned session.open response.
+  if (renderedSession.current !== currentSessionId) {
+    activeSession.current = currentSessionId;
+    renderedSession.current = currentSessionId;
+  }
 
   useEffect(() => {
     const pause = () =>

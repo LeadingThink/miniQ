@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   ChevronDown,
@@ -32,7 +32,18 @@ const COLLAPSED_SESSION_COUNT = 3;
 const FEEDBACK_FORM_URL =
   "https://zaiwen-chattests.feishu.cn/share/base/form/shrcncCk7TJ5Jns8e34ycHSD3yf";
 
+export interface SidebarHostGroup {
+  key: string;
+  label: string;
+  state: string;
+  error?: string;
+  workspaceIds: string[];
+  selected: boolean;
+  onSelect: () => void;
+}
+
 interface SidebarProps {
+  hostGroups?: SidebarHostGroup[];
   workspaces: Workspace[];
   sessions: Session[];
   unreadSessionIds: ReadonlySet<string>;
@@ -101,7 +112,10 @@ export function Sidebar(props: SidebarProps) {
 
       {props.workspaces.length > 0 && <SidebarFilters query={query} filter={filter} counts={navigation.counts} onQuery={setQuery} onFilter={setFilter} />}
       <div className="sidebar-scroll" role="navigation" aria-label="项目与会话" onKeyDown={handleSidebarNavigation}>
-        {navigation.groups.map(({ workspace, sessions }) => (
+        {props.hostGroups?.filter((host) => !host.workspaceIds.length).map((host) => <HostHeading key={host.key} host={host} />)}
+        {navigation.groups.map(({ workspace, sessions }, index) => (
+          <Fragment key={workspace.id}>
+          {props.hostGroups?.filter((host) => host.workspaceIds.includes(workspace.id) && !navigation.groups.slice(0, index).some((group) => host.workspaceIds.includes(group.workspace.id))).map((host) => <HostHeading key={host.key} host={host} />)}
           <WorkspaceGroup
             currentSessionId={props.currentSessionId}
             key={workspace.id}
@@ -122,6 +136,7 @@ export function Sidebar(props: SidebarProps) {
             onSetSessionArchived={props.onSetSessionArchived}
             onSelectWorkspace={props.onSelectWorkspace}
           />
+          </Fragment>
         ))}
         {props.workspaces.length === 0 && (
           <div className="sidebar-empty">点击新对话选择或创建一个项目开始协作</div>
@@ -200,6 +215,16 @@ export function Sidebar(props: SidebarProps) {
       </div>
     </SidebarPanel>
   );
+}
+
+function HostHeading({ host }: { host: SidebarHostGroup }) {
+  const state = { connected: "已连接", connecting: "连接中", disconnected: "未连接", error: "连接失败" }[host.state] ?? host.state;
+  return <div className="sidebar-host" data-state={host.state}>
+    <button type="button" className="sidebar-host-heading" aria-current={host.selected ? "location" : undefined} onClick={host.onSelect} title={host.error ?? `${host.label} · ${state}`}>
+      <span>{host.label}</span><small>{state}</small>
+    </button>
+    {host.error && <p className="sidebar-host-error">{host.error}</p>}
+  </div>;
 }
 
 interface WorkspaceGroupProps {

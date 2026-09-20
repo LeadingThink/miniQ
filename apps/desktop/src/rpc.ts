@@ -18,13 +18,10 @@ export interface RemoteConnectionInfo extends RemoteCredentials {
   kind: "remote";
 }
 
-export interface SshConnectionInfo extends Omit<LocalConnectionInfo, "kind"> {
-  kind: "ssh";
-  host: string;
-  version?: string;
-}
-
-export type ConnectionInfo = LocalConnectionInfo | RemoteConnectionInfo | SshConnectionInfo;
+export type ConnectionInfo = LocalConnectionInfo | RemoteConnectionInfo;
+export type HostEvent =
+  | { type: "host_event"; hostId: string; event: DaemonEvent | { type: "remote_resync" } }
+  | { type: "host_changed"; hostId: string };
 
 interface RpcError {
   code: number;
@@ -49,18 +46,13 @@ export class RpcClient {
   private pending = new Map<string, Pending>();
   private nextId = 1;
   private eventListeners = new Set<(event: DaemonEvent) => void>();
+  private hostListeners = new Set<(event: HostEvent) => void>();
   private statusListeners = new Set<(connected: boolean) => void>();
   private resyncListeners = new Set<() => void>();
   private connectionMode: "local" | "remote" = "local";
   private remoteKey: CryptoKey | null = null;
   private reader: RemotePayloadReader | null = null;
   private outgoing: Promise<void> = Promise.resolve();
-  private host: string | null;
-
-  constructor(sshHost: string | null = null) {
-    this.host = sshHost;
-    this.connectionMode = sshHost ? "remote" : "local";
-  }
 
   /** Idempotent: concurrent calls share one in-flight connection attempt, so
    * React StrictMode's double-mounted effects cannot open two sockets — and
@@ -75,7 +67,6 @@ export class RpcClient {
       if (this.connectPromise) return this.connectPromise;
     }
     this.connectionMode = info.kind === "local" ? "local" : "remote";
-    this.host = info.kind === "ssh" ? info.host : null;
     const controller = new AbortController();
     this.connectController = controller;
     let cancel!: () => void;
@@ -100,7 +91,7 @@ export class RpcClient {
     }
   }
 
-  private connectLocal(info: LocalConnectionInfo | SshConnectionInfo, signal: AbortSignal): Promise<void> {
+  private connectLocal(info: LocalConnectionInfo, signal: AbortSignal): Promise<void> {
     const url = `ws://127.0.0.1:${info.port}/ws?token=${encodeURIComponent(info.token)}`;
     return this.openSocket(url, (ws, resolve) => {
       this.ws = ws;
@@ -159,7 +150,7 @@ export class RpcClient {
       };
       signal.addEventListener("abort", abort, { once: true });
       const connectTimer = window.setTimeout(() => {
-        fail(new Error(this.host ? "连接 SSH 主机超时" : this.connectionMode === "remote" ? "连接 miniQ relay 超时" : "连接 miniQ daemon 超时"));
+        fail(new Error(this.connectionMode === "remote" ? "连接 miniQ relay 超时" : "连接 miniQ daemon 超时"));
         ws.close(4000, "connect timeout");
       }, CONNECTION_TIMEOUT_MS);
       ws.onopen = () => {
@@ -175,13 +166,13 @@ export class RpcClient {
         }
       };
       ws.onerror = () => {
-        fail(new Error(this.host ? "SSH 连接中断，请检查主机网络和登录状态" : this.connectionMode === "remote" ? "无法连接 miniQ relay" : "无法连接 miniQ daemon"));
+        fail(new Error(this.connectionMode === "remote" ? "无法连接 miniQ relay" : "无法连接 miniQ daemon"));
         ws.close(4000, "transport error");
       };
       ws.onclose = () => {
         reader.dispose();
         window.clearTimeout(connectTimer);
-        fail(new Error(this.host ? "SSH 连接已关闭，远端任务可能仍在运行" : this.connectionMode === "remote" ? "桌面端未在线或远程连接已关闭" : "daemon 连接已关闭"));
+        fail(new Error(this.connectionMode === "remote" ? "桌面端未在线或远程连接已关闭" : "daemon 连接已关闭"));
         if (this.ws === ws) {
           this.ws = null;
           this.remoteKey = null;
@@ -306,12 +297,12 @@ export class RpcClient {
   }
 
   get sshHost(): string | null {
-    return this.host;
+    return null;
   }
 
-  selectSession(sessionId: string | null) {
+  selectSession(sessionId: string | null, hostId: string | null = null) {
     if (this.connectionMode === "remote" && this.ws && this.remoteKey) {
-      void this.sendRemote(this.ws, this.remoteKey, { type: "remote_select", sessionId, acceptEncoding: "gzip" }).catch(() => {});
+      void this.sendRemote(this.ws, this.remoteKey, { type: "remote_select", hostId, sessionId, acceptEncoding: "gzip" }).catch(() => {});
     }
   }
 
@@ -323,6 +314,10 @@ export class RpcClient {
       return;
     }
     if (typeof data.type === "string") {
+      if ((data.type === "host_event" || data.type === "host_changed") && typeof data.hostId === "string") {
+        for (const listener of this.hostListeners) this.deliver(() => listener(data as HostEvent));
+        return;
+      }
       if (data.type === "remote_resync") {
         for (const listener of this.resyncListeners) this.deliver(listener);
         return;
@@ -364,7 +359,7 @@ export class RpcClient {
         // and subsequent requests can continue while the relay/desktop
         // recovers. A local timeout still tears down the socket so a wedged
         // daemon can be rediscovered on the next attempt.
-        if (method !== "daemon.health" && this.connectionMode !== "remote") {
+        if (method !== "daemon.health" && !method.startsWith("host.") && this.connectionMode !== "remote") {
           this.disconnect("rpc timeout");
         }
         reject(new Error(`请求 ${method} 超时`));
@@ -381,7 +376,7 @@ export class RpcClient {
       const cleanup = () => options.signal?.removeEventListener("abort", abort);
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer, method, cleanup });
       options.signal?.addEventListener("abort", abort, { once: true });
-      if (this.connectionMode === "local" || this.host) {
+      if (this.connectionMode === "local") {
         try {
           if (ws.readyState !== WebSocket.OPEN) throw new Error("daemon 连接已关闭");
           ws.send(payload);
@@ -436,6 +431,11 @@ export class RpcClient {
     return () => this.statusListeners.delete(listener);
   }
 
+  onHostEvent(listener: (event: HostEvent) => void): () => void {
+    this.hostListeners.add(listener);
+    return () => this.hostListeners.delete(listener);
+  }
+
   onResync(listener: () => void): () => void {
     this.resyncListeners.add(listener);
     return () => this.resyncListeners.delete(listener);
@@ -475,13 +475,9 @@ export class RpcClient {
 /// Resolve daemon connection info.
 /// - Inside Tauri: ask the shell (it spawns/discovers the daemon).
 /// - In a plain browser (dev): read ?port=...&token=... from the URL.
-export async function resolveConnection(sshHost?: string | null): Promise<ConnectionInfo> {
+export async function resolveConnection(): Promise<ConnectionInfo> {
   if (isTauriRuntime()) {
     const { invoke } = await import("@tauri-apps/api/core");
-    if (sshHost) {
-      const connection = await invoke<Omit<SshConnectionInfo, "kind">>("ssh_connect", { host: sshHost });
-      return { kind: "ssh", ...connection };
-    }
     const local = await invoke<Omit<LocalConnectionInfo, "kind">>("daemon_connection");
     return { kind: "local", ...local };
   }

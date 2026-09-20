@@ -3,6 +3,11 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
 import { useSessionFileAccess } from "./sessionFileAccess";
+import type { ReactNode } from "react";
+
+// Entry routing has no transport dependency; host lifecycle is covered by the
+// real-provider isolation tests in desktopHost.test.tsx.
+vi.mock("./desktopHost", () => ({ DesktopHostProvider: ({ children }: { children: ReactNode }) => children, useDesktopHost: () => null }));
 
 const state = vi.hoisted(() => {
   let release!: () => void;

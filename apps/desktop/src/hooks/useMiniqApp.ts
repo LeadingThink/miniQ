@@ -4,6 +4,7 @@ import { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 import { isMobileLayout } from "../mobileViewport";
 import { useDesktopHost } from "../desktopHost";
+import { hostKey } from "../hostWorkspace";
 import type {
   QueuedMessage,
   Session,
@@ -42,8 +43,9 @@ function useRpcClient(): RpcClient {
   const desktop = useDesktopHost();
   const clientRef = useRef<RpcClient>();
   const lifecycle = useRef(0);
-  if (!clientRef.current) clientRef.current = new RpcClient(desktop?.host);
+  if (!clientRef.current) clientRef.current = desktop ? desktop.clientFor(desktop.host) : new RpcClient();
   useEffect(() => {
+    if (desktop) return;
     const generation = ++lifecycle.current;
     return () => {
       // Let connection/event hooks unsubscribe first. StrictMode's immediate
@@ -57,15 +59,19 @@ function useRpcClient(): RpcClient {
 }
 
 function useCatalog(client: RpcClient) {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const desktop = useDesktopHost();
+  const cached = desktop?.catalogs[hostKey(client.sshHost)];
+  const [localWorkspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const workspaces = cached?.workspaces ?? localWorkspaces;
   type SessionRow = Omit<Session, "workingDirectory"> & { workingDirectory?: string };
-  const [sessionRows, setSessions] = useState<SessionRow[]>([]);
+  const [localSessions, setSessions] = useState<SessionRow[]>([]);
+  const sessionRows = cached?.sessions ?? localSessions;
   // The mobile website is updated before every connected desktop has migrated.
   const sessions = useMemo<Session[]>(() => sessionRows.map((session) => ({
     ...session,
     workingDirectory: session.workingDirectory ?? workspaces.find((workspace) => workspace.id === session.workspaceId)?.path ?? "",
   })), [sessionRows, workspaces]);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(() => desktop?.destination.workspaceId ?? null);
   const [currentSessionId, setCurrentSessionState] = useState<string | null>(null);
   const navigationEpoch = useRef(0);
   const sessionRefresh = useRef<Promise<void> | null>(null);
@@ -76,6 +82,7 @@ function useCatalog(client: RpcClient) {
   }, []);
 
   const refreshSessions = useCallback(() => {
+    if (desktop) return desktop.refreshCatalog(client.sshHost);
     sessionRefreshQueued.current = true;
     if (sessionRefresh.current) return sessionRefresh.current;
     sessionRefresh.current = (async () => {
@@ -86,13 +93,14 @@ function useCatalog(client: RpcClient) {
       } while (sessionRefreshQueued.current);
     })().finally(() => { sessionRefresh.current = null; });
     return sessionRefresh.current;
-  }, [client]);
+  }, [client, desktop?.refreshCatalog]);
 
   const refreshWorkspaces = useCallback(async () => {
+    if (desktop) { await desktop.refreshCatalog(client.sshHost); return; }
     type WorkspaceRow = Omit<Workspace, "additionalPaths"> & { additionalPaths?: string[] };
     const result = await client.call<{ workspaces: WorkspaceRow[] }>("workspace.list");
     setWorkspaces(result.workspaces.map((workspace) => ({ ...workspace, additionalPaths: workspace.additionalPaths ?? [] })));
-  }, [client]);
+  }, [client, desktop?.refreshCatalog]);
 
   const updateSessionStatus = useCallback(
     (sessionId: string, status: SessionStatus) => {
@@ -144,6 +152,7 @@ function useCatalog(client: RpcClient) {
 }
 
 function useNavigationState() {
+  const desktop = useDesktopHost();
   const [showRemoteFolder, setShowRemoteFolder] = useState(false);
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
   const [showExternalImport, setShowExternalImport] = useState(false);
@@ -161,13 +170,13 @@ function useNavigationState() {
     showSettings,
     showDistill,
     showSearch,
-    sidebarCollapsed,
+    sidebarCollapsed: desktop?.sidebarCollapsed ?? sidebarCollapsed,
     page,
     setShowExternalImport,
     setShowSettings,
     setShowDistill,
     setShowSearch,
-    setSidebarCollapsed,
+    setSidebarCollapsed: desktop?.setSidebarCollapsed ?? setSidebarCollapsed,
     setPage,
   };
 }
@@ -222,6 +231,8 @@ function useWorkspaceActions(
   setError: ErrorSetter,
   openRemoteFolder: () => void,
 ) {
+  const desktop = useDesktopHost();
+  const canManage = (desktop?.root ?? client).mode === "local";
   const {
     refreshWorkspaces,
     setSelectedWorkspaceId,
@@ -229,6 +240,7 @@ function useWorkspaceActions(
   } = catalog;
 
   const openWorkspace = useCallback(async () => {
+    if (!canManage) { setError("请在桌面端添加或授权工作区目录"); return; }
     if (client.sshHost) { openRemoteFolder(); return; }
     const path = await pickDirectory();
     if (!path) return;
@@ -241,15 +253,16 @@ function useWorkspaceActions(
     } catch (error) {
       setError(errorMessage(error));
     }
-  }, [client, refreshWorkspaces, setCurrentSessionId, setError, setSelectedWorkspaceId, openRemoteFolder]);
+  }, [client, canManage, refreshWorkspaces, setCurrentSessionId, setError, setSelectedWorkspaceId, openRemoteFolder]);
 
   const openRemoteWorkspace = useCallback(async (path: string) => {
+    if (!canManage) throw new Error("请在桌面端添加或授权工作区目录");
     const workspace = await client.call<Workspace>("workspace.open", { path });
     await refreshWorkspaces();
     setSelectedWorkspaceId(workspace.id);
     setCurrentSessionId(null);
     setError(null);
-  }, [client, refreshWorkspaces, setCurrentSessionId, setError, setSelectedWorkspaceId]);
+  }, [client, canManage, refreshWorkspaces, setCurrentSessionId, setError, setSelectedWorkspaceId]);
 
   const createBlankProject = useCallback(
     async (name: string) => {
@@ -373,7 +386,7 @@ function useTurnActions(
         });
         if (epoch === catalog.navigationEpoch.current) {
           window.dispatchEvent(new CustomEvent<BrowserDraftCreatedDetail>(BROWSER_DRAFT_CREATED_EVENT, {
-            detail: { workspaceId: catalog.selectedWorkspace.id, sessionId: session.id },
+            detail: { hostId: client.sshHost, workspaceId: catalog.selectedWorkspace.id, sessionId: session.id },
           }));
         }
         await client.call("session.sendMessage", {
@@ -478,7 +491,7 @@ function useInteractionActions(
   return { resolveApproval, resolveQuestion, rollbackCheckpoint };
 }
 
-export function useMiniqApp() {
+export function useMiniqApp(active = true) {
   const desktop = useDesktopHost();
   const client = useRpcClient();
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -491,15 +504,17 @@ export function useMiniqApp() {
     client,
     catalog.currentSessionId,
     catalog.selectedWorkspace?.id ?? null,
+    desktop?.getModelDrafts(client.sshHost),
   );
   const markSessionSeen = useCallback((sessionId: string) => {
+    desktop?.markSeen(client.sshHost, sessionId);
     setUnreadSessionIds((current) => {
       if (!current.has(sessionId)) return current;
       const next = new Set(current);
       next.delete(sessionId);
       return next;
     });
-  }, []);
+  }, [desktop?.markSeen, client]);
   const handleSessionStatusChanged = useCallback(
     (sessionId: string, status: SessionStatus) => {
       const previous = catalog.sessions.find((session) => session.id === sessionId)?.status;
@@ -542,16 +557,17 @@ export function useMiniqApp() {
     onError: setSessionError,
   });
   const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls);
-  const preview = useFilePreview(catalog.currentSession?.workingDirectory, catalog.currentSessionId, catalog.currentWorkspacePaths, client);
+  const preview = useFilePreview(catalog.currentSession?.workingDirectory, catalog.currentSessionId, catalog.currentWorkspacePaths, client, desktop?.getFilePreviewCache(client.sshHost));
   useTaskNotifications(client, catalog.sessions);
-  const updater = useAppUpdater(client, setConnectionError);
-  const connection = useDaemonConnection({
+  const updater = useAppUpdater(client, setConnectionError, desktop?.setTransportPaused);
+  const scopedConnection = useDaemonConnection({
     client,
     refreshWorkspaces: catalog.refreshWorkspaces,
     refreshSessions: catalog.refreshSessions,
     onError: setConnectionError,
-    paused: updater.state.phase === "installing" || desktop?.pending,
+    paused: updater.state.phase === "installing" || Boolean(desktop && !client.sshHost),
   });
+  const connection = desktop && !client.sshHost ? desktop.connection : scopedConnection;
   const ensureProviderConfigured = useCallback(async () => {
     if (client.mode !== "local" && !client.sshHost) return true;
     try {
@@ -590,7 +606,23 @@ export function useMiniqApp() {
     feed,
     markSessionSeen,
     setSessionError,
+    active,
   );
+  const destinationRevision = useRef(-1);
+  useEffect(() => {
+    if (!active || !desktop || desktop.host !== client.sshHost || !connection.connected || destinationRevision.current === desktop.destination.revision) return;
+    destinationRevision.current = desktop.destination.revision;
+    const target = desktop.destination;
+    if (target.sessionId) void lifecycle.openSession(target.sessionId);
+    else if (target.workspaceId) {
+      navigationActions.selectWorkspace(target.workspaceId);
+      if (target.action === "edit") navigation.setEditingWorkspaceId(target.workspaceId);
+      if (target.action === "create") void lifecycle.createSession(target.workspaceId);
+    } else navigationActions.newChat();
+  }, [active, client, desktop, connection.connected, lifecycle, navigationActions, navigation]);
+  useEffect(() => {
+    desktop?.rememberNavigation(client.sshHost, { workspaceId: catalog.selectedWorkspaceId, sessionId: catalog.currentSessionId });
+  }, [desktop?.rememberNavigation, client, catalog.selectedWorkspaceId, catalog.currentSessionId]);
   const turnActions = useTurnActions(
     client,
     catalog,
@@ -602,13 +634,14 @@ export function useMiniqApp() {
   const interactionActions = useInteractionActions(client, setError, review.refresh);
   const lastResyncedConnection = useRef(0);
   useEffect(() => {
+    if (!active) return;
     const sessionId = catalog.currentSessionId;
     const epoch = connection.connectionEpoch;
     if (epoch === 0 || epoch === lastResyncedConnection.current) return;
     lastResyncedConnection.current = epoch;
     if (!sessionId) return;
     void lifecycle.syncSession(sessionId).catch((cause) => setError(errorMessage(cause)));
-  }, [catalog.currentSessionId, connection.connectionEpoch, lifecycle, setError]);
+  }, [active, catalog.currentSessionId, connection.connectionEpoch, lifecycle, setError]);
   const busy =
     catalog.currentSession?.status === "running" ||
     catalog.currentSession?.status === "waiting_approval";
@@ -616,9 +649,9 @@ export function useMiniqApp() {
   return {
     client,
     sessionModel,
-    error: connectionError ?? sessionError,
+    error: connectionError ?? desktop?.error ?? sessionError,
     setError,
-    dismissError: () => { setConnectionError(null); setError(null); },
+    dismissError: () => { setConnectionError(null); desktop?.clearError(); setError(null); },
     busy,
     catalog,
     unreadSessionIds,

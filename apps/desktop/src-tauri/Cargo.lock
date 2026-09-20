@@ -2191,12 +2191,10 @@ dependencies = [
  "base64 0.22.1",
  "block2",
  "futures-util",
- "glob",
  "http-range",
  "libc",
  "mime_guess",
  "miniq-local",
- "miniq-protocol",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
@@ -2204,7 +2202,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "shlex",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -2234,16 +2231,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
-]
-
-[[package]]
-name = "miniq-protocol"
-version = "0.1.41"
-dependencies = [
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
 ]
 
 [[package]]

@@ -44,15 +44,20 @@ const EMPTY_PREVIEW: FilePreviewState = {
 };
 
 const NO_PATHS: readonly string[] = [];
+export interface FilePreviewCache {
+  sessions: Record<string, PreviewTabsState>;
+  views: PreviewViewStore;
+}
 
 export function useFilePreview(
   workspacePath?: string | null,
   sessionId?: string | null,
   workspacePaths: readonly string[] = NO_PATHS,
   client?: RpcClient,
+  cache?: FilePreviewCache,
 ) {
   const [state, setState] = useState<FilePreviewState>(EMPTY_PREVIEW);
-  const [views] = useState(() => new PreviewViewStore());
+  const [views] = useState(() => cache?.views ?? new PreviewViewStore());
   const scope = JSON.stringify([
     sessionId ?? null,
     workspacePath ?? null,
@@ -60,7 +65,7 @@ export function useFilePreview(
   ]);
   const [stateScope, setStateScope] = useState(scope);
   const [sessions, setSessions] = useState<Record<string, PreviewTabsState>>(
-    {},
+    cache?.sessions ?? {},
   );
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
@@ -71,10 +76,11 @@ export function useFilePreview(
     (update: (current: PreviewTabsState) => PreviewTabsState) => {
       const next = update(sessionsRef.current[scope] ?? EMPTY_PREVIEW_TABS);
       sessionsRef.current = { ...sessionsRef.current, [scope]: next };
+      if (cache) cache.sessions = sessionsRef.current;
       setSessions(sessionsRef.current);
       return next;
     },
-    [scope],
+    [scope, cache],
   );
 
   const openFile = useCallback(

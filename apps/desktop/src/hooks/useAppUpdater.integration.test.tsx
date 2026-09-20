@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { RpcClient } from "../rpc";
 import { useAppUpdater } from "./useAppUpdater";
 import { useDaemonConnection } from "./useDaemonConnection";
+import { useState } from "react";
 
 const fake = vi.hoisted(() => ({
   invoke: vi.fn(), check: vi.fn(), download: vi.fn(), install: vi.fn(),
@@ -44,12 +45,13 @@ function setup(sshHost: string | null = null) {
   const refresh = vi.fn().mockResolvedValue(undefined);
   const onError = vi.fn();
   const hook = renderHook(() => {
-    const updater = useAppUpdater(client as unknown as RpcClient, onError);
+    const [rootPaused, pauseRoot] = useState(false);
+    const updater = useAppUpdater(client as unknown as RpcClient, onError, pauseRoot);
     const connection = useDaemonConnection({
       client: client as unknown as RpcClient, refreshWorkspaces: refresh,
-      refreshSessions: refresh, onError, paused: updater.state.phase === "installing",
+      refreshSessions: refresh, onError, paused: rootPaused,
     });
-    return { ...updater, connection };
+    return { ...updater, connection, rootPaused };
   });
   return { ...hook, client, onError };
 }
@@ -79,6 +81,7 @@ it("blocks restart before shutdown and waits for the captured process before ins
   await act(async () => { pending = hook.result.current.install(); });
   await waitFor(() => expect(fake.invoke).toHaveBeenCalledWith("wait_for_daemon_exit"));
   expect(fake.install).not.toHaveBeenCalled();
+  expect(hook.result.current.rootPaused).toBe(true);
   expect(fake.resolveConnection).toHaveBeenCalledTimes(1);
   expect(fake.invoke.mock.invocationCallOrder[0]).toBeLessThan(
     hook.client.call.mock.invocationCallOrder[hook.client.call.mock.calls.findIndex(([method]) => method === "daemon.shutdownIfIdle")],
@@ -160,9 +163,11 @@ it("does not fall back to cancelling tasks when idle shutdown is busy or unsuppo
 
 it("never sends desktop update shutdown commands to an SSH host", async () => {
   const hook = setup("devbox");
-  await available(hook);
+  await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
+  await act(async () => { await hook.result.current.checkNow(); });
   await act(async () => { await hook.result.current.install(); });
-  expect(hook.onError).toHaveBeenLastCalledWith(expect.stringContaining("切换到本机"));
+  expect(hook.result.current.supported).toBe(false);
+  expect(fake.check).not.toHaveBeenCalled();
   expect(fake.download).not.toHaveBeenCalled();
   expect(fake.invoke).not.toHaveBeenCalled();
   expect(hook.client.call).not.toHaveBeenCalledWith("daemon.shutdownIfIdle");

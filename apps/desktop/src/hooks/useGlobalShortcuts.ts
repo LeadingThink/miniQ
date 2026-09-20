@@ -77,8 +77,9 @@ function handleTextNavigation(event: KeyboardEvent): boolean {
  * App-wide keyboard shortcuts, mirroring the ChatGPT desktop app defaults
  * (⌘K palette, ⌘N new chat, ⌘, settings, ⌘. stop, ⌘B sidebar).
  */
-export function useGlobalShortcuts(handlers: ShortcutHandlers) {
+export function useGlobalShortcuts(handlers: ShortcutHandlers, enabled = true) {
   useEffect(() => {
+    if (!enabled) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (handleTextNavigation(e)) return;
 
@@ -132,5 +133,5 @@ export function useGlobalShortcuts(handlers: ShortcutHandlers) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("beforeinput", onBeforeInput, true);
     };
-  }, [handlers]);
+  }, [handlers, enabled]);
 }

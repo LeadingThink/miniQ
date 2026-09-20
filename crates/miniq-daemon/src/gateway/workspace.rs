@@ -35,6 +35,9 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         .store
         .create_workspace(&canonical, &name)
         .map_err(store_err)?;
+    state.emit(Event::WorkspaceUpdated {
+        workspace: workspace.clone(),
+    });
     to_value(workspace)
 }
 
@@ -55,7 +58,8 @@ pub(super) fn create(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
     let name = input.name.trim();
     validate_name(name)?;
 
-    let directory = crate::data_dir().join("projects").join(name);
+    // Use this daemon's data directory, including isolated CLI/test instances.
+    let directory = state.checkpoints_dir.with_file_name("projects").join(name);
     std::fs::create_dir_all(&directory)
         .map_err(|error| RpcError::new(ErrorCode::InternalError, error.to_string()))?;
     let canonical = super::canonical_workspace_path(&directory)
@@ -64,6 +68,9 @@ pub(super) fn create(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
         .store
         .create_workspace(&canonical, name)
         .map_err(store_err)?;
+    state.emit(Event::WorkspaceUpdated {
+        workspace: workspace.clone(),
+    });
     to_value(workspace)
 }
 

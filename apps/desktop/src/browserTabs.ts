@@ -16,6 +16,7 @@ export const EMPTY_BROWSER_TABS: BrowserTabsState = { tabs: [], activeId: null, 
 
 export const BROWSER_DRAFT_CREATED_EVENT = "miniq:browser-draft-created";
 export interface BrowserDraftCreatedDetail {
+  hostId: string | null;
   workspaceId: string;
   sessionId: string;
 }

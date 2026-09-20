@@ -21,6 +21,7 @@ mod security;
 pub mod server;
 mod session_models;
 mod session_titles;
+pub mod ssh;
 pub mod state;
 pub mod turn;
 mod turn_checkpoint;

@@ -28,6 +28,7 @@ export function useSessionLifecycleActions(
   feed: SessionFeed,
   markSessionSeen: (sessionId: string) => void,
   setSessionError: (sessionId: string, message: string | null) => void,
+  active = true,
 ) {
   const {
     refreshSessions,
@@ -37,17 +38,25 @@ export function useSessionLifecycleActions(
   const { setPage } = navigation;
   const { reset, load, prepend, failLoad, applyReplay } = feed;
   const opening = useRef<AbortController | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const openingSession = useRef<string | null>(null);
   const paging = useRef<AbortController | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   useEffect(() => () => { opening.current?.abort(); paging.current?.abort(); }, []);
   useEffect(() => {
+    if (!active) {
+      catalog.navigationEpoch.current++;
+      opening.current?.abort();
+      paging.current?.abort();
+      return;
+    }
     client.selectSession?.(catalog.currentSessionId);
     if (openingSession.current !== catalog.currentSessionId) opening.current?.abort();
     paging.current?.abort();
     paging.current = null;
     setLoadingOlder(false);
-  }, [catalog.currentSessionId, client]);
+  }, [catalog.currentSessionId, client, active]);
 
   const createSession = useCallback(
     async (workspaceId: string) => {
@@ -65,6 +74,7 @@ export function useSessionLifecycleActions(
 
   const openSession = useCallback(
     async (sessionId: string, markSeen = true) => {
+      if (!activeRef.current) return;
       opening.current?.abort();
       paging.current?.abort();
       paging.current = null;
@@ -126,6 +136,7 @@ export function useSessionLifecycleActions(
   );
 
   const syncSession = useCallback(async (sessionId: string) => {
+    if (!activeRef.current) return;
     const cursor = feed.eventCursor;
     if (!cursor || feed.loading) { await openSession(sessionId, false); return; }
     const epoch = catalog.navigationEpoch.current;

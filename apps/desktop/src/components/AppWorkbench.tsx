@@ -26,10 +26,12 @@ export function AppWorkbench({
   app,
   workbench,
   onDiscuss,
+  suspended = false,
 }: {
   app: MiniqAppController;
   workbench: AppWorkbenchController;
   onDiscuss: (content: string) => void;
+  suspended?: boolean;
 }) {
   const [expandedScope, setExpandedScope] = useState<string | null>(null);
   const [layout, setLayout] = useState<"mobile" | "split" | "overlay">("split");
@@ -50,7 +52,7 @@ export function AppWorkbench({
   };
   return (
     <WorkbenchPanel
-      hidden={!active}
+      hidden={!active || suspended}
       expanded={expanded}
       onRestore={() => setExpandedScope(null)}
       onLayoutChange={setLayout}
@@ -129,7 +131,7 @@ export function AppWorkbench({
                         active === "browser" &&
                         !!workbench.browserUrl
                       }
-                      suspended={overlayOpen}
+                      suspended={overlayOpen || suspended}
                       onNavigate={(url) =>
                         workbench.navigateBrowser(scope, tab.id, url)
                       }

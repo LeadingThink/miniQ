@@ -1,124 +1,78 @@
 // @vitest-environment jsdom
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, act } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { afterEach, expect, it, vi } from "vitest";
-import {
-  DesktopHostProvider,
-  hostDraftKey,
-  useDesktopHost,
-} from "./desktopHost";
-
-const invoke = vi.hoisted(() => vi.fn());
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
-afterEach(() => {
-  cleanup();
-  vi.resetAllMocks();
-});
-
+import { DesktopHostProvider, useDesktopHost, hostDraftKey } from "./desktopHost";
+import { SshFixtureRoot } from "./fixtures/sshModel";
+vi.mock("@capacitor/app", () => ({ App: { addListener: () => Promise.resolve({ remove: vi.fn() }) } }));
+vi.mock("./rpc", async (original) => ({ ...await original<typeof import("./rpc")>(), resolveConnection: vi.fn().mockResolvedValue({ kind: "local", port: 1, token: "fixture" }) }));
+afterEach(cleanup);
+beforeEach(() => { localStorage.clear(); });
 function Workspace() {
-  const target = useDesktopHost()!;
-  const [text, setText] = useState("");
-  return (
-    <>
-      <span data-testid="host">{target.host ?? "local"}</span>
-      <input
-        aria-label="draft"
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-      />
-      <button onClick={() => void target.selectHost("devbox")}>remote</button>
-      <button onClick={() => void target.selectHost(null)}>local</button>
-      <button onClick={() => void target.selectHost("local")}>
-        alias named local
-      </button>
-      <span role="status">{target.pending ? "connecting" : "ready"}</span>
-      {target.error && <span role="alert">{target.error}</span>}
-    </>
-  );
+  const host = useDesktopHost()!; const [filter, setFilter] = useState("");
+  return <><span data-testid="host">{host.host ?? "local"}</span><input aria-label="persistent sidebar filter" value={filter} onChange={(event) => setFilter(event.target.value)} />
+    <button onClick={() => void host.selectHost("demo-development")}>dev</button><button onClick={() => void host.selectHost("demo-research")}>research</button><button onClick={() => void host.selectHost(null)}>local</button><button onClick={() => void host.selectHost("demo-offline")}>offline</button><button onClick={() => void host.selectHost("new-unsaved")}>new</button>
+    <span data-testid="catalogs">{Object.values(host.catalogs).flatMap((catalog) => catalog.workspaces.map((workspace) => workspace.name)).join(",")}</span>
+    {host.error && <span role="alert">{host.error}</span>}
+  </>;
 }
-
-it("switches the entire workspace only after SSH succeeds and never forwards local settings", async () => {
-  invoke.mockResolvedValue({ port: 2345, token: "fixture", host: "devbox" });
-  render(
-    <DesktopHostProvider>
-      <Workspace />
-    </DesktopHostProvider>,
-  );
-  fireEvent.change(screen.getByLabelText("draft"), {
-    target: { value: "local private draft" },
-  });
-  fireEvent.click(screen.getByText("remote"));
-  await waitFor(() =>
-    expect(screen.getByTestId("host").textContent).toBe("devbox"),
-  );
-  expect((screen.getByLabelText("draft") as HTMLInputElement).value).toBe("");
-  expect(invoke).toHaveBeenCalledWith("ssh_connect", { host: "devbox" });
-  expect(invoke).toHaveBeenCalledTimes(1);
-  fireEvent.change(screen.getByLabelText("draft"), {
-    target: { value: "remote draft" },
-  });
-  fireEvent.click(screen.getByText("local"));
-  await waitFor(() =>
-    expect(screen.getByTestId("host").textContent).toBe("local"),
-  );
-  expect((screen.getByLabelText("draft") as HTMLInputElement).value).toBe("");
-  expect(invoke).toHaveBeenLastCalledWith("ssh_disconnect");
-  expect(hostDraftKey("devbox", "hero")).not.toBe(hostDraftKey(null, "hero"));
-  expect(hostDraftKey("devbox", "same-session")).not.toBe(
-    hostDraftKey("other", "same-session"),
-  );
+async function setup(root = new SshFixtureRoot()) {
+  render(<DesktopHostProvider root={root}><Workspace /></DesktopHostProvider>);
+  await waitFor(() => expect(screen.getByTestId("catalogs").textContent).toContain("研究项目"));
+  return root;
+}
+it("retains simultaneous host catalogs and does not remount sidebar on switch", async () => {
+  const root = await setup(); const disconnect = vi.spyOn(root, "disconnect");
+  fireEvent.change(screen.getByLabelText("persistent sidebar filter"), { target: { value: "my search" } });
+  fireEvent.click(screen.getByText("dev")); await waitFor(() => expect(screen.getByTestId("host").textContent).toBe("demo-development"));
+  expect(screen.getByTestId("catalogs").textContent).toContain("本地产品");
+  expect(screen.getByTestId("catalogs").textContent).toContain("研究项目");
+  expect((screen.getByLabelText("persistent sidebar filter") as HTMLInputElement).value).toBe("my search");
+  fireEvent.click(screen.getByText("local")); await waitFor(() => expect(screen.getByTestId("host").textContent).toBe("local"));
+  expect(disconnect).not.toHaveBeenCalled();
+  expect(hostDraftKey("a", "same")).not.toBe(hostDraftKey("b", "same"));
 });
-
-it("preserves the previous host and unsent input if SSH authentication fails", async () => {
-  let reject!: (error: Error) => void;
-  invoke.mockImplementation(
-    () =>
-      new Promise((_resolve, rejectPromise) => {
-        reject = rejectPromise;
-      }),
-  );
-  render(
-    <DesktopHostProvider>
-      <Workspace />
-    </DesktopHostProvider>,
-  );
-  fireEvent.change(screen.getByLabelText("draft"), {
-    target: { value: "keep this" },
-  });
-  fireEvent.click(screen.getByText("remote"));
-  fireEvent.click(screen.getByText("remote"));
-  expect(invoke).toHaveBeenCalledTimes(1);
-  expect(screen.getByRole("status").textContent).toBe("connecting");
-  reject(new Error("Host key verification failed"));
-  expect(await screen.findByRole("alert")).toHaveProperty(
-    "textContent",
-    "Host key verification failed",
-  );
+it("failed SSH preserves current host and sidebar state", async () => {
+  await setup(); fireEvent.click(screen.getByText("offline"));
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "演示主机暂不可达；本机及其他电脑保持连接");
   expect(screen.getByTestId("host").textContent).toBe("local");
-  expect((screen.getByLabelText("draft") as HTMLInputElement).value).toBe(
-    "keep this",
-  );
 });
-
-it("isolates an SSH alias literally named local from this computer", async () => {
-  invoke.mockResolvedValue({ port: 2345, token: "fixture", host: "local" });
-  render(
-    <DesktopHostProvider>
-      <Workspace />
-    </DesktopHostProvider>,
-  );
-  fireEvent.change(screen.getByLabelText("draft"), {
-    target: { value: "private local state" },
+it("returning local is not blocked by a slow SSH connection", async () => {
+  const disconnected = new SshFixtureRoot();
+  disconnected.hosts[0].state = "disconnected";
+  const root = await setup(disconnected); const original = root.call.bind(root); let finish!: () => void;
+  vi.spyOn(root, "call").mockImplementation(async (method, params) => {
+    if (method === "host.connect") await new Promise<void>((resolve) => { finish = resolve; });
+    return original(method, params);
   });
-  fireEvent.click(screen.getByText("alias named local"));
-  await waitFor(() =>
-    expect((screen.getByLabelText("draft") as HTMLInputElement).value).toBe(""),
-  );
-  expect(invoke).toHaveBeenCalledWith("ssh_connect", { host: "local" });
+  fireEvent.click(screen.getByText("dev")); fireEvent.click(screen.getByRole("button", { name: "local" }));
+  await act(async () => { finish(); });
+  expect(screen.getByTestId("host").textContent).toBe("local");
+});
+it("reuses connected hosts without refetching every host catalog on navigation", async () => {
+  const root = await setup(); const call = vi.spyOn(root, "call");
+  fireEvent.click(screen.getByText("dev"));
+  await waitFor(() => expect(screen.getByTestId("host").textContent).toBe("demo-development"));
+  fireEvent.click(screen.getByText("research"));
+  await waitFor(() => expect(screen.getByTestId("host").textContent).toBe("demo-research"));
+  expect(call).not.toHaveBeenCalled();
+});
+it("mobile only connects saved desktop hosts and never saves arbitrary hosts", async () => {
+  const root = new SshFixtureRoot(); root.mobile = true; const call = vi.spyOn(root, "call"); await setup(root);
+  fireEvent.click(screen.getByText("new")); expect(await screen.findByRole("alert")).toHaveProperty("textContent", "请先在桌面端添加 SSH 电脑，移动端只能连接已保存的电脑");
+  expect(call.mock.calls.some(([method]) => method === "host.save")).toBe(false);
+  fireEvent.click(screen.getByText("dev")); await waitFor(() => expect(screen.getByTestId("host").textContent).toBe("demo-development"));
+});
+it("keeps legacy storage until every host has migrated, without blocking real catalogs", async () => {
+  localStorage.setItem("miniq.ssh.saved-hosts", '["saved-a","saved-b"]');
+  const root = new SshFixtureRoot(); const original = root.call.bind(root);
+  vi.spyOn(root, "call").mockImplementation(async (method, params) => {
+    if (method === "host.save" && (params as { hostId: string }).hostId === "saved-b") throw new Error("disk full");
+    return original(method, params);
+  });
+  await setup(root); expect(localStorage.getItem("miniq.ssh.saved-hosts")).toBe('["saved-a","saved-b"]');
+});
+it("ignores malformed legacy preferences while retaining them for recovery", async () => {
+  localStorage.setItem("miniq.ssh.saved-hosts", "broken json"); await setup();
+  expect(localStorage.getItem("miniq.ssh.saved-hosts")).toBe("broken json");
 });

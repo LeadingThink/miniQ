@@ -3,7 +3,7 @@ import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
 import { LoaderCircle, PlugZap, Sparkles } from "lucide-react";
-import { lazy, Suspense, useState } from "react";
+import { Fragment, lazy, Suspense, useState } from "react";
 import { Composer, ComposerCard } from "./Composer";
 import type { ComposerSlashCommand } from "../composerSlash";
 import { useAppSlashCommands } from "../hooks/useAppSlashCommands";
@@ -15,7 +15,7 @@ import { ProjectPicker } from "./ProjectPicker";
 import { SchedulePanel } from "./Schedule";
 import { SearchOverlay, type PaletteCommand } from "./Search";
 import { SettingsPanel } from "./Settings";
-import { Sidebar } from "./Sidebar";
+import { AppSidebar } from "./AppSidebar";
 import { SkillsPanel } from "./Skills";
 import { StarterPrompts } from "./StarterPrompts";
 import { AppErrorBanner, AppStatusBar } from "./AppStatus";
@@ -23,8 +23,7 @@ import { SessionModelControls } from "./SessionModelControls";
 import { SessionPermissionControls } from "./SessionPermissionControls";
 import { AgentPanel } from "./AgentPanel";
 import { ProjectDirectories } from "./ProjectDirectories";
-import { isMobileLayout } from "../mobileViewport";
-import { hostDraftKey } from "../desktopHost";
+import { hostDraftKey, useDesktopHost } from "../desktopHost";
 import { RemotePathDialog } from "./RemotePathDialog";
 
 import { useAppWorkbench } from "../hooks/useAppWorkbench";
@@ -35,6 +34,8 @@ interface AppOnlyProps {
 }
 
 interface AppShellProps extends AppOnlyProps {
+  contentOnly?: boolean;
+  active?: boolean;
   theme: ThemeId;
   onThemeChange: (theme: ThemeId) => void;
 }
@@ -45,6 +46,7 @@ const Timeline = lazy(async () => {
 });
 
 function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
+  const desktop = useDesktopHost();
   const editingWorkspace = app.catalog.workspaces.find(
     (workspace) => workspace.id === app.navigation.editingWorkspaceId,
   );
@@ -57,7 +59,7 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
         <ProjectDirectories
           key={editingWorkspace.id}
           workspace={editingWorkspace}
-          readOnly={app.client.mode === "remote" && !app.client.sshHost}
+          readOnly={(desktop?.root ?? app.client).mode === "remote"}
           remote={!!app.client.sshHost}
           sessions={app.catalog.sessions.filter(
             (session) => session.workspaceId === editingWorkspace.id,
@@ -377,7 +379,7 @@ function buildPaletteCommands(app: MiniqAppController): PaletteCommand[] {
   ];
 }
 
-export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
+export function AppShell({ app, theme, onThemeChange, contentOnly = false, active = true }: AppShellProps) {
   const workbench = useAppWorkbench(app);
   const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
   const slash = useAppSlashCommands(app, {
@@ -392,101 +394,13 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
     onStop: app.busy ? () => void app.actions.cancelTurn() : undefined,
     onToggleSidebar: () =>
       app.navigation.setSidebarCollapsed(!app.navigation.sidebarCollapsed),
-  });
+  }, active);
 
-  const closeMobileSidebar = () => {
-    if (isMobileLayout()) {
-      app.navigation.setSidebarCollapsed(true);
-    }
-  };
+  const Container = contentOnly ? Fragment : "div";
 
   return (
-    <div
-      className={`app ${app.navigation.sidebarCollapsed ? "sidebar-collapsed" : ""}`}
-    >
-      <Sidebar
-        workspaces={app.catalog.workspaces}
-        sessions={app.catalog.sessions}
-        unreadSessionIds={app.unreadSessionIds}
-        currentSessionId={app.catalog.currentSessionId}
-        selectedWorkspaceId={app.catalog.selectedWorkspace?.id ?? null}
-        onNewChat={() => {
-          app.actions.newChat();
-          closeMobileSidebar();
-        }}
-        onShowSearch={() => {
-          app.navigation.setShowSearch(true);
-          closeMobileSidebar();
-        }}
-        onShowSchedule={() => {
-          app.navigation.setPage("schedule");
-          closeMobileSidebar();
-        }}
-        onImportSessions={() => {
-          app.navigation.setShowExternalImport(true);
-          closeMobileSidebar();
-        }}
-        onSelectWorkspace={(workspaceId) => {
-          app.actions.selectWorkspace(workspaceId);
-          closeMobileSidebar();
-        }}
-        onCreateSession={(workspaceId) =>
-          void app.actions.createSession(workspaceId)
-        }
-        onDeleteWorkspace={(workspaceId) =>
-          void app.actions.deleteWorkspace(workspaceId)
-        }
-        onRenameWorkspace={(workspaceId, name) =>
-          void app.actions.renameWorkspace(workspaceId, name)
-        }
-        onEditWorkspace={app.navigation.setEditingWorkspaceId}
-        onSelectSession={(sessionId) => {
-          closeMobileSidebar();
-          void app.actions.openSession(sessionId);
-        }}
-        onSessionSeen={app.markSessionSeen}
-        onDeleteSession={(sessionId) =>
-          void app.actions.deleteSession(sessionId)
-        }
-        onRenameSession={(sessionId, title) =>
-          void app.actions.renameSession(sessionId, title)
-        }
-        onSetSessionPinned={(sessionId, pinned) =>
-          void app.actions.setSessionPinned(sessionId, pinned)
-        }
-        onSetSessionArchived={(sessionId, archived) =>
-          void app.actions.setSessionArchived(sessionId, archived)
-        }
-        onShowSkills={() => {
-          app.navigation.setPage("skills");
-          closeMobileSidebar();
-        }}
-        onShowMcp={() => {
-          app.navigation.setPage("mcp");
-          closeMobileSidebar();
-        }}
-        onShowPlugins={() => {
-          app.navigation.setPage("plugins");
-          closeMobileSidebar();
-        }}
-        onShowSettings={() => {
-          app.navigation.setShowSettings(true);
-          closeMobileSidebar();
-        }}
-        updateSupported={app.updater.supported}
-        updateState={app.updater.state}
-        onCheckForUpdates={() => void app.updater.checkNow()}
-        onInstallUpdate={() => void app.updater.install()}
-        onError={app.setError}
-      />
-      {!app.navigation.sidebarCollapsed && (
-        <button
-          type="button"
-          className="mobile-sidebar-scrim"
-          aria-label="关闭侧栏"
-          onClick={() => app.navigation.setSidebarCollapsed(true)}
-        />
-      )}
+    <Container {...(contentOnly ? {} : { className: `app ${app.navigation.sidebarCollapsed ? "sidebar-collapsed" : ""}` })}>
+      {!contentOnly && <AppSidebar app={app} />}
       <div className="main">
         <AppStatusBar
           app={app}
@@ -500,20 +414,20 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
           }}
         />
         <AppErrorBanner app={app} />
-        <AppOverlays app={app} theme={theme} onThemeChange={onThemeChange} />
-        {slash.dialogs}
-        <MainPage
+        {active && <AppOverlays app={app} theme={theme} onThemeChange={onThemeChange} />}
+        {active && slash.dialogs}
+        {active && <MainPage
           app={app}
           slashCommands={slash.commands}
           onOpenUrl={workbench.openUrl}
           onOpenFile={workbench.openFile}
           draftRequest={fileQuestion?.sessionId === app.catalog.currentSessionId ? fileQuestion : undefined}
           onDraftRequestApplied={() => setFileQuestion(undefined)}
-        />
+        />}
       </div>
-      <AppWorkbench app={app} workbench={workbench} onDiscuss={(content) => {
+      <AppWorkbench suspended={!active} app={app} workbench={workbench} onDiscuss={(content) => {
         if (app.catalog.currentSessionId) setFileQuestion({ sessionId: app.catalog.currentSessionId, id: Date.now(), content, append: true });
       }} />
-    </div>
+    </Container>
   );
 }

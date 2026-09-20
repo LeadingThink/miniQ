@@ -28,7 +28,8 @@ function draftResult(
 export function useSessionModel(
   client: RpcClient,
   sessionId: string | null,
-  workspaceId: string | null = null
+  workspaceId: string | null = null,
+  savedDrafts?: Map<string | null, SessionModelSettings>,
 ) {
   const [result, setResult] = useState<SessionModelResult>({
     settings: DEFAULT_MODEL_SETTINGS,
@@ -41,7 +42,7 @@ export function useSessionModel(
   currentContext.current = modelContext;
   const [pending, setPending] = useState(false);
   const [error, setError] = useSessionError(modelContext);
-  const drafts = useRef(new Map<string | null, SessionModelSettings>());
+  const drafts = useRef(savedDrafts ?? new Map<string | null, SessionModelSettings>());
   const draftDefaults = useRef<SessionModelResult>(result);
   const generation = useRef(0);
   const updatePending = useRef(false);

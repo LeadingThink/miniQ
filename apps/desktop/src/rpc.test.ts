@@ -70,28 +70,16 @@ describe("RpcClient timeouts", () => {
     vi.unstubAllGlobals();
   });
 
-  it("routes SSH RPC and events directly through the loopback tunnel, with remote file semantics", async () => {
-    const client = new RpcClient("devbox");
-    expect(client.mode).toBe("remote");
-    const connected = client.connect({ kind: "ssh", host: "devbox", port: 9000, token: "fixture" });
+  it("keeps SSH events separate from root events", async () => {
+    const client = new RpcClient();
+    const connected = client.connect({ kind: "local", port: 9000, token: "fixture" });
     const socket = FakeWebSocket.instances[0];
-    socket.open();
-    await connected;
-    const event = vi.fn();
-    client.onEvent(event);
-    const response = client.call("session.create", { workspaceId: "remote-workspace" });
-    expect(socket.sent).toHaveLength(1);
-    const request = JSON.parse(socket.sent[0]);
-    expect(request).toMatchObject({ jsonrpc: "2.0", method: "session.create", params: { workspaceId: "remote-workspace" } });
-    socket.receive({ type: "session_updated", sessionId: "remote-session" });
-    socket.receive({ jsonrpc: "2.0", id: request.id, result: { id: "remote-session" } });
-    await expect(response).resolves.toEqual({ id: "remote-session" });
-    expect(event).toHaveBeenCalledWith({ type: "session_updated", sessionId: "remote-session" });
-    client.selectSession("remote-session");
-    expect(socket.sent).toHaveLength(1);
-    client.disconnect();
-    expect(client.sshHost).toBe("devbox");
-    expect(socket.sent.some((raw) => raw.includes("shutdown"))).toBe(false);
+    socket.open(); await connected;
+    const local = vi.fn(), host = vi.fn();
+    client.onEvent(local); client.onHostEvent(host);
+    socket.receive({ type: "host_event", hostId: "dev", event: { type: "session_updated", sessionId: "same" } });
+    expect(local).not.toHaveBeenCalled();
+    expect(host).toHaveBeenCalledWith({ type: "host_event", hostId: "dev", event: { type: "session_updated", sessionId: "same" } });
   });
 
   it("rejects a connection that never finishes its handshake", async () => {
@@ -103,6 +91,21 @@ describe("RpcClient timeouts", () => {
 
     await rejected;
     expect(FakeWebSocket.instances[0].readyState).toBe(FakeWebSocket.CLOSED);
+  });
+
+  it("keeps the root transport healthy after an SSH request times out", async () => {
+    const client = new RpcClient();
+    const connected = client.connect({ kind: "local", port: 9000, token: "fixture" });
+    const socket = FakeWebSocket.instances[0]; socket.open(); await connected;
+    const pending = client.call("host.call", { hostId: "slow", method: "session.open", params: { sessionId: "s" } }, { timeoutMs: 100 });
+    const rejection = expect(pending).rejects.toThrow("请求 host.call 超时");
+    await vi.advanceTimersByTimeAsync(100); await rejection;
+    expect(client.connected).toBe(true);
+    const health = client.call("daemon.health");
+    const request = JSON.parse(socket.sent.at(-1)!);
+    socket.receive({ jsonrpc: "2.0", id: request.id, result: { status: "ok" } });
+    await expect(health).resolves.toEqual({ status: "ok" });
+    expect(FakeWebSocket.instances).toHaveLength(1);
   });
 
   it("rejects an RPC request when the daemon never responds", async () => {
