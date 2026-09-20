@@ -5,6 +5,8 @@ import { pathToFileURL } from "node:url";
 
 export const APP_BUNDLE_ID = "com.leadingthink.miniq";
 
+const REQUIRED_PRIVACY_DESCRIPTIONS = ["NSCameraUsageDescription", "NSMicrophoneUsageDescription"];
+
 const REQUIRED_SECRETS = [
   "IOS_CERTIFICATE_BASE64",
   "IOS_CERTIFICATE_PASSWORD",
@@ -65,6 +67,7 @@ export function validateEnvironment(environment) {
 export function validateSource(desktopDirectory) {
   const capacitor = readFileSync(resolve(desktopDirectory, "capacitor.config.ts"), "utf8");
   const project = readFileSync(resolve(desktopDirectory, "ios/App/App.xcodeproj/project.pbxproj"), "utf8");
+  const info = readFileSync(resolve(desktopDirectory, "ios/App/App/Info.plist"), "utf8");
   if (!capacitor.includes(`appId: "${APP_BUNDLE_ID}"`)) {
     throw new Error(`Capacitor appId must be ${APP_BUNDLE_ID}`);
   }
@@ -72,6 +75,42 @@ export function validateSource(desktopDirectory) {
   if (bundleIds.length === 0 || bundleIds.some((bundleId) => bundleId !== APP_BUNDLE_ID)) {
     throw new Error(`every iOS target must use bundle identifier ${APP_BUNDLE_ID}`);
   }
+  validatePrivacySource(info);
+}
+
+export function validatePrivacyDescriptions(info) {
+  for (const key of REQUIRED_PRIVACY_DESCRIPTIONS) {
+    const value = info?.[key];
+    if (typeof value !== "string" || !value.trim() || /\$[({]/.test(value)) {
+      throw new Error(`${key} must contain a non-empty privacy purpose description without unresolved build settings`);
+    }
+  }
+}
+
+export function validatePrivacySource(xml) {
+  // Check the checked-in XML on every CI platform. The archive is parsed with plutil below.
+  const source = xml.replace(/<!--[\s\S]*?-->/g, "");
+  const descriptions = {};
+  for (const key of REQUIRED_PRIVACY_DESCRIPTIONS) {
+    const keyPattern = `<key>\\s*${key}\\s*</key>`;
+    const entries = [...source.matchAll(new RegExp(keyPattern, "g"))];
+    if (entries.length !== 1) throw new Error(`Info.plist must declare ${key} exactly once`);
+    descriptions[key] = source.match(new RegExp(`${keyPattern}\\s*<string>([^<]*)</string>`))?.[1];
+  }
+  validatePrivacyDescriptions(descriptions);
+}
+
+export function validateBuiltApp(info, marketingVersion, buildNumber) {
+  validateMarketingVersion(marketingVersion);
+  validateBuildNumber(buildNumber);
+  for (const [key, expected] of Object.entries({
+    CFBundleIdentifier: APP_BUNDLE_ID,
+    CFBundleShortVersionString: marketingVersion,
+    CFBundleVersion: buildNumber,
+  })) {
+    if (info?.[key] !== expected) throw new Error(`archived app ${key} must be ${expected}`);
+  }
+  validatePrivacyDescriptions(info);
 }
 
 export function validateProfile(profile, teamId, now = new Date()) {
@@ -201,7 +240,15 @@ function main() {
     console.log("Validated App Store provisioning profile and created export options");
     return;
   }
-  throw new Error("expected action: validate or prepare-profile");
+  if (action === "validate-app") {
+    const path = process.argv[3];
+    if (!path) throw new Error("validate-app requires the archived App.app/Info.plist path");
+    const info = JSON.parse(execFileSync("/usr/bin/plutil", ["-convert", "json", "-o", "-", path], { encoding: "utf8" }));
+    validateBuiltApp(info, process.env.IOS_MARKETING_VERSION, process.env.IOS_BUILD_NUMBER);
+    console.log("Validated archived iOS app identity, version, camera, and microphone descriptions");
+    return;
+  }
+  throw new Error("expected action: validate, prepare-profile, or validate-app");
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

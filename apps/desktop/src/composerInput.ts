@@ -1,7 +1,7 @@
 import type { KeyboardEvent } from "react";
 
 export const COMPOSER_KEYBOARD_HINT =
-  "Enter 或 Shift＋Enter 发送，Ctrl＋Enter 换行";
+  "Enter 发送，Shift＋Enter 换行";
 
 export function canSendComposer(draft: string, attachments: string[]): boolean {
   return draft.trim().length > 0 || attachments.length > 0;
@@ -29,7 +29,7 @@ export function handleComposerKeyDown(
   ) return;
 
   event.preventDefault();
-  if (!event.ctrlKey) {
+  if (!event.shiftKey) {
     onSend();
     return;
   }
