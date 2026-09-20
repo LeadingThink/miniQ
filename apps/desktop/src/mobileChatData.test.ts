@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from "vitest";
-import { MOBILE_CHAT_STORAGE_KEY, readMobileChat, textChatModels } from "./mobileChatData";
+import { MOBILE_CHAT_STORAGE_KEY, mobileMessageText, persistMobileChat, readMobileChat, textChatModels } from "./mobileChatData";
 
 afterEach(() => localStorage.clear());
 
@@ -26,8 +26,31 @@ it("keeps shared history while rejecting malformed or unsafe persisted messages"
     { role: "user", content: [{ type: "image_url", image_url: { url: "javascript:bad()" } }] },
     { role: "user", content: [{ type: "text" }] },
   ]));
-  expect(readMobileChat()).toEqual([
+  const messages = readMobileChat();
+  expect(messages.map(({ role, content, status }) => ({ role, content, ...(status ? { status } : {}) }))).toEqual([
     { role: "user", content: "问题" },
     { role: "assistant", content: "部分回答", status: "interrupted" },
   ]);
+  expect(messages[0].id).toBeTruthy();
+  expect(messages[1].replyTo).toBe(messages[0].id);
+  expect(new Set(messages.map(({ id }) => id)).size).toBe(2);
+  persistMobileChat(messages);
+  expect(readMobileChat()).toEqual(messages);
+});
+
+it("preserves an answer's association after its question is deleted", () => {
+  localStorage.setItem(MOBILE_CHAT_STORAGE_KEY, JSON.stringify([
+    { id: "old-question", role: "user", content: "较早的问题" },
+    { id: "answer", role: "assistant", replyTo: "deleted-question", content: "部分回答", status: "failed" },
+  ]));
+  expect(readMobileChat()[1].replyTo).toBe("deleted-question");
+});
+
+it("copies all text parts without exposing inline image data as text", () => {
+  expect(mobileMessageText("# 原始 Markdown\n\n正文")).toBe("# 原始 Markdown\n\n正文");
+  expect(mobileMessageText([
+    { type: "text", text: "第一段" },
+    { type: "image_url", image_url: { url: "data:image/png;base64,example" } },
+    { type: "text", text: "第二段" },
+  ])).toBe("第一段\n第二段");
 });

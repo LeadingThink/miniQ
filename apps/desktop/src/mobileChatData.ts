@@ -8,8 +8,10 @@ export type ChatContent = string | Array<
 >;
 
 export interface MobileChatMessage {
+  id: string;
   role: "user" | "assistant";
   content: ChatContent;
+  replyTo?: string;
   status?: "failed" | "interrupted";
 }
 
@@ -31,13 +33,26 @@ export function textChatModels(result: unknown): string[] {
 export function readMobileChat(): MobileChatMessage[] {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(MOBILE_CHAT_STORAGE_KEY) ?? "[]");
-    return Array.isArray(value) ? value.filter(isChatMessage) : [];
+    if (!Array.isArray(value)) return [];
+    const messages: MobileChatMessage[] = [];
+    const ids = new Set<string>();
+    for (const item of value.filter(isChatMessage)) {
+      const id = typeof item.id === "string" && item.id && !ids.has(item.id) ? item.id : crypto.randomUUID();
+      const previous = messages.at(-1);
+      const replyTo = item.role === "assistant"
+        ? typeof item.replyTo === "string" ? item.replyTo : previous?.role === "user" ? previous.id : undefined
+        : undefined;
+      messages.push({ id, role: item.role, content: item.content,
+        ...(item.status ? { status: item.status } : {}), ...(replyTo ? { replyTo } : {}) });
+      ids.add(id);
+    }
+    return messages;
   } catch {
     return [];
   }
 }
 
-function isChatMessage(value: unknown): value is MobileChatMessage {
+function isChatMessage(value: unknown): value is Omit<MobileChatMessage, "id"> & { id?: string } {
   if (!value || typeof value !== "object" || !("role" in value) || !("content" in value)) return false;
   if (value.role !== "user" && value.role !== "assistant") return false;
   if ("status" in value && value.status !== "failed" && value.status !== "interrupted") return false;
@@ -49,6 +64,10 @@ function isChatMessage(value: unknown): value is MobileChatMessage {
     return Boolean(image && typeof image === "object" && "url" in image && typeof image.url === "string"
       && /^(https?:\/\/|data:image\/(?:png|jpeg|webp|gif);base64,)/i.test(image.url));
   }));
+}
+
+export function mobileMessageText(content: ChatContent): string {
+  return typeof content === "string" ? content : content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n");
 }
 
 export function persistMobileChat(messages: MobileChatMessage[]): boolean {
