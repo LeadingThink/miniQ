@@ -1,0 +1,55 @@
+.message-time {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  white-space: normal;
+}
+
+.message-time-trigger {
+  width: fit-content;
+  color: inherit;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 4px;
+}
+
+.message-time-trigger::-webkit-details-marker { display: none; }
+.message-time-trigger:hover { text-decoration: underline; }
+.message-time-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.message-time-detail { display: block; margin-top: 4px; }
+.bubble > .message-time { margin-top: 6px; }
+.bubble.user > .message-time { text-align: right; }
+.bubble.user > .message-time > summary { margin-left: auto; }
+
+.conversation-time-separator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  margin: 12px 0;
+}
+
+.conversation-time-separator::before,
+.conversation-time-separator::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--hairline);
+}
+
+.turn-timing {
+  align-self: flex-start;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+}
+
+.turn-timing summary { cursor: pointer; width: fit-content; }
+.turn-timing p { margin: 4px 0; font-size: 11px; }
+.turn-timing summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

@@ -1,11 +1,27 @@
+.preview-tab-bar {
+  display: flex;
+  align-items: stretch;
+  position: relative;
+  flex-shrink: 0;
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+}
 .preview-tabs {
   display: flex;
   gap: 1px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
+  flex: 1;
   min-width: 0;
+}
+.preview-tab-menu .icon-button {
+  background: transparent;
+  color: var(--text-mid);
+  border: 0;
+}
+.preview-tab-menu .icon-button:hover {
+  background: var(--bg-active);
+  color: var(--text);
 }
 .preview-tab {
   display: flex;
@@ -51,4 +67,164 @@
   height: 28px;
   margin-right: 4px;
   flex-shrink: 0;
+}
+.preview-tab-menu {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.preview-tab-menu-trigger.icon-button {
+  display: flex;
+  gap: 3px;
+  width: auto;
+  min-width: 42px;
+  height: 32px;
+  padding: 6px;
+  margin-inline: 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.preview-tab-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 4px;
+  z-index: 90;
+  width: min(360px, calc(100vw - 32px));
+  max-width: calc(100% - 8px);
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel, var(--bg));
+  color: var(--text);
+  box-shadow: 0 12px 36px #0003;
+}
+.preview-tab-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+}
+.preview-tab-search input {
+  min-width: 0;
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.preview-tab-search:focus-within {
+  border-color: var(--accent);
+}
+.preview-tab-results {
+  max-height: min(320px, 40dvh);
+  overflow-y: auto;
+  margin-block: 6px;
+}
+.preview-tab-result {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.preview-tab-result-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.preview-tab-result-select > span {
+  min-width: 0;
+  flex: 1;
+}
+.preview-tab-result-select strong,
+.preview-tab-result-select small {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.preview-tab-result-select strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.preview-tab-result-select small {
+  margin-top: 3px;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+.preview-tab-result-select svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.preview-tab-result-select:hover,
+.preview-tab-result-select[aria-current="true"],
+.preview-tab-actions button:hover:not(:disabled) {
+  background: var(--hover, color-mix(in srgb, var(--text) 7%, transparent));
+}
+.preview-tab-result > .icon-button {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+}
+.preview-tab-empty {
+  margin: 14px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.preview-tab-actions {
+  display: flex;
+  flex-direction: column;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+}
+.preview-tab-actions:empty {
+  display: none;
+}
+.preview-tab-actions button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  text-align: left;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+.preview-tab-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.preview-tab-bar button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+@media (max-width: 700px), (pointer: coarse) {
+  .preview-tab-search input {
+    font-size: 16px;
+  }
+  .preview-tab-result-select,
+  .preview-tab-actions button {
+    min-height: 40px;
+  }
+  .preview-tab-menu-trigger.icon-button {
+    min-width: 44px;
+    min-height: 40px;
+  }
+  .preview-tab-result > .icon-button {
+    min-width: 40px;
+    min-height: 40px;
+  }
 }

@@ -17,7 +17,19 @@ import {
 import "./WorkbenchPanel.css";
 
 /** Owns layout updates so dragging never rerenders the conversation tree. */
-export function WorkbenchPanel({ children, hidden = false }: { children: ReactNode; hidden?: boolean }) {
+export function WorkbenchPanel({
+  children,
+  hidden = false,
+  expanded = false,
+  onRestore,
+  onLayoutChange,
+}: {
+  children: ReactNode;
+  hidden?: boolean;
+  expanded?: boolean;
+  onRestore?: () => void;
+  onLayoutChange?: (mode: "mobile" | "split" | "overlay") => void;
+}) {
   const container = useRef<HTMLDivElement>(null);
   const [preferredWidth, setPreferredWidth] = useState(() =>
     readWorkbenchWidth(window.localStorage),
@@ -38,7 +50,9 @@ export function WorkbenchPanel({ children, hidden = false }: { children: ReactNo
       const viewport = window.innerWidth;
       const mobile = isMobileLayout();
       setSpace((previous) =>
-        previous.available === available && previous.viewport === viewport && previous.mobile === mobile
+        previous.available === available &&
+        previous.viewport === viewport &&
+        previous.mobile === mobile
           ? previous
           : { available, viewport, mobile },
       );
@@ -57,6 +71,7 @@ export function WorkbenchPanel({ children, hidden = false }: { children: ReactNo
     };
   }, []);
   const layout = workbenchLayout(space.available, space.viewport, space.mobile);
+  useEffect(() => onLayoutChange?.(layout.mode), [layout.mode, onLayoutChange]);
   useEffect(() => {
     if (layout.mode === "mobile") setDragWidth(null);
   }, [layout.mode]);
@@ -75,9 +90,17 @@ export function WorkbenchPanel({ children, hidden = false }: { children: ReactNo
       ref={container}
       className="workbench-panel"
       data-layout={layout.mode}
+      data-expanded={expanded || undefined}
       style={{ width, display: hidden ? "none" : undefined }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && expanded && !event.defaultPrevented) {
+          event.preventDefault();
+          event.stopPropagation();
+          onRestore?.();
+        }
+      }}
     >
-      {layout.mode !== "mobile" && (
+      {layout.mode !== "mobile" && !expanded && (
         <WorkbenchResizer
           width={width}
           min={layout.min}

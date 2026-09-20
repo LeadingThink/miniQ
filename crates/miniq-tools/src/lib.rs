@@ -11,6 +11,10 @@ mod apply_patch;
 mod apply_patch_diff;
 mod browser;
 mod catalog;
+#[cfg(feature = "desktop")]
+mod computer;
+#[cfg(not(feature = "desktop"))]
+#[path = "computer/headless.rs"]
 mod computer;
 mod desktop_lock;
 mod doc;
@@ -130,7 +134,9 @@ pub fn default_router() -> ToolRouter {
         std::sync::Arc::new(MemoryWriteTool),
         std::sync::Arc::new(McpCallTool),
         std::sync::Arc::new(BrowserAutomationTool::default()),
+        #[cfg(feature = "desktop")]
         std::sync::Arc::new(ComputerUseTool::default()),
+        #[cfg(feature = "desktop")]
         std::sync::Arc::new(AppAutomationTool::default()),
         std::sync::Arc::new(GenerateImageTool),
         std::sync::Arc::new(EditImageTool),

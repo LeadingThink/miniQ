@@ -82,6 +82,7 @@ impl Store {
                 });
             }
         }
+        super::turn_timing::attach(&conn, &mut page.messages)?;
         Ok(page)
     }
 }

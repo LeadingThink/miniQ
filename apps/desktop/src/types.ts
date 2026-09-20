@@ -154,6 +154,19 @@ export interface Message {
   content: string;
   attachments?: MessageAttachment[];
   createdAt: string;
+  turnTiming?: TurnTiming;
+}
+
+export interface TurnTiming {
+  startedAt: string;
+  completedAt?: string;
+  elapsedMs?: number;
+  status: "running" | "completed" | "failed" | "cancelled" | "interrupted";
+}
+
+export interface AnchoredTurnTiming {
+  messageId: string;
+  timing: TurnTiming;
 }
 
 export interface MessageAttachment {
@@ -364,6 +377,7 @@ export type DaemonEvent = {
     }
   | { type: "session_status_changed"; sessionId: string; status: SessionStatus }
   | { type: "turn_progress_changed"; sessionId: string; progress: TurnProgress }
+  | { type: "turn_timing_changed"; sessionId: string; messageId: string; timing: TurnTiming }
   | { type: "message_created"; sessionId: string; message: Message }
   | {
       type: "session_rewritten";
@@ -398,6 +412,7 @@ export type DaemonEvent = {
       toolCallId: string;
       toolName: string;
       input: unknown;
+      createdAt?: string;
     }
   | {
       type: "tool_call_finished";
@@ -405,6 +420,7 @@ export type DaemonEvent = {
       toolCallId: string;
       status: ToolCallStatus;
       output?: unknown;
+      completedAt?: string;
     }
   | {
       type: "approval_requested";

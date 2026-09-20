@@ -579,6 +579,16 @@
           },
           "sessionId": {
             "type": "string"
+          },
+          "turnTiming": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TurnTiming"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1017,6 +1027,46 @@
         ],
         "type": "object"
       },
+      "TurnTiming": {
+        "description": "One execution of a user request. Phase changes and model retries do not restart this clock. Missing elapsed time means it could not be measured, for example after an unclean daemon restart.",
+        "properties": {
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "elapsedMs": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/definitions/TurnTimingStatus"
+          }
+        },
+        "required": [
+          "startedAt",
+          "status"
+        ],
+        "type": "object"
+      },
+      "TurnTimingStatus": {
+        "enum": [
+          "running",
+          "completed",
+          "failed",
+          "cancelled",
+          "interrupted"
+        ],
+        "type": "string"
+      },
       "Workspace": {
         "description": "A project with a primary directory and explicitly attached directories.",
         "properties": {
@@ -1214,6 +1264,33 @@
         "type": "object"
       },
       {
+        "description": "Durable timing for the user message that anchors this execution.",
+        "properties": {
+          "messageId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "timing": {
+            "$ref": "#/definitions/TurnTiming"
+          },
+          "type": {
+            "enum": [
+              "turn_timing_changed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "messageId",
+          "sessionId",
+          "timing",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
         "description": "A full message was persisted (user echo or final assistant message).",
         "properties": {
           "message": {
@@ -1374,6 +1451,12 @@
               "null"
             ]
           },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "input": true,
           "sessionId": {
             "type": "string"
@@ -1403,6 +1486,12 @@
       {
         "description": "A tool call finished (succeeded/failed/rejected/cancelled).",
         "properties": {
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "output": true,
           "sessionId": {
             "type": "string"
@@ -2664,6 +2753,16 @@
           },
           "sessionId": {
             "type": "string"
+          },
+          "turnTiming": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TurnTiming"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -2717,6 +2816,46 @@
           "failed",
           "rejected",
           "cancelled"
+        ],
+        "type": "string"
+      },
+      "TurnTiming": {
+        "description": "One execution of a user request. Phase changes and model retries do not restart this clock. Missing elapsed time means it could not be measured, for example after an unclean daemon restart.",
+        "properties": {
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "elapsedMs": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/definitions/TurnTimingStatus"
+          }
+        },
+        "required": [
+          "startedAt",
+          "status"
+        ],
+        "type": "object"
+      },
+      "TurnTimingStatus": {
+        "enum": [
+          "running",
+          "completed",
+          "failed",
+          "cancelled",
+          "interrupted"
         ],
         "type": "string"
       }

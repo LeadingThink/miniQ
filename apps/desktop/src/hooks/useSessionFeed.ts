@@ -14,6 +14,7 @@ import type {
   HistoryPage,
   HistoryCursor,
   EventCursor,
+  AnchoredTurnTiming,
 } from "../types";
 
 export interface PendingApproval {
@@ -23,6 +24,7 @@ export interface PendingApproval {
 }
 
 interface SessionFeedState {
+  latestTurnTiming: AnchoredTurnTiming | null;
   eventCursor: EventCursor | null;
   buffered: { event: DaemonEvent; receivedAt: string }[];
   loading: boolean;
@@ -40,6 +42,7 @@ interface SessionFeedState {
 }
 
 export interface LoadedSessionFeed {
+  latestTurnTiming?: AnchoredTurnTiming | null;
   eventCursor?: EventCursor | null;
   nextCursor?: HistoryCursor | null;
   messages: Message[];
@@ -68,6 +71,7 @@ interface ScopedFeed {
 }
 
 const EMPTY_FEED: SessionFeedState = {
+  latestTurnTiming: null,
   eventCursor: null,
   buffered: [],
   loading: false,
@@ -99,7 +103,7 @@ function updateFinishedToolCall(
           status: event.status,
           output: event.output,
           payloadDeferred: event.payloadDeferred,
-          completedAt: receivedAt,
+          completedAt: event.completedAt ?? receivedAt,
         }
       : toolCall,
   );
@@ -123,6 +127,7 @@ function reduceDaemonEvent(
           event.message.role === "assistant" ? "" : state.streamingText,
         plan: event.message.role === "user" ? [] : state.plan,
         turnProgress: event.message.role === "user" ? null : state.turnProgress,
+        latestTurnTiming: event.message.role === "user" ? null : state.latestTurnTiming,
       };
     case "session_rewritten": {
       const removedMessages = new Set(event.removedMessageIds);
@@ -146,10 +151,18 @@ function reduceDaemonEvent(
         plan: [],
         streamingText: "",
         turnProgress: null,
+        latestTurnTiming: null,
       };
     }
     case "turn_progress_changed":
       return { ...state, turnProgress: event.progress };
+    case "turn_timing_changed":
+      return {
+        ...state,
+        latestTurnTiming: { messageId: event.messageId, timing: event.timing },
+        messages: state.messages.map((message) => message.id === event.messageId
+          ? { ...message, turnTiming: event.timing } : message),
+      };
     case "assistant_delta":
       return { ...state, streamingText: state.streamingText + event.delta };
     case "assistant_replaced":
@@ -170,7 +183,7 @@ function reduceDaemonEvent(
             payloadDeferred: event.payloadDeferred,
             live: true,
             status: "running",
-            createdAt: receivedAt,
+            createdAt: event.createdAt ?? receivedAt,
           },
         ],
       };
@@ -283,6 +296,7 @@ function sessionFeedReducer(
       questions: action.feed.questions,
       streamingText: action.feed.streamingText,
       turnProgress: action.feed.turnProgress,
+      latestTurnTiming: action.feed.latestTurnTiming ?? null,
     };
     for (const item of state.buffered)
       loaded = applySequencedEvent(loaded, item.event, item.receivedAt);

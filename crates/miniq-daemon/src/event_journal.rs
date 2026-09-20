@@ -51,20 +51,34 @@ impl EventJournal {
                 agent_id,
                 tool_call_id,
                 tool_name,
+                created_at,
                 ..
-            } => json!({
+            } => {
+                let mut value = json!({
                 "type": "tool_call_started", "sessionId": session_id, "toolCallId": tool_call_id,
                 "toolName": tool_name, "agentId": agent_id, "input": null, "payloadDeferred": true,
-            }),
+                });
+                if let Some(created_at) = created_at {
+                    value["createdAt"] = created_at.clone().into();
+                }
+                value
+            }
             Event::ToolCallFinished {
                 session_id,
                 tool_call_id,
                 status,
+                completed_at,
                 ..
-            } => json!({
+            } => {
+                let mut value = json!({
                 "type": "tool_call_finished", "sessionId": session_id, "toolCallId": tool_call_id,
                 "status": status, "output": null, "payloadDeferred": true,
-            }),
+                });
+                if let Some(completed_at) = completed_at {
+                    value["completedAt"] = completed_at.clone().into();
+                }
+                value
+            }
             _ => serde_json::to_value(event).expect("event serialization"),
         };
         self.cursor.sequence += 1;
@@ -128,6 +142,60 @@ pub(crate) fn sidebar_event(event: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_replay_keeps_persisted_timestamps_while_deferring_payloads() {
+        let mut journal = EventJournal::default();
+        let cursor = journal.cursor();
+        journal.record(&Event::ToolCallStarted {
+            session_id: "one".into(),
+            agent_id: None,
+            tool_call_id: "tool".into(),
+            tool_name: "shell_run".into(),
+            input: json!({"command":"private command"}),
+            created_at: Some("2026-09-20T00:00:00Z".into()),
+        });
+        journal.record(&Event::ToolCallFinished {
+            session_id: "one".into(),
+            tool_call_id: "tool".into(),
+            status: miniq_protocol::ToolCallStatus::Succeeded,
+            output: Some(json!({"output":"private result"})),
+            completed_at: Some("2026-09-20T00:02:03Z".into()),
+        });
+        let replay = journal.replay("one", &cursor).unwrap();
+        assert_eq!(replay[0]["createdAt"], "2026-09-20T00:00:00Z");
+        assert_eq!(replay[1]["completedAt"], "2026-09-20T00:02:03Z");
+        assert!(replay[0]["input"].is_null());
+        assert!(replay[1]["output"].is_null());
+        let missing = journal.record(&Event::ToolCallFinished {
+            session_id: "one".into(),
+            tool_call_id: "unpersisted".into(),
+            status: miniq_protocol::ToolCallStatus::Failed,
+            output: None,
+            completed_at: None,
+        });
+        assert!(missing.get("completedAt").is_none());
+    }
+
+    #[test]
+    fn timing_replay_preserves_original_clock_and_session_scope() {
+        let mut journal = EventJournal::default();
+        let cursor = journal.cursor();
+        let timing = miniq_protocol::TurnTiming {
+            started_at: "2026-09-20T00:00:00Z".into(),
+            completed_at: Some("2026-09-20T00:01:00Z".into()),
+            elapsed_ms: Some(60_000),
+            status: miniq_protocol::TurnTimingStatus::Completed,
+        };
+        journal.record(&Event::TurnTimingChanged {
+            session_id: "one".into(),
+            message_id: "user".into(),
+            timing: timing.clone(),
+        });
+        let replay = journal.replay("one", &cursor).unwrap();
+        assert_eq!(replay[0]["timing"], serde_json::to_value(timing).unwrap());
+        assert!(journal.replay("two", &cursor).unwrap().is_empty());
+    }
     #[test]
     fn reconnect_replays_only_missing_session_events_and_expiry_is_explicit() {
         let mut journal = EventJournal::default();

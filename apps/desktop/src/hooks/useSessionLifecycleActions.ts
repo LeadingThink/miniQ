@@ -5,6 +5,7 @@ import type { Artifact, Message, PlanTask, QueuedMessage, Session, ToolCall, Tur
 import type { Catalog, NavigationState, SessionFeed } from "./useMiniqApp";
 
 interface OpenSessionResult {
+  latestTurnTiming?: import("../types").AnchoredTurnTiming | null;
   eventCursor?: EventCursor | null;
   nextCursor?: HistoryCursor | null;
   session: Session;
@@ -107,6 +108,7 @@ export function useSessionLifecycleActions(
         questions: result.questions ?? [],
         streamingText: result.streamingText ?? "",
         turnProgress: result.turnProgress ?? null,
+        latestTurnTiming: result.latestTurnTiming ?? null,
       });
       if (markSeen && result.canAcknowledgeFailure && result.session.status === "failed") {
         try {

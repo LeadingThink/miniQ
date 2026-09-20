@@ -112,14 +112,16 @@ async fn unknown_tool_is_persisted_and_emits_a_failed_lifecycle() {
     let finished = events.recv().await.unwrap();
     assert!(matches!(
         started,
-        Event::ToolCallStarted { tool_name, .. } if tool_name == "ImaginaryProviderTool"
+        Event::ToolCallStarted { tool_name, created_at, .. }
+            if tool_name == "ImaginaryProviderTool" && created_at.as_ref() == Some(&calls[0].created_at)
     ));
     assert!(matches!(
         finished,
         Event::ToolCallFinished {
             status: ToolCallStatus::Failed,
+            completed_at,
             ..
-        }
+        } if completed_at == calls[0].completed_at
     ));
 }
 

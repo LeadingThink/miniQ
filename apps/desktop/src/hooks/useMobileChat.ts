@@ -44,6 +44,11 @@ export function useMobileChat(apiKey: string, model: string) {
     const controller = new AbortController();
     const messageId = crypto.randomUUID();
     const replyTo = history.at(-1)?.id;
+    const createdAt = new Date().toISOString();
+    const startedTick = performance.now();
+    const elapsed = () => ({ completedAt: new Date().toISOString(), elapsedMs: Math.max(0, performance.now() - startedTick) });
+    let completed: ReturnType<typeof elapsed> | undefined;
+    controller.signal.addEventListener("abort", () => { completed ??= elapsed(); }, { once: true });
     let output = "";
     let timer: ReturnType<typeof setTimeout> | null = null;
     const update = (status?: MobileChatMessage["status"], persist = false) => {
@@ -54,17 +59,19 @@ export function useMobileChat(apiKey: string, model: string) {
       if (!mounted.current) return;
       // Update the live record, not the request's original history: users may
       // delete messages while this response is streaming.
+      if (persist) completed ??= elapsed();
       publish(messagesRef.current.map((message) => message.id === messageId
-        ? { id: messageId, role: "assistant", content: output, replyTo, ...(status ? { status } : {}) }
+        ? { id: messageId, role: "assistant", content: output, replyTo, createdAt,
+          ...(completed ?? {}), ...(status ? { status } : {}) }
         : message), persist);
     };
     active.current = { messageId, controller, checkpoint: () => {
       // A backgrounded page can resume streaming. Save a recoverable checkpoint
       // without presenting the live request as already stopped.
       persistMobileChat(messagesRef.current.map((message) => message.id === messageId
-        ? { ...message, content: output, status: "interrupted" } : message));
+        ? { ...message, content: output, status: "interrupted", ...(completed ?? elapsed()) } : message));
     } };
-    publish([...history, { id: messageId, role: "assistant", content: "", replyTo }], false);
+    publish([...history, { id: messageId, role: "assistant", content: "", replyTo, createdAt }], false);
     setBusy(true);
     setError(null);
 
@@ -98,7 +105,8 @@ export function useMobileChat(apiKey: string, model: string) {
     return true;
   };
 
-  const send = (content: ChatContent) => run([...messagesRef.current, { id: crypto.randomUUID(), role: "user", content }]);
+  const send = (content: ChatContent) => run([...messagesRef.current,
+    { id: crypto.randomUUID(), role: "user", content, createdAt: new Date().toISOString() }]);
   const canRetryMessages = (history: MobileChatMessage[]) => {
     const answer = history.at(-1);
     const question = history.at(-2);

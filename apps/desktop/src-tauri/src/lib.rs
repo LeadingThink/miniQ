@@ -7,8 +7,31 @@ mod daemon;
 mod daemon_process;
 mod html_preview;
 mod local_file;
+mod ssh;
 
 type DaemonState = std::sync::Arc<daemon::DaemonLifecycle>;
+type SshState = std::sync::Arc<ssh::SshConnections>;
+
+#[tauri::command]
+async fn ssh_hosts() -> Result<Vec<ssh::SshHost>, String> {
+    tauri::async_runtime::spawn_blocking(ssh::hosts)
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn ssh_connect(
+    state: tauri::State<'_, SshState>,
+    host: String,
+) -> Result<ssh::ConnectionInfo, String> {
+    state.connect(&host).await
+}
+
+#[tauri::command]
+async fn ssh_disconnect(state: tauri::State<'_, SshState>) -> Result<(), String> {
+    state.disconnect().await;
+    Ok(())
+}
 
 /// Set when the user picks Quit from the tray menu. While false, closing the
 /// main window only hides to tray; while true, the close is allowed so
@@ -215,6 +238,7 @@ async fn browser_screenshot(app: tauri::AppHandle, view_id: String) -> Result<St
 pub fn run() {
     tauri::Builder::default()
         .manage(DaemonState::default())
+        .manage(SshState::default())
         .manage(html_preview::HtmlPreviews::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -223,6 +247,9 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             daemon_connection,
+            ssh_hosts,
+            ssh_connect,
+            ssh_disconnect,
             prepare_daemon_update,
             cancel_daemon_update,
             wait_for_daemon_exit,
@@ -266,6 +293,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building miniQ desktop")
         .run(|_app, _event| {
+            if matches!(_event, tauri::RunEvent::Exit) {
+                use tauri::Manager;
+                let ssh = _app.state::<SshState>();
+                ssh.begin_shutdown();
+                tauri::async_runtime::block_on(ssh.disconnect());
+            }
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = _event {
                 show_main_window(_app);
@@ -377,9 +410,12 @@ fn request_quit(app: &tauri::AppHandle) {
         return;
     }
     let state = app.state::<DaemonState>().inner().clone();
+    let ssh = app.state::<SshState>().inner().clone();
     state.begin_shutdown();
+    ssh.begin_shutdown();
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        ssh.disconnect().await;
         if let Err(error) = state.shutdown().await {
             eprintln!("[miniq] could not stop daemon during exit: {error}");
         }

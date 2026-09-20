@@ -4,6 +4,7 @@ import {
   LoaderCircle,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRight,
   Sparkles,
 } from "lucide-react";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
@@ -18,6 +19,8 @@ export function AppStatusBar(props: {
   onOpenBrowser: () => void;
   onToggleReview: () => void;
   onOpenFile: (target: LocalFileTarget) => void;
+  onToggleWorkbench?: () => void;
+  workbenchOpen?: boolean;
 }) {
   const { app } = props;
   const { connected, health } = app.connection;
@@ -32,7 +35,7 @@ export function AppStatusBar(props: {
       <button
         type="button"
         className="statusbar-icon-button"
-        title={`${app.navigation.sidebarCollapsed ? "显示" : "隐藏"}侧栏 (⌘⇧S)`}
+        title={`${app.navigation.sidebarCollapsed ? "显示" : "隐藏"}侧栏（⌘/Ctrl+B）`}
         aria-label={`${app.navigation.sidebarCollapsed ? "显示" : "隐藏"}侧栏`}
         onClick={() =>
           app.navigation.setSidebarCollapsed(!app.navigation.sidebarCollapsed)
@@ -58,11 +61,18 @@ export function AppStatusBar(props: {
         {connected
           ? `daemon v${health?.daemonVersion ?? "?"}`
           : app.connection.phase === "connecting"
-            ? app.client.mode === "remote"
+            ? app.client.sshHost
+              ? "正在连接 SSH 主机"
+              : app.client.mode === "remote"
               ? "正在连接远程桌面"
               : "正在连接后台服务"
             : "连接中断，正在恢复"}
       </span>
+      {app.client.sshHost && (
+        <button type="button" className="ghost" title="切换执行主机" onClick={() => app.navigation.setShowSettings(true)}>
+          SSH · {app.client.sshHost}
+        </button>
+      )}
       {currentSession && (
         <span className={`badge ${currentSession.status}`}>
           {sessionStatusLabel(currentSession.status)}
@@ -73,6 +83,18 @@ export function AppStatusBar(props: {
         client={app.client}
         onOpenSession={app.actions.openSession}
       />
+      {props.onToggleWorkbench && (
+        <button
+          type="button"
+          className="statusbar-icon-button"
+          title="任务、文件、网页和审阅"
+          aria-label={props.workbenchOpen ? "隐藏工作面板" : "打开工作面板"}
+          aria-expanded={props.workbenchOpen}
+          onClick={props.onToggleWorkbench}
+        >
+          <PanelRight size={16} />
+        </button>
+      )}
       {app.client.mode === "local" && (
         <OpenPreviewButton
           workspacePath={
@@ -87,8 +109,12 @@ export function AppStatusBar(props: {
       <button
         type="button"
         className="statusbar-icon-button"
-        title={app.client.mode === "remote" ? "查看桌面网页记录" : "打开内置浏览器"}
-        aria-label={app.client.mode === "remote" ? "查看桌面网页记录" : "打开内置浏览器"}
+        title={
+          app.client.mode === "remote" ? "查看桌面网页记录" : "打开内置浏览器"
+        }
+        aria-label={
+          app.client.mode === "remote" ? "查看桌面网页记录" : "打开内置浏览器"
+        }
         disabled={app.client.mode === "remote" && !currentSession}
         onClick={props.onOpenBrowser}
       >

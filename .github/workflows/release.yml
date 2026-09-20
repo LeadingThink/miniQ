@@ -63,6 +63,62 @@ jobs:
         run: |
           npm run test:release-manifest
           npm run test:qiniu-publisher
+          node --test scripts/linux-terminal.node-test.mjs
+
+  # Server binaries must not inherit the desktop runner's glibc or GUI libraries.
+  # Debian 11 establishes glibc 2.31, below Ubuntu 20.10 / common server baselines.
+  terminal-linux:
+    needs: validate
+    if: ${{ !inputs.windows_only && inputs.include_linux }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build server terminal on glibc 2.31
+        run: |
+          docker run --rm -v "$PWD:/source" -w /source debian:bullseye \
+            bash -euxo pipefail -c '
+              apt-get update
+              apt-get install -y --no-install-recommends build-essential ca-certificates curl pkg-config
+              curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+              export PATH="/root/.cargo/bin:$PATH"
+              export LZMA_API_STATIC=1 BZIP2_NO_PKG_CONFIG=1
+              cargo build --release --locked --no-default-features -p miniq-daemon -p miniq-cli \
+                --bin miniq-daemon --bin miniq --target x86_64-unknown-linux-gnu
+              cargo test --release --locked --no-default-features -p miniq-tools --lib computer::tests
+            '
+      - name: Verify glibc baseline and runtime dependencies
+        run: node apps/desktop/scripts/linux-terminal.mjs target/x86_64-unknown-linux-gnu/release
+      - name: Boot CLI and bridge in a clean server image
+        run: |
+          docker run --rm --network none \
+            -v "$PWD/target/x86_64-unknown-linux-gnu/release:/opt/miniq:ro" \
+            -e PATH=/opt/miniq:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            debian:bullseye-slim bash -euxo pipefail -c '
+              miniq --version
+              miniq --data-dir /tmp/miniq-smoke rpc daemon.health
+              miniq --data-dir /tmp/miniq-smoke bridge </dev/null | grep miniq_bridge_ready
+              miniq --data-dir /tmp/miniq-smoke rpc daemon.shutdownIfIdle
+            '
+      - name: Package portable Linux terminal
+        run: |
+          stage="$(mktemp -d)"
+          cp target/x86_64-unknown-linux-gnu/release/miniq "$stage/"
+          cp target/x86_64-unknown-linux-gnu/release/miniq-daemon "$stage/"
+          cp docs/terminal.md "$stage/README.md"
+          mkdir -p dist-terminal
+          tar -czf dist-terminal/x86_64-unknown-linux-gnu.terminal.tar.gz -C "$stage" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: miniq-release-x86_64-unknown-linux-gnu-terminal
+          path: dist-terminal/*.terminal.tar.gz
+          if-no-files-found: error
 
   build:
     needs: validate
@@ -106,6 +162,7 @@ jobs:
         if: matrix.target != 'x86_64-apple-darwin'
         run: cargo test --locked -p miniq-cli -p miniq-local --target ${{ matrix.target }}
       - name: Package terminal client and daemon
+        if: runner.os != 'Linux'
         shell: bash
         run: |
           stage="$(mktemp -d)"
@@ -177,7 +234,8 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: build
+    needs: [build, terminal-linux]
+    if: ${{ always() && needs.build.result == 'success' && (needs.terminal-linux.result == 'success' || needs.terminal-linux.result == 'skipped') }}
     concurrency:
       group: miniq-shared-download-manifest
       cancel-in-progress: false

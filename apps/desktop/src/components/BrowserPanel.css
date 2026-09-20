@@ -1,0 +1,26 @@
+.browser-panel {
+  container-type: inline-size;
+}
+@container (max-width: 440px) {
+  .browser-panel .browser-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .browser-panel .browser-toolbar form {
+    flex-basis: 100%;
+    order: -1;
+  }
+  .browser-toolbar input {
+    font-size: 16px;
+  }
+}
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .browser-panel .browser-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .browser-panel .browser-toolbar form {
+    flex-basis: 100%;
+    order: -1;
+  }
+}

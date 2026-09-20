@@ -98,6 +98,7 @@ export function useBrowserDriverEvents(
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
   useEffect(() => {
+    if (client.mode === "remote") return;
     const queues = new Map<string, Promise<void>>();
     return client.onEvent((event) => {
       if (event.type !== "browser_driver_requested") return;

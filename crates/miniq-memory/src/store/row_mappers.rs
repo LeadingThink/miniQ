@@ -178,6 +178,7 @@ pub(super) fn row_to_message(row: &Row<'_>) -> rusqlite::Result<Message> {
             )
         })?,
         created_at: row.get(5)?,
+        turn_timing: None,
     })
 }
 

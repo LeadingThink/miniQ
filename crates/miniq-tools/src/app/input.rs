@@ -46,7 +46,7 @@ pub(super) enum AxValue {
 }
 
 impl AxValue {
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "desktop"))]
     pub fn scalar(&self) -> Value {
         match self {
             Self::Text { text } => json!(text),
@@ -97,6 +97,7 @@ pub(super) struct AppInput {
     ))]
     pub key: Option<String>,
     #[serde(default)]
+    #[cfg_attr(not(all(target_os = "macos", feature = "desktop")), allow(dead_code))]
     pub modifiers: Vec<Modifier>,
     /// Coordinates in the latest target screenshot's pixels. Never global coordinates.
     #[schemars(range(min = 0))]

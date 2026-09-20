@@ -13,6 +13,8 @@ import { RetryNotice } from "./RetryNotice";
 import { ToolPayload } from "./ToolPayload";
 import { ComputerObservation } from "./ComputerObservation";
 import type { RpcClient } from "../rpc";
+import { formatDuration } from "../time";
+import { LiveElapsed } from "./LiveElapsed";
 import { useToolDetail } from "../hooks/useToolDetail";
 import {
   automationActionLabel,
@@ -87,40 +89,6 @@ export function toolDuration(call: ToolCall): string | null {
   const elapsed =
     new Date(call.completedAt).getTime() - new Date(call.createdAt).getTime();
   return formatDuration(elapsed);
-}
-
-function formatDuration(elapsed: number): string | null {
-  if (!Number.isFinite(elapsed) || elapsed < 0) return null;
-  if (elapsed < 1_000) return "<1 秒";
-  const seconds = Math.round(elapsed / 1_000);
-  if (seconds < 60) return `${seconds} 秒`;
-  const minutes = Math.floor(seconds / 60);
-  const remainder = seconds % 60;
-  return remainder ? `${minutes} 分 ${remainder} 秒` : `${minutes} 分`;
-}
-
-function LiveElapsed({
-  startedAt,
-  className,
-  prefix,
-}: {
-  startedAt: string;
-  className: string;
-  prefix?: string;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
-    return () => window.clearInterval(timer);
-  }, [startedAt]);
-  const duration = formatDuration(now - new Date(startedAt).getTime());
-  if (!duration) return null;
-  return (
-    <span className={className}>
-      {prefix ? `${prefix} ${duration}` : duration}
-    </span>
-  );
 }
 
 function statusText(call: ToolCall): string | null {
@@ -385,7 +353,7 @@ export function ExecutionPrelude({
             <LiveElapsed
               startedAt={progress.startedAt}
               className="execution-elapsed"
-              prefix="已等待"
+              prefix="本步骤已用"
             />
           </span>
         )}
@@ -393,7 +361,7 @@ export function ExecutionPrelude({
           <LiveElapsed
             startedAt={progress.startedAt}
             className="execution-elapsed"
-            prefix="已等待"
+            prefix="本步骤已用"
           />
         )}
         {activeTask && <span>{activeTask.content}</span>}

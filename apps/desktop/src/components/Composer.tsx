@@ -29,6 +29,7 @@ import { VoiceInput } from "./VoiceInput";
 import { VoiceTranscript } from "./VoiceTranscript";
 import type { VoicePreview } from "../voiceTranscription";
 import { readImagePreview, savePastedImage } from "../localFiles";
+import { RemotePathDialog } from "./RemotePathDialog";
 
 /** Listen for native file drops (Tauri window-level drag & drop). */
 function useDroppedFiles(
@@ -74,6 +75,7 @@ function AttachmentPreview(props: {
   path: string;
   sending: boolean;
   onRemove: () => void;
+  remote?: boolean;
 }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [zoomed, setZoomed] = useState(false);
@@ -96,7 +98,7 @@ function AttachmentPreview(props: {
   }, [zoomed]);
 
   useEffect(() => {
-    if (!isImageAttachment(props.path)) return;
+    if (props.remote || !isImageAttachment(props.path)) return;
     let disposed = false;
     void readImagePreview(props.path)
       .then((preview) => {
@@ -109,7 +111,7 @@ function AttachmentPreview(props: {
     return () => {
       disposed = true;
     };
-  }, [props.path]);
+  }, [props.path, props.remote]);
 
   if (imageUrl) {
     return (
@@ -249,6 +251,8 @@ export function ComposerCard(props: {
   sendBlockedReason?: string;
 }) {
   const keyboardHintId = useId();
+  const remoteHost = props.client?.sshHost;
+  const [showRemoteAttachment, setShowRemoteAttachment] = useState(false);
   const [draft, setDraftState] = useState(() => readDraft(props.draftKey));
   const draftValueRef = useRef(draft);
   draftValueRef.current = draft;
@@ -310,9 +314,15 @@ export function ComposerCard(props: {
     [props.draftKey],
   );
 
-  useDroppedFiles(addAttachments, props.onError);
+  const receiveDroppedFiles = useCallback((paths: string[]) => {
+    if (remoteHost) {
+      props.onError?.("当前为 SSH 会话，请先上传本机文件，再通过附件按钮填写远程文件路径。");
+    } else addAttachments(paths);
+  }, [addAttachments, remoteHost, props.onError]);
+  useDroppedFiles(receiveDroppedFiles, props.onError);
 
   const pickFiles = async () => {
+    if (remoteHost) { setShowRemoteAttachment(true); return; }
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({ multiple: true, title: "附加文件" });
@@ -339,6 +349,10 @@ export function ComposerCard(props: {
     if (imageFiles.length === 0) return;
 
     event.preventDefault();
+    if (remoteHost) {
+      props.onError?.("当前为 SSH 会话，剪贴板图片需先上传到远程主机，再附加远程文件路径。");
+      return;
+    }
     try {
       const paths = await Promise.all(
         imageFiles.map((file) => savePastedImage(file)),
@@ -392,7 +406,7 @@ export function ComposerCard(props: {
             {
               id: "attach",
               name: "附加文件",
-              description: "选择图片或文件作为当前消息的附件",
+              description: remoteHost ? "填写远程主机上的文件绝对路径" : "选择图片或文件作为当前消息的附件",
               group: "工具",
               icon: "file" as const,
               keywords: ["attach", "file", "附件", "文件"],
@@ -456,6 +470,8 @@ export function ComposerCard(props: {
 
   return (
     <div className="composer-card">
+      {showRemoteAttachment && remoteHost && <RemotePathDialog host={remoteHost} purpose="attachment"
+        onSubmit={async (path) => { addAttachments([path]); }} onClose={() => setShowRemoteAttachment(false)} />}
       {voicePreview && <VoiceTranscript preview={voicePreview} />}
       {slash.menu}
       {attachments.length > 0 && (
@@ -464,6 +480,7 @@ export function ComposerCard(props: {
             <AttachmentPreview
               key={path}
               path={path}
+              remote={!!remoteHost}
               sending={sending}
               onRemove={() =>
                 setAttachments((current) => {
@@ -520,7 +537,7 @@ export function ComposerCard(props: {
           <button
             type="button"
             className="attach-btn"
-            title="附加文件(也可直接拖入窗口)"
+            title={remoteHost ? "附加远程文件" : "附加文件(也可直接拖入窗口)"}
             onClick={() => void pickFiles()}
           >
             <Paperclip size={15} />

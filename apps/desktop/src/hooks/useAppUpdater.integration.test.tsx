@@ -24,9 +24,10 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
 
-function setup() {
+function setup(sshHost: string | null = null) {
   const listeners = new Set<(connected: boolean) => void>();
   const client = {
+    sshHost,
     connected: true,
     connect: vi.fn().mockImplementation(async () => { client.connected = true; }),
     onStatus: (listener: (connected: boolean) => void) => { listeners.add(listener); return () => listeners.delete(listener); },
@@ -155,4 +156,15 @@ it("does not fall back to cancelling tasks when idle shutdown is busy or unsuppo
   expect(fake.install).not.toHaveBeenCalled();
   expect(fake.relaunch).not.toHaveBeenCalled();
   expect(fake.invoke).toHaveBeenCalledWith("cancel_daemon_update");
+});
+
+it("never sends desktop update shutdown commands to an SSH host", async () => {
+  const hook = setup("devbox");
+  await available(hook);
+  await act(async () => { await hook.result.current.install(); });
+  expect(hook.onError).toHaveBeenLastCalledWith(expect.stringContaining("切换到本机"));
+  expect(fake.download).not.toHaveBeenCalled();
+  expect(fake.invoke).not.toHaveBeenCalled();
+  expect(hook.client.call).not.toHaveBeenCalledWith("daemon.shutdownIfIdle");
+  expect(hook.client.call).not.toHaveBeenCalledWith("daemon.shutdown");
 });

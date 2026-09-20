@@ -51,6 +51,14 @@ pub enum Event {
         session_id: String,
         progress: TurnProgress,
     },
+    /// Durable timing for the user message that anchors this execution.
+    TurnTimingChanged {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        #[serde(rename = "messageId")]
+        message_id: String,
+        timing: crate::TurnTiming,
+    },
     /// A full message was persisted (user echo or final assistant message).
     MessageCreated {
         #[serde(rename = "sessionId")]
@@ -105,6 +113,8 @@ pub enum Event {
         #[serde(rename = "toolName")]
         tool_name: String,
         input: Value,
+        #[serde(default, rename = "createdAt", skip_serializing_if = "Option::is_none")]
+        created_at: Option<String>,
     },
     /// A tool call finished (succeeded/failed/rejected/cancelled).
     ToolCallFinished {
@@ -115,6 +125,12 @@ pub enum Event {
         status: ToolCallStatus,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         output: Option<Value>,
+        #[serde(
+            default,
+            rename = "completedAt",
+            skip_serializing_if = "Option::is_none"
+        )]
+        completed_at: Option<String>,
     },
     /// The daemon is waiting for the user to resolve an approval.
     ApprovalRequested {
@@ -228,6 +244,7 @@ impl Event {
             | Event::SessionApprovalChanged { session_id, .. }
             | Event::SessionStatusChanged { session_id, .. }
             | Event::TurnProgressChanged { session_id, .. }
+            | Event::TurnTimingChanged { session_id, .. }
             | Event::MessageCreated { session_id, .. }
             | Event::SessionRewritten { session_id, .. }
             | Event::AssistantDelta { session_id, .. }

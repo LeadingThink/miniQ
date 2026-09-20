@@ -40,6 +40,7 @@ impl CheckpointStore for SessionCheckpoint {
                 content: format!("{}\n\n[本轮未完成]", checkpoint.display_text),
                 attachments: Vec::new(),
                 created_at: miniq_memory::now_iso(),
+                turn_timing: None,
             });
         let anchor = message
             .as_ref()

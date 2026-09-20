@@ -57,6 +57,7 @@ fn response_err_shape() {
 #[test]
 fn event_tagged_serialization() {
     let ev = Event::ToolCallStarted {
+        created_at: None,
         session_id: "sess_01".into(),
         agent_id: Some("agent_01".into()),
         tool_call_id: "tool_01".into(),
@@ -149,6 +150,21 @@ fn retry_progress_roundtrip_and_optional_field() {
     let progress: TurnProgress = serde_json::from_value(old.clone()).unwrap();
     assert!(progress.retry.is_none());
     assert_eq!(serde_json::to_value(progress).unwrap(), old);
+}
+
+#[test]
+fn turn_timing_events_and_legacy_messages_roundtrip() {
+    let raw = json!({
+        "type":"turn_timing_changed", "sessionId":"session", "messageId":"user",
+        "timing":{"startedAt":"2026-09-20T00:00:00Z", "status":"interrupted"}
+    });
+    let event: Event = serde_json::from_value(raw.clone()).unwrap();
+    assert_eq!(event.session_id(), "session");
+    assert_eq!(serde_json::to_value(event).unwrap(), raw);
+    let legacy = json!({"id":"old","sessionId":"session","role":"user","content":"old task","createdAt":"2026-09-20T00:00:00Z"});
+    let message: miniq_protocol::Message = serde_json::from_value(legacy.clone()).unwrap();
+    assert!(message.turn_timing.is_none());
+    assert_eq!(serde_json::to_value(message).unwrap(), legacy);
 }
 
 #[test]

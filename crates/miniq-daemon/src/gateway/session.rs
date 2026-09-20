@@ -105,6 +105,7 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         "eventCursor": journal.cursor(),
         "session": session,
         "lastTurn": state.store.last_turn_outcome(&input.session_id).map_err(store_err)?,
+        "latestTurnTiming": state.store.latest_turn_timing(&input.session_id).map_err(store_err)?,
         "messages": history.messages,
         "toolCalls": history.tool_calls,
         "nextCursor": history.next_cursor,

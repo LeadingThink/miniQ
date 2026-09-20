@@ -145,9 +145,9 @@ describe("Timeline execution flow", () => {
       ],
     });
 
-    expect(html).toMatch(/class="bubble user"[^>]*><div>你好<\/div><div class="message-actions"><span class="copy-control">/);
+    expect(html).toMatch(/class="bubble user"[^>]*><div>你好<\/div><details class="message-time">.*?<\/details><div class="message-actions"><span class="copy-control">/);
     expect(html).toContain('aria-label="修改消息"');
-    expect(html).toMatch(/你好，有什么需要我帮你处理的？<\/p><\/div><div class="message-actions assistant-actions"><span class="copy-control">/);
+    expect(html).toMatch(/你好，有什么需要我帮你处理的？<\/p><\/div><details class="message-time">.*?<\/details><div class="message-actions assistant-actions"><span class="copy-control">/);
     expect(html.indexOf('aria-label="复制消息"', html.indexOf("bubble assistant")))
       .toBeLessThan(html.indexOf('aria-label="重新生成"'));
   });

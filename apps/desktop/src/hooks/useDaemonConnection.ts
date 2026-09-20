@@ -41,7 +41,7 @@ async function connectWithRetry(
   options.onPhase(reconnecting ? "reconnecting" : "connecting");
   for (let attempt = 1; !options.isDisposed(); attempt++) {
     try {
-      const info = await resolveConnection();
+      const info = await resolveConnection(options.client.sshHost);
       if (options.isDisposed()) return;
       await options.client.connect(info);
       if (options.isDisposed()) return;

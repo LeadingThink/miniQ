@@ -7,7 +7,9 @@ import {
 } from "../localFiles";
 import {
   EMPTY_PREVIEW_TABS,
+  closePreviewTabs,
   removePreviewTab,
+  reopenPreviewTab,
   selectPreviewTab,
   type PreviewTabsState,
 } from "../previewTabs";
@@ -65,6 +67,15 @@ export function useFilePreview(
   const tabs = sessions[scope] ?? EMPTY_PREVIEW_TABS;
   const requestSequence = useRef(0);
   const requestController = useRef<AbortController>();
+  const updateTabs = useCallback(
+    (update: (current: PreviewTabsState) => PreviewTabsState) => {
+      const next = update(sessionsRef.current[scope] ?? EMPTY_PREVIEW_TABS);
+      sessionsRef.current = { ...sessionsRef.current, [scope]: next };
+      setSessions(sessionsRef.current);
+      return next;
+    },
+    [scope],
+  );
 
   const openFile = useCallback(
     async (target: LocalFileTarget) => {
@@ -73,10 +84,7 @@ export function useFilePreview(
       const controller = new AbortController();
       requestController.current = controller;
       setStateScope(scope);
-      setSessions((current) => ({
-        ...current,
-        [scope]: selectPreviewTab(current[scope] ?? EMPTY_PREVIEW_TABS, target),
-      }));
+      updateTabs((current) => selectPreviewTab(current, target));
       setState({
         target,
         resolvedPath: target.path,
@@ -108,14 +116,13 @@ export function useFilePreview(
           },
         );
         if (requestId !== requestSequence.current) return;
-        setSessions((current) => ({
-          ...current,
-          [scope]: selectPreviewTab(
-            current[scope] ?? EMPTY_PREVIEW_TABS,
+        updateTabs((current) =>
+          selectPreviewTab(
+            current,
             { ...target, path: file.path },
             target.path,
           ),
-        }));
+        );
         setState({
           target: { ...target, path: file.path },
           resolvedPath: file.path,
@@ -137,36 +144,77 @@ export function useFilePreview(
         }));
       }
     },
-    [workspacePath, workspacePaths, scope, client, sessionId],
+    [workspacePath, workspacePaths, scope, client, sessionId, updateTabs],
   );
 
   const close = useCallback(() => {
     requestSequence.current += 1;
     requestController.current?.abort();
-    setSessions((current) => ({
-      ...current,
-      [scope]: { ...(current[scope] ?? EMPTY_PREVIEW_TABS), open: false },
-    }));
+    updateTabs((current) => ({ ...current, open: false }));
     // Keep tab identities separately, but release large media payloads as soon
     // as the panel closes, particularly on memory-constrained mobile devices.
     setState(EMPTY_PREVIEW);
-  }, [scope]);
+  }, [updateTabs]);
 
-  const closeTab = useCallback(
-    (path: string) => {
-      views.closeFile(scope, path);
+  const changeTabs = useCallback(
+    (update: (current: PreviewTabsState) => PreviewTabsState) => {
       const previous = sessionsRef.current[scope] ?? EMPTY_PREVIEW_TABS;
-      const next = removePreviewTab(previous, path);
-      setSessions((current) => ({ ...current, [scope]: next }));
-      if (previous.active !== path) return;
+      const next = updateTabs(update);
+      if (previous.active === next.active && previous.open === next.open)
+        return;
       requestSequence.current++;
       requestController.current?.abort();
       const target = next.targets.find((item) => item.path === next.active);
       if (target) void openFile(target);
       else setState(EMPTY_PREVIEW);
     },
-    [scope, openFile, views],
+    [scope, openFile, updateTabs],
   );
+
+  const closeTab = useCallback(
+    (path: string) => {
+      changeTabs((current) => removePreviewTab(current, path));
+    },
+    [changeTabs],
+  );
+
+  const closeOtherTabs = useCallback(
+    (path: string) => {
+      changeTabs((current) =>
+        current.targets.some((item) => item.path === path)
+          ? closePreviewTabs(
+              current,
+              new Set(
+                current.targets
+                  .filter((item) => item.path !== path)
+                  .map((item) => item.path),
+              ),
+            )
+          : current,
+      );
+    },
+    [changeTabs],
+  );
+
+  const closeAllTabs = useCallback(() => {
+    changeTabs((current) =>
+      closePreviewTabs(
+        current,
+        new Set(current.targets.map((item) => item.path)),
+      ),
+    );
+  }, [changeTabs]);
+
+  const reopenClosedTab = useCallback(() => {
+    changeTabs(reopenPreviewTab);
+  }, [changeTabs]);
+
+  const reopen = useCallback(() => {
+    const saved = sessionsRef.current[scope];
+    const target = saved?.targets.find((item) => item.path === saved.active);
+    if (target) void openFile(target);
+    else reopenClosedTab();
+  }, [scope, openFile, reopenClosedTab]);
 
   useEffect(() => {
     requestSequence.current += 1;
@@ -189,6 +237,11 @@ export function useFilePreview(
     state: stateScope === scope ? state : EMPTY_PREVIEW,
     tabs: tabs.targets,
     closeTab,
+    closeOtherTabs,
+    closeAllTabs,
+    reopenClosedTab,
+    canReopenClosedTab: tabs.closed.length > 0,
+    reopen,
     openFile,
     close,
   };

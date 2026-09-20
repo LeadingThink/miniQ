@@ -4,11 +4,13 @@ export interface PreviewTabsState {
   targets: LocalFileTarget[];
   active: string | null;
   open: boolean;
+  closed: Array<{ target: LocalFileTarget; index: number }>;
 }
 export const EMPTY_PREVIEW_TABS: PreviewTabsState = {
   targets: [],
   active: null,
   open: false,
+  closed: [],
 };
 
 /** Show the shortest distinguishing parent path for same-name files. */
@@ -53,17 +55,24 @@ export function selectPreviewTab(
   target: LocalFileTarget,
   previousPath = target.path,
 ): PreviewTabsState {
-  const targets = state.targets.filter(
-    (item) => item.path !== previousPath || previousPath === target.path,
+  const canonicalExists = state.targets.some(
+    (item) => item.path === target.path,
   );
-  const index = targets.findIndex((item) => item.path === target.path);
+  const targets = state.targets.flatMap((item) => {
+    if (item.path === target.path) return [target];
+    if (item.path !== previousPath) return [item];
+    return canonicalExists ? [] : [target];
+  });
   return {
-    targets:
-      index < 0
-        ? [...targets, target]
-        : targets.map((item, i) => (i === index ? target : item)),
+    targets: targets.some((item) => item.path === target.path)
+      ? targets
+      : [...targets, target],
     active: target.path,
     open: true,
+    closed: state.closed.filter(
+      ({ target: item }) =>
+        item.path !== target.path && item.path !== previousPath,
+    ),
   };
 }
 
@@ -71,12 +80,71 @@ export function removePreviewTab(
   state: PreviewTabsState,
   path: string,
 ): PreviewTabsState {
-  const index = state.targets.findIndex((item) => item.path === path);
-  if (index < 0) return state;
-  const targets = state.targets.filter((item) => item.path !== path);
-  const active =
-    state.active === path
-      ? (targets[Math.min(index, targets.length - 1)]?.path ?? null)
-      : state.active;
-  return { targets, active, open: active !== null && state.open };
+  return closePreviewTabs(state, new Set([path]));
+}
+
+/** Retain identities and lightweight view state, never file payloads. */
+export function closePreviewTabs(
+  state: PreviewTabsState,
+  paths: ReadonlySet<string>,
+): PreviewTabsState {
+  const removed = state.targets.flatMap((target, index) =>
+    paths.has(target.path) ? [{ target, index }] : [],
+  );
+  if (!removed.length) return state;
+  const targets = state.targets.filter((item) => !paths.has(item.path));
+  const activeIndex = state.targets.findIndex(
+    (item) => item.path === state.active,
+  );
+  const adjacent =
+    state.targets
+      .slice(activeIndex + 1)
+      .find((item) => !paths.has(item.path)) ??
+    state.targets
+      .slice(0, activeIndex)
+      .reverse()
+      .find((item) => !paths.has(item.path));
+  const active = paths.has(state.active ?? "")
+    ? (adjacent?.path ?? null)
+    : state.active;
+  // The visible file reopens first after “close all”. Original positions survive.
+  removed.sort(
+    (a, b) =>
+      Number(a.target.path === state.active) -
+      Number(b.target.path === state.active),
+  );
+  const history = removed.map(({ target, index }, position) => ({
+    target,
+    // Record the position at each individual removal so undoing the batch
+    // restores the original order even when the active file closed last.
+    index:
+      index -
+      (target.path === state.active
+        ? removed.filter((item) => item.index < index).length
+        : position),
+  }));
+  return {
+    targets,
+    active,
+    open: active !== null && state.open,
+    closed: [
+      ...state.closed.filter(({ target }) => !paths.has(target.path)),
+      ...history,
+    ],
+  };
+}
+
+export function reopenPreviewTab(state: PreviewTabsState): PreviewTabsState {
+  const last = state.closed.at(-1);
+  if (!last) return state;
+  const targets = state.targets.filter(
+    (item) => item.path !== last.target.path,
+  );
+  targets.splice(Math.min(last.index, targets.length), 0, last.target);
+  return {
+    targets,
+    active: last.target.path,
+    open: true,
+    closed: state.closed.slice(0, -1),
+  };
 }

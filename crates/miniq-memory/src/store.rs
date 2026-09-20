@@ -16,6 +16,7 @@ mod row_mappers;
 mod scheduled_tasks;
 mod session_settings;
 mod session_titles;
+mod turn_timing;
 mod workspace_roots;
 mod workspaces;
 
@@ -248,6 +249,7 @@ impl Store {
     pub fn recover_interrupted_work(&self) -> Result<StartupRecovery> {
         let mut conn = self.conn.lock().unwrap();
         let transaction = conn.transaction()?;
+        turn_timing::interrupt(&transaction, None)?;
         let now = now_iso();
         transaction.execute(
             "UPDATE agent_tasks SET state_json = json_set(state_json,
@@ -298,6 +300,7 @@ impl Store {
     pub fn recover_interrupted_session(&self, session_id: &str) -> Result<SessionRecovery> {
         let mut conn = self.conn.lock().unwrap();
         let transaction = conn.transaction()?;
+        turn_timing::interrupt(&transaction, Some(session_id))?;
         let now = now_iso();
         let session_failed = transaction.execute(
             "UPDATE sessions

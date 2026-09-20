@@ -9,6 +9,8 @@ import { ComputerSettings } from "./ComputerSettings";
 import { MobileUpdateCheck } from "./MobileUpdateCheck";
 import { clearRemoteCredentials, DEFAULT_RELAY_URL, loadRemoteCredentials, storeRemoteCredentials } from "../remoteAccess";
 import { MINIQ_PRIVACY_URL, MINIQ_SUPPORT_URL } from "../mobilePrivacy";
+import { useDesktopHost } from "../desktopHost";
+import { SshConnections } from "./SshConnections";
 
 export const ZAIWEN_API_PORTAL_URL = "https://platform.zaiwenai.com/";
 export const ZAIWEN_API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
@@ -48,6 +50,8 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel(props: SettingsPanelProps) {
+  const desktop = useDesktopHost();
+  const canConfigureProvider = props.client.mode === "local" || !!props.client.sshHost;
   const settingsTabs = ["services", "computer", "appearance"] as const;
   const [tab, setTab] = useState<(typeof settingsTabs)[number]>("services");
   const [baseUrl, setBaseUrl] = useState(ZAIWEN_API_BASE_URL);
@@ -231,7 +235,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         aria-labelledby="settings-title"
         onSubmit={(event) => {
           event.preventDefault();
-          if (tab === "services" && props.client.mode === "local") void save();
+          if (tab === "services" && canConfigureProvider) void save();
         }}
       >
         <div className="settings-header">
@@ -292,7 +296,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
           <ThemePicker theme={props.theme} onThemeChange={props.onThemeChange} />
         </div>
         <div id="settings-services" role="tabpanel" aria-labelledby="settings-tab-services" hidden={tab !== "services"}>
-          {props.client.mode === "remote" ? (
+          {props.client.sshHost && <p className="settings-section-description">当前设置属于 SSH 主机 {props.client.sshHost}。模型请求、文件操作和命令在该主机执行；不会自动复制本机的 API Key。</p>}
+          {!canConfigureProvider ? (
             <section className="settings-section provider-settings">
               <div className="settings-section-title">
                 <MonitorSmartphone size={15} />
@@ -469,6 +474,10 @@ export function SettingsPanel(props: SettingsPanelProps) {
               </section>
             </>
           )}
+          {desktop && <details className="settings-section" open={!!desktop.host}>
+            <summary>SSH 连接 · 远程开发</summary>
+            <SshConnections activeHost={desktop.host} pending={desktop.pending} error={desktop.error} onSelectHost={(host) => void desktop.selectHost(host)} />
+          </details>}
           {(loading || status) && (
             <div className="settings-status" role="status" aria-live="polite">
               {loading ? "正在读取设置..." : status}
@@ -476,7 +485,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
           )}
         </div>
         <div className="approval-actions">
-          {tab === "services" && props.client.mode === "local" && (
+          {tab === "services" && canConfigureProvider && (
             <button
               type="submit"
               disabled={loading || saving || !baseUrl.trim() || (!hasKey && !apiKey.trim()) || !deviceName.trim()}

@@ -11,6 +11,7 @@ scripts/
 /scripts/*
 !/scripts/install-cli.sh
 !/scripts/install-cli.ps1
+!/scripts/test-ssh-smoke.mjs
 !apps/desktop/scripts/
 apps/desktop/scripts/*
 !apps/desktop/scripts/android_release.py
@@ -23,6 +24,8 @@ apps/desktop/scripts/*
 !apps/desktop/scripts/macos_privacy.mjs
 !apps/desktop/scripts/macos_privacy.node-test.mjs
 !apps/desktop/scripts/prepare-daemon-sidecar.mjs
+!apps/desktop/scripts/linux-terminal.mjs
+!apps/desktop/scripts/linux-terminal.node-test.mjs
 dist-android/
 
 # Local macOS metadata and generated promotional media.

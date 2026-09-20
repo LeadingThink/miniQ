@@ -116,6 +116,7 @@ mod tests {
             content: "interrupted output".into(),
             attachments: Vec::new(),
             created_at: now_iso(),
+            turn_timing: None,
         };
         assert!(store
             .save_context_with_message(

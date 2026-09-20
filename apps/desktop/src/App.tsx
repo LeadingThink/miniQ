@@ -4,6 +4,8 @@ import { isRemoteBrowserEntry, loadRemoteCredentials } from "./remoteAccess";
 import { getAppearance, subscribeAppearance, storeTheme, type ThemeId } from "./theme";
 import { sharedSessionId } from "./sharing";
 import { hasMobilePrivacyConsent } from "./mobilePrivacy";
+import { DesktopHostProvider } from "./desktopHost";
+import { isTauriRuntime } from "./runtime";
 const SharedSessionPage = lazy(() => import("./components/SharedSessionPage").then((module) => ({ default: module.SharedSessionPage })));
 const ConnectedApp = lazy(() => import("./ConnectedApp"));
 
@@ -15,7 +17,8 @@ export default function App() {
   if (shareId !== null) return <Suspense fallback={<p role="status">正在加载分享…</p>}><SharedSessionPage key={shareId} id={shareId} /></Suspense>;
 
   if (isRemoteBrowserEntry()) return <RemoteGate theme={theme} onThemeChange={storeTheme} />;
-  return <Suspense fallback={<p role="status" className="remote-restoring">正在加载工作台…</p>}><ConnectedApp theme={theme} onThemeChange={storeTheme} /></Suspense>;
+  const desktop = <Suspense fallback={<p role="status" className="remote-restoring">正在加载工作台…</p>}><ConnectedApp theme={theme} onThemeChange={storeTheme} /></Suspense>;
+  return isTauriRuntime() ? <DesktopHostProvider>{desktop}</DesktopHostProvider> : desktop;
 }
 
 /** Remembered credentials reconnect straight to the desktop, so the API key —

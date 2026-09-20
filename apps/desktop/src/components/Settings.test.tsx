@@ -7,7 +7,7 @@ describe("SettingsPanel", () => {
   it("offers the official Zaiwen commercial API as a miniQ provider", () => {
     const html = renderToStaticMarkup(
       <SettingsPanel
-        client={{} as RpcClient}
+        client={{ mode: "local" } as RpcClient}
         theme="jade"
         onThemeChange={() => undefined}
         onClose={() => undefined}

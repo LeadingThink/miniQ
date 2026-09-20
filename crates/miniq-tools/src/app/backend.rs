@@ -75,7 +75,7 @@ pub(super) trait AppSnapshot: Send {
 
 pub(super) struct NativeApp;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(all(target_os = "macos", feature = "desktop")))]
 impl AppBackend for NativeApp {
     fn supported(&self) -> bool {
         false
@@ -94,7 +94,7 @@ impl AppBackend for NativeApp {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(all(target_os = "macos", feature = "desktop")))]
 fn unsupported() -> String {
     "background_app_unsupported: application-scoped control currently requires macOS; browser_automation remains available for web tasks".into()
 }

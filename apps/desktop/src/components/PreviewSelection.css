@@ -1,0 +1,36 @@
+.preview-selection {
+  flex: none;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+.preview-selection > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.preview-selection strong {
+  font-size: 12px;
+}
+.preview-selection small {
+  flex: 1;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.preview-selection blockquote {
+  margin: 8px 0;
+  padding: 4px 10px;
+  border-left: 2px solid var(--accent);
+  max-height: 100px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  user-select: text;
+}
+.preview-selection > button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

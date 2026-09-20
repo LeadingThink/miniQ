@@ -50,6 +50,8 @@ function setup(mode: "local" | "remote" = "local") {
     updateSessionStatus: vi.fn(),
   };
   const navigation: NavigationState = {
+    showRemoteFolder: false,
+    setShowRemoteFolder: vi.fn(),
     editingWorkspaceId: null,
     setEditingWorkspaceId: vi.fn(),
     showExternalImport: false,
@@ -66,6 +68,7 @@ function setup(mode: "local" | "remote" = "local") {
     setPage: vi.fn(),
   };
   const feed: SessionFeed = {
+    latestTurnTiming: null,
     eventCursor: null,
     buffered: [],
     loading: false,
