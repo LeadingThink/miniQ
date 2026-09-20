@@ -77,37 +77,11 @@ impl AnthropicProvider {
 /// available fields in the wire schema; the tool runtime remains authoritative
 /// for cross-field validation that Anthropic cannot express.
 fn anthropic_input_schema(schema: &Value) -> Value {
-    let Some(source) = schema.as_object() else {
+    let Value::Object(mut normalized) = crate::compat_schema::compatible_tool_schema(schema) else {
         return json!({"type": "object", "properties": {}});
     };
-    let mut normalized = source.clone();
-    let mut properties = normalized
-        .remove("properties")
-        .and_then(|value| value.as_object().cloned())
-        .unwrap_or_default();
-
-    for keyword in ["oneOf", "anyOf", "allOf"] {
-        let Some(variants) = normalized
-            .remove(keyword)
-            .and_then(|value| value.as_array().cloned())
-        else {
-            continue;
-        };
-        for variant in variants {
-            let Some(variant_properties) = variant.get("properties").and_then(Value::as_object)
-            else {
-                continue;
-            };
-            for (name, definition) in variant_properties {
-                properties
-                    .entry(name.clone())
-                    .or_insert_with(|| definition.clone());
-            }
-        }
-    }
-
     normalized.insert("type".into(), Value::String("object".into()));
-    normalized.insert("properties".into(), Value::Object(properties));
+    normalized.entry("properties").or_insert_with(|| json!({}));
     Value::Object(normalized)
 }
 

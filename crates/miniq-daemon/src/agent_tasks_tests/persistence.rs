@@ -10,6 +10,72 @@ fn reopen(bridge: &DaemonAgentBridge) -> DaemonAgentBridge {
 }
 
 #[tokio::test]
+async fn image_archive_survives_child_checkpoint_restart_and_session_scoped_resume() {
+    let directory = tempfile::tempdir().unwrap();
+    let bridge = bridge_with_provider(&directory, Arc::new(MockProvider::text("unused")));
+    let manager = &bridge.state.agent_tasks;
+    let (id, record) = manager
+        .create(
+            &bridge.session_id,
+            None,
+            &request("inspect"),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    let mut carrier = ChatMessage::system("");
+    carrier.image_archive = serde_json::from_value(json!([{
+        "id":"img_1", "image":{"path":"/trusted/child-image.png","mime_type":"image/png"},
+        "sources":[{"role":"tool","image_index":0,"tool_call_id":"child-read-1","tool_name":"view_image",
+            "source_content":"already inspected", "tool_arguments":{"path":"/trusted/child-image.png"}}]
+    }])).unwrap();
+    crate::turn_checkpoint::AgentCheckpoint {
+        manager: manager.clone(),
+        record,
+    }
+    .save(TurnCheckpoint {
+        history: vec![
+            ChatMessage::system("child runtime"),
+            carrier.clone(),
+            ChatMessage::assistant("already inspected"),
+        ],
+        display_text: String::new(),
+        stopped: true,
+    })
+    .await
+    .unwrap();
+    let restored = reopen(&bridge);
+    let (_, _, history) = restored
+        .state
+        .agent_tasks
+        .prepare_resume(
+            &bridge.session_id,
+            &id,
+            &mut request("compare"),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(history[1].image_archive, carrier.image_archive);
+    let other = restored
+        .state
+        .store
+        .create_session(&bridge.workspace_id, "other")
+        .unwrap();
+    assert!(restored
+        .state
+        .agent_tasks
+        .prepare_resume(
+            &other.id,
+            &id,
+            &mut request("read foreign image"),
+            CancellationToken::new()
+        )
+        .await
+        .is_err());
+}
+
+#[tokio::test]
 async fn disk_database_reopens_without_loading_large_history_or_result_into_the_list() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("agents.sqlite");

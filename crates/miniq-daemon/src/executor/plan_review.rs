@@ -243,6 +243,18 @@ impl ToolExecutor for ReviewExecutor<'_> {
         self.inner.call_fingerprint(call)
     }
 
+    fn validate_image_history(&self, images: &[miniq_models::ChatImage]) -> Result<(), String> {
+        self.inner.validate_image_history(images)
+    }
+
+    async fn record_image_history(
+        &self,
+        call: &ToolCallRequest,
+        output: &Value,
+    ) -> Result<(), AgentError> {
+        self.inner.record_image_history(call, output).await
+    }
+
     async fn execute(&self, call: &ToolCallRequest) -> Result<Value, AgentError> {
         if self.inner.cancel.is_cancelled() {
             return Err(AgentError::Cancelled);

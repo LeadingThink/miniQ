@@ -77,7 +77,17 @@ pub fn estimate_request_tokens(messages: &[ChatMessage], tools: &[ToolSpec]) -> 
         .ok()
         .map(|tools| estimate_text_tokens(&tools))
         .unwrap_or_default();
-    estimate_tokens(messages) + tool_tokens + 32
+    let visual_tools = tools
+        .iter()
+        .any(|tool| tool.name == crate::image_history_tool::TOOL_NAME);
+    let message_tokens = if visual_tools {
+        estimate_tokens(
+            &crate::visual_history::VisualHistory::from_messages(messages).project(messages),
+        ) + estimate_text_tokens(crate::image_history_tool::POLICY)
+    } else {
+        estimate_tokens(messages)
+    };
+    message_tokens + tool_tokens + 32
 }
 
 fn prune_tool_results_to_limit(
@@ -194,6 +204,15 @@ pub async fn compact_history(
     events: &tokio::sync::mpsc::Sender<AgentEvent>,
     cancel: &CancellationToken,
 ) -> Result<ContextOutcome, AgentError> {
+    // Capture original source metadata before pruning or summarizing any text.
+    // This catalog is local checkpoint data, never summarizer/model input.
+    let archive = (tools
+        .iter()
+        .any(|tool| tool.name == crate::image_history_tool::TOOL_NAME)
+        || messages
+            .iter()
+            .any(|message| !message.image_archive.is_empty()))
+    .then(|| crate::visual_history::VisualHistory::from_messages(&messages));
     let estimated_tokens_before = estimate_request_tokens(&messages, tools);
     if estimated_tokens_before <= policy.soft_limit_tokens {
         return Ok(ContextOutcome {
@@ -208,6 +227,9 @@ pub async fn compact_history(
     // even when it is part of the newest tool batch.
     let pruned = prune_tool_results_to_limit(&mut messages, tools, policy);
     if estimate_request_tokens(&messages, tools) <= policy.soft_limit_tokens {
+        if let Some(archive) = &archive {
+            archive.persist(&mut messages);
+        }
         let estimated_tokens_after = estimate_request_tokens(&messages, tools);
         let _ = events
             .send(AgentEvent::ContextCompacted {
@@ -231,6 +253,9 @@ pub async fn compact_history(
     let boundary = summary_boundary(&messages, tools, policy, conversation_start);
     let old = &messages[conversation_start..boundary];
     if old.is_empty() {
+        if let Some(archive) = &archive {
+            archive.persist(&mut messages);
+        }
         let estimated_tokens_after = estimate_request_tokens(&messages, tools);
         return Ok(ContextOutcome {
             messages,
@@ -272,6 +297,9 @@ pub async fn compact_history(
         summaries.join("\n\n")
     )));
     compacted_messages.extend_from_slice(&messages[boundary..]);
+    if let Some(archive) = &archive {
+        archive.persist(&mut compacted_messages);
+    }
     let estimated_tokens_after = estimate_request_tokens(&compacted_messages, tools);
     let _ = events
         .send(AgentEvent::ContextCompacted {

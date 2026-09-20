@@ -119,9 +119,10 @@ fn removes_unsupported_root_combinators_from_tool_schemas() {
         assert!(schema.get("anyOf").is_none());
         assert!(schema.get("allOf").is_none());
     }
-    assert!(body["tools"][0]["input_schema"]["properties"]["operation"]
-        .get("oneOf")
-        .is_some());
+    assert_eq!(
+        body["tools"][0]["input_schema"]["properties"]["operation"]["properties"]["type"]["enum"],
+        json!(["create_file", "delete_file"])
+    );
     assert_eq!(
         body["tools"][1]["input_schema"]["properties"]["path"]["type"],
         "string"
@@ -130,6 +131,35 @@ fn removes_unsupported_root_combinators_from_tool_schemas() {
         body["tools"][1]["input_schema"]["properties"]["query"]["type"],
         "string"
     );
+}
+
+#[test]
+fn merges_every_tagged_action_and_keeps_only_common_required_fields() {
+    let schema = anthropic_input_schema(&json!({
+        "oneOf":[
+            {"type":"object","required":["action"],"properties":{
+                "action":{"type":"string","enum":["list"]},
+                "limit":{"type":"integer","minimum":1,"maximum":50}
+            }},
+            {"type":"object","required":["action","ids"],"properties":{
+                "action":{"type":"string","enum":["read"]},
+                "ids":{"type":"array","items":{"type":"string"},"minItems":1}
+            }},
+            {"type":"object","required":["action","id"],"properties":{
+                "action":{"type":"string","const":"sources"},
+                "id":{"type":"string"}
+            }}
+        ]
+    }));
+    assert_eq!(
+        schema["properties"]["action"]["enum"],
+        json!(["list", "read", "sources"])
+    );
+    assert_eq!(schema["required"], json!(["action"]));
+    assert_eq!(schema["properties"]["limit"]["maximum"], 50);
+    assert_eq!(schema["properties"]["ids"]["minItems"], 1);
+    assert_eq!(schema["properties"]["id"]["type"], "string");
+    assert!(schema.get("oneOf").is_none());
 }
 
 #[test]

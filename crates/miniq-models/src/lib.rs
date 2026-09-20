@@ -20,11 +20,12 @@ mod sse;
 
 pub use anthropic::AnthropicProvider;
 pub use configured::{infer_protocol, ConfiguredProvider};
+pub use image::{decode_static_image, load_static_image, validate_image_path};
 pub use openai::OpenAiCompatProvider;
 pub use provider::{
-    ApiProtocol, ChatDelta, ChatImage, ChatMessage, ChatRole, CompletionRequest, DeltaStream,
-    ImageDetail, ModelCapabilities, ModelProvider, OutputTokenUsage, ProviderConfig,
-    ProviderContext, ProviderError, ToolCallRequest, ToolSpec,
+    ApiProtocol, ArchivedImage, ArchivedImageSource, ChatDelta, ChatImage, ChatMessage, ChatRole,
+    CompletionRequest, DeltaStream, ImageDetail, ModelCapabilities, ModelProvider,
+    OutputTokenUsage, ProviderConfig, ProviderContext, ProviderError, ToolCallRequest, ToolSpec,
 };
 pub use reasoning::reasoning_efforts;
 pub use responses::ResponsesProvider;

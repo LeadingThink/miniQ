@@ -115,6 +115,9 @@ pub struct ChatMessage {
     /// User attachments or trusted tool observations, read at request encoding.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<ChatImage>,
+    /// Local visual evidence catalog. Never serialized into provider requests.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub image_archive: Vec<ArchivedImage>,
     /// Set on `Tool` messages: which call this result answers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
@@ -141,12 +144,64 @@ pub struct ChatImage {
     pub detail: ImageDetail,
 }
 
+/// A stable reference to original pixels and every distinct recorded source.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ArchivedImage {
+    pub id: String,
+    pub image: ChatImage,
+    pub sources: Vec<ArchivedImageSource>,
+    /// Position in the most recent user attachment batch, retained across compaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_user_reference: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ArchivedImageSource {
+    pub role: ChatRole,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    pub image_index: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    /// Complete tool or user content, including page numbers and observation metadata.
+    pub source_content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_arguments: Option<Value>,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ImageDetail {
     #[default]
     Auto,
     High,
+    /// Preserve the original file, but send a bounded preview to the model.
+    /// This local policy is encoded as `high` in provider requests.
+    Preview,
+}
+
+impl ImageDetail {
+    pub fn wire_detail(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::High | Self::Preview => "high",
+        }
+    }
+
+    /// Expected model input dimensions; never upscale or alter screenshot coordinates.
+    pub fn target_dimensions(self, width: u32, height: u32) -> (u32, u32) {
+        if self != Self::Preview || width == 0 || height == 0 {
+            return (width, height);
+        }
+        let scale = 1.0_f64
+            .min(2048.0 / f64::from(width))
+            .min(2048.0 / f64::from(height))
+            .min((2_500_000.0 / (f64::from(width) * f64::from(height))).sqrt());
+        (
+            ((f64::from(width) * scale).floor() as u32).max(1),
+            ((f64::from(height) * scale).floor() as u32).max(1),
+        )
+    }
 }
 
 impl ChatMessage {
@@ -164,6 +219,7 @@ impl ChatMessage {
             role: ChatRole::Tool,
             content: content.into(),
             images: Vec::new(),
+            image_archive: Vec::new(),
             tool_call_id: Some(tool_call_id.into()),
             tool_calls: Vec::new(),
             provider_context: None,
@@ -174,6 +230,7 @@ impl ChatMessage {
             role,
             content: content.into(),
             images: Vec::new(),
+            image_archive: Vec::new(),
             tool_call_id: None,
             tool_calls: Vec::new(),
             provider_context: None,

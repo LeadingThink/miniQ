@@ -98,6 +98,14 @@ pub(crate) fn redact_provider_history(history: &mut [ChatMessage]) {
         if let Some(context) = &mut message.provider_context {
             redact_sensitive(&mut context.data);
         }
+        for archived in &mut message.image_archive {
+            for source in &mut archived.sources {
+                source.source_content = redact_string(&source.source_content);
+                if let Some(arguments) = &mut source.tool_arguments {
+                    redact_sensitive(arguments);
+                }
+            }
+        }
         message.content = redact_string(&message.content);
     }
 }
@@ -105,6 +113,25 @@ pub(crate) fn redact_provider_history(history: &mut [ChatMessage]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_archive_provenance_is_redacted_without_losing_trusted_reference() {
+        let mut carrier = ChatMessage::system("");
+        carrier.image_archive = serde_json::from_value(serde_json::json!([{
+            "id":"img_1", "image":{"path":"/trusted/image.png","mime_type":"image/png"},
+            "sources":[{"role":"tool","image_index":0,"tool_call_id":"read-1","tool_name":"view_image",
+                "source_content":"curl -H 'Authorization: Bearer never-log-source' https://example.test",
+                "tool_arguments":{"path":"/trusted/image.png","api_key":"never-log-key"}}]
+        }])).unwrap();
+        redact_provider_history(std::slice::from_mut(&mut carrier));
+        let archive = &carrier.image_archive[0];
+        assert_eq!(archive.id, "img_1");
+        assert_eq!(archive.image.path, "/trusted/image.png");
+        assert_eq!(archive.sources[0].tool_call_id.as_deref(), Some("read-1"));
+        let stored = serde_json::to_string(&carrier).unwrap();
+        assert!(!stored.contains("never-log"));
+        assert!(stored.contains(REDACTED));
+    }
 
     #[test]
     fn redacts_nested_credentials_and_shell_flags() {

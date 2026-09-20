@@ -29,7 +29,7 @@ fn message_content(message: &ChatMessage, text_kind: &str) -> Result<Vec<Value>,
         content.push(text_part(text_kind, &message.content));
     }
     for image in &message.images {
-        let detail = image.detail;
+        let detail = image.detail.wire_detail();
         let image = encode_image(image)?;
         content.push(json!({
             "type": "input_image",
@@ -224,7 +224,7 @@ fn computer_result_items(call_id: &str, message: &ChatMessage) -> ComputerResult
             Ok(encoded) => content.push(json!({
                 "type": "input_image",
                 "image_url": format!("data:{};base64,{}", encoded.mime_type, encoded.base64),
-                "detail": image.detail,
+                "detail": image.detail.wire_detail(),
             })),
             Err(error) => content.push(text_part(
                 "input_text",

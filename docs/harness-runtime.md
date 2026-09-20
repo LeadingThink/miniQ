@@ -4,16 +4,19 @@ miniQ 的 Agent 运行时吸收了 DeepSeek Harness 与 OpenAI Codex 开源实�
 
 ## 每轮上下文
 
-`miniq-daemon` 在一次 turn 成功结束后，把模型实际看到的消息保存到 SQLite 的 `model_context_snapshots` 表。快照包括：
+`miniq-daemon` 把可恢复的会话记录保存到 SQLite 的 `model_context_snapshots` 表。模型每次请求使用该记录的副本；图片历史会按当前需要选择发送的像素。快照包括：
 
 - user 和 assistant 消息；
 - assistant 发出的完整 tool calls；
 - 对应的 tool results；
 - 快照对应的最后一条持久消息 ID。
+- 已观察图片的原图引用和结构化来源档案，独立于模型文字摘要保存。
 
 下一轮先恢复快照，再追加该消息 ID 之后的新用户消息。这样模型获得的是完整工具记录，而不是只有聊天正文的近似历史。快照按 session 覆盖写入，数据库迁移位于 `migrations/0006_model_context.sql`。
 
-当前只在成功轮次结束时推进快照。失败或取消的轮次不会污染下一轮可用上下文；工具调用和审计记录仍按原有机制持久化。
+工具执行前后也会保存 checkpoint。失败或取消时保留已确认结果与未完成标记，下一轮按最新请求继续；不会把未确认的工具执行当作成功结果。
+
+图片历史保留最新用户参考批次和最近两个工具图片批次，其余按会话引用回读。默认查看使用有界预览，精细核查可读取原图；电脑控制截图保持原尺寸。详见 [图片历史管理与本机对照实测](image-history-management.md)。
 
 ## 上下文压缩
 

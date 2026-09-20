@@ -98,7 +98,7 @@ impl OpenAiCompatProvider {
 }
 
 fn image_to_json(image: &ChatImage) -> Result<Value, ProviderError> {
-    let detail = image.detail;
+    let detail = image.detail.wire_detail();
     let image = encode_image(image)?;
     Ok(json!({
         "type": "image_url",

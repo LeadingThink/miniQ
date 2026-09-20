@@ -2641,11 +2641,14 @@ name = "miniq-agent"
 version = "0.1.41"
 dependencies = [
  "async-trait",
+ "axum",
  "futures-util",
  "miniq-models",
  "rand 0.9.4",
+ "schemars",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
@@ -2762,6 +2765,8 @@ dependencies = [
  "base64 0.22.1",
  "futures-util",
  "httpdate",
+ "image",
+ "libc",
  "miniq-protocol",
  "reqwest",
  "serde",

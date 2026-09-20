@@ -31,6 +31,22 @@ fn screenshot(directory: &std::path::Path, name: &str, bytes: &[u8]) -> ChatImag
 }
 
 #[test]
+fn local_preview_uses_provider_high_detail_for_responses() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("preview.png");
+    image::RgbImage::new(2, 3).save(&path).unwrap();
+    let mut message = ChatMessage::user("Read the image.");
+    message.images.push(ChatImage {
+        path: path.to_string_lossy().into_owned(),
+        mime_type: "image/png".into(),
+        detail: ImageDetail::Preview,
+    });
+    let input = build_input(&[message]).unwrap();
+    assert_eq!(input[0]["content"][1]["type"], "input_image");
+    assert_eq!(input[0]["content"][1]["detail"], "high");
+}
+
+#[test]
 fn denied_computer_call_retains_error_and_allows_later_chat() {
     let mut requested = assistant(vec![computer_call("denied")]);
     let actual_arguments = json!({

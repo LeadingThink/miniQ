@@ -69,6 +69,50 @@ fn reviewer(executor: &SessionToolExecutor) -> ReviewExecutor<'_> {
 }
 
 #[tokio::test]
+async fn image_history_review_preserves_host_validation_and_audit() {
+    let (directory, executor) = fixture();
+    let review = ReviewExecutor {
+        inner: &executor,
+        plan: Vec::new(),
+        source: ReviewPlan::Checklist,
+    };
+    let error = review
+        .validate_image_history(&[miniq_models::ChatImage {
+            path: directory
+                .path()
+                .join("missing.png")
+                .to_string_lossy()
+                .into_owned(),
+            mime_type: "image/png".into(),
+            detail: miniq_models::ImageDetail::High,
+        }])
+        .unwrap_err();
+    review
+        .record_image_history(
+            &call("image_history", json!({"action":"read","ids":["img_1"]})),
+            &json!({"error":error}),
+        )
+        .await
+        .unwrap();
+    let records = executor
+        .state
+        .store
+        .list_tool_calls(&executor.session_id)
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].tool_name, "image_history");
+    assert_eq!(records[0].status, miniq_protocol::ToolCallStatus::Failed);
+    assert_eq!(
+        executor
+            .state
+            .store
+            .count_audit_events(&executor.session_id)
+            .unwrap(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn reconciles_two_of_five_and_preserves_the_delivered_answer() {
     let (_dir, executor) = fixture();
     let before = json!({"tasks":[task("inventory", "completed"), task("research", "completed"),

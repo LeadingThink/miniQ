@@ -13,6 +13,67 @@ struct ScriptedProvider {
     cancel: CancellationToken,
 }
 
+#[tokio::test]
+async fn image_archive_survives_session_checkpoint_and_next_turn_restore() {
+    use miniq_agent::{CheckpointStore, TurnCheckpoint};
+    let directory = tempfile::tempdir().unwrap();
+    let store = Arc::new(miniq_memory::Store::open_in_memory().unwrap());
+    let workspace = store
+        .create_workspace(directory.path().to_str().unwrap(), "images")
+        .unwrap();
+    let session = store.create_session(&workspace.id, "archive").unwrap();
+    let user = store
+        .append_message(&session.id, Role::User, "inspect image")
+        .unwrap();
+    let mut carrier = ChatMessage::system("");
+    carrier.image_archive = serde_json::from_value(json!([{
+        "id":"img_1", "image":{"path":"/trusted/image.png","mime_type":"image/png"},
+        "sources":[{"role":"user","image_index":0,"source_content":"original image request"}]
+    }]))
+    .unwrap();
+    let checkpoint = crate::turn_checkpoint::SessionCheckpoint {
+        store: store.clone(),
+        session_id: session.id.clone(),
+        anchor_id: user.id,
+        message_id: "partial-result".into(),
+        model_identity: None,
+        partial_message: Default::default(),
+    };
+    checkpoint
+        .save(TurnCheckpoint {
+            history: vec![
+                ChatMessage::system("old runtime"),
+                carrier.clone(),
+                ChatMessage::user("inspect image"),
+            ],
+            display_text: String::new(),
+            stopped: true,
+        })
+        .await
+        .unwrap();
+    let snapshot = store.get_model_context(&session.id).unwrap().unwrap();
+    let persisted: Vec<ChatMessage> = serde_json::from_value(snapshot.history.clone()).unwrap();
+    assert_eq!(persisted[0].image_archive, carrier.image_archive);
+    assert!(!persisted
+        .iter()
+        .any(|message| message.content == "old runtime"));
+    store
+        .append_message(&session.id, Role::User, "compare with the previous image")
+        .unwrap();
+    let restored = history_for_turn(
+        &store.list_messages(&session.id).unwrap(),
+        Some(snapshot),
+        "",
+        directory.path(),
+    );
+    assert_eq!(restored[0].role, ChatRole::System);
+    assert_eq!(restored[1].image_archive, carrier.image_archive);
+    assert_eq!(
+        restored.last().unwrap().content,
+        "compare with the previous image"
+    );
+}
+
 #[async_trait]
 impl ModelProvider for ScriptedProvider {
     async fn stream_complete(

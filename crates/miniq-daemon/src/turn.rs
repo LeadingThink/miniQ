@@ -125,6 +125,7 @@ fn visible_message_to_chat(message: &Message) -> Option<ChatMessage> {
         tool_call_id: None,
         tool_calls: Vec::new(),
         provider_context: None,
+        image_archive: Vec::new(),
     })
 }
 
@@ -689,6 +690,7 @@ mod tests {
                 role: ChatRole::Assistant,
                 content: String::new(),
                 images: Vec::new(),
+                image_archive: Vec::new(),
                 tool_call_id: None,
                 tool_calls: vec![miniq_models::ToolCallRequest {
                     id: "tool-1".to_string(),

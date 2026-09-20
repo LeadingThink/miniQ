@@ -180,6 +180,20 @@ fn encodes_attached_images_as_openai_vision_content_parts() {
 }
 
 #[test]
+fn local_preview_uses_provider_high_detail() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("preview.png");
+    image::RgbImage::new(2, 3).save(&path).unwrap();
+    let encoded = image_to_json(&ChatImage {
+        path: path.to_string_lossy().into(),
+        mime_type: "image/png".into(),
+        detail: crate::ImageDetail::Preview,
+    })
+    .unwrap();
+    assert_eq!(encoded["image_url"]["detail"], "high");
+}
+
+#[test]
 fn tool_observations_follow_the_complete_tool_batch_as_user_images() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("image.png");

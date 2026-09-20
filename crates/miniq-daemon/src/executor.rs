@@ -18,6 +18,7 @@ use crate::state::{AppState, ApprovalDecision};
 mod adaptation;
 mod checkpoint;
 mod hooks;
+mod image_history;
 mod interaction;
 #[cfg(test)]
 mod permission_tests;
@@ -311,6 +312,20 @@ impl SessionToolExecutor {
 impl ToolExecutor for SessionToolExecutor {
     fn specs(&self) -> Vec<ToolSpec> {
         self.router.specs()
+    }
+
+    async fn record_image_history(
+        &self,
+        call: &ToolCallRequest,
+        output: &Value,
+    ) -> Result<(), AgentError> {
+        self.persist_image_history(call, output)
+    }
+
+    fn validate_image_history(&self, images: &[miniq_models::ChatImage]) -> Result<(), String> {
+        images.iter().try_for_each(|image| {
+            miniq_models::validate_image_path(image).map_err(|error| error.to_string())
+        })
     }
 
     fn result_images(

@@ -11,9 +11,11 @@
 use async_trait::async_trait;
 mod checkpoint;
 mod context;
+mod image_history_tool;
 mod response_language;
 mod retry;
 mod tool_batch;
+mod visual_history;
 
 pub use checkpoint::{CheckpointStore, TurnCheckpoint};
 
@@ -159,6 +161,23 @@ pub trait ToolExecutor: Send + Sync {
         _output: &Value,
     ) -> Vec<miniq_models::ChatImage> {
         Vec::new()
+    }
+
+    /// Hosts audit the runner's read-only image-history tool through their
+    /// normal session/agent event channel. References are resolved by the
+    /// runner from this conversation only, never from model-supplied paths.
+    async fn record_image_history(
+        &self,
+        _call: &ToolCallRequest,
+        _output: &Value,
+    ) -> Result<(), AgentError> {
+        Ok(())
+    }
+
+    /// Validate trusted recall paths in the host before reporting a successful
+    /// read. The provider repeats safe validation when encoding the request.
+    fn validate_image_history(&self, _images: &[miniq_models::ChatImage]) -> Result<(), String> {
+        Ok(())
     }
 
     /// Execute one call and return a structured result. Errors and
@@ -312,6 +331,8 @@ async fn run_turn_inner(
     cancel: CancellationToken,
     limits: &RunLimits,
 ) -> Result<TurnOutcome, AgentError> {
+    let image_executor = image_history_tool::ImageHistoryExecutor::new(executor, &state.history);
+    let executor = &image_executor;
     let tools = executor.specs();
     let capabilities = provider.capabilities().await;
     let mut steps = 0;
@@ -326,6 +347,7 @@ async fn run_turn_inner(
             return Err(AgentError::StepLimitExceeded { steps });
         }
         steps += 1;
+        image_executor.sync(&mut state.history);
         let mut context_policy = effective_context_policy(&limits.context_policy, &capabilities);
         context_policy.soft_limit_tokens =
             context_policy
@@ -351,8 +373,10 @@ async fn run_turn_inner(
         let (text, tool_calls, provider_context) = loop {
             state.partial_text.clear();
             let committed_text = state.streamed_text.clone();
-            let mut request_messages =
-                response_language::request_messages(&state.history, limits.purpose);
+            let mut request_messages = response_language::request_messages(
+                &image_executor.messages(&state.history),
+                limits.purpose,
+            );
             if placeholder_recovery_used {
                 request_messages.push(ChatMessage::system(
                     "上一轮只返回了占位省略号。请根据已完成工具结果直接给出简短最终总结，不要输出省略号占位。",
@@ -600,6 +624,7 @@ async fn run_turn_inner(
             role: miniq_models::ChatRole::Assistant,
             content: text,
             images: Vec::new(),
+            image_archive: Vec::new(),
             tool_call_id: None,
             tool_calls: tool_calls.clone(),
             provider_context,
@@ -613,6 +638,9 @@ async fn run_turn_inner(
 
 #[cfg(test)]
 mod observation_tests;
+
+#[cfg(test)]
+mod image_history_wire_tests;
 
 #[cfg(test)]
 mod run_limits_tests;
