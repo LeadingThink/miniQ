@@ -1,8 +1,13 @@
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, CapacitorHttp } from "@capacitor/core";
 
 /** Android builds ship outside an app store, so updates are discovered by
  * comparing the local versionName against the public release manifest. */
 export const RELEASE_MANIFEST_URL = "https://oss.zaiwen.top/releases/manifest.json";
+export const MOBILE_DOWNLOAD_PAGE_URL = "https://chat.zaiwenai.com/download";
+const UPDATE_TIMEOUT_MS = 15_000;
+const UPDATE_TIMEOUT_MESSAGE = "连接更新服务超时，请检查网络后重试，或前往下载页获取最新版。";
+
+class UpdateRequestError extends Error {}
 
 export interface AndroidRelease {
   version: string;
@@ -80,12 +85,51 @@ export async function fetchAndroidRelease(
   fetchImpl: typeof fetch = fetch,
   url: string = RELEASE_MANIFEST_URL,
 ): Promise<AndroidRelease | null> {
-  const response = await fetchImpl(`${url}?release_check=${Date.now()}`, {
-    cache: "no-store",
-    headers: { "Cache-Control": "no-cache" },
+  const requestUrl = new URL(url);
+  requestUrl.searchParams.set("release_check", String(Date.now()));
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(new UpdateRequestError(UPDATE_TIMEOUT_MESSAGE));
+      controller.abort();
+    }, UPDATE_TIMEOUT_MS);
   });
-  if (!response.ok) throw new Error(`发布清单请求失败（HTTP ${response.status}）`);
-  return parseAndroidRelease(await response.json());
+  try {
+    const manifest = await Promise.race([
+      requestReleaseManifest(requestUrl.href, fetchImpl, controller.signal),
+      deadline,
+    ]);
+    return parseAndroidRelease(manifest);
+  } catch (error) {
+    if (error instanceof UpdateRequestError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (/timeout|timed out/i.test(message)) throw new UpdateRequestError(UPDATE_TIMEOUT_MESSAGE);
+    if (error instanceof SyntaxError) throw new UpdateRequestError("更新服务返回的发布信息不完整，请稍后重试。");
+    throw new UpdateRequestError("无法连接更新服务，请检查网络后重试，或前往下载页获取最新版。");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function requestReleaseManifest(url: string, fetchImpl: typeof fetch, signal: AbortSignal): Promise<unknown> {
+  if (isMobileUpdateSupported()) {
+    // The APK runs at https://localhost. Native HTTP avoids WebView CORS and
+    // CDN preflight failures without patching fetch used by streaming chat.
+    const response = await CapacitorHttp.get({
+      url,
+      responseType: "json",
+      connectTimeout: UPDATE_TIMEOUT_MS,
+      readTimeout: UPDATE_TIMEOUT_MS,
+    });
+    if (response.status < 200 || response.status >= 300) {
+      throw new UpdateRequestError(`发布清单请求失败（HTTP ${response.status}），请稍后重试。`);
+    }
+    return typeof response.data === "string" ? JSON.parse(response.data) : response.data;
+  }
+  const response = await fetchImpl(url, { cache: "no-store", credentials: "omit", signal });
+  if (!response.ok) throw new UpdateRequestError(`发布清单请求失败（HTTP ${response.status}），请稍后重试。`);
+  return response.json();
 }
 
 export async function checkAndroidUpdate(options: {

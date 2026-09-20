@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -10,7 +11,8 @@ import { ArrowUp, LoaderCircle, Paperclip, Square, X } from "lucide-react";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import {
   canSendComposer,
-  isComposerSendKey,
+  COMPOSER_KEYBOARD_HINT,
+  handleComposerKeyDown,
   shouldShowComposerSend,
 } from "../composerInput";
 import { useComposerSlash } from "../hooks/useComposerSlash";
@@ -246,6 +248,7 @@ export function ComposerCard(props: {
   sendBlocked?: boolean;
   sendBlockedReason?: string;
 }) {
+  const keyboardHintId = useId();
   const [draft, setDraftState] = useState(() => readDraft(props.draftKey));
   const draftValueRef = useRef(draft);
   draftValueRef.current = draft;
@@ -476,6 +479,7 @@ export function ComposerCard(props: {
       <textarea
         readOnly={sending || slash.pending}
         aria-label="消息"
+        aria-describedby={keyboardHintId}
         ref={textareaRef}
         value={draft}
         autoFocus={props.autoFocus}
@@ -505,16 +509,7 @@ export function ComposerCard(props: {
         }}
         onKeyDown={(e) => {
           if (slash.onKeyDown(e)) return;
-          if (
-            isComposerSendKey(
-              e.key,
-              e.shiftKey,
-              e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229,
-            )
-          ) {
-            e.preventDefault();
-            send();
-          }
+          handleComposerKeyDown(e, setDraft, () => void send());
         }}
       />
       <div className="composer-row">
@@ -591,6 +586,9 @@ export function ComposerCard(props: {
           </button>
         )}
       </div>
+      <p id={keyboardHintId} className="composer-keyboard-hint">
+        {COMPOSER_KEYBOARD_HINT}
+      </p>
     </div>
   );
 }
@@ -618,7 +616,7 @@ export function Composer(props: {
     <div className="composer-outer">
       <ComposerCard
         busy={props.busy}
-        placeholder="随心输入，Enter 发送，/ 使用命令与技能"
+        placeholder="随心输入，/ 使用命令与技能"
         chip={props.chip}
         modelSlot={props.modelSlot}
         permissionSlot={props.permissionSlot}

@@ -98,6 +98,44 @@ it("does not send Enter while the Chinese input method is composing", async () =
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
 
+it("inserts a newline at the selection with Ctrl+Enter and sends the full draft with Shift+Enter", async () => {
+  const fetcher = vi.fn((url: unknown, _init?: RequestInit) => Promise.resolve(modelRequest(url) ? json({ data: catalog }) : doneResponse("回答")));
+  vi.stubGlobal("fetch", fetcher);
+  render(<MobileChat apiKey="test-key" onBack={() => {}} />);
+  await screen.findByText("custom-chat");
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+  const hint = screen.getByText("Enter 或 Shift＋Enter 发送，Ctrl＋Enter 换行");
+  expect(input.getAttribute("aria-describedby")).toBe(hint.id);
+  fireEvent.change(input, { target: { value: "第一行替换第二行" } });
+  input.setSelectionRange(3, 5);
+  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+  expect(input.value).toBe("第一行\n第二行");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(screen.getByText(hint.textContent!)).toBe(hint);
+  await waitFor(() => {
+    expect(input.selectionStart).toBe(4);
+    expect(input.selectionEnd).toBe(4);
+  });
+  fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+  await screen.findByText("回答");
+  const request = fetcher.mock.calls.find(([url]) => !modelRequest(url))?.[1];
+  expect(JSON.parse(request?.body as string).messages).toEqual([{ role: "user", content: "第一行\n第二行" }]);
+  expect(input.value).toBe("");
+});
+
+it.each([{ isComposing: true }, { keyCode: 229 }])("does not insert or send Ctrl+Enter during IME composition: %j", async (composition) => {
+  const fetcher = vi.fn((url: unknown) => Promise.resolve(modelRequest(url) ? json({ data: catalog }) : doneResponse("回答")));
+  vi.stubGlobal("fetch", fetcher);
+  render(<MobileChat apiKey="test-key" onBack={() => {}} />);
+  await screen.findByText("custom-chat");
+  const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: "中文候选词" } });
+  input.setSelectionRange(2, 2);
+  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true, ...composition });
+  expect(input.value).toBe("中文候选词");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
 it.each(["failed", "interrupted"])("preserves the %s partial answer when the user asks to continue", async (status) => {
   const streaming = controlledResponse();
   let request = 0;

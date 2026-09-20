@@ -261,6 +261,14 @@
   padding: 0 6px;
 }
 
+.composer-keyboard-hint {
+  margin: 6px 10px 0;
+  color: var(--text-mid);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .session-model-controls { position: relative; display: inline-flex; align-items: center; }
 .model-trigger { display: inline-flex; align-items: center; gap: 5px; background: transparent; color: var(--text-mid); padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px; max-width: 190px; }
 .model-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

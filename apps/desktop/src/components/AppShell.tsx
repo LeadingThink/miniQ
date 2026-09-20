@@ -232,8 +232,8 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
     <div className="hero">
       <h1>
         {selectedWorkspace
-          ? `要在 ${selectedWorkspace.name} 中完成什么?`
-          : "今天想完成什么?"}
+          ? `要在 ${selectedWorkspace.name} 中完成什么？`
+          : "今天想完成什么？"}
       </h1>
       <div className="hero-composer">
         <ComposerCard
@@ -253,8 +253,8 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
           client={app.client}
           placeholder={
             selectedWorkspace
-              ? "描述你的目标,例如:整理这份资料并生成周报"
-              : "先选择一个项目,再描述你的目标"
+              ? "描述你的目标，例如：整理这份资料并生成周报"
+              : "先选择一个项目，再描述你的目标"
           }
           chipSlot={
             <ProjectPicker

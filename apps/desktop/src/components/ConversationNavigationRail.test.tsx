@@ -134,6 +134,38 @@ it("coalesces scroll bursts and caches DOM lookups", () => {
   expect(queries).not.toHaveBeenCalled();
 });
 
+it("expands nearby markers progressively for pointer and keyboard navigation", () => {
+  render(<ConversationNavigationRail messages={messages} scrollRef={createScrollRef()} />);
+  const markers = screen.getAllByRole("button");
+  const proximity = (index: number) => Number(markers[index].style.getPropertyValue("--rail-proximity"));
+  fireEvent.mouseEnter(markers[0]);
+  expect(proximity(0)).toBeGreaterThan(proximity(1));
+  expect(proximity(1)).toBeGreaterThan(proximity(2));
+  expect(proximity(2)).toBeGreaterThan(proximity(3));
+  fireEvent.mouseLeave(screen.getByRole("navigation"));
+  expect(markers.every((marker) => marker.style.getPropertyValue("--rail-proximity") === "0")).toBe(true);
+  fireEvent.focus(markers[3]);
+  expect(proximity(3)).toBeGreaterThan(proximity(2));
+  expect(proximity(2)).toBeGreaterThan(proximity(1));
+  fireEvent.blur(markers[3]);
+  expect(screen.queryByText(messages[3].content)).toBeNull();
+});
+
+it("positions full previews beside the target and keeps them inside the conversation", () => {
+  const { container } = render(<ConversationNavigationRail messages={messages} scrollRef={createScrollRef()} />);
+  vi.spyOn(container, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1000, 600));
+  vi.spyOn(screen.getByRole("navigation"), "getBoundingClientRect").mockReturnValue(new DOMRect(0, 200, 42, 80));
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(80);
+  const marker = screen.getAllByRole("button")[1];
+  const markerRect = vi.spyOn(marker, "getBoundingClientRect").mockReturnValue(new DOMRect(6, 240, 30, 20));
+  fireEvent.mouseEnter(marker);
+  const preview = screen.getByText(messages[1].content);
+  expect(preview.style.getPropertyValue("--rail-preview-y")).toBe("50px");
+  markerRect.mockReturnValue(new DOMRect(6, 590, 30, 20));
+  fireEvent.scroll(container.querySelector(".conversation-navigation-list")!);
+  expect(preview.style.getPropertyValue("--rail-preview-y")).toBe("352px");
+});
+
 it("hides the rail when resizing leaves no conversation gutter", () => {
   let resize: (() => void) | undefined;
   let frame: FrameRequestCallback | undefined;
