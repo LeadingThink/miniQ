@@ -174,7 +174,8 @@ export function useComposerSlash(props: {
       );
       return true;
     }
-    if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey) {
+    if ((event.key === "Enter" || event.key === "Tab") &&
+      !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
       if (index >= 0 && visible[index]) void pick(visible[index]);
       return true;

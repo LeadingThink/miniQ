@@ -494,6 +494,14 @@
   line-height: 1.5;
 }
 
+.mobile-chat-keyboard-hint {
+  grid-column: 1 / -1;
+  padding: 0 8px 3px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .mobile-chat-send {
   width: 44px;
   height: 44px;
