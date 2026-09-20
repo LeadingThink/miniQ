@@ -3,11 +3,13 @@ import { FolderPlus, Package, RefreshCw, Trash2 } from "lucide-react";
 import type { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 import type { PluginInfo, PluginListResult } from "../types";
+import { RemotePathDialog } from "./RemotePathDialog";
 
 export function PluginsPanel(props: { client: RpcClient }) {
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [remotePicker, setRemotePicker] = useState(false);
 
   useEffect(() => {
     void props.client
@@ -20,6 +22,7 @@ export function PluginsPanel(props: { client: RpcClient }) {
   }, [props.client]);
 
   const install = async () => {
+    if (props.client.sshHost) { setRemotePicker(true); return; }
     let path: string | null = null;
     if (isTauriRuntime()) {
       const { open } = await import("@tauri-apps/plugin-dialog");
@@ -107,6 +110,12 @@ export function PluginsPanel(props: { client: RpcClient }) {
 
   return (
     <div className="page">
+      {remotePicker && props.client.sshHost && <RemotePathDialog host={props.client.sshHost} purpose="plugin"
+        onClose={() => setRemotePicker(false)} onSubmit={async (path) => {
+          const result = await props.client.call<PluginListResult>("plugin.install", { path });
+          setPlugins(result.plugins);
+          setStatus("远程插件已安装");
+        }} />}
       <div className="page-inner wide">
         <div className="page-header plugin-page-header">
           <div>

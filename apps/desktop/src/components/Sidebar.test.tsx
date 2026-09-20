@@ -2,7 +2,8 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ComponentProps } from "react";
 import type { Session, Workspace } from "../types";
 import { Sidebar } from "./Sidebar";
 
@@ -27,7 +28,8 @@ const session: Session = {
   updatedAt: "2026-09-03T00:00:00Z",
 };
 
-afterEach(cleanup);
+beforeEach(() => window.localStorage.clear());
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Sidebar", () => {
   it("toggles all project sessions when the project is clicked repeatedly", () => {
@@ -66,17 +68,16 @@ describe("Sidebar", () => {
     );
 
     const projectButton = screen.getByRole("button", { name: workspace.name });
-    const sessionItem = document.querySelector(".session-item") as HTMLElement;
     expect(projectButton.getAttribute("aria-expanded")).toBe("true");
-    expect(sessionItem.hidden).toBe(false);
+    expect(screen.queryByRole("button", { name: "完善预览，执行中" })).not.toBeNull();
 
     fireEvent.click(projectButton);
     expect(projectButton.getAttribute("aria-expanded")).toBe("false");
-    expect(sessionItem.hidden).toBe(true);
+    expect(screen.queryByRole("button", { name: "完善预览，执行中" })).toBeNull();
 
     fireEvent.click(projectButton);
     expect(projectButton.getAttribute("aria-expanded")).toBe("true");
-    expect(sessionItem.hidden).toBe(false);
+    expect(screen.queryByRole("button", { name: "完善预览，执行中" })).not.toBeNull();
     expect(onSelectWorkspace).toHaveBeenCalledTimes(2);
   });
 
@@ -155,5 +156,144 @@ describe("Sidebar", () => {
     expect(html).toMatch(/class="session-item[^\"]*unread/);
     expect(html).toContain('class="session-state-label unread"');
     expect(html).toContain(">新回复<");
+  });
+});
+
+function sidebarProps(overrides: Partial<ComponentProps<typeof Sidebar>> = {}): ComponentProps<typeof Sidebar> {
+  return {
+    workspaces: [workspace], sessions: [session], unreadSessionIds: new Set(), currentSessionId: null,
+    selectedWorkspaceId: workspace.id, onNewChat: noop, onShowSearch: noop, onShowSchedule: noop,
+    onImportSessions: noop, onSelectWorkspace: noop, onCreateSession: noop, onDeleteWorkspace: noop,
+    onRenameWorkspace: noop, onEditWorkspace: noop, onSelectSession: noop, onSessionSeen: noop,
+    onDeleteSession: noop, onRenameSession: noop, onSetSessionPinned: noop, onSetSessionArchived: noop,
+    onShowSkills: noop, onShowMcp: noop, onShowSettings: noop, updateSupported: false,
+    updateState: { phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null },
+    onCheckForUpdates: noop, onInstallUpdate: noop, onError: noop, ...overrides,
+  };
+}
+
+describe("Sidebar navigation", () => {
+  it("preserves project collapse across remounts and reveals a newly selected session", () => {
+    const props = sidebarProps();
+    const first = render(<Sidebar {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: workspace.name }));
+    first.unmount();
+    const next = render(<Sidebar {...props} />);
+    expect(screen.queryByRole("button", { name: "完善预览，执行中" })).toBeNull();
+    next.rerender(<Sidebar {...props} currentSessionId={session.id} />);
+    expect(screen.queryByRole("button", { name: "完善预览，执行中" })).not.toBeNull();
+  });
+
+  it("keeps hidden session controls unmounted and makes all sessions available on expansion", () => {
+    const sessions = Array.from({ length: 400 }, (_, index) => ({ ...session, id: `s${index}`, title: `任务 ${index}` }));
+    render(<Sidebar {...sidebarProps({ sessions })} />);
+    expect(document.querySelectorAll(".session-select")).toHaveLength(3);
+    fireEvent.click(screen.getByRole("button", { name: "展开 397 条会话" }));
+    expect(document.querySelectorAll(".session-select")).toHaveLength(400);
+    fireEvent.click(screen.getByRole("button", { name: "收起" }));
+    expect(document.querySelectorAll(".session-select")).toHaveLength(3);
+  });
+
+  it("reveals a selected session beyond the initial three without reopening on unrelated updates", () => {
+    const sessions = Array.from({ length: 8 }, (_, index) => ({ ...session, id: `s${index}`, title: `任务 ${index}` }));
+    const props = sidebarProps({ sessions, currentSessionId: "s7" });
+    const rendered = render(<Sidebar {...props} />);
+    expect(screen.queryByRole("button", { name: "任务 7，执行中" })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: workspace.name }));
+    rendered.rerender(<Sidebar {...props} sessions={[...sessions]} />);
+    expect(document.querySelectorAll(".session-select")).toHaveLength(0);
+  });
+
+  it("filters running, waiting, unread and pinned sessions without fetching history", () => {
+    const sessions: Session[] = [session,
+      { ...session, id: "waiting", title: "等待确认的任务", status: "waiting_approval" },
+      { ...session, id: "unread", title: "后台回复", status: "idle", pinned: true },
+      { ...session, id: "idle", title: "普通会话", status: "idle" }];
+    render(<Sidebar {...sidebarProps({ sessions, unreadSessionIds: new Set(["unread"]) })} />);
+    fireEvent.click(screen.getByRole("button", { name: "筛选项目和会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "进行中 2" }));
+    expect(document.querySelectorAll(".session-select")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "等待确认的任务，等待确认" })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "未读 1" }));
+    expect(document.querySelectorAll(".session-select")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "后台回复，新回复" })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "置顶 1" }));
+    expect(document.querySelectorAll(".session-select")).toHaveLength(1);
+  });
+
+  it("finds archived titles and clears empty results with Escape", () => {
+    const archived = { ...session, id: "archived", title: "归档报告", archived: true, status: "idle" as const };
+    render(<Sidebar {...sidebarProps({ sessions: [session, archived] })} />);
+    fireEvent.click(screen.getByRole("button", { name: "筛选项目和会话" }));
+    const search = screen.getByRole("textbox", { name: "筛选项目或会话标题" });
+    fireEvent.change(search, { target: { value: "归档报告" } });
+    expect(screen.queryByRole("button", { name: "归档报告" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "完善预览，执行中" })).toBeNull();
+    fireEvent.change(search, { target: { value: "无结果" } });
+    expect(screen.getByRole("status").textContent).toContain("没有符合条件");
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect(screen.queryByRole("button", { name: "完善预览，执行中" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "归档报告" })).toBeNull();
+  });
+
+  it("temporarily expands collapsed projects for matching titles without losing the preference", () => {
+    render(<Sidebar {...sidebarProps()} />);
+    fireEvent.click(screen.getByRole("button", { name: workspace.name }));
+    fireEvent.click(screen.getByRole("button", { name: "筛选项目和会话" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "筛选项目或会话标题" }), { target: { value: "预览" } });
+    expect(screen.queryByRole("button", { name: "完善预览，执行中" })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "清除会话筛选" }));
+    expect(screen.queryByRole("button", { name: "完善预览，执行中" })).toBeNull();
+  });
+
+  it("supports arrow, Home and End navigation without selecting sessions until activated", () => {
+    const onSelectSession = vi.fn();
+    render(<Sidebar {...sidebarProps({ onSelectSession })} />);
+    const project = screen.getByRole("button", { name: workspace.name });
+    const item = screen.getByRole("button", { name: "完善预览，执行中" });
+    project.focus();
+    fireEvent.keyDown(project, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(item);
+    expect(onSelectSession).not.toHaveBeenCalled();
+    fireEvent.keyDown(item, { key: "Home" });
+    expect(document.activeElement).toBe(project);
+    fireEvent.keyDown(project, { key: "End" });
+    expect(document.activeElement).toBe(item);
+  });
+
+  it("opens the archive when the current session is archived", () => {
+    render(<Sidebar {...sidebarProps({ sessions: [{ ...session, archived: true }], currentSessionId: session.id })} />);
+    expect(screen.queryByRole("button", { name: "完善预览，执行中" })).not.toBeNull();
+  });
+
+  it("reveals a current session when remote session metadata arrives after selection", () => {
+    window.localStorage.setItem(`miniq.sidebar.project.${workspace.id}.collapsed`, "true");
+    const props = sidebarProps({ currentSessionId: session.id });
+    const rendered = render(<Sidebar {...props} sessions={[]} />);
+    rendered.rerender(<Sidebar {...props} />);
+    expect(screen.queryByRole("button", { name: "完善预览，执行中" })).not.toBeNull();
+  });
+
+  it("can close the filter controls while keeping the selected filter", () => {
+    render(<Sidebar {...sidebarProps()} />);
+    const toggle = screen.getByRole("button", { name: "筛选项目和会话" });
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: "进行中 1" }));
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("textbox", { name: "筛选项目或会话标题" })).toBeNull();
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "进行中 1" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("allows navigation and resizing when browser storage is denied", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new DOMException("denied", "SecurityError"); });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("denied", "SecurityError"); });
+    render(<Sidebar {...sidebarProps()} />);
+    const separator = screen.getByRole("separator", { name: "调整左侧栏宽度" });
+    fireEvent.keyDown(separator, { key: "ArrowRight" });
+    expect(separator.getAttribute("aria-valuenow")).toBe("276");
+    fireEvent.click(screen.getByRole("button", { name: workspace.name }));
+    expect(screen.queryByRole("button", { name: "完善预览，执行中" })).toBeNull();
   });
 });

@@ -6,7 +6,9 @@ The `miniq` executable is a client of `miniq-daemon`, not a second agent engine.
 
 Desktop releases from v0.1.19 include `miniQ_terminal_VERSION_TARGET.tar.gz` and a SHA-256 checksum for macOS Apple Silicon/Intel, Linux x86-64 and Windows x86-64. Download the matching archive from the [public release page](https://github.com/LeadingThink/miniQ-releases/releases), verify its checksum, extract it and put both executables in the same directory on PATH. Windows 10/11 can extract with `tar -xzf`; Unix extraction preserves executable permissions. Keep `miniq` and `miniq-daemon` together. There is no npm package, Homebrew formula or WinGet package; do not run guessed installation commands.
 
-Source installation prerequisites: stable Rust (https://rustup.rs/), a C/C++ toolchain, and the repository. Prebuilt archives do not require Rust or Node.js; individual tools/MCP servers/plugins may need additional dependencies. Linux archives are built on Ubuntu 24.04 and require compatible system libraries. PDF vision on every platform requires Poppler.
+Source installation prerequisites: stable Rust (https://rustup.rs/), a C/C++ toolchain, and the repository. Prebuilt archives do not require Rust or Node.js; individual tools/MCP servers/plugins may need additional dependencies. From v0.1.41, Linux terminal archives target x86-64 servers with **glibc 2.31 or later** and the base `libgcc_s` runtime; they do not require X11, Wayland, PipeWire or other desktop libraries. They retain agent, shell, file, browser and plugin capabilities; real desktop screenshot/mouse/keyboard tools are available in the separate full desktop edition. Browser automation still needs its normal browser runtime. Earlier Linux terminal archives and graphical desktop packages retain their Ubuntu 24.04 system requirements. PDF vision on every platform requires Poppler.
+
+The release pipeline builds Linux terminal binaries in Debian 11, checks their ELF dependencies and GLIBC symbol versions, then starts the real daemon and SSH bridge in a clean Debian 11 image without network or graphical libraries. To build the same server edition from source, use `cargo build --release --locked --no-default-features -p miniq-daemon -p miniq-cli`; omit `--no-default-features` for native desktop control.
 
 macOS (Apple Silicon or Intel), from the checkout:
 
@@ -114,6 +116,22 @@ History is paged; use the returned `nextCursor` in `--before` until null. Large 
 The daemon is loopback-only and authenticated. Discovery uses `MINIQ_DATA_DIR` (Unix default `~/.local/share/miniq`; Windows `%LOCALAPPDATA%/miniq`), `MINIQ_DAEMON_PATH`, the binary next to the CLI, then installed locations/PATH. `--no-start` makes diagnostics connect-only. An OS lock prevents concurrent daemons from recovering/overwriting the same active database. To test independently, use a new `--data-dir` and a mock provider, not a copy of a live database.
 
 Terminal-only servers can use file, code, document, model, MCP and existing browser automation tools; browser automation needs an installed compatible browser. Native computer use needs a logged-in graphical session and screen/accessibility permissions. SSH, containers, mobile browsers and WSL do not gain control of an unrelated desktop by installing the CLI. Mobile remote access still uses miniQ's authenticated relay; it is not a public shell service. `doctor` checks permission state without requesting changes or restarting processes.
+
+## Desktop Connections over SSH
+
+`miniq bridge` exposes the authenticated local daemon connection as JSONL on standard input/output for miniQ desktop's SSH transport. Install matching `miniq` and `miniq-daemon` binaries on the remote computer first. The bridge discovers the remote user's saved data directory and starts a detached daemon if needed; `--no-start`, `--data-dir` and `--daemon-path` have the same meaning as other CLI commands. It does not listen on a public network port and does not print the daemon token or copy the local computer's provider key to the remote computer.
+
+After authenticated daemon health and protocol checks, the first stdout line is:
+
+```json
+{"type":"miniq_bridge_ready","protocolVersion":2,"version":"<installed version>"}
+```
+
+Send one JSON-RPC 2.0 request object per newline-terminated UTF-8 line, including an `id` and `method`. Responses and daemon events follow as JSON objects, one per line, in daemon order. Events received during startup follow the ready marker. Pretty-printed daemon JSON is normalized to one line without changing its content. Bridge input and output are limited to 16 MiB per message, matching the default daemon WebSocket frame limit; oversized messages fail explicitly instead of being truncated. Use the existing paginated and chunked file/history APIs for larger payloads.
+
+EOF or Ctrl+C closes only this connection; active tasks remain owned by the daemon. A broken connection exits nonzero with diagnostics on stderr. No request is replayed automatically, including requests whose outcome is unknown. Reconnect and inspect persisted session state before submitting another task. Closing desktop's SSH connection does not log out the remote provider or stop its daemon. Native computer use on a remote host still requires that host's graphical session and OS permissions.
+
+Developers can run `cargo build -p miniq-cli -p miniq-daemon` and then `node scripts/test-ssh-smoke.mjs` on macOS/Linux with OpenSSH installed. The optional smoke starts an isolated loopback SSH server with temporary keys, a fresh daemon data directory and a local mock model. It checks that an executing task survives SSH disconnection and completes once after reconnect. It neither uses production credentials nor changes system SSH configuration. `--keep` holds the fixture for the native proxy integration test until SIGTERM, then removes the temporary keys and stops its test services.
 
 ## Multimodal Files
 

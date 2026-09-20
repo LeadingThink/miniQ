@@ -196,6 +196,10 @@ async fn chat_turn_streams_and_persists() {
     assert_eq!(created["message"]["role"], "assistant");
     assert_eq!(created["message"]["content"], "hello from mock");
 
+    let timing = next_event_of(&mut ws, "turn_timing_changed").await;
+    assert_eq!(timing["timing"]["status"], "completed");
+    assert!(timing["timing"]["elapsedMs"].as_u64().is_some());
+
     next_event_of(&mut ws, "turn_completed").await;
 
     // Persistence: reopen the session and check both messages are stored.
@@ -204,6 +208,15 @@ async fn chat_turn_streams_and_persists() {
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0]["role"], "user");
     assert_eq!(messages[1]["content"], "hello from mock");
+    assert_eq!(messages[0]["turnTiming"], timing["timing"]);
+    assert_eq!(
+        resp["result"]["latestTurnTiming"]["messageId"],
+        messages[0]["id"]
+    );
+    assert_eq!(
+        resp["result"]["latestTurnTiming"]["timing"],
+        timing["timing"]
+    );
     assert_eq!(resp["result"]["session"]["status"], "idle");
     assert!(resp["result"]["turnProgress"].is_null());
     // Without a configured title model, the message prefix remains available
@@ -288,6 +301,13 @@ async fn provider_failure_marks_turn_failed() {
 
     let resp = call(&mut ws, "r4", "session.open", json!({"sessionId": sess_id})).await;
     assert_eq!(resp["result"]["session"]["status"], "failed");
+    assert_eq!(
+        resp["result"]["latestTurnTiming"]["timing"]["status"],
+        "failed"
+    );
+    assert!(resp["result"]["latestTurnTiming"]["timing"]["elapsedMs"]
+        .as_u64()
+        .is_some());
 }
 
 #[tokio::test]

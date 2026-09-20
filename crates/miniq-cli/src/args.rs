@@ -98,6 +98,8 @@ pub enum Commands {
         #[arg(default_value = "{}")]
         params: String,
     },
+    /// Authenticated JSONL stdio transport for desktop SSH connections. EOF detaches only.
+    Bridge,
     /// Generate shell completions without connecting to the daemon.
     Completions { shell: clap_complete::Shell },
 }
@@ -128,6 +130,7 @@ mod tests {
             vec!["miniq", "exec", "-", "--json", "-m", "gpt-5.6-sol"],
             vec!["miniq", "resume", "--last"],
             vec!["miniq", "resume", "sess-1", "continue"],
+            vec!["miniq", "bridge", "--no-start"],
         ] {
             assert!(Cli::try_parse_from(args).is_ok());
         }

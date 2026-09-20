@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { Message } from "../types";
+import { conversationTimestamp } from "../time";
 
 interface ConversationNavigationRailProps {
   messages: Message[];
@@ -188,6 +189,9 @@ export function ConversationNavigationRail({
       </div>
       {preview && (
         <div className="conversation-navigation-preview" ref={previewRef} aria-hidden="true">
+          {conversationTimestamp(preview.createdAt) && <time dateTime={preview.createdAt} className="conversation-navigation-time">
+            {conversationTimestamp(preview.createdAt)!.label}
+          </time>}
           {preview.content || preview.attachments?.map((attachment) => attachment.name).join("、") || "附件消息"}
         </div>
       )}

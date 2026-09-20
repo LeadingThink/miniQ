@@ -48,6 +48,8 @@ import { isTauriRuntime } from "../runtime";
 import { useSessionFileAccess } from "../sessionFileAccess";
 import { RemoteFileDownload } from "./RemoteFileDownload";
 import { PreviewTabs } from "./PreviewTabs";
+import { PreviewSelection } from "./PreviewSelection";
+import { usePreviewSelection } from "../hooks/usePreviewSelection";
 import type { LocalFileTarget } from "../localFiles";
 import "./PreviewFocus.css";
 import {
@@ -68,7 +70,14 @@ interface FilePreviewPanelProps {
   onRetry: () => void;
   tabs?: LocalFileTarget[];
   onCloseTab?: (path: string) => void;
-  onDiscuss?: (path: string) => void;
+  onCloseOtherTabs?: (path: string) => void;
+  onCloseAllTabs?: () => void;
+  onReopenClosedTab?: () => void;
+  canReopenClosedTab?: boolean;
+  onDiscuss?: (path: string, selection?: string) => void;
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
+  withinWorkbench?: boolean;
 }
 
 interface PreviewPanelContentProps extends FilePreviewPanelProps {
@@ -84,7 +93,8 @@ function fileName(path: string): string {
 
 export function FilePreviewPanel(props: FilePreviewPanelProps) {
   const [localStore] = useState(() => new PreviewViewStore());
-  const [expanded, setExpanded] = useState(false);
+  const [localExpanded, setExpanded] = useState(false);
+  const expanded = props.expanded ?? localExpanded;
   const path = props.preview.resolvedPath ?? props.preview.target?.path ?? "";
   const scope = props.viewScope ?? props.workspacePath;
   return (
@@ -96,7 +106,7 @@ export function FilePreviewPanel(props: FilePreviewPanelProps) {
       <PreviewPanelContent
         {...props}
         expanded={expanded}
-        onToggleExpanded={() => setExpanded((value) => !value)}
+        onToggleExpanded={props.onToggleExpanded ?? (() => setExpanded((value) => !value))}
       />
     </PreviewViewProvider>
   );
@@ -111,7 +121,12 @@ function PreviewPanelContent({
   onRetry,
   tabs = [],
   onCloseTab,
+  onCloseOtherTabs,
+  onCloseAllTabs,
+  onReopenClosedTab,
+  canReopenClosedTab,
   onDiscuss,
+  withinWorkbench = false,
   expanded,
   onToggleExpanded,
 }: PreviewPanelContentProps) {
@@ -130,6 +145,7 @@ function PreviewPanelContent({
   const viewCache = usePreviewCache();
   const target = preview.target;
   const path = preview.resolvedPath ?? target?.path ?? "";
+  const selection = usePreviewSelection(path, preview.content ?? preview.dataBase64);
   const line = target?.line ?? 1;
   const column = target?.column ?? 1;
 
@@ -194,9 +210,15 @@ function PreviewPanelContent({
     const save = () => viewCache.set("codeState", instance.saveViewState());
     const scroll = instance.onDidScrollChange(save);
     const cursor = instance.onDidChangeCursorPosition(save);
+    const selected = instance.onDidChangeCursorSelection(() => {
+      const range = instance.getSelection();
+      const text = range && !range.isEmpty() ? instance.getModel()?.getValueInRange(range) : "";
+      selection.setText(text && range ? `第 ${range.startLineNumber}–${range.endLineNumber} 行：\n${text}` : "");
+    });
     instance.onDidDispose(() => {
       scroll.dispose();
       cursor.dispose();
+      selected.dispose();
     });
   };
 
@@ -211,7 +233,7 @@ function PreviewPanelContent({
 
   return (
     <aside
-      className={`file-preview-panel${expanded ? " preview-expanded" : ""}`}
+      className={`file-preview-panel${expanded && !withinWorkbench ? " preview-expanded" : ""}`}
       aria-label="文件预览"
       onKeyDown={(event) => {
         if (event.key === "Escape" && expanded && !event.defaultPrevented) {
@@ -228,6 +250,10 @@ function PreviewPanelContent({
           id={contentId}
           onSelect={onOpenFile}
           onClose={onCloseTab}
+          onCloseOthers={onCloseOtherTabs}
+          onCloseAll={onCloseAllTabs}
+          onReopenClosed={onReopenClosedTab}
+          canReopenClosed={canReopenClosedTab}
         />
       )}
       <header className="file-preview-header">
@@ -243,17 +269,17 @@ function PreviewPanelContent({
             {preview.size !== null ? formatFileSize(preview.size) : ""}
           </small>
         )}
-        <button
+        {!withinWorkbench && <button
           className="icon-button"
           title="关闭预览"
           aria-label="关闭预览"
           onClick={onClose}
         >
           <X size={17} />
-        </button>
+        </button>}
         <section className="file-preview-tools" aria-label="文件操作">
           {onDiscuss && <button type="button" className="icon-button" aria-label="针对这个文件继续提问" title="针对这个文件继续提问" disabled={!path} onClick={() => onDiscuss(path)}><MessageSquare size={16} /></button>}
-          <button
+          {!withinWorkbench && <button
             type="button"
             className="icon-button"
             aria-label={expanded ? "恢复分栏预览" : "展开预览"}
@@ -267,7 +293,7 @@ function PreviewPanelContent({
             }}
           >
             {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-          </button>
+          </button>}
           {renderable && preview.content !== null && (
             <span
               className="preview-mode-toggle"
@@ -373,7 +399,10 @@ function PreviewPanelContent({
           )}
         </div>
       )}
+      {onDiscuss && <PreviewSelection text={selection.text} onClear={selection.clear}
+        onDiscuss={() => { onDiscuss(path, selection.text); selection.clear(); }} />}
       <div
+        ref={selection.ref}
         className="file-preview-content"
         id={contentId}
         role={tabs.length ? "tabpanel" : undefined}

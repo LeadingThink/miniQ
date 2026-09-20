@@ -16,6 +16,7 @@ pub struct Client {
     next_id: u64,
     scope: Option<String>,
     snapshot_cursor: Option<Value>,
+    connecting: bool,
     pub directory: PathBuf,
     pub reject_busy: bool,
 }
@@ -43,6 +44,7 @@ impl Client {
             next_id: 0,
             scope: None,
             snapshot_cursor: None,
+            connecting: true,
             directory: directory.into(),
             reject_busy: false,
         };
@@ -51,7 +53,14 @@ impl Client {
             bail!("daemon protocol differs from this CLI; update both before reconnecting");
         }
         client.reject_busy = health["capabilities"]["rejectBusy"] == true;
+        client.connecting = false;
         Ok(client)
+    }
+
+    pub fn into_bridge_parts(
+        self,
+    ) -> (WebSocketStream<MaybeTlsStream<TcpStream>>, VecDeque<Value>) {
+        (self.socket, self.events)
     }
 
     pub fn scope(&mut self, session: &str) {
@@ -89,7 +98,7 @@ impl Client {
                     }
                     return Ok(result);
                 }
-                if self.is_scoped(&value) {
+                if self.connecting || self.is_scoped(&value) {
                     self.events.push_back(value);
                 }
             }

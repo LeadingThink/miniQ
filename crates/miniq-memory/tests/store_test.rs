@@ -141,7 +141,7 @@ fn tool_call_lifecycle() {
     let call = store
         .create_tool_call(&sess.id, "shell_run", &input, None, ToolCallStatus::Running)
         .unwrap();
-    store
+    let completed_at = store
         .finish_tool_call(
             &call.id,
             ToolCallStatus::Succeeded,
@@ -154,7 +154,10 @@ fn tool_call_lifecycle() {
     assert_eq!(calls[0].status, ToolCallStatus::Succeeded);
     assert_eq!(calls[0].input, input);
     assert_eq!(calls[0].output.as_ref().unwrap()["exitCode"], 0);
-    assert!(calls[0].completed_at.is_some());
+    assert_eq!(
+        calls[0].completed_at.as_deref(),
+        Some(completed_at.as_str())
+    );
 }
 
 #[test]

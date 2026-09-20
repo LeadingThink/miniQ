@@ -3,6 +3,7 @@ import { errorMessage } from "../errorMessage";
 import { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 import { isMobileLayout } from "../mobileViewport";
+import { useDesktopHost } from "../desktopHost";
 import type {
   QueuedMessage,
   Session,
@@ -38,8 +39,20 @@ async function pickDirectory(): Promise<string | null> {
 }
 
 function useRpcClient(): RpcClient {
+  const desktop = useDesktopHost();
   const clientRef = useRef<RpcClient>();
-  if (!clientRef.current) clientRef.current = new RpcClient();
+  const lifecycle = useRef(0);
+  if (!clientRef.current) clientRef.current = new RpcClient(desktop?.host);
+  useEffect(() => {
+    const generation = ++lifecycle.current;
+    return () => {
+      // Let connection/event hooks unsubscribe first. StrictMode's immediate
+      // remount keeps its client; a real host switch disposes only the old one.
+      queueMicrotask(() => {
+        if (generation === lifecycle.current) clientRef.current?.disconnect("workspace detached");
+      });
+    };
+  }, []);
   return clientRef.current;
 }
 
@@ -131,6 +144,7 @@ function useCatalog(client: RpcClient) {
 }
 
 function useNavigationState() {
+  const [showRemoteFolder, setShowRemoteFolder] = useState(false);
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
   const [showExternalImport, setShowExternalImport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -139,6 +153,8 @@ function useNavigationState() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(isMobileLayout);
   const [page, setPage] = useState<AppPage>(null);
   return {
+    showRemoteFolder,
+    setShowRemoteFolder,
     editingWorkspaceId,
     setEditingWorkspaceId,
     showExternalImport,
@@ -204,6 +220,7 @@ function useWorkspaceActions(
   client: RpcClient,
   catalog: Catalog,
   setError: ErrorSetter,
+  openRemoteFolder: () => void,
 ) {
   const {
     refreshWorkspaces,
@@ -212,6 +229,7 @@ function useWorkspaceActions(
   } = catalog;
 
   const openWorkspace = useCallback(async () => {
+    if (client.sshHost) { openRemoteFolder(); return; }
     const path = await pickDirectory();
     if (!path) return;
     try {
@@ -223,6 +241,14 @@ function useWorkspaceActions(
     } catch (error) {
       setError(errorMessage(error));
     }
+  }, [client, refreshWorkspaces, setCurrentSessionId, setError, setSelectedWorkspaceId, openRemoteFolder]);
+
+  const openRemoteWorkspace = useCallback(async (path: string) => {
+    const workspace = await client.call<Workspace>("workspace.open", { path });
+    await refreshWorkspaces();
+    setSelectedWorkspaceId(workspace.id);
+    setCurrentSessionId(null);
+    setError(null);
   }, [client, refreshWorkspaces, setCurrentSessionId, setError, setSelectedWorkspaceId]);
 
   const createBlankProject = useCallback(
@@ -270,7 +296,7 @@ function useWorkspaceActions(
     [client, refreshWorkspaces, setError],
   );
 
-  return { openWorkspace, createBlankProject, deleteWorkspace, renameWorkspace };
+  return { openWorkspace, openRemoteWorkspace, createBlankProject, deleteWorkspace, renameWorkspace };
 }
 
 type SessionLifecycle = ReturnType<typeof useSessionLifecycleActions>;
@@ -453,6 +479,7 @@ function useInteractionActions(
 }
 
 export function useMiniqApp() {
+  const desktop = useDesktopHost();
   const client = useRpcClient();
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => new Set());
@@ -523,10 +550,10 @@ export function useMiniqApp() {
     refreshWorkspaces: catalog.refreshWorkspaces,
     refreshSessions: catalog.refreshSessions,
     onError: setConnectionError,
-    paused: updater.state.phase === "installing",
+    paused: updater.state.phase === "installing" || desktop?.pending,
   });
   const ensureProviderConfigured = useCallback(async () => {
-    if (client.mode !== "local") return true;
+    if (client.mode !== "local" && !client.sshHost) return true;
     try {
       const configured = connection.providerConfigured === true
         || await connection.refreshProviderConfiguration();
@@ -540,20 +567,22 @@ export function useMiniqApp() {
   }, [client.mode, connection.providerConfigured, connection.refreshProviderConfiguration, navigation.setShowSettings]);
   useEffect(() => {
     if (
-      client.mode !== "local" ||
+      (client.mode !== "local" && !client.sshHost) ||
       connection.connectionEpoch === 0 ||
       connection.providerConfigured !== false
     ) return;
     try {
-      if (window.localStorage.getItem(PROVIDER_ONBOARDING_KEY) === "seen") return;
-      window.localStorage.setItem(PROVIDER_ONBOARDING_KEY, "seen");
+      const key = `${PROVIDER_ONBOARDING_KEY}${client.sshHost ? `:${client.sshHost}` : ""}`;
+      if (window.localStorage.getItem(key) === "seen") return;
+      window.localStorage.setItem(key, "seen");
     } catch {
       // Storage can be unavailable; showing the setup screen is still safe.
     }
     navigation.setShowSettings(true);
   }, [client.mode, connection.connectionEpoch, connection.providerConfigured, navigation.setShowSettings]);
   const navigationActions = useNavigationActions(catalog, navigation, feed);
-  const workspaceActions = useWorkspaceActions(client, catalog, setError);
+  const openRemoteFolder = useCallback(() => navigation.setShowRemoteFolder(true), [navigation.setShowRemoteFolder]);
+  const workspaceActions = useWorkspaceActions(client, catalog, setError, openRemoteFolder);
   const lifecycle = useSessionLifecycleActions(
     client,
     catalog,

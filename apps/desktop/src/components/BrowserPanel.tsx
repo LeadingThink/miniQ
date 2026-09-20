@@ -1,10 +1,21 @@
-import { ArrowLeft, ArrowRight, ExternalLink, Globe2, RefreshCw, Square, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ExternalLink,
+  Globe2,
+  MessageSquare,
+  RefreshCw,
+  Square,
+  X,
+} from "lucide-react";
 import { useEffect, useRef } from "react";
 import { openExternalUrl } from "../externalLinks";
 import { errorMessage } from "../errorMessage";
 import { isTauriRuntime } from "../runtime";
 import { normalizeBrowserUrl } from "../browserWorkbench";
 import { useBrowserPanel } from "../hooks/useBrowserPanel";
+import { CopyButton } from "./CopyButton";
+import "./BrowserPanel.css";
 
 export function BrowserPanel(props: {
   url: string;
@@ -14,6 +25,7 @@ export function BrowserPanel(props: {
   suspended?: boolean;
   onNavigate: (url: string) => void;
   onClose: () => void;
+  onDiscuss?: (url: string) => void;
 }) {
   const surface = useRef<HTMLDivElement>(null);
   const addressInput = useRef<HTMLInputElement>(null);
@@ -39,7 +51,10 @@ export function BrowserPanel(props: {
       className={`browser-panel${props.active === false ? " browser-panel-inactive" : ""}`}
       aria-label="网页浏览器"
       onKeyDown={(event) => {
-        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "l") {
+        if (
+          (event.metaKey || event.ctrlKey) &&
+          event.key.toLowerCase() === "l"
+        ) {
           event.preventDefault();
           addressInput.current?.focus();
           addressInput.current?.select();
@@ -79,7 +94,11 @@ export function BrowserPanel(props: {
           disabled={browser.pending && reloadAction !== "stop"}
           onClick={() => void browser.action(reloadAction)}
         >
-          {reloadAction === "stop" ? <Square size={13} /> : <RefreshCw size={15} />}
+          {reloadAction === "stop" ? (
+            <Square size={13} />
+          ) : (
+            <RefreshCw size={15} />
+          )}
         </button>
         <form
           onSubmit={(event) => {
@@ -113,13 +132,31 @@ export function BrowserPanel(props: {
             placeholder="输入网址"
           />
         </form>
+        <CopyButton
+          content={browser.activeUrl}
+          label="复制当前网页链接"
+          onError={browser.setError}
+        />
+        {props.onDiscuss && (
+          <button
+            type="button"
+            className="icon-button"
+            title="针对当前网页提问"
+            aria-label="针对当前网页提问"
+            onClick={() => props.onDiscuss?.(browser.activeUrl)}
+          >
+            <MessageSquare size={16} />
+          </button>
+        )}
         <button
           type="button"
           className="icon-button"
           title="在系统浏览器中打开"
           aria-label="在系统浏览器中打开"
           onClick={() =>
-            void openExternalUrl(browser.activeUrl).catch((cause) => browser.setError(errorMessage(cause)))
+            void openExternalUrl(browser.activeUrl).catch((cause) =>
+              browser.setError(errorMessage(cause)),
+            )
           }
         >
           <ExternalLink size={16} />
@@ -171,7 +208,9 @@ export function BrowserPanel(props: {
       </div>
       <footer className="browser-status" role="status" aria-live="polite">
         <span className={browser.loading ? "browser-loading" : ""} />
-        <span>{browser.loading ? "正在加载" : native ? "内置浏览器" : "网页预览"}</span>
+        <span>
+          {browser.loading ? "正在加载" : native ? "内置浏览器" : "网页预览"}
+        </span>
         <code title={browser.activeUrl}>{browser.activeUrl}</code>
       </footer>
     </aside>

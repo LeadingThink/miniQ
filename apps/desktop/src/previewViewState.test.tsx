@@ -43,10 +43,6 @@ it("restores view state per session and file without cross-session leakage", () 
   expect(screen.getByRole("button").textContent).toBe("200%");
   expect(screen.getByTestId("viewport").scrollTop).toBe(450);
   expect(screen.getByTestId("viewport").scrollLeft).toBe(30);
-  view.rerender(element("two", "/a"));
-  store.closeFile("one", "/a");
-  view.rerender(element("one", "/a"));
-  expect(screen.getByRole("button").textContent).toBe("100%");
 });
 
 it("restores a provided viewport only after document layout is ready", () => {

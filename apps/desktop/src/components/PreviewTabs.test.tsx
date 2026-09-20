@@ -100,3 +100,59 @@ it("shows same-name directories and keeps the active tab visible and focused aft
     else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
   }
 });
+
+it("finds tabs beyond the visible strip by full path and supports keyboard selection", () => {
+  const targets = Array.from({ length: 80 }, (_, index) => ({ path: `/work/project-${index}/report.md`, line: null, column: null }));
+  const select = vi.fn();
+  render(<PreviewTabs id="search-tabs" tabs={targets} active={targets[0].path} onSelect={select} onClose={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "文件标签管理，80 个已打开" }));
+  const input = screen.getByRole("textbox", { name: "搜索打开的文件" });
+  expect(document.activeElement).toBe(input);
+  fireEvent.change(input, { target: { value: "PROJECT-79/REPORT" } });
+  expect(screen.getByRole("dialog").textContent).toContain(targets[79].path);
+  expect(screen.queryByRole("button", { name: "report.md /work/project-78/report.md" })).toBeNull();
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(document.activeElement?.getAttribute("title")).toBe(targets[79].path);
+  fireEvent.click(document.activeElement!);
+  expect(select).toHaveBeenCalledWith(targets[79]);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("offers tab management, escapes to its trigger and does not trap outside clicks", () => {
+  const onCloseOthers = vi.fn(), onCloseAll = vi.fn(), onReopenClosed = vi.fn();
+  const tabs = ["/one.md", "/two.md"].map((path) => ({ path, line: null, column: null }));
+  render(<><button>外部内容</button><PreviewTabs id="manage-tabs" tabs={tabs} active={tabs[1].path} onSelect={() => {}} onClose={() => {}}
+    onCloseOthers={onCloseOthers} onCloseAll={onCloseAll} onReopenClosed={onReopenClosed} canReopenClosed /></>);
+  const trigger = screen.getByRole("button", { name: "文件标签管理，2 个已打开" });
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("button", { name: "关闭其他文件" }));
+  expect(onCloseOthers).toHaveBeenCalledWith("/two.md");
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("button", { name: "关闭全部文件" }));
+  expect(onCloseAll).toHaveBeenCalledOnce();
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("button", { name: "重新打开已关闭文件" }));
+  expect(onReopenClosed).toHaveBeenCalledOnce();
+  fireEvent.click(trigger);
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "missing" } });
+  expect(screen.getByText("没有匹配的文件")).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape" });
+  expect(document.activeElement).toBe(trigger);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(trigger);
+  fireEvent.pointerDown(screen.getByRole("button", { name: "外部内容" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("keeps reopening discoverable with no open files and supports middle-click close", () => {
+  const onClose = vi.fn(), onReopenClosed = vi.fn();
+  const view = render(<PreviewTabs id="empty-tabs" tabs={[]} active="" onSelect={() => {}} onClose={onClose}
+    onReopenClosed={onReopenClosed} canReopenClosed />);
+  fireEvent.click(screen.getByRole("button", { name: "文件标签管理，0 个已打开" }));
+  fireEvent.click(screen.getByRole("button", { name: "重新打开已关闭文件" }));
+  expect(onReopenClosed).toHaveBeenCalledOnce();
+  view.rerender(<PreviewTabs id="empty-tabs" tabs={[{ path: "/one.md", line: null, column: null }]}
+    active="/one.md" onSelect={() => {}} onClose={onClose} />);
+  fireEvent(screen.getByRole("tab"), new MouseEvent("auxclick", { bubbles: true, button: 1 }));
+  expect(onClose).toHaveBeenCalledWith("/one.md");
+});

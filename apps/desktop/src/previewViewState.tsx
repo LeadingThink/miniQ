@@ -31,9 +31,6 @@ export class PreviewViewStore {
     }
     return values;
   }
-  closeFile(scope: string, path: string) {
-    this.views.delete(JSON.stringify([scope, path]));
-  }
 }
 
 const PreviewContext = createContext<ViewValues | null>(null);

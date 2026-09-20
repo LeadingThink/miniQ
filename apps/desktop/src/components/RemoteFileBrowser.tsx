@@ -7,9 +7,11 @@ import type { FileReadOptions, RemoteDirectory } from "../remoteFiles";
 export function RemoteFileBrowser({
   access,
   onOpen,
+  label = "远端项目文件",
 }: {
   access: FileReadOptions;
   onOpen: (path: string) => void;
+  label?: string;
 }) {
   const { client, sessionId } = access;
   const [location, setLocation] = useState({ client, sessionId, path: "" });
@@ -89,7 +91,7 @@ export function RemoteFileBrowser({
   return (
     <section
       className="remote-file-browser"
-      aria-label="远端项目文件"
+      aria-label={label}
       aria-busy={loading}
     >
       {page && (
@@ -169,7 +171,7 @@ export function RemoteFileBrowser({
           )}
         </>
       )}
-      {loading && <p role="status">正在读取远端目录…</p>}
+      {loading && <p role="status">正在读取目录…</p>}
       {error && (
         <div role="alert">
           {error}

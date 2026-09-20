@@ -200,6 +200,17 @@ async fn queued_message_runs_after_turn_completes() {
     let users: Vec<_> = messages.iter().filter(|m| m["role"] == "user").collect();
     assert_eq!(users.len(), 2);
     assert_eq!(users[1]["content"], "two");
+    assert!(users
+        .iter()
+        .all(|message| message["turnTiming"]["status"] == "completed"));
+    assert_ne!(
+        users[0]["turnTiming"]["startedAt"],
+        users[1]["turnTiming"]["startedAt"]
+    );
+    assert_eq!(
+        resp["result"]["latestTurnTiming"]["messageId"],
+        users[1]["id"]
+    );
     assert_eq!(resp["result"]["session"]["status"], "idle");
 }
 
@@ -270,6 +281,17 @@ async fn steer_interrupts_running_turn_and_promotes_message() {
         .map(|m| m["content"].as_str().unwrap().to_string())
         .collect();
     assert_eq!(users, vec!["slow task", "steer me", "queued a"]);
+    let timings = resp["result"]["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|message| message["role"] == "user")
+        .map(|message| message["turnTiming"]["status"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        timings,
+        vec![json!("cancelled"), json!("completed"), json!("completed")]
+    );
 }
 
 #[tokio::test]

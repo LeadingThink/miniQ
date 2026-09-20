@@ -72,6 +72,32 @@ function setup() {
   };
 }
 
+it("keeps total timing across phase changes and completed history while isolating sessions", () => {
+  const hook = setup();
+  act(() => hook.result.current.load("a", snapshot));
+  const startedAt = "2026-09-20T00:00:00Z";
+  hook.emit({ type: "turn_timing_changed", sessionId: "a", messageId: "m-a", timing: { startedAt, status: "running" } });
+  hook.emit({ type: "turn_progress_changed", sessionId: "a", progress: { startedAt: "2026-09-20T00:00:40Z", phase: "waiting_retry" } });
+  expect(hook.result.current.latestTurnTiming?.timing.startedAt).toBe(startedAt);
+  const finished = { startedAt, status: "completed" as const, completedAt: "2026-09-20T00:01:00Z", elapsedMs: 60_000 };
+  hook.emit({ type: "turn_timing_changed", sessionId: "a", messageId: "m-a", timing: finished });
+  hook.emit({ type: "turn_completed", sessionId: "a" });
+  expect(hook.result.current.latestTurnTiming?.timing).toEqual(finished);
+  expect(hook.result.current.messages[0].turnTiming).toEqual(finished);
+  hook.rerender({ id: "b" });
+  expect(hook.result.current.latestTurnTiming).toBeNull();
+});
+
+it("uses daemon tool timestamps when events are received or replayed much later", () => {
+  const hook = setup();
+  act(() => hook.result.current.load("a", snapshot));
+  hook.emit({ type: "tool_call_started", sessionId: "a", toolCallId: "delayed", toolName: "file_read", input: {}, createdAt: "2026-09-01T00:00:00Z" });
+  hook.emit({ type: "tool_call_finished", sessionId: "a", toolCallId: "delayed", status: "succeeded", completedAt: "2026-09-01T00:00:05Z" });
+  expect(hook.result.current.toolCalls.find((call) => call.id === "delayed")).toMatchObject({
+    createdAt: "2026-09-01T00:00:00Z", completedAt: "2026-09-01T00:00:05Z",
+  });
+});
+
 it("a new session immediately has no prior messages, tasks or streaming text", () => {
   const hook = setup();
   act(() => hook.result.current.load("a", snapshot));

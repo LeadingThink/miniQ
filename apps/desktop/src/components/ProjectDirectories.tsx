@@ -8,13 +8,14 @@ import "./ProjectDirectories.css";
 
 interface Props {
   readOnly?: boolean;
+  remote?: boolean;
   workspace: Workspace;
   sessions: Session[];
   onSave: (paths: string[]) => Promise<void>;
   onClose: () => void;
 }
 
-export function ProjectDirectories({ workspace, sessions, onSave, onClose, readOnly = false }: Props) {
+export function ProjectDirectories({ workspace, sessions, onSave, onClose, readOnly = false, remote = false }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [paths, setPaths] = useState(() => [workspace.path, ...workspace.additionalPaths]);
   const [path, setPath] = useState("");
@@ -85,7 +86,7 @@ export function ProjectDirectories({ workspace, sessions, onSave, onClose, readO
       </ol>
       {!readOnly && <form className="project-root-add" onSubmit={(event) => { event.preventDefault(); if (!disabled) addPath(path); }}>
         <input aria-label="目录绝对路径" placeholder="目录绝对路径" value={path} disabled={disabled} onChange={(event) => setPath(event.target.value)} />
-        {isTauriRuntime() && <button type="button" disabled={disabled} title="选择文件夹" aria-label="选择文件夹" onClick={() => void browse()}><FolderOpen size={17} /></button>}
+        {isTauriRuntime() && !remote && <button type="button" disabled={disabled} title="选择文件夹" aria-label="选择文件夹" onClick={() => void browse()}><FolderOpen size={17} /></button>}
         <button type="submit" disabled={disabled || !path.trim()} title="添加目录" aria-label="添加目录"><Plus size={18} /></button>
       </form>}
       {active && <div role="status">项目有任务正在运行，目录暂不可修改</div>}

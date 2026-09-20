@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = ["desktop"]
+desktop = ["miniq-tools/desktop"]
+
 [dependencies]
 miniq-local = { path = "../miniq-local" }
 miniq-docs = { path = "../miniq-docs" }
@@ -12,7 +16,7 @@ miniq-memory = { path = "../miniq-memory" }
 miniq-session-connectors = { path = "../miniq-session-connectors" }
 miniq-models = { path = "../miniq-models" }
 miniq-agent = { path = "../miniq-agent" }
-miniq-tools = { path = "../miniq-tools" }
+miniq-tools = { path = "../miniq-tools", default-features = false }
 miniq-plugins = { path = "../miniq-plugins" }
 miniq-sandbox = { path = "../miniq-sandbox" }
 miniq-skills = { path = "../miniq-skills" }

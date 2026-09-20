@@ -3,8 +3,7 @@ import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
 import { LoaderCircle, PlugZap, Sparkles } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
-import { flushSync } from "react-dom";
+import { lazy, Suspense, useState } from "react";
 import { Composer, ComposerCard } from "./Composer";
 import type { ComposerSlashCommand } from "../composerSlash";
 import { useAppSlashCommands } from "../hooks/useAppSlashCommands";
@@ -13,24 +12,23 @@ import { ExternalSessionImportDialog } from "./ExternalSessionImport";
 import { McpPanel } from "./Mcp";
 import { PluginsPanel } from "./Plugins";
 import { ProjectPicker } from "./ProjectPicker";
-import { ReviewPanel } from "./ReviewPanel";
 import { SchedulePanel } from "./Schedule";
 import { SearchOverlay, type PaletteCommand } from "./Search";
 import { SettingsPanel } from "./Settings";
 import { Sidebar } from "./Sidebar";
 import { SkillsPanel } from "./Skills";
 import { StarterPrompts } from "./StarterPrompts";
-import { WorkbenchPanel } from "./WorkbenchPanel";
 import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 import { SessionModelControls } from "./SessionModelControls";
 import { SessionPermissionControls } from "./SessionPermissionControls";
 import { AgentPanel } from "./AgentPanel";
 import { ProjectDirectories } from "./ProjectDirectories";
-import { useBrowserDriverEvents } from "../hooks/useBrowserDriverEvents";
-import { BrowserTabs } from "./BrowserTabs";
-import { openExternalUrl } from "../externalLinks";
 import { isMobileLayout } from "../mobileViewport";
-import { adoptDraftBrowserTabs, BROWSER_DRAFT_CREATED_EVENT, browserDraftScope, closeBrowserTab, EMPTY_BROWSER_TABS, openBrowserTab, updateBrowserTab, type BrowserDraftCreatedDetail, type BrowserTabsState } from "../browserTabs";
+import { hostDraftKey } from "../desktopHost";
+import { RemotePathDialog } from "./RemotePathDialog";
+
+import { useAppWorkbench } from "../hooks/useAppWorkbench";
+import { AppWorkbench } from "./AppWorkbench";
 
 interface AppOnlyProps {
   app: MiniqAppController;
@@ -41,30 +39,10 @@ interface AppShellProps extends AppOnlyProps {
   onThemeChange: (theme: ThemeId) => void;
 }
 
-const FilePreviewPanel = lazy(async () => {
-  const module = await import("./FilePreviewPanel");
-  return { default: module.FilePreviewPanel };
-});
-
-const BrowserPanel = lazy(async () => {
-  const module = await import("./BrowserPanel");
-  return { default: module.BrowserPanel };
-});
-
-const RemoteBrowserPanel = lazy(async () => {
-  const module = await import("./RemoteBrowserPanel");
-  return { default: module.RemoteBrowserPanel };
-});
-
 const Timeline = lazy(async () => {
   const module = await import("./Timeline");
   return { default: module.Timeline };
 });
-
-function openFileTarget(app: MiniqAppController, target: LocalFileTarget) {
-  app.review.setOpen(false);
-  void app.preview.openFile(target);
-}
 
 function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
   const editingWorkspace = app.catalog.workspaces.find(
@@ -72,11 +50,15 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
   );
   return (
     <>
+      {app.navigation.showRemoteFolder && app.client.sshHost && <RemotePathDialog
+        host={app.client.sshHost} purpose="project" onSubmit={app.actions.openRemoteWorkspace}
+        onClose={() => app.navigation.setShowRemoteFolder(false)} />}
       {editingWorkspace && (
         <ProjectDirectories
           key={editingWorkspace.id}
           workspace={editingWorkspace}
-          readOnly={app.client.mode === "remote"}
+          readOnly={app.client.mode === "remote" && !app.client.sshHost}
+          remote={!!app.client.sshHost}
           sessions={app.catalog.sessions.filter(
             (session) => session.workspaceId === editingWorkspace.id,
           )}
@@ -179,6 +161,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
           workspacePaths={app.catalog.currentWorkspacePaths}
           streamingText={app.feed.streamingText}
           turnProgress={app.feed.turnProgress}
+          latestTurnTiming={app.feed.latestTurnTiming}
           busy={!!app.busy}
           onResolveApproval={app.actions.resolveApproval}
           onResolveQuestion={app.actions.resolveQuestion}
@@ -205,7 +188,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
         sendBlocked={!app.sessionModel.ready || app.sessionModel.pending}
         busy={!!app.busy}
         chip={app.catalog.currentWorkspace?.name}
-        draftKey={app.catalog.currentSessionId ?? undefined}
+        draftKey={hostDraftKey(app.client.sshHost, app.catalog.currentSessionId!)}
         draftRequest={draftRequest}
         onDraftRequestApplied={onDraftRequestApplied}
         client={app.client}
@@ -248,7 +231,7 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
           }
           busy={false}
           autoFocus
-          draftKey="hero"
+          draftKey={hostDraftKey(app.client.sshHost, "hero")}
           draftRequest={draftRequest}
           client={app.client}
           placeholder={
@@ -394,83 +377,11 @@ function buildPaletteCommands(app: MiniqAppController): PaletteCommand[] {
 }
 
 export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
-  const browserScope =
-    app.catalog.currentSessionId ??
-    browserDraftScope(app.catalog.selectedWorkspace?.id);
-  const [browserSessions, setBrowserSessions] = useState<Record<string, BrowserTabsState>>({});
-  const [remoteBrowserSession, setRemoteBrowserSession] = useState<string | null>(null);
-  const remoteBrowserOpen = app.client.mode === "remote" && remoteBrowserSession !== null && remoteBrowserSession === app.catalog.currentSessionId;
+  const workbench = useAppWorkbench(app);
   const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
-  const browserState = browserSessions[browserScope] ?? EMPTY_BROWSER_TABS;
-  const activeBrowserTab = browserState.tabs.find((tab) => tab.id === browserState.activeId) ?? null;
-  const browserUrl = browserState.open ? activeBrowserTab?.url ?? null : null;
-  const hideBrowserPanel = () => {
-    setRemoteBrowserSession(null);
-    setBrowserSessions((current) => {
-      const state = current[browserScope] ?? EMPTY_BROWSER_TABS;
-      return { ...current, [browserScope]: { ...state, open: false } };
-    });
-  };
-  const openNewBrowserTab = (url = "https://www.bing.com/") => setBrowserSessions((current) => ({ ...current, [browserScope]: openBrowserTab(current[browserScope] ?? EMPTY_BROWSER_TABS, url) }));
-  const openBrowserUrl = (url: string) => {
-    if (app.client.mode === "remote") {
-      if (/^https?:\/\//i.test(url)) void openExternalUrl(url).catch((error) => app.setError(String(error)));
-      return;
-    }
-    app.preview.close();
-    app.review.setOpen(false);
-    openNewBrowserTab(url);
-  };
-  const openBrowserWorkbench = () => {
-    app.preview.close();
-    app.review.setOpen(false);
-    if (app.client.mode === "remote") setRemoteBrowserSession(app.catalog.currentSessionId);
-    else if (activeBrowserTab) setBrowserSessions((current) => ({ ...current, [browserScope]: { ...browserState, open: true } }));
-    else openNewBrowserTab();
-  };
-  useBrowserDriverEvents(app.client, browserSessions, setBrowserSessions);
-  useEffect(() => {
-    const adoptDraft = (event: Event) => {
-      const detail = (event as CustomEvent<BrowserDraftCreatedDetail>).detail;
-      if (!detail || typeof detail.workspaceId !== "string" || typeof detail.sessionId !== "string") return;
-      // Adopt before session.sendMessage can produce browser-driver requests.
-      // Stable tab/view keys retain the native page and its unsaved form state.
-      flushSync(() => setBrowserSessions((current) => adoptDraftBrowserTabs(current, detail.workspaceId, detail.sessionId)));
-    };
-    window.addEventListener(BROWSER_DRAFT_CREATED_EVENT, adoptDraft);
-    return () => window.removeEventListener(BROWSER_DRAFT_CREATED_EVENT, adoptDraft);
-  }, []);
-  useEffect(() => {
-    const openFromObservation = (event: Event) => {
-      const detail = (event as CustomEvent<{ url?: unknown; tabId?: unknown }>).detail;
-      const url = detail?.url;
-      if (typeof url !== "string" || !url.trim()) return;
-      if (app.client.mode === "remote") return;
-      app.preview.close();
-      app.review.setOpen(false);
-      setBrowserSessions((current) => {
-        const state = current[browserScope] ?? EMPTY_BROWSER_TABS;
-        const existing = typeof detail.tabId === "string" ? state.tabs.find((tab) => tab.viewId === detail.tabId) : undefined;
-        return { ...current, [browserScope]: existing
-          ? { ...state, activeId: existing.id, open: true }
-          : openBrowserTab(state, url) };
-      });
-    };
-    window.addEventListener("miniq:open-browser", openFromObservation);
-    return () => window.removeEventListener("miniq:open-browser", openFromObservation);
-  }, [browserScope]);
-  const openPreviewFile = (target: LocalFileTarget) => {
-    hideBrowserPanel();
-    openFileTarget(app, target);
-  };
-
   const slash = useAppSlashCommands(app, {
-    onOpenBrowser: openBrowserWorkbench,
-    onOpenReview: () => {
-      hideBrowserPanel();
-      app.preview.close();
-      app.review.setOpen(true);
-    },
+    onOpenBrowser: () => workbench.select("browser"),
+    onOpenReview: () => workbench.select("review"),
   });
 
   useGlobalShortcuts({
@@ -482,11 +393,6 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
       app.navigation.setSidebarCollapsed(!app.navigation.sidebarCollapsed),
   });
 
-  const workbenchOpen = Boolean(
-    browserUrl || remoteBrowserOpen ||
-    (app.preview.state.open && app.catalog.currentWorkspace) ||
-    (app.review.open && app.catalog.currentWorkspace),
-  );
   const closeMobileSidebar = () => {
     if (isMobileLayout()) {
       app.navigation.setSidebarCollapsed(true);
@@ -583,12 +489,13 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
       <div className="main">
         <AppStatusBar
           app={app}
-          onOpenFile={openPreviewFile}
-          onOpenBrowser={openBrowserWorkbench}
+          onOpenFile={workbench.openFile}
+          onOpenBrowser={() => workbench.select("browser")}
+          onToggleWorkbench={() => workbench.active ? workbench.close() : workbench.select("overview")}
+          workbenchOpen={!!workbench.active}
           onToggleReview={() => {
-            hideBrowserPanel();
-            app.preview.close();
-            app.review.setOpen(!app.review.open);
+            if (workbench.active === "review") workbench.close();
+            else workbench.select("review");
           }}
         />
         <AppErrorBanner app={app} />
@@ -597,101 +504,15 @@ export function AppShell({ app, theme, onThemeChange }: AppShellProps) {
         <MainPage
           app={app}
           slashCommands={slash.commands}
-          onOpenUrl={openBrowserUrl}
-          onOpenFile={openPreviewFile}
+          onOpenUrl={workbench.openUrl}
+          onOpenFile={workbench.openFile}
           draftRequest={fileQuestion?.sessionId === app.catalog.currentSessionId ? fileQuestion : undefined}
           onDraftRequestApplied={() => setFileQuestion(undefined)}
         />
       </div>
-      {(workbenchOpen || Object.values(browserSessions).some((state) => state.tabs.length)) && (
-        <WorkbenchPanel hidden={!workbenchOpen}>
-          {remoteBrowserOpen && app.catalog.currentSessionId && <Suspense fallback={<div role="status">正在加载网页记录…</div>}>
-            <RemoteBrowserPanel key={app.catalog.currentSessionId} client={app.client} sessionId={app.catalog.currentSessionId}
-              calls={app.feed.toolCalls} hasOlder={Boolean(app.feed.nextCursor)} loadingOlder={app.actions.loadingOlder}
-              onLoadOlder={() => void app.actions.loadOlder()} onClose={hideBrowserPanel}
-              onDiscuss={(content) => {
-                setFileQuestion({ sessionId: app.catalog.currentSessionId!, id: Date.now(), content, append: true });
-                hideBrowserPanel();
-              }} />
-          </Suspense>}
-          {Object.values(browserSessions).some((state) => state.tabs.length) && (
-            <Suspense
-              fallback={
-                <aside className="browser-panel">
-                  <div className="diff-empty">正在启动浏览器...</div>
-                </aside>
-              }
-            >
-              <div className="browser-workbench" hidden={!browserUrl}>
-              <BrowserTabs
-                tabs={browserState.tabs}
-                activeId={browserState.activeId}
-                onSelect={(id) => setBrowserSessions((current) => ({ ...current, [browserScope]: { ...(current[browserScope] ?? EMPTY_BROWSER_TABS), activeId: id } }))}
-                onClose={(id) => setBrowserSessions((current) => ({ ...current, [browserScope]: closeBrowserTab(current[browserScope] ?? EMPTY_BROWSER_TABS, id) }))}
-                onNew={() => openNewBrowserTab()}
-              />
-              {Object.entries(browserSessions).flatMap(([scope, state]) => state.tabs.map((tab) => <BrowserPanel
-                key={tab.id}
-                url={tab.url}
-                viewId={tab.viewId}
-                browserSessionId={tab.browserSessionId}
-                active={scope === browserScope && tab.id === browserState.activeId && !!browserUrl}
-                suspended={
-                  app.navigation.showSettings ||
-                  app.navigation.showSearch ||
-                  app.navigation.showDistill ||
-                  app.navigation.showExternalImport ||
-                  Boolean(app.navigation.editingWorkspaceId)
-                }
-                onNavigate={(url) => setBrowserSessions((current) => ({ ...current, [scope]: updateBrowserTab(current[scope] ?? EMPTY_BROWSER_TABS, tab.id, url) }))}
-                onClose={() => setBrowserSessions((current) => ({ ...current, [scope]: { ...(current[scope] ?? EMPTY_BROWSER_TABS), open: false } }))}
-              />))}
-              </div>
-            </Suspense>
-          )}
-          {!browserUrl && app.preview.state.open && app.catalog.currentWorkspace ? (
-            <Suspense
-              fallback={
-                <aside className="file-preview-panel">
-                  <div className="diff-empty">正在加载编辑器...</div>
-                </aside>
-              }
-            >
-              <FilePreviewPanel
-                viewStore={app.preview.views}
-                viewScope={app.preview.viewScope}
-                key={app.catalog.currentSessionId}
-                preview={app.preview.state}
-                tabs={app.preview.tabs}
-                onCloseTab={app.preview.closeTab}
-                workspacePath={
-                  app.catalog.currentSession?.workingDirectory ??
-                  app.catalog.currentWorkspace.path
-                }
-                workspacePaths={app.catalog.currentWorkspacePaths}
-                onClose={app.preview.close}
-                onDiscuss={(path) => {
-                  const sessionId = app.catalog.currentSessionId;
-                  if (!sessionId) return;
-                  setFileQuestion({ sessionId, id: Date.now(), content: `关于文件「${path}」：\n`, append: true });
-                  app.preview.close();
-                }}
-                onOpenFile={(target) => void app.preview.openFile(target)}
-                onRetry={() => {
-                  const target = app.preview.state.target;
-                  if (target) void app.preview.openFile(target);
-                }}
-              />
-            </Suspense>
-          ) : !browserUrl && app.review.open && app.catalog.currentWorkspace ? (
-            <ReviewPanel
-              diff={app.review.data}
-              onOpenFile={openPreviewFile}
-              onClose={() => app.review.setOpen(false)}
-            />
-          ) : null}
-        </WorkbenchPanel>
-      )}
+      <AppWorkbench app={app} workbench={workbench} onDiscuss={(content) => {
+        if (app.catalog.currentSessionId) setFileQuestion({ sessionId: app.catalog.currentSessionId, id: Date.now(), content, append: true });
+      }} />
     </div>
   );
 }

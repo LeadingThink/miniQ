@@ -148,6 +148,7 @@ impl Store {
             content: queued.content,
             attachments: queued.attachments,
             created_at: now_iso(),
+            turn_timing: None,
         };
         super::conversation::insert_message(&transaction, &message)?;
         transaction.execute(

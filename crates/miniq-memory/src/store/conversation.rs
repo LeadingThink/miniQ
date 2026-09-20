@@ -83,6 +83,7 @@ impl Store {
             content: content.to_string(),
             attachments: attachments.to_vec(),
             created_at: now_iso(),
+            turn_timing: None,
         };
         insert_message(&conn, &message)?;
         Ok(message)
@@ -102,7 +103,9 @@ impl Store {
                m.id ASC",
         )?;
         let rows = stmt.query_map(params![session_id], row_to_message)?;
-        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+        let mut messages = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        super::turn_timing::attach(&conn, &mut messages)?;
+        Ok(messages)
     }
 
     pub fn rewrite_session_from_user_message(
@@ -135,6 +138,12 @@ impl Store {
             collect_ids_since(&transaction, "tool_calls", session_id, &message.created_at)?;
         let removed_artifact_ids =
             collect_ids_since(&transaction, "artifacts", session_id, &message.created_at)?;
+        transaction.execute(
+            "DELETE FROM audit_events WHERE session_id = ?1 AND event_type = 'turn_timing'
+             AND id IN (SELECT 'turn_timing_' || id FROM messages WHERE session_id = ?1
+                 AND (id = ?3 OR created_at > ?2 OR (created_at = ?2 AND id > ?3)))",
+            params![session_id, message.created_at, message_id],
+        )?;
 
         transaction.execute(
             "DELETE FROM approvals WHERE tool_call_id IN (
@@ -236,7 +245,9 @@ impl Store {
              LIMIT ?2",
         )?;
         let rows = stmt.query_map(params![pattern, limit as i64], row_to_message)?;
-        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+        let mut messages = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        super::turn_timing::attach(&conn, &mut messages)?;
+        Ok(messages)
     }
 
     pub fn create_tool_call(
@@ -292,17 +303,18 @@ impl Store {
         id: &str,
         status: ToolCallStatus,
         output: Option<&Value>,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let conn = self.conn.lock().unwrap();
         let output_json = output.map(serde_json::to_string).transpose()?;
+        let completed_at = now_iso();
         let updated = conn.execute(
             "UPDATE tool_calls SET status = ?2, output_json = ?3, completed_at = ?4 WHERE id = ?1",
-            params![id, status.as_str(), output_json, now_iso()],
+            params![id, status.as_str(), output_json, completed_at],
         )?;
         if updated == 0 {
             return Err(MemoryError::NotFound(format!("tool_call {id}")));
         }
-        Ok(())
+        Ok(completed_at)
     }
 
     pub fn update_tool_call_status(&self, id: &str, status: ToolCallStatus) -> Result<()> {

@@ -56,7 +56,8 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it("copies the complete Markdown source of either role without action or status text", async () => {
   const markdown = `# 完整答案\n\n${"保留全部内容，**不要截断**。\n".repeat(1200)}\n\`\`\`ts\nconst answer = 42;\n\`\`\``;
-  seed([{ role: "user", content: "请保留 Markdown" }, { role: "assistant", content: markdown, status: "interrupted" }]);
+  seed([{ role: "user", content: "请保留 Markdown", createdAt: "2026-09-20T08:00:00.000Z" },
+    { role: "assistant", content: markdown, status: "interrupted", createdAt: "2026-09-20T08:00:00.000Z", elapsedMs: 72_000 }]);
   installFetcher();
   render(<MobileChat apiKey="test-key" onBack={() => {}} />);
   fireEvent.click(within(rows()[0]).getByRole("button", { name: "复制" }));
@@ -64,6 +65,8 @@ it("copies the complete Markdown source of either role without action or status 
   fireEvent.click(within(rows()[1]).getByRole("button", { name: "复制" }));
   await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith(markdown));
   expect(within(rows()[1]).getByRole("button", { name: "已复制" })).toBeTruthy();
+  expect(rows()[0].querySelector("time")?.dateTime).toBe("2026-09-20T08:00:00.000Z");
+  expect(within(rows()[1]).getByText("用时 1 分 12 秒")).toBeTruthy();
   await screen.findByText("chat-model");
 });
 

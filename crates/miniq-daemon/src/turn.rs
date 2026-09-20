@@ -3,7 +3,7 @@
 
 use miniq_agent::{run_turn_with_limits, AgentError, AgentEvent, ContextPolicy, RunLimits};
 use miniq_models::{ChatImage, ChatMessage, ChatRole};
-use miniq_protocol::{Event, Message, Role, SessionStatus, TurnPhase};
+use miniq_protocol::{Event, Message, Role, SessionStatus, TurnPhase, TurnTimingStatus};
 use std::path::Path;
 use tokio_util::sync::CancellationToken;
 
@@ -199,12 +199,16 @@ fn runtime_context(workspace_path: &Path) -> String {
 /// persisted and the turn slot is registered in `state.active_turns`.
 pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken) {
     tokio::spawn(async move {
+        let clock = crate::turn_clock::TurnClock::start(&state, &session_id);
         let result = execute_turn(&state, &session_id, cancel).await;
-        let outcome = match &result {
-            Ok(()) => "completed",
-            Err(TurnError::Cancelled) => "cancelled",
-            Err(TurnError::Fatal(_)) => "failed",
+        let (outcome, timing_status) = match &result {
+            Ok(()) => ("completed", TurnTimingStatus::Completed),
+            Err(TurnError::Cancelled) => ("cancelled", TurnTimingStatus::Cancelled),
+            Err(TurnError::Fatal(_)) => ("failed", TurnTimingStatus::Failed),
         };
+        if let Some(clock) = clock {
+            clock.finish(&state, &session_id, timing_status);
+        }
         if let Err(error) = state.store.record_turn_outcome(&session_id, outcome) {
             tracing::error!(%error, %session_id, "failed to persist turn outcome");
         }
@@ -551,6 +555,7 @@ async fn execute_turn(
         content: outcome.final_text.clone(),
         attachments: Vec::new(),
         created_at: miniq_memory::now_iso(),
+        turn_timing: None,
     };
     // The first entry is the runtime system prompt, rebuilt on every turn.
     // Keep any compacted summary plus the exact transcript used by the final
@@ -593,6 +598,7 @@ mod tests {
             content: content.to_string(),
             attachments: Vec::new(),
             created_at: "2026-08-30T00:00:00Z".to_string(),
+            turn_timing: None,
         }
     }
 

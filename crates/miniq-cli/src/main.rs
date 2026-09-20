@@ -1,4 +1,5 @@
 mod args;
+mod bridge;
 mod client;
 mod monitor;
 mod output;
@@ -44,6 +45,10 @@ async fn run(cli: Cli) -> Result<u8> {
     let directory = cli.data_dir.clone().unwrap_or_else(miniq_local::data_dir);
     let mut client = client::ensure(&directory, cli.daemon_path.as_deref(), cli.no_start).await?;
     let result = match cli.command {
+        Some(Commands::Bridge) => {
+            bridge::run(client).await?;
+            return Ok(0);
+        }
         Some(Commands::Exec(exec)) => return execute(&mut client, &cli.chat, exec).await,
         Some(Commands::Resume { session, last: _, prompt }) => {
             require_terminal()?;

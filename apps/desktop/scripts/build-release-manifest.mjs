@@ -147,7 +147,11 @@ export function buildRelease({ input, output, tag, assetBaseUrl, mirrorBaseUrl, 
   copyOptionalArtifact(linux, ".deb", "Linux deb", outputRoot, `miniQ_${version}_amd64.deb`);
 
   for (const target of Object.values(TARGETS)) {
-    const archive = findOptionalOne(artifactDirectory(inputRoot, target), `${target}.terminal.tar.gz`, `${target} terminal`);
+    // Linux terminal artifacts are built separately on the server glibc baseline.
+    const archive = findOptionalOne(inputRoot, `${target}.terminal.tar.gz`, `${target} terminal`);
+    if (!archive && target === TARGETS.linux && requiredPlatforms.includes("linux-x86_64")) {
+      throw new Error("missing required portable Linux terminal archive");
+    }
     if (!archive) continue;
     const name = `miniQ_terminal_${version}_${target}.tar.gz`;
     copyArtifact(archive, outputRoot, name);

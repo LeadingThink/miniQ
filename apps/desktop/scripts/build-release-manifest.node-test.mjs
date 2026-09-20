@@ -28,7 +28,7 @@ test("builds one signed update manifest for every desktop platform", () => {
   fixture(input, targets.macIntel, [["miniQ.app.tar.gz"], ["miniQ.app.tar.gz.sig", "intel-signature"], ["miniQ_x64.dmg"]]);
   fixture(input, targets.linux, [["miniQ.AppImage", "native-v2-appimage"], ["miniQ.AppImage.sig", "linux-signature"], ["miniQ.deb"]]);
   for (const target of Object.values(targets)) {
-    fixture(input, target, [[`${target}.terminal.tar.gz`, `terminal-${target}`]]);
+    fixture(input, target === targets.linux ? `${target}-terminal` : target, [[`${target}.terminal.tar.gz`, `terminal-${target}`]]);
   }
 
   const manifest = buildRelease({
@@ -88,6 +88,18 @@ test("builds a manifest from the platform artifacts that exist", () => {
   assert.deepEqual(Object.keys(manifest.platforms), ["windows-x86_64"]);
   assert.equal(manifest.platforms["windows-x86_64"].signature, "windows-signature");
   assert.match(manifest.platforms["windows-x86_64"].url, /miniQ_1\.2\.3_x64-setup\.exe$/);
+});
+
+test("Linux desktop releases require the separately built portable terminal", () => {
+  const root = mkdtempSync(join(tmpdir(), "miniq-release-server-required-"));
+  const input = join(root, "input");
+  fixture(input, targets.linux, [["miniQ.AppImage"], ["miniQ.AppImage.sig", "linux-signature"]]);
+  assert.throws(() => buildRelease({
+    input, output: join(root, "output"), tag: "v1.2.3",
+    assetBaseUrl: "https://oss.example.com/releases/miniq/v1.2.3",
+    mirrorBaseUrl: "https://github.com/acme/releases/download/v1.2.3",
+    requiredPlatforms: ["linux-x86_64"],
+  }), /missing required portable Linux terminal/);
 });
 
 test("fails when no signed updater artifacts exist", () => {

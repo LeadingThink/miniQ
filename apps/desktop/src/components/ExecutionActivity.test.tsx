@@ -154,6 +154,6 @@ describe("execution activity", () => {
     );
     expect(html).toContain("模型正在生成响应");
     expect(html).toContain("第 3 轮");
-    expect(html).toContain("已等待");
+    expect(html).toContain("本步骤已用");
   });
 });

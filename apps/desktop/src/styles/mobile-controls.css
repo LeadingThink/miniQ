@@ -264,6 +264,24 @@
   min-height: 44px;
 }
 
+.mobile-chat-message-time {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: normal;
+}
+.mobile-chat-message.user .mobile-chat-message-time {
+  color: inherit;
+}
+.mobile-chat-message.user .message-time {
+  color: inherit;
+}
+
 .mobile-chat-message-actions {
   display: flex;
   align-items: center;

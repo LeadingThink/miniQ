@@ -252,7 +252,12 @@ export interface LocalImagePreview {
   dataBase64: string;
 }
 
-export async function readImagePreview(path: string): Promise<LocalImagePreview> {
+export async function readImagePreview(path: string, options: FileReadOptions = {}): Promise<LocalImagePreview> {
+  if (options.client?.mode === "remote") {
+    const file = await readRemoteFile(path, options);
+    if (!file.mimeType.startsWith("image/") || !file.dataBase64) throw new Error("远程文件不是可预览的图片");
+    return { mimeType: file.mimeType, dataBase64: file.dataBase64 };
+  }
   if (!isTauriRuntime()) throw new Error("图片预览仅在 miniQ 桌面应用中可用");
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<LocalImagePreview>("read_image_preview", { path });

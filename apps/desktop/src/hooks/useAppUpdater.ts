@@ -171,6 +171,10 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
   const install = useCallback(async () => {
     const update = updateRef.current;
     if (!update || state.phase !== "available" || installRef.current) return;
+    if (client.sshHost) {
+      onError("请先在设置中切换到本机，再安装桌面更新。远端任务会继续运行。");
+      return;
+    }
     let prepared = false;
     let installerStarted = false;
     installRef.current = true;

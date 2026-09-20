@@ -1,8 +1,10 @@
 import { Trash2 } from "lucide-react";
 import { memo, useState } from "react";
 import { mobileMessageText, type MobileChatMessage } from "../mobileChatData";
+import { formatDuration } from "../time";
 import { CopyButton } from "./CopyButton";
 import { Md } from "./Md";
+import { MessageTime } from "./MessageTime";
 
 export const MobileChatRow = memo(function MobileChatRow(props: {
   message: MobileChatMessage;
@@ -12,8 +14,14 @@ export const MobileChatRow = memo(function MobileChatRow(props: {
   const { message, active, onDelete } = props;
   const [confirming, setConfirming] = useState(false);
   const text = mobileMessageText(message.content);
+  const duration = message.role === "assistant" && !active && message.elapsedMs !== undefined
+    ? formatDuration(message.elapsedMs) : null;
 
   return <article className={`mobile-chat-message ${message.role}`}>
+    {(message.createdAt || duration) && <div className="mobile-chat-message-time">
+      <MessageTime at={message.createdAt} />
+      {duration && <span>用时 {duration}</span>}
+    </div>}
     <div className="mobile-chat-message-content">
       {message.role === "assistant" ? <Md>{text || (active ? "正在思考…" : "")}</Md>
         : typeof message.content === "string" ? message.content

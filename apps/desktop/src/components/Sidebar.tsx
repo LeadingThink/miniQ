@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
-  ArchiveRestore,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Clock3,
   Download,
@@ -10,7 +10,6 @@ import {
   MessageSquareText,
   MoreHorizontal,
   PencilLine,
-  Pin,
   Plug,
   Puzzle,
   Plus,
@@ -22,12 +21,12 @@ import {
 import type { Session, Workspace } from "../types";
 import type { AppUpdaterState } from "../hooks/useAppUpdater";
 import { openExternalUrl } from "../externalLinks";
-import { relativeAge } from "../time";
-import { sessionStatusLabel } from "../sessionStatus";
-import { PROVIDER_LABELS, PROVIDER_MARKS } from "./externalSessionImportModel";
 import { UpdateNotice } from "./UpdateNotice";
 import { DropdownMenu } from "./DropdownMenu";
 import { SidebarPanel } from "./SidebarPanel";
+import { SidebarSessionItem } from "./SidebarSessionItem";
+import { handleSidebarNavigation, SidebarFilters, sidebarGroups, useProjectDisclosure, type SidebarFilter } from "./SidebarNavigation";
+import "./Sidebar.css";
 
 const COLLAPSED_SESSION_COUNT = 3;
 const FEEDBACK_FORM_URL =
@@ -66,8 +65,24 @@ interface SidebarProps {
 }
 
 export function Sidebar(props: SidebarProps) {
-  const [showArchived, setShowArchived] = useState(false);
-  const archivedSessions = props.sessions.filter((session) => session.archived);
+  const [showArchived, setShowArchived] = useState(() => props.sessions.some((session) => session.id === props.currentSessionId && session.archived));
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<SidebarFilter>("all");
+  const navigation = useMemo(() => sidebarGroups(props.workspaces, props.sessions, props.unreadSessionIds, query, filter),
+    [props.workspaces, props.sessions, props.unreadSessionIds, query, filter]);
+  const previousSession = useRef({ id: props.currentSessionId, revealed: false });
+  useEffect(() => {
+    if (previousSession.current.id !== props.currentSessionId) {
+      previousSession.current = { id: props.currentSessionId, revealed: false };
+    }
+    if (previousSession.current.revealed) return;
+    const selected = props.sessions.find((session) => session.id === props.currentSessionId);
+    if (!selected) return;
+    previousSession.current.revealed = true;
+    if (selected?.archived) setShowArchived(true);
+  }, [props.currentSessionId, props.sessions]);
+  const archivedSessions = navigation.archived;
+  const archiveOpen = showArchived || navigation.filtering;
   return (
     <SidebarPanel>
       <div className="brand">miniQ</div>
@@ -84,16 +99,15 @@ export function Sidebar(props: SidebarProps) {
         <Download className="nav-icon" size={15} /> 导入会话
       </button>
 
-      {props.workspaces.length > 0 && <div className="sidebar-section">项目</div>}
-      <div className="sidebar-scroll">
-        {props.workspaces.map((workspace) => (
+      {props.workspaces.length > 0 && <SidebarFilters query={query} filter={filter} counts={navigation.counts} onQuery={setQuery} onFilter={setFilter} />}
+      <div className="sidebar-scroll" role="navigation" aria-label="项目与会话" onKeyDown={handleSidebarNavigation}>
+        {navigation.groups.map(({ workspace, sessions }) => (
           <WorkspaceGroup
             currentSessionId={props.currentSessionId}
             key={workspace.id}
             selected={workspace.id === props.selectedWorkspaceId}
-            sessions={props.sessions.filter(
-              (session) => session.workspaceId === workspace.id && !session.archived,
-            )}
+            sessions={sessions}
+            filtering={navigation.filtering}
             unreadSessionIds={props.unreadSessionIds}
             workspace={workspace}
             onCreateSession={props.onCreateSession}
@@ -112,23 +126,29 @@ export function Sidebar(props: SidebarProps) {
         {props.workspaces.length === 0 && (
           <div className="sidebar-empty">点击新对话选择或创建一个项目开始协作</div>
         )}
+        {navigation.filtering && navigation.groups.length === 0 && archivedSessions.length === 0 && (
+          <div className="sidebar-filter-empty" role="status">
+            没有符合条件的会话
+            <button type="button" onClick={() => { setQuery(""); setFilter("all"); }}>清除筛选，查看全部</button>
+          </div>
+        )}
         {archivedSessions.length > 0 && (
           <>
             <button
               type="button"
               className="session-toggle"
-              aria-expanded={showArchived}
+              aria-expanded={archiveOpen}
+              disabled={navigation.filtering}
               onClick={() => setShowArchived((current) => !current)}
             >
               <Archive size={13} />
               <span>已归档 {archivedSessions.length}</span>
-              {showArchived ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              {archiveOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </button>
-            {showArchived &&
+            {archiveOpen &&
               archivedSessions.map((session) => (
-                <SessionItem
+                <SidebarSessionItem
                   current={session.id === props.currentSessionId}
-                  hidden={false}
                   key={session.id}
                   session={session}
                   onSelect={props.onSelectSession}
@@ -188,6 +208,7 @@ interface WorkspaceGroupProps {
   unreadSessionIds: ReadonlySet<string>;
   currentSessionId: string | null;
   selected: boolean;
+  filtering: boolean;
   onSelectWorkspace: (workspaceId: string) => void;
   onCreateSession: (workspaceId: string) => void;
   onDeleteWorkspace: (workspaceId: string) => void;
@@ -202,7 +223,8 @@ interface WorkspaceGroupProps {
 }
 
 function WorkspaceGroup(props: WorkspaceGroupProps) {
-  const [open, setOpen] = useState(true);
+  const [preferredOpen, setOpen] = useProjectDisclosure(props.workspace.id);
+  const open = props.filtering || preferredOpen;
   const [expanded, setExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -211,11 +233,22 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const renameCommittedRef = useRef(false);
   const hiddenCount = Math.max(0, props.sessions.length - COLLAPSED_SESSION_COUNT);
+  const previousSession = useRef({ id: props.currentSessionId, revealed: false });
 
   useEffect(() => {
+    if (previousSession.current.id !== props.currentSessionId) {
+      previousSession.current = { id: props.currentSessionId, revealed: false };
+    }
+    if (previousSession.current.revealed) return;
     const currentIndex = props.sessions.findIndex((session) => session.id === props.currentSessionId);
+    if (currentIndex < 0) return;
+    previousSession.current.revealed = true;
+    setOpen(true);
     if (currentIndex >= COLLAPSED_SESSION_COUNT) setExpanded(true);
-  }, [props.currentSessionId, props.sessions]);
+  }, [props.currentSessionId, props.sessions, setOpen]);
+  const visibleSessions = !open ? [] : (expanded || props.filtering)
+    ? props.sessions
+    : props.sessions.slice(0, COLLAPSED_SESSION_COUNT);
 
   useEffect(() => {
     if (renaming && inputRef.current) {
@@ -266,9 +299,10 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
             aria-expanded={open}
             onClick={() => {
               props.onSelectWorkspace(props.workspace.id);
-              setOpen((current) => !current);
+              if (!props.filtering) setOpen(!open);
             }}
           >
+            <ChevronRight className="workspace-disclosure" size={12} aria-hidden="true" />
             <Folder className="workspace-icon" size={15} />
             <span className="workspace-name">{props.workspace.name}</span>
             {props.workspace.additionalPaths.length > 0 && <span className="workspace-root-count">{props.workspace.additionalPaths.length + 1}</span>}
@@ -291,7 +325,9 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
             type="button"
             ref={menuBtnRef}
             className="menu-trigger"
-            aria-label="更多操作"
+            aria-label={`${props.workspace.name} 的更多操作`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
             title="更多操作"
             onClick={(event) => {
               event.stopPropagation();
@@ -342,10 +378,9 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
           </DropdownMenu>
         </div>
       </div>
-      {props.sessions.map((session, index) => (
-        <SessionItem
+      {visibleSessions.map((session) => (
+        <SidebarSessionItem
           current={session.id === props.currentSessionId}
-          hidden={!open || (!expanded && index >= COLLAPSED_SESSION_COUNT)}
           key={session.id}
           session={session}
           onSelect={props.onSelectSession}
@@ -357,7 +392,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
           onSetArchived={props.onSetSessionArchived}
         />
       ))}
-      {open && hiddenCount > 0 && (
+      {open && !props.filtering && hiddenCount > 0 && (
         <button
           type="button"
           className="session-toggle"
@@ -368,182 +403,6 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
           <span>{expanded ? "收起" : `展开 ${hiddenCount} 条会话`}</span>
         </button>
       )}
-    </div>
-  );
-}
-
-function SessionItem(props: {
-  session: Session;
-  current: boolean;
-  hidden: boolean;
-  onSelect: (sessionId: string) => void;
-  onSeen: (sessionId: string) => void;
-  unread: boolean;
-  onDelete: (sessionId: string) => void;
-  onRename: (sessionId: string, title: string) => void;
-  onSetPinned: (sessionId: string, pinned: boolean) => void;
-  onSetArchived: (sessionId: string, archived: boolean) => void;
-}) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(props.session.title);
-  const menuBtnRef = useRef<HTMLButtonElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const renameCommittedRef = useRef(false);
-  const external = props.session.external;
-  const unread = !props.current && props.unread;
-  const statusText = unread ? "新回复" : sessionStatusLabel(props.session.status);
-
-  useEffect(() => {
-    if (renaming && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [renaming]);
-
-  const commitRename = () => {
-    if (renameCommittedRef.current) return;
-    renameCommittedRef.current = true;
-    const trimmed = renameValue.trim();
-    setRenaming(false);
-    if (trimmed && trimmed !== props.session.title) {
-      props.onRename(props.session.id, trimmed);
-    } else {
-      setRenameValue(props.session.title);
-    }
-  };
-
-  return (
-    <div
-      className={`session-item ${props.current ? "active" : ""} ${unread ? "unread" : ""} ${props.session.pinned ? "pinned" : ""}`}
-      hidden={props.hidden}
-      title={`${props.session.title}${unread || props.session.status !== "idle" ? ` · ${statusText}` : ""}`}
-    >
-      {renaming ? (
-        <input
-          ref={inputRef}
-          className="rename-input"
-          value={renameValue}
-          onChange={(e) => setRenameValue(e.target.value)}
-          onBlur={commitRename}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              commitRename();
-            }
-            if (e.key === "Escape") {
-              setRenameValue(props.session.title);
-              setRenaming(false);
-            }
-          }}
-        />
-      ) : (
-        <button
-          type="button"
-          className="session-select"
-          aria-current={props.current ? "page" : undefined}
-          aria-label={`${props.session.title}${unread || props.session.status !== "idle" ? `，${statusText}` : ""}`}
-          onClick={() => {
-            props.onSeen(props.session.id);
-            props.onSelect(props.session.id);
-          }}
-        >
-          <span
-            className={`session-status ${props.session.status} ${unread ? "unread" : ""}`}
-            aria-hidden="true"
-          />
-          {external && (
-            <span className={`session-source ${external.provider}`} title={PROVIDER_LABELS[external.provider]}>
-              {PROVIDER_MARKS[external.provider]}
-            </span>
-          )}
-          {props.session.pinned && <Pin className="pin-icon" size={12} />}
-          <span className="session-title">{props.session.title}</span>
-          {(unread || props.session.status !== "idle") && (
-            <span
-              className={`session-state-label ${unread ? "unread" : props.session.status}`}
-              role="status"
-              aria-label={statusText}
-            >
-              {statusText}
-            </span>
-          )}
-          <span className="session-age">{relativeAge(props.session.updatedAt)}</span>
-        </button>
-      )}
-      <div className="menu-container">
-        <button
-          type="button"
-          ref={menuBtnRef}
-          className="menu-trigger"
-          aria-label="更多操作"
-          title="更多操作"
-          onClick={(event) => {
-            event.stopPropagation();
-            setMenuOpen((v) => !v);
-          }}
-        >
-          <MoreHorizontal size={14} />
-        </button>
-        <DropdownMenu
-          triggerRef={menuBtnRef}
-          open={menuOpen}
-          onClose={() => setMenuOpen(false)}
-        >
-          <button
-            type="button"
-            className="dropdown-item"
-            onClick={(event) => {
-              event.stopPropagation();
-              setMenuOpen(false);
-              renameCommittedRef.current = false;
-              setRenameValue(props.session.title);
-              setRenaming(true);
-            }}
-          >
-            <PencilLine size={13} />
-            <span>重命名</span>
-          </button>
-          <button
-            type="button"
-            className="dropdown-item"
-            onClick={(event) => {
-              event.stopPropagation();
-              setMenuOpen(false);
-              props.onSetPinned(props.session.id, !props.session.pinned);
-            }}
-          >
-            <Pin size={13} />
-            <span>{props.session.pinned ? "取消置顶" : "置顶"}</span>
-          </button>
-          <button
-            type="button"
-            className="dropdown-item"
-            onClick={(event) => {
-              event.stopPropagation();
-              setMenuOpen(false);
-              props.onSetArchived(props.session.id, !props.session.archived);
-            }}
-          >
-            {props.session.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
-            <span>{props.session.archived ? "取消归档" : "归档"}</span>
-          </button>
-          <button
-            type="button"
-            className="dropdown-item danger"
-            onClick={(event) => {
-              event.stopPropagation();
-              setMenuOpen(false);
-              if (window.confirm(`确定要删除会话「${props.session.title}」吗？`)) {
-                props.onDelete(props.session.id);
-              }
-            }}
-          >
-            <Trash2 size={13} />
-            <span>删除会话</span>
-          </button>
-        </DropdownMenu>
-      </div>
     </div>
   );
 }

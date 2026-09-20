@@ -174,6 +174,8 @@ pub struct Message {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<MessageAttachment>,
     pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_timing: Option<crate::TurnTiming>,
 }
 
 /// Tool call lifecycle status.

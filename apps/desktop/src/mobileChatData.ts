@@ -13,6 +13,9 @@ export interface MobileChatMessage {
   content: ChatContent;
   replyTo?: string;
   status?: "failed" | "interrupted";
+  createdAt?: string;
+  completedAt?: string;
+  elapsedMs?: number;
 }
 
 export interface PendingMobileImage {
@@ -43,13 +46,22 @@ export function readMobileChat(): MobileChatMessage[] {
         ? typeof item.replyTo === "string" ? item.replyTo : previous?.role === "user" ? previous.id : undefined
         : undefined;
       messages.push({ id, role: item.role, content: item.content,
-        ...(item.status ? { status: item.status } : {}), ...(replyTo ? { replyTo } : {}) });
+        ...(item.status ? { status: item.status } : {}), ...(replyTo ? { replyTo } : {}),
+        ...(validTimestamp(item.createdAt) ? { createdAt: item.createdAt } : {}),
+        ...(validTimestamp(item.completedAt) ? { completedAt: item.completedAt } : {}),
+        ...(typeof item.elapsedMs === "number" && Number.isFinite(item.elapsedMs) && item.elapsedMs >= 0
+          ? { elapsedMs: item.elapsedMs } : {}),
+      });
       ids.add(id);
     }
     return messages;
   } catch {
     return [];
   }
+}
+
+function validTimestamp(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
 }
 
 function isChatMessage(value: unknown): value is Omit<MobileChatMessage, "id"> & { id?: string } {

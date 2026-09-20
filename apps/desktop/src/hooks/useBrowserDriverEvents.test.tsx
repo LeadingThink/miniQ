@@ -16,6 +16,13 @@ const capabilities: BrowserCapabilities = {
   pointerInput: true, keyboardInput: true, selectInput: true,
 };
 
+it("does not execute a remote host's browser requests in this computer's webview", () => {
+  const onEvent = vi.fn();
+  const client = { mode: "remote", sshHost: "devbox", onEvent } as unknown as RpcClient;
+  renderHook(() => useBrowserDriverEvents(client, {}, vi.fn()));
+  expect(onEvent).not.toHaveBeenCalled();
+});
+
 function fixture(initial: Record<string, BrowserTabsState> = {}) {
   let listener: (event: DaemonEvent) => void = () => {};
   const unsubscribe = vi.fn();

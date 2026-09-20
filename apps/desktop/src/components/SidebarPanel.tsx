@@ -9,14 +9,17 @@ const DEFAULT_WIDTH = 264;
 export function SidebarPanel({ children }: { children: ReactNode }) {
   const [preferred, setPreferred] = useState(() => {
     if (typeof window === "undefined") return DEFAULT_WIDTH;
-    const value = Number(window.localStorage.getItem(STORAGE_KEY));
-    return Number.isFinite(value) && value >= 220 && value <= 420 ? value : DEFAULT_WIDTH;
+    try {
+      const value = Number(window.localStorage.getItem(STORAGE_KEY));
+      return Number.isFinite(value) && value >= 220 && value <= 420 ? value : DEFAULT_WIDTH;
+    } catch { return DEFAULT_WIDTH; }
   });
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const commit = (width: number) => {
     setDragWidth(null);
     setPreferred(width);
-    window.localStorage.setItem(STORAGE_KEY, String(width));
+    try { window.localStorage.setItem(STORAGE_KEY, String(width)); }
+    catch { /* Resizing still works when persistence is unavailable. */ }
   };
   const width = dragWidth ?? preferred;
   return (

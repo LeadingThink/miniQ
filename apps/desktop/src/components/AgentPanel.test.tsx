@@ -215,7 +215,7 @@ it("shows interrupted agents in the exception filter with observed time and held
   fireEvent.click(await screen.findByRole("button", { name: /子任务.*总计/ }));
   fireEvent.click(screen.getByRole("button", { name: "异常" }));
   fireEvent.click(screen.getByRole("button", { name: /^A child/ }));
-  expect(screen.getByText(/至少 1.2 秒/)).toBeTruthy();
+  expect(screen.getByText(/至少 1 秒/)).toBeTruthy();
   expect(await screen.findByText(/preserved instruction/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "停止 A child" })).toBeNull();
   expect(

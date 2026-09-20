@@ -15,7 +15,7 @@ use crate::{observation, Tool, ToolContext, ToolError};
 
 mod backend;
 mod input;
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "desktop"))]
 mod macos;
 #[cfg(test)]
 mod tests;

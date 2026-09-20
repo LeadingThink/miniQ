@@ -24,6 +24,7 @@ const fake = vi.hoisted(() => ({
 }));
 vi.mock("../rpc", () => ({
   RpcClient: class {
+    disconnect = vi.fn();
     call = fake.call;
     connect = fake.connect;
     connected = true;

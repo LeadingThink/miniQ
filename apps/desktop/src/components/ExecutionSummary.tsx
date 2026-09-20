@@ -1,7 +1,9 @@
 import { Check, CirclePause, CircleX, LoaderCircle, MessageCircleQuestion, ShieldQuestion } from "lucide-react";
 import { useMemo } from "react";
 import { currentExecution } from "../timelineModel";
-import type { Message, PlanTask, ToolCall, TurnProgress } from "../types";
+import type { AnchoredTurnTiming, Message, PlanTask, ToolCall, TurnProgress } from "../types";
+import { latestMessageTiming } from "../timelineTiming";
+import { TurnTimingSummary } from "./TurnTimingSummary";
 import { toolActionLabel, toolInputSummary, turnProgressLabel } from "./ExecutionActivity";
 import "./ExecutionSummary.css";
 
@@ -13,8 +15,10 @@ export function ExecutionSummary(props: {
   busy: boolean;
   approvals: number;
   questions: number;
+  timing?: AnchoredTurnTiming | null;
 }) {
   const summary = useMemo(() => currentExecution(props.messages, props.calls), [props.messages, props.calls]);
+  const timing = (props.timing ?? latestMessageTiming(props.messages))?.timing;
   if (!props.busy && !summary.completed && !summary.failed && !summary.cancelled) return null;
   const active = props.busy ? summary.running.at(-1) : undefined;
   const label = props.approvals
@@ -44,6 +48,7 @@ export function ExecutionSummary(props: {
         <strong role="status">{label}</strong>
         {detail && <span title={detail}>{detail}</span>}
       </div>
+      {props.busy && timing?.status === "running" && <TurnTimingSummary timing={timing} active />}
       <div className="execution-summary-counts" aria-label={summary.partial ? "已加载步骤统计" : "本轮步骤统计"}>
         {summary.partial && <span>已加载</span>}
         <span>

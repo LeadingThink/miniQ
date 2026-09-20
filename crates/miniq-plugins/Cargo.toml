@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-miniq-tools = { path = "../miniq-tools" }
+miniq-tools = { path = "../miniq-tools", default-features = false }
 miniq-protocol = { path = "../miniq-protocol" }
 miniq-sandbox = { path = "../miniq-sandbox" }
 async-trait = { workspace = true }

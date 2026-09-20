@@ -15,6 +15,7 @@ import { RetryNotice } from "./RetryNotice";
 import { ModelDiagnostics } from "./ModelDiagnostics";
 import { AgentActivity } from "./AgentActivity";
 import { AgentHistory } from "./AgentHistory";
+import { conversationTimestamp, formatDuration } from "../time";
 
 interface AgentSummary {
   agentId: string;
@@ -293,9 +294,11 @@ function SessionAgentPanel({
                       : ""}
                     {agent.model ?? "默认模型"} ·{" "}
                     {LABELS[agent.status] ?? agent.status} ·{" "}
-                    {new Date(agent.createdAt).toLocaleTimeString()}
+                    <time dateTime={agent.createdAt} title={conversationTimestamp(agent.createdAt)?.full}>
+                      {conversationTimestamp(agent.createdAt)?.label}
+                    </time>
                     {agent.elapsedMs !== undefined &&
-                      ` · ${agent.timingComplete === false ? "至少 " : ""}${(agent.elapsedMs / 1000).toFixed(1)} 秒`}
+                      formatDuration(agent.elapsedMs) && ` · ${agent.timingComplete === false ? "至少 " : ""}${formatDuration(agent.elapsedMs)}`}
                     {!!agent.heldMessagesCount &&
                       ` · ${agent.heldMessagesCount} 条待处理消息`}
                   </small>

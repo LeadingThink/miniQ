@@ -23,6 +23,7 @@ fn lock(root: &Path, name: &str, shared: bool) -> Result<File, String> {
     Ok(file)
 }
 
+#[cfg(any(feature = "desktop", test))]
 pub(crate) fn foreground(root: &Path) -> Result<File, String> {
     lock(root, "miniq-desktop-input.lock", false)
 }

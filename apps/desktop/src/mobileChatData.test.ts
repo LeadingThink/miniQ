@@ -46,6 +46,26 @@ it("preserves an answer's association after its question is deleted", () => {
   expect(readMobileChat()[1].replyTo).toBe("deleted-question");
 });
 
+it("persists recorded timestamps and elapsed time without inventing timing for older messages", () => {
+  const timed = { id: "answer", role: "assistant" as const, content: "答案", createdAt: "2026-09-20T08:00:00.000Z",
+    completedAt: "2026-09-20T08:01:12.000Z", elapsedMs: 72_000 };
+  persistMobileChat([{ id: "old", role: "user", content: "旧提问" }, timed]);
+  const [old, answer] = readMobileChat();
+  expect(old).not.toHaveProperty("createdAt");
+  expect(old).not.toHaveProperty("elapsedMs");
+  expect(answer).toEqual({ ...timed, replyTo: "old" });
+});
+
+it("retains message contents when optional persisted timing is malformed", () => {
+  localStorage.setItem(MOBILE_CHAT_STORAGE_KEY, JSON.stringify([
+    { id: "question", role: "user", content: "保留问题", createdAt: "not a date" },
+    { id: "answer", role: "assistant", content: "保留答案", completedAt: 123, elapsedMs: -5 },
+  ]));
+  const [question, answer] = readMobileChat();
+  expect(question).toEqual({ id: "question", role: "user", content: "保留问题" });
+  expect(answer).toEqual({ id: "answer", role: "assistant", content: "保留答案", replyTo: "question" });
+});
+
 it("copies all text parts without exposing inline image data as text", () => {
   expect(mobileMessageText("# 原始 Markdown\n\n正文")).toBe("# 原始 Markdown\n\n正文");
   expect(mobileMessageText([

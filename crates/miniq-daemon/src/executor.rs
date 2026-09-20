@@ -213,6 +213,7 @@ impl SessionToolExecutor {
         &self,
         call: &ToolCallRequest,
         tool_call_id: &str,
+        created_at: &str,
     ) -> Result<Value, AgentError> {
         let _ = self
             .state
@@ -224,6 +225,7 @@ impl SessionToolExecutor {
             tool_call_id: tool_call_id.to_string(),
             tool_name: call.name.clone(),
             input: crate::security::redacted(call.arguments.clone()),
+            created_at: Some(created_at.into()),
         });
 
         // ask_user is interactive: handled here, not by the router.
@@ -283,18 +285,24 @@ impl SessionToolExecutor {
 
     fn finish(&self, tool_call_id: &str, status: ToolCallStatus, output: &Value) {
         let redacted_output = crate::security::redacted(output.clone());
-        if let Err(e) =
-            self.state
+        let completed_at =
+            match self
+                .state
                 .store
                 .finish_tool_call(tool_call_id, status, Some(&redacted_output))
-        {
-            tracing::error!("tool call persist failed: {e}");
-        }
+            {
+                Ok(completed_at) => Some(completed_at),
+                Err(error) => {
+                    tracing::error!(%error, "tool call persist failed");
+                    None
+                }
+            };
         self.state.emit(Event::ToolCallFinished {
             session_id: self.session_id.clone(),
             tool_call_id: tool_call_id.to_string(),
             status,
             output: Some(redacted_output),
+            completed_at,
         });
     }
 }
@@ -382,6 +390,7 @@ impl ToolExecutor for SessionToolExecutor {
                     tool_call_id: tool_call.id.clone(),
                     tool_name: call.name.clone(),
                     input: crate::security::redacted(call.arguments.clone()),
+                    created_at: Some(tool_call.created_at.clone()),
                 });
                 self.finish(&tool_call.id, ToolCallStatus::Failed, &output);
                 return Ok(output);
@@ -434,6 +443,7 @@ impl ToolExecutor for SessionToolExecutor {
                     tool_call_id: tool_call.id.clone(),
                     tool_name: call.name.clone(),
                     input: crate::security::redacted(call.arguments.clone()),
+                    created_at: Some(tool_call.created_at.clone()),
                 });
                 self.finish(&tool_call.id, ToolCallStatus::Failed, &output);
                 return Ok(output);
@@ -529,7 +539,8 @@ impl ToolExecutor for SessionToolExecutor {
         }
 
         // 4. Execute.
-        self.run_tool_call(call, &tool_call.id).await
+        self.run_tool_call(call, &tool_call.id, &tool_call.created_at)
+            .await
     }
 }
 
