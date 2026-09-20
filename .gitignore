@@ -20,6 +20,8 @@ apps/desktop/scripts/*
 !apps/desktop/scripts/create-preview-fixtures.mjs
 !apps/desktop/scripts/ios_testflight.mjs
 !apps/desktop/scripts/ios_testflight.node-test.mjs
+!apps/desktop/scripts/macos_privacy.mjs
+!apps/desktop/scripts/macos_privacy.node-test.mjs
 !apps/desktop/scripts/prepare-daemon-sidecar.mjs
 dist-android/
 

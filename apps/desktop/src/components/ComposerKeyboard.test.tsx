@@ -16,7 +16,7 @@ function setup(busy = false, onSend = vi.fn().mockResolvedValue(true)) {
   return { input, onSend };
 }
 
-it.each([{}, { shiftKey: true }, { metaKey: true }])("sends with Enter modifiers %j", async (modifiers) => {
+it.each([{}, { ctrlKey: true }, { metaKey: true }])("sends with Enter modifiers %j", async (modifiers) => {
   const { input, onSend } = setup();
   fireEvent.change(input, { target: { value: "第一行\n第二行" } });
   await act(async () => { fireEvent.keyDown(input, { key: "Enter", ...modifiers }); });
@@ -25,13 +25,13 @@ it.each([{}, { shiftKey: true }, { metaKey: true }])("sends with Enter modifiers
 });
 
 it.each([{ start: 2, end: 2, value: "甲乙\n丙丁" }, { start: 1, end: 3, value: "甲\n丁" }])(
-  "inserts Ctrl+Enter at the selection and persists the draft: %j", ({ start, end, value }) => {
+  "inserts Shift+Enter at the selection and persists the draft: %j", ({ start, end, value }) => {
     let frame: FrameRequestCallback | undefined;
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => { frame = callback; return 1; });
     const { input, onSend } = setup();
     fireEvent.change(input, { target: { value: "甲乙丙丁" } });
     input.setSelectionRange(start, end);
-    fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
     expect(input.value).toBe(value);
     expect(localStorage.getItem("miniq.draft.keyboard-test")).toBe(value);
     act(() => frame?.(0));
@@ -41,7 +41,7 @@ it.each([{ start: 2, end: 2, value: "甲乙\n丙丁" }, { start: 1, end: 3, valu
   },
 );
 
-it("gives Ctrl precedence when both Ctrl and Shift are held", () => {
+it("keeps Shift+Enter as a newline when Ctrl is also held", () => {
   const { input, onSend } = setup();
   fireEvent.change(input, { target: { value: "第一行" } });
   fireEvent.keyDown(input, { key: "Enter", ctrlKey: true, shiftKey: true });
@@ -71,10 +71,10 @@ it("does not edit or resend while a send is pending", async () => {
   const onSend = vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve; }));
   const { input } = setup(false, onSend);
   fireEvent.change(input, { target: { value: "等待发送" } });
-  fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+  fireEvent.keyDown(input, { key: "Enter" });
   expect(input.readOnly).toBe(true);
-  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
   fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
   expect(input.value).toBe("等待发送");
   expect(onSend).toHaveBeenCalledTimes(1);
   await act(async () => finish(true));
@@ -83,14 +83,14 @@ it("does not edit or resend while a send is pending", async () => {
 it("uses the same shortcuts while a task is running and new content will be queued", async () => {
   const { input, onSend } = setup(true);
   fireEvent.change(input, { target: { value: "下一步" } });
-  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+  fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
   expect(onSend).not.toHaveBeenCalled();
   fireEvent.change(input, { target: { value: `${input.value}保留原文` } });
-  await act(async () => { fireEvent.keyDown(input, { key: "Enter", shiftKey: true }); });
+  await act(async () => { fireEvent.keyDown(input, { key: "Enter" }); });
   expect(onSend).toHaveBeenCalledExactlyOnceWith("下一步\n保留原文", []);
 });
 
-it("does not let Ctrl+Enter select a slash command", () => {
+it("does not let Shift+Enter select a slash command", () => {
   Element.prototype.scrollIntoView = vi.fn();
   const onSelect = vi.fn();
   const onSend = vi.fn();
@@ -100,7 +100,7 @@ it("does not let Ctrl+Enter select a slash command", () => {
   const input = screen.getByRole<HTMLTextAreaElement>("textbox");
   fireEvent.change(input, { target: { value: "/" } });
   expect(screen.getByRole("listbox")).toBeTruthy();
-  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+  fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
   expect(input.value).toBe("/\n");
   expect(onSelect).not.toHaveBeenCalled();
   expect(onSend).not.toHaveBeenCalled();
