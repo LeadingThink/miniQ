@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
+
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Session, Workspace } from "../types";
 import { Sidebar } from "./Sidebar";
 
@@ -24,7 +27,59 @@ const session: Session = {
   updatedAt: "2026-09-03T00:00:00Z",
 };
 
+afterEach(cleanup);
+
 describe("Sidebar", () => {
+  it("toggles all project sessions when the project is clicked repeatedly", () => {
+    const onSelectWorkspace = vi.fn();
+    render(
+      <Sidebar
+        workspaces={[workspace]}
+        sessions={[session]}
+        unreadSessionIds={new Set()}
+        currentSessionId={session.id}
+        selectedWorkspaceId={workspace.id}
+        onNewChat={noop}
+        onShowSearch={noop}
+        onShowSchedule={noop}
+        onImportSessions={noop}
+        onSelectWorkspace={onSelectWorkspace}
+        onCreateSession={noop}
+        onDeleteWorkspace={noop}
+        onRenameWorkspace={noop}
+        onEditWorkspace={noop}
+        onSelectSession={noop}
+        onSessionSeen={noop}
+        onDeleteSession={noop}
+        onRenameSession={noop}
+        onSetSessionPinned={noop}
+        onSetSessionArchived={noop}
+        onShowSkills={noop}
+        onShowMcp={noop}
+        onShowSettings={noop}
+        updateSupported={false}
+        updateState={{ phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null }}
+        onCheckForUpdates={noop}
+        onInstallUpdate={noop}
+        onError={noop}
+      />,
+    );
+
+    const projectButton = screen.getByRole("button", { name: workspace.name });
+    const sessionItem = document.querySelector(".session-item") as HTMLElement;
+    expect(projectButton.getAttribute("aria-expanded")).toBe("true");
+    expect(sessionItem.hidden).toBe(false);
+
+    fireEvent.click(projectButton);
+    expect(projectButton.getAttribute("aria-expanded")).toBe("false");
+    expect(sessionItem.hidden).toBe(true);
+
+    fireEvent.click(projectButton);
+    expect(projectButton.getAttribute("aria-expanded")).toBe("true");
+    expect(sessionItem.hidden).toBe(false);
+    expect(onSelectWorkspace).toHaveBeenCalledTimes(2);
+  });
+
   it("uses keyboard-operable controls for projects and sessions", () => {
     const html = renderToStaticMarkup(
       <Sidebar

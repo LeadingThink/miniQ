@@ -202,6 +202,7 @@ interface WorkspaceGroupProps {
 }
 
 function WorkspaceGroup(props: WorkspaceGroupProps) {
+  const [open, setOpen] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -262,7 +263,11 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
             className="workspace-select"
             title={[props.workspace.path, ...props.workspace.additionalPaths].join("\n")}
             aria-current={props.selected ? "true" : undefined}
-            onClick={() => props.onSelectWorkspace(props.workspace.id)}
+            aria-expanded={open}
+            onClick={() => {
+              props.onSelectWorkspace(props.workspace.id);
+              setOpen((current) => !current);
+            }}
           >
             <Folder className="workspace-icon" size={15} />
             <span className="workspace-name">{props.workspace.name}</span>
@@ -340,7 +345,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
       {props.sessions.map((session, index) => (
         <SessionItem
           current={session.id === props.currentSessionId}
-          hidden={!expanded && index >= COLLAPSED_SESSION_COUNT}
+          hidden={!open || (!expanded && index >= COLLAPSED_SESSION_COUNT)}
           key={session.id}
           session={session}
           onSelect={props.onSelectSession}
@@ -352,7 +357,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
           onSetArchived={props.onSetSessionArchived}
         />
       ))}
-      {hiddenCount > 0 && (
+      {open && hiddenCount > 0 && (
         <button
           type="button"
           className="session-toggle"
