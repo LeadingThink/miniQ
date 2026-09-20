@@ -6,6 +6,7 @@ import {
   checkAndroidUpdate,
   formatFileSize,
   isMobileUpdateSupported,
+  MOBILE_DOWNLOAD_PAGE_URL,
   readInstalledVersion,
   type MobileUpdateState,
 } from "../mobileUpdate";
@@ -54,7 +55,15 @@ export function MobileUpdateCheck() {
         </button>
       </div>
       {state.phase === "unavailable" && <p role="status">已是最新版本</p>}
-      {state.phase === "error" && <p role="alert">检查更新失败：{state.error}</p>}
+      {state.phase === "error" && (
+        <div>
+          <p role="alert">检查更新失败：{state.error}</p>
+          <button type="button" className="secondary" onClick={() => void openExternalUrl(MOBILE_DOWNLOAD_PAGE_URL)}>
+            <Download size={14} />
+            前往下载页
+          </button>
+        </div>
+      )}
       {release && (
         <div className="mobile-update-available">
           <p role="status">

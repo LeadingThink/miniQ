@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { Message } from "../types";
 
 interface ConversationNavigationRailProps {
@@ -7,6 +7,43 @@ interface ConversationNavigationRailProps {
 }
 
 const MIN_MESSAGES_FOR_RAIL = 4;
+
+function usePreviewPosition(
+  navRef: RefObject<HTMLElement | null>,
+  listRef: RefObject<HTMLDivElement | null>,
+  previewRef: RefObject<HTMLDivElement | null>,
+  previewIndex: number,
+  visible: boolean,
+) {
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    const list = listRef.current;
+    const preview = previewRef.current;
+    const marker = list?.children[previewIndex];
+    if (!visible || !nav || !list || !preview || !marker) return;
+    const update = () => {
+      const navRect = nav.getBoundingClientRect();
+      const markerRect = marker.getBoundingClientRect();
+      const shellRect = nav.parentElement!.getBoundingClientRect();
+      const halfHeight = preview.offsetHeight / 2;
+      const center = Math.max(
+        shellRect.top + halfHeight + 8,
+        Math.min(markerRect.top + markerRect.height / 2, shellRect.bottom - halfHeight - 8),
+      );
+      preview.style.setProperty("--rail-preview-y", `${center - navRect.top}px`);
+    };
+    update();
+    list.addEventListener("scroll", update, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(nav);
+    observer?.observe(nav.parentElement!);
+    observer?.observe(preview);
+    return () => {
+      list.removeEventListener("scroll", update);
+      observer?.disconnect();
+    };
+  }, [navRef, listRef, previewRef, previewIndex, visible]);
+}
 
 function messageLabel(message: Message, position: number): string {
   const preview = message.content.replace(/\s+/g, " ").trim();
@@ -86,10 +123,14 @@ export function ConversationNavigationRail({
     [messages],
   );
   const { activeId, hasGutter, elements } = useRailPosition(userMessages, scrollRef);
+  const navRef = useRef<HTMLElement>(null);
   const railRef = useRef<HTMLDivElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
-  const preview = userMessages.find((message) => message.id === (hoverId ?? focusId));
+  const previewIndex = userMessages.findIndex((message) => message.id === (hoverId ?? focusId));
+  const preview = userMessages[previewIndex];
+  usePreviewPosition(navRef, railRef, previewRef, previewIndex, hasGutter);
 
   useEffect(() => {
     const list = railRef.current;
@@ -120,6 +161,7 @@ export function ConversationNavigationRail({
 
   return (
     <nav
+      ref={navRef}
       className="conversation-navigation-rail"
       aria-label="会话中的用户消息"
       onMouseLeave={() => setHoverId(null)}
@@ -130,6 +172,11 @@ export function ConversationNavigationRail({
             key={message.id}
             type="button"
             className="conversation-navigation-marker"
+            style={{
+              "--rail-proximity": previewIndex < 0
+                ? 0
+                : [1, 0.7, 0.4, 0.2][Math.abs(index - previewIndex)] ?? 0,
+            } as CSSProperties}
             aria-label={messageLabel(message, index + 1)}
             aria-current={activeId === message.id ? "true" : undefined}
             onMouseEnter={() => setHoverId(message.id)}
@@ -140,7 +187,7 @@ export function ConversationNavigationRail({
         ))}
       </div>
       {preview && (
-        <div className="conversation-navigation-preview" aria-hidden="true">
+        <div className="conversation-navigation-preview" ref={previewRef} aria-hidden="true">
           {preview.content || preview.attachments?.map((attachment) => attachment.name).join("、") || "附件消息"}
         </div>
       )}

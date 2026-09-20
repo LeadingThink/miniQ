@@ -8,7 +8,8 @@
   max-height: calc(100% - 24px);
   transform: translateY(-50%);
   opacity: 0.42;
-  transition: opacity 140ms ease;
+  transition: opacity 180ms ease;
+  --rail-easing: cubic-bezier(0.2, 0.8, 0.2, 1.08);
 }
 
 .timeline-shell:hover .conversation-navigation-rail,
@@ -25,7 +26,7 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
-  padding: 2px;
+  padding: 4px 6px;
 }
 
 .conversation-navigation-list::-webkit-scrollbar {
@@ -34,10 +35,11 @@
 
 .conversation-navigation-marker {
   display: grid;
-  place-items: center;
+  align-items: center;
+  justify-items: start;
   width: 30px;
-  height: 24px;
-  flex: 0 0 24px;
+  height: 20px;
+  flex: 0 0 20px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -46,17 +48,19 @@
 
 .conversation-navigation-marker::before {
   content: "";
-  width: 100%;
-  height: 4px;
+  width: 28px;
+  height: 3px;
   border-radius: 999px;
   background: var(--border-strong);
-  transition: transform 120ms ease, background 120ms ease;
+  transform-origin: left center;
+  transform: scaleX(calc(0.25 + var(--rail-proximity, 0) * 0.75));
+  transition: transform 180ms var(--rail-easing), background 160ms ease;
 }
 
 .conversation-navigation-marker:hover::before,
 .conversation-navigation-marker:focus-visible::before {
   background: var(--text-mid);
-  transform: scaleX(1.1);
+  transform: scaleX(1);
 }
 
 .conversation-navigation-marker:focus-visible {
@@ -67,12 +71,16 @@
 
 .conversation-navigation-marker[aria-current="true"]::before {
   background: var(--accent);
-  transform: scaleX(1.12);
+  transform: scaleX(max(0.6, calc(0.25 + var(--rail-proximity, 0) * 0.75)));
+}
+
+.conversation-navigation-marker[aria-current="true"]:is(:hover, :focus-visible)::before {
+  transform: scaleX(1);
 }
 
 .conversation-navigation-preview {
   position: absolute;
-  top: 50%;
+  top: var(--rail-preview-y, 50%);
   left: 100%;
   transform: translateY(-50%);
   width: min(26rem, 55vw);
@@ -89,6 +97,12 @@
   box-shadow: var(--shadow);
   font-size: 13px;
   line-height: 1.6;
+  animation: conversation-preview-enter 160ms ease-out;
+}
+
+@keyframes conversation-preview-enter {
+  from { opacity: 0; transform: translate(-4px, -50%); }
+  to { opacity: 1; transform: translate(0, -50%); }
 }
 
 @media (max-width: 900px), (pointer: coarse) {
@@ -101,5 +115,8 @@
   .conversation-navigation-rail,
   .conversation-navigation-marker::before {
     transition: none;
+  }
+  .conversation-navigation-preview {
+    animation: none;
   }
 }
