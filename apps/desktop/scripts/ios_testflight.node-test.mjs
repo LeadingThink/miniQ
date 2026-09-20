@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import test from "node:test";
 import {
   APP_BUNDLE_ID,
   buildExportOptions,
   validateBuildNumber,
+  validateBuiltApp,
   validateEnvironment,
   validateMarketingVersion,
+  validatePrivacyDescriptions,
+  validatePrivacySource,
   validateProfile,
+  validateSource,
 } from "./ios_testflight.mjs";
 
 const teamId = "W5M6Q4SAV7";
@@ -89,4 +95,74 @@ test("export options use manual App Store Connect signing", () => {
   assert.match(plist, new RegExp(`<key>${APP_BUNDLE_ID.replaceAll(".", "\\.")}<\\/key>`));
   assert.match(plist, /miniQ &amp; App Store/);
   assert.match(plist, /<key>manageAppVersionAndBuildNumber<\/key><false\/>/);
+});
+
+const privacyDescriptions = {
+  NSCameraUsageDescription: "用于拍摄你主动添加到对话中的照片。",
+  NSMicrophoneUsageDescription: "用于将你主动录制的声音转成输入文字。",
+};
+
+function privacySource(descriptions = privacyDescriptions) {
+  return `<plist version="1.0"><dict>${Object.entries(descriptions)
+    .map(([key, value]) => `<key>${key}</key><string>${value}</string>`)
+    .join("\n")}</dict></plist>`;
+}
+
+function appInfo(overrides = {}) {
+  return {
+    CFBundleIdentifier: APP_BUNDLE_ID,
+    CFBundleShortVersionString: "1.0",
+    CFBundleVersion: "4",
+    ...privacyDescriptions,
+    ...overrides,
+  };
+}
+
+test("the checked-in iOS target declares the permissions its attachment and voice flows use", () => {
+  assert.doesNotThrow(() => validateSource(resolve(import.meta.dirname, "..")));
+});
+
+test("the validator can be imported from a Node eval without invoking the release CLI", () => {
+  const url = new URL("./ios_testflight.mjs", import.meta.url).href;
+  assert.equal(execFileSync(process.execPath, ["--input-type=module", "-e", `await import(${JSON.stringify(url)})`], {
+    encoding: "utf8",
+  }), "");
+});
+
+test("requires camera and microphone descriptions without requiring full photo library access", () => {
+  assert.doesNotThrow(() => validatePrivacyDescriptions(privacyDescriptions));
+  assert.doesNotThrow(() => validatePrivacySource(privacySource()));
+  for (const key of Object.keys(privacyDescriptions)) {
+    for (const value of [undefined, "", " \n\t", false, 1, "$(CAMERA_REASON)", "${MIC_REASON}"]) {
+      assert.throws(() => validatePrivacyDescriptions({ ...privacyDescriptions, [key]: value }), new RegExp(key));
+    }
+  }
+});
+
+test("source validation rejects missing, commented, non-string, and duplicate privacy declarations", () => {
+  const camera = "<key>NSCameraUsageDescription</key><string>允许添加照片。</string>";
+  const noCamera = privacySource({ NSMicrophoneUsageDescription: privacyDescriptions.NSMicrophoneUsageDescription });
+  for (const invalidSource of [
+    noCamera,
+    noCamera.replace("</dict>", `<!--${camera}--></dict>`),
+    privacySource().replace(/<string>[^<]+<\/string>/, "<true/>"),
+    privacySource().replace("</dict>", `${camera}</dict>`),
+    privacySource({ ...privacyDescriptions, NSCameraUsageDescription: "  " }),
+    privacySource({ ...privacyDescriptions, NSCameraUsageDescription: "$(CAMERA_REASON)" }),
+  ]) {
+    assert.throws(() => validatePrivacySource(invalidSource), /NSCameraUsageDescription/);
+  }
+});
+
+test("validates the archived app permissions and identity before upload", () => {
+  assert.doesNotThrow(() => validateBuiltApp(appInfo(), "1.0", "4"));
+  for (const [key, value] of Object.entries({
+    CFBundleIdentifier: "com.example.other",
+    CFBundleShortVersionString: "1.1",
+    CFBundleVersion: "3",
+    NSCameraUsageDescription: undefined,
+    NSMicrophoneUsageDescription: "",
+  })) {
+    assert.throws(() => validateBuiltApp(appInfo({ [key]: value }), "1.0", "4"), new RegExp(key));
+  }
 });

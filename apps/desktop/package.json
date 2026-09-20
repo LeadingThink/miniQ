@@ -1,7 +1,7 @@
 {
   "name": "miniq-desktop",
   "private": true,
-  "version": "0.1.39",
+  "version": "0.1.40",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,9 +11,10 @@
     "mobile:android": "npm run mobile:sync && cap build android",
     "mobile:ios": "npm run mobile:sync && cap open ios",
     "release:check-version": "node scripts/check-release-version.mjs",
-    "test": "vitest run --maxWorkers=4 --testTimeout=15000 && npm run test:browser-links && npm run test:release-manifest && npm run test:qiniu-publisher && npm run test:ios-testflight",
+    "test": "vitest run --maxWorkers=4 --testTimeout=15000 && npm run test:browser-links && npm run test:release-manifest && npm run test:qiniu-publisher && npm run test:ios-testflight && npm run test:macos-privacy",
     "test:browser-links": "node --test src-tauri/src/browser_links.node-test.cjs",
     "test:ios-testflight": "node --test scripts/ios_testflight.node-test.mjs",
+    "test:macos-privacy": "node --test scripts/macos_privacy.node-test.mjs",
     "test:release-manifest": "node --test scripts/build-release-manifest.node-test.mjs",
     "test:qiniu-publisher": "python3 -m unittest discover -s scripts -p *_test.py",
     "preview": "vite preview",

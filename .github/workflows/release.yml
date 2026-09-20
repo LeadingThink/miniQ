@@ -154,6 +154,13 @@ jobs:
             fi
           fi
           npm run tauri build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Verify macOS microphone permission in signed application
+        if: runner.os == 'macOS'
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          node --test scripts/macos_privacy.node-test.mjs
+          node scripts/macos_privacy.mjs app "src-tauri/target/${{ matrix.target }}/release/bundle/macos/miniQ.app"
       - uses: actions/upload-artifact@v4
         with:
           name: miniq-release-${{ matrix.target }}

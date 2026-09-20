@@ -128,9 +128,7 @@ jobs:
             | tee "$IOS_CI_DIR/archive.log"
           codesign --verify --deep --strict "$IOS_CI_DIR/miniQ.xcarchive/Products/Applications/App.app"
           info="$IOS_CI_DIR/miniQ.xcarchive/Products/Applications/App.app/Info.plist"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info")" = "com.leadingthink.miniq"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info")" = "$IOS_MARKETING_VERSION"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$info")" = "$IOS_BUILD_NUMBER"
+          node scripts/ios_testflight.mjs validate-app "$info"
       - name: Export signed IPA
         run: |
           set -o pipefail
