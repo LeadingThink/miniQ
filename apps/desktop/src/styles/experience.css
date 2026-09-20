@@ -54,6 +54,10 @@
   display: grid;
   gap: 12px;
 }
+.session-model-controls.popover-below .session-model-popover {
+  top: calc(100% + 10px);
+  bottom: auto;
+}
 .session-model-popover header,
 .session-model-popover footer {
   display: flex;

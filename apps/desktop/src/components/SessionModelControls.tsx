@@ -14,10 +14,12 @@ export function SessionModelControls({
   client,
   model,
   busy,
+  placement = "above",
 }: {
   client: RpcClient;
   model: ReturnType<typeof useSessionModel>;
   busy: boolean;
+  placement?: "above" | "below";
 }) {
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState<string[]>([]);
@@ -52,13 +54,16 @@ export function SessionModelControls({
     const updatePopoverHeight = () => {
       const trigger = triggerRef.current;
       if (!trigger) return;
-      const availableHeight = trigger.getBoundingClientRect().top - 26;
+      const bounds = trigger.getBoundingClientRect();
+      const availableHeight = placement === "below"
+        ? window.innerHeight - bounds.bottom - 26
+        : bounds.top - 26;
       setPopoverMaxHeight(Math.max(120, Math.floor(availableHeight)));
     };
     updatePopoverHeight();
     window.addEventListener("resize", updatePopoverHeight);
     return () => window.removeEventListener("resize", updatePopoverHeight);
-  }, [open]);
+  }, [open, placement]);
 
   useEffect(() => {
     if (!model.effective) return;
@@ -111,7 +116,10 @@ export function SessionModelControls({
   }, [modelListOpen, models, query]);
 
   return (
-    <div ref={rootRef} className="session-model-controls">
+    <div
+      ref={rootRef}
+      className={`session-model-controls ${placement === "below" ? "popover-below" : ""}`}
+    >
       <button
         type="button"
         className="model-trigger"

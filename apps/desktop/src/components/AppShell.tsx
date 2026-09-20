@@ -227,6 +227,7 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
               client={app.client}
               model={app.sessionModel}
               busy={false}
+              placement="below"
             />
           }
           busy={false}

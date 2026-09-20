@@ -88,3 +88,22 @@ it("filters the model catalog as the user types", async () => {
   expect(screen.queryByRole("option", { name: "gpt-5.6-sol" })).toBeNull();
   expect(screen.queryByRole("option", { name: "gpt-image-2" })).toBeNull();
 });
+
+it("marks the hero model picker to open below its trigger", () => {
+  const client = {
+    call: vi.fn().mockResolvedValue({ model: "gpt-5.6-sol", apiProtocol: "responses", reasoningEfforts: [] }),
+  } as unknown as RpcClient;
+  const model = {
+    settings: { ...DEFAULT_MODEL_SETTINGS },
+    effective: { model: "gpt-5.6-sol", apiProtocol: "responses", reasoningEffort: null },
+    ready: true,
+    pending: false,
+    error: null,
+    update: vi.fn(),
+    reload: vi.fn(),
+  } as unknown as ReturnType<typeof useSessionModel>;
+
+  render(<SessionModelControls client={client} model={model} busy={false} placement="below" />);
+
+  expect(document.querySelector(".session-model-controls")?.classList.contains("popover-below")).toBe(true);
+});
