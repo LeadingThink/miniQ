@@ -82,12 +82,9 @@ jobs:
           node-version: 22
       - name: Build server terminal on glibc 2.31
         run: |
-          docker run --rm -v "$PWD:/source" -w /source debian:bullseye \
+          docker run --rm -v "$PWD:/source" -w /source \
+            rust:1.93.0-bullseye@sha256:b133cf54916a628618368930a4735dfc7b23fa9d1880afe32c4bb2dafbc845d9 \
             bash -euxo pipefail -c '
-              apt-get update
-              apt-get install -y --no-install-recommends build-essential ca-certificates curl pkg-config
-              curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-              export PATH="/root/.cargo/bin:$PATH"
               export LZMA_API_STATIC=1 BZIP2_NO_PKG_CONFIG=1
               cargo build --release --locked --no-default-features -p miniq-daemon -p miniq-cli \
                 --bin miniq-daemon --bin miniq --target x86_64-unknown-linux-gnu
