@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type FormEvent } from "react";
 import {
   Check,
   Download,
@@ -193,6 +193,9 @@ function ImportToolbar(props: ImportToolbarProps) {
     else next.add(provider);
     props.onProvidersChange(next);
   };
+  const changeWorkspace = (event: FormEvent<HTMLSelectElement>) => {
+    props.onWorkspaceChange(event.currentTarget.value);
+  };
   return (
     <div className="external-import-toolbar">
       <div className="external-provider-segments" aria-label="会话来源">
@@ -219,7 +222,8 @@ function ImportToolbar(props: ImportToolbarProps) {
         <select
           aria-label="目标项目"
           value={props.workspaceId}
-          onChange={(event) => props.onWorkspaceChange(event.target.value)}
+          onChange={changeWorkspace}
+          onInput={changeWorkspace}
         >
           <option value="">原项目目录</option>
           {props.workspaces.map((workspace) => (
