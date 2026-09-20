@@ -5,6 +5,8 @@ Android 与 iOS App 使用 Capacitor 8 封装现有移动工作台，网页入�
 ## 能力与安全
 
 - 移动问答直接调用在问 OneAPI，支持 SSE 流式回答。
+- 每条移动问答消息都提供复制和删除操作。复制保留完整文字（含 Markdown）；仅含图片的消息没有可复制的文字。删除需确认，只移除选中的消息并更新本地历史，后续提问不再携带它；删除正在生成的回答也会停止该回答。
+- 模型选择使用独立顶层弹窗，打开时背景问答不可操作，列表可搜索和滚动；兼容 iPhone/iPad 的键盘与安全区域。
 - 移动问答支持从系统相册/文件选择器附加 PNG、JPEG、WebP、GIF 图片；图片会按 OpenAI 多模态 `image_url` 格式发送，重新打开历史仍保留图片上下文。
 - 远程桌面通过 `wss://oneapi.zaiwenai.com/miniq-relay/ws` 控制桌面 miniQ。
 - API Key 在 Android Keystore / iOS Keychain 中安全保存，不发送给 relay。

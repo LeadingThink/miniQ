@@ -15,6 +15,7 @@
     "test:browser-links": "node --test src-tauri/src/browser_links.node-test.cjs",
     "test:ios-testflight": "node --test scripts/ios_testflight.node-test.mjs",
     "test:macos-privacy": "node --test scripts/macos_privacy.node-test.mjs",
+    "test:mobile": "vitest run --maxWorkers=4 src/components/MobileEntry.test.ts src/components/MobileChat.test.tsx src/components/MobileChat.actions.test.tsx src/components/MobileModelPicker.test.tsx src/mobileChatData.test.ts src/mobileChatStream.test.ts src/remoteCrypto.test.ts src/remotePayload.test.ts src/remoteBlob.test.ts src/hooks/useDaemonConnection.test.ts src/hooks/useDaemonConnection.integration.test.tsx",
     "test:release-manifest": "node --test scripts/build-release-manifest.node-test.mjs",
     "test:qiniu-publisher": "python3 -m unittest discover -s scripts -p *_test.py",
     "preview": "vite preview",

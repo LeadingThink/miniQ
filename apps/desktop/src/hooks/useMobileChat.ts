@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import {
   MOBILE_API_BASE_URL, mobileResponseError, persistMobileChat, readMobileChat,
@@ -13,16 +13,16 @@ export function useMobileChat(apiKey: string, model: string) {
   const [error, setError] = useState<string | null>(null);
   const [storageWarning, setStorageWarning] = useState(false);
   const mounted = useRef(true);
-  const active = useRef<{ controller: AbortController; checkpoint: () => void } | null>(null);
+  const active = useRef<{ messageId: string; controller: AbortController; checkpoint: () => void } | null>(null);
 
-  const publish = (next: MobileChatMessage[], persist: boolean) => {
+  const publish = useCallback((next: MobileChatMessage[], persist: boolean) => {
     messagesRef.current = next;
     if (mounted.current) setMessages(next);
     if (persist) {
       const saved = persistMobileChat(next);
       if (mounted.current) setStorageWarning(!saved);
     }
-  };
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
@@ -42,19 +42,29 @@ export function useMobileChat(apiKey: string, model: string) {
   const run = (history: MobileChatMessage[]) => {
     if (active.current || !model) return false;
     const controller = new AbortController();
+    const messageId = crypto.randomUUID();
+    const replyTo = history.at(-1)?.id;
     let output = "";
     let timer: ReturnType<typeof setTimeout> | null = null;
     const update = (status?: MobileChatMessage["status"], persist = false) => {
       if (timer) clearTimeout(timer);
       timer = null;
-      publish([...history, { role: "assistant", content: output, ...(status ? { status } : {}) }], persist);
+      // Unmount already saved a checkpoint. A late abort must not overwrite
+      // history that a newly opened chat has since edited.
+      if (!mounted.current) return;
+      // Update the live record, not the request's original history: users may
+      // delete messages while this response is streaming.
+      publish(messagesRef.current.map((message) => message.id === messageId
+        ? { id: messageId, role: "assistant", content: output, replyTo, ...(status ? { status } : {}) }
+        : message), persist);
     };
-    active.current = { controller, checkpoint: () => {
+    active.current = { messageId, controller, checkpoint: () => {
       // A backgrounded page can resume streaming. Save a recoverable checkpoint
       // without presenting the live request as already stopped.
-      persistMobileChat([...history, { role: "assistant", content: output, status: "interrupted" }]);
+      persistMobileChat(messagesRef.current.map((message) => message.id === messageId
+        ? { ...message, content: output, status: "interrupted" } : message));
     } };
-    update();
+    publish([...history, { id: messageId, role: "assistant", content: "", replyTo }], false);
     setBusy(true);
     setError(null);
 
@@ -88,15 +98,27 @@ export function useMobileChat(apiKey: string, model: string) {
     return true;
   };
 
-  const send = (content: ChatContent) => run([...messagesRef.current, { role: "user", content }]);
+  const send = (content: ChatContent) => run([...messagesRef.current, { id: crypto.randomUUID(), role: "user", content }]);
+  const canRetryMessages = (history: MobileChatMessage[]) => {
+    const answer = history.at(-1);
+    const question = history.at(-2);
+    return Boolean(answer?.status && question?.role === "user" && answer.replyTo === question.id);
+  };
   const retry = () => {
     const previous = messagesRef.current;
-    if (!previous.at(-1)?.status || previous.at(-2)?.role !== "user") return false;
+    if (!canRetryMessages(previous)) return false;
     return run(previous.slice(0, -1));
   };
+  const deleteMessage = useCallback((id: string) => {
+    if (!messagesRef.current.some((message) => message.id === id)) return;
+    if (active.current?.messageId === id) active.current.controller.abort();
+    if (messagesRef.current.at(-1)?.id === id) setError(null);
+    publish(messagesRef.current.filter((message) => message.id !== id), true);
+  }, [publish]);
   return {
-    messages, busy, error, storageWarning, send, retry,
-    canRetry: Boolean(messages.at(-1)?.status && messages.at(-2)?.role === "user"),
+    messages, busy, error, storageWarning, send, retry, deleteMessage,
+    activeMessageId: active.current?.messageId,
+    canRetry: canRetryMessages(messages),
     stop: () => active.current?.controller.abort(),
   };
 }

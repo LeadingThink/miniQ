@@ -1,11 +1,12 @@
-import { ArrowDown, ArrowLeft, Bot, Check, ChevronDown, ImagePlus, RefreshCw, Send, Square, X } from "lucide-react";
-import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, ArrowLeft, Bot, ImagePlus, RefreshCw, Send, Square, X } from "lucide-react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { COMPOSER_KEYBOARD_HINT, handleComposerKeyDown } from "../composerInput";
 import { errorMessage } from "../errorMessage";
-import { readMobileImage, type MobileChatMessage, type PendingMobileImage } from "../mobileChatData";
+import { readMobileImage, type PendingMobileImage } from "../mobileChatData";
 import { useMobileChat } from "../hooks/useMobileChat";
 import { useMobileChatModels } from "../hooks/useMobileChatModels";
-import { Md } from "./Md";
+import { MobileChatRow } from "./MobileChatRow";
+import { MobileModelPicker } from "./MobileModelPicker";
 
 export function MobileChat(props: { apiKey: string; onBack: () => void }) {
   const catalog = useMobileChatModels(props.apiKey);
@@ -85,8 +86,8 @@ export function MobileChat(props: { apiKey: string; onBack: () => void }) {
           previousHeight.current = feedRef.current?.scrollHeight ?? null;
           setVisibleCount((value) => value + 30);
         }}>加载更早的消息（还有 {chat.messages.length - visibleCount} 条）</button>}
-        {chat.messages.slice(-visibleCount).map((message, index, visible) => (
-          <MobileChatRow key={chat.messages.length - visible.length + index} message={message} active={chat.busy && index === visible.length - 1} />
+        {chat.messages.slice(-visibleCount).map((message) => (
+          <MobileChatRow key={message.id} message={message} active={chat.busy && message.id === chat.activeMessageId} onDelete={chat.deleteMessage} />
         ))}
         {catalog.error && <div className="mobile-entry-error" role="alert">{catalog.error}<button type="button" className="mobile-chat-retry" onClick={catalog.reload}>重新加载模型</button></div>}
         {(chat.error || imageError) && <div className="mobile-entry-error" role="alert">{imageError || chat.error}</div>}
@@ -108,46 +109,4 @@ export function MobileChat(props: { apiKey: string; onBack: () => void }) {
       </form>
     </main>
   );
-}
-
-const MobileChatRow = memo(function MobileChatRow(props: { message: MobileChatMessage; active: boolean }) {
-  const { message, active } = props;
-  return <article className={`mobile-chat-message ${message.role}`}>
-    {message.role === "assistant" ? <Md>{typeof message.content === "string" ? message.content || (active ? "正在思考..." : "") : ""}</Md>
-      : typeof message.content === "string" ? message.content
-        : message.content.map((part, index) => part.type === "text" ? <span key={index}>{part.text}</span> : <img key={index} src={part.image_url.url} alt="已附加图片" loading="lazy" />)}
-    {!active && message.status && <div className="mobile-chat-status">{message.status === "interrupted" ? "已停止，收到的内容已保留" : "回答未完成，收到的内容已保留"}</div>}
-  </article>;
-});
-
-function MobileModelPicker(props: { catalog: ReturnType<typeof useMobileChatModels>; disabled: boolean }) {
-  const { catalog, disabled } = props;
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const input = useRef<HTMLInputElement>(null);
-  const container = useRef<HTMLDivElement>(null);
-  const options = useMemo(() => catalog.models.filter((model) => model.toLowerCase().includes(search.trim().toLowerCase())), [catalog.models, search]);
-  useEffect(() => {
-    if (!open) return;
-    input.current?.focus();
-    const outside = (event: PointerEvent) => {
-      if (event.target instanceof Node && !container.current?.contains(event.target)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
-  }, [open]);
-  return <div className="mobile-chat-model-picker" ref={container} onKeyDown={(event) => {
-    if (event.key === "Escape") { setOpen(false); container.current?.querySelector("button")?.focus(); }
-  }}>
-    <button type="button" className="mobile-chat-model-trigger" aria-label="问答模型" aria-expanded={open} aria-haspopup="dialog" disabled={disabled || catalog.loading || !catalog.models.length} title={catalog.model} onClick={() => { setSearch(""); setOpen((value) => !value); }}>
-      <span>{catalog.loading ? "加载模型…" : catalog.model || "选择模型"}</span><ChevronDown size={14} />
-    </button>
-    {open && <div className="mobile-chat-model-popover" role="dialog" aria-label="选择问答模型">
-      <input ref={input} className="mobile-chat-model-search" aria-label="搜索模型" placeholder="搜索文本模型" type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
-      <div className="mobile-chat-model-results" role="listbox" aria-label="可用文本模型">
-        {options.map((model) => <button type="button" role="option" aria-selected={model === catalog.model} key={model} onClick={() => { catalog.selectModel(model); setOpen(false); container.current?.querySelector("button")?.focus(); }}><span>{model}</span>{model === catalog.model && <Check size={14} />}</button>)}
-        {!options.length && <p role="status">没有匹配的文本模型</p>}
-      </div>
-    </div>}
-  </div>;
 }

@@ -6,11 +6,15 @@ export function CopyButton({
   label,
   className = "icon-button",
   onError,
+  showLabel = false,
+  disabled = false,
 }: {
   content: string;
   label: string;
   className?: string;
   onError?: (message: string) => void;
+  showLabel?: boolean;
+  disabled?: boolean;
 }) {
   const [state, setState] = useState<"idle" | "copied" | "error">("idle");
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -29,8 +33,9 @@ export function CopyButton({
       <button
         type="button"
         className={`${className} ${state}`}
-        title={status}
+        title={disabled ? "没有可复制的文字" : status}
         aria-label={status}
+        disabled={disabled}
         onClick={() => {
           void (async () => {
             try {
@@ -48,6 +53,7 @@ export function CopyButton({
         }}
       >
         {state === "copied" ? <Check size={14} /> : <Copy size={14} />}
+        {showLabel && <span>{status}</span>}
       </button>
       {state === "error" && <small role="alert">复制失败</small>}
     </span>

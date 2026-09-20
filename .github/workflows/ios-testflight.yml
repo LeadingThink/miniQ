@@ -59,7 +59,7 @@ jobs:
       - name: Test and build mobile frontend
         run: |
           node --test scripts/ios_testflight.node-test.mjs
-          npx vitest run src/components/MobileEntry.test.ts src/remoteCrypto.test.ts src/remotePayload.test.ts src/remoteBlob.test.ts src/hooks/useDaemonConnection.test.ts src/hooks/useDaemonConnection.integration.test.tsx
+          npm run test:mobile
           npm run build
           npx cap sync ios
           xcodebuild -list -json -project ios/App/App.xcodeproj | tee "$IOS_CI_DIR-project.json"

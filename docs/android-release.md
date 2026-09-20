@@ -33,7 +33,7 @@ From `apps/desktop`:
 npm ci
 python3 scripts/android_release.py validate --tag android-v0.1.17
 python3 scripts/android_release_test.py
-npx vitest run src/components/MobileEntry.test.ts src/remoteCrypto.test.ts src/remotePayload.test.ts src/remoteBlob.test.ts src/hooks/useDaemonConnection.test.ts src/hooks/useDaemonConnection.integration.test.tsx
+npm run test:mobile
 npm run build
 npx cap sync android
 ```

@@ -31,7 +31,11 @@ async function enterQuestion(text = "原问题") {
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
 }
 
-beforeEach(() => { localStorage.clear(); sessionStorage.clear(); });
+beforeEach(() => {
+  localStorage.clear(); sessionStorage.clear();
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  HTMLDialogElement.prototype.close = function () { this.open = false; };
+});
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it("selects an available text model, supports search, and sends the selected model", async () => {
@@ -215,7 +219,7 @@ it.each(["pagehide", "visibilitychange"])("checkpoints on %s without stopping or
     fireEvent(window, new Event(eventName));
   }
   expect(JSON.parse(localStorage.getItem(MOBILE_CHAT_STORAGE_KEY) ?? "[]").at(-1))
-    .toEqual({ role: "assistant", content: "切后台前", status: "interrupted" });
+    .toEqual(expect.objectContaining({ role: "assistant", content: "切后台前", status: "interrupted" }));
   expect(fetcher.mock.calls.find(([url]) => !modelRequest(url))?.[1]?.signal?.aborted).toBe(false);
   expect(streaming.cancel).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "停止" })).toBeTruthy();
@@ -223,7 +227,8 @@ it.each(["pagehide", "visibilitychange"])("checkpoints on %s without stopping or
   await act(async () => { streaming.push({ choices: [{ delta: { content: "，回来后继续" }, finish_reason: "stop" }] }); });
   await screen.findByText("切后台前，回来后继续");
   expect(JSON.parse(localStorage.getItem(MOBILE_CHAT_STORAGE_KEY) ?? "[]").at(-1))
-    .toEqual({ role: "assistant", content: "切后台前，回来后继续" });
+    .toEqual(expect.objectContaining({ role: "assistant", content: "切后台前，回来后继续" }));
+  expect(JSON.parse(localStorage.getItem(MOBILE_CHAT_STORAGE_KEY) ?? "[]").at(-1)).not.toHaveProperty("status");
 });
 
 it("loads older history on demand without dropping any messages from storage", async () => {
