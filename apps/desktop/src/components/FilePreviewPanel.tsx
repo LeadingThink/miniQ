@@ -47,6 +47,7 @@ import { isHtmlFile } from "../htmlPreview";
 import { isTauriRuntime } from "../runtime";
 import { useSessionFileAccess } from "../sessionFileAccess";
 import { RemoteFileDownload } from "./RemoteFileDownload";
+import { ExternalEditorMenu } from "./ExternalEditorMenu";
 import { PreviewTabs } from "./PreviewTabs";
 import { PreviewSelection } from "./PreviewSelection";
 import { usePreviewSelection } from "../hooks/usePreviewSelection";
@@ -363,6 +364,10 @@ function PreviewPanelContent({
           >
             <ExternalLink size={16} />
           </button>}
+          {!remote && <ExternalEditorMenu
+            target={{ path, line: target?.line, column: target?.column }}
+            onError={setActionError}
+          />}
           {!remote && <button
             className="icon-button"
             title="在文件夹中显示"
