@@ -1,47 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RpcClient } from "./rpc";
-import { decryptRemotePayload, deriveRemoteIdentity, encryptRemotePayload } from "./remoteCrypto";
+import { decryptRemotePayload, deriveRemoteIdentity } from "./remoteCrypto";
 import { RemotePayloadReader } from "./remotePayload";
 import * as remoteCrypto from "./remoteCrypto";
-
-class FakeWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSING = 2;
-  static readonly CLOSED = 3;
-  static instances: FakeWebSocket[] = [];
-
-  readyState = FakeWebSocket.CONNECTING;
-  onopen: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  onclose: (() => void) | null = null;
-  onmessage: ((event: { data: string }) => void) | null = null;
-  sent: string[] = [];
-
-  constructor(_url: string) {
-    FakeWebSocket.instances.push(this);
-  }
-
-  open() {
-    this.readyState = FakeWebSocket.OPEN;
-    this.onopen?.();
-  }
-
-  send(payload: string) {
-    if (this.readyState !== FakeWebSocket.OPEN) throw new Error("socket closed");
-    this.sent.push(payload);
-  }
-
-  receive(payload: unknown) {
-    this.onmessage?.({ data: JSON.stringify(payload) });
-  }
-
-  close() {
-    if (this.readyState === FakeWebSocket.CLOSED) return;
-    this.readyState = FakeWebSocket.CLOSED;
-    this.onclose?.();
-  }
-}
+import { FakeWebSocket, remoteClient } from "./testSupport/rpcSocket";
 
 function useLegacyAbortController() {
   class LegacyAbortController extends AbortController {
@@ -298,25 +260,6 @@ describe("RpcClient timeouts", () => {
     await vi.advanceTimersByTimeAsync(60_000);
   });
 
-  async function remoteClient() {
-    const client = new RpcClient();
-    const info = { kind: "remote" as const, apiKey: "test-only-key", relayUrl: "ws://relay.test/ws", deviceId: "mobile-test", deviceName: "test" };
-    const connected = client.connect(info);
-    const concurrent = client.connect(info);
-    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
-    const socket = FakeWebSocket.instances[0];
-    socket.open();
-    socket.receive({ type: "ready", desktopOnline: true });
-    await connected;
-    await concurrent;
-    const { encryptionKey } = await deriveRemoteIdentity(info.apiKey);
-    const receive = async (payload: unknown) => {
-      const encrypted = await encryptRemotePayload(encryptionKey, payload);
-      socket.receive({ type: "frame", ...encrypted });
-    };
-    return { client, socket, receive };
-  }
-
   it("connects and cancels requests on iOS signals without modern abort methods", async () => {
     useLegacyAbortController();
     const { client, socket } = await remoteClient();
@@ -387,31 +330,6 @@ describe("RpcClient timeouts", () => {
       requestId: "req_1", data: bytes.subarray(20).toString("base64url") });
     await expect(response).resolves.toEqual(expected.result);
     expect(client.connected).toBe(true);
-  });
-
-  it("falls back to encrypted chunks when an object download fails", async () => {
-    const { client, socket, receive } = await remoteClient();
-    const read = vi.spyOn(RemotePayloadReader.prototype, "readAsync").mockImplementation(async (payload) => {
-      if (payload.type === "remote_blob") throw new Error("Failed to fetch");
-      return [payload];
-    });
-    const response = client.call("file.read", { sessionId: "s", path: "/work/image.png", offset: 0 });
-    await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
-    const { encryptionKey } = await deriveRemoteIdentity("test-only-key");
-    const first = JSON.parse(socket.sent.at(-1)!);
-    await expect(decryptRemotePayload(encryptionKey, first.nonce, first.ciphertext)).resolves.toMatchObject({
-      method: "file.read", acceptBlob: true,
-    });
-    await receive({ type: "remote_blob", requestId: "req_1", url: "https://s3.cn-south-1.qiniucs.com/object",
-      expiresAt: Date.now() + 60_000, bytes: 32, sha256: "0".repeat(64), nonce: "AAAAAAAAAAAAAAAA" });
-    await vi.waitFor(() => expect(socket.sent).toHaveLength(3));
-    const fallback = JSON.parse(socket.sent.at(-1)!);
-    await expect(decryptRemotePayload(encryptionKey, fallback.nonce, fallback.ciphertext)).resolves.toMatchObject({
-      method: "file.read", acceptBlob: false,
-    });
-    await receive({ jsonrpc: "2.0", id: "req_1", result: { offset: 0, done: true } });
-    await expect(response).resolves.toEqual({ offset: 0, done: true });
-    expect(read).toHaveBeenCalledTimes(2);
   });
 
   it("keeps a remote socket alive when one request times out", async () => {

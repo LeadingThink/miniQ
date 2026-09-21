@@ -7,6 +7,7 @@ import { decryptRemotePayload, deriveRemoteIdentity, encryptRemotePayload } from
 import { loadRemoteCredentials, type RemoteCredentials } from "./remoteAccess";
 import { RemotePayloadReader } from "./remotePayload";
 import { remoteUploadFrames } from "./remoteUpload";
+import { canReplayRemoteRead } from "./remoteBlobPolicy";
 
 export interface LocalConnectionInfo {
   kind: "local";
@@ -33,8 +34,8 @@ type Pending = {
   reject: (err: Error) => void;
   timer: number;
   method: string;
-  /** Original remote request, retained for a one-time object-transfer fallback. */
-  remotePayload?: Record<string, unknown>;
+  /** Only audited reads may be repeated after an object download fails. */
+  blobFallbackPayload?: Record<string, unknown>;
   blobFallbackAttempted: boolean;
   cleanup: () => void;
 };
@@ -235,19 +236,16 @@ export class RpcClient {
                 if (this.ws !== ws) return;
                 const pending = this.pending.get(id);
                 if (!pending) return;
-                // Qiniu object downloads can fail independently of the encrypted
-                // relay (for example a stale ticket or a transient CORS/network
-                // failure). Retry this RPC once without object storage so the
-                // existing encrypted remote_chunk path can still deliver the
-                // complete response. This is especially important for media,
-                // whose response is large enough to select object storage.
-                if (pending.remotePayload && !pending.blobFallbackAttempted) {
+                // A failed object download may repeat an audited read once over
+                // encrypted chunks. Commands never retain a fallback payload:
+                // repeating them could duplicate a task, approval or file edit.
+                if (pending.blobFallbackPayload && !pending.blobFallbackAttempted) {
                   pending.blobFallbackAttempted = true;
                   this.refreshTimeout(id);
                   void this.sendRemote(
                     ws,
                     remoteKey,
-                    { ...pending.remotePayload, acceptBlob: false },
+                    { ...pending.blobFallbackPayload, acceptBlob: false },
                     () => this.pending.has(id),
                   ).catch((fallbackError) => {
                     const current = this.pending.get(id);
@@ -401,15 +399,17 @@ export class RpcClient {
         reject(new DOMException("Request cancelled", "AbortError"));
       };
       const cleanup = () => options.signal?.removeEventListener("abort", abort);
+      const request = JSON.parse(payload);
+      const acceptBlob = this.connectionMode === "remote" && canReplayRemoteRead(method, request.params);
       const remotePayload = this.connectionMode === "remote"
-        ? { ...JSON.parse(payload), acceptEncoding: "gzip", acceptBlob: true }
+        ? { ...request, acceptEncoding: "gzip", acceptBlob }
         : undefined;
       this.pending.set(id, {
         resolve: resolve as (v: unknown) => void,
         reject,
         timer,
         method,
-        remotePayload,
+        blobFallbackPayload: acceptBlob ? remotePayload : undefined,
         blobFallbackAttempted: false,
         cleanup,
       });
