@@ -243,6 +243,8 @@ export function Timeline(props: TimelineProps) {
           <input
             type="search"
             aria-label="搜索当前会话"
+            data-session-search="true"
+            title="搜索当前会话（⌘/Option+F 或 Ctrl+F）"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />

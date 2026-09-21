@@ -15,6 +15,9 @@ export interface ShortcutHandlers {
   onStop?: () => void;
   /** ⌘/Ctrl+B — toggle the sidebar. */
   onToggleSidebar?: () => void;
+  /** ⌘/Ctrl+F (or Option+F on macOS) — focus the current session search.
+   * Return false when no active conversation search is available. */
+  onSessionSearch?: () => boolean | void;
   /** Escape — close topmost overlay (handled by overlays themselves). */
 }
 
@@ -32,6 +35,11 @@ function textControl(
     return target;
   }
   return null;
+}
+
+function isApplePlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Mac|iPhone|iPad/.test(`${navigator.platform} ${navigator.userAgent}`);
 }
 
 function handleTextNavigation(event: KeyboardEvent): boolean {
@@ -84,6 +92,21 @@ export function useGlobalShortcuts(handlers: ShortcutHandlers, enabled = true) {
       if (handleTextNavigation(e)) return;
 
       const mod = e.metaKey || e.ctrlKey;
+      // Keep the browser's find shortcut scoped to the current conversation.
+      // macOS reports Option+F as `altKey` without a meta modifier, while
+      // Windows/Linux use Ctrl+F. Cmd+F remains supported on macOS too.
+      const findShortcut =
+        (e.key === "f" || e.key === "F" || e.code === "KeyF") &&
+        (isApplePlatform()
+          ? (e.altKey && !e.metaKey && !e.ctrlKey) ||
+            (e.metaKey && !e.altKey && !e.ctrlKey)
+          : e.ctrlKey && !e.altKey && !e.metaKey);
+      if (findShortcut) {
+        if (handlers.onSessionSearch) {
+          if (handlers.onSessionSearch() !== false) e.preventDefault();
+        }
+        return;
+      }
       if (!mod || e.altKey) return;
 
       switch (e.key) {

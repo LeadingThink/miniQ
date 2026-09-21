@@ -28,6 +28,7 @@ export function ApprovalInboxButton(props: Props) {
       <button
         type="button"
         className="statusbar-icon-button"
+        data-tooltip="待审批总览"
         title="待审批总览"
         aria-label="待审批总览"
         onClick={() => setOpen(true)}

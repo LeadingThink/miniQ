@@ -82,6 +82,7 @@ export function OpenPreviewButton(props: {
         ref={trigger}
         type="button"
         className="statusbar-icon-button"
+        data-tooltip="打开项目文件预览"
         title="打开项目文件预览"
         aria-label="打开项目文件预览"
         disabled={pending}

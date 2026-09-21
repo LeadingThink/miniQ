@@ -25,6 +25,7 @@
 }
 
 .statusbar-icon-button {
+  position: relative;
   width: 28px;
   height: 28px;
   display: inline-grid;
@@ -35,6 +36,38 @@
   background: transparent;
   border: 0;
   border-radius: 7px;
+}
+
+/* Native `title` hints are not consistently surfaced by the macOS WebView.
+   Keep title/aria-label as the accessibility fallback, but render a small,
+   predictable hint for pointer and keyboard users as well. */
+.statusbar-icon-button[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 100;
+  top: calc(100% + 7px);
+  right: 0;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 5px 8px;
+  color: var(--accent-fg);
+  background: var(--text);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
+  text-align: left;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.statusbar-icon-button[data-tooltip]:hover::after,
+.statusbar-icon-button[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .statusbar-icon-button:hover {

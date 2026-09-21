@@ -35,6 +35,7 @@ export function AppStatusBar(props: {
       <button
         type="button"
         className="statusbar-icon-button"
+        data-tooltip={`${app.navigation.sidebarCollapsed ? "显示" : "隐藏"}侧栏（⌘/Ctrl+B）`}
         title={`${app.navigation.sidebarCollapsed ? "显示" : "隐藏"}侧栏（⌘/Ctrl+B）`}
         aria-label={`${app.navigation.sidebarCollapsed ? "显示" : "隐藏"}侧栏`}
         onClick={() =>
@@ -87,6 +88,7 @@ export function AppStatusBar(props: {
         <button
           type="button"
           className="statusbar-icon-button"
+          data-tooltip="任务、文件、网页和审阅"
           title="任务、文件、网页和审阅"
           aria-label={props.workbenchOpen ? "隐藏工作面板" : "打开工作面板"}
           aria-expanded={props.workbenchOpen}
@@ -109,6 +111,9 @@ export function AppStatusBar(props: {
       <button
         type="button"
         className="statusbar-icon-button"
+        data-tooltip={
+          app.client.mode === "remote" ? "查看桌面网页记录" : "打开内置浏览器"
+        }
         title={
           app.client.mode === "remote" ? "查看桌面网页记录" : "打开内置浏览器"
         }
@@ -124,7 +129,9 @@ export function AppStatusBar(props: {
         <button
           type="button"
           className="ghost review-toggle"
+          data-tooltip="查看本会话的代码修改"
           title="查看本会话的代码修改"
+          aria-label="查看本会话的代码修改"
           onClick={props.onToggleReview}
         >
           <FileDiff size={16} />

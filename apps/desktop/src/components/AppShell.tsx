@@ -394,6 +394,15 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
     onStop: app.busy ? () => void app.actions.cancelTurn() : undefined,
     onToggleSidebar: () =>
       app.navigation.setSidebarCollapsed(!app.navigation.sidebarCollapsed),
+    onSessionSearch: () => {
+      const search = document.querySelector<HTMLInputElement>(
+        '.main[data-app-active="true"] input[data-session-search="true"]',
+      );
+      if (!search) return false;
+      search.focus();
+      search.select();
+      return true;
+    },
   }, active);
 
   const Container = contentOnly ? Fragment : "div";
@@ -401,7 +410,7 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
   return (
     <Container {...(contentOnly ? {} : { className: `app ${app.navigation.sidebarCollapsed ? "sidebar-collapsed" : ""}` })}>
       {!contentOnly && <AppSidebar app={app} />}
-      <div className="main">
+      <div className="main" data-app-active={String(active)}>
         <AppStatusBar
           app={app}
           onOpenFile={workbench.openFile}
