@@ -15,6 +15,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{run_turn, AgentError, ToolExecutor};
 
+mod missing;
+
 #[derive(Clone)]
 struct CaptureState {
     requests: Arc<Mutex<Vec<(usize, Value)>>>,

@@ -4,14 +4,15 @@
 //! dispatch tool calls to a [`ToolExecutor`], feed results back to the model
 //! and repeat until the model answers without tool calls.
 //!
-//! This crate never touches SQLite or the OS. Persistence and real tool
-//! execution live behind the `ToolExecutor` implementation supplied by the
-//! daemon.
+//! Persistence and real tool execution live behind the `ToolExecutor`
+//! implementation supplied by the daemon. Historical image availability is
+//! checked read-only before constructing provider requests.
 
 use async_trait::async_trait;
 mod checkpoint;
 mod context;
 mod image_history_tool;
+mod missing_images;
 mod response_language;
 mod retry;
 mod tool_batch;

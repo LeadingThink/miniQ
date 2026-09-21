@@ -2,7 +2,9 @@ use super::*;
 use miniq_models::{mock::MockProvider, ChatImage, ImageDetail};
 use serde_json::json;
 
-struct VisualExecutor;
+struct VisualExecutor {
+    screenshot: std::path::PathBuf,
+}
 #[async_trait]
 impl ToolExecutor for VisualExecutor {
     fn specs(&self) -> Vec<ToolSpec> {
@@ -13,7 +15,7 @@ impl ToolExecutor for VisualExecutor {
     }
     fn result_images(&self, _call: &ToolCallRequest, _output: &Value) -> Vec<ChatImage> {
         vec![ChatImage {
-            path: "host-owned.png".into(),
+            path: self.screenshot.to_string_lossy().into_owned(),
             mime_type: "image/png".into(),
             detail: ImageDetail::High,
         }]
@@ -22,6 +24,9 @@ impl ToolExecutor for VisualExecutor {
 
 #[tokio::test]
 async fn screenshots_reach_the_next_model_step_and_persist_in_history() {
+    let directory = tempfile::tempdir().unwrap();
+    let screenshot = directory.path().join("host-owned.png");
+    std::fs::write(&screenshot, crate::missing_images::tests::PNG).unwrap();
     let provider = MockProvider::new(vec![
         vec![ChatDelta::ToolCall(ToolCallRequest {
             id: "screen-1".into(),
@@ -33,7 +38,7 @@ async fn screenshots_reach_the_next_model_step_and_persist_in_history() {
     let (tx, _rx) = tokio::sync::mpsc::channel(32);
     let outcome = run_turn(
         &provider,
-        &VisualExecutor,
+        &VisualExecutor { screenshot },
         vec![ChatMessage::user("inspect")],
         tx,
         CancellationToken::new(),

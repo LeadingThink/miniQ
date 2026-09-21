@@ -15,7 +15,7 @@ pub(crate) struct EncodedImage {
 }
 
 pub(crate) fn encode_image(image: &ChatImage) -> Result<EncodedImage, ProviderError> {
-    let mut bytes = read_image_file(Path::new(&image.path))?;
+    let mut bytes = read_image_bytes(Path::new(&image.path))?;
     let mut mime_type = image.mime_type.clone();
     if image.detail == ImageDetail::Preview {
         let pixels = decode_static_image(&bytes)?;
@@ -84,7 +84,9 @@ pub fn validate_image_path(image: &ChatImage) -> Result<(), ProviderError> {
     open_image_file(Path::new(&image.path)).map(|_| ())
 }
 
-fn read_image_file(path: &Path) -> Result<Vec<u8>, ProviderError> {
+/// Read bounded original bytes without following a substituted symlink.
+/// Attachment ingestion shares this path with provider request encoding.
+pub fn read_image_bytes(path: &Path) -> Result<Vec<u8>, ProviderError> {
     let file = open_image_file(path)?;
     let mut bytes = Vec::new();
     file.take(MAX_IMAGE_BYTES + 1)
@@ -103,7 +105,7 @@ fn read_image_file(path: &Path) -> Result<Vec<u8>, ProviderError> {
 
 /// Safely read a regular image file without following a substituted symlink.
 pub fn load_static_image(path: &Path) -> Result<image::DynamicImage, ProviderError> {
-    decode_static_image(&read_image_file(path)?)
+    decode_static_image(&read_image_bytes(path)?)
 }
 
 /// Decode bounded, static visual evidence and normalize its EXIF orientation.

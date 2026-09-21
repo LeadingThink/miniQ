@@ -21,7 +21,7 @@ mod sse;
 
 pub use anthropic::AnthropicProvider;
 pub use configured::{infer_protocol, ConfiguredProvider};
-pub use image::{decode_static_image, load_static_image, validate_image_path};
+pub use image::{decode_static_image, load_static_image, read_image_bytes, validate_image_path};
 pub use openai::OpenAiCompatProvider;
 pub use provider::{
     ApiProtocol, ArchivedImage, ArchivedImageSource, ChatDelta, ChatImage, ChatMessage, ChatRole,

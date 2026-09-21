@@ -13,6 +13,8 @@ fn transcript(messages: &[ChatMessage]) -> Result<String, ProviderError> {
         role: miniq_models::ChatRole,
         content: &'a str,
         images: &'a [miniq_models::ChatImage],
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        missing_visual_evidence: Vec<serde_json::Value>,
         tool_call_id: &'a Option<String>,
         tool_calls: &'a [miniq_models::ToolCallRequest],
     }
@@ -22,6 +24,11 @@ fn transcript(messages: &[ChatMessage]) -> Result<String, ProviderError> {
             role: message.role,
             content: &message.content,
             images: &message.images,
+            missing_visual_evidence: message
+                .images
+                .iter()
+                .filter_map(|image| crate::missing_images::missing_evidence(image, None))
+                .collect(),
             tool_call_id: &message.tool_call_id,
             tool_calls: &message.tool_calls,
         })

@@ -211,7 +211,7 @@ pub async fn compact_history(
         .any(|tool| tool.name == crate::image_history_tool::TOOL_NAME)
         || messages
             .iter()
-            .any(|message| !message.image_archive.is_empty()))
+            .any(|message| !message.images.is_empty() || !message.image_archive.is_empty()))
     .then(|| crate::visual_history::VisualHistory::from_messages(&messages));
     let estimated_tokens_before = estimate_request_tokens(&messages, tools);
     if estimated_tokens_before <= policy.soft_limit_tokens {

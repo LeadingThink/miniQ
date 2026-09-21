@@ -2,7 +2,8 @@
 use super::common::{params, store_err};
 use crate::state::AppState;
 use base64::Engine;
-use miniq_local::files::{preview_format, validated_file, MAX_PREVIEW_BYTES};
+use miniq_local::files::{preview_format, MAX_PREVIEW_BYTES};
+use miniq_memory::Store;
 use miniq_protocol::{ErrorCode, RpcError};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -69,8 +70,9 @@ fn invalid(error: impl std::fmt::Display) -> RpcError {
 pub(super) async fn describe(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: FileInput = params(raw)?;
     let scope = scope(state, &input.session_id)?;
+    let store = state.store.clone();
     tokio::task::spawn_blocking(move || {
-        let path = validated_file(&input.path, &scope.cwd, &scope.roots)?;
+        let path = validated_session_file(&store, &scope, &input.session_id, &input.path)?;
         let file = File::open(&path).map_err(|e| e.to_string())?;
         let metadata = file.metadata().map_err(|e| e.to_string())?;
         let (kind, mime_type) = preview_format(&path);
@@ -86,10 +88,14 @@ pub(super) async fn describe(state: &AppState, raw: Option<Value>) -> Result<Val
 pub(super) async fn read(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: ReadInput = params(raw)?;
     let scope = scope(state, &input.session_id)?;
-    tokio::task::spawn_blocking(move || read_chunk(&scope, &input))
-        .await
-        .map_err(invalid)?
-        .map_err(invalid)
+    let store = state.store.clone();
+    tokio::task::spawn_blocking(move || {
+        let path = validated_session_file(&store, &scope, &input.session_id, &input.path)?;
+        read_chunk(&path, &input)
+    })
+    .await
+    .map_err(invalid)?
+    .map_err(invalid)
 }
 
 fn revision(metadata: &std::fs::Metadata) -> Result<String, String> {
@@ -102,8 +108,7 @@ fn revision(metadata: &std::fs::Metadata) -> Result<String, String> {
     Ok(format!("{}:{modified}", metadata.len()))
 }
 
-fn read_chunk(scope: &Scope, input: &ReadInput) -> Result<Value, String> {
-    let path = validated_file(&input.path, &scope.cwd, &scope.roots)?;
+fn read_chunk(path: &Path, input: &ReadInput) -> Result<Value, String> {
     let mut file = File::open(path).map_err(|e| e.to_string())?;
     let metadata = file.metadata().map_err(|e| e.to_string())?;
     if revision(&metadata)? != input.revision {
@@ -147,14 +152,7 @@ fn list_directory(scope: &Scope, input: &ListInput) -> Result<Value, String> {
         .join(&input.path)
         .canonicalize()
         .map_err(|e| e.to_string())?;
-    let mut roots = Vec::<PathBuf>::new();
-    for root in std::iter::once(&scope.cwd).chain(scope.roots.iter()) {
-        if let Ok(root) = Path::new(root).canonicalize() {
-            if root.is_dir() && !roots.contains(&root) {
-                roots.push(root);
-            }
-        }
-    }
+    let roots = canonical_roots(scope);
     if !path.is_dir() || !roots.iter().any(|root| path.starts_with(root)) {
         return Err("只能浏览当前会话的项目目录".into());
     }
@@ -206,6 +204,49 @@ fn list_directory(scope: &Scope, input: &ListInput) -> Result<Value, String> {
         .parent()
         .filter(|parent| roots.iter().any(|root| parent.starts_with(root)));
     Ok(json!({"path":path,"parent":parent,"roots":roots,"entries":page,"nextCursor":next_cursor}))
+}
+
+fn canonical_roots(scope: &Scope) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    for root in std::iter::once(&scope.cwd).chain(scope.roots.iter()) {
+        if let Ok(root) = Path::new(root).canonicalize() {
+            if root.is_dir() && !roots.contains(&root) {
+                roots.push(root);
+            }
+        }
+    }
+    roots
+}
+
+fn validated_session_file(
+    store: &Store,
+    scope: &Scope,
+    session_id: &str,
+    requested: &str,
+) -> Result<PathBuf, String> {
+    let path = Path::new(&scope.cwd)
+        .join(requested)
+        .canonicalize()
+        .map_err(|error| format!("无法访问文件 {requested}: {error}"))?;
+    if !path.is_file() {
+        return Err(format!("目标不是文件: {}", path.display()));
+    }
+    if canonical_roots(scope)
+        .iter()
+        .any(|root| path.starts_with(root))
+    {
+        return Ok(path);
+    }
+    // Persisted attachments authorize only their canonical file. Never grant
+    // access to their parent directory, or follow a replaced attachment symlink
+    // to a path which was not explicitly attached to this session.
+    if store
+        .session_has_attachment(session_id, &path.to_string_lossy())
+        .map_err(|error| error.to_string())?
+    {
+        return Ok(path);
+    }
+    Err(format!("拒绝打开当前会话未授权的文件: {}", path.display()))
 }
 
 #[cfg(test)]

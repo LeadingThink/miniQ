@@ -4,6 +4,7 @@
 mod agent_history;
 mod agent_tasks;
 mod approval_inbox;
+mod attachments;
 mod conversation;
 mod execution_events;
 mod external_sessions;

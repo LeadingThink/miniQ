@@ -215,7 +215,7 @@ impl VisualHistory {
             let metadata = json!({
                 "images":references,
                 "readTool":"image_history",
-                "note":"Original pixels and source metadata are retained locally. An included=false image is archived or already included elsewhere in this request. Use image_history to read any needed reference before making a new visual judgment."
+                "note":"Image references and source metadata are retained locally. Original pixels remain readable while their local files are available. An included=false image is archived or already included elsewhere in this request. Explicit missing_visual_evidence notices override inclusion metadata: missing pixels were not inspected. Use image_history to read any needed reference before making a new visual judgment."
             });
             if message.role == ChatRole::Tool {
                 if let Ok(Value::Object(mut output)) = serde_json::from_str(&message.content) {
