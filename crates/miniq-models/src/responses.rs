@@ -417,10 +417,16 @@ impl ModelProvider for ResponsesProvider {
         request: CompletionRequest,
     ) -> Result<DeltaStream, ProviderError> {
         let url = format!("{}/responses", self.config.base_url.trim_end_matches('/'));
-        let body = self.try_build_body(&request)?;
+        let mut sent_messages = request.messages.clone();
+        let body =
+            crate::request_attachments::build_with_attachment_recovery(&request, |request| {
+                sent_messages = request.messages.clone();
+                self.try_build_body(request)
+            })?;
         let decoder = ResponsesDecoder {
-            computer_observation: crate::responses_computer::latest_observation(
+            computer_observation: crate::responses_computer::latest_observation_with_sent_messages(
                 &request.messages,
+                &sent_messages,
                 body["input"].as_array().expect("built input is an array"),
             ),
             ..Default::default()

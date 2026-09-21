@@ -6,7 +6,8 @@
 //!
 //! Persistence and real tool execution live behind the `ToolExecutor`
 //! implementation supplied by the daemon. Historical image availability is
-//! checked read-only before constructing provider requests.
+//! checked read-only during archive recalls and context summarization. Providers
+//! handle unreadable attachment fields when serializing a request.
 
 use async_trait::async_trait;
 mod checkpoint;
@@ -172,12 +173,6 @@ pub trait ToolExecutor: Send + Sync {
         _call: &ToolCallRequest,
         _output: &Value,
     ) -> Result<(), AgentError> {
-        Ok(())
-    }
-
-    /// Validate trusted recall paths in the host before reporting a successful
-    /// read. The provider repeats safe validation when encoding the request.
-    fn validate_image_history(&self, _images: &[miniq_models::ChatImage]) -> Result<(), String> {
         Ok(())
     }
 

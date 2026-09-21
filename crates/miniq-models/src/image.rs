@@ -15,6 +15,13 @@ pub(crate) struct EncodedImage {
 }
 
 pub(crate) fn encode_image(image: &ChatImage) -> Result<EncodedImage, ProviderError> {
+    encode_image_payload(image).map_err(|error| ProviderError::Attachment {
+        path: image.path.clone(),
+        detail: error.to_string(),
+    })
+}
+
+fn encode_image_payload(image: &ChatImage) -> Result<EncodedImage, ProviderError> {
     let mut bytes = read_image_bytes(Path::new(&image.path))?;
     let mut mime_type = image.mime_type.clone();
     if image.detail == ImageDetail::Preview {

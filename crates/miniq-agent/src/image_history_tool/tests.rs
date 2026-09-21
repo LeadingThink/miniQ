@@ -328,7 +328,64 @@ async fn mixed_recall_reports_missing_pixels_and_recovers_them_after_restoration
 }
 
 #[tokio::test]
-async fn removal_between_recall_execution_and_projection_still_reports_missing_evidence() {
+async fn mixed_recall_keeps_directory_and_valid_image_for_provider_recovery() {
+    let directory = tempfile::tempdir().unwrap();
+    let inner = Executor::default();
+    let messages = history(directory.path());
+    let executor = ImageHistoryExecutor::new(&inner, &messages);
+    // A directory is an invalid image attachment, but it is an authorized
+    // archive reference. The image-history tool must return both references so
+    // provider serialization can drop only the directory and retain pixels
+    // from the valid image in the same read.
+    let invalid = directory.path().join("observation-1.png");
+    std::fs::remove_file(&invalid).unwrap();
+    std::fs::create_dir(&invalid).unwrap();
+    let read = call(json!({"action":"read","ids":["img_1","img_2"]}));
+    let output = executor.execute(&read).await.unwrap();
+    assert!(output.get("error").is_none(), "{output}");
+    assert_eq!(
+        output["attached_image_references"],
+        json!(["img_1", "img_2"])
+    );
+    assert!(output["missing_visual_evidence"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let images = executor.result_images(&read, &output);
+    assert_eq!(images.len(), 2);
+    assert_eq!(images[0].path, invalid.to_string_lossy());
+    assert!(images[1].path.ends_with("observation-2.png"));
+
+    // Exercise the actual agent turn so this is more than a unit check of the
+    // result helper: the mixed image-history result must be attached to the
+    // next provider request as one tool-result message.
+    let provider = MockProvider::new(vec![
+        vec![ChatDelta::ToolCall(read.clone())],
+        vec![ChatDelta::Text("done".into())],
+    ]);
+    let (events, _receiver) = tokio::sync::mpsc::channel(32);
+    crate::run_turn(
+        &provider,
+        &inner,
+        messages,
+        events,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let requests = provider.requests.lock().unwrap();
+    let recalled = requests[1]
+        .messages
+        .iter()
+        .find(|message| message.tool_call_id.as_deref() == Some("recall-call"))
+        .expect("image_history result should be sent to provider");
+    assert_eq!(recalled.images.len(), 2);
+    assert_eq!(recalled.images[0].path, invalid.to_string_lossy());
+    assert!(recalled.images[1].path.ends_with("observation-2.png"));
+}
+
+#[tokio::test]
+async fn removal_after_recall_keeps_references_for_provider_recovery() {
     let directory = tempfile::tempdir().unwrap();
     let inner = Executor::default();
     let messages = history(directory.path());
@@ -345,20 +402,14 @@ async fn removal_between_recall_execution_and_projection_still_reports_missing_e
     assert_eq!(result.images.len(), 2);
     let outgoing = executor.messages(&[result]);
     let recalled = outgoing.last().unwrap();
-    assert_eq!(recalled.images.len(), 1);
+    assert_eq!(recalled.images.len(), 2);
     let body: Value = serde_json::from_str(&recalled.content).unwrap();
-    assert_eq!(
-        body["missing_visual_evidence"][0]["image_reference"],
-        "img_1"
-    );
-    assert!(body["missing_visual_evidence"][0]["image"]["path"]
-        .as_str()
-        .unwrap()
-        .ends_with("observation-1.png"));
+    assert_eq!(body["attached_image_references"], json!(["img_1", "img_4"]));
+    assert!(recalled.images[0].path.ends_with("observation-1.png"));
 }
 
 #[tokio::test]
-async fn missing_user_reference_survives_compaction_and_resume_without_blocking_text() {
+async fn missing_user_reference_survives_compaction_for_provider_recovery() {
     let directory = tempfile::tempdir().unwrap();
     let inner = Executor::default();
     let deleted = directory.path().join("missing-reference.png");
@@ -394,10 +445,10 @@ async fn missing_user_reference_survives_compaction_and_resume_without_blocking_
         serde_json::from_slice(&serde_json::to_vec(&compacted.messages).unwrap()).unwrap();
     let executor = ImageHistoryExecutor::new(&inner, &persisted);
     let outgoing = executor.messages(&persisted);
-    assert!(outgoing.iter().all(|message| message.images.is_empty()));
     assert!(outgoing
         .iter()
-        .any(|message| message.content.contains("missing_visual_evidence")));
+        .flat_map(|message| &message.images)
+        .any(|image| image.path == deleted.to_str().unwrap()));
     assert_eq!(
         outgoing.last().unwrap().content,
         "Continue the text-only explanation"

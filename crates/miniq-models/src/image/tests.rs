@@ -139,9 +139,34 @@ fn unreadable_nonregular_and_oversized_paths_fail_validation_and_encoding() {
         .unwrap();
     for path in [dir.path().to_owned(), large, dir.path().join("missing.png")] {
         let attached = attachment(&path, ImageDetail::High);
-        assert!(validate_image_path(&attached).is_err());
-        assert!(encode_image(&attached).is_err());
+        assert!(matches!(
+            validate_image_path(&attached),
+            Err(ProviderError::Config(_))
+        ));
+        assert!(matches!(
+            read_image_bytes(&path),
+            Err(ProviderError::Config(_))
+        ));
+        let error = encode_image(&attached).err().unwrap();
+        assert!(!error.is_retryable());
+        assert!(
+            matches!(error, ProviderError::Attachment {path, detail} if path == attached.path && !detail.is_empty())
+        );
     }
+}
+
+#[test]
+fn preview_decode_errors_identify_the_exact_attachment_without_changing_validation() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("broken.png");
+    std::fs::write(&path, b"not an image").unwrap();
+    let attached = attachment(&path, ImageDetail::Preview);
+    assert!(validate_image_path(&attached).is_ok());
+    assert_eq!(read_image_bytes(&path).unwrap(), b"not an image");
+    let error = encode_image(&attached).err().unwrap();
+    assert!(
+        matches!(error, ProviderError::Attachment {path, detail} if path == attached.path && detail.contains("cannot decode"))
+    );
 }
 
 #[cfg(unix)]

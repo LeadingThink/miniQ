@@ -243,10 +243,6 @@ impl ToolExecutor for ReviewExecutor<'_> {
         self.inner.call_fingerprint(call)
     }
 
-    fn validate_image_history(&self, images: &[miniq_models::ChatImage]) -> Result<(), String> {
-        self.inner.validate_image_history(images)
-    }
-
     async fn record_image_history(
         &self,
         call: &ToolCallRequest,

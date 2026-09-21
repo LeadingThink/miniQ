@@ -322,12 +322,6 @@ impl ToolExecutor for SessionToolExecutor {
         self.persist_image_history(call, output)
     }
 
-    fn validate_image_history(&self, images: &[miniq_models::ChatImage]) -> Result<(), String> {
-        images.iter().try_for_each(|image| {
-            miniq_models::validate_image_path(image).map_err(|error| error.to_string())
-        })
-    }
-
     fn result_images(
         &self,
         call: &ToolCallRequest,

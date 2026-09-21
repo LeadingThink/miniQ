@@ -145,18 +145,29 @@ fn unreadable_screenshots_become_visible_errors_instead_of_poisoning_history() {
         mime_type: "image/png".to_owned(),
         detail: ImageDetail::Auto,
     });
-    let input = build_input(&[
-        assistant(vec![computer_call("lost")]),
-        result,
-        ChatMessage::user("Continue."),
-    ])
+    let request = crate::CompletionRequest {
+        trace: Default::default(),
+        messages: vec![
+            assistant(vec![computer_call("lost")]),
+            result,
+            ChatMessage::user("Continue."),
+        ],
+        tools: vec![],
+        temperature: None,
+        max_output_tokens: None,
+    };
+    let input = crate::request_attachments::build_with_attachment_recovery(&request, |request| {
+        build_input(&request.messages).map(Value::Array)
+    })
     .unwrap();
-    assert_eq!(input[0]["type"], "function_call");
-    assert_eq!(input[1]["output"][0]["text"], "The click completed.");
-    let error = input[1]["output"][1]["text"].as_str().unwrap();
-    assert!(error.contains("Computer tool screenshot unavailable"));
-    assert!(error.contains("expired.png"));
-    assert_eq!(input[2]["role"], "user");
+    let notice: Value =
+        serde_json::from_str(input[0]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(notice["status"], "unavailable_attachment");
+    assert!(notice["path"].as_str().unwrap().ends_with("expired.png"));
+    assert_eq!(input[1]["type"], "function_call");
+    assert_eq!(input[2]["output"], "The click completed.");
+    assert_eq!(input[3]["role"], "user");
+    assert!(request.messages[1].images[0].path.ends_with("expired.png"));
 }
 
 #[test]

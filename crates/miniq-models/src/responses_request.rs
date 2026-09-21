@@ -152,7 +152,7 @@ fn append_tool_result(
             .as_ref()
             .map(|arguments| (call, arguments))
     }) {
-        let result = computer_result_items(call_id, message);
+        let result = computer_result_items(call_id, message)?;
         if !result.native {
             // The native protocol requires a screenshot even when execution was
             // denied. Replay this completed pair as the actual function tool so
@@ -214,37 +214,35 @@ struct ComputerResult {
     observations: Option<Value>,
 }
 
-fn computer_result_items(call_id: &str, message: &ChatMessage) -> ComputerResult {
+fn computer_result_items(
+    call_id: &str,
+    message: &ChatMessage,
+) -> Result<ComputerResult, ProviderError> {
     let mut content = Vec::new();
     if !message.content.is_empty() {
         content.push(text_part("input_text", &message.content));
     }
     for image in &message.images {
-        match encode_image(image) {
-            Ok(encoded) => content.push(json!({
-                "type": "input_image",
-                "image_url": format!("data:{};base64,{}", encoded.mime_type, encoded.base64),
-                "detail": image.detail.wire_detail(),
-            })),
-            Err(error) => content.push(text_part(
-                "input_text",
-                &format!("Computer tool screenshot unavailable: {error}"),
-            )),
-        }
+        let encoded = encode_image(image)?;
+        content.push(json!({
+            "type": "input_image",
+            "image_url": format!("data:{};base64,{}", encoded.mime_type, encoded.base64),
+            "detail": image.detail.wire_detail(),
+        }));
     }
     let Some(image_index) = content
         .iter()
         .position(|part| part["type"] == "input_image")
     else {
-        return ComputerResult {
+        return Ok(ComputerResult {
             native: false,
             output: json!({
                 "type": "function_call_output",
                 "call_id": call_id,
-                "output": if message.images.is_empty() { json!(message.content) } else { json!(content) },
+                "output": message.content,
             }),
             observations: None,
-        };
+        });
     };
     let screenshot = content.remove(image_index);
     let output = json!({
@@ -263,11 +261,11 @@ fn computer_result_items(call_id: &str, message: &ChatMessage) -> ComputerResult
     } else {
         None
     };
-    ComputerResult {
+    Ok(ComputerResult {
         native: true,
         output,
         observations,
-    }
+    })
 }
 
 pub(crate) fn shell_result_item(call_id: &str, content: &str) -> Value {

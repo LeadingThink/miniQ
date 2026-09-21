@@ -69,28 +69,21 @@ fn reviewer(executor: &SessionToolExecutor) -> ReviewExecutor<'_> {
 }
 
 #[tokio::test]
-async fn image_history_review_preserves_host_validation_and_audit() {
-    let (directory, executor) = fixture();
+async fn image_history_review_preserves_reference_audit() {
+    let (_directory, executor) = fixture();
     let review = ReviewExecutor {
         inner: &executor,
         plan: Vec::new(),
         source: ReviewPlan::Checklist,
     };
-    let error = review
-        .validate_image_history(&[miniq_models::ChatImage {
-            path: directory
-                .path()
-                .join("missing.png")
-                .to_string_lossy()
-                .into_owned(),
-            mime_type: "image/png".into(),
-            detail: miniq_models::ImageDetail::High,
-        }])
-        .unwrap_err();
     review
         .record_image_history(
             &call("image_history", json!({"action":"read","ids":["img_1"]})),
-            &json!({"error":error}),
+            &json!({
+                "image_references":["img_1"],
+                "attached_image_references":["img_1"],
+                "historical_evidence":true
+            }),
         )
         .await
         .unwrap();
@@ -101,7 +94,7 @@ async fn image_history_review_preserves_host_validation_and_audit() {
         .unwrap();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].tool_name, "image_history");
-    assert_eq!(records[0].status, miniq_protocol::ToolCallStatus::Failed);
+    assert_eq!(records[0].status, miniq_protocol::ToolCallStatus::Succeeded);
     assert_eq!(
         executor
             .state

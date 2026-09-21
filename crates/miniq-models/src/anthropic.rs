@@ -438,7 +438,10 @@ impl ModelProvider for AnthropicProvider {
         request: CompletionRequest,
     ) -> Result<DeltaStream, ProviderError> {
         let url = format!("{}/messages", self.config.base_url.trim_end_matches('/'));
-        let body = self.try_build_body(&request)?;
+        let body =
+            crate::request_attachments::build_with_attachment_recovery(&request, |request| {
+                self.try_build_body(request)
+            })?;
         let mut builder = self
             .client
             .post(url)

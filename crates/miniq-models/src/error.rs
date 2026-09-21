@@ -78,6 +78,7 @@ impl ProviderError {
             Self::Refusal
             | Self::InvalidResponse(_)
             | Self::ContextWindowExceeded
+            | Self::Attachment { .. }
             | Self::Config(_) => false,
         }
     }

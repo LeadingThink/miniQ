@@ -1,9 +1,7 @@
 //! Missing historical pixels are explicit evidence gaps, never invented visuals.
 
-use miniq_models::{ChatImage, ChatMessage, ChatRole};
+use miniq_models::ChatImage;
 use serde_json::{json, Value};
-
-use crate::visual_history::VisualHistory;
 
 pub(crate) const MISSING_NOTE: &str = "The original local image file is missing. Its pixels are not included and have not been inspected in this request. Do not infer visual details from its path, source text, OCR or metadata. Continue work that does not require these pixels; if visual inspection is necessary, ask for the file to be restored or attached again. Original image references and source metadata remain in the conversation archive; restoring the file makes it readable again.";
 
@@ -18,39 +16,6 @@ pub(crate) fn missing_evidence(image: &ChatImage, reference: Option<&str>) -> Op
             "note": MISSING_NOTE,
         })),
         _ => None,
-    }
-}
-
-/// Sanitize only the outgoing copy. Never remove archived paths or sources.
-pub(crate) fn mark_missing_images(messages: &mut [ChatMessage], archive: &VisualHistory) {
-    for message in messages {
-        let mut missing = Vec::new();
-        message.images.retain(|image| {
-            let reference = archive.entries().iter().find(|entry| {
-                entry.image.path == image.path && entry.image.mime_type == image.mime_type
-            });
-            match missing_evidence(image, reference.map(|entry| entry.id.as_str())) {
-                Some(evidence) => {
-                    missing.push(evidence);
-                    false
-                }
-                None => true,
-            }
-        });
-        if missing.is_empty() {
-            continue;
-        }
-        if message.role == ChatRole::Tool {
-            if let Ok(Value::Object(mut output)) = serde_json::from_str(&message.content) {
-                output.insert("missing_visual_evidence".into(), json!(missing));
-                message.content = Value::Object(output).to_string();
-                continue;
-            }
-        }
-        message.content.push_str(&format!(
-            "\n\n[Missing visual evidence: {}]",
-            json!(missing)
-        ));
     }
 }
 

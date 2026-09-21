@@ -17,56 +17,28 @@ fn image(path: &std::path::Path) -> ChatImage {
 }
 
 #[test]
-fn projection_preserves_user_text_archive_and_valid_pixels_then_recovers_restored_files() {
+fn missing_notice_preserves_reference_and_path_then_clears_after_restoration() {
     let directory = tempfile::tempdir().unwrap();
     let present = directory.path().join("present.png");
     let deleted = directory.path().join("微信旧截图.png");
     std::fs::write(&present, PNG).unwrap();
     miniq_models::decode_static_image(PNG).unwrap();
-    let mut attachment = ChatMessage::user("按照之前的图片设计，但先回答我的文字问题。");
-    attachment.images = vec![image(&present), image(&deleted)];
-    let history = vec![attachment, ChatMessage::user("先继续解释方案")];
-    let original = serde_json::to_value(&history).unwrap();
-    let archive = VisualHistory::from_messages(&history);
-    let stored = serde_json::to_value(archive.entries()).unwrap();
-    let mut outgoing = history.clone();
-    mark_missing_images(&mut outgoing, &archive);
-    assert_eq!(outgoing[0].images, vec![image(&present)]);
-    assert!(outgoing[0].content.starts_with(&history[0].content));
-    assert!(outgoing[0].content.contains("missing_visual_evidence"));
-    assert!(outgoing[0].content.contains("img_2"));
-    assert!(outgoing[0].content.contains(deleted.to_str().unwrap()));
-    assert!(outgoing[0].content.contains("have not been inspected"));
-    assert_eq!(outgoing[1].content, history[1].content);
-    assert_eq!(serde_json::to_value(&history).unwrap(), original);
-    assert_eq!(serde_json::to_value(archive.entries()).unwrap(), stored);
+    let attachment = image(&deleted);
+    let original = serde_json::to_value(&attachment).unwrap();
+    assert!(missing_evidence(&image(&present), Some("img_1")).is_none());
+    let notice = missing_evidence(&attachment, Some("img_2")).unwrap();
+    assert_eq!(notice["status"], "missing_visual_evidence");
+    assert_eq!(notice["image_reference"], "img_2");
+    assert_eq!(notice["image"]["path"], deleted.to_str().unwrap());
+    assert!(notice["note"]
+        .as_str()
+        .unwrap()
+        .contains("have not been inspected"));
+    assert_eq!(serde_json::to_value(&attachment).unwrap(), original);
 
     std::fs::write(&deleted, PNG).unwrap();
-    let mut recovered = history.clone();
-    mark_missing_images(&mut recovered, &archive);
-    assert_eq!(serde_json::to_value(recovered).unwrap(), original);
-}
-
-#[test]
-fn missing_tool_images_keep_their_structured_output_and_reference() {
-    let directory = tempfile::tempdir().unwrap();
-    let mut message =
-        ChatMessage::tool_result("view-1", r#"{"page":3,"finding":"original finding"}"#);
-    message
-        .images
-        .push(image(&directory.path().join("gone.png")));
-    let history = vec![message];
-    let archive = VisualHistory::from_messages(&history);
-    let mut outgoing = archive.project(&history);
-    mark_missing_images(&mut outgoing, &archive);
-    let output: Value = serde_json::from_str(&outgoing[0].content).unwrap();
-    assert_eq!(output["page"], 3);
-    assert_eq!(output["finding"], "original finding");
-    assert_eq!(
-        output["missing_visual_evidence"][0]["image_reference"],
-        "img_1"
-    );
-    assert!(outgoing[0].images.is_empty());
+    assert!(missing_evidence(&attachment, Some("img_2")).is_none());
+    assert_eq!(serde_json::to_value(attachment).unwrap(), original);
 }
 
 #[test]

@@ -36,6 +36,8 @@ pub enum ProviderError {
     IncompleteStream,
     #[error("tool call {tool} ended with incomplete JSON arguments: {detail}")]
     IncompleteToolArguments { tool: String, detail: String },
+    #[error("cannot encode image attachment {path}: {detail}")]
+    Attachment { path: String, detail: String },
     #[error("configuration error: {0}")]
     Config(String),
 }

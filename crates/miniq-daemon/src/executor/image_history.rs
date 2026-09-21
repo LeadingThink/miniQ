@@ -165,42 +165,4 @@ mod tests {
         assert!(!serialized.contains("never-log"));
         assert!(serialized.contains("[REDACTED]"));
     }
-
-    #[test]
-    fn image_history_validation_rejects_missing_files_without_reading_payloads() {
-        let (directory, executor) = fixture(None);
-        let path = directory.path().join("missing.png");
-        let image = miniq_models::ChatImage {
-            path: path.to_string_lossy().into_owned(),
-            mime_type: "image/png".into(),
-            detail: miniq_models::ImageDetail::High,
-        };
-        assert!(executor
-            .validate_image_history(std::slice::from_ref(&image))
-            .is_err());
-        std::fs::write(
-            &path,
-            "validation checks ownership and file type, not pixels",
-        )
-        .unwrap();
-        executor.validate_image_history(&[image]).unwrap();
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn image_history_validation_rejects_a_substituted_symlink() {
-        let (directory, executor) = fixture(None);
-        let original = directory.path().join("original.png");
-        let substituted = directory.path().join("archived.png");
-        std::fs::write(&original, "private fixture").unwrap();
-        std::os::unix::fs::symlink(&original, &substituted).unwrap();
-        let error = executor
-            .validate_image_history(&[miniq_models::ChatImage {
-                path: substituted.to_string_lossy().into_owned(),
-                mime_type: "image/png".into(),
-                detail: miniq_models::ImageDetail::High,
-            }])
-            .unwrap_err();
-        assert!(error.contains("symlink"));
-    }
 }

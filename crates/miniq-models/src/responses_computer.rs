@@ -125,7 +125,20 @@ fn normalize_modifier(key: &Value) -> Value {
 
 /// Bind native actions to the actual screenshot included in the request. A
 /// model-provided flag cannot skip freshness, ownership, expiry or focus checks.
+#[cfg(test)]
 pub(crate) fn latest_observation(messages: &[ChatMessage], input: &[Value]) -> Option<String> {
+    latest_observation_with_sent_messages(messages, messages, input)
+}
+
+/// As `messages` may contain images omitted by local attachment recovery,
+/// require the original first image for each computer result to still be the
+/// first image sent on the wire. A valid secondary image cannot impersonate a
+/// missing primary screenshot.
+pub(crate) fn latest_observation_with_sent_messages(
+    messages: &[ChatMessage],
+    sent_messages: &[ChatMessage],
+    input: &[Value],
+) -> Option<String> {
     // Use the exact serialized request, not attachment metadata or a second file
     // read: screenshot recovery may have replaced missing images with text.
     let visual_results: HashSet<&str> = input
@@ -148,6 +161,23 @@ pub(crate) fn latest_observation(messages: &[ChatMessage], input: &[Value]) -> O
             (native || function)
                 .then(|| item["call_id"].as_str())
                 .flatten()
+        })
+        .collect();
+    let sent_images_by_call: HashMap<&str, bool> = messages
+        .iter()
+        .filter(|message| message.role == ChatRole::Tool)
+        .filter_map(|message| {
+            let call_id = message.tool_call_id.as_deref()?;
+            let sent = sent_messages.iter().find(|candidate| {
+                candidate.role == ChatRole::Tool
+                    && candidate.tool_call_id.as_deref() == Some(call_id)
+            })?;
+            let primary_preserved = message
+                .images
+                .first()
+                .zip(sent.images.first())
+                .is_some_and(|(original, sent)| original == sent);
+            Some((call_id, primary_preserved))
         })
         .collect();
     let mut calls = HashMap::new();
@@ -183,6 +213,7 @@ pub(crate) fn latest_observation(messages: &[ChatMessage], input: &[Value]) -> O
                     let id = value["observationId"].as_str()?;
                     (value["screenshot"]["id"] == id
                         && !message.images.is_empty()
+                        && sent_images_by_call.get(message.tool_call_id.as_deref()?) == Some(&true)
                         && message
                             .tool_call_id
                             .as_deref()
@@ -287,6 +318,39 @@ mod tests {
     }
 
     #[test]
+    fn secondary_image_cannot_authorize_a_result_when_primary_screenshot_was_omitted() {
+        let encoded = vec![json!({
+            "type": "function_call_output",
+            "call_id": "one",
+            "output": [{"type": "input_image", "image_url": "data:image/png;base64,secondary"}]
+        })];
+        let mut original = observed("screenshot", "one");
+        original[1].images = vec![
+            ChatImage {
+                path: "primary.png".into(),
+                mime_type: "image/png".into(),
+                detail: crate::ImageDetail::High,
+            },
+            ChatImage {
+                path: "secondary.png".into(),
+                mime_type: "image/png".into(),
+                detail: crate::ImageDetail::High,
+            },
+        ];
+        let mut sent = original.clone();
+        sent[1].images.remove(0);
+        assert_eq!(
+            latest_observation_with_sent_messages(&original, &sent, &encoded),
+            None
+        );
+        sent[1].images.insert(0, original[1].images[0].clone());
+        assert_eq!(
+            latest_observation_with_sent_messages(&original, &sent, &encoded),
+            Some("one".into())
+        );
+    }
+
+    #[test]
     fn release_or_failed_input_invalidates_previous_observation() {
         let encoded = vec![json!({"type":"computer_call_output","call_id":"one",
             "output":{"type":"computer_screenshot","image_url":"data:image/png;base64,encoded"}})];
@@ -313,8 +377,20 @@ mod tests {
             .join("missing.png")
             .to_string_lossy()
             .into_owned();
-        let input = crate::responses_request::build_input(&messages).unwrap();
-        assert_eq!(input[1]["type"], "function_call_output");
-        assert_eq!(latest_observation(&messages, &input), None);
+        let request = crate::CompletionRequest {
+            trace: Default::default(),
+            messages,
+            tools: vec![],
+            temperature: None,
+            max_output_tokens: None,
+        };
+        let input =
+            crate::request_attachments::build_with_attachment_recovery(&request, |request| {
+                crate::responses_request::build_input(&request.messages).map(Value::Array)
+            })
+            .unwrap();
+        let input = input.as_array().unwrap();
+        assert_eq!(input[2]["type"], "function_call_output");
+        assert_eq!(latest_observation(&request.messages, input), None);
     }
 }
