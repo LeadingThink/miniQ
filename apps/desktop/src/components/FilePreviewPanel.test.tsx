@@ -89,6 +89,7 @@ it("offers mobile download and follow-up without desktop-only actions", () => {
   );
   expect(screen.getByRole("button", { name: "下载到当前设备" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "在文件夹中显示" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "在外部编辑器中打开" })).toBeNull();
   expect(
     screen.queryByRole("button", { name: "使用系统默认应用打开" }),
   ).toBeNull();

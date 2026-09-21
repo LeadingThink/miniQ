@@ -77,6 +77,7 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
       {app.navigation.showSettings && (
         <SettingsPanel
           client={app.client}
+          workspaceId={app.catalog.currentSession?.workspaceId ?? app.catalog.selectedWorkspaceId}
           theme={theme}
           onThemeChange={onThemeChange}
           onProviderConfigured={() => void app.connection.refreshProviderConfiguration()}

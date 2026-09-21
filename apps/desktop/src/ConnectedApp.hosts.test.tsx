@@ -10,7 +10,8 @@ import { DEFAULT_MODEL_SETTINGS } from "./modelSelection";
 
 vi.mock("@capacitor/app", () => ({ App: { addListener: () => Promise.resolve({ remove: vi.fn() }) } }));
 vi.mock("./rpc", async (original) => ({ ...await original<typeof import("./rpc")>(), resolveConnection: vi.fn().mockResolvedValue({ kind: "local", port: 1, token: "fixture" }) }));
-vi.mock("./hooks/useTaskNotifications", () => ({ useTaskNotifications: () => {} }));
+const notifyTaskResult = vi.hoisted(() => vi.fn());
+vi.mock("./taskNotifications", () => ({ notifyTaskResult }));
 const updater = vi.hoisted(() => ({ state: { phase: "idle" }, supported: false, checkNow: vi.fn(), install: vi.fn() }));
 vi.mock("./hooks/useAppUpdater", () => ({ useAppUpdater: () => updater }));
 vi.mock("./localFiles", async (original) => ({ ...await original<typeof import("./localFiles")>(), readLocalFilePreview: async (path: string, _workspace: unknown, _paths: unknown, options: { client: { sshHost: string | null } }) => ({ path, content: `${options.client.sshHost ?? "local"} file contents`, kind: "text", mimeType: "text/plain", dataBase64: null, size: 10 }) }));
@@ -52,7 +53,7 @@ class IntegrationRoot extends SshFixtureRoot {
   }
 }
 afterEach(cleanup);
-beforeEach(() => { localStorage.clear(); Element.prototype.scrollIntoView = vi.fn(); });
+beforeEach(() => { localStorage.clear(); notifyTaskResult.mockClear(); Element.prototype.scrollIntoView = vi.fn(); });
 
 it("loads equal session IDs from the selected computer and isolates actual preview state", async () => {
   const root = new IntegrationRoot(); const select = vi.spyOn(root, "selectSession");
@@ -111,4 +112,23 @@ it("finishes sending a local task without reopening its session after switching 
   await waitFor(() => expect(select).toHaveBeenLastCalledWith("same-session", "demo-development"));
   expect(root.opened).not.toContain("local");
   expect(root.extraSessions).toHaveLength(1);
+});
+
+it("notifies once when a task on an inactive SSH host completes after switching hosts", async () => {
+  const root = new IntegrationRoot();
+  render(<DesktopHostProvider root={root}><ConnectedApp theme="jade" onThemeChange={() => {}} /></DesktopHostProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: "开发项目 · 任务进度" }));
+  await screen.findByText("demo-development private answer");
+  fireEvent.click(screen.getByRole("button", { name: "研究项目 · 任务进度" }));
+  await screen.findByText("demo-research private answer");
+  await act(async () => {
+    root.emit({ type: "host_event", hostId: "demo-development", event: { type: "turn_completed", sessionId: "same-session" } });
+  });
+  expect(notifyTaskResult.mock.calls).toEqual([["completed", "开发服务器 · 开发项目 · 任务进度"]]);
+  await act(async () => {
+    root.emit({ type: "host_event", hostId: "demo-research", event: { type: "turn_failed", sessionId: "same-session", error: "provider secret" } });
+  });
+  expect(notifyTaskResult).toHaveBeenLastCalledWith("failed", "研究服务器 · 研究项目 · 任务进度");
+  expect(notifyTaskResult).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole("region", { name: "content-demo-research" })).toBeTruthy();
 });

@@ -14,6 +14,7 @@ mod external_workspace;
 mod files;
 mod interaction;
 mod mcp;
+mod memory;
 mod observation;
 mod plugin;
 mod schedule;
@@ -84,6 +85,8 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "workspace.open" => workspace::open(state, req.params),
         "workspace.create" => workspace::create(state, req.params),
         "workspace.list" => workspace::list(state),
+        "memory.list" => memory::list(state, req.params),
+        "memory.delete" => memory::delete(state, req.params),
         "workspace.updateRoots" => workspace_roots::update(state, req.params).await,
         "schedule.create" => schedule::create(state, req.params),
         "schedule.list" => schedule::list(state),

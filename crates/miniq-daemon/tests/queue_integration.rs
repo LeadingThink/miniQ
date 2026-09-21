@@ -15,6 +15,9 @@ use tokio_tungstenite::tungstenite::Message;
 type WsClient =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+#[path = "queue/ordering.rs"]
+mod ordering;
+
 /// Provider that blocks until released via a watch channel; every release
 /// completes exactly one waiting turn.
 struct GatedProvider {

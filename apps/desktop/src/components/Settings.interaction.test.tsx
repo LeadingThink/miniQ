@@ -120,14 +120,14 @@ describe("appearance settings integration", () => {
       screenRecording: "granted",
       accessibility: "granted",
       displayServer: null,
-    } : settings));
+    } : method === "memory.list" ? { memories: [], nextCursor: null } : settings));
     const trigger = document.createElement("button");
     document.body.append(trigger);
     trigger.focus();
     const { unmount } = render(<Fixture />);
     await waitFor(() => expect(call).toHaveBeenCalledTimes(1));
     expect(screen.getAllByRole("tab").map((element) => element.textContent)).toEqual([
-      "服务与远程", "电脑控制", "外观",
+      "服务与远程", "电脑控制", "外观", "记忆",
     ]);
     fireEvent.keyDown(screen.getByRole("tab", { name: "服务与远程" }), { key: "ArrowRight" });
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "电脑控制" }));
@@ -135,9 +135,9 @@ describe("appearance settings integration", () => {
     await waitFor(() => expect(screen.getAllByText("已授权")).toHaveLength(2));
     expect(screen.queryByRole("searchbox")).toBeNull();
     fireEvent.keyDown(document.activeElement!, { key: "End" });
-    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "外观" }));
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "记忆" }));
     fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
-    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "电脑控制" }));
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "外观" }));
     fireEvent.keyDown(document.activeElement!, { key: "Home" });
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "服务与远程" }));
     expect(screen.getByRole("button", { name: "保存并开始使用" })).toBeTruthy();

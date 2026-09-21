@@ -1,4 +1,4 @@
-import { ExternalLink, KeyRound, Monitor, MonitorSmartphone, Palette, Server, Wifi, WifiOff, X } from "lucide-react";
+import { ExternalLink, KeyRound, MonitorSmartphone, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import { openExternalUrl } from "../externalLinks";
@@ -11,6 +11,9 @@ import { clearRemoteCredentials, DEFAULT_RELAY_URL, loadRemoteCredentials, store
 import { MINIQ_PRIVACY_URL, MINIQ_SUPPORT_URL } from "../mobilePrivacy";
 import { useDesktopHost } from "../desktopHost";
 import { SshConnections } from "./SshConnections";
+import { TaskNotificationSettings } from "./TaskNotificationSettings";
+import { MemoryPanel } from "./MemoryPanel";
+import { SettingsTabs, type SettingsTab } from "./SettingsTabs";
 
 export const ZAIWEN_API_PORTAL_URL = "https://platform.zaiwenai.com/";
 export const ZAIWEN_API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
@@ -43,6 +46,7 @@ interface SettingsView {
 
 interface SettingsPanelProps {
   client: RpcClient;
+  workspaceId?: string | null;
   theme: ThemeId;
   onThemeChange: (theme: ThemeId) => void;
   onClose: () => void;
@@ -52,8 +56,7 @@ interface SettingsPanelProps {
 export function SettingsPanel(props: SettingsPanelProps) {
   const desktop = useDesktopHost();
   const canConfigureProvider = (desktop?.root ?? props.client).mode === "local";
-  const settingsTabs = ["services", "computer", "appearance"] as const;
-  const [tab, setTab] = useState<(typeof settingsTabs)[number]>("services");
+  const [tab, setTab] = useState<SettingsTab>("services");
   const [baseUrl, setBaseUrl] = useState(ZAIWEN_API_BASE_URL);
   const [defaultModel, setDefaultModel] = useState(DEFAULT_PROVIDER_MODEL);
   const [apiKey, setApiKey] = useState("");
@@ -247,42 +250,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
           </button>
         </div>
 
-        <div className="settings-tabs" role="tablist" aria-label="设置分类">
-          {settingsTabs.map((value, index) => (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              id={`settings-tab-${value}`}
-              aria-controls={`settings-${value}`}
-              aria-selected={tab === value}
-              tabIndex={tab === value ? 0 : -1}
-              onClick={() => setTab(value)}
-              onKeyDown={(event) => {
-                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-                event.preventDefault();
-                const next =
-                  settingsTabs[
-                    event.key === "Home"
-                      ? 0
-                      : event.key === "End"
-                        ? settingsTabs.length - 1
-                        : (index + (event.key === "ArrowLeft" ? -1 : 1) + settingsTabs.length) % settingsTabs.length
-                  ];
-                setTab(next);
-                document.getElementById(`settings-tab-${next}`)?.focus();
-              }}
-            >
-              {value === "appearance" ? (
-                <Palette size={15} />
-              ) : value === "services" ? (
-                <Server size={15} />
-              ) : (
-                <Monitor size={15} />
-              )}
-              {value === "appearance" ? "外观" : value === "services" ? "服务与远程" : "电脑控制"}
-            </button>
-          ))}
+        <SettingsTabs selected={tab} onSelect={setTab} />
+        <div id="settings-memory" role="tabpanel" aria-labelledby="settings-tab-memory" hidden={tab !== "memory"}>
+          {tab === "memory" && <MemoryPanel client={props.client} workspaceId={props.workspaceId ?? null} />}
         </div>
         <div id="settings-computer" role="tabpanel" aria-labelledby="settings-tab-computer" hidden={tab !== "computer"}>
           {tab === "computer" && <ComputerSettings client={props.client} />}
@@ -294,6 +264,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
           hidden={tab !== "appearance"}
         >
           <ThemePicker theme={props.theme} onThemeChange={props.onThemeChange} />
+          {tab === "appearance" && <TaskNotificationSettings />}
         </div>
         <div id="settings-services" role="tabpanel" aria-labelledby="settings-tab-services" hidden={tab !== "services"}>
           {props.client.sshHost && <p className="settings-section-description">当前设置属于 SSH 主机 {props.client.sshHost}。模型请求、文件操作和命令在该主机执行；不会自动复制本机的 API Key。</p>}

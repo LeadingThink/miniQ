@@ -1,43 +1,74 @@
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriRuntime } from "./runtime";
+import { isSessionRunning } from "./sessionStatus";
+import type { SessionStatus } from "./types";
 
 const STORAGE_KEY = "miniq.keepAwake.v1";
 const CHANGE_EVENT = "miniq-keep-awake-changed";
+let error: string | null = null;
+const listeners = new Set<() => void>();
+let nativeUpdate: Promise<void> = Promise.resolve();
+
+function reportError(value: string | null) {
+  error = value;
+  listeners.forEach((notify) => notify());
+}
 
 export function getKeepAwake(): boolean {
-  if (typeof localStorage === "undefined") return false;
-  return localStorage.getItem(STORAGE_KEY) === "true";
+  try { return localStorage.getItem(STORAGE_KEY) === "true"; }
+  catch { return false; }
 }
 
 export function setKeepAwake(enabled: boolean): void {
-  localStorage.setItem(STORAGE_KEY, String(enabled));
-  window.dispatchEvent(new Event(CHANGE_EVENT));
+  try {
+    localStorage.setItem(STORAGE_KEY, String(enabled));
+    reportError(null);
+    window.dispatchEvent(new Event(CHANGE_EVENT));
+  } catch {
+    reportError("无法保存防休眠设置，请检查本机存储是否可用。");
+  }
 }
 
-export function useKeepAwake(busy: boolean): boolean {
-  const [enabled, setEnabled] = useState(getKeepAwake);
+function subscribe(notify: () => void) {
+  listeners.add(notify);
+  window.addEventListener(CHANGE_EVENT, notify);
+  window.addEventListener("storage", notify);
+  return () => {
+    listeners.delete(notify);
+    window.removeEventListener(CHANGE_EVENT, notify);
+    window.removeEventListener("storage", notify);
+  };
+}
 
-  useEffect(() => {
-    const refresh = () => setEnabled(getKeepAwake());
-    window.addEventListener(CHANGE_EVENT, refresh);
-    window.addEventListener("storage", refresh);
-    return () => {
-      window.removeEventListener(CHANGE_EVENT, refresh);
-      window.removeEventListener("storage", refresh);
-    };
-  }, []);
+export function useKeepAwakePreference() {
+  const enabled = useSyncExternalStore(subscribe, getKeepAwake, () => false);
+  const problem = useSyncExternalStore(subscribe, () => error, () => null);
+  return { enabled, error: problem };
+}
 
+export function hasLocalRunningTasks(mode: string, sessions: readonly { status: SessionStatus }[]): boolean {
+  return mode === "local" && sessions.some((session) => isSessionRunning(session.status));
+}
+
+function updateNative(enabled: boolean) {
+  // Serialize cleanup/start requests so a slow previous toggle cannot win.
+  nativeUpdate = nativeUpdate.then(async () => {
+    try {
+      await invoke("set_keep_awake", { enabled });
+      reportError(null);
+    } catch (cause) {
+      reportError(`防休眠设置未生效：${String(cause)}`);
+    }
+  });
+}
+
+/** Mount once at the desktop root, outside per-host/per-conversation views. */
+export function useKeepAwake(busy: boolean): void {
+  const { enabled } = useKeepAwakePreference();
   useEffect(() => {
     if (!isTauriRuntime()) return;
-    const active = enabled && busy;
-    void invoke("set_keep_awake", { enabled: active }).catch(() => {
-      // The toggle remains useful on platforms without a native sleep lock.
-    });
-    return () => {
-      if (active) void invoke("set_keep_awake", { enabled: false }).catch(() => {});
-    };
+    updateNative(enabled && busy);
+    return () => { updateNative(false); };
   }, [busy, enabled]);
-
-  return enabled;
 }

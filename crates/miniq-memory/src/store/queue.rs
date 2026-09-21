@@ -79,7 +79,7 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, session_id, content, attachments_json, position, created_at
-             FROM queued_messages WHERE session_id = ?1 ORDER BY position ASC",
+             FROM queued_messages WHERE session_id = ?1 ORDER BY position ASC, id ASC",
         )?;
         let rows = stmt.query_map(params![session_id], row_to_queued)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -210,8 +210,8 @@ impl Store {
         })
     }
 
-    /// Move a queued message one slot while checking the caller's queue
-    /// revision. The session id is part of the lookup so a message id from a
+    /// Move a queued message one slot while checking its last observed
+    /// position. The session id is part of the lookup so a message id from a
     /// different session cannot be reordered accidentally or deliberately.
     pub fn move_queued_message(
         &self,
@@ -237,41 +237,42 @@ impl Store {
             ));
         }
 
-        let ids = {
-            let mut stmt = transaction.prepare(
-                "SELECT id FROM queued_messages WHERE session_id = ?1
-                 ORDER BY position ASC, id ASC",
-            )?;
-            let rows = stmt.query_map(params![session_id], |row| row.get::<_, String>(0))?;
-            rows.collect::<std::result::Result<Vec<_>, _>>()?
-        };
-        let index = ids
-            .iter()
-            .position(|queued_id| queued_id == id)
-            .ok_or_else(|| MemoryError::NotFound(format!("queued message {id}")))?;
-        let adjacent = if move_up {
-            index.checked_sub(1)
-        } else if index + 1 < ids.len() {
-            Some(index + 1)
+        let neighbor_query = if move_up {
+            "SELECT id, position FROM queued_messages
+             WHERE session_id = ?1 AND (position, id) < (?2, ?3)
+             ORDER BY position DESC, id DESC LIMIT 1"
         } else {
-            None
+            "SELECT id, position FROM queued_messages
+             WHERE session_id = ?1 AND (position, id) > (?2, ?3)
+             ORDER BY position ASC, id ASC LIMIT 1"
         };
-        let Some(adjacent) = adjacent else {
+        let neighbor = transaction
+            .query_row(
+                neighbor_query,
+                params![session_id, message.position, id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()?;
+        let Some((neighbor_id, neighbor_position)) = neighbor else {
             transaction.commit()?;
             return Ok(message);
         };
 
-        let mut reordered = ids;
-        reordered.swap(index, adjacent);
-        for (position, queued_id) in reordered.iter().enumerate() {
-            transaction.execute(
-                "UPDATE queued_messages SET position = ?2
-                 WHERE id = ?1 AND session_id = ?3",
-                params![queued_id, position as i64 + 1, session_id],
-            )?;
-        }
+        // Preserve gaps left by removal, steering and draining. Renumbering
+        // unrelated messages would invalidate another client's pending move.
+        transaction.execute(
+            "UPDATE queued_messages SET position = CASE WHEN id = ?1 THEN ?2 ELSE ?3 END
+             WHERE session_id = ?4 AND id IN (?1, ?5)",
+            params![
+                id,
+                neighbor_position,
+                message.position,
+                session_id,
+                neighbor_id
+            ],
+        )?;
         let mut moved = message;
-        moved.position = adjacent as i64 + 1;
+        moved.position = neighbor_position;
         transaction.commit()?;
         Ok(moved)
     }
@@ -468,6 +469,54 @@ mod tests {
             .is_err());
         assert!(store
             .move_queued_message(&other_session.id, &third.id, 3, true)
+            .is_err());
+    }
+
+    #[test]
+    fn move_preserves_unrelated_positions_after_removal_and_steering() {
+        let (store, session_id) = store_with_session();
+        let removed = store.enqueue_message(&session_id, "removed").unwrap();
+        let first = store.enqueue_message(&session_id, "first").unwrap();
+        let second = store.enqueue_message(&session_id, "second").unwrap();
+        let third = store.enqueue_message(&session_id, "third").unwrap();
+        let fourth = store.enqueue_message(&session_id, "fourth").unwrap();
+        store.remove_queued_message(&removed.id).unwrap();
+        let promoted = store.promote_queued_message(&fourth.id).unwrap();
+        let moved = store
+            .move_queued_message(&session_id, &second.id, second.position, true)
+            .unwrap();
+        assert_eq!(moved.position, first.position);
+        let queue = store.list_queued_messages(&session_id).unwrap();
+        assert_eq!(
+            queue.iter().map(|item| item.position).collect::<Vec<_>>(),
+            vec![
+                promoted.position,
+                first.position,
+                second.position,
+                third.position
+            ]
+        );
+        assert_eq!(
+            queue
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![&fourth.id, &second.id, &first.id, &third.id]
+        );
+        let boundary = store
+            .move_queued_message(&session_id, &fourth.id, promoted.position, true)
+            .unwrap();
+        assert_eq!(boundary.position, promoted.position);
+        assert_eq!(
+            store
+                .start_queued_message(&session_id)
+                .unwrap()
+                .unwrap()
+                .content,
+            "fourth"
+        );
+        assert!(store
+            .move_queued_message(&session_id, &fourth.id, promoted.position, false)
             .is_err());
     }
 

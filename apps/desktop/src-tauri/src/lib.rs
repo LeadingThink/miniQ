@@ -6,26 +6,9 @@ mod browser;
 mod daemon;
 mod daemon_process;
 mod html_preview;
+mod keep_awake;
 mod local_file;
-
-struct KeepAwakeState(std::sync::Mutex<Option<std::process::Child>>);
-
-impl Default for KeepAwakeState {
-    fn default() -> Self {
-        Self(std::sync::Mutex::new(None))
-    }
-}
-
-impl Drop for KeepAwakeState {
-    fn drop(&mut self) {
-        if let Ok(mut child) = self.0.lock() {
-            if let Some(mut process) = child.take() {
-                let _ = process.kill();
-                let _ = process.wait();
-            }
-        }
-    }
-}
+use keep_awake::KeepAwakeState;
 
 type DaemonState = std::sync::Arc<daemon::DaemonLifecycle>;
 
@@ -48,31 +31,8 @@ async fn daemon_connection(
 /// macOS uses its built-in caffeinate utility, avoiding an extra native
 /// dependency and keeping the lease tied to the desktop process lifecycle.
 #[tauri::command]
-fn set_keep_awake(
-    state: tauri::State<'_, KeepAwakeState>,
-    enabled: bool,
-) -> Result<(), String> {
-    let mut child = state.0.lock().map_err(|_| "防休眠状态不可用".to_string())?;
-    if enabled {
-        if child.is_some() {
-            return Ok(());
-        }
-        #[cfg(target_os = "macos")]
-        {
-            *child = Some(
-                std::process::Command::new("caffeinate")
-                    .args(["-dimsu"])
-                    .spawn()
-                    .map_err(|error| format!("无法启用防休眠：{error}"))?,
-            );
-        }
-        return Ok(());
-    }
-    if let Some(mut process) = child.take() {
-        let _ = process.kill();
-        let _ = process.wait();
-    }
-    Ok(())
+fn set_keep_awake(state: tauri::State<'_, KeepAwakeState>, enabled: bool) -> Result<(), String> {
+    state.set_enabled(enabled)
 }
 
 #[tauri::command]
@@ -318,6 +278,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building miniQ desktop")
         .run(|_app, _event| {
+            if matches!(_event, tauri::RunEvent::Exit) {
+                use tauri::Manager;
+                let _ = _app.state::<KeepAwakeState>().set_enabled(false);
+            }
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = _event {
                 show_main_window(_app);

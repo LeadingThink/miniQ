@@ -4,7 +4,7 @@ import type { ExternalEditor, ExternalEditorTarget } from "../externalEditor";
 import { openInEditor } from "../externalEditor";
 import { DropdownMenu } from "./DropdownMenu";
 
-const EDITORS: Array<{ id: Exclude<ExternalEditor, "system">; label: string }> = [
+const EDITORS: Array<{ id: ExternalEditor; label: string }> = [
   { id: "vscode", label: "VS Code" },
   { id: "cursor", label: "Cursor" },
   { id: "zed", label: "Zed" },
@@ -19,6 +19,7 @@ export function ExternalEditorMenu(props: {
   const [open, setOpen] = useState(false);
   const run = async (editor: ExternalEditor) => {
     setOpen(false);
+    triggerRef.current?.focus();
     try {
       await openInEditor(props.target, editor);
     } catch (cause) {
@@ -35,7 +36,7 @@ export function ExternalEditorMenu(props: {
         aria-label="在外部编辑器中打开"
         aria-haspopup="menu"
         aria-expanded={open}
-        disabled={!props.target.path}
+        disabled={!props.target.path.trim()}
         onClick={() => setOpen((value) => !value)}
       >
         <Code2 size={16} />

@@ -10,30 +10,13 @@ import {
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { RpcClient } from "../rpc";
 import { ToolPayload } from "./ToolPayload";
-import type { TurnProgress } from "../types";
 import { RetryNotice } from "./RetryNotice";
 import { ModelDiagnostics } from "./ModelDiagnostics";
 import { AgentActivity } from "./AgentActivity";
 import { AgentHistory } from "./AgentHistory";
+import { AgentSummaryStats, type AgentSummary } from "./AgentSummary";
 import { conversationTimestamp, formatDuration } from "../time";
-
-interface AgentSummary {
-  agentId: string;
-  parentId: string | null;
-  name: string;
-  description: string;
-  status: string;
-  model: string | null;
-  createdAt: string;
-  queuedMessages: number;
-  error: string | null;
-  result?: string | null;
-  progress?: TurnProgress | null;
-  elapsedMs?: number;
-  timingComplete?: boolean;
-  heldMessagesCount?: number;
-  heldMessages?: string[];
-}
+import { turnProgressLabel } from "./ExecutionActivity";
 
 const ACTIVE = new Set(["running", "stopping", "finalizing"]);
 const LABELS: Record<string, string> = {
@@ -84,14 +67,29 @@ function SessionAgentPanel({
   useEffect(() => {
     let stale = false;
     let inFlight = false;
-    let timer: ReturnType<typeof setTimeout>;
+    let refreshQueued = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = (delay: number) => {
+      if (stale || document.visibilityState === "hidden") return;
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        void refresh();
+      }, delay);
+    };
     const refresh = async () => {
-      if (stale || inFlight) return;
+      if (stale) return;
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+      if (inFlight) {
+        refreshQueued = true;
+        return;
+      }
       if (document.visibilityState === "hidden") {
-        timer = setTimeout(() => void refresh(), 2500);
         return;
       }
       inFlight = true;
+      let nextDelay: number | null = null;
       try {
         const response = await client.call<{ agents: AgentSummary[] }>(
           "agent.list",
@@ -101,23 +99,45 @@ function SessionAgentPanel({
         setAgents(response.agents);
         setError(null);
         if (busy || response.agents.some((agent) => ACTIVE.has(agent.status)))
-          timer = setTimeout(() => void refresh(), 2500);
+          nextDelay = 2500;
       } catch (cause) {
-        if (!stale) setError(String(cause));
+        if (!stale) {
+          setError(String(cause));
+          // A temporary disconnect must not permanently freeze the panel,
+          // including when the first request fails before any agents exist.
+          nextDelay = 5000;
+        }
       } finally {
         inFlight = false;
+        if (stale) return;
+        if (refreshQueued) {
+          refreshQueued = false;
+          schedule(0);
+        } else if (nextDelay !== null) {
+          schedule(nextDelay);
+        }
       }
     };
     void refresh();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refresh();
+      else if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     const reconnect = client.onStatus((connected) => {
       if (connected && !stale) {
-        clearTimeout(timer);
+        if (timer !== null) clearTimeout(timer);
+        timer = null;
         void refresh();
       }
     });
     return () => {
       stale = true;
-      clearTimeout(timer);
+      if (timer !== null) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
       reconnect();
     };
   }, [client, sessionId, busy, attempt]);
@@ -187,9 +207,6 @@ function SessionAgentPanel({
 
   if (!agents.length && !error) return null;
   const names = new Map(agents.map((agent) => [agent.agentId, agent.name]));
-  const activeCount = agents.filter((agent) => ACTIVE.has(agent.status)).length;
-  const completedCount = agents.filter((agent) => agent.status === "completed").length;
-  const failedCount = agents.filter((agent) => ["failed", "interrupted"].includes(agent.status)).length;
   const needle = query.trim().toLocaleLowerCase();
   const visible = agents.filter(
     (agent) =>
@@ -211,24 +228,14 @@ function SessionAgentPanel({
       >
         <GitBranch size={15} />
         <strong>子任务</strong>
-        <span>
-          {activeCount} 执行中 /{" "}
-          {agents.length} 总计
-        </span>
-        <span
-          className="agent-panel-summary"
-          aria-label={`子任务状态：${activeCount} 个执行中，${completedCount} 个已完成，${failedCount} 个异常`}
-          title={`执行中 ${activeCount} · 已完成 ${completedCount} · 异常 ${failedCount}`}
-        >
-          <i className={`agent-status-dot active${activeCount ? "" : " empty"}`} aria-hidden="true" />
-          <i className={`agent-status-dot completed${completedCount ? "" : " empty"}`} aria-hidden="true" />
-          <i className={`agent-status-dot failed${failedCount ? "" : " empty"}`} aria-hidden="true" />
-        </span>
+        <span>{agents.length} 总计</span>
+        <AgentSummaryStats agents={agents} />
         <ChevronRight size={14} className={open ? "open" : ""} />
       </button>
       {error && (
         <div role="alert">
           {error}
+          <span className="agent-refresh-hint">暂时无法刷新，已保留最近状态；将自动重试。</span>
           <button
             type="button"
             className="icon-button"
@@ -314,6 +321,12 @@ function SessionAgentPanel({
                     {!!agent.heldMessagesCount &&
                       ` · ${agent.heldMessagesCount} 条待处理消息`}
                   </small>
+                  {ACTIVE.has(agent.status) && agent.progress && (
+                    <small className="agent-phase">
+                      {turnProgressLabel(agent.progress)}
+                      {agent.progress.modelStep != null && ` · 第 ${agent.progress.modelStep} 轮`}
+                    </small>
+                  )}
                   {agent.progress?.retry && (
                     <RetryNotice progress={agent.progress} />
                   )}

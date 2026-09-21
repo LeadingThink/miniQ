@@ -8,6 +8,8 @@ import { isMobileLayout } from "./mobileViewport";
 import type { SessionModelSettings } from "./modelSelection";
 import { PreviewViewStore } from "./previewViewState";
 import type { FilePreviewCache } from "./hooks/useFilePreview";
+import { hasLocalRunningTasks, useKeepAwake } from "./keepAwake";
+import { useTaskNotifications } from "./hooks/useTaskNotifications";
 
 type Destination = Omit<HostDestination, "revision">;
 type DesktopHost = ReturnType<typeof useHostState>;
@@ -45,6 +47,9 @@ function useHostState(suppliedRoot?: RpcClient) {
   }, []);
   const rememberNavigation = useCallback((target: string | null, navigation: HostNavigation) => { locations.current.set(hostKey(target), navigation); }, []);
   const catalogs = useHostCatalogs(root, clientFor, { host, navigation: locations.current.get(hostKey(host)) ?? destination }, transportPaused);
+  // The root outlives host/conversation views; only local tasks hold this lease.
+  useKeepAwake(hasLocalRunningTasks(root.mode, catalogs.catalogs[hostKey(null)]?.sessions ?? []));
+  useTaskNotifications(root, catalogs.catalogs);
   const clearError = useCallback(() => { setError(null); catalogs.clearError(); }, [catalogs.clearError]);
   const registryRef = useRef(catalogs.registry);
   registryRef.current = catalogs.registry;

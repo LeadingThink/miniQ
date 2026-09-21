@@ -217,9 +217,8 @@ pub struct TurnOutcome {
 pub struct RunLimits {
     pub purpose: miniq_models::ModelCallPurpose,
     pub checkpoint: Option<std::sync::Arc<dyn CheckpointStore>>,
-    /// Per-turn model-step budget. Interactive turns get a generous guard so
-    /// a model that keeps changing tools cannot run forever; bounded callers
-    /// can supply a smaller explicit budget.
+    /// Optional per-turn model-step budget. Interactive turns have no fixed
+    /// ceiling; callers running bounded child tasks can supply one explicitly.
     pub max_steps: Option<usize>,
     pub repeated_tool_batch_limit: usize,
     pub max_model_retries: usize,
@@ -231,7 +230,7 @@ impl Default for RunLimits {
         Self {
             purpose: miniq_models::ModelCallPurpose::Task,
             checkpoint: None,
-            max_steps: Some(256),
+            max_steps: None,
             repeated_tool_batch_limit: 4,
             max_model_retries: 10,
             context_policy: ContextPolicy::default(),

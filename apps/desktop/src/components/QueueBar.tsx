@@ -49,6 +49,8 @@ export function QueueBar({
 
   function move(item: QueuedMessage, direction: "up" | "down") {
     if (!actions.onMove || pending || editing) return;
+    const index = queue.findIndex((queued) => queued.id === item.id);
+    if (index < 0 || (direction === "up" ? index === 0 : index === queue.length - 1)) return;
     void perform(() => actions.onMove!(item, direction));
   }
 

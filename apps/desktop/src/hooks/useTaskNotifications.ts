@@ -1,51 +1,42 @@
 import { useEffect, useRef } from "react";
 import type { RpcClient } from "../rpc";
-import type { Session } from "../types";
-import { isTauriRuntime } from "../runtime";
+import type { DaemonEvent, EventCursor } from "../types";
+import { hostKey, scopedKey, type HostCatalog } from "../hostWorkspace";
+import { notifyTaskResult } from "../taskNotifications";
 
-async function notify(title: string, body: string) {
-  if (isTauriRuntime()) {
-    try {
-      const plugin = await import("@tauri-apps/plugin-notification");
-      let granted = await plugin.isPermissionGranted();
-      if (!granted) {
-        granted = (await plugin.requestPermission()) === "granted";
-      }
-      if (granted) plugin.sendNotification({ title, body });
-      return;
-    } catch {
-      /* fall through to web Notification */
-    }
-  }
-  if (typeof Notification === "undefined") return;
-  if (Notification.permission === "default") {
-    await Notification.requestPermission();
-  }
-  if (Notification.permission === "granted") {
-    new Notification(title, { body });
-  }
-}
-
-/**
- * System notification when a turn finishes while the window is unfocused —
- * mirrors the ChatGPT desktop "assistant finished replying in the background"
- * notification, useful for long-running agent tasks.
- */
-export function useTaskNotifications(client: RpcClient, sessions: Session[]) {
-  const sessionsRef = useRef(sessions);
-  sessionsRef.current = sessions;
+/** One subscription at the desktop root covers every host, including hidden ones. */
+export function useTaskNotifications(root: RpcClient, catalogs: Record<string, HostCatalog>) {
+  const catalogsRef = useRef(catalogs);
+  catalogsRef.current = catalogs;
 
   useEffect(() => {
-    return client.onEvent((event) => {
-      if (event.type !== "turn_completed" && event.type !== "turn_failed") return;
-      if (document.hasFocus()) return;
-      const session = sessionsRef.current.find((s) => s.id === event.sessionId);
-      const title = session?.title || "miniQ";
-      if (event.type === "turn_completed") {
-        void notify("任务完成", `「${title}」已完成,点击窗口查看结果。`);
-      } else {
-        void notify("任务失败", `「${title}」执行出错:${event.error}`);
+    const seen = new Map<string, EventCursor>();
+    const receive = (host: string | null, event: DaemonEvent) => {
+      if (event.type === "session_deleted") {
+        seen.delete(scopedKey(host, event.sessionId));
+        return;
       }
+      if (event.type !== "turn_completed" && event.type !== "turn_failed") return;
+      const key = scopedKey(host, event.sessionId);
+      const cursor = event.eventCursor;
+      if (cursor) {
+        const previous = seen.get(key);
+        if (previous?.epoch === cursor.epoch && previous.sequence >= cursor.sequence) return;
+        // Record before delivery: replays must not notify later for an event
+        // already received in the foreground or with notifications disabled.
+        seen.set(key, cursor);
+      }
+      const catalog = catalogsRef.current[hostKey(host)];
+      const session = catalog?.sessions.find((entry) => entry.id === event.sessionId);
+      const title = host === null
+        ? session?.title ?? ""
+        : `${catalog?.label || host} · ${session?.title || "当前会话"}`;
+      void notifyTaskResult(event.type === "turn_completed" ? "completed" : "failed", title);
+    };
+    const offLocal = root.onEvent((event) => receive(null, event));
+    const offHost = root.onHostEvent((event) => {
+      if (event.type === "host_event" && event.event.type !== "remote_resync") receive(event.hostId, event.event);
     });
-  }, [client]);
+    return () => { offLocal(); offHost(); };
+  }, [root]);
 }

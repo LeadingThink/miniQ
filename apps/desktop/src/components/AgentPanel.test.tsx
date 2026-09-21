@@ -7,11 +7,14 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RpcClient } from "../rpc";
 import { AgentPanel } from "./AgentPanel";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 const agent = {
   agentId: "a-child",
   name: "A child",
@@ -222,4 +225,95 @@ it("shows interrupted agents in the exception filter with observed time and held
   expect(
     screen.getByRole("button", { name: "查看 A child 模型调用" }),
   ).toBeTruthy();
+});
+
+it("keeps truthful status counts, segments and phases visible while collapsed", async () => {
+  const call = vi.fn().mockResolvedValue({
+    agents: [
+      agent,
+      { ...agent, agentId: "running", status: "running", progress: {
+        phase: "receiving_model", modelStep: 7, startedAt: "2026-09-21T00:00:00Z",
+      } },
+      { ...agent, agentId: "failed", status: "failed" },
+      { ...agent, agentId: "interrupted", status: "interrupted" },
+      { ...agent, agentId: "cancelled", status: "cancelled" },
+    ],
+  });
+  render(<AgentPanel client={{ call, onStatus: () => () => {} } as unknown as RpcClient} sessionId="a" busy={false} />);
+  const toggle = await screen.findByRole("button", { name: /子任务.*总计/ });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getByLabelText("子任务状态：1 个执行中，1 个已完成，2 个异常")).toBeTruthy();
+  expect(screen.getByRole("img", { name: "状态分段：执行中 1，已完成 1，异常 2，其他 1" })).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toBe("阶段：接收响应 · 第 7 轮");
+  expect(screen.queryByRole("progressbar")).toBeNull();
+  expect(screen.queryByText("A child")).toBeNull();
+  fireEvent.click(toggle);
+  expect(screen.getByText("模型正在生成响应 · 第 7 轮")).toBeTruthy();
+  fireEvent.click(toggle);
+  expect(screen.getByLabelText("子任务状态：1 个执行中，1 个已完成，2 个异常")).toBeTruthy();
+});
+
+describe("recoverable agent refresh", () => {
+  it("recovers automatically when the very first list request fails", async () => {
+    vi.useFakeTimers();
+    const call = vi.fn().mockRejectedValueOnce(new Error("temporary disconnect"))
+      .mockResolvedValue({ agents: [agent] });
+    render(<AgentPanel client={{ call, onStatus: () => () => {} } as unknown as RpcClient} sessionId="a" busy={false} />);
+    await act(async () => {});
+    expect(screen.getByRole("alert").textContent).toContain("将自动重试");
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByLabelText("子任务状态：0 个执行中，1 个已完成，0 个异常")).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(call).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes immediately on returning to the foreground", async () => {
+    vi.useFakeTimers();
+    const descriptor = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    const call = vi.fn().mockResolvedValue({ agents: [agent] });
+    try {
+      render(<AgentPanel client={{ call, onStatus: () => () => {} } as unknown as RpcClient} sessionId="a" busy={false} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(call).not.toHaveBeenCalled();
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+      await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+      expect(call).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("button", { name: /子任务.*总计/ })).toBeTruthy();
+    } finally {
+      if (descriptor) Object.defineProperty(document, "visibilityState", descriptor);
+      else Reflect.deleteProperty(document, "visibilityState");
+    }
+  });
+
+  it("coalesces reconnects during an in-flight request without dropping the refresh", async () => {
+    vi.useFakeTimers();
+    let resolveList!: (value: unknown) => void;
+    let status!: (connected: boolean) => void;
+    const call = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { resolveList = resolve; }))
+      .mockResolvedValue({ agents: [{ ...agent, status: "failed" }] });
+    const client = { call, onStatus: (listener: typeof status) => { status = listener; return () => {}; } } as unknown as RpcClient;
+    render(<AgentPanel client={client} sessionId="a" busy={false} />);
+    await act(async () => { status(true); status(true); });
+    expect(call).toHaveBeenCalledTimes(1);
+    await act(async () => { resolveList({ agents: [agent] }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText("子任务状态：0 个执行中，0 个已完成，1 个异常")).toBeTruthy();
+  });
+
+  it("ignores a previous session's late list response and cancels its retry timer", async () => {
+    vi.useFakeTimers();
+    let resolveOld!: (value: unknown) => void;
+    const call = vi.fn((_method, params) => params.sessionId === "a"
+      ? new Promise((resolve) => { resolveOld = resolve; }) : Promise.resolve({ agents: [] }));
+    const client = { call, onStatus: () => () => {} } as unknown as RpcClient;
+    const view = render(<AgentPanel client={client} sessionId="a" busy />);
+    view.rerender(<AgentPanel client={client} sessionId="b" busy={false} />);
+    await act(async () => { resolveOld({ agents: [agent] }); await vi.advanceTimersByTimeAsync(10_000); });
+    expect(screen.queryByRole("region", { name: "子任务" })).toBeNull();
+    expect(call).toHaveBeenCalledTimes(2);
+  });
 });

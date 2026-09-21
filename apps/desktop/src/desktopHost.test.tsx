@@ -4,10 +4,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { DesktopHostProvider, useDesktopHost, hostDraftKey } from "./desktopHost";
 import { SshFixtureRoot } from "./fixtures/sshModel";
+const keepAwake = vi.hoisted(() => vi.fn());
+vi.mock("./keepAwake", async (original) => ({ ...await original<typeof import("./keepAwake")>(), useKeepAwake: keepAwake }));
 vi.mock("@capacitor/app", () => ({ App: { addListener: () => Promise.resolve({ remove: vi.fn() }) } }));
 vi.mock("./rpc", async (original) => ({ ...await original<typeof import("./rpc")>(), resolveConnection: vi.fn().mockResolvedValue({ kind: "local", port: 1, token: "fixture" }) }));
 afterEach(cleanup);
-beforeEach(() => { localStorage.clear(); });
+beforeEach(() => { localStorage.clear(); keepAwake.mockClear(); });
 function Workspace() {
   const host = useDesktopHost()!; const [filter, setFilter] = useState("");
   return <><span data-testid="host">{host.host ?? "local"}</span><input aria-label="persistent sidebar filter" value={filter} onChange={(event) => setFilter(event.target.value)} />
@@ -75,4 +77,25 @@ it("keeps legacy storage until every host has migrated, without blocking real ca
 it("ignores malformed legacy preferences while retaining them for recovery", async () => {
   localStorage.setItem("miniq.ssh.saved-hosts", "broken json"); await setup();
   expect(localStorage.getItem("miniq.ssh.saved-hosts")).toBe("broken json");
+});
+
+it("retains the local task sleep lease while viewing SSH and never leases for a mobile viewer", async () => {
+  const root = new SshFixtureRoot();
+  const content = root.content.bind(root);
+  vi.spyOn(root, "content").mockImplementation(async (host, method, params) => {
+    if (host === null && method === "session.list") return { sessions: [
+      { id: "idle", workspaceId: "same-workspace", status: "idle" },
+      { id: "background", workspaceId: "same-workspace", status: "running" },
+    ] };
+    return content(host, method, params);
+  });
+  await setup(root);
+  await waitFor(() => expect(keepAwake).toHaveBeenLastCalledWith(true));
+  fireEvent.click(screen.getByText("dev"));
+  await waitFor(() => expect(screen.getByTestId("host").textContent).toBe("demo-development"));
+  expect(keepAwake).toHaveBeenLastCalledWith(true);
+  cleanup();
+  root.mobile = true;
+  await setup(root);
+  expect(keepAwake).toHaveBeenLastCalledWith(false);
 });

@@ -2,7 +2,7 @@ use miniq_protocol::Artifact;
 use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
-use super::{new_id, now_iso, CheckpointRow, MemoryError, MemoryRow, Result, Store};
+use super::{new_id, now_iso, CheckpointRow, MemoryError, Result, Store};
 
 impl Store {
     pub fn create_artifact(
@@ -126,66 +126,6 @@ impl Store {
                 existed: row.get::<_, i64>(4)? != 0,
                 backup_path: row.get(5)?,
                 created_at: row.get(6)?,
-            })
-        })?;
-        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
-    }
-
-    pub fn create_memory(
-        &self,
-        workspace_id: Option<&str>,
-        scope: &str,
-        content: &str,
-    ) -> Result<MemoryRow> {
-        let conn = self.conn.lock().unwrap();
-        let now = now_iso();
-        let memory = MemoryRow {
-            id: new_id("mem"),
-            workspace_id: workspace_id.map(|id| id.to_string()),
-            scope: scope.to_string(),
-            content: content.to_string(),
-            created_at: now.clone(),
-            updated_at: now,
-        };
-        conn.execute(
-            "INSERT INTO memories (id, workspace_id, scope, content, metadata_json, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, '{}', ?5, ?6)",
-            params![
-                memory.id,
-                memory.workspace_id,
-                memory.scope,
-                memory.content,
-                memory.created_at,
-                memory.updated_at
-            ],
-        )?;
-        Ok(memory)
-    }
-
-    /// Substring search over memories visible to a workspace: its own rows
-    /// plus global-scope rows.
-    pub fn search_memories(
-        &self,
-        workspace_id: Option<&str>,
-        query: &str,
-        limit: usize,
-    ) -> Result<Vec<MemoryRow>> {
-        let conn = self.conn.lock().unwrap();
-        let pattern = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
-        let mut stmt = conn.prepare(
-            "SELECT id, workspace_id, scope, content, created_at, updated_at FROM memories
-             WHERE content LIKE ?1 ESCAPE '\\'
-               AND (scope = 'global' OR workspace_id IS ?2 OR ?2 IS NULL)
-             ORDER BY updated_at DESC LIMIT ?3",
-        )?;
-        let rows = stmt.query_map(params![pattern, workspace_id, limit as i64], |row| {
-            Ok(MemoryRow {
-                id: row.get(0)?,
-                workspace_id: row.get(1)?,
-                scope: row.get(2)?,
-                content: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
             })
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)

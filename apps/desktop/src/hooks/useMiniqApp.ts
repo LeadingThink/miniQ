@@ -18,11 +18,9 @@ import { useSessionLifecycleActions } from "./useSessionLifecycleActions";
 import { useSessionFeed } from "./useSessionFeed";
 import { useSessionModel } from "./useSessionModel";
 import { useSessionDiff } from "./useSessionDiff";
-import { useTaskNotifications } from "./useTaskNotifications";
 import { useSessionError } from "./useSessionError";
 import { isSessionRunning, isSessionTerminal } from "../sessionStatus";
 import { BROWSER_DRAFT_CREATED_EVENT, type BrowserDraftCreatedDetail } from "../browserTabs";
-import { useKeepAwake } from "../keepAwake";
 
 export type AppPage = "schedule" | "skills" | "mcp" | "plugins" | null;
 const PROVIDER_ONBOARDING_KEY = "miniq.providerOnboarding.v1";
@@ -571,7 +569,6 @@ export function useMiniqApp(active = true) {
   });
   const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls);
   const preview = useFilePreview(catalog.currentSession?.workingDirectory, catalog.currentSessionId, catalog.currentWorkspacePaths, client, desktop?.getFilePreviewCache(client.sshHost));
-  useTaskNotifications(client, catalog.sessions);
   const updater = useAppUpdater(client, setConnectionError, desktop?.setTransportPaused);
   const scopedConnection = useDaemonConnection({
     client,
@@ -658,17 +655,6 @@ export function useMiniqApp(active = true) {
   const busy =
     catalog.currentSession?.status === "running" ||
     catalog.currentSession?.status === "waiting_approval";
-  // Keep the local desktop awake for any active local session, even when the
-  // user switches to another conversation. Remote/mobile views and SSH
-  // workspaces must never lock the viewing device or local host.
-  const localTaskBusy =
-    active &&
-    client.mode === "local" &&
-    !client.sshHost &&
-    catalog.sessions.some(
-      (session) => session.status === "running" || session.status === "waiting_approval",
-    );
-  useKeepAwake(localTaskBusy);
 
   return {
     client,

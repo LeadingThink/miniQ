@@ -1,0 +1,81 @@
+.agent-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.agent-summary-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.agent-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-mid);
+}
+
+.agent-stat strong {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.agent-stat-active strong { color: var(--accent, #3b82f6); }
+.agent-stat-completed strong { color: var(--ok, #2caa70); }
+.agent-stat-failed strong { color: var(--danger, #c4364b); }
+
+.agent-summary-segments {
+  display: flex;
+  width: 54px;
+  height: 6px;
+  gap: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.agent-summary-segment {
+  min-width: 3px;
+  height: 100%;
+}
+
+.agent-summary-segment.active { background: var(--accent, #3b82f6); }
+.agent-summary-segment.completed { background: var(--ok, #2caa70); }
+.agent-summary-segment.failed { background: var(--danger, #c4364b); }
+.agent-summary-segment.other { background: var(--text-mid); }
+
+.agent-summary-progress {
+  max-width: 260px;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-refresh-hint {
+  display: block;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.agent-panel-toggle {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .agent-summary {
+    width: 100%;
+    margin-left: 22px;
+    flex-wrap: wrap;
+  }
+
+  .agent-summary-progress { max-width: 100%; }
+}

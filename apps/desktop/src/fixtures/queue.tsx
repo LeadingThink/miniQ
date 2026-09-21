@@ -81,6 +81,17 @@ function Fixture() {
           ]);
           setNotice("已调整方向");
         }}
+        onMove={async (original, direction) => {
+          setQueue((items) => {
+            const from = items.findIndex((item) => item.id === original.id);
+            const to = from + (direction === "up" ? -1 : 1);
+            if (from < 0 || to < 0 || to >= items.length) return items;
+            const next = [...items];
+            [next[from], next[to]] = [next[to], next[from]];
+            return next;
+          });
+          setNotice("已更新队列顺序，执行中的任务保持不变");
+        }}
       />
       <p role="status">{notice}</p>
     </main>

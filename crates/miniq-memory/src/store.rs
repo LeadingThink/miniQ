@@ -8,6 +8,7 @@ mod conversation;
 mod execution_events;
 mod external_sessions;
 mod history;
+mod memories;
 mod model_calls;
 mod model_context;
 mod queue;
@@ -22,6 +23,7 @@ mod workspaces;
 
 pub use agent_tasks::AgentTaskRow;
 pub use external_sessions::ExternalImportOutcome;
+pub use memories::MemoryPage;
 pub use model_context::ModelContextSnapshot;
 
 use std::path::Path;

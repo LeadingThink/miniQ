@@ -23,7 +23,13 @@ const settings = {
   remoteStatus: { state: "disabled", relayUrl: "", mobileClients: 0 },
 };
 // No daemon, API key, relay, or live task is accessed by this fixture.
-const client = { mode: "local", call: async () => settings } as unknown as RpcClient;
+const client = {
+  mode: "local",
+  call: async (method: string) => method === "memory.list"
+    ? { memories: [], nextCursor: null }
+    : settings,
+  onStatus: () => () => {},
+} as unknown as RpcClient;
 const FilePreviewPanel = lazy(() =>
   import("../components/FilePreviewPanel").then((module) => ({ default: module.FilePreviewPanel }))
 );

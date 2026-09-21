@@ -44,7 +44,6 @@ vi.mock("../rpc", () => ({
   },
   resolveConnection: async () => ({ kind: "local", port: 9999, token: "test" }),
 }));
-vi.mock("./useTaskNotifications", () => ({ useTaskNotifications: () => {} }));
 vi.mock("./useAppUpdater", () => ({ useAppUpdater: () => ({ state: { phase: "idle" } }) }));
 afterEach(() => {
   cleanup();
