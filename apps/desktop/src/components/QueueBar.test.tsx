@@ -24,6 +24,7 @@ const callbacks = () => ({
   onUpdate: vi.fn(async () => {}),
   onRemove: vi.fn(async () => {}),
   onSteer: vi.fn(async () => {}),
+  onMove: vi.fn(async () => {}),
 });
 function edit(content: string) {
   fireEvent.click(screen.getByRole("button", { name: "编辑第 1 条排队消息" }));
@@ -169,5 +170,20 @@ describe("pending queue editing", () => {
     expect(props.onSteer).not.toHaveBeenCalled();
     await act(async () => fail(new Error("消息已经移除")));
     expect(screen.getByRole("alert").textContent).toBe("消息已经移除");
+  });
+
+  it("moves queued messages with boundary buttons and keyboard shortcuts", async () => {
+    const props = callbacks();
+    const second = { ...item, id: "q2", content: "第二条", position: 2 };
+    render(<QueueBar queue={[item, second]} {...props} />);
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "上移第 1 条排队消息" }).disabled).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "下移第 2 条排队消息" }).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "上移第 2 条排队消息" }));
+    await waitFor(() => expect(props.onMove).toHaveBeenCalledWith(second, "up"));
+    fireEvent.keyDown(screen.getByText("原来的消息"), {
+      key: "ArrowDown",
+      altKey: true,
+    });
+    await waitFor(() => expect(props.onMove).toHaveBeenCalledWith(item, "down"));
   });
 });

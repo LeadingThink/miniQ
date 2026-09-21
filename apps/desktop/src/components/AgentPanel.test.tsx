@@ -41,6 +41,7 @@ it("filters agents by status and model without losing the original list", async 
     />,
   );
   fireEvent.click(await screen.findByRole("button", { name: /子任务.*总计/ }));
+  expect(screen.getByLabelText("子任务状态：0 个执行中，1 个已完成，1 个异常")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "异常" }));
   expect(screen.queryByText("A child")).toBeNull();
   expect(screen.getByText("Reviewer")).toBeTruthy();

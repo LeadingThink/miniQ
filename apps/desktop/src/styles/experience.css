@@ -521,6 +521,22 @@
 .agent-open .open {
   transform: rotate(90deg);
 }
+.agent-panel-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.agent-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-mid);
+}
+.agent-status-dot.active { background: var(--accent, #3b82f6); }
+.agent-status-dot.completed { background: var(--ok, #2caa70); }
+.agent-status-dot.failed { background: var(--danger, #c4364b); }
+.agent-status-dot.empty { opacity: 0.2; }
 .agent-list {
   padding-bottom: 8px;
 }

@@ -47,6 +47,22 @@ struct QueueUpdateParams {
     content: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct QueueMoveParams {
+    session_id: String,
+    queued_message_id: String,
+    expected_position: i64,
+    direction: QueueMoveDirection,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum QueueMoveDirection {
+    Up,
+    Down,
+}
+
 pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: QueueUpdateParams = params(raw)?;
     let updated = state
@@ -65,6 +81,26 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
         })?;
     emit_queue_changed(state, &input.session_id);
     to_value(json!({ "updated": updated }))
+}
+
+pub(super) fn move_item(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: QueueMoveParams = params(raw)?;
+    let moved = state
+        .store
+        .move_queued_message(
+            &input.session_id,
+            &input.queued_message_id,
+            input.expected_position,
+            matches!(input.direction, QueueMoveDirection::Up),
+        )
+        .map_err(|error| match &error {
+            miniq_memory::MemoryError::NotFound(_) | miniq_memory::MemoryError::InvalidData(_) => {
+                RpcError::new(ErrorCode::InvalidParams, error.to_string())
+            }
+            _ => store_err(error),
+        })?;
+    emit_queue_changed(state, &input.session_id);
+    to_value(json!({ "moved": moved }))
 }
 
 pub(super) fn remove(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {

@@ -187,6 +187,9 @@ function SessionAgentPanel({
 
   if (!agents.length && !error) return null;
   const names = new Map(agents.map((agent) => [agent.agentId, agent.name]));
+  const activeCount = agents.filter((agent) => ACTIVE.has(agent.status)).length;
+  const completedCount = agents.filter((agent) => agent.status === "completed").length;
+  const failedCount = agents.filter((agent) => ["failed", "interrupted"].includes(agent.status)).length;
   const needle = query.trim().toLocaleLowerCase();
   const visible = agents.filter(
     (agent) =>
@@ -209,8 +212,17 @@ function SessionAgentPanel({
         <GitBranch size={15} />
         <strong>子任务</strong>
         <span>
-          {agents.filter((agent) => ACTIVE.has(agent.status)).length} 执行中 /{" "}
+          {activeCount} 执行中 /{" "}
           {agents.length} 总计
+        </span>
+        <span
+          className="agent-panel-summary"
+          aria-label={`子任务状态：${activeCount} 个执行中，${completedCount} 个已完成，${failedCount} 个异常`}
+          title={`执行中 ${activeCount} · 已完成 ${completedCount} · 异常 ${failedCount}`}
+        >
+          <i className={`agent-status-dot active${activeCount ? "" : " empty"}`} aria-hidden="true" />
+          <i className={`agent-status-dot completed${completedCount ? "" : " empty"}`} aria-hidden="true" />
+          <i className={`agent-status-dot failed${failedCount ? "" : " empty"}`} aria-hidden="true" />
         </span>
         <ChevronRight size={14} className={open ? "open" : ""} />
       </button>

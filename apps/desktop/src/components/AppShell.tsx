@@ -173,6 +173,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
           onSteerQueued={app.actions.steerQueued}
           onRemoveQueued={app.actions.removeQueued}
           onUpdateQueued={app.actions.updateQueued}
+          onMoveQueued={app.actions.moveQueued}
           onRewrite={app.actions.rewriteMessage}
           onError={app.setError}
         />

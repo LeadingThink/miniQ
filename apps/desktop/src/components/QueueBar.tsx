@@ -1,4 +1,4 @@
-import { Pencil, X, Zap } from "lucide-react";
+import { ChevronDown, ChevronUp, Pencil, X, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { QueuedMessage } from "../types";
 import { errorMessage } from "../errorMessage";
@@ -8,6 +8,7 @@ export interface QueueActions {
   onUpdate: (original: QueuedMessage, content: string) => Promise<void>;
   onSteer: (id: string) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
+  onMove?: (item: QueuedMessage, direction: "up" | "down") => Promise<void>;
 }
 
 export function QueueBar({
@@ -46,6 +47,11 @@ export function QueueBar({
     }
   }
 
+  function move(item: QueuedMessage, direction: "up" | "down") {
+    if (!actions.onMove || pending || editing) return;
+    void perform(() => actions.onMove!(item, direction));
+  }
+
   if (queue.length === 0 && !editing && !error) return null;
   return (
     <section
@@ -61,7 +67,16 @@ export function QueueBar({
       <div className="queue-list">
         {queue.map((item, index) => (
           <div key={item.id} className="queue-item">
-            <div className="queue-content" tabIndex={0}>
+            <div
+              className="queue-content"
+              tabIndex={0}
+              title={actions.onMove ? "按 Alt+↑/↓ 调整排队顺序" : undefined}
+              onKeyDown={(event) => {
+                if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+                event.preventDefault();
+                move(item, event.key === "ArrowUp" ? "up" : "down");
+              }}
+            >
               <span className="queue-position">{index + 1}.</span>{" "}
               {item.content}
               {!!item.attachments?.length && (
@@ -74,6 +89,32 @@ export function QueueBar({
               )}
             </div>
             <div className="queue-actions">
+              {actions.onMove && (
+                <>
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={pending || !!editing || index === 0}
+                    aria-label={`上移第 ${index + 1} 条排队消息`}
+                    aria-keyshortcuts="Alt+ArrowUp"
+                    title={index === 0 ? "已经是第一条" : "上移（Alt+↑）"}
+                    onClick={() => move(item, "up")}
+                  >
+                    <ChevronUp size={13} /> 上移
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={pending || !!editing || index === queue.length - 1}
+                    aria-label={`下移第 ${index + 1} 条排队消息`}
+                    aria-keyshortcuts="Alt+ArrowDown"
+                    title={index === queue.length - 1 ? "已经是最后一条" : "下移（Alt+↓）"}
+                    onClick={() => move(item, "down")}
+                  >
+                    <ChevronDown size={13} /> 下移
+                  </button>
+                </>
+              )}
               <button
                 type="button"
                 className="ghost"

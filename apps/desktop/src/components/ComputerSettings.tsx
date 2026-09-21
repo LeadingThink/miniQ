@@ -17,12 +17,14 @@ import {
   type ComputerPermissions,
 } from "../computerPermissions";
 import "./ComputerSettings.css";
+import { getKeepAwake, setKeepAwake } from "../keepAwake";
 
 export function ComputerSettings({ client }: { client: RpcClient }) {
   const [status, setStatus] = useState<ComputerPermissions | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [requested, setRequested] = useState(false);
+  const [keepAwake, setKeepAwakeState] = useState(getKeepAwake);
   const epoch = useRef(0);
   const inFlight = useRef(false);
   const recheckPending = useRef(false);
@@ -194,6 +196,21 @@ export function ComputerSettings({ client }: { client: RpcClient }) {
           )}
         </>
       )}
+      <label className="computer-permission-note computer-keep-awake">
+        <input
+          type="checkbox"
+          checked={keepAwake}
+          onChange={(event) => {
+            setKeepAwakeState(event.target.checked);
+            setKeepAwake(event.target.checked);
+          }}
+        />
+        <span>
+          <strong>长任务期间防止系统休眠</strong>
+          <br />
+          <small>任务执行或等待授权时保持电脑唤醒，结束后自动释放。</small>
+        </span>
+      </label>
     </section>
   );
 }

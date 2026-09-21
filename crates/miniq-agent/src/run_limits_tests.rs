@@ -118,6 +118,28 @@ async fn retry_within_a_model_step_does_not_spend_another_step() {
 }
 
 #[tokio::test]
+async fn default_interactive_budget_stops_a_changing_tool_loop() {
+    let provider = MockProvider::new((0..260).map(|index| tool_turn(index, index)).collect());
+    let executor = CountingExecutor::default();
+    let error = run_turn(
+        &provider,
+        &executor,
+        Vec::new(),
+        discard_events(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        AgentError::StepLimitExceeded { steps: 256 }
+    ));
+    assert_eq!(provider.requests.lock().unwrap().len(), 256);
+    assert_eq!(executor.calls.load(Ordering::SeqCst), 256);
+}
+
+#[tokio::test]
 async fn unbounded_turn_can_be_cancelled_after_96_steps() {
     let provider = MockProvider::new((0..101).map(|index| tool_turn(index, index)).collect());
     let cancel = CancellationToken::new();

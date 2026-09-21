@@ -70,3 +70,15 @@
   color: var(--danger, #c4364b);
   overflow-wrap: anywhere;
 }
+.computer-keep-awake {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 16px;
+}
+.computer-keep-awake input {
+  flex: 0 0 auto;
+}
+.computer-keep-awake small {
+  color: var(--text-mid);
+}

@@ -8,6 +8,25 @@ mod daemon_process;
 mod html_preview;
 mod local_file;
 
+struct KeepAwakeState(std::sync::Mutex<Option<std::process::Child>>);
+
+impl Default for KeepAwakeState {
+    fn default() -> Self {
+        Self(std::sync::Mutex::new(None))
+    }
+}
+
+impl Drop for KeepAwakeState {
+    fn drop(&mut self) {
+        if let Ok(mut child) = self.0.lock() {
+            if let Some(mut process) = child.take() {
+                let _ = process.kill();
+                let _ = process.wait();
+            }
+        }
+    }
+}
+
 type DaemonState = std::sync::Arc<daemon::DaemonLifecycle>;
 
 /// Set when the user picks Quit from the tray menu. While false, closing the
@@ -23,6 +42,37 @@ async fn daemon_connection(
     tauri::async_runtime::spawn_blocking(move || state.ensure())
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// Hold a native sleep-prevention lease only while a user-enabled task runs.
+/// macOS uses its built-in caffeinate utility, avoiding an extra native
+/// dependency and keeping the lease tied to the desktop process lifecycle.
+#[tauri::command]
+fn set_keep_awake(
+    state: tauri::State<'_, KeepAwakeState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut child = state.0.lock().map_err(|_| "防休眠状态不可用".to_string())?;
+    if enabled {
+        if child.is_some() {
+            return Ok(());
+        }
+        #[cfg(target_os = "macos")]
+        {
+            *child = Some(
+                std::process::Command::new("caffeinate")
+                    .args(["-dimsu"])
+                    .spawn()
+                    .map_err(|error| format!("无法启用防休眠：{error}"))?,
+            );
+        }
+        return Ok(());
+    }
+    if let Some(mut process) = child.take() {
+        let _ = process.kill();
+        let _ = process.wait();
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -215,6 +265,7 @@ async fn browser_screenshot(app: tauri::AppHandle, view_id: String) -> Result<St
 pub fn run() {
     tauri::Builder::default()
         .manage(DaemonState::default())
+        .manage(KeepAwakeState::default())
         .manage(html_preview::HtmlPreviews::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -223,6 +274,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             daemon_connection,
+            set_keep_awake,
             prepare_daemon_update,
             cancel_daemon_update,
             wait_for_daemon_exit,

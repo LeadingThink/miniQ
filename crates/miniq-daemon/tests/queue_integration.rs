@@ -424,6 +424,96 @@ async fn queue_edit_validates_parameters_and_detects_concurrent_client_changes()
 }
 
 #[tokio::test]
+async fn queue_move_is_session_scoped_and_rejects_stale_positions() {
+    let (_release, receiver) = tokio::sync::watch::channel(0u64);
+    let (port, token) = start(Arc::new(GatedProvider { release: receiver })).await;
+    let mut ws = connect(port, &token).await;
+    let (session, _dir) = setup_session(&mut ws).await;
+    call(
+        &mut ws,
+        "start",
+        "session.sendMessage",
+        send_params(&session, "running"),
+    )
+    .await;
+    let first = call(
+        &mut ws,
+        "first",
+        "session.sendMessage",
+        send_params(&session, "first"),
+    )
+    .await["result"]["queued"]
+        .clone();
+    let second = call(
+        &mut ws,
+        "second",
+        "session.sendMessage",
+        send_params(&session, "second"),
+    )
+    .await["result"]["queued"]
+        .clone();
+    let moved = call(
+        &mut ws,
+        "move",
+        "session.queueMove",
+        json!({
+            "sessionId": session,
+            "queuedMessageId": second["id"],
+            "expectedPosition": second["position"],
+            "direction": "up",
+        }),
+    )
+    .await;
+    assert_eq!(moved["result"]["moved"]["position"], 1, "moves: {moved}");
+    let queue = call(
+        &mut ws,
+        "list",
+        "session.queueList",
+        json!({"sessionId": session}),
+    )
+    .await;
+    assert_eq!(queue["result"]["queue"][0]["id"], second["id"]);
+    assert_eq!(queue["result"]["queue"][1]["id"], first["id"]);
+
+    let stale = call(
+        &mut ws,
+        "stale",
+        "session.queueMove",
+        json!({
+            "sessionId": session,
+            "queuedMessageId": first["id"],
+            "expectedPosition": first["position"],
+            "direction": "down",
+        }),
+    )
+    .await;
+    assert_eq!(stale["error"]["code"], -32602, "stale: {stale}");
+    let cross_session = call(
+        &mut ws,
+        "cross",
+        "session.queueMove",
+        json!({
+            "sessionId": "other-session",
+            "queuedMessageId": first["id"],
+            "expectedPosition": first["position"],
+            "direction": "down",
+        }),
+    )
+    .await;
+    assert_eq!(
+        cross_session["error"]["code"], -32602,
+        "cross-session: {cross_session}"
+    );
+    call(
+        &mut ws,
+        "stop",
+        "session.cancel",
+        json!({"sessionId":session}),
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn cancel_discards_queued_messages() {
     let (release_tx, release_rx) = tokio::sync::watch::channel(0u64);
     let provider: Arc<dyn ModelProvider> = Arc::new(GatedProvider {

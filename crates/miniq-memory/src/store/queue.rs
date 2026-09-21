@@ -210,6 +210,72 @@ impl Store {
         })
     }
 
+    /// Move a queued message one slot while checking the caller's queue
+    /// revision. The session id is part of the lookup so a message id from a
+    /// different session cannot be reordered accidentally or deliberately.
+    pub fn move_queued_message(
+        &self,
+        session_id: &str,
+        id: &str,
+        expected_position: i64,
+        move_up: bool,
+    ) -> Result<QueuedMessage> {
+        let mut conn = self.conn.lock().unwrap();
+        let transaction = conn.transaction()?;
+        let message = transaction
+            .query_row(
+                "SELECT id, session_id, content, attachments_json, position, created_at
+                 FROM queued_messages WHERE id = ?1 AND session_id = ?2",
+                params![id, session_id],
+                row_to_queued,
+            )
+            .optional()?
+            .ok_or_else(|| MemoryError::NotFound(format!("queued message {id}")))?;
+        if message.position != expected_position {
+            return Err(MemoryError::InvalidData(
+                "排队顺序已在其他设备更新，请刷新后再调整".into(),
+            ));
+        }
+
+        let ids = {
+            let mut stmt = transaction.prepare(
+                "SELECT id FROM queued_messages WHERE session_id = ?1
+                 ORDER BY position ASC, id ASC",
+            )?;
+            let rows = stmt.query_map(params![session_id], |row| row.get::<_, String>(0))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        let index = ids
+            .iter()
+            .position(|queued_id| queued_id == id)
+            .ok_or_else(|| MemoryError::NotFound(format!("queued message {id}")))?;
+        let adjacent = if move_up {
+            index.checked_sub(1)
+        } else if index + 1 < ids.len() {
+            Some(index + 1)
+        } else {
+            None
+        };
+        let Some(adjacent) = adjacent else {
+            transaction.commit()?;
+            return Ok(message);
+        };
+
+        let mut reordered = ids;
+        reordered.swap(index, adjacent);
+        for (position, queued_id) in reordered.iter().enumerate() {
+            transaction.execute(
+                "UPDATE queued_messages SET position = ?2
+                 WHERE id = ?1 AND session_id = ?3",
+                params![queued_id, position as i64 + 1, session_id],
+            )?;
+        }
+        let mut moved = message;
+        moved.position = adjacent as i64 + 1;
+        transaction.commit()?;
+        Ok(moved)
+    }
+
     /// Drop every queued message for a session (e.g. user pressed stop).
     pub fn clear_queued_messages(&self, session_id: &str) -> Result<usize> {
         let conn = self.conn.lock().unwrap();
@@ -365,6 +431,44 @@ mod tests {
 
         let head = store.start_queued_message(&session_id).unwrap().unwrap();
         assert_eq!(head.content, "second");
+    }
+
+    #[test]
+    fn move_reorders_one_slot_with_session_and_position_guards() {
+        let (store, session_id) = store_with_session();
+        let first = store.enqueue_message(&session_id, "first").unwrap();
+        let second = store.enqueue_message(&session_id, "second").unwrap();
+        let third = store.enqueue_message(&session_id, "third").unwrap();
+        let other_workspace = store.create_workspace("/tmp/queue-other", "other").unwrap();
+        let other_session = store.create_session(&other_workspace.id, "other").unwrap();
+        store
+            .enqueue_message(&other_session.id, "unrelated")
+            .unwrap();
+
+        let moved = store
+            .move_queued_message(&session_id, &second.id, second.position, true)
+            .unwrap();
+        assert_eq!(moved.position, 1);
+        assert_eq!(
+            store
+                .list_queued_messages(&session_id)
+                .unwrap()
+                .into_iter()
+                .map(|item| item.content)
+                .collect::<Vec<_>>(),
+            vec!["second", "first", "third"]
+        );
+
+        let moved = store
+            .move_queued_message(&session_id, &first.id, 2, false)
+            .unwrap();
+        assert_eq!(moved.position, 3);
+        assert!(store
+            .move_queued_message(&session_id, &third.id, third.position, true)
+            .is_err());
+        assert!(store
+            .move_queued_message(&other_session.id, &third.id, 3, true)
+            .is_err());
     }
 
     #[test]

@@ -120,6 +120,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.cancel" => session::cancel(state, req.params).await,
         "session.queueList" => session_queue::list(state, req.params),
         "session.queueUpdate" => session_queue::update(state, req.params),
+        "session.queueMove" => session_queue::move_item(state, req.params),
         "session.queueRemove" => session_queue::remove(state, req.params),
         "session.queueSteer" => session_queue::steer(state, req.params),
         "session.rename" => session::rename(state, req.params),

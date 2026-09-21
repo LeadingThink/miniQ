@@ -74,7 +74,8 @@ pub(crate) fn model_identity(config: Option<&ProviderConfig>) -> Option<String> 
                     config.base_url,
                     config.api_key,
                     config.model,
-                    config.api_protocol
+                    config.api_protocol,
+                    config.reasoning_effort
                 ])
                 .to_string()
             )
@@ -157,5 +158,23 @@ mod tests {
         let mut rotated = config.clone();
         rotated.api_key = "different-account".into();
         assert_ne!(model_identity(Some(&rotated)), Some(identity));
+    }
+
+    #[test]
+    fn changing_reasoning_effort_is_a_new_provider_identity() {
+        let mut low = ProviderConfig {
+            base_url: "https://test/v1".into(),
+            api_key: "secret".into(),
+            model: "claude-sonnet-4.6".into(),
+            api_protocol: ApiProtocol::AnthropicMessages,
+            reasoning_effort: Some(ReasoningEffort::Low),
+        };
+        let high = ProviderConfig {
+            reasoning_effort: Some(ReasoningEffort::High),
+            ..low.clone()
+        };
+        assert_ne!(model_identity(Some(&low)), model_identity(Some(&high)));
+        low.reasoning_effort = None;
+        assert_ne!(model_identity(Some(&low)), model_identity(Some(&high)));
     }
 }

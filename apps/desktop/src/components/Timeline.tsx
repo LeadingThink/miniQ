@@ -72,6 +72,7 @@ export interface TimelineProps {
   onSteerQueued: QueueActions["onSteer"];
   onRemoveQueued: QueueActions["onRemove"];
   onUpdateQueued: QueueActions["onUpdate"];
+  onMoveQueued?: QueueActions["onMove"];
   onRewrite: (
     messageId: string,
     content: string,
@@ -369,6 +370,7 @@ export function Timeline(props: TimelineProps) {
             onSteer={props.onSteerQueued}
             onRemove={props.onRemoveQueued}
             onUpdate={props.onUpdateQueued}
+            onMove={props.onMoveQueued}
           />
         </div>
       </div>

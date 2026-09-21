@@ -20,7 +20,7 @@ miniQ 的 Agent 运行时吸收了 DeepSeek Harness 与 OpenAI Codex 开源实�
 
 ## 上下文压缩
 
-默认软上限为 96,000 个估算 token，可通过环境变量调整：
+默认软上限为 64,000 个估算 token，可通过环境变量调整：
 
 ```text
 MINIQ_CONTEXT_TOKENS=128000
@@ -48,7 +48,7 @@ git_status, git_diff, doc_read, skill_read, memory_search
 
 ## 失控保护
 
-- 交互式会话不再设置固定的模型 step 上限；取消、重复工具批次检测和上下文压缩仍会阻止失控任务。子 agent 仍默认最多执行 32 个 step，也可通过 `maxTurns` 显式设置 1 到 96 的预算。
+- 交互式会话默认最多执行 256 个模型 step；取消、重复工具批次检测和上下文压缩仍会阻止失控任务。子 agent 仍默认最多执行 32 个 step，也可通过 `maxTurns` 显式设置 1 到 96 的预算。达到上限后保留 checkpoint，避免模型循环无限占用资源。
 - 完全相同的工具调用批次连续出现 4 次时主动停止，避免模型重复读取或执行同一动作。
 - 原有取消信号在每个 step 和工具执行阶段继续生效。
 - 写操作仍经过风险分级、审批、checkpoint 和审计链路。
