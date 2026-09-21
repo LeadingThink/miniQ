@@ -1,0 +1,30 @@
+.remote-path-dialog form > label {
+  display: grid;
+  gap: 8px;
+}
+.remote-path-dialog input {
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--bg-subtle);
+}
+.remote-path-dialog footer { gap: 10px; }
+.remote-path-dialog footer button { width: auto; min-width: 72px; min-height: 44px; padding-inline: 12px; }
+.remote-path-dialog :is(p, [role="alert"]) { overflow-wrap: anywhere; }
+@media (max-width: 720px), (pointer: coarse) {
+  .remote-path-dialog {
+    position: fixed;
+    inset: calc(var(--app-offset-top, 0px) + max(12px, env(safe-area-inset-top))) 0 auto;
+    margin: 0 auto;
+    width: min(620px, calc(100vw - 24px));
+    max-height: calc(var(--app-height, 100dvh) - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom)));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 14px;
+  }
+  .remote-path-dialog input { font-size: 16px; }
+}

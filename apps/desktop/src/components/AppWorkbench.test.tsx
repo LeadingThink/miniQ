@@ -124,6 +124,17 @@ it("preserves the actual page element while switching modes and expanding", asyn
   expect(screen.getByTitle("page-stable")).toBe(frame);
 });
 
+it("offers an explicit mobile return action without changing open file tabs", async () => {
+  viewport = 390;
+  const props = setup("files");
+  render(layout(props));
+  await screen.findByText("讨论选区");
+  expect(screen.queryByRole("button", { name: "展开工作面板" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "返回会话" }));
+  expect(props.workbench.close).toHaveBeenCalledOnce();
+  expect(props.app.preview.closeTab).not.toHaveBeenCalled();
+});
+
 it("restores split view when discussing from fullscreen, preserving all selected text", async () => {
   const props = setup("files");
   const discuss = vi.fn();

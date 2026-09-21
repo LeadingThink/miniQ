@@ -1,0 +1,46 @@
+.session-model-dialog {
+  position: fixed;
+  inset: calc(var(--app-offset-top, 0px) + max(12px, env(safe-area-inset-top))) 0 auto;
+  margin: 0 auto;
+  width: min(460px, calc(100vw - max(12px, env(safe-area-inset-left)) - max(12px, env(safe-area-inset-right))));
+  max-width: none;
+  max-height: calc(var(--app-height, 100dvh) - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom)));
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.session-model-dialog::backdrop { background: var(--scrim); }
+.session-model-dialog > .session-model-popover {
+  position: static;
+  width: 100%;
+  max-height: none;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  gap: 10px;
+}
+.session-model-dialog .session-model-popover :is(input, button) { min-height: 44px; }
+.session-model-dialog .session-model-popover input { font-size: 16px; }
+.session-model-dialog .session-model-popover .session-model-list {
+  max-height: none;
+  overflow: visible;
+}
+.session-model-dialog .session-model-popover .session-model-list > button {
+  min-height: 44px;
+  padding: 10px 8px;
+}
+.session-model-dialog .session-model-list > button span { white-space: normal; }
+.session-model-dialog .session-model-popover > footer {
+  position: sticky;
+  bottom: -14px;
+  margin: 0 -14px -14px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}

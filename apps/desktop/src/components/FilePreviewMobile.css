@@ -1,0 +1,66 @@
+.file-preview-path { min-width: 0; }
+.file-preview-path > summary {
+  width: 100%;
+  color: var(--text-mid);
+  cursor: pointer;
+  font-size: 11px;
+  padding-block: 3px;
+}
+.file-preview-path .file-path-summary { display: block; }
+.file-preview-path .file-path-hint { display: none; }
+.file-preview-header .file-preview-path > span {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.file-preview-discuss > span { display: none; }
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .file-preview-panel .file-preview-header {
+    max-height: 42%;
+    overflow: auto;
+    align-items: flex-start;
+    padding: 8px;
+    gap: 6px;
+  }
+  .file-preview-panel .file-preview-header > svg { margin-top: 3px; }
+  .file-preview-panel .file-preview-location > strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .file-preview-panel .file-preview-path > summary { min-height: 36px; padding-block: 9px; }
+  .file-preview-panel .file-path-summary { display: none; }
+  .file-preview-panel .file-path-hint { display: inline; font: inherit; }
+  .file-preview-panel .file-preview-path > span { font-size: 12px; line-height: 1.6; }
+  .file-preview-panel .file-preview-tools {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    gap: 4px;
+    padding-bottom: 3px;
+  }
+  .file-preview-panel .file-preview-tools > * { flex-shrink: 0; }
+  .file-preview-panel .file-preview-tools .icon-button,
+  .file-preview-panel .preview-mode-toggle button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .file-preview-panel .preview-mode-toggle { height: auto; }
+  #root .file-preview-header .icon-button.file-preview-discuss { width: auto; flex: 0 0 auto; gap: 5px; padding-inline: 8px; }
+  .file-preview-panel .file-preview-discuss > span { display: inline; font: inherit; font-size: 13px; }
+  .file-preview-panel .preview-tab [role="tab"],
+  .file-preview-panel .preview-tab .icon-button,
+  .file-preview-panel .preview-tab-menu-trigger.icon-button,
+  .file-preview-panel .preview-tab-result > .icon-button,
+  .file-preview-panel .preview-tab-actions button { min-height: 44px; }
+  .file-preview-panel .preview-tab .icon-button { min-width: 44px; }
+  .file-preview-panel .preview-tab-result-select { min-height: 44px; }
+  .file-preview-panel .preview-tab-result-select strong,
+  .file-preview-panel .preview-tab-result-select small { white-space: normal; overflow-wrap: anywhere; }
+  .file-preview-panel .markdown-preview { padding: 16px 14px 32px; }
+}

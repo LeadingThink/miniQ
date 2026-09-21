@@ -13,6 +13,7 @@ import { ApprovalInboxButton } from "./ApprovalInbox";
 import { OpenPreviewButton } from "./OpenPreviewButton";
 import type { LocalFileTarget } from "../localFiles";
 import "./AppStatus.css";
+import { RemoteConnectionStatus } from "./RemoteConnectionStatus";
 
 export function AppStatusBar(props: {
   app: MiniqAppController;
@@ -48,7 +49,7 @@ export function AppStatusBar(props: {
           <PanelLeftClose size={16} />
         )}
       </button>
-      <span
+      {app.client.mode === "remote" ? <RemoteConnectionStatus app={app} onToggleReview={props.onToggleReview} /> : <span
         className={`connection-state ${connected ? "connected" : app.connection.phase}`}
         title={
           connected ? "miniQ 后台服务运行正常" : "连接恢复后会自动同步会话"
@@ -64,12 +65,10 @@ export function AppStatusBar(props: {
           : app.connection.phase === "connecting"
             ? app.client.sshHost
               ? "正在连接 SSH 主机"
-              : app.client.mode === "remote"
-              ? "正在连接远程桌面"
               : "正在连接后台服务"
             : "连接中断，正在恢复"}
-      </span>
-      {app.client.sshHost && (
+      </span>}
+      {app.client.sshHost && app.client.mode !== "remote" && (
         <button type="button" className="ghost" title="切换执行主机" onClick={() => app.navigation.setShowSettings(true)}>
           SSH · {app.client.sshHost}
         </button>
@@ -95,6 +94,7 @@ export function AppStatusBar(props: {
           onClick={props.onToggleWorkbench}
         >
           <PanelRight size={16} />
+          <span className="statusbar-action-label">工作区</span>
         </button>
       )}
       {app.client.mode === "local" && (
@@ -124,6 +124,7 @@ export function AppStatusBar(props: {
         onClick={props.onOpenBrowser}
       >
         <Globe2 size={16} />
+        <span className="statusbar-action-label">网页</span>
       </button>
       {app.review.data.files.length > 0 && (
         <button
@@ -160,6 +161,7 @@ export function AppErrorBanner({ app }: { app: MiniqAppController }) {
   return (
     <div className="error-banner" role="alert">
       <span style={{ flex: 1 }}>{app.error}</span>
+      {app.client.mode === "remote" && !app.connection.connected && <button type="button" className="ghost" onClick={() => app.navigation.setShowSettings(true)}>连接设置</button>}
       <button
         type="button"
         className="banner-close"

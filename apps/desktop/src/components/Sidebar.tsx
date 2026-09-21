@@ -17,6 +17,7 @@ import {
   Settings,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import type { Session, Workspace } from "../types";
 import type { AppUpdaterState } from "../hooks/useAppUpdater";
@@ -25,7 +26,7 @@ import { UpdateNotice } from "./UpdateNotice";
 import { DropdownMenu } from "./DropdownMenu";
 import { SidebarPanel } from "./SidebarPanel";
 import { SidebarSessionItem } from "./SidebarSessionItem";
-import { handleSidebarNavigation, SidebarFilters, sidebarGroups, useProjectDisclosure, type SidebarFilter } from "./SidebarNavigation";
+import { handleSidebarNavigation, SidebarFilters, sidebarGroups, useMobileSidebarLayout, useProjectDisclosure, type SidebarFilter } from "./SidebarNavigation";
 import "./Sidebar.css";
 
 const COLLAPSED_SESSION_COUNT = 3;
@@ -44,6 +45,7 @@ export interface SidebarHostGroup {
 
 interface SidebarProps {
   hostGroups?: SidebarHostGroup[];
+  onClose?: () => void;
   workspaces: Workspace[];
   sessions: Session[];
   unreadSessionIds: ReadonlySet<string>;
@@ -76,11 +78,17 @@ interface SidebarProps {
 }
 
 export function Sidebar(props: SidebarProps) {
+  const mobile = useMobileSidebarLayout();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const showSecondary = !mobile || moreOpen;
   const [showArchived, setShowArchived] = useState(() => props.sessions.some((session) => session.id === props.currentSessionId && session.archived));
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SidebarFilter>("all");
-  const navigation = useMemo(() => sidebarGroups(props.workspaces, props.sessions, props.unreadSessionIds, query, filter),
-    [props.workspaces, props.sessions, props.unreadSessionIds, query, filter]);
+  const hostLabels = useMemo(() => new Map(props.hostGroups?.flatMap((host) => host.workspaceIds.map((id) => [id, host.label] as const))), [props.hostGroups]);
+  const workspaceLabels = useMemo(() => new Map(props.workspaces.map((workspace) => [workspace.id,
+    [hostLabels.get(workspace.id), workspace.name].filter(Boolean).join(" · ")])), [hostLabels, props.workspaces]);
+  const navigation = useMemo(() => sidebarGroups(props.workspaces, props.sessions, props.unreadSessionIds, query, filter, hostLabels),
+    [props.workspaces, props.sessions, props.unreadSessionIds, query, filter, hostLabels]);
   const previousSession = useRef({ id: props.currentSessionId, revealed: false });
   useEffect(() => {
     if (previousSession.current.id !== props.currentSessionId) {
@@ -96,22 +104,29 @@ export function Sidebar(props: SidebarProps) {
   const archiveOpen = showArchived || navigation.filtering;
   return (
     <SidebarPanel>
-      <div className="brand">miniQ</div>
+      <div className="sidebar-brand-row">
+        <div className="brand">miniQ</div>
+        {mobile && props.onClose && <button type="button" className="sidebar-close" aria-label="关闭项目与会话侧栏" onClick={props.onClose}><X size={19} /></button>}
+      </div>
+      <div className="sidebar-primary-actions">
       <button type="button" className="nav-item sidebar-nav-button" onClick={props.onNewChat}>
         <PencilLine className="nav-icon" size={16} /> 新对话
       </button>
       <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSearch}>
-        <Search className="nav-icon" size={16} /> 搜索
+        <Search className="nav-icon" size={16} /> {mobile ? "搜索内容" : "搜索"}
       </button>
+      </div>
+      {showSecondary && <div className="sidebar-secondary-actions" id="sidebar-secondary-actions">
       <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSchedule}>
         <Clock3 className="nav-icon" size={16} /> 已安排
       </button>
       <button type="button" className="nav-item sidebar-nav-button" onClick={props.onImportSessions}>
         <Download className="nav-icon" size={15} /> 导入会话
       </button>
+      </div>}
 
-      {props.workspaces.length > 0 && <SidebarFilters query={query} filter={filter} counts={navigation.counts} onQuery={setQuery} onFilter={setFilter} />}
       <div className="sidebar-scroll" role="navigation" aria-label="项目与会话" onKeyDown={handleSidebarNavigation}>
+        {props.workspaces.length > 0 && <SidebarFilters query={query} filter={filter} counts={navigation.counts} onQuery={setQuery} onFilter={setFilter} />}
         {props.hostGroups?.filter((host) => !host.workspaceIds.length).map((host) => <HostHeading key={host.key} host={host} />)}
         {navigation.groups.map(({ workspace, sessions }, index) => (
           <Fragment key={workspace.id}>
@@ -166,6 +181,7 @@ export function Sidebar(props: SidebarProps) {
                   current={session.id === props.currentSessionId}
                   key={session.id}
                   session={session}
+                  contextLabel={workspaceLabels.get(session.workspaceId)}
                   onSelect={props.onSelectSession}
                   onSeen={props.onSessionSeen}
                   unread={props.unreadSessionIds.has(session.id)}
@@ -186,6 +202,7 @@ export function Sidebar(props: SidebarProps) {
           onCheck={props.onCheckForUpdates}
           onInstall={props.onInstallUpdate}
         />
+        {showSecondary && <div className="sidebar-secondary-actions" id="sidebar-secondary-footer">
         <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSkills}>
           <Sparkles className="nav-icon" size={16} /> 技能
         </button>
@@ -209,9 +226,16 @@ export function Sidebar(props: SidebarProps) {
         >
           <MessageSquareText className="nav-icon" size={16} /> 反馈
         </button>
+        </div>}
+        <div className="sidebar-primary-actions">
+        {mobile && <button type="button" className="nav-item sidebar-nav-button" aria-expanded={moreOpen}
+          aria-controls="sidebar-secondary-actions sidebar-secondary-footer" onClick={() => setMoreOpen((value) => !value)}>
+          <MoreHorizontal className="nav-icon" size={16} /> {moreOpen ? "收起功能" : "更多功能"}
+        </button>}
         <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSettings}>
           <Settings className="nav-icon" size={16} /> 设置
         </button>
+        </div>
       </div>
     </SidebarPanel>
   );

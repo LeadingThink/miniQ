@@ -1,0 +1,10 @@
+.mobile-entry-key-control { display: flex; gap: 8px; min-width: 0; }
+.mobile-entry-key-control input { flex: 1; min-width: 0; font-size: 16px; }
+.mobile-entry-key-control button { min-width: 44px; min-height: 44px; flex: none; display: grid; place-items: center; }
+.mobile-entry-get-key { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; color: var(--accent); font-weight: 500; }
+.mobile-entry-progress { margin: 0; color: var(--text-mid); font-size: 13px; line-height: 1.6; }
+.mobile-entry-help { border-top: 1px solid var(--border); padding-top: 12px; font-size: 13px; line-height: 1.65; color: var(--text-mid); }
+.mobile-entry-help summary { min-height: 40px; padding: 8px 0; cursor: pointer; color: var(--text); }
+.mobile-entry-help ol { padding-left: 22px; margin: 6px 0; }
+.mobile-entry-help li + li { margin-top: 8px; }
+.mobile-entry-help p { margin: 8px 0 0; }

@@ -238,37 +238,6 @@
   border: 0;
   padding: 5px 0;
 }
-.session-export {
-  position: relative;
-  flex: none;
-}
-.session-export summary {
-  cursor: pointer;
-  padding: 5px;
-  list-style: none;
-  display: flex;
-}
-.session-export summary::-webkit-details-marker {
-  display: none;
-}
-.session-export > div {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  z-index: 30;
-  padding: 5px;
-  display: grid;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: var(--shadow);
-}
-.session-export button {
-  background: transparent;
-  color: var(--text);
-  text-align: left;
-  border-radius: 4px;
-}
 .tool-group {
   border-left: 2px solid var(--border);
   padding-left: 10px;

@@ -70,6 +70,7 @@ export function AppWorkbench({
             (app.client.mode === "local" && !!app.catalog.currentWorkspace)
           }
           expanded={expanded}
+          mobile={layout === "mobile"}
           onExpand={() => setExpandedScope(expanded ? null : workbench.scope)}
           onClose={workbench.close}
           onSelect={workbench.select}

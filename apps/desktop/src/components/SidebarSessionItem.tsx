@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Archive, ArchiveRestore, MoreHorizontal, PencilLine, Pin, Trash2 } from "lucide-react";
 import type { Session } from "../types";
 import { relativeAge } from "../time";
@@ -9,6 +9,7 @@ import { DropdownMenu } from "./DropdownMenu";
 export function SidebarSessionItem(props: {
   session: Session;
   current: boolean;
+  contextLabel?: string;
   onSelect: (sessionId: string) => void;
   onSeen: (sessionId: string) => void;
   unread: boolean;
@@ -24,6 +25,7 @@ export function SidebarSessionItem(props: {
   const inputRef = useRef<HTMLInputElement>(null);
   const renameCommittedRef = useRef(false);
   const itemRef = useRef<HTMLDivElement>(null);
+  const contextId = useId();
   const external = props.session.external;
   const unread = !props.current && props.unread;
   const statusText = unread ? "新回复" : sessionStatusLabel(props.session.status);
@@ -81,6 +83,7 @@ export function SidebarSessionItem(props: {
           className="session-select"
           aria-current={props.current ? "page" : undefined}
           aria-label={`${props.session.title}${unread || props.session.status !== "idle" ? `，${statusText}` : ""}`}
+          aria-describedby={props.contextLabel ? contextId : undefined}
           onClick={() => {
             props.onSeen(props.session.id);
             props.onSelect(props.session.id);
@@ -96,7 +99,10 @@ export function SidebarSessionItem(props: {
             </span>
           )}
           {props.session.pinned && <Pin className="pin-icon" size={12} />}
+          <span className={`session-copy${props.contextLabel ? " with-context" : ""}`}>
           <span className="session-title">{props.session.title}</span>
+          <span className="session-meta">
+          {props.contextLabel && <span id={contextId} className="session-context">{props.contextLabel}</span>}
           {(unread || props.session.status !== "idle") && (
             <span
               className={`session-state-label ${unread ? "unread" : props.session.status}`}
@@ -107,6 +113,8 @@ export function SidebarSessionItem(props: {
             </span>
           )}
           <span className="session-age">{relativeAge(props.session.updatedAt)}</span>
+          </span>
+          </span>
         </button>
       )}
       <div className="menu-container">

@@ -69,6 +69,40 @@ it("does not send an unavailable fallback model and reloads a failed catalog wit
   expect((screen.getByRole("button", { name: "发送" }) as HTMLButtonElement).disabled).toBe(false);
 });
 
+it("restores an unsent draft after returning from remote mode and clears it only after accepting send", async () => {
+  const fetcher = vi.fn((url: unknown) => Promise.resolve(modelRequest(url) ? json({ data: catalog }) : doneResponse("完成")));
+  vi.stubGlobal("fetch", fetcher);
+  const view = render(<MobileChat apiKey="test-key" onBack={() => {}} />);
+  await screen.findByText("custom-chat");
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "还没写完的详细要求\n保留换行" } });
+  view.unmount();
+  render(<MobileChat apiKey="test-key" onBack={() => {}} />);
+  await screen.findByText("custom-chat");
+  expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("还没写完的详细要求\n保留换行");
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
+  await screen.findByText("完成");
+  expect(localStorage.getItem("miniq.draft.mobile-chat")).toBeNull();
+});
+
+it("lets the phone Return key insert a newline and sends with the visible button", async () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  const fetcher = vi.fn((url: unknown, _init?: RequestInit) => Promise.resolve(modelRequest(url) ? json({ data: catalog }) : doneResponse("完成")));
+  vi.stubGlobal("fetch", fetcher);
+  render(<MobileChat apiKey="test-key" onBack={() => {}} />);
+  await screen.findByText("custom-chat");
+  const input = screen.getByRole<HTMLTextAreaElement>("textbox");
+  fireEvent.change(input, { target: { value: "第一行第二行" } });
+  input.setSelectionRange(3, 3);
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(input.value).toBe("第一行\n第二行");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("回车换行，点击发送按钮")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "发送" }));
+  await screen.findByText("完成");
+  const request = fetcher.mock.calls.find(([url]) => !modelRequest(url))?.[1];
+  expect(JSON.parse(request?.body as string).messages).toEqual([{ role: "user", content: "第一行\n第二行" }]);
+});
+
 it("keeps a partial answer after network EOF and retries the same question without duplicating it", async () => {
   let request = 0;
   const fetcher = vi.fn((url: unknown, _init?: RequestInit) => Promise.resolve(modelRequest(url) ? json({ data: catalog })

@@ -1,0 +1,34 @@
+.statusbar-identity { display: none; }
+.statusbar .remote-connection-trigger { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-subtle); color: var(--text-mid); min-width: 0; cursor: pointer; }
+.remote-connection-trigger.connected { color: var(--text); }
+.remote-connection-dialog { width: min(520px, calc(100vw - 24px)); max-height: min(85dvh, var(--app-height, 100dvh)); overflow-y: auto; overscroll-behavior: contain; padding: 20px; border: 1px solid var(--border); border-radius: 16px; background: var(--bg); color: var(--text); white-space: normal; }
+.remote-connection-dialog::backdrop { background: #0007; }
+.remote-connection-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.remote-connection-dialog h2 { margin: 0; font-size: 17px; }
+.remote-connection-dialog h3 { margin: 0 0 10px; font-size: 15px; overflow-wrap: anywhere; }
+.remote-connection-dialog header button { min-width: 44px; min-height: 44px; }
+.remote-connection-dialog section { padding: 16px 0; }
+.remote-connection-dialog section + section { border-top: 1px solid var(--border); }
+.remote-connection-dialog p { font-size: 13px; line-height: 1.65; color: var(--text-mid); margin: 8px 0 12px; }
+.remote-connection-dialog small { display: block; font-size: 12px; line-height: 1.5; color: var(--text-dim); overflow-wrap: anywhere; }
+.remote-current-context dl { display: grid; gap: 10px; margin: 0; font-size: 13px; }
+.remote-current-context dl > div { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; }
+.remote-current-context dt { color: var(--text-dim); }
+.remote-current-context dd { margin: 0; overflow-wrap: anywhere; }
+.remote-connection-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.remote-connection-actions button { min-height: 44px; padding: 9px 12px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.remote-machine-list { display: grid; gap: 8px; }
+.remote-machine-list h3, .remote-machine-list p { margin: 0; }
+.remote-machine-list > button { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 10px; text-align: left; color: var(--text); background: var(--bg-subtle); border: 1px solid var(--border); }
+.remote-machine-list > button[aria-pressed="true"] { border-color: var(--accent); }
+.remote-machine-list > button > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.remote-machine-list > button > small { flex: none; }
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .statusbar-identity { display: flex; align-items: center; gap: 8px; flex: 1 1 calc(100% - 60px); min-width: 0; max-width: calc(100% - 52px); min-height: 44px; text-align: left; padding: 4px 8px; color: var(--text); background: transparent; border: 0; }
+  .statusbar-identity > span { min-width: 0; flex: 1; }
+  .statusbar-identity strong { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .statusbar-identity small { display: block; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); margin-top: 3px; }
+  .statusbar-identity > svg { flex: none; }
+  .statusbar .remote-connection-trigger { min-height: 44px; padding: 6px 8px; font-size: 11px; }
+  .remote-connection-dialog { padding: 16px; }
+}

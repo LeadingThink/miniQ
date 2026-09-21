@@ -9,6 +9,12 @@ import {
 } from "../modelSelection";
 import type { RpcClient } from "../rpc";
 import type { useSessionModel } from "../hooks/useSessionModel";
+import { SessionModelSurface } from "./SessionModelSurface";
+
+const MODEL_DIALOG_QUERY = "(max-width: 720px), (pointer: coarse)";
+function needsModelDialog() {
+  return window.matchMedia?.(MODEL_DIALOG_QUERY).matches ?? window.innerWidth <= 720;
+}
 
 export function SessionModelControls({
   client,
@@ -31,23 +37,34 @@ export function SessionModelControls({
   const [attempt, setAttempt] = useState(0);
   const [modelListOpen, setModelListOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const [mobile, setMobile] = useState(needsModelDialog);
   const selectedModelRef = useRef<HTMLButtonElement>(null);
   const [popoverMaxHeight, setPopoverMaxHeight] = useState<number | null>(null);
   const disabled = busy || model.pending || !model.ready;
 
   useEffect(() => {
+    const media = window.matchMedia?.(MODEL_DIALOG_QUERY);
+    const update = () => setMobile(needsModelDialog());
+    media?.addEventListener("change", update);
+    return () => media?.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
+
+  useEffect(() => {
     if (!open) return;
     const handleOutsideMouseDown = (event: MouseEvent) => {
       const root = rootRef.current;
-      if (root && !root.contains(event.target as Node)) setOpen(false);
+      if (root && !root.contains(event.target as Node) && !formRef.current?.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", handleOutsideMouseDown);
     return () => document.removeEventListener("mousedown", handleOutsideMouseDown);
   }, [open]);
 
   useLayoutEffect(() => {
-    if (!open) {
+    if (!open || mobile) {
       setPopoverMaxHeight(null);
       return;
     }
@@ -63,7 +80,7 @@ export function SessionModelControls({
     updatePopoverHeight();
     window.addEventListener("resize", updatePopoverHeight);
     return () => window.removeEventListener("resize", updatePopoverHeight);
-  }, [open, placement]);
+  }, [open, placement, mobile]);
 
   useEffect(() => {
     if (!model.effective) return;
@@ -126,6 +143,7 @@ export function SessionModelControls({
         ref={triggerRef}
         disabled={disabled}
         aria-expanded={open}
+        aria-haspopup={mobile ? "dialog" : undefined}
         aria-label="选择会话模型"
         title={
           busy
@@ -134,7 +152,7 @@ export function SessionModelControls({
         }
         onClick={() => {
           setOpen(!open);
-          setModelListOpen(false);
+          setModelListOpen(mobile);
           setQuery("");
         }}
       >
@@ -182,7 +200,9 @@ export function SessionModelControls({
         </span>
       )}
       {open && (
+        <SessionModelSurface mobile={mobile} trigger={triggerRef} onClose={() => setOpen(false)}>
         <form
+          ref={formRef}
           className="session-model-popover"
           style={
             popoverMaxHeight === null
@@ -202,7 +222,11 @@ export function SessionModelControls({
               .catch(() => {});
           }}
           onKeyDown={(event) => {
-            if (event.key === "Escape") {
+            if (event.key === "Enter" && event.target instanceof HTMLInputElement && mobile) {
+              event.preventDefault();
+              if (!event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) setModelListOpen(true);
+            } else if (event.key === "Escape") {
+              event.preventDefault();
               event.stopPropagation();
               if (modelListOpen) setModelListOpen(false);
               else setOpen(false);
@@ -227,7 +251,8 @@ export function SessionModelControls({
               <span className="session-model-select">
                 <span className="session-model-search">
                   <input
-                    autoFocus
+                    autoFocus={!mobile}
+                    enterKeyHint={mobile ? "search" : undefined}
                     value={query}
                     placeholder={model.effective?.model ?? "搜索模型"}
                     aria-label="模型 ID"
@@ -285,7 +310,8 @@ export function SessionModelControls({
               </span>
             ) : (
               <input
-                autoFocus
+                autoFocus={!mobile}
+                enterKeyHint={mobile ? "search" : undefined}
                 value={query}
                 placeholder={model.effective?.model ?? "模型 ID"}
                 onChange={(event) => setQuery(event.target.value)}
@@ -341,6 +367,7 @@ export function SessionModelControls({
             </button>
           </footer>
         </form>
+        </SessionModelSurface>
       )}
     </div>
   );

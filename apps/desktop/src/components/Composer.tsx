@@ -6,12 +6,11 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ReactNode } from "react";
-import { ArrowUp, LoaderCircle, Paperclip, Square, X } from "lucide-react";
+import type { ComponentProps, ReactNode } from "react";
+import { ArrowUp, LoaderCircle, Paperclip, Square } from "lucide-react";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import {
   canSendComposer,
-  COMPOSER_KEYBOARD_HINT,
   handleComposerKeyDown,
   shouldShowComposerSend,
 } from "../composerInput";
@@ -28,188 +27,16 @@ import { insertTranscript, type TextRange } from "../voiceAudio";
 import { VoiceInput } from "./VoiceInput";
 import { VoiceTranscript } from "./VoiceTranscript";
 import type { VoicePreview } from "../voiceTranscription";
-import { readImagePreview, savePastedImage } from "../localFiles";
+import { savePastedImage } from "../localFiles";
+import { readDraft, storeDraft, readAttachments, storeAttachments } from "../composerDraft";
+import { AttachmentPreview } from "./AttachmentPreview";
 import { RemotePathDialog } from "./RemotePathDialog";
+import { useTouchComposerInput } from "../hooks/useTouchComposerInput";
+import { useDroppedFiles } from "../hooks/useDroppedFiles";
+import { useAttachmentReads } from "../hooks/useAttachmentReads";
+import "./Composer.css";
 
-/** Listen for native file drops (Tauri window-level drag & drop). */
-function useDroppedFiles(
-  onFiles: (paths: string[]) => void,
-  onError?: (message: string) => void,
-) {
-  useEffect(() => {
-    if (!isTauriRuntime()) return;
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      const { getCurrentWebviewWindow } =
-        await import("@tauri-apps/api/webviewWindow");
-      const stop = await getCurrentWebviewWindow().onDragDropEvent((event) => {
-        if (event.payload.type === "drop" && event.payload.paths.length > 0) {
-          onFiles(event.payload.paths);
-        }
-      });
-      if (disposed) stop();
-      else unlisten = stop;
-    })().catch((error) => {
-      onError?.(
-        `无法接收拖入文件: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [onError, onFiles]);
-}
 
-function fileName(path: string): string {
-  const normalized = path.replace(/\\/g, "/");
-  return normalized.slice(normalized.lastIndexOf("/") + 1) || path;
-}
-
-function isImageAttachment(path: string): boolean {
-  return /\.(?:png|jpe?g|webp|gif)$/i.test(path);
-}
-
-function AttachmentPreview(props: {
-  path: string;
-  sending: boolean;
-  onRemove: () => void;
-  remote?: boolean;
-}) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [zoomed, setZoomed] = useState(false);
-  const previewRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    if (!zoomed) return;
-    const closeWhenOutside = (event: PointerEvent) => {
-      if (!previewRef.current?.contains(event.target as Node)) setZoomed(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setZoomed(false);
-    };
-    document.addEventListener("pointerdown", closeWhenOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeWhenOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [zoomed]);
-
-  useEffect(() => {
-    if (props.remote || !isImageAttachment(props.path)) return;
-    let disposed = false;
-    void readImagePreview(props.path)
-      .then((preview) => {
-        if (!disposed)
-          setImageUrl(`data:${preview.mimeType};base64,${preview.dataBase64}`);
-      })
-      .catch(() => {
-        if (!disposed) setImageUrl(null);
-      });
-    return () => {
-      disposed = true;
-    };
-  }, [props.path, props.remote]);
-
-  if (imageUrl) {
-    return (
-      <span
-        ref={previewRef}
-        className={`attach-image-chip${zoomed ? " zoomed" : ""}`}
-        title={props.path}
-        onClick={() => setZoomed((current) => !current)}
-      >
-        <img
-          src={imageUrl}
-          alt={fileName(props.path)}
-          className="attach-image-preview"
-        />
-        <button
-          type="button"
-          className="attach-remove attach-image-remove"
-          title={`移除图片 ${fileName(props.path)}`}
-          aria-label={`移除图片 ${fileName(props.path)}`}
-          disabled={props.sending}
-          onClick={(event) => {
-            event.stopPropagation();
-            props.onRemove();
-          }}
-        >
-          <X size={12} />
-        </button>
-      </span>
-    );
-  }
-
-  return (
-    <span className="attach-chip" title={props.path}>
-      <Paperclip size={12} />
-      {fileName(props.path)}
-      <button
-        type="button"
-        className="attach-remove"
-        title={`移除附件 ${fileName(props.path)}`}
-        aria-label={`移除附件 ${fileName(props.path)}`}
-        disabled={props.sending}
-        onClick={props.onRemove}
-      >
-        <X size={11} />
-      </button>
-    </span>
-  );
-}
-
-const DRAFT_PREFIX = "miniq.draft.";
-
-function readDraft(key: string | undefined): string {
-  if (!key) return "";
-  try {
-    return window.localStorage.getItem(DRAFT_PREFIX + key) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function storeDraft(key: string | undefined, value: string) {
-  if (!key) return;
-  try {
-    if (value) window.localStorage.setItem(DRAFT_PREFIX + key, value);
-    else window.localStorage.removeItem(DRAFT_PREFIX + key);
-  } catch {
-    /* storage unavailable */
-  }
-}
-
-function readAttachments(key?: string): string[] {
-  if (!key) return [];
-  try {
-    const value: unknown = JSON.parse(
-      window.localStorage.getItem(`${DRAFT_PREFIX}${key}.attachments`) ?? "[]",
-    );
-    return Array.isArray(value) &&
-      value.every((path) => typeof path === "string")
-      ? value
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function storeAttachments(key: string | undefined, paths: string[]) {
-  if (!key) return;
-  try {
-    if (paths.length)
-      window.localStorage.setItem(
-        `${DRAFT_PREFIX}${key}.attachments`,
-        JSON.stringify(paths),
-      );
-    else window.localStorage.removeItem(`${DRAFT_PREFIX}${key}.attachments`);
-  } catch {
-    /* Draft remains in memory when browser storage is unavailable. */
-  }
-}
 
 type SendMessage = (
   content: string,
@@ -251,7 +78,10 @@ export function ComposerCard(props: {
   sendBlockedReason?: string;
 }) {
   const keyboardHintId = useId();
-  const remoteHost = props.client?.sshHost;
+  const inputMode = useTouchComposerInput();
+  const attachmentReads = useAttachmentReads(props.draftKey);
+  const remoteHost = props.client?.sshHost || (props.client?.mode === "remote" ? "远程电脑" : null);
+  const canAttach = isTauriRuntime() || !!remoteHost;
   const [showRemoteAttachment, setShowRemoteAttachment] = useState(false);
   const [draft, setDraftState] = useState(() => readDraft(props.draftKey));
   const draftValueRef = useRef(draft);
@@ -261,11 +91,16 @@ export function ComposerCard(props: {
   );
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
+  const mountedRef = useRef(true);
   const draftKeyRef = useRef(props.draftKey);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceRangeRef = useRef<TextRange>({ start: 0, end: 0 });
   const voiceDraftRef = useRef("");
   const [voicePreview, setVoicePreview] = useState<VoicePreview | null>(null);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   // When the draft key changes (e.g. switching sessions), load that key's draft.
   useEffect(() => {
     if (draftKeyRef.current === props.draftKey) return;
@@ -273,6 +108,7 @@ export function ComposerCard(props: {
     setDraftState(readDraft(props.draftKey));
     setAttachments(readAttachments(props.draftKey));
     setVoicePreview(null);
+    setShowRemoteAttachment(false);
   }, [props.draftKey]);
 
   const setDraft = (value: string) => {
@@ -321,6 +157,12 @@ export function ComposerCard(props: {
 
   const addAttachments = useCallback(
     (paths: string[]) => {
+      // Native pickers and clipboard saves may finish after switching sessions.
+      // Keep the result with the draft which initiated that operation.
+      if (!mountedRef.current || draftKeyRef.current !== props.draftKey) {
+        storeAttachments(props.draftKey, [...new Set([...readAttachments(props.draftKey), ...paths])]);
+        return;
+      }
       if (sendingRef.current) return;
       setAttachments((current) => {
         const next = [...new Set([...current, ...paths])];
@@ -333,7 +175,7 @@ export function ComposerCard(props: {
 
   const receiveDroppedFiles = useCallback((paths: string[]) => {
     if (remoteHost) {
-      props.onError?.("当前为 SSH 会话，请先上传本机文件，再通过附件按钮填写远程文件路径。");
+      props.onError?.("当前连接远程电脑，请先将文件传到该电脑，再通过附件按钮填写文件路径。");
     } else addAttachments(paths);
   }, [addAttachments, remoteHost, props.onError]);
   useDroppedFiles(receiveDroppedFiles, props.onError);
@@ -341,8 +183,10 @@ export function ComposerCard(props: {
   const pickFiles = async () => {
     if (remoteHost) { setShowRemoteAttachment(true); return; }
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({ multiple: true, title: "附加文件" });
+      const selected = await attachmentReads.run(async () => {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        return open({ multiple: true, title: "附加文件" });
+      });
       if (Array.isArray(selected)) addAttachments(selected);
       else if (typeof selected === "string") addAttachments([selected]);
     } catch (error) {
@@ -367,13 +211,11 @@ export function ComposerCard(props: {
 
     event.preventDefault();
     if (remoteHost) {
-      props.onError?.("当前为 SSH 会话，剪贴板图片需先上传到远程主机，再附加远程文件路径。");
+      props.onError?.("当前连接远程电脑，剪贴板图片需先传到该电脑，再附加远程文件路径。");
       return;
     }
     try {
-      const paths = await Promise.all(
-        imageFiles.map((file) => savePastedImage(file)),
-      );
+      const paths = await attachmentReads.run(() => Promise.all(imageFiles.map((file) => savePastedImage(file))));
       addAttachments(paths);
     } catch (error) {
       props.onError?.(
@@ -385,6 +227,7 @@ export function ComposerCard(props: {
   const send = async () => {
     if (
       sendingRef.current ||
+      attachmentReads.hasPending() ||
       slash.pending ||
       voicePreview !== null ||
       props.sendBlocked ||
@@ -418,12 +261,12 @@ export function ComposerCard(props: {
     client: props.client,
     commands: [
       ...(props.slashCommands ?? []),
-      ...(isTauriRuntime()
+      ...(canAttach
         ? [
             {
               id: "attach",
               name: "附加文件",
-              description: remoteHost ? "填写远程主机上的文件绝对路径" : "选择图片或文件作为当前消息的附件",
+              description: remoteHost ? "附加远程电脑上已有的文件" : "选择图片或文件作为当前消息的附件",
               group: "工具",
               icon: "file" as const,
               keywords: ["attach", "file", "附件", "文件"],
@@ -521,6 +364,7 @@ export function ComposerCard(props: {
           props.busy ? "任务执行中，发送的消息会加入队列..." : props.placeholder
         }
         rows={1}
+        enterKeyHint={inputMode.enterSends ? "send" : "enter"}
         {...slash.inputAttributes}
         onBeforeInput={(e) => {
           const data = (e.nativeEvent as InputEvent).data;
@@ -543,18 +387,20 @@ export function ComposerCard(props: {
         }}
         onKeyDown={(e) => {
           if (slash.onKeyDown(e)) return;
-          handleComposerKeyDown(e, setDraft, () => void send());
+          handleComposerKeyDown(e, setDraft, () => void send(), inputMode);
         }}
       />
       <div className="composer-row">
         {props.modelSlot}
         {props.chipSlot}
         {props.chip && <span className="chip">🗂 {props.chip}</span>}
-        {isTauriRuntime() && (
+        {canAttach && (
           <button
             type="button"
             className="attach-btn"
             title={remoteHost ? "附加远程文件" : "附加文件(也可直接拖入窗口)"}
+            aria-label={remoteHost ? "附加远程文件" : "附加文件"}
+            disabled={sending || slash.pending}
             onClick={() => void pickFiles()}
           >
             <Paperclip size={15} />
@@ -601,6 +447,7 @@ export function ComposerCard(props: {
             }
             disabled={
               sending ||
+              attachmentReads.pending ||
               slash.pending ||
               voicePreview !== null ||
               props.sendBlocked ||
@@ -620,52 +467,24 @@ export function ComposerCard(props: {
           </button>
         )}
       </div>
+      {attachmentReads.pending && <p className="composer-send-status" role="status">正在准备附件，完成后可发送</p>}
+      {props.sendBlocked && <p className="composer-send-status" role="status">
+        {props.sendBlockedReason ?? "暂时无法发送，草稿会保留"}
+      </p>}
       <p id={keyboardHintId} className="composer-keyboard-hint">
-        {COMPOSER_KEYBOARD_HINT}
+        {inputMode.keyboardHint}
       </p>
     </div>
   );
 }
 
 /** Bottom-docked composer for an open session. */
-export function Composer(props: {
-  busy: boolean;
-  chip?: string;
-  modelSlot?: ReactNode;
-  permissionSlot?: ReactNode;
-  sendBlocked?: boolean;
-  draftKey?: string;
-  draftRequest?: { id: number; content: string; append?: boolean };
-  onDraftRequestApplied?: () => void;
-  client?: RpcClient;
-  workspaceId?: string;
-  slashCommands?: ComposerSlashCommand[];
-  approvalMode?: ApprovalMode;
-  onApprovalModeChange?: (mode: ApprovalMode) => void;
-  onSend: SendMessage;
-  onCancel: () => void;
-  onError?: (message: string) => void;
-}) {
+export function Composer(props: Omit<ComponentProps<typeof ComposerCard>, "placeholder" | "autoFocus" | "chipSlot"> & { onCancel: () => void }) {
   return (
     <div className="composer-outer">
       <ComposerCard
-        busy={props.busy}
+        {...props}
         placeholder="随心输入，/ 使用命令与技能"
-        chip={props.chip}
-        modelSlot={props.modelSlot}
-        permissionSlot={props.permissionSlot}
-        sendBlocked={props.sendBlocked}
-        draftKey={props.draftKey}
-        draftRequest={props.draftRequest}
-        onDraftRequestApplied={props.onDraftRequestApplied}
-        client={props.client}
-        workspaceId={props.workspaceId}
-        slashCommands={props.slashCommands}
-        approvalMode={props.approvalMode}
-        onApprovalModeChange={props.onApprovalModeChange}
-        onSend={props.onSend}
-        onCancel={props.onCancel}
-        onError={props.onError}
       />
     </div>
   );

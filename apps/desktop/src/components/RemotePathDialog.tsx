@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import "./ProjectDirectories.css";
+import "./RemotePathDialog.css";
 
 export function RemotePathDialog(props: {
   host: string;
@@ -9,6 +10,7 @@ export function RemotePathDialog(props: {
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const submitting = useRef(false);
   const [path, setPath] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +28,7 @@ export function RemotePathDialog(props: {
   return (
     <dialog
       ref={ref}
-      className="project-directories"
+      className="project-directories remote-path-dialog"
       aria-label={title}
       onCancel={(event) => {
         event.preventDefault();
@@ -36,19 +38,20 @@ export function RemotePathDialog(props: {
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (pending) return;
+          if (submitting.current) return;
           const value = path.trim();
-          if (!value.startsWith("/") || /[\r\n\0]/.test(value)) {
-            setError("请输入远程主机上的绝对路径，例如 /home/user/project");
+          if (!isRemoteAbsolutePath(value)) {
+            setError("请输入远程电脑上的完整绝对路径，例如 /Users/name/file.pdf 或 C:\\Users\\name\\file.pdf");
             return;
           }
+          submitting.current = true;
           setPending(true);
           setError(null);
           void props
             .onSubmit(value)
             .then(props.onClose)
             .catch((cause) => setError(errorMessage(cause)))
-            .finally(() => setPending(false));
+            .finally(() => { submitting.current = false; setPending(false); });
         }}
       >
         <header>
@@ -61,12 +64,19 @@ export function RemotePathDialog(props: {
             autoFocus
             value={path}
             disabled={pending}
-            placeholder="/home/user/project"
+            placeholder={props.purpose === "attachment" ? "/Users/name/file.pdf 或 C:\\Users\\name\\file.pdf" : "/home/user/project"}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            enterKeyHint="done"
             onChange={(event) => setPath(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)) event.preventDefault();
+            }}
           />
         </label>
         {props.purpose === "attachment" && (
-          <p>选择已在远程主机上的文件。本机文件请先通过 scp 或其他方式上传。</p>
+          <p>填写已在这台远程电脑上的文件路径。此入口不会上传手机或当前设备的文件。</p>
         )}
         {error && <p role="alert">{error}</p>}
         <footer>
@@ -85,4 +95,9 @@ export function RemotePathDialog(props: {
       </form>
     </dialog>
   );
+}
+
+export function isRemoteAbsolutePath(path: string): boolean {
+  if (/[\r\n\0]/.test(path)) return false;
+  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) || /^\\\\[^\\]+\\[^\\]+/.test(path);
 }

@@ -19,6 +19,7 @@ export function handleComposerKeyDown(
   event: KeyboardEvent<HTMLTextAreaElement>,
   onDraftChange: (value: string) => void,
   onSend: () => void,
+  options: { enterSends: boolean } = { enterSends: true },
 ): void {
   if (
     event.key !== "Enter" ||
@@ -29,7 +30,7 @@ export function handleComposerKeyDown(
   ) return;
 
   event.preventDefault();
-  if (!event.shiftKey) {
+  if (!event.shiftKey && (options.enterSends || event.ctrlKey || event.metaKey)) {
     onSend();
     return;
   }

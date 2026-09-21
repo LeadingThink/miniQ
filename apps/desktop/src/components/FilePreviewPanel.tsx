@@ -53,6 +53,7 @@ import { PreviewSelection } from "./PreviewSelection";
 import { usePreviewSelection } from "../hooks/usePreviewSelection";
 import type { LocalFileTarget } from "../localFiles";
 import "./PreviewFocus.css";
+import "./FilePreviewMobile.css";
 import {
   PreviewViewProvider,
   PreviewViewStore,
@@ -259,9 +260,12 @@ function PreviewPanelContent({
       )}
       <header className="file-preview-header">
         <TypeIcon size={17} />
-        <div>
+        <div className="file-preview-location">
           <strong>{fileName(path) || "文件预览"}</strong>
-          <span title={path}>{path}</span>
+          <details key={path} className="file-preview-path">
+            <summary title={path}><span className="file-path-summary">{path}</span><span className="file-path-hint">文件路径</span></summary>
+            <span>{path}</span>
+          </details>
         </div>
         {(target?.line || preview.size !== null) && (
           <small>
@@ -279,7 +283,7 @@ function PreviewPanelContent({
           <X size={17} />
         </button>}
         <section className="file-preview-tools" aria-label="文件操作">
-          {onDiscuss && <button type="button" className="icon-button" aria-label="针对这个文件继续提问" title="针对这个文件继续提问" disabled={!path} onClick={() => onDiscuss(path)}><MessageSquare size={16} /></button>}
+          {onDiscuss && <button type="button" className="icon-button file-preview-discuss" aria-label="针对这个文件继续提问" title="针对这个文件继续提问" disabled={!path} onClick={() => onDiscuss(path)}><MessageSquare size={16} /><span>继续提问</span></button>}
           {!withinWorkbench && <button
             type="button"
             className="icon-button"

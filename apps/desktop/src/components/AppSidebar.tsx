@@ -7,6 +7,7 @@ export function AppSidebar({ app, hostGroups, onCreateSession }: { app: MiniqApp
   return <>
       <Sidebar
         hostGroups={hostGroups}
+        onClose={closeMobileSidebar}
         workspaces={app.catalog.workspaces}
         sessions={app.catalog.sessions}
         unreadSessionIds={app.unreadSessionIds}
@@ -29,12 +30,14 @@ export function AppSidebar({ app, hostGroups, onCreateSession }: { app: MiniqApp
           closeMobileSidebar();
         }}
         onSelectWorkspace={(workspaceId) => {
+          // Expanding a project is navigation within the drawer, not leaving it.
           app.actions.selectWorkspace(workspaceId);
+        }}
+        onCreateSession={(workspaceId) => {
+          if (onCreateSession) onCreateSession(workspaceId);
+          else void app.actions.createSession(workspaceId).catch((cause) => app.setError(cause instanceof Error ? cause.message : String(cause)));
           closeMobileSidebar();
         }}
-        onCreateSession={onCreateSession ?? ((workspaceId) =>
-          void app.actions.createSession(workspaceId).catch((cause) => app.setError(cause instanceof Error ? cause.message : String(cause)))
-        )}
         onDeleteWorkspace={(workspaceId) =>
           void app.actions.deleteWorkspace(workspaceId)
         }

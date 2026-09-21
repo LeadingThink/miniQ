@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { App } from "@capacitor/app";
 import { errorMessage } from "../errorMessage";
 import { resolveConnection } from "../rpc";
@@ -19,6 +19,7 @@ interface ConnectAttemptOptions extends ConnectionOptions {
   onHealth: (health: HealthStatus) => void;
   onApprovalMode: (mode: ApprovalMode) => void;
   onProviderConfigured: (configured: boolean) => void;
+  onDeviceName: (name: string | null) => void;
   onPhase: (phase: ConnectionPhase) => void;
   onReady: () => void;
 }
@@ -51,11 +52,13 @@ async function connectWithRetry(
       const settings = await options.client.call<{
         approvalMode?: ApprovalMode;
         provider?: { hasApiKey?: boolean } | null;
+        remoteAccess?: { deviceName?: string };
       }>(
         "settings.get",
       );
       if (settings.approvalMode) options.onApprovalMode(settings.approvalMode);
       options.onProviderConfigured(Boolean(settings.provider?.hasApiKey));
+      options.onDeviceName(settings.remoteAccess?.deviceName?.trim() || null);
       await options.refreshWorkspaces();
       await options.refreshSessions();
       if (options.isDisposed()) return;
@@ -82,6 +85,9 @@ export function useDaemonConnection(options: ConnectionOptions) {
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>("auto");
   const [providerConfigured, setProviderConfigured] = useState<boolean | null>(null);
+  const [deviceName, setDeviceName] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const recoveryRef = useRef<(() => Promise<void>) | null>(null);
   const { client, refreshWorkspaces, refreshSessions, onError, paused = false } = options;
 
   useEffect(() => {
@@ -89,10 +95,12 @@ export function useDaemonConnection(options: ConnectionOptions) {
     let disposed = false;
     let connectionLoopRunning = false;
     let recovering = false;
+    const updateRetrying = () => { if (!disposed) setRetrying(connectionLoopRunning || recovering); };
     const connect = async (reconnecting: boolean) => {
       if (connectionLoopRunning || disposed) return;
       connectionLoopRunning = true;
-      await connectWithRetry(
+      updateRetrying();
+      try { await connectWithRetry(
         {
           client,
           refreshWorkspaces,
@@ -103,12 +111,15 @@ export function useDaemonConnection(options: ConnectionOptions) {
           onHealth: setHealth,
           onApprovalMode: setApprovalMode,
           onProviderConfigured: setProviderConfigured,
+          onDeviceName: setDeviceName,
           onPhase: setPhase,
           onReady: () => setConnectionEpoch((current) => current + 1),
         },
         reconnecting,
-      );
-      connectionLoopRunning = false;
+      ); } finally {
+        connectionLoopRunning = false;
+        updateRetrying();
+      }
     };
     void connect(false);
     const recover = async () => {
@@ -116,6 +127,7 @@ export function useDaemonConnection(options: ConnectionOptions) {
       // probe prevents duplicate transfers and competing reconnect attempts.
       if (disposed || recovering || connectionLoopRunning) return;
       recovering = true;
+      updateRetrying();
       try {
         if (!client.connected) {
           client.disconnect("foreground recovery");
@@ -142,8 +154,10 @@ export function useDaemonConnection(options: ConnectionOptions) {
         setConnectionEpoch((current) => current + 1);
       } finally {
         recovering = false;
+        updateRetrying();
       }
     };
+    recoveryRef.current = recover;
     const appStateListener = App.addListener("appStateChange", ({ isActive }) => {
       if (isActive) void recover();
     });
@@ -151,6 +165,8 @@ export function useDaemonConnection(options: ConnectionOptions) {
       if (document.visibilityState === "visible") void recover();
     };
     document.addEventListener("visibilitychange", visibilityListener);
+    const onlineListener = () => { void recover(); };
+    window.addEventListener("online", onlineListener);
     const offResync = client.onResync(() => {
       setConnectionEpoch((current) => current + 1);
       void refreshSessions().catch((cause) => onError(errorMessage(cause)));
@@ -172,13 +188,17 @@ export function useDaemonConnection(options: ConnectionOptions) {
     });
     return () => {
       disposed = true;
+      if (recoveryRef.current === recover) recoveryRef.current = null;
       offStatus();
       offWorkspace();
       offResync();
       document.removeEventListener("visibilitychange", visibilityListener);
+      window.removeEventListener("online", onlineListener);
       void appStateListener.then((listener) => listener.remove());
     };
   }, [client, onError, paused, refreshSessions, refreshWorkspaces]);
+
+  const retryConnection = useCallback(async () => { await recoveryRef.current?.(); }, []);
 
   const changeApprovalMode = useCallback(
     async (mode: ApprovalMode) => {
@@ -206,6 +226,9 @@ export function useDaemonConnection(options: ConnectionOptions) {
   return {
     connected,
     phase,
+    retrying: paused ? false : retrying,
+    retryConnection,
+    deviceName,
     connectionEpoch,
     health,
     approvalMode,

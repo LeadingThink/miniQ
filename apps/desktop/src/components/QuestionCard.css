@@ -136,4 +136,12 @@
 .question-spinner { animation: question-spin 1s linear infinite; }
 @keyframes question-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .question-spinner { animation: none; } }
-@media (max-width: 480px) { .question-card { padding: 12px; } .question-submit { min-height: 44px; } }
+@media (max-width: 720px), (pointer: coarse) {
+  .question-card { padding: 12px; }
+  /* One page scroll keeps long prompts and choices readable on a phone. */
+  .question-card .question-prompt { max-height: none; overflow: visible; }
+  .question-card .question-clear { min-height: 44px; padding: 8px 0; margin-bottom: 4px; }
+  .question-card .question-input { font-size: 16px; }
+  .question-card .question-submit { min-height: 44px; width: 100%; }
+  .question-card .question-footer { justify-content: stretch; }
+}

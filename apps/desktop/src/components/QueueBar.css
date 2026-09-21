@@ -1,0 +1,14 @@
+@media (max-width: 720px), (pointer: coarse) {
+  .queue-bar .queue-item { flex-direction: column; }
+  .queue-bar .queue-content { width: 100%; flex: auto; }
+  .queue-bar .queue-actions { width: 100%; gap: 6px; }
+  .queue-bar :is(.queue-actions, .queue-editor-actions) button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .queue-bar .queue-editor textarea {
+    font-size: 16px;
+    max-height: min(220px, calc(var(--app-height, 100dvh) * 0.35));
+  }
+  .queue-bar .queue-editor-hint { flex-basis: 100%; }
+}

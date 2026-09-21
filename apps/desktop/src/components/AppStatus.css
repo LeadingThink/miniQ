@@ -11,6 +11,7 @@
 .statusbar .connection-state {
   white-space: nowrap;
 }
+.statusbar-action-label { display: none; }
 .distill-button {
   display: inline-flex;
   align-items: center;
@@ -69,5 +70,22 @@
   }
   .statusbar .review-toggle {
     gap: 4px;
+  }
+}
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .statusbar { column-gap: 8px; row-gap: 6px; }
+  .statusbar > span:empty { display: none; }
+  .statusbar .statusbar-icon-button { width: 44px; height: 44px; }
+  .statusbar .statusbar-action-label { display: inline; font-size: 11px; white-space: nowrap; }
+  .statusbar .statusbar-icon-button:has(.statusbar-action-label) { display: inline-flex; align-items: center; justify-content: center; width: auto; gap: 5px; padding-inline: 8px; }
+  .statusbar:has(.remote-connection-trigger) > .badge,
+  .statusbar:has(.remote-connection-trigger) .distill-button,
+  .statusbar:has(.remote-connection-trigger) .review-toggle { display: none; }
+}
+@media (max-width: 360px) {
+  .app .statusbar {
+    gap: 4px;
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
   }
 }

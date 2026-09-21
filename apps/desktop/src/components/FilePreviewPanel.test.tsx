@@ -93,6 +93,11 @@ it("offers mobile download and follow-up without desktop-only actions", () => {
   expect(
     screen.queryByRole("button", { name: "使用系统默认应用打开" }),
   ).toBeNull();
+  const location = document.querySelector<HTMLDetailsElement>(".file-preview-path")!;
+  expect(location.open).toBe(false);
+  fireEvent.click(location.querySelector("summary")!);
+  expect(location.open).toBe(true);
+  expect(location.querySelector(":scope > span")?.textContent).toBe("/workspace/output.zip");
   fireEvent.click(screen.getByRole("button", { name: "针对这个文件继续提问" }));
   expect(discuss).toHaveBeenCalledWith("/workspace/output.zip");
 });

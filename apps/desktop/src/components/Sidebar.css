@@ -120,19 +120,19 @@
     transition: none;
   }
 }
-@media (max-width: 700px), (pointer: coarse) {
+@media (max-width: 720px), (pointer: coarse) {
   .sidebar-filter-toggle {
-    min-width: 32px;
-    min-height: 32px;
+    min-width: 44px;
+    min-height: 44px;
   }
   .sidebar-filter-query {
-    min-height: 34px;
+    min-height: 44px;
   }
   .sidebar-filter-query input {
     font-size: 16px;
   }
   .sidebar-filter-options button {
-    min-height: 32px;
+    min-height: 44px;
     padding-inline: 6px;
   }
 }
@@ -142,3 +142,166 @@
 .sidebar-host-heading span { overflow-wrap: anywhere; }
 .sidebar-host-heading small { white-space: nowrap; font-size: 10px; }
 .sidebar-host-error { padding: 0 10px; color: var(--danger); font-size: 11px; overflow-wrap: anywhere; }
+
+.sidebar-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+}
+.sidebar-primary-actions,
+.sidebar-secondary-actions,
+.session-copy,
+.session-meta {
+  display: contents;
+}
+.session-copy.with-context {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.session-copy.with-context .session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.session-context {
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.sidebar-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  color: var(--text-mid);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+.sidebar-close:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .app .sidebar.sidebar {
+    width: min(calc(100vw - 40px), 400px) !important;
+  }
+  .sidebar .brand {
+    padding: 4px 10px;
+  }
+  .sidebar-primary-actions,
+  .sidebar-secondary-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px;
+    flex: none;
+  }
+  .sidebar .sidebar-nav-button {
+    min-height: 44px;
+    font-size: 14px;
+  }
+  .sidebar .sidebar-footer {
+    flex: none;
+    max-height: 40%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .sidebar-scroll {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sidebar-filter-controls {
+    padding-inline: 2px;
+  }
+  .sidebar-filter-query button {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    margin-block: -5px;
+    margin-right: -7px;
+  }
+  .sidebar-filter-options {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .sidebar-filter-options button {
+    justify-content: center;
+    padding-inline: 3px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 720px), (pointer: coarse) {
+  .sidebar .workspace-item {
+    gap: 2px;
+    padding-inline: 4px;
+  }
+  .sidebar .workspace-select {
+    gap: 5px;
+    min-height: 44px;
+    padding-block: 6px;
+  }
+  .sidebar .workspace-name {
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+  }
+  .sidebar .session-item {
+    align-items: flex-start;
+    padding: 6px 4px 6px 10px;
+    gap: 4px;
+  }
+  .sidebar .session-select {
+    align-items: flex-start;
+    gap: 6px;
+    min-height: 44px;
+    padding-block: 6px;
+  }
+  .sidebar .session-copy {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .sidebar .session-select .session-title {
+    flex: none;
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .sidebar .session-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .sidebar .session-age {
+    margin-left: 0;
+  }
+  .sidebar .session-select > .session-status {
+    margin-top: 7px;
+  }
+  .sidebar .session-select > :is(.pin-icon, .session-source) {
+    margin-top: 4px;
+  }
+  .sidebar .sidebar-host-heading {
+    min-height: 44px;
+    font-size: 13px;
+  }
+  .sidebar .sidebar-host-heading small {
+    font-size: 11px;
+  }
+}

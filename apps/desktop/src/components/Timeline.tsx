@@ -1,13 +1,8 @@
 import {
-  Activity,
   ArrowDown,
   ChevronUp,
-  Download,
   LoaderCircle,
   RefreshCw,
-  Search,
-  Share2,
-  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -42,6 +37,7 @@ import { SessionShareDialog } from "./SessionShareDialog";
 import { ConversationNavigationRail } from "./ConversationNavigationRail";
 import { useConversationScroll } from "../hooks/useConversationScroll";
 import { TimelineEntries } from "./TimelineEntries";
+import { TimelineToolbar } from "./TimelineToolbar";
 
 export interface TimelineProps {
   workspacePaths?: readonly string[];
@@ -207,82 +203,17 @@ export function Timeline(props: TimelineProps) {
         questions={props.questions.length}
         timing={props.latestTurnTiming}
       />
-      <div className="timeline-toolbar" aria-label="会话记录工具栏">
-        {props.client && props.sessionId && <button type="button" className="icon-button" title="分享会话" aria-label="分享会话" onClick={() => setShowShare(true)}><Share2 size={16} /></button>}
-        {props.client && props.sessionId && (
-          <button
-            type="button"
-            className="icon-button"
-            title="模型调用记录"
-            aria-label="模型调用记录"
-            onClick={() => setShowDiagnostics(true)}
-          >
-            <Activity size={16} />
-          </button>
-        )}
-        <div className="timeline-modes" role="group" aria-label="记录类型">
-          {(
-            [
-              ["all", "全部"],
-              ["answers", "回答"],
-              ["activity", "执行"],
-              ["errors", "异常"],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              type="button"
-              key={value}
-              aria-pressed={filter === value}
-              onClick={() => setFilter(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <label className="timeline-search">
-          <Search size={14} />
-          <input
-            type="search"
-            aria-label="搜索当前会话"
-            data-session-search="true"
-            title="搜索当前会话（⌘/Option+F 或 Ctrl+F）"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          {query && (
-            <button
-              type="button"
-              className="icon-button"
-              title="清空会话搜索"
-              aria-label="清空会话搜索"
-              onClick={() => setQuery("")}
-            >
-              <X size={13} />
-            </button>
-          )}
-        </label>
-        <details className="session-export">
-          <summary title="导出会话" aria-label="导出会话">
-            {exporting ? (
-              <LoaderCircle size={16} className="activity-spinner" />
-            ) : (
-              <Download size={16} />
-            )}
-          </summary>
-          <div>
-            {(["md", "json"] as const).map((format) => (
-              <button
-                type="button"
-                key={format}
-                disabled={exporting}
-                onClick={() => void exportSession(format)}
-              >
-                {format === "md" ? "Markdown" : "JSON"}
-              </button>
-            ))}
-          </div>
-        </details>
-      </div>
+      <TimelineToolbar
+        key={props.sessionId}
+        filter={filter}
+        query={query}
+        exporting={exporting}
+        onFilter={setFilter}
+        onQuery={setQuery}
+        onShare={props.client && props.sessionId ? () => setShowShare(true) : undefined}
+        onDiagnostics={props.client && props.sessionId ? () => setShowDiagnostics(true) : undefined}
+        onExport={(format) => void exportSession(format)}
+      />
       {showDiagnostics && props.client && props.sessionId && (
         <ModelDiagnostics
           client={props.client}

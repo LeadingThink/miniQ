@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   FileDiff,
   Files,
   Globe2,
@@ -20,6 +21,7 @@ export function WorkbenchToolbar(props: {
   hasSession: boolean;
   canPreviewFiles?: boolean;
   expanded: boolean;
+  mobile?: boolean;
   onSelect: (view: WorkbenchView) => void;
   onExpand: () => void;
   onClose: () => void;
@@ -57,6 +59,7 @@ export function WorkbenchToolbar(props: {
   ] as const;
   return (
     <header className="workbench-toolbar" aria-label="工作面板">
+      {props.mobile && <button type="button" className="workbench-back" onClick={props.onClose}><ArrowLeft size={18} />返回会话</button>}
       <div role="tablist" aria-label="工作面板内容">
         {sections.map(({ key, label, icon: Icon, count, disabled }) => (
           <button
@@ -96,7 +99,7 @@ export function WorkbenchToolbar(props: {
           </button>
         ))}
       </div>
-      <button
+      {!props.mobile && <button
         type="button"
         className="icon-button"
         title={props.expanded ? "恢复分栏（Esc）" : "展开工作面板"}
@@ -108,8 +111,8 @@ export function WorkbenchToolbar(props: {
         }}
       >
         {props.expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-      </button>
-      <button
+      </button>}
+      {!props.mobile && <button
         type="button"
         className="icon-button"
         title="隐藏工作面板，保留打开的标签"
@@ -117,7 +120,7 @@ export function WorkbenchToolbar(props: {
         onClick={props.onClose}
       >
         <X size={16} />
-      </button>
+      </button>}
     </header>
   );
 }

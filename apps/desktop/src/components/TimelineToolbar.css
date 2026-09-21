@@ -1,0 +1,64 @@
+.timeline-mobile-filter { display: none; }
+.timeline-actions { position: relative; flex: none; }
+.timeline-actions > summary {
+  display: grid;
+  place-items: center;
+  padding: 7px;
+  list-style: none;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--text-mid);
+}
+.timeline-actions > summary::-webkit-details-marker { display: none; }
+.timeline-actions[open] > summary { background: var(--bg-active); color: var(--text); }
+.timeline-action-list {
+  position: absolute;
+  z-index: 35;
+  right: 0;
+  top: calc(100% + 6px);
+  display: grid;
+  width: 200px;
+  max-width: calc(100vw - 32px);
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--shadow-lg);
+}
+.timeline-action-list button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+}
+.timeline-action-list button:hover { background: var(--bg-hover); }
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .timeline-toolbar.conversation-tools {
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 4px 10px;
+  }
+  .conversation-tools .timeline-modes { display: none; }
+  .conversation-tools .timeline-mobile-filter {
+    display: block;
+    flex: 0 0 auto;
+    max-width: 112px;
+    min-height: 44px;
+    padding: 5px;
+    font-size: 16px;
+    color: var(--text);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .conversation-tools .timeline-search { flex: 1; min-width: 0; gap: 4px; }
+  .conversation-tools .timeline-search input { width: 100%; min-height: 44px; font-size: 16px; }
+  .conversation-tools .timeline-search .icon-button,
+  .conversation-tools .timeline-actions > summary { min-width: 44px; height: 44px; padding: 0; }
+  .conversation-tools .timeline-action-list button { min-height: 44px; }
+  .timeline .history-pages .ghost { min-height: 44px; }
+  .timeline .approval-actions button { min-height: 44px; }
+}

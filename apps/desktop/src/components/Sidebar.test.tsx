@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
@@ -29,7 +29,7 @@ const session: Session = {
 };
 
 beforeEach(() => window.localStorage.clear());
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("Sidebar", () => {
   it("toggles all project sessions when the project is clicked repeatedly", () => {
@@ -225,7 +225,7 @@ describe("Sidebar navigation", () => {
     const archived = { ...session, id: "archived", title: "归档报告", archived: true, status: "idle" as const };
     render(<Sidebar {...sidebarProps({ sessions: [session, archived] })} />);
     fireEvent.click(screen.getByRole("button", { name: "筛选项目和会话" }));
-    const search = screen.getByRole("textbox", { name: "筛选项目或会话标题" });
+    const search = screen.getByRole("textbox", { name: "筛选会话、项目或电脑" });
     fireEvent.change(search, { target: { value: "归档报告" } });
     expect(screen.queryByRole("button", { name: "归档报告" })).not.toBeNull();
     expect(screen.queryByRole("button", { name: "完善预览，执行中" })).toBeNull();
@@ -240,7 +240,7 @@ describe("Sidebar navigation", () => {
     render(<Sidebar {...sidebarProps()} />);
     fireEvent.click(screen.getByRole("button", { name: workspace.name }));
     fireEvent.click(screen.getByRole("button", { name: "筛选项目和会话" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "筛选项目或会话标题" }), { target: { value: "预览" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "筛选会话、项目或电脑" }), { target: { value: "预览" } });
     expect(screen.queryByRole("button", { name: "完善预览，执行中" })).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "清除会话筛选" }));
     expect(screen.queryByRole("button", { name: "完善预览，执行中" })).toBeNull();
@@ -281,7 +281,7 @@ describe("Sidebar navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "进行中 1" }));
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByRole("textbox", { name: "筛选项目或会话标题" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "筛选会话、项目或电脑" })).toBeNull();
     fireEvent.click(toggle);
     expect(screen.getByRole("button", { name: "进行中 1" }).getAttribute("aria-pressed")).toBe("true");
   });
@@ -295,5 +295,114 @@ describe("Sidebar navigation", () => {
     expect(separator.getAttribute("aria-valuenow")).toBe("276");
     fireEvent.click(screen.getByRole("button", { name: workspace.name }));
     expect(screen.queryByRole("button", { name: "完善预览，执行中" })).toBeNull();
+  });
+});
+
+describe("mobile Sidebar", () => {
+  function mobileViewport() {
+    const media = Object.assign(new EventTarget(), { matches: true });
+    vi.stubGlobal("matchMedia", () => media);
+    return media;
+  }
+
+  it("makes title search available immediately and keeps less frequent actions accessible", () => {
+    mobileViewport();
+    const onShowSchedule = vi.fn();
+    const onClose = vi.fn();
+    render(<Sidebar {...sidebarProps({ onShowSchedule, onClose })} />);
+    expect(screen.getByRole("textbox", { name: "筛选会话、项目或电脑" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "已安排" })).toBeNull();
+    expect(screen.getByRole("button", { name: "设置" })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "更多功能" }));
+    fireEvent.click(screen.getByRole("button", { name: "已安排" }));
+    expect(onShowSchedule).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: "导入会话" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "技能" })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "收起功能" }));
+    expect(screen.queryByRole("button", { name: "技能" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "关闭项目与会话侧栏" }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("preserves a filter when rotating between compact and desktop layouts", () => {
+    const media = mobileViewport();
+    render(<Sidebar {...sidebarProps()} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "筛选会话、项目或电脑" }), { target: { value: "预览" } });
+    act(() => { media.matches = false; media.dispatchEvent(new Event("change")); });
+    expect(screen.getByRole("button", { name: "已安排" })).not.toBeNull();
+    expect(screen.queryByRole("textbox", { name: "筛选会话、项目或电脑" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "筛选项目和会话" }));
+    expect((screen.getByRole("textbox", { name: "筛选会话、项目或电脑" }) as HTMLInputElement).value).toBe("预览");
+    act(() => { media.matches = true; media.dispatchEvent(new Event("change")); });
+    expect((screen.getByRole("textbox", { name: "筛选会话、项目或电脑" }) as HTMLInputElement).value).toBe("预览");
+  });
+
+  it("dismisses the mobile keyboard on Search without clearing results or opening a session", () => {
+    mobileViewport();
+    const onSelectSession = vi.fn();
+    render(<Sidebar {...sidebarProps({ onSelectSession })} />);
+    const input = screen.getByRole("textbox", { name: "筛选会话、项目或电脑" });
+    input.focus();
+    fireEvent.change(input, { target: { value: "预览" } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(document.activeElement).toBe(input);
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(document.activeElement).not.toBe(input);
+    expect(screen.getByRole("button", { name: "完善预览，执行中" })).not.toBeNull();
+    expect(onSelectSession).not.toHaveBeenCalled();
+  });
+
+  it("reveals a collapsed project during mobile search and preserves collapse after clearing", () => {
+    mobileViewport();
+    render(<Sidebar {...sidebarProps()} />);
+    fireEvent.click(screen.getByRole("button", { name: workspace.name }));
+    expect(screen.queryByRole("button", { name: "完善预览，执行中" })).toBeNull();
+    fireEvent.change(screen.getByRole("textbox", { name: "筛选会话、项目或电脑" }), { target: { value: "预览" } });
+    expect(screen.getByRole("button", { name: workspace.name }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: "完善预览，执行中" })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "清除会话筛选" }));
+    expect(screen.getByRole("button", { name: workspace.name }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("button", { name: "完善预览，执行中" })).toBeNull();
+  });
+
+  it("finds a remote computer, project path and full title using local catalog metadata", () => {
+    mobileViewport();
+    const remoteWorkspace = { ...workspace, id: "remote-workspace", name: "miniQ", path: "/srv/partner-project", additionalPaths: ["/srv/customer-assets"] };
+    const title = "检查远程电脑里的企业路演宣传视频最终完整版并修复最后一页的中文标题";
+    const remoteSession = { ...session, id: "remote-session", workspaceId: remoteWorkspace.id, title };
+    const onSelectSession = vi.fn();
+    render(<Sidebar {...sidebarProps({ workspaces: [workspace, remoteWorkspace], sessions: [session, remoteSession], onSelectSession,
+      hostGroups: [{ key: "remote", label: "青岛设计工作站", state: "connected", workspaceIds: [remoteWorkspace.id], selected: false, onSelect: noop }] })} />);
+    const query = screen.getByRole("textbox", { name: "筛选会话、项目或电脑" });
+    for (const value of ["青岛设计", "customer-assets", "最后一页的中文标题"]) {
+      fireEvent.change(query, { target: { value } });
+      expect(document.querySelectorAll(".session-select")).toHaveLength(1);
+      expect(screen.getByRole("button", { name: `${title}，执行中` }).textContent).toContain(title);
+    }
+    fireEvent.click(screen.getByRole("button", { name: `${title}，执行中` }));
+    expect(onSelectSession).toHaveBeenCalledWith("remote-session");
+  });
+
+  it("isolates tasks requiring confirmation from running and failed tasks", () => {
+    mobileViewport();
+    render(<Sidebar {...sidebarProps({ sessions: [session,
+      { ...session, id: "waiting", title: "允许发送", status: "waiting_approval" },
+      { ...session, id: "failed", title: "需要恢复", status: "failed" },
+      { ...session, id: "archived-failed", title: "旧错误", status: "failed", archived: true }] })} />);
+    fireEvent.click(screen.getByRole("button", { name: "待确认 1" }));
+    expect(document.querySelectorAll(".session-select")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "允许发送，等待确认" })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "失败 1" }));
+    expect(document.querySelectorAll(".session-select")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "需要恢复，执行失败" })).not.toBeNull();
+  });
+
+  it("identifies the project and host of archived sessions", () => {
+    mobileViewport();
+    render(<Sidebar {...sidebarProps({ sessions: [{ ...session, archived: true }], currentSessionId: session.id,
+      hostGroups: [{ key: "remote", label: "工作电脑", state: "connected", workspaceIds: [workspace.id], selected: true, onSelect: noop }] })} />);
+    const control = screen.getByRole("button", { name: "完善预览，执行中" });
+    const description = document.getElementById(control.getAttribute("aria-describedby")!);
+    expect(description?.textContent).toBe("工作电脑 · miniQ");
   });
 });

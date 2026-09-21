@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { QueuedMessage } from "../types";
 import { errorMessage } from "../errorMessage";
 import { QueueEditor } from "./QueueEditor";
+import "./QueueBar.css";
 
 export interface QueueActions {
   onUpdate: (original: QueuedMessage, content: string) => Promise<void>;

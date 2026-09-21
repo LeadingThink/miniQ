@@ -1,6 +1,8 @@
 import { ArrowDown, ArrowLeft, Bot, ImagePlus, RefreshCw, Send, Square, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { COMPOSER_KEYBOARD_HINT, handleComposerKeyDown } from "../composerInput";
+import { handleComposerKeyDown } from "../composerInput";
+import { readDraft, storeDraft } from "../composerDraft";
+import { useTouchComposerInput } from "../hooks/useTouchComposerInput";
 import { errorMessage } from "../errorMessage";
 import { readMobileImage, type PendingMobileImage } from "../mobileChatData";
 import { useMobileChat } from "../hooks/useMobileChat";
@@ -11,7 +13,9 @@ import { MobileModelPicker } from "./MobileModelPicker";
 export function MobileChat(props: { apiKey: string; onBack: () => void }) {
   const catalog = useMobileChatModels(props.apiKey);
   const chat = useMobileChat(props.apiKey, catalog.models.includes(catalog.model) ? catalog.model : "");
-  const [draft, setDraft] = useState("");
+  const [draft, setDraftValue] = useState(() => readDraft("mobile-chat"));
+  const setDraft = (value: string) => { setDraftValue(value); storeDraft("mobile-chat", value); };
+  const inputMode = useTouchComposerInput();
   const keyboardHintId = useId();
   const [pendingImage, setPendingImage] = useState<PendingMobileImage | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -97,7 +101,7 @@ export function MobileChat(props: { apiKey: string; onBack: () => void }) {
       </section>
       <form className="mobile-chat-composer" onSubmit={(event) => { event.preventDefault(); send(); }}>
         {pendingImage && <div className="mobile-chat-image-chip"><ImagePlus size={14} /><span title={pendingImage.name}>{pendingImage.name}</span><button type="button" aria-label="移除图片" title="移除图片" onClick={() => setPendingImage(null)}><X size={13} /></button></div>}
-        <textarea value={draft} rows={2} aria-label="输入问题或任务" aria-describedby={keyboardHintId} placeholder="输入问题或任务" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => handleComposerKeyDown(event, setDraft, send)} />
+        <textarea value={draft} rows={2} aria-label="输入问题或任务" aria-describedby={keyboardHintId} enterKeyHint={inputMode.enterSends ? "send" : "enter"} placeholder="输入问题或任务" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => handleComposerKeyDown(event, setDraft, send, inputMode)} />
         <label className="mobile-chat-image-button" title={readingImage ? "正在读取图片" : "附加图片"}><ImagePlus size={16} /><input type="file" aria-label="附加图片" disabled={readingImage} accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => {
           const file = event.target.files?.[0];
           event.currentTarget.value = "";
@@ -105,7 +109,7 @@ export function MobileChat(props: { apiKey: string; onBack: () => void }) {
         }} /></label>
         {chat.busy ? <button type="button" className="mobile-chat-send" aria-label="停止" title="停止" onClick={chat.stop}><Square size={16} /></button>
           : <button type="submit" className="mobile-chat-send" aria-label="发送" title="发送" disabled={!ready || readingImage || (!draft.trim() && !pendingImage)}><Send size={17} /></button>}
-        <div id={keyboardHintId} className="mobile-chat-keyboard-hint">{COMPOSER_KEYBOARD_HINT}</div>
+        <div id={keyboardHintId} className="mobile-chat-keyboard-hint">{inputMode.keyboardHint}</div>
       </form>
     </main>
   );
