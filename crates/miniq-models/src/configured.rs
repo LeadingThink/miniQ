@@ -62,6 +62,21 @@ impl ConfiguredProvider {
             .clone()
     }
 
+    async fn effective_output_tokens(
+        &self,
+        protocol: ApiProtocol,
+        requested: Option<u32>,
+    ) -> Option<u32> {
+        if requested.is_some() || protocol != ApiProtocol::AnthropicMessages {
+            return requested;
+        }
+        // Anthropic requires max_tokens. Use the endpoint's advertised model
+        // limit when the caller intentionally leaves the provider default
+        // unset; the native adapter retains a conservative fallback only when
+        // a metadata endpoint cannot describe the model.
+        self.model_capabilities().await.max_output_tokens
+    }
+
     async fn fetch_model_capabilities(&self) -> ModelCapabilities {
         let Ok(mut url) = reqwest::Url::parse(&self.config.base_url) else {
             return ModelCapabilities::default();
@@ -154,7 +169,11 @@ impl ModelProvider for ConfiguredProvider {
         &self,
         max_output_tokens: Option<u32>,
     ) -> Result<Option<miniq_protocol::ModelExecutionInfo>, ProviderError> {
-        match self.protocol().await? {
+        let protocol = self.protocol().await?;
+        let max_output_tokens = self
+            .effective_output_tokens(protocol, max_output_tokens)
+            .await;
+        match protocol {
             ApiProtocol::ChatCompletions => self.chat.execution_info(max_output_tokens).await,
             ApiProtocol::Responses => self.responses.execution_info(max_output_tokens).await,
             ApiProtocol::AnthropicMessages => {
@@ -166,9 +185,12 @@ impl ModelProvider for ConfiguredProvider {
 
     async fn stream_complete(
         &self,
-        request: CompletionRequest,
+        mut request: CompletionRequest,
     ) -> Result<DeltaStream, ProviderError> {
         let protocol = self.protocol().await?;
+        request.max_output_tokens = self
+            .effective_output_tokens(protocol, request.max_output_tokens)
+            .await;
         if let Some(effort) = self.config.reasoning_effort {
             let choices = self
                 .model_capabilities()
@@ -293,6 +315,15 @@ mod tests {
                 max_context_tokens: Some(1_000_000),
                 reasoning_efforts: None,
             }
+        );
+        assert_eq!(
+            provider
+                .execution_info(None)
+                .await
+                .unwrap()
+                .unwrap()
+                .max_output_tokens,
+            Some(128_000)
         );
     }
 }

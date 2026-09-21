@@ -35,4 +35,7 @@ pub use responses::ResponsesProvider;
 pub mod mock;
 
 #[cfg(test)]
+mod configured_budget_tests;
+
+#[cfg(test)]
 mod request_wire_tests;

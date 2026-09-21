@@ -17,7 +17,10 @@ pub struct AnthropicProvider {
     client: reqwest::Client,
 }
 
-const DEFAULT_MAX_OUTPUT_TOKENS: u32 = 16_384;
+// Anthropic requires max_tokens even when metadata is unavailable. Normal
+// configured requests supply the advertised model limit instead of this
+// conservative unknown-model fallback.
+const UNKNOWN_MODEL_MAX_OUTPUT_TOKENS: u32 = 16_384;
 
 impl AnthropicProvider {
     pub fn new(config: ProviderConfig) -> Self {
@@ -36,7 +39,9 @@ impl AnthropicProvider {
         let mut body = json!({
             "model": self.config.model,
             "messages": messages,
-            "max_tokens": request.max_output_tokens.unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS),
+            "max_tokens": request
+                .max_output_tokens
+                .unwrap_or(UNKNOWN_MODEL_MAX_OUTPUT_TOKENS),
             "stream": true,
         });
         crate::reasoning::apply_reasoning(&mut body, &self.config, ApiProtocol::AnthropicMessages);
@@ -424,7 +429,7 @@ impl ModelProvider for AnthropicProvider {
             model: self.config.model.clone(),
             api_protocol: ApiProtocol::AnthropicMessages,
             reasoning_effort: self.config.reasoning_effort,
-            max_output_tokens: Some(max_output_tokens.unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS)),
+            max_output_tokens: Some(max_output_tokens.unwrap_or(UNKNOWN_MODEL_MAX_OUTPUT_TOKENS)),
         }))
     }
 

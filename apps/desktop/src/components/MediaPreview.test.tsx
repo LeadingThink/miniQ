@@ -35,6 +35,7 @@ it("does not recreate media when the parent's error callback changes", () => {
   expect(screen.getByRole("img")).toBe(image);
   expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
   fireEvent.error(image);
+  fireEvent.error(screen.getByRole("img"));
   expect(onError).toHaveBeenCalledWith("图片解码失败");
 });
 
@@ -77,6 +78,7 @@ it("releases replaced sources, resets image state and really retries decoding on
   );
   const first = screen.getByRole("img");
   fireEvent.error(first);
+  fireEvent.error(screen.getByRole("img"));
   expect(onError).toHaveBeenCalledWith("图片解码失败");
   view.rerender(
     <BlobPreview
@@ -136,6 +138,7 @@ it("uses an inline, metadata-only video player and reports decode errors", () =>
   expect(video.playsInline).toBe(true);
   expect(video.autoplay).toBe(false);
   fireEvent.error(video);
+  fireEvent.error(screen.getByLabelText("clip"));
   expect(onError).toHaveBeenCalledWith("视频解码失败");
 });
 
@@ -158,6 +161,48 @@ it("falls back to a data URL when Android WebView cannot decode a blob URL", () 
   expect(fallback.src).toBe("data:video/mp4;base64,AQID");
   fireEvent.error(fallback);
   expect(onError).toHaveBeenCalledWith("视频解码失败");
+  platform.mockRestore();
+});
+
+it("falls back to a data URL when a browser or iOS WebView cannot decode a blob URL", () => {
+  const platform = vi.spyOn(Capacitor, "getPlatform").mockReturnValue("ios");
+  const onError = vi.fn();
+  render(
+    <BlobPreview
+      dataBase64="AQID"
+      mimeType="image/png"
+      kind="image"
+      label="remote image"
+      onError={onError}
+    />,
+  );
+  const image = screen.getByRole("img", { name: "remote image" });
+  expect(image.getAttribute("src")).toBe("blob:media-1");
+  fireEvent.error(image);
+  expect(screen.getByRole("img", { name: "remote image" }).getAttribute("src"))
+    .toBe("data:image/png;base64,AQID");
+  expect(onError).not.toHaveBeenCalled();
+  platform.mockRestore();
+});
+
+it("keeps a fallback for a 2 MiB remote image on iOS", () => {
+  const platform = vi.spyOn(Capacitor, "getPlatform").mockReturnValue("ios");
+  const dataBase64 = Buffer.alloc(2 * 1024 * 1024).toString("base64");
+  const onError = vi.fn();
+  render(
+    <BlobPreview
+      dataBase64={dataBase64}
+      mimeType="image/png"
+      kind="image"
+      label="large remote image"
+      onError={onError}
+    />,
+  );
+  const image = screen.getByRole("img", { name: "large remote image" });
+  fireEvent.error(image);
+  expect(screen.getByRole("img", { name: "large remote image" }).getAttribute("src"))
+    .toMatch(/^data:image\/png;base64,A+={0,2}$/);
+  expect(onError).not.toHaveBeenCalled();
   platform.mockRestore();
 });
 

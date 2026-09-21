@@ -302,6 +302,23 @@ export function ComposerCard(props: {
     resizeComposer(textareaRef.current);
   }, [draft]);
 
+  // A sidebar drag changes the textarea's available width without changing
+  // its value. Observe that width so wrapped lines immediately update the
+  // composer height and never cover the last lines of the conversation.
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || typeof ResizeObserver === "undefined") return;
+    let width = textarea.getBoundingClientRect().width;
+    const observer = new ResizeObserver(() => {
+      const nextWidth = textarea.getBoundingClientRect().width;
+      if (nextWidth === width) return;
+      width = nextWidth;
+      resizeComposer(textarea);
+    });
+    observer.observe(textarea);
+    return () => observer.disconnect();
+  }, [props.draftKey]);
+
   const addAttachments = useCallback(
     (paths: string[]) => {
       if (sendingRef.current) return;

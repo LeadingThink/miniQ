@@ -389,6 +389,31 @@ describe("RpcClient timeouts", () => {
     expect(client.connected).toBe(true);
   });
 
+  it("falls back to encrypted chunks when an object download fails", async () => {
+    const { client, socket, receive } = await remoteClient();
+    const read = vi.spyOn(RemotePayloadReader.prototype, "readAsync").mockImplementation(async (payload) => {
+      if (payload.type === "remote_blob") throw new Error("Failed to fetch");
+      return [payload];
+    });
+    const response = client.call("file.read", { sessionId: "s", path: "/work/image.png", offset: 0 });
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
+    const { encryptionKey } = await deriveRemoteIdentity("test-only-key");
+    const first = JSON.parse(socket.sent.at(-1)!);
+    await expect(decryptRemotePayload(encryptionKey, first.nonce, first.ciphertext)).resolves.toMatchObject({
+      method: "file.read", acceptBlob: true,
+    });
+    await receive({ type: "remote_blob", requestId: "req_1", url: "https://s3.cn-south-1.qiniucs.com/object",
+      expiresAt: Date.now() + 60_000, bytes: 32, sha256: "0".repeat(64), nonce: "AAAAAAAAAAAAAAAA" });
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(3));
+    const fallback = JSON.parse(socket.sent.at(-1)!);
+    await expect(decryptRemotePayload(encryptionKey, fallback.nonce, fallback.ciphertext)).resolves.toMatchObject({
+      method: "file.read", acceptBlob: false,
+    });
+    await receive({ jsonrpc: "2.0", id: "req_1", result: { offset: 0, done: true } });
+    await expect(response).resolves.toEqual({ offset: 0, done: true });
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps a remote socket alive when one request times out", async () => {
     const { client } = await remoteClient();
     const response = client.call("session.open", { sessionId: "slow" });

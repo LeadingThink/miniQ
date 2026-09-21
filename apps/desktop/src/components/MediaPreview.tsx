@@ -1,6 +1,5 @@
 import { Maximize, Scan, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Capacitor } from "@capacitor/core";
 import { decodeBase64 } from "../previewBinary";
 import "./MediaPreview.css";
 import {
@@ -32,13 +31,13 @@ export function BlobPreview({ dataBase64, mimeType, ...props }: Props) {
     try {
       const bytes = decodeBase64(dataBase64);
       url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
-      // Android WebView versions in the field occasionally fail to hand a
-      // blob: URL to the media decoder. Keep a data URL fallback ready for
-      // small assets; larger files still use the memory-efficient blob URL.
-      const fallbackUrl =
-        Capacitor.getPlatform() === "android" && bytes.byteLength <= 16 * 1024 * 1024
-          ? `data:${mimeType};base64,${dataBase64}`
-          : undefined;
+      // Some embedded WebViews (including iOS WKWebView) occasionally fail
+      // to hand a blob: URL to the media decoder for remote files. Keep a
+      // data URL fallback ready for medium-sized assets on every platform;
+      // larger files still use the memory-efficient blob URL only.
+      const fallbackUrl = bytes.byteLength <= 16 * 1024 * 1024
+        ? `data:${mimeType};base64,${dataBase64}`
+        : undefined;
       setUseFallback(false);
       setSource({ data: dataBase64, mime: mimeType, url, fallbackUrl });
     } catch (error) {

@@ -178,3 +178,25 @@ async fn unfinished_summary_is_never_used_as_a_checkpoint() {
         "complete"
     );
 }
+
+#[tokio::test]
+async fn output_limit_is_not_retried_with_the_same_transcript() {
+    let provider = Scripted::new(vec![vec![Err(ProviderError::OutputLimitReached(
+        miniq_models::OutputTokenUsage::default(),
+    ))]]);
+    let (tx, _) = tokio::sync::mpsc::channel(32);
+    let error = summarize_batch(
+        &provider,
+        &[ChatMessage::user("history")],
+        10,
+        &tx,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        AgentError::Provider(ProviderError::OutputLimitReached(_))
+    ));
+    assert_eq!(provider.requests.lock().unwrap().len(), 1);
+}

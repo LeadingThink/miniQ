@@ -33,6 +33,9 @@ type Pending = {
   reject: (err: Error) => void;
   timer: number;
   method: string;
+  /** Original remote request, retained for a one-time object-transfer fallback. */
+  remotePayload?: Record<string, unknown>;
+  blobFallbackAttempted: boolean;
   cleanup: () => void;
 };
 
@@ -232,6 +235,30 @@ export class RpcClient {
                 if (this.ws !== ws) return;
                 const pending = this.pending.get(id);
                 if (!pending) return;
+                // Qiniu object downloads can fail independently of the encrypted
+                // relay (for example a stale ticket or a transient CORS/network
+                // failure). Retry this RPC once without object storage so the
+                // existing encrypted remote_chunk path can still deliver the
+                // complete response. This is especially important for media,
+                // whose response is large enough to select object storage.
+                if (pending.remotePayload && !pending.blobFallbackAttempted) {
+                  pending.blobFallbackAttempted = true;
+                  this.refreshTimeout(id);
+                  void this.sendRemote(
+                    ws,
+                    remoteKey,
+                    { ...pending.remotePayload, acceptBlob: false },
+                    () => this.pending.has(id),
+                  ).catch((fallbackError) => {
+                    const current = this.pending.get(id);
+                    if (!current) return;
+                    this.pending.delete(id);
+                    window.clearTimeout(current.timer);
+                    current.cleanup();
+                    current.reject(fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError)));
+                  });
+                  return;
+                }
                 this.pending.delete(id);
                 window.clearTimeout(pending.timer);
                 pending.cleanup();
@@ -374,7 +401,18 @@ export class RpcClient {
         reject(new DOMException("Request cancelled", "AbortError"));
       };
       const cleanup = () => options.signal?.removeEventListener("abort", abort);
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer, method, cleanup });
+      const remotePayload = this.connectionMode === "remote"
+        ? { ...JSON.parse(payload), acceptEncoding: "gzip", acceptBlob: true }
+        : undefined;
+      this.pending.set(id, {
+        resolve: resolve as (v: unknown) => void,
+        reject,
+        timer,
+        method,
+        remotePayload,
+        blobFallbackAttempted: false,
+        cleanup,
+      });
       options.signal?.addEventListener("abort", abort, { once: true });
       if (this.connectionMode === "local") {
         try {
@@ -396,7 +434,7 @@ export class RpcClient {
         reject(new Error("远程加密通道尚未就绪"));
         return;
       }
-      void this.sendRemote(ws, key, { ...JSON.parse(payload), acceptEncoding: "gzip", acceptBlob: true }, () => this.pending.has(id))
+      void this.sendRemote(ws, key, remotePayload!, () => this.pending.has(id))
         .catch((error) => {
           this.pending.delete(id);
           window.clearTimeout(timer);

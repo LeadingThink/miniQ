@@ -41,7 +41,9 @@ export function WorkbenchPanel({
     mobile: isMobileLayout(),
   });
   useLayoutEffect(() => {
-    const app = container.current?.parentElement;
+    // HostContent can sit inside display:contents when the shared sidebar
+    // keeps local and SSH views mounted. Such wrappers have no layout box.
+    const app = container.current?.closest<HTMLElement>(".app");
     if (!app) return;
     const sidebar = app.querySelector<HTMLElement>(":scope > .sidebar");
     const measure = () => {

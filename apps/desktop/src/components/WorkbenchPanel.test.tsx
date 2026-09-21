@@ -17,12 +17,14 @@ let measure: () => void;
 let flush: FrameRequestCallback | null;
 let captures: Set<number>;
 let writes: ReturnType<typeof vi.spyOn>;
+let observed: Element[];
 
 beforeEach(() => {
   viewport = 1400;
   sidebar = 264;
   flush = null;
   captures = new Set();
+  observed = [];
   localStorage.clear();
   vi.spyOn(window, "innerWidth", "get").mockImplementation(() => viewport);
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
@@ -37,7 +39,7 @@ beforeEach(() => {
       constructor(callback: () => void) {
         measure = callback;
       }
-      observe() {}
+      observe(element: Element) { observed.push(element); }
       disconnect() {}
     },
   );
@@ -103,6 +105,22 @@ it("resizes the sidebar in the opposite direction and persists only a finished d
   fireEvent.keyDown(handle(), { key: "ArrowLeft" });
   expect(width()).toBe(352);
 });
+
+it("measures the real app when the content host uses display: contents", () => {
+  viewport = 900;
+  render(
+    <div className="app">
+      <aside className="sidebar" />
+      <div style={{ display: "contents" }}>
+        <WorkbenchPanel><aside className="file-preview-panel">Document</aside></WorkbenchPanel>
+      </div>
+    </div>,
+  );
+  expect(observed.some((element) => element.classList.contains("app"))).toBe(true);
+  expect(observed.some((element) => element.classList.contains("sidebar"))).toBe(true);
+  expect(document.querySelector<HTMLElement>(".workbench-panel")?.dataset.layout).toBe("overlay");
+});
+
 function tick() {
   act(() => {
     const callback = flush;
