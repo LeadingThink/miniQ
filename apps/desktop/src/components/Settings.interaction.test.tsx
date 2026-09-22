@@ -12,7 +12,9 @@ const settings = {
   remoteAccess: { enabled: false, relayUrl: "wss://example.test", deviceName: "desktop", deviceId: "test" },
   remoteStatus: { state: "disabled", relayUrl: "", mobileClients: 0 },
 };
-const call = vi.fn().mockResolvedValue(settings);
+const call = vi.fn().mockImplementation((method: string) => Promise.resolve(
+  method === "model.list" ? { models: ["test", "gpt-5.6-sol", "claude-sonnet"] } : settings,
+));
 const client = { call, mode: "local", onStatus: () => () => {} } as unknown as RpcClient;
 
 function Fixture({ onClose = () => {} }: { onClose?: () => void }) {
@@ -22,7 +24,9 @@ function Fixture({ onClose = () => {} }: { onClose?: () => void }) {
 beforeEach(() => {
   localStorage.clear();
   initializeAppearance();
-  call.mockClear().mockResolvedValue(settings);
+  call.mockClear().mockImplementation((method: string) => Promise.resolve(
+    method === "model.list" ? { models: ["test", "gpt-5.6-sol", "claude-sonnet"] } : settings,
+  ));
 });
 afterEach(() => {
   cleanup();
@@ -55,7 +59,7 @@ describe("appearance settings integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "收藏夜墨" }));
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "rose" } });
     fireEvent.submit(screen.getByRole("dialog"));
-    expect(call.mock.calls.every(([method]) => method === "settings.get")).toBe(true);
+    expect(call.mock.calls.every(([method]) => ["settings.get", "model.list"].includes(method))).toBe(true);
     expect(getAppearance().theme).toBe("night");
   });
 
@@ -64,7 +68,10 @@ describe("appearance settings integration", () => {
     render(<Fixture onClose={onClose} />);
     const baseUrl = await screen.findByLabelText(/服务地址/);
     expect((baseUrl as HTMLInputElement).value).toBe("https://example.test/v1");
-    expect(screen.queryByLabelText("Model")).toBeNull();
+    const defaultModel = await screen.findByRole("combobox", { name: /默认 Chat 模型/ });
+    expect((defaultModel as HTMLSelectElement).value).toBe("test");
+    expect(screen.getByRole("option", { name: "gpt-5.6-sol" })).toBeTruthy();
+    fireEvent.change(defaultModel, { target: { value: "claude-sonnet" } });
     expect(screen.queryByText("API 协议")).toBeNull();
     expect(screen.queryByLabelText("Relay URL")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "外观" }));
@@ -75,18 +82,37 @@ describe("appearance settings integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存并开始使用" }));
     await waitFor(() =>
       expect(call).toHaveBeenCalledWith("settings.update", {
-        provider: { baseUrl: "https://example.test/v1", model: "test", apiProtocol: "auto" },
+        provider: { baseUrl: "https://example.test/v1", model: "claude-sonnet", apiProtocol: "auto" },
         remoteAccess: { enabled: false, relayUrl: DEFAULT_RELAY_URL, deviceName: "desktop" },
       })
     );
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("falls back to manual model ID only when the model catalog fails", async () => {
+    call.mockImplementation((method: string) => {
+      if (method === "settings.get") return Promise.resolve(settings);
+      if (method === "model.list") return Promise.reject(new Error("catalog unavailable"));
+      return Promise.resolve(settings);
+    });
+    render(<Fixture />);
+    expect(await screen.findByText(/模型列表读取失败：catalog unavailable/)).toBeTruthy();
+    const input = screen.getByRole("textbox", { name: /默认 Chat 模型/ });
+    expect((input as HTMLInputElement).value).toBe("test");
+    fireEvent.change(input, { target: { value: "manual-model" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存并开始使用" }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("settings.update", expect.objectContaining({
+      provider: expect.objectContaining({ model: "manual-model" }),
+    })));
+  });
+
   it("keeps settings open when saving fails", async () => {
     const onClose = vi.fn();
-    call.mockImplementation((method: string) =>
-      method === "settings.get" ? Promise.resolve(settings) : Promise.reject(new Error("update failed")),
-    );
+    call.mockImplementation((method: string) => {
+      if (method === "settings.get") return Promise.resolve(settings);
+      if (method === "model.list") return Promise.resolve({ models: ["test"] });
+      return Promise.reject(new Error("update failed"));
+    });
     render(<Fixture onClose={onClose} />);
     await screen.findByLabelText(/服务地址/);
 
@@ -98,7 +124,7 @@ describe("appearance settings integration", () => {
 
   it("defaults first-time setup to Zaiwen and requires only an API key", async () => {
     const empty = { ...settings, provider: null };
-    call.mockImplementation((method: string) => Promise.resolve(method === "settings.get" ? empty : settings));
+    call.mockImplementation((method: string) => Promise.resolve(method === "settings.get" ? empty : method === "model.list" ? { models: [] } : settings));
     render(<Fixture />);
     await waitFor(() => expect((screen.getByLabelText(/服务地址/) as HTMLInputElement).value).toBe(ZAIWEN_API_BASE_URL));
     const save = screen.getByRole("button", { name: "保存并开始使用" }) as HTMLButtonElement;
@@ -120,7 +146,7 @@ describe("appearance settings integration", () => {
       screenRecording: "granted",
       accessibility: "granted",
       displayServer: null,
-    } : method === "memory.list" ? { memories: [], nextCursor: null } : settings));
+    } : method === "memory.list" ? { memories: [], nextCursor: null } : method === "model.list" ? { models: ["test"] } : settings));
     const trigger = document.createElement("button");
     document.body.append(trigger);
     trigger.focus();

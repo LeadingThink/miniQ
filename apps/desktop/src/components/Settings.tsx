@@ -59,6 +59,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const [tab, setTab] = useState<SettingsTab>("services");
   const [baseUrl, setBaseUrl] = useState(ZAIWEN_API_BASE_URL);
   const [defaultModel, setDefaultModel] = useState(DEFAULT_PROVIDER_MODEL);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [modelCatalogError, setModelCatalogError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -78,11 +80,20 @@ export function SettingsPanel(props: SettingsPanelProps) {
   useEffect(() => {
     void props.client
       .call<SettingsView>("settings.get")
-      .then((res) => {
+      .then(async (res) => {
         if (res.provider) {
           setBaseUrl(res.provider.baseUrl);
           setDefaultModel(res.provider.model || DEFAULT_PROVIDER_MODEL);
           setHasKey(res.provider.hasApiKey);
+          try {
+            const catalog = await props.client.call<{ models: string[] }>("model.list");
+            setModelOptions(catalog.models);
+            setDefaultModel((current) => catalog.models.includes(current) ? current : "");
+            setModelCatalogError(null);
+          } catch (error) {
+            setModelOptions([]);
+            setModelCatalogError(`模型列表读取失败：${errorMessage(error)}`);
+          }
         }
         if (res.remoteAccess) {
           setRemoteEnabled(res.remoteAccess.enabled);
@@ -376,6 +387,39 @@ export function SettingsPanel(props: SettingsPanelProps) {
                     </a>
                   </div>
                 </div>
+                <label htmlFor="provider-default-model">
+                  默认 Chat 模型
+                  {hasKey && !modelCatalogError ? (
+                    <select
+                      id="provider-default-model"
+                      value={defaultModel}
+                      disabled={loading || saving || modelOptions.length === 0}
+                      onChange={(event) => {
+                        setDefaultModel(event.target.value);
+                        setStatus(null);
+                      }}
+                    >
+                      <option value="" disabled>请选择模型</option>
+                      {modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}
+                    </select>
+                  ) : (
+                    <input
+                      id="provider-default-model"
+                      value={defaultModel}
+                      disabled={loading || saving}
+                      spellCheck={false}
+                      autoComplete="off"
+                      placeholder={DEFAULT_PROVIDER_MODEL}
+                      onChange={(event) => {
+                        setDefaultModel(event.target.value);
+                        setStatus(null);
+                      }}
+                    />
+                  )}
+                  <small>作为所有项目和新会话的全局默认模型；项目或会话可单独覆盖。</small>
+                  {hasKey && modelCatalogError && <small role="status">{modelCatalogError}，当前可手动输入模型 ID。</small>}
+                  {!hasKey && <small>首次连接会先使用默认模型；保存 API Key 后即可从服务返回的 Chat 模型列表中选择。</small>}
+                </label>
                 <label htmlFor="provider-base-url">
                   服务地址
                   <input
@@ -459,7 +503,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
           {tab === "services" && canConfigureProvider && (
             <button
               type="submit"
-              disabled={loading || saving || !baseUrl.trim() || (!hasKey && !apiKey.trim()) || !deviceName.trim()}
+              disabled={loading || saving || !baseUrl.trim() || !defaultModel.trim() || (!hasKey && !apiKey.trim()) || !deviceName.trim()}
             >
               {saving ? "正在保存..." : "保存并开始使用"}
             </button>
