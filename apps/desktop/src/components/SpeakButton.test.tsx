@@ -21,7 +21,7 @@ function setup(
 }
 
 it("splits long text at Unicode-safe sentence boundaries without loss", () => {
-  const text = `第一段。${"😀".repeat(5)}第二段！第三段？`;
+  const text = `\n第一段。${"😀".repeat(5)}第二段！第三段？ `;
   const chunks = splitTextForSpeech(text, 10);
   expect(chunks.join("")).toBe(text);
   expect(chunks.every((chunk) => Array.from(chunk).length <= 10)).toBe(true);

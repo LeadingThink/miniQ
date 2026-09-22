@@ -26,8 +26,8 @@ function base64ToBytes(value: string): Uint8Array {
  * requested one at a time while playback advances.
  */
 export function splitTextForSpeech(text: string, maxChars = MAX_SPEECH_CHARS): string[] {
-  const chars = Array.from(text.trim());
-  if (chars.length === 0) return [];
+  const chars = Array.from(text);
+  if (chars.length === 0 || chars.every((char) => /\s/u.test(char))) return [];
   if (!Number.isSafeInteger(maxChars) || maxChars < 1) {
     throw new Error("speech chunk size must be a positive integer");
   }
@@ -118,8 +118,8 @@ export function SpeakButton(props: {
 
   const speak = async (retry = false) => {
     if ((status !== "idle" && status !== "error") || props.disabled) return;
-    const content = props.text.trim();
-    if (!content) {
+    const content = props.text;
+    if (!content.trim()) {
       props.onError?.("没有可朗读的文本");
       return;
     }
