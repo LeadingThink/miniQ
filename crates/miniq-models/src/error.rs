@@ -89,6 +89,28 @@ impl ProviderError {
             _ => None,
         }
     }
+
+    /// OneAPI may wrap an upstream route failure as a generic 404. It is safe
+    /// to try another protocol only when the body identifies that wrapper;
+    /// ordinary missing-model and invalid-request 404s remain permanent.
+    pub(crate) fn is_protocol_route_not_found(&self) -> bool {
+        let Self::Api { status, body, .. } = self else {
+            return false;
+        };
+        if *status != 404 {
+            return false;
+        }
+        let Ok(payload) = serde_json::from_str::<Value>(body) else {
+            return false;
+        };
+        let Some(error) = payload.get("error") else {
+            return false;
+        };
+        error.get("message").and_then(Value::as_str) == Some("openai_error")
+            && ["type", "code"].iter().any(|field| {
+                error.get(field).and_then(Value::as_str) == Some("bad_response_status_code")
+            })
+    }
 }
 
 fn parse_retry_after(value: &str, now: SystemTime) -> Option<Duration> {

@@ -276,6 +276,9 @@ pub struct CompletionRequest {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModelCapabilities {
     pub preferred_api_protocol: Option<ApiProtocol>,
+    /// Protocols the gateway says this model can actually route. A preferred
+    /// route can be unavailable on one upstream channel.
+    pub supported_api_protocols: Option<Vec<ApiProtocol>>,
     pub max_output_tokens: Option<u32>,
     pub max_context_tokens: Option<u32>,
     pub reasoning_efforts: Option<Vec<ReasoningEffort>>,

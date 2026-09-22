@@ -39,4 +39,7 @@ pub mod mock;
 mod configured_budget_tests;
 
 #[cfg(test)]
+mod configured_protocol_tests;
+
+#[cfg(test)]
 mod request_wire_tests;

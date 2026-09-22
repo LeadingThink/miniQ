@@ -62,6 +62,10 @@ impl ModelProvider for FixtureProvider {
 }
 
 fn fixture(fail: bool, wait: bool) -> (ObservedProvider, ModelCallsParams) {
+    fixture_with_provider(Arc::new(FixtureProvider { fail, wait }))
+}
+
+fn fixture_with_provider(inner: Arc<dyn ModelProvider>) -> (ObservedProvider, ModelCallsParams) {
     let store = Arc::new(Store::open_in_memory().unwrap());
     let workspace = store.create_workspace("/fixture", "fixture").unwrap();
     let session = store.create_session(&workspace.id, "fixture").unwrap();
@@ -72,7 +76,7 @@ fn fixture(fail: bool, wait: bool) -> (ObservedProvider, ModelCallsParams) {
         limit: 20,
     };
     let provider = ObservedProvider::new(
-        Arc::new(FixtureProvider { fail, wait }),
+        inner,
         store,
         session.id,
         Some("child-1".into()),
@@ -80,6 +84,47 @@ fn fixture(fail: bool, wait: bool) -> (ObservedProvider, ModelCallsParams) {
         None,
     );
     (provider, params)
+}
+
+struct SwitchingProtocolProvider {
+    started: std::sync::atomic::AtomicBool,
+    fail_refresh: bool,
+}
+
+#[async_trait]
+impl ModelProvider for SwitchingProtocolProvider {
+    fn describe(&self) -> String {
+        "switching protocol fixture".into()
+    }
+
+    async fn execution_info(
+        &self,
+        max_output_tokens: Option<u32>,
+    ) -> Result<Option<ModelExecutionInfo>, ProviderError> {
+        let started = self.started.load(std::sync::atomic::Ordering::SeqCst);
+        if started && self.fail_refresh {
+            return Err(ProviderError::Config("metadata unavailable".into()));
+        }
+        Ok(Some(ModelExecutionInfo {
+            model: "requested-model".into(),
+            api_protocol: if started {
+                ApiProtocol::ChatCompletions
+            } else {
+                ApiProtocol::Responses
+            },
+            reasoning_effort: None,
+            max_output_tokens,
+        }))
+    }
+
+    async fn stream_complete(&self, _: CompletionRequest) -> Result<DeltaStream, ProviderError> {
+        self.started
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(Box::pin(stream::iter(vec![
+            Ok(ChatDelta::Text("completed after negotiation".into())),
+            Ok(ChatDelta::Finished),
+        ])))
+    }
 }
 
 fn request() -> CompletionRequest {
@@ -112,6 +157,49 @@ async fn persists_real_usage_without_converting_capabilities_to_request_limits()
     assert!(!serde_json::to_string(record)
         .unwrap()
         .contains("private prompt"));
+}
+
+#[tokio::test]
+async fn records_the_protocol_selected_when_the_stream_is_established() {
+    let (provider, params) = fixture_with_provider(Arc::new(SwitchingProtocolProvider {
+        started: Default::default(),
+        fail_refresh: false,
+    }));
+    let mut completion = request();
+    completion.max_output_tokens = Some(4096);
+    let mut stream = provider.stream_complete(completion).await.unwrap();
+    let page = provider.store.model_calls_page(&params).unwrap();
+    let execution = page.calls[0].request.as_ref().unwrap();
+    assert_eq!(execution.api_protocol, ApiProtocol::ChatCompletions);
+    assert_eq!(execution.max_output_tokens, Some(4096));
+    assert_eq!(page.calls[0].status, ModelCallStatus::Running);
+    while stream.next().await.is_some() {}
+    assert_eq!(
+        provider.store.model_calls_page(&params).unwrap().calls[0].status,
+        ModelCallStatus::Completed
+    );
+}
+
+#[tokio::test]
+async fn unavailable_refreshed_metadata_does_not_discard_a_valid_stream() {
+    let (provider, params) = fixture_with_provider(Arc::new(SwitchingProtocolProvider {
+        started: Default::default(),
+        fail_refresh: true,
+    }));
+    let mut stream = provider.stream_complete(request()).await.unwrap();
+    assert!(matches!(
+        stream.next().await,
+        Some(Ok(ChatDelta::Text(text))) if text == "completed after negotiation"
+    ));
+    assert!(matches!(stream.next().await, Some(Ok(ChatDelta::Finished))));
+    let page = provider.store.model_calls_page(&params).unwrap();
+    let record = &page.calls[0];
+    assert_eq!(record.status, ModelCallStatus::Completed);
+    assert_eq!(
+        record.request.as_ref().unwrap().api_protocol,
+        ApiProtocol::Responses
+    );
+    assert_eq!(record.error, None);
 }
 
 #[tokio::test]

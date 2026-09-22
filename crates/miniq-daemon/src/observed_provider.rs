@@ -203,8 +203,19 @@ impl ModelProvider for ObservedProvider {
         guard.record.advertised_context_tokens = limits.max_context_tokens;
         guard.record.advertised_output_tokens = limits.max_output_tokens;
         guard.save();
+        let requested_max_output_tokens = request.max_output_tokens;
         match self.inner.stream_complete(request).await {
-            Ok(inner) => Ok(Box::pin(ObservedStream { inner, guard })),
+            Ok(inner) => {
+                // Auto protocol negotiation can select a different endpoint while
+                // establishing the stream. Diagnostics must describe that request,
+                // without sacrificing a valid stream if metadata is unavailable.
+                if let Ok(Some(info)) = self.inner.execution_info(requested_max_output_tokens).await
+                {
+                    guard.record.request = Some(info);
+                    guard.save();
+                }
+                Ok(Box::pin(ObservedStream { inner, guard }))
+            }
             Err(error) => {
                 guard.finish(ModelCallStatus::Failed, Some(&error));
                 Err(error)

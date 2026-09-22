@@ -34,6 +34,31 @@ fn transient_statuses_and_permanent_errors_are_distinguished() {
 }
 
 #[test]
+fn only_oneapi_route_wrapper_404_is_protocol_fallback_eligible() {
+    let route_failure = ProviderError::from_api_response(
+        404,
+        json!({
+            "error": {
+                "message": "openai_error",
+                "type": "bad_response_status_code",
+                "code": "bad_response_status_code"
+            }
+        })
+        .to_string(),
+        None,
+    );
+    assert!(route_failure.is_protocol_route_not_found());
+
+    for body in [
+        json!({"error":{"code":"model_not_found"}}).to_string(),
+        json!({"error":{"code":"not_found_error","message":"model not found"}}).to_string(),
+        "not found".to_string(),
+    ] {
+        assert!(!ProviderError::from_api_response(404, body, None).is_protocol_route_not_found());
+    }
+}
+
+#[test]
 fn stream_errors_preserve_codes_even_when_the_message_is_only_busy() {
     for error in [
         json!({"type":"overloaded_error","message":"busy"}),

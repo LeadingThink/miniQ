@@ -15,6 +15,7 @@ pub struct ConfiguredProvider {
     responses: ResponsesProvider,
     anthropic: AnthropicProvider,
     resolved: OnceCell<ApiProtocol>,
+    fallback: OnceCell<ApiProtocol>,
     capabilities: OnceCell<ModelCapabilities>,
     metadata_client: reqwest::Client,
 }
@@ -27,6 +28,7 @@ impl ConfiguredProvider {
             anthropic: AnthropicProvider::new(config.clone()),
             config,
             resolved: OnceCell::new(),
+            fallback: OnceCell::new(),
             capabilities: OnceCell::new(),
             metadata_client: reqwest::Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(5))
@@ -39,6 +41,9 @@ impl ConfiguredProvider {
     pub async fn protocol(&self) -> Result<ApiProtocol, ProviderError> {
         if self.config.api_protocol != ApiProtocol::Auto {
             return Ok(self.config.api_protocol);
+        }
+        if let Some(protocol) = self.fallback.get() {
+            return Ok(*protocol);
         }
         self.resolved
             .get_or_try_init(|| async { self.resolve_auto_protocol().await })
@@ -60,6 +65,36 @@ impl ConfiguredProvider {
             .get_or_init(|| async { self.fetch_model_capabilities().await })
             .await
             .clone()
+    }
+
+    async fn fallback_protocol(&self, current: ApiProtocol) -> Option<ApiProtocol> {
+        if self.config.api_protocol != ApiProtocol::Auto
+            || current != ApiProtocol::Responses
+            || self.fallback.get().is_some()
+        {
+            return None;
+        }
+        // Recover the observed Responses route failure only when the same
+        // model explicitly advertises Chat Completions. Never guess another
+        // protocol or bounce back to the failed route later in the turn.
+        self.model_capabilities()
+            .await
+            .supported_api_protocols?
+            .contains(&ApiProtocol::ChatCompletions)
+            .then_some(ApiProtocol::ChatCompletions)
+    }
+
+    async fn stream_with_protocol(
+        &self,
+        protocol: ApiProtocol,
+        request: CompletionRequest,
+    ) -> Result<DeltaStream, ProviderError> {
+        match protocol {
+            ApiProtocol::Auto => unreachable!("auto protocol must be resolved"),
+            ApiProtocol::ChatCompletions => self.chat.stream_complete(request).await,
+            ApiProtocol::Responses => self.responses.stream_complete(request).await,
+            ApiProtocol::AnthropicMessages => self.anthropic.stream_complete(request).await,
+        }
     }
 
     async fn effective_output_tokens(
@@ -130,6 +165,17 @@ fn extract_protocol(payload: &Value) -> Option<ApiProtocol> {
         .filter(|protocol| *protocol != ApiProtocol::Auto)
 }
 
+fn extract_protocols(payload: &Value) -> Option<Vec<ApiProtocol>> {
+    let protocols = metadata_value(payload, "supported_api_protocols")?
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_str)
+        .filter_map(|value| ApiProtocol::parse(value).ok())
+        .filter(|protocol| *protocol != ApiProtocol::Auto)
+        .collect::<Vec<_>>();
+    (!protocols.is_empty()).then_some(protocols)
+}
+
 fn metadata_value<'a>(payload: &'a Value, key: &str) -> Option<&'a Value> {
     payload
         .get("data")
@@ -149,6 +195,7 @@ fn positive_u32(value: Option<&Value>) -> Option<u32> {
 fn extract_capabilities(payload: &Value) -> ModelCapabilities {
     ModelCapabilities {
         preferred_api_protocol: extract_protocol(payload),
+        supported_api_protocols: extract_protocols(payload),
         max_output_tokens: positive_u32(
             metadata_value(payload, "max_output")
                 .or_else(|| metadata_value(payload, "max_output_tokens")),
@@ -204,11 +251,19 @@ impl ModelProvider for ConfiguredProvider {
                 )));
             }
         }
-        match protocol {
-            ApiProtocol::Auto => unreachable!("auto protocol must be resolved"),
-            ApiProtocol::ChatCompletions => self.chat.stream_complete(request).await,
-            ApiProtocol::Responses => self.responses.stream_complete(request).await,
-            ApiProtocol::AnthropicMessages => self.anthropic.stream_complete(request).await,
+        let Some(fallback) = self.fallback_protocol(protocol).await else {
+            return self.stream_with_protocol(protocol, request).await;
+        };
+        match self.stream_with_protocol(protocol, request.clone()).await {
+            Err(error) if error.is_protocol_route_not_found() => {
+                let result = self.stream_with_protocol(fallback, request).await;
+                if result.is_ok() {
+                    // Cache only an endpoint that accepted the request.
+                    let _ = self.fallback.set(fallback);
+                }
+                result
+            }
+            result => result,
         }
     }
 
@@ -258,6 +313,7 @@ mod tests {
         let payload = json!({
             "data": {
                 "preferred_api_protocol": "responses",
+                "supported_api_protocols": ["responses", "chat_completions"],
                 "max_tokens": 1_000_000,
                 "max_output": "128000"
             }
@@ -267,6 +323,10 @@ mod tests {
             extract_capabilities(&payload),
             ModelCapabilities {
                 preferred_api_protocol: Some(ApiProtocol::Responses),
+                supported_api_protocols: Some(vec![
+                    ApiProtocol::Responses,
+                    ApiProtocol::ChatCompletions,
+                ]),
                 max_output_tokens: Some(128_000),
                 max_context_tokens: Some(1_000_000),
                 reasoning_efforts: None,
@@ -311,6 +371,7 @@ mod tests {
             provider.capabilities().await,
             ModelCapabilities {
                 preferred_api_protocol: Some(ApiProtocol::AnthropicMessages),
+                supported_api_protocols: None,
                 max_output_tokens: Some(128_000),
                 max_context_tokens: Some(1_000_000),
                 reasoning_efforts: None,

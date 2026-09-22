@@ -997,6 +997,7 @@ mod tests {
         let provider = MockProvider::new(vec![vec![ChatDelta::Text("done".into())]])
             .with_capabilities(ModelCapabilities {
                 preferred_api_protocol: None,
+                supported_api_protocols: None,
                 max_output_tokens: Some(4_096),
                 max_context_tokens: Some(32_000),
                 reasoning_efforts: None,
