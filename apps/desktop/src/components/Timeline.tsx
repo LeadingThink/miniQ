@@ -282,7 +282,6 @@ export function Timeline(props: TimelineProps) {
             </div>
           )}
         <TimelineEntries
-          key={props.sessionId}
           client={props.client}
           items={items}
           messages={props.messages}
@@ -306,7 +305,6 @@ export function Timeline(props: TimelineProps) {
           workspacePaths={props.workspacePaths}
         />
           <QueueBar
-            key={props.sessionId}
             queue={props.queue}
             onSteer={props.onSteerQueued}
             onRemove={props.onRemoveQueued}
