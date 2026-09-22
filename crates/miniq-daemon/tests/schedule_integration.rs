@@ -62,7 +62,10 @@ async fn next_event_of(ws: &mut WsClient, wanted: &str) -> Value {
 
 #[tokio::test]
 async fn schedule_crud_and_run_now() {
-    let provider = MockProvider::new(vec![vec![ChatDelta::Text("日报写好了".into())]]);
+    let provider = MockProvider::new(vec![
+        vec![ChatDelta::Text("日报写好了".into())],
+        vec![ChatDelta::Text("已继续".into())],
+    ]);
     let (port, token) = start(provider).await;
     let mut ws = connect(port, &token).await;
 
@@ -113,6 +116,26 @@ async fn schedule_crud_and_run_now() {
         .unwrap()
         .contains("invalid schedule"));
 
+    // A continuation task must fail at configuration time instead of waiting
+    // until a background tick to discover a missing target session.
+    let resp = call(
+        &mut ws,
+        "s2b",
+        "schedule.create",
+        json!({
+            "workspaceId": ws_id,
+            "name": "无目标续接",
+            "prompt": "继续",
+            "mode": "heartbeat",
+            "schedule": {"type": "daily", "time": "09:00"},
+        }),
+    )
+    .await;
+    assert!(resp["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("targetSessionId"));
+
     // List contains the task.
     let resp = call(&mut ws, "s3", "schedule.list", Value::Null).await;
     assert_eq!(resp["result"]["tasks"].as_array().unwrap().len(), 1);
@@ -140,6 +163,46 @@ async fn schedule_crud_and_run_now() {
     assert_eq!(task["lastSessionId"].as_str().unwrap(), session_id);
     assert!(task["lastRunAt"].is_string());
 
+    // A heartbeat appends to the explicitly selected session and keeps its
+    // memory scoped to this task.
+    let resp = call(
+        &mut ws,
+        "s10",
+        "schedule.create",
+        json!({
+            "workspaceId": ws_id,
+            "name": "续接简报",
+            "prompt": "继续检查",
+            "mode": "heartbeat",
+            "targetSessionId": session_id,
+            "memory": "只关注阻塞项",
+            "schedule": {"type": "weekdays", "weekdays": [1, 2, 3, 4, 5], "time": "09:00"},
+        }),
+    )
+    .await;
+    let heartbeat_id = resp["result"]["id"].as_str().unwrap().to_string();
+    let resp = call(
+        &mut ws,
+        "s11",
+        "schedule.runNow",
+        json!({"id": heartbeat_id}),
+    )
+    .await;
+    assert_eq!(resp["result"]["sessionId"], session_id);
+    next_event_of(&mut ws, "turn_completed").await;
+    let resp = call(
+        &mut ws,
+        "s12",
+        "session.open",
+        json!({"sessionId": session_id}),
+    )
+    .await;
+    let messages = resp["result"]["messages"].as_array().unwrap();
+    assert!(messages.iter().any(|message| message["content"]
+        .as_str()
+        .unwrap_or("")
+        .contains("只关注阻塞项")));
+
     // Toggle off and delete.
     let resp = call(
         &mut ws,
@@ -150,6 +213,14 @@ async fn schedule_crud_and_run_now() {
     .await;
     assert_eq!(resp["result"]["enabled"], false);
     let resp = call(&mut ws, "s8", "schedule.delete", json!({"id": task_id})).await;
+    assert_eq!(resp["result"]["deleted"], true);
+    let resp = call(
+        &mut ws,
+        "s13",
+        "schedule.delete",
+        json!({"id": heartbeat_id}),
+    )
+    .await;
     assert_eq!(resp["result"]["deleted"], true);
     let resp = call(&mut ws, "s9", "schedule.list", Value::Null).await;
     assert_eq!(resp["result"]["tasks"].as_array().unwrap().len(), 0);

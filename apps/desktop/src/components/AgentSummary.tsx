@@ -1,4 +1,5 @@
 import type { TurnProgress } from "../types";
+import { Activity, CircleAlert, LoaderCircle, PauseCircle } from "lucide-react";
 import "./AgentSummary.css";
 
 export interface AgentSummary {
@@ -54,6 +55,30 @@ function stepSummary(agents: AgentSummary[]): string | null {
   return unique.length === 1 ? `第 ${unique[0]} 轮` : `第 ${unique.join("、")} 轮`;
 }
 
+function summarizeAgents(agents: AgentSummary[]) {
+  const active = agents.filter((agent) => ACTIVE.has(agent.status)).length;
+  const completed = agents.filter((agent) => agent.status === "completed").length;
+  const failed = agents.filter((agent) => EXCEPTION.has(agent.status)).length;
+  const waitingToRetry = agents.filter(
+    (agent) => ACTIVE.has(agent.status) && agent.progress?.phase === "waiting_retry",
+  ).length;
+  const queued = agents.filter(
+    (agent) => ["queued", "waiting", "waiting_approval"].includes(agent.status),
+  ).length;
+  const cancelled = agents.filter((agent) => agent.status === "cancelled").length;
+  return {
+    active,
+    running: active - waitingToRetry,
+    waiting: queued + waitingToRetry,
+    completed,
+    failed,
+    cancelled,
+    other: Math.max(0, agents.length - active - completed - failed),
+    phase: phaseSummary(agents),
+    step: stepSummary(agents),
+  };
+}
+
 function StatusStat({
   label,
   count,
@@ -72,12 +97,7 @@ function StatusStat({
 }
 
 export function AgentSummaryStats({ agents }: { agents: AgentSummary[] }) {
-  const active = agents.filter((agent) => ACTIVE.has(agent.status)).length;
-  const completed = agents.filter((agent) => agent.status === "completed").length;
-  const failed = agents.filter((agent) => EXCEPTION.has(agent.status)).length;
-  const other = Math.max(0, agents.length - active - completed - failed);
-  const phase = phaseSummary(agents);
-  const step = stepSummary(agents);
+  const { active, completed, failed, other, phase, step } = summarizeAgents(agents);
   return (
     <span className="agent-summary" aria-label={`子任务状态：${active} 个执行中，${completed} 个已完成，${failed} 个异常`}>
       <span className="agent-summary-stats">
@@ -104,5 +124,39 @@ export function AgentSummaryStats({ agents }: { agents: AgentSummary[] }) {
         </span>
       )}
     </span>
+  );
+}
+
+/** Compact in-conversation status, backed by the same agent list as the panel. */
+export function AgentStatusIndicator({
+  agents,
+  onOpen,
+}: {
+  agents: AgentSummary[];
+  onOpen: () => void;
+}) {
+  if (agents.length === 0) return null;
+  const { running, waiting, completed, failed, cancelled, phase, step } = summarizeAgents(agents);
+  const progress = [phase, step].filter(Boolean).join(" · ");
+  const label = `子任务：${running} 个执行中，${waiting} 个等待，${failed} 个异常`
+    + (completed ? `，${completed} 个已完成` : "")
+    + (cancelled ? `，${cancelled} 个已取消` : "");
+  return (
+    <button
+      type="button"
+      className="agent-status-indicator"
+      aria-label={label}
+      title={`${label}。点击查看执行活动`}
+      onClick={onOpen}
+    >
+      <Activity size={14} aria-hidden="true" />
+      <span className="agent-status-indicator-label">子任务</span>
+      {running > 0 && <span className="agent-status-chip running"><LoaderCircle size={12} className="activity-spinner" />{running} 执行中</span>}
+      {waiting > 0 && <span className="agent-status-chip waiting"><PauseCircle size={12} />{waiting} 等待</span>}
+      {failed > 0 && <span className="agent-status-chip failed"><CircleAlert size={12} />{failed} 异常</span>}
+      {completed > 0 && <span className="agent-status-chip completed">{completed} 已完成</span>}
+      {cancelled > 0 && <span className="agent-status-chip">{cancelled} 已取消</span>}
+      {progress && <span className="agent-status-indicator-phase">{progress}</span>}
+    </button>
   );
 }

@@ -1,9 +1,14 @@
-import { LoaderCircle, Square, Volume2 } from "lucide-react";
+import { LoaderCircle, RotateCcw, Square, Volume2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { RpcClient } from "../rpc";
 
 /** Keep each request below the daemon/provider speech input limit. */
 export const MAX_SPEECH_CHARS = 1500;
+
+// A single audio focus keeps two message rows from speaking over each other.
+// The previous row is cancelled before a new row starts.
+let activeSpeechOwner: symbol | null = null;
+let activeSpeechCancel: (() => void) | null = null;
 
 interface SpeakResponse {
   audioBase64: string;
@@ -64,7 +69,10 @@ export function SpeakButton(props: {
   const chunksRef = useRef<string[]>([]);
   const failedChunkRef = useRef(0);
   const runTokenRef = useRef(0);
+  const requestRef = useRef<AbortController | null>(null);
   const resolvePlaybackRef = useRef<(() => void) | null>(null);
+  const ownerRef = useRef<symbol | null>(null);
+  if (ownerRef.current === null) ownerRef.current = Symbol("speech");
 
   const clearAudio = (expectedAudio?: HTMLAudioElement, expectedUrl?: string) => {
     if (expectedAudio && audioRef.current !== expectedAudio) return;
@@ -86,18 +94,30 @@ export function SpeakButton(props: {
 
   const stop = () => {
     runTokenRef.current += 1;
+    requestRef.current?.abort();
+    requestRef.current = null;
     clearAudio();
     chunksRef.current = [];
     failedChunkRef.current = 0;
     setProgress({ current: 0, total: 0 });
     setStatus("idle");
+    if (activeSpeechOwner === ownerRef.current) {
+      activeSpeechOwner = null;
+      activeSpeechCancel = null;
+    }
   };
 
   useEffect(() => () => {
     // Unmount cleanup must invalidate in-flight RPC/audio work without
     // enqueueing state updates on a component that no longer exists.
     runTokenRef.current += 1;
+    requestRef.current?.abort();
+    requestRef.current = null;
     clearAudio();
+    if (activeSpeechOwner === ownerRef.current) {
+      activeSpeechOwner = null;
+      activeSpeechCancel = null;
+    }
   }, []);
   useEffect(() => {
     // A message can be replaced in place while a timeline row remains
@@ -128,19 +148,27 @@ export function SpeakButton(props: {
       : splitTextForSpeech(content);
     chunksRef.current = chunks;
     const firstChunk = retry ? failedChunkRef.current : 0;
+    if (activeSpeechOwner !== ownerRef.current) activeSpeechCancel?.();
+    activeSpeechOwner = ownerRef.current;
+    activeSpeechCancel = stop;
     const token = ++runTokenRef.current;
     setProgress({ current: firstChunk, total: chunks.length });
     setStatus("loading");
     for (let index = firstChunk; index < chunks.length; index += 1) {
       if (token !== runTokenRef.current) return;
+      if (!chunks[index].trim()) continue;
+      setStatus("loading");
       setProgress({ current: index, total: chunks.length });
       let chunkAudio: HTMLAudioElement | undefined;
       let chunkUrl: string | undefined;
       try {
+        const request = new AbortController();
+        requestRef.current = request;
         const result = await props.client.call<SpeakResponse>("voice.speak", {
           text: chunks[index],
-        });
+        }, { signal: request.signal });
         if (token !== runTokenRef.current) return;
+        requestRef.current = null;
         if (typeof result.audioBase64 !== "string" || !result.audioBase64) {
           throw new Error("语音合成响应无效");
         }
@@ -164,6 +192,7 @@ export function SpeakButton(props: {
           return;
         }
         clearAudio();
+        requestRef.current = null;
         failedChunkRef.current = index;
         setProgress({ current: index, total: chunks.length });
         setStatus("error");
@@ -175,6 +204,10 @@ export function SpeakButton(props: {
       chunksRef.current = [];
       setProgress({ current: chunks.length, total: chunks.length });
       setStatus("idle");
+      if (activeSpeechOwner === ownerRef.current) {
+        activeSpeechOwner = null;
+        activeSpeechCancel = null;
+      }
     }
   };
 
@@ -192,11 +225,12 @@ export function SpeakButton(props: {
     <button
       type="button"
       className="msg-action"
-      title={label}
+      style={progressLabel ? { width: "auto", gap: 4, padding: "0 4px" } : undefined}
+      title={status === "loading" ? `${label}，点击停止` : label}
       aria-label={label}
-      aria-pressed={status === "playing"}
+      aria-pressed={status === "playing" || status === "loading"}
       aria-busy={status === "loading"}
-      disabled={props.disabled || !props.text.trim()}
+      disabled={(props.disabled && status !== "playing" && status !== "loading") || !props.text.trim()}
       onClick={() => {
         if (status === "playing" || status === "loading") stop();
         else void speak(status === "error");
@@ -206,9 +240,12 @@ export function SpeakButton(props: {
         <LoaderCircle className="spin" size={15} />
       ) : status === "playing" ? (
         <Square size={13} fill="currentColor" />
+      ) : status === "error" ? (
+        <RotateCcw size={15} />
       ) : (
         <Volume2 size={15} />
       )}
+      {progressLabel && <span aria-hidden="true">{progressLabel}</span>}
     </button>
   );
 }
@@ -217,7 +254,6 @@ function friendlyError(cause: unknown): string {
   const message = cause instanceof Error ? cause.message : String(cause);
   if (message.includes("not configured")) return "请先在设置中配置模型服务和 API Key";
   if (message.includes("401") || message.includes("403")) return "语音合成鉴权失败，请检查 API Key";
-  if (message.includes("character limit")) return "这条消息太长，暂不支持完整朗读";
   if (message.includes("unsupported voice")) return "当前语音服务音色不可用";
   return message.replace(/ \(code -?\d+\)$/, "");
 }

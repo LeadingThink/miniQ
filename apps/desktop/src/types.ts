@@ -313,13 +313,19 @@ export type ApprovalMode = "alwaysAsk" | "auto" | "fullAccess";
 export type ScheduleSpec =
   | { type: "daily"; time: string }
   | { type: "weekly"; weekday: number; time: string }
+  | { type: "weekdays"; weekdays: number[]; time: string }
   | { type: "interval"; minutes: number };
+
+export type ScheduledTaskMode = "newSession" | "heartbeat";
 
 export interface ScheduledTask {
   id: string;
   workspaceId: string;
   name: string;
   prompt: string;
+  mode: ScheduledTaskMode;
+  targetSessionId?: string | null;
+  memory: string;
   schedule: ScheduleSpec;
   enabled: boolean;
   nextRunAt: string;

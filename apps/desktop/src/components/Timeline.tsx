@@ -38,6 +38,7 @@ import { ConversationNavigationRail } from "./ConversationNavigationRail";
 import { useConversationScroll } from "../hooks/useConversationScroll";
 import { TimelineEntries } from "./TimelineEntries";
 import { TimelineToolbar } from "./TimelineToolbar";
+import { AgentStatusIndicator, type AgentSummary } from "./AgentSummary";
 
 export interface TimelineProps {
   workspacePaths?: readonly string[];
@@ -60,6 +61,8 @@ export interface TimelineProps {
   turnProgress: TurnProgress | null;
   latestTurnTiming?: AnchoredTurnTiming | null;
   busy: boolean;
+  agents?: AgentSummary[];
+  onOpenAgentPanel?: () => void;
   onResolveApproval: (approvalId: string, decision: string) => void;
   onResolveQuestion: QuestionCardProps["onResolve"];
   onRollback: (checkpointId: string) => void;
@@ -203,6 +206,12 @@ export function Timeline(props: TimelineProps) {
         questions={props.questions.length}
         timing={props.latestTurnTiming}
       />
+      {props.agents && props.onOpenAgentPanel && (
+        <AgentStatusIndicator
+          agents={props.agents}
+          onOpen={props.onOpenAgentPanel}
+        />
+      )}
       <TimelineToolbar
         key={props.sessionId}
         filter={filter}
@@ -273,6 +282,7 @@ export function Timeline(props: TimelineProps) {
             </div>
           )}
         <TimelineEntries
+          key={props.sessionId}
           client={props.client}
           items={items}
           messages={props.messages}

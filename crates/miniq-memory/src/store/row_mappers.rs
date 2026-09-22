@@ -84,6 +84,13 @@ pub(super) fn row_to_scheduled_task(row: &Row<'_>) -> rusqlite::Result<Scheduled
         workspace_id: row.get(1)?,
         name: row.get(2)?,
         prompt: row.get(3)?,
+        mode: match row.get::<_, String>(10)?.as_str() {
+            "heartbeat" => miniq_protocol::ScheduledTaskMode::Heartbeat,
+            "newSession" => miniq_protocol::ScheduledTaskMode::NewSession,
+            other => return Err(invalid_text(format!("scheduled task mode {other}"))),
+        },
+        target_session_id: row.get(11)?,
+        memory: row.get(12)?,
         schedule: serde_json::from_str(&schedule_raw).unwrap_or(Value::Null),
         enabled: row.get(5)?,
         next_run_at: row.get(6)?,

@@ -1,26 +1,32 @@
-//! Scheduled tasks: a background loop fires due tasks by creating a fresh
-//! session in the task's workspace and sending the stored prompt through the
-//! normal turn pipeline (same risk gating / approvals as interactive turns).
+//! Scheduled tasks: a background loop sends due prompts through the normal
+//! turn pipeline (same risk gating / approvals as interactive turns), either
+//! in a fresh session or as a heartbeat of one explicitly selected session.
 //!
 //! Schedule spec (stored as JSON on the task row), times in local wall clock:
 //!   {"type":"daily","time":"09:00"}
 //!   {"type":"weekly","weekday":1,"time":"09:00"}   // 1 = Monday .. 7 = Sunday
+//!   {"type":"weekdays","weekdays":[1,2,3,4,5],"time":"09:00"}
 //!   {"type":"interval","minutes":30}
 
-use miniq_protocol::{Event, Role, ScheduledTask, SessionStatus};
+use miniq_protocol::{Event, ScheduledTask, ScheduledTaskMode, SessionStatus};
 use serde::{Deserialize, Serialize};
 use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime, UtcOffset, Weekday};
 
 use crate::state::AppState;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Schedule {
     /// Every day at `time` ("HH:MM", local).
     Daily { time: ScheduleTime },
     /// Every week on `weekday` (1 = Monday .. 7 = Sunday) at `time` (local).
     Weekly { weekday: u8, time: ScheduleTime },
+    /// Weekdays (1 = Monday .. 7 = Sunday) at a local wall-clock time.
+    Weekdays {
+        weekdays: Vec<u8>,
+        time: ScheduleTime,
+    },
     /// Every `minutes` minutes, from the last run.
     Interval { minutes: u32 },
 }
@@ -60,6 +66,11 @@ pub fn parse_schedule(value: &serde_json::Value) -> Result<Schedule, String> {
     match schedule {
         Schedule::Weekly { weekday, .. } if !(1..=7).contains(&weekday) => {
             Err("weekday must be 1 (Monday) .. 7 (Sunday)".to_string())
+        }
+        Schedule::Weekdays { weekdays, .. }
+            if weekdays.is_empty() || weekdays.iter().any(|day| !(1..=7).contains(day)) =>
+        {
+            Err("weekdays must contain at least one day from 1 (Monday) .. 7 (Sunday)".to_string())
         }
         Schedule::Interval { minutes } if !(1..=7 * 24 * 60).contains(&(minutes as usize)) => {
             Err("interval minutes must be between 1 and 10080".to_string())
@@ -117,6 +128,22 @@ pub fn next_run_after(schedule: &Schedule, now_utc: OffsetDateTime) -> OffsetDat
             }
             at_time + Duration::days(days_ahead)
         }
+        Schedule::Weekdays { weekdays, time } => {
+            let at_time = local
+                .replace_hour(time.hour)
+                .and_then(|t| t.replace_minute(time.minute))
+                .and_then(|t| t.replace_second(0))
+                .and_then(|t| t.replace_nanosecond(0))
+                .unwrap_or(local);
+            let today_num = weekday_number(local.weekday());
+            let days_ahead = (0..=7)
+                .find(|offset| {
+                    let candidate = (today_num as i64 + *offset - 1) % 7 + 1;
+                    weekdays.contains(&(candidate as u8)) && (*offset > 0 || at_time > local)
+                })
+                .unwrap_or(7);
+            at_time + Duration::days(days_ahead)
+        }
     };
     next_local.to_offset(UtcOffset::UTC)
 }
@@ -128,36 +155,100 @@ pub fn next_run_iso(schedule: &Schedule, now_utc: OffsetDateTime) -> String {
         .unwrap_or_else(|_| miniq_memory::now_iso())
 }
 
-/// Fire one task now: create a session, send the prompt, spawn the turn.
-/// Returns the new session id.
+/// Run a task manually. Paused tasks may run once without being enabled.
 pub fn fire_task(state: &AppState, task: &ScheduledTask) -> Result<String, String> {
+    dispatch_task(state, task, false)
+}
+
+fn dispatch_task(
+    state: &AppState,
+    snapshot: &ScheduledTask,
+    only_due: bool,
+) -> Result<String, String> {
     let _activity = state.activity.enter().map_err(|error| error.message)?;
-    let session = state
+    let due_at = only_due.then_some(snapshot.next_run_at.as_str());
+    if !state
         .store
-        .create_session(&task.workspace_id, &task.name)
-        .map_err(|e| e.to_string())?;
+        .claim_scheduled_task(&snapshot.id, due_at)
+        .map_err(|e| e.to_string())?
+    {
+        return Err("任务正在运行，或本次计划已经处理，将等待下一次执行".into());
+    }
+    let result = state
+        .store
+        .get_scheduled_task(&snapshot.id)
+        .map_err(|e| e.to_string())
+        .and_then(|task| dispatch_claimed_task(state, &task));
+    if result.is_err() {
+        let _ = state.store.release_scheduled_task(&snapshot.id);
+    }
+    result
+}
+
+fn dispatch_claimed_task(state: &AppState, task: &ScheduledTask) -> Result<String, String> {
+    let schedule = parse_schedule(&task.schedule).map_err(|error| {
+        let _ = state
+            .store
+            .set_scheduled_task_enabled(&task.id, false, None);
+        error
+    })?;
+    let session = match task.mode {
+        ScheduledTaskMode::NewSession => state
+            .store
+            .create_session(&task.workspace_id, &task.name)
+            .map_err(|e| e.to_string())?,
+        ScheduledTaskMode::Heartbeat => {
+            let id = task
+                .target_session_id
+                .as_deref()
+                .ok_or("heartbeat task has no target session")?;
+            let session = state.store.get_session(id).map_err(|e| match e {
+                miniq_memory::MemoryError::NotFound(_) => {
+                    let _ = state
+                        .store
+                        .set_scheduled_task_enabled(&task.id, false, None);
+                    "目标会话已删除，任务已暂停；请编辑任务并选择新会话".to_string()
+                }
+                other => other.to_string(),
+            })?;
+            if session.workspace_id != task.workspace_id {
+                return Err("heartbeat target belongs to another workspace".into());
+            }
+            if session.archived || session.external.is_some() {
+                return Err("目标会话已归档或为导入记录，请选择可继续的会话".into());
+            }
+            if !matches!(session.status, SessionStatus::Idle | SessionStatus::Failed) {
+                return Err("heartbeat target session is active or awaiting approval".into());
+            }
+            session
+        }
+    };
 
     let Some(cancel) = state.begin_turn(&session.id) else {
         return Err("session already has an active turn".to_string());
     };
 
-    let message = match state
-        .store
-        .append_message(&session.id, Role::User, &task.prompt)
-    {
-        Ok(m) => m,
-        Err(e) => {
-            state.end_turn(&session.id);
-            return Err(e.to_string());
-        }
+    let content = if task.memory.trim().is_empty() {
+        task.prompt.clone()
+    } else {
+        format!("{}\n\n任务记忆：\n{}", task.prompt, task.memory.trim())
     };
+    let next_run = next_run_iso(&schedule, OffsetDateTime::now_utc());
+    let message =
+        match state
+            .store
+            .start_scheduled_task_run(&task.id, &session.id, &content, &next_run)
+        {
+            Ok(m) => m,
+            Err(e) => {
+                state.end_turn(&session.id);
+                return Err(e.to_string());
+            }
+        };
     state.emit(Event::MessageCreated {
         session_id: session.id.clone(),
         message,
     });
-    let _ = state
-        .store
-        .update_session_status(&session.id, SessionStatus::Running);
     state.emit(Event::SessionStatusChanged {
         session_id: session.id.clone(),
         status: SessionStatus::Running,
@@ -179,31 +270,23 @@ async fn run_due_tasks(state: &AppState) {
         }
     };
     for task in due {
-        let Ok(schedule) = parse_schedule(&task.schedule) else {
-            tracing::error!(
-                "scheduler: task {} has invalid schedule; disabling",
-                task.id
-            );
-            let _ = state
-                .store
-                .set_scheduled_task_enabled(&task.id, false, None);
-            continue;
-        };
-        match fire_task(state, &task) {
+        match dispatch_task(state, &task, true) {
             Ok(session_id) => {
-                let next = next_run_iso(&schedule, OffsetDateTime::now_utc());
                 tracing::info!(
-                    "scheduler: fired task {} ({}), session {session_id}, next {next}",
+                    "scheduler: fired task {} ({}), session {session_id}",
                     task.id,
                     task.name
                 );
-                let _ = state
-                    .store
-                    .mark_scheduled_task_run(&task.id, &session_id, &next);
             }
             Err(e) => {
-                // Busy workspace or transient store error: leave next_run_at
-                // in the past and retry on the next tick.
+                // A target awaiting approval or an active turn is skipped for
+                // this occurrence; do not hammer it every scheduler tick.
+                if let Ok(schedule) = parse_schedule(&task.schedule) {
+                    let next = next_run_iso(&schedule, OffsetDateTime::now_utc());
+                    let _ = state
+                        .store
+                        .defer_scheduled_task(&task.id, &task.next_run_at, &next);
+                }
                 tracing::debug!("scheduler: task {} postponed: {e}", task.id);
             }
         }
@@ -213,6 +296,10 @@ async fn run_due_tasks(state: &AppState) {
 /// Background scheduler loop. Checks for due tasks every 30 seconds; runs one
 /// pass at startup so overdue tasks fire without waiting a full tick.
 pub fn spawn_scheduler(state: AppState) {
+    if let Err(error) = state.store.recover_scheduled_task_claims() {
+        tracing::error!("scheduler: recovering interrupted dispatch failed: {error}");
+        return;
+    }
     tokio::spawn(async move {
         tracing::info!("scheduler started");
         run_due_tasks(&state).await;
@@ -226,6 +313,9 @@ pub fn spawn_scheduler(state: AppState) {
 }
 
 #[cfg(test)]
+mod continuity_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
@@ -236,6 +326,10 @@ mod tests {
         assert!(matches!(
             parse_schedule(&json!({"type": "daily", "time": "09:30"})),
             Ok(Schedule::Daily { .. })
+        ));
+        assert!(matches!(
+            parse_schedule(&json!({"type": "weekdays", "weekdays": [1, 3, 5], "time": "08:00"})),
+            Ok(Schedule::Weekdays { .. })
         ));
         assert!(matches!(
             parse_schedule(&json!({"type": "weekly", "weekday": 1, "time": "08:00"})),

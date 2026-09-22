@@ -17,6 +17,7 @@ import { AgentHistory } from "./AgentHistory";
 import { AgentSummaryStats, type AgentSummary } from "./AgentSummary";
 import { conversationTimestamp, formatDuration } from "../time";
 import { turnProgressLabel } from "./ExecutionActivity";
+import { useAgentSummary } from "../hooks/useAgentSummary";
 
 const ACTIVE = new Set(["running", "stopping", "finalizing"]);
 const LABELS: Record<string, string> = {
@@ -33,6 +34,11 @@ export function AgentPanel(props: {
   client: RpcClient;
   sessionId: string;
   busy: boolean;
+  agents?: AgentSummary[];
+  agentError?: string | null;
+  onRefreshAgents?: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   return <SessionAgentPanel key={props.sessionId} {...props} />;
 }
@@ -41,15 +47,35 @@ function SessionAgentPanel({
   client,
   sessionId,
   busy,
+  agents: suppliedAgents,
+  agentError: suppliedError,
+  onRefreshAgents: suppliedRefresh,
+  open: suppliedOpen,
+  onOpenChange,
 }: {
   client: RpcClient;
   sessionId: string;
   busy: boolean;
+  agents?: AgentSummary[];
+  agentError?: string | null;
+  onRefreshAgents?: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [agents, setAgents] = useState<AgentSummary[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const [open, setOpen] = useState(false);
+  const ownSummary = useAgentSummary(client, sessionId, busy, suppliedAgents === undefined);
+  const agents = suppliedAgents ?? ownSummary.agents;
+  const [actionError, setActionError] = useState<string | null>(null);
+  const error = actionError ?? suppliedError ?? ownSummary.error;
+  const refreshAgents = () => {
+    setActionError(null);
+    (suppliedRefresh ?? ownSummary.refresh)();
+  };
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = suppliedOpen ?? internalOpen;
+  const setOpen = (next: boolean) => {
+    if (suppliedOpen === undefined) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
   const [selected, setSelected] = useState<string | null>(null);
   const [result, setResult] = useState<AgentSummary | null>(null);
   const [pending, setPending] = useState(false);
@@ -63,84 +89,6 @@ function SessionAgentPanel({
   const [history, setHistory] = useState(false);
   const actionEpoch = useRef(0);
   const detailsId = useId();
-
-  useEffect(() => {
-    let stale = false;
-    let inFlight = false;
-    let refreshQueued = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const schedule = (delay: number) => {
-      if (stale || document.visibilityState === "hidden") return;
-      if (timer !== null) clearTimeout(timer);
-      timer = setTimeout(() => {
-        timer = null;
-        void refresh();
-      }, delay);
-    };
-    const refresh = async () => {
-      if (stale) return;
-      if (timer !== null) clearTimeout(timer);
-      timer = null;
-      if (inFlight) {
-        refreshQueued = true;
-        return;
-      }
-      if (document.visibilityState === "hidden") {
-        return;
-      }
-      inFlight = true;
-      let nextDelay: number | null = null;
-      try {
-        const response = await client.call<{ agents: AgentSummary[] }>(
-          "agent.list",
-          { sessionId },
-        );
-        if (stale) return;
-        setAgents(response.agents);
-        setError(null);
-        if (busy || response.agents.some((agent) => ACTIVE.has(agent.status)))
-          nextDelay = 2500;
-      } catch (cause) {
-        if (!stale) {
-          setError(String(cause));
-          // A temporary disconnect must not permanently freeze the panel,
-          // including when the first request fails before any agents exist.
-          nextDelay = 5000;
-        }
-      } finally {
-        inFlight = false;
-        if (stale) return;
-        if (refreshQueued) {
-          refreshQueued = false;
-          schedule(0);
-        } else if (nextDelay !== null) {
-          schedule(nextDelay);
-        }
-      }
-    };
-    void refresh();
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") void refresh();
-      else if (timer !== null) {
-        clearTimeout(timer);
-        timer = null;
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    const reconnect = client.onStatus((connected) => {
-      if (connected && !stale) {
-        if (timer !== null) clearTimeout(timer);
-        timer = null;
-        void refresh();
-      }
-    });
-    return () => {
-      stale = true;
-      if (timer !== null) clearTimeout(timer);
-      document.removeEventListener("visibilitychange", onVisibility);
-      reconnect();
-    };
-  }, [client, sessionId, busy, attempt]);
 
   useEffect(
     () => () => {
@@ -193,12 +141,13 @@ function SessionAgentPanel({
   const stopAgent = async (agentId: string) => {
     if (stoppingRef.current) return;
     stoppingRef.current = true;
+    setActionError(null);
     setStopping(agentId);
     try {
       await client.call("agent.stop", { sessionId, agentId });
-      setAttempt((value) => value + 1);
+      refreshAgents();
     } catch (cause) {
-      setError(String(cause));
+      setActionError(String(cause));
     } finally {
       stoppingRef.current = false;
       setStopping(null);
@@ -224,7 +173,7 @@ function SessionAgentPanel({
         className="agent-panel-toggle"
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => setOpen(!open)}
       >
         <GitBranch size={15} />
         <strong>子任务</strong>
@@ -241,7 +190,7 @@ function SessionAgentPanel({
             className="icon-button"
             aria-label="刷新子任务"
             title="刷新子任务"
-            onClick={() => setAttempt((value) => value + 1)}
+            onClick={refreshAgents}
           >
             <RefreshCw size={14} />
           </button>

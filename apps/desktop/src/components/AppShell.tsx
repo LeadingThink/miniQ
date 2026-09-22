@@ -22,6 +22,7 @@ import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 import { SessionModelControls } from "./SessionModelControls";
 import { SessionPermissionControls } from "./SessionPermissionControls";
 import { AgentPanel } from "./AgentPanel";
+import { useAgentSummary } from "../hooks/useAgentSummary";
 import { ProjectDirectories } from "./ProjectDirectories";
 import { hostDraftKey, useDesktopHost } from "../desktopHost";
 import { RemotePathDialog } from "./RemotePathDialog";
@@ -130,12 +131,26 @@ interface WorkbenchPageProps extends AppOnlyProps {
 }
 
 function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
+  const [agentPanelOpen, setAgentPanelOpen] = useState(false);
+  const agentSummary = useAgentSummary(
+    app.client,
+    app.catalog.currentSessionId!,
+    !!app.busy,
+  );
+  const openAgentPanel = () => {
+    setAgentPanelOpen(true);
+  };
   return (
     <>
       <AgentPanel
         client={app.client}
         sessionId={app.catalog.currentSessionId!}
         busy={!!app.busy}
+        agents={agentSummary.agents}
+        agentError={agentSummary.error}
+        onRefreshAgents={agentSummary.refresh}
+        open={agentPanelOpen}
+        onOpenChange={setAgentPanelOpen}
       />
       <Suspense
         fallback={
@@ -164,6 +179,8 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
           workspacePaths={app.catalog.currentWorkspacePaths}
           streamingText={app.feed.streamingText}
           turnProgress={app.feed.turnProgress}
+          agents={agentSummary.agents}
+          onOpenAgentPanel={openAgentPanel}
           latestTurnTiming={app.feed.latestTurnTiming}
           busy={!!app.busy}
           onResolveApproval={app.actions.resolveApproval}

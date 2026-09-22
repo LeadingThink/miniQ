@@ -125,8 +125,31 @@ pub struct MessageAttachment {
     pub mime_type: Option<String>,
 }
 
-/// A recurring task: at each due time a fresh session is created in the
-/// workspace and `prompt` is sent as the user message.
+/// How a recurring task is delivered. Existing tasks default to `newSession`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ScheduledTaskMode {
+    NewSession,
+    Heartbeat,
+}
+
+impl Default for ScheduledTaskMode {
+    fn default() -> Self {
+        Self::NewSession
+    }
+}
+
+impl ScheduledTaskMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NewSession => "newSession",
+            Self::Heartbeat => "heartbeat",
+        }
+    }
+}
+
+/// A recurring task. A heartbeat appends the prompt to the selected existing
+/// session, while a new-session task creates an isolated session each run.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduledTask {
@@ -134,7 +157,13 @@ pub struct ScheduledTask {
     pub workspace_id: String,
     pub name: String,
     pub prompt: String,
-    /// Schedule spec as JSON (daily / weekly / interval), parsed by the daemon.
+    #[serde(default)]
+    pub mode: ScheduledTaskMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_session_id: Option<String>,
+    #[serde(default)]
+    pub memory: String,
+    /// Schedule spec as JSON (daily / weekly / weekdays / interval), parsed by the daemon.
     pub schedule: Value,
     pub enabled: bool,
     pub next_run_at: String,

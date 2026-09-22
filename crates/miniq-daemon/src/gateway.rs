@@ -89,6 +89,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "memory.delete" => memory::delete(state, req.params),
         "workspace.updateRoots" => workspace_roots::update(state, req.params).await,
         "schedule.create" => schedule::create(state, req.params),
+        "schedule.update" => schedule::update(state, req.params),
         "schedule.list" => schedule::list(state),
         "schedule.toggle" => schedule::toggle(state, req.params),
         "schedule.delete" => schedule::delete(state, req.params),

@@ -70,6 +70,43 @@
   flex-wrap: wrap;
 }
 
+.agent-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  max-width: 100%;
+  margin: 4px 24px 8px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface, var(--bg));
+  color: var(--text-mid);
+  font-size: 11px;
+  text-align: left;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.agent-status-indicator:hover,
+.agent-status-indicator:focus-visible {
+  border-color: var(--accent, #3b82f6);
+  background: var(--surface-raised, var(--bg));
+}
+
+.agent-status-indicator-label { color: var(--text); font-weight: 600; }
+.agent-status-chip { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.agent-status-chip.running { color: var(--accent, #3b82f6); }
+.agent-status-chip.waiting { color: var(--warning, #b7791f); }
+.agent-status-chip.failed { color: var(--danger, #c4364b); }
+.agent-status-chip.completed { color: var(--ok, #2caa70); }
+.agent-status-indicator-phase {
+  overflow: hidden;
+  max-width: 240px;
+  color: var(--text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 720px) {
   .agent-summary {
     width: 100%;
@@ -78,4 +115,6 @@
   }
 
   .agent-summary-progress { max-width: 100%; }
+  .agent-status-indicator { margin-left: 12px; margin-right: 12px; }
+  .agent-status-indicator-phase { display: none; }
 }
