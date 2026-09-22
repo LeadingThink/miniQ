@@ -88,7 +88,7 @@ it("plays long messages sequentially and retries only the failed chunk", async (
   const text = `${"甲".repeat(1500)}。${"乙".repeat(1500)}。${"丙".repeat(20)}`;
   let calls = 0;
   const requested: string[] = [];
-  const client = setup((_method, params) => {
+  setup((_method, params) => {
     calls += 1;
     requested.push((params as { text: string }).text);
     if (calls === 2) return Promise.reject(new Error("temporary provider error"));

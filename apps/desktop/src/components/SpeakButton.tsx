@@ -109,7 +109,7 @@ export function SpeakButton(props: {
   const playAudio = async (audio: HTMLAudioElement, token: number) => {
     await new Promise<void>((resolve, reject) => {
       resolvePlaybackRef.current = resolve;
-      audio.onended = resolve;
+      audio.onended = () => resolve();
       audio.onerror = () => reject(new Error("音频播放失败"));
       void audio.play().catch(reject);
     });
