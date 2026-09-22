@@ -13,6 +13,7 @@ interface Props {
   onPreview: (preview: VoicePreview | null) => void;
   onError?: (message: string) => void;
   disabled?: boolean;
+  transcribeModel?: string;
 }
 interface Recording {
   abort: AbortController;
@@ -75,7 +76,7 @@ export function VoiceInput(props: Props) {
           if (current.current === recording) callbacks.current.onPreview({
             phase: recording.finishing ? "transcribing" : "recording", text, delayed,
           });
-        });
+        }, props.transcribeModel);
         recording.transcript.append(samples);
       }, () => void finish(recording));
       if (current.current !== recording) { recording.capture.stop(); return; }

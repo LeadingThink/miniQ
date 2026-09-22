@@ -40,6 +40,10 @@ fn audio(preview: bool) -> Value {
     json!({"audioBase64": base64::engine::general_purpose::STANDARD.encode([0_u8; 45]), "filename": "record.wav", "preview": preview})
 }
 
+fn audio_with_model(preview: bool, model: &str) -> Value {
+    json!({"audioBase64": base64::engine::general_purpose::STANDARD.encode([0_u8; 45]), "filename": "record.wav", "preview": preview, "transcribeModel": model})
+}
+
 #[tokio::test]
 async fn recognition_uses_configured_provider_without_blocking_connection() {
     let started = Arc::new(tokio::sync::Notify::new());
@@ -178,6 +182,44 @@ async fn capabilities_hides_buttons_when_audio_models_absent() {
     assert_eq!(response["result"]["speak"], false);
     assert!(response["result"]["transcribeModel"].is_null());
     assert!(response["result"]["ttsModel"].is_null());
+}
+
+#[tokio::test]
+async fn transcription_uses_capability_selected_sencevoice_model() {
+    let api = Router::new().route(
+        "/v1/audio/transcriptions",
+        post(|request: Request| async move {
+            let bytes = axum::body::to_bytes(request.into_body(), 1024 * 1024)
+                .await
+                .unwrap();
+            let body = String::from_utf8_lossy(&bytes);
+            assert!(body.contains("sencevoice-small"));
+            assert!(!body.contains("grok-transcribe"));
+            axum::Json(json!({"text":"备用模型转写成功"}))
+        }),
+    );
+    let (mut ws, _dir) = voice_daemon(api).await;
+    let response = call(
+        &mut ws,
+        "sence",
+        "voice.transcribe",
+        audio_with_model(false, "sencevoice-small"),
+    )
+    .await;
+    assert_eq!(response["result"]["text"], "备用模型转写成功");
+}
+
+#[tokio::test]
+async fn transcription_rejects_unadvertised_model() {
+    let (mut ws, _dir) = voice_daemon(Router::new()).await;
+    assert!(call(
+        &mut ws,
+        "bad-model",
+        "voice.transcribe",
+        audio_with_model(false, "unexpected-transcriber"),
+    )
+    .await["error"]
+        .is_object());
 }
 
 #[tokio::test]

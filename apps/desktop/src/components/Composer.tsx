@@ -412,6 +412,7 @@ export function ComposerCard(props: {
           <VoiceInput
             key={props.draftKey}
             client={props.client}
+            transcribeModel={voiceCapabilities.capabilities.transcribeModel ?? undefined}
             disabled={sending || slash.pending}
             onStart={rememberVoiceInsertion}
             onTranscribed={applyTranscription}

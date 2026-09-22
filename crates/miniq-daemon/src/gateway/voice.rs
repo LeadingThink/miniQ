@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use super::common::params;
 use crate::state::AppState;
 
-const TRANSCRIPTION_MODEL: &str = "grok-transcribe";
+const DEFAULT_TRANSCRIPTION_MODEL: &str = "grok-transcribe";
 /// Audio transcription models listed in OneAPI 音频与语音文档.
 const TRANSCRIBE_CANDIDATES: &[&str] = &["grok-transcribe", "sencevoice-small"];
 /// Speech synthesis model listed in OneAPI 音频与语音文档.
@@ -37,6 +37,8 @@ struct TranscribeParams {
     filename: String,
     #[serde(default)]
     preview: bool,
+    #[serde(default)]
+    transcribe_model: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -252,6 +254,16 @@ pub(super) async fn speak(state: &AppState, raw: Option<Value>) -> Result<Value,
 pub(super) async fn transcribe(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: TranscribeParams = params(raw)?;
     let audio = decode_audio(&input.audio_base64)?;
+    let transcribe_model = input
+        .transcribe_model
+        .as_deref()
+        .unwrap_or(DEFAULT_TRANSCRIPTION_MODEL);
+    if !TRANSCRIBE_CANDIDATES.contains(&transcribe_model) {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "unsupported transcription model",
+        ));
+    }
     let provider = state
         .settings
         .lock()
@@ -291,6 +303,7 @@ pub(super) async fn transcribe(state: &AppState, raw: Option<Value>) -> Result<V
             &filename,
             &audio,
             input.preview,
+            transcribe_model,
         )
         .await
         {
@@ -348,13 +361,14 @@ async fn send_transcription(
     filename: &str,
     audio: &[u8],
     preview: bool,
+    transcribe_model: &str,
 ) -> Result<String, VoiceAttemptError> {
     let file = Part::bytes(audio.to_vec())
         .file_name(filename.to_string())
         .mime_str("audio/wav")
         .map_err(VoiceAttemptError::final_error)?;
     let form = Form::new()
-        .text("model", TRANSCRIPTION_MODEL)
+        .text("model", transcribe_model.to_string())
         .text("response_format", "json")
         .part("file", file);
     let response = client
@@ -423,6 +437,7 @@ mod tests {
         assert!(!TTS_VOICES.is_empty());
         assert!(TTS_VOICES.contains(&"eve"));
         assert!(TRANSCRIBE_CANDIDATES.contains(&"grok-transcribe"));
+        assert!(TRANSCRIBE_CANDIDATES.contains(&"sencevoice-small"));
         assert_eq!(TTS_MODEL, "grok-tts");
     }
 }

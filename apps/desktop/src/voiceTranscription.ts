@@ -30,7 +30,8 @@ export class VoiceTranscription {
   private retryAt = 0;
   private failures = 0;
   constructor(private client: RpcClient, readonly sampleRate: number,
-    private update: (text: string, delayed: boolean) => void) {}
+    private update: (text: string, delayed: boolean) => void,
+    private transcribeModel?: string) {}
   get duration() { return this.segments.reduce((total, segment) => total + segment.samples, 0) / this.sampleRate; }
   get text() { return joinVoiceSegments(this.segments.map((segment) => segment.text)); }
 
@@ -85,6 +86,7 @@ export class VoiceTranscription {
     const wav = encodeVoiceWav(chunks, this.sampleRate);
     const response = await this.client.call<{ text: string }>("voice.transcribe", {
       audioBase64: bytesToBase64(wav), filename: "record.wav", preview,
+      ...(this.transcribeModel ? { transcribeModel: this.transcribeModel } : {}),
     }, { signal: this.abort.signal, timeoutMs: preview ? 20_000 : 390_000 });
     if (typeof response.text !== "string") throw new Error("语音识别响应无效");
     return response.text.trim();

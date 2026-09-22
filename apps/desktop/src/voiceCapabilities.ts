@@ -30,8 +30,10 @@ async function fallbackFromModelList(client: RpcClient): Promise<VoiceCapabiliti
   try {
     const result = await client.call<{ models: string[] }>("model.list");
     const models = Array.isArray(result.models) ? result.models : [];
-    const transcribeModel =
-      models.find((id) => id === "grok-transcribe" || id === "sencevoice-small") ?? null;
+    // Old daemons always send grok-transcribe from voice.transcribe. Do not
+    // advertise sencevoice-small through this compatibility path because the
+    // old daemon cannot honor that selection.
+    const transcribeModel = models.find((id) => id === "grok-transcribe") ?? null;
     const ttsModel = models.find((id) => id === "grok-tts") ?? null;
     return {
       transcribe: transcribeModel !== null,

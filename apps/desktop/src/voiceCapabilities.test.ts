@@ -35,6 +35,17 @@ it("falls back to model.list for old daemons", async () => {
   expect(result.ttsModel).toBe("grok-tts");
 });
 
+it("does not advertise sencevoice-small through the old-daemon fallback", async () => {
+  const client = clientWith((method) => {
+    if (method === "voice.capabilities") return Promise.reject(new Error("unknown method: voice.capabilities (code -32601)"));
+    if (method === "model.list") return Promise.resolve({ models: ["sencevoice-small"] });
+    return Promise.reject(new Error(`unexpected ${method}`));
+  });
+  const result = await fetchVoiceCapabilities(client);
+  expect(result.transcribe).toBe(false);
+  expect(result.transcribeModel).toBeNull();
+});
+
 it("hides buttons when audio models are absent", async () => {
   const client = clientWith((method) =>
     method === "voice.capabilities"
