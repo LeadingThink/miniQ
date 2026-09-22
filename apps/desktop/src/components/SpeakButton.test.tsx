@@ -87,15 +87,19 @@ it("plays long messages sequentially and retries only the failed chunk", async (
   } as unknown as typeof URL);
   const text = `${"甲".repeat(1500)}。${"乙".repeat(1500)}。${"丙".repeat(20)}`;
   let calls = 0;
-  const client = setup(() => {
+  const requested: string[] = [];
+  const client = setup((_method, params) => {
     calls += 1;
+    requested.push((params as { text: string }).text);
     if (calls === 2) return Promise.reject(new Error("temporary provider error"));
     return Promise.resolve({ audioBase64, mimeType: "audio/mpeg" });
   }, () => undefined, text);
   fireEvent.click(screen.getByRole("button", { name: "朗读消息" }));
   await vi.waitFor(() => expect(screen.getByRole("button", { name: /重试朗读/ })).toBeTruthy());
   expect(calls).toBe(2);
+  expect(requested[0]).toBe("甲".repeat(1500));
   fireEvent.click(screen.getByRole("button", { name: /重试朗读/ }));
   await vi.waitFor(() => expect(screen.getByRole("button", { name: "朗读消息" })).toBeTruthy());
-  expect(calls).toBe(4);
+  expect(calls).toBe(5);
+  expect(requested.filter((chunk) => chunk === requested[0])).toHaveLength(1);
 });
