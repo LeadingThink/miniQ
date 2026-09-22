@@ -90,8 +90,9 @@ it("keeps server matches with deferred tool payloads and searches older artifact
   expect(screen.queryByRole("button", { name: "打开 needle.pdf" })).toBeNull();
   fireEvent.change(screen.getByRole("searchbox", { name: "搜索当前会话" }), { target: { value: "needle" } });
   await waitFor(() => expect(document.querySelectorAll(".tool-step")).toHaveLength(1));
-  expect(call.mock.calls[0][0]).toBe("session.history");
-  expect(call.mock.calls[0][1]).toMatchObject({ query: "needle", filter: "all" });
+  const historyCall = call.mock.calls.find(([method]) => method === "session.history");
+  expect(historyCall?.[0]).toBe("session.history");
+  expect(historyCall?.[1]).toMatchObject({ query: "needle", filter: "all" });
   expect(screen.getByRole("button", { name: "打开 needle.pdf" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "打开 other.pdf" })).toBeNull();
   expect(screen.queryByText("没有匹配的记录")).toBeNull();

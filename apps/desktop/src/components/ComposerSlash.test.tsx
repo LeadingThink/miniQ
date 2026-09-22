@@ -401,6 +401,12 @@ it("ignores a skill response from a previous workspace", async () => {
 it("retries a failed skill listing while keeping local app commands available", async () => {
   const call = vi
     .fn()
+    .mockResolvedValueOnce({
+      transcribe: false,
+      speak: false,
+      transcribeModel: null,
+      ttsModel: null,
+    })
     .mockRejectedValueOnce(new Error("技能读取失败"))
     .mockResolvedValueOnce({ skills });
   const { input } = renderComposer({ call });
@@ -412,5 +418,5 @@ it("retries a failed skill listing while keeping local app commands available", 
   expect(screen.getByRole("option", { name: /新建会话/ })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "重试" }));
   expect(await screen.findByText("简历筛选")).toBeTruthy();
-  expect(call).toHaveBeenCalledTimes(2);
+  expect(call.mock.calls.filter(([method]) => method === "skill.list")).toHaveLength(2);
 });
