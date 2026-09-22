@@ -11,6 +11,8 @@ import { QuestionCard } from "./QuestionCard";
 import { Md } from "./Md";
 import { ExecutionPrelude, PlanProgress } from "./ExecutionActivity";
 import { CopyButton } from "./CopyButton";
+import { SpeakButton } from "./SpeakButton";
+import { useVoiceCapabilities } from "../voiceCapabilities";
 import { ToolGroup } from "./ToolGroup";
 import { MessageTime, ConversationTimeSeparator } from "./MessageTime";
 import { showConversationTimestamp } from "../time";
@@ -81,6 +83,7 @@ export function TimelineEntries(props: {
   workspacePaths?: readonly string[];
 }) {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const voiceCapabilities = useVoiceCapabilities(props.client);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const turnEnds = useMemo(() => props.expandGroups ? new Map() : timelineTurnEnds(props.items, props.latestTurnTiming),
@@ -269,6 +272,14 @@ export function TimelineEntries(props: {
                   content={item.message.content}
                   onError={props.onError}
                 />
+                {props.client && voiceCapabilities.capabilities.speak && (
+                  <SpeakButton
+                    client={props.client}
+                    text={item.message.content}
+                    disabled={props.busy}
+                    onError={props.onError}
+                  />
+                )}
                 <button
                   type="button"
                   className="msg-action"

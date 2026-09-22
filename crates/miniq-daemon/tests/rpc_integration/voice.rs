@@ -143,3 +143,105 @@ async fn previews_fail_fast_while_final_requests_retry_temporary_errors() {
     assert_eq!(response["result"]["text"], "恢复成功");
     assert_eq!(requests.load(Ordering::SeqCst), 4);
 }
+
+#[tokio::test]
+async fn capabilities_reflects_audio_models_in_catalog() {
+    use axum::routing::get as route;
+    let api = Router::new().route(
+        "/v1/models",
+        route(|| async {
+            axum::Json(json!({"data":[
+              {"id":"chat-model","model_type":"chat"},
+              {"id":"grok-transcribe"},
+              {"id":"grok-tts"},
+            ]}))
+        }),
+    );
+    let (mut ws, _dir) = voice_daemon(api).await;
+    let response = call(&mut ws, "caps", "voice.capabilities", Value::Null).await;
+    assert_eq!(response["result"]["transcribe"], true);
+    assert_eq!(response["result"]["speak"], true);
+    assert_eq!(response["result"]["transcribeModel"], "grok-transcribe");
+    assert_eq!(response["result"]["ttsModel"], "grok-tts");
+}
+
+#[tokio::test]
+async fn capabilities_hides_buttons_when_audio_models_absent() {
+    use axum::routing::get as route;
+    let api = Router::new().route(
+        "/v1/models",
+        route(|| async { axum::Json(json!({"data":[{"id":"chat-model","model_type":"chat"}]})) }),
+    );
+    let (mut ws, _dir) = voice_daemon(api).await;
+    let response = call(&mut ws, "caps", "voice.capabilities", Value::Null).await;
+    assert_eq!(response["result"]["transcribe"], false);
+    assert_eq!(response["result"]["speak"], false);
+    assert!(response["result"]["transcribeModel"].is_null());
+    assert!(response["result"]["ttsModel"].is_null());
+}
+
+#[tokio::test]
+async fn speak_synthesizes_with_grok_tts_defaults() {
+    let api = Router::new().route(
+        "/v1/audio/speech",
+        post(|request: Request| async move {
+            assert_eq!(
+                request.headers().get("authorization").unwrap(),
+                "Bearer test-secret"
+            );
+            let bytes = axum::body::to_bytes(request.into_body(), 1024 * 1024)
+                .await
+                .unwrap();
+            let body: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(body["model"], "grok-tts");
+            assert_eq!(body["input"], "你好，欢迎使用在问。");
+            assert_eq!(body["voice"], "eve");
+            assert_eq!(body["response_format"], "mp3");
+            assert_eq!(body["speed"], 1.0);
+            (
+                [(axum::http::header::CONTENT_TYPE, "audio/mpeg")],
+                b"fake-mp3-bytes".to_vec(),
+            )
+        }),
+    );
+    let (mut ws, _dir) = voice_daemon(api).await;
+    let response = call(
+        &mut ws,
+        "speak",
+        "voice.speak",
+        json!({"text": "你好，欢迎使用在问。"}),
+    )
+    .await;
+    let audio = base64::engine::general_purpose::STANDARD
+        .decode(response["result"]["audioBase64"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(audio, b"fake-mp3-bytes");
+    assert_eq!(response["result"]["mimeType"], "audio/mpeg");
+    assert_eq!(response["result"]["voice"], "eve");
+}
+
+#[tokio::test]
+async fn speak_rejects_empty_text_and_bad_voice() {
+    let (mut ws, _dir) = voice_daemon(Router::new()).await;
+    assert!(
+        call(&mut ws, "empty", "voice.speak", json!({"text": "  "})).await["error"].is_object()
+    );
+    assert!(call(
+        &mut ws,
+        "voice",
+        "voice.speak",
+        json!({"text": "hi", "voice": "unknown"})
+    )
+    .await["error"]
+        .is_object());
+    assert!(call(
+        &mut ws,
+        "format",
+        "voice.speak",
+        json!({"text": "hi", "responseFormat": "ogg"}),
+    )
+    .await["error"]
+        .is_object());
+    let long = "你".repeat(1600);
+    assert!(call(&mut ws, "long", "voice.speak", json!({"text": long})).await["error"].is_object());
+}

@@ -129,6 +129,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         | "session.shareList"
                         | "session.shareRevoke"
                         | "voice.transcribe"
+                        | "voice.speak"
+                        | "voice.capabilities"
                 )
             {
                 let slots = if host_request {

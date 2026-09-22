@@ -16,12 +16,23 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); localStorage.clear(); vi.useRealTimers(); vi.clearAllMocks(); });
 function setup() {
-  const call = vi.fn().mockResolvedValue({ text: "识别文字" });
+  const call = vi.fn((method: string): Promise<unknown> => {
+    if (method === "voice.capabilities")
+      return Promise.resolve({
+        transcribe: true,
+        speak: true,
+        transcribeModel: "grok-transcribe",
+        ttsModel: "grok-tts",
+      });
+    return Promise.resolve({ text: "识别文字" });
+  });
   const props = { busy: false, placeholder: "消息", draftKey: "voice-a", client: { call } as unknown as RpcClient, onSend: vi.fn(async () => true) };
   const view = render(<ComposerCard {...props} />);
   return { props, view, call };
 }
 async function record() {
+  // Flush the async voice.capabilities lookup (fake timers break findBy* waits).
+  await act(async () => {});
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "语音输入" })); });
   act(() => samples(new Float32Array(32_000).fill(0.1), 16_000));
   await act(async () => { vi.advanceTimersByTime(2000); });
@@ -59,4 +70,16 @@ it("clears voice state and ignores a late result after changing sessions", async
   await act(async () => resolve({ text: "旧会话的转录" }));
   expect(screen.queryByLabelText("语音转录预览")).toBeNull();
   expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("");
+});
+
+it("hides voice input when transcription is unavailable", async () => {
+  const call = vi.fn((method: string): Promise<unknown> => {
+    if (method === "voice.capabilities")
+      return Promise.resolve({ transcribe: false, speak: false, transcribeModel: null, ttsModel: null });
+    return Promise.resolve({ text: "识别文字" });
+  });
+  const props = { busy: false, placeholder: "消息", draftKey: "voice-hidden", client: { call } as unknown as RpcClient, onSend: vi.fn(async () => true) };
+  render(<ComposerCard {...props} />);
+  await act(async () => {});
+  expect(screen.queryByRole("button", { name: "语音输入" })).toBeNull();
 });
