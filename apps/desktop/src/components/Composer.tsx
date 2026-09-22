@@ -25,6 +25,7 @@ import {
 } from "../textInputNavigation";
 import { insertTranscript, type TextRange } from "../voiceAudio";
 import { VoiceInput } from "./VoiceInput";
+import { useVoiceCapabilities } from "../voiceCapabilities";
 import { VoiceTranscript } from "./VoiceTranscript";
 import type { VoicePreview } from "../voiceTranscription";
 import { savePastedImage } from "../localFiles";
@@ -97,6 +98,7 @@ export function ComposerCard(props: {
   const voiceRangeRef = useRef<TextRange>({ start: 0, end: 0 });
   const voiceDraftRef = useRef("");
   const [voicePreview, setVoicePreview] = useState<VoicePreview | null>(null);
+  const voiceCapabilities = useVoiceCapabilities(props.client);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
@@ -406,7 +408,7 @@ export function ComposerCard(props: {
             <Paperclip size={15} />
           </button>
         )}
-        {props.client && (
+        {props.client && voiceCapabilities.capabilities.transcribe && (
           <VoiceInput
             key={props.draftKey}
             client={props.client}

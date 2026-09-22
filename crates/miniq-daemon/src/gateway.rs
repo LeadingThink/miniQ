@@ -151,6 +151,8 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "remote.status" => serde_json::to_value(crate::remote::status(state))
             .map_err(|error| RpcError::new(ErrorCode::InternalError, error.to_string())),
         "voice.transcribe" => voice::transcribe(state, req.params).await,
+        "voice.speak" => voice::speak(state, req.params).await,
+        "voice.capabilities" => voice::capabilities(state).await,
         "skill.list" => skill::list(state, req.params),
         "skill.read" => skill::read(state, req.params),
         "skill.setEnabled" => skill::set_enabled(state, req.params),
