@@ -188,54 +188,56 @@ export function TimelineEntries(props: {
                     ))}
                   </div>
                 )}
-              <MessageTime at={item.message.createdAt} />
-              <div className="message-actions">
-                {editingMessageId === item.message.id ? (
-                  <>
-                    <button
-                      type="button"
-                      className="msg-action"
-                      title="发送修改"
-                      aria-label="发送修改"
-                      disabled={!draft.trim() || saving || props.busy}
-                      onClick={() => void saveMessage(item.message)}
-                    >
-                      {saving ? (
-                        <LoaderCircle className="spin" size={15} />
-                      ) : (
-                        <Check size={15} />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      className="msg-action"
-                      title="取消修改"
-                      aria-label="取消修改"
-                      onClick={cancelEditing}
-                    >
-                      <X size={15} />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <CopyButton
-                      className="msg-copy"
-                      label="复制消息"
-                      content={item.message.content}
-                      onError={props.onError}
-                    />
-                    <button
-                      type="button"
-                      className="msg-action"
-                      title="修改消息"
-                      aria-label="修改消息"
-                      disabled={props.busy}
-                      onClick={() => startEditing(item.message)}
-                    >
-                      <Pencil size={15} />
-                    </button>
-                  </>
-                )}
+              <div className="message-footer">
+                <MessageTime at={item.message.createdAt} />
+                <div className="message-actions">
+                  {editingMessageId === item.message.id ? (
+                    <>
+                      <button
+                        type="button"
+                        className="msg-action"
+                        title="发送修改"
+                        aria-label="发送修改"
+                        disabled={!draft.trim() || saving || props.busy}
+                        onClick={() => void saveMessage(item.message)}
+                      >
+                        {saving ? (
+                          <LoaderCircle className="spin" size={15} />
+                        ) : (
+                          <Check size={15} />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="msg-action"
+                        title="取消修改"
+                        aria-label="取消修改"
+                        onClick={cancelEditing}
+                      >
+                        <X size={15} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <CopyButton
+                        className="msg-copy"
+                        label="复制消息"
+                        content={item.message.content}
+                        onError={props.onError}
+                      />
+                      <button
+                        type="button"
+                        className="msg-action"
+                        title="修改消息"
+                        aria-label="修改消息"
+                        disabled={props.busy}
+                        onClick={() => startEditing(item.message)}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           ) : item.message.role === "tool" ? (
@@ -266,47 +268,49 @@ export function TimelineEntries(props: {
               >
                 {item.message.content}
               </Md>
-              <MessageTime at={item.message.createdAt} />
-              <div className="message-actions assistant-actions">
-                <CopyButton
-                  className="msg-copy"
-                  label="复制消息"
-                  content={item.message.content}
-                  onError={props.onError}
-                />
-                {props.client && voiceCapabilities.capabilities.speak && (
-                  <SpeakButton
-                    client={props.client}
-                    text={item.message.content}
-                    disabled={props.busy}
+              <div className="message-footer assistant-footer">
+                <MessageTime at={item.message.createdAt} />
+                <div className="message-actions">
+                  <CopyButton
+                    className="msg-copy"
+                    label="复制消息"
+                    content={item.message.content}
                     onError={props.onError}
                   />
-                )}
-                <button
-                  type="button"
-                  className="msg-action"
-                  title="重新生成"
-                  aria-label="重新生成"
-                  disabled={props.busy}
-                  onClick={() => void regenerateMessage(item.message)}
-                >
-                  <RefreshCw size={15} />
-                </button>
-                {props.onFork && (
+                  {props.client && voiceCapabilities.capabilities.speak && (
+                    <SpeakButton
+                      client={props.client}
+                      text={item.message.content}
+                      disabled={props.busy}
+                      onError={props.onError}
+                    />
+                  )}
                   <button
                     type="button"
                     className="msg-action"
-                    title="分支到新聊天"
-                    aria-label="分支到新聊天"
-                    disabled={props.busy || forkingMessageId !== null}
-                    onClick={() => {
-                      setForkingMessageId(item.message.id);
-                      void props.onFork!(item.message.id).finally(() => setForkingMessageId(null));
-                    }}
+                    title="重新生成"
+                    aria-label="重新生成"
+                    disabled={props.busy}
+                    onClick={() => void regenerateMessage(item.message)}
                   >
-                    {forkingMessageId === item.message.id ? <LoaderCircle className="spin" size={15} /> : <GitBranch size={15} />}
+                    <RefreshCw size={15} />
                   </button>
-                )}
+                  {props.onFork && (
+                    <button
+                      type="button"
+                      className="msg-action"
+                      title="分支到新聊天"
+                      aria-label="分支到新聊天"
+                      disabled={props.busy || forkingMessageId !== null}
+                      onClick={() => {
+                        setForkingMessageId(item.message.id);
+                        void props.onFork!(item.message.id).finally(() => setForkingMessageId(null));
+                      }}
+                    >
+                      {forkingMessageId === item.message.id ? <LoaderCircle className="spin" size={15} /> : <GitBranch size={15} />}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )

@@ -38,12 +38,12 @@
     flex-shrink: 0;
   }
 
-  .composer-card .composer-row > .send-btn {
+  .composer-card .composer-submit {
     margin-left: auto;
   }
 
-  .composer-card .composer-row > .send-btn + .send-btn {
-    margin-left: 0;
+  .composer-card .composer-submit-buttons {
+    gap: 6px;
   }
 
   .composer-card .voice-input {
@@ -86,7 +86,7 @@
   }
 
   .composer-card .composer-keyboard-hint {
-    margin: 4px 4px 0;
+    margin: 0;
     font-size: 11px;
   }
 

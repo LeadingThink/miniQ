@@ -427,56 +427,60 @@ export function ComposerCard(props: {
           />
         )}
         {props.permissionSlot}
-        {props.busy && props.onCancel && (
-          <button
-            type="button"
-            className="send-btn stop"
-            title="停止并清空队列 (⌘.)"
-            onClick={props.onCancel}
-          >
-            <Square size={14} fill="currentColor" aria-label="停止任务" />
-          </button>
-        )}
-        {shouldShowComposerSend(props.busy, draft, attachments) && (
-          <button
-            type="button"
-            className="send-btn"
-            title={
-              props.sendBlocked
-                ? (props.sendBlockedReason ?? "当前无法发送")
-                : props.busy
-                  ? "加入队列，当前任务结束后执行"
-                  : "发送"
-            }
-            disabled={
-              sending ||
-              attachmentReads.pending ||
-              slash.pending ||
-              voicePreview !== null ||
-              props.sendBlocked ||
-              !canSendComposer(draft, attachments)
-            }
-            onClick={send}
-          >
-            {sending ? (
-              <LoaderCircle
-                size={16}
-                className="activity-spinner"
-                aria-label="正在发送"
-              />
-            ) : (
-              <ArrowUp size={18} aria-label="发送消息" />
+        <div className="composer-submit">
+          <div className="composer-submit-buttons">
+            <p id={keyboardHintId} className="composer-keyboard-hint">
+              {inputMode.keyboardHint}
+            </p>
+            {props.busy && props.onCancel && (
+              <button
+                type="button"
+                className="send-btn stop"
+                title="停止并清空队列 (⌘.)"
+                onClick={props.onCancel}
+              >
+                <Square size={14} fill="currentColor" aria-label="停止任务" />
+              </button>
             )}
-          </button>
-        )}
+            {shouldShowComposerSend(props.busy, draft, attachments) && (
+              <button
+                type="button"
+                className="send-btn"
+                title={
+                  props.sendBlocked
+                    ? (props.sendBlockedReason ?? "当前无法发送")
+                    : props.busy
+                      ? "加入队列，当前任务结束后执行"
+                      : "发送"
+                }
+                disabled={
+                  sending ||
+                  attachmentReads.pending ||
+                  slash.pending ||
+                  voicePreview !== null ||
+                  props.sendBlocked ||
+                  !canSendComposer(draft, attachments)
+                }
+                onClick={send}
+              >
+                {sending ? (
+                  <LoaderCircle
+                    size={16}
+                    className="activity-spinner"
+                    aria-label="正在发送"
+                  />
+                ) : (
+                  <ArrowUp size={18} aria-label="发送消息" />
+                )}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
       {attachmentReads.pending && <p className="composer-send-status" role="status">正在准备附件，完成后可发送</p>}
       {props.sendBlocked && <p className="composer-send-status" role="status">
         {props.sendBlockedReason ?? "暂时无法发送，草稿会保留"}
       </p>}
-      <p id={keyboardHintId} className="composer-keyboard-hint">
-        {inputMode.keyboardHint}
-      </p>
     </div>
   );
 }

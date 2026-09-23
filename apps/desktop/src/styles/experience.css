@@ -407,7 +407,7 @@
 .bubble.assistant {
   width: fit-content;
 }
-.message-actions {
+.message-footer {
   position: absolute;
   top: calc(100% + 2px);
   right: 0;
@@ -416,7 +416,15 @@
   align-items: center;
   gap: 2px;
 }
-.assistant-actions {
+.message-footer > .message-time {
+  margin: 0 4px 0 0;
+}
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.assistant-footer {
   right: auto;
   left: 0;
 }

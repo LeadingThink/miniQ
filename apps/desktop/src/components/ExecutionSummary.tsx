@@ -47,29 +47,29 @@ export function ExecutionSummary(props: {
         <Icon size={16} className={props.busy && !props.approvals && !props.questions ? "activity-spinner" : ""} />
         <strong role="status">{label}</strong>
         {detail && <span title={detail}>{detail}</span>}
+        <div className="execution-summary-counts" aria-label={summary.partial ? "已加载步骤统计" : "本轮步骤统计"}>
+          {summary.partial && <span>已加载</span>}
+          <span>
+            <Check size={12} />
+            {summary.completed} 完成
+          </span>
+          {summary.running.length > 0 && props.busy && <span>{summary.running.length} 执行中</span>}
+          {summary.waiting > 0 && <span>{summary.waiting} 待确认</span>}
+          {summary.failed > 0 && (
+            <span className="execution-failed">
+              <CircleX size={12} />
+              {summary.failed} 失败
+            </span>
+          )}
+          {summary.cancelled > 0 && (
+            <span>
+              <CirclePause size={12} />
+              {summary.cancelled} 取消/拒绝
+            </span>
+          )}
+        </div>
       </div>
       {props.busy && timing?.status === "running" && <TurnTimingSummary timing={timing} active />}
-      <div className="execution-summary-counts" aria-label={summary.partial ? "已加载步骤统计" : "本轮步骤统计"}>
-        {summary.partial && <span>已加载</span>}
-        <span>
-          <Check size={12} />
-          {summary.completed} 完成
-        </span>
-        {summary.running.length > 0 && props.busy && <span>{summary.running.length} 执行中</span>}
-        {summary.waiting > 0 && <span>{summary.waiting} 待确认</span>}
-        {summary.failed > 0 && (
-          <span className="execution-failed">
-            <CircleX size={12} />
-            {summary.failed} 失败
-          </span>
-        )}
-        {summary.cancelled > 0 && (
-          <span>
-            <CirclePause size={12} />
-            {summary.cancelled} 取消/拒绝
-          </span>
-        )}
-      </div>
     </section>
   );
 }

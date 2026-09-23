@@ -50,6 +50,22 @@ it("shows approvals ahead of model activity", () => {
   expect(screen.queryByText(/执行中/)).toBeNull();
 });
 
+it("keeps completed execution counts on the summary title row", () => {
+  render(
+    <ExecutionSummary
+      messages={[]}
+      calls={[call(1)]}
+      progress={null}
+      plan={[]}
+      busy={false}
+      approvals={0}
+      questions={0}
+    />,
+  );
+  const title = screen.getByRole("status").parentElement;
+  expect(title?.contains(screen.getByLabelText(/步骤统计$/))).toBe(true);
+});
+
 it("excludes internal plan updates from visible step counts", () => {
   expect(currentExecution([], [{ ...call(1), toolName: "task_update" }, call(2)]).completed).toBe(1);
 });
