@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FolderPlus, Package, RefreshCw, Trash2 } from "lucide-react";
+import { FolderPlus, Package, RefreshCw, Trash2, Upload } from "lucide-react";
 import type { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 import type { PluginInfo, PluginListResult } from "../types";
@@ -10,6 +10,7 @@ export function PluginsPanel(props: { client: RpcClient }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [remotePicker, setRemotePicker] = useState(false);
+  const [remotePluginUpdate, setRemotePluginUpdate] = useState(false);
 
   useEffect(() => {
     void props.client
@@ -22,7 +23,11 @@ export function PluginsPanel(props: { client: RpcClient }) {
   }, [props.client]);
 
   const install = async () => {
-    if (props.client.sshHost) { setRemotePicker(true); return; }
+    if (props.client.sshHost) {
+      setRemotePluginUpdate(false);
+      setRemotePicker(true);
+      return;
+    }
     let path: string | null = null;
     if (isTauriRuntime()) {
       const { open } = await import("@tauri-apps/plugin-dialog");
@@ -76,6 +81,34 @@ export function PluginsPanel(props: { client: RpcClient }) {
     }
   };
 
+  const update = async (plugin: PluginInfo) => {
+    if (props.client.sshHost) {
+      setRemotePluginUpdate(true);
+      setRemotePicker(true);
+      return;
+    }
+    let path: string | null = null;
+    if (isTauriRuntime()) {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({ directory: true, multiple: false, title: `选择 ${plugin.name} 的新版目录` });
+      path = typeof selected === "string" ? selected : null;
+    } else {
+      path = window.prompt("新版插件文件夹（绝对路径）:");
+    }
+    if (!path) return;
+    setBusy(plugin.id);
+    setStatus(null);
+    try {
+      const result = await props.client.call<PluginListResult>("plugin.install", { path, update: true });
+      setPlugins(result.plugins);
+      setStatus(`已更新 ${plugin.name}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const reload = async (plugin: PluginInfo) => {
     setBusy(plugin.id);
     setStatus(null);
@@ -112,15 +145,15 @@ export function PluginsPanel(props: { client: RpcClient }) {
     <div className="page">
       {remotePicker && props.client.sshHost && <RemotePathDialog host={props.client.sshHost} purpose="plugin"
         onClose={() => setRemotePicker(false)} onSubmit={async (path) => {
-          const result = await props.client.call<PluginListResult>("plugin.install", { path });
+          const result = await props.client.call<PluginListResult>("plugin.install", { path, update: remotePluginUpdate });
           setPlugins(result.plugins);
-          setStatus("远程插件已安装");
+          setStatus(remotePluginUpdate ? "远程插件已更新" : "远程插件已安装");
         }} />}
       <div className="page-inner wide">
         <div className="page-header plugin-page-header">
           <div>
             <div className="page-title">插件</div>
-            <div className="page-sub">安装和管理本地 WASM 与 Node.js 插件。</div>
+            <div className="page-sub">安装和管理本地 WASM、Node.js 插件与版本化技能包。</div>
           </div>
           <button disabled={busy !== null} onClick={() => void install()}>
             <FolderPlus size={15} />
@@ -132,7 +165,7 @@ export function PluginsPanel(props: { client: RpcClient }) {
           <div className="schedule-empty">
             <Package className="plugin-empty-icon" size={32} />
             <div className="schedule-empty-title">还没有本地插件</div>
-            <div className="schedule-empty-sub">添加一个包含 manifest.toml 的插件文件夹</div>
+            <div className="schedule-empty-sub">添加一个包含 manifest.toml 的插件或技能包文件夹</div>
           </div>
         ) : (
           <div className="card-grid">
@@ -169,6 +202,14 @@ export function PluginsPanel(props: { client: RpcClient }) {
                 <div className="plugin-card-meta">
                   权限：{plugin.permissions.join(", ") || "无"}
                 </div>
+                {(plugin.skills ?? []).length > 0 && (
+                  <div className="plugin-card-meta">技能包：{(plugin.skills ?? []).join(", ")}</div>
+                )}
+                {(plugin.dependencies ?? []).length > 0 && (
+                  <div className="plugin-card-meta">
+                    依赖：{(plugin.dependencies ?? []).map((dependency) => `${dependency.command} ${dependency.available ? "✓" : "缺少"}`).join("、")}
+                  </div>
+                )}
                 {plugin.trustedCode && !plugin.trustConfirmed && (
                   <div className="plugin-warning">启用前需要确认可信代码权限。</div>
                 )}
@@ -176,8 +217,18 @@ export function PluginsPanel(props: { client: RpcClient }) {
                 <div className="asset-meta plugin-card-actions">
                   <button
                     className="ghost"
+                    disabled={busy !== null}
+                    onClick={() => void update(plugin)}
+                    title="从本地目录导入同一插件的新版本"
+                  >
+                    <Upload size={14} />
+                    更新
+                  </button>
+                  <button
+                    className="ghost"
                     disabled={busy !== null || !plugin.enabled}
                     onClick={() => void reload(plugin)}
+                    title="重新加载当前版本"
                   >
                     <RefreshCw size={14} />
                     重载

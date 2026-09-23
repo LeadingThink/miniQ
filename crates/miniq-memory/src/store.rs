@@ -8,6 +8,7 @@ mod attachments;
 mod conversation;
 mod execution_events;
 mod external_sessions;
+mod goals;
 mod history;
 mod memories;
 mod model_calls;
@@ -16,6 +17,7 @@ mod queue;
 mod records;
 mod row_mappers;
 mod scheduled_tasks;
+mod session_fork;
 mod session_settings;
 mod session_titles;
 mod turn_timing;
@@ -101,6 +103,14 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0016_scheduled_task_continuity",
         include_str!("../../../migrations/0016_scheduled_task_continuity.sql"),
+    ),
+    (
+        "0017_scheduled_task_runs",
+        include_str!("../../../migrations/0017_scheduled_task_runs.sql"),
+    ),
+    (
+        "0018_session_goals",
+        include_str!("../../../migrations/0018_session_goals.sql"),
     ),
 ];
 
@@ -294,6 +304,12 @@ impl Store {
              WHERE status = 'pending'",
             params![now],
         )?;
+        transaction.execute(
+            "UPDATE scheduled_task_runs
+             SET status = 'failed', reason = 'daemon restarted before the run completed', completed_at = ?1
+             WHERE status = 'running'",
+            params![now],
+        )?;
         transaction.commit()?;
         Ok(StartupRecovery {
             sessions_failed,
@@ -325,6 +341,12 @@ impl Store {
             "UPDATE approvals
              SET status = 'rejected', resolved_at = ?2
              WHERE session_id = ?1 AND status = 'pending'",
+            params![session_id, now],
+        )?;
+        transaction.execute(
+            "UPDATE scheduled_task_runs
+             SET status = 'cancelled', reason = 'run was interrupted before completion', completed_at = ?2
+             WHERE session_id = ?1 AND status = 'running'",
             params![session_id, now],
         )?;
         transaction.commit()?;

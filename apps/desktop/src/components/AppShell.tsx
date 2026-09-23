@@ -179,6 +179,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
           workspacePaths={app.catalog.currentWorkspacePaths}
           streamingText={app.feed.streamingText}
           turnProgress={app.feed.turnProgress}
+          goal={app.feed.goal}
           agents={agentSummary.agents}
           onOpenAgentPanel={openAgentPanel}
           latestTurnTiming={app.feed.latestTurnTiming}
@@ -193,6 +194,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
           onUpdateQueued={app.actions.updateQueued}
           onMoveQueued={app.actions.moveQueued}
           onRewrite={app.actions.rewriteMessage}
+          onFork={app.actions.forkSession}
           onError={app.setError}
         />
       </Suspense>

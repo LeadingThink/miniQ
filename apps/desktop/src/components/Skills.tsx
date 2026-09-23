@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import { Upload } from "lucide-react";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
+import { isTauriRuntime } from "../runtime";
+import { RemotePathDialog } from "./RemotePathDialog";
 
 interface SkillView {
   name: string;
@@ -9,6 +12,7 @@ interface SkillView {
   origin: string;
   source: "project" | "user" | "bundled";
   enabled: boolean;
+  dependencies?: { command: string; available: boolean }[];
 }
 
 interface SkillDetailView extends SkillView {
@@ -90,6 +94,11 @@ function SkillGrid(props: {
           <div className="asset-meta">
             <span className="badge">{SOURCE_LABEL[skill.source]}</span>
             <span className="badge">v{skill.version}</span>
+            {(skill.dependencies ?? []).map((dependency) => (
+              <span className="badge" key={dependency.command} title="运行时会检查该依赖是否在 PATH 中">
+                依赖 {dependency.command} {dependency.available ? "✓" : "缺少"}
+              </span>
+            ))}
           </div>
         </div>
       ))}
@@ -113,6 +122,7 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
   const [skills, setSkills] = useState<SkillView[]>([]);
   const [detail, setDetail] = useState<SkillDetailView | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [remotePicker, setRemotePicker] = useState(false);
   const scope = props.workspaceId ? { workspaceId: props.workspaceId } : {};
 
   const refresh = useCallback(async () => {
@@ -156,14 +166,58 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
     }
   };
 
+  const importPackage = async () => {
+    if (props.client.sshHost) {
+      setRemotePicker(true);
+      return;
+    }
+    let path: string | null = null;
+    try {
+      if (isTauriRuntime()) {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const selected = await open({ directory: true, multiple: false, title: "选择技能包目录" });
+        path = typeof selected === "string" ? selected : null;
+      } else {
+        path = window.prompt("技能包目录（绝对路径）:");
+      }
+    } catch (error) {
+      setStatus(errorMessage(error));
+      return;
+    }
+    if (!path) return;
+    try {
+      const result = await props.client.call<{ skills: SkillView[]; imported: SkillView[] }>("skill.import", { path });
+      setSkills(result.skills);
+      setStatus(`已导入 ${result.imported.length} 个技能，可在列表中查看版本`);
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  };
+
   return (
     <div className="page">
+      {remotePicker && props.client.sshHost && <RemotePathDialog
+        host={props.client.sshHost}
+        purpose="skill"
+        onClose={() => setRemotePicker(false)}
+        onSubmit={async (path) => {
+          const result = await props.client.call<{ skills: SkillView[]; imported: SkillView[] }>("skill.import", { path });
+          setSkills(result.skills);
+          setStatus(`已导入 ${result.imported.length} 个远程技能`);
+        }}
+      />}
       <div className="page-inner wide">
         <div className="page-header">
-          <div className="page-title">技能</div>
-          <div className="page-sub">
-            可复用的工作流。启用的技能会在任务中自动使用;完成任务后可通过「保存为技能」蒸馏新技能。
+          <div>
+            <div className="page-title">技能</div>
+            <div className="page-sub">
+              可复用的工作流。启用的技能会在任务中自动使用;完成任务后可通过「保存为技能」蒸馏新技能。
+            </div>
           </div>
+          <button onClick={() => void importPackage()} title="导入或更新包含一个或多个 SKILL.md 的目录">
+            <Upload size={15} />
+            导入技能包
+          </button>
         </div>
         {status && <div className="settings-status">{status}</div>}
         {detail ? (

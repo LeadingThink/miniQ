@@ -141,6 +141,43 @@ async fn skill_rpcs_list_read_toggle_delete() {
 }
 
 #[tokio::test]
+async fn skill_import_rpc_installs_and_updates_a_package() {
+    let provider = Arc::new(MockProvider::text("x"));
+    let (port, token) = start(provider).await;
+    let mut ws = connect(port, &token).await;
+    let package = tempfile::tempdir().unwrap();
+    let skill = package.path().join("document-workflow");
+    std::fs::create_dir_all(skill.join("scripts")).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\nname: document-workflow\ndescription: imported docs\nversion: 2\n---\n\nUse doc_read.\n",
+    )
+    .unwrap();
+    std::fs::write(skill.join("scripts/check.sh"), "echo ok").unwrap();
+
+    let response = call(
+        &mut ws,
+        "import",
+        "skill.import",
+        json!({"path": package.path().to_string_lossy()}),
+    )
+    .await;
+    assert_eq!(
+        response["result"]["imported"][0]["name"],
+        "document-workflow"
+    );
+    assert_eq!(response["result"]["imported"][0]["version"], 2);
+    let detail = call(
+        &mut ws,
+        "read-imported",
+        "skill.read",
+        json!({"name": "document-workflow"}),
+    )
+    .await;
+    assert_eq!(detail["result"]["files"][0], "scripts/check.sh");
+}
+
+#[tokio::test]
 async fn skills_injected_into_prompt_and_readable_by_agent() {
     let provider = Arc::new(MockProvider::new(vec![
         vec![ChatDelta::ToolCall(ToolCallRequest {

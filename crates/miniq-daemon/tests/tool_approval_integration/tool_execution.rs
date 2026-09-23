@@ -145,6 +145,7 @@ async fn tool_list_reports_toolset() {
             "plan_mode",
             "process_kill",
             "process_output",
+            "scheduled_task_memory_write",
             "shell_batch",
             "shell_run",
             "skill_read",

@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::types::{
-    Approval, Artifact, Message, PlanTask, Question, RiskLevel, SessionStatus, ToolCallStatus,
-    TurnProgress,
+    Approval, Artifact, Message, PlanTask, Question, RiskLevel, SessionGoal, SessionStatus,
+    ToolCallStatus, TurnProgress,
 };
 
 /// An event pushed by the daemon over the WebSocket connection.
@@ -44,6 +44,12 @@ pub enum Event {
         #[serde(rename = "sessionId")]
         session_id: String,
         status: SessionStatus,
+    },
+    /// The session goal or its accumulated usage changed.
+    SessionGoalChanged {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+        goal: Option<SessionGoal>,
     },
     /// The current observable stage of a running turn changed.
     TurnProgressChanged {
@@ -243,6 +249,7 @@ impl Event {
             Event::ModelSettingsChanged { session_id, .. }
             | Event::SessionApprovalChanged { session_id, .. }
             | Event::SessionStatusChanged { session_id, .. }
+            | Event::SessionGoalChanged { session_id, .. }
             | Event::TurnProgressChanged { session_id, .. }
             | Event::TurnTimingChanged { session_id, .. }
             | Event::MessageCreated { session_id, .. }

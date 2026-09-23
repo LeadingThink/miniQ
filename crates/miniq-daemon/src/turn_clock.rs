@@ -40,6 +40,19 @@ impl TurnClock {
         self.timing.elapsed_ms =
             Some(u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX));
         self.timing.status = status;
+        if let Some(elapsed_ms) = self.timing.elapsed_ms {
+            if let Err(error) = state
+                .store
+                .record_session_goal_usage(session_id, elapsed_ms)
+            {
+                tracing::warn!(%session_id, %error, "failed to update session goal usage");
+            } else if let Ok(goal) = state.store.session_goal(session_id) {
+                state.emit(Event::SessionGoalChanged {
+                    session_id: session_id.into(),
+                    goal,
+                });
+            }
+        }
         match state
             .store
             .finish_turn_timing(session_id, &self.message_id, &self.timing)

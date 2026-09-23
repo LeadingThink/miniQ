@@ -32,6 +32,9 @@ pub struct DaemonSettings {
     pub approval_mode: ApprovalMode,
     #[serde(default)]
     pub remote_access: crate::remote::RemoteAccessSettings,
+    /// Optional local command run after each turn. Empty means disabled.
+    #[serde(default)]
+    pub turn_ended_command: Option<String>,
 }
 
 fn uuid_suffix() -> String {
@@ -384,6 +387,61 @@ impl AppState {
         Ok(())
     }
 
+    /// Run the user-configured local completion hook without blocking the
+    /// turn. Environment values are passed explicitly; no model or message
+    /// content is interpolated into a shell command.
+    pub fn run_turn_ended_hook(&self, session_id: &str, status: &str) {
+        let command = self
+            .settings
+            .lock()
+            .unwrap()
+            .turn_ended_command
+            .clone()
+            .filter(|command| !command.trim().is_empty());
+        let Some(command) = command else { return };
+        let Ok(session) = self.store.get_session(session_id) else {
+            return;
+        };
+        let Ok(workspace) = self.store.get_workspace(&session.workspace_id) else {
+            return;
+        };
+        let session_id = session.id;
+        let workspace_path = workspace.path;
+        let title = session.title;
+        let status = status.to_string();
+        tokio::spawn(async move {
+            #[cfg(windows)]
+            let mut child = tokio::process::Command::new("powershell.exe");
+            #[cfg(not(windows))]
+            let mut child = tokio::process::Command::new("sh");
+            #[cfg(windows)]
+            child.args(["-NoProfile", "-NonInteractive", "-Command", &command]);
+            #[cfg(not(windows))]
+            child.args(["-lc", &command]);
+            let result = child
+                .env("MINIQ_SESSION_ID", &session_id)
+                .env("MINIQ_TURN_STATUS", &status)
+                .env("MINIQ_WORKSPACE", &workspace_path)
+                .env("MINIQ_TITLE", &title)
+                .output()
+                .await;
+            match result {
+                Ok(output) if !output.status.success() => tracing::warn!(
+                    session_id = %session_id,
+                    status = %status,
+                    code = ?output.status.code(),
+                    "turn-ended hook exited unsuccessfully"
+                ),
+                Err(error) => {
+                    tracing::warn!(session_id = %session_id, %error, "turn-ended hook failed")
+                }
+                _ => {
+                    tracing::debug!(session_id = %session_id, status = %status, "turn-ended hook completed")
+                }
+            }
+        });
+    }
+
     /// Register a pending approval and get the receiver the executor awaits.
     pub fn register_approval(&self, approval_id: &str) -> oneshot::Receiver<ApprovalDecision> {
         let (tx, rx) = oneshot::channel();
@@ -584,5 +642,49 @@ mod tests {
                 error: Some("late error".into()),
             })
         );
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn turn_ended_hook_receives_safe_environment_and_empty_is_disabled() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("hook.txt");
+        let workspace_path = directory.path().join("workspace");
+        std::fs::create_dir_all(&workspace_path).unwrap();
+        let state = AppState::new(
+            Store::open_in_memory().unwrap(),
+            "token".to_string(),
+            Arc::new(MockProvider::new(Vec::new())),
+        );
+        let workspace = state
+            .store
+            .create_workspace(workspace_path.to_str().unwrap(), "hook project")
+            .unwrap();
+        let session = state
+            .store
+            .create_session(&workspace.id, "hook session")
+            .unwrap();
+        let mut settings = state.settings.lock().unwrap().clone();
+        settings.turn_ended_command = Some(format!("printf '%s|%s|%s|%s' \"$MINIQ_SESSION_ID\" \"$MINIQ_TURN_STATUS\" \"$MINIQ_WORKSPACE\" \"$MINIQ_TITLE\" > '{}'", output.display()));
+        *state.settings.lock().unwrap() = settings;
+        state.run_turn_ended_hook(&session.id, "failed");
+        let expected_prefix = format!("{}|failed|", session.id);
+        for _ in 0..50 {
+            if std::fs::read_to_string(&output)
+                .map(|value| value.starts_with(&expected_prefix))
+                .unwrap_or(false)
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let value = std::fs::read_to_string(output).unwrap();
+        assert!(value.starts_with(&format!("{}|failed|", session.id)));
+        assert!(value.ends_with("|hook session"));
+
+        let mut settings = state.settings.lock().unwrap().clone();
+        settings.turn_ended_command = None;
+        *state.settings.lock().unwrap() = settings;
+        state.run_turn_ended_hook(&session.id, "succeeded");
     }
 }

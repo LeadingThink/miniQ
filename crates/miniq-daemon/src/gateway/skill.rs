@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use miniq_protocol::{ErrorCode, RpcError};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::path::Path;
 
 use super::common::{params, store_err, to_value};
 use crate::state::AppState;
@@ -71,6 +72,25 @@ pub(super) fn delete(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
         .delete(workspace.as_deref(), &input.name)
         .map_err(skill_err)?;
     Ok(json!({ "deleted": input.name }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportParams {
+    path: String,
+}
+
+/// Import a versioned skill directory/package. The store validates every
+/// SKILL.md and replaces same-name user skills, making local updates safe and
+/// repeatable without touching project or bundled skills.
+pub(super) fn import(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: ImportParams = params(raw)?;
+    let imported = state
+        .skills
+        .import_directory(Path::new(&input.path))
+        .map_err(skill_err)?;
+    let skills = state.skills.discover(None);
+    to_value(json!({ "imported": imported, "skills": skills }))
 }
 
 fn workspace_path(

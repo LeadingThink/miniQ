@@ -54,6 +54,17 @@ pub enum ToolOrigin {
 
 pub type ToolCatalog = Arc<dyn Fn() -> Vec<ToolSpec> + Send + Sync>;
 
+/// Scope for the one scheduled run that may write task memory. It is absent
+/// for normal conversations, so memory writes cannot accidentally target a
+/// task from another session.
+#[derive(Clone)]
+pub struct ScheduledTaskMemoryContext {
+    pub store: Arc<miniq_memory::Store>,
+    pub task_id: String,
+    pub run_id: String,
+    pub task_revision: i64,
+}
+
 /// Everything a tool needs to run. Tools must not reach outside this context.
 #[derive(Clone)]
 pub struct ToolContext {
@@ -89,6 +100,7 @@ pub struct ToolContext {
     pub media: Option<MediaConfig>,
     /// Plan-mode guard shared by the executor and plan_mode tool.
     plan_mode: Arc<AtomicBool>,
+    pub scheduled_task: Option<ScheduledTaskMemoryContext>,
 }
 
 impl ToolContext {
@@ -112,6 +124,7 @@ impl ToolContext {
             cancellation: tokio_util::sync::CancellationToken::new(),
             media: None,
             plan_mode: Arc::new(AtomicBool::new(false)),
+            scheduled_task: None,
         }
     }
 
@@ -178,6 +191,11 @@ impl ToolContext {
     ) -> Self {
         self.memory = memory;
         self.workspace_id = workspace_id;
+        self
+    }
+
+    pub fn with_scheduled_task(mut self, task: Option<ScheduledTaskMemoryContext>) -> Self {
+        self.scheduled_task = task;
         self
     }
 

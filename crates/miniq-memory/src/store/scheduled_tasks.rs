@@ -2,8 +2,14 @@ use miniq_protocol::{Message, Role, ScheduledTask, ScheduledTaskMode};
 use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
-use super::row_mappers::row_to_scheduled_task;
+use super::row_mappers::{row_to_scheduled_task, row_to_scheduled_task_run};
 use super::{new_id, now_iso, MemoryError, Result, Store};
+
+#[derive(Debug, Clone)]
+pub struct ScheduledTaskRunPage {
+    pub runs: Vec<miniq_protocol::ScheduledTaskRun>,
+    pub next_cursor: Option<String>,
+}
 
 impl Store {
     #[allow(clippy::too_many_arguments)]
@@ -33,6 +39,7 @@ impl Store {
             last_run_at: None,
             last_session_id: None,
             created_at: now_iso(),
+            revision: 0,
         };
         conn.execute(
             "INSERT INTO scheduled_tasks
@@ -58,7 +65,8 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, workspace_id, name, prompt, schedule, enabled, next_run_at,
-                    last_run_at, last_session_id, created_at, mode, target_session_id, memory
+                    last_run_at, last_session_id, created_at, mode, target_session_id, memory,
+                    revision
              FROM scheduled_tasks ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map([], row_to_scheduled_task)?;
@@ -69,7 +77,8 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
             "SELECT id, workspace_id, name, prompt, schedule, enabled, next_run_at,
-                    last_run_at, last_session_id, created_at, mode, target_session_id, memory
+                    last_run_at, last_session_id, created_at, mode, target_session_id, memory,
+                    revision
              FROM scheduled_tasks WHERE id = ?1",
             params![id],
             row_to_scheduled_task,
@@ -83,7 +92,8 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, workspace_id, name, prompt, schedule, enabled, next_run_at,
-                    last_run_at, last_session_id, created_at, mode, target_session_id, memory
+                    last_run_at, last_session_id, created_at, mode, target_session_id, memory,
+                    revision
              FROM scheduled_tasks WHERE enabled = 1 AND dispatching = 0 AND next_run_at <= ?1",
         )?;
         let rows = stmt.query_map(params![now], row_to_scheduled_task)?;
@@ -115,6 +125,14 @@ impl Store {
                 "任务已变更、暂停，或目标会话不再可用，请刷新后重试".into(),
             ));
         }
+        let run_id = new_id("schedrun");
+        transaction.execute(
+            "INSERT INTO scheduled_task_runs
+             (id, task_id, session_id, status, started_at, memory_before, task_revision)
+             SELECT ?1, id, ?2, 'running', ?3, memory, revision
+             FROM scheduled_tasks WHERE id = ?4",
+            params![run_id, session_id, now_iso(), id],
+        )?;
         let message = Message {
             id: new_id("msg"),
             session_id: session_id.to_owned(),
@@ -131,6 +149,140 @@ impl Store {
         )?;
         transaction.commit()?;
         Ok(message)
+    }
+
+    pub fn active_scheduled_task_context(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<(String, String, i64)>> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT r.task_id, r.id, r.task_revision
+             FROM scheduled_task_runs r WHERE r.session_id = ?1 AND r.status = 'running'
+             ORDER BY r.started_at DESC LIMIT 1",
+            [session_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    pub fn list_scheduled_task_runs(
+        &self,
+        task_id: &str,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<ScheduledTaskRunPage> {
+        let conn = self.conn.lock().unwrap();
+        let limit = limit.clamp(1, 100) as i64;
+        let mut stmt = conn.prepare(
+            "SELECT id, task_id, session_id, status, reason, started_at, completed_at, memory_before, memory_after, task_revision
+             FROM scheduled_task_runs WHERE task_id=?1 AND (?2 IS NULL OR (started_at, id) < (SELECT started_at, id FROM scheduled_task_runs WHERE id=?2))
+             ORDER BY started_at DESC, id DESC LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(
+            params![task_id, cursor, limit + 1],
+            row_to_scheduled_task_run,
+        )?;
+        let mut runs: Vec<_> = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        let next_cursor = if runs.len() > limit as usize {
+            runs.pop().map(|run| run.id)
+        } else {
+            None
+        };
+        Ok(ScheduledTaskRunPage { runs, next_cursor })
+    }
+
+    /// Record an occurrence that was claimed but could not be dispatched.
+    /// There is no session yet in this case, so the run remains explicitly
+    /// unbound and is visible as a skipped run in task history.
+    pub fn record_scheduled_task_skip(&self, task_id: &str, reason: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let (memory, revision): (String, i64) = conn
+            .query_row(
+                "SELECT memory, revision FROM scheduled_tasks WHERE id = ?1",
+                [task_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?
+            .ok_or_else(|| MemoryError::NotFound(format!("scheduled task {task_id}")))?;
+        let now = now_iso();
+        conn.execute(
+            "INSERT INTO scheduled_task_runs
+             (id, task_id, session_id, status, reason, started_at, completed_at, memory_before, task_revision)
+             VALUES (?1, ?2, NULL, 'skipped', ?3, ?4, ?4, ?5, ?6)",
+            params![new_id("schedrun"), task_id, reason, now, memory, revision],
+        )?;
+        Ok(())
+    }
+
+    pub fn complete_scheduled_task_run(
+        &self,
+        run_id: &str,
+        status: miniq_protocol::ScheduledTaskRunStatus,
+        reason: Option<&str>,
+        memory_after: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let changed = conn.execute(
+            "UPDATE scheduled_task_runs SET status=?2, reason=?3, memory_after=COALESCE(?4,memory_after), completed_at=?5 WHERE id=?1 AND status='running'",
+            params![run_id, status.as_str(), reason, memory_after, now_iso()],
+        )?;
+        if changed == 0 {
+            return Err(MemoryError::NotFound(format!(
+                "scheduled task run {run_id}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Finish the active scheduled run associated with a session. A session
+    /// can only have one active turn, so this is safe to call from turn cleanup.
+    pub fn complete_scheduled_task_run_for_session(
+        &self,
+        session_id: &str,
+        status: miniq_protocol::ScheduledTaskRunStatus,
+        reason: Option<&str>,
+    ) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let changed = conn.execute(
+            "UPDATE scheduled_task_runs
+             SET status = ?2, reason = ?3, completed_at = ?4
+             WHERE id = (
+               SELECT id FROM scheduled_task_runs
+               WHERE session_id = ?1 AND status = 'running'
+               ORDER BY started_at DESC, id DESC LIMIT 1
+             )",
+            params![session_id, status.as_str(), reason, now_iso()],
+        )?;
+        Ok(changed > 0)
+    }
+
+    /// Current-run task memory writeback. The revision check makes a user
+    /// edit win over an in-flight model result.
+    pub fn write_scheduled_task_memory(
+        &self,
+        run_id: &str,
+        task_id: &str,
+        task_revision: i64,
+        memory: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let changed = conn.execute(
+            "UPDATE scheduled_tasks SET memory=?4, revision=revision+1 WHERE id=?2 AND revision=?3
+             AND EXISTS (SELECT 1 FROM scheduled_task_runs WHERE id=?1 AND task_id=?2 AND task_revision=?3 AND status='running')",
+            params![run_id, task_id, task_revision, memory],
+        )?;
+        if changed == 0 {
+            return Err(MemoryError::InvalidData(
+                "任务已被编辑或本次运行已结束，未写入任务记忆".into(),
+            ));
+        }
+        conn.execute(
+            "UPDATE scheduled_task_runs SET memory_after=?2 WHERE id=?1 AND status='running'",
+            params![run_id, memory],
+        )?;
+        Ok(())
     }
 
     /// Enable/disable; enabling recomputes next_run_at (passed by the caller).
@@ -238,7 +390,7 @@ impl Store {
         }
         let changed = conn.execute(
             "UPDATE scheduled_tasks SET workspace_id=?2, name=?3, prompt=?4, schedule=?5, mode=?6,
-             target_session_id=?7, memory=?8, next_run_at=?9 WHERE id=?1 AND dispatching=0",
+             target_session_id=?7, memory=?8, next_run_at=?9, revision=revision+1 WHERE id=?1 AND dispatching=0",
             params![
                 id,
                 workspace_id,

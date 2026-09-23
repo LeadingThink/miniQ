@@ -57,6 +57,32 @@ export interface Session {
   updatedAt: string;
 }
 
+export type SessionGoalStatus = "active" | "completed" | "paused";
+export interface SessionGoal {
+  sessionId: string;
+  goal: string;
+  status: SessionGoalStatus;
+  tokenBudget: number | null;
+  usedTokens: number;
+  usedTimeMs: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ScheduledTaskRunStatus = "running" | "succeeded" | "failed" | "skipped" | "cancelled";
+export interface ScheduledTaskRun {
+  id: string;
+  taskId: string;
+  sessionId: string | null;
+  status: ScheduledTaskRunStatus;
+  reason: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  memoryBefore: string;
+  memoryAfter: string | null;
+  taskRevision: number;
+}
+
 /** A user message queued while the session had an active turn. */
 export interface QueuedMessage {
   id: string;
@@ -280,7 +306,7 @@ export interface HealthStatus {
 
 export type PluginStatus =
   "discovered" | "disabled" | "loading" | "active" | "failed" | "unloading";
-export type PluginRuntime = "wasm" | "node";
+export type PluginRuntime = "wasm" | "node" | "skills";
 export type PluginProcessState =
   "not_applicable" | "stopped" | "starting" | "running" | "failed";
 export interface PluginInfo {
@@ -301,6 +327,8 @@ export interface PluginInfo {
   entry: string;
   engineNode: string | null;
   trustConfirmed: boolean;
+  skills: string[];
+  dependencies: { command: string; available: boolean }[];
 }
 export interface PluginListResult {
   plugins: PluginInfo[];
@@ -382,6 +410,7 @@ export type DaemonEvent = {
       settings: import("./modelSelection").SessionModelSettings;
     }
   | { type: "session_status_changed"; sessionId: string; status: SessionStatus }
+  | { type: "session_goal_changed"; sessionId: string; goal: SessionGoal | null }
   | { type: "turn_progress_changed"; sessionId: string; progress: TurnProgress }
   | { type: "turn_timing_changed"; sessionId: string; messageId: string; timing: TurnTiming }
   | { type: "message_created"; sessionId: string; message: Message }

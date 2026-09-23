@@ -22,6 +22,7 @@ pub(super) fn get(state: &AppState) -> Result<Value, RpcError> {
         "approvalMode": settings.approval_mode,
         "remoteAccess": settings.remote_access,
         "remoteStatus": crate::remote::status(state),
+        "turnEndedCommand": settings.turn_ended_command,
     }))
 }
 
@@ -34,6 +35,8 @@ struct UpdateParams {
     approval_mode: Option<ApprovalMode>,
     #[serde(default)]
     remote_access: Option<RemoteAccessUpdate>,
+    #[serde(default)]
+    turn_ended_command: Option<Option<String>>,
 }
 
 #[derive(Deserialize)]
@@ -103,6 +106,16 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
             device_name: remote.device_name.trim().to_string(),
             device_id,
         };
+    }
+    if let Some(command) = input.turn_ended_command {
+        let command = command.unwrap_or_default();
+        if command.chars().count() > 4000 {
+            return Err(RpcError::new(
+                ErrorCode::InvalidParams,
+                "turnEndedCommand is too long",
+            ));
+        }
+        settings.turn_ended_command = (!command.trim().is_empty()).then_some(command);
     }
 
     state

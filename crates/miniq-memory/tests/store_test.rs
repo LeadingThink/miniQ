@@ -1,5 +1,8 @@
 use miniq_memory::Store;
-use miniq_protocol::{ApprovalStatus, RiskLevel, Role, SessionStatus, ToolCallStatus};
+use miniq_protocol::{
+    ApprovalStatus, RiskLevel, Role, ScheduledTaskMode, ScheduledTaskRunStatus, SessionStatus,
+    ToolCallStatus,
+};
 use serde_json::json;
 
 #[test]
@@ -234,6 +237,27 @@ fn startup_recovery_atomically_terminates_process_owned_state() {
         .unwrap();
     let active = store.create_session(&ws.id, "active").unwrap();
     let idle = store.create_session(&ws.id, "idle").unwrap();
+    let task = store
+        .create_scheduled_task(
+            &ws.id,
+            "scheduled",
+            "run",
+            &json!({"kind":"interval","seconds":3600}),
+            "2099-01-01T00:00:00Z",
+            ScheduledTaskMode::NewSession,
+            None,
+            "",
+        )
+        .unwrap();
+    assert!(store.claim_scheduled_task(&task.id, None).unwrap());
+    store
+        .start_scheduled_task_run(&task.id, &idle.id, "run", "2099-01-01T01:00:00Z")
+        .unwrap();
+    // Simulate a process that died after persisting the run but before the
+    // session status was observed by startup recovery.
+    store
+        .update_session_status(&idle.id, SessionStatus::Idle)
+        .unwrap();
     store
         .update_session_status(&active.id, SessionStatus::WaitingApproval)
         .unwrap();
@@ -274,6 +298,16 @@ fn startup_recovery_atomically_terminates_process_owned_state() {
     assert!(store
         .resolve_approval(&approval.id, ApprovalStatus::Approved)
         .is_err());
+    let runs = store
+        .list_scheduled_task_runs(&task.id, None, 20)
+        .unwrap()
+        .runs;
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].status, ScheduledTaskRunStatus::Failed);
+    assert!(runs[0]
+        .reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("daemon restarted")));
 
     assert_eq!(
         store.recover_interrupted_work().unwrap(),

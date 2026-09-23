@@ -83,6 +83,7 @@ function setup(mode: "local" | "remote" = "local") {
     queue: [],
     streamingText: "",
     turnProgress: null,
+    goal: null,
     reset: vi.fn(),
     load: vi.fn(),
     prepend: vi.fn(),

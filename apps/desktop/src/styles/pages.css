@@ -328,10 +328,112 @@
   border-top: 1px solid var(--border);
 }
 
+/* Session goal is intentionally compact: it stays visible above the timeline
+   without competing with the execution summary. Keep long goals readable and
+   preserve usable controls on narrow remote/mobile layouts. */
+.session-goal-card {
+  display: flex;
+  width: min(100%, 780px);
+  margin: 0 auto 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg) 88%, var(--bg-subtle));
+  color: var(--text-mid);
+}
+
+.session-goal-card form {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, 180px) minmax(100px, 130px) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.session-goal-card input {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.session-goal-card select {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.session-goal-content {
+  display: grid;
+  width: 100%;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.session-goal-content:hover {
+  background: var(--bg-hover);
+  opacity: 1;
+}
+
+.session-goal-label {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.session-goal-content > span:nth-child(2) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.session-goal-usage {
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.session-goal-add {
+  width: 100%;
+  text-align: left;
+}
+
 @media (max-width: 720px) {
   .plugin-page-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .session-goal-card form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .session-goal-card form input:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .session-goal-content {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .session-goal-usage {
+    grid-column: 2;
   }
 }
 

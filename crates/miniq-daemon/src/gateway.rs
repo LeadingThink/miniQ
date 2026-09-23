@@ -22,6 +22,7 @@ mod session;
 mod session_approval;
 mod session_attention;
 mod session_diff;
+mod session_goal;
 mod session_history;
 mod session_model;
 mod session_queue;
@@ -94,9 +95,13 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "schedule.toggle" => schedule::toggle(state, req.params),
         "schedule.delete" => schedule::delete(state, req.params),
         "schedule.runNow" => schedule::run_now(state, req.params),
+        "schedule.runs" => schedule::runs(state, req.params),
         "session.create" => session::create(state, req.params).await,
+        "session.fork" => session::fork(state, req.params),
         "session.list" => session::list(state, req.params),
         "session.open" => session::open(state, req.params),
+        "session.goal.get" => session_goal::get(state, req.params),
+        "session.goal.update" => session_goal::update(state, req.params),
         "session.history" => session_history::page(state, req.params),
         "session.modelCalls" => session_history::model_calls(state, req.params),
         "session.approval.get" => session_approval::get(state, req.params),
@@ -158,6 +163,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "skill.read" => skill::read(state, req.params),
         "skill.setEnabled" => skill::set_enabled(state, req.params),
         "skill.delete" => skill::delete(state, req.params),
+        "skill.import" => skill::import(state, req.params),
         "skill.distill" => skill::distill(state, req.params).await,
         "skill.refine" => skill::refine(state, req.params).await,
         "skill.save" => skill::save(state, req.params),

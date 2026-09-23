@@ -17,6 +17,7 @@ pub enum PluginStatus {
 pub enum PluginRuntime {
     Wasm,
     Node,
+    Skills,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -49,6 +50,15 @@ pub struct PluginInfo {
     pub entry: String,
     pub engine_node: Option<String>,
     pub trust_confirmed: bool,
+    pub skills: Vec<String>,
+    pub dependencies: Vec<PluginDependencyStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginDependencyStatus {
+    pub command: String,
+    pub available: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -67,6 +77,8 @@ pub struct PluginIdParams {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginInstallParams {
     pub path: String,
+    #[serde(default)]
+    pub update: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

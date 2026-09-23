@@ -1,4 +1,4 @@
-import { Check, LoaderCircle, Pencil, RefreshCw, X } from "lucide-react";
+import { Check, GitBranch, LoaderCircle, Pencil, RefreshCw, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import type { AnchoredTurnTiming, Message, MessageAttachment, PlanTask, Question, TurnProgress } from "../types";
 import type { PendingApproval } from "../App";
@@ -79,6 +79,7 @@ export function TimelineEntries(props: {
   onOpenFile: TimelineProps["onOpenFile"];
   onOpenUrl: TimelineProps["onOpenUrl"];
   onRewrite: TimelineProps["onRewrite"];
+  onFork?: TimelineProps["onFork"];
   workspacePath?: string | null;
   workspacePaths?: readonly string[];
 }) {
@@ -86,6 +87,7 @@ export function TimelineEntries(props: {
   const voiceCapabilities = useVoiceCapabilities(props.client);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
   const turnEnds = useMemo(() => props.expandGroups ? new Map() : timelineTurnEnds(props.items, props.latestTurnTiming),
     [props.items, props.latestTurnTiming, props.expandGroups]);
 
@@ -290,6 +292,21 @@ export function TimelineEntries(props: {
                 >
                   <RefreshCw size={15} />
                 </button>
+                {props.onFork && (
+                  <button
+                    type="button"
+                    className="msg-action"
+                    title="分支到新聊天"
+                    aria-label="分支到新聊天"
+                    disabled={props.busy || forkingMessageId !== null}
+                    onClick={() => {
+                      setForkingMessageId(item.message.id);
+                      void props.onFork!(item.message.id).finally(() => setForkingMessageId(null));
+                    }}
+                  >
+                    {forkingMessageId === item.message.id ? <LoaderCircle className="spin" size={15} /> : <GitBranch size={15} />}
+                  </button>
+                )}
               </div>
             </div>
           )

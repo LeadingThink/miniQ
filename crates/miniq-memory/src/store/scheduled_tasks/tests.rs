@@ -161,6 +161,30 @@ fn run_record_and_message_are_atomic_and_prevent_overlapping_runs() {
 }
 
 #[test]
+fn skipped_occurrences_keep_reason_without_creating_a_session() {
+    let store = Store::open_in_memory().unwrap();
+    let workspace = store
+        .create_workspace("/scheduler-skip", "schedule")
+        .unwrap();
+    let task = task(&store, &workspace.id);
+    store
+        .record_scheduled_task_skip(&task.id, "target is still running")
+        .unwrap();
+    let runs = store
+        .list_scheduled_task_runs(&task.id, None, 20)
+        .unwrap()
+        .runs;
+    assert_eq!(runs.len(), 1);
+    assert_eq!(
+        runs[0].status,
+        miniq_protocol::ScheduledTaskRunStatus::Skipped
+    );
+    assert_eq!(runs[0].session_id, None);
+    assert_eq!(runs[0].reason.as_deref(), Some("target is still running"));
+    assert!(runs[0].completed_at.is_some());
+}
+
+#[test]
 fn deferral_never_reenables_or_overwrites_another_run() {
     let store = Store::open_in_memory().unwrap();
     let workspace = store.create_workspace("/scheduler", "schedule").unwrap();

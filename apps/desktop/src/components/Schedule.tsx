@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
 import { localDateTime, relativeAge } from "../time";
-import type { ScheduledTask, ScheduleSpec, Workspace } from "../types";
+import type { ScheduledTask, ScheduledTaskRun, ScheduleSpec, Workspace } from "../types";
 import { ScheduleForm, type ScheduleTemplate } from "./ScheduleForm";
 
 const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -38,6 +38,7 @@ interface SchedulePanelProps {
 
 function useScheduledTasks(client: RpcClient) {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  const [latestRuns, setLatestRuns] = useState<Record<string, ScheduledTaskRun | undefined>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -50,6 +51,13 @@ function useScheduledTasks(client: RpcClient) {
       const result = await client.call<{ tasks: ScheduledTask[] }>("schedule.list");
       if (request !== epoch.current) return;
       setTasks(result.tasks);
+      const runEntries = await Promise.all(result.tasks.map(async (task) => {
+        try {
+          const page = await client.call<{ runs: ScheduledTaskRun[] }>("schedule.runs", { taskId: task.id, limit: 1 });
+          return [task.id, page.runs[0]] as const;
+        } catch { return [task.id, undefined] as const; }
+      }));
+      if (request === epoch.current) setLatestRuns(Object.fromEntries(runEntries));
       setError(null);
     } catch (cause) {
       if (request === epoch.current) setError(errorMessage(cause));
@@ -72,7 +80,7 @@ function useScheduledTasks(client: RpcClient) {
     catch (cause) { setError(errorMessage(cause)); }
     finally { actionLock.current = false; setPending(null); }
   };
-  return { tasks, loading, error, pending, refresh, act };
+  return { tasks, latestRuns, loading, error, pending, refresh, act };
 }
 
 function TemplateButtons({ empty, onCreate }: { empty: boolean; onCreate: (template?: ScheduleTemplate) => void }) {
@@ -91,6 +99,7 @@ function TemplateButtons({ empty, onCreate }: { empty: boolean; onCreate: (templ
 
 function ScheduledTaskList(props: {
   tasks: ScheduledTask[]; workspaces: Workspace[]; pending: boolean;
+  latestRuns: Record<string, ScheduledTaskRun | undefined>;
   onOpenResult: (sessionId: string) => void;
   onRunNow: (task: ScheduledTask) => void; onToggle: (task: ScheduledTask) => void;
   onRemove: (task: ScheduledTask) => void; onEdit: (task: ScheduledTask) => void;
@@ -99,7 +108,7 @@ function ScheduledTaskList(props: {
     <div className="skill-row-main">
       <span className="tool-name">{task.name}</span>
       <span className={`badge ${task.enabled ? "succeeded" : ""}`}>{task.enabled ? describeSchedule(task.schedule) : "已暂停"} · {task.mode === "heartbeat" ? "续接会话" : "新会话"}</span>
-      <div className="sub">{props.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? "已删除的项目"}{task.enabled && ` · 下次 ${localDateTime(task.nextRunAt)}`}{task.lastRunAt && ` · 上次运行 ${relativeAge(task.lastRunAt)}前`}</div>
+      <div className="sub">{props.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? "已删除的项目"}{task.enabled && ` · 下次 ${localDateTime(task.nextRunAt)}`}{task.lastRunAt && ` · 上次运行 ${relativeAge(task.lastRunAt)}前`}{props.latestRuns[task.id] && ` · ${runStatusLabel(props.latestRuns[task.id]!.status)}`}</div>
     </div>
     {task.lastSessionId && <button type="button" className="ghost" onClick={() => props.onOpenResult(task.lastSessionId!)}>查看结果</button>}
     <button type="button" className="ghost" disabled={props.pending} onClick={() => props.onRunNow(task)}>立即运行</button>
@@ -107,6 +116,10 @@ function ScheduledTaskList(props: {
     <button type="button" className="ghost" disabled={props.pending} onClick={() => props.onToggle(task)}>{task.enabled ? "暂停" : "启用"}</button>
     <button type="button" className="ghost danger" disabled={props.pending} onClick={() => props.onRemove(task)}>删除</button>
   </div>)}</div>;
+}
+
+function runStatusLabel(status: ScheduledTaskRun["status"]): string {
+  return { running: "执行中", succeeded: "已成功", failed: "失败", skipped: "已跳过", cancelled: "已取消" }[status];
 }
 
 export function SchedulePanel(props: SchedulePanelProps) {
@@ -136,7 +149,7 @@ export function SchedulePanel(props: SchedulePanelProps) {
     <div className="page-header"><div className="page-title">已安排</div><div className="page-sub">定时生成新结果，或持续跟进同一会话。任务记忆会在每次运行时提供给 agent。</div></div>
     {tasks.loading && <div role="status">正在读取定时任务</div>}
     {tasks.error && <div className="settings-status" role="alert">{tasks.error}<button type="button" className="ghost" disabled={tasks.loading} onClick={() => void tasks.refresh()}>重新加载</button></div>}
-    <ScheduledTaskList tasks={tasks.tasks} workspaces={props.workspaces} pending={saving || tasks.pending !== null}
+    <ScheduledTaskList tasks={tasks.tasks} latestRuns={tasks.latestRuns} workspaces={props.workspaces} pending={saving || tasks.pending !== null}
       onOpenResult={openResult} onRunNow={(task) => void runNow(task)} onToggle={(task) => void toggle(task)} onRemove={remove} onEdit={(task) => openEditor(task)} />
     {!editor && !tasks.loading && <TemplateButtons empty={tasks.tasks.length === 0} onCreate={(template) => openEditor(undefined, template)} />}
     {editor && <ScheduleForm key={editor.revision} client={props.client} workspaces={props.workspaces}

@@ -99,6 +99,54 @@ pub struct Session {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionGoalStatus {
+    Active,
+    Completed,
+    Paused,
+}
+
+impl Default for SessionGoalStatus {
+    fn default() -> Self {
+        Self::Active
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionGoal {
+    pub session_id: String,
+    pub goal: String,
+    pub status: SessionGoalStatus,
+    pub token_budget: Option<u64>,
+    pub used_tokens: u64,
+    pub used_time_ms: u64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionGoalUpdate {
+    pub session_id: String,
+    pub goal: String,
+    #[serde(default)]
+    pub status: SessionGoalStatus,
+    pub token_budget: Option<u64>,
+}
+
+/// Create a new conversation from a durable assistant reply. The fork keeps
+/// the source session untouched and copies only history up to the anchor.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionForkParams {
+    pub session_id: String,
+    pub anchor_message_id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
 /// A user message sent while the session had an active turn. Drained in
 /// order when the turn ends, or steered to the front to interrupt.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -111,6 +159,43 @@ pub struct QueuedMessage {
     pub attachments: Vec<MessageAttachment>,
     pub position: i64,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ScheduledTaskRunStatus {
+    Running,
+    Succeeded,
+    Failed,
+    Skipped,
+    Cancelled,
+}
+
+impl ScheduledTaskRunStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduledTaskRun {
+    pub id: String,
+    pub task_id: String,
+    pub session_id: Option<String>,
+    pub status: ScheduledTaskRunStatus,
+    pub reason: Option<String>,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+    pub memory_before: String,
+    pub memory_after: Option<String>,
+    pub task_revision: i64,
 }
 
 /// A local file explicitly attached to a user message. Image MIME types are
@@ -170,6 +255,8 @@ pub struct ScheduledTask {
     pub last_run_at: Option<String>,
     pub last_session_id: Option<String>,
     pub created_at: String,
+    #[serde(default)]
+    pub revision: i64,
 }
 
 /// Message author role.

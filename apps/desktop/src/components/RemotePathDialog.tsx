@@ -5,7 +5,7 @@ import "./RemotePathDialog.css";
 
 export function RemotePathDialog(props: {
   host: string;
-  purpose: "project" | "attachment" | "plugin";
+  purpose: "project" | "attachment" | "plugin" | "skill";
   onSubmit: (path: string) => Promise<void>;
   onClose: () => void;
 }) {
@@ -24,7 +24,9 @@ export function RemotePathDialog(props: {
       ? "打开远程项目"
       : props.purpose === "plugin"
         ? "安装远程插件"
-        : "附加远程文件";
+        : props.purpose === "skill"
+          ? "导入远程技能包"
+          : "附加远程文件";
   return (
     <dialog
       ref={ref}
@@ -77,6 +79,9 @@ export function RemotePathDialog(props: {
         </label>
         {props.purpose === "attachment" && (
           <p>填写已在这台远程电脑上的文件路径。此入口不会上传手机或当前设备的文件。</p>
+        )}
+        {props.purpose === "skill" && (
+          <p>填写远程电脑上包含 SKILL.md 的技能包目录。此入口不会上传当前设备的文件。</p>
         )}
         {error && <p role="alert">{error}</p>}
         <footer>

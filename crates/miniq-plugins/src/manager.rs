@@ -19,6 +19,7 @@ const TRUST_STORE_FILE: &str = ".trusted-node.json";
 const NODE_HOST_DIRECTORY: &str = ".miniq-node-plugin-host-v1";
 static TRUST_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 static INSTALL_TEMP_ID: AtomicU64 = AtomicU64::new(0);
+static BACKUP_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Default, Deserialize, Serialize)]
 struct TrustStore(BTreeMap<String, String>);
@@ -77,7 +78,20 @@ impl PluginRecord {
                     .engine
                     .as_ref()
                     .map(|engine| engine.node.to_string()),
-                trust_confirmed: manifest.runtime == PluginRuntime::Wasm,
+                trust_confirmed: manifest.runtime != PluginRuntime::Node,
+                skills: manifest
+                    .skills
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect(),
+                dependencies: manifest
+                    .requires
+                    .iter()
+                    .map(|command| miniq_protocol::PluginDependencyStatus {
+                        command: command.clone(),
+                        available: command_available(command),
+                    })
+                    .collect(),
             },
             manifest_path,
             handles: Arc::new(std::sync::Mutex::new(Vec::new())),
@@ -106,6 +120,8 @@ impl PluginRecord {
                 entry: String::new(),
                 engine_node: None,
                 trust_confirmed: false,
+                skills: Vec::new(),
+                dependencies: Vec::new(),
             },
             manifest_path,
             handles: Arc::new(std::sync::Mutex::new(Vec::new())),
@@ -150,6 +166,21 @@ impl PluginManager {
     }
 
     pub async fn install_from_directory(&self, source: &Path) -> Result<PluginInfo, PluginError> {
+        self.install_from_directory_inner(source, false).await
+    }
+
+    /// Replace an installed package with a newer local copy. Validation and
+    /// copying happen before the existing package is unloaded, and the
+    /// destination is swapped in one rename so a partial copy is never used.
+    pub async fn update_from_directory(&self, source: &Path) -> Result<PluginInfo, PluginError> {
+        self.install_from_directory_inner(source, true).await
+    }
+
+    async fn install_from_directory_inner(
+        &self,
+        source: &Path,
+        replace_existing: bool,
+    ) -> Result<PluginInfo, PluginError> {
         let manifest_path = source.join("manifest.toml");
         let raw = std::fs::read_to_string(&manifest_path).map_err(|error| {
             PluginError::new(PluginFailureKind::InvalidManifest, error.to_string())
@@ -160,13 +191,26 @@ impl PluginManager {
         manifest.validate().map_err(|error| {
             PluginError::new(PluginFailureKind::InvalidManifest, error.to_string())
         })?;
-        secure_entry(source, &manifest.entry)?;
+        if manifest.runtime != PluginRuntime::Skills {
+            secure_entry(source, &manifest.entry)?;
+        }
+        for skill in &manifest.skills {
+            let directory = secure_directory(source, skill)?;
+            if !directory.join("SKILL.md").is_file() {
+                return Err(PluginError::new(
+                    PluginFailureKind::InvalidMetadata,
+                    format!("skill directory has no SKILL.md: {}", skill.display()),
+                ));
+            }
+        }
 
         std::fs::create_dir_all(&self.root).map_err(|error| {
             PluginError::new(PluginFailureKind::InvalidEntry, error.to_string())
         })?;
         let destination = self.root.join(&manifest.id);
-        if destination.exists() || self.records.read().unwrap().contains_key(&manifest.id) {
+        if !replace_existing
+            && (destination.exists() || self.records.read().unwrap().contains_key(&manifest.id))
+        {
             return Err(PluginError::new(
                 PluginFailureKind::InvalidManifest,
                 "plugin is already installed",
@@ -181,12 +225,40 @@ impl PluginManager {
             let _ = std::fs::remove_dir_all(&temp);
             return Err(error);
         }
+        let backup = self.root.join(format!(
+            ".backup-{}-{}",
+            manifest.id,
+            BACKUP_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        let mut backed_up = false;
+        if replace_existing {
+            if self.records.read().unwrap().contains_key(&manifest.id) {
+                self.unload(&manifest.id).await;
+            }
+            if destination.exists() {
+                if let Err(error) = std::fs::rename(&destination, &backup) {
+                    let _ = std::fs::remove_dir_all(&temp);
+                    return Err(PluginError::new(
+                        PluginFailureKind::InvalidEntry,
+                        error.to_string(),
+                    ));
+                }
+                backed_up = true;
+            }
+        }
         if let Err(error) = std::fs::rename(&temp, &destination) {
             let _ = std::fs::remove_dir_all(&temp);
-            return Err(PluginError::new(
-                PluginFailureKind::InvalidEntry,
-                error.to_string(),
-            ));
+            let restore_error = backed_up
+                .then(|| std::fs::rename(&backup, &destination).err())
+                .flatten();
+            let message = restore_error.map_or_else(
+                || error.to_string(),
+                |restore| format!("{error}; failed to restore previous plugin: {restore}"),
+            );
+            return Err(PluginError::new(PluginFailureKind::InvalidEntry, message));
+        }
+        if backed_up {
+            let _ = std::fs::remove_dir_all(&backup);
         }
 
         self.load_directory(&destination).await;
@@ -227,7 +299,12 @@ impl PluginManager {
             .map_err(|error| PluginError::new(PluginFailureKind::InvalidEntry, error.to_string()))?
             .filter_map(Result::ok)
             .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-            .filter(|entry| entry.file_name() != NODE_HOST_DIRECTORY)
+            .filter(|entry| {
+                let name = entry.file_name();
+                name != NODE_HOST_DIRECTORY
+                    && !name.to_string_lossy().starts_with(".install-")
+                    && !name.to_string_lossy().starts_with(".backup-")
+            })
             .map(|entry| entry.path())
             .collect::<Vec<_>>();
         directories.sort();
@@ -447,8 +524,6 @@ impl PluginManager {
         _manifest_path: PathBuf,
     ) -> Result<(), (String, PluginError)> {
         let id = manifest.id.clone();
-        let entry =
-            secure_entry(directory, &manifest.entry).map_err(|error| (id.clone(), error))?;
         let cancellation = CancellationToken::new();
         let handles = self
             .records
@@ -467,6 +542,8 @@ impl PluginManager {
             Option<Arc<NodePluginProcess>>,
         ) = match manifest.runtime {
             PluginRuntime::Wasm => {
+                let entry = secure_entry(directory, &manifest.entry)
+                    .map_err(|error| (id.clone(), error))?;
                 let wasm = std::fs::read(&entry).map_err(|error| {
                     (
                         id.clone(),
@@ -489,6 +566,8 @@ impl PluginManager {
                 )
             }
             PluginRuntime::Node => {
+                let entry = secure_entry(directory, &manifest.entry)
+                    .map_err(|error| (id.clone(), error))?;
                 let (plugin, metadata) = NodePluginProcess::start(
                     manifest.clone(),
                     directory,
@@ -507,6 +586,26 @@ impl PluginManager {
                     .collect();
                 (tools, Some(plugin))
             }
+            PluginRuntime::Skills => {
+                for skill in &manifest.skills {
+                    let dir =
+                        secure_directory(directory, skill).map_err(|error| (id.clone(), error))?;
+                    let md = dir.join("SKILL.md");
+                    let raw = std::fs::read_to_string(&md).map_err(|error| {
+                        (
+                            id.clone(),
+                            PluginError::new(PluginFailureKind::InvalidMetadata, error.to_string()),
+                        )
+                    })?;
+                    miniq_skills::parse_skill_md(&raw).map_err(|error| {
+                        (
+                            id.clone(),
+                            PluginError::new(PluginFailureKind::InvalidMetadata, error.to_string()),
+                        )
+                    })?;
+                }
+                (Vec::new(), None)
+            }
         };
         let mut tool_names = Vec::with_capacity(tools.len());
         for tool in tools {
@@ -522,6 +621,7 @@ impl PluginManager {
                 match manifest.runtime {
                     PluginRuntime::Wasm => "wasm",
                     PluginRuntime::Node => "node",
+                    PluginRuntime::Skills => "skills",
                 }
                 .to_string(),
                 manifest.version.to_string(),
@@ -632,6 +732,25 @@ fn copy_directory(source: &Path, destination: &Path) -> Result<(), PluginError> 
     Ok(())
 }
 
+fn command_available(command: &str) -> bool {
+    let mut candidates = std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
+        .flat_map(|path| {
+            let base = path.join(command);
+            #[cfg(windows)]
+            let candidates = [
+                base.clone(),
+                path.join(format!("{command}.exe")),
+                path.join(format!("{command}.cmd")),
+            ];
+            #[cfg(not(windows))]
+            let candidates = [base];
+            candidates.into_iter()
+        });
+    candidates.any(|candidate| candidate.is_file())
+}
+
 fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let temp_id = TRUST_TEMP_ID.fetch_add(1, Ordering::Relaxed);
     let temp = path.with_extension(format!("tmp-{}-{temp_id}", std::process::id()));
@@ -722,6 +841,23 @@ fn secure_entry(directory: &Path, entry: &Path) -> Result<PathBuf, PluginError> 
     Ok(candidate)
 }
 
+fn secure_directory(directory: &Path, relative: &Path) -> Result<PathBuf, PluginError> {
+    let root = directory
+        .canonicalize()
+        .map_err(|error| PluginError::new(PluginFailureKind::InvalidEntry, error.to_string()))?;
+    let candidate = directory
+        .join(relative)
+        .canonicalize()
+        .map_err(|error| PluginError::new(PluginFailureKind::InvalidEntry, error.to_string()))?;
+    if !candidate.starts_with(&root) || !candidate.is_dir() {
+        return Err(PluginError::new(
+            PluginFailureKind::InvalidEntry,
+            "skill directory escapes its plugin directory",
+        ));
+    }
+    Ok(candidate)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -784,6 +920,8 @@ node = ">=22"
     async fn ignores_internal_node_host_directory() {
         let temp = tempfile::tempdir().unwrap();
         std::fs::create_dir(temp.path().join(NODE_HOST_DIRECTORY)).unwrap();
+        std::fs::create_dir(temp.path().join(".install-stale")).unwrap();
+        std::fs::create_dir(temp.path().join(".backup-stale")).unwrap();
         let manager = PluginManager::new(
             temp.path().to_path_buf(),
             Arc::new(ToolRouter::new()),
@@ -871,6 +1009,56 @@ node = ">=22"
         manager.uninstall("dev.miniq.test").await.unwrap();
         assert!(manager.list().is_empty());
         assert!(!installed.path().join("dev.miniq.test").exists());
+    }
+
+    #[tokio::test]
+    async fn installs_and_updates_a_skill_package() {
+        let installed = tempfile::tempdir().unwrap();
+        let source_root = tempfile::tempdir().unwrap();
+        let source = source_root.path().join("source");
+        let skill = source.join("document-workflow");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(
+            source.join("manifest.toml"),
+            r#"id = "dev.miniq.docs"
+name = "Docs"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["document-workflow"]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            skill.join("SKILL.md"),
+            "---\nname: document-workflow\ndescription: docs\n---\n\nDo it.\n",
+        )
+        .unwrap();
+        let manager = PluginManager::new(
+            installed.path().to_path_buf(),
+            Arc::new(ToolRouter::new()),
+            PluginLimits::default(),
+        );
+        let plugin = manager.install_from_directory(&source).await.unwrap();
+        assert_eq!(plugin.status, PluginStatus::Active);
+        assert_eq!(plugin.runtime, PluginRuntime::Skills);
+        assert_eq!(plugin.skills, vec!["document-workflow"]);
+
+        std::fs::write(
+            source.join("manifest.toml"),
+            r#"id = "dev.miniq.docs"
+name = "Docs"
+version = "2.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["document-workflow"]
+"#,
+        )
+        .unwrap();
+        let updated = manager.update_from_directory(&source).await.unwrap();
+        assert_eq!(updated.version, "2.0.0");
     }
 
     #[tokio::test]

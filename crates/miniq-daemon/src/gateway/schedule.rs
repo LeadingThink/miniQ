@@ -242,3 +242,42 @@ pub(super) fn run_now(state: &AppState, raw: Option<Value>) -> Result<Value, Rpc
         .map_err(|error| RpcError::new(ErrorCode::SessionBusy, error))?;
     to_value(json!({ "sessionId": session_id }))
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunsParams {
+    task_id: String,
+    #[serde(default)]
+    cursor: Option<String>,
+    #[serde(default = "default_run_limit", deserialize_with = "run_limit")]
+    limit: usize,
+}
+
+fn default_run_limit() -> usize {
+    20
+}
+
+fn run_limit<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let limit = usize::deserialize(deserializer)?;
+    if (1..=100).contains(&limit) {
+        Ok(limit)
+    } else {
+        Err(serde::de::Error::custom("limit must be between 1 and 100"))
+    }
+}
+
+pub(super) fn runs(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: RunsParams = params(raw)?;
+    state
+        .store
+        .get_scheduled_task(&input.task_id)
+        .map_err(store_err)?;
+    let page = state
+        .store
+        .list_scheduled_task_runs(&input.task_id, input.cursor.as_deref(), input.limit)
+        .map_err(store_err)?;
+    to_value(json!({ "runs": page.runs, "nextCursor": page.next_cursor }))
+}

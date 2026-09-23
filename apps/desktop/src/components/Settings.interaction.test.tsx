@@ -106,6 +106,23 @@ describe("appearance settings integration", () => {
     })));
   });
 
+  it("persists the optional turn-ended command without exposing it by default", async () => {
+    call.mockImplementation((method: string) => Promise.resolve(
+      method === "model.list" ? { models: ["test"] } : { ...settings, turnEndedCommand: "say old" },
+    ));
+    render(<Fixture />);
+    await screen.findByText("回合结束命令（可选）");
+    const details = document.querySelector("details.turn-ended-hook") as HTMLDetailsElement;
+    details.open = true;
+    const hook = details.querySelector<HTMLInputElement>("#turn-ended-command")!;
+    expect(hook.value).toBe("say old");
+    fireEvent.change(hook, { target: { value: "say finished" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存并开始使用" }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("settings.update", expect.objectContaining({
+      turnEndedCommand: "say finished",
+    })));
+  });
+
   it("keeps settings open when saving fails", async () => {
     const onClose = vi.fn();
     call.mockImplementation((method: string) => {

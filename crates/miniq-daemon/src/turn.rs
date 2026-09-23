@@ -213,6 +213,23 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
         if let Err(error) = state.store.record_turn_outcome(&session_id, outcome) {
             tracing::error!(%error, %session_id, "failed to persist turn outcome");
         }
+        let scheduled_status = match outcome {
+            "completed" => miniq_protocol::ScheduledTaskRunStatus::Succeeded,
+            "cancelled" => miniq_protocol::ScheduledTaskRunStatus::Cancelled,
+            _ => miniq_protocol::ScheduledTaskRunStatus::Failed,
+        };
+        let scheduled_reason = match &result {
+            Err(TurnError::Cancelled) => Some("cancelled"),
+            Err(TurnError::Fatal(error)) => Some(error.as_str()),
+            Ok(()) => None,
+        };
+        if let Err(error) = state.store.complete_scheduled_task_run_for_session(
+            &session_id,
+            scheduled_status,
+            scheduled_reason,
+        ) {
+            tracing::warn!(%error, %session_id, "failed to persist scheduled task outcome");
+        }
         state.clear_streaming_text(&session_id);
         state.clear_turn_progress(&session_id);
         match result {
@@ -257,6 +274,7 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
             }
         }
         state.end_turn(&session_id);
+        state.run_turn_ended_hook(&session_id, outcome);
         // Queued follow-ups (sent while this turn ran, or steered to the
         // front to interrupt it) start automatically once the session rests.
         start_next_queued(&state, &session_id);
@@ -350,6 +368,18 @@ async fn execute_turn(
         .as_ref()
         .and_then(|snapshot| snapshot.model_identity.clone());
     let mut history = history_for_turn(&messages, snapshot, &skills_block, &workspace_path);
+    if let Some(goal) = state
+        .store
+        .session_goal(session_id)
+        .map_err(|error| TurnError::Fatal(error.to_string()))?
+    {
+        history[0].content.push_str(&format!(
+            "\n\nCurrent session goal (user-owned context): {}. Status: {:?}. Token budget: {}. Track progress against this goal and report when it is complete.",
+            goal.goal,
+            goal.status,
+            goal.token_budget.map_or_else(|| "unlimited".to_string(), |budget| budget.to_string())
+        ));
+    }
     let plan = state
         .store
         .session_plan(session_id)
@@ -448,6 +478,18 @@ async fn execute_turn(
         }
     });
 
+    let scheduled_task = state
+        .store
+        .active_scheduled_task_context(session_id)
+        .map_err(|error| TurnError::Fatal(error.to_string()))?
+        .map(
+            |(task_id, run_id, task_revision)| miniq_tools::ScheduledTaskMemoryContext {
+                store: state.store.clone(),
+                task_id,
+                run_id,
+                task_revision,
+            },
+        );
     let executor = crate::executor::SessionToolExecutor {
         state: state.clone(),
         session_id: session_id.to_string(),
@@ -473,6 +515,7 @@ async fn execute_turn(
             )
             .with_observations(state.observations_dir.clone())
             .with_skills(Some(state.skills.clone()))
+            .with_scheduled_task(scheduled_task)
             .with_memory(
                 Some(state.store.clone()),
                 Some(session.workspace_id.clone()),

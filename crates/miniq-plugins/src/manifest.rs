@@ -11,6 +11,7 @@ pub const API_VERSION: &str = "1.0.0";
 #[serde(rename_all = "snake_case")]
 pub enum PluginCapability {
     Tool,
+    Skills,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -38,14 +39,22 @@ pub struct PluginManifest {
     pub version: Version,
     pub api_version: Version,
     pub runtime: PluginRuntime,
+    #[serde(default)]
     pub entry: PathBuf,
     pub capabilities: Vec<PluginCapability>,
+    #[serde(default)]
+    pub skills: Vec<PathBuf>,
+    #[serde(default)]
+    pub requires: Vec<String>,
     #[serde(default)]
     pub permissions: Vec<PluginPermission>,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+    #[serde(default)]
     pub description: Option<String>,
+    #[serde(default)]
     pub author: Option<String>,
+    #[serde(default)]
     pub engine: Option<PluginEngine>,
 }
 
@@ -63,7 +72,7 @@ pub enum ManifestError {
     EmptyName,
     #[error("unsupported API version: {0}")]
     UnsupportedApiVersion(Version),
-    #[error("plugin must declare exactly the tool capability")]
+    #[error("plugin capabilities do not match its runtime or skill directories")]
     UnsupportedCapability,
     #[error("permission is not implemented for this runtime in API v1: {0:?}")]
     UnsupportedPermission(PluginPermission),
@@ -102,7 +111,20 @@ impl PluginManifest {
                 self.api_version.clone(),
             ));
         }
-        if self.capabilities != [PluginCapability::Tool] {
+        let has_tools = self.capabilities.contains(&PluginCapability::Tool);
+        let has_skills = self.capabilities.contains(&PluginCapability::Skills);
+        if self.capabilities.is_empty()
+            || if self.runtime == PluginRuntime::Skills {
+                self.capabilities != [PluginCapability::Skills] || self.skills.is_empty()
+            } else {
+                !has_tools || has_skills != !self.skills.is_empty()
+            }
+            || self.skills.iter().any(|path| !valid_relative(path))
+            || self
+                .requires
+                .iter()
+                .any(|name| name.is_empty() || name.contains(['/', '\\']))
+        {
             return Err(ManifestError::UnsupportedCapability);
         }
         match self.runtime {
@@ -122,8 +144,16 @@ impl PluginManifest {
                 return Err(ManifestError::MissingNodeEngine);
             }
             PluginRuntime::Node => {}
+            PluginRuntime::Skills => {
+                if self.engine.is_some()
+                    || !self.entry.as_os_str().is_empty()
+                    || !self.permissions.is_empty()
+                {
+                    return Err(ManifestError::InvalidEntry);
+                }
+            }
         }
-        if !valid_entry(&self.entry, self.runtime) {
+        if self.runtime != PluginRuntime::Skills && !valid_entry(&self.entry, self.runtime) {
             return Err(ManifestError::InvalidEntry);
         }
         Ok(())
@@ -154,10 +184,14 @@ fn valid_entry(entry: &Path, runtime: PluginRuntime) -> bool {
         PluginRuntime::Node => entry
             .extension()
             .is_some_and(|extension| extension == "js" || extension == "mjs"),
+        PluginRuntime::Skills => false,
     };
+    extension_matches && valid_relative(entry)
+}
+
+pub(crate) fn valid_relative(entry: &Path) -> bool {
     !entry.as_os_str().is_empty()
         && !entry.is_absolute()
-        && extension_matches
         && entry
             .components()
             .all(|component| matches!(component, Component::Normal(_)))
@@ -176,6 +210,8 @@ mod tests {
             runtime: PluginRuntime::Wasm,
             entry: "plugin.wasm".into(),
             capabilities: vec![PluginCapability::Tool],
+            skills: Vec::new(),
+            requires: Vec::new(),
             permissions: vec![PluginPermission::Log],
             enabled: true,
             description: None,
@@ -246,6 +282,28 @@ capabilities = ["tool"]
 
         node.entry = "dist/index.ts".into();
         assert_eq!(node.validate(), Err(ManifestError::InvalidEntry));
+    }
+
+    #[test]
+    fn validates_versioned_skill_pack_contract() {
+        let raw = r#"
+id = "dev.miniq.docs"
+name = "Document skills"
+version = "2.1.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["document-workflow", "pdf-workflow"]
+requires = ["latexmk"]
+"#;
+        let parsed = PluginManifest::parse(raw).unwrap();
+        assert_eq!(parsed.runtime, PluginRuntime::Skills);
+        assert_eq!(parsed.skills.len(), 2);
+        assert_eq!(parsed.requires, vec!["latexmk"]);
+
+        let mut empty = parsed;
+        empty.skills.clear();
+        assert_eq!(empty.validate(), Err(ManifestError::UnsupportedCapability));
     }
 
     #[test]

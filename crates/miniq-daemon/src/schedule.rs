@@ -179,7 +179,14 @@ fn dispatch_task(
         .get_scheduled_task(&snapshot.id)
         .map_err(|e| e.to_string())
         .and_then(|task| dispatch_claimed_task(state, &task));
-    if result.is_err() {
+    if let Err(error) = &result {
+        if let Err(record_error) = state.store.record_scheduled_task_skip(&snapshot.id, error) {
+            tracing::debug!(
+                task_id = %snapshot.id,
+                %record_error,
+                "scheduler: unable to record skipped occurrence"
+            );
+        }
         let _ = state.store.release_scheduled_task(&snapshot.id);
     }
     result

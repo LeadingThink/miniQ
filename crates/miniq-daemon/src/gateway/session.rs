@@ -54,6 +54,23 @@ pub(super) async fn create(state: &AppState, raw: Option<Value>) -> Result<Value
     to_value(session)
 }
 
+pub(super) fn fork(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: miniq_protocol::SessionForkParams = params(raw)?;
+    let session = state
+        .store
+        .fork_session(
+            &input.session_id,
+            &input.anchor_message_id,
+            input.title.as_deref(),
+        )
+        .map_err(store_err)?;
+    state.emit(Event::SessionStatusChanged {
+        session_id: session.id.clone(),
+        status: session.status,
+    });
+    to_value(session)
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ListParams {
@@ -106,6 +123,10 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
     let questions = state.pending_questions_for_session(&input.session_id);
     let streaming_text = state.streaming_text(&input.session_id);
     let turn_progress = state.turn_progress(&input.session_id);
+    let goal = state
+        .store
+        .session_goal(&input.session_id)
+        .map_err(store_err)?;
     to_value(json!({
         "canAcknowledgeFailure": true,
         "eventCursor": journal.cursor(),
@@ -123,6 +144,7 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         "questions": questions,
         "streamingText": streaming_text,
         "turnProgress": turn_progress,
+        "goal": goal,
     }))
 }
 

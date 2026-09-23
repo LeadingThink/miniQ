@@ -420,6 +420,8 @@ mod tests {
             version: Version::new(1, 0, 0),
             api_version: Version::new(1, 0, 0),
             runtime: PluginRuntime::Wasm,
+            skills: Vec::new(),
+            requires: Vec::new(),
             entry: "plugin.wasm".into(),
             capabilities: vec![PluginCapability::Tool],
             permissions: Vec::new(),

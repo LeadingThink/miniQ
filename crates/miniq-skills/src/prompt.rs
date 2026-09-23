@@ -74,6 +74,7 @@ mod tests {
             meta,
             source: SkillSource::User,
             enabled,
+            dependencies: Vec::new(),
             dir: None,
         }
     }

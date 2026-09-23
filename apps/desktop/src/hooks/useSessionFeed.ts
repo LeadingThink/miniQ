@@ -15,6 +15,7 @@ import type {
   HistoryCursor,
   EventCursor,
   AnchoredTurnTiming,
+  SessionGoal,
 } from "../types";
 
 export interface PendingApproval {
@@ -39,6 +40,7 @@ interface SessionFeedState {
   queue: QueuedMessage[];
   streamingText: string;
   turnProgress: TurnProgress | null;
+  goal: SessionGoal | null;
 }
 
 export interface LoadedSessionFeed {
@@ -54,6 +56,7 @@ export interface LoadedSessionFeed {
   questions: Question[];
   streamingText: string;
   turnProgress: TurnProgress | null;
+  goal?: SessionGoal | null;
 }
 
 type SessionFeedAction =
@@ -86,6 +89,7 @@ const EMPTY_FEED: SessionFeedState = {
   queue: [],
   streamingText: "",
   turnProgress: null,
+  goal: null,
 };
 
 function updateFinishedToolCall(
@@ -242,6 +246,8 @@ function reduceDaemonEvent(
     case "turn_completed":
     case "turn_failed":
       return { ...state, streamingText: "", turnProgress: null };
+    case "session_goal_changed":
+      return { ...state, goal: event.goal };
     case "queue_changed":
       return { ...state, queue: event.queue };
     case "session_status_changed":
@@ -296,6 +302,7 @@ function sessionFeedReducer(
       questions: action.feed.questions,
       streamingText: action.feed.streamingText,
       turnProgress: action.feed.turnProgress,
+      goal: action.feed.goal ?? null,
       latestTurnTiming: action.feed.latestTurnTiming ?? null,
     };
     for (const item of state.buffered)

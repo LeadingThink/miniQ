@@ -671,6 +671,21 @@
         ],
         "type": "string"
       },
+      "PluginDependencyStatus": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "command"
+        ],
+        "type": "object"
+      },
       "PluginInfo": {
         "properties": {
           "author": {
@@ -682,6 +697,12 @@
           "capabilities": {
             "items": {
               "type": "string"
+            },
+            "type": "array"
+          },
+          "dependencies": {
+            "items": {
+              "$ref": "#/definitions/PluginDependencyStatus"
             },
             "type": "array"
           },
@@ -727,6 +748,12 @@
           "runtime": {
             "$ref": "#/definitions/PluginRuntime"
           },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "status": {
             "$ref": "#/definitions/PluginStatus"
           },
@@ -748,6 +775,7 @@
         },
         "required": [
           "capabilities",
+          "dependencies",
           "enabled",
           "entry",
           "id",
@@ -755,6 +783,7 @@
           "permissions",
           "processState",
           "runtime",
+          "skills",
           "status",
           "tools",
           "trustConfirmed",
@@ -776,7 +805,8 @@
       "PluginRuntime": {
         "enum": [
           "wasm",
-          "node"
+          "node",
+          "skills"
         ],
         "type": "string"
       },
@@ -922,6 +952,61 @@
           "assistant",
           "system",
           "tool"
+        ],
+        "type": "string"
+      },
+      "SessionGoal": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/definitions/SessionGoalStatus"
+          },
+          "tokenBudget": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "usedTimeMs": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "usedTokens": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "createdAt",
+          "goal",
+          "sessionId",
+          "status",
+          "updatedAt",
+          "usedTimeMs",
+          "usedTokens"
+        ],
+        "type": "object"
+      },
+      "SessionGoalStatus": {
+        "enum": [
+          "active",
+          "completed",
+          "paused"
         ],
         "type": "string"
       },
@@ -1236,6 +1321,35 @@
         "required": [
           "sessionId",
           "status",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "The session goal or its accumulated usage changed.",
+        "properties": {
+          "goal": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/SessionGoal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "session_goal_changed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
           "type"
         ],
         "type": "object"
@@ -3703,6 +3817,21 @@
   "pluginDiagnosticsResult": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "definitions": {
+      "PluginDependencyStatus": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "command"
+        ],
+        "type": "object"
+      },
       "PluginInfo": {
         "properties": {
           "author": {
@@ -3714,6 +3843,12 @@
           "capabilities": {
             "items": {
               "type": "string"
+            },
+            "type": "array"
+          },
+          "dependencies": {
+            "items": {
+              "$ref": "#/definitions/PluginDependencyStatus"
             },
             "type": "array"
           },
@@ -3759,6 +3894,12 @@
           "runtime": {
             "$ref": "#/definitions/PluginRuntime"
           },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "status": {
             "$ref": "#/definitions/PluginStatus"
           },
@@ -3780,6 +3921,7 @@
         },
         "required": [
           "capabilities",
+          "dependencies",
           "enabled",
           "entry",
           "id",
@@ -3787,6 +3929,7 @@
           "permissions",
           "processState",
           "runtime",
+          "skills",
           "status",
           "tools",
           "trustConfirmed",
@@ -3808,7 +3951,8 @@
       "PluginRuntime": {
         "enum": [
           "wasm",
-          "node"
+          "node",
+          "skills"
         ],
         "type": "string"
       },
@@ -3855,6 +3999,10 @@
     "properties": {
       "path": {
         "type": "string"
+      },
+      "update": {
+        "default": false,
+        "type": "boolean"
       }
     },
     "required": [
@@ -3866,6 +4014,21 @@
   "pluginListResult": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "definitions": {
+      "PluginDependencyStatus": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "command"
+        ],
+        "type": "object"
+      },
       "PluginInfo": {
         "properties": {
           "author": {
@@ -3877,6 +4040,12 @@
           "capabilities": {
             "items": {
               "type": "string"
+            },
+            "type": "array"
+          },
+          "dependencies": {
+            "items": {
+              "$ref": "#/definitions/PluginDependencyStatus"
             },
             "type": "array"
           },
@@ -3922,6 +4091,12 @@
           "runtime": {
             "$ref": "#/definitions/PluginRuntime"
           },
+          "skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "status": {
             "$ref": "#/definitions/PluginStatus"
           },
@@ -3943,6 +4118,7 @@
         },
         "required": [
           "capabilities",
+          "dependencies",
           "enabled",
           "entry",
           "id",
@@ -3950,6 +4126,7 @@
           "permissions",
           "processState",
           "runtime",
+          "skills",
           "status",
           "tools",
           "trustConfirmed",
@@ -3971,7 +4148,8 @@
       "PluginRuntime": {
         "enum": [
           "wasm",
-          "node"
+          "node",
+          "skills"
         ],
         "type": "string"
       },

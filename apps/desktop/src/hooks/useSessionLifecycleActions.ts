@@ -19,6 +19,7 @@ interface OpenSessionResult {
   questions: SessionFeed["questions"];
   streamingText: string;
   turnProgress: TurnProgress | null;
+  goal?: import("../types").SessionGoal | null;
 }
 
 export function useSessionLifecycleActions(
@@ -118,6 +119,7 @@ export function useSessionLifecycleActions(
         questions: result.questions ?? [],
         streamingText: result.streamingText ?? "",
         turnProgress: result.turnProgress ?? null,
+        goal: result.goal ?? null,
         latestTurnTiming: result.latestTurnTiming ?? null,
       });
       if (markSeen && result.canAcknowledgeFailure && result.session.status === "failed") {
@@ -133,6 +135,31 @@ export function useSessionLifecycleActions(
       }
     },
     [client, load, failLoad, markSessionSeen, refreshSessions, reset, setCurrentSessionId, setPage, setSelectedWorkspaceId, catalog.navigationEpoch, setSessionError],
+  );
+
+  const forkSession = useCallback(
+    async (anchorMessageId: string) => {
+      const sourceSessionId = catalog.currentSessionId;
+      if (!sourceSessionId) return false;
+      try {
+        const session = await client.call<Session>("session.fork", {
+          sessionId: sourceSessionId,
+          anchorMessageId,
+        });
+        await refreshSessions();
+        setSelectedWorkspaceId(session.workspaceId);
+        setCurrentSessionId(session.id);
+        setPage(null);
+        reset(session.id);
+        failLoad(session.id);
+        await openSession(session.id);
+        return true;
+      } catch (cause) {
+        setSessionError(sourceSessionId, errorMessage(cause));
+        return false;
+      }
+    },
+    [catalog.currentSessionId, client, failLoad, openSession, refreshSessions, reset, setCurrentSessionId, setPage, setSelectedWorkspaceId, setSessionError],
   );
 
   const syncSession = useCallback(async (sessionId: string) => {
@@ -229,6 +256,7 @@ export function useSessionLifecycleActions(
 
   return {
     createSession,
+    forkSession,
     openSession,
     syncSession,
     loadOlder,

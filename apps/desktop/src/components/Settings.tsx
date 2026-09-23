@@ -42,6 +42,7 @@ interface SettingsView {
     mobileClients: number;
     lastError?: string;
   };
+  turnEndedCommand?: string | null;
 }
 
 interface SettingsPanelProps {
@@ -71,6 +72,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const [remoteStatus, setRemoteStatus] = useState<SettingsView["remoteStatus"] | null>(null);
   const [remoteKeyDraft, setRemoteKeyDraft] = useState("");
   const [remoteKeyStatus, setRemoteKeyStatus] = useState<string | null>(null);
+  const [turnEndedCommand, setTurnEndedCommand] = useState("");
+  const [initialTurnEndedCommand, setInitialTurnEndedCommand] = useState("");
   const [switchingKey, setSwitchingKey] = useState(false);
   const [exitingRemote, setExitingRemote] = useState(false);
   const panelRef = useRef<HTMLFormElement>(null);
@@ -100,6 +103,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
           setDeviceName(res.remoteAccess.deviceName);
         }
         setRemoteStatus(res.remoteStatus ?? null);
+        const hook = res.turnEndedCommand ?? "";
+        setTurnEndedCommand(hook);
+        setInitialTurnEndedCommand(hook);
         setStatus(null);
       })
       .catch((error) => setStatus(`读取设置失败：${errorMessage(error)}`))
@@ -179,6 +185,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
         relayUrl: DEFAULT_RELAY_URL,
         deviceName: deviceName.trim(),
       };
+      if (turnEndedCommand.trim() !== initialTurnEndedCommand.trim()) {
+        params.turnEndedCommand = turnEndedCommand.trim() || null;
+      }
       const res = await props.client.call<SettingsView>("settings.update", params);
       setHasKey(res.provider?.hasApiKey ?? false);
       setApiKey("");
@@ -487,6 +496,34 @@ export function SettingsPanel(props: SettingsPanelProps) {
                   </>
                 )}
               </section>
+              <details className="settings-section turn-ended-hook">
+                <summary>回合结束命令（可选）</summary>
+                <p className="settings-section-description">
+                  每轮任务完成、失败或取消后，在本机后台执行一次。可用于通知、记录日志或打开结果；命令不会阻塞任务。
+                </p>
+                <label htmlFor="turn-ended-command">
+                  本地命令
+                  <input
+                    id="turn-ended-command"
+                    value={turnEndedCommand}
+                    disabled={loading || saving}
+                    spellCheck={false}
+                    autoComplete="off"
+                    placeholder="例如：say miniQ 已完成"
+                    maxLength={4000}
+                    onChange={(event) => setTurnEndedCommand(event.target.value)}
+                  />
+                  <small>可用环境变量：MINIQ_SESSION_ID、MINIQ_TURN_STATUS、MINIQ_WORKSPACE、MINIQ_TITLE。</small>
+                </label>
+                <button
+                  type="button"
+                  className="ghost"
+                  disabled={loading || saving || !turnEndedCommand}
+                  onClick={() => setTurnEndedCommand("")}
+                >
+                  清除命令
+                </button>
+              </details>
             </>
           )}
           {desktop && <details className="settings-section" open={!!desktop.host}>

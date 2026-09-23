@@ -91,12 +91,39 @@ pub(super) fn row_to_scheduled_task(row: &Row<'_>) -> rusqlite::Result<Scheduled
         },
         target_session_id: row.get(11)?,
         memory: row.get(12)?,
+        revision: row.get(13)?,
         schedule: serde_json::from_str(&schedule_raw).unwrap_or(Value::Null),
         enabled: row.get(5)?,
         next_run_at: row.get(6)?,
         last_run_at: row.get(7)?,
         last_session_id: row.get(8)?,
         created_at: row.get(9)?,
+    })
+}
+
+pub(super) fn row_to_scheduled_task_run(
+    row: &Row<'_>,
+) -> rusqlite::Result<miniq_protocol::ScheduledTaskRun> {
+    let status: String = row.get(3)?;
+    let status = match status.as_str() {
+        "running" => miniq_protocol::ScheduledTaskRunStatus::Running,
+        "succeeded" => miniq_protocol::ScheduledTaskRunStatus::Succeeded,
+        "failed" => miniq_protocol::ScheduledTaskRunStatus::Failed,
+        "skipped" => miniq_protocol::ScheduledTaskRunStatus::Skipped,
+        "cancelled" => miniq_protocol::ScheduledTaskRunStatus::Cancelled,
+        other => return Err(invalid_text(format!("scheduled task run status {other}"))),
+    };
+    Ok(miniq_protocol::ScheduledTaskRun {
+        id: row.get(0)?,
+        task_id: row.get(1)?,
+        session_id: row.get(2)?,
+        status,
+        reason: row.get(4)?,
+        started_at: row.get(5)?,
+        completed_at: row.get(6)?,
+        memory_before: row.get(7)?,
+        memory_after: row.get(8)?,
+        task_revision: row.get(9)?,
     })
 }
 

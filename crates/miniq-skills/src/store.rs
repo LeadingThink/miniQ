@@ -14,7 +14,7 @@ use std::sync::Mutex;
 
 use thiserror::Error;
 
-use crate::parse::{parse_skill_md, ParseError, SkillMeta};
+use crate::parse::{parse_skill_md, render_skill_md, ParseError, SkillMeta};
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -47,9 +47,17 @@ pub struct Skill {
     pub meta: SkillMeta,
     pub source: SkillSource,
     pub enabled: bool,
+    pub dependencies: Vec<SkillDependencyStatus>,
     /// Directory on disk; `None` for bundled skills not yet materialized.
     #[serde(skip)]
     pub dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillDependencyStatus {
+    pub command: String,
+    pub available: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -114,12 +122,14 @@ impl SkillStore {
         for bundled in &self.bundled {
             if let Ok((meta, _)) = parse_skill_md(bundled.content) {
                 let enabled = !disabled.contains(&meta.name);
+                let dependency_status = dependencies(&meta.requires.bins);
                 by_name.insert(
                     meta.name.clone(),
                     Skill {
                         meta,
                         source: SkillSource::Bundled,
                         enabled,
+                        dependencies: dependency_status,
                         dir: None,
                     },
                 );
@@ -205,6 +215,65 @@ impl SkillStore {
         Ok(meta)
     }
 
+    /// Import a skill directory or a package containing child skill
+    /// directories. Existing user skills are replaced atomically by name;
+    /// project and bundled skills remain untouched and continue to shadow
+    /// imported copies when they have the same name.
+    pub fn import_directory(&self, source: &Path) -> Result<Vec<SkillMeta>, StoreError> {
+        let roots = if source.join("SKILL.md").is_file() {
+            vec![source.to_path_buf()]
+        } else {
+            let mut children = std::fs::read_dir(source)
+                .map_err(StoreError::Io)?
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| path.is_dir() && path.join("SKILL.md").is_file())
+                .collect::<Vec<_>>();
+            children.sort();
+            children
+        };
+        if roots.is_empty() {
+            return Err(StoreError::Invalid(
+                "skill package must contain SKILL.md or child skill directories".into(),
+            ));
+        }
+        let mut validated = Vec::with_capacity(roots.len());
+        let mut names = HashSet::new();
+        for root in roots {
+            let raw = std::fs::read_to_string(root.join("SKILL.md"))?;
+            let (mut meta, body) = parse_skill_md(&raw).map_err(|e| StoreError::Parse {
+                path: root.join("SKILL.md").display().to_string(),
+                source: e,
+            })?;
+            if !names.insert(meta.name.clone()) {
+                return Err(StoreError::Invalid(format!(
+                    "skill package contains duplicate skill: {}",
+                    meta.name
+                )));
+            }
+            meta.origin = crate::parse::SkillOrigin::Installed;
+            validated.push((root, meta, body));
+        }
+        let mut imported = Vec::with_capacity(validated.len());
+        for (root, meta, body) in validated {
+            let target = self.user_root.join(&meta.name);
+            let temp = self.user_root.join(format!(".import-{}", meta.name));
+            if temp.exists() {
+                std::fs::remove_dir_all(&temp)?;
+            }
+            std::fs::create_dir_all(&self.user_root)?;
+            copy_skill_tree(&root, &temp)?;
+            let rendered = render_skill_md(&meta, &body);
+            std::fs::write(temp.join("SKILL.md"), rendered)?;
+            if target.exists() {
+                std::fs::remove_dir_all(&target)?;
+            }
+            std::fs::rename(&temp, &target)?;
+            imported.push(meta);
+        }
+        Ok(imported)
+    }
+
     /// Delete a skill from the user root. Project and bundled skills cannot
     /// be deleted through the store (project skills belong to the repo;
     /// bundled ones can only be disabled).
@@ -242,6 +311,27 @@ impl SkillStore {
     }
 }
 
+fn copy_skill_tree(source: &Path, target: &Path) -> Result<(), StoreError> {
+    std::fs::create_dir_all(target)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() {
+            return Err(StoreError::Invalid(format!(
+                "skill package cannot contain symlinks: {}",
+                entry.path().display()
+            )));
+        }
+        let destination = target.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_skill_tree(&entry.path(), &destination)?;
+        } else if file_type.is_file() {
+            std::fs::copy(entry.path(), destination)?;
+        }
+    }
+    Ok(())
+}
+
 fn scan_root(root: &Path, source: SkillSource) -> Vec<Skill> {
     let Ok(entries) = std::fs::read_dir(root) else {
         return Vec::new();
@@ -270,14 +360,45 @@ fn scan_root(root: &Path, source: SkillSource) -> Vec<Skill> {
         if dir.file_name().and_then(|n| n.to_str()) != Some(meta.name.as_str()) {
             continue;
         }
+        let dependency_status = dependencies(&meta.requires.bins);
         skills.push(Skill {
             meta,
             source,
             enabled: true,
+            dependencies: dependency_status,
             dir: Some(dir),
         });
     }
     skills
+}
+
+fn dependencies(commands: &[String]) -> Vec<SkillDependencyStatus> {
+    commands
+        .iter()
+        .map(|command| SkillDependencyStatus {
+            command: command.clone(),
+            available: command_available(command),
+        })
+        .collect()
+}
+
+fn command_available(command: &str) -> bool {
+    let mut candidates = std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
+        .flat_map(|path| {
+            let base = path.join(command);
+            #[cfg(windows)]
+            let candidates = [
+                base.clone(),
+                path.join(format!("{command}.exe")),
+                path.join(format!("{command}.cmd")),
+            ];
+            #[cfg(not(windows))]
+            let candidates = [base];
+            candidates.into_iter()
+        });
+    candidates.any(|candidate| candidate.is_file())
 }
 
 fn list_sidecar_files(dir: &Path) -> Vec<String> {
@@ -456,5 +577,39 @@ mod tests {
             .discover(None)
             .iter()
             .all(|s| s.meta.name != "other-name"));
+    }
+
+    #[test]
+    fn imports_and_updates_a_skill_package_without_following_symlinks() {
+        let data = tempfile::tempdir().unwrap();
+        let package = tempfile::tempdir().unwrap();
+        let skill_dir = package.path().join("pdf-review");
+        std::fs::create_dir_all(skill_dir.join("scripts")).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: pdf-review\ndescription: Review PDFs\nversion: 2\nrequires:\n  bins: [pdftoppm]\n---\n\nUse the script.\n",
+        )
+        .unwrap();
+        std::fs::write(skill_dir.join("scripts/render.sh"), "echo render").unwrap();
+        let store = store(data.path());
+        let imported = store.import_directory(package.path()).unwrap();
+        assert_eq!(imported[0].version, 2);
+        let detail = store.read(None, "pdf-review").unwrap();
+        assert_eq!(detail.skill.source, SkillSource::User);
+        assert_eq!(detail.files, vec!["scripts/render.sh"]);
+        assert!(detail.body.contains("Use the script"));
+
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: pdf-review\ndescription: Review PDFs\nversion: 3\n---\n\nUpdated workflow.\n",
+        )
+        .unwrap();
+        let imported = store.import_directory(package.path()).unwrap();
+        assert_eq!(imported[0].version, 3);
+        assert!(store
+            .read(None, "pdf-review")
+            .unwrap()
+            .body
+            .contains("Updated"));
     }
 }

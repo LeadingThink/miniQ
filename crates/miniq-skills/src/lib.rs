@@ -19,7 +19,9 @@ pub use learn::{
 };
 pub use parse::{parse_skill_md, render_skill_md, ParseError, SkillMeta, SkillOrigin};
 pub use prompt::available_skills_block;
-pub use store::{BundledSkill, Skill, SkillDetail, SkillSource, SkillStore, StoreError};
+pub use store::{
+    BundledSkill, Skill, SkillDependencyStatus, SkillDetail, SkillSource, SkillStore, StoreError,
+};
 
 /// Skills compiled into the miniQ binary.
 pub fn bundled_skills() -> Vec<BundledSkill> {
@@ -35,6 +37,24 @@ pub fn bundled_skills() -> Vec<BundledSkill> {
         },
         BundledSkill {
             content: include_str!("../assets/develop-miniq-plugin/SKILL.md"),
+        },
+        BundledSkill {
+            content: include_str!("../assets/document-workflow/SKILL.md"),
+        },
+        BundledSkill {
+            content: include_str!("../assets/pdf-workflow/SKILL.md"),
+        },
+        BundledSkill {
+            content: include_str!("../assets/spreadsheet-workflow/SKILL.md"),
+        },
+        BundledSkill {
+            content: include_str!("../assets/presentation-workflow/SKILL.md"),
+        },
+        BundledSkill {
+            content: include_str!("../assets/visualization-workflow/SKILL.md"),
+        },
+        BundledSkill {
+            content: include_str!("../assets/latex-workflow/SKILL.md"),
         },
     ]
 }
