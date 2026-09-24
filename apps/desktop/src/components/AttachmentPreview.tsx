@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Paperclip, X } from "lucide-react";
 import { readImagePreview } from "../localFiles";
 
@@ -18,24 +18,6 @@ export function AttachmentPreview(props: {
   remote?: boolean;
 }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [zoomed, setZoomed] = useState(false);
-  const previewRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    if (!zoomed) return;
-    const closeWhenOutside = (event: PointerEvent) => {
-      if (!previewRef.current?.contains(event.target as Node)) setZoomed(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setZoomed(false);
-    };
-    document.addEventListener("pointerdown", closeWhenOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeWhenOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [zoomed]);
 
   useEffect(() => {
     if (props.remote || !isImageAttachment(props.path)) return;
@@ -55,12 +37,7 @@ export function AttachmentPreview(props: {
 
   if (imageUrl) {
     return (
-      <span
-        ref={previewRef}
-        className={`attach-image-chip${zoomed ? " zoomed" : ""}`}
-        title={props.path}
-        onClick={() => setZoomed((current) => !current)}
-      >
+      <span className="attach-image-chip" title={props.path}>
         <img
           src={imageUrl}
           alt={fileName(props.path)}

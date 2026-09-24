@@ -324,11 +324,19 @@ function useTurnActions(
   const { openSession } = lifecycle;
 
   const sendMessage = useCallback(
-    async (content: string, attachments: string[] = []) => {
+    async (content: string, attachments: string[] = [], asGoal = false) => {
       if (!catalog.currentSessionId) return false;
       if (!await ensureProviderConfigured()) return false;
       setError(null);
       try {
+        if (asGoal) {
+          await client.call("session.goal.update", {
+            sessionId: catalog.currentSessionId,
+            goal: content,
+            status: "active",
+            tokenBudget: null,
+          });
+        }
         await client.call("session.sendMessage", {
           sessionId: catalog.currentSessionId,
           message: { role: "user", content, attachments },
@@ -365,7 +373,7 @@ function useTurnActions(
   );
 
   const startTask = useCallback(
-    async (content: string, attachments: string[] = []) => {
+    async (content: string, attachments: string[] = [], asGoal = false) => {
       if (!await ensureProviderConfigured()) return false;
       if (!sessionModel.ready || sessionModel.pending) return false;
       if (!catalog.selectedWorkspace) {
@@ -387,6 +395,14 @@ function useTurnActions(
           window.dispatchEvent(new CustomEvent<BrowserDraftCreatedDetail>(BROWSER_DRAFT_CREATED_EVENT, {
             detail: { hostId: client.sshHost, workspaceId: catalog.selectedWorkspace.id, sessionId: session.id },
           }));
+        }
+        if (asGoal) {
+          await client.call("session.goal.update", {
+            sessionId: session.id,
+            goal: content,
+            status: "active",
+            tokenBudget: null,
+          });
         }
         await client.call("session.sendMessage", {
           sessionId: session.id,
@@ -416,6 +432,16 @@ function useTurnActions(
   const cancelTurn = useCallback(async () => {
     if (!catalog.currentSessionId) return;
     await client.call("session.cancel", { sessionId: catalog.currentSessionId });
+  }, [catalog.currentSessionId, client]);
+
+  const pauseTurn = useCallback(async () => {
+    if (!catalog.currentSessionId) return;
+    await client.call("session.pause", { sessionId: catalog.currentSessionId });
+  }, [catalog.currentSessionId, client]);
+
+  const resumeTurn = useCallback(async () => {
+    if (!catalog.currentSessionId) return;
+    await client.call("session.resume", { sessionId: catalog.currentSessionId });
   }, [catalog.currentSessionId, client]);
 
   /** Remove a message from the pending queue. */
@@ -458,7 +484,7 @@ function useTurnActions(
     [client],
   );
 
-  return { sendMessage, rewriteMessage, startTask, cancelTurn, removeQueued, steerQueued, updateQueued, moveQueued };
+  return { sendMessage, rewriteMessage, startTask, pauseTurn, resumeTurn, cancelTurn, removeQueued, steerQueued, updateQueued, moveQueued };
 }
 
 function useInteractionActions(

@@ -13,10 +13,9 @@ import type {
   PlanTask,
   Question,
   QueuedMessage,
+  SessionGoal,
   ToolCall,
   TurnProgress,
-  SessionGoal,
-  SessionGoalStatus,
 } from "../types";
 import type { PendingApproval } from "../App";
 import type { LocalFileTarget } from "../localFiles";
@@ -52,6 +51,7 @@ export interface TimelineProps {
   onLoadOlder?: () => Promise<void>;
   title?: string;
   messages: Message[];
+  goal?: SessionGoal | null;
   toolCalls: ToolCall[];
   approvals: PendingApproval[];
   questions: Question[];
@@ -61,7 +61,6 @@ export interface TimelineProps {
   workspacePath?: string | null;
   streamingText: string;
   turnProgress: TurnProgress | null;
-  goal?: SessionGoal | null;
   latestTurnTiming?: AnchoredTurnTiming | null;
   busy: boolean;
   agents?: AgentSummary[];
@@ -86,63 +85,7 @@ export interface TimelineProps {
 
 export function Timeline(props: TimelineProps) {
   const [showShare, setShowShare] = useState(false);
-  const [goalEditing, setGoalEditing] = useState(false);
-  const [goalText, setGoalText] = useState("");
-  const [goalBudget, setGoalBudget] = useState("");
-  const [goalStatus, setGoalStatus] = useState<SessionGoalStatus>("active");
-  const [goalBusy, setGoalBusy] = useState(false);
-  const [savedGoal, setSavedGoal] = useState<SessionGoal | null>(null);
-  const goalEditingRef = useRef(false);
-  const previousGoalSessionRef = useRef<string | undefined>(undefined);
-  const currentGoal = savedGoal ?? props.goal ?? null;
-  const setGoalEditingValue = (editing: boolean) => {
-    goalEditingRef.current = editing;
-    setGoalEditing(editing);
-  };
   useEffect(() => setShowShare(false), [props.sessionId]);
-  useEffect(() => {
-    const sessionChanged = previousGoalSessionRef.current !== props.sessionId;
-    previousGoalSessionRef.current = props.sessionId;
-    if (sessionChanged) setGoalEditingValue(false);
-    setSavedGoal((previous) => {
-      if (!props.goal) return sessionChanged ? null : previous;
-      // A locally saved goal may arrive before session.open is refreshed. Do
-      // not overwrite it with an older feed snapshot.
-      if (previous && previous.sessionId === props.goal.sessionId && previous.updatedAt > props.goal.updatedAt) {
-        return previous;
-      }
-      return props.goal;
-    });
-    if (sessionChanged || !goalEditingRef.current) {
-      const draftGoal = props.goal ?? (sessionChanged ? null : currentGoal);
-      setGoalText(draftGoal?.goal ?? "");
-      setGoalBudget(draftGoal?.tokenBudget?.toString() ?? "");
-      setGoalStatus(draftGoal?.status ?? "active");
-    }
-  }, [
-    props.sessionId,
-    props.goal?.goal,
-    props.goal?.status,
-    props.goal?.tokenBudget,
-    props.goal?.usedTokens,
-    props.goal?.usedTimeMs,
-    props.goal?.updatedAt,
-  ]);
-  const saveGoal = async () => {
-    if (!props.client || !props.sessionId || !goalText.trim()) return;
-    const tokenBudget = goalBudget.trim() ? Number(goalBudget) : null;
-    if (tokenBudget !== null && (!Number.isSafeInteger(tokenBudget) || tokenBudget < 1)) {
-      props.onError("token 预算必须是大于 0 的整数");
-      return;
-    }
-    setGoalBusy(true);
-    try {
-      const saved = await props.client.call<SessionGoal>("session.goal.update", { sessionId: props.sessionId, goal: goalText.trim(), status: goalStatus, tokenBudget });
-      setSavedGoal(saved);
-      setGoalEditingValue(false);
-    } catch (cause) { props.onError(`保存目标失败: ${String(cause)}`); }
-    finally { setGoalBusy(false); }
-  };
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [filter, setFilter] = useState<TimelineFilter>("all");
   const [query, setQuery] = useState("");
@@ -273,30 +216,6 @@ export function Timeline(props: TimelineProps) {
           questions={props.questions.length}
           timing={props.latestTurnTiming}
         />
-        {(goalEditing || currentGoal || (props.client && props.sessionId)) && (
-          <div className={`session-goal-card${goalEditing ? " is-editing" : ""}`} data-testid="session-goal">
-            {goalEditing ? (
-              <form onSubmit={(event) => { event.preventDefault(); void saveGoal(); }}>
-                <input aria-label="会话目标" value={goalText} onChange={(event) => setGoalText(event.target.value)} placeholder="这次会话的目标" maxLength={2000} autoFocus />
-                <input aria-label="token 预算" type="number" min={1} step={1} value={goalBudget} onChange={(event) => setGoalBudget(event.target.value)} placeholder="token 预算（可选）" />
-                <select aria-label="目标状态" value={goalStatus} onChange={(event) => setGoalStatus(event.target.value as SessionGoalStatus)}>
-                  <option value="active">进行中</option>
-                  <option value="paused">已暂停</option>
-                  <option value="completed">已完成</option>
-                </select>
-                <button type="submit" disabled={goalBusy || !goalText.trim()}>保存目标</button>
-                <button type="button" className="ghost" onClick={() => { setGoalText(currentGoal?.goal ?? ""); setGoalBudget(currentGoal?.tokenBudget?.toString() ?? ""); setGoalStatus(currentGoal?.status ?? "active"); setGoalEditingValue(false); }}>取消</button>
-              </form>
-            ) : currentGoal ? (
-              <button type="button" className="session-goal-content" onClick={() => { setGoalStatus(currentGoal.status); setGoalEditingValue(true); }} title="编辑会话目标">
-                <span className="session-goal-label">目标</span><span>{currentGoal.goal}</span>
-                <span className="session-goal-usage">{currentGoal.status === "completed" ? "已完成 · " : currentGoal.status === "paused" ? "已暂停 · " : "进行中 · "}{currentGoal.usedTokens.toLocaleString()} tokens · {(currentGoal.usedTimeMs / 1000).toFixed(1)}s</span>
-              </button>
-            ) : props.client && props.sessionId ? (
-              <button type="button" className="ghost session-goal-add" onClick={() => { setGoalStatus("active"); setGoalEditingValue(true); }}>＋ 设置会话目标</button>
-            ) : null}
-          </div>
-        )}
         {props.agents && props.onOpenAgentPanel && (
           <AgentStatusIndicator
             agents={props.agents}
@@ -377,6 +296,7 @@ export function Timeline(props: TimelineProps) {
           client={props.client}
           items={items}
           messages={props.messages}
+          goal={props.goal}
           expandGroups={filter !== "all" || !!query}
           onError={props.onError}
           approvals={props.approvals}

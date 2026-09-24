@@ -26,7 +26,11 @@ invoke with an advertised AX action, select or setValue. It works on the target 
 pointer. Follow pagination to inspect additional controls. Some apps do not expose usable \
 accessibility controls; do not claim background support when an action reports unsupported. \
 Use computer_use only when foreground desktop interaction is necessary, and tell the user \
-before taking over their pointer. Do not replace app_automation with shell GUI scripting or \
+before taking over their pointer. Never use computer_use, desktop applications, file-picker \
+dialogs, or shell GUI scripting to create, read, edit, move, rename, or delete ordinary files \
+and directories; use the provided file tools, apply_patch, or shell_run instead. Opening a \
+specific desktop application is appropriate only when the user explicitly requests interaction \
+with that application or the task genuinely requires its GUI. Do not replace app_automation with shell GUI scripting or \
 osascript. The file-preview webview is not the automation browser; browser_automation owns \
 the task-isolated browser surface. If browser_automation reports that its embedded DOM \
 capability is unavailable for a web form, do not silently fall back to computer_use: explain \
@@ -202,8 +206,11 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
     tokio::spawn(async move {
         let clock = crate::turn_clock::TurnClock::start(&state, &session_id);
         let result = execute_turn(&state, &session_id, cancel).await;
+        let paused =
+            matches!(result, Err(TurnError::Cancelled)) && state.is_turn_paused(&session_id);
         let (outcome, timing_status) = match &result {
             Ok(()) => ("completed", TurnTimingStatus::Completed),
+            Err(TurnError::Cancelled) if paused => ("paused", TurnTimingStatus::Cancelled),
             Err(TurnError::Cancelled) => ("cancelled", TurnTimingStatus::Cancelled),
             Err(TurnError::Fatal(_)) => ("failed", TurnTimingStatus::Failed),
         };
@@ -223,12 +230,14 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
             Err(TurnError::Fatal(error)) => Some(error.as_str()),
             Ok(()) => None,
         };
-        if let Err(error) = state.store.complete_scheduled_task_run_for_session(
-            &session_id,
-            scheduled_status,
-            scheduled_reason,
-        ) {
-            tracing::warn!(%error, %session_id, "failed to persist scheduled task outcome");
+        if !paused {
+            if let Err(error) = state.store.complete_scheduled_task_run_for_session(
+                &session_id,
+                scheduled_status,
+                scheduled_reason,
+            ) {
+                tracing::warn!(%error, %session_id, "failed to persist scheduled task outcome");
+            }
         }
         state.clear_streaming_text(&session_id);
         state.clear_turn_progress(&session_id);
@@ -253,10 +262,12 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
                     session_id: session_id.clone(),
                     status: SessionStatus::Idle,
                 });
-                state.emit(Event::TurnFailed {
-                    session_id: session_id.clone(),
-                    error: "cancelled".to_string(),
-                });
+                if !paused {
+                    state.emit(Event::TurnFailed {
+                        session_id: session_id.clone(),
+                        error: "cancelled".to_string(),
+                    });
+                }
             }
             Err(TurnError::Fatal(err)) => {
                 tracing::error!(session_id, %err, "turn failed");
@@ -275,9 +286,25 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
         }
         state.end_turn(&session_id);
         state.run_turn_ended_hook(&session_id, outcome);
+        if paused && state.take_turn_resume_request(&session_id) {
+            state.resume_turn(&session_id);
+            if let Some(cancel) = state.begin_turn(&session_id) {
+                let _ = state
+                    .store
+                    .update_session_status(&session_id, SessionStatus::Running);
+                state.emit(Event::SessionStatusChanged {
+                    session_id: session_id.clone(),
+                    status: SessionStatus::Running,
+                });
+                spawn_turn(state.clone(), session_id.clone(), cancel);
+            }
+            return;
+        }
         // Queued follow-ups (sent while this turn ran, or steered to the
         // front to interrupt it) start automatically once the session rests.
-        start_next_queued(&state, &session_id);
+        if !paused {
+            start_next_queued(&state, &session_id);
+        }
     });
 }
 
@@ -672,6 +699,17 @@ mod tests {
         assert!(system.contains("Never abbreviate or omit any path segment"));
         assert!(system.contains("Use forward slashes in Windows Markdown link targets"));
         assert!(system.contains("[main.rs (line 42)](/absolute/path/main.rs)"));
+    }
+
+    #[test]
+    fn system_prompt_keeps_file_operations_out_of_computer_use() {
+        let history = history_for_turn(&[], None, "", Path::new("workspace"));
+        let system = &history[0].content;
+
+        assert!(system.contains("Never use computer_use"));
+        assert!(system.contains("to create, read, edit, move, rename, or delete ordinary files"));
+        assert!(system.contains("use the provided file tools, apply_patch, or shell_run instead"));
+        assert!(system.contains("only when the user explicitly requests interaction"));
     }
 
     #[test]

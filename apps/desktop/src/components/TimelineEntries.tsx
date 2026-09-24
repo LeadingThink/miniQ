@@ -1,6 +1,6 @@
-import { Check, GitBranch, LoaderCircle, Pencil, RefreshCw, X } from "lucide-react";
+import { Check, GitBranch, LoaderCircle, Pencil, RefreshCw, Target, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
-import type { AnchoredTurnTiming, Message, MessageAttachment, PlanTask, Question, TurnProgress } from "../types";
+import type { AnchoredTurnTiming, Message, MessageAttachment, PlanTask, Question, SessionGoal, TurnProgress } from "../types";
 import type { PendingApproval } from "../App";
 import type { RpcClient } from "../rpc";
 import { readImagePreview } from "../localFiles";
@@ -19,6 +19,17 @@ import { showConversationTimestamp } from "../time";
 import { timelineGroupKey, timelineTurnEnds } from "../timelineTiming";
 import { TurnTimingSummary } from "./TurnTimingSummary";
 import { useSessionFileAccess } from "../sessionFileAccess";
+
+export function findGoalMessageId(
+  messages: Message[],
+  goal?: SessionGoal | null,
+): string | null {
+  if (!goal) return null;
+  return [...messages].reverse().find(
+    (message) =>
+      message.role === "user" && message.content.trim() === goal.goal.trim(),
+  )?.id ?? null;
+}
 
 function MessageAttachmentPreview({
   attachment,
@@ -63,6 +74,7 @@ export function TimelineEntries(props: {
   client?: RpcClient;
   items: TimelineGroup[];
   messages: Message[];
+  goal?: SessionGoal | null;
   expandGroups: boolean;
   onError: TimelineProps["onError"];
   approvals: PendingApproval[];
@@ -90,6 +102,10 @@ export function TimelineEntries(props: {
   const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
   const turnEnds = useMemo(() => props.expandGroups ? new Map() : timelineTurnEnds(props.items, props.latestTurnTiming),
     [props.items, props.latestTurnTiming, props.expandGroups]);
+  const goalMessageId = useMemo(
+    () => findGoalMessageId(props.messages, props.goal),
+    [props.goal, props.messages],
+  );
 
   const startEditing = (message: Message) => {
     if (props.busy) return;
@@ -193,6 +209,12 @@ export function TimelineEntries(props: {
               <div className="message-footer">
                 <MessageTime at={item.message.createdAt} />
                 <div className="message-actions">
+                  {item.message.id === goalMessageId && (
+                    <span className="message-goal-marker">
+                      <Target size={13} aria-hidden="true" />
+                      设为目标
+                    </span>
+                  )}
                   {editingMessageId === item.message.id ? (
                     <>
                       <button

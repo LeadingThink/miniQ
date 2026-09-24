@@ -105,6 +105,7 @@ pub enum SessionGoalStatus {
     Active,
     Completed,
     Paused,
+    Cancelled,
 }
 
 impl Default for SessionGoalStatus {

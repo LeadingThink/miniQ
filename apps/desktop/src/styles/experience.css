@@ -627,6 +627,15 @@
   max-width: 100%;
   flex-wrap: wrap;
 }
+.message-goal-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .message-footer .msg-copy,
 .msg-action {
   display: inline-flex;

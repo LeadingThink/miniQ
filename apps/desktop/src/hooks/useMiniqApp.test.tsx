@@ -177,6 +177,53 @@ it("creates a task with its draft model before sending and preserves sibling mod
   expect(fake.call.mock.calls.some(([method]) => ["model.update", "workspace.modelUpdate"].includes(method))).toBe(false);
 });
 
+it("activates a goal before sending the first message of a new session", async () => {
+  const original = fake.call.getMockImplementation()!;
+  fake.call.mockImplementation(async (method, params) => {
+    if (method === "session.create") {
+      return {
+        id: "goal-session",
+        workspaceId: "w",
+        workingDirectory: "/workspace",
+        title: "goal",
+        status: "running",
+        createdAt: "2026-09-24",
+        updatedAt: "2026-09-24",
+      };
+    }
+    if (method === "session.goal.update" || method === "session.sendMessage") return {};
+    if (method === "session.open" && params.sessionId === "goal-session") {
+      const snapshot = await original("session.open", { sessionId: "a" });
+      return { ...snapshot, session: { ...snapshot.session, id: "goal-session" } };
+    }
+    return original(method, params);
+  });
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.catalog.selectedWorkspace?.id).toBe("w"));
+  await waitFor(() => expect(hook.result.current.sessionModel.ready).toBe(true));
+
+  await act(async () => {
+    expect(await hook.result.current.actions.startTask("整理项目文档", [], true)).toBe(true);
+  });
+
+  const goalCallIndex = fake.call.mock.calls.findIndex(
+    ([method]) => method === "session.goal.update",
+  );
+  const sendCallIndex = fake.call.mock.calls.findIndex(
+    ([method]) => method === "session.sendMessage",
+  );
+  expect(fake.call.mock.calls[goalCallIndex]).toEqual([
+    "session.goal.update",
+    {
+      sessionId: "goal-session",
+      goal: "整理项目文档",
+      status: "active",
+      tokenBudget: null,
+    },
+  ]);
+  expect(goalCallIndex).toBeLessThan(sendCallIndex);
+});
+
 it("opens first-run provider setup automatically on a local desktop without an API key", async () => {
   fake.mode = "local";
   fake.providerHasApiKey = false;
@@ -209,6 +256,39 @@ it("reopens provider setup and sends nothing when a local task has no API key", 
   });
   expect(hook.result.current.navigation.showSettings).toBe(true);
   expect(fake.call.mock.calls.some(([method]) => method === "session.sendMessage")).toBe(false);
+});
+
+it("activates a goal before sending its message", async () => {
+  const original = fake.call.getMockImplementation()!;
+  fake.call.mockImplementation(async (method, params) => {
+    if (method === "session.goal.update" || method === "session.sendMessage") return {};
+    return original(method, params);
+  });
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
+  await act(async () => { await hook.result.current.actions.openSession("a"); });
+
+  await act(async () => {
+    expect(await hook.result.current.actions.sendMessage("整理发布说明", [], true)).toBe(true);
+  });
+
+  expect(fake.call).toHaveBeenCalledWith("session.goal.update", {
+    sessionId: "a",
+    goal: "整理发布说明",
+    status: "active",
+    tokenBudget: null,
+  });
+  expect(fake.call).toHaveBeenCalledWith("session.sendMessage", {
+    sessionId: "a",
+    message: { role: "user", content: "整理发布说明", attachments: [] },
+  });
+  const goalCall = fake.call.mock.invocationCallOrder[
+    fake.call.mock.calls.findIndex(([method]) => method === "session.goal.update")
+  ];
+  const sendCall = fake.call.mock.invocationCallOrder[
+    fake.call.mock.calls.findIndex(([method]) => method === "session.sendMessage")
+  ];
+  expect(goalCall).toBeLessThan(sendCall);
 });
 
 it("keeps the draft and sends no message when creating its model configuration fails", async () => {

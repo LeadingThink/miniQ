@@ -8,6 +8,7 @@ fn parse_status(value: &str) -> rusqlite::Result<SessionGoalStatus> {
         "active" => Ok(SessionGoalStatus::Active),
         "completed" => Ok(SessionGoalStatus::Completed),
         "paused" => Ok(SessionGoalStatus::Paused),
+        "cancelled" => Ok(SessionGoalStatus::Cancelled),
         other => Err(rusqlite::Error::FromSqlConversionFailure(
             2,
             rusqlite::types::Type::Text,
@@ -83,6 +84,16 @@ impl Store {
 
     pub fn record_session_goal_usage(&self, session_id: &str, elapsed_ms: u64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        let is_active = conn
+            .query_row(
+                "SELECT status = 'active' FROM session_goals WHERE session_id = ?1",
+                [session_id],
+                |row| row.get::<_, bool>(0),
+            )
+            .optional()?;
+        if is_active != Some(true) {
+            return Ok(());
+        }
         let mut statement =
             conn.prepare("SELECT record_json FROM model_calls WHERE session_id = ?1")?;
         let mut tokens = 0u64;
@@ -150,6 +161,7 @@ fn format_status(status: SessionGoalStatus) -> &'static str {
         SessionGoalStatus::Active => "active",
         SessionGoalStatus::Completed => "completed",
         SessionGoalStatus::Paused => "paused",
+        SessionGoalStatus::Cancelled => "cancelled",
     }
 }
 
@@ -176,6 +188,30 @@ mod tests {
         let current = store.session_goal(&session.id).unwrap().unwrap();
         assert_eq!(current.used_tokens, 12);
         assert_eq!(current.used_time_ms, 250);
+    }
+
+    #[test]
+    fn paused_and_cancelled_goals_do_not_accumulate_usage() {
+        let store = Store::open_in_memory().unwrap();
+        let workspace = store
+            .create_workspace("/tmp/goals-paused", "goals")
+            .unwrap();
+        let session = store.create_session(&workspace.id, "session").unwrap();
+        for status in [SessionGoalStatus::Paused, SessionGoalStatus::Cancelled] {
+            store
+                .update_session_goal(&SessionGoalUpdate {
+                    session_id: session.id.clone(),
+                    goal: "ship the feature".into(),
+                    status,
+                    token_budget: None,
+                })
+                .unwrap();
+            store.record_session_goal_usage(&session.id, 250).unwrap();
+            let current = store.session_goal(&session.id).unwrap().unwrap();
+            assert_eq!(current.status, status);
+            assert_eq!(current.used_tokens, 0);
+            assert_eq!(current.used_time_ms, 0);
+        }
     }
 
     #[test]
