@@ -3,8 +3,72 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { useFilePreview } from "./useFilePreview";
 import { readLocalFilePreview, type LocalFilePreview } from "../localFiles";
+const dialog = vi.hoisted(() => ({ open: vi.fn() }));
 vi.mock("../localFiles", () => ({ readLocalFilePreview: vi.fn() }));
+vi.mock("../runtime", () => ({ isTauriRuntime: () => true }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: dialog.open }));
 afterEach(cleanup);
+
+it("authorizes only a file explicitly selected by the user", async () => {
+  const target = { path: "\\\\?\\D:\\outside\\report.jsonl", line: null, column: null };
+  vi.mocked(readLocalFilePreview)
+    .mockRejectedValueOnce(new Error("拒绝打开工作区外的文件"))
+    .mockResolvedValueOnce({
+      path: target.path,
+      kind: "text",
+      mimeType: "text/plain",
+      size: 7,
+      content: "allowed",
+      dataBase64: null,
+    });
+  const hook = renderHook(() => useFilePreview("D:/workspace", "session"));
+
+  await act(async () => hook.result.current.openFile(target));
+  expect(hook.result.current.state.error).toContain("工作区外");
+  await act(async () => hook.result.current.authorizeFile(target));
+
+  expect(dialog.open).not.toHaveBeenCalled();
+  expect(readLocalFilePreview).toHaveBeenLastCalledWith(
+    target.path,
+    "D:/workspace",
+    [],
+    expect.any(Object),
+    [target.path],
+  );
+  expect(hook.result.current.state.content).toBe("allowed");
+  expect(hook.result.current.authorizedFiles).toEqual([target.path]);
+});
+
+it("replaces an unresolved preview target with the explicitly selected file", async () => {
+  const target = { path: "D:/study/readme", line: null, column: null };
+  const selected = "D:/test/2022-Machine-Learning-Specialization/README.md";
+  dialog.open.mockResolvedValue(selected);
+  vi.mocked(readLocalFilePreview)
+    .mockRejectedValueOnce(new Error("无法访问文件 D:/study/readme: os error 2"))
+    .mockResolvedValueOnce({
+      path: selected,
+      kind: "markdown",
+      mimeType: "text/markdown",
+      size: 7,
+      content: "# README",
+      dataBase64: null,
+    });
+  const hook = renderHook(() => useFilePreview("D:/study", "session"));
+
+  await act(async () => hook.result.current.openFile(target));
+  await act(async () => hook.result.current.authorizeFile(target, true));
+
+  expect(readLocalFilePreview).toHaveBeenLastCalledWith(
+    selected,
+    "D:/study",
+    [],
+    expect.any(Object),
+    [selected],
+  );
+  expect(hook.result.current.state.target?.path).toBe(selected);
+  expect(hook.result.current.state.content).toBe("# README");
+  expect(hook.result.current.tabs.map((tab) => tab.path)).toEqual([selected]);
+});
 
 it("restores session tab identities and re-reads contents", async () => {
   vi.mocked(readLocalFilePreview).mockImplementation(async (path) => ({

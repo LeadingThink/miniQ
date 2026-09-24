@@ -67,9 +67,14 @@ interface FilePreviewPanelProps {
   preview: FilePreviewState;
   workspacePath: string;
   workspacePaths: readonly string[];
+  authorizedFiles?: readonly string[];
   onClose: () => void;
   onOpenFile: (target: NonNullable<FilePreviewState["target"]>) => void;
   onRetry: () => void;
+  onAuthorizeFile?: (
+    target: NonNullable<FilePreviewState["target"]>,
+    chooseReplacement?: boolean,
+  ) => void;
   tabs?: LocalFileTarget[];
   onCloseTab?: (path: string) => void;
   onCloseOtherTabs?: (path: string) => void;
@@ -118,9 +123,11 @@ function PreviewPanelContent({
   preview,
   workspacePath,
   workspacePaths,
+  authorizedFiles = [],
   onClose,
   onOpenFile,
   onRetry,
+  onAuthorizeFile,
   tabs = [],
   onCloseTab,
   onCloseOtherTabs,
@@ -147,6 +154,14 @@ function PreviewPanelContent({
   const viewCache = usePreviewCache();
   const target = preview.target;
   const path = preview.resolvedPath ?? target?.path ?? "";
+  const deniedExternalFile = preview.error?.includes("拒绝打开工作区外的文件") ?? false;
+  const missingLocalFile = preview.error?.includes("无法访问文件") ?? false;
+  const canChooseLocalFile = Boolean(
+    (deniedExternalFile || missingLocalFile) &&
+    target &&
+    onAuthorizeFile &&
+    !remote,
+  );
   const selection = usePreviewSelection(path, preview.content ?? preview.dataBase64);
   const line = target?.line ?? 1;
   const column = target?.column ?? 1;
@@ -362,7 +377,7 @@ function PreviewPanelContent({
             disabled={!path}
             onClick={() =>
               void runAction(() =>
-                openLocalFile(path, workspacePath, workspacePaths),
+                openLocalFile(path, workspacePath, workspacePaths, authorizedFiles),
               )
             }
           >
@@ -379,7 +394,7 @@ function PreviewPanelContent({
             disabled={!path}
             onClick={() =>
               void runAction(() =>
-                revealLocalFile(path, workspacePath, workspacePaths),
+                revealLocalFile(path, workspacePath, workspacePaths, authorizedFiles),
               )
             }
           >
@@ -390,6 +405,16 @@ function PreviewPanelContent({
       {(preview.error || actionError || renderError) && (
         <div className="review-error preview-error" role="alert">
           <span>无法打开：{preview.error ?? actionError ?? renderError}</span>
+          {canChooseLocalFile && target && onAuthorizeFile && (
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => onAuthorizeFile(target, missingLocalFile)}
+            >
+              <FolderOpen size={14} />
+              {deniedExternalFile ? "允许并打开" : "选择并打开"}
+            </button>
+          )}
           {(renderError || preview.error) && (
             <button
               type="button"

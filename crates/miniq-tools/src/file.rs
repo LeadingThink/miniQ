@@ -68,7 +68,48 @@ impl Tool for FileReadTool {
         })
     }
     fn evaluate_risk(&self, ctx: &ToolContext, input: &Value) -> Risk {
-        path_risk(ctx, input, RiskLevel::Low, "read-only file access")
+        let Some(path) = input.get("path").and_then(Value::as_str) else {
+            return Risk {
+                level: RiskLevel::Blocked,
+                reason: "missing path".into(),
+            };
+        };
+        match ctx.resolve_read_path(path) {
+            Ok(_) => Risk {
+                level: RiskLevel::Low,
+                reason: "read-only file access".into(),
+            },
+            Err(error) if std::path::Path::new(path).is_absolute() => {
+                let external = std::path::Path::new(path)
+                    .canonicalize()
+                    .ok()
+                    .filter(|file| file.is_file());
+                match external {
+                    Some(file) => Risk {
+                        level: RiskLevel::High,
+                        reason: format!("读取工作区外的文件，需要明确批准: {}", file.display()),
+                    },
+                    None => Risk {
+                        level: RiskLevel::Blocked,
+                        reason: error.to_string(),
+                    },
+                }
+            }
+            Err(error) => Risk {
+                level: RiskLevel::Blocked,
+                reason: error.to_string(),
+            },
+        }
+    }
+
+    fn approval_scope(&self, _ctx: &ToolContext, input: &Value) -> Option<String> {
+        let path = input.get("path").and_then(Value::as_str)?;
+        let file = std::path::Path::new(path)
+            .canonicalize()
+            .ok()?
+            .to_string_lossy()
+            .into_owned();
+        Some(format!("external-file:{file}"))
     }
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: FileReadInput = parse_input(input)?;
@@ -316,5 +357,30 @@ mod tests {
         );
         let risk = FileWriteTool.evaluate_risk(&ctx(dir.path()), &json!({"path": "x.txt"}));
         assert_eq!(risk.level, RiskLevel::Medium);
+    }
+
+    #[tokio::test]
+    async fn external_file_read_requires_explicit_read_authorization() {
+        let workspace = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let file = outside.path().join("readme.md");
+        std::fs::write(&file, "outside").unwrap();
+        let input = json!({"path": file});
+        let restricted = ctx(workspace.path());
+
+        assert_eq!(
+            FileReadTool.evaluate_risk(&restricted, &input).level,
+            RiskLevel::High
+        );
+        assert!(FileReadTool
+            .execute(&restricted, input.clone())
+            .await
+            .is_err());
+
+        let allowed = restricted.with_readable_file(file.canonicalize().unwrap());
+        assert_eq!(
+            FileReadTool.execute(&allowed, input).await.unwrap()["content"],
+            "outside"
+        );
     }
 }

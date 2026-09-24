@@ -1,7 +1,11 @@
 #[cfg(test)]
-use miniq_local::files::preview_format;
+use miniq_local::files::{preview_format, read_preview, read_text};
 pub(crate) use miniq_local::files::validated_file;
-pub use miniq_local::files::{read_preview, read_text, LocalFilePreview, LocalTextFile};
+pub use miniq_local::files::{LocalFilePreview, LocalTextFile};
+use miniq_local::files::{
+    read_preview_with_authorization, read_text_with_authorization,
+    validated_file_with_authorization,
+};
 use std::path::Path;
 
 use base64::Engine;
@@ -102,8 +106,14 @@ pub fn open(
     path: &str,
     workspace_path: &str,
     workspace_paths: &[String],
+    authorized_files: &[String],
 ) -> Result<(), String> {
-    let file = validated_file(path, workspace_path, workspace_paths)?;
+    let file = validated_file_with_authorization(
+        path,
+        workspace_path,
+        workspace_paths,
+        authorized_files,
+    )?;
     app.opener()
         .open_path(file.to_string_lossy(), None::<&str>)
         .map_err(|error| error.to_string())
@@ -114,11 +124,35 @@ pub fn reveal(
     path: &str,
     workspace_path: &str,
     workspace_paths: &[String],
+    authorized_files: &[String],
 ) -> Result<(), String> {
-    let file = validated_file(path, workspace_path, workspace_paths)?;
+    let file = validated_file_with_authorization(
+        path,
+        workspace_path,
+        workspace_paths,
+        authorized_files,
+    )?;
     app.opener()
         .reveal_item_in_dir(file)
         .map_err(|error| error.to_string())
+}
+
+pub fn read_text_authorized(
+    path: &str,
+    workspace_path: &str,
+    workspace_paths: &[String],
+    authorized_files: &[String],
+) -> Result<LocalTextFile, String> {
+    read_text_with_authorization(path, workspace_path, workspace_paths, authorized_files)
+}
+
+pub fn read_preview_authorized(
+    path: &str,
+    workspace_path: &str,
+    workspace_paths: &[String],
+    authorized_files: &[String],
+) -> Result<LocalFilePreview, String> {
+    read_preview_with_authorization(path, workspace_path, workspace_paths, authorized_files)
 }
 
 #[cfg(test)]

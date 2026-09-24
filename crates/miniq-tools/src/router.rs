@@ -150,6 +150,11 @@ impl ToolContext {
         self
     }
 
+    pub fn with_readable_file(mut self, file: PathBuf) -> Self {
+        self.readable_files.push(file);
+        self
+    }
+
     pub fn resolve_read_path(&self, requested: &str) -> Result<PathBuf, miniq_sandbox::PathError> {
         self.resolve_path(requested).or_else(|error| {
             let path = std::path::Path::new(requested);

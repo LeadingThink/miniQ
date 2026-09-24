@@ -11,7 +11,78 @@ vi.mock("./CodePreview", () => {
     ),
   };
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+});
+
+it("offers explicit authorization for a file outside the workspace", () => {
+  Object.defineProperty(window, "__TAURI_INTERNALS__", {
+    configurable: true,
+    value: {},
+  });
+  const target = { path: "D:/outside/report.jsonl", line: null, column: null };
+  const authorize = vi.fn();
+  render(
+    <FilePreviewPanel
+      preview={{
+        target,
+        resolvedPath: target.path,
+        content: null,
+        kind: null,
+        mimeType: null,
+        dataBase64: null,
+        size: null,
+        loading: false,
+        error: "拒绝打开工作区外的文件: D:/outside/report.jsonl",
+        open: true,
+      }}
+      workspacePath="D:/workspace"
+      workspacePaths={[]}
+      onClose={vi.fn()}
+      onOpenFile={vi.fn()}
+      onRetry={vi.fn()}
+      onAuthorizeFile={authorize}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "允许并打开" }));
+  expect(authorize).toHaveBeenCalledWith(target, false);
+});
+
+it("offers file selection when a resolved reference does not exist", () => {
+  Object.defineProperty(window, "__TAURI_INTERNALS__", {
+    configurable: true,
+    value: {},
+  });
+  const target = { path: "D:/study/readme", line: null, column: null };
+  const authorize = vi.fn();
+  render(
+    <FilePreviewPanel
+      preview={{
+        target,
+        resolvedPath: target.path,
+        content: null,
+        kind: null,
+        mimeType: null,
+        dataBase64: null,
+        size: null,
+        loading: false,
+        error: "无法访问文件 D:/study/readme: 系统找不到指定的文件。 (os error 2)",
+        open: true,
+      }}
+      workspacePath="D:/study"
+      workspacePaths={[]}
+      onClose={vi.fn()}
+      onOpenFile={vi.fn()}
+      onRetry={vi.fn()}
+      onAuthorizeFile={authorize}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "选择并打开" }));
+  expect(authorize).toHaveBeenCalledWith(target, true);
+});
 
 it("does not load the code editor for Markdown rendering, but loads it on demand", async () => {
   render(

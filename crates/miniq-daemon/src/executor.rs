@@ -134,6 +134,7 @@ impl SessionToolExecutor {
         call: &ToolCallRequest,
         tool_call_id: &str,
         risk: &miniq_sandbox::Risk,
+        approval_pattern: &str,
     ) -> Result<bool, AgentError> {
         let approval = self
             .state
@@ -178,7 +179,7 @@ impl SessionToolExecutor {
             ApprovalDecision::Approve => (ApprovalStatus::Approved, true),
             ApprovalDecision::ApproveForSession => {
                 self.state
-                    .allow_for_session(&self.session_id, &self.approval_pattern(call));
+                    .allow_for_session(&self.session_id, approval_pattern);
                 (ApprovalStatus::ApprovedForSession, true)
             }
             ApprovalDecision::Reject => (ApprovalStatus::Rejected, false),
@@ -215,6 +216,7 @@ impl SessionToolExecutor {
         call: &ToolCallRequest,
         tool_call_id: &str,
         created_at: &str,
+        approved_readable_file: Option<std::path::PathBuf>,
     ) -> Result<Value, AgentError> {
         let _ = self
             .state
@@ -253,7 +255,10 @@ impl SessionToolExecutor {
         // Back up the target before any file-mutating tool runs.
         let checkpoint_ids = self.take_checkpoints(call, tool_call_id);
 
-        let ctx = self.ctx.clone().with_cancellation(self.cancel.clone());
+        let mut ctx = self.ctx.clone().with_cancellation(self.cancel.clone());
+        if let Some(file) = approved_readable_file {
+            ctx = ctx.with_readable_file(file);
+        }
         let result = tokio::select! {
             _ = self.cancel.cancelled() => {
                 let output = json!({"cancelled": true});
@@ -438,7 +443,7 @@ impl ToolExecutor for SessionToolExecutor {
 
         // 2. Risk evaluation. Unknown calls are visible in history and give
         // the model the exact current tool list so it can recover next round.
-        let risk = match self.router.evaluate(&self.ctx, &call.name, &call.arguments) {
+        let mut risk = match self.router.evaluate(&self.ctx, &call.name, &call.arguments) {
             Ok(risk) => risk,
             Err(error) => {
                 let output = unknown_tool_output(&self.router, call, &error);
@@ -461,6 +466,32 @@ impl ToolExecutor for SessionToolExecutor {
         self.audit(
             "tool_call",
             json!({"toolCallId": tool_call.id, "tool": call.name, "risk": risk.level.as_str()}),
+        );
+
+        let approved_readable_file = if call.name == "file_read" && risk.level == RiskLevel::High {
+            let file = call
+                .arguments
+                .get("path")
+                .and_then(Value::as_str)
+                .and_then(|path| std::path::Path::new(path).canonicalize().ok())
+                .filter(|file| file.is_file());
+            let Some(file) = file else {
+                let output = json!({
+                    "rejected": true,
+                    "riskLevel": "blocked",
+                    "reason": "external file is no longer available",
+                });
+                self.finish(&tool_call.id, ToolCallStatus::Rejected, &output);
+                return Ok(output);
+            };
+            risk.reason = format!("读取工作区外的文件，需要明确批准: {}", file.display());
+            Some(file)
+        } else {
+            None
+        };
+        let approval_pattern = approved_readable_file.as_ref().map_or_else(
+            || self.approval_pattern(call),
+            |file| format!("file_read:external-file:{}", file.to_string_lossy()),
         );
 
         if self.ctx.plan_mode() && !plan::plan_mode_allows(call, risk.level) {
@@ -494,10 +525,9 @@ impl ToolExecutor for SessionToolExecutor {
                             "cannot read session approval policy: {error}"
                         ))
                     })?;
-                let pattern = self.approval_pattern(call);
                 let allowed_for_session = self
                     .state
-                    .is_allowed_for_session(&self.session_id, &pattern);
+                    .is_allowed_for_session(&self.session_id, &approval_pattern);
                 let pre_approved = mode != crate::state::ApprovalMode::AlwaysAsk
                     && match self.permission_policy {
                         PermissionPolicy::AcceptEdits => {
@@ -533,7 +563,9 @@ impl ToolExecutor for SessionToolExecutor {
                         .state
                         .store
                         .update_tool_call_status(&tool_call.id, ToolCallStatus::WaitingApproval);
-                    let approved = self.request_approval(call, &tool_call.id, &risk).await?;
+                    let approved = self
+                        .request_approval(call, &tool_call.id, &risk, &approval_pattern)
+                        .await?;
                     if !approved {
                         let output = json!({
                             "rejected": true,
@@ -548,8 +580,13 @@ impl ToolExecutor for SessionToolExecutor {
         }
 
         // 4. Execute.
-        self.run_tool_call(call, &tool_call.id, &tool_call.created_at)
-            .await
+        self.run_tool_call(
+            call,
+            &tool_call.id,
+            &tool_call.created_at,
+            approved_readable_file,
+        )
+        .await
     }
 }
 

@@ -15,6 +15,7 @@ import {
 } from "../previewTabs";
 import { PreviewViewStore } from "../previewViewState";
 import type { RpcClient } from "../rpc";
+import { isTauriRuntime } from "../runtime";
 
 export interface FilePreviewState {
   target: LocalFileTarget | null;
@@ -67,6 +68,9 @@ export function useFilePreview(
   const [sessions, setSessions] = useState<Record<string, PreviewTabsState>>(
     cache?.sessions ?? {},
   );
+  const [authorizedFiles, setAuthorizedFiles] = useState<Record<string, string[]>>({});
+  const authorizedFilesRef = useRef(authorizedFiles);
+  authorizedFilesRef.current = authorizedFiles;
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
   const tabs = sessions[scope] ?? EMPTY_PREVIEW_TABS;
@@ -120,6 +124,7 @@ export function useFilePreview(
                 }));
             },
           },
+          authorizedFilesRef.current[scope] ?? [],
         );
         if (requestId !== requestSequence.current) return;
         updateTabs((current) =>
@@ -151,6 +156,57 @@ export function useFilePreview(
       }
     },
     [workspacePath, workspacePaths, scope, client, sessionId, updateTabs],
+  );
+
+  const authorizeFile = useCallback(
+    async (target: LocalFileTarget, chooseReplacement = false) => {
+      if (!isTauriRuntime()) return;
+      try {
+        let selected = target.path;
+        if (chooseReplacement) {
+          const { open } = await import("@tauri-apps/plugin-dialog");
+          const replacement = await open({
+            directory: false,
+            multiple: false,
+            title: "选择要允许 miniQ 打开的文件",
+            defaultPath: target.path,
+          });
+          if (typeof replacement !== "string") return;
+          selected = replacement;
+        }
+        const next = Array.from(new Set([...(authorizedFilesRef.current[scope] ?? []), selected]));
+        const selectedTarget = { ...target, path: selected };
+        const file = await readLocalFilePreview(
+          selected,
+          workspacePath,
+          workspacePaths,
+          { client, sessionId },
+          next,
+        );
+        authorizedFilesRef.current = { ...authorizedFilesRef.current, [scope]: next };
+        setAuthorizedFiles(authorizedFilesRef.current);
+        updateTabs((current) => selectPreviewTab(current, { ...selectedTarget, path: file.path }, target.path));
+        setState({
+          target: { ...selectedTarget, path: file.path },
+          resolvedPath: file.path,
+          content: file.content,
+          kind: file.kind,
+          mimeType: file.mimeType,
+          dataBase64: file.dataBase64,
+          size: file.size,
+          loading: false,
+          error: null,
+          open: true,
+        });
+      } catch (cause) {
+        setState((current) => ({
+          ...current,
+          loading: false,
+          error: errorMessage(cause),
+        }));
+      }
+    },
+    [scope, workspacePath, workspacePaths, client, sessionId, updateTabs],
   );
 
   const close = useCallback(() => {
@@ -249,6 +305,8 @@ export function useFilePreview(
     canReopenClosedTab: tabs.closed.length > 0,
     reopen,
     openFile,
+    authorizeFile,
+    authorizedFiles: authorizedFiles[scope] ?? [],
     close,
   };
 }

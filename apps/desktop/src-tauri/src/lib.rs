@@ -65,8 +65,15 @@ fn open_local_file(
     path: String,
     workspace_path: String,
     workspace_paths: Vec<String>,
+    authorized_files: Vec<String>,
 ) -> Result<(), String> {
-    local_file::open(&app, &path, &workspace_path, &workspace_paths)
+    local_file::open(
+        &app,
+        &path,
+        &workspace_path,
+        &workspace_paths,
+        &authorized_files,
+    )
 }
 
 #[tauri::command]
@@ -75,8 +82,15 @@ fn reveal_local_file(
     path: String,
     workspace_path: String,
     workspace_paths: Vec<String>,
+    authorized_files: Vec<String>,
 ) -> Result<(), String> {
-    local_file::reveal(&app, &path, &workspace_path, &workspace_paths)
+    local_file::reveal(
+        &app,
+        &path,
+        &workspace_path,
+        &workspace_paths,
+        &authorized_files,
+    )
 }
 
 #[tauri::command]
@@ -84,8 +98,14 @@ fn read_local_text_file(
     path: String,
     workspace_path: String,
     workspace_paths: Vec<String>,
+    authorized_files: Vec<String>,
 ) -> Result<local_file::LocalTextFile, String> {
-    local_file::read_text(&path, &workspace_path, &workspace_paths)
+    local_file::read_text_authorized(
+        &path,
+        &workspace_path,
+        &workspace_paths,
+        &authorized_files,
+    )
 }
 
 #[tauri::command]
@@ -93,8 +113,14 @@ fn read_local_file_preview(
     path: String,
     workspace_path: String,
     workspace_paths: Vec<String>,
+    authorized_files: Vec<String>,
 ) -> Result<local_file::LocalFilePreview, String> {
-    local_file::read_preview(&path, &workspace_path, &workspace_paths)
+    local_file::read_preview_authorized(
+        &path,
+        &workspace_path,
+        &workspace_paths,
+        &authorized_files,
+    )
 }
 
 #[tauri::command]

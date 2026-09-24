@@ -168,6 +168,7 @@ export function AppWorkbench({
                   app.catalog.currentWorkspace.path
                 }
                 workspacePaths={app.catalog.currentWorkspacePaths}
+                authorizedFiles={app.preview.authorizedFiles}
                 onClose={workbench.close}
                 withinWorkbench
                 expanded={expanded}
@@ -190,6 +191,9 @@ export function AppWorkbench({
                     : undefined
                 }
                 onOpenFile={workbench.openFile}
+                onAuthorizeFile={(target, chooseReplacement) =>
+                  void app.preview.authorizeFile(target, chooseReplacement)
+                }
                 onRetry={() => {
                   if (app.preview.state.target)
                     workbench.openFile(app.preview.state.target);
