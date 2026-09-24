@@ -255,45 +255,55 @@ export function Timeline(props: TimelineProps) {
     props.questions.length === 0;
 
   return (
-    <>
-      <ExecutionSummary
-        messages={props.messages}
-        calls={props.toolCalls}
-        progress={props.turnProgress}
-        plan={props.plan}
-        busy={props.busy}
-        approvals={props.approvals.length}
-        questions={props.questions.length}
-        timing={props.latestTurnTiming}
-      />
-      <div className="session-goal-card" data-testid="session-goal">
-        {goalEditing ? (
-          <form onSubmit={(event) => { event.preventDefault(); void saveGoal(); }}>
-            <input aria-label="会话目标" value={goalText} onChange={(event) => setGoalText(event.target.value)} placeholder="这次会话的目标" maxLength={2000} autoFocus />
-            <input aria-label="token 预算" type="number" min={1} step={1} value={goalBudget} onChange={(event) => setGoalBudget(event.target.value)} placeholder="token 预算（可选）" />
-            <select aria-label="目标状态" value={goalStatus} onChange={(event) => setGoalStatus(event.target.value as SessionGoalStatus)}>
-              <option value="active">进行中</option>
-              <option value="paused">已暂停</option>
-              <option value="completed">已完成</option>
-            </select>
-            <button type="submit" disabled={goalBusy || !goalText.trim()}>保存目标</button>
-            <button type="button" className="ghost" onClick={() => { setGoalText(currentGoal?.goal ?? ""); setGoalBudget(currentGoal?.tokenBudget?.toString() ?? ""); setGoalStatus(currentGoal?.status ?? "active"); setGoalEditingValue(false); }}>取消</button>
-          </form>
-        ) : currentGoal ? (
-          <button type="button" className="session-goal-content" onClick={() => { setGoalStatus(currentGoal.status); setGoalEditingValue(true); }} title="编辑会话目标">
-            <span className="session-goal-label">目标</span><span>{currentGoal.goal}</span>
-            <span className="session-goal-usage">{currentGoal.status === "completed" ? "已完成 · " : currentGoal.status === "paused" ? "已暂停 · " : "进行中 · "}{currentGoal.usedTokens.toLocaleString()} tokens · {(currentGoal.usedTimeMs / 1000).toFixed(1)}s</span>
-          </button>
-        ) : props.client && props.sessionId ? (
-          <button type="button" className="ghost session-goal-add" onClick={() => { setGoalStatus("active"); setGoalEditingValue(true); }}>＋ 设置会话目标</button>
-        ) : null}
-      </div>
-      {props.agents && props.onOpenAgentPanel && (
-        <AgentStatusIndicator
-          agents={props.agents}
-          onOpen={props.onOpenAgentPanel}
+    <div className="conversation-view" data-testid="conversation-view">
+      <div className="conversation-context" data-testid="conversation-context">
+        {props.title && (
+          <div className="conversation-title" title={props.title}>
+            <span className="conversation-title-label">会话</span>
+            <strong>{props.title}</strong>
+          </div>
+        )}
+        <ExecutionSummary
+          messages={props.messages}
+          calls={props.toolCalls}
+          progress={props.turnProgress}
+          plan={props.plan}
+          busy={props.busy}
+          approvals={props.approvals.length}
+          questions={props.questions.length}
+          timing={props.latestTurnTiming}
         />
-      )}
+        {(goalEditing || currentGoal || (props.client && props.sessionId)) && (
+          <div className={`session-goal-card${goalEditing ? " is-editing" : ""}`} data-testid="session-goal">
+            {goalEditing ? (
+              <form onSubmit={(event) => { event.preventDefault(); void saveGoal(); }}>
+                <input aria-label="会话目标" value={goalText} onChange={(event) => setGoalText(event.target.value)} placeholder="这次会话的目标" maxLength={2000} autoFocus />
+                <input aria-label="token 预算" type="number" min={1} step={1} value={goalBudget} onChange={(event) => setGoalBudget(event.target.value)} placeholder="token 预算（可选）" />
+                <select aria-label="目标状态" value={goalStatus} onChange={(event) => setGoalStatus(event.target.value as SessionGoalStatus)}>
+                  <option value="active">进行中</option>
+                  <option value="paused">已暂停</option>
+                  <option value="completed">已完成</option>
+                </select>
+                <button type="submit" disabled={goalBusy || !goalText.trim()}>保存目标</button>
+                <button type="button" className="ghost" onClick={() => { setGoalText(currentGoal?.goal ?? ""); setGoalBudget(currentGoal?.tokenBudget?.toString() ?? ""); setGoalStatus(currentGoal?.status ?? "active"); setGoalEditingValue(false); }}>取消</button>
+              </form>
+            ) : currentGoal ? (
+              <button type="button" className="session-goal-content" onClick={() => { setGoalStatus(currentGoal.status); setGoalEditingValue(true); }} title="编辑会话目标">
+                <span className="session-goal-label">目标</span><span>{currentGoal.goal}</span>
+                <span className="session-goal-usage">{currentGoal.status === "completed" ? "已完成 · " : currentGoal.status === "paused" ? "已暂停 · " : "进行中 · "}{currentGoal.usedTokens.toLocaleString()} tokens · {(currentGoal.usedTimeMs / 1000).toFixed(1)}s</span>
+              </button>
+            ) : props.client && props.sessionId ? (
+              <button type="button" className="ghost session-goal-add" onClick={() => { setGoalStatus("active"); setGoalEditingValue(true); }}>＋ 设置会话目标</button>
+            ) : null}
+          </div>
+        )}
+        {props.agents && props.onOpenAgentPanel && (
+          <AgentStatusIndicator
+            agents={props.agents}
+            onOpen={props.onOpenAgentPanel}
+          />
+        )}
+      </div>
       <TimelineToolbar
         key={props.sessionId}
         filter={filter}
@@ -407,6 +417,6 @@ export function Timeline(props: TimelineProps) {
           <ArrowDown size={15} />
         </button>
       )}
-    </>
+    </div>
   );
 }

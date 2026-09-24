@@ -200,6 +200,198 @@
   flex: none;
   min-width: 0;
 }
+
+/* The conversation is a single vertical work area.  Keep execution metadata
+   in one compact context row so the scrollable transcript gets the remaining
+   height, matching the way ChatGPT keeps its conversation header lightweight. */
+.conversation-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+}
+
+.conversation-context {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 4px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.conversation-title {
+  display: inline-flex;
+  flex: 0 1 260px;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.conversation-title-label {
+  flex: none;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.conversation-title strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+}
+
+.conversation-context > .execution-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 0;
+  border-bottom: 0;
+}
+
+.conversation-context .execution-summary-title {
+  gap: 6px;
+  min-height: 24px;
+  overflow: hidden;
+}
+
+.conversation-context .execution-summary-counts {
+  flex-wrap: nowrap;
+  gap: 9px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.conversation-context .execution-summary > .turn-timing {
+  margin-top: 0;
+  font-size: 11px;
+}
+
+.conversation-context .session-goal-card {
+  flex: 0 1 auto;
+  width: auto;
+  max-width: min(420px, 34vw);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.conversation-context .session-goal-content,
+.conversation-context .session-goal-add {
+  width: auto;
+  max-width: min(420px, 34vw);
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  white-space: nowrap;
+}
+
+.conversation-context .session-goal-content > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-context .session-goal-usage {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conversation-context .session-goal-card.is-editing {
+  position: absolute;
+  z-index: 12;
+  top: 8px;
+  right: 20px;
+  left: 20px;
+  max-width: none;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: var(--shadow-lg);
+}
+
+.conversation-context .session-goal-card.is-editing form {
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 180px) minmax(100px, 130px) auto auto;
+}
+
+.conversation-context .agent-status-indicator {
+  flex: 0 1 auto;
+  margin: 0;
+  max-width: min(440px, 36vw);
+  overflow: hidden;
+}
+
+.conversation-view > .timeline-toolbar {
+  flex: 0 0 auto;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.conversation-view > .timeline-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
+  .conversation-context {
+    gap: 6px;
+    padding-inline: 14px;
+  }
+
+  .conversation-title {
+    flex-basis: 180px;
+  }
+
+  .conversation-context .session-goal-card,
+  .conversation-context .session-goal-content,
+  .conversation-context .session-goal-add,
+  .conversation-context .agent-status-indicator {
+    max-width: 260px;
+  }
+}
+
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .conversation-context {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    min-height: 0;
+    padding: 5px max(12px, env(safe-area-inset-right)) 4px max(12px, env(safe-area-inset-left));
+  }
+
+  .conversation-title {
+    flex: 1 1 100%;
+    min-height: 22px;
+  }
+
+  .conversation-context > .execution-summary {
+    flex-basis: 100%;
+  }
+
+  .conversation-context .session-goal-card,
+  .conversation-context .session-goal-content,
+  .conversation-context .session-goal-add,
+  .conversation-context .agent-status-indicator {
+    max-width: 100%;
+  }
+
+  .conversation-context .session-goal-card.is-editing {
+    top: 6px;
+    right: 10px;
+    left: 10px;
+  }
+}
 .timeline-modes {
   display: flex;
   flex: none;

@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Artifact, Message, Question, ToolCall, TurnProgress } from "../types";
 import type { PendingApproval } from "../hooks/useSessionFeed";
+import type { RpcClient } from "../rpc";
 import { Timeline } from "./Timeline";
 import { QueueBar } from "./QueueBar";
 
@@ -22,10 +23,16 @@ function renderTimeline(options: {
   questions?: Question[];
   approvals?: PendingApproval[];
   artifacts?: Artifact[];
+  client?: RpcClient;
+  sessionId?: string;
+  title?: string;
 }) {
   return renderToStaticMarkup(
     <Timeline
       messages={options.messages ?? []}
+      client={options.client}
+      sessionId={options.sessionId}
+      title={options.title}
       toolCalls={options.toolCalls ?? []}
       approvals={options.approvals ?? []}
       questions={options.questions ?? []}
@@ -50,6 +57,29 @@ function renderTimeline(options: {
 }
 
 describe("Timeline execution flow", () => {
+  it("keeps the compact context above the single scrollable transcript", () => {
+    const html = renderTimeline({
+      client: {} as RpcClient,
+      sessionId: "session-1",
+      title: "检查服务状态",
+    });
+    const context = html.indexOf('data-testid="conversation-context"');
+    const toolbar = html.indexOf('aria-label="会话记录工具栏"');
+    const shell = html.indexOf('class="timeline-shell"');
+    const transcript = html.indexOf('class="timeline"');
+    expect(context).toBeGreaterThanOrEqual(0);
+    expect(toolbar).toBeGreaterThan(context);
+    expect(shell).toBeGreaterThan(toolbar);
+    expect(transcript).toBeGreaterThan(shell);
+    expect(html).toContain("检查服务状态");
+    expect(html).toContain("设置会话目标");
+  });
+
+  it("does not reserve a goal row when a session cannot edit goals", () => {
+    const html = renderTimeline({ title: "只读会话" });
+    expect(html).not.toContain('data-testid="session-goal"');
+  });
+
   it("places generated artifacts at their creation point instead of a fixed footer", () => {
     const html = renderTimeline({
       messages: [
