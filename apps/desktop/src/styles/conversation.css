@@ -627,32 +627,6 @@
   position: relative;
 }
 
-.bubble.assistant .msg-copy {
-  position: absolute;
-  top: 2px;
-  right: 4px;
-  display: inline-flex;
-  align-items: center;
-  padding: 4px;
-  color: var(--text-dim);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-
-.bubble.assistant:hover .msg-copy,
-.bubble.assistant .msg-copy.copied {
-  opacity: 1;
-}
-
-.bubble.assistant .msg-copy:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
 .jump-to-bottom {
   position: absolute;
   bottom: 110px;

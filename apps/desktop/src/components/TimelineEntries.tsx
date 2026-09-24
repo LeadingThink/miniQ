@@ -153,41 +153,43 @@ export function TimelineEntries(props: {
           item.message.role === "user" ? (
             <div
               key={item.message.id}
-              className="bubble user"
+              className="message-entry user"
               data-user-message-id={item.message.id}
               data-history-anchor={`message:${item.message.id}`}
             >
-              {editingMessageId === item.message.id ? (
-                <textarea
-                  className="message-edit-input"
-                  aria-label="修改消息内容"
-                  value={draft}
-                  autoFocus
-                  rows={Math.max(2, draft.split("\n").length)}
-                  onChange={(event) => setDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") cancelEditing();
-                    if (
-                      event.key === "Enter" &&
-                      (event.ctrlKey || event.metaKey)
-                    )
-                      void saveMessage(item.message);
-                  }}
-                />
-              ) : item.message.content ? (
-                <div>{item.message.content}</div>
-              ) : null}
-              {item.message.attachments &&
-                item.message.attachments.length > 0 && (
-                  <div className="message-attachments">
-                    {item.message.attachments.map((attachment) => (
-                      <MessageAttachmentPreview
-                        key={attachment.path}
-                        attachment={attachment}
-                      />
-                    ))}
-                  </div>
-                )}
+              <div className="bubble user">
+                {editingMessageId === item.message.id ? (
+                  <textarea
+                    className="message-edit-input"
+                    aria-label="修改消息内容"
+                    value={draft}
+                    autoFocus
+                    rows={Math.max(2, draft.split("\n").length)}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") cancelEditing();
+                      if (
+                        event.key === "Enter" &&
+                        (event.ctrlKey || event.metaKey)
+                      )
+                        void saveMessage(item.message);
+                    }}
+                  />
+                ) : item.message.content ? (
+                  <div>{item.message.content}</div>
+                ) : null}
+                {item.message.attachments &&
+                  item.message.attachments.length > 0 && (
+                    <div className="message-attachments">
+                      {item.message.attachments.map((attachment) => (
+                        <MessageAttachmentPreview
+                          key={attachment.path}
+                          attachment={attachment}
+                        />
+                      ))}
+                    </div>
+                  )}
+              </div>
               <div className="message-footer">
                 <MessageTime at={item.message.createdAt} />
                 <div className="message-actions">
@@ -258,17 +260,19 @@ export function TimelineEntries(props: {
           ) : (
             <div
               key={item.message.id}
-              className="bubble assistant"
+              className="message-entry assistant"
               data-history-anchor={`message:${item.message.id}`}
             >
-              <Md
-                workspacePath={props.workspacePath}
-                onOpenFile={props.onOpenFile}
-                onOpenUrl={props.onOpenUrl}
-              >
-                {item.message.content}
-              </Md>
-              <div className="message-footer assistant-footer">
+              <div className="bubble assistant">
+                <Md
+                  workspacePath={props.workspacePath}
+                  onOpenFile={props.onOpenFile}
+                  onOpenUrl={props.onOpenUrl}
+                >
+                  {item.message.content}
+                </Md>
+              </div>
+              <div className="message-footer">
                 <MessageTime at={item.message.createdAt} />
                 <div className="message-actions">
                   <CopyButton

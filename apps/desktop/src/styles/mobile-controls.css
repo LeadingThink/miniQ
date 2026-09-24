@@ -284,6 +284,7 @@
 
 .mobile-chat-message-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   margin-top: 6px;

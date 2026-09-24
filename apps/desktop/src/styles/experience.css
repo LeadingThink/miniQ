@@ -587,44 +587,50 @@
   color: var(--danger);
   font-size: 11px;
 }
-.bubble .copy-control {
+/* Footer width and height must not depend on how short the message is. */
+.message-entry {
   display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+.message-entry.user { align-items: flex-end; }
+.message-entry.assistant { align-items: flex-start; }
+.message-entry.assistant > .bubble { width: fit-content; }
+.message-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-self: flex-start;
+  max-width: 100%;
+  gap: 2px 6px;
+  margin-top: 2px;
+  white-space: normal;
+}
+.message-entry.user > .message-footer {
+  align-self: flex-end;
   justify-content: flex-end;
 }
-.bubble.user,
-.bubble.assistant {
-  position: relative;
-  margin-bottom: 30px;
-}
-.bubble.assistant {
-  width: fit-content;
-}
-.message-footer {
-  position: absolute;
-  top: calc(100% + 2px);
-  right: 0;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
 .message-footer > .message-time {
-  margin: 0 4px 0 0;
+  margin: 0;
+  padding-block: 6px;
 }
 .message-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  max-width: 100%;
   gap: 2px;
 }
-.assistant-footer {
-  right: auto;
-  left: 0;
+.message-footer .copy-control {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
 }
-.bubble.user .msg-copy,
-.bubble.assistant .msg-copy,
+.message-footer .msg-copy,
 .msg-action {
-  position: static;
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 28px;
@@ -636,7 +642,7 @@
   color: var(--text-dim);
 }
 .msg-action:hover,
-.bubble .msg-copy:hover {
+.message-footer .msg-copy:hover {
   color: var(--text);
   background: var(--bg-subtle);
 }
@@ -646,7 +652,7 @@
 }
 .message-edit-input {
   width: min(520px, 60vw);
-  min-width: 220px;
+  min-width: 0;
   max-width: 100%;
   resize: vertical;
   border: 0;

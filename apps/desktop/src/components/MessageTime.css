@@ -1,4 +1,6 @@
 .message-time {
+  min-width: 0;
+  max-width: 100%;
   color: var(--text-dim);
   font-size: 11px;
   line-height: 1.5;
@@ -12,15 +14,17 @@
   cursor: pointer;
   list-style: none;
   border-radius: 4px;
+  max-width: 100%;
+  word-break: normal;
+  overflow-wrap: normal;
 }
+
+.message-time-trigger time { white-space: nowrap; }
 
 .message-time-trigger::-webkit-details-marker { display: none; }
 .message-time-trigger:hover { text-decoration: underline; }
 .message-time-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.message-time-detail { display: block; margin-top: 4px; }
-.bubble > .message-time { margin-top: 6px; }
-.bubble.user > .message-time { text-align: right; }
-.bubble.user > .message-time > summary { margin-left: auto; }
+.message-time-detail { display: block; margin-top: 4px; overflow-wrap: anywhere; }
 
 .conversation-time-separator {
   display: flex;
