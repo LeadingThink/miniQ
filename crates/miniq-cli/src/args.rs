@@ -6,7 +6,7 @@ use std::path::PathBuf;
     name = "miniq",
     version,
     about = "miniQ terminal client. Shares tasks with desktop and mobile.",
-    after_help = "Start: miniq configure --base-url https://your-endpoint/v1 --model MODEL\nThen: miniq, miniq exec 'task', or miniq resume --last\nNo desktop window is required. Computer-use still requires an interactive desktop and OS permissions."
+    after_help = "Start: miniq (first launch guides you through API Key and model setup)\nContinue: miniq resume, miniq exec 'task', or miniq update\nNo desktop window is required. Computer-use still requires an interactive desktop and OS permissions."
 )]
 pub struct Cli {
     #[arg(long, global = true, env = "MINIQ_DATA_DIR")]
@@ -48,9 +48,9 @@ pub struct ChatOptions {
 pub enum Commands {
     /// Run a task without an interactive prompt. Progress goes to stderr; final answer to stdout.
     Exec(ExecArgs),
-    /// Resume an existing session, or the most recent session in this project.
+    /// Pick a project session to resume, supply its ID, or use --last.
     Resume {
-        #[arg(required_unless_present = "last", conflicts_with = "last")]
+        #[arg(conflicts_with = "last")]
         session: Option<String>,
         #[arg(long)]
         last: bool,
@@ -77,12 +77,12 @@ pub enum Commands {
     },
     /// Stop a session and its queued follow-ups/child agents.
     Cancel { session: String },
-    /// Configure the shared provider. Key comes from MINIQ_API_KEY or a hidden prompt, never argv.
+    /// Guided provider setup. Defaults to OneAPI; Key is read from a hidden prompt or MINIQ_API_KEY.
     Configure {
         #[arg(long)]
-        base_url: String,
+        base_url: Option<String>,
         #[arg(long)]
-        model: String,
+        model: Option<String>,
     },
     /// Inspect available models, or their advertised capabilities and reasoning efforts.
     Models { model: Option<String> },
@@ -102,6 +102,12 @@ pub enum Commands {
     Bridge,
     /// Generate shell completions without connecting to the daemon.
     Completions { shell: clap_complete::Shell },
+    /// Update the terminal binaries without interrupting running desktop or terminal tasks.
+    Update {
+        /// Check for a new version without installing it.
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 #[derive(Args)]
@@ -129,13 +135,21 @@ mod tests {
             vec!["miniq"],
             vec!["miniq", "exec", "-", "--json", "-m", "gpt-5.6-sol"],
             vec!["miniq", "resume", "--last"],
+            vec!["miniq", "resume"],
             vec!["miniq", "resume", "sess-1", "continue"],
             vec!["miniq", "bridge", "--no-start"],
+            vec!["miniq", "configure"],
+            vec!["miniq", "update", "--check"],
         ] {
             assert!(Cli::try_parse_from(args).is_ok());
         }
-        assert!(Cli::try_parse_from(["miniq", "resume"]).is_err());
+        assert!(Cli::try_parse_from(["miniq", "resume", "sess-1", "--last"]).is_err());
         assert!(Cli::try_parse_from(["miniq", "--effort", "invalid"]).is_err());
         assert!(Cli::try_parse_from(["miniq", "history", "s", "--limit", "101"]).is_err());
+        let configured =
+            Cli::try_parse_from(["miniq", "configure", "--model", "custom-model"]).unwrap();
+        assert!(
+            matches!(configured.command, Some(Commands::Configure { model: Some(model), base_url: None }) if model == "custom-model")
+        );
     }
 }

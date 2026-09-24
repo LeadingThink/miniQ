@@ -38,8 +38,16 @@ def release_upload_plan(input_dir: Path, tag: str) -> list[UploadItem]:
 
     prefix = f"releases/miniq/{tag}"
     versioned = [UploadItem(path, f"{prefix}/{path.name}") for path in files]
+    terminal = source_dir / "terminal.json"
+    terminal_stable = []
+    if terminal in files:
+        for name in ("install.sh", "install.ps1", "terminal.json"):
+            source = source_dir / name
+            if source not in files:
+                raise ValueError(f"terminal release must contain {name}")
+            terminal_stable.append(UploadItem(source, f"releases/miniq/{name}"))
     # Stable manifests are uploaded last, so clients never see metadata before assets exist.
-    return versioned + [
+    return versioned + terminal_stable + [
         UploadItem(latest, "releases/miniq/latest.json"),
         UploadItem(latest, "latest.json"),
     ]
@@ -90,6 +98,9 @@ def refresh_manifests(
     urls = [
         f"{primary_domain.rstrip('/')}/{MANIFEST_KEY}",
         f"{primary_domain.rstrip('/')}/releases/miniq/latest.json",
+        f"{primary_domain.rstrip('/')}/releases/miniq/terminal.json",
+        f"{primary_domain.rstrip('/')}/releases/miniq/install.sh",
+        f"{primary_domain.rstrip('/')}/releases/miniq/install.ps1",
         f"{primary_domain.rstrip('/')}/latest.json",
         f"{legacy_domain.rstrip('/')}/latest.json",
     ]

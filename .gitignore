@@ -9,6 +9,8 @@ dist-release/
 scripts/
 !/scripts/
 /scripts/*
+!/scripts/install-cli.node-test.mjs
+!/scripts/test-install-cli.ps1
 !/scripts/install-cli.sh
 !/scripts/install-cli.ps1
 !/scripts/test-ssh-smoke.mjs

@@ -1,0 +1,10 @@
+.terminal-settings { min-width: 0; }
+.terminal-install-location { display: grid; gap: 6px; min-width: 0; }
+.terminal-install-location code,
+.terminal-install-command code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.terminal-install-command { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0; }
+.terminal-install-command code { flex: 1 1 260px; min-width: 0; }
+.terminal-install-error,
+.terminal-install-log { white-space: pre-wrap; overflow-wrap: anywhere; }
+.terminal-install-log { max-height: 220px; overflow-y: auto; font-size: 12px; }
+.terminal-settings summary { cursor: pointer; }

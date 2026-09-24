@@ -70,4 +70,18 @@ cd apps/desktop; npx tauri build
 
 ## Terminal Client
 
-miniQ also provides `miniq`, a terminal client sharing the desktop daemon and mobile sessions. See [installation, platform prerequisites, interactive use, scripting, and visual files](docs/terminal.md). Desktop releases include terminal archives for macOS, Windows and Linux; source installers build both CLI and daemon without restarting running tasks.
+miniQ 提供独立终端命令 `miniq`，与桌面、手机共享会话和后台能力。安装不需要 Rust 或 Node.js。
+
+macOS / Linux / WSL：
+
+```sh
+curl -fsSL https://oss.zaiwen.top/releases/miniq/install.sh | sh
+```
+
+Windows PowerShell：
+
+```powershell
+irm https://oss.zaiwen.top/releases/miniq/install.ps1 | iex
+```
+
+安装后重新打开终端，在项目目录运行 `miniq`。首次使用会引导配置 Key 并搜索选择文本模型；已有桌面配置会直接复用。`miniq resume` 选择历史会话，`miniq update` 更新终端程序，`miniq doctor` 查看 CLI、后台版本与依赖状态。桌面设置也提供安装终端命令的入口。更新保留运行中的任务，详见[终端安装、使用与多端说明](docs/terminal.md)。

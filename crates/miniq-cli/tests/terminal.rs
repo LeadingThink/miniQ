@@ -8,6 +8,10 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
 
+#[cfg(target_os = "macos")]
+#[path = "support/terminal_pty.rs"]
+mod pty;
+
 struct Fixture {
     dir: tempfile::TempDir,
     requests: Arc<Mutex<Vec<Value>>>,
@@ -54,7 +58,18 @@ impl Fixture {
                             json!({"protocolVersion":2,"capabilities":{"rejectBusy":mode != "old"}})
                         }
                         "settings.get" => {
-                            json!({"approvalMode":if matches!(mode, "full" | "session-ask") {"fullAccess"} else {"alwaysAsk"}})
+                            json!({"provider":{"baseUrl":"https://oneapi.zaiwenai.com/v1","model":"fixture","hasApiKey": mode != "unconfigured"},"approvalMode":if matches!(mode, "full" | "session-ask") {"fullAccess"} else {"alwaysAsk"}})
+                        }
+                        "settings.update" => json!({"provider":{"hasApiKey":true}}),
+                        "settings.models" | "model.list" => {
+                            json!({"models":["claude-opus", "gemini-3.8-flash", "gpt-5.6-sol"]})
+                        }
+                        "model.describe" => json!({"reasoningEfforts":["low", "medium", "high"]}),
+                        "workspace.list" => {
+                            json!({"workspaces":[{"id":"workspace-1","path":root}]})
+                        }
+                        "session.list" => {
+                            json!({"sessions":[{"id":"session-1","title":"中文项目测试","status":"idle","updatedAt":"2026-09-25T00:00:00Z"}]})
                         }
                         "session.approval.get" => {
                             json!({"mode":null,"effective":if matches!(mode, "full" | "session-full") {"fullAccess"} else {"alwaysAsk"}})
@@ -65,7 +80,7 @@ impl Fixture {
                         "workspace.updateRoots" => request["params"].clone(),
                         "session.create" => json!({"id":"session-1"}),
                         "session.modelGet" => {
-                            json!({"settings":{"model":null,"apiProtocol":"auto","reasoningEffort":null}})
+                            json!({"settings":{"model":null,"apiProtocol":"auto","reasoningEffort":null},"effective":{"model":"fixture","apiProtocol":"auto","reasoningEffort":null}})
                         }
                         "session.modelUpdate" => json!({}),
                         "session.open" => {
@@ -205,6 +220,39 @@ async fn stdin_jsonl_is_scoped_and_committed_output_is_authoritative() {
         .unwrap();
     assert_eq!(model["params"]["settings"]["model"], "gpt-5.6-sol");
     assert_eq!(model["params"]["settings"]["reasoningEffort"], "high");
+    assert_eq!(model["params"]["sessionId"], "session-1");
+    assert!(!requests.iter().any(|request| matches!(
+        request["method"].as_str(),
+        Some("settings.update" | "workspace.modelUpdate" | "model.globalUpdate")
+    )));
+}
+
+#[tokio::test]
+async fn noninteractive_missing_key_does_not_create_or_send_a_task() {
+    let fixture = Fixture::new("unconfigured").await;
+    let result = fixture.run(&["exec", "fixture", "--json"], "").await;
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("miniq configure"));
+    assert!(fixture
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|request| matches!(
+            request["method"].as_str(),
+            Some("daemon.health" | "settings.get")
+        )));
+}
+
+#[tokio::test]
+async fn interactive_commands_reject_piped_input_before_connecting() {
+    for args in [vec![], vec!["resume"], vec!["resume", "--last"]] {
+        let fixture = Fixture::new("success").await;
+        let result = fixture.run(&args, "unexpected piped input").await;
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("miniq exec -"));
+        assert!(fixture.requests.lock().unwrap().is_empty());
+    }
 }
 
 #[tokio::test]

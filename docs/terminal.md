@@ -4,55 +4,39 @@ The `miniq` executable is a client of `miniq-daemon`, not a second agent engine.
 
 ## Installation
 
-Desktop releases from v0.1.19 include `miniQ_terminal_VERSION_TARGET.tar.gz` and a SHA-256 checksum for macOS Apple Silicon/Intel, Linux x86-64 and Windows x86-64. Download the matching archive from the [public release page](https://github.com/LeadingThink/miniQ-releases/releases), verify its checksum, extract it and put both executables in the same directory on PATH. Windows 10/11 can extract with `tar -xzf`; Unix extraction preserves executable permissions. Keep `miniq` and `miniq-daemon` together. There is no npm package, Homebrew formula or WinGet package; do not run guessed installation commands.
-
-Source installation prerequisites: stable Rust (https://rustup.rs/), a C/C++ toolchain, and the repository. Prebuilt archives do not require Rust or Node.js; individual tools/MCP servers/plugins may need additional dependencies. From v0.1.41, Linux terminal archives target x86-64 servers with **glibc 2.31 or later** and the base `libgcc_s` runtime; they do not require X11, Wayland, PipeWire or other desktop libraries. They retain agent, shell, file, browser and plugin capabilities; real desktop screenshot/mouse/keyboard tools are available in the separate full desktop edition. Browser automation still needs its normal browser runtime. Earlier Linux terminal archives and graphical desktop packages retain their Ubuntu 24.04 system requirements. PDF vision on every platform requires Poppler.
-
-The release pipeline builds Linux terminal binaries in Debian 11, checks their ELF dependencies and GLIBC symbol versions, then starts the real daemon and SSH bridge in a clean Debian 11 image without network or graphical libraries. To build the same server edition from source, use `cargo build --release --locked --no-default-features -p miniq-daemon -p miniq-cli`; omit `--no-default-features` for native desktop control.
-
-macOS (Apple Silicon or Intel), from the checkout:
+macOS (Apple Silicon/Intel), Linux x86-64 and WSL:
 
 ```sh
-sh scripts/install-cli.sh
-export PATH="$HOME/.local/bin:$PATH"
-brew install poppler # Optional, required for PDF visual reading
-miniq --version
+curl -fsSL https://oss.zaiwen.top/releases/miniq/install.sh | sh
 ```
 
-Linux / WSL (Debian/Ubuntu system dependencies for the daemon's desktop capabilities):
-
-```sh
-sudo apt-get install build-essential pkg-config libclang-dev libxcb1-dev \
-  libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libwayland-dev libegl-dev \
-  libgbm-dev libxkbcommon-dev libssl-dev libxdo-dev poppler-utils
-sh scripts/install-cli.sh
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Windows PowerShell, with Rust MSVC and Visual Studio C++ Build Tools:
+Windows 10/11 x64, in PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install-cli.ps1
-$env:PATH = "$env:LOCALAPPDATA\miniQ\bin;$env:PATH"
-miniq --version
+irm https://oss.zaiwen.top/releases/miniq/install.ps1 | iex
 ```
 
-Windows PDF vision needs a trusted Poppler distribution with `pdfinfo.exe` and `pdftoppm.exe` on PATH. The installer does not silently download unverified third-party executables. WSL is a separate Linux environment/data directory, not the Windows desktop daemon. Do not share a live SQLite database across the Windows/WSL boundary.
+Open a new terminal, enter your project directory and run `miniq`. No Rust, Node.js, administrator access or desktop window is required. The installer selects the correct architecture, downloads the official release over HTTPS and verifies its SHA-256 checksum before changing anything. Desktop **Settings → Services & remote → Terminal** offers the same installation action. There is no npm package, Homebrew formula or WinGet package; do not run guessed package names.
 
-Set `MINIQ_INSTALL_DIR` to override the destination. Re-run the installer to update source builds. Both binaries are built before installation, and no running task/process is stopped. A running older daemon continues using its loaded code. When no tasks are active, exit/restart that daemon through the desktop workflow; do not start a second daemon against its database. On Windows replacement of an in-use binary can fail explicitly; retry when idle.
+Default installation: `~/.local/bin` on Unix; `%LOCALAPPDATA%\miniQ\bin` on Windows. The installer adds that directory to the current user's shell profile/User PATH. Set `MINIQ_INSTALL_DIR` to an absolute custom directory, `MINIQ_NO_MODIFY_PATH=1` to manage PATH yourself, or `MINIQ_VERSION=x.y.z` to install a specific published version from v0.1.53 onward. The Unix script chooses zsh, bash, fish or POSIX profile syntax. A GUI-launched macOS install without `SHELL` defaults to zsh. Re-running the installer is safe; `miniq update` uses the same installation mechanism and `miniq update --check` only checks availability.
 
-Uninstall only the two installed executables, using the exact installation directory. Keep the data directory unless you explicitly want to delete conversations, configuration and keys. No shell profile, registry entry or login service is modified automatically.
+CLI and daemon are an immutable pair under `bin/.miniq/versions/VERSION`. A single atomic version pointer activates the pair; old payloads remain available to already running processes. Unix exposes two stable symlinks; Windows uses native launchers, preserving arguments, standard streams and the child exit code. Concurrent installers are rejected. No installer stops a task, restarts the shared daemon or edits provider keys/conversations. An old daemon keeps its loaded code until it exits safely. Migrating an older Windows installation whose binary is in use fails before replacing either executable; retry after that process exits. Upgrading an already managed Windows installation does not overwrite its busy launchers.
+
+Linux prebuilt terminals require x86-64, **glibc 2.31+** and `libgcc_s`; Alpine/musl and Linux ARM are not supported. They need no X11, Wayland or PipeWire libraries, and include agent, shell, file, browser and plugin tools. Native desktop mouse/screenshot tools require the separate graphical desktop edition. Browser automation still requires a compatible browser runtime. PDF vision requires Poppler (`brew install poppler` or `apt install poppler-utils`; on Windows put trusted `pdfinfo.exe`/`pdftoppm.exe` on PATH). The installer does not download third-party tool dependencies. WSL has a separate data directory; never share a live SQLite database across the Windows/WSL boundary.
+
+Manual archives and SHA-256 sidecars remain available on the [public release page](https://github.com/LeadingThink/miniQ-releases/releases). Keep `miniq` and `miniq-daemon` together. Source builds require stable Rust and a C/C++ toolchain: `cargo build --release --locked --no-default-features -p miniq-daemon -p miniq-cli --bin miniq --bin miniq-daemon` builds the server edition; omit `--no-default-features` for native desktop control. The release pipeline verifies Linux ELF dependencies and glibc symbols and boots its daemon/SSH bridge in a clean Debian 11 image.
+
+To uninstall, remove only the exact installed `miniq`/`miniq-daemon` links or launchers and their `.miniq` binary store, then remove the installer-marked PATH line (Windows: the user PATH entry). Keep the separate daemon data directory unless you explicitly want to delete conversations/configuration. No login service is installed.
 
 ## First Use
 
 ```sh
-miniq configure --base-url https://your-oneapi-endpoint/v1 --model MODEL_ID
-miniq doctor
 cd /path/to/project
 miniq
+miniq doctor
 ```
 
-`configure` prompts for the key with echo disabled, or uses `MINIQ_API_KEY` supplied by your secret manager. Never put a key in command-line arguments, shell history, shared logs or screenshots. It updates the same provider settings as desktop; session model changes are separate. Saved settings/connection files use atomic replacement and owner-only permissions on Unix. Windows inherits the local user's data-directory ACL: do not place it in a shared directory.
+First launch detects existing shared desktop settings. If no key is configured, it offers the default `https://oneapi.zaiwenai.com/v1` service, concealed key input and a searchable list of text models before creating a session. Get a key from [Zaiwen API](https://platform.zaiwenai.com/). `miniq configure` reopens setup; `--base-url` and `--model` are optional overrides. An existing saved endpoint is preserved. A secret manager may supply `MINIQ_API_KEY`. Never put a key in command-line arguments, shell history, logs or screenshots. Setup updates shared provider settings; session model changes are separate. Saved settings/connection files use atomic replacement and owner-only permissions on Unix; Windows inherits the current user's data-directory ACL. Do not use a shared data directory.
 
 `miniq logout` removes the saved shared provider key without cancelling running tasks. Also remove `MINIQ_API_KEY` from your environment/secret manager when appropriate; a running request may already hold its key. A blank key keeps the saved key only for the same endpoint, never forwards it to a new endpoint.
 
@@ -64,12 +48,13 @@ miniq
 miniq -C /project --add-dir /shared/reference -m MODEL --effort high
 miniq -a /project/screenshot.png "Review this layout"
 miniq resume --last
+miniq resume
 miniq resume SESSION_ID "Continue from the verified results"
 miniq sessions
 miniq sessions --all
 ```
 
-Interactive commands: `/model ID`, `/effort LEVEL`, `/effort default`, `/attach PATH`, `/clear-attachments`, `/status`, `/history`, `/help`, `/exit`. Paths after `/attach` may contain spaces; they are not shell-evaluated. Line editing uses a standard terminal editor. Prompts are not copied to a separate plaintext CLI history file.
+Interactive commands: `/model` opens searchable text-model selection; `/model ID` switches directly for this session. `/effort` lists the selected model's supported reasoning choices; `/effort LEVEL` and `/effort default` remain available. `miniq resume` opens a project-scoped session picker; `resume --last` resumes immediately. Other commands: `/attach PATH`, `/clear-attachments`, `/status`, `/history`, `/help`, `/exit`. Paths after `/attach` may contain spaces and are not shell-evaluated. The editor supports arrow-key prompt recall in memory; prompts are not copied to a separate plaintext history file.
 
 Approvals show the tool and full input; `y` approves once, anything else rejects. Questions accept free text and show supplied choices. Responses from desktop/mobile remain authoritative. Ctrl+C during a task started by this client requests cancellation of that session and its children. Ctrl+C while merely watching detaches without cancelling. `/exit` between turns leaves the daemon running. Resume reuses persisted context; it does not resend the earlier task.
 

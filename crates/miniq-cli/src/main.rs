@@ -2,8 +2,11 @@ mod args;
 mod bridge;
 mod client;
 mod monitor;
+mod onboarding;
 mod output;
+mod selection;
 mod sessions;
+mod updater;
 
 use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser};
@@ -42,6 +45,12 @@ async fn run(cli: Cli) -> Result<u8> {
         clap_complete::generate(shell, &mut Cli::command(), "miniq", &mut io::stdout());
         return Ok(0);
     }
+    if let Some(Commands::Update { check }) = cli.command {
+        return updater::run(check).await;
+    }
+    if cli.command.is_none() || matches!(&cli.command, Some(Commands::Resume { .. })) {
+        require_terminal()?;
+    }
     let directory = cli.data_dir.clone().unwrap_or_else(miniq_local::data_dir);
     let mut client = client::ensure(&directory, cli.daemon_path.as_deref(), cli.no_start).await?;
     let result = match cli.command {
@@ -50,9 +59,15 @@ async fn run(cli: Cli) -> Result<u8> {
             return Ok(0);
         }
         Some(Commands::Exec(exec)) => return execute(&mut client, &cli.chat, exec).await,
-        Some(Commands::Resume { session, last: _, prompt }) => {
-            require_terminal()?;
-            let id = match session { Some(id) => id, None => sessions::last(&mut client, &cli.chat).await? };
+        Some(Commands::Resume { session, last, prompt }) => {
+            let id = match session {
+                Some(id) => id,
+                None if last => sessions::last(&mut client, &cli.chat).await?,
+                None => match selection::session(&mut client, &cli.chat).await? {
+                    Some(id) => id, None => return Ok(0),
+                },
+            };
+            if !onboarding::ensure(&mut client, true).await? { return Ok(0); }
             let id = sessions::prepare(&mut client, &cli.chat, Some(&id)).await?;
             return monitor::interactive(&mut client, &id, prompt, &cli.chat).await;
         }
@@ -68,7 +83,9 @@ async fn run(cli: Cli) -> Result<u8> {
             return Ok(code);
         }
         Some(Commands::Cancel { session }) => client.call("session.cancel", json!({"sessionId":session})).await?,
-        Some(Commands::Configure { base_url, model }) => configure(&mut client, &base_url, &model, cli.chat.protocol.as_deref()).await?,
+        Some(Commands::Configure { base_url, model }) => match onboarding::configure(&mut client, base_url.as_deref(), model.as_deref(), cli.chat.protocol.as_deref()).await? {
+            Some(settings) => settings, None => return Ok(0),
+        },
         Some(Commands::Models { model }) => match model {
             Some(model) => client.call("model.describe", json!({"model":model,"apiProtocol":cli.chat.protocol.unwrap_or_else(|| "auto".into())})).await?,
             None => client.call("model.list", json!({})).await?,
@@ -87,18 +104,18 @@ async fn run(cli: Cli) -> Result<u8> {
             client.call(&method, params).await?
         }
         None => {
-            require_terminal()?;
+            if !onboarding::ensure(&mut client, true).await? { return Ok(0); }
             let id = sessions::prepare(&mut client, &cli.chat, None).await?;
             return monitor::interactive(&mut client, &id, cli.prompt, &cli.chat).await;
         }
-        Some(Commands::Completions { .. }) => unreachable!(),
+        Some(Commands::Completions { .. } | Commands::Update { .. }) => unreachable!(),
     };
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(0)
 }
 
 fn require_terminal() -> Result<()> {
-    if !io::stdin().is_terminal() {
+    if !io::stdin().is_terminal() || !io::stderr().is_terminal() {
         bail!("interactive chat needs a terminal; use `miniq exec -` for stdin");
     }
     Ok(())
@@ -123,6 +140,7 @@ fn prompt_from_stdin(prompt: Option<String>) -> Result<String> {
 async fn execute(client: &mut Client, options: &args::ChatOptions, exec: ExecArgs) -> Result<u8> {
     let prompt = prompt_from_stdin(exec.prompt)?;
     sessions::attachments(&options.attachments)?;
+    onboarding::ensure(client, false).await?;
     if let Some(path) = &exec.output {
         if path.exists() {
             bail!(
@@ -166,28 +184,6 @@ async fn execute(client: &mut Client, options: &args::ChatOptions, exec: ExecArg
         progress(&error);
     }
     Ok(code)
-}
-
-async fn configure(
-    client: &mut Client,
-    base_url: &str,
-    model: &str,
-    protocol: Option<&str>,
-) -> Result<Value> {
-    let key = match std::env::var("MINIQ_API_KEY") {
-        Ok(key) => key,
-        Err(_) => {
-            require_terminal()?;
-            rpassword::prompt_password("API key (hidden; blank keeps existing): ")?
-        }
-    };
-    client
-        .call(
-            "settings.update",
-            json!({"provider":{"baseUrl":base_url,"model":model,
-        "apiProtocol":protocol.unwrap_or("auto"),"apiKey":key}}),
-        )
-        .await
 }
 
 async fn doctor(client: &mut Client) -> Result<Value> {

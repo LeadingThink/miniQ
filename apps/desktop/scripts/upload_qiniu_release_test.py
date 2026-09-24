@@ -8,6 +8,26 @@ from upload_qiniu_release import main, release_upload_plan
 
 
 class UploadPlanTest(unittest.TestCase):
+    def test_terminal_assets_exist_before_stable_installers_and_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("latest.json", "terminal.json", "install.sh", "install.ps1", "terminal.tar.gz"):
+                (root / name).write_text("fixture", encoding="utf-8")
+            keys = [item.object_key for item in release_upload_plan(root, "v1.2.3")]
+            self.assertEqual(keys[-5:], [
+                "releases/miniq/install.sh", "releases/miniq/install.ps1",
+                "releases/miniq/terminal.json", "releases/miniq/latest.json", "latest.json",
+            ])
+            self.assertLess(keys.index("releases/miniq/v1.2.3/terminal.tar.gz"), keys.index("releases/miniq/terminal.json"))
+
+    def test_terminal_manifest_requires_both_installers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("latest.json", "terminal.json", "install.sh"):
+                (root / name).write_text("fixture", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "install.ps1"):
+                release_upload_plan(root, "v1.2.3")
+
     def test_assets_are_versioned_before_stable_manifests(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -8,6 +8,7 @@ mod daemon_process;
 mod html_preview;
 mod keep_awake;
 mod local_file;
+mod terminal_install;
 use keep_awake::KeepAwakeState;
 
 type DaemonState = std::sync::Arc<daemon::DaemonLifecycle>;
@@ -260,6 +261,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             daemon_connection,
+            terminal_install::terminal_install_status,
+            terminal_install::install_terminal_command,
             set_keep_awake,
             prepare_daemon_update,
             cancel_daemon_update,

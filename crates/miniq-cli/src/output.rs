@@ -58,10 +58,12 @@ impl Output {
                 event["toolCallId"].as_str().unwrap_or(""),
                 event["status"].as_str().unwrap_or("")
             )),
-            "turn_progress_changed" if event["progress"]["phase"] == "waiting_retry" => {
-                progress(&format!("\n[retry] {}", event["progress"]["retry"]))
+            "turn_progress_changed" => {
+                if let Some(message) = phase_text(&event["progress"]) {
+                    progress(&message);
+                }
             }
-            "plan_updated" => progress(&format!("\n[plan] {}", event["tasks"])),
+            "plan_updated" => progress(&plan_text(&event["tasks"])),
             "context_compacted" => progress("\n[context compacted]"),
             "artifact_created" => progress(&format!("\n[artifact] {}", event["artifact"])),
             _ => {}
@@ -88,9 +90,64 @@ impl Output {
     }
 }
 
+fn phase_text(value: &Value) -> Option<String> {
+    let text = match value["phase"].as_str()? {
+        "preparing_context" => "Preparing context",
+        "compacting_context" => "Compacting context; task continues",
+        "requesting_model" => "Waiting for model",
+        "finalizing" => "Saving result",
+        "waiting_retry" => {
+            let retry = &value["retry"];
+            return Some(format!(
+                "\n[retry {}/{}] Waiting {} seconds before retrying",
+                retry["attempt"],
+                retry["maxAttempts"],
+                retry["delayMs"].as_u64().unwrap_or(0).div_ceil(1000)
+            ));
+        }
+        // Streaming text already shows progress; avoid printing between deltas.
+        _ => return None,
+    };
+    Some(match value["modelStep"].as_u64() {
+        Some(step) => format!("\n[step {step}] {text}"),
+        None => format!("\n[{text}]"),
+    })
+}
+
+fn plan_text(tasks: &Value) -> String {
+    let mut text = String::from("\n[plan]");
+    for task in tasks.as_array().into_iter().flatten() {
+        let marker = match task["status"].as_str() {
+            Some("completed") => "x",
+            Some("in_progress") => ">",
+            _ => " ",
+        };
+        text.push_str(&format!(
+            "\n  [{marker}] {}",
+            task["content"].as_str().unwrap_or("")
+        ));
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn progress_distinguishes_work_retry_and_streaming_without_losing_plan_content() {
+        let tasks = json!([
+            {"status":"completed","content":"Read files"},
+            {"status":"in_progress","content":"Compare every candidate"},
+            {"status":"pending","content":"Write report"}
+        ]);
+        assert_eq!(
+            plan_text(&tasks),
+            "\n[plan]\n  [x] Read files\n  [>] Compare every candidate\n  [ ] Write report"
+        );
+        assert_eq!(phase_text(&json!({"phase":"waiting_retry","retry":{"attempt":2,"maxAttempts":10,"delayMs":1500}})).unwrap(),
+            "\n[retry 2/10] Waiting 2 seconds before retrying");
+        assert!(phase_text(&json!({"phase":"receiving_model"})).is_none());
+    }
     #[test]
     fn escape_sequences_cannot_control_the_terminal() {
         assert_eq!(terminal_text("hello\x1b[2J\x07\r\n世界"), "hello[2J\n世界");

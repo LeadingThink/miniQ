@@ -263,7 +263,7 @@ fn daemon_binary(explicit: Option<&Path>) -> Result<PathBuf> {
         candidates.extend(std::env::split_paths(&paths).map(|path| path.join(name)));
     }
     candidates.into_iter().find(|path| path.is_file())
-        .context("miniq-daemon not found; run scripts/install-cli.sh (or install-cli.ps1) from the source checkout, or set MINIQ_DAEMON_PATH")
+        .context("miniq-daemon not found; install the terminal pair from https://oss.zaiwen.top/releases/miniq/install.sh (Windows: install.ps1), or set MINIQ_DAEMON_PATH")
 }
 
 #[cfg(test)]

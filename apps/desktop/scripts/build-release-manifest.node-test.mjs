@@ -43,12 +43,19 @@ test("builds one signed update manifest for every desktop platform", () => {
   });
 
   assert.equal(manifest.version, "1.2.3");
+  const terminalManifest = JSON.parse(readFileSync(join(output, "terminal.json"), "utf8"));
+  assert.equal(terminalManifest.version, "1.2.3");
+  assert.match(readFileSync(join(output, "install.sh"), "utf8"), /MINIQ_NO_MODIFY_PATH/);
+  assert.match(readFileSync(join(output, "install.ps1"), "utf8"), /MINIQ_NO_MODIFY_PATH/);
   for (const target of Object.values(targets)) {
     const name = `miniQ_terminal_1.2.3_${target}.tar.gz`;
     const content = readFileSync(join(output, name), "utf8");
     assert.equal(content, `terminal-${target}`);
     const digest = createHash("sha256").update(content).digest("hex");
     assert.equal(readFileSync(join(output, `${name}.sha256`), "utf8"), `${digest}  ${name}\n`);
+    assert.deepEqual(terminalManifest.platforms[target], {
+      url: `https://oss.example.com/releases/miniq/v1.2.3/${name}`, sha256: digest,
+    });
   }
   assert.deepEqual(Object.keys(manifest.platforms), [
     "windows-x86_64",
@@ -99,7 +106,19 @@ test("Linux desktop releases require the separately built portable terminal", ()
     assetBaseUrl: "https://oss.example.com/releases/miniq/v1.2.3",
     mirrorBaseUrl: "https://github.com/acme/releases/download/v1.2.3",
     requiredPlatforms: ["linux-x86_64"],
-  }), /missing required portable Linux terminal/);
+  }), /missing required portable terminal archive: x86_64-unknown-linux-gnu/);
+});
+
+test("every required desktop platform also requires a CLI pair", () => {
+  const root = mkdtempSync(join(tmpdir(), "miniq-release-terminal-required-"));
+  const input = join(root, "input");
+  fixture(input, targets.windows, [["miniQ-setup.exe"], ["miniQ-setup.exe.sig", "signature"]]);
+  assert.throws(() => buildRelease({
+    input, output: join(root, "out"), tag: "v1.2.3",
+    assetBaseUrl: "https://oss.example.com/releases/miniq/v1.2.3",
+    mirrorBaseUrl: "https://github.com/acme/releases/download/v1.2.3",
+    requiredPlatforms: ["windows-x86_64"],
+  }), /missing required portable terminal archive: x86_64-pc-windows-msvc/);
 });
 
 test("fails when no signed updater artifacts exist", () => {

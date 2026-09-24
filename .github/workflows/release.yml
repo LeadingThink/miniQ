@@ -64,6 +64,7 @@ jobs:
           npm run test:release-manifest
           npm run test:qiniu-publisher
           node --test scripts/linux-terminal.node-test.mjs
+          node --test ../../scripts/install-cli.node-test.mjs
 
   # Server binaries must not inherit the desktop runner's glibc or GUI libraries.
   # Debian 11 establishes glibc 2.31, below Ubuntu 20.10 / common server baselines.
@@ -155,6 +156,13 @@ jobs:
             apps/desktop/src-tauri -> apps/desktop/src-tauri/target
       - name: Build daemon and terminal client
         run: cargo build --release --locked -p miniq-daemon -p miniq-cli --bin miniq-daemon --bin miniq --target ${{ matrix.target }}
+      - name: Build Windows terminal launcher
+        if: runner.os == 'Windows'
+        run: cargo build --release --locked -p miniq-cli --bin miniq-launcher --target ${{ matrix.target }}
+      - name: Verify native Windows terminal installation and safe updates
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test-install-cli.ps1 -Binaries "target/${{ matrix.target }}/release"
       - name: Test terminal on native platforms
         if: matrix.target != 'x86_64-apple-darwin'
         run: cargo test --locked -p miniq-cli -p miniq-local --target ${{ matrix.target }}
@@ -167,6 +175,9 @@ jobs:
           if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
           cp "target/${{ matrix.target }}/release/miniq${ext}" "$stage/"
           cp "target/${{ matrix.target }}/release/miniq-daemon${ext}" "$stage/"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "target/${{ matrix.target }}/release/miniq-launcher.exe" "$stage/"
+          fi
           cp docs/terminal.md "$stage/README.md"
           mkdir -p dist-terminal
           tar -czf "dist-terminal/${{ matrix.target }}.terminal.tar.gz" -C "$stage" .

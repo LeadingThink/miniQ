@@ -4,10 +4,15 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "miniQ terminal client for the shared local agent daemon"
+default-run = "miniq"
 
 [[bin]]
 name = "miniq"
 path = "src/main.rs"
+
+[[bin]]
+name = "miniq-launcher"
+path = "src/launcher.rs"
 
 [dependencies]
 miniq-local = { path = "../miniq-local" }
@@ -22,6 +27,6 @@ clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
 rustyline = "15"
 rpassword = "7"
-
-[dev-dependencies]
+reqwest = { workspace = true }
+semver = { workspace = true }
 tempfile = "3"

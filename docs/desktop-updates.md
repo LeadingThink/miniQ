@@ -76,6 +76,15 @@ four updater targets. Versioned assets are uploaded to Qiniu first, followed by
 the stable update manifest and a CDN refresh; GitHub Releases receives the same
 files plus its own GitHub-addressed `latest.json` as a functional fallback. A
 release is published only after every target succeeds.
+Starting with v0.1.53, the same workflow publishes prebuilt terminal packages,
+`terminal.json` (version, target URLs and SHA-256 hashes), `install.sh`, and
+`install.ps1`. Versioned assets are uploaded before these three stable files at
+`https://oss.zaiwen.top/releases/miniq/`. The stable terminal manifest must cover
+every requested platform; do not publish a desktop release with a missing matching
+CLI/daemon pair. The Unix and Windows installer tests run in release validation.
+`miniq update` and the desktop terminal-install action embed these reviewed
+installers. Upgrades activate an immutable version directory with one version
+pointer; they never stop a daemon or change the user's conversation database.
 The workflow also updates `https://miniq.zaiwenai.com/latest.json` in the legacy
 `miniq-zaiwenai` bucket so already-installed clients continue receiving updates.
 

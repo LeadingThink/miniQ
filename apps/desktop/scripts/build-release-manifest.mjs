@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 const TARGETS = {
@@ -146,17 +146,31 @@ export function buildRelease({ input, output, tag, assetBaseUrl, mirrorBaseUrl, 
   copyOptionalArtifact(macIntel, ".dmg", "Intel macOS DMG", outputRoot, `miniQ_${version}_x64.dmg`);
   copyOptionalArtifact(linux, ".deb", "Linux deb", outputRoot, `miniQ_${version}_amd64.deb`);
 
+  const terminalPlatforms = {};
+  const terminalRequired = {
+    "windows-x86_64": TARGETS.windows,
+    "darwin-aarch64": TARGETS.macArm,
+    "darwin-x86_64": TARGETS.macIntel,
+    "linux-x86_64": TARGETS.linux,
+  };
   for (const target of Object.values(TARGETS)) {
     // Linux terminal artifacts are built separately on the server glibc baseline.
     const archive = findOptionalOne(inputRoot, `${target}.terminal.tar.gz`, `${target} terminal`);
-    if (!archive && target === TARGETS.linux && requiredPlatforms.includes("linux-x86_64")) {
-      throw new Error("missing required portable Linux terminal archive");
+    if (!archive && requiredPlatforms.some(platform => terminalRequired[platform] === target)) {
+      throw new Error(`missing required portable terminal archive: ${target}`);
     }
     if (!archive) continue;
     const name = `miniQ_terminal_${version}_${target}.tar.gz`;
     copyArtifact(archive, outputRoot, name);
     const digest = createHash("sha256").update(readFileSync(archive)).digest("hex");
     writeFileSync(join(outputRoot, `${name}.sha256`), `${digest}  ${name}\n`);
+    terminalPlatforms[target] = { url: `${baseUrl}/${name}`, sha256: digest };
+  }
+  if (Object.keys(terminalPlatforms).length > 0) {
+    writeFileSync(join(outputRoot, "terminal.json"), `${JSON.stringify({ version, platforms: terminalPlatforms }, null, 2)}\n`);
+    const installerRoot = fileURLToPath(new URL("../../../scripts/", import.meta.url));
+    copyArtifact(join(installerRoot, "install-cli.sh"), outputRoot, "install.sh");
+    copyArtifact(join(installerRoot, "install-cli.ps1"), outputRoot, "install.ps1");
   }
 
   const manifest = { version, notes, pub_date: publishedAt, platforms };

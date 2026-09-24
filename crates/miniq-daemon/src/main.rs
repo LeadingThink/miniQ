@@ -4,6 +4,9 @@ use miniq_memory::Store;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if print_command_info(std::env::args().skip(1).collect())? {
+        return Ok(());
+    }
     let dir = data_dir();
     std::fs::create_dir_all(&dir)?;
     let _instance = miniq_local::DaemonLock::acquire(&dir).map_err(|error| {
@@ -72,4 +75,19 @@ async fn main() -> anyhow::Result<()> {
     let result = server::serve(listener, state).await;
     let _ = std::fs::remove_file(dir.join("daemon.json"));
     result
+}
+
+fn print_command_info(args: Vec<String>) -> anyhow::Result<bool> {
+    match args.as_slice() {
+        [] => Ok(false),
+        [flag] if flag == "--version" || flag == "-V" => {
+            println!("miniq-daemon {}", env!("CARGO_PKG_VERSION"));
+            Ok(true)
+        }
+        [flag] if flag == "--help" || flag == "-h" => {
+            println!("miniQ shared local daemon\n\nUsage: miniq-daemon [--version | --help]\nUse `miniq` for interactive tasks and `miniq doctor` for diagnostics.\nMINIQ_DATA_DIR and MINIQ_PORT configure the local service.");
+            Ok(true)
+        }
+        _ => anyhow::bail!("unknown daemon argument; use `miniq-daemon --help`"),
+    }
 }

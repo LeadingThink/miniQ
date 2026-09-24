@@ -14,6 +14,8 @@ import { SshConnections } from "./SshConnections";
 import { TaskNotificationSettings } from "./TaskNotificationSettings";
 import { MemoryPanel } from "./MemoryPanel";
 import { SettingsTabs, type SettingsTab } from "./SettingsTabs";
+import { isTauriRuntime } from "../runtime";
+import { TerminalSettings } from "./TerminalSettings";
 
 export const ZAIWEN_API_PORTAL_URL = "https://platform.zaiwenai.com/";
 export const ZAIWEN_API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
@@ -526,6 +528,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
               </details>
             </>
           )}
+          {tab === "services" && typeof window !== "undefined" && isTauriRuntime() && canConfigureProvider && <TerminalSettings />}
           {desktop && <details className="settings-section" open={!!desktop.host}>
             <summary>SSH 连接 · 远程开发</summary>
             <SshConnections {...desktop.registry} activeHost={desktop.host} pending={desktop.pending} error={desktop.error} canManage={desktop.root.mode === "local"} onSelectHost={(host) => void desktop.selectHost(host)} onSave={desktop.saveHost} onRemove={desktop.removeHost} onDisconnect={desktop.disconnectHost} onRefresh={desktop.refreshHosts} />

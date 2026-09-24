@@ -6,6 +6,10 @@ use crate::output::{progress, terminal_text, Output};
 
 pub fn line(prompt: &str) -> Result<Option<String>> {
     let mut editor = rustyline::DefaultEditor::new()?;
+    read_line(&mut editor, prompt)
+}
+
+fn read_line(editor: &mut rustyline::DefaultEditor, prompt: &str) -> Result<Option<String>> {
     match editor.readline(prompt) {
         Ok(line) => Ok(Some(line)),
         Err(
@@ -182,7 +186,20 @@ pub async fn interactive(
     options: &crate::args::ChatOptions,
 ) -> Result<u8> {
     let mut files = options.attachments.clone();
-    progress(&format!("Session: {session}\n/help for commands. Ctrl+C during a task cancels it; /exit between turns detaches."));
+    // Keep prompt history in this process only; never persist messages or API Keys to disk.
+    let mut editor = rustyline::DefaultEditor::new()?;
+    progress(&format!("miniQ {} · Session: {session}\n/model selects this session's model; /effort selects supported reasoning. /help lists commands.\nCtrl+C during a task cancels it; /exit between turns detaches.", env!("CARGO_PKG_VERSION")));
+    let selection = client
+        .call("session.modelGet", json!({"sessionId":session}))
+        .await?;
+    if let Some(model) = selection["effective"]["model"].as_str() {
+        progress(&format!(
+            "Model: {model} · reasoning: {}",
+            selection["effective"]["reasoningEffort"]
+                .as_str()
+                .unwrap_or("default")
+        ));
+    }
     let snapshot = client
         .call("session.open", json!({"sessionId":session}))
         .await?;
@@ -197,7 +214,7 @@ pub async fn interactive(
     loop {
         let prompt = match initial.take() {
             Some(prompt) => prompt,
-            None => match line("miniq> ")? {
+            None => match read_line(&mut editor, "miniq> ")? {
                 Some(line) => line,
                 None => return Ok(0),
             },
@@ -206,6 +223,7 @@ pub async fn interactive(
         if text.is_empty() && files.is_empty() {
             continue;
         }
+        editor.add_history_entry(&prompt)?;
         if text.starts_with('/') {
             if command(client, session, text, &mut files).await? {
                 return Ok(0);
@@ -234,7 +252,7 @@ async fn command(
     let result = match command {
         "/exit" | "/quit" => return Ok(true),
         "/help" => {
-            progress("/model MODEL, /effort LEVEL|default, /attach PATH, /clear-attachments, /status, /history, /exit");
+            progress("/model              Search/select a text model for this session\n/model MODEL        Switch this session to an exact model ID\n/effort             Select a supported reasoning effort\n/effort LEVEL       Set effort, or default to clear the override\n/attach PATH        Add a file to the next message\n/clear-attachments  Remove pending attachments\n/status             Show this session's effective model\n/history            Show recent messages and the next history cursor\n/exit               Leave the terminal without deleting the session\n\nContinue later: miniq resume (searchable project sessions), or miniq resume --last.\nFor multiline tasks: pipe a file to miniq exec -. History pagination: miniq history SESSION --before CURSOR.");
             Ok(())
         }
         "/attach" if !arg.is_empty() => {
@@ -254,14 +272,7 @@ async fn command(
             files.clear();
             Ok(())
         }
-        "/model" | "/effort" if !arg.is_empty() => {
-            let options = crate::args::ChatOptions {
-                model: (command == "/model").then(|| arg.into()),
-                effort: (command == "/effort").then(|| arg.into()),
-                ..Default::default()
-            };
-            crate::sessions::update_model(client, session, &options).await
-        }
+        "/model" | "/effort" => change_model(client, session, command, arg).await,
         "/status" | "/history" => {
             let method = if command == "/status" {
                 "session.modelGet"
@@ -281,4 +292,63 @@ async fn command(
         progress(&format!("{error:#}"));
     }
     Ok(false)
+}
+
+async fn change_model(client: &mut Client, session: &str, command: &str, arg: &str) -> Result<()> {
+    let selected = if !arg.is_empty() {
+        Some(arg.to_owned())
+    } else {
+        let state = client
+            .call("session.modelGet", json!({"sessionId":session}))
+            .await?;
+        if command == "/model" {
+            crate::selection::model(client, state["effective"]["model"].as_str()).await?
+        } else {
+            choose_effort(client, &state).await?
+        }
+    };
+    let Some(selected) = selected else {
+        return Ok(());
+    };
+    let options = crate::args::ChatOptions {
+        model: (command == "/model").then(|| selected.clone()),
+        effort: (command == "/effort").then(|| selected.clone()),
+        ..Default::default()
+    };
+    crate::sessions::update_model(client, session, &options).await?;
+    progress(&format!(
+        "{}: {selected} — saved for this session only.",
+        command.trim_start_matches('/')
+    ));
+    Ok(())
+}
+
+async fn choose_effort(client: &mut Client, state: &Value) -> Result<Option<String>> {
+    let model = state["effective"]["model"]
+        .as_str()
+        .context("select a model first")?;
+    let description = client
+        .call(
+            "model.describe",
+            json!({"model":model,"apiProtocol":state["effective"]["apiProtocol"]}),
+        )
+        .await?;
+    let mut choices = vec![crate::selection::Choice::plain("default")];
+    for effort in description["reasoningEfforts"]
+        .as_array()
+        .context("invalid reasoning capabilities")?
+    {
+        choices.push(crate::selection::Choice::plain(
+            effort.as_str().context("invalid reasoning effort")?,
+        ));
+    }
+    crate::selection::choose(
+        &format!("Reasoning for {model} — this session only"),
+        &choices,
+        Some(
+            state["effective"]["reasoningEffort"]
+                .as_str()
+                .unwrap_or("default"),
+        ),
+    )
 }
