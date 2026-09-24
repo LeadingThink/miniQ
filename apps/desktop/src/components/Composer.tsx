@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import type { ComponentProps, ReactNode } from "react";
-import { ArrowUp, LoaderCircle, Paperclip, Square } from "lucide-react";
+import { ArrowUp, LoaderCircle, Paperclip, Square, Target } from "lucide-react";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import {
   canSendComposer,
@@ -42,6 +42,7 @@ import "./Composer.css";
 type SendMessage = (
   content: string,
   attachments?: string[],
+  asGoal?: boolean,
 ) => void | boolean | Promise<void | boolean>;
 
 function resizeComposer(textarea: HTMLTextAreaElement | null) {
@@ -59,6 +60,7 @@ export function ComposerCard(props: {
   chipSlot?: ReactNode;
   modelSlot?: ReactNode;
   permissionSlot?: ReactNode;
+  allowGoal?: boolean;
   autoFocus?: boolean;
   /** Persist unsent drafts under this key (restored on remount). */
   draftKey?: string;
@@ -91,6 +93,7 @@ export function ComposerCard(props: {
     readAttachments(props.draftKey),
   );
   const [sending, setSending] = useState(false);
+  const [goalMode, setGoalMode] = useState(false);
   const sendingRef = useRef(false);
   const mountedRef = useRef(true);
   const draftKeyRef = useRef(props.draftKey);
@@ -109,6 +112,7 @@ export function ComposerCard(props: {
     draftKeyRef.current = props.draftKey;
     setDraftState(readDraft(props.draftKey));
     setAttachments(readAttachments(props.draftKey));
+    setGoalMode(false);
     setVoicePreview(null);
     setShowRemoteAttachment(false);
   }, [props.draftKey]);
@@ -240,13 +244,16 @@ export function ComposerCard(props: {
     setSending(true);
     const key = props.draftKey;
     try {
-      const accepted = await props.onSend(draft.trim(), attachments);
+      const accepted = goalMode
+        ? await props.onSend(draft.trim(), attachments, true)
+        : await props.onSend(draft.trim(), attachments);
       if (accepted === false) return;
       storeDraft(key, "");
       storeAttachments(key, []);
       if (draftKeyRef.current === key) {
         setDraftState("");
         setAttachments([]);
+        setGoalMode(false);
       }
     } catch (cause) {
       props.onError?.(cause instanceof Error ? cause.message : String(cause));
@@ -355,43 +362,46 @@ export function ComposerCard(props: {
           ))}
         </div>
       )}
-      <textarea
-        readOnly={sending || slash.pending}
-        aria-label="消息"
-        aria-describedby={keyboardHintId}
-        ref={textareaRef}
-        value={draft}
-        autoFocus={props.autoFocus}
-        placeholder={
-          props.busy ? "任务执行中，发送的消息会加入队列..." : props.placeholder
-        }
-        rows={1}
-        enterKeyHint={inputMode.enterSends ? "send" : "enter"}
-        {...slash.inputAttributes}
-        onBeforeInput={(e) => {
-          const data = (e.nativeEvent as InputEvent).data;
-          if (data && containsUnsupportedInput(data)) e.preventDefault();
-        }}
-        onPaste={pasteImages}
-        onChange={(e) => {
-          const textarea = e.currentTarget;
-          const sanitized = sanitizeTextInput(
-            textarea.value,
-            textarea.selectionStart,
-            textarea.selectionEnd,
-          );
-          setDraft(sanitized.value);
-          if (sanitized.changed) {
-            requestAnimationFrame(() => {
-              textarea.setSelectionRange(sanitized.start, sanitized.end);
-            });
+      <div className="composer-input-row">
+        {goalMode && <span className="composer-goal-prefix">目标</span>}
+        <textarea
+          readOnly={sending || slash.pending}
+          aria-label="消息"
+          aria-describedby={keyboardHintId}
+          ref={textareaRef}
+          value={draft}
+          autoFocus={props.autoFocus}
+          placeholder={
+            props.busy ? "任务执行中，发送的消息会加入队列..." : props.placeholder
           }
-        }}
-        onKeyDown={(e) => {
-          if (slash.onKeyDown(e)) return;
-          handleComposerKeyDown(e, setDraft, () => void send(), inputMode);
-        }}
-      />
+          rows={1}
+          enterKeyHint={inputMode.enterSends ? "send" : "enter"}
+          {...slash.inputAttributes}
+          onBeforeInput={(e) => {
+            const data = (e.nativeEvent as InputEvent).data;
+            if (data && containsUnsupportedInput(data)) e.preventDefault();
+          }}
+          onPaste={pasteImages}
+          onChange={(e) => {
+            const textarea = e.currentTarget;
+            const sanitized = sanitizeTextInput(
+              textarea.value,
+              textarea.selectionStart,
+              textarea.selectionEnd,
+            );
+            setDraft(sanitized.value);
+            if (sanitized.changed) {
+              requestAnimationFrame(() => {
+                textarea.setSelectionRange(sanitized.start, sanitized.end);
+              });
+            }
+          }}
+          onKeyDown={(e) => {
+            if (slash.onKeyDown(e)) return;
+            handleComposerKeyDown(e, setDraft, () => void send(), inputMode);
+          }}
+        />
+      </div>
       <div className="composer-row">
         {props.modelSlot}
         {props.chipSlot}
@@ -427,6 +437,21 @@ export function ComposerCard(props: {
           />
         )}
         {props.permissionSlot}
+        {props.allowGoal && (
+          <button
+            type="button"
+            className={`composer-goal-btn${goalMode ? " active" : ""}`}
+            aria-pressed={goalMode}
+            onClick={() => {
+              setGoalMode((active) => !active);
+              requestAnimationFrame(() => textareaRef.current?.focus());
+            }}
+            title={goalMode ? "取消设为目标" : "将下一条消息设为目标"}
+          >
+            <Target size={14} aria-hidden="true" />
+            <span>目标</span>
+          </button>
+        )}
         <div className="composer-submit">
           <div className="composer-submit-buttons">
             <p id={keyboardHintId} className="composer-keyboard-hint">

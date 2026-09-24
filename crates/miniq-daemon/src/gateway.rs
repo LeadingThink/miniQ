@@ -126,6 +126,8 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.diff" => session_diff::get(state, req.params),
         "session.sendMessage" => session::send_message(state, req.params),
         "session.rewriteMessage" => session::rewrite_message(state, req.params),
+        "session.pause" => session::pause(state, req.params),
+        "session.resume" => session::resume(state, req.params),
         "session.cancel" => session::cancel(state, req.params).await,
         "session.queueList" => session_queue::list(state, req.params),
         "session.queueUpdate" => session_queue::update(state, req.params),

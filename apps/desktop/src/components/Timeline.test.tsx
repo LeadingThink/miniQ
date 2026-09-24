@@ -72,7 +72,6 @@ describe("Timeline execution flow", () => {
     expect(shell).toBeGreaterThan(toolbar);
     expect(transcript).toBeGreaterThan(shell);
     expect(html).toContain("检查服务状态");
-    expect(html).toContain("设置会话目标");
   });
 
   it("does not reserve a goal row when a session cannot edit goals", () => {

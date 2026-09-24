@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { COMPOSER_KEYBOARD_HINT } from "../composerInput";
 import { ComposerCard } from "./Composer";
@@ -72,4 +72,33 @@ it("keeps the keyboard hint beside the right-aligned send controls", () => {
   expect(controls?.contains(hint)).toBe(true);
   expect(controls?.contains(sendButton)).toBe(true);
   expect(hint.compareDocumentPosition(sendButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("toggles goal mode and sends the next message as a goal", async () => {
+  const onSend = vi.fn().mockResolvedValue(true);
+  render(
+    <ComposerCard
+      busy={false}
+      placeholder="消息"
+      draftKey="goal-action"
+      permissionSlot={<button type="button">替我审批</button>}
+      allowGoal
+      onSend={onSend}
+    />,
+  );
+
+  const permission = screen.getByRole("button", { name: "替我审批" });
+  const goal = screen.getByRole("button", { name: "目标" });
+  expect(permission.nextElementSibling).toBe(goal);
+  fireEvent.click(goal);
+  expect(goal.getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByText("目标", { selector: ".composer-goal-prefix" })).toBeTruthy();
+
+  fireEvent.change(screen.getByRole("textbox", { name: "消息" }), {
+    target: { value: "整理发布说明" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+  await vi.waitFor(() => expect(onSend).toHaveBeenCalledWith("整理发布说明", [], true));
+  await vi.waitFor(() => expect(goal.getAttribute("aria-pressed")).toBe("false"));
 });

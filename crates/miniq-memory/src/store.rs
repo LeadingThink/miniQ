@@ -112,6 +112,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0018_session_goals",
         include_str!("../../../migrations/0018_session_goals.sql"),
     ),
+    (
+        "0019_cancelled_session_goals",
+        include_str!("../../../migrations/0019_cancelled_session_goals.sql"),
+    ),
 ];
 
 #[derive(Debug, Error)]

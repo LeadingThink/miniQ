@@ -93,6 +93,10 @@ pub struct AppState {
     pub ssh_hosts: Arc<crate::ssh::SshHostManager>,
     /// Cancellation token per session with an active turn.
     pub(crate) active_turns: Arc<Mutex<HashMap<String, ActiveTurn>>>,
+    /// Sessions whose active turn was interrupted for a user-requested pause.
+    pub(crate) paused_turns: Arc<Mutex<HashSet<String>>>,
+    /// Resume requests received while the paused turn is still cleaning up.
+    pub(crate) pending_turn_resumes: Arc<Mutex<HashSet<String>>>,
     pub(crate) activity: crate::activity::ActivityGate,
     /// Bound snapshot hashing and uploads across desktop and mobile connections.
     pub(crate) share_uploads: Arc<tokio::sync::Semaphore>,
@@ -195,6 +199,8 @@ impl AppState {
             shutdown,
             ssh_hosts,
             active_turns: Arc::new(Mutex::new(HashMap::new())),
+            paused_turns: Arc::new(Mutex::new(HashSet::new())),
+            pending_turn_resumes: Arc::new(Mutex::new(HashSet::new())),
             activity: crate::activity::ActivityGate::default(),
             share_uploads: Arc::new(tokio::sync::Semaphore::new(2)),
             title_jobs: Arc::new(Mutex::new(HashSet::new())),
@@ -556,6 +562,43 @@ impl AppState {
         }
     }
 
+    pub fn pause_turn(&self, session_id: &str) -> bool {
+        let turns = self.active_turns.lock().unwrap();
+        let Some(turn) = turns.get(session_id) else {
+            return false;
+        };
+        self.paused_turns
+            .lock()
+            .unwrap()
+            .insert(session_id.to_string());
+        turn.cancellation.cancel();
+        true
+    }
+
+    pub fn is_turn_paused(&self, session_id: &str) -> bool {
+        self.paused_turns.lock().unwrap().contains(session_id)
+    }
+
+    pub fn resume_turn(&self, session_id: &str) -> bool {
+        self.paused_turns.lock().unwrap().remove(session_id)
+    }
+
+    pub fn request_turn_resume(&self, session_id: &str) {
+        self.pending_turn_resumes
+            .lock()
+            .unwrap()
+            .insert(session_id.to_string());
+    }
+
+    pub fn take_turn_resume_request(&self, session_id: &str) -> bool {
+        self.pending_turn_resumes.lock().unwrap().remove(session_id)
+    }
+
+    pub fn clear_paused_turn(&self, session_id: &str) -> bool {
+        self.pending_turn_resumes.lock().unwrap().remove(session_id);
+        self.paused_turns.lock().unwrap().remove(session_id)
+    }
+
     pub fn cancel_all_turns(&self) -> usize {
         let turns = self.active_turns.lock().unwrap();
         for turn in turns.values() {
@@ -606,6 +649,27 @@ mod tests {
 
         state.clear_turn_progress("session");
         assert!(state.turn_progress("session").is_none());
+    }
+
+    #[test]
+    fn paused_turn_can_queue_resume_and_cancel_clears_both_states() {
+        let state = AppState::new(
+            Store::open_in_memory().unwrap(),
+            "token".to_string(),
+            Arc::new(MockProvider::new(Vec::new())),
+        );
+        let turn = state.begin_turn("session").unwrap();
+
+        assert!(state.pause_turn("session"));
+        assert!(turn.is_cancelled());
+        assert!(state.is_turn_paused("session"));
+
+        state.request_turn_resume("session");
+        assert!(state.take_turn_resume_request("session"));
+        state.request_turn_resume("session");
+        assert!(state.clear_paused_turn("session"));
+        assert!(!state.is_turn_paused("session"));
+        assert!(!state.take_turn_resume_request("session"));
     }
 
     #[tokio::test]

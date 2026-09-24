@@ -1,4 +1,6 @@
-use miniq_protocol::{ErrorCode, Event, MessageAttachment, Role, RpcError, SessionStatus};
+use miniq_protocol::{
+    ErrorCode, Event, MessageAttachment, Role, RpcError, SessionGoalStatus, SessionStatus,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -338,6 +340,44 @@ struct CancelParams {
     session_id: String,
 }
 
+pub(super) fn pause(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: CancelParams = params(raw)?;
+    let paused = state.pause_turn(&input.session_id);
+    if !paused {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "session does not have an active turn",
+        ));
+    }
+    Ok(json!({ "paused": true }))
+}
+
+pub(super) fn resume(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: CancelParams = params(raw)?;
+    let persisted_pause = state
+        .store
+        .session_goal(&input.session_id)
+        .map_err(store_err)?
+        .is_some_and(|goal| goal.status == SessionGoalStatus::Paused);
+    if !state.is_turn_paused(&input.session_id) && !persisted_pause {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "session does not have a paused turn",
+        ));
+    }
+    let Some(cancel) = state.begin_turn(&input.session_id) else {
+        state.request_turn_resume(&input.session_id);
+        return Ok(json!({ "resumed": true, "pending": true }));
+    };
+    state.resume_turn(&input.session_id);
+    if let Err(error) = set_running(state, &input.session_id) {
+        state.end_turn(&input.session_id);
+        return Err(error);
+    }
+    crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
+    Ok(json!({ "resumed": true }))
+}
+
 pub(super) async fn cancel(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: CancelParams = params(raw)?;
     // An explicit stop discards queued follow-ups too: the user wants the
@@ -349,6 +389,7 @@ pub(super) async fn cancel(state: &AppState, raw: Option<Value>) -> Result<Value
     if cleared > 0 {
         emit_queue_changed(state, &input.session_id);
     }
+    let was_paused = state.clear_paused_turn(&input.session_id);
     let cancelled = state.cancel_turn(&input.session_id);
     let recovered = if cancelled {
         let _ = state
@@ -358,6 +399,8 @@ pub(super) async fn cancel(state: &AppState, raw: Option<Value>) -> Result<Value
             session_id: input.session_id.clone(),
             status: SessionStatus::Cancelling,
         });
+        false
+    } else if was_paused {
         false
     } else {
         let recovery = state
@@ -373,7 +416,7 @@ pub(super) async fn cancel(state: &AppState, raw: Option<Value>) -> Result<Value
         recovery.session_failed
     };
     let cancelled_agents = state.agent_tasks.cancel_session(&input.session_id).await;
-    Ok(json!({ "cancelled": cancelled || recovered || cancelled_agents > 0 }))
+    Ok(json!({ "cancelled": was_paused || cancelled || recovered || cancelled_agents > 0 }))
 }
 
 #[derive(Deserialize)]
@@ -501,6 +544,7 @@ mod tests {
     use super::*;
     use miniq_memory::Store;
     use miniq_models::mock::MockProvider;
+    use miniq_protocol::SessionGoalUpdate;
     use std::sync::Arc;
 
     fn setup() -> (AppState, String) {
@@ -610,6 +654,27 @@ mod tests {
             state.store.list_messages(&session_id).unwrap()[0].content,
             "answer"
         );
+        state.end_turn(&session_id);
+    }
+
+    #[test]
+    fn resume_accepts_persisted_pause_after_runtime_state_is_lost() {
+        let (state, session_id) = setup();
+        state
+            .store
+            .update_session_goal(&SessionGoalUpdate {
+                session_id: session_id.clone(),
+                goal: "finish the task".into(),
+                status: SessionGoalStatus::Paused,
+                token_budget: None,
+            })
+            .unwrap();
+        let _active_turn = state.begin_turn(&session_id).unwrap();
+
+        let response = resume(&state, Some(json!({ "sessionId": session_id }))).unwrap();
+
+        assert_eq!(response, json!({ "resumed": true, "pending": true }));
+        assert!(state.take_turn_resume_request(&session_id));
         state.end_turn(&session_id);
     }
 }

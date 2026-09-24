@@ -616,6 +616,15 @@
   align-items: center;
   gap: 2px;
 }
+.message-goal-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .assistant-footer {
   right: auto;
   left: 0;

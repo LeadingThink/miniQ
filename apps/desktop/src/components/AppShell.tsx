@@ -21,6 +21,7 @@ import { StarterPrompts } from "./StarterPrompts";
 import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 import { SessionModelControls } from "./SessionModelControls";
 import { SessionPermissionControls } from "./SessionPermissionControls";
+import { SessionGoalBar } from "./SessionGoalBar";
 import { AgentPanel } from "./AgentPanel";
 import { useAgentSummary } from "../hooks/useAgentSummary";
 import { ProjectDirectories } from "./ProjectDirectories";
@@ -169,6 +170,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
           onLoadOlder={app.actions.loadOlder}
           title={app.catalog.currentSession?.title}
           messages={app.feed.messages}
+          goal={app.feed.goal}
           toolCalls={app.feed.toolCalls}
           approvals={app.feed.approvals}
           questions={app.feed.questions}
@@ -179,7 +181,6 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
           workspacePaths={app.catalog.currentWorkspacePaths}
           streamingText={app.feed.streamingText}
           turnProgress={app.feed.turnProgress}
-          goal={app.feed.goal}
           agents={agentSummary.agents}
           onOpenAgentPanel={openAgentPanel}
           latestTurnTiming={app.feed.latestTurnTiming}
@@ -198,6 +199,15 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
           onError={app.setError}
         />
       </Suspense>
+      <SessionGoalBar
+        client={app.client}
+        sessionId={app.catalog.currentSessionId!}
+        goal={app.feed.goal}
+        onPauseTurn={app.actions.pauseTurn}
+        onResumeTurn={app.actions.resumeTurn}
+        onCancelTurn={app.actions.cancelTurn}
+        onError={app.setError}
+      />
       <Composer
         slashCommands={slashCommands}
         workspaceId={app.catalog.currentWorkspace?.id}
@@ -221,6 +231,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
             sessionId={app.catalog.currentSessionId!}
           />
         }
+        allowGoal
         onSend={app.actions.sendMessage}
         onCancel={app.actions.cancelTurn}
         onError={app.setError}
@@ -276,6 +287,7 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
           }
           approvalMode={app.connection.approvalMode}
           onApprovalModeChange={app.connection.changeApprovalMode}
+          allowGoal
           onSend={app.actions.startTask}
           onError={app.setError}
           sendBlocked={

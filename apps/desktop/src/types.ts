@@ -57,7 +57,7 @@ export interface Session {
   updatedAt: string;
 }
 
-export type SessionGoalStatus = "active" | "completed" | "paused";
+export type SessionGoalStatus = "active" | "completed" | "paused" | "cancelled";
 export interface SessionGoal {
   sessionId: string;
   goal: string;
