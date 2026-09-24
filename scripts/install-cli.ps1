@@ -27,7 +27,9 @@ function Get-MiniqFile([string]$Url, [string]$Destination) {
     Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing -MaximumRedirection 0 -TimeoutSec 600
 }
 function Set-MiniqFile([string]$Source, [string]$Destination) {
-    if ([IO.File]::Exists($Destination)) { [IO.File]::Replace($Source, $Destination, $null) }
+    # PowerShell coerces $null to an empty string for a .NET string parameter.
+    # File.Replace requires an actual null when no backup pathname is requested.
+    if ([IO.File]::Exists($Destination)) { [IO.File]::Replace($Source, $Destination, [System.Management.Automation.Language.NullString]::Value) }
     else { [IO.File]::Move($Source, $Destination) }
 }
 try {

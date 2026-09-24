@@ -159,9 +159,13 @@ jobs:
       - name: Build Windows terminal launcher
         if: runner.os == 'Windows'
         run: cargo build --release --locked -p miniq-cli --bin miniq-launcher --target ${{ matrix.target }}
-      - name: Verify native Windows terminal installation and safe updates
+      - name: Verify terminal installation and safe updates in PowerShell 7
         if: runner.os == 'Windows'
         shell: pwsh
+        run: ./scripts/test-install-cli.ps1 -Binaries "target/${{ matrix.target }}/release"
+      - name: Verify terminal installation and safe updates in Windows PowerShell 5.1
+        if: runner.os == 'Windows'
+        shell: powershell
         run: ./scripts/test-install-cli.ps1 -Binaries "target/${{ matrix.target }}/release"
       - name: Test terminal on native platforms
         if: matrix.target != 'x86_64-apple-darwin'
