@@ -4,7 +4,7 @@ The `miniq` executable is a client of `miniq-daemon`, not a second agent engine.
 
 ## Installation
 
-macOS (Apple Silicon/Intel), Linux x86-64 and WSL:
+macOS (Apple Silicon/Intel):
 
 ```sh
 curl -fsSL https://oss.zaiwen.top/releases/miniq/install.sh | sh
@@ -16,9 +16,17 @@ Windows 10/11 x64, in PowerShell:
 irm https://oss.zaiwen.top/releases/miniq/install.ps1 | iex
 ```
 
+Linux / WSL (x86_64, glibc 2.31+), using the currently available terminal release 0.1.54:
+
+```sh
+curl -fsSL https://oss.zaiwen.top/releases/miniq/install.sh | MINIQ_VERSION=0.1.54 sh
+```
+
+Version 0.1.55 did not publish a Linux terminal package. The current default terminal manifest only lists macOS and Windows, so Linux / WSL must use the version-pinned command above; plain installation and `miniq update` cannot currently select a Linux release.
+
 Open a new terminal, enter your project directory and run `miniq`. No Rust, Node.js, administrator access or desktop window is required. The installer selects the correct architecture, downloads the official release over HTTPS and verifies its SHA-256 checksum before changing anything. Desktop **Settings → Services & remote → Terminal** offers the same installation action. There is no npm package, Homebrew formula or WinGet package; do not run guessed package names.
 
-Default installation: `~/.local/bin` on Unix; `%LOCALAPPDATA%\miniQ\bin` on Windows. The installer adds that directory to the current user's shell profile/User PATH. Set `MINIQ_INSTALL_DIR` to an absolute custom directory, `MINIQ_NO_MODIFY_PATH=1` to manage PATH yourself, or `MINIQ_VERSION=x.y.z` to install a specific published version from v0.1.54 onward. The Unix script chooses zsh, bash, fish or POSIX profile syntax. A GUI-launched macOS install without `SHELL` defaults to zsh. Re-running the installer is safe; `miniq update` uses the same installation mechanism and `miniq update --check` only checks availability.
+Default installation: `~/.local/bin` on Unix; `%LOCALAPPDATA%\miniQ\bin` on Windows. The installer adds that directory to the current user's shell profile/User PATH. Set `MINIQ_INSTALL_DIR` to an absolute custom directory, `MINIQ_NO_MODIFY_PATH=1` to manage PATH yourself, or `MINIQ_VERSION=x.y.z` to install a specific published version from v0.1.54 onward, provided it includes your platform. The Unix script chooses zsh, bash, fish or POSIX profile syntax. A GUI-launched macOS install without `SHELL` defaults to zsh. Re-running the installer is safe. On macOS / Windows, `miniq update` uses the same installation mechanism and `miniq update --check` only checks availability. For Linux / WSL, use the pinned command above until a newer release includes that platform.
 
 CLI and daemon are an immutable pair under `bin/.miniq/versions/VERSION`. A single atomic version pointer activates the pair; old payloads remain available to already running processes. Unix exposes two stable symlinks; Windows uses native launchers, preserving arguments, standard streams and the child exit code. Concurrent installers are rejected. No installer stops a task, restarts the shared daemon or edits provider keys/conversations. An old daemon keeps its loaded code until it exits safely. Migrating an older Windows installation whose binary is in use fails before replacing either executable; retry after that process exits. Upgrading an already managed Windows installation does not overwrite its busy launchers.
 
@@ -37,6 +45,8 @@ miniq doctor
 ```
 
 First launch detects existing shared desktop settings. If no key is configured, it offers the default `https://oneapi.zaiwenai.com/v1` service, concealed key input and a searchable list of text models before creating a session. Get a key from [Zaiwen API](https://platform.zaiwenai.com/). `miniq configure` reopens setup; `--base-url` and `--model` are optional overrides. An existing saved endpoint is preserved. A secret manager may supply `MINIQ_API_KEY`. Never put a key in command-line arguments, shell history, logs or screenshots. Setup updates shared provider settings; session model changes are separate. Saved settings/connection files use atomic replacement and owner-only permissions on Unix; Windows inherits the current user's data-directory ACL. Do not use a shared data directory.
+
+Desktop settings on another computer are not copied automatically. Configure each target computer separately; WSL also has its own configuration and conversations. In a session, use `/model` to select a model and `/effort` to choose its supported reasoning level for that session. From the shell, `miniq resume` continues a session in the current project and `miniq doctor` checks terminal/daemon versions and dependencies. See the platform-specific installation and update guidance above.
 
 `miniq logout` removes the saved shared provider key without cancelling running tasks. Also remove `MINIQ_API_KEY` from your environment/secret manager when appropriate; a running request may already hold its key. A blank key keeps the saved key only for the same endpoint, never forwards it to a new endpoint.
 
@@ -101,6 +111,12 @@ History is paged; use the returned `nextCursor` in `--before` until null. Large 
 The daemon is loopback-only and authenticated. Discovery uses `MINIQ_DATA_DIR` (Unix default `~/.local/share/miniq`; Windows `%LOCALAPPDATA%/miniq`), `MINIQ_DAEMON_PATH`, the binary next to the CLI, then installed locations/PATH. `--no-start` makes diagnostics connect-only. An OS lock prevents concurrent daemons from recovering/overwriting the same active database. To test independently, use a new `--data-dir` and a mock provider, not a copy of a live database.
 
 Terminal-only servers can use file, code, document, model, MCP and existing browser automation tools; browser automation needs an installed compatible browser. Native computer use needs a logged-in graphical session and screen/accessibility permissions. SSH, containers, mobile browsers and WSL do not gain control of an unrelated desktop by installing the CLI. Mobile remote access still uses miniQ's authenticated relay; it is not a public shell service. `doctor` checks permission state without requesting changes or restarting processes.
+
+## iPhone and iPad
+
+The released miniQ app is available on the [App Store](https://apps.apple.com/cn/app/miniq/id6811485613) for iOS / iPadOS 15 or later. Mobile chat works independently of a computer. To access remote tasks, enable **Settings → Services & remote → Allow remote connections** on the computer, use the same Zaiwen API key on both devices, and keep the computer online and awake. The mobile app can view and continue tasks on that computer, including responding to questions and approvals.
+
+The terminal client runs tasks on the computer or server where it is installed. The mobile app is a remote client of those computers; it does not install `miniq` or run desktop tools locally on iPhone or iPad.
 
 ## Desktop Connections over SSH
 

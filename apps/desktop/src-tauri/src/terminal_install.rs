@@ -10,7 +10,6 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 
 static INSTALL_LOCK: Mutex<()> = Mutex::const_new(());
-const INSTALL_BASE: &str = "https://oss.zaiwen.top/releases/miniq";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,7 +19,6 @@ pub struct TerminalStatus {
     version: Option<String>,
     version_error: Option<String>,
     desktop_version: &'static str,
-    install_command: String,
 }
 
 #[derive(Serialize)]
@@ -43,14 +41,6 @@ fn install_directory() -> Result<PathBuf, String> {
         return Err(format!("{variable} 不是绝对路径，无法确定终端安装位置"));
     }
     Ok(base.join(suffix))
-}
-
-fn install_command() -> String {
-    if cfg!(windows) {
-        format!("irm {INSTALL_BASE}/install.ps1 | iex")
-    } else {
-        format!("curl -fsSL {INSTALL_BASE}/install.sh | sh")
-    }
 }
 
 fn configure_process(command: &mut Command) {
@@ -96,7 +86,6 @@ async fn status_in(directory: &Path) -> TerminalStatus {
         version,
         version_error,
         desktop_version: env!("CARGO_PKG_VERSION"),
-        install_command: install_command(),
     }
 }
 

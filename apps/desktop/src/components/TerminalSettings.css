@@ -4,6 +4,10 @@
 .terminal-install-command code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .terminal-install-command { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0; }
 .terminal-install-command code { flex: 1 1 260px; min-width: 0; }
+.terminal-install-platform { margin-top: 16px; }
+.terminal-install-platform h4 { margin: 0 0 6px; font-size: 13px; }
+.terminal-command-help { margin: 0; padding-left: 20px; font-size: 12px; line-height: 1.8; }
+.terminal-command-help code { overflow-wrap: anywhere; }
 .terminal-install-error,
 .terminal-install-log { white-space: pre-wrap; overflow-wrap: anywhere; }
 .terminal-install-log { max-height: 220px; overflow-y: auto; font-size: 12px; }

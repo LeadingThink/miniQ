@@ -68,20 +68,34 @@ cd apps/desktop; npx tauri build
 - 工具路径约束在项目根目录内(`miniq-sandbox`);用户明确附加的项目外文件仅允许读取该文件,不授予写入或相邻目录访问权。
 - 命令按风险分级:`low` 自动执行;`medium/high` 需审批(允许一次 / 本会话允许 / 拒绝);`blocked` 直接拦截。
 
+## 手机与平板
+
+iPhone / iPad 正式版已在 [App Store 上架](https://apps.apple.com/cn/app/miniq/id6811485613)，需要 iOS / iPadOS 15 或更高版本。手机端可独立问答，也可远程查看和继续电脑上的任务。使用远程功能时，在电脑 miniQ 的「设置 → 服务与远程」开启「允许远程连接」，两端使用同一个在问 API Key，电脑保持联网且未休眠。
+
+终端版在所安装的电脑或服务器上执行任务；手机端连接这些电脑上的 miniQ，不在 iPhone / iPad 上安装终端命令或执行电脑工具。
+
 ## Terminal Client
 
-miniQ 提供独立终端命令 `miniq`，与桌面、手机共享会话和后台能力。安装不需要 Rust 或 Node.js。
+miniQ 提供独立终端命令 `miniq`，连接同一后台时与桌面、手机共享会话和后台能力。安装不需要 Rust 或 Node.js，也可在桌面「设置 → 服务与远程 → 终端命令」一键安装到本机。
 
-macOS / Linux / WSL：
+macOS（Apple Silicon / Intel）：
 
 ```sh
 curl -fsSL https://oss.zaiwen.top/releases/miniq/install.sh | sh
 ```
 
-Windows PowerShell：
+Windows 10 / 11 x64，在 PowerShell 中执行：
 
 ```powershell
 irm https://oss.zaiwen.top/releases/miniq/install.ps1 | iex
 ```
 
-安装后重新打开终端，在项目目录运行 `miniq`。首次使用会引导配置 Key 并搜索选择文本模型；已有桌面配置会直接复用。`miniq resume` 选择历史会话，`miniq update` 更新终端程序，`miniq doctor` 查看 CLI、后台版本与依赖状态。桌面设置也提供安装终端命令的入口。更新保留运行中的任务，详见[终端安装、使用与多端说明](docs/terminal.md)。
+Linux / WSL（x86_64，glibc 2.31+），当前可用终端正式版为 0.1.54：
+
+```sh
+curl -fsSL https://oss.zaiwen.top/releases/miniq/install.sh | MINIQ_VERSION=0.1.54 sh
+```
+
+安装后重新打开终端，进入项目目录运行 `miniq`。首次使用会引导配置 API Key 并搜索选择文本模型；本机已有桌面配置会直接复用，其他电脑需单独配置，WSL 与 Windows 使用独立的数据目录。在会话中输入 `/model` 选择模型，`/effort` 调整当前会话的推理强度。`miniq resume` 选择当前项目的历史会话，`miniq doctor` 查看终端、后台版本与依赖状态。
+
+macOS / Windows 可用 `miniq update` 更新终端程序。0.1.55 未发布 Linux 终端包，Linux / WSL 暂请使用上方指定 0.1.54 的命令安装或重装。更新保留运行中的任务，详见[终端安装、使用与多端说明](docs/terminal.md)。
