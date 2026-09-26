@@ -375,6 +375,21 @@
     min-height: 22px;
   }
 
+  /* The remote phone header already shows the session title. */
+  .main:has(.statusbar-identity) .conversation-title {
+    display: none;
+  }
+
+  .conversation-context:empty,
+  .main:has(.statusbar-identity) .conversation-context:not(:has(> :not(.conversation-title))) {
+    display: none;
+  }
+
+  .conversation-view > .timeline-toolbar {
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+
   .conversation-context > .execution-summary {
     flex-basis: 100%;
   }

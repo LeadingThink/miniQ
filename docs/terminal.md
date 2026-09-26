@@ -118,6 +118,20 @@ The released miniQ app is available on the [App Store](https://apps.apple.com/cn
 
 The terminal client runs tasks on the computer or server where it is installed. The mobile app is a remote client of those computers; it does not install `miniq` or run desktop tools locally on iPhone or iPad.
 
+### Terminal-only servers (no desktop app)
+
+Remote access is provided by `miniq-daemon`, so a server with only the terminal package can also be reached from the mobile app. It is off by default and the CLI has no dedicated switch; enable it once through the advanced RPC:
+
+```sh
+miniq configure                      # save the same Zaiwen API key used on the phone
+miniq rpc settings.update - <<'EOF'
+{"remoteAccess":{"enabled":true,"relayUrl":"wss://oneapi.zaiwenai.com/miniq-relay/ws","deviceName":"my-server"}}
+EOF
+miniq rpc remote.status              # should report the relay as connected
+```
+
+`deviceName` is the name shown on the phone (1–80 characters). Without a saved API key the status stays waiting for a key. Keep the daemon running and the server online; after a reboot run any `miniq` command (for example `miniq status`) to start it again. To turn remote access off, repeat the update with `"enabled":false`. The phone can view and continue tasks, answer questions and approvals, and browse files on the server; native computer use still requires a graphical session on that server.
+
 ## Desktop Connections over SSH
 
 `miniq bridge` exposes the authenticated local daemon connection as JSONL on standard input/output for miniQ desktop's SSH transport. Install matching `miniq` and `miniq-daemon` binaries on the remote computer first. The bridge discovers the remote user's saved data directory and starts a detached daemon if needed; `--no-start`, `--data-dir` and `--daemon-path` have the same meaning as other CLI commands. It does not listen on a public network port and does not print the daemon token or copy the local computer's provider key to the remote computer.

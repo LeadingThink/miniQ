@@ -31,4 +31,18 @@
   .statusbar-identity > svg { flex: none; }
   .statusbar .remote-connection-trigger { min-height: 44px; padding: 6px 8px; font-size: 11px; }
   .remote-connection-dialog { padding: 16px; }
+  /* Phone remote header: a single row. The identity button opens the same
+     connection dialog, so the healthy-connection chip is hidden; it comes back
+     with its label whenever the link is degraded. */
+  .statusbar:has(> .statusbar-identity) { flex-wrap: nowrap; gap: 2px; min-height: 0; padding-top: max(4px, env(safe-area-inset-top)); padding-bottom: 4px; }
+  .statusbar:has(> .statusbar-identity) > span[style] { display: none; }
+  .statusbar:has(> .statusbar-identity) > .statusbar-identity { flex: 1 1 auto; max-width: none; padding: 2px 4px; }
+  .statusbar:has(> .statusbar-identity) > .remote-connection-trigger.connected { display: none; }
+  .statusbar:has(> .statusbar-identity) > .remote-connection-trigger { flex: 0 1 auto; white-space: nowrap; }
+  .statusbar:has(> .statusbar-identity) > .remote-connection-trigger > svg:last-child { display: none; }
+  /* Phone header: degraded connection collapses to a tinted icon chip; the label stays in aria-label and the details dialog. */
+  .statusbar:has(> .statusbar-identity) > .remote-connection-trigger { flex: 0 0 auto; min-width: 40px; justify-content: center; color: var(--warning, #d97706); border-color: currentColor; }
+  .statusbar:has(> .statusbar-identity) > .remote-connection-trigger > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .statusbar:has(> .statusbar-identity) :is(.statusbar-icon-button, .review-toggle) { flex: 0 0 auto; min-width: 40px; height: 44px; padding: 0 8px; justify-content: center; }
+  .statusbar:has(> .statusbar-identity) .statusbar-action-label { display: none; }
 }

@@ -13,10 +13,12 @@
     padding: 0 2px;
   }
 
+  /* One row on phones: model picker shares the line with attach/send and only
+     wraps when extra controls (goal, approval mode, voice) need the space. */
   .composer-card .composer-row > .session-model-controls {
-    flex: 1 0 100%;
+    flex: 1 1 220px;
     min-width: 0;
-    gap: 8px;
+    gap: 6px;
   }
 
   .composer-card .model-trigger {
@@ -85,9 +87,17 @@
     justify-content: center;
   }
 
+  /* Still announced through aria-describedby, but no longer costs a row. */
   .composer-card .composer-keyboard-hint {
-    margin: 0;
-    font-size: 11px;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
   }
 
 }
