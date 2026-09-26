@@ -46,3 +46,15 @@
   .statusbar:has(> .statusbar-identity) :is(.statusbar-icon-button, .review-toggle) { flex: 0 0 auto; min-width: 40px; height: 44px; padding: 0 8px; justify-content: center; }
   .statusbar:has(> .statusbar-identity) .statusbar-action-label { display: none; }
 }
+
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  /* Native wrappers can reclaim the persistent safe-area/header padding while
+     the web layout keeps its existing touch sizing. */
+  .native-mobile .statusbar-identity { gap: 6px; min-height: 36px; padding: 2px 4px; }
+  .native-mobile .statusbar-identity strong { font-size: 13px; line-height: 1.2; }
+  .native-mobile .statusbar-identity small { font-size: 10px; line-height: 1.15; margin-top: 1px; }
+  .native-mobile .statusbar .remote-connection-trigger { min-height: 44px; padding: 4px 7px; }
+  .native-mobile .statusbar:has(> .statusbar-identity) { padding-top: max(3px, env(safe-area-inset-top)); padding-bottom: 2px; }
+  .native-mobile .statusbar:has(> .statusbar-identity) > .statusbar-identity { padding: 1px 4px; }
+  .native-mobile .statusbar:has(> .statusbar-identity) :is(.statusbar-icon-button, .review-toggle) { height: 44px; }
+}

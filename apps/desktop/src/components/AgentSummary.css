@@ -118,3 +118,30 @@
   .agent-status-indicator { margin-left: 12px; margin-right: 12px; }
   .agent-status-indicator-phase { display: none; }
 }
+
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  /* Native mobile keeps the panel summary on the same row as its label. The
+     full list, phases, and errors remain available from the existing toggle. */
+  .native-mobile .agent-panel-toggle .agent-summary {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+    margin-left: auto;
+    flex-wrap: nowrap;
+    gap: 5px;
+    overflow: hidden;
+  }
+  .native-mobile .agent-panel-toggle .agent-summary-stats {
+    min-width: 0;
+    gap: 5px;
+    overflow: hidden;
+  }
+  .native-mobile .agent-panel-toggle .agent-stat {
+    gap: 2px;
+    font-size: 10px;
+  }
+  .native-mobile .agent-panel-toggle .agent-stat strong { font-size: 11px; }
+  .native-mobile .agent-panel-toggle .agent-summary-segments { width: 40px; height: 5px; flex: none; }
+  .native-mobile .agent-panel-toggle .agent-summary-progress { display: none; }
+  .native-mobile .conversation-context .agent-status-indicator { display: none; }
+}

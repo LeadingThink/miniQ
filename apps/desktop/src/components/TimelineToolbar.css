@@ -62,3 +62,9 @@
   .timeline .history-pages .ghost { min-height: 44px; }
   .timeline .approval-actions button { min-height: 44px; }
 }
+
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .native-mobile .conversation-tools { gap: 4px; padding: 0 10px; min-height: 44px; }
+  .native-mobile .conversation-tools .timeline-mobile-filter { max-width: 112px; }
+  .native-mobile .conversation-tools .timeline-search input { min-height: 44px; }
+}

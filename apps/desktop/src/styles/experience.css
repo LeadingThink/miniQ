@@ -407,6 +407,40 @@
     left: 10px;
   }
 }
+
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .native-mobile .conversation-context {
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 4px;
+    min-height: 28px;
+    padding: 1px max(10px, env(safe-area-inset-right)) 1px max(10px, env(safe-area-inset-left));
+  }
+  .native-mobile .conversation-context > .execution-summary {
+    flex: 1 1 auto;
+    flex-basis: auto;
+    min-width: 0;
+  }
+  .native-mobile .conversation-context .session-goal-card,
+  .native-mobile .conversation-context .session-goal-content,
+  .native-mobile .conversation-context .session-goal-add { max-width: 48vw; }
+  .native-mobile .main:has(.statusbar-identity) .conversation-title { display: none; }
+  .native-mobile .main:has(.statusbar-identity) .conversation-context:not(:has(> :not(.conversation-title))) { display: none; }
+}
+
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .native-mobile .agent-panel { padding-inline: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
+  .native-mobile .agent-panel-toggle { min-height: 44px; padding: 3px 0; gap: 6px; flex-wrap: nowrap; overflow: hidden; }
+  .native-mobile .agent-panel-toggle > strong,
+  .native-mobile .agent-panel-toggle > span { flex: none; }
+  .native-mobile .agent-panel-toggle > .agent-summary {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+    margin-left: auto;
+  }
+  .native-mobile .agent-panel-toggle > svg:last-child { flex: none; }
+}
 .timeline-modes {
   display: flex;
   flex: none;
