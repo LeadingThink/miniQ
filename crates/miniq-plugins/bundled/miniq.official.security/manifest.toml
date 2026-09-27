@@ -1,9 +1,26 @@
 id = "miniq.official.security"
 name = "安全审查"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["security-review", "threat-model", "secret-scan"]
-description = "对代码做安全最佳实践审查、STRIDE 威胁建模和硬编码密钥扫描，输出分级报告"
+skills = [
+  "security-review",
+  "security-scan",
+  "security-deep-scan",
+  "security-diff-scan",
+  "security-threat-model",
+  "security-finding-discovery",
+  "security-validation",
+  "security-attack-path",
+  "security-secret-scan",
+  "security-triage-finding",
+  "security-writeup",
+  "security-track-findings",
+  "security-fix-finding",
+  "security-patch-risk",
+  "security-policy",
+  "security-hardening",
+]
+description = "端到端代码安全工作流：快速审查、全仓/深度/差异扫描、威胁建模、候选发现与验证、攻击路径定级、密钥扫描、外部报告分诊、漏洞报告与工单跟踪、修复与补丁风险评估、SECURITY.md 策略与系统加固，输出分级报告与 SARIF"
 author = "miniQ"

@@ -1,12 +1,12 @@
 id = "miniq.official.expo"
 name = "Expo"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["expo-app-dev", "expo-eas-build"]
+skills = ["expo-app-dev", "expo-eas-build", "building-native-ui", "expo-api-routes", "expo-cicd-workflows", "expo-deployment", "expo-dev-client", "expo-module", "expo-tailwind-setup", "expo-ui-jetpack-compose", "expo-ui-swift-ui", "native-data-fetching", "upgrading-expo", "use-dom"]
 requires = ["npx"]
-description = "开发调试 Expo 应用，并用 EAS 构建、提交商店与发布更新"
+description = "Expo 官方技能全集：UI 开发、原生模块、数据获取、升级、EAS 构建提交与 OTA 更新"
 author = "miniQ"
 
 [[mcp_servers]]

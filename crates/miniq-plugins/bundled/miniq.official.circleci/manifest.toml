@@ -1,12 +1,12 @@
 id = "miniq.official.circleci"
 name = "CircleCI"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["circleci-build-triage", "circleci-pipeline-status", "circleci-config"]
+skills = ["circleci-build-triage", "circleci-pipeline-status", "circleci-config", "circleci-builds", "circleci-chunk", "circleci-cli"]
 requires = ["npx"]
-description = "排查 CircleCI 失败构建、查看流水线状态、编写并校验配置"
+description = "CircleCI 官方技能：排查失败构建、拆分并行测试、CLI 操作、编写并校验 config.yml"
 author = "miniQ"
 
 [[mcp_servers]]

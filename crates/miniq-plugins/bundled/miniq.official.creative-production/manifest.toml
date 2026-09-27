@@ -1,9 +1,9 @@
 id = "miniq.official.creative-production"
 name = "创意制作工坊"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["creative-brief-intake", "creative-asset-produce", "creative-layout-deliver"]
-description = "从创意简报、文案到图像视频音频素材，再排版成可交付的成品"
+skills = ["creative-brief-intake", "creative-asset-produce", "creative-board", "creative-layout-deliver"]
+description = "从零状态起步菜单或具体简报出发，并行生成多个真正不同的创意方向到本地看板比较选择，再确定性排版导出多平台成品"
 author = "miniQ"

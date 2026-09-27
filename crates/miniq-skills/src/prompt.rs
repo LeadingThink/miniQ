@@ -2,14 +2,19 @@
 
 use crate::store::Skill;
 
-/// Character budget for the block (~4 chars/token, so roughly 3k tokens).
-const DEFAULT_BUDGET_CHARS: usize = 12_000;
+/// Byte budget for the block. Bundled plugin packs ship a few hundred skills,
+/// so the block keeps full descriptions while they fit, then shortens them
+/// before ever dropping to bare names.
+const DEFAULT_BUDGET_CHARS: usize = 36_000;
+
+/// Per-skill description cap (in characters) used by the shortened tier.
+const SHORT_DESCRIPTION_CHARS: usize = 100;
 
 /// Build the `<available_skills>` prompt block from enabled skills.
 ///
-/// Degradation under budget pressure: full (name + description) -> compact
-/// (names only) -> truncated name list. Returns an empty string when no
-/// skill is enabled.
+/// Degradation under budget pressure: full (name + description) -> shortened
+/// descriptions -> compact (names only) -> truncated name list. Returns an
+/// empty string when no skill is enabled.
 pub fn available_skills_block(skills: &[Skill]) -> String {
     available_skills_block_with_budget(skills, DEFAULT_BUDGET_CHARS)
 }
@@ -20,11 +25,15 @@ pub fn available_skills_block_with_budget(skills: &[Skill], budget: usize) -> St
         return String::new();
     }
 
-    let full = render(&enabled, true);
+    let full = render(&enabled, Some(usize::MAX));
     if full.len() <= budget {
         return full;
     }
-    let compact = render(&enabled, false);
+    let short = render(&enabled, Some(SHORT_DESCRIPTION_CHARS));
+    if short.len() <= budget {
+        return short;
+    }
+    let compact = render(&enabled, None);
     if compact.len() <= budget {
         return compact;
     }
@@ -32,24 +41,35 @@ pub fn available_skills_block_with_budget(skills: &[Skill], budget: usize) -> St
     let mut kept: Vec<&Skill> = Vec::new();
     for skill in &enabled {
         kept.push(skill);
-        if render(&kept, false).len() > budget {
+        if render(&kept, None).len() > budget {
             kept.pop();
             break;
         }
     }
-    render(&kept, false)
+    render(&kept, None)
 }
 
-fn render(skills: &[&Skill], with_description: bool) -> String {
+fn shorten(text: &str, max_chars: usize) -> String {
+    let text = text.trim();
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let mut out: String = text.chars().take(max_chars).collect();
+    out.push('…');
+    out
+}
+
+fn render(skills: &[&Skill], description_chars: Option<usize>) -> String {
     let mut out = String::from(
         "<available_skills>\nWhen a task matches one of these skills, call the \
          `skill_read` tool with its name and follow the steps in its body.\n",
     );
     for skill in skills {
-        if with_description {
+        if let Some(max) = description_chars {
             out.push_str(&format!(
                 "- {}: {}\n",
-                skill.meta.name, skill.meta.description
+                skill.meta.name,
+                shorten(&skill.meta.description, max)
             ));
         } else {
             out.push_str(&format!("- {}\n", skill.meta.name));
@@ -104,6 +124,11 @@ mod tests {
             .collect();
         let full = available_skills_block_with_budget(&skills, 100_000);
         assert!(full.contains(&long));
+
+        // Too long in full -> descriptions shortened to the per-skill cap.
+        let short = available_skills_block_with_budget(&skills, 1_500);
+        assert!(!short.contains(&long));
+        assert!(short.contains(&format!("{}…", "x".repeat(SHORT_DESCRIPTION_CHARS))));
 
         // Too small for descriptions -> names only.
         let compact = available_skills_block_with_budget(&skills, 400);

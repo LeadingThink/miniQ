@@ -415,19 +415,58 @@ fn command_available(command: &str) -> bool {
     candidates.any(|candidate| candidate.is_file())
 }
 
+/// Upper bound on listed sidecar files so a huge skill pack cannot flood the
+/// `skill_read` result; the model can still browse `skillDir` directly.
+const MAX_SIDECAR_FILES: usize = 400;
+const MAX_SIDECAR_DEPTH: usize = 6;
+
+/// Every supporting file of a skill (relative to its directory), recursing
+/// into nested folders such as `references/triage/*.md` or `rules/*.md`.
+/// Hidden entries and the SKILL.md itself are skipped.
 fn list_sidecar_files(dir: &Path) -> Vec<String> {
-    let mut files = Vec::new();
-    for sub in ["scripts", "templates", "references", "assets"] {
-        let sub_dir = dir.join(sub);
-        let Ok(entries) = std::fs::read_dir(&sub_dir) else {
-            continue;
+    fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<String>) {
+        if depth > MAX_SIDECAR_DEPTH || out.len() >= MAX_SIDECAR_FILES {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
         };
-        for entry in entries.flatten() {
-            if entry.path().is_file() {
-                files.push(format!("{sub}/{}", entry.file_name().to_string_lossy()));
+        let mut entries: Vec<_> = entries.flatten().collect();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with('.') {
+                continue;
+            }
+            let path = entry.path();
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                walk(root, &path, depth + 1, out);
+            } else if kind.is_file() {
+                if depth == 0 && name == "SKILL.md" {
+                    continue;
+                }
+                if out.len() >= MAX_SIDECAR_FILES {
+                    return;
+                }
+                let Ok(relative) = path.strip_prefix(root) else {
+                    continue;
+                };
+                out.push(
+                    relative
+                        .components()
+                        .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                        .collect::<Vec<_>>()
+                        .join("/"),
+                );
             }
         }
     }
+    let mut files = Vec::new();
+    walk(dir, dir, 0, &mut files);
     files.sort();
     files
 }
@@ -551,6 +590,36 @@ mod tests {
         assert!(detail.body.contains("body of on-disk"));
         assert_eq!(detail.files, vec!["scripts/run.py"]);
         assert!(detail.skill_dir.is_some());
+    }
+
+    #[test]
+    fn sidecar_files_are_listed_recursively() {
+        let data = tempfile::tempdir().unwrap();
+        let store = store(data.path());
+        let root = data.path().join("skills/deep");
+        write_skill(&data.path().join("skills"), "deep", "deep skill");
+        for rel in [
+            "references/triage/stuck.md",
+            "references/index.md",
+            "rules/a.md",
+            "AGENTS.md",
+            ".hidden/x.md",
+            "references/.DS_Store",
+        ] {
+            let path = root.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "x").unwrap();
+        }
+        let detail = store.read(None, "deep").unwrap();
+        assert_eq!(
+            detail.files,
+            vec![
+                "AGENTS.md",
+                "references/index.md",
+                "references/triage/stuck.md",
+                "rules/a.md"
+            ]
+        );
     }
 
     #[test]

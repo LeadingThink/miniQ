@@ -21,6 +21,12 @@ fn collect(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
             if name.to_string_lossy().starts_with('.') {
                 continue;
             }
+            // Only text is embedded (`include_str!`); binary assets such as
+            // logos in third-party skill packs are skipped.
+            match std::fs::read(&path) {
+                Ok(bytes) if std::str::from_utf8(&bytes).is_ok() => {}
+                _ => continue,
+            }
             let relative = path
                 .strip_prefix(root)
                 .expect("bundled file is under the bundled root")

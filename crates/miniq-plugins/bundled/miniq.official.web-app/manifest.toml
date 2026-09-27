@@ -1,9 +1,9 @@
 id = "miniq.official.web-app"
 name = "Web 应用开发"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["web-app-scaffold", "frontend-polish"]
-description = "快速搭建可运行的前端项目，并对界面做可访问性、响应式与视觉细节打磨"
+skills = ["web-app-scaffold", "frontend-polish", "frontend-app-builder", "frontend-testing-debugging", "react-best-practices", "shadcn-best-practices", "stripe-best-practices", "supabase-best-practices"]
+description = "网页应用：前端搭建、React 最佳实践、界面打磨、Playwright 验证、Stripe 与 Supabase 集成"
 author = "miniQ"

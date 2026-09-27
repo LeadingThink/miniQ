@@ -1,9 +1,17 @@
 id = "miniq.official.github"
 name = "GitHub 协作"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
 skills = ["gh-fix-ci", "gh-address-comments", "gh-pr-create"]
-description = "借助 gh 命令行排查 CI 失败、处理 PR 评审意见并创建规范的 Pull Request"
+requires = ["npx"]
+description = "GitHub 协作：排查 CI、处理 PR 评审、创建 PR，附 GitHub 官方 MCP（需 GITHUB_PAT_TOKEN）"
 author = "miniQ"
+
+[[mcp_servers]]
+name = "github"
+description = "GitHub 官方托管 MCP（需设置环境变量 GITHUB_PAT_TOKEN）：仓库、Issue、PR、Actions"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://api.githubcopilot.com/mcp/", "--header", "Authorization:Bearer ${GITHUB_PAT_TOKEN}"]
+env = ["GITHUB_PAT_TOKEN"]

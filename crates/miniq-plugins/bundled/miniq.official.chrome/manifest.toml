@@ -1,9 +1,9 @@
 id = "miniq.official.chrome"
 name = "Chrome 浏览器操控"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["chrome-control"]
-description = "借用你已登录的 Chrome 标签页和会话完成网页任务"
+skills = ["chrome-control", "chrome-browser-tasks"]
+description = "借用你已登录的 Chrome 标签页和会话完成网页任务；无需登录态时用内置浏览器，含标签认领清理、上传排查与分级确认"
 author = "miniQ"

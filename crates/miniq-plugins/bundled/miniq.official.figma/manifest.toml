@@ -1,12 +1,12 @@
 id = "miniq.official.figma"
 name = "Figma 设计协作"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["figma-design-to-code", "figma-rest-export"]
+skills = ["figma-design-to-code", "figma-design-system-rules", "figma-implement-motion", "figma-code-connect", "figma-swiftui", "figma-use", "figma-generate-design", "figma-generate-library", "figma-generate-diagram", "figma-use-figjam", "figma-use-slides", "figma-use-motion", "figma-create-new-file", "figma-rest-export"]
 requires = ["npx", "python3"]
-description = "读取 Figma 设计稿与变量，还原为代码并导出切图资源"
+description = "读取 Figma 设计稿与变量还原为代码，并通过官方 MCP 在 Figma/FigJam/Slides 中搭建页面、设计系统、图表与动效"
 author = "miniQ"
 
 [[mcp_servers]]

@@ -1,9 +1,9 @@
 id = "miniq.official.messages"
 name = "信息 Messages"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["imessage-read", "imessage-send"]
-description = "只读检索本机“信息”聊天记录，并在确认后代为发送"
+skills = ["imessage-read", "imessage-send", "messages-triage"]
+description = "只读检索本机“信息”聊天记录与附件，整理未读并起草回复，在逐条确认后代为发送文字或文件"
 author = "miniQ"

@@ -1,10 +1,10 @@
 id = "miniq.official.coderabbit"
 name = "CodeRabbit"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
 skills = ["coderabbit-review"]
 requires = ["git"]
-description = "用 CodeRabbit CLI 对本地改动做 AI 代码评审并逐条修复"
+description = "CodeRabbit 官方技能：用 CLI 对本地改动做 AI 代码评审并逐条修复"
 author = "miniQ"

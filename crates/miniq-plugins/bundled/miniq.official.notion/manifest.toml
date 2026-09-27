@@ -1,12 +1,12 @@
 id = "miniq.official.notion"
 name = "Notion 知识库"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["notion-docs", "notion-meeting-db", "notion-db-query"]
+skills = ["notion-docs", "notion-meeting-db", "notion-db-query", "notion-knowledge-capture", "notion-meeting-intelligence", "notion-research-documentation", "notion-spec-to-implementation"]
 requires = ["npx"]
-description = "在 Notion 中撰写规格文档、归档会议纪要并查询数据库"
+description = "Notion 官方技能：规格转实施计划、会议准备、知识沉淀与研究文档，配合 Notion 连接器"
 author = "miniQ"
 
 [[mcp_servers]]

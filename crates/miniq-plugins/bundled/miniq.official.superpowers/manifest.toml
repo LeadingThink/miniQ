@@ -1,9 +1,9 @@
 id = "miniq.official.superpowers"
 name = "工程方法"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["sp-clarify-plan", "sp-tdd-debug", "sp-review-dispatch"]
-description = "需求澄清、实施计划、TDD、系统化调试、自检与并行分派"
+skills = ["sp-clarify-plan", "sp-tdd-debug", "sp-review-dispatch", "brainstorming", "dispatching-parallel-agents", "executing-plans", "finishing-a-development-branch", "receiving-code-review", "requesting-code-review", "subagent-driven-development", "systematic-debugging", "test-driven-development", "using-git-worktrees", "using-superpowers", "verification-before-completion", "writing-plans", "writing-skills"]
+description = "Superpowers 工程方法：头脑风暴、计划编写与执行、TDD、系统化调试、代码评审与并行子代理"
 author = "miniQ"

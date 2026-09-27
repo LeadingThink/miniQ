@@ -1,10 +1,17 @@
 id = "miniq.official.ios-apps"
 name = "iOS 应用开发"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["ios-build-run", "ios-swiftui-dev", "ios-test-debug"]
-requires = ["xcodebuild", "xcrun"]
-description = "用 xcodebuild/simctl 构建运行 SwiftUI 应用并测试排错"
+skills = ["ios-build-run", "ios-swiftui-dev", "ios-test-debug", "ios-app-intents", "ios-debugger-agent", "ios-ettrace-performance", "ios-memgraph-leaks", "ios-simulator-browser", "swiftui-liquid-glass", "swiftui-performance-audit", "swiftui-ui-patterns", "swiftui-view-refactor"]
+requires = ["xcodebuild", "xcrun", "npx"]
+description = "iOS 应用开发：SwiftUI 模式与性能、App Intents、模拟器调试，附 XcodeBuildMCP 连接器"
 author = "miniQ"
+
+[[mcp_servers]]
+name = "xcodebuildmcp"
+description = "XcodeBuildMCP：模拟器构建运行、UI 自动化、LLDB 调试与日志采集"
+command = "env"
+args = ["XCODEBUILDMCP_ENABLED_WORKFLOWS=simulator,ui-automation,debugging,logging", "npx", "-y", "xcodebuildmcp@latest", "mcp"]
+env = []

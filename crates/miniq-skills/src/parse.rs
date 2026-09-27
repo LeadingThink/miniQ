@@ -34,13 +34,38 @@ fn default_version() -> u32 {
     1
 }
 
+/// Accept integer versions as well as semver-like strings (`"4.0.506"`,
+/// common in third-party skill packs) by taking the leading major number;
+/// anything unparseable falls back to 1 instead of rejecting the skill.
+fn lenient_version<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_yaml::Value::deserialize(deserializer)?;
+    Ok(match value {
+        serde_yaml::Value::Number(n) => n
+            .as_u64()
+            .and_then(|v| u32::try_from(v).ok())
+            .or_else(|| n.as_f64().filter(|f| *f >= 0.0).map(|f| f as u32))
+            .unwrap_or(1),
+        serde_yaml::Value::String(s) => s
+            .trim()
+            .trim_start_matches(['v', 'V'])
+            .split('.')
+            .next()
+            .and_then(|major| major.parse().ok())
+            .unwrap_or(1),
+        _ => 1,
+    })
+}
+
 /// Frontmatter of a SKILL.md.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillMeta {
     pub name: String,
     pub description: String,
-    #[serde(default = "default_version")]
+    #[serde(default = "default_version", deserialize_with = "lenient_version")]
     pub version: u32,
     #[serde(default)]
     pub origin: SkillOrigin,
@@ -106,6 +131,19 @@ mod tests {
     use super::*;
 
     const SAMPLE: &str = "---\nname: weekly-report\ndescription: Generate a weekly report\nversion: 2\norigin: distilled\nrequires:\n  bins: [git]\n---\n\n## Steps\n1. run git log\n";
+
+    #[test]
+    fn semver_string_version_is_accepted() {
+        let (meta, _) =
+            parse_skill_md("---\nname: a\ndescription: d\nversion: '4.0.506'\n---\nbody\n").unwrap();
+        assert_eq!(meta.version, 4);
+        let (meta, _) =
+            parse_skill_md("---\nname: a\ndescription: d\nversion: v0.8.1\n---\nbody\n").unwrap();
+        assert_eq!(meta.version, 0);
+        let (meta, _) =
+            parse_skill_md("---\nname: a\ndescription: d\nversion: beta\n---\nbody\n").unwrap();
+        assert_eq!(meta.version, 1);
+    }
 
     #[test]
     fn parse_roundtrip() {

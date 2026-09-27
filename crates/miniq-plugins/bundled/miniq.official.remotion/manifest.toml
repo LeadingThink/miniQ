@@ -1,10 +1,10 @@
 id = "miniq.official.remotion"
 name = "Remotion 视频"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["remotion-video"]
+skills = ["remotion-video", "remotion-best-practices", "remotion-captions", "remotion-create", "remotion-docs", "remotion-interactivity", "remotion-maps", "remotion-markup", "remotion-multimedia", "remotion-render", "remotion-saas", "remotion-studio", "remotion-upgrade"]
 requires = ["node", "npx"]
-description = "用 React 代码编写、预览并渲染 MP4 视频，可配合 AI 配音与配乐"
+description = "Remotion 官方技能：用 React 编写视频，覆盖动画、字幕、音频、3D、转场与渲染"
 author = "miniQ"

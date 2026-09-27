@@ -437,6 +437,15 @@ impl PluginManager {
                         std::fs::write(&file, &serialized)?;
                     } else {
                         std::fs::write(&file, content)?;
+                        // Skill packs invoke helpers as `./scripts/x.sh`.
+                        #[cfg(unix)]
+                        if content.starts_with("#!") {
+                            use std::os::unix::fs::PermissionsExt;
+                            std::fs::set_permissions(
+                                &file,
+                                std::fs::Permissions::from_mode(0o755),
+                            )?;
+                        }
                     }
                 }
                 Ok(())
@@ -1376,12 +1385,32 @@ env = ["LINEAR_TOKEN"]
                 .find(|plugin| plugin.id == package.id)
                 .unwrap_or_else(|| panic!("{} not loaded", package.id));
             assert!(info.bundled);
-            assert_eq!(info.status, PluginStatus::Active, "{info:?}");
+            let manifest = package
+                .files
+                .iter()
+                .find(|(path, _)| path == "manifest.toml")
+                .map(|(_, raw)| PluginManifest::parse(raw).unwrap())
+                .unwrap();
+            let expected = if manifest.enabled {
+                PluginStatus::Active
+            } else {
+                PluginStatus::Disabled
+            };
+            assert_eq!(info.status, expected, "{info:?}");
         }
-        let skill_count: usize = plugins.iter().map(|plugin| plugin.skills.len()).sum();
+        let skill_count: usize = plugins
+            .iter()
+            .filter(|plugin| plugin.status == PluginStatus::Active)
+            .map(|plugin| plugin.skills.len())
+            .sum();
         assert_eq!(manager.enabled_skill_directories().len(), skill_count);
 
-        let first = bundled[0].id.clone();
+        let first = plugins
+            .iter()
+            .find(|plugin| plugin.bundled && plugin.status == PluginStatus::Active)
+            .unwrap()
+            .id
+            .clone();
         assert!(manager.uninstall(&first).await.is_err());
         manager.set_enabled(&first, false, false).await.unwrap();
         let disabled_count = manager

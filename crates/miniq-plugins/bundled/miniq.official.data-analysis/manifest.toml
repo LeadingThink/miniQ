@@ -1,9 +1,28 @@
 id = "miniq.official.data-analysis"
 name = "数据分析"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["data-explore", "jupyter-notebook"]
-description = "对 CSV/Excel 数据做探索性分析，并创建、整理和执行 Jupyter Notebook"
+skills = [
+    "data-index",
+    "data-explore",
+    "data-quality-audit",
+    "data-validate-analysis",
+    "data-context-layer",
+    "data-business-context",
+    "data-kpi-design",
+    "data-kpi-reporting",
+    "data-metric-diagnostics",
+    "data-market-sizing",
+    "data-product-analysis",
+    "data-visualize",
+    "data-dashboard",
+    "data-report",
+    "data-report-office",
+    "data-report-pdf",
+    "data-publish-html",
+    "data-jupyter-notebook",
+]
+description = "端到端数据分析：探索与质量审计、分析校验、业务与数据上下文、KPI 设计与汇报、指标波动诊断、市场规模测算、产品与实验分析、图表与看板、报告撰写及 HTML/PDF/Word/PPT 导出发布、Jupyter Notebook"
 author = "miniQ"

@@ -1,9 +1,10 @@
 id = "miniq.official.twilio"
 name = "Twilio"
-version = "1.0.0"
+version = "1.1.0"
+enabled = false
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["twilio-messaging", "twilio-debug"]
-description = "用 Twilio CLI/REST 发短信和验证码，排查投递与回调问题"
+skills = ["twilio-messaging", "twilio-debug", "twilio-account-setup", "twilio-agent-augmentation-architect", "twilio-agent-connect", "twilio-ai-agent-architect", "twilio-call-recordings", "twilio-cli-reference", "twilio-compliance-onboarding", "twilio-compliance-traffic", "twilio-conference-calls", "twilio-content-template-builder", "twilio-conversation-intelligence", "twilio-conversation-orchestrator", "twilio-conversations-classic-api", "twilio-customer-memory", "twilio-customer-support-architect", "twilio-debugging-observability", "twilio-email-deliverability-advisor", "twilio-email-send", "twilio-enterprise-knowledge", "twilio-iam-auth-setup", "twilio-identity-verification-advisor", "twilio-lookup-phone-intelligence", "twilio-marketing-promotions-advisor", "twilio-messaging-channel-advisor", "twilio-messaging-overview", "twilio-messaging-services", "twilio-messaging-webhooks", "twilio-notifications-alerts-advisor", "twilio-numbers-senders", "twilio-organizations-setup", "twilio-rcs-messaging", "twilio-regulatory-compliance-bundles", "twilio-reliability-patterns", "twilio-security-api-auth", "twilio-security-compliance-hipaa", "twilio-security-hardening", "twilio-send-message", "twilio-sendgrid-account-setup", "twilio-sendgrid-deliverability-advisor", "twilio-sendgrid-email-send", "twilio-sendgrid-email-settings", "twilio-sendgrid-engagement-quality", "twilio-sendgrid-inbound-parse", "twilio-sendgrid-suppressions", "twilio-sendgrid-webhooks", "twilio-sms-isv-setup", "twilio-sms-send-message", "twilio-taskrouter-routing", "twilio-verify-send-otp", "twilio-voice-conversation-relay", "twilio-voice-outbound-calls", "twilio-voice-twiml", "twilio-webhook-architecture", "twilio-whatsapp-manage-senders", "twilio-whatsapp-send-message"]
+description = "Twilio 官方技能全集：短信/WhatsApp/RCS、语音、验证码、SendGrid 邮件、合规与排障（默认未启用）"
 author = "miniQ"

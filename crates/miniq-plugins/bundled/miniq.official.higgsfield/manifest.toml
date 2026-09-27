@@ -1,12 +1,12 @@
 id = "miniq.official.higgsfield"
 name = "Higgsfield AI 短片"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["higgsfield-storyboard-video", "higgsfield-api-generate"]
+skills = ["higgsfield-storyboard-video", "higgsfield-api-generate", "higgsfield-faceless-channel", "higgsfield-narrator", "higgsfield-subtitles"]
 requires = ["ffmpeg"]
-description = "分镜→关键帧→AI 视频→剪辑合成，可接入 Higgsfield 生成"
+description = "分镜→关键帧→AI 视频→配音字幕→剪辑合成，可接入 Higgsfield 生成无出镜频道视频"
 author = "miniQ"
 
 [[mcp_servers]]

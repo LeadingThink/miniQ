@@ -1,12 +1,12 @@
 id = "miniq.official.supabase"
 name = "Supabase"
-version = "1.0.0"
+version = "1.1.0"
 api_version = "1.0.0"
 runtime = "skills"
 capabilities = ["skills"]
-skills = ["supabase-database", "supabase-debug"]
+skills = ["supabase-database", "supabase-debug", "supabase", "supabase-postgres-best-practices"]
 requires = ["npx"]
-description = "管理 Supabase 数据库表结构、SQL、迁移与类型，并排查日志和安全建议"
+description = "Supabase 官方技能：数据库、认证、存储、Postgres 最佳实践、迁移与安全建议"
 author = "miniQ"
 
 [[mcp_servers]]
