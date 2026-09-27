@@ -221,7 +221,11 @@ impl<'a> ImageHistoryExecutor<'a> {
 #[async_trait]
 impl ToolExecutor for ImageHistoryExecutor<'_> {
     fn specs(&self) -> Vec<ToolSpec> {
-        let mut specs = self.inner.specs();
+        self.specs_for(&crate::TurnToolCtx { step: 0 })
+    }
+
+    fn specs_for(&self, ctx: &crate::TurnToolCtx) -> Vec<ToolSpec> {
+        let mut specs = self.inner.specs_for(ctx);
         if self.enabled {
             let mut parameters =
                 serde_json::to_value(schemars::schema_for!(Input)).expect("image history schema");
