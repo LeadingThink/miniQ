@@ -555,6 +555,7 @@ fn mcp_server(name: &str, enabled: bool) -> crate::mcp::McpServerConfig {
         command: "/nonexistent/mcp".into(),
         args: Vec::new(),
         enabled,
+        env: Default::default(),
     }
 }
 
