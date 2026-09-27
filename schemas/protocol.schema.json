@@ -696,6 +696,11 @@
               "null"
             ]
           },
+          "bundled": {
+            "default": false,
+            "description": "First-party plugin shipped with miniQ: cannot be uninstalled, only disabled, and is upgraded automatically with the app.",
+            "type": "boolean"
+          },
           "capabilities": {
             "items": {
               "type": "string"
@@ -3894,6 +3899,11 @@
               "null"
             ]
           },
+          "bundled": {
+            "default": false,
+            "description": "First-party plugin shipped with miniQ: cannot be uninstalled, only disabled, and is upgraded automatically with the app.",
+            "type": "boolean"
+          },
           "capabilities": {
             "items": {
               "type": "string"
@@ -4090,6 +4100,11 @@
               "string",
               "null"
             ]
+          },
+          "bundled": {
+            "default": false,
+            "description": "First-party plugin shipped with miniQ: cannot be uninstalled, only disabled, and is upgraded automatically with the app.",
+            "type": "boolean"
           },
           "capabilities": {
             "items": {

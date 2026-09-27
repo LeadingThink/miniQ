@@ -165,8 +165,8 @@ export function PluginsPanel(props: { client: RpcClient }) {
         {plugins.length === 0 ? (
           <div className="schedule-empty">
             <Package className="plugin-empty-icon" size={32} />
-            <div className="schedule-empty-title">还没有本地插件</div>
-            <div className="schedule-empty-sub">添加一个包含 manifest.toml 的插件或技能包文件夹</div>
+            <div className="schedule-empty-title">还没有插件</div>
+            <div className="schedule-empty-sub">内置插件会在 miniQ 启动时自动安装；也可以添加一个包含 manifest.toml 的插件或技能包文件夹</div>
           </div>
         ) : (
           <div className="card-grid">
@@ -189,7 +189,9 @@ export function PluginsPanel(props: { client: RpcClient }) {
                     <span className="switch-knob" />
                   </button>
                 </div>
+                {plugin.description && <div className="plugin-card-meta">{plugin.description}</div>}
                 <div className="plugin-badges">
+                  {plugin.bundled && <span className="badge" title="随 miniQ 提供，可停用，不可卸载">内置</span>}
                   <span className="badge">{plugin.runtime}</span>
                   <span className={`badge ${plugin.status}`}>{plugin.status}</span>
                   {plugin.runtime === "node" && plugin.processState === "failed" && (
@@ -216,15 +218,17 @@ export function PluginsPanel(props: { client: RpcClient }) {
                 )}
                 {plugin.error && <div className="plugin-error">{plugin.error}</div>}
                 <div className="asset-meta plugin-card-actions">
-                  <button
-                    className="ghost"
-                    disabled={busy !== null}
-                    onClick={() => void update(plugin)}
-                    title="从本地目录导入同一插件的新版本"
-                  >
-                    <Upload size={14} />
-                    更新
-                  </button>
+                  {!plugin.bundled && (
+                    <button
+                      className="ghost"
+                      disabled={busy !== null}
+                      onClick={() => void update(plugin)}
+                      title="从本地目录导入同一插件的新版本"
+                    >
+                      <Upload size={14} />
+                      更新
+                    </button>
+                  )}
                   <button
                     className="ghost"
                     disabled={busy !== null || !plugin.enabled}
@@ -235,14 +239,16 @@ export function PluginsPanel(props: { client: RpcClient }) {
                     重载
                   </button>
                   <span style={{ flex: 1 }} />
-                  <button
-                    className="ghost danger"
-                    disabled={busy !== null}
-                    onClick={() => void uninstall(plugin)}
-                  >
-                    <Trash2 size={14} />
-                    卸载
-                  </button>
+                  {!plugin.bundled && (
+                    <button
+                      className="ghost danger"
+                      disabled={busy !== null}
+                      onClick={() => void uninstall(plugin)}
+                    >
+                      <Trash2 size={14} />
+                      卸载
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

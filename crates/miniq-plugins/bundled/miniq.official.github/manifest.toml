@@ -1,0 +1,9 @@
+id = "miniq.official.github"
+name = "GitHub 协作"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["gh-fix-ci", "gh-address-comments", "gh-pr-create"]
+description = "借助 gh 命令行排查 CI 失败、处理 PR 评审意见并创建规范的 Pull Request"
+author = "miniQ"

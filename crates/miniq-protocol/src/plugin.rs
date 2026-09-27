@@ -52,6 +52,10 @@ pub struct PluginInfo {
     pub trust_confirmed: bool,
     pub skills: Vec<String>,
     pub dependencies: Vec<PluginDependencyStatus>,
+    /// First-party plugin shipped with miniQ: cannot be uninstalled, only
+    /// disabled, and is upgraded automatically with the app.
+    #[serde(default)]
+    pub bundled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

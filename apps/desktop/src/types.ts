@@ -333,6 +333,8 @@ export interface PluginInfo {
   trustConfirmed: boolean;
   skills: string[];
   dependencies: { command: string; available: boolean }[];
+  /** First-party plugin shipped with miniQ: can be disabled, not uninstalled. */
+  bundled: boolean;
 }
 export interface PluginListResult {
   plugins: PluginInfo[];

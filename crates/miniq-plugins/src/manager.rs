@@ -96,6 +96,7 @@ impl PluginRecord {
                         available: command_available(command),
                     })
                     .collect(),
+                bundled: crate::bundled::is_bundled(&manifest.id),
             },
             manifest_path,
             handles: Arc::new(std::sync::Mutex::new(Vec::new())),
@@ -105,6 +106,7 @@ impl PluginRecord {
     }
 
     fn failed(id: String, name: String, manifest_path: PathBuf, error: PluginError) -> Self {
+        let bundled = crate::bundled::is_bundled(&id);
         Self {
             info: PluginInfo {
                 id,
@@ -126,6 +128,7 @@ impl PluginRecord {
                 trust_confirmed: false,
                 skills: Vec::new(),
                 dependencies: Vec::new(),
+                bundled,
             },
             manifest_path,
             handles: Arc::new(std::sync::Mutex::new(Vec::new())),
@@ -275,6 +278,12 @@ impl PluginManager {
     }
 
     pub async fn uninstall(&self, id: &str) -> Result<(), PluginError> {
+        if crate::bundled::is_bundled(id) {
+            return Err(PluginError::new(
+                PluginFailureKind::Incompatible,
+                "built-in plugins cannot be uninstalled; disable them instead",
+            ));
+        }
         let directory = self
             .records
             .read()
@@ -299,6 +308,107 @@ impl PluginManager {
             }
         }
         self.set_trust(id, None)
+    }
+
+    /// Skill directories of every enabled, healthy skills-carrying plugin.
+    pub fn enabled_skill_directories(&self) -> Vec<PathBuf> {
+        let records = self.records.read().unwrap();
+        let mut dirs = Vec::new();
+        for record in records.values() {
+            let info = &record.info;
+            if !info.enabled || info.status == PluginStatus::Failed || info.skills.is_empty() {
+                continue;
+            }
+            let Some(directory) = record.manifest_path.parent() else {
+                continue;
+            };
+            for skill in &info.skills {
+                if let Ok(dir) = secure_directory(directory, Path::new(skill)) {
+                    dirs.push(dir);
+                }
+            }
+        }
+        dirs.sort();
+        dirs
+    }
+
+    /// Materialize the first-party plugins compiled into the binary into the
+    /// plugin root. Missing or outdated copies are (re)written; the user's
+    /// enabled/disabled choice is preserved across upgrades.
+    pub fn sync_bundled(&self) -> Result<(), PluginError> {
+        let io = |error: std::io::Error| {
+            PluginError::new(PluginFailureKind::InvalidEntry, error.to_string())
+        };
+        std::fs::create_dir_all(&self.root).map_err(io)?;
+        for package in crate::bundled::bundled_plugins() {
+            let Some(manifest_raw) = package
+                .files
+                .iter()
+                .find(|(path, _)| path == "manifest.toml")
+                .map(|(_, content)| *content)
+            else {
+                continue;
+            };
+            let mut manifest = PluginManifest::parse(manifest_raw).map_err(|error| {
+                PluginError::new(PluginFailureKind::InvalidManifest, error.to_string())
+            })?;
+            let target = self.root.join(&package.id);
+            let existing = std::fs::read_to_string(target.join("manifest.toml"))
+                .ok()
+                .and_then(|raw| PluginManifest::parse(&raw).ok());
+            if let Some(existing) = &existing {
+                manifest.enabled = existing.enabled;
+            }
+            let up_to_date = existing
+                .as_ref()
+                .is_some_and(|existing| existing.version == manifest.version)
+                && package
+                    .files
+                    .iter()
+                    .filter(|(path, _)| path != "manifest.toml")
+                    .all(|(path, content)| {
+                        std::fs::read_to_string(target.join(path))
+                            .is_ok_and(|disk| disk == *content)
+                    });
+            if up_to_date {
+                continue;
+            }
+            let staging = self.root.join(format!(
+                ".install-bundled-{}-{}",
+                package.id,
+                INSTALL_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+            ));
+            if staging.exists() {
+                std::fs::remove_dir_all(&staging).map_err(io)?;
+            }
+            let serialized = toml::to_string_pretty(&manifest).map_err(|error| {
+                PluginError::new(PluginFailureKind::InvalidManifest, error.to_string())
+            })?;
+            let write_all = || -> std::io::Result<()> {
+                for (path, content) in &package.files {
+                    let file = staging.join(path);
+                    if let Some(parent) = file.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    if path == "manifest.toml" {
+                        std::fs::write(&file, &serialized)?;
+                    } else {
+                        std::fs::write(&file, content)?;
+                    }
+                }
+                Ok(())
+            };
+            if let Err(error) = write_all() {
+                let _ = std::fs::remove_dir_all(&staging);
+                return Err(io(error));
+            }
+            if target.exists() {
+                std::fs::remove_dir_all(&target).map_err(io)?;
+            }
+            std::fs::rename(&staging, &target).map_err(io)?;
+            tracing::info!(plugin = %package.id, version = %manifest.version, "installed bundled plugin");
+        }
+        Ok(())
     }
 
     pub async fn scan_and_load(&self) -> Result<Vec<PluginInfo>, PluginError> {
@@ -1133,6 +1243,58 @@ skills = ["document-workflow"]
         .unwrap();
         let updated = manager.update_from_directory(&source).await.unwrap();
         assert_eq!(updated.version, "2.0.0");
+    }
+
+    #[tokio::test]
+    async fn bundled_plugins_install_expose_skills_and_survive_restarts() {
+        let root = tempfile::tempdir().unwrap();
+        let manager = PluginManager::new(
+            root.path().to_path_buf(),
+            Arc::new(ToolRouter::new()),
+            PluginLimits::default(),
+        );
+        manager.sync_bundled().unwrap();
+        let plugins = manager.scan_and_load().await.unwrap();
+        let bundled = crate::bundled::bundled_plugins();
+        assert!(!bundled.is_empty());
+        for package in &bundled {
+            let info = plugins
+                .iter()
+                .find(|plugin| plugin.id == package.id)
+                .unwrap_or_else(|| panic!("{} not loaded", package.id));
+            assert!(info.bundled);
+            assert_eq!(info.status, PluginStatus::Active, "{info:?}");
+        }
+        let skill_count: usize = plugins.iter().map(|plugin| plugin.skills.len()).sum();
+        assert_eq!(manager.enabled_skill_directories().len(), skill_count);
+
+        let first = bundled[0].id.clone();
+        assert!(manager.uninstall(&first).await.is_err());
+        manager.set_enabled(&first, false, false).await.unwrap();
+        let disabled_count = manager
+            .diagnostics(&first)
+            .map(|plugin| plugin.skills.len())
+            .unwrap();
+        assert_eq!(
+            manager.enabled_skill_directories().len(),
+            skill_count - disabled_count
+        );
+
+        // A restart (re-sync) keeps the user's disabled choice and repairs
+        // tampered content.
+        let skill_dir = manager
+            .root
+            .join(&first)
+            .join(manager.diagnostics(&first).unwrap().skills[0].clone());
+        std::fs::write(skill_dir.join("SKILL.md"), "tampered").unwrap();
+        manager.sync_bundled().unwrap();
+        manager.scan_and_load().await.unwrap();
+        let info = manager.diagnostics(&first).unwrap();
+        assert!(!info.enabled);
+        assert_ne!(
+            std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap(),
+            "tampered"
+        );
     }
 
     #[tokio::test]

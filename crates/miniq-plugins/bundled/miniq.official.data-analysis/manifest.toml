@@ -1,0 +1,9 @@
+id = "miniq.official.data-analysis"
+name = "数据分析"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["data-explore", "jupyter-notebook"]
+description = "对 CSV/Excel 数据做探索性分析，并创建、整理和执行 Jupyter Notebook"
+author = "miniQ"

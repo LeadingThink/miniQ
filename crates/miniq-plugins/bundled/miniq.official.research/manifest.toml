@@ -1,0 +1,9 @@
+id = "miniq.official.research"
+name = "调研写作"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["research-report", "knowledge-capture"]
+description = "多来源联网调研并撰写带引用的报告，把对话与资料沉淀为结构化知识笔记"
+author = "miniQ"

@@ -10,7 +10,7 @@ interface SkillView {
   description: string;
   version: number;
   origin: string;
-  source: "project" | "user" | "bundled";
+  source: "project" | "user" | "bundled" | "plugin";
   enabled: boolean;
   dependencies?: { command: string; available: boolean }[];
 }
@@ -25,6 +25,7 @@ const SOURCE_LABEL: Record<SkillView["source"], string> = {
   project: "项目",
   user: "我的",
   bundled: "内置",
+  plugin: "插件",
 };
 
 function SkillDetail(props: {

@@ -1,0 +1,9 @@
+id = "miniq.official.web-app"
+name = "Web 应用开发"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["web-app-scaffold", "frontend-polish"]
+description = "快速搭建可运行的前端项目，并对界面做可访问性、响应式与视觉细节打磨"
+author = "miniQ"

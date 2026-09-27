@@ -1,0 +1,9 @@
+id = "miniq.official.security"
+name = "安全审查"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["security-review", "threat-model", "secret-scan"]
+description = "对代码做安全最佳实践审查、STRIDE 威胁建模和硬编码密钥扫描，输出分级报告"
+author = "miniQ"

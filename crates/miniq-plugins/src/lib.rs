@@ -3,12 +3,14 @@
 //! This crate owns admission, execution limits, lifecycle and adaptation to
 //! `miniq_tools::Tool`. It has no daemon, RPC, UI or persistence dependency.
 
+mod bundled;
 mod error;
 mod host;
 mod manager;
 mod manifest;
 mod node;
 
+pub use bundled::{bundled_plugins, is_bundled, BundledPlugin};
 pub use error::{PluginError, PluginFailureKind, PluginLimits};
 pub use manager::PluginManager;
 pub use manifest::{

@@ -26,7 +26,7 @@ pub async fn reload(state: &AppState, params: Option<Value>) -> Result<Value, Rp
 pub async fn install(state: &AppState, params: Option<Value>) -> Result<Value, RpcError> {
     let input: PluginInstallParams = decode(params)?;
     let manager = manager(state)?;
-    let info = if input.update {
+    if input.update {
         manager
             .update_from_directory(std::path::Path::new(&input.path))
             .await
@@ -37,18 +37,6 @@ pub async fn install(state: &AppState, params: Option<Value>) -> Result<Value, R
             .await
             .map_err(plugin_error)?
     };
-    if !info.skills.is_empty() {
-        let package = std::path::Path::new(&input.path).join("skills");
-        let package = if package.is_dir() {
-            package
-        } else {
-            std::path::PathBuf::from(&input.path)
-        };
-        state
-            .skills
-            .import_directory(&package)
-            .map_err(skill_error)?;
-    }
     publish(state)
 }
 
@@ -79,7 +67,13 @@ pub fn diagnostics(state: &AppState, params: Option<Value>) -> Result<Value, Rpc
 }
 
 fn publish(state: &AppState) -> Result<Value, RpcError> {
-    let plugins = manager(state)?.list();
+    let manager = manager(state)?;
+    // Plugin-contributed skills follow the plugin's lifecycle: they appear
+    // while the plugin is enabled and vanish on disable/uninstall.
+    state
+        .skills
+        .set_plugin_skill_dirs(manager.enabled_skill_directories());
+    let plugins = manager.list();
     state.emit(Event::PluginsChanged {
         plugins: plugins.clone(),
     });
@@ -141,8 +135,4 @@ fn encode<T: serde::Serialize>(value: T) -> Result<Value, RpcError> {
 
 fn plugin_error(error: miniq_plugins::PluginError) -> RpcError {
     RpcError::new(ErrorCode::InternalError, error.to_string())
-}
-
-fn skill_error(error: miniq_skills::StoreError) -> RpcError {
-    RpcError::new(ErrorCode::InvalidParams, error.to_string())
 }
