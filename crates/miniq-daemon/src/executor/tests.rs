@@ -54,7 +54,11 @@ fn unknown_tool_response_lists_real_tools_and_recovery_guidance() {
         )
         .unwrap_err();
 
-    let output = unknown_tool_output(&router, &call, &error);
+    let output = unknown_tool_output(
+        router.specs().into_iter().map(|spec| spec.name).collect(),
+        &call,
+        &error,
+    );
 
     assert_eq!(output["error"]["code"], "unknown_tool");
     assert_eq!(output["error"]["requestedTool"], "ImaginaryProviderTool");
@@ -515,4 +519,151 @@ fn parallel_execution_keeps_native_and_canonical_mutations_as_barriers() {
             "{name}"
         );
     }
+}
+
+fn effective_set_fixture(
+    policy: PermissionPolicy,
+    servers: Vec<crate::mcp::McpServerConfig>,
+) -> (tempfile::TempDir, AppState, SessionToolExecutor) {
+    let directory = tempfile::tempdir().unwrap();
+    let store = miniq_memory::Store::open_in_memory().unwrap();
+    let workspace = store
+        .create_workspace(directory.path().to_str().unwrap(), "workspace")
+        .unwrap();
+    let session = store.create_session(&workspace.id, "effective").unwrap();
+    let state = AppState::new(
+        store,
+        "token".to_string(),
+        std::sync::Arc::new(miniq_models::mock::MockProvider::new(Vec::new())),
+    );
+    state.settings.lock().unwrap().mcp_servers = servers;
+    let executor = SessionToolExecutor {
+        state: state.clone(),
+        session_id: session.id.clone(),
+        router: state.router.clone(),
+        ctx: ToolContext::new(directory.path().to_path_buf()),
+        cancel: CancellationToken::new(),
+        permission_policy: policy,
+        review_plan: Default::default(),
+    };
+    (directory, state, executor)
+}
+
+fn mcp_server(name: &str, enabled: bool) -> crate::mcp::McpServerConfig {
+    crate::mcp::McpServerConfig {
+        name: name.into(),
+        command: "/nonexistent/mcp".into(),
+        args: Vec::new(),
+        enabled,
+    }
+}
+
+fn mcp_call_request(server: &str) -> ToolCallRequest {
+    ToolCallRequest {
+        id: "mcp-call".into(),
+        name: "mcp_call".into(),
+        arguments: json!({"server": server, "tool": "echo", "arguments": {"message": "hi"}}),
+    }
+}
+
+/// RT-07: once a server is disabled, `mcp_call` targeting it is checked on
+/// the inner (server, tool), rejected with TOOL_NOT_IN_EFFECTIVE_SET and
+/// never reaches approval.
+#[tokio::test]
+async fn rt07_disabled_mcp_server_call_is_rejected_before_approval() {
+    let (_dir, state, executor) =
+        effective_set_fixture(PermissionPolicy::Inherit, vec![mcp_server("mock", false)]);
+    state.settings.lock().unwrap().approval_mode = miniq_protocol::ApprovalMode::AlwaysAsk;
+    let mut events = state.events.subscribe();
+
+    assert!(!executor.specs().iter().any(|spec| spec.name == "mcp_call"));
+    let output = tokio::time::timeout(
+        Duration::from_secs(2),
+        executor.execute(&mcp_call_request("mock")),
+    )
+    .await
+    .expect("must not wait for approval")
+    .unwrap();
+
+    assert_eq!(output["error"]["code"], "TOOL_NOT_IN_EFFECTIVE_SET");
+    assert_eq!(output["error"]["requestedTool"], "mcp:mock:echo");
+    let calls = state.store.list_tool_calls(&executor.session_id).unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].status, ToolCallStatus::Failed);
+    while let Ok(event) = events.try_recv() {
+        assert!(
+            !matches!(event, Event::ApprovalRequested { .. }),
+            "rejected call must skip approval"
+        );
+    }
+}
+
+#[tokio::test]
+async fn mcp_call_to_unconfigured_server_is_rejected_even_when_others_enabled() {
+    let (_dir, _state, executor) =
+        effective_set_fixture(PermissionPolicy::Inherit, vec![mcp_server("mock", true)]);
+    assert!(executor.specs().iter().any(|spec| spec.name == "mcp_call"));
+    let output = executor.execute(&mcp_call_request("other")).await.unwrap();
+    assert_eq!(output["error"]["code"], "TOOL_NOT_IN_EFFECTIVE_SET");
+    assert_eq!(output["error"]["requestedTool"], "mcp:other:echo");
+}
+
+#[tokio::test]
+async fn mcp_call_without_servers_is_outside_the_effective_set() {
+    let (_dir, _state, executor) = effective_set_fixture(PermissionPolicy::Inherit, Vec::new());
+    assert!(!executor.specs().iter().any(|spec| spec.name == "mcp_call"));
+    let output = executor.execute(&mcp_call_request("mock")).await.unwrap();
+    assert_eq!(output["error"]["code"], "TOOL_NOT_IN_EFFECTIVE_SET");
+    assert_eq!(output["error"]["requestedTool"], "mcp:mock:echo");
+}
+
+/// An in-set `mcp_call` goes through `decide_approval`: under DontAsk with an
+/// always-ask session it is denied without prompting; under Inherit it asks.
+#[tokio::test]
+async fn enabled_mcp_call_goes_through_decide_approval() {
+    let (_dir, state, executor) =
+        effective_set_fixture(PermissionPolicy::DontAsk, vec![mcp_server("mock", true)]);
+    state.settings.lock().unwrap().approval_mode = miniq_protocol::ApprovalMode::AlwaysAsk;
+    let output = tokio::time::timeout(
+        Duration::from_secs(2),
+        executor.execute(&mcp_call_request("mock")),
+    )
+    .await
+    .expect("DontAsk must not wait")
+    .unwrap();
+    assert_eq!(output["rejected"], true, "{output}");
+
+    let (_dir, state, executor) =
+        effective_set_fixture(PermissionPolicy::Inherit, vec![mcp_server("mock", true)]);
+    state.settings.lock().unwrap().approval_mode = miniq_protocol::ApprovalMode::AlwaysAsk;
+    let mut events = state.events.subscribe();
+    let task = tokio::spawn(async move { executor.execute(&mcp_call_request("mock")).await });
+    let approval = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let Event::ApprovalRequested { approval, .. } = events.recv().await.unwrap() {
+                break approval;
+            }
+        }
+    })
+    .await
+    .expect("mcp_call must request approval");
+    assert!(state.deliver_approval(&approval.id, ApprovalDecision::Reject));
+    let output = task.await.unwrap().unwrap();
+    assert_eq!(output["rejected"], true, "{output}");
+}
+
+#[tokio::test]
+async fn unregistered_tool_is_not_in_effective_set_and_unknown_output_uses_it() {
+    let (_dir, _state, executor) = effective_set_fixture(PermissionPolicy::Inherit, Vec::new());
+    let output = executor
+        .execute(&ToolCallRequest {
+            id: "ghost".into(),
+            name: "ghost_tool".into(),
+            arguments: json!({}),
+        })
+        .await
+        .unwrap();
+    assert_eq!(output["error"]["code"], "unknown_tool");
+    let available = output["error"]["availableTools"].as_array().unwrap();
+    assert!(!available.iter().any(|name| name == "mcp_call"));
 }

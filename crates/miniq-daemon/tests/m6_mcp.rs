@@ -203,21 +203,17 @@ async fn mcp_unknown_server_reports_error() {
     )
     .await;
 
-    let requested = next_event_of(&mut ws, "approval_requested").await;
-    let approval_id = requested["approval"]["id"].as_str().unwrap().to_string();
-    call(
-        &mut ws,
-        "r5",
-        "approval.resolve",
-        json!({"approvalId": approval_id, "decision": "approve"}),
-    )
-    .await;
-
+    // Unconfigured servers are outside the effective set: the call fails
+    // before approval with TOOL_NOT_IN_EFFECTIVE_SET (no approval_requested).
     let finished = next_event_of(&mut ws, "tool_call_finished").await;
     assert_eq!(finished["status"], "failed");
-    assert!(finished["output"]["error"]
-        .as_str()
-        .unwrap()
-        .contains("unknown MCP server"));
+    assert_eq!(
+        finished["output"]["error"]["code"],
+        "TOOL_NOT_IN_EFFECTIVE_SET"
+    );
+    assert_eq!(
+        finished["output"]["error"]["requestedTool"],
+        "mcp:nope:echo"
+    );
     next_event_of(&mut ws, "turn_completed").await;
 }

@@ -18,6 +18,7 @@ use crate::state::{AppState, ApprovalDecision};
 mod adaptation;
 mod approval;
 mod checkpoint;
+mod effective_set;
 mod hooks;
 mod image_history;
 mod interaction;
@@ -367,7 +368,7 @@ impl SessionToolExecutor {
 #[async_trait]
 impl ToolExecutor for SessionToolExecutor {
     fn specs(&self) -> Vec<ToolSpec> {
-        self.router.specs()
+        self.effective_set().specs
     }
 
     async fn record_image_history(
@@ -497,7 +498,7 @@ impl ToolExecutor for SessionToolExecutor {
         let mut risk = match self.router.evaluate(&self.ctx, &call.name, &call.arguments) {
             Ok(risk) => risk,
             Err(error) => {
-                let output = unknown_tool_output(&self.router, call, &error);
+                let output = unknown_tool_output(self.effective_set().names(), call, &error);
                 self.audit(
                     "unknown_tool",
                     json!({"toolCallId": tool_call.id, "tool": call.name}),
@@ -514,6 +515,24 @@ impl ToolExecutor for SessionToolExecutor {
                 return Ok(output);
             }
         };
+        // 2b. Effective-set gate: tools outside this turn's effective set
+        // (disabled plugin, disabled/unknown MCP server) fail before approval.
+        if let Some(output) = self.effective_set_rejection(call) {
+            self.audit(
+                "tool_not_in_effective_set",
+                json!({"toolCallId": tool_call.id, "tool": call.name, "target": output["error"]["requestedTool"]}),
+            );
+            self.state.emit(Event::ToolCallStarted {
+                session_id: self.session_id.clone(),
+                agent_id: self.owner_agent_id().map(str::to_owned),
+                tool_call_id: tool_call.id.clone(),
+                tool_name: call.name.clone(),
+                input: crate::security::redacted(call.arguments.clone()),
+                created_at: Some(tool_call.created_at.clone()),
+            });
+            self.finish(&tool_call.id, ToolCallStatus::Failed, &output);
+            return Ok(output);
+        }
         self.audit(
             "tool_call",
             json!({"toolCallId": tool_call.id, "tool": call.name, "risk": risk.level.as_str()}),
