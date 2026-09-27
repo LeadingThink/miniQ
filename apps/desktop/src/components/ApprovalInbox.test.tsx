@@ -115,3 +115,39 @@ it("shows loading errors and retries without approving anything", async () => {
     true,
   );
 });
+
+it.each([
+  ["local", true],
+  ["remote", false],
+] as const)(
+  "offers always-allow only on the host (%s client)",
+  async (mode, shown) => {
+    const call = vi.fn(async (method: string) => {
+      if (method === "tool.detail")
+        return { sessionId: "session-1", input: { command: "ls" } };
+      if (method === "approval.resolve") return { resolved: true };
+      return { entries: [entry], nextCursor: null };
+    });
+    const rpc = { ...client(call), mode } as unknown as RpcClient;
+    render(
+      <ApprovalInbox
+        client={rpc}
+        onOpenSession={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(await screen.findByText("shell_run · review first"));
+    await screen.findByText(/ls/);
+    const button = screen.queryByRole("button", { name: "总是允许" });
+    expect(Boolean(button)).toBe(shown);
+    if (button) {
+      fireEvent.click(button);
+      await waitFor(() =>
+        expect(call).toHaveBeenCalledWith("approval.resolve", {
+          approvalId: "approval-1",
+          decision: "always_allow_tool",
+        }),
+      );
+    }
+  },
+);
