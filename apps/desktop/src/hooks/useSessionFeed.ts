@@ -259,6 +259,7 @@ function reduceDaemonEvent(
     case "workspace_renamed":
     case "workspace_updated":
     case "plugins_changed":
+    case "settings_load_failed":
     case "session_pinned_changed":
     case "session_archived_changed":
       return state;
@@ -431,11 +432,13 @@ export function useSessionFeed(options: SessionFeedOptions) {
         event.type === "workspace_updated" ||
         event.type === "global_model_settings_changed" ||
         event.type === "workspace_model_settings_changed" ||
-        event.type === "plugins_changed"
+        event.type === "plugins_changed" ||
+        event.type === "settings_load_failed"
       ) {
         if (
           event.type === "browser_driver_requested" ||
           event.type === "plugins_changed" ||
+          event.type === "settings_load_failed" ||
           event.type === "global_model_settings_changed" ||
           event.type === "workspace_model_settings_changed"
         )

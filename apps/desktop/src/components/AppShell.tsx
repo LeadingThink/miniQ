@@ -20,6 +20,7 @@ import { SkillsPanel } from "./Skills";
 import { StarterPrompts } from "./StarterPrompts";
 import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 import { SessionModelControls } from "./SessionModelControls";
+import { SettingsLoadErrorBanner } from "./SettingsLoadErrorBanner";
 import { RemotePermissionNotice } from "./RemotePermissionNotice";
 import { SessionPermissionControls } from "./SessionPermissionControls";
 import { SessionGoalBar } from "./SessionGoalBar";
@@ -457,6 +458,7 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
           }}
         />
         <AppErrorBanner app={app} />
+        <SettingsLoadErrorBanner client={app.client} />
         <RemotePermissionNotice client={app.client} />
         {active && <AppOverlays app={app} theme={theme} onThemeChange={onThemeChange} />}
         {active && slash.dialogs}

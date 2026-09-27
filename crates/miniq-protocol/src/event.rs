@@ -249,6 +249,18 @@ pub enum Event {
     PluginsChanged {
         plugins: Vec<crate::plugin::PluginInfo>,
     },
+    /// `settings.json` existed but could not be loaded; the daemon runs on
+    /// defaults and never overwrites the unbacked original.
+    SettingsLoadFailed {
+        path: String,
+        error: String,
+        #[serde(
+            rename = "backupPath",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        backup_path: Option<String>,
+    },
 }
 
 impl Event {
@@ -286,7 +298,8 @@ impl Event {
             | Event::WorkspaceDeleted { .. }
             | Event::WorkspaceRenamed { .. }
             | Event::WorkspaceUpdated { .. }
-            | Event::PluginsChanged { .. } => "",
+            | Event::PluginsChanged { .. }
+            | Event::SettingsLoadFailed { .. } => "",
         }
     }
 }

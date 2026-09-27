@@ -65,8 +65,11 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("miniq-daemon listening on ws://{addr}/ws");
 
     let settings_path = dir.join("settings.json");
-    let settings = miniq_daemon::load_settings(&settings_path);
+    let (settings, settings_failure) = miniq_daemon::load_settings_checked(&settings_path);
     let state = AppState::with_settings(store, token, settings, settings_path);
+    if let Some(failure) = settings_failure {
+        state.report_settings_load_error(failure);
+    }
     if let Err(error) = state.plugins.scan_and_load().await {
         tracing::error!(%error, "failed to scan plugin directory");
     }

@@ -341,3 +341,45 @@ mod tests {
         server.abort();
     }
 }
+
+/// Startup settings diagnostics (plan §4.6): `{loadError?: {path,error,backupPath?}}`.
+pub(super) fn status(state: &AppState) -> Result<Value, RpcError> {
+    let failure = state.settings_load_error.lock().unwrap().clone();
+    let backup_available = state
+        .settings_path
+        .as_ref()
+        .is_some_and(|path| crate::state::settings_last_backup(path).is_file());
+    let mut result = json!({ "backupAvailable": backup_available });
+    if let Some(failure) = failure {
+        result["loadError"] = json!(failure);
+    }
+    Ok(result)
+}
+
+pub(super) fn restore_backup(state: &AppState) -> Result<Value, RpcError> {
+    state
+        .restore_settings_backup()
+        .map_err(|error| RpcError::new(ErrorCode::InternalError, error))?;
+    status(state)
+}
+
+pub(super) fn features_get(state: &AppState) -> Result<Value, RpcError> {
+    let features = state.settings.lock().unwrap().features.clone();
+    Ok(json!({ "features": features }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FeaturesSetParams {
+    features: crate::features::FeatureFlagsPatch,
+}
+
+pub(super) fn features_set(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: FeaturesSetParams = params(raw)?;
+    let mut settings = state.settings.lock().unwrap().clone();
+    input.features.apply(&mut settings.features);
+    state
+        .update_settings(settings)
+        .map_err(|error| RpcError::new(ErrorCode::InternalError, error))?;
+    features_get(state)
+}
