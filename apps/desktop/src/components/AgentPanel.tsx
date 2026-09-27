@@ -14,12 +14,13 @@ import { RetryNotice } from "./RetryNotice";
 import { ModelDiagnostics } from "./ModelDiagnostics";
 import { AgentActivity } from "./AgentActivity";
 import { AgentHistory } from "./AgentHistory";
-import { AgentSummaryStats, type AgentSummary } from "./AgentSummary";
+import { AgentAvatar, AgentSummaryStats, type AgentSummary } from "./AgentSummary";
 import { conversationTimestamp, formatDuration } from "../time";
 import { turnProgressLabel } from "./ExecutionActivity";
 import { useAgentSummary } from "../hooks/useAgentSummary";
 
 const ACTIVE = new Set(["running", "stopping", "finalizing"]);
+const ONGOING = new Set([...ACTIVE, "queued", "waiting", "waiting_approval"]);
 const LABELS: Record<string, string> = {
   running: "执行中",
   stopping: "正在停止",
@@ -28,7 +29,16 @@ const LABELS: Record<string, string> = {
   failed: "失败",
   cancelled: "已取消",
   interrupted: "已中断",
+  queued: "排队中",
+  waiting: "等待中",
+  waiting_approval: "等待审批",
 };
+
+/** Request to open the panel on one child; nonce lets the same agent be re-focused. */
+export interface AgentFocusRequest {
+  agentId: string;
+  nonce: number;
+}
 
 export function AgentPanel(props: {
   client: RpcClient;
@@ -39,6 +49,7 @@ export function AgentPanel(props: {
   onRefreshAgents?: () => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  focusRequest?: AgentFocusRequest | null;
 }) {
   return <SessionAgentPanel key={props.sessionId} {...props} />;
 }
@@ -52,6 +63,7 @@ function SessionAgentPanel({
   onRefreshAgents: suppliedRefresh,
   open: suppliedOpen,
   onOpenChange,
+  focusRequest,
 }: {
   client: RpcClient;
   sessionId: string;
@@ -61,6 +73,7 @@ function SessionAgentPanel({
   onRefreshAgents?: () => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  focusRequest?: AgentFocusRequest | null;
 }) {
   const ownSummary = useAgentSummary(client, sessionId, busy, suppliedAgents === undefined);
   const agents = suppliedAgents ?? ownSummary.agents;
@@ -89,6 +102,8 @@ function SessionAgentPanel({
   const [history, setHistory] = useState(false);
   const actionEpoch = useRef(0);
   const detailsId = useId();
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const [focused, setFocused] = useState<string | null>(null);
 
   useEffect(
     () => () => {
@@ -130,6 +145,29 @@ function SessionAgentPanel({
   const selectedStatus = agents.find(
     (agent) => agent.agentId === selected,
   )?.status;
+
+  const handledFocus = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focusRequest || handledFocus.current === focusRequest.nonce) return;
+    handledFocus.current = focusRequest.nonce;
+    actionEpoch.current++;
+    setFilter("all");
+    setQuery("");
+    setResult(null);
+    setResultError(null);
+    setPending(false);
+    setActivity(false);
+    setHistory(false);
+    setSelected(focusRequest.agentId);
+    setFocused(focusRequest.agentId);
+  }, [focusRequest]);
+  useEffect(() => {
+    if (!focused || !open) return;
+    const row = rowRefs.current.get(focused);
+    row?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+    const timer = window.setTimeout(() => setFocused(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [focused, open]);
   useEffect(() => {
     if (selected) void loadOutput(selected);
     return () => {
@@ -166,6 +204,157 @@ function SessionAgentPanel({
       `${agent.name}\n${agent.description}\n${agent.model ?? ""}`
         .toLocaleLowerCase()
         .includes(needle),
+  );
+  const groups: Array<[string | null, AgentSummary[]]> =
+    filter === "all"
+      ? ([
+          ["进行中", visible.filter((agent) => ONGOING.has(agent.status))],
+          ["已结束", visible.filter((agent) => !ONGOING.has(agent.status))],
+        ] as Array<[string, AgentSummary[]]>).filter(([, items]) => items.length > 0)
+      : [[null, visible]];
+  const renderAgent = (agent: AgentSummary) => (
+            <div
+              key={agent.agentId}
+              ref={(node) => {
+                if (node) rowRefs.current.set(agent.agentId, node);
+                else rowRefs.current.delete(agent.agentId);
+              }}
+            >
+              <div className={`agent-row${focused === agent.agentId ? " focused" : ""}`}>
+                <button
+                  type="button"
+                  className="agent-open"
+                  title={agent.description}
+                  aria-expanded={selected === agent.agentId}
+                  aria-controls={`${detailsId}-${agent.agentId}`}
+                  onClick={() => select(agent.agentId)}
+                >
+                  <ChevronRight
+                    size={14}
+                    className={selected === agent.agentId ? "open" : ""}
+                  />
+                  <AgentAvatar seed={agent.agentId} name={agent.name} status={agent.status} />
+                  {ACTIVE.has(agent.status) && (
+                    <LoaderCircle size={13} className="activity-spinner" />
+                  )}
+                  <strong>{agent.name}</strong>
+                  <span>{agent.description}</span>
+                  <small>
+                    {agent.parentId
+                      ? `${names.get(agent.parentId) ?? agent.parentId} / `
+                      : ""}
+                    {agent.model ?? "默认模型"} ·{" "}
+                    {LABELS[agent.status] ?? agent.status} ·{" "}
+                    <time dateTime={agent.createdAt} title={conversationTimestamp(agent.createdAt)?.full}>
+                      {conversationTimestamp(agent.createdAt)?.label}
+                    </time>
+                    {agent.elapsedMs !== undefined &&
+                      formatDuration(agent.elapsedMs) && ` · ${agent.timingComplete === false ? "至少 " : ""}${formatDuration(agent.elapsedMs)}`}
+                    {!!agent.heldMessagesCount &&
+                      ` · ${agent.heldMessagesCount} 条待处理消息`}
+                  </small>
+                  {ACTIVE.has(agent.status) && agent.progress && (
+                    <small className="agent-phase">
+                      {turnProgressLabel(agent.progress)}
+                      {agent.progress.modelStep != null && ` · 第 ${agent.progress.modelStep} 轮`}
+                    </small>
+                  )}
+                  {agent.progress?.retry && (
+                    <RetryNotice progress={agent.progress} />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
+                  title={`查看 ${agent.name} 模型调用`}
+                  aria-label={`查看 ${agent.name} 模型调用`}
+                  onClick={() => setDiagnostics(agent.agentId)}
+                >
+                  <Activity size={14} />
+                </button>
+                {ACTIVE.has(agent.status) && (
+                  <button
+                    className="icon-button"
+                    type="button"
+                    title={`停止 ${agent.name}`}
+                    aria-label={`停止 ${agent.name}`}
+                    disabled={stopping !== null || agent.status !== "running"}
+                    onClick={() => void stopAgent(agent.agentId)}
+                  >
+                    <Square size={13} />
+                  </button>
+                )}
+              </div>
+              {selected === agent.agentId && (
+                <div
+                  id={`${detailsId}-${agent.agentId}`}
+                  role="region"
+                  aria-label={`${agent.name} 详情`}
+                >
+                  {agent.description && (
+                    <p className="agent-final-response-label">委派任务：{agent.description}</p>
+                  )}
+                  {pending && <div role="status">正在读取最终回复…</div>}
+                  <button
+                    type="button"
+                    className="icon-button"
+                    title={`刷新 ${agent.name} 结果`}
+                    aria-label={`刷新 ${agent.name} 结果`}
+                    disabled={pending}
+                    onClick={() => void loadOutput(agent.agentId)}
+                  >
+                    <RefreshCw size={14} />
+                  </button>
+                  {resultError && <p role="alert">{resultError}</p>}
+                  {result && (
+                    <ToolPayload
+                      label={result.result ? "最终回复" : "子任务结果"}
+                      value={
+                        result.result ??
+                        result.error ??
+                        (ONGOING.has(result.status)
+                          ? `${LABELS[result.status] ?? result.status}，尚无最终回复`
+                          : LABELS[result.status] ?? result.status)
+                      }
+                    />
+                  )}
+                  {!!result?.heldMessages?.length && (
+                    <ToolPayload
+                      label="待处理消息"
+                      value={result.heldMessages}
+                    />
+                  )}
+                  <details
+                    open={activity}
+                    onToggle={(event) => setActivity(event.currentTarget.open)}
+                  >
+                    <summary>执行记录</summary>
+                    {activity && (
+                      <AgentActivity
+                        client={client}
+                        sessionId={sessionId}
+                        agentId={agent.agentId}
+                        status={agent.status}
+                      />
+                    )}
+                  </details>
+                  <details
+                    open={history}
+                    onToggle={(event) => setHistory(event.currentTarget.open)}
+                  >
+                    <summary>对话历史</summary>
+                    {history && (
+                      <AgentHistory
+                        client={client}
+                        sessionId={sessionId}
+                        agentId={agent.agentId}
+                        status={agent.status}
+                      />
+                    )}
+                  </details>
+                </div>
+              )}
+            </div>
   );
   return (
     <section className="agent-panel" aria-label="子任务">
@@ -236,137 +425,14 @@ function SessionAgentPanel({
               没有匹配的子任务
             </p>
           )}
-          {visible.map((agent) => (
-            <div key={agent.agentId}>
-              <div className="agent-row">
-                <button
-                  type="button"
-                  className="agent-open"
-                  title={agent.description}
-                  aria-expanded={selected === agent.agentId}
-                  aria-controls={`${detailsId}-${agent.agentId}`}
-                  onClick={() => select(agent.agentId)}
-                >
-                  <ChevronRight
-                    size={14}
-                    className={selected === agent.agentId ? "open" : ""}
-                  />
-                  {ACTIVE.has(agent.status) && (
-                    <LoaderCircle size={13} className="activity-spinner" />
-                  )}
-                  <strong>{agent.name}</strong>
-                  <span>{agent.description}</span>
-                  <small>
-                    {agent.parentId
-                      ? `${names.get(agent.parentId) ?? agent.parentId} / `
-                      : ""}
-                    {agent.model ?? "默认模型"} ·{" "}
-                    {LABELS[agent.status] ?? agent.status} ·{" "}
-                    <time dateTime={agent.createdAt} title={conversationTimestamp(agent.createdAt)?.full}>
-                      {conversationTimestamp(agent.createdAt)?.label}
-                    </time>
-                    {agent.elapsedMs !== undefined &&
-                      formatDuration(agent.elapsedMs) && ` · ${agent.timingComplete === false ? "至少 " : ""}${formatDuration(agent.elapsedMs)}`}
-                    {!!agent.heldMessagesCount &&
-                      ` · ${agent.heldMessagesCount} 条待处理消息`}
-                  </small>
-                  {ACTIVE.has(agent.status) && agent.progress && (
-                    <small className="agent-phase">
-                      {turnProgressLabel(agent.progress)}
-                      {agent.progress.modelStep != null && ` · 第 ${agent.progress.modelStep} 轮`}
-                    </small>
-                  )}
-                  {agent.progress?.retry && (
-                    <RetryNotice progress={agent.progress} />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  title={`查看 ${agent.name} 模型调用`}
-                  aria-label={`查看 ${agent.name} 模型调用`}
-                  onClick={() => setDiagnostics(agent.agentId)}
-                >
-                  <Activity size={14} />
-                </button>
-                {ACTIVE.has(agent.status) && (
-                  <button
-                    className="icon-button"
-                    type="button"
-                    title={`停止 ${agent.name}`}
-                    aria-label={`停止 ${agent.name}`}
-                    disabled={stopping !== null || agent.status !== "running"}
-                    onClick={() => void stopAgent(agent.agentId)}
-                  >
-                    <Square size={13} />
-                  </button>
-                )}
-              </div>
-              {selected === agent.agentId && (
-                <div
-                  id={`${detailsId}-${agent.agentId}`}
-                  role="region"
-                  aria-label={`${agent.name} 详情`}
-                >
-                  {pending && <div role="status">正在读取子任务</div>}
-                  <button
-                    type="button"
-                    className="icon-button"
-                    title={`刷新 ${agent.name} 结果`}
-                    aria-label={`刷新 ${agent.name} 结果`}
-                    disabled={pending}
-                    onClick={() => void loadOutput(agent.agentId)}
-                  >
-                    <RefreshCw size={14} />
-                  </button>
-                  {resultError && <p role="alert">{resultError}</p>}
-                  {result && (
-                    <ToolPayload
-                      label="子任务结果"
-                      value={
-                        result.result ??
-                        result.error ??
-                        LABELS[result.status] ??
-                        result.status
-                      }
-                    />
-                  )}
-                  {!!result?.heldMessages?.length && (
-                    <ToolPayload
-                      label="待处理消息"
-                      value={result.heldMessages}
-                    />
-                  )}
-                  <details
-                    open={activity}
-                    onToggle={(event) => setActivity(event.currentTarget.open)}
-                  >
-                    <summary>执行记录</summary>
-                    {activity && (
-                      <AgentActivity
-                        client={client}
-                        sessionId={sessionId}
-                        agentId={agent.agentId}
-                        status={agent.status}
-                      />
-                    )}
-                  </details>
-                  <details
-                    open={history}
-                    onToggle={(event) => setHistory(event.currentTarget.open)}
-                  >
-                    <summary>对话历史</summary>
-                    {history && (
-                      <AgentHistory
-                        client={client}
-                        sessionId={sessionId}
-                        agentId={agent.agentId}
-                        status={agent.status}
-                      />
-                    )}
-                  </details>
+          {groups.map(([title, items]) => (
+            <div key={title ?? "all"} className="agent-panel-section" role={title ? "group" : undefined} aria-label={title ? `${title} ${items.length}` : undefined}>
+              {title && (
+                <div className="agent-panel-section-title" aria-hidden="true">
+                  {title} · {items.length}
                 </div>
               )}
+              {items.map(renderAgent)}
             </div>
           ))}
         </div>

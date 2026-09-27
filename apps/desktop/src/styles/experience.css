@@ -329,7 +329,7 @@
 .conversation-context .agent-status-indicator {
   flex: 0 1 auto;
   margin: 0;
-  max-width: min(440px, 36vw);
+  max-width: min(560px, 44vw);
   overflow: hidden;
 }
 

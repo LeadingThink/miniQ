@@ -64,7 +64,7 @@ export interface TimelineProps {
   latestTurnTiming?: AnchoredTurnTiming | null;
   busy: boolean;
   agents?: AgentSummary[];
-  onOpenAgentPanel?: () => void;
+  onOpenAgentPanel?: (agentId?: string) => void;
   onResolveApproval: (approvalId: string, decision: string) => void;
   onResolveQuestion: QuestionCardProps["onResolve"];
   onRollback: (checkpointId: string) => void;

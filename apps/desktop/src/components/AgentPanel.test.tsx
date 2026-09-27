@@ -317,3 +317,38 @@ describe("recoverable agent refresh", () => {
     expect(call).toHaveBeenCalledTimes(2);
   });
 });
+
+it("groups ongoing and finished children and focuses a child requested from the timeline", async () => {
+  const call = vi.fn(async (method: string, params?: { agentId?: string }) => {
+    if (method === "agent.list") {
+      return {
+        agents: [
+          agent,
+          { ...agent, agentId: "live", name: "Live child", status: "running" },
+        ],
+      };
+    }
+    if (method === "agent.output") {
+      return { agentId: params?.agentId, status: "completed", result: "final answer" };
+    }
+    return {};
+  });
+  const client = { call, onStatus: () => () => {} } as unknown as RpcClient;
+  const { rerender } = render(
+    <AgentPanel client={client} sessionId="a" busy={false} open onOpenChange={() => {}} />,
+  );
+  expect(await screen.findByRole("group", { name: "进行中 1" })).toBeTruthy();
+  expect(screen.getByRole("group", { name: "已结束 1" })).toBeTruthy();
+  rerender(
+    <AgentPanel
+      client={client}
+      sessionId="a"
+      busy={false}
+      open
+      onOpenChange={() => {}}
+      focusRequest={{ agentId: "a-child", nonce: 1 }}
+    />,
+  );
+  expect(await screen.findByRole("region", { name: "A child 详情" })).toBeTruthy();
+  expect(await screen.findByText("final answer")).toBeTruthy();
+});

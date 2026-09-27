@@ -24,7 +24,7 @@ import { SettingsLoadErrorBanner } from "./SettingsLoadErrorBanner";
 import { RemotePermissionNotice } from "./RemotePermissionNotice";
 import { SessionPermissionControls } from "./SessionPermissionControls";
 import { SessionGoalBar } from "./SessionGoalBar";
-import { AgentPanel } from "./AgentPanel";
+import { AgentPanel, type AgentFocusRequest } from "./AgentPanel";
 import { useAgentSummary } from "../hooks/useAgentSummary";
 import { ProjectDirectories } from "./ProjectDirectories";
 import { hostDraftKey, useDesktopHost } from "../desktopHost";
@@ -140,8 +140,10 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
     app.catalog.currentSessionId!,
     !!app.busy,
   );
-  const openAgentPanel = () => {
+  const [agentFocus, setAgentFocus] = useState<AgentFocusRequest | null>(null);
+  const openAgentPanel = (agentId?: string) => {
     setAgentPanelOpen(true);
+    if (agentId) setAgentFocus((current) => ({ agentId, nonce: (current?.nonce ?? 0) + 1 }));
   };
   return (
     <>
@@ -154,6 +156,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
         onRefreshAgents={agentSummary.refresh}
         open={agentPanelOpen}
         onOpenChange={setAgentPanelOpen}
+        focusRequest={agentFocus}
       />
       <Suspense
         fallback={
