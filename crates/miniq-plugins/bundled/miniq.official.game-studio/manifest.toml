@@ -1,0 +1,10 @@
+id = "miniq.official.game-studio"
+name = "游戏工作室"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["game-design-doc", "game-prototype", "game-playtest-ship"]
+requires = ["npx"]
+description = "网页游戏策划、Vite 原型、素材生成、试玩截图与发布"
+author = "miniQ"

@@ -1,0 +1,10 @@
+id = "miniq.official.hyperframes"
+name = "HyperFrames 网页转视频"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["hyperframes-video"]
+requires = ["node", "npx", "ffmpeg"]
+description = "用 HTML/CSS 与 GSAP 动画编写视频，确定性渲染为 MP4"
+author = "miniQ"

@@ -1,0 +1,9 @@
+id = "miniq.official.twilio"
+name = "Twilio"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["twilio-messaging", "twilio-debug"]
+description = "用 Twilio CLI/REST 发短信和验证码，排查投递与回调问题"
+author = "miniQ"

@@ -1,0 +1,9 @@
+id = "miniq.official.dropbox"
+name = "Dropbox 云盘"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["dropbox-files"]
+description = "通过 Dropbox HTTP API 搜索、下载、上传与分享文件"
+author = "miniQ"

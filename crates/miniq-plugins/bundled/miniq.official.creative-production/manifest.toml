@@ -1,0 +1,9 @@
+id = "miniq.official.creative-production"
+name = "创意制作工坊"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["creative-brief-intake", "creative-asset-produce", "creative-layout-deliver"]
+description = "从创意简报、文案到图像视频音频素材，再排版成可交付的成品"
+author = "miniQ"

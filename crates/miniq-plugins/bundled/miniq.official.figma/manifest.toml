@@ -1,0 +1,22 @@
+id = "miniq.official.figma"
+name = "Figma 设计协作"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["figma-design-to-code", "figma-rest-export"]
+requires = ["npx", "python3"]
+description = "读取 Figma 设计稿与变量，还原为代码并导出切图资源"
+author = "miniQ"
+
+[[mcp_servers]]
+name = "figma"
+description = "Figma 官方远程 MCP（OAuth 登录；仅 Figma MCP 目录内的客户端可连接，可能被拒）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://mcp.figma.com/mcp"]
+
+[[mcp_servers]]
+name = "figma-desktop"
+description = "Figma 桌面应用本地 MCP（需在桌面端 Dev Mode 启用，付费 Dev/Full 席位）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "http://127.0.0.1:3845/mcp"]

@@ -335,6 +335,8 @@ export interface PluginInfo {
   dependencies: { command: string; available: boolean }[];
   /** First-party plugin shipped with miniQ: can be disabled, not uninstalled. */
   bundled: boolean;
+  /** MCP servers (connectors) the plugin contributes while enabled. */
+  mcpServers: { name: string; description: string | null }[];
 }
 export interface PluginListResult {
   plugins: PluginInfo[];

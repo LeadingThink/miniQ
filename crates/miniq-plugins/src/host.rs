@@ -451,6 +451,7 @@ mod tests {
             author: None,
             engine: None,
             read_only_tools: vec!["count".into()],
+            mcp_servers: Vec::new(),
         }
     }
 

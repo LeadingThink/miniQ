@@ -1,0 +1,16 @@
+id = "miniq.official.higgsfield"
+name = "Higgsfield AI 短片"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["higgsfield-storyboard-video", "higgsfield-api-generate"]
+requires = ["ffmpeg"]
+description = "分镜→关键帧→AI 视频→剪辑合成，可接入 Higgsfield 生成"
+author = "miniQ"
+
+[[mcp_servers]]
+name = "higgsfield"
+description = "Higgsfield 官方远程 MCP（登录现有账号授权，生成会消耗账号积分）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://mcp.higgsfield.ai/mcp"]

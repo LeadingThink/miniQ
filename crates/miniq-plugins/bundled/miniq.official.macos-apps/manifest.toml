@@ -1,0 +1,10 @@
+id = "miniq.official.macos-apps"
+name = "macOS 应用开发"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["macos-build-run", "macos-swiftui-appkit", "macos-sign-notarize"]
+requires = ["swift", "xcrun"]
+description = "SwiftUI/AppKit 应用的构建运行、界面开发与签名公证"
+author = "miniQ"

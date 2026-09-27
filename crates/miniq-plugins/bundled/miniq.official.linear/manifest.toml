@@ -1,0 +1,17 @@
+id = "miniq.official.linear"
+name = "Linear 项目管理"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["linear-issues", "linear-planning"]
+requires = ["npx"]
+description = "查询、创建和更新 Linear 议题，辅助迭代规划与周报"
+author = "miniQ"
+
+[[mcp_servers]]
+name = "linear"
+description = "Linear 官方远程 MCP（首次使用会在浏览器中 OAuth 登录）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://mcp.linear.app/mcp"]
+env = []

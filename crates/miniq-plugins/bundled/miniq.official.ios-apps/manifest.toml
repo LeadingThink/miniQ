@@ -1,0 +1,10 @@
+id = "miniq.official.ios-apps"
+name = "iOS 应用开发"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["ios-build-run", "ios-swiftui-dev", "ios-test-debug"]
+requires = ["xcodebuild", "xcrun"]
+description = "用 xcodebuild/simctl 构建运行 SwiftUI 应用并测试排错"
+author = "miniQ"

@@ -57,15 +57,15 @@ fn origin_label(origin: &ToolOrigin) -> String {
 impl SessionToolExecutor {
     /// Compute the effective set from live router, plugin and MCP state.
     pub(super) fn effective_set(&self) -> EffectiveSet {
+        // Settings servers plus enabled plugins' servers: a plugin server is
+        // available by default while its plugin is enabled (enabling the
+        // plugin is the opt-in); settings win on name collisions.
         let mcp_servers = self
             .state
-            .settings
-            .lock()
-            .unwrap()
-            .mcp_servers
-            .iter()
+            .effective_mcp_servers()
+            .into_iter()
             .filter(|server| server.enabled)
-            .map(|server| server.name.clone())
+            .map(|server| server.name)
             .collect::<BTreeSet<_>>();
         let mut set = EffectiveSet {
             mcp_servers,

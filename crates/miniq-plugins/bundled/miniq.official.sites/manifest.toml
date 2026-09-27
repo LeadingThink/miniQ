@@ -1,0 +1,9 @@
+id = "miniq.official.sites"
+name = "网站搭建"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["sites-build"]
+description = "快速搭建个人主页、活动页等静态网站，预览验证后发布"
+author = "miniQ"

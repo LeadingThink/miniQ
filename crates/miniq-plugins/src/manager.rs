@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::{PluginError, PluginFailureKind, PluginLimits};
 use crate::host::{WasmPlugin, WasmTool};
-use crate::manifest::PluginManifest;
+use crate::manifest::{PluginManifest, PluginMcpServer};
 use crate::node::{NodePluginProcess, NodeTool};
 
 const TRUST_STORE_FILE: &str = ".trusted-node.json";
@@ -28,9 +28,20 @@ static BACKUP_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 #[derive(Default, Deserialize, Serialize)]
 struct TrustStore(BTreeMap<String, String>);
 
+/// An MCP server contributed by an enabled plugin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnabledPluginMcpServer {
+    pub plugin_id: String,
+    pub plugin_name: String,
+    pub server: PluginMcpServer,
+}
+
 struct PluginRecord {
     info: PluginInfo,
     manifest_path: PathBuf,
+    /// Full `[[mcp_servers]]` declarations (command/args/env); `info` only
+    /// exposes their public name/description.
+    mcp_servers: Vec<PluginMcpServer>,
     handles: Arc<std::sync::Mutex<Vec<RegistrationHandle>>>,
     cancellation: CancellationToken,
     node: Option<Arc<NodePluginProcess>>,
@@ -97,8 +108,17 @@ impl PluginRecord {
                     })
                     .collect(),
                 bundled: crate::bundled::is_bundled(&manifest.id),
+                mcp_servers: manifest
+                    .mcp_servers
+                    .iter()
+                    .map(|server| miniq_protocol::PluginMcpServerInfo {
+                        name: server.name.clone(),
+                        description: server.description.clone(),
+                    })
+                    .collect(),
             },
             manifest_path,
+            mcp_servers: manifest.mcp_servers.clone(),
             handles: Arc::new(std::sync::Mutex::new(Vec::new())),
             cancellation: CancellationToken::new(),
             node: None,
@@ -129,8 +149,10 @@ impl PluginRecord {
                 skills: Vec::new(),
                 dependencies: Vec::new(),
                 bundled,
+                mcp_servers: Vec::new(),
             },
             manifest_path,
+            mcp_servers: Vec::new(),
             handles: Arc::new(std::sync::Mutex::new(Vec::new())),
             cancellation: CancellationToken::new(),
             node: None,
@@ -308,6 +330,27 @@ impl PluginManager {
             }
         }
         self.set_trust(id, None)
+    }
+
+    /// MCP servers declared by every enabled, healthy plugin, tagged with the
+    /// contributing plugin. Sorted by plugin id, then declaration order.
+    pub fn enabled_mcp_servers(&self) -> Vec<EnabledPluginMcpServer> {
+        let records = self.records.read().unwrap();
+        let mut servers = Vec::new();
+        for record in records.values() {
+            let info = record.current_info();
+            if !info.enabled || info.status == PluginStatus::Failed {
+                continue;
+            }
+            for server in &record.mcp_servers {
+                servers.push(EnabledPluginMcpServer {
+                    plugin_id: info.id.clone(),
+                    plugin_name: info.name.clone(),
+                    server: server.clone(),
+                });
+            }
+        }
+        servers
     }
 
     /// Skill directories of every enabled, healthy skills-carrying plugin.
@@ -1243,6 +1286,76 @@ skills = ["document-workflow"]
         .unwrap();
         let updated = manager.update_from_directory(&source).await.unwrap();
         assert_eq!(updated.version, "2.0.0");
+    }
+
+    #[tokio::test]
+    async fn enabled_mcp_servers_follow_plugin_enablement() {
+        let installed = tempfile::tempdir().unwrap();
+        let source_root = tempfile::tempdir().unwrap();
+        let source = source_root.path().join("source");
+        std::fs::create_dir_all(source.join("linear")).unwrap();
+        std::fs::write(
+            source.join("manifest.toml"),
+            r#"id = "dev.miniq.linear"
+name = "Linear"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["linear"]
+
+[[mcp_servers]]
+name = "linear"
+description = "Linear issues"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://mcp.linear.app/mcp"]
+env = ["LINEAR_TOKEN"]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            source.join("linear/SKILL.md"),
+            "---\nname: linear\ndescription: Linear workflow\n---\n",
+        )
+        .unwrap();
+        let manager = PluginManager::new(
+            installed.path().to_path_buf(),
+            Arc::new(ToolRouter::new()),
+            PluginLimits::default(),
+        );
+
+        let info = manager.install_from_directory(&source).await.unwrap();
+        assert_eq!(
+            info.mcp_servers,
+            vec![miniq_protocol::PluginMcpServerInfo {
+                name: "linear".into(),
+                description: Some("Linear issues".into()),
+            }]
+        );
+        let servers = manager.enabled_mcp_servers();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].plugin_id, "dev.miniq.linear");
+        assert_eq!(servers[0].plugin_name, "Linear");
+        assert_eq!(servers[0].server.command, "npx");
+        assert_eq!(servers[0].server.env, vec!["LINEAR_TOKEN"]);
+
+        let disabled = manager
+            .set_enabled("dev.miniq.linear", false, false)
+            .await
+            .unwrap();
+        assert!(!disabled.enabled);
+        // Still listed for the UI, but no longer contributed at runtime.
+        assert_eq!(disabled.mcp_servers.len(), 1);
+        assert!(manager.enabled_mcp_servers().is_empty());
+
+        manager
+            .set_enabled("dev.miniq.linear", true, false)
+            .await
+            .unwrap();
+        assert_eq!(manager.enabled_mcp_servers().len(), 1);
+
+        manager.uninstall("dev.miniq.linear").await.unwrap();
+        assert!(manager.enabled_mcp_servers().is_empty());
     }
 
     #[tokio::test]

@@ -1,0 +1,9 @@
+id = "miniq.official.user-writing"
+name = "像我一样写作"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["user-writing-style"]
+description = "参考你过往的文字，用你的语气与格式起草内容"
+author = "miniQ"

@@ -1,0 +1,9 @@
+id = "miniq.official.computer-history"
+name = "电脑活动回顾"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["computer-activity-recall"]
+description = "根据本机最近的文件、应用与浏览记录回顾你在做什么"
+author = "miniQ"

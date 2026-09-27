@@ -10,10 +10,21 @@ interface McpServerView {
   status: string;
   tools?: { name: string; description?: string }[];
   error?: string;
+  source?: "settings" | "plugin";
+  pluginId?: string;
+  pluginName?: string;
+  description?: string | null;
+  readOnly?: boolean;
+}
+
+/** Plugin-provided servers are managed by their plugin, never by `mcp.update`. */
+export function isPluginServer(server: McpServerView): boolean {
+  return server.source === "plugin";
 }
 
 const STATUS_LABEL: Record<string, string> = {
   running: "运行中",
+  shadowed: "被覆盖",
   configured: "已配置",
   error: "错误",
 };
@@ -42,7 +53,7 @@ function useMcpServers(client: RpcClient) {
 
   const saveServers = async (next: McpServerView[]) => {
     await client.call("mcp.update", {
-      servers: next.map((server) => ({
+      servers: next.filter((server) => !isPluginServer(server)).map((server) => ({
         name: server.name,
         command: server.command,
         args: server.args,
@@ -89,6 +100,7 @@ function McpServerCard(props: {
   onRemove: (server: McpServerView) => void;
 }) {
   const { server } = props;
+  const pluginServer = isPluginServer(server);
   const badgeClass =
     server.status === "running"
       ? "succeeded"
@@ -102,14 +114,24 @@ function McpServerCard(props: {
         <div className="asset-name" title={server.name}>
           {server.name}
         </div>
-        <div
-          className={`switch ${server.enabled ? "on" : ""}`}
-          title={server.enabled ? "点击禁用" : "点击启用"}
-          onClick={() => props.onToggle(server)}
-        >
-          <div className="switch-knob" />
-        </div>
+        {!pluginServer && (
+          <div
+            className={`switch ${server.enabled ? "on" : ""}`}
+            title={server.enabled ? "点击禁用" : "点击启用"}
+            onClick={() => props.onToggle(server)}
+          >
+            <div className="switch-knob" />
+          </div>
+        )}
       </div>
+      {pluginServer && (
+        <div className="asset-desc">
+          来自插件 {server.pluginName ?? server.pluginId}（只读，在“插件”页启停）
+        </div>
+      )}
+      {pluginServer && server.description && (
+        <div className="asset-desc">{server.description}</div>
+      )}
       <div className="asset-cmd" title={`${server.command} ${server.args.join(" ")}`}>
         {server.command} {server.args.join(" ")}
       </div>
@@ -128,9 +150,11 @@ function McpServerCard(props: {
           {STATUS_LABEL[server.status] ?? server.status}
         </span>
         <span style={{ flex: 1 }} />
-        <button className="ghost danger" onClick={() => props.onRemove(server)}>
-          移除
-        </button>
+        {!pluginServer && (
+          <button className="ghost danger" onClick={() => props.onRemove(server)}>
+            移除
+          </button>
+        )}
       </div>
     </div>
   );
@@ -156,7 +180,7 @@ function McpServerList(props: {
     <div className="card-grid">
       {props.servers.map((server) => (
         <McpServerCard
-          key={server.name}
+          key={`${server.source ?? "settings"}:${server.pluginId ?? ""}:${server.name}`}
           server={server}
           onToggle={props.onToggle}
           onRemove={props.onRemove}

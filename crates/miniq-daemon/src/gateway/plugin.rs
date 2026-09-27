@@ -73,6 +73,13 @@ fn publish(state: &AppState) -> Result<Value, RpcError> {
     state
         .skills
         .set_plugin_skill_dirs(manager.enabled_skill_directories());
+    // Plugin MCP servers follow the same lifecycle: the effective list is
+    // recomputed on every use, so only stale connections need closing.
+    let effective = state.effective_mcp_servers();
+    let mcp = state.mcp.clone();
+    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        runtime.spawn(async move { mcp.retain(&effective).await });
+    }
     let plugins = manager.list();
     state.emit(Event::PluginsChanged {
         plugins: plugins.clone(),

@@ -1,0 +1,9 @@
+id = "miniq.official.visualize"
+name = "可视化"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["visual-charts", "visual-diagrams"]
+description = "生成单文件交互图表、流程图与可视化讲解，并截图验证"
+author = "miniQ"

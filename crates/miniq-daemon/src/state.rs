@@ -318,9 +318,25 @@ impl AppState {
         }
     }
 
+    /// MCP servers contributed by enabled plugins, with `env` resolved from
+    /// the daemon's own environment.
+    pub fn plugin_mcp_servers(&self) -> Vec<crate::mcp::PluginMcpServerConfig> {
+        crate::mcp::resolve_plugin_servers(self.plugins.enabled_mcp_servers(), |name| {
+            std::env::var(name).ok()
+        })
+    }
+
+    /// User-configured servers plus plugin servers (settings win on name
+    /// collisions). Read on every use, so plugin enable/disable/install/
+    /// uninstall takes effect on the next turn without a restart.
+    pub fn effective_mcp_servers(&self) -> Vec<crate::mcp::McpServerConfig> {
+        let settings = self.settings.lock().unwrap().mcp_servers.clone();
+        crate::mcp::merge_servers(&settings, &self.plugin_mcp_servers())
+    }
+
     /// Bridge handed to tools so mcp_call can reach configured servers.
     pub fn mcp_bridge(&self) -> Option<Arc<dyn miniq_tools::McpBridge>> {
-        let servers = self.settings.lock().unwrap().mcp_servers.clone();
+        let servers = self.effective_mcp_servers();
         if servers.is_empty() {
             return None;
         }

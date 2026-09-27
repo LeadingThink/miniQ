@@ -1,0 +1,9 @@
+id = "miniq.official.messages"
+name = "信息 Messages"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["imessage-read", "imessage-send"]
+description = "只读检索本机“信息”聊天记录，并在确认后代为发送"
+author = "miniQ"

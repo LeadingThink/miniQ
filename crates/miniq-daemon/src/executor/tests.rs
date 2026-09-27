@@ -618,6 +618,54 @@ async fn mcp_call_without_servers_is_outside_the_effective_set() {
     assert_eq!(output["error"]["requestedTool"], "mcp:mock:echo");
 }
 
+/// Plugin MCP servers are available by default while their plugin is
+/// enabled and leave the effective set when it is disabled.
+#[tokio::test]
+async fn plugin_mcp_servers_join_the_effective_set_while_enabled() {
+    let (_dir, state, executor) = effective_set_fixture(PermissionPolicy::Inherit, Vec::new());
+    let source_root = tempfile::tempdir().unwrap();
+    let source = source_root.path().join("source");
+    std::fs::create_dir_all(source.join("linear")).unwrap();
+    std::fs::write(
+        source.join("manifest.toml"),
+        r#"id = "dev.miniq.linear"
+name = "Linear"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["linear"]
+
+[[mcp_servers]]
+name = "linear"
+command = "/nonexistent/mcp"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        source.join("linear/SKILL.md"),
+        "---\nname: linear\ndescription: Linear workflow\n---\n",
+    )
+    .unwrap();
+    state.plugins.install_from_directory(&source).await.unwrap();
+
+    assert!(executor.specs().iter().any(|spec| spec.name == "mcp_call"));
+    assert!(executor
+        .effective_set()
+        .contains_mcp("linear", "tools/list"));
+    assert_eq!(state.effective_mcp_servers().len(), 1);
+
+    state
+        .plugins
+        .set_enabled("dev.miniq.linear", false, false)
+        .await
+        .unwrap();
+    assert!(!executor.specs().iter().any(|spec| spec.name == "mcp_call"));
+    let output = executor.execute(&mcp_call_request("linear")).await.unwrap();
+    assert_eq!(output["error"]["code"], "TOOL_NOT_IN_EFFECTIVE_SET");
+    assert!(state.mcp_bridge().is_none());
+}
+
 /// An in-set `mcp_call` goes through `decide_approval`: under DontAsk with an
 /// always-ask session it is denied without prompting; under Inherit it asks.
 #[tokio::test]

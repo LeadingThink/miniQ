@@ -62,7 +62,7 @@ pub use file::{FileListTool, FileReadTool, FileWriteTool};
 pub use git::{GitDiffTool, GitStatusTool};
 pub use http::HttpRequestTool;
 pub use interact::{validate_ask_user_input, AskUserTool, TaskUpdateTool};
-pub use mcp::{McpBridge, McpCallTool};
+pub use mcp::{McpBridge, McpCallTool, MCP_LIST_TOOLS};
 pub use media::{
     EditImageTool, GenerateImageTool, GenerateMusicTool, GenerateVideoTool, SynthesizeSpeechTool,
     TranscribeAudioTool,

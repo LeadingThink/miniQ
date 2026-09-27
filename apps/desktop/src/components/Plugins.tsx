@@ -6,6 +6,12 @@ import type { PluginInfo, PluginListResult } from "../types";
 import { RemotePathDialog } from "./RemotePathDialog";
 import { ApprovalRulesSection } from "./ApprovalRules";
 
+/** "连接器：linear" label for plugins that contribute MCP servers. */
+export function connectorLabel(plugin: Pick<PluginInfo, "mcpServers">): string | null {
+  const names = (plugin.mcpServers ?? []).map((server) => server.name);
+  return names.length > 0 ? `连接器：${names.join(", ")}` : null;
+}
+
 export function PluginsPanel(props: { client: RpcClient }) {
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -207,6 +213,11 @@ export function PluginsPanel(props: { client: RpcClient }) {
                 </div>
                 {(plugin.skills ?? []).length > 0 && (
                   <div className="plugin-card-meta">技能包：{(plugin.skills ?? []).join(", ")}</div>
+                )}
+                {connectorLabel(plugin) && (
+                  <div className="plugin-card-meta" title={(plugin.mcpServers ?? []).map((server) => server.description ? `${server.name}: ${server.description}` : server.name).join("\n")}>
+                    {connectorLabel(plugin)}
+                  </div>
                 )}
                 {(plugin.dependencies ?? []).length > 0 && (
                   <div className="plugin-card-meta">

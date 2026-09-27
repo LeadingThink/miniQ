@@ -1,0 +1,17 @@
+id = "miniq.official.notion"
+name = "Notion 知识库"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["notion-docs", "notion-meeting-db", "notion-db-query"]
+requires = ["npx"]
+description = "在 Notion 中撰写规格文档、归档会议纪要并查询数据库"
+author = "miniQ"
+
+[[mcp_servers]]
+name = "notion"
+description = "Notion 官方远程 MCP（首次使用会在浏览器中 OAuth 登录）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://mcp.notion.com/mcp"]
+env = []

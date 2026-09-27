@@ -1,0 +1,10 @@
+id = "miniq.official.temporal"
+name = "Temporal"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["temporal-develop", "temporal-ops"]
+requires = ["temporal"]
+description = "编写 Temporal 工作流与 Worker，并排查卡住或失败的执行"
+author = "miniQ"

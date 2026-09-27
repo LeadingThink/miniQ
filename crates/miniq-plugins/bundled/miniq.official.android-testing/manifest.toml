@@ -1,0 +1,10 @@
+id = "miniq.official.android-testing"
+name = "Android 测试"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["android-emulator-qa", "android-gradle-test", "android-perf-check"]
+requires = ["adb"]
+description = "用 adb/模拟器做界面测试截图验证，运行 Gradle 测试与性能检查"
+author = "miniQ"
