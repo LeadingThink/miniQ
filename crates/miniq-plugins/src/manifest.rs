@@ -56,6 +56,11 @@ pub struct PluginManifest {
     pub author: Option<String>,
     #[serde(default)]
     pub engine: Option<PluginEngine>,
+    /// WASM tools the author declares side-effect free (plan v3 §4.4, the
+    /// API v1 form of `extensions."dev.miniq".nativeTools[].readOnly`).
+    /// They are evaluated as Low risk instead of the Medium default.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub read_only_tools: Vec<String>,
 }
 
 fn default_enabled() -> bool {
@@ -82,6 +87,8 @@ pub enum ManifestError {
     MissingNodeEngine,
     #[error("engine.node is only valid for Node plugins")]
     UnexpectedNodeEngine,
+    #[error("read_only_tools is only valid for WASM plugins and must list tool names")]
+    InvalidReadOnlyTools,
 }
 
 impl PluginManifest {
@@ -126,6 +133,15 @@ impl PluginManifest {
                 .any(|name| name.is_empty() || name.contains(['/', '\\']))
         {
             return Err(ManifestError::UnsupportedCapability);
+        }
+        if !self.read_only_tools.is_empty()
+            && (self.runtime != PluginRuntime::Wasm
+                || self
+                    .read_only_tools
+                    .iter()
+                    .any(|name| name.is_empty() || name.contains(['.', '/', '\\'])))
+        {
+            return Err(ManifestError::InvalidReadOnlyTools);
         }
         match self.runtime {
             PluginRuntime::Wasm => {
@@ -217,7 +233,35 @@ mod tests {
             description: None,
             author: None,
             engine: None,
+            read_only_tools: Vec::new(),
         }
+    }
+
+    #[test]
+    fn read_only_tools_are_wasm_only() {
+        let mut wasm = manifest();
+        wasm.read_only_tools = vec!["count".into()];
+        assert!(wasm.validate().is_ok());
+        wasm.read_only_tools = vec!["other.count".into()];
+        assert!(matches!(
+            wasm.validate(),
+            Err(ManifestError::InvalidReadOnlyTools)
+        ));
+        let parsed = PluginManifest::parse(
+            r#"id = "dev.miniq.node-test"
+name = "Test"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "node"
+entry = "index.mjs"
+capabilities = ["tool"]
+read_only_tools = ["count"]
+
+[engine]
+node = ">=22"
+"#,
+        );
+        assert!(matches!(parsed, Err(ManifestError::InvalidReadOnlyTools)));
     }
 
     #[test]
