@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -102,6 +102,7 @@ impl NodePluginProcess {
         manifest: PluginManifest,
         plugin_dir: &Path,
         entry: &Path,
+        data_dir: &Path,
         limits: PluginLimits,
         handles: Arc<Mutex<Vec<RegistrationHandle>>>,
     ) -> Result<(Arc<Self>, Vec<NodeToolMetadata>), PluginError> {
@@ -109,41 +110,17 @@ impl NodePluginProcess {
         let node = find_node(&manifest).await?;
         install_host(plugin_dir)?;
         let host_entry = Path::new(".miniq-node-plugin-host-v1/host.mjs");
-        let system_root = std::env::var("SystemRoot").unwrap_or_default();
-        let system_drive = std::env::var("SystemDrive")
-            .ok()
-            .filter(|value| !value.is_empty())
-            .or_else(|| system_root.get(..2).map(str::to_owned))
-            .unwrap_or_default();
-        let path = std::env::var("PATH").unwrap_or_default();
-        let pathext = std::env::var("PATHEXT").unwrap_or_default();
-        let comspec = std::env::var("COMSPEC").unwrap_or_default();
-        let user_profile = std::env::var("USERPROFILE").unwrap_or_default();
-        let home_drive = std::env::var("HOMEDRIVE").unwrap_or_default();
-        let home_path = std::env::var("HOMEPATH").unwrap_or_default();
+        let (plugin_dir, data_dir) = prepare_directories(plugin_dir, data_dir)?;
         let mut command = Command::new(node);
         command
-            .arg("--permission")
-            .arg("--allow-fs-read=.")
+            .args(node_permission_args(&plugin_dir, &data_dir))
             .arg(node_cli_path(host_entry))
-            .current_dir(plugin_dir)
-            .env_clear()
-            .env("SystemRoot", system_root)
-            .env("SystemDrive", system_drive)
-            .env("PATH", path)
-            .env("PATHEXT", pathext)
-            .env("COMSPEC", comspec)
-            .env("USERPROFILE", user_profile)
-            .env("HOMEDRIVE", home_drive)
-            .env("HOMEPATH", home_path)
-            .env("TEMP", std::env::var("TEMP").unwrap_or_default())
-            .env("TMP", std::env::var("TMP").unwrap_or_default())
-            .env(
-                "MINIQ_NODE_PLUGIN_PROTOCOL",
-                NODE_PLUGIN_PROTOCOL_VERSION.to_string(),
-            )
-            .env("MINIQ_PLUGIN_ID", &manifest.id)
-            .env("LANG", "C.UTF-8")
+            .current_dir(&plugin_dir);
+        miniq_local::subprocess_env::apply_allowlist(
+            command.as_std_mut(),
+            &node_plugin_env(&manifest, &data_dir),
+        );
+        command
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -548,6 +525,67 @@ fn node_tool_risk() -> Risk {
     }
 }
 
+/// Canonicalizes the plugin directory and creates/canonicalizes the plugin's
+/// private data directory. Node's permission model matches canonical paths,
+/// and the data directory must never live inside the (trusted, hashed) plugin
+/// directory.
+fn prepare_directories(
+    plugin_dir: &Path,
+    data_dir: &Path,
+) -> Result<(PathBuf, PathBuf), PluginError> {
+    let process_error =
+        |error: std::io::Error| PluginError::new(PluginFailureKind::Process, error.to_string());
+    let plugin_dir = strip_verbatim(plugin_dir.canonicalize().map_err(process_error)?);
+    std::fs::create_dir_all(data_dir).map_err(process_error)?;
+    let data_dir = strip_verbatim(data_dir.canonicalize().map_err(process_error)?);
+    if data_dir.starts_with(&plugin_dir) || plugin_dir.starts_with(&data_dir) {
+        return Err(PluginError::new(
+            PluginFailureKind::Process,
+            "plugin data directory must be outside the plugin directory",
+        ));
+    }
+    Ok((plugin_dir, data_dir))
+}
+
+/// Node does not accept Windows verbatim (`\\?\C:\...`) paths in its
+/// permission flags; drop the prefix for ordinary drive paths.
+fn strip_verbatim(path: PathBuf) -> PathBuf {
+    let text = path.to_string_lossy();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path,
+    }
+}
+
+/// Node permission-model flags: read the plugin and its data directory, write
+/// only the data directory. No `--allow-child-process`, `--allow-worker`,
+/// `--allow-addons` or `--allow-wasi` are granted. Network access cannot be
+/// restricted by Node's permission model.
+fn node_permission_args(plugin_dir: &Path, data_dir: &Path) -> Vec<String> {
+    vec![
+        "--permission".to_string(),
+        format!("--allow-fs-read={}", node_cli_path(plugin_dir)),
+        format!("--allow-fs-read={}", node_cli_path(data_dir)),
+        format!("--allow-fs-write={}", node_cli_path(data_dir)),
+    ]
+}
+
+/// Plugin-specific variables layered on top of the shared subprocess env
+/// allowlist.
+fn node_plugin_env(manifest: &PluginManifest, data_dir: &Path) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        (
+            "MINIQ_NODE_PLUGIN_PROTOCOL".to_string(),
+            NODE_PLUGIN_PROTOCOL_VERSION.to_string(),
+        ),
+        ("MINIQ_PLUGIN_ID".to_string(), manifest.id.clone()),
+        (
+            "MINIQ_PLUGIN_DATA_DIR".to_string(),
+            data_dir.to_string_lossy().into_owned(),
+        ),
+    ])
+}
+
 fn node_cli_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
@@ -729,6 +767,69 @@ fn protocol_error(error: impl std::fmt::Display) -> PluginError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_manifest() -> PluginManifest {
+        PluginManifest::parse(
+            r#"id = "dev.miniq.node-test"
+name = "Test"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "node"
+entry = "index.mjs"
+capabilities = ["tool"]
+
+[engine]
+node = ">=22"
+"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn permission_args_restrict_fs_to_plugin_and_data_dirs() {
+        let args = node_permission_args(Path::new("/p/plugin"), Path::new("/d/data"));
+        assert_eq!(
+            args,
+            vec![
+                "--permission",
+                "--allow-fs-read=/p/plugin",
+                "--allow-fs-read=/d/data",
+                "--allow-fs-write=/d/data",
+            ]
+        );
+        assert!(!args.iter().any(|arg| arg.contains("child-process")
+            || arg.contains("worker")
+            || arg.contains("addons")
+            || arg.contains("wasi")));
+    }
+
+    #[test]
+    fn prepare_directories_creates_private_data_dir_outside_plugin() {
+        let temp = tempfile::tempdir().unwrap();
+        let plugin = temp.path().join("plugin");
+        std::fs::create_dir_all(&plugin).unwrap();
+        let data = temp.path().join(".plugin-data").join("plugin");
+        let (plugin_dir, data_dir) = prepare_directories(&plugin, &data).unwrap();
+        assert!(data_dir.is_dir());
+        assert!(!data_dir.starts_with(&plugin_dir));
+        assert!(prepare_directories(&plugin, &plugin.join("data")).is_err());
+    }
+
+    #[test]
+    fn node_plugin_env_uses_shared_allowlist() {
+        let env = node_plugin_env(&test_manifest(), Path::new("/d/data"));
+        assert_eq!(env["MINIQ_PLUGIN_ID"], "dev.miniq.node-test");
+        assert_eq!(env["MINIQ_PLUGIN_DATA_DIR"], "/d/data");
+        let mut command = std::process::Command::new("node");
+        miniq_local::subprocess_env::apply_allowlist(&mut command, &env);
+        let names = command
+            .get_envs()
+            .filter(|(_, value)| value.is_some())
+            .map(|(key, _)| key.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert!(names.contains(&"MINIQ_PLUGIN_ID".to_string()));
+        assert!(!names.contains(&"MINIQ_CREDENTIALS_PASSPHRASE".to_string()));
+    }
 
     #[test]
     fn trusted_node_tool_uses_medium_risk() {

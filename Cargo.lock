@@ -2745,6 +2745,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "tracing",
 ]
 
 [[package]]
@@ -2786,6 +2787,7 @@ name = "miniq-plugins"
 version = "0.1.57"
 dependencies = [
  "async-trait",
+ "miniq-local",
  "miniq-protocol",
  "miniq-sandbox",
  "miniq-skills",

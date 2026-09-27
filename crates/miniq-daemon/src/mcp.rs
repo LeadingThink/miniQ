@@ -2,7 +2,7 @@
 //! speaks JSON-RPC 2.0 over stdio (newline-delimited JSON, the MCP stdio
 //! transport). Connections are created lazily and kept alive.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::process::Stdio;
 use std::sync::Arc;
 
@@ -23,6 +23,11 @@ pub struct McpServerConfig {
     pub args: Vec<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Extra environment for the server process. The server otherwise only
+    /// receives the subprocess allowlist (`miniq_local::subprocess_env`);
+    /// `MINIQ_CREDENTIALS_PASSPHRASE` is always dropped.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
 }
 
 fn default_true() -> bool {
@@ -94,9 +99,15 @@ impl McpManager {
         })
     }
 
+    fn command(config: &McpServerConfig) -> tokio::process::Command {
+        let mut command = tokio::process::Command::new(&config.command);
+        command.args(&config.args);
+        miniq_local::subprocess_env::apply_allowlist(command.as_std_mut(), &config.env);
+        command
+    }
+
     async fn connect(config: &McpServerConfig) -> Result<Connection, String> {
-        let mut child = tokio::process::Command::new(&config.command)
-            .args(&config.args)
+        let mut child = Self::command(config)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -204,5 +215,52 @@ impl miniq_tools::McpBridge for ManagerBridge {
             .find(|s| s.name == server)
             .ok_or_else(|| format!("unknown MCP server: {server}"))?;
         self.manager.call_tool(config, tool, arguments).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stdio_server_env_is_allowlisted() {
+        let config: McpServerConfig = serde_json::from_value(json!({
+            "name": "demo",
+            "command": "demo-server",
+            "env": {
+                "DEMO_TOKEN": "configured",
+                "MINIQ_CREDENTIALS_PASSPHRASE": "never"
+            }
+        }))
+        .unwrap();
+        let command = McpManager::command(&config);
+        let envs = command
+            .as_std()
+            .get_envs()
+            .filter_map(|(key, value)| value.map(|value| (key.to_owned(), value.to_owned())))
+            .collect::<HashMap<_, _>>();
+        assert_eq!(
+            envs.get(std::ffi::OsStr::new("DEMO_TOKEN")).unwrap(),
+            "configured"
+        );
+        assert!(!envs.contains_key(std::ffi::OsStr::new("MINIQ_CREDENTIALS_PASSPHRASE")));
+        for key in envs.keys() {
+            let key = key.to_string_lossy();
+            assert!(
+                key == "DEMO_TOKEN"
+                    || key.starts_with("LC_")
+                    || ["PATH", "HOME", "LANG", "TMPDIR", "USER", "SHELL"].contains(&key.as_ref())
+                    || cfg!(windows),
+                "unexpected inherited variable {key}"
+            );
+        }
+    }
+
+    #[test]
+    fn env_field_defaults_to_empty_and_is_omitted() {
+        let config: McpServerConfig =
+            serde_json::from_value(json!({"name": "demo", "command": "demo"})).unwrap();
+        assert!(config.env.is_empty());
+        assert!(serde_json::to_value(&config).unwrap().get("env").is_none());
     }
 }

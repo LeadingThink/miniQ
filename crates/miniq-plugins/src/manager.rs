@@ -17,6 +17,10 @@ use crate::node::{NodePluginProcess, NodeTool};
 
 const TRUST_STORE_FILE: &str = ".trusted-node.json";
 const NODE_HOST_DIRECTORY: &str = ".miniq-node-plugin-host-v1";
+/// Per-plugin private data directories live here, outside every plugin
+/// directory so that plugin code can never rewrite its own trusted contents.
+const PLUGIN_DATA_DIRECTORY: &str = ".plugin-data";
+const TRUST_FINGERPRINT_VERSION: &[u8] = b"miniq-node-trust-v2";
 static TRUST_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 static INSTALL_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 static BACKUP_TEMP_ID: AtomicU64 = AtomicU64::new(0);
@@ -288,6 +292,12 @@ impl PluginManager {
                 error.to_string(),
             ));
         }
+        let data_dir = self.plugin_data_dir(id);
+        if data_dir.exists() {
+            if let Err(error) = std::fs::remove_dir_all(&data_dir) {
+                tracing::warn!(plugin = id, %error, "failed to remove plugin data directory");
+            }
+        }
         self.set_trust(id, None)
     }
 
@@ -302,6 +312,7 @@ impl PluginManager {
             .filter(|entry| {
                 let name = entry.file_name();
                 name != NODE_HOST_DIRECTORY
+                    && name != PLUGIN_DATA_DIRECTORY
                     && !name.to_string_lossy().starts_with(".install-")
                     && !name.to_string_lossy().starts_with(".backup-")
             })
@@ -378,8 +389,8 @@ impl PluginManager {
                     "plugin directory is missing",
                 )
             })?;
-            let entry = secure_entry(directory, &manifest.entry)?;
-            Some(trust_fingerprint(&manifest, &entry)?)
+            secure_entry(directory, &manifest.entry)?;
+            Some(trust_fingerprint(&manifest, directory)?)
         } else {
             None
         };
@@ -472,7 +483,7 @@ impl PluginManager {
         let mut record = PluginRecord::discovered(&manifest, manifest_path.clone());
         if manifest.runtime == PluginRuntime::Node {
             let confirmed = secure_entry(directory, &manifest.entry)
-                .and_then(|entry| trust_fingerprint(&manifest, &entry))
+                .and_then(|_| trust_fingerprint(&manifest, directory))
                 .ok()
                 .is_some_and(|fingerprint| self.is_trusted(&manifest.id, &fingerprint));
             record.info.trust_confirmed = confirmed;
@@ -568,10 +579,12 @@ impl PluginManager {
             PluginRuntime::Node => {
                 let entry = secure_entry(directory, &manifest.entry)
                     .map_err(|error| (id.clone(), error))?;
+                let data_dir = self.plugin_data_dir(&manifest.id);
                 let (plugin, metadata) = NodePluginProcess::start(
                     manifest.clone(),
                     directory,
                     &entry,
+                    &data_dir,
                     self.limits.clone(),
                     handles.clone(),
                 )
@@ -670,6 +683,12 @@ impl PluginManager {
             .write()
             .unwrap()
             .insert(id.clone(), PluginRecord::failed(id, name, path, error));
+    }
+
+    /// Private, writable data directory for one plugin. It is a sibling of the
+    /// plugin directories (never inside one) and is created on demand.
+    fn plugin_data_dir(&self, id: &str) -> PathBuf {
+        self.root.join(PLUGIN_DATA_DIRECTORY).join(id)
     }
 
     fn is_trusted(&self, id: &str, fingerprint: &str) -> bool {
@@ -805,23 +824,78 @@ fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
     }
 }
 
-fn trust_fingerprint(manifest: &PluginManifest, entry: &Path) -> Result<String, PluginError> {
-    let entry_bytes = std::fs::read(entry)
-        .map_err(|error| PluginError::new(PluginFailureKind::InvalidEntry, error.to_string()))?;
-    let trust_fields = serde_json::to_vec(&(
-        &manifest.id,
-        &manifest.version,
-        manifest.runtime,
-        &manifest.entry,
-        &manifest.permissions,
-        &manifest.engine,
-    ))
-    .map_err(|error| PluginError::new(PluginFailureKind::InvalidManifest, error.to_string()))?;
+/// Trust fingerprint of a Node plugin: the normalized manifest plus a content
+/// hash over the *whole* plugin directory (sorted relative paths and file
+/// contents, `node_modules` included). Only host-generated files are excluded:
+/// the bundled host directory and `manifest.toml`, whose `enabled` flag the
+/// daemon rewrites (every other manifest field is covered by the normalized
+/// manifest). Any change to any other file therefore requires re-trust.
+fn trust_fingerprint(manifest: &PluginManifest, directory: &Path) -> Result<String, PluginError> {
+    let mut normalized = manifest.clone();
+    normalized.enabled = false;
+    let manifest_bytes = serde_json::to_vec(&normalized)
+        .map_err(|error| PluginError::new(PluginFailureKind::InvalidManifest, error.to_string()))?;
     let mut digest = Sha256::new();
-    digest.update(trust_fields);
+    digest.update(TRUST_FINGERPRINT_VERSION);
     digest.update([0]);
-    digest.update(entry_bytes);
+    digest.update((manifest_bytes.len() as u64).to_le_bytes());
+    digest.update(manifest_bytes);
+    digest.update(content_hash(directory)?);
     Ok(format!("{:x}", digest.finalize()))
+}
+
+/// SHA-256 over the directory tree rooted at `directory`, skipping only the
+/// host-generated top-level entries. Symlinks are hashed by their target path
+/// and never followed.
+fn content_hash(directory: &Path) -> Result<[u8; 32], PluginError> {
+    let io_error = |error: std::io::Error| {
+        PluginError::new(PluginFailureKind::InvalidEntry, error.to_string())
+    };
+    let mut entries = Vec::new();
+    let mut pending = vec![PathBuf::new()];
+    while let Some(relative) = pending.pop() {
+        for item in std::fs::read_dir(directory.join(&relative)).map_err(io_error)? {
+            let item = item.map_err(io_error)?;
+            let child = relative.join(item.file_name());
+            if relative.as_os_str().is_empty()
+                && (item.file_name() == NODE_HOST_DIRECTORY || item.file_name() == "manifest.toml")
+            {
+                continue;
+            }
+            let kind = item.file_type().map_err(io_error)?;
+            if kind.is_dir() {
+                pending.push(child.clone());
+            }
+            entries.push((child, kind));
+        }
+    }
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut digest = Sha256::new();
+    for (relative, kind) in entries {
+        let path_bytes = relative
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/")
+            .into_bytes();
+        let (tag, content) = if kind.is_symlink() {
+            let target = std::fs::read_link(directory.join(&relative)).map_err(io_error)?;
+            (b'L', target.to_string_lossy().into_owned().into_bytes())
+        } else if kind.is_dir() {
+            (b'D', Vec::new())
+        } else {
+            (
+                b'F',
+                std::fs::read(directory.join(&relative)).map_err(io_error)?,
+            )
+        };
+        digest.update([tag]);
+        digest.update((path_bytes.len() as u64).to_le_bytes());
+        digest.update(&path_bytes);
+        digest.update((content.len() as u64).to_le_bytes());
+        digest.update(&content);
+    }
+    Ok(digest.finalize().into())
 }
 
 fn secure_entry(directory: &Path, entry: &Path) -> Result<PathBuf, PluginError> {
@@ -1097,7 +1171,7 @@ skills = ["document-workflow"]
             "\"workspace_read\"",
         ))
         .unwrap();
-        let fingerprint = trust_fingerprint(&base, &entry).unwrap();
+        let fingerprint = trust_fingerprint(&base, temp.path()).unwrap();
 
         let version_changed = PluginManifest::parse(&node_manifest(
             "dev.miniq.node-test",
@@ -1107,7 +1181,7 @@ skills = ["document-workflow"]
         .unwrap();
         assert_ne!(
             fingerprint,
-            trust_fingerprint(&version_changed, &entry).unwrap()
+            trust_fingerprint(&version_changed, temp.path()).unwrap()
         );
 
         let permissions_changed = PluginManifest::parse(&node_manifest(
@@ -1118,11 +1192,95 @@ skills = ["document-workflow"]
         .unwrap();
         assert_ne!(
             fingerprint,
-            trust_fingerprint(&permissions_changed, &entry).unwrap()
+            trust_fingerprint(&permissions_changed, temp.path()).unwrap()
         );
 
         std::fs::write(&entry, "export default { changed: true };").unwrap();
-        assert_ne!(fingerprint, trust_fingerprint(&base, &entry).unwrap());
+        assert_ne!(fingerprint, trust_fingerprint(&base, temp.path()).unwrap());
+    }
+
+    #[test]
+    fn node_trust_covers_whole_directory_except_host_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        std::fs::write(dir.join("index.mjs"), "import './lib/util.mjs';").unwrap();
+        std::fs::create_dir_all(dir.join("lib")).unwrap();
+        std::fs::write(dir.join("lib/util.mjs"), "export const a = 1;").unwrap();
+        std::fs::create_dir_all(dir.join("node_modules/dep")).unwrap();
+        std::fs::write(dir.join("node_modules/dep/index.js"), "module.exports = 1;").unwrap();
+        let mut manifest = PluginManifest::parse(&node_manifest(
+            "dev.miniq.node-test",
+            "1.0.0",
+            "\"workspace_read\"",
+        ))
+        .unwrap();
+        let base = trust_fingerprint(&manifest, dir).unwrap();
+
+        // Host-generated files and the daemon-managed enabled flag are ignored.
+        std::fs::create_dir_all(dir.join(NODE_HOST_DIRECTORY)).unwrap();
+        std::fs::write(dir.join(NODE_HOST_DIRECTORY).join("host.mjs"), "host").unwrap();
+        std::fs::write(dir.join("manifest.toml"), "rewritten").unwrap();
+        manifest.enabled = !manifest.enabled;
+        assert_eq!(base, trust_fingerprint(&manifest, dir).unwrap());
+
+        // A non-entry source file changes the fingerprint.
+        std::fs::write(dir.join("lib/util.mjs"), "export const a = 2;").unwrap();
+        let changed = trust_fingerprint(&manifest, dir).unwrap();
+        assert_ne!(base, changed);
+
+        // Dependencies in node_modules are covered too.
+        std::fs::write(dir.join("node_modules/dep/index.js"), "module.exports = 2;").unwrap();
+        let dependency_changed = trust_fingerprint(&manifest, dir).unwrap();
+        assert_ne!(changed, dependency_changed);
+
+        // Adding a new file is also a change.
+        std::fs::write(dir.join("extra.js"), "").unwrap();
+        assert_ne!(
+            dependency_changed,
+            trust_fingerprint(&manifest, dir).unwrap()
+        );
+    }
+
+    #[test]
+    fn legacy_entry_only_fingerprint_is_not_trusted() {
+        let temp = tempfile::tempdir().unwrap();
+        let plugin = temp.path().join("dev.miniq.node-test");
+        std::fs::create_dir_all(&plugin).unwrap();
+        std::fs::write(plugin.join("index.mjs"), "export default {};").unwrap();
+        let manifest = PluginManifest::parse(&node_manifest(
+            "dev.miniq.node-test",
+            "1.0.0",
+            "\"workspace_read\"",
+        ))
+        .unwrap();
+        // Recompute the previous (entry-file only) fingerprint format.
+        let legacy = {
+            let fields = serde_json::to_vec(&(
+                &manifest.id,
+                &manifest.version,
+                manifest.runtime,
+                &manifest.entry,
+                &manifest.permissions,
+                &manifest.engine,
+            ))
+            .unwrap();
+            let mut digest = Sha256::new();
+            digest.update(fields);
+            digest.update([0]);
+            digest.update(std::fs::read(plugin.join("index.mjs")).unwrap());
+            format!("{:x}", digest.finalize())
+        };
+        let manager = PluginManager::new(
+            temp.path().to_path_buf(),
+            Arc::new(ToolRouter::new()),
+            PluginLimits::default(),
+        );
+        manager
+            .set_trust("dev.miniq.node-test", Some(legacy.clone()))
+            .unwrap();
+        let current = trust_fingerprint(&manifest, &plugin).unwrap();
+        assert_ne!(legacy, current);
+        assert!(!manager.is_trusted("dev.miniq.node-test", &current));
     }
 
     #[test]
