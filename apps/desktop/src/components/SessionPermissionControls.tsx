@@ -4,6 +4,9 @@ import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
 import type { ApprovalMode } from "../types";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
+import { APPROVAL_MODE_NAMES } from "./RemotePermissionNotice";
+
+const RANK: Record<ApprovalMode, number> = { alwaysAsk: 0, auto: 1, fullAccess: 2 };
 
 type Settings = { mode: ApprovalMode | null; effective: ApprovalMode };
 type Props = { client: RpcClient; sessionId: string };
@@ -53,6 +56,16 @@ function Controls({ client, sessionId }: Props) {
   }, [client, sessionId, load]);
   const update = async (mode: ApprovalMode | null) => {
     if (updating.current) return;
+    if (
+      client.mode === "remote" &&
+      mode &&
+      settings &&
+      RANK[mode] > RANK[settings.effective] &&
+      !window.confirm(
+        `确定将当前会话权限提升为「${APPROVAL_MODE_NAMES[mode]}」？仅影响该会话，桌面端会收到通知并可撤回。`,
+      )
+    )
+      return;
     updating.current = true;
     setPending(true);
     const request = epoch.current;

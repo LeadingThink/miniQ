@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 use crate::state::{AppState, ApprovalDecision};
 
 mod adaptation;
+mod approval;
 mod checkpoint;
 mod hooks;
 mod image_history;
@@ -78,6 +79,44 @@ impl SessionToolExecutor {
     /// grant is impossible — shell commands are scoped to the program token
     /// (approving `cargo ...` does not unlock `rm`), network tools to the
     /// target domain (approving example.com does not unlock other hosts).
+    /// Identity an "always allow" rule is bound to (plan v3 §4.3). Built-in
+    /// tools bind to the approval pattern so e.g. `shell_run:git` never covers
+    /// every shell command; plugin tools bind per tool and plugin version.
+    fn approval_binding(
+        &self,
+        call: &ToolCallRequest,
+        approval_pattern: &str,
+    ) -> crate::approval_rules::ApprovalBinding {
+        use crate::approval_rules::{desc_hash, major_version, ApprovalBinding};
+        let hash = self
+            .router
+            .get(&call.name)
+            .map(|tool| desc_hash(tool.description(), &tool.parameters_schema()))
+            .unwrap_or_default();
+        match self.router.origin(&call.name) {
+            Some(miniq_tools::ToolOrigin::Plugin {
+                id,
+                runtime,
+                version,
+            }) => ApprovalBinding {
+                origin: format!("plugin:{id}/{}", call.name),
+                source_id: format!("local:{id}"),
+                signer: None,
+                transport_fingerprint: runtime,
+                desc_hash: hash,
+                plugin_major: major_version(&version),
+            },
+            _ => ApprovalBinding {
+                origin: format!("builtin:{approval_pattern}"),
+                source_id: "builtin".into(),
+                signer: None,
+                transport_fingerprint: "builtin".into(),
+                desc_hash: hash,
+                plugin_major: None,
+            },
+        }
+    }
+
     fn approval_pattern(&self, call: &ToolCallRequest) -> String {
         if let Some(scope) = self
             .router
@@ -135,6 +174,7 @@ impl SessionToolExecutor {
         tool_call_id: &str,
         risk: &miniq_sandbox::Risk,
         approval_pattern: &str,
+        binding: &crate::approval_rules::ApprovalBinding,
     ) -> Result<bool, AgentError> {
         let approval = self
             .state
@@ -181,6 +221,17 @@ impl SessionToolExecutor {
                 self.state
                     .allow_for_session(&self.session_id, approval_pattern);
                 (ApprovalStatus::ApprovedForSession, true)
+            }
+            ApprovalDecision::AlwaysAllowTool => {
+                let rule = self
+                    .state
+                    .approval_rules
+                    .allow(&call.name, binding.clone(), "local");
+                self.audit(
+                    "approval_rule_created",
+                    json!({"ruleId": rule.id, "tool": call.name, "origin": rule.binding.origin}),
+                );
+                (ApprovalStatus::ApprovedAlways, true)
             }
             ApprovalDecision::Reject => (ApprovalStatus::Rejected, false),
         };
@@ -525,55 +576,57 @@ impl ToolExecutor for SessionToolExecutor {
                             "cannot read session approval policy: {error}"
                         ))
                     })?;
-                let allowed_for_session = self
-                    .state
-                    .is_allowed_for_session(&self.session_id, &approval_pattern);
-                let pre_approved = mode != crate::state::ApprovalMode::AlwaysAsk
-                    && match self.permission_policy {
-                        PermissionPolicy::AcceptEdits => {
-                            risk.level == RiskLevel::Medium
-                                || mode == crate::state::ApprovalMode::FullAccess
-                                || allowed_for_session
-                        }
-                        PermissionPolicy::DontAsk => {
-                            mode == crate::state::ApprovalMode::FullAccess || allowed_for_session
-                        }
-                        PermissionPolicy::Inherit => match mode {
-                            crate::state::ApprovalMode::FullAccess => true,
-                            // Auto ("替我审批"): medium-risk actions (workspace writes,
-                            // build/test commands -- all checkpointed or reversible) run
-                            // without asking; only high risk needs the user once per pattern.
-                            crate::state::ApprovalMode::Auto => {
-                                risk.level == RiskLevel::Medium || allowed_for_session
-                            }
-                            crate::state::ApprovalMode::AlwaysAsk => false,
-                        },
-                    };
-                if !pre_approved {
-                    if self.permission_policy == PermissionPolicy::DontAsk {
+                let binding = self.approval_binding(call, &approval_pattern);
+                let class = match self.router.origin(&call.name) {
+                    Some(miniq_tools::ToolOrigin::Plugin { .. }) => approval::ToolClass::Extension,
+                    _ => approval::ToolClass::Builtin,
+                };
+                let rule = self.state.approval_rules.check(&binding);
+                let verdict = approval::decide_approval(&approval::ApprovalCtx {
+                    mode,
+                    policy: self.permission_policy,
+                    risk: risk.level,
+                    class,
+                    allowed_for_session: self
+                        .state
+                        .is_allowed_for_session(&self.session_id, &approval_pattern),
+                    rule,
+                    non_preapprovable: false,
+                });
+                match verdict {
+                    approval::Verdict::Allow => {}
+                    approval::Verdict::Deny(reason) => {
                         let output = json!({
                             "rejected": true,
                             "riskLevel": risk.level.as_str(),
-                            "reason": "agent permission mode dontAsk denied an action requiring approval",
+                            "reason": reason,
                         });
                         self.finish(&tool_call.id, ToolCallStatus::Rejected, &output);
                         return Ok(output);
                     }
-                    let _ = self
-                        .state
-                        .store
-                        .update_tool_call_status(&tool_call.id, ToolCallStatus::WaitingApproval);
-                    let approved = self
-                        .request_approval(call, &tool_call.id, &risk, &approval_pattern)
-                        .await?;
-                    if !approved {
-                        let output = json!({
-                            "rejected": true,
-                            "riskLevel": risk.level.as_str(),
-                            "reason": "user rejected the operation",
-                        });
-                        self.finish(&tool_call.id, ToolCallStatus::Rejected, &output);
-                        return Ok(output);
+                    approval::Verdict::Ask => {
+                        let _ = self.state.store.update_tool_call_status(
+                            &tool_call.id,
+                            ToolCallStatus::WaitingApproval,
+                        );
+                        let approved = self
+                            .request_approval(
+                                call,
+                                &tool_call.id,
+                                &risk,
+                                &approval_pattern,
+                                &binding,
+                            )
+                            .await?;
+                        if !approved {
+                            let output = json!({
+                                "rejected": true,
+                                "riskLevel": risk.level.as_str(),
+                                "reason": "user rejected the operation",
+                            });
+                            self.finish(&tool_call.id, ToolCallStatus::Rejected, &output);
+                            return Ok(output);
+                        }
                     }
                 }
             }

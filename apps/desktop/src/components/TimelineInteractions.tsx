@@ -19,6 +19,8 @@ export function ApprovalCard({
   onResolve: (approvalId: string, decision: string) => void;
   pending?: boolean;
 }) {
+  // "Always allow" persists a host-wide rule, so it is desktop-only (plan v3 D16).
+  const isRemote = useSessionFileAccess()?.client?.mode === "remote";
   return (
     <div className="card approval-card">
       <div className="card-head">
@@ -44,6 +46,16 @@ export function ApprovalCard({
         >
           本会话允许
         </button>
+        {!isRemote && (
+          <button
+            className="secondary"
+            disabled={pending}
+            title="以后此工具（同一来源与版本）不再询问，可在插件页撤销"
+            onClick={() => onResolve(item.approval.id, "always_allow_tool")}
+          >
+            总是允许
+          </button>
+        )}
         <button
           disabled={pending}
           className="danger"

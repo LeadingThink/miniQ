@@ -78,6 +78,11 @@ async function send(title: string, body: string, allowed: () => boolean | Promis
   }
 }
 
+/** Tells the host owner that a remote device raised a session's permissions. */
+export function notifyRemotePermissionRaise(device: string, mode: string): Promise<boolean> {
+  return send("miniQ · 远程提升了权限", `设备 ${device} 将会话权限提升为「${mode}」，可在 miniQ 中一键撤回。`, () => true);
+}
+
 export async function notifyTaskResult(outcome: TaskOutcome, sessionTitle: string): Promise<boolean> {
   const allowed = async () => {
     if (document.hasFocus()) return false;

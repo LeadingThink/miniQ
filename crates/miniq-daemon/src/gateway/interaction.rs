@@ -12,6 +12,33 @@ pub(super) fn approval_inbox(state: &AppState, raw: Option<Value>) -> Result<Val
     super::common::to_value(state.store.approval_inbox(&input).map_err(store_err)?)
 }
 
+pub(super) fn list_approval_rules(state: &AppState) -> Result<Value, RpcError> {
+    Ok(json!({ "rules": state.approval_rules.list() }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RevokeRuleParams {
+    rule_id: String,
+}
+
+pub(super) fn revoke_approval_rule(
+    state: &AppState,
+    raw: Option<Value>,
+) -> Result<Value, RpcError> {
+    let input: RevokeRuleParams = params(raw)?;
+    let revoked = state.approval_rules.revoke(&input.rule_id);
+    if revoked {
+        crate::audit::record(
+            state,
+            "local",
+            "approval.rules.revoke",
+            json!({ "ruleId": input.rule_id }),
+        );
+    }
+    Ok(json!({ "revoked": revoked }))
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ApprovalParams {
@@ -35,6 +62,7 @@ fn parse_decision(decision: &str) -> Result<ApprovalDecision, RpcError> {
     match decision {
         "approve" => Ok(ApprovalDecision::Approve),
         "approve_for_session" => Ok(ApprovalDecision::ApproveForSession),
+        "always_allow_tool" | "alwaysAllowTool" => Ok(ApprovalDecision::AlwaysAllowTool),
         "reject" => Ok(ApprovalDecision::Reject),
         other => Err(RpcError::new(
             ErrorCode::InvalidParams,

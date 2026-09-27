@@ -4,6 +4,7 @@ import type { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 import type { PluginInfo, PluginListResult } from "../types";
 import { RemotePathDialog } from "./RemotePathDialog";
+import { ApprovalRulesSection } from "./ApprovalRules";
 
 export function PluginsPanel(props: { client: RpcClient }) {
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
@@ -247,6 +248,7 @@ export function PluginsPanel(props: { client: RpcClient }) {
             ))}
           </div>
         )}
+        <ApprovalRulesSection client={props.client} />
       </div>
     </div>
   );

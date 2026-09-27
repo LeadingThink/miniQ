@@ -263,6 +263,7 @@
           "pending",
           "approved",
           "approved_for_session",
+          "approved_always",
           "rejected"
         ],
         "type": "string"
@@ -494,6 +495,7 @@
           "pending",
           "approved",
           "approved_for_session",
+          "approved_always",
           "rejected"
         ],
         "type": "string"
@@ -1006,7 +1008,8 @@
         "enum": [
           "active",
           "completed",
-          "paused"
+          "paused",
+          "cancelled"
         ],
         "type": "string"
       },
@@ -1210,6 +1213,13 @@
       },
       {
         "properties": {
+          "actor": {
+            "description": "`remote:<device>` when the change came from a remote client.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "mode": {
             "anyOf": [
               {
@@ -1219,6 +1229,21 @@
                 "type": "null"
               }
             ]
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ApprovalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Effective mode before the change, so the host can offer a one-click revert."
+          },
+          "raised": {
+            "description": "True when the effective mode became more permissive.",
+            "type": "boolean"
           },
           "sessionId": {
             "type": "string"
@@ -4228,6 +4253,13 @@
       },
       "method": {
         "type": "string"
+      },
+      "origin": {
+        "description": "Caller origin. `remote` / `remote:<device>` marks requests from the relay or forwarded by a remote `host.call`; the daemon applies the per-method remote policy to them.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "params": true
     },

@@ -23,6 +23,15 @@ pub enum Event {
         #[serde(rename = "sessionId")]
         session_id: String,
         mode: Option<crate::ApprovalMode>,
+        /// `remote:<device>` when the change came from a remote client.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        actor: Option<String>,
+        /// Effective mode before the change, so the host can offer a one-click revert.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous: Option<crate::ApprovalMode>,
+        /// True when the effective mode became more permissive.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        raised: bool,
     },
     ModelSettingsChanged {
         #[serde(rename = "sessionId")]

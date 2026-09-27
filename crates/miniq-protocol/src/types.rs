@@ -369,6 +369,7 @@ pub enum ApprovalStatus {
     Pending,
     Approved,
     ApprovedForSession,
+    ApprovedAlways,
     Rejected,
 }
 
@@ -378,6 +379,7 @@ impl ApprovalStatus {
             ApprovalStatus::Pending => "pending",
             ApprovalStatus::Approved => "approved",
             ApprovalStatus::ApprovedForSession => "approved_for_session",
+            ApprovalStatus::ApprovedAlways => "approved_always",
             ApprovalStatus::Rejected => "rejected",
         }
     }

@@ -55,6 +55,7 @@ fn parse_approval_status(value: &str) -> rusqlite::Result<ApprovalStatus> {
         "pending" => Ok(ApprovalStatus::Pending),
         "approved" => Ok(ApprovalStatus::Approved),
         "approved_for_session" => Ok(ApprovalStatus::ApprovedForSession),
+        "approved_always" => Ok(ApprovalStatus::ApprovedAlways),
         "rejected" => Ok(ApprovalStatus::Rejected),
         other => Err(invalid_text(format!("approval status {other}"))),
     }

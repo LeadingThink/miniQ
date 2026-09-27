@@ -265,37 +265,15 @@ impl ActiveConfig {
     }
 }
 
+/// Legacy helpers kept for tests; the gateway enforces [`crate::remote_policy`].
+#[cfg(test)]
 fn remote_method_allowed(method: &str) -> bool {
-    !matches!(
-        method,
-        "browser.resolve"
-            | "daemon.shutdown"
-            | "daemon.shutdownIfIdle"
-            | "computer.requestPermission"
-            | "settings.update"
-            | "workspace.open"
-            | "workspace.updateRoots"
-            | "externalSession.import"
-            | "mcp.update"
-            | "skill.delete"
-            | "host.save"
-            | "host.remove"
-    )
+    crate::remote_policy::check(method, None).is_ok()
 }
 
-/// The outer tunnel must not turn a desktop-only operation into a mobile RPC.
+#[cfg(test)]
 fn remote_request_allowed(request: &RpcRequest) -> bool {
-    if !remote_method_allowed(&request.method) {
-        return false;
-    }
-    if request.method != "host.call" {
-        return true;
-    }
-    request
-        .params
-        .as_ref()
-        .and_then(|params| params["method"].as_str())
-        .is_some_and(|method| !method.starts_with("host.") && remote_method_allowed(method))
+    crate::remote_policy::check(&request.method, request.params.as_ref()).is_ok()
 }
 
 fn parse_relay_text(message: Message) -> anyhow::Result<RelayFrame> {

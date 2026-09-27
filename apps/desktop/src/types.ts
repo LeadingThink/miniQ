@@ -33,7 +33,11 @@ export type ToolCallStatus =
 export type RiskLevel = "low" | "medium" | "high" | "blocked";
 
 export type ApprovalStatus =
-  "pending" | "approved" | "approved_for_session" | "rejected";
+  | "pending"
+  | "approved"
+  | "approved_for_session"
+  | "approved_always"
+  | "rejected";
 
 export interface Workspace {
   id: string;
@@ -393,6 +397,12 @@ export type DaemonEvent = {
       type: "session_approval_changed";
       sessionId: string;
       mode: ApprovalMode | null;
+      /** `remote:<device>` when a remote client made the change. */
+      actor?: string;
+      /** Effective mode before the change. */
+      previous?: ApprovalMode;
+      /** True when the effective mode became more permissive. */
+      raised?: boolean;
     }
   | {
       type: "model_settings_changed";

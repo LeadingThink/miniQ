@@ -12,6 +12,11 @@ pub struct RpcRequest {
     pub method: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params: Option<Value>,
+    /// Caller origin. `remote` / `remote:<device>` marks requests from the
+    /// relay or forwarded by a remote `host.call`; the daemon applies the
+    /// per-method remote policy to them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
 }
 
 impl RpcRequest {
@@ -21,7 +26,13 @@ impl RpcRequest {
             id: id.into(),
             method: method.into(),
             params,
+            origin: None,
         }
+    }
+
+    pub fn with_origin(mut self, origin: Option<String>) -> Self {
+        self.origin = origin;
+        self
     }
 }
 

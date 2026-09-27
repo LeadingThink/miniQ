@@ -51,12 +51,22 @@ impl Connection {
         (connection, completion)
     }
 
+    #[cfg(test)]
     pub async fn call(&self, method: &str, params: Option<Value>) -> Reply {
+        self.call_from(method, params, None).await
+    }
+
+    pub async fn call_from(
+        &self,
+        method: &str,
+        params: Option<Value>,
+        origin: Option<String>,
+    ) -> Reply {
         if self.cancel.is_cancelled() {
             return Err(failed(INTERRUPTED));
         }
         let id = uuid::Uuid::new_v4().to_string();
-        let request = RpcRequest::new(id.clone(), method, params);
+        let request = RpcRequest::new(id.clone(), method, params).with_origin(origin);
         let mut line = serde_json::to_vec(&request).map_err(|error| invalid(error.to_string()))?;
         if line.len() > MAX_FRAME_BYTES {
             return Err(invalid("SSH 请求超过 16 MiB，请使用分页或分块传输"));

@@ -84,3 +84,15 @@ it("keeps the confirmed policy on a failed update and allows retry", async () =>
   fireEvent.click(screen.getByRole("button", { name: "刷新会话权限" }));
   await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
 });
+
+it("asks for confirmation before a remote client raises permissions", async () => {
+  const call = vi.fn().mockResolvedValue({ mode: null, effective: "auto" });
+  const rpc = { ...client(call), mode: "remote" } as unknown as RpcClient;
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  render(<SessionPermissionControls client={rpc} sessionId="one" />);
+  fireEvent.click(await screen.findByRole("button", { name: "替我审批" }));
+  fireEvent.click(screen.getByRole("option", { name: /完全访问/ }));
+  expect(confirm).toHaveBeenCalledOnce();
+  expect(call).toHaveBeenCalledTimes(1);
+  confirm.mockRestore();
+});

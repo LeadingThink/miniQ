@@ -64,6 +64,7 @@ impl DaemonSettings {
 pub enum ApprovalDecision {
     Approve,
     ApproveForSession,
+    AlwaysAllowTool,
     Reject,
 }
 
@@ -127,6 +128,8 @@ pub struct AppState {
     pub mcp: Arc<crate::mcp::McpManager>,
     /// Observable state for the outbound encrypted relay connection.
     pub remote_status: Arc<Mutex<crate::remote::RemoteRuntimeStatus>>,
+    /// Persistent "always allow" rules (`<data_dir>/approvals/rules.json`).
+    pub approval_rules: Arc<crate::approval_rules::ApprovalRules>,
 }
 
 impl AppState {
@@ -218,6 +221,7 @@ impl AppState {
             observations_dir: data_dir.join("observations"),
             mcp: crate::mcp::McpManager::new(),
             remote_status: Arc::new(Mutex::new(crate::remote::RemoteRuntimeStatus::default())),
+            approval_rules: Arc::new(crate::approval_rules::ApprovalRules::new(Some(&data_dir))),
         }
     }
 

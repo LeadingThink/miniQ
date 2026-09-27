@@ -374,8 +374,10 @@ impl Tool for WasmTool {
 
     fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
         Risk {
-            level: RiskLevel::Low,
-            reason: "sandboxed WASM pure-compute plugin".into(),
+            // Plan v3 §4.3: third-party code defaults to Medium even when
+            // sandboxed, so Auto mode asks once before running it.
+            level: RiskLevel::Medium,
+            reason: "third-party WASM plugin (sandboxed pure compute)".into(),
         }
     }
 

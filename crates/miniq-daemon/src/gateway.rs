@@ -61,6 +61,30 @@ fn workspace_path_display(path: &Path) -> String {
 /// Dispatch one JSON-RPC request while preserving its request identifier.
 pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
     let id = req.id.clone();
+    let remote_actor = req
+        .origin
+        .clone()
+        .filter(|origin| crate::remote_policy::is_remote_origin(Some(origin)));
+    if remote_actor.is_some() {
+        if let Err(error) = crate::remote_policy::check(&req.method, req.params.as_ref()) {
+            tracing::info!(
+                target: "miniq::audit",
+                "remote request denied: method={} actor={:?}", req.method, remote_actor
+            );
+            if matches!(
+                req.method.as_str(),
+                "approval.resolve" | "schedule.create" | "schedule.update" | "host.call"
+            ) {
+                crate::audit::record(
+                    state,
+                    remote_actor.as_deref().unwrap_or("remote"),
+                    &req.method,
+                    serde_json::json!({"denied": error.data}),
+                );
+            }
+            return RpcResponse::err(id, error);
+        }
+    }
     let _activity = if matches!(
         req.method.as_str(),
         "daemon.health" | "daemon.shutdown" | "daemon.shutdownIfIdle"
@@ -72,9 +96,21 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
             Err(error) => return RpcResponse::err(id, error),
         }
     };
+    let audit_params = remote_actor
+        .as_ref()
+        .filter(|_| {
+            crate::remote_policy::audited(&req.method) && req.method != "session.approval.update"
+        })
+        .map(|_| req.params.clone());
+    let method = req.method.clone();
     let result = match req.method.as_str() {
         "host.list" | "host.save" | "host.remove" | "host.connect" | "host.disconnect"
-        | "host.call" => state.ssh_hosts.dispatch(&req.method, req.params).await,
+        | "host.call" => {
+            state
+                .ssh_hosts
+                .dispatch_from(&req.method, req.params, remote_actor.clone())
+                .await
+        }
         "daemon.health" => system::health(state),
         "file.describe" => files::describe(state, req.params).await,
         "file.read" => files::read(state, req.params).await,
@@ -105,7 +141,9 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.history" => session_history::page(state, req.params),
         "session.modelCalls" => session_history::model_calls(state, req.params),
         "session.approval.get" => session_approval::get(state, req.params),
-        "session.approval.update" => session_approval::update(state, req.params),
+        "session.approval.update" => {
+            session_approval::update(state, req.params, remote_actor.as_deref())
+        }
         "session.executionEvents" => session_history::execution_events(state, req.params),
         "approval.inbox" => interaction::approval_inbox(state, req.params),
         "session.sync" => session_history::sync(state, req.params),
@@ -148,6 +186,8 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "externalSession.import" => external_session::import(state, req.params).await,
         "externalSession.importStatus" => external_session::import_status(state, req.params),
         "approval.resolve" => interaction::resolve_approval(state, req.params),
+        "approval.rules.list" => interaction::list_approval_rules(state),
+        "approval.rules.revoke" => interaction::revoke_approval_rule(state, req.params),
         "question.resolve" => interaction::resolve_question(state, req.params),
         "browser.resolve" => interaction::resolve_browser_request(state, req.params),
         "checkpoint.rollback" => interaction::rollback_checkpoint(state, req.params),
@@ -183,6 +223,9 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         )),
     };
 
+    if let (Some(actor), Some(params), Ok(_)) = (&remote_actor, audit_params, &result) {
+        crate::audit::record(state, actor, &method, serde_json::json!({"params": params}));
+    }
     match result {
         Ok(value) => RpcResponse::ok(id, value),
         Err(err) => RpcResponse::err(id, err),

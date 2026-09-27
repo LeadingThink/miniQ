@@ -495,6 +495,7 @@ describe("Timeline execution flow", () => {
     expect(html).toContain("dev.miniq.text-utils.transform");
     expect(html).toContain("允许一次");
     expect(html).toContain("本会话允许");
+    expect(html).toContain("总是允许");
     expect(html).toContain("拒绝");
   });
 
