@@ -9,6 +9,7 @@ miniq-tools = { path = "../miniq-tools", default-features = false }
 miniq-protocol = { path = "../miniq-protocol" }
 miniq-skills = { path = "../miniq-skills" }
 miniq-sandbox = { path = "../miniq-sandbox" }
+miniq-local = { path = "../miniq-local" }
 async-trait = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
