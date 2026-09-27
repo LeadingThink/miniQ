@@ -139,7 +139,7 @@ fn backup_corrupt(path: &std::path::Path, raw: &[u8]) -> Option<PathBuf> {
         target = dir.join(format!("settings.json.corrupt-{unix}-{n}"));
         n += 1;
     }
-    let result = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&target, raw));
+    let result = miniq_local::write_private_bytes(&target, raw);
     match result {
         Ok(()) => Some(target),
         Err(error) => {
@@ -538,7 +538,7 @@ impl AppState {
                 let current = std::fs::read(path.as_ref()).ok();
                 restored.save(path).map_err(|e| e.to_string())?;
                 if let Some(current) = current {
-                    let _ = std::fs::write(&backup, current);
+                    let _ = miniq_local::write_private_bytes(&backup, &current);
                 }
                 *self.settings.lock().unwrap() = restored;
                 return Ok(());
@@ -916,7 +916,7 @@ fn backup_before_save(path: &std::path::Path) -> Result<(), String> {
         return Ok(());
     }
     let target = settings_last_backup(path);
-    std::fs::create_dir_all(settings_backup_dir(path))
-        .and_then(|_| std::fs::copy(path, &target).map(|_| ()))
+    std::fs::read(path)
+        .and_then(|raw| miniq_local::write_private_bytes(&target, &raw))
         .map_err(|error| format!("failed to back up settings before saving: {error}"))
 }

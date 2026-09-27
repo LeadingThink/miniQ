@@ -51,10 +51,15 @@ pub fn write_connection_info(dir: &Path, info: &ConnectionInfo) -> std::io::Resu
 }
 
 pub fn write_private_json(path: &Path, value: &impl Serialize) -> std::io::Result<()> {
+    write_private_bytes(path, &serde_json::to_vec_pretty(value)?)
+}
+
+/// Atomically write bytes to an owner-only (0600 on Unix) file.
+pub fn write_private_bytes(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(dir)?;
     let mut file = tempfile::NamedTempFile::new_in(dir)?;
-    file.write_all(&serde_json::to_vec_pretty(value)?)?;
+    file.write_all(bytes)?;
     file.as_file().sync_all()?;
     file.persist(path).map_err(|error| error.error)?;
     Ok(())
