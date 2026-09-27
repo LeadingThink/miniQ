@@ -170,6 +170,70 @@ mod tests {
         c.mode = ApprovalMode::FullAccess;
         assert_eq!(decide_approval(&c), Verdict::Allow);
     }
+
+    /// RT-08: no feature-flag combination can weaken a non-preapprovable
+    /// call. Interactive sources (Inherit / AcceptEdits) must Ask; non-
+    /// interactive sources (scheduled / background agents run as DontAsk)
+    /// must Deny. `ApprovalCtx` is built from settings with every flag
+    /// combination, so any future coupling between flags and approval has
+    /// to go through this table.
+    #[test]
+    fn rt08_feature_flags_never_bypass_non_preapprovable() {
+        use crate::features::{FeatureFlags, FeatureStage};
+        let sources = [
+            (PermissionPolicy::Inherit, true),
+            (PermissionPolicy::AcceptEdits, true),
+            (PermissionPolicy::DontAsk, false),
+        ];
+        let risks = [RiskLevel::Low, RiskLevel::Medium, RiskLevel::High];
+        let rules = [RuleMatch::None, RuleMatch::Allowed, RuleMatch::Stale("x")];
+        let mut checked = 0usize;
+        for bits in 0u32..(1 << FeatureFlags::COUNT) {
+            let mut settings = crate::state::DaemonSettings::default();
+            for (i, stage) in settings.features.stages_mut().into_iter().enumerate() {
+                *stage = if bits & (1 << i) != 0 {
+                    FeatureStage::On
+                } else {
+                    FeatureStage::Off
+                };
+            }
+            for mode in MODES {
+                settings.approval_mode = mode;
+                for (policy, interactive) in sources {
+                    for risk in risks {
+                        for class in [ToolClass::Builtin, ToolClass::Extension] {
+                            for rule in &rules {
+                                for allowed_for_session in [false, true] {
+                                    let c = ApprovalCtx {
+                                        mode: settings.approval_mode,
+                                        policy,
+                                        risk,
+                                        class,
+                                        allowed_for_session,
+                                        rule: rule.clone(),
+                                        non_preapprovable: true,
+                                    };
+                                    let expected = if interactive {
+                                        Verdict::Ask
+                                    } else {
+                                        Verdict::Deny(DONT_ASK_DENIED)
+                                    };
+                                    assert_eq!(
+                                        decide_approval(&c),
+                                        expected,
+                                        "features={:?} {mode:?} interactive={interactive} {risk:?} {class:?} {rule:?}",
+                                        settings.features
+                                    );
+                                    checked += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(checked, 128 * 3 * 3 * 3 * 2 * 3 * 2);
+    }
 }
 
 #[cfg(test)]

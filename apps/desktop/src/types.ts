@@ -497,4 +497,5 @@ export type DaemonEvent = {
   | { type: "queue_changed"; sessionId: string; queue: QueuedMessage[] }
   | { type: "browser_driver_requested"; request: BrowserDriverRequest }
   | { type: "plugins_changed"; plugins: PluginInfo[] }
+  | { type: "settings_load_failed"; path: string; error: string; backupPath?: string }
 );

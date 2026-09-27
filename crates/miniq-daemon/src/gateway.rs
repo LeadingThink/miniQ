@@ -196,6 +196,10 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "settings.get" => settings::get(state),
         "settings.models" => settings::models(state, req.params).await,
         "settings.update" => settings::update(state, req.params),
+        "settings.status" => settings::status(state),
+        "settings.restoreBackup" => settings::restore_backup(state),
+        "features.get" => settings::features_get(state),
+        "features.set" => settings::features_set(state, req.params),
         "remote.status" => serde_json::to_value(crate::remote::status(state))
             .map_err(|error| RpcError::new(ErrorCode::InternalError, error.to_string())),
         "voice.transcribe" => voice::transcribe(state, req.params).await,

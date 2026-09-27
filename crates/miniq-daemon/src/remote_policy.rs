@@ -85,7 +85,8 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "plugin.getDiagnostics"
         | "mcp.list"
         | "approval.rules.list"
-        | "features.get" => ReadOnly,
+        | "features.get"
+        | "settings.status" => ReadOnly,
         "approval.rules.revoke" => Allow,
         "plugin.setEnabled" => ToggleOnly,
         "plugin.install"
@@ -94,7 +95,9 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "plugin.uninstall"
         | "mcp.update"
         | "automation.grant"
-        | "connector.confirmReadonlySet" => HostOnly,
+        | "connector.confirmReadonlySet"
+        | "features.set"
+        | "settings.restoreBackup" => HostOnly,
         // 13.1.3 existing blacklist
         "browser.resolve"
         | "daemon.shutdown"

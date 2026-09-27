@@ -2048,6 +2048,35 @@
           "type"
         ],
         "type": "object"
+      },
+      {
+        "description": "`settings.json` existed but could not be loaded; the daemon runs on defaults and never overwrites the unbacked original.",
+        "properties": {
+          "backupPath": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "settings_load_failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "path",
+          "type"
+        ],
+        "type": "object"
       }
     ],
     "title": "Event"
