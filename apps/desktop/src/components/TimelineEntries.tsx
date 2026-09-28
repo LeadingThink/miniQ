@@ -1,6 +1,6 @@
 import { Check, GitBranch, LoaderCircle, Pencil, RefreshCw, Target, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
-import type { AnchoredTurnTiming, Message, MessageAttachment, PlanTask, Question, SessionGoal, TurnProgress } from "../types";
+import type { AnchoredTurnTiming, Message, MessageAttachment, PlanTask, Question, SessionGoal, TurnPlan, TurnProgress } from "../types";
 import type { PendingApproval } from "../App";
 import type { RpcClient } from "../rpc";
 import { readImagePreview } from "../localFiles";
@@ -9,14 +9,14 @@ import type { TimelineProps } from "./Timeline";
 import { ApprovalCard, ArtifactCard } from "./TimelineInteractions";
 import { QuestionCard } from "./QuestionCard";
 import { Md } from "./Md";
-import { ExecutionPrelude, PlanProgress } from "./ExecutionActivity";
+import { ExecutionPrelude, TurnPlanSummary } from "./ExecutionActivity";
 import { CopyButton } from "./CopyButton";
 import { SpeakButton } from "./SpeakButton";
 import { useVoiceCapabilities } from "../voiceCapabilities";
 import { ToolGroup } from "./ToolGroup";
 import { MessageTime, ConversationTimeSeparator } from "./MessageTime";
 import { showConversationTimestamp } from "../time";
-import { timelineGroupKey, timelineTurnEnds } from "../timelineTiming";
+import { timelineGroupKey, timelineTurnEnds, timelineTurnPlanEnds } from "../timelineTiming";
 import { TurnTimingSummary } from "./TurnTimingSummary";
 import { useSessionFileAccess } from "../sessionFileAccess";
 
@@ -80,6 +80,7 @@ export function TimelineEntries(props: {
   approvals: PendingApproval[];
   questions: Question[];
   plan: PlanTask[];
+  turnPlans?: TurnPlan[];
   streamingText: string;
   turnProgress: TurnProgress | null;
   latestTurnTiming?: AnchoredTurnTiming | null;
@@ -102,6 +103,12 @@ export function TimelineEntries(props: {
   const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
   const turnEnds = useMemo(() => props.expandGroups ? new Map() : timelineTurnEnds(props.items, props.latestTurnTiming),
     [props.items, props.latestTurnTiming, props.expandGroups]);
+  const turnPlanEnds = useMemo(() => timelineTurnPlanEnds(props.items, props.turnPlans ?? []),
+    [props.items, props.turnPlans]);
+  // The running turn's plan lives in the composer pill; it joins the timeline once the turn ends.
+  const runningAnchor = props.busy
+    ? [...props.messages].reverse().find((message) => message.role === "user")?.id
+    : undefined;
   const goalMessageId = useMemo(
     () => findGoalMessageId(props.messages, props.goal),
     [props.goal, props.messages],
@@ -366,6 +373,12 @@ export function TimelineEntries(props: {
             />
           </div>
         )}
+        {(() => {
+          const turnPlan = turnPlanEnds.get(timelineGroupKey(item));
+          return turnPlan && turnPlan.anchorMessageId !== runningAnchor
+            ? <TurnPlanSummary plan={turnPlan.tasks} />
+            : null;
+        })()}
         {turnEnds.has(timelineGroupKey(item)) && <TurnTimingSummary timing={turnEnds.get(timelineGroupKey(item))!} />}
       </Fragment>)}
       {props.approvals.map((approval) => (
@@ -400,7 +413,6 @@ export function TimelineEntries(props: {
       {props.thinking && (
         <ExecutionPrelude plan={props.plan} progress={props.turnProgress} />
       )}
-      <PlanProgress plan={props.plan} busy={props.busy} />
     </div>
   );
 }

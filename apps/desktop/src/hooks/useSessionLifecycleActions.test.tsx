@@ -79,6 +79,7 @@ function setup(mode: "local" | "remote" = "local") {
     approvals: [],
     questions: [],
     plan: [],
+    turnPlans: [],
     artifacts: [],
     queue: [],
     streamingText: "",

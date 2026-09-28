@@ -105,6 +105,10 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         .store
         .session_plan(&input.session_id)
         .map_err(store_err)?;
+    let turn_plans = state
+        .store
+        .session_turn_plans(&input.session_id)
+        .map_err(store_err)?;
     let queue = state
         .store
         .list_queued_messages(&input.session_id)
@@ -141,6 +145,7 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         "historyVersion": 1,
         "artifacts": artifacts,
         "plan": plan,
+        "turnPlans": turn_plans,
         "queue": queue,
         "approvals": approvals,
         "questions": questions,

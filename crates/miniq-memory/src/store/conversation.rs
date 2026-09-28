@@ -179,6 +179,11 @@ impl Store {
             params![session_id],
         )?;
         transaction.execute(
+            "DELETE FROM turn_plans WHERE session_id = ?1 AND (anchor_message_id = ?2
+               OR anchor_message_id NOT IN (SELECT id FROM messages WHERE session_id = ?1))",
+            params![session_id, message_id],
+        )?;
+        transaction.execute(
             "DELETE FROM queued_messages WHERE session_id = ?1",
             params![session_id],
         )?;

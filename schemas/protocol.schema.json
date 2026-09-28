@@ -1747,6 +1747,13 @@
       {
         "description": "The agent updated its step plan for the current task.",
         "properties": {
+          "anchorMessageId": {
+            "description": "User message that started the turn owning this plan. Clients render the checklist inside that turn instead of pinning it to the end.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sessionId": {
             "type": "string"
           },

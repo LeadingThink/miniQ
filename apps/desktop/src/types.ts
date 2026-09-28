@@ -245,6 +245,13 @@ export interface PlanTask {
   status: "pending" | "in_progress" | "completed";
 }
 
+/** The latest plan published during one user turn, anchored to that turn's user message. */
+export interface TurnPlan {
+  anchorMessageId: string;
+  tasks: PlanTask[];
+  updatedAt?: string;
+}
+
 export interface Question {
   id: string;
   sessionId: string;
@@ -480,7 +487,7 @@ export type DaemonEvent = {
       riskLevel: RiskLevel;
     }
   | { type: "approval_resolved"; sessionId: string; approval: Approval }
-  | { type: "plan_updated"; sessionId: string; tasks: PlanTask[] }
+  | { type: "plan_updated"; sessionId: string; tasks: PlanTask[]; anchorMessageId?: string }
   | { type: "question_requested"; sessionId: string; question: Question }
   | {
       type: "question_resolved";

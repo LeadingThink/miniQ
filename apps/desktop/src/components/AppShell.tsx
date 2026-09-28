@@ -5,6 +5,7 @@ import { type LocalFileTarget } from "../localFiles";
 import { LoaderCircle, PlugZap, Sparkles } from "lucide-react";
 import { Fragment, lazy, Suspense, useState } from "react";
 import { Composer, ComposerCard } from "./Composer";
+import { PlanStepPill } from "./ExecutionActivity";
 import type { ComposerSlashCommand } from "../composerSlash";
 import { useAppSlashCommands } from "../hooks/useAppSlashCommands";
 import { DistillModal } from "./Distill";
@@ -180,6 +181,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
           approvals={app.feed.approvals}
           questions={app.feed.questions}
           plan={app.feed.plan}
+          turnPlans={app.feed.turnPlans}
           artifacts={app.feed.artifacts}
           queue={app.feed.queue}
           workspacePath={app.catalog.currentSession?.workingDirectory}
@@ -213,6 +215,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
         onCancelTurn={app.actions.cancelTurn}
         onError={app.setError}
       />
+      <PlanStepPill plan={app.feed.plan} busy={!!app.busy} />
       <Composer
         slashCommands={slashCommands}
         workspaceId={app.catalog.currentWorkspace?.id}

@@ -14,6 +14,7 @@ interface OpenSessionResult {
   toolCalls: ToolCall[];
   artifacts: Artifact[];
   plan: PlanTask[];
+  turnPlans?: import("../types").TurnPlan[];
   queue: QueuedMessage[];
   approvals: SessionFeed["approvals"];
   questions: SessionFeed["questions"];
@@ -113,6 +114,7 @@ export function useSessionLifecycleActions(
         messages: result.messages,
         toolCalls: result.toolCalls,
         plan: result.plan ?? [],
+        turnPlans: result.turnPlans ?? [],
         artifacts: result.artifacts ?? [],
         queue: result.queue ?? [],
         approvals: result.approvals ?? [],

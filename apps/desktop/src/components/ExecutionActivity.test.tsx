@@ -5,6 +5,9 @@ import { automationResultLabel } from "./automationActivity";
 import {
   ExecutionPrelude,
   PlanProgress,
+  PlanStepPill,
+  TurnPlanSummary,
+  currentPlanStep,
   ToolStep,
   toolActionLabel,
   toolDuration,
@@ -155,5 +158,33 @@ describe("execution activity", () => {
     expect(html).toContain("模型正在生成响应");
     expect(html).toContain("第 3 轮");
     expect(html).toContain("本步骤已用");
+  });
+});
+
+describe("turn plan display", () => {
+  const plan = [
+    { content: "one", status: "completed" as const },
+    { content: "two", status: "pending" as const },
+    { content: "three", status: "in_progress" as const },
+  ];
+
+  it("picks in-progress, then first unfinished, then the last step", () => {
+    expect(currentPlanStep(plan)).toBe(3);
+    expect(currentPlanStep(plan.map((task) => ({ ...task, status: task.status === "in_progress" ? "pending" as const : task.status })))).toBe(2);
+    expect(currentPlanStep(plan.map((task) => ({ ...task, status: "completed" as const })))).toBe(3);
+  });
+
+  it("shows the step pill only while the turn runs", () => {
+    const html = renderToStaticMarkup(<PlanStepPill plan={plan} busy />);
+    expect(html).toContain("第 3 / 3 步");
+    expect(renderToStaticMarkup(<PlanStepPill plan={plan} busy={false} />)).toBe("");
+    expect(renderToStaticMarkup(<PlanStepPill plan={[]} busy />)).toBe("");
+  });
+
+  it("collapses a turn plan into one counted line", () => {
+    const html = renderToStaticMarkup(<TurnPlanSummary plan={plan} />);
+    expect(html).toContain("共 3 个任务，已完成 1 个");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain("two");
   });
 });

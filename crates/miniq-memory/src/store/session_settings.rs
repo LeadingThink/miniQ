@@ -62,17 +62,69 @@ impl Store {
             .map(Option::unwrap_or_default)
     }
 
+    /// Persist the current plan and bind it to the turn that produced it.
+    /// Returns the anchoring user message, when the session has one.
     pub fn set_session_plan(
         &self,
         session_id: &str,
         plan: &[miniq_protocol::PlanTask],
-    ) -> Result<()> {
-        self.conn.lock().unwrap().execute(
+    ) -> Result<Option<String>> {
+        let mut conn = self.conn.lock().unwrap();
+        let transaction = conn.transaction()?;
+        let tasks_json = serde_json::to_string(plan)?;
+        transaction.execute(
             "INSERT INTO session_plans (session_id, tasks_json) VALUES (?1, ?2)
              ON CONFLICT(session_id) DO UPDATE SET tasks_json = excluded.tasks_json",
-            params![session_id, serde_json::to_string(plan)?],
+            params![session_id, tasks_json],
         )?;
-        Ok(())
+        let anchor: Option<String> = transaction
+            .query_row(
+                "SELECT id FROM messages WHERE session_id = ?1 AND role = 'user'
+                 ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                params![session_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(anchor) = &anchor {
+            transaction.execute(
+                "INSERT INTO turn_plans (session_id, anchor_message_id, tasks_json, updated_at)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(session_id, anchor_message_id) DO UPDATE
+                 SET tasks_json = excluded.tasks_json, updated_at = excluded.updated_at",
+                params![session_id, anchor, tasks_json, super::now_iso()],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(anchor)
+    }
+
+    /// Every turn's latest plan, oldest turn first.
+    pub fn session_turn_plans(&self, session_id: &str) -> Result<Vec<miniq_protocol::TurnPlan>> {
+        self.get_session(session_id)?;
+        let conn = self.conn.lock().unwrap();
+        let mut statement = conn.prepare(
+            "SELECT p.anchor_message_id, p.tasks_json, p.updated_at FROM turn_plans p
+             JOIN messages m ON m.id = p.anchor_message_id AND m.session_id = p.session_id
+             WHERE p.session_id = ?1 ORDER BY m.created_at, m.rowid",
+        )?;
+        let rows = statement
+            .query_map(params![session_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        rows.into_iter()
+            .map(|(anchor_message_id, tasks, updated_at)| {
+                Ok(miniq_protocol::TurnPlan {
+                    anchor_message_id,
+                    tasks: serde_json::from_str(&tasks)?,
+                    updated_at,
+                })
+            })
+            .collect()
     }
 
     pub fn session_model_settings(&self, session_id: &str) -> Result<SessionModelSettings> {
@@ -182,6 +234,50 @@ mod tests {
         assert!(store
             .set_session_model_settings("missing", &settings)
             .is_err());
+    }
+
+    #[test]
+    fn plans_stay_bound_to_the_turn_that_published_them() {
+        use miniq_protocol::{PlanTask, Role};
+        let store = Store::open_in_memory().unwrap();
+        let workspace = store.create_workspace("/fixture", "fixture").unwrap();
+        let session = store.create_session(&workspace.id, "s").unwrap();
+        let plan = |text: &str| {
+            serde_json::from_value::<Vec<PlanTask>>(
+                serde_json::json!([{ "content": text, "status": "in_progress" }]),
+            )
+            .unwrap()
+        };
+        assert_eq!(store.set_session_plan(&session.id, &plan("orphan")).unwrap(), None);
+        let first = store.append_message(&session.id, Role::User, "one").unwrap();
+        assert_eq!(
+            store.set_session_plan(&session.id, &plan("a")).unwrap(),
+            Some(first.id.clone())
+        );
+        store.set_session_plan(&session.id, &plan("a2")).unwrap();
+        let answer = store.append_message(&session.id, Role::Assistant, "done").unwrap();
+        let second = store.append_message(&session.id, Role::User, "two").unwrap();
+        store.set_session_plan(&session.id, &plan("b")).unwrap();
+
+        let turns = store.session_turn_plans(&session.id).unwrap();
+        assert_eq!(turns.len(), 2);
+        assert_eq!(turns[0].anchor_message_id, first.id);
+        assert_eq!(turns[0].tasks[0].content, "a2");
+        assert_eq!(turns[1].anchor_message_id, second.id);
+        assert_eq!(turns[1].tasks[0].content, "b");
+
+        store
+            .rewrite_session_from_user_message(&session.id, &second.id, "two again", &[])
+            .unwrap();
+        let turns = store.session_turn_plans(&session.id).unwrap();
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].anchor_message_id, first.id);
+
+        let fork = store.fork_session(&session.id, &answer.id, None).unwrap();
+        let forked = store.session_turn_plans(&fork.id).unwrap();
+        assert_eq!(forked.len(), 1);
+        assert_ne!(forked[0].anchor_message_id, first.id);
+        assert_eq!(forked[0].tasks[0].content, "a2");
     }
 
     #[test]

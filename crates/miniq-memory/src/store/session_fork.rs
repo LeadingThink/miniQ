@@ -158,6 +158,14 @@ impl Store {
              SELECT ?1, tasks_json FROM session_plans WHERE session_id = ?2",
             params![target_id, source_session_id],
         )?;
+        for (source_message, copied_message) in &message_ids {
+            transaction.execute(
+                "INSERT INTO turn_plans (session_id, anchor_message_id, tasks_json, updated_at)
+                 SELECT ?1, ?2, tasks_json, updated_at FROM turn_plans
+                 WHERE session_id = ?3 AND anchor_message_id = ?4",
+                params![target_id, copied_message, source_session_id, source_message],
+            )?;
+        }
         transaction.execute(
             "INSERT INTO session_goals (session_id, goal, status, token_budget, used_tokens, used_time_ms, created_at, updated_at)
              SELECT ?1, goal, status, token_budget, 0, 0, ?3, ?3

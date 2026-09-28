@@ -227,3 +227,25 @@ it("late action failures stay in their originating session, including drafts", (
   hook.rerender({ id: "b" });
   expect(hook.result.current[0]).toBe("b failed");
 });
+
+it("anchors plans to their turn, replaces within a turn and drops rewritten turns", () => {
+  const hook = setup();
+  act(() => hook.result.current.load("a", { ...snapshot, turnPlans: [] }));
+  const task = (content: string) => [{ content, status: "pending" as const }];
+  hook.emit({ type: "plan_updated", sessionId: "a", tasks: task("first"), anchorMessageId: "m-a" });
+  hook.emit({ type: "plan_updated", sessionId: "a", tasks: task("replaced"), anchorMessageId: "m-a" });
+  hook.emit({ type: "plan_updated", sessionId: "a", tasks: task("later"), anchorMessageId: "m-b" });
+  expect(hook.result.current.turnPlans.map((plan) => [plan.anchorMessageId, plan.tasks[0].content])).toEqual([
+    ["m-a", "replaced"],
+    ["m-b", "later"],
+  ]);
+  hook.emit({
+    type: "session_rewritten",
+    sessionId: "a",
+    message: { id: "m-a", sessionId: "a", role: "user", content: "edited", createdAt: "2026-09-07" },
+    removedMessageIds: ["m-b"],
+    removedToolCallIds: [],
+    removedArtifactIds: [],
+  });
+  expect(hook.result.current.turnPlans).toEqual([]);
+});

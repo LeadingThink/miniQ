@@ -399,6 +399,15 @@ pub struct Approval {
     pub resolved_at: Option<String>,
 }
 
+/// The latest checklist published during one user turn.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnPlan {
+    pub anchor_message_id: String,
+    pub tasks: Vec<PlanTask>,
+    pub updated_at: String,
+}
+
 /// One step in the agent's plan for the current task.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

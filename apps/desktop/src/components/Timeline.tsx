@@ -11,6 +11,7 @@ import type {
   HistoryCursor,
   Message,
   PlanTask,
+  TurnPlan,
   Question,
   QueuedMessage,
   SessionGoal,
@@ -56,6 +57,7 @@ export interface TimelineProps {
   approvals: PendingApproval[];
   questions: Question[];
   plan: PlanTask[];
+  turnPlans?: TurnPlan[];
   artifacts: Artifact[];
   queue: QueuedMessage[];
   workspacePath?: string | null;
@@ -169,9 +171,9 @@ export function Timeline(props: TimelineProps) {
     ? historySearch.loading
     : props.loadingOlder;
   const contentVersion = useMemo(() => [
-    items, props.approvals, props.questions, props.plan, props.streamingText,
+    items, props.approvals, props.questions, props.plan, props.turnPlans, props.streamingText,
     props.turnProgress, props.busy, props.queue,
-  ], [items, props.approvals, props.questions, props.plan, props.streamingText,
+  ], [items, props.approvals, props.questions, props.plan, props.turnPlans, props.streamingText,
     props.turnProgress, props.busy, props.queue]);
   const { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump } = useConversationScroll({
     viewKey: JSON.stringify([props.sessionId, filter, query.trim()]),
@@ -302,6 +304,7 @@ export function Timeline(props: TimelineProps) {
           approvals={props.approvals}
           questions={props.questions}
           plan={props.plan}
+          turnPlans={props.turnPlans}
           streamingText={props.streamingText}
           turnProgress={props.turnProgress}
           latestTurnTiming={props.latestTurnTiming}

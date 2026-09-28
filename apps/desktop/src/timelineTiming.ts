@@ -1,4 +1,4 @@
-import type { AnchoredTurnTiming, Message, TurnTiming } from "./types";
+import type { AnchoredTurnTiming, Message, TurnPlan, TurnTiming } from "./types";
 import type { TimelineGroup } from "./timelineModel";
 
 export function timelineGroupKey(group: TimelineGroup): string {
@@ -25,6 +25,25 @@ export function timelineTurnEnds(groups: TimelineGroup[], latest?: AnchoredTurnT
     last = timelineGroupKey(group);
   }
   if (last && current && current.status !== "running") ends.set(last, current);
+  return ends;
+}
+
+/** Map each turn plan to the last visible record of the turn that published it,
+ * so a finished plan stays with its turn instead of floating below later turns. */
+export function timelineTurnPlanEnds(groups: TimelineGroup[], turnPlans: readonly TurnPlan[]): Map<string, TurnPlan> {
+  const ends = new Map<string, TurnPlan>();
+  if (!turnPlans.length) return ends;
+  const byAnchor = new Map(turnPlans.map((turn) => [turn.anchorMessageId, turn]));
+  let current: TurnPlan | undefined;
+  let last: string | undefined;
+  for (const group of groups) {
+    if (group.kind === "message" && group.message.role === "user") {
+      if (last && current) ends.set(last, current);
+      current = byAnchor.get(group.message.id);
+    }
+    last = timelineGroupKey(group);
+  }
+  if (last && current) ends.set(last, current);
   return ends;
 }
 

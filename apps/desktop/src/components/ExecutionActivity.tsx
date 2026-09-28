@@ -259,6 +259,119 @@ export function ToolStep(props: {
   );
 }
 
+export function planCounts(plan: PlanTask[]) {
+  const done = plan.filter((task) => task.status === "completed").length;
+  return { done, total: plan.length };
+}
+
+/** The step shown in the composer pill: the first in-progress task, else the
+ * first unfinished task, else the last task. Returns a 1-based index. */
+export function currentPlanStep(plan: PlanTask[]): number {
+  const active = plan.findIndex((task) => task.status === "in_progress");
+  if (active >= 0) return active + 1;
+  const pending = plan.findIndex((task) => task.status !== "completed");
+  if (pending >= 0) return pending + 1;
+  return plan.length;
+}
+
+function PlanSteps({ plan, busy }: { plan: PlanTask[]; busy: boolean }) {
+  return (
+    <ol>
+      {plan.map((task, index) => (
+        <li
+          key={`${index}-${task.content}`}
+          className={!busy && task.status === "in_progress" ? "pending" : task.status}
+        >
+          <span className="plan-step-marker" aria-hidden="true">
+            {task.status === "completed" ? (
+              <Check size={12} />
+            ) : task.status === "in_progress" && busy ? (
+              <LoaderCircle className="activity-spinner" size={13} />
+            ) : (
+              <span />
+            )}
+          </span>
+          <span>{task.content}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** A turn's plan inside the timeline: one collapsed line that expands to the steps. */
+export function TurnPlanSummary({ plan, busy = false }: { plan: PlanTask[]; busy?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  if (plan.length === 0) return null;
+  const { done, total } = planCounts(plan);
+  return (
+    <section className={`turn-plan${open ? " open" : ""}`} aria-label={`任务步骤 ${done}/${total}`}>
+      <button
+        type="button"
+        className="turn-plan-toggle"
+        aria-expanded={open}
+        aria-controls={listId}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <ChevronRight size={14} className="turn-plan-chevron" aria-hidden="true" />
+        <span>共 {total} 个任务，已完成 {done} 个</span>
+      </button>
+      {open && (
+        <div id={listId} className="turn-plan-list execution-plan">
+          <PlanSteps plan={plan} busy={busy} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Compact "step x / y" pill above the composer while a turn is running. */
+export function PlanStepPill({ plan, busy }: { plan: PlanTask[]; busy: boolean }) {
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  if (!busy || plan.length === 0) return null;
+  const { done, total } = planCounts(plan);
+  const step = currentPlanStep(plan);
+  const radius = 6;
+  const circumference = 2 * Math.PI * radius;
+  return (
+    <div
+      className="plan-step-pill-wrap"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        className="plan-step-pill"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-label={`第 ${step} / ${total} 步，已完成 ${done} 个`}
+        onClick={() => setOpen((value) => !value)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+          <circle className="plan-ring-track" cx="8" cy="8" r={radius} />
+          <circle
+            className="plan-ring-value"
+            cx="8"
+            cy="8"
+            r={radius}
+            strokeDasharray={circumference}
+            strokeDashoffset={circumference * (1 - done / total)}
+          />
+        </svg>
+        <span>第 {step} / {total} 步</span>
+      </button>
+      {open && (
+        <div id={listId} className="plan-step-popover execution-plan" role="tooltip">
+          <PlanSteps plan={plan} busy={busy} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function PlanProgress({
   plan,
   busy,

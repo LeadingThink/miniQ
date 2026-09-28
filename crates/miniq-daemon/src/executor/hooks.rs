@@ -91,7 +91,7 @@ fn publish_plan(
         .store
         .set_session_plan(&executor.session_id, &tasks)
     {
-        Ok(()) => {
+        Ok(anchor_message_id) => {
             *executor
                 .review_plan
                 .lock()
@@ -99,6 +99,7 @@ fn publish_plan(
             executor.state.emit(Event::PlanUpdated {
                 session_id: executor.session_id.clone(),
                 tasks,
+                anchor_message_id,
             });
         }
         Err(error) => tracing::error!(%error, "could not persist the session plan"),

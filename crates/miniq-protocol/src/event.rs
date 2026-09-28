@@ -169,6 +169,14 @@ pub enum Event {
         #[serde(rename = "sessionId")]
         session_id: String,
         tasks: Vec<PlanTask>,
+        /// User message that started the turn owning this plan. Clients render
+        /// the checklist inside that turn instead of pinning it to the end.
+        #[serde(
+            rename = "anchorMessageId",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        anchor_message_id: Option<String>,
     },
     /// The agent is waiting for the user to answer a question.
     QuestionRequested {

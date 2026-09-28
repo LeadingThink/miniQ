@@ -6,6 +6,7 @@ import type {
   DaemonEvent,
   Message,
   PlanTask,
+  TurnPlan,
   Question,
   QueuedMessage,
   SessionStatus,
@@ -36,6 +37,7 @@ interface SessionFeedState {
   approvals: PendingApproval[];
   questions: Question[];
   plan: PlanTask[];
+  turnPlans: TurnPlan[];
   artifacts: Artifact[];
   queue: QueuedMessage[];
   streamingText: string;
@@ -51,6 +53,7 @@ export interface LoadedSessionFeed {
   toolCalls: ToolCall[];
   artifacts: Artifact[];
   plan: PlanTask[];
+  turnPlans?: TurnPlan[];
   queue: QueuedMessage[];
   approvals: PendingApproval[];
   questions: Question[];
@@ -85,12 +88,19 @@ const EMPTY_FEED: SessionFeedState = {
   approvals: [],
   questions: [],
   plan: [],
+  turnPlans: [],
   artifacts: [],
   queue: [],
   streamingText: "",
   turnProgress: null,
   goal: null,
 };
+
+function upsertTurnPlan(turns: TurnPlan[], next: TurnPlan): TurnPlan[] {
+  const index = turns.findIndex((turn) => turn.anchorMessageId === next.anchorMessageId);
+  if (index < 0) return [...turns, next];
+  return turns.map((turn, position) => (position === index ? next : turn));
+}
 
 function updateFinishedToolCall(
   toolCalls: ToolCall[],
@@ -153,6 +163,9 @@ function reduceDaemonEvent(
         approvals: [],
         questions: [],
         plan: [],
+        turnPlans: state.turnPlans.filter(
+          (turn) => !removedMessages.has(turn.anchorMessageId) && turn.anchorMessageId !== event.message.id,
+        ),
         streamingText: "",
         turnProgress: null,
         latestTurnTiming: null,
@@ -223,7 +236,13 @@ function reduceDaemonEvent(
         ),
       };
     case "plan_updated":
-      return { ...state, plan: event.tasks };
+      return {
+        ...state,
+        plan: event.tasks,
+        turnPlans: event.anchorMessageId
+          ? upsertTurnPlan(state.turnPlans, { anchorMessageId: event.anchorMessageId, tasks: event.tasks })
+          : state.turnPlans,
+      };
     case "question_requested":
       return state.questions.some(
         (question) => question.id === event.question.id,
@@ -298,6 +317,7 @@ function sessionFeedReducer(
       toolCalls: action.feed.toolCalls,
       artifacts: action.feed.artifacts,
       plan: action.feed.plan,
+      turnPlans: action.feed.turnPlans ?? [],
       queue: action.feed.queue,
       approvals: action.feed.approvals,
       questions: action.feed.questions,
