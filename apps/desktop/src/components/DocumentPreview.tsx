@@ -2,7 +2,7 @@ import { FileWarning } from "lucide-react";
 export { PdfPreview } from "./PdfPreview";
 export { SpreadsheetPreview } from "./SpreadsheetPreview";
 export { BlobPreview } from "./MediaPreview";
-export { DocxPreview, PptxPreview } from "./OfficePreview";
+export { DocxPreview, LegacyOfficePreview, PptxPreview } from "./OfficePreview";
 
 export function UnsupportedPreview({ remote = false }: { remote?: boolean }) {
   return (

@@ -172,3 +172,30 @@ it("offers mobile download and follow-up without desktop-only actions", () => {
   fireEvent.click(screen.getByRole("button", { name: "针对这个文件继续提问" }));
   expect(discuss).toHaveBeenCalledWith("/workspace/output.zip");
 });
+
+it("does not claim to convert legacy WPS files in a remote WebView", () => {
+  render(
+    <FilePreviewPanel
+      preview={{
+        target: { path: "/workspace/draft.wps", line: null, column: null },
+        resolvedPath: "/workspace/draft.wps",
+        content: null,
+        kind: "officeLegacy",
+        mimeType: "application/vnd.miniq.office-legacy",
+        dataBase64: null,
+        size: 40,
+        loading: false,
+        error: null,
+        open: true,
+      }}
+      workspacePath="/workspace"
+      workspacePaths={[]}
+      onClose={vi.fn()}
+      onOpenFile={vi.fn()}
+      onRetry={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByText("暂不支持内嵌预览此格式")).toBeTruthy();
+  expect(screen.getByText(/下载到当前设备查看/)).toBeTruthy();
+});

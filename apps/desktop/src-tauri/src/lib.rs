@@ -8,6 +8,7 @@ mod daemon_process;
 mod html_preview;
 mod keep_awake;
 mod local_file;
+mod office_preview;
 mod terminal_install;
 use keep_awake::KeepAwakeState;
 
@@ -101,12 +102,7 @@ fn read_local_text_file(
     workspace_paths: Vec<String>,
     authorized_files: Vec<String>,
 ) -> Result<local_file::LocalTextFile, String> {
-    local_file::read_text_authorized(
-        &path,
-        &workspace_path,
-        &workspace_paths,
-        &authorized_files,
-    )
+    local_file::read_text_authorized(&path, &workspace_path, &workspace_paths, &authorized_files)
 }
 
 #[tauri::command]
@@ -116,12 +112,33 @@ fn read_local_file_preview(
     workspace_paths: Vec<String>,
     authorized_files: Vec<String>,
 ) -> Result<local_file::LocalFilePreview, String> {
-    local_file::read_preview_authorized(
-        &path,
-        &workspace_path,
-        &workspace_paths,
-        &authorized_files,
-    )
+    local_file::read_preview_authorized(&path, &workspace_path, &workspace_paths, &authorized_files)
+}
+
+#[tauri::command]
+async fn convert_office_preview(
+    app: tauri::AppHandle,
+    path: String,
+    workspace_path: String,
+    workspace_paths: Vec<String>,
+    authorized_files: Vec<String>,
+) -> Result<office_preview::OfficePdfPreview, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        office_preview::convert(
+            &app,
+            &path,
+            &workspace_path,
+            &workspace_paths,
+            &authorized_files,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+fn office_preview_capabilities() -> office_preview::OfficePreviewCapabilities {
+    office_preview::capabilities()
 }
 
 #[tauri::command]
@@ -271,6 +288,8 @@ pub fn run() {
             reveal_local_file,
             read_local_text_file,
             read_local_file_preview,
+            convert_office_preview,
+            office_preview_capabilities,
             open_html_preview,
             close_html_preview,
             read_image_preview,

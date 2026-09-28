@@ -33,6 +33,7 @@ import { formatFileSize, openLocalFile, revealLocalFile } from "../localFiles";
 import {
   BlobPreview,
   DocxPreview,
+  LegacyOfficePreview,
   PdfPreview,
   PptxPreview,
   SpreadsheetPreview,
@@ -208,7 +209,7 @@ function PreviewPanelContent({
             ? Table2
             : preview.kind === "pptx"
               ? Presentation
-              : ["markdown", "docx", "pdf"].includes(preview.kind ?? "")
+                : ["markdown", "docx", "pdf", "officeLegacy"].includes(preview.kind ?? "")
                 ? FileText
                 : FileCode2;
   const sourceVisible =
@@ -533,6 +534,17 @@ function PreviewPanelContent({
             dataBase64={preview.dataBase64}
             onError={reportRenderError}
           />
+          ) : preview.kind === "officeLegacy" && !remote ? (
+            <LegacyOfficePreview
+              key={renderAttempt}
+              path={path}
+              workspacePath={workspacePath}
+              workspacePaths={workspacePaths}
+              authorizedFiles={authorizedFiles}
+              onError={reportRenderError}
+            />
+          ) : preview.kind === "officeLegacy" ? (
+            <UnsupportedPreview remote />
         ) : preview.kind === "unsupported" ? (
           <UnsupportedPreview remote={remote} />
         ) : null}

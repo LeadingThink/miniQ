@@ -95,6 +95,9 @@ pub fn preview_format(path: &Path) -> (&'static str, &'static str) {
             "pptx",
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         ),
+        "doc" | "xls" | "ppt" | "wps" | "et" | "dps" => {
+            ("officeLegacy", "application/vnd.miniq.office-legacy")
+        }
         "bash" | "bat" | "c" | "cc" | "cjs" | "conf" | "cpp" | "cs" | "css" | "csv" | "diff"
         | "env" | "fish" | "go" | "h" | "hpp" | "htm" | "html" | "ini" | "java" | "js" | "json"
         | "jsonl" | "jsx" | "kt" | "kts" | "less" | "lock" | "log" | "mjs" | "patch" | "php"
@@ -200,7 +203,7 @@ pub fn read_preview_with_authorization(
     }
 
     let (mut kind, mut mime_type) = preview_format(&file);
-    let bytes = if matches!(kind, "text" | "markdown" | "unsupported") {
+    let bytes = if matches!(kind, "text" | "markdown" | "officeLegacy" | "unsupported") {
         None
     } else {
         Some(
@@ -224,7 +227,7 @@ pub fn read_preview_with_authorization(
                 .map_err(|error| format!("无法读取 UTF-8 文本文件 {}: {error}", file.display()))?,
         };
         (Some(text), None)
-    } else if kind == "unsupported" {
+    } else if matches!(kind, "officeLegacy" | "unsupported") {
         (None, None)
     } else {
         (
@@ -314,5 +317,23 @@ mod tests {
         assert_eq!(preview.kind, "docx");
         assert!(preview.content.is_none());
         assert_eq!(preview.data_base64.as_deref(), Some("UEsDBGRvY3VtZW50"));
+    }
+
+    #[test]
+    fn routes_legacy_office_and_wps_formats_to_native_conversion() {
+        for name in [
+            "report.doc",
+            "ledger.xls",
+            "briefing.ppt",
+            "draft.wps",
+            "accounts.et",
+            "slides.dps",
+        ] {
+            assert_eq!(
+                preview_format(Path::new(name)),
+                ("officeLegacy", "application/vnd.miniq.office-legacy"),
+                "unexpected preview format for {name}",
+            );
+        }
     }
 }

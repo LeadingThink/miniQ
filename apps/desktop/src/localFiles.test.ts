@@ -57,6 +57,9 @@ describe("local file preview types", () => {
   it("recognizes binary preview formats supported by the desktop shell", () => {
     expect(looksLikeFileReference("recording.m4a")).toBe(true);
     expect(looksLikeFileReference("report.xlsm")).toBe(true);
+    expect(looksLikeFileReference("draft.wps")).toBe(true);
+    expect(looksLikeFileReference("accounts.et")).toBe(true);
+    expect(looksLikeFileReference("slides.dps")).toBe(true);
   });
 });
 
