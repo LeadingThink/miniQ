@@ -98,24 +98,71 @@ function TemplateButtons({ empty, onCreate }: { empty: boolean; onCreate: (templ
 }
 
 function ScheduledTaskList(props: {
-  tasks: ScheduledTask[]; workspaces: Workspace[]; pending: boolean;
+  client: RpcClient; tasks: ScheduledTask[]; workspaces: Workspace[]; pending: boolean;
   latestRuns: Record<string, ScheduledTaskRun | undefined>;
   onOpenResult: (sessionId: string) => void;
   onRunNow: (task: ScheduledTask) => void; onToggle: (task: ScheduledTask) => void;
   onRemove: (task: ScheduledTask) => void; onEdit: (task: ScheduledTask) => void;
 }) {
-  return <div className="skill-list">{props.tasks.map((task) => <div key={task.id} className="skill-row" role="group" aria-label={task.name}>
-    <div className="skill-row-main">
-      <span className="tool-name">{task.name}</span>
-      <span className={`badge ${task.enabled ? "succeeded" : ""}`}>{task.enabled ? describeSchedule(task.schedule) : "已暂停"} · {task.mode === "heartbeat" ? "续接会话" : "新会话"}</span>
-      <div className="sub">{props.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? "已删除的项目"}{task.enabled && ` · 下次 ${localDateTime(task.nextRunAt)}`}{task.lastRunAt && ` · 上次运行 ${relativeAge(task.lastRunAt)}前`}{props.latestRuns[task.id] && ` · ${runStatusLabel(props.latestRuns[task.id]!.status)}`}</div>
+  return <div className="skill-list">{props.tasks.map((task) => <div key={task.id} className="schedule-task-item">
+    <div className="skill-row" role="group" aria-label={task.name}>
+      <div className="skill-row-main">
+        <span className="tool-name">{task.name}</span>
+        <span className={`badge ${task.enabled ? "succeeded" : ""}`}>{task.enabled ? describeSchedule(task.schedule) : "已暂停"} · {task.mode === "heartbeat" ? "续接会话" : "新会话"}</span>
+        <div className="sub">{props.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? "已删除的项目"}{task.enabled && ` · 下次 ${localDateTime(task.nextRunAt)}`}{task.lastRunAt && ` · 上次运行 ${relativeAge(task.lastRunAt)}前`}{props.latestRuns[task.id] && ` · ${runStatusLabel(props.latestRuns[task.id]!.status)}`}</div>
+      </div>
+      {task.lastSessionId && <button type="button" className="ghost" onClick={() => props.onOpenResult(task.lastSessionId!)}>查看结果</button>}
+      <button type="button" className="ghost" disabled={props.pending} onClick={() => props.onRunNow(task)}>立即运行</button>
+      <button type="button" className="ghost" disabled={props.pending} onClick={() => props.onEdit(task)}>编辑</button>
+      <button type="button" className="ghost" disabled={props.pending} onClick={() => props.onToggle(task)}>{task.enabled ? "暂停" : "启用"}</button>
+      <button type="button" className="ghost danger" disabled={props.pending} onClick={() => props.onRemove(task)}>删除</button>
     </div>
-    {task.lastSessionId && <button type="button" className="ghost" onClick={() => props.onOpenResult(task.lastSessionId!)}>查看结果</button>}
-    <button type="button" className="ghost" disabled={props.pending} onClick={() => props.onRunNow(task)}>立即运行</button>
-    <button type="button" className="ghost" disabled={props.pending} onClick={() => props.onEdit(task)}>编辑</button>
-    <button type="button" className="ghost" disabled={props.pending} onClick={() => props.onToggle(task)}>{task.enabled ? "暂停" : "启用"}</button>
-    <button type="button" className="ghost danger" disabled={props.pending} onClick={() => props.onRemove(task)}>删除</button>
+    <ScheduledTaskHistory client={props.client} taskId={task.id} onOpenSession={props.onOpenResult} />
   </div>)}</div>;
+}
+
+function ScheduledTaskHistory({ client, taskId, onOpenSession }: { client: RpcClient; taskId: string; onOpenSession: (sessionId: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [runs, setRuns] = useState<ScheduledTaskRun[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async (cursor?: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const page = await client.call<{ runs: ScheduledTaskRun[]; nextCursor: string | null }>("schedule.runs", { taskId, cursor: cursor ?? null, limit: 20 });
+      setRuns((current) => cursor ? [...current, ...page.runs] : page.runs);
+      setNextCursor(page.nextCursor);
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return <>
+    <button type="button" className="schedule-history-toggle ghost" aria-expanded={open} onClick={() => {
+      setOpen((current) => !current);
+      if (!open && runs.length === 0) void load();
+    }}>运行历史</button>
+    {open && <div className="schedule-history" aria-label="运行历史">
+      {loading && runs.length === 0 && <div role="status">正在读取运行历史</div>}
+      {error && <div className="settings-status" role="alert">{error}<button type="button" className="ghost" onClick={() => void load(nextCursor ?? undefined)}>重新加载</button></div>}
+      {!loading && !error && runs.length === 0 && <div className="schedule-history-empty">暂无运行记录</div>}
+      {runs.map((run) => <div className="schedule-run" key={run.id}>
+        <div className="schedule-run-main">
+          <span className={`badge ${run.status === "succeeded" ? "succeeded" : ""}`}>{runStatusLabel(run.status)}</span>
+          <span className="schedule-run-time">开始 {localDateTime(run.startedAt)}</span>
+          <span className="schedule-run-time">结束 {run.completedAt ? localDateTime(run.completedAt) : "未结束"}</span>
+          {run.reason && <span className="schedule-run-reason">原因：{run.reason}</span>}
+        </div>
+        {run.sessionId && <button type="button" className="ghost" onClick={() => onOpenSession(run.sessionId!)}>查看会话</button>}
+      </div>)}
+      {nextCursor && <button type="button" className="ghost schedule-history-more" disabled={loading} onClick={() => void load(nextCursor)}>{loading ? "正在加载" : "加载更早记录"}</button>}
+    </div>}
+  </>;
 }
 
 function runStatusLabel(status: ScheduledTaskRun["status"]): string {
@@ -149,7 +196,7 @@ export function SchedulePanel(props: SchedulePanelProps) {
     <div className="page-header"><div className="page-title">已安排</div><div className="page-sub">定时生成新结果，或持续跟进同一会话。任务记忆会在每次运行时提供给 agent。</div></div>
     {tasks.loading && <div role="status">正在读取定时任务</div>}
     {tasks.error && <div className="settings-status" role="alert">{tasks.error}<button type="button" className="ghost" disabled={tasks.loading} onClick={() => void tasks.refresh()}>重新加载</button></div>}
-    <ScheduledTaskList tasks={tasks.tasks} latestRuns={tasks.latestRuns} workspaces={props.workspaces} pending={saving || tasks.pending !== null}
+    <ScheduledTaskList client={props.client} tasks={tasks.tasks} latestRuns={tasks.latestRuns} workspaces={props.workspaces} pending={saving || tasks.pending !== null}
       onOpenResult={openResult} onRunNow={(task) => void runNow(task)} onToggle={(task) => void toggle(task)} onRemove={remove} onEdit={(task) => openEditor(task)} />
     {!editor && !tasks.loading && <TemplateButtons empty={tasks.tasks.length === 0} onCreate={(template) => openEditor(undefined, template)} />}
     {editor && <ScheduleForm key={editor.revision} client={props.client} workspaces={props.workspaces}
