@@ -2869,6 +2869,7 @@ dependencies = [
  "html2text",
  "ignore",
  "image",
+ "libc",
  "lopdf",
  "miniq-docs",
  "miniq-memory",
