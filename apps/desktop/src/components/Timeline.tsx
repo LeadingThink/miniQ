@@ -2,7 +2,6 @@ import { Spinner } from "./ui/Spinner";
 import {
   ArrowDown,
   ChevronUp,
-  LoaderCircle,
   RefreshCw,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -278,7 +277,7 @@ export function Timeline(props: TimelineProps) {
               onClick={loadOlder}
             >
               {loadingOlder ? (
-                <LoaderCircle size={14} className="activity-spinner" />
+                <Spinner size={14} />
               ) : (
                 <ChevronUp size={14} />
               )}

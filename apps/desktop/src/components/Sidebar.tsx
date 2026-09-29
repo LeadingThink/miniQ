@@ -13,6 +13,7 @@ import {
   PencilLine,
   Plus,
   Search,
+  SearchX,
   Settings,
   Trash2,
   X,
@@ -161,10 +162,14 @@ export function Sidebar(props: SidebarProps) {
           />
         )}
         {navigation.filtering && navigation.groups.length === 0 && archivedSessions.length === 0 && (
-          <div className="sidebar-filter-empty" role="status">
-            没有符合条件的会话
-            <button type="button" onClick={() => { setQuery(""); setFilter("all"); }}>清除筛选，查看全部</button>
-          </div>
+          <EmptyState
+            compact
+            live
+            className="sidebar-filter-empty"
+            icon={<SearchX size={20} />}
+            title="没有符合条件的会话"
+            action={<button type="button" className="ghost" onClick={() => { setQuery(""); setFilter("all"); }}>清除筛选，查看全部</button>}
+          />
         )}
         {archivedSessions.length > 0 && (
           <>
