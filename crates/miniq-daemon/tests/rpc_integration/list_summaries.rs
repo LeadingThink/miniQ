@@ -80,7 +80,6 @@ async fn settings_schema_returns_ordered_groups_and_defaults() {
         [
             "general",
             "appearance",
-            "models",
             "services",
             "computer",
             "skills",
@@ -90,7 +89,7 @@ async fn settings_schema_returns_ordered_groups_and_defaults() {
         ]
     );
     assert_eq!(
-        groups[3],
+        groups[2],
         json!({"id": "services", "label": "服务与远程", "icon": "server"})
     );
     assert_eq!(result["defaults"]["approvalMode"], "auto");

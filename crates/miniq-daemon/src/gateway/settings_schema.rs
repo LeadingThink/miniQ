@@ -2,10 +2,9 @@ use miniq_protocol::{ApprovalMode, RpcError};
 use serde_json::{json, Value};
 
 /// Settings navigation groups in display order: `(id, label, lucide icon)`.
-const GROUPS: [(&str, &str, &str); 9] = [
+const GROUPS: [(&str, &str, &str); 8] = [
     ("general", "通用", "settings"),
     ("appearance", "外观", "palette"),
-    ("models", "模型", "bot"),
     ("services", "服务与远程", "server"),
     ("computer", "电脑控制", "monitor"),
     ("skills", "技能", "sparkles"),
@@ -50,7 +49,6 @@ mod tests {
             [
                 "general",
                 "appearance",
-                "models",
                 "services",
                 "computer",
                 "skills",
@@ -59,7 +57,7 @@ mod tests {
                 "memory"
             ]
         );
-        assert_eq!(value["groups"][6]["label"], "MCP 连接");
+        assert_eq!(value["groups"][5]["label"], "MCP 连接");
         assert_eq!(value["groups"][0]["icon"], "settings");
         assert_eq!(value["defaults"]["approvalMode"], "auto");
         assert_eq!(value["defaults"]["theme"], "system");
