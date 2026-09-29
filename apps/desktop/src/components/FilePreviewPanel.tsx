@@ -1,4 +1,5 @@
 import type { OnMount } from "@monaco-editor/react";
+import { breadcrumb } from "../fileTreeModel";
 import {
   Code2,
   Eye,
@@ -279,7 +280,7 @@ function PreviewPanelContent({
         <div className="file-preview-location">
           <strong>{fileName(path) || "文件预览"}</strong>
           <details key={path} className="file-preview-path">
-            <summary title={path}><span className="file-path-summary">{path}</span><span className="file-path-hint">文件路径</span></summary>
+            <summary title={path}><span className="file-path-summary">{breadcrumb(path, workspacePaths.length ? workspacePaths : [workspacePath])}</span><span className="file-path-hint">文件路径</span></summary>
             <span>{path}</span>
           </details>
         </div>

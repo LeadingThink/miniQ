@@ -1,4 +1,5 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { WorkspaceFileTree } from "./WorkspaceFileTree";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import type { AppWorkbenchController } from "../hooks/useAppWorkbench";
 import { BrowserTabs } from "./BrowserTabs";
@@ -36,8 +37,56 @@ export function AppWorkbench({
   const [expandedScope, setExpandedScope] = useState<string | null>(null);
   const [layout, setLayout] = useState<"mobile" | "split" | "overlay">("split");
   const [reviewViews] = useState(() => new PreviewViewStore());
+  const [treeOpen, setTreeOpen] = useState(readTreePreference);
+  const treeFilter = useRef<HTMLInputElement>(null);
+  const focusTree = useRef(false);
   const expanded = expandedScope === workbench.scope;
   const active = workbench.active;
+  const sessionId = app.catalog.currentSessionId;
+  const showTree = active === "files" && !!sessionId && layout !== "mobile" && treeOpen;
+  const setTree = (open: boolean) => {
+    setTreeOpen(open);
+    try {
+      localStorage.setItem(TREE_KEY, open ? "1" : "0");
+    } catch {
+      /* storage unavailable */
+    }
+  };
+  // ⌘P / Ctrl+P: jump to the file tree filter, like a quick-open.
+  const quickOpen = useRef<() => void>(() => {});
+  quickOpen.current = () => {
+    if (!sessionId) return;
+    if (layout === "mobile") {
+      workbench.select("files");
+      return;
+    }
+    focusTree.current = true;
+    setTree(true);
+    if (active !== "files") workbench.select("files");
+    else treeFilter.current?.focus();
+  };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() !== "p" ||
+        event.shiftKey ||
+        event.altKey ||
+        !(MAC ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) ||
+        event.defaultPrevented
+      )
+        return;
+      event.preventDefault();
+      quickOpen.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  useEffect(() => {
+    if (showTree && focusTree.current) {
+      focusTree.current = false;
+      requestAnimationFrame(() => treeFilter.current?.focus());
+    }
+  });
   if (!active && !workbench.hasBrowsers) return null;
   const overlayOpen =
     app.navigation.showSettings ||
@@ -74,6 +123,11 @@ export function AppWorkbench({
           onExpand={() => setExpandedScope(expanded ? null : workbench.scope)}
           onClose={workbench.close}
           onSelect={workbench.select}
+          fileTree={
+            active === "files" && sessionId
+              ? { open: treeOpen, onToggle: () => setTree(!treeOpen) }
+              : undefined
+          }
         />
       )}
       <div
@@ -148,59 +202,6 @@ export function AppWorkbench({
             </div>
           </Suspense>
         )}
-        {active === "files" &&
-          app.preview.state.open &&
-          app.catalog.currentWorkspace && (
-            <Suspense fallback={<div role="status">正在加载预览…</div>}>
-              <FilePreviewPanel
-                key={app.catalog.currentSessionId}
-                viewStore={app.preview.views}
-                viewScope={app.preview.viewScope}
-                preview={app.preview.state}
-                tabs={app.preview.tabs}
-                onCloseTab={app.preview.closeTab}
-                onCloseOtherTabs={app.preview.closeOtherTabs}
-                onCloseAllTabs={app.preview.closeAllTabs}
-                onReopenClosedTab={app.preview.reopenClosedTab}
-                canReopenClosedTab={app.preview.canReopenClosedTab}
-                workspacePath={
-                  app.catalog.currentSession?.workingDirectory ??
-                  app.catalog.currentWorkspace.path
-                }
-                workspacePaths={app.catalog.currentWorkspacePaths}
-                authorizedFiles={app.preview.authorizedFiles}
-                onClose={workbench.close}
-                withinWorkbench
-                expanded={expanded}
-                onToggleExpanded={() =>
-                  setExpandedScope(expanded ? null : workbench.scope)
-                }
-                onDiscuss={
-                  app.catalog.currentSessionId
-                    ? (path, selected) =>
-                        discuss(
-                          `关于文件「${path}」：\n${
-                            selected
-                              ? `\n选中内容：\n${selected
-                                  .split("\n")
-                                  .map((line) => `> ${line}`)
-                                  .join("\n")}\n\n修改要求：`
-                              : ""
-                          }`,
-                        )
-                    : undefined
-                }
-                onOpenFile={workbench.openFile}
-                onAuthorizeFile={(target, chooseReplacement) =>
-                  void app.preview.authorizeFile(target, chooseReplacement)
-                }
-                onRetry={() => {
-                  if (app.preview.state.target)
-                    workbench.openFile(app.preview.state.target);
-                }}
-              />
-            </Suspense>
-          )}
         {active === "review" && (
           <ReviewPanel
             key={app.catalog.currentSessionId}
@@ -213,16 +214,110 @@ export function AppWorkbench({
             onClose={workbench.close}
           />
         )}
-        {(active === "overview" ||
-          (active === "files" && !app.preview.state.open)) && (
+        {active === "overview" && (
           <WorkbenchOverview
             key={`${workbench.scope}:${active}`}
             app={app}
             onOpenFile={workbench.openFile}
-            filesOnly={active === "files"}
           />
+        )}
+        {active === "files" && (
+          <div className={`workbench-files${showTree ? " with-tree" : ""}`}>
+            <div className="workbench-files-main">
+            {active === "files" &&
+              app.preview.state.open &&
+              app.catalog.currentWorkspace && (
+                <Suspense fallback={<div role="status">正在加载预览…</div>}>
+                  <FilePreviewPanel
+                    key={app.catalog.currentSessionId}
+                    viewStore={app.preview.views}
+                    viewScope={app.preview.viewScope}
+                    preview={app.preview.state}
+                    tabs={app.preview.tabs}
+                    onCloseTab={app.preview.closeTab}
+                    onCloseOtherTabs={app.preview.closeOtherTabs}
+                    onCloseAllTabs={app.preview.closeAllTabs}
+                    onReopenClosedTab={app.preview.reopenClosedTab}
+                    canReopenClosedTab={app.preview.canReopenClosedTab}
+                    workspacePath={
+                      app.catalog.currentSession?.workingDirectory ??
+                      app.catalog.currentWorkspace.path
+                    }
+                    workspacePaths={app.catalog.currentWorkspacePaths}
+                    authorizedFiles={app.preview.authorizedFiles}
+                    onClose={workbench.close}
+                    withinWorkbench
+                    expanded={expanded}
+                    onToggleExpanded={() =>
+                      setExpandedScope(expanded ? null : workbench.scope)
+                    }
+                    onDiscuss={
+                      app.catalog.currentSessionId
+                        ? (path, selected) =>
+                            discuss(
+                              `关于文件「${path}」：\n${
+                                selected
+                                  ? `\n选中内容：\n${selected
+                                      .split("\n")
+                                      .map((line) => `> ${line}`)
+                                      .join("\n")}\n\n修改要求：`
+                                  : ""
+                              }`,
+                            )
+                        : undefined
+                    }
+                    onOpenFile={workbench.openFile}
+                    onAuthorizeFile={(target, chooseReplacement) =>
+                      void app.preview.authorizeFile(target, chooseReplacement)
+                    }
+                    onRetry={() => {
+                      if (app.preview.state.target)
+                        workbench.openFile(app.preview.state.target);
+                    }}
+                  />
+                </Suspense>
+              )}
+              {!app.preview.state.open && (
+                <WorkbenchOverview
+                  key={`${workbench.scope}:${active}`}
+                  app={app}
+                  onOpenFile={workbench.openFile}
+                  filesOnly
+                  fileTreeVisible={showTree}
+                />
+              )}
+            </div>
+            {showTree && sessionId && (
+              <aside className="workbench-file-tree-pane" aria-label="项目文件">
+                <WorkspaceFileTree
+                  key={sessionId}
+                  access={{ client: app.client, sessionId }}
+                  activePath={
+                    app.preview.state.open
+                      ? (app.preview.state.resolvedPath ?? app.preview.state.target?.path)
+                      : null
+                  }
+                  filterRef={treeFilter}
+                  onOpen={(path) =>
+                    workbench.openFile({ path, line: null, column: null })
+                  }
+                />
+              </aside>
+            )}
+          </div>
         )}
       </div>
     </WorkbenchPanel>
   );
+}
+
+const MAC =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+const TREE_KEY = "miniq.workbench.fileTree";
+function readTreePreference(): boolean {
+  try {
+    return localStorage.getItem(TREE_KEY) !== "0";
+  } catch {
+    return true;
+  }
 }

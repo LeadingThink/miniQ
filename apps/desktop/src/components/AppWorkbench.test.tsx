@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import type {
@@ -24,6 +30,22 @@ vi.mock("./BrowserPanel", () => ({
 }));
 vi.mock("./WorkbenchOverview", () => ({
   WorkbenchOverview: () => <p>概览内容</p>,
+}));
+vi.mock("./WorkspaceFileTree", () => ({
+  WorkspaceFileTree: (props: {
+    filterRef?: { current: HTMLInputElement | null };
+    onOpen: (path: string) => void;
+  }) => (
+    <div>
+      <input
+        aria-label="树筛选"
+        ref={(node) => {
+          if (props.filterRef) props.filterRef.current = node;
+        }}
+      />
+      <button onClick={() => props.onOpen("/project/src/a.ts")}>a.ts</button>
+    </div>
+  ),
 }));
 vi.mock("./FilePreviewPanel", () => ({
   FilePreviewPanel: (props: {
@@ -56,6 +78,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -89,6 +112,7 @@ function setup(active: WorkbenchView = "browser") {
     browserSessions: { session: browserState },
     close: vi.fn(),
     select: vi.fn(),
+    openFile: vi.fn(),
     newBrowserTab: vi.fn(),
     selectBrowserTab: vi.fn(),
     closeBrowserTab: vi.fn(),
@@ -175,4 +199,27 @@ it("keeps local project file previews available before creating a session", () =
   expect(
     (screen.getByRole("tab", { name: "审阅" }) as HTMLButtonElement).disabled,
   ).toBe(true);
+});
+
+
+it("shows a toggleable project file tree next to previews and focuses it with Cmd+P", async () => {
+  const props = setup("files");
+  const view = render(layout(props));
+  const toggle = await screen.findByRole("button", { name: "隐藏文件树" });
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(screen.getByText("a.ts"));
+  expect(props.workbench.openFile).toHaveBeenCalledWith({
+    path: "/project/src/a.ts",
+    line: null,
+    column: null,
+  });
+  fireEvent.click(toggle);
+  expect(screen.queryByLabelText("树筛选")).toBeNull();
+  expect(localStorage.getItem("miniq.workbench.fileTree")).toBe("0");
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+  fireEvent.keyDown(window, { key: "p", metaKey: mac, ctrlKey: !mac });
+  const filter = await screen.findByLabelText("树筛选");
+  await waitFor(() => expect(document.activeElement).toBe(filter));
+  expect(localStorage.getItem("miniq.workbench.fileTree")).toBe("1");
+  view.unmount();
 });

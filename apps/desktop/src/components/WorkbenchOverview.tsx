@@ -10,10 +10,12 @@ export function WorkbenchOverview({
   app,
   onOpenFile,
   filesOnly = false,
+  fileTreeVisible = false,
 }: {
   app: MiniqAppController;
   onOpenFile: (target: LocalFileTarget) => void;
   filesOnly?: boolean;
+  fileTreeVisible?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [browse, setBrowse] = useState(false);
@@ -82,7 +84,10 @@ export function WorkbenchOverview({
       {app.feed.nextCursor && (
         <p>此处列出已加载的交付记录；更早的记录会随会话历史一起加载。</p>
       )}
-      {app.catalog.currentSessionId && (
+      {fileTreeVisible && (
+        <p className="workbench-tree-tip">从右侧文件树打开项目文件，按 ⌘P 可快速筛选。</p>
+      )}
+      {app.catalog.currentSessionId && !fileTreeVisible && (
         <>
           <button
             type="button"

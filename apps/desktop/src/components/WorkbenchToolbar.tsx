@@ -6,6 +6,8 @@ import {
   LayoutList,
   Maximize2,
   Minimize2,
+  PanelRightClose,
+  PanelRightOpen,
   X,
 } from "lucide-react";
 import { useId } from "react";
@@ -25,6 +27,7 @@ export function WorkbenchToolbar(props: {
   onSelect: (view: WorkbenchView) => void;
   onExpand: () => void;
   onClose: () => void;
+  fileTree?: { open: boolean; onToggle: () => void };
 }) {
   const id = useId();
   const sections = [
@@ -99,6 +102,16 @@ export function WorkbenchToolbar(props: {
           </button>
         ))}
       </div>
+      {!props.mobile && props.fileTree && <button
+        type="button"
+        className="icon-button"
+        title={props.fileTree.open ? "隐藏文件树" : "显示文件树（⌘P 筛选文件）"}
+        aria-label={props.fileTree.open ? "隐藏文件树" : "显示文件树"}
+        aria-pressed={props.fileTree.open}
+        onClick={props.fileTree.onToggle}
+      >
+        {props.fileTree.open ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+      </button>}
       {!props.mobile && <button
         type="button"
         className="icon-button"

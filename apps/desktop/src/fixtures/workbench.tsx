@@ -2,13 +2,40 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { WorkbenchPanel } from "../components/WorkbenchPanel";
 import { FilePreviewPanel } from "../components/FilePreviewPanel";
+import { WorkspaceFileTree } from "../components/WorkspaceFileTree";
 import { pdfFixtureBase64 } from "./pdf";
+import "../components/WorkbenchToolbar.css";
 import "../styles/base.css";
 import "../styles/themes.css";
 import "../styles/conversation.css";
 import "../styles/review.css";
 import "../styles/remote.css";
 import "../styles/experience.css";
+
+const TREE: Record<string, [string, boolean][]> = {
+  "/fixture": [
+    ["docs", true], ["src", true], [".miniq", true], ["report.md", false],
+    ["preview.html", false], ["document.pdf", false],
+    ["2026-08-01至2026-08-31收支记录汇总.xlsx", false],
+    ["download_mindshow_themes.py", false], ["微信图片20260801183245.png", false],
+    ["archive.zip", false], ["rewrite.log", false],
+  ],
+  "/fixture/docs": [["guide.md", false], ["api", true]],
+  "/fixture/src": [["main.rs", false], ["lib10.rs", false], ["lib2.rs", false]],
+};
+const treeClient = {
+  mode: "local",
+  call: async (_method: string, params: { path: string }) => {
+    const path = params.path || "/fixture";
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    return {
+      path, parent: null, roots: ["/fixture"], nextCursor: null,
+      entries: (TREE[path] ?? []).map(([name, directory]) => ({
+        name, path: `${path}/${name}`, directory, size: 1024,
+      })),
+    };
+  },
+} as never;
 
 function Fixture() {
   const [collapsed, setCollapsed] = useState(false);
@@ -53,12 +80,15 @@ function Fixture() {
       </main>
       {open && (
         <WorkbenchPanel>
+          <div className="workbench-content">
+          <div className="workbench-files with-tree">
+          <div className="workbench-files-main">
           <FilePreviewPanel
             workspacePath="/fixture"
             workspacePaths={["/fixture"]}
             preview={{
-              target: { path: file, line: null, column: null },
-              resolvedPath: file,
+              target: { path: `/fixture/${file}`, line: null, column: null },
+              resolvedPath: `/fixture/${file}`,
               open: true,
               loading: false,
               error: null,
@@ -76,6 +106,19 @@ function Fixture() {
             onOpenFile={() => {}}
             onRetry={() => {}}
           />
+          </div>
+          <aside className="workbench-file-tree-pane" aria-label="项目文件">
+            <WorkspaceFileTree
+              access={{ client: treeClient, sessionId: "fixture" }}
+              activePath={`/fixture/${file}`}
+              onOpen={(path) => {
+                setFile(path.replace("/fixture/", ""));
+                setOpen(true);
+              }}
+            />
+          </aside>
+          </div>
+          </div>
         </WorkbenchPanel>
       )}
     </div>
