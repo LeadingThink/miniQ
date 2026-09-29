@@ -5,6 +5,7 @@ mod listing;
 mod monitor;
 mod onboarding;
 mod output;
+mod repl;
 mod schema;
 mod selection;
 mod sessions;
