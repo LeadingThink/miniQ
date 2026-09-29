@@ -90,7 +90,7 @@ export function usePreviewValue<T>(
 export function usePreviewScroll<T extends HTMLElement>(
   key: string,
   ready = true,
-  providedRef?: RefObject<T>,
+  providedRef?: RefObject<T | null>,
 ) {
   const values = usePreviewCache();
   const localRef = useRef<T>(null);

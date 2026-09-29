@@ -3,7 +3,7 @@ import { usePreviewValue } from "../previewViewState";
 import { usePreviewWidth } from "./usePreviewWidth";
 
 export function useOfficeLayout(
-  ref: RefObject<HTMLDivElement>,
+  ref: RefObject<HTMLDivElement | null>,
   ready: boolean,
   kind: "docx" | "pptx",
 ) {

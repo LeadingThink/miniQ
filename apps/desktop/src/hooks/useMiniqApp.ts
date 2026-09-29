@@ -40,7 +40,7 @@ async function pickDirectory(): Promise<string | null> {
 
 function useRpcClient(): RpcClient {
   const desktop = useDesktopHost();
-  const clientRef = useRef<RpcClient>();
+  const clientRef = useRef<RpcClient>(undefined);
   const lifecycle = useRef(0);
   if (!clientRef.current) clientRef.current = desktop ? desktop.clientFor(desktop.host) : new RpcClient();
   useEffect(() => {

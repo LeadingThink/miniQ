@@ -24,7 +24,7 @@ export function MobileModelPicker({ catalog, disabled }: { catalog: Catalog; dis
   </div>;
 }
 
-function ModelDialog({ catalog, id, trigger, onClose }: { catalog: Catalog; id: string; trigger: RefObject<HTMLButtonElement>; onClose: () => void }) {
+function ModelDialog({ catalog, id, trigger, onClose }: { catalog: Catalog; id: string; trigger: RefObject<HTMLButtonElement | null>; onClose: () => void }) {
   const [search, setSearch] = useState("");
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);

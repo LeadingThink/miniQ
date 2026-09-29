@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState, type RefObject } from "react";
 
-export function usePreviewWidth(ref: RefObject<HTMLElement>) {
+export function usePreviewWidth(ref: RefObject<HTMLElement | null>) {
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
     const element = ref.current;

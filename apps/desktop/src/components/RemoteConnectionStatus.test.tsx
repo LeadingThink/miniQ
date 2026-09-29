@@ -8,7 +8,8 @@ const host = vi.hoisted(() => ({ pending: false, host: "build", error: null as s
   registry: { hosts: [{ hostId: "build", label: "构建服务器", state: "connected" }, { hostId: "other", label: "另一台电脑", state: "disconnected" }] },
   catalogs: { '"build"': { label: "构建服务器" } },
 }));
-vi.mock("../desktopHost", () => ({ useDesktopHost: () => host }));
+// Production returns a fresh memoized snapshot per change; mirror that so the compiled component sees mutations.
+vi.mock("../desktopHost", () => ({ useDesktopHost: () => ({ ...host }) }));
 beforeEach(() => {
   host.host = "build"; host.pending = false; host.error = null; host.selectHost.mockReset();
   vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);

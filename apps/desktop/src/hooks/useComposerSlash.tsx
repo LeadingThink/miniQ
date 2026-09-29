@@ -24,7 +24,7 @@ export function useComposerSlash(props: {
   workspaceId?: string;
   client?: RpcClient;
   commands?: ComposerSlashCommand[];
-  inputRef: RefObject<HTMLTextAreaElement>;
+  inputRef: RefObject<HTMLTextAreaElement | null>;
   setDraft: (value: string) => void;
   onPick: (command: ComposerSlashCommand) => Promise<void>;
 }) {

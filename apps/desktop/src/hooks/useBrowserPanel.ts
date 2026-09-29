@@ -30,7 +30,7 @@ import { useOpenDialog } from "./useOpenDialog";
 
 export function useBrowserPanel(
   url: string,
-  surface: RefObject<HTMLDivElement>,
+  surface: RefObject<HTMLDivElement | null>,
   requestedSuspension = false,
   requestedViewId?: string,
   requestedBrowserSessionId?: string,

@@ -10,8 +10,8 @@ export function usePdfPage(props: {
   zoom: number;
   fitWidth: number;
   rotation: number;
-  canvas: RefObject<HTMLCanvasElement>;
-  textLayer: RefObject<HTMLDivElement>;
+  canvas: RefObject<HTMLCanvasElement | null>;
+  textLayer: RefObject<HTMLDivElement | null>;
   onError: (message: string) => void;
   /** Reports the unscaled, rotated page size so a continuous layout can converge. */
   onMeasure?: (page: number, size: { width: number; height: number }) => void;

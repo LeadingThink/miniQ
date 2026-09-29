@@ -7,7 +7,11 @@ import { viteStaticCopy } from "vite-plugin-static-copy";
 export default defineConfig({
   base: "./",
   plugins: [
-    react(),
+    react({
+      babel: {
+        plugins: ["babel-plugin-react-compiler"],
+      },
+    }),
     viteStaticCopy({
       targets: ["cmaps", "standard_fonts", "wasm"].map((name) => ({
         src: `node_modules/pdfjs-dist/${name}/*`,
