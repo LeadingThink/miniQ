@@ -66,7 +66,8 @@ pub fn command_spec(id: &str) -> Option<(&'static str, Option<&'static str>)> {
         "settings" => ("设置…", Some("CmdOrCtrl+,")),
         "toggleSidebar" => ("切换侧边栏", Some("CmdOrCtrl+B")),
         "palette" => ("命令面板", Some("CmdOrCtrl+K")),
-        "find" => ("查找", Some("CmdOrCtrl+F")),
+        // No accelerator: ⌘F stays with the webview so Monaco and the session search both keep it.
+        "find" => ("查找", None),
         "showShortcuts" => ("显示键盘快捷键", Some("CmdOrCtrl+/")),
         "back" => ("返回", Some("CmdOrCtrl+[")),
         "forward" => ("前进", Some("CmdOrCtrl+]")),
