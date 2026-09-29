@@ -263,8 +263,19 @@ function reduceDaemonEvent(
         ? state
         : { ...state, artifacts: [...state.artifacts, event.artifact] };
     case "turn_completed":
-    case "turn_failed":
-      return { ...state, streamingText: "", turnProgress: null };
+    case "turn_failed": {
+      const latest = state.latestTurnTiming;
+      if (!event.summary || !latest) return { ...state, streamingText: "", turnProgress: null };
+      const timing = { ...latest.timing, summary: event.summary };
+      return {
+        ...state,
+        streamingText: "",
+        turnProgress: null,
+        latestTurnTiming: { messageId: latest.messageId, timing },
+        messages: state.messages.map((message) => message.id === latest.messageId
+          ? { ...message, turnTiming: { ...(message.turnTiming ?? latest.timing), summary: event.summary } } : message),
+      };
+    }
     case "session_goal_changed":
       return { ...state, goal: event.goal };
     case "queue_changed":

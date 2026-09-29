@@ -144,3 +144,17 @@ describe("Md code blocks", () => {
     expect(html).not.toContain('class="code-block"');
   });
 });
+
+describe("Md tables", () => {
+  it("wraps tables in a horizontal scroller and marks index columns", () => {
+    const html = render("| 序号 | 名称 |\n| --- | --- |\n| 1 | 甲 |\n| 12 | 乙 |");
+    expect(html).toMatch(/<div class="md-table-wrap" tabindex="0"><table class="md-table-indexed">/);
+  });
+
+  it("detects numeric first columns without an index header", () => {
+    expect(render("| a | b |\n| - | - |\n| 1. | x |\n| (2) | y |")).toContain("md-table-indexed");
+    const plain = render("| 模块 | 说明 |\n| - | - |\n| core | x |");
+    expect(plain).toContain("md-table-wrap");
+    expect(plain).not.toContain("md-table-indexed");
+  });
+});

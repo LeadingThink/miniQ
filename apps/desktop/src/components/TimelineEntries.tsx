@@ -19,6 +19,11 @@ import { showConversationTimestamp } from "../time";
 import { timelineGroupKey, timelineTurnEnds, timelineTurnPlanEnds } from "../timelineTiming";
 import { TurnTimingSummary } from "./TurnTimingSummary";
 import { useSessionFileAccess } from "../sessionFileAccess";
+import { groupTimelineTurns, turnSegments, type TurnSegment } from "../timelineTurns";
+import { ExecutionFold } from "./ExecutionFold";
+
+/** Above this many turns, older turns skip layout/paint while offscreen. */
+export const LIGHT_TURN_THRESHOLD = 40;
 
 export function findGoalMessageId(
   messages: Message[],
@@ -192,8 +197,16 @@ export function TimelineEntries(props: {
   // Streaming tokens only change the live tail. Keeping the history subtree's
   // element identity stable lets React skip every completed message on each
   // token instead of re-rendering the whole conversation.
-  const history = useMemo(() => (
-props.items.map((item, index) => <Fragment key={timelineGroupKey(item)}>
+  const turns = useMemo(() => groupTimelineTurns(props.items, props.latestTurnTiming),
+    [props.items, props.latestTurnTiming]);
+  // Approvals and questions always render below history; open the latest turn's
+  // execution so the step that asked is visible next to them.
+  const pendingAttention = props.approvals.length > 0 || props.questions.length > 0;
+  const history = useMemo(() => {
+    const indexByKey = new Map(props.items.map((item, index) => [timelineGroupKey(item), index]));
+    const renderGroup = (item: TimelineGroup) => {
+      const index = indexByKey.get(timelineGroupKey(item)) ?? 0;
+      return <Fragment key={timelineGroupKey(item)}>
         {item.kind === "message" && showConversationTimestamp(item.at, props.items[index - 1]?.at)
           && <ConversationTimeSeparator at={item.at} />}
         {
@@ -397,19 +410,52 @@ props.items.map((item, index) => <Fragment key={timelineGroupKey(item)}>
             />
           </div>
         )}
-        {(() => {
-          const turnPlan = turnPlanEnds.get(timelineGroupKey(item));
-          return turnPlan && turnPlan.anchorMessageId !== runningAnchor
-            ? <TurnPlanSummary plan={turnPlan.tasks} />
-            : null;
-        })()}
-        {turnEnds.has(timelineGroupKey(item)) && <TurnTimingSummary timing={turnEnds.get(timelineGroupKey(item))!} />}
-      </Fragment>)
-  ), [
+      </Fragment>;
+    };
+    const lastTurn = turns.at(-1);
+    return turns.map((turn, turnIndex) => {
+      const endKey = timelineGroupKey(turn.groups[turn.groups.length - 1]);
+      const turnPlan = turnPlanEnds.get(endKey);
+      const planNode = turnPlan && turnPlan.anchorMessageId !== runningAnchor
+        ? <TurnPlanSummary plan={turnPlan.tasks} /> : null;
+      const timing = turnEnds.get(endKey);
+      const timingNode = timing ? <TurnTimingSummary timing={timing} /> : null;
+      const segments: TurnSegment[] = props.expandGroups
+        ? turn.groups.map((group) => ({ kind: "group", group }))
+        : turnSegments(turn);
+      const hasFold = segments.some((segment) => segment.kind === "execution");
+      const isLast = turn === lastTurn;
+      const light = turns.length > LIGHT_TURN_THRESHOLD && turns.length - turnIndex > 2;
+      return (
+        <div
+          key={turn.key}
+          className={`timeline-turn${light ? " is-light" : ""}`}
+          data-turn-key={turn.key}
+        >
+          {segments.map((segment) => segment.kind === "group" ? renderGroup(segment.group) : (
+            <div key={segment.key} data-history-anchor={segment.key}>
+              <ExecutionFold
+                calls={segment.calls}
+                timing={turn.timing}
+                active={isLast && props.busy}
+                attention={isLast && pendingAttention}
+              >
+                {segment.groups.map(renderGroup)}
+                {planNode}
+                {timingNode}
+              </ExecutionFold>
+            </div>
+          ))}
+          {!hasFold && planNode}
+          {!hasFold && timingNode}
+        </div>
+      );
+    });
+  }, [
     props.items, props.busy, props.workspacePath, props.workspacePaths,
     props.expandGroups, props.client, editingMessageId, draft, saving,
     forkingMessageId, goalMessageId, turnEnds, turnPlanEnds, runningAnchor,
-    hasFork, canSpeak, bridge,
+    hasFork, canSpeak, bridge, turns, pendingAttention,
   ]);
 
   return (

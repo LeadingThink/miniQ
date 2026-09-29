@@ -291,6 +291,7 @@ export function Md(props: {
               onOpenFile={hasFileHandler ? handlers.openFile : undefined}
             />
           ),
+          table: MarkdownTable,
           pre: props.previewAssets ? DiagramMarkdownPre : MarkdownCodeBlock,
           ...(ImageRenderer ? { img: ImageRenderer } : {}),
         }}
@@ -317,4 +318,45 @@ export function Md(props: {
     ],
   );
   return <div className="md">{rendered}</div>;
+}
+
+type HastNode = { type: string; tagName?: string; value?: string; children?: HastNode[] };
+
+function hastText(node: HastNode | undefined): string {
+  if (!node) return "";
+  if (node.type === "text") return node.value ?? "";
+  return (node.children ?? []).map(hastText).join("");
+}
+
+function hastRows(node: HastNode | undefined): HastNode[] {
+  if (!node) return [];
+  if (node.tagName === "tr") return [node];
+  return (node.children ?? []).flatMap(hastRows);
+}
+
+const INDEX_HEADER = /^(#|序号|编号|序|排名|步骤|no\.?|id|idx|index|rank)$/i;
+const INDEX_CELL = /^[#(（]?\d{1,4}[.)）、]?$/;
+
+/** True when the first column holds row numbers (序号, #, 1/2/3…) so it can
+ * stay on one line instead of wrapping digit by digit in narrow tables. */
+export function tableHasIndexColumn(node: HastNode | undefined): boolean {
+  const rows = hastRows(node);
+  const firstCells = rows.map((row) =>
+    hastText((row.children ?? []).find((child) => child.tagName === "th" || child.tagName === "td")).trim());
+  if (firstCells.length === 0) return false;
+  const [header, ...body] = firstCells;
+  if (INDEX_HEADER.test(header)) return true;
+  const filled = body.filter(Boolean);
+  return filled.length > 0 && filled.every((cell) => INDEX_CELL.test(cell));
+}
+
+/** GFM tables scroll horizontally inside their own wrapper instead of
+ * squeezing columns or widening the whole message. */
+function MarkdownTable({ node, className, ...rest }: ComponentPropsWithoutRef<"table"> & { node?: unknown }) {
+  const indexed = tableHasIndexColumn(node as HastNode | undefined);
+  return (
+    <div className="md-table-wrap" tabIndex={0}>
+      <table {...rest} className={[className, indexed ? "md-table-indexed" : ""].filter(Boolean).join(" ") || undefined} />
+    </div>
+  );
 }

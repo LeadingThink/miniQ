@@ -50,6 +50,7 @@ it("does not insert or send an IME candidate confirmation", () => {
 it("exposes remote file attachment in the phone browser and persists the full Windows path", async () => {
   const client = { mode: "remote", call: vi.fn().mockResolvedValue({ skills: [] }) } as unknown as RpcClient;
   const { onSend } = setup({ client });
+  fireEvent.click(screen.getByRole("button", { name: "更多输入方式" }));
   fireEvent.click(screen.getByRole("button", { name: "附加远程文件" }));
   const dialog = screen.getByRole("dialog", { name: "附加远程文件" });
   fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "C:\\文档\\需要审核的完整报告.pdf" } });
