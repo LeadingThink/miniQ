@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, CircleAlert, Focus, Layers } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useContext, useEffect, useId, useState } from "react";
+import { InsideExecutionFold } from "./ExecutionFold";
 import type { ToolCall } from "../types";
 import { toolCounts } from "../timelineModel";
 import { ToolStep } from "./ExecutionActivity";
@@ -17,6 +18,7 @@ export function ToolGroup({
   expanded?: boolean;
   client?: RpcClient;
 }) {
+  const bare = useContext(InsideExecutionFold);
   const counts = toolCounts(calls);
   const liveAttention = calls.some(
     (call) => (!call.payloadDeferred || call.live) && (call.status === "failed" || call.status === "waiting_approval"),
@@ -29,7 +31,8 @@ export function ToolGroup({
   const runningIndex = calls.findIndex((call) => ["running", "waiting_approval", "pending"].includes(call.status));
   const initialFocusIndex = runningIndex >= 0 ? runningIndex : lastAutomationIndex;
   const pageSize = 30;
-  const [open, setOpen] = useState(expanded || liveAttention || automationSummary !== null);
+  const [openState, setOpen] = useState(expanded || liveAttention || automationSummary !== null);
+  const open = bare || openState;
   const [page, setPage] = useState(() => Math.max(0, Math.floor(initialFocusIndex / pageSize)));
   const regionId = useId();
   const pageCount = Math.max(1, Math.ceil(calls.length / pageSize));
@@ -53,8 +56,8 @@ export function ToolGroup({
     );
   }
   return (
-    <section className={`tool-group ${counts.attention ? "needs-attention" : ""}`}>
-      <button
+    <section className={`tool-group${counts.attention ? " needs-attention" : ""}${bare ? " is-bare" : ""}`}>
+      {!bare && <button
         className="tool-group-toggle"
         type="button"
         aria-expanded={open}
@@ -68,10 +71,10 @@ export function ToolGroup({
         {counts.running > 0 && <span className="group-running">{counts.running} 执行中</span>}
         {counts.failed > 0 && <span className="group-failed">{counts.failed} 未成功</span>}
         <ChevronRight size={14} className={open ? "open" : ""} />
-      </button>
+      </button>}
       {open && (
         <div className="tool-group-body" id={regionId} role="region" aria-label="执行步骤详情">
-          <div className="tool-group-jumps">
+          {(!bare || pageCount > 1) && <div className="tool-group-jumps">
             <span>
               {currentPage * pageSize + 1}-{Math.min((currentPage + 1) * pageSize, calls.length)} / {calls.length}
             </span>
@@ -97,7 +100,7 @@ export function ToolGroup({
                 <CircleAlert size={14} />
               </button>
             )}
-          </div>
+          </div>}
           {calls.slice(currentPage * pageSize, (currentPage + 1) * pageSize).map((call, index) => (
             <ToolStep
               key={call.id}

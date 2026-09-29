@@ -1,8 +1,12 @@
 import { ChevronRight, CircleAlert, Layers, LoaderCircle } from "lucide-react";
-import { useId, useState, type ReactNode } from "react";
+import { createContext, useId, useState, type ReactNode } from "react";
 import type { ToolCall, TurnTiming } from "../types";
 import { compactDuration, executionSummary } from "../timelineTurns";
 import { toolActionLabel, toolInputSummary } from "./ExecutionActivity";
+
+/** True for content rendered inside an ExecutionFold, whose header already
+ * summarises the steps; nested groups skip their own header. */
+export const InsideExecutionFold = createContext(false);
 
 function liveStep(calls: ToolCall[]): string | null {
   const call = [...calls].reverse().find((candidate) =>
@@ -66,7 +70,7 @@ export function ExecutionFold({
       </button>
       {open && (
         <div className="execution-fold-body" id={regionId} role="region" aria-label="本轮执行详情">
-          {children}
+          <InsideExecutionFold.Provider value={true}>{children}</InsideExecutionFold.Provider>
         </div>
       )}
     </section>
