@@ -17,7 +17,7 @@ export function CopyButton({
   disabled?: boolean;
 }) {
   const [state, setState] = useState<"idle" | "copied" | "error">("idle");
-  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;

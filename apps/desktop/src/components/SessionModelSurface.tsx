@@ -5,7 +5,7 @@ import "./SessionModelSurface.css";
 /** Share the same model form; phones put it in the native modal top layer. */
 export function SessionModelSurface(props: {
   mobile: boolean;
-  trigger: RefObject<HTMLButtonElement>;
+  trigger: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
   children: ReactNode;
 }) {

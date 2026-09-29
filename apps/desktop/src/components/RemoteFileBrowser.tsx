@@ -37,7 +37,7 @@ export function RemoteFileBrowser({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [failedCursor, setFailedCursor] = useState<string>();
-  const request = useRef<AbortController>();
+  const request = useRef<AbortController>(undefined);
 
   const load = useCallback(
     async (after?: string) => {
