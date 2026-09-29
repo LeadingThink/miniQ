@@ -387,6 +387,15 @@
   gap: 11px;
 }
 
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text);
+  font-size: var(--font-body);
+}
+
 .remote-access-toggle {
   min-height: 52px;
   display: grid !important;

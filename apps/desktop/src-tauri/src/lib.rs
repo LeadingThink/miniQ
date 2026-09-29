@@ -2,6 +2,7 @@
 //! All agent logic lives in the separate `miniq-daemon` process; the UI talks
 //! to it over WebSocket. The shell only hands the connection info to the UI.
 
+mod app_menu;
 mod browser;
 mod daemon;
 mod daemon_process;
@@ -309,6 +310,10 @@ pub fn run() {
         ])
         .setup(|app| {
             setup_tray(app.handle())?;
+            // A broken menu must not keep the app from starting.
+            if let Err(error) = app_menu::setup_app_menu(app.handle()) {
+                eprintln!("[miniq] could not install app menu: {error}");
+            }
             setup_global_shortcut(app.handle());
             Ok(())
         })
@@ -340,7 +345,7 @@ pub fn run() {
 }
 
 /// Restore the existing window so its session and child webviews stay intact.
-fn show_main_window(app: &tauri::AppHandle) {
+pub(crate) fn show_main_window(app: &tauri::AppHandle) {
     use tauri::Manager;
 
     let Some(window) = app.get_webview_window("main") else {
@@ -412,8 +417,8 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
     use tauri::tray::TrayIconBuilder;
 
-    let show = MenuItemBuilder::with_id("show", "Show miniQ").build(app)?;
-    let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+    let show = MenuItemBuilder::with_id("show", "显示 miniQ").build(app)?;
+    let quit = MenuItemBuilder::with_id("quit", "退出 miniQ").build(app)?;
     let menu = MenuBuilder::new(app)
         .item(&show)
         .separator()
@@ -436,7 +441,7 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-fn request_quit(app: &tauri::AppHandle) {
+pub(crate) fn request_quit(app: &tauri::AppHandle) {
     use tauri::Manager;
 
     if QUIT_REQUESTED.swap(true, std::sync::atomic::Ordering::SeqCst) {

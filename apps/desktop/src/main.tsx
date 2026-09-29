@@ -25,10 +25,12 @@ import { initializeAppearance } from "./theme";
 import { initializeMobileRuntime } from "./mobileRuntime";
 import { initializeMobileViewport } from "./mobileViewport";
 import { initializeWindowChrome } from "./windowChrome";
+import { initializeNativeMenuBridge } from "./nativeMenuBridge";
 
 initializeAppearance();
 initializeWindowChrome();
 initializeMobileViewport();
+initializeNativeMenuBridge();
 void initializeMobileRuntime();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

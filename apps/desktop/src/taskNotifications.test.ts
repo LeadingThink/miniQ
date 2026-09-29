@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  getAttentionNotificationPrefs,
   getTaskNotificationMode,
+  notifyAttention,
+  setAttentionNotificationPref,
   isAppInBackground,
   notifyTaskResult,
   requestTaskNotificationPermission,
@@ -187,5 +190,67 @@ describe("explicit notification controls", () => {
     expect(await sendTaskNotificationTest()).toBe(true);
     expect(plugin.sendNotification).toHaveBeenCalledTimes(1);
     expect(isWindowFocused).not.toHaveBeenCalled();
+  });
+});
+
+describe("attention notifications", () => {
+  it("defaults both reminders on and persists each toggle independently", () => {
+    expect(getAttentionNotificationPrefs()).toEqual({ approval: true, question: true });
+    setAttentionNotificationPref("approval", false);
+    expect(getAttentionNotificationPrefs()).toEqual({ approval: false, question: true });
+    setAttentionNotificationPref("question", false);
+    setAttentionNotificationPref("approval", true);
+    expect(getAttentionNotificationPrefs()).toEqual({ approval: true, question: false });
+    expect(getAttentionNotificationPrefs()).toBe(getAttentionNotificationPrefs());
+  });
+
+  it("falls back to defaults for corrupt stored values", () => {
+    localStorage.setItem("miniq.attentionNotifications.v1", "{not json");
+    expect(getAttentionNotificationPrefs()).toEqual({ approval: true, question: true });
+    localStorage.setItem("miniq.attentionNotifications.v1", JSON.stringify({ approval: "no" }));
+    expect(getAttentionNotificationPrefs()).toEqual({ approval: true, question: true });
+  });
+
+  it("titles approval and question reminders with the session name", async () => {
+    expect(await notifyAttention("approval", "修复构建", "运行 npm install")).toBe(true);
+    expect(web).toHaveBeenLastCalledWith("需要你审批：修复构建", { body: "运行 npm install" });
+    expect(await notifyAttention("question", "", "  ")).toBe(true);
+    expect(web).toHaveBeenLastCalledWith("需要你回答：当前会话", { body: "助手在等待你的回答，请返回 miniQ 处理。" });
+  });
+
+  it("respects each toggle and window focus", async () => {
+    setAttentionNotificationPref("approval", false);
+    expect(await notifyAttention("approval", "a", "b")).toBe(false);
+    expect(await notifyAttention("question", "a", "b")).toBe(true);
+    vi.mocked(document.hasFocus).mockReturnValue(true);
+    expect(await notifyAttention("question", "a", "b")).toBe(false);
+    expect(web).toHaveBeenCalledTimes(1);
+  });
+
+  it("is independent of the task notification mode and never requests permission", async () => {
+    setTaskNotificationMode("off");
+    web.permission = "default";
+    expect(await notifyAttention("approval", "a", "b")).toBe(false);
+    expect(web.requestPermission).not.toHaveBeenCalled();
+    web.permission = "granted";
+    expect(await notifyAttention("approval", "a", "b")).toBe(true);
+  });
+
+  it("runs the click handler for web notifications", async () => {
+    const onClick = vi.fn();
+    vi.spyOn(window, "focus").mockImplementation(() => undefined);
+    await notifyAttention("approval", "a", "b", onClick);
+    const instance = web.mock.instances[0] as unknown as { onclick: () => void; close: () => void };
+    instance.close = vi.fn();
+    instance.onclick();
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(instance.close).toHaveBeenCalled();
+  });
+
+  it("delivers natively on desktop", async () => {
+    platform.native = true;
+    expect(await notifyAttention("question", "会话", "问题")).toBe(true);
+    expect(plugin.sendNotification).toHaveBeenCalledWith({ title: "需要你回答：会话", body: "问题" });
+    expect(web).not.toHaveBeenCalled();
   });
 });

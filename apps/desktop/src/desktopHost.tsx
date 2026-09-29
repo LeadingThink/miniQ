@@ -10,6 +10,7 @@ import { PreviewViewStore } from "./previewViewState";
 import type { FilePreviewCache } from "./hooks/useFilePreview";
 import { hasLocalRunningTasks, useKeepAwake } from "./keepAwake";
 import { useTaskNotifications } from "./hooks/useTaskNotifications";
+import { useAttentionNotifications } from "./hooks/useAttentionNotifications";
 
 type Destination = Omit<HostDestination, "revision">;
 type DesktopHost = ReturnType<typeof useHostState>;
@@ -87,6 +88,7 @@ function useHostState(suppliedRoot?: RpcClient) {
     } catch (cause) { if (generation === switching.current) setError(errorMessage(cause)); }
     finally { if (generation === switching.current) setPending(false); }
   }, [root, clientFor, catalogs.refreshCatalog, catalogs.refreshHosts]);
+  useAttentionNotifications(root, catalogs.catalogs, (target, navigation) => { void selectHost(target, navigation); });
   const saveHost = useCallback(async (hostId: string) => {
     if (root.mode !== "local") throw new Error("请在桌面端添加 SSH 电脑");
     if (!validSshTarget(hostId)) throw new Error("请输入有效的 SSH 主机地址");
