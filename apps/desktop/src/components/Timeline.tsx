@@ -40,6 +40,7 @@ import { ConversationNavigationRail } from "./ConversationNavigationRail";
 import { useConversationScroll } from "../hooks/useConversationScroll";
 import { TimelineEntries } from "./TimelineEntries";
 import { TimelineToolbar } from "./TimelineToolbar";
+import { TimelineQuote } from "./TimelineQuote";
 import { AgentStatusIndicator, type AgentSummary } from "./AgentSummary";
 
 export interface TimelineProps {
@@ -245,6 +246,7 @@ export function Timeline(props: TimelineProps) {
       {showShare && props.client && props.sessionId && <SessionShareDialog client={props.client} sessionId={props.sessionId} title={props.title ?? "miniQ 会话"} artifacts={props.artifacts} onClose={() => setShowShare(false)} />}
       <div className="timeline-shell">
         <ConversationNavigationRail messages={navigationMessages} scrollRef={scrollRef} />
+        <TimelineQuote scrollRef={scrollRef} />
         <div className="timeline" ref={scrollRef} onScroll={onScroll}>
           <div ref={historyTopRef} className="history-top-sentinel" aria-hidden="true" />
         {(props.loading || (historySearch.loading && !historySearch.page)) && (

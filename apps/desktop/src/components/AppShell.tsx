@@ -232,6 +232,8 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
         draftRequest={draftRequest}
         onDraftRequestApplied={onDraftRequestApplied}
         client={app.client}
+        sessionId={app.catalog.currentSessionId!}
+        messages={app.feed.messages}
         permissionSlot={
           <SessionPermissionControls
             client={app.client}
