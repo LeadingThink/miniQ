@@ -398,9 +398,11 @@ describe("Timeline execution flow", () => {
       turnPlans: [{ anchorMessageId: "user-1", tasks: [{ content: "验证结果", status: "completed" }] }],
     });
 
-    expect(html.indexOf("检查这个项目")).toBeLessThan(html.indexOf("运行了命令"));
-    expect(html.indexOf("运行了命令")).toBeLessThan(html.indexOf("检查完成"));
-    expect(html.indexOf("检查完成")).toBeLessThan(html.indexOf("共 1 个任务，已完成 1 个"));
+    // Execution details collapse into a single per-turn summary row between
+    // the request and the reply; step and plan details live inside the fold.
+    expect(html.indexOf("检查这个项目")).toBeLessThan(html.indexOf("已执行 1 步"));
+    expect(html.indexOf("已执行 1 步")).toBeLessThan(html.indexOf("检查完成"));
+    expect(html).not.toContain("运行了命令");
     expect(html).not.toContain("task_update");
   });
 

@@ -201,6 +201,17 @@ export interface TurnTiming {
   completedAt?: string;
   elapsedMs?: number;
   status: "running" | "completed" | "failed" | "cancelled" | "interrupted";
+  /** Client-side only: merged from the `summary` carried by turn_completed /
+   * turn_failed events (the daemon never sends it inside TurnTiming). */
+  summary?: TurnSummary;
+}
+
+export interface TurnSummary {
+  toolCalls: number;
+  failedToolCalls: number;
+  filesChanged: number;
+  durationMs?: number;
+  status: "completed" | "failed" | "cancelled";
 }
 
 export interface AnchoredTurnTiming {
@@ -505,8 +516,8 @@ export type DaemonEvent = {
       answer: string;
     }
   | { type: "artifact_created"; sessionId: string; artifact: Artifact }
-  | { type: "turn_completed"; sessionId: string }
-  | { type: "turn_failed"; sessionId: string; error: string }
+  | { type: "turn_completed"; sessionId: string; summary?: TurnSummary }
+  | { type: "turn_failed"; sessionId: string; error: string; summary?: TurnSummary }
   | { type: "session_deleted"; sessionId: string }
   | { type: "workspace_deleted"; workspaceId: string }
   | { type: "session_renamed"; sessionId: string; title: string }

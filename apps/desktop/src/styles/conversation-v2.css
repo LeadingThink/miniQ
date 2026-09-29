@@ -1,0 +1,325 @@
+/* Conversation v2: per-turn execution folds, minimal composer, turn
+   virtualization and reading typography. Loaded from base.css, i.e. before
+   conversation.css, so overrides are scoped (`.main …`) to win on specificity
+   rather than source order. Tokens only; no literal colors. */
+
+/* ============ Reading column ============ */
+/* Reading column: ~760px; :root covers fixtures rendered outside .main. */
+:root,
+body .main {
+  /* Comfortable measure for CJK + Latin prose (~40 CJK chars per line). */
+  --conversation-content-width: 760px;
+}
+
+/* ============ Turns ============ */
+.timeline-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* Long sessions: turns far from the reader skip layout/paint until they
+   approach the viewport. `auto` remembers the last rendered size, which keeps
+   scroll anchoring and the navigation rail stable once a turn has been seen. */
+.timeline-turn.is-light {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 480px;
+}
+
+/* ============ Execution fold ============ */
+.execution-fold {
+  align-self: stretch;
+  min-width: 0;
+}
+
+.execution-fold .execution-fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  min-height: 30px;
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-mid);
+  font: inherit;
+  font-size: var(--font-footnote);
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.execution-fold .execution-fold-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.execution-fold-toggle:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.execution-fold.is-open > .execution-fold-toggle {
+  border-color: var(--border);
+  background: var(--bg-subtle);
+}
+
+.execution-fold-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-dim);
+}
+
+.execution-fold.is-running .execution-fold-icon { color: var(--blue); }
+.execution-fold.is-failed .execution-fold-icon,
+.execution-fold.is-failed .execution-fold-label { color: var(--danger); }
+
+.execution-fold-icon .spin {
+  animation: spin 900ms linear infinite;
+}
+
+.execution-fold-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.execution-fold-tag {
+  flex: none;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-mid);
+  font-size: var(--font-caption);
+  line-height: 18px;
+}
+
+.execution-fold-chevron {
+  flex: none;
+  color: var(--text-dim);
+  transition: transform var(--duration) var(--ease-out);
+}
+
+.execution-fold.is-open .execution-fold-chevron {
+  transform: rotate(90deg);
+}
+
+.execution-fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0 var(--space-3);
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--border);
+  animation: execution-fold-in var(--duration) var(--ease-out);
+}
+
+@keyframes execution-fold-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ============ Minimal composer ============ */
+.main .composer-card,
+.hero .composer-card {
+  border-radius: var(--radius-lg);
+  padding: var(--space-1) var(--space-2) var(--space-2);
+}
+
+.main .composer-card textarea,
+.hero .composer-card textarea {
+  padding: var(--space-3) var(--space-3) var(--space-2);
+}
+
+.composer-plus {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+/* Scoped under .composer-row so the global `button` rule in base.css
+   (loaded later, same specificity) cannot restore its padding/radius. */
+.composer-row .composer-plus-trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-weight: 400;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-mid);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    transform var(--duration) var(--ease-spring);
+}
+
+.composer-row .composer-plus-trigger:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.composer-row .composer-plus-trigger.open {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+.composer-row .composer-plus-trigger.open svg {
+  transform: rotate(45deg);
+}
+
+.composer-plus-trigger svg {
+  transition: transform var(--duration) var(--ease-spring);
+}
+
+.composer-plus-trigger:focus-visible,
+.composer-plus-item:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.composer-plus-panel {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  animation: composer-plus-in var(--duration-fast) var(--ease-out);
+}
+
+.composer-plus-panel[hidden] { display: none; }
+
+@keyframes composer-plus-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.composer-plus-panel .composer-plus-item,
+.composer-plus-panel .composer-plus-voice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-plus-panel .composer-plus-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.composer-plus-panel .composer-plus-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.composer-plus-panel .composer-plus-item svg {
+  flex: none;
+  color: var(--text-mid);
+}
+
+.composer-plus-panel .composer-goal-btn.active,
+.composer-plus-panel .composer-goal-btn.active svg {
+  color: var(--blue);
+}
+
+.composer-plus-panel .composer-plus-voice {
+  padding: 0;
+  cursor: default;
+  color: var(--text-mid);
+}
+
+.composer-plus-panel .composer-plus-voice .voice-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ============ Markdown reading rhythm ============ */
+.timeline-inner .md {
+  line-height: 1.6;
+}
+
+.timeline-inner .md p { margin: var(--space-2) 0; }
+.timeline-inner .md :is(ul, ol) { margin: var(--space-2) 0; }
+.timeline-inner .md li { margin: var(--space-1) 0; }
+.timeline-inner .md li > :is(ul, ol) { margin: var(--space-1) 0; }
+
+/* ============ Markdown tables ============ */
+.md .md-table-wrap {
+  max-width: 100%;
+  margin: var(--space-3) 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overscroll-behavior-x: contain;
+}
+
+.md .md-table-wrap:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.md .md-table-wrap > table {
+  width: 100%;
+  margin: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.md .md-table-wrap :is(th, td) {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-2) var(--space-3);
+  vertical-align: top;
+}
+
+.md .md-table-wrap :is(th, td) + :is(th, td) {
+  border-left: 1px solid var(--border);
+}
+
+.md .md-table-wrap tr:last-child > td {
+  border-bottom: 0;
+}
+
+/* CJK headers break between words, never mid-word ("序号" never becomes
+   "序/号"); long cells still wrap normally. */
+.md .md-table-wrap th {
+  word-break: keep-all;
+  overflow-wrap: normal;
+  text-align: left;
+}
+
+.md table.md-table-indexed :is(th, td):first-child {
+  min-width: 3em;
+  white-space: nowrap;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-mid);
+}

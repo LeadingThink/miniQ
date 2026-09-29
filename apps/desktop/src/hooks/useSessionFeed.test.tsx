@@ -88,6 +88,20 @@ it("keeps total timing across phase changes and completed history while isolatin
   expect(hook.result.current.latestTurnTiming).toBeNull();
 });
 
+it("merges an optional turn_completed summary into the turn timing", () => {
+  const hook = setup();
+  act(() => hook.result.current.load("a", snapshot));
+  const finished = { startedAt: "2026-09-20T00:00:00Z", status: "completed" as const, completedAt: "2026-09-20T00:01:00Z" };
+  hook.emit({ type: "turn_timing_changed", sessionId: "a", messageId: "m-a", timing: finished });
+  const summary = { toolCalls: 12, failedToolCalls: 1, filesChanged: 2, durationMs: 60_000, status: "completed" as const };
+  hook.emit({ type: "turn_completed", sessionId: "a", summary });
+  expect(hook.result.current.latestTurnTiming?.timing).toEqual({ ...finished, summary });
+  expect(hook.result.current.messages[0].turnTiming).toEqual({ ...finished, summary });
+  const failed = { toolCalls: 3, failedToolCalls: 2, filesChanged: 0, status: "failed" as const };
+  hook.emit({ type: "turn_failed", sessionId: "a", error: "boom", summary: failed });
+  expect(hook.result.current.latestTurnTiming?.timing.summary).toEqual(failed);
+});
+
 it("uses daemon tool timestamps when events are received or replayed much later", () => {
   const hook = setup();
   act(() => hook.result.current.load("a", snapshot));

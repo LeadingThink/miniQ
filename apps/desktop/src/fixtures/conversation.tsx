@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { applyTheme } from "../theme";
 import { Timeline } from "../components/Timeline";
 import type { Message } from "../types";
 import type { RpcClient } from "../rpc";
@@ -106,4 +107,6 @@ function Fixture() {
   );
 }
 
+// Headless --force-dark-mode screenshots: follow the system scheme.
+if (new URLSearchParams(location.search).has("dark") || window.matchMedia?.("(prefers-color-scheme: dark)").matches) applyTheme("night");
 if (import.meta.env.DEV) createRoot(document.getElementById("root")!).render(<Fixture />);

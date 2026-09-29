@@ -1,4 +1,5 @@
 @import "./tokens.css";
+@import "./conversation-v2.css";
 @import "../components/ui/ui.css";
 @import "./polish.css";
 /* Self-hosted MiSans VF subset: 常用字 6500 + ASCII + CJK punctuation (2.4MB),

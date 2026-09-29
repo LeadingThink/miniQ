@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import type { ComponentProps, ReactNode } from "react";
-import { ArrowUp, LoaderCircle, Paperclip, Square, Target } from "lucide-react";
+import { ArrowUp, LoaderCircle, Paperclip, Plus, Slash, Square, Target } from "lucide-react";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import {
   canSendComposer,
@@ -102,6 +102,30 @@ export function ComposerCard(props: {
   const voiceDraftRef = useRef("");
   const [voicePreview, setVoicePreview] = useState<VoicePreview | null>(null);
   const voiceCapabilities = useVoiceCapabilities(props.client);
+  // Secondary inputs live behind "+". The panel stays mounted so an active
+  // voice recording keeps its state, and it is forced open while voice is live.
+  const [plusOpen, setPlusOpen] = useState(false);
+  const plusRef = useRef<HTMLDivElement>(null);
+  const plusButtonRef = useRef<HTMLButtonElement>(null);
+  const plusPanelId = useId();
+  const plusVisible = plusOpen || voicePreview !== null;
+  useEffect(() => {
+    if (!plusOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!plusRef.current?.contains(event.target as Node)) setPlusOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setPlusOpen(false);
+      plusButtonRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [plusOpen]);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
@@ -403,33 +427,96 @@ export function ComposerCard(props: {
         />
       </div>
       <div className="composer-row">
-        {props.modelSlot}
+        <div className="composer-plus" ref={plusRef}>
+          <button
+            ref={plusButtonRef}
+            type="button"
+            className={`composer-plus-trigger${plusVisible ? " open" : ""}`}
+            aria-label="更多输入方式"
+            title="附件、目标、命令与语音"
+            aria-haspopup="true"
+            aria-expanded={plusVisible}
+            aria-controls={plusPanelId}
+            onClick={() => setPlusOpen((open) => !open)}
+          >
+            <Plus size={16} aria-hidden="true" />
+          </button>
+          <div
+            id={plusPanelId}
+            className="composer-plus-panel"
+            role="group"
+            aria-label="更多输入方式"
+            hidden={!plusVisible}
+          >
+            {canAttach && (
+              <button
+                type="button"
+                className="composer-plus-item"
+                title={remoteHost ? "附加远程文件" : "附加文件(也可直接拖入窗口)"}
+                aria-label={remoteHost ? "附加远程文件" : "附加文件"}
+                disabled={sending || slash.pending}
+                onClick={() => {
+                  setPlusOpen(false);
+                  void pickFiles();
+                }}
+              >
+                <Paperclip size={15} aria-hidden="true" />
+                <span>{remoteHost ? "附加远程文件" : "附加文件"}</span>
+              </button>
+            )}
+            {props.allowGoal && (
+              <button
+                type="button"
+                className={`composer-plus-item composer-goal-btn${goalMode ? " active" : ""}`}
+                aria-pressed={goalMode}
+                onClick={() => {
+                  setGoalMode((active) => !active);
+                  setPlusOpen(false);
+                  requestAnimationFrame(() => textareaRef.current?.focus());
+                }}
+                title={goalMode ? "取消设为目标" : "将下一条消息设为目标"}
+              >
+                <Target size={15} aria-hidden="true" />
+                <span>目标</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="composer-plus-item"
+              title="命令与技能"
+              disabled={sending || slash.pending}
+              onClick={() => {
+                setPlusOpen(false);
+                const next = draft.startsWith("/") ? draft : `/${draft}`;
+                setDraft(next);
+                requestAnimationFrame(() => {
+                  textareaRef.current?.focus();
+                  textareaRef.current?.setSelectionRange(1, 1);
+                });
+              }}
+            >
+              <Slash size={15} aria-hidden="true" />
+              <span>命令与技能</span>
+            </button>
+            {props.client && voiceCapabilities.capabilities.transcribe && (
+              <div className="composer-plus-voice">
+                <VoiceInput
+                  key={props.draftKey}
+                  client={props.client}
+                  transcribeModel={voiceCapabilities.capabilities.transcribeModel ?? undefined}
+                  disabled={sending || slash.pending}
+                  onStart={rememberVoiceInsertion}
+                  onTranscribed={applyTranscription}
+                  onPreview={setVoicePreview}
+                  onError={props.onError}
+                />
+                {voicePreview === null && <span aria-hidden="true">语音输入</span>}
+              </div>
+            )}
+          </div>
+        </div>
         {props.chipSlot}
         {props.chip && <span className="chip">🗂 {props.chip}</span>}
-        {canAttach && (
-          <button
-            type="button"
-            className="attach-btn"
-            title={remoteHost ? "附加远程文件" : "附加文件(也可直接拖入窗口)"}
-            aria-label={remoteHost ? "附加远程文件" : "附加文件"}
-            disabled={sending || slash.pending}
-            onClick={() => void pickFiles()}
-          >
-            <Paperclip size={15} />
-          </button>
-        )}
-        {props.client && voiceCapabilities.capabilities.transcribe && (
-          <VoiceInput
-            key={props.draftKey}
-            client={props.client}
-            transcribeModel={voiceCapabilities.capabilities.transcribeModel ?? undefined}
-            disabled={sending || slash.pending}
-            onStart={rememberVoiceInsertion}
-            onTranscribed={applyTranscription}
-            onPreview={setVoicePreview}
-            onError={props.onError}
-          />
-        )}
         {props.approvalMode && props.onApprovalModeChange && (
           <ApprovalModeSelect
             mode={props.approvalMode}
@@ -437,21 +524,7 @@ export function ComposerCard(props: {
           />
         )}
         {props.permissionSlot}
-        {props.allowGoal && (
-          <button
-            type="button"
-            className={`composer-goal-btn${goalMode ? " active" : ""}`}
-            aria-pressed={goalMode}
-            onClick={() => {
-              setGoalMode((active) => !active);
-              requestAnimationFrame(() => textareaRef.current?.focus());
-            }}
-            title={goalMode ? "取消设为目标" : "将下一条消息设为目标"}
-          >
-            <Target size={14} aria-hidden="true" />
-            <span>目标</span>
-          </button>
-        )}
+        {props.modelSlot}
         <div className="composer-submit">
           <div className="composer-submit-buttons">
             <p id={keyboardHintId} className="composer-keyboard-hint">
