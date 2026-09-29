@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DOMAIN = "https://oss.zaiwen.top"
 MANIFEST_KEY = "releases/manifest.json"
 SIGNING_CERT_SHA256 = "05D22724D2AD383290390BC1DBFB25E53940DD8FE2C45FABC065D2F0D600220C"
+# Voice input depends on the WebView being allowed to capture audio.
+REQUIRED_PERMISSIONS = ("android.permission.RECORD_AUDIO", "android.permission.MODIFY_AUDIO_SETTINGS")
 
 
 def version_for_tag(tag: str) -> str:
@@ -76,6 +78,9 @@ def verify_apk(apk: Path, tag: str, tools: Path) -> None:
         raise ValueError("APK identity/version/debuggable verification failed")
     if re.search(r"^native-code:", badging, re.M):
         raise ValueError("universal WebView APK must not contain ABI-specific native libraries")
+    missing = [name for name in REQUIRED_PERMISSIONS if f"uses-permission: name='{name}'" not in badging]
+    if missing:
+        raise ValueError(f"APK is missing required permissions: {', '.join(missing)}")
 
 
 def mirror_url(version: str) -> str:
