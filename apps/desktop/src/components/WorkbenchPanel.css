@@ -67,11 +67,11 @@
     position: fixed;
     margin: 0;
     z-index: 60;
-    --workbench-top: max(6px, env(safe-area-inset-top));
-    --workbench-bottom: max(6px, env(safe-area-inset-bottom));
+    --workbench-top: max(6px, var(--safe-top));
+    --workbench-bottom: max(6px, var(--safe-bottom));
     inset: calc(var(--app-offset-top, 0px) + var(--workbench-top))
-      max(6px, env(safe-area-inset-right)) auto
-      max(6px, env(safe-area-inset-left));
+      max(6px, var(--safe-right)) auto
+      max(6px, var(--safe-left));
     width: auto !important;
     height: calc(
       var(--app-height, 100dvh) - var(--workbench-top) - var(--workbench-bottom)

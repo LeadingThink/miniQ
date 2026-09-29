@@ -18,10 +18,10 @@
 @media (max-width: 720px), (pointer: coarse) {
   .remote-path-dialog {
     position: fixed;
-    inset: calc(var(--app-offset-top, 0px) + max(12px, env(safe-area-inset-top))) 0 auto;
+    inset: calc(var(--app-offset-top, 0px) + max(12px, var(--safe-top))) 0 auto;
     margin: 0 auto;
     width: min(620px, calc(100vw - 24px));
-    max-height: calc(var(--app-height, 100dvh) - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom)));
+    max-height: calc(var(--app-height, 100dvh) - max(12px, var(--safe-top)) - max(12px, var(--safe-bottom)));
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 14px;

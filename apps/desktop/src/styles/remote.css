@@ -15,8 +15,8 @@
   height: 100%;
   overflow-y: auto;
   overscroll-behavior-y: contain;
-  padding: max(22px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
-    max(22px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  padding: max(22px, var(--safe-top)) max(18px, var(--safe-right))
+    max(22px, var(--safe-bottom)) max(18px, var(--safe-left));
 }
 
 .mobile-entry-brand {
@@ -309,7 +309,7 @@
   grid-template-columns: 44px minmax(0, 1fr) minmax(124px, 42%);
   align-items: center;
   gap: 10px;
-  padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+  padding: max(8px, var(--safe-top)) max(12px, var(--safe-right)) 8px max(12px, var(--safe-left));
   background: var(--glass);
   backdrop-filter: var(--glass-blur);
   border-bottom: 1px solid var(--border);
@@ -335,7 +335,7 @@
   max-width: 760px;
   min-height: 0;
   margin: 0 auto;
-  padding: 18px max(14px, env(safe-area-inset-right)) 28px max(14px, env(safe-area-inset-left));
+  padding: 18px max(14px, var(--safe-right)) 28px max(14px, var(--safe-left));
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -410,13 +410,13 @@
 
 .mobile-chat-composer {
   position: relative;
-  width: min(calc(100% - max(10px, env(safe-area-inset-left)) - max(10px, env(safe-area-inset-right))), 760px);
+  width: min(calc(100% - max(10px, var(--safe-left)) - max(10px, var(--safe-right))), 760px);
   min-height: 58px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 44px 44px;
   align-items: end;
   gap: 8px;
-  margin: 0 auto max(10px, env(safe-area-inset-bottom));
+  margin: 0 auto max(10px, var(--safe-bottom));
   padding: 7px;
   background: var(--bg);
   border: 1px solid var(--border-strong);
@@ -514,8 +514,8 @@
 @media (max-width: 520px) {
   .mobile-entry {
     justify-content: flex-start;
-    padding-left: max(12px, env(safe-area-inset-left));
-    padding-right: max(12px, env(safe-area-inset-right));
+    padding-left: max(12px, var(--safe-left));
+    padding-right: max(12px, var(--safe-right));
   }
 
   .mobile-entry-sheet {
@@ -547,9 +547,9 @@
     height: var(--app-height, 100dvh);
     z-index: 51;
     width: min(86vw, 320px) !important;
-    padding-top: max(14px, env(safe-area-inset-top));
-    padding-bottom: max(10px, env(safe-area-inset-bottom));
-    padding-left: max(10px, env(safe-area-inset-left));
+    padding-top: max(14px, var(--safe-top));
+    padding-bottom: max(10px, var(--safe-bottom));
+    padding-left: max(10px, var(--safe-left));
     box-shadow: var(--shadow-lg);
   }
 
@@ -582,7 +582,7 @@
 
   .statusbar {
     min-height: 50px;
-    padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 7px max(12px, env(safe-area-inset-left));
+    padding: max(8px, var(--safe-top)) max(12px, var(--safe-right)) 7px max(12px, var(--safe-left));
   }
 
   .statusbar .review-toggle,
@@ -594,7 +594,7 @@
   }
 
   .timeline {
-    padding: 10px max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left));
+    padding: 10px max(12px, var(--safe-right)) 10px max(12px, var(--safe-left));
   }
 
   .bubble,
@@ -603,7 +603,7 @@
   }
 
   .composer-outer {
-    padding: 8px max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    padding: 8px max(10px, var(--safe-right)) max(10px, var(--safe-bottom)) max(10px, var(--safe-left));
   }
 
   .hero {
@@ -628,7 +628,7 @@
     top: var(--app-offset-top, 0px);
     bottom: auto;
     height: var(--app-height, 100dvh);
-    padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    padding: max(8px, var(--safe-top)) max(8px, var(--safe-right)) max(8px, var(--safe-bottom)) max(8px, var(--safe-left));
   }
 
   .card-grid {

@@ -1,10 +1,10 @@
 .session-model-dialog {
   position: fixed;
-  inset: calc(var(--app-offset-top, 0px) + max(12px, env(safe-area-inset-top))) 0 auto;
+  inset: calc(var(--app-offset-top, 0px) + max(12px, var(--safe-top))) 0 auto;
   margin: 0 auto;
-  width: min(460px, calc(100vw - max(12px, env(safe-area-inset-left)) - max(12px, env(safe-area-inset-right))));
+  width: min(460px, calc(100vw - max(12px, var(--safe-left)) - max(12px, var(--safe-right))));
   max-width: none;
-  max-height: calc(var(--app-height, 100dvh) - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom)));
+  max-height: calc(var(--app-height, 100dvh) - max(12px, var(--safe-top)) - max(12px, var(--safe-bottom)));
   padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: 16px;

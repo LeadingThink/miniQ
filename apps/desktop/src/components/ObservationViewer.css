@@ -6,5 +6,5 @@
 .observation-viewer > header :is(button,a) { display: grid; place-items: center; min-width: 44px; min-height: 44px; color: inherit; background: transparent; }
 .observation-viewer .media-inspector { flex: 1; min-height: 0; }
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
-  .observation-viewer { width: 100%; max-width: 100%; height: var(--app-height, 100dvh); border: 0; border-radius: 0; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  .observation-viewer { width: 100%; max-width: 100%; height: var(--app-height, 100dvh); border: 0; border-radius: 0; padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left); }
 }

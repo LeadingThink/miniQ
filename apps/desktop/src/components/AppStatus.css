@@ -85,7 +85,7 @@
 @media (max-width: 360px) {
   .app .statusbar {
     gap: 4px;
-    padding-left: max(8px, env(safe-area-inset-left));
-    padding-right: max(8px, env(safe-area-inset-right));
+    padding-left: max(8px, var(--safe-left));
+    padding-right: max(8px, var(--safe-right));
   }
 }
