@@ -15,12 +15,40 @@ export function shouldShowComposerSend(
   return !busy || canSendComposer(draft, attachments);
 }
 
+/** Mention of `@` file references kept short for the placeholder. */
+export const COMPOSER_PLACEHOLDER = "随心输入，/ 使用命令与技能，@ 引用文件";
+
 export function handleComposerKeyDown(
   event: KeyboardEvent<HTMLTextAreaElement>,
   onDraftChange: (value: string) => void,
   onSend: () => void,
-  options: { enterSends: boolean } = { enterSends: true },
+  options: {
+    enterSends: boolean;
+    /** Returns this session's last user message for ↑ in an empty input. */
+    recallLast?: () => string | undefined;
+  } = { enterSends: true },
 ): void {
+  if (
+    event.key === "ArrowUp" &&
+    options.recallLast &&
+    !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey &&
+    !event.nativeEvent.isComposing &&
+    event.nativeEvent.keyCode !== 229 &&
+    !event.currentTarget.readOnly &&
+    !event.currentTarget.disabled &&
+    event.currentTarget.value === ""
+  ) {
+    const recalled = options.recallLast();
+    if (!recalled) return;
+    event.preventDefault();
+    const textarea = event.currentTarget;
+    onDraftChange(recalled);
+    requestAnimationFrame(() => {
+      if (textarea.isConnected && textarea.value === recalled)
+        textarea.setSelectionRange(recalled.length, recalled.length);
+    });
+    return;
+  }
   if (
     event.key !== "Enter" ||
     event.nativeEvent.isComposing ||
