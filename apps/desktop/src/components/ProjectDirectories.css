@@ -9,7 +9,7 @@
   color: var(--text);
   box-shadow: var(--shadow-lg);
 }
-.project-directories::backdrop { background: rgba(0, 0, 0, 0.35); }
+.project-directories::backdrop { background: var(--scrim); }
 .project-directories header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .project-directories h2 { margin: 0 0 6px; font-size: var(--font-headline); }
 .project-directories header span { color: var(--text-mid); overflow-wrap: anywhere; }

@@ -33,7 +33,7 @@
 .workbench-toolbar [role="tab"][aria-selected="true"] {
   background: var(--bg);
   color: var(--text);
-  box-shadow: 0 1px 4px #00000012;
+  box-shadow: var(--shadow-sm);
 }
 .workbench-toolbar [role="tab"]:disabled {
   opacity: 0.4;

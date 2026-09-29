@@ -27,7 +27,7 @@
   height: 0;
 }
 .pdf-text-layer ::selection {
-  background: rgb(35 121 220 / 30%);
+  background: color-mix(in srgb, var(--blue) 30%, transparent);
 }
 .pdf-text-layer[data-main-rotation="90"] {
   transform: rotate(90deg) translateY(-100%);
@@ -43,7 +43,7 @@
   gap: 12px;
   max-width: 320px;
   margin: 24px auto;
-  color: #222;
+  color: var(--paper-fg);
 }
 .pdf-password label {
   display: grid;

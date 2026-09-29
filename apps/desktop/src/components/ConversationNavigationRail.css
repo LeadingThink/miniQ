@@ -8,8 +8,7 @@
   max-height: calc(100% - 24px);
   transform: translateY(-50%);
   opacity: 0.42;
-  transition: opacity 180ms ease;
-  --rail-easing: cubic-bezier(0.2, 0.8, 0.2, 1.08);
+  transition: opacity var(--duration) var(--ease-standard);
 }
 
 .timeline-shell:hover .conversation-navigation-rail,
@@ -54,7 +53,7 @@
   background: var(--border-strong);
   transform-origin: left center;
   transform: scaleX(calc(0.25 + var(--rail-proximity, 0) * 0.75));
-  transition: transform 180ms var(--rail-easing), background 160ms ease;
+  transition: transform var(--duration) var(--ease-spring), background var(--duration) var(--ease-standard);
 }
 
 .conversation-navigation-marker:hover::before,
@@ -97,7 +96,7 @@
   box-shadow: var(--shadow);
   font-size: var(--font-body);
   line-height: 1.6;
-  animation: conversation-preview-enter 160ms ease-out;
+  animation: conversation-preview-enter var(--duration) var(--ease-out);
 }
 
 @keyframes conversation-preview-enter {
@@ -111,15 +110,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .conversation-navigation-rail,
-  .conversation-navigation-marker::before {
-    transition: none;
-  }
-  .conversation-navigation-preview {
-    animation: none;
-  }
-}
 .conversation-navigation-time {
   display: block;
   margin-bottom: 6px;

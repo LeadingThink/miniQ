@@ -102,7 +102,7 @@
 .external-provider-segments button.active {
   color: var(--text);
   background: var(--bg);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-sm);
 }
 
 .external-import-controls {
@@ -188,6 +188,8 @@
   accent-color: var(--accent);
 }
 
+/* Token exception: third-party provider brand marks keep their fixed brand
+   colors (white glyph on brand fill) in every theme. */
 .external-provider-mark,
 .session-source {
   flex: none;
@@ -319,7 +321,7 @@
   height: 36px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--bg);
   color: var(--text);
   padding: 0 10px;
 }

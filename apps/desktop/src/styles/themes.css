@@ -39,6 +39,10 @@
   --shadow: 0 1px 2px rgb(0 0 0 / 20%), 0 8px 24px rgb(0 0 0 / 18%);
   --shadow-sheet: 0 1px 2px rgb(0 0 0 / 22%), 0 16px 42px rgb(0 0 0 / 24%);
   --shadow-lg: 0 2px 5px rgb(0 0 0 / 24%), 0 28px 72px rgb(0 0 0 / 42%);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 30%);
+  --shadow-popover: 0 8px 24px rgb(0 0 0 / 40%);
+  --shadow-page: 0 8px 28px rgb(0 0 0 / 45%);
+  --shadow-knob: 0 1px 2px rgb(0 0 0 / 40%);
 }
 
 ::selection {

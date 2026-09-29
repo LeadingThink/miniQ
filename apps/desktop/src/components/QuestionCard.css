@@ -135,7 +135,6 @@
 .question-submit { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; border-radius: var(--radius-sm); }
 .question-spinner { animation: question-spin 1s linear infinite; }
 @keyframes question-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .question-spinner { animation: none; } }
 @media (max-width: 720px), (pointer: coarse) {
   .question-card { padding: 12px; }
   /* One page scroll keeps long prompts and choices readable on a phone. */

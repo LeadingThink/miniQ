@@ -14,7 +14,7 @@
   flex-direction: column;
 }
 .model-diagnostics::backdrop {
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--scrim);
 }
 .model-diagnostics > header,
 .model-diagnostics > footer {

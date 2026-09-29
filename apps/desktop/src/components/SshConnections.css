@@ -75,7 +75,7 @@
 .ssh-discovered button { color: var(--text); background: var(--bg-active); flex-wrap: wrap; }
 .ssh-add-host { display: flex; gap: 8px; margin: 7px 0; }
 .ssh-add-host input { flex: 1; min-width: 0; }
-.ssh-error { color: var(--danger, #c4364b); font-size: var(--font-footnote); line-height: 1.6; overflow-wrap: anywhere; }
+.ssh-error { color: var(--danger); font-size: var(--font-footnote); line-height: 1.6; overflow-wrap: anywhere; }
 .ssh-setup-help { margin-top: 16px; color: var(--text-mid); font-size: var(--font-footnote); line-height: 1.7; }
 .ssh-setup-help summary { cursor: pointer; color: var(--text); }
 .ssh-setup-help ol { padding-left: 20px; }

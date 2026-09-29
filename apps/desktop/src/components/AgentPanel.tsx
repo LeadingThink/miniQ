@@ -51,6 +51,7 @@ export function AgentPanel(props: {
   onOpenChange?: (open: boolean) => void;
   focusRequest?: AgentFocusRequest | null;
 }) {
+  'use no memo';
   return <SessionAgentPanel key={props.sessionId} {...props} />;
 }
 
@@ -75,6 +76,7 @@ function SessionAgentPanel({
   onOpenChange?: (open: boolean) => void;
   focusRequest?: AgentFocusRequest | null;
 }) {
+  'use no memo';
   const ownSummary = useAgentSummary(client, sessionId, busy, suppliedAgents === undefined);
   const agents = suppliedAgents ?? ownSummary.agents;
   const [actionError, setActionError] = useState<string | null>(null);

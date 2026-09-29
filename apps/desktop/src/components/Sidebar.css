@@ -95,7 +95,7 @@
 .workspace-disclosure {
   flex: none;
   color: var(--text-dim);
-  transition: transform 0.16s ease;
+  transition: transform var(--duration) var(--ease-standard);
 }
 .workspace-select[aria-expanded="true"] .workspace-disclosure {
   transform: rotate(90deg);
@@ -114,11 +114,6 @@
   border: 0;
   background: transparent;
   padding: 0;
-}
-@media (prefers-reduced-motion: reduce) {
-  .workspace-disclosure {
-    transition: none;
-  }
 }
 @media (max-width: 720px), (pointer: coarse) {
   .sidebar-filter-toggle {

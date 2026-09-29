@@ -27,9 +27,9 @@
   color: var(--text);
 }
 
-.agent-stat-active strong { color: var(--accent, #3b82f6); }
-.agent-stat-completed strong { color: var(--ok, #2caa70); }
-.agent-stat-failed strong { color: var(--danger, #c4364b); }
+.agent-stat-active strong { color: var(--accent); }
+.agent-stat-completed strong { color: var(--ok); }
+.agent-stat-failed strong { color: var(--danger); }
 
 .agent-summary-segments {
   display: flex;
@@ -46,9 +46,9 @@
   height: 100%;
 }
 
-.agent-summary-segment.active { background: var(--accent, #3b82f6); }
-.agent-summary-segment.completed { background: var(--ok, #2caa70); }
-.agent-summary-segment.failed { background: var(--danger, #c4364b); }
+.agent-summary-segment.active { background: var(--accent); }
+.agent-summary-segment.completed { background: var(--ok); }
+.agent-summary-segment.failed { background: var(--danger); }
 .agent-summary-segment.other { background: var(--text-mid); }
 
 .agent-summary-progress {
@@ -80,17 +80,17 @@
   padding: 3px 9px 3px 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
-  background: var(--surface, var(--bg));
+  background: var(--bg);
   color: var(--text-mid);
   font-size: var(--font-caption);
   text-align: left;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: border-color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
 }
 
 .agent-status-indicator:hover,
 .agent-status-indicator:focus-within {
-  border-color: var(--accent, #3b82f6);
-  background: var(--surface-raised, var(--bg));
+  border-color: var(--accent);
+  background: var(--bg);
 }
 
 .agent-status-indicator-main {
@@ -108,7 +108,7 @@
 }
 .agent-status-indicator-main:focus-visible,
 .agent-avatar-button:focus-visible {
-  outline: 2px solid var(--accent, #3b82f6);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-radius: var(--radius-sm);
 }
@@ -129,7 +129,9 @@
 .agent-status-indicator-main .agent-status-indicator-phase { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-status-open-icon { flex: none; color: var(--text-dim); }
 
-/* Seeded agent identity (ChatGPT-style): one stable tone per agent id. */
+/* Seeded agent identity (ChatGPT-style): one stable tone per agent id.
+   Token exception: the 8 tones below are a fixed categorical identity palette
+   (not UI state), mixed with var(--bg) so they adapt to every theme. */
 .agent-avatar {
   --agent-tone: #3b82f6;
   position: relative;
@@ -140,7 +142,7 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--agent-tone) 16%, var(--surface, #fff));
+  background: color-mix(in srgb, var(--agent-tone) 16%, var(--bg));
   color: var(--agent-tone);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--agent-tone) 35%, transparent);
   font-size: var(--font-caption);
@@ -163,19 +165,15 @@
   bottom: -1px;
   width: 6px;
   height: 6px;
-  border: 1.5px solid var(--surface, var(--bg, #fff));
+  border: 1.5px solid var(--bg);
   border-radius: 50%;
   background: var(--text-dim);
 }
-.agent-avatar[data-state="active"]::after { background: var(--accent, #3b82f6); animation: agent-avatar-pulse 1.6s ease-in-out infinite; }
-.agent-avatar[data-state="completed"]::after { background: var(--ok, #2caa70); }
-.agent-avatar[data-state="failed"]::after { background: var(--danger, #c4364b); }
-.agent-avatar[data-state="waiting"]::after { background: var(--warning, #b7791f); }
+.agent-avatar[data-state="active"]::after { background: var(--accent); animation: agent-avatar-pulse 1.6s ease-in-out infinite; }
+.agent-avatar[data-state="completed"]::after { background: var(--ok); }
+.agent-avatar[data-state="failed"]::after { background: var(--danger); }
+.agent-avatar[data-state="waiting"]::after { background: var(--warn); }
 @keyframes agent-avatar-pulse { 50% { opacity: 0.35; } }
-@media (prefers-reduced-motion: reduce) {
-  .agent-avatar[data-state="active"]::after { animation: none; }
-}
-
 .agent-avatar-stack { display: inline-flex; align-items: center; flex: none; }
 .agent-avatar-button {
   display: inline-flex;
@@ -186,7 +184,7 @@
   cursor: pointer;
 }
 .agent-avatar-button + .agent-avatar-button { margin-left: -5px; }
-.agent-avatar-stack .agent-avatar { box-shadow: 0 0 0 1.5px var(--surface, var(--bg, #fff)); }
+.agent-avatar-stack .agent-avatar { box-shadow: 0 0 0 1.5px var(--bg); }
 .agent-avatar-button:hover { position: relative; z-index: 1; transform: translateY(-1px); }
 
 .agent-panel-section-title {
@@ -199,13 +197,13 @@
   font-weight: 600;
 }
 .agent-final-response-label { color: var(--text-dim); font-size: var(--font-caption); font-weight: 600; }
-.agent-row.focused { outline: 1px solid var(--accent, #3b82f6); outline-offset: -1px; border-radius: var(--radius); }
+.agent-row.focused { outline: 1px solid var(--accent); outline-offset: -1px; border-radius: var(--radius); }
 
 .agent-status-chip { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
-.agent-status-chip.running { color: var(--accent, #3b82f6); }
-.agent-status-chip.waiting { color: var(--warning, #b7791f); }
-.agent-status-chip.failed { color: var(--danger, #c4364b); }
-.agent-status-chip.completed { color: var(--ok, #2caa70); }
+.agent-status-chip.running { color: var(--accent); }
+.agent-status-chip.waiting { color: var(--warn); }
+.agent-status-chip.failed { color: var(--danger); }
+.agent-status-chip.completed { color: var(--ok); }
 .agent-status-indicator-phase {
   overflow: hidden;
   max-width: 240px;

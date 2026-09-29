@@ -10,7 +10,7 @@
   color: var(--text);
 }
 .microphone-permission-dialog::backdrop {
-  background: #0007;
+  background: var(--scrim);
   backdrop-filter: blur(4px);
 }
 .microphone-permission-dialog header,

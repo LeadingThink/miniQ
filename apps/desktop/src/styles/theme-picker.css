@@ -131,7 +131,7 @@
 .theme-preview-sidebar i {
   display: block;
   height: 3px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--theme-text) 24%, transparent);
 }
 .theme-preview-sidebar i:first-child {
@@ -154,7 +154,7 @@
   display: block;
   height: 3px;
   width: 80%;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--theme-text) 27%, transparent);
 }
 .theme-preview-content i:nth-child(2) {

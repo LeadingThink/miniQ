@@ -28,7 +28,7 @@
   box-shadow: var(--shadow-lg);
 }
 .open-preview-dialog::backdrop {
-  background: #0005;
+  background: var(--scrim);
 }
 .open-preview-dialog form {
   display: grid;
