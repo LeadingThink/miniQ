@@ -89,28 +89,61 @@ struct UpdateParams {
 
 /// A settings entry as sent by the UI. Entries echoed back from `mcp.list`
 /// with `source: "plugin"` are dropped: only user servers are persisted.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// `mcp.list` never echoes `env` (it may hold secrets), so an entry without
+/// an `env` key keeps the stored environment of the same server.
 struct UpdateEntry {
-    #[serde(default)]
     source: Option<String>,
-    #[serde(flatten)]
+    env_present: bool,
     config: crate::mcp::McpServerConfig,
 }
 
-fn user_servers(entries: Vec<UpdateEntry>) -> Vec<crate::mcp::McpServerConfig> {
+impl<'de> Deserialize<'de> for UpdateEntry {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        let source = value
+            .get("source")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let env_present = value.get("env").is_some_and(|env| !env.is_null());
+        let config = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+        Ok(Self {
+            source,
+            env_present,
+            config,
+        })
+    }
+}
+
+fn user_servers(entries: Vec<UpdateEntry>) -> Vec<(crate::mcp::McpServerConfig, bool)> {
     entries
         .into_iter()
         .filter(|entry| entry.source.as_deref() != Some("plugin"))
-        .map(|entry| entry.config)
+        .map(|entry| (entry.config, entry.env_present))
+        .collect()
+}
+
+fn preserve_env(
+    entries: Vec<(crate::mcp::McpServerConfig, bool)>,
+    existing: &[crate::mcp::McpServerConfig],
+) -> Vec<crate::mcp::McpServerConfig> {
+    entries
+        .into_iter()
+        .map(|(mut config, env_present)| {
+            if !env_present {
+                if let Some(old) = existing.iter().find(|s| s.name == config.name) {
+                    config.env = old.env.clone();
+                }
+            }
+            config
+        })
         .collect()
 }
 
 pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: UpdateParams = params(raw)?;
-    let servers = user_servers(input.servers);
-    validate_servers(&servers)?;
     let mut settings = state.settings.lock().unwrap().clone();
+    let servers = preserve_env(user_servers(input.servers), &settings.mcp_servers);
+    validate_servers(&servers)?;
     settings.mcp_servers = servers;
     state
         .update_settings(settings)
@@ -144,9 +177,33 @@ mod tests {
             ]
         }))
         .unwrap();
-        let servers = user_servers(input.servers);
+        let servers = preserve_env(user_servers(input.servers), &[]);
         let names = servers.iter().map(|s| s.name.as_str()).collect::<Vec<_>>();
         assert_eq!(names, vec!["mine", "plain"]);
         assert!(servers.iter().all(|s| s.enabled));
+    }
+
+    #[test]
+    fn update_keeps_env_when_omitted_and_replaces_when_sent() {
+        let existing: Vec<crate::mcp::McpServerConfig> = serde_json::from_value(json!([
+            {"name": "a", "command": "x", "env": {"TOKEN": "secret"}},
+            {"name": "b", "command": "y", "env": {"K": "v"}}
+        ]))
+        .unwrap();
+        let input: UpdateParams = serde_json::from_value(json!({
+            "servers": [
+                {"name": "a", "command": "x"},
+                {"name": "b", "command": "y", "env": {}},
+                {"name": "c", "command": "z"}
+            ]
+        }))
+        .unwrap();
+        let servers = preserve_env(user_servers(input.servers), &existing);
+        assert_eq!(
+            servers[0].env.get("TOKEN").map(String::as_str),
+            Some("secret")
+        );
+        assert!(servers[1].env.is_empty());
+        assert!(servers[2].env.is_empty());
     }
 }
