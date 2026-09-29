@@ -11,9 +11,9 @@ use serde_json::Value;
 #[path = "codex_title_catalog.rs"]
 mod title_catalog;
 
+use crate::collector::{FullSession, SessionCollector, SessionTally};
 use crate::common::{
-    content_text, env_root, first_and_last_timestamp, first_string, raw_event, read_jsonl,
-    string_at, timestamp_at, SessionFileIndex,
+    content_text, env_root, first_string, for_each_jsonl, string_at, timestamp_at, SessionFileIndex,
 };
 use crate::projection::projected_content;
 use crate::{ConnectorScan, ExternalSessionSnapshot, SessionConnector};
@@ -71,23 +71,7 @@ impl CodexConnector {
         &self,
         path: &Path,
     ) -> Result<Option<ExternalSessionSnapshot>, crate::ConnectorError> {
-        self.parse_session_with_titles(path, self.title_catalog())
-    }
-
-    fn parse_session_with_titles(
-        &self,
-        path: &Path,
-        titles: &CodexTitleCatalog,
-    ) -> Result<Option<ExternalSessionSnapshot>, crate::ConnectorError> {
-        let values = read_jsonl(path)?;
-        if values.is_empty() {
-            return Ok(None);
-        }
-        let mut state = CodexParseState::new(path);
-        for (sequence, value) in values.into_iter().enumerate() {
-            state.consume(sequence, value);
-        }
-        Ok(state.finish(titles))
+        parse_file::<FullSession>(path, self.title_catalog())
     }
 
     fn load_path(
@@ -138,11 +122,11 @@ impl SessionConnector for CodexConnector {
                 let parsed: Vec<_> = files
                     .files()
                     .par_iter()
-                    .map(|file| self.parse_session_with_titles(file, titles))
+                    .map(|file| parse_file::<SessionTally>(file, titles))
                     .collect();
                 for result in parsed {
                     match result {
-                        Ok(Some(session)) => scan.sessions.push(session.summary),
+                        Ok(Some(summary)) => scan.sessions.push(summary),
                         Ok(None) => {}
                         Err(error) => scan.errors.push(error),
                     }
@@ -163,24 +147,33 @@ impl SessionConnector for CodexConnector {
     }
 }
 
-struct CodexParseState {
+fn parse_file<C: SessionCollector>(
+    path: &Path,
+    titles: &CodexTitleCatalog,
+) -> Result<Option<C::Output>, crate::ConnectorError> {
+    let mut state = CodexParseState::<C>::new(path);
+    for_each_jsonl(path, |sequence, value| state.consume(sequence, value))?;
+    Ok(state.finish(titles))
+}
+
+struct CodexParseState<C> {
     source_path: String,
     external_id: Option<String>,
     cwd: Option<String>,
-    events: Vec<crate::ExternalSessionEvent>,
-    messages: Vec<ExternalSessionMessage>,
-    event_user_messages: Vec<ExternalSessionMessage>,
+    collector: C,
+    /// `event_msg` user messages; used only when no `response_item` user
+    /// message exists, since both usually mirror the same prompt.
+    event_user: C,
 }
 
-impl CodexParseState {
+impl<C: SessionCollector> CodexParseState<C> {
     fn new(path: &Path) -> Self {
         Self {
             source_path: path.to_string_lossy().into_owned(),
             external_id: None,
             cwd: None,
-            events: Vec::new(),
-            messages: Vec::new(),
-            event_user_messages: Vec::new(),
+            collector: C::default(),
+            event_user: C::default(),
         }
     }
 
@@ -206,8 +199,8 @@ impl CodexParseState {
             "event_msg" => self.consume_event_message(&value, &event_id, occurred_at.clone()),
             _ => {}
         }
-        self.events
-            .push(raw_event(value, sequence, raw_id, event_type, occurred_at));
+        self.collector
+            .event(value, sequence, raw_id, event_type, occurred_at);
     }
 
     fn consume_metadata(&mut self, value: &Value) {
@@ -248,7 +241,7 @@ impl CodexParseState {
             .map(content_text)
             .unwrap_or_default();
         if let Some(content) = projected_content(ExternalProvider::Codex, role, content) {
-            self.messages.push(ExternalSessionMessage {
+            self.collector.message(ExternalSessionMessage {
                 event_id: event_id.to_owned(),
                 role,
                 content,
@@ -272,7 +265,7 @@ impl CodexParseState {
             .map(content_text)
             .unwrap_or_default();
         if let Some(content) = projected_content(ExternalProvider::Codex, Role::User, content) {
-            self.event_user_messages.push(ExternalSessionMessage {
+            self.event_user.message(ExternalSessionMessage {
                 event_id: event_id.to_owned(),
                 role: Role::User,
                 content,
@@ -281,52 +274,33 @@ impl CodexParseState {
         }
     }
 
-    fn finish(mut self, titles: &CodexTitleCatalog) -> Option<ExternalSessionSnapshot> {
-        if !self
-            .messages
-            .iter()
-            .any(|message| message.role == Role::User)
-        {
-            self.messages.append(&mut self.event_user_messages);
+    fn finish(self, titles: &CodexTitleCatalog) -> Option<C::Output> {
+        let mut collector = self.collector;
+        if !collector.has_user_message() {
+            collector.append_messages(self.event_user);
         }
-        if self.messages.is_empty() {
+        if !collector.has_messages() {
             return None;
         }
         let external_id = self.external_id.unwrap_or_else(|| self.source_path.clone());
-        let title = titles
-            .get(&external_id)
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| session_title(&self.messages, "Codex session"));
-        let (created_at, updated_at) = first_and_last_timestamp(&self.events);
-        Some(ExternalSessionSnapshot {
-            summary: ExternalSessionSummary {
+        let catalog_title = titles.get(&external_id).map(ToOwned::to_owned);
+        let (cwd, source_path) = (self.cwd, self.source_path);
+        Some(collector.finish(|stats| {
+            ExternalSessionSummary {
                 provider: ExternalProvider::Codex,
                 external_id,
-                title,
-                cwd: self.cwd,
-                source_path: self.source_path,
-                message_count: self.messages.len(),
-                created_at,
-                updated_at,
+                title: catalog_title
+                    .or(stats.title)
+                    .unwrap_or_else(|| "Codex session".to_owned()),
+                cwd,
+                source_path,
+                message_count: stats.message_count,
+                created_at: stats.created_at,
+                updated_at: stats.updated_at,
                 continuation_mode: ExternalContinuationMode::RecreateOnly,
-            },
-            events: self.events,
-            messages: self.messages,
-        })
+            }
+        }))
     }
-}
-
-fn session_title(messages: &[ExternalSessionMessage], fallback: &str) -> String {
-    messages
-        .iter()
-        .find(|message| message.role == Role::User && !message.content.trim().is_empty())
-        .or_else(|| {
-            messages
-                .iter()
-                .find(|message| !message.content.trim().is_empty())
-        })
-        .map(|message| message.content.clone())
-        .unwrap_or_else(|| fallback.to_owned())
 }
 
 fn finish_scan(scan: &mut ConnectorScan) {
@@ -478,5 +452,35 @@ mod tests {
         assert_eq!(snapshot.messages.len(), 2);
         assert_eq!(snapshot.messages[0].content, "actual request");
         assert_eq!(snapshot.summary.title, "actual request");
+    }
+
+    #[test]
+    fn scan_summary_matches_loaded_summary_for_event_only_user_messages() {
+        let temp = tempfile::tempdir().unwrap();
+        let sessions = temp.path().join("sessions");
+        fs::create_dir_all(&sessions).unwrap();
+        fs::write(
+            sessions.join("session.jsonl"),
+            concat!(
+                "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"codex-3\"}}\n",
+                "\n",
+                "{\"timestamp\":\"2026-01-01T00:00:01Z\",\"type\":\"response_item\",\"payload\":{\"id\":\"a\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"ready\"}]}}\n",
+                "{\"timestamp\":\"2026-01-01T00:00:02Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\",\"message\":\"event prompt\"}}\n"
+            ),
+        )
+        .unwrap();
+
+        let connector = CodexConnector::new(temp.path().to_path_buf());
+        let scan = connector.scan();
+        assert_eq!(scan.sessions.len(), 1);
+        let loaded = connector
+            .load("codex-3", &scan.sessions[0].source_path)
+            .unwrap()
+            .unwrap();
+        assert_eq!(scan.sessions[0], loaded.summary);
+        assert_eq!(loaded.summary.title, "event prompt");
+        assert_eq!(loaded.summary.message_count, 2);
+        assert_eq!(loaded.events.len(), 3);
+        assert_eq!(loaded.events[2].sequence, 2);
     }
 }

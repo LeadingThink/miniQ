@@ -110,12 +110,17 @@ fn collect_files_from(
     Ok(())
 }
 
-pub(crate) fn read_jsonl(path: &Path) -> Result<Vec<Value>, ConnectorError> {
+/// Streams a JSONL file one value at a time. `sequence` counts non-blank
+/// records, so blank lines never shift event identities.
+pub(crate) fn for_each_jsonl(
+    path: &Path,
+    mut callback: impl FnMut(usize, Value),
+) -> Result<(), ConnectorError> {
     let file = File::open(path).map_err(|source| ConnectorError::Io {
         path: path.to_path_buf(),
         source,
     })?;
-    let mut values = Vec::new();
+    let mut sequence = 0;
     for (index, line) in BufReader::new(file).lines().enumerate() {
         let line = line.map_err(|source| ConnectorError::Io {
             path: path.to_path_buf(),
@@ -129,9 +134,10 @@ pub(crate) fn read_jsonl(path: &Path) -> Result<Vec<Value>, ConnectorError> {
             line: index + 1,
             source,
         })?;
-        values.push(value);
+        callback(sequence, value);
+        sequence += 1;
     }
-    Ok(values)
+    Ok(())
 }
 
 pub(crate) fn nested<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {

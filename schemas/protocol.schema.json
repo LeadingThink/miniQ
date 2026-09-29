@@ -2802,6 +2802,216 @@
     "title": "ExternalSessionScan",
     "type": "object"
   },
+  "externalSessionScanJob": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "definitions": {
+      "ExternalContinuationMode": {
+        "enum": [
+          "native_resumable",
+          "recreate_only",
+          "read_only"
+        ],
+        "type": "string"
+      },
+      "ExternalProvider": {
+        "enum": [
+          "codex",
+          "claude_code",
+          "opencode"
+        ],
+        "type": "string"
+      },
+      "ExternalProviderStatus": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messageCount": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "provider": {
+            "$ref": "#/definitions/ExternalProvider"
+          },
+          "root": {
+            "type": "string"
+          },
+          "sessionCount": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "available",
+          "messageCount",
+          "provider",
+          "root",
+          "sessionCount"
+        ],
+        "type": "object"
+      },
+      "ExternalScanError": {
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/definitions/ExternalProvider"
+          },
+          "sourcePath": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "message",
+          "provider"
+        ],
+        "type": "object"
+      },
+      "ExternalSessionScan": {
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/definitions/ExternalScanError"
+            },
+            "type": "array"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/definitions/ExternalProviderStatus"
+            },
+            "type": "array"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/definitions/ExternalSessionSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "errors",
+          "providers",
+          "sessions"
+        ],
+        "type": "object"
+      },
+      "ExternalSessionScanState": {
+        "enum": [
+          "running",
+          "completed",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "ExternalSessionSummary": {
+        "properties": {
+          "continuationMode": {
+            "$ref": "#/definitions/ExternalContinuationMode"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cwd": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "externalId": {
+            "type": "string"
+          },
+          "messageCount": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "provider": {
+            "$ref": "#/definitions/ExternalProvider"
+          },
+          "sourcePath": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "continuationMode",
+          "externalId",
+          "messageCount",
+          "provider",
+          "sourcePath",
+          "title"
+        ],
+        "type": "object"
+      }
+    },
+    "properties": {
+      "failure": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "id": {
+        "type": "string"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExternalSessionScan"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "state": {
+        "$ref": "#/definitions/ExternalSessionScanState"
+      }
+    },
+    "required": [
+      "id",
+      "state"
+    ],
+    "title": "ExternalSessionScanJob",
+    "type": "object"
+  },
+  "externalSessionScanStatusRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "properties": {
+      "jobId": {
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "jobId"
+    ],
+    "title": "ExternalSessionScanStatusRequest",
+    "type": "object"
+  },
   "globalModelUpdate": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "additionalProperties": false,

@@ -2,6 +2,7 @@
 
 mod claude;
 mod codex;
+mod collector;
 mod common;
 mod model;
 mod opencode;

@@ -144,6 +144,15 @@ export interface ExternalSessionScan {
   errors: ExternalScanError[];
 }
 
+export type ExternalSessionScanState = "running" | "completed" | "failed";
+
+export interface ExternalSessionScanJob {
+  id: string;
+  state: ExternalSessionScanState;
+  result: ExternalSessionScan | null;
+  failure: string | null;
+}
+
 export interface ExternalSessionSelection {
   provider: ExternalProvider;
   externalId: string;
