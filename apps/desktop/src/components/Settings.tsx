@@ -54,12 +54,13 @@ interface SettingsPanelProps {
   onThemeChange: (theme: ThemeId) => void;
   onClose: () => void;
   onProviderConfigured?: () => void;
+  initialTab?: SettingsTab;
 }
 
 export function SettingsPanel(props: SettingsPanelProps) {
   const desktop = useDesktopHost();
   const canConfigureProvider = (desktop?.root ?? props.client).mode === "local";
-  const [tab, setTab] = useState<SettingsTab>("services");
+  const [tab, setTab] = useState<SettingsTab>(props.initialTab ?? "services");
   const [baseUrl, setBaseUrl] = useState(ZAIWEN_API_BASE_URL);
   const [defaultModel, setDefaultModel] = useState(DEFAULT_PROVIDER_MODEL);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
@@ -91,9 +92,12 @@ export function SettingsPanel(props: SettingsPanelProps) {
           setDefaultModel(res.provider.model || DEFAULT_PROVIDER_MODEL);
           setHasKey(res.provider.hasApiKey);
           try {
-            const catalog = await props.client.call<{ models: string[] }>("model.list");
-            setModelOptions(catalog.models);
-            setDefaultModel((current) => catalog.models.includes(current) ? current : "");
+            const catalog = await props.client.call<{ models?: unknown }>("model.list");
+            const models = Array.isArray(catalog?.models)
+              ? catalog.models.filter((model): model is string => typeof model === "string")
+              : [];
+            setModelOptions(models);
+            setDefaultModel((current) => models.includes(current) ? current : "");
             setModelCatalogError(null);
           } catch (error) {
             setModelOptions([]);

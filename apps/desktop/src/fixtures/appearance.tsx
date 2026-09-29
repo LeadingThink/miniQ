@@ -27,12 +27,16 @@ const client = {
   mode: "local",
   call: async (method: string) => method === "memory.list"
     ? { memories: [], nextCursor: null }
-    : settings,
+    : method === "model.list"
+      ? { models: ["gpt-5.6-sol", "claude-sonnet"] }
+      : settings,
   onStatus: () => () => {},
 } as unknown as RpcClient;
 const FilePreviewPanel = lazy(() =>
   import("../components/FilePreviewPanel").then((module) => ({ default: module.FilePreviewPanel }))
 );
+
+const initialTab = new URLSearchParams(location.search).get("tab") === "appearance" ? "appearance" : undefined;
 
 function AppearanceFixture() {
   const { theme } = useSyncExternalStore(subscribeAppearance, getAppearance);
@@ -42,11 +46,11 @@ function AppearanceFixture() {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">miniQ</div>
-        <button className="nav-item" type="button" onClick={() => setOpen(true)}>
+        <button className="nav-item sidebar-nav-button" type="button" onClick={() => setOpen(true)}>
           <Settings size={16} />
           设置
         </button>
-        <button className="nav-item" type="button" onClick={() => setSourceOpen(true)}>
+        <button className="nav-item sidebar-nav-button" type="button" onClick={() => setSourceOpen(true)}>
           <Code size={16} />
           源码预览
         </button>
@@ -76,7 +80,7 @@ function AppearanceFixture() {
         </Suspense>
       )}
       {open && (
-        <SettingsPanel client={client} theme={theme} onThemeChange={storeTheme} onClose={() => setOpen(false)} />
+        <SettingsPanel client={client} initialTab={initialTab} theme={theme} onThemeChange={storeTheme} onClose={() => setOpen(false)} />
       )}
     </div>
   );

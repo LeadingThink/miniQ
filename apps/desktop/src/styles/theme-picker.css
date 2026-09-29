@@ -40,7 +40,8 @@
   color: var(--text);
   border-bottom-color: var(--accent);
 }
-#settings-services:not([hidden]) {
+#settings-services:not([hidden]),
+#settings-appearance:not([hidden]) {
   display: grid;
   gap: 16px;
 }

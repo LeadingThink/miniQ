@@ -5,8 +5,11 @@
   cursor: pointer;
   font-size: var(--font-caption);
   padding-block: 3px;
+  list-style: none;
 }
-.file-preview-path .file-path-summary { display: block; }
+.file-preview-path > summary::-webkit-details-marker { display: none; }
+.file-preview-path .file-path-summary { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-preview-path[open] .file-path-summary { white-space: normal; overflow-wrap: anywhere; }
 .file-preview-path .file-path-hint { display: none; }
 .file-preview-header .file-preview-path > span {
   display: block;
