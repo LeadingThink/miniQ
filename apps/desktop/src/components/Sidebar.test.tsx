@@ -317,9 +317,10 @@ describe("mobile Sidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "已安排" }));
     expect(onShowSchedule).toHaveBeenCalledOnce();
     expect(screen.getByRole("button", { name: "导入会话" })).not.toBeNull();
-    expect(screen.getByRole("button", { name: "技能" })).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "收起功能" }));
+    expect(screen.getByRole("button", { name: "反馈" })).not.toBeNull();
     expect(screen.queryByRole("button", { name: "技能" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "收起功能" }));
+    expect(screen.queryByRole("button", { name: "导入会话" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "关闭项目与会话侧栏" }));
     expect(onClose).toHaveBeenCalledOnce();
   });

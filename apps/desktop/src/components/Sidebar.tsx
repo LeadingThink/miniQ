@@ -10,12 +10,9 @@ import {
   MessageSquareText,
   MoreHorizontal,
   PencilLine,
-  Plug,
-  Puzzle,
   Plus,
   Search,
   Settings,
-  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -66,8 +63,11 @@ interface SidebarProps {
   onRenameSession: (sessionId: string, title: string) => void;
   onSetSessionPinned: (sessionId: string, pinned: boolean) => void;
   onSetSessionArchived: (sessionId: string, archived: boolean) => void;
-  onShowSkills: () => void;
-  onShowMcp: () => void;
+  /** @deprecated 技能 / MCP / 插件已移入设置。保留以兼容旧调用方。 */
+  onShowSkills?: () => void;
+  /** @deprecated */
+  onShowMcp?: () => void;
+  /** @deprecated */
   onShowPlugins?: () => void;
   onShowSettings: () => void;
   updateSupported: boolean;
@@ -109,21 +109,16 @@ export function Sidebar(props: SidebarProps) {
         {mobile && props.onClose && <button type="button" className="sidebar-close" aria-label="关闭项目与会话侧栏" onClick={props.onClose}><X size={19} /></button>}
       </div>
       <div className="sidebar-primary-actions">
-      <button type="button" className="nav-item sidebar-nav-button" onClick={props.onNewChat}>
+      <button type="button" className="nav-item sidebar-nav-button" onClick={props.onNewChat} title="新对话（⌘/Ctrl+N）">
         <PencilLine className="nav-icon" size={16} /> 新对话
       </button>
       <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSearch}>
         <Search className="nav-icon" size={16} /> {mobile ? "搜索内容" : "搜索"}
       </button>
-      </div>
-      {showSecondary && <div className="sidebar-secondary-actions" id="sidebar-secondary-actions">
-      <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSchedule}>
+      {!mobile && <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSchedule}>
         <Clock3 className="nav-icon" size={16} /> 已安排
-      </button>
-      <button type="button" className="nav-item sidebar-nav-button" onClick={props.onImportSessions}>
-        <Download className="nav-icon" size={15} /> 导入会话
-      </button>
-      </div>}
+      </button>}
+      </div>
 
       <div className="sidebar-scroll" role="navigation" aria-label="项目与会话" onKeyDown={handleSidebarNavigation}>
         {props.workspaces.length > 0 && <SidebarFilters query={query} filter={filter} counts={navigation.counts} onQuery={setQuery} onFilter={setFilter} />}
@@ -203,18 +198,11 @@ export function Sidebar(props: SidebarProps) {
           onInstall={props.onInstallUpdate}
         />
         {showSecondary && <div className="sidebar-secondary-actions" id="sidebar-secondary-footer">
-        <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSkills}>
-          <Sparkles className="nav-icon" size={16} /> 技能
-        </button>
-        <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowMcp}>
-          <Plug className="nav-icon" size={16} /> MCP
-        </button>
-        <button
-          type="button"
-          className="nav-item sidebar-nav-button"
-          onClick={() => props.onShowPlugins?.()}
-        >
-          <Puzzle className="nav-icon" size={16} /> 插件
+        {mobile && <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSchedule}>
+          <Clock3 className="nav-icon" size={16} /> 已安排
+        </button>}
+        <button type="button" className="nav-item sidebar-nav-button" onClick={props.onImportSessions}>
+          <Download className="nav-icon" size={15} /> 导入会话
         </button>
         <button
           type="button"
@@ -227,14 +215,20 @@ export function Sidebar(props: SidebarProps) {
           <MessageSquareText className="nav-icon" size={16} /> 反馈
         </button>
         </div>}
-        <div className="sidebar-primary-actions">
-        {mobile && <button type="button" className="nav-item sidebar-nav-button" aria-expanded={moreOpen}
-          aria-controls="sidebar-secondary-actions sidebar-secondary-footer" onClick={() => setMoreOpen((value) => !value)}>
+        {mobile && <div className="sidebar-primary-actions">
+        <button type="button" className="nav-item sidebar-nav-button" aria-expanded={moreOpen}
+          aria-controls="sidebar-secondary-footer" onClick={() => setMoreOpen((value) => !value)}>
           <MoreHorizontal className="nav-icon" size={16} /> {moreOpen ? "收起功能" : "更多功能"}
-        </button>}
-        <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSettings}>
-          <Settings className="nav-icon" size={16} /> 设置
         </button>
+        </div>}
+        <div className="sidebar-account-row">
+          <div className="sidebar-account" title="本机账户">
+            <span className="sidebar-account-avatar" aria-hidden="true">Q</span>
+            <span className="sidebar-account-name">本机</span>
+          </div>
+          <button type="button" className="nav-item sidebar-nav-button sidebar-settings-button" onClick={props.onShowSettings} title="设置（⌘/Ctrl+,）">
+            <Settings className="nav-icon" size={16} /> 设置
+          </button>
         </div>
       </div>
     </SidebarPanel>

@@ -5,6 +5,7 @@ import { isTauriRuntime } from "../runtime";
 import { isMobileLayout } from "../mobileViewport";
 import { useDesktopHost } from "../desktopHost";
 import { hostKey } from "../hostWorkspace";
+import type { SettingsTab } from "../settingsNavigation";
 import type {
   QueuedMessage,
   Session,
@@ -22,7 +23,7 @@ import { useSessionError } from "./useSessionError";
 import { isSessionRunning, isSessionTerminal } from "../sessionStatus";
 import { BROWSER_DRAFT_CREATED_EVENT, type BrowserDraftCreatedDetail } from "../browserTabs";
 
-export type AppPage = "schedule" | "skills" | "mcp" | "plugins" | null;
+export type AppPage = "schedule" | null;
 const PROVIDER_ONBOARDING_KEY = "miniq.providerOnboarding.v1";
 
 async function pickDirectory(): Promise<string | null> {
@@ -155,7 +156,17 @@ function useNavigationState() {
   const [showRemoteFolder, setShowRemoteFolder] = useState(false);
   const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
   const [showExternalImport, setShowExternalImport] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSettings, setShowSettingsState] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>();
+  const setShowSettings = useCallback((open: boolean) => {
+    setShowSettingsState(open);
+    if (!open) setSettingsTab(undefined);
+  }, []);
+  /** Open the settings sheet, optionally on a specific group (技能 / MCP 连接 / 插件 ...). */
+  const openSettings = useCallback((tab?: SettingsTab) => {
+    setSettingsTab(tab);
+    setShowSettingsState(true);
+  }, []);
   const [showDistill, setShowDistill] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(isMobileLayout);
@@ -167,6 +178,8 @@ function useNavigationState() {
     setEditingWorkspaceId,
     showExternalImport,
     showSettings,
+    settingsTab,
+    openSettings,
     showDistill,
     showSearch,
     sidebarCollapsed: desktop?.sidebarCollapsed ?? sidebarCollapsed,

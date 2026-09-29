@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { AppStatusBar } from "./AppStatus";
@@ -49,12 +49,40 @@ describe("AppStatusBar", () => {
     expect(buttons.map((button) => button.getAttribute("data-tooltip"))).toEqual([
       "显示侧栏（⌘/Ctrl+B）",
       "待审批总览",
-      "任务、文件、网页和审阅",
-      "打开内置浏览器",
+      "检查器：概览、审阅、预览和浏览器",
+      "更多操作",
     ]);
     for (const button of buttons) {
       expect(button.getAttribute("title")).toBe(button.getAttribute("data-tooltip"));
       expect(button.getAttribute("aria-label")).toBeTruthy();
     }
+  });
+
+  it("renders a single draggable toolbar and keeps secondary actions in the overflow menu", () => {
+    const onOpenBrowser = vi.fn();
+    const app = appFixture();
+    const { container } = render(
+      <AppStatusBar
+        app={app}
+        onOpenBrowser={onOpenBrowser}
+        onToggleReview={() => {}}
+        onOpenFile={() => {}}
+        onToggleWorkbench={() => {}}
+        workbenchOpen
+      />,
+    );
+    expect(container.querySelector(".statusbar")?.hasAttribute("data-tauri-drag-region")).toBe(true);
+    expect(screen.getByRole("button", { name: "隐藏检查器" }).getAttribute("aria-pressed")).toBe("true");
+    const more = screen.getByRole("button", { name: "更多操作" });
+    fireEvent.click(more);
+    expect(more.getAttribute("aria-expanded")).toBe("true");
+    const menu = screen.getByRole("menu", { name: "更多操作" });
+    expect(menu.textContent).toContain("设置");
+    fireEvent.click(screen.getByRole("menuitem", { name: "打开内置浏览器" }));
+    expect(onOpenBrowser).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(more);
+    fireEvent.click(screen.getByRole("menuitem", { name: "设置" }));
+    expect(app.navigation.setShowSettings).toHaveBeenCalledWith(true);
   });
 });

@@ -15,7 +15,7 @@ const settings = {
 const call = vi.fn().mockImplementation((method: string) => Promise.resolve(
   method === "model.list" ? { models: ["test", "gpt-5.6-sol", "claude-sonnet"] } : settings,
 ));
-const client = { call, mode: "local", onStatus: () => () => {} } as unknown as RpcClient;
+const client = { call, mode: "local", onStatus: () => () => {}, onEvent: () => () => {} } as unknown as RpcClient;
 
 function Fixture({ onClose = () => {} }: { onClose?: () => void }) {
   const { theme } = useSyncExternalStore(subscribeAppearance, getAppearance);
@@ -58,7 +58,7 @@ describe("appearance settings integration", () => {
     expect(document.activeElement).toBe(dark);
     fireEvent.click(screen.getByRole("radio", { name: "夜墨" }));
     fireEvent.submit(screen.getByRole("dialog"));
-    expect(call.mock.calls.every(([method]) => ["settings.get", "model.list"].includes(method))).toBe(true);
+    expect(call.mock.calls.every(([method]) => ["settings.get", "model.list", "settings.schema"].includes(method))).toBe(true);
     expect(getAppearance().theme).toBe("night");
   });
 
@@ -167,9 +167,9 @@ describe("appearance settings integration", () => {
     document.body.append(trigger);
     trigger.focus();
     const { unmount } = render(<Fixture />);
-    await waitFor(() => expect(call).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("settings.get"));
     expect(screen.getAllByRole("tab").map((element) => element.textContent)).toEqual([
-      "服务与远程", "电脑控制", "外观", "记忆",
+      "通用", "外观", "服务与远程", "电脑控制", "技能", "MCP 连接", "插件", "记忆",
     ]);
     fireEvent.keyDown(screen.getByRole("tab", { name: "服务与远程" }), { key: "ArrowRight" });
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "电脑控制" }));
@@ -179,8 +179,11 @@ describe("appearance settings integration", () => {
     fireEvent.keyDown(document.activeElement!, { key: "End" });
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "记忆" }));
     fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
-    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "外观" }));
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "插件" }));
     fireEvent.keyDown(document.activeElement!, { key: "Home" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "通用" }));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "服务与远程" }));
     expect(screen.getByRole("button", { name: "保存并开始使用" })).toBeTruthy();
     unmount();

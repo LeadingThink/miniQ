@@ -10,14 +10,11 @@ import type { ComposerSlashCommand } from "../composerSlash";
 import { useAppSlashCommands } from "../hooks/useAppSlashCommands";
 import { DistillModal } from "./Distill";
 import { ExternalSessionImportDialog } from "./ExternalSessionImport";
-import { McpPanel } from "./Mcp";
-import { PluginsPanel } from "./Plugins";
 import { ProjectPicker } from "./ProjectPicker";
 import { SchedulePanel } from "./Schedule";
 import { SearchOverlay, type PaletteCommand } from "./Search";
 import { SettingsPanel } from "./Settings";
 import { AppSidebar } from "./AppSidebar";
-import { SkillsPanel } from "./Skills";
 import { StarterPrompts } from "./StarterPrompts";
 import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 import { SessionModelControls } from "./SessionModelControls";
@@ -85,6 +82,7 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
           workspaceId={app.catalog.currentSession?.workspaceId ?? app.catalog.selectedWorkspaceId}
           theme={theme}
           onThemeChange={onThemeChange}
+          initialTab={app.navigation.settingsTab}
           onProviderConfigured={() => void app.connection.refreshProviderConfiguration()}
           onClose={() => app.navigation.setShowSettings(false)}
         />
@@ -315,7 +313,7 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
         <button
           type="button"
           className="hero-card"
-          onClick={() => app.navigation.setPage("skills")}
+          onClick={() => app.navigation.openSettings("skills")}
         >
           <div className="hero-card-title">
             <Sparkles size={14} />
@@ -328,7 +326,7 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
         <button
           type="button"
           className="hero-card"
-          onClick={() => app.navigation.setPage("mcp")}
+          onClick={() => app.navigation.openSettings("mcp")}
         >
           <div className="hero-card-title">
             <PlugZap size={14} />
@@ -355,17 +353,6 @@ function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onD
           onOpenSession={(sessionId) => void app.actions.openSession(sessionId)}
         />
       );
-    case "skills":
-      return (
-        <SkillsPanel
-          client={app.client}
-          workspaceId={app.catalog.selectedWorkspace?.id ?? null}
-        />
-      );
-    case "mcp":
-      return <McpPanel client={app.client} />;
-    case "plugins":
-      return <PluginsPanel client={app.client} />;
     default:
       return app.catalog.currentSessionId ? (
         <SessionPage
@@ -403,13 +390,13 @@ function buildPaletteCommands(app: MiniqAppController): PaletteCommand[] {
       id: "skills",
       label: "技能",
       icon: "skills",
-      run: () => app.navigation.setPage("skills"),
+      run: () => app.navigation.openSettings("skills"),
     },
     {
       id: "mcp",
       label: "MCP 连接",
       icon: "mcp",
-      run: () => app.navigation.setPage("mcp"),
+      run: () => app.navigation.openSettings("mcp"),
     },
     {
       id: "schedule",
