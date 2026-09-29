@@ -50,7 +50,7 @@
   content: "";
   width: 28px;
   height: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border-strong);
   transform-origin: left center;
   transform: scaleX(calc(0.25 + var(--rail-proximity, 0) * 0.75));
@@ -66,7 +66,7 @@
 .conversation-navigation-marker:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .conversation-navigation-marker[aria-current="true"]::before {
@@ -93,9 +93,9 @@
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: var(--radius);
   box-shadow: var(--shadow);
-  font-size: 13px;
+  font-size: var(--font-body);
   line-height: 1.6;
   animation: conversation-preview-enter 160ms ease-out;
 }
@@ -124,6 +124,6 @@
   display: block;
   margin-bottom: 6px;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-variant-numeric: tabular-nums;
 }

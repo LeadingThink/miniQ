@@ -2,7 +2,7 @@
   min-width: 0;
   max-width: 100%;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
   white-space: normal;
@@ -13,7 +13,7 @@
   color: inherit;
   cursor: pointer;
   list-style: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   max-width: 100%;
   word-break: normal;
   overflow-wrap: normal;
@@ -32,7 +32,7 @@
   justify-content: center;
   gap: 14px;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-variant-numeric: tabular-nums;
   margin: 12px 0;
 }
@@ -48,12 +48,12 @@
 .turn-timing {
   align-self: flex-start;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--font-footnote);
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
   max-width: 100%;
 }
 
 .turn-timing summary { cursor: pointer; width: fit-content; }
-.turn-timing p { margin: 4px 0; font-size: 11px; }
+.turn-timing p { margin: 4px 0; font-size: var(--font-caption); }
 .turn-timing summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

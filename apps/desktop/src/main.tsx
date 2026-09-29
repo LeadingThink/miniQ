@@ -5,9 +5,9 @@ import App from "./App";
 // (code); CJK: MiSans VF subset (@font-face lives in styles/base.css).
 import "@fontsource-variable/inter/wght.css";
 import "@fontsource-variable/jetbrains-mono/wght.css";
+import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/themes.css";
-import "./styles/theme-patterns.css";
 import "./styles/conversation.css";
 import "./components/ConversationNavigationRail.css";
 import "./styles/interactions.css";

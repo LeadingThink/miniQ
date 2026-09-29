@@ -7,9 +7,9 @@
   border: none;
   background: transparent;
   color: var(--text-mid);
-  font-size: 12px;
+  font-size: var(--font-footnote);
   padding: 4px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -29,7 +29,7 @@
   background: var(--glass);
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--hairline);
-  border-radius: 8px;
+  border-radius: var(--radius);
   box-shadow:
     inset 0 1px 0 var(--glass-highlight),
     var(--shadow-lg);
@@ -45,7 +45,7 @@
   color: inherit;
   text-align: left;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -59,7 +59,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--font-body);
   font-weight: 600;
   color: var(--text);
 }
@@ -71,7 +71,7 @@
 
 .mode-item-desc {
   margin-top: 2px;
-  font-size: 12px;
+  font-size: var(--font-footnote);
   color: var(--text-dim);
 }
 
@@ -124,7 +124,7 @@
 
 .session-age {
   flex: none;
-  font-size: 11px;
+  font-size: var(--font-caption);
   color: var(--text-dim);
   margin-left: 6px;
 }
@@ -150,7 +150,7 @@
   border: none;
   outline: none;
   padding: 14px 16px;
-  font-size: 15px;
+  font-size: var(--font-callout);
   border-bottom: 1px solid var(--hairline);
   background: transparent;
   color: var(--text);
@@ -173,7 +173,7 @@
   align-items: center;
   gap: 10px;
   padding: 9px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -185,7 +185,7 @@
 
 .search-section {
   padding: 8px 10px 4px;
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -195,7 +195,7 @@
 .search-state {
   padding: 9px 10px;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--font-footnote);
 }
 
 .search-state.error {
@@ -220,7 +220,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--font-footnote);
 }
 
 .search-result-title {
@@ -228,13 +228,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--font-body);
   color: var(--text);
 }
 
 .search-result-meta {
   flex: none;
-  font-size: 12px;
+  font-size: var(--font-footnote);
   color: var(--text-dim);
 }
 
@@ -255,13 +255,13 @@
 }
 
 .page-title {
-  font-size: 20px;
+  font-size: var(--font-title);
   font-weight: 650;
   letter-spacing: -0.01em;
 }
 
 .page-sub {
-  font-size: 13px;
+  font-size: var(--font-body);
   color: var(--text-dim);
   margin-top: 4px;
 }
@@ -319,7 +319,7 @@
 
 .plugin-card-meta {
   overflow-wrap: anywhere;
-  font-size: 11.5px;
+  font-size: var(--font-caption);
   color: var(--text-dim);
 }
 
@@ -369,7 +369,7 @@
 .session-goal-label {
   flex: none;
   color: var(--text-mid);
-  font-size: 12px;
+  font-size: var(--font-footnote);
   font-weight: 600;
 }
 
@@ -393,7 +393,7 @@
   gap: 4px;
   align-items: center;
   padding: 5px 7px;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 
 .session-goal-actions .session-goal-cancel {
@@ -463,13 +463,13 @@
 .asset-icon {
   width: 34px;
   height: 34px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--bg-subtle);
   border: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  font-size: var(--font-callout);
   font-weight: 650;
   color: var(--text-mid);
   flex: none;
@@ -478,7 +478,7 @@
 .asset-name {
   flex: 1;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: var(--font-body);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -486,7 +486,7 @@
 }
 
 .asset-desc {
-  font-size: 12.5px;
+  font-size: var(--font-footnote);
   line-height: 1.45;
   color: var(--text-mid);
   display: -webkit-box;
@@ -497,7 +497,7 @@
 
 .asset-cmd {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--font-caption);
   color: var(--text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -514,7 +514,7 @@
 .asset-meta .ghost.danger {
   color: var(--danger);
   background: transparent;
-  font-size: 12px;
+  font-size: var(--font-footnote);
   padding: 3px 8px;
 }
 
@@ -528,7 +528,7 @@
   align-items: center;
   width: 36px;
   height: 21px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border-strong);
   padding: 2px;
   flex: none;

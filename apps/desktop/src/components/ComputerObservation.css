@@ -1,18 +1,18 @@
 .computer-observation { margin: 12px 0; min-width: 0; }
-.computer-observation figcaption { display: flex; align-items: center; gap: 8px; min-height: 34px; flex-wrap: wrap; font-size: 12px; }
+.computer-observation figcaption { display: flex; align-items: center; gap: 8px; min-height: 34px; flex-wrap: wrap; font-size: var(--font-footnote); }
 .computer-observation .observation-size { color: var(--muted); }
 .computer-observation .observation-actions { display: flex; flex: none; gap: 6px; margin-left: auto; }
-.computer-observation .icon-button { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; color: inherit; background: transparent; border: 1px solid var(--border); border-radius: 4px; }
+.computer-observation .icon-button { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; color: inherit; background: transparent; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .computer-observation-image { overflow: auto; max-height: 560px; border: 1px solid var(--border); background: #f3f4f5; color: #383c40; }
 .computer-observation-image img { display: block; width: 100%; height: auto; }
 .computer-observation-image.original img { width: auto; max-width: none; }
 .computer-observation-image [role] { padding: 16px; overflow-wrap: anywhere; }
 .computer-observation .observation-page-count { align-self: center; min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
 .computer-observation .icon-button:disabled { opacity: 0.4; cursor: default; }
-.computer-observation-pending { display: flex; gap: 10px; margin: 12px 0; padding: 12px; border: 1px solid #c98719; border-radius: 6px; background: #fff8e8; color: #5f430f; }
+.computer-observation-pending { display: flex; gap: 10px; margin: 12px 0; padding: 12px; border: 1px solid #c98719; border-radius: var(--radius-sm); background: #fff8e8; color: #5f430f; }
 .computer-observation-pending > svg { flex: none; margin-top: 1px; }
 .computer-observation-pending > div { display: grid; gap: 4px; min-width: 0; }
-.computer-observation-pending span { font-size: 12px; overflow-wrap: anywhere; }
+.computer-observation-pending span { font-size: var(--font-footnote); overflow-wrap: anywhere; }
 @media (max-width: 720px), (pointer: coarse) {
   .computer-observation .icon-button { width: 44px; height: 44px; }
   .computer-observation .observation-actions { max-width: 100%; flex-wrap: wrap; }

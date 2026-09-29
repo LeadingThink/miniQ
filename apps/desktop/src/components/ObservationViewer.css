@@ -1,4 +1,4 @@
-.observation-viewer { width: min(1200px, 100%); height: calc(var(--app-height, 100dvh) - 24px); max-width: calc(100% - 24px); max-height: none; margin: auto; padding: 0; border: 1px solid var(--border); border-radius: 12px; color: var(--text); background: var(--bg); }
+.observation-viewer { width: min(1200px, 100%); height: calc(var(--app-height, 100dvh) - 24px); max-width: calc(100% - 24px); max-height: none; margin: auto; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); background: var(--bg); }
 .observation-viewer[open] { display: flex; flex-direction: column; }
 .observation-viewer::backdrop { background: var(--scrim); }
 .observation-viewer > header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }

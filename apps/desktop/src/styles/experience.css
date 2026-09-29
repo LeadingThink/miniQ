@@ -31,11 +31,11 @@
   color: var(--text-mid);
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   padding: 4px;
   max-width: 100%;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-footnote);
 }
 .session-model-popover {
   position: absolute;
@@ -48,7 +48,7 @@
   overflow-y: auto;
   background: var(--bg);
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 14px;
   box-shadow: var(--shadow-lg);
   display: grid;
@@ -68,7 +68,7 @@
 .session-model-popover label {
   display: grid;
   gap: 5px;
-  font-size: 12px;
+  font-size: var(--font-footnote);
   color: var(--text-mid);
 }
 .session-model-popover input,
@@ -80,7 +80,7 @@
   border: 1px solid var(--border-strong);
   background: var(--bg);
   color: var(--text);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
 }
 .session-model-select {
   display: grid;
@@ -122,7 +122,7 @@
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border-strong);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   font-family: inherit;
   font-size: var(--model-font-size);
   font-weight: var(--model-font-weight);
@@ -140,7 +140,7 @@
   padding: 4px;
   background: var(--bg);
   border: 1px solid var(--border-strong);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
 }
 .session-model-popover .session-model-list > button {
   width: 100%;
@@ -153,7 +153,7 @@
   color: var(--text);
   background: transparent;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-family: inherit;
   font-size: var(--model-font-size);
   font-weight: var(--model-font-weight);
@@ -173,7 +173,7 @@
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 5px 12px;
-  font-size: 12px;
+  font-size: var(--font-footnote);
 }
 .model-capabilities dt {
   color: var(--text-mid);
@@ -185,7 +185,7 @@
 }
 .model-error {
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--font-footnote);
   overflow-wrap: anywhere;
 }
 .composer-row {
@@ -238,12 +238,12 @@
 .conversation-title-label {
   flex: none;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 
 .conversation-title strong {
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--font-body);
   font-weight: 650;
   text-overflow: ellipsis;
 }
@@ -271,7 +271,7 @@
 
 .conversation-context .execution-summary > .turn-timing {
   margin-top: 0;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 
 .conversation-context .session-goal-card {
@@ -292,7 +292,7 @@
   min-height: 30px;
   padding: 5px 8px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg-subtle);
   white-space: nowrap;
 }
@@ -445,14 +445,14 @@
   display: flex;
   flex: none;
   background: var(--bg-subtle);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 2px;
 }
 .timeline-modes button {
   background: transparent;
   color: var(--text-mid);
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-footnote);
   padding: 5px 9px;
 }
 .timeline-modes button[aria-pressed="true"] {
@@ -474,7 +474,7 @@
   max-width: 100%;
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-footnote);
   background: transparent;
   border: 0;
   padding: 5px 0;
@@ -497,7 +497,7 @@
   color: var(--text-mid);
   background: transparent;
   text-align: left;
-  font-size: 12px;
+  font-size: var(--font-footnote);
 }
 .tool-group-toggle strong {
   color: var(--text);
@@ -517,7 +517,7 @@
 }
 .tool-identity {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
   overflow-wrap: anywhere;
 }
 .tool-payload {
@@ -539,7 +539,7 @@
   height: 30px;
   flex: none;
   padding: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-mid);
 }
@@ -561,14 +561,14 @@
   background: var(--bg);
   color: var(--text);
   font: inherit;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .tool-payload header,
 .tool-payload footer {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--font-caption);
   flex-wrap: wrap;
 }
 .tool-payload header strong {
@@ -583,7 +583,7 @@
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .tool-payload footer {
   justify-content: flex-end;
@@ -634,7 +634,7 @@
 }
 .copy-control small {
   color: var(--danger);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 /* Footer width and height must not depend on how short the message is. */
 .message-entry {
@@ -682,7 +682,7 @@
   gap: 4px;
   height: 28px;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
   white-space: nowrap;
 }
 .message-footer .msg-copy,
@@ -745,7 +745,7 @@
   color: var(--text-mid);
   background: var(--bg);
   padding: 8px 0;
-  font-size: 12px;
+  font-size: var(--font-footnote);
 }
 .agent-panel-toggle strong {
   color: var(--text);
@@ -777,19 +777,19 @@
 }
 .agent-open > span {
   color: var(--text-mid);
-  font-size: 12px;
+  font-size: var(--font-footnote);
   overflow-wrap: anywhere;
 }
 .agent-open small {
   width: 100%;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
   overflow-wrap: anywhere;
 }
 .retry-notice {
   display: block;
   width: 100%;
-  font-size: 12px;
+  font-size: var(--font-footnote);
   color: var(--text-mid);
   overflow-wrap: anywhere;
 }
@@ -802,7 +802,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--font-footnote);
   cursor: pointer;
   color: var(--text-mid);
 }
@@ -822,9 +822,9 @@
   background: transparent;
   color: var(--text);
   padding: 6px;
-  font-size: 12px;
+  font-size: var(--font-footnote);
   overflow-wrap: anywhere;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .markdown-preview [id] {
   scroll-margin-top: 16px;
@@ -842,7 +842,7 @@
   gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--font-footnote);
   color: var(--text-mid);
   flex: none;
 }
@@ -921,5 +921,5 @@
 .session-permissions [role="alert"] {
   color: var(--danger);
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--font-footnote);
 }

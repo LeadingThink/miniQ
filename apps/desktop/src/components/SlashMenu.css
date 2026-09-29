@@ -9,14 +9,14 @@
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border-strong);
-  border-radius: 12px;
+  border-radius: var(--radius);
   box-shadow: var(--shadow-lg);
 }
 .slash-header,
 .slash-footer {
   flex: none;
   padding: 9px 12px;
-  font-size: 11px;
+  font-size: var(--font-caption);
   color: var(--text-dim);
 }
 .slash-header {
@@ -48,7 +48,7 @@
 .slash-title {
   padding: 8px 8px 4px;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-weight: 600;
 }
 .slash-item {
@@ -63,7 +63,7 @@
   text-align: left;
   background: transparent;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
 }
 .slash-item > svg {
   flex: none;
@@ -86,12 +86,12 @@
   gap: 3px;
 }
 .slash-name {
-  font-size: 13px;
+  font-size: var(--font-body);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 .slash-desc {
-  font-size: 12px;
+  font-size: var(--font-footnote);
   line-height: 1.45;
   color: var(--text-dim);
   white-space: normal;
@@ -103,14 +103,14 @@
   gap: 6px;
   flex: none;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .slash-meta code {
   font: inherit;
 }
 .slash-state {
   padding: 12px;
-  font-size: 12px;
+  font-size: var(--font-footnote);
   overflow-wrap: anywhere;
 }
 .slash-state.error {
@@ -128,7 +128,7 @@
   box-sizing: border-box;
   padding: 20px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--bg);
   color: var(--text);
 }
@@ -136,7 +136,7 @@
   background: #0006;
 }
 .slash-rename-dialog h2 {
-  font-size: 17px;
+  font-size: var(--font-headline);
   margin: 0 0 16px;
 }
 .slash-rename-dialog label {
@@ -148,7 +148,7 @@
   padding: 8px;
   background: var(--bg-subtle);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text);
   font: inherit;
 }
@@ -167,6 +167,6 @@
     display: none;
   }
   .slash-rename-dialog input {
-    font-size: 16px;
+    font-size: var(--font-callout);
   }
 }

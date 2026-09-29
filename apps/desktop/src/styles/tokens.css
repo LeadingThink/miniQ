@@ -1,0 +1,48 @@
+/* miniQ design tokens — the single source for type, spacing, shape and motion.
+   Modeled on the macOS HIG: a small type ramp, a 4pt grid, three corner radii,
+   and one family of easing curves. Colors live in base.css / themes.css. */
+:root {
+  /* Type ramp (macOS): caption / footnote / body / callout / headline / title / large title */
+  --font-caption: 11px;
+  --font-footnote: 12px;
+  --font-body: 13px;
+  --font-callout: 15px;
+  --font-headline: 17px;
+  --font-title: 22px;
+  --font-large-title: 28px;
+
+  /* 4pt spacing grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Shape: small controls / controls & cards / sheets & dialogs */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Motion: quick, physical, never decorative */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.2, 0.8, 0.2, 1.08);
+  --duration-fast: 120ms;
+  --duration: 200ms;
+  --duration-slow: 320ms;
+}
+
+/* Respect "Reduce motion" everywhere, not file by file. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

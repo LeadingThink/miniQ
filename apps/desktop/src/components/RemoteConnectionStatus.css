@@ -1,17 +1,17 @@
 .statusbar-identity { display: none; }
-.statusbar .remote-connection-trigger { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-subtle); color: var(--text-mid); min-width: 0; cursor: pointer; }
+.statusbar .remote-connection-trigger { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-subtle); color: var(--text-mid); min-width: 0; cursor: pointer; }
 .remote-connection-trigger.connected { color: var(--text); }
-.remote-connection-dialog { width: min(520px, calc(100vw - 24px)); max-height: min(85dvh, var(--app-height, 100dvh)); overflow-y: auto; overscroll-behavior: contain; padding: 20px; border: 1px solid var(--border); border-radius: 16px; background: var(--bg); color: var(--text); white-space: normal; }
+.remote-connection-dialog { width: min(520px, calc(100vw - 24px)); max-height: min(85dvh, var(--app-height, 100dvh)); overflow-y: auto; overscroll-behavior: contain; padding: 20px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); color: var(--text); white-space: normal; }
 .remote-connection-dialog::backdrop { background: #0007; }
 .remote-connection-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.remote-connection-dialog h2 { margin: 0; font-size: 17px; }
-.remote-connection-dialog h3 { margin: 0 0 10px; font-size: 15px; overflow-wrap: anywhere; }
+.remote-connection-dialog h2 { margin: 0; font-size: var(--font-headline); }
+.remote-connection-dialog h3 { margin: 0 0 10px; font-size: var(--font-callout); overflow-wrap: anywhere; }
 .remote-connection-dialog header button { min-width: 44px; min-height: 44px; }
 .remote-connection-dialog section { padding: 16px 0; }
 .remote-connection-dialog section + section { border-top: 1px solid var(--border); }
-.remote-connection-dialog p { font-size: 13px; line-height: 1.65; color: var(--text-mid); margin: 8px 0 12px; }
-.remote-connection-dialog small { display: block; font-size: 12px; line-height: 1.5; color: var(--text-dim); overflow-wrap: anywhere; }
-.remote-current-context dl { display: grid; gap: 10px; margin: 0; font-size: 13px; }
+.remote-connection-dialog p { font-size: var(--font-body); line-height: 1.65; color: var(--text-mid); margin: 8px 0 12px; }
+.remote-connection-dialog small { display: block; font-size: var(--font-footnote); line-height: 1.5; color: var(--text-dim); overflow-wrap: anywhere; }
+.remote-current-context dl { display: grid; gap: 10px; margin: 0; font-size: var(--font-body); }
 .remote-current-context dl > div { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; }
 .remote-current-context dt { color: var(--text-dim); }
 .remote-current-context dd { margin: 0; overflow-wrap: anywhere; }
@@ -26,10 +26,10 @@
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
   .statusbar-identity { display: flex; align-items: center; gap: 8px; flex: 1 1 calc(100% - 60px); min-width: 0; max-width: calc(100% - 52px); min-height: 44px; text-align: left; padding: 4px 8px; color: var(--text); background: transparent; border: 0; }
   .statusbar-identity > span { min-width: 0; flex: 1; }
-  .statusbar-identity strong { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .statusbar-identity small { display: block; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); margin-top: 3px; }
+  .statusbar-identity strong { display: block; font-size: var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .statusbar-identity small { display: block; font-size: var(--font-caption); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); margin-top: 3px; }
   .statusbar-identity > svg { flex: none; }
-  .statusbar .remote-connection-trigger { min-height: 44px; padding: 6px 8px; font-size: 11px; }
+  .statusbar .remote-connection-trigger { min-height: 44px; padding: 6px 8px; font-size: var(--font-caption); }
   .remote-connection-dialog { padding: 16px; }
   /* Phone remote header: a single row. The identity button opens the same
      connection dialog, so the healthy-connection chip is hidden; it comes back
@@ -51,8 +51,8 @@
   /* Native wrappers can reclaim the persistent safe-area/header padding while
      the web layout keeps its existing touch sizing. */
   .native-mobile .statusbar-identity { gap: 6px; min-height: 36px; padding: 2px 4px; }
-  .native-mobile .statusbar-identity strong { font-size: 13px; line-height: 1.2; }
-  .native-mobile .statusbar-identity small { font-size: 10px; line-height: 1.15; margin-top: 1px; }
+  .native-mobile .statusbar-identity strong { font-size: var(--font-body); line-height: 1.2; }
+  .native-mobile .statusbar-identity small { font-size: var(--font-caption); line-height: 1.15; margin-top: 1px; }
   .native-mobile .statusbar .remote-connection-trigger { min-height: 44px; padding: 4px 7px; }
   .native-mobile .statusbar:has(> .statusbar-identity) { padding-top: max(3px, var(--safe-top)); padding-bottom: 2px; }
   .native-mobile .statusbar:has(> .statusbar-identity) > .statusbar-identity { padding: 1px 4px; }

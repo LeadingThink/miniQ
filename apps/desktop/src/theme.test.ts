@@ -11,35 +11,60 @@ import {
   THEMES,
   LEGACY_THEMES,
   THEME_STORAGE_KEY,
-  CHARACTER_STORAGE_KEY,
-  FAVORITES_STORAGE_KEY,
+  MODE_STORAGE_KEY,
   LAST_THEME_STORAGE_KEY,
   readStoredTheme,
+  storeAppearanceMode,
   storeTheme,
-  storeCharacter,
-  toggleFavorite,
   subscribeAppearance,
+  themeById,
 } from "./theme";
-import { themeCategories } from "./themeCatalog";
-import { themeCharacters } from "./themeCharacters";
 import { buildThemeBootstrap } from "./themeBootstrap";
+
+let dark = false;
+let changeListeners: Array<() => void> = [];
+function stubSystem(isDark: boolean) {
+  dark = isDark;
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation(() => ({
+      get matches() {
+        return dark;
+      },
+      addEventListener: (_: string, listener: () => void) => changeListeners.push(listener),
+    }))
+  );
+}
+function bootstrapTheme() {
+  document.documentElement.removeAttribute("data-theme");
+  window.eval(buildThemeBootstrap());
+  return document.documentElement.dataset.theme;
+}
 
 beforeEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute("style");
-  vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: false }));
+  stubSystem(false);
   initializeAppearance();
+  // 初始化会写入完整偏好；清掉以便各用例模拟老用户/新用户的存储状态。
+  localStorage.clear();
 });
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
-describe("theme selection", () => {
-  it("keeps every registered theme id", () => {
+describe("theme catalog", () => {
+  it("keeps three light and three dark themes, each paired with the other side", () => {
+    expect(THEMES).toHaveLength(6);
+    expect(new Set(THEMES.map((theme) => theme.id)).size).toBe(6);
+    expect(THEMES.filter((theme) => theme.mode === "light")).toHaveLength(3);
     for (const theme of THEMES) {
       expect(isThemeId(theme.id)).toBe(true);
       expect(resolveTheme(theme.id)).toBe(theme.id);
+      const pair = themeById(theme.pair as never);
+      expect(pair.mode).not.toBe(theme.mode);
+      expect(pair.pair).toBe(theme.id);
     }
   });
 
@@ -50,36 +75,30 @@ describe("theme selection", () => {
     }
   });
 
-  it("has the full nine-category Web catalog without duplicates", () => {
-    expect(THEMES).toHaveLength(108);
-    expect(new Set(THEMES.map((theme) => theme.id)).size).toBe(108);
-    expect(themeCategories).toHaveLength(9);
-    expect(new Set(THEMES.map((theme) => theme.pattern)).size).toBe(16);
-    expect(THEMES.filter((theme) => theme.featured)).toHaveLength(25);
-    for (const category of themeCategories)
-      expect(THEMES.filter((theme) => theme.category === category.id)).toHaveLength(12);
-    expect(themeCharacters).toHaveLength(10);
+  it("maps every retired theme to a kept theme of the same brightness", () => {
+    expect(Object.keys(LEGACY_THEMES).length).toBeGreaterThan(100);
+    for (const next of Object.values(LEGACY_THEMES)) expect(isThemeId(next)).toBe(true);
+    expect(LEGACY_THEMES["starry"] && themeById(LEGACY_THEMES["starry"]).mode).toBe("dark");
+    expect(LEGACY_THEMES["rose"] && themeById(LEGACY_THEMES["rose"]).mode).toBe("light");
   });
 
   it.each(Object.entries(LEGACY_THEMES))("migrates %s to %s", (old, next) => {
     localStorage.setItem(THEME_STORAGE_KEY, old);
-    window.eval(buildThemeBootstrap());
-    expect(document.documentElement.dataset.theme).toBe(next);
+    expect(bootstrapTheme()).toBe(next);
     initializeAppearance();
-    expect(getAppearance().theme).toBe(next);
+    expect(getAppearance()).toMatchObject({ theme: next, mode: themeById(next).mode });
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe(next);
   });
 
   it.each(THEMES)("applies $id with readable text and matching initial paint", (theme) => {
     localStorage.setItem(THEME_STORAGE_KEY, theme.id);
-    window.eval(buildThemeBootstrap());
     const root = document.documentElement;
-    expect(root.dataset.theme).toBe(theme.id);
+    expect(bootstrapTheme()).toBe(theme.id);
     expect(root.style.getPropertyValue("--theme-page")).toBe(theme.preview.page);
     expect(root.style.colorScheme).toBe(theme.mode);
     applyTheme(theme.id);
-    expect(root.dataset.themePattern).toBe(theme.pattern);
     expect(root.dataset.themeMode).toBe(theme.mode);
+    expect(root.dataset.themePattern).toBeUndefined();
     for (const [key, value] of Object.entries(theme.preview))
       expect(root.style.getPropertyValue(`--theme-${key}`)).toBe(value);
     expect(contrastRatio(theme.preview.accent, accentForeground(theme.preview.accent))).toBeGreaterThanOrEqual(4.5);
@@ -87,15 +106,74 @@ describe("theme selection", () => {
       expect(contrastRatio(theme.preview.text, surface)).toBeGreaterThanOrEqual(7);
     }
   });
+});
 
-  it("uses system darkness only when there is no saved preference", () => {
+describe("appearance mode", () => {
+  it("follows the system for new users, including the first paint", () => {
     localStorage.clear();
-    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    stubSystem(true);
     expect(readStoredTheme()).toBe("night");
-    window.eval(buildThemeBootstrap());
-    expect(document.documentElement.dataset.theme).toBe("night");
-    storeTheme("rose");
-    expect(readStoredTheme()).toBe("rose");
+    expect(bootstrapTheme()).toBe("night");
+    initializeAppearance();
+    expect(getAppearance().mode).toBe("system");
+    expect(localStorage.getItem(MODE_STORAGE_KEY)).toBe("system");
+    stubSystem(false);
+    expect(bootstrapTheme()).toBe("jade");
+    initializeAppearance();
+    expect(getAppearance()).toMatchObject({ mode: "system", theme: "jade" });
+  });
+
+  it("switches live when the system appearance changes", () => {
+    storeTheme("snow");
+    storeTheme("graphite");
+    expect(getAppearance()).toMatchObject({ mode: "system", theme: "snow" });
+    const listener = vi.fn();
+    const unsubscribe = subscribeAppearance(listener);
+    dark = true;
+    changeListeners.forEach((change) => change());
+    expect(getAppearance().theme).toBe("graphite");
+    expect(document.documentElement.dataset.theme).toBe("graphite");
+    expect(listener).toHaveBeenCalled();
+    unsubscribe();
+  });
+
+  it("keeps a fixed mode and remembers each side independently", () => {
+    storeAppearanceMode("dark");
+    expect(getAppearance().theme).toBe("night");
+    storeTheme("slate");
+    storeTheme("amber");
+    expect(getAppearance()).toMatchObject({ mode: "light", theme: "amber", lastThemes: { light: "amber", dark: "slate" } });
+    storeAppearanceMode("dark");
+    expect(getAppearance().theme).toBe("slate");
+    initializeAppearance();
+    expect(getAppearance()).toMatchObject({ mode: "dark", theme: "slate" });
+    expect(bootstrapTheme()).toBe("slate");
+    storeAppearanceMode("system");
+    expect(getAppearance().theme).toBe("amber");
+    expect(bootstrapTheme()).toBe("amber");
+  });
+
+  it("gives upgraded users the paired theme on the other side", () => {
+    localStorage.setItem(THEME_STORAGE_KEY, "snow");
+    initializeAppearance();
+    expect(getAppearance()).toMatchObject({ mode: "light", lastThemes: { light: "snow", dark: "slate" } });
+    storeAppearanceMode("system");
+    stubSystem(true);
+    expect(bootstrapTheme()).toBe("slate");
+  });
+
+  it("drops retired preferences and validates malformed ones", () => {
+    localStorage.setItem("miniq.appearance.favorites", '["rose"]');
+    localStorage.setItem("miniq.appearance.character", "human-li-bai");
+    localStorage.setItem(LAST_THEME_STORAGE_KEY, '{"light":"night","dark":"jade"}');
+    localStorage.setItem(MODE_STORAGE_KEY, "sepia");
+    initializeAppearance();
+    // 非法明暗且无旧主题时按新用户处理（跟随系统），左右错位的 lastThemes 被纠正。
+    expect(getAppearance()).toMatchObject({ mode: "system", lastThemes: { light: "jade", dark: "night" } });
+    expect(localStorage.getItem("miniq.appearance.favorites")).toBeNull();
+    expect(localStorage.getItem("miniq.appearance.character")).toBeNull();
+    localStorage.setItem(LAST_THEME_STORAGE_KEY, "{broken");
+    expect(() => bootstrapTheme()).not.toThrow();
   });
 
   it("retains preferences when storage is blocked", () => {
@@ -106,71 +184,27 @@ describe("theme selection", () => {
       throw new Error("blocked");
     });
     initializeAppearance();
-    storeTheme("starry");
-    storeCharacter("human-li-bai");
-    toggleFavorite("starry");
-    expect(getAppearance()).toMatchObject({ theme: "starry", character: "human-li-bai", favorites: ["starry"] });
-    expect(document.documentElement.dataset.theme).toBe("starry");
-    expect(() => window.eval(buildThemeBootstrap())).not.toThrow();
-  });
-
-  it("remembers light and dark choices independently", () => {
-    storeTheme("rose");
-    storeTheme("starry");
-    initializeAppearance();
-    expect(getAppearance().lastThemes).toEqual({ light: "rose", dark: "starry" });
-  });
-
-  it("validates malformed stored preferences", () => {
-    localStorage.setItem(FAVORITES_STORAGE_KEY, '["rose","rose","unknown",42]');
-    localStorage.setItem(CHARACTER_STORAGE_KEY, "../../untrusted");
-    localStorage.setItem(LAST_THEME_STORAGE_KEY, '{"light":"starry","dark":"rose"}');
-    initializeAppearance();
-    expect(getAppearance()).toMatchObject({
-      favorites: ["rose"],
-      character: "none",
-      lastThemes: { light: "jade", dark: "night" },
-    });
-    localStorage.setItem(FAVORITES_STORAGE_KEY, "{broken");
-    initializeAppearance();
-    expect(getAppearance().favorites).toEqual([]);
-  });
-
-  it("persists all favorites and keeps characters independent of theme changes", () => {
-    THEMES.forEach((theme) => toggleFavorite(theme.id));
-    storeCharacter("human-ada-lovelace");
-    storeTheme("night");
-    initializeAppearance();
-    expect(getAppearance().favorites).toHaveLength(108);
-    expect(getAppearance().character).toBe("human-ada-lovelace");
-    expect(document.documentElement.style.getPropertyValue("--theme-character-watermark")).toContain(
-      "human-ada-lovelace-watermark.png"
-    );
-    storeCharacter("none");
-    expect(document.documentElement.style.getPropertyValue("--theme-character-watermark")).toBe("none");
-    toggleFavorite("rose");
-    expect(getAppearance().favorites).not.toContain("rose");
+    storeAppearanceMode("dark");
+    storeTheme("graphite");
+    expect(getAppearance()).toMatchObject({ theme: "graphite", mode: "dark" });
+    expect(document.documentElement.dataset.theme).toBe("graphite");
+    expect(() => bootstrapTheme()).not.toThrow();
   });
 
   it("syncs appearance across windows, handles clearing storage and unsubscribes", () => {
     const listener = vi.fn();
     const unsubscribe = subscribeAppearance(listener);
-    localStorage.setItem(THEME_STORAGE_KEY, "polar-night");
-    localStorage.setItem(CHARACTER_STORAGE_KEY, "human-su-shi");
-    localStorage.setItem(FAVORITES_STORAGE_KEY, '["polar-night"]');
+    localStorage.setItem(THEME_STORAGE_KEY, "slate");
+    localStorage.setItem(MODE_STORAGE_KEY, "dark");
     window.dispatchEvent(new StorageEvent("storage", { key: THEME_STORAGE_KEY, storageArea: localStorage }));
     expect(listener).toHaveBeenCalledTimes(1);
-    expect(getAppearance()).toMatchObject({
-      theme: "polar-night",
-      character: "human-su-shi",
-      favorites: ["polar-night"],
-    });
+    expect(getAppearance()).toMatchObject({ theme: "slate", mode: "dark" });
     window.dispatchEvent(new StorageEvent("storage", { key: THEME_STORAGE_KEY, storageArea: sessionStorage }));
     window.dispatchEvent(new StorageEvent("storage", { key: "unrelated" }));
     expect(listener).toHaveBeenCalledTimes(1);
     localStorage.clear();
     window.dispatchEvent(new StorageEvent("storage", { key: null, storageArea: localStorage }));
-    expect(getAppearance()).toMatchObject({ theme: "jade", character: "none", favorites: [] });
+    expect(getAppearance()).toMatchObject({ theme: "jade", mode: "system" });
     unsubscribe();
     window.dispatchEvent(new StorageEvent("storage", { key: THEME_STORAGE_KEY }));
     expect(listener).toHaveBeenCalledTimes(2);

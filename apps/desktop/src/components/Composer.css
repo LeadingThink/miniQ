@@ -1,7 +1,7 @@
 .composer-card .composer-send-status {
   margin: 4px;
   color: var(--text-mid);
-  font-size: 12px;
+  font-size: var(--font-footnote);
   overflow-wrap: anywhere;
 }
 
@@ -57,7 +57,7 @@
     max-height: min(200px, 28dvh, calc(var(--app-height, 100dvh) * 0.28));
     overflow-y: auto;
     overscroll-behavior: contain;
-    font-size: 16px;
+    font-size: var(--font-callout);
   }
 
   .composer-card .attach-row {
@@ -70,7 +70,7 @@
   .composer-card .attach-chip {
     max-width: 100%;
     min-height: 44px;
-    border-radius: 10px;
+    border-radius: var(--radius);
     padding: 0 0 0 8px;
   }
 

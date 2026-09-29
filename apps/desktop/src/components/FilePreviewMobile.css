@@ -3,7 +3,7 @@
   width: 100%;
   color: var(--text-mid);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-caption);
   padding-block: 3px;
 }
 .file-preview-path .file-path-summary { display: block; }
@@ -27,13 +27,13 @@
   .file-preview-panel .file-preview-location > strong {
     white-space: normal;
     overflow-wrap: anywhere;
-    font-size: 14px;
+    font-size: var(--font-body);
     line-height: 1.5;
   }
   .file-preview-panel .file-preview-path > summary { min-height: 36px; padding-block: 9px; }
   .file-preview-panel .file-path-summary { display: none; }
   .file-preview-panel .file-path-hint { display: inline; font: inherit; }
-  .file-preview-panel .file-preview-path > span { font-size: 12px; line-height: 1.6; }
+  .file-preview-panel .file-preview-path > span { font-size: var(--font-footnote); line-height: 1.6; }
   .file-preview-panel .file-preview-tools {
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -52,7 +52,7 @@
   }
   .file-preview-panel .preview-mode-toggle { height: auto; }
   #root .file-preview-header .icon-button.file-preview-discuss { width: auto; flex: 0 0 auto; gap: 5px; padding-inline: 8px; }
-  .file-preview-panel .file-preview-discuss > span { display: inline; font: inherit; font-size: 13px; }
+  .file-preview-panel .file-preview-discuss > span { display: inline; font: inherit; font-size: var(--font-body); }
   .file-preview-panel .preview-tab [role="tab"],
   .file-preview-panel .preview-tab .icon-button,
   .file-preview-panel .preview-tab-menu-trigger.icon-button,

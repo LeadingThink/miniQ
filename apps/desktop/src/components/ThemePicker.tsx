@@ -1,279 +1,131 @@
-import { Check, ChevronLeft, ChevronRight, Heart, Moon, Search, Sun, X } from "lucide-react";
-import { useState, useSyncExternalStore, type CSSProperties } from "react";
-import { getAppearance, storeCharacter, subscribeAppearance, toggleFavorite, THEMES, type ThemeId } from "../theme";
-import { themeCategories, type ThemeDefinition } from "../themeCatalog";
-import { themeCharacters } from "../themeCharacters";
+import { Check } from "lucide-react";
+import { useSyncExternalStore, type CSSProperties } from "react";
+import {
+  getAppearance,
+  storeAppearanceMode,
+  subscribeAppearance,
+  themeById,
+  THEMES,
+  type AppearanceMode,
+  type ThemeId,
+  type ThemeMode,
+} from "../theme";
+import type { ThemeDefinition } from "../themeCatalog";
 
-const PAGE_SIZE = 12;
+const MODES: { id: AppearanceMode; label: string }[] = [
+  { id: "system", label: "自动" },
+  { id: "light", label: "浅色" },
+  { id: "dark", label: "深色" },
+];
 
-function CharacterPicker() {
-  const appearance = useSyncExternalStore(subscribeAppearance, getAppearance, getAppearance);
-  const character = themeCharacters.find((item) => item.id === appearance.character)!;
+function previewStyle(theme: ThemeDefinition): CSSProperties {
+  return Object.fromEntries(
+    Object.entries(theme.preview).map(([key, value]) => [`--theme-${key}`, value])
+  ) as CSSProperties;
+}
+
+function ThemePreview({ theme, split }: { theme: ThemeDefinition; split?: ThemeDefinition }) {
   return (
-    <details className="theme-characters">
-      <summary>
-        角色外观{" "}
-        <span>
-          {character.name} · {themeCharacters.length} 款
-        </span>
-      </summary>
-      <div className="character-grid" role="radiogroup" aria-label="角色外观">
-        {themeCharacters.map((item) => (
-          <label key={item.id} className="character-choice" title={item.story}>
+    <span className="theme-preview" aria-hidden="true">
+      {[theme, split].map(
+        (item, index) =>
+          item && (
+            <span key={index} className="theme-preview-half" style={previewStyle(item)}>
+              <span className="theme-preview-sidebar">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span className="theme-preview-content">
+                <i />
+                <i />
+                <b />
+              </span>
+            </span>
+          )
+      )}
+    </span>
+  );
+}
+
+function ThemeRow(props: {
+  mode: ThemeMode;
+  selected: ThemeId;
+  active: boolean;
+  onSelect: (theme: ThemeId) => void;
+}) {
+  const label = props.mode === "light" ? "浅色主题" : "深色主题";
+  return (
+    <section className="theme-row" aria-label={label}>
+      <h3>
+        {label}
+        {props.active && <span>当前使用</span>}
+      </h3>
+      <div className="theme-grid" role="radiogroup" aria-label={label}>
+        {THEMES.filter((theme) => theme.mode === props.mode).map((theme) => (
+          <label key={theme.id} className="theme-choice" title={theme.description}>
             <input
               type="radio"
-              name="theme-character"
-              value={item.id}
-              aria-label={item.name}
-              checked={appearance.character === item.id}
-              onChange={() => storeCharacter(item.id)}
+              name={`appearance-theme-${props.mode}`}
+              value={theme.id}
+              checked={props.selected === theme.id}
+              aria-label={theme.name}
+              onChange={() => props.onSelect(theme.id)}
             />
-            <span className="character-art" aria-hidden="true">
-              {item.asset ? <img src={item.asset} alt="" loading="lazy" width="64" height="64" /> : <X size={22} />}
+            <ThemePreview theme={theme} />
+            <span className="theme-copy">
+              <span className="theme-swatch" style={{ background: theme.preview.accent }} aria-hidden="true" />
+              <strong>{theme.name}</strong>
+              {props.selected === theme.id && <Check className="theme-check" size={14} aria-hidden="true" />}
             </span>
-            <strong>{item.name}</strong>
-            <small>{item.universe}</small>
           </label>
         ))}
       </div>
-    </details>
-  );
-}
-
-function ThemeTile({
-  theme,
-  selected,
-  favorite,
-  onSelect,
-}: {
-  theme: (typeof THEMES)[number];
-  selected: boolean;
-  favorite: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <div className="theme-tile" key={theme.id}>
-      <label className="theme-choice">
-        <input
-          type="radio"
-          name="appearance-theme"
-          value={theme.id}
-          checked={selected}
-          aria-label={theme.name}
-          onChange={onSelect}
-        />
-        <ThemePreview theme={theme} />
-        <span className="theme-copy">
-          <strong>{theme.name}</strong>
-          <small>{theme.description}</small>
-        </span>
-        {selected && <Check className="theme-check" size={16} aria-hidden="true" />}
-      </label>
-      <button
-        className="theme-favorite"
-        type="button"
-        aria-label={`${favorite ? "取消收藏" : "收藏"}${theme.name}`}
-        title={`${favorite ? "取消收藏" : "收藏"}${theme.name}`}
-        aria-pressed={favorite}
-        onClick={() => toggleFavorite(theme.id)}
-      >
-        <Heart size={14} fill={favorite ? "currentColor" : "none"} />
-      </button>
-    </div>
-  );
-}
-
-function ThemePreview({ theme }: { theme: ThemeDefinition }) {
-  const style = Object.fromEntries(
-    Object.entries(theme.preview).map(([key, value]) => [`--theme-${key}`, value])
-  ) as CSSProperties;
-  return (
-    <span className="theme-preview" data-theme-pattern={theme.pattern} style={style} aria-hidden="true">
-      <span className="theme-preview-sidebar">
-        <i />
-        <i />
-        <i />
-      </span>
-      <span className="theme-preview-content">
-        <i />
-        <i />
-        <b />
-        <i />
-      </span>
-    </span>
+    </section>
   );
 }
 
 export function ThemePicker(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) => void }) {
   const appearance = useSyncExternalStore(subscribeAppearance, getAppearance, getAppearance);
-  const [query, setQuery] = useState("");
-  const [scope, setScope] = useState("featured");
-  const [category, setCategory] = useState("all");
-  const [mode, setMode] = useState("all");
-  const [page, setPage] = useState(0);
-  const selected = THEMES.find((theme) => theme.id === props.theme)!;
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filtered = THEMES.filter((theme) => {
-    const categoryName = themeCategories.find((item) => item.id === theme.category)!.name;
-    return (
-      (scope !== "favorites" || appearance.favorites.includes(theme.id)) &&
-      (scope !== "featured" || theme.featured) &&
-      (category === "all" || theme.category === category) &&
-      (mode === "all" || theme.mode === mode) &&
-      (!normalizedQuery ||
-        [theme.name, theme.description, theme.id, categoryName].some((value) =>
-          value.toLocaleLowerCase().includes(normalizedQuery)
-        ))
-    );
-  });
-  const pageCount = Math.ceil(filtered.length / PAGE_SIZE);
-  const activePage = Math.min(page, Math.max(0, pageCount - 1));
-  const visible = filtered.slice(activePage * PAGE_SIZE, (activePage + 1) * PAGE_SIZE);
-  const resetFilters = () => {
-    setQuery("");
-    setScope("all");
-    setCategory("all");
-    setMode("all");
-    setPage(0);
-  };
-
+  const light = themeById(appearance.lastThemes.light);
+  const dark = themeById(appearance.lastThemes.dark);
+  const activeMode = themeById(props.theme).mode;
   return (
     <div className="appearance-settings">
-      <div className="appearance-current">
-        <ThemePreview theme={selected} />
-        <div>
-          <strong>{selected.name}</strong>
-          <span>{selected.description}</span>
-        </div>
-        <div className="appearance-modes" role="group" aria-label="明暗外观">
-          {(["light", "dark"] as const).map((value) => (
-            <button
-              type="button"
-              key={value}
-              aria-label={value === "light" ? "浅色外观" : "深色外观"}
-              title={value === "light" ? "浅色外观" : "深色外观"}
-              aria-pressed={selected.mode === value}
-              onClick={() => props.onThemeChange(appearance.lastThemes[value])}
-            >
-              {value === "light" ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
+      <section className="appearance-mode-row" aria-label="外观">
+        <h3>外观</h3>
+        <div className="appearance-modes" role="radiogroup" aria-label="明暗外观">
+          {MODES.map((mode) => (
+            <label key={mode.id} className="appearance-mode">
+              <input
+                type="radio"
+                name="appearance-mode"
+                value={mode.id}
+                checked={appearance.mode === mode.id}
+                aria-label={mode.label}
+                onChange={() => storeAppearanceMode(mode.id)}
+              />
+              <ThemePreview
+                theme={mode.id === "dark" ? dark : light}
+                split={mode.id === "system" ? dark : undefined}
+              />
+              <span>{mode.label}</span>
+            </label>
           ))}
         </div>
-      </div>
-      <CharacterPicker />
-      <div className="theme-picker-heading">
-        <h3>外观主题</h3>
-        <span>{THEMES.length} 套</span>
-      </div>
-      <div className="theme-search">
-        <Search size={16} aria-hidden="true" />
-        <input
-          type="search"
-          aria-label="搜索主题"
-          placeholder="搜索主题"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            if (scope === "featured") setScope("all");
-            setPage(0);
-          }}
+        <p className="settings-section-description">
+          {appearance.mode === "system" ? "随系统的浅色 / 深色外观自动切换。" : "始终使用所选外观。"}
+        </p>
+      </section>
+      {(["light", "dark"] as const).map((mode) => (
+        <ThemeRow
+          key={mode}
+          mode={mode}
+          selected={appearance.lastThemes[mode]}
+          active={activeMode === mode}
+          onSelect={props.onThemeChange}
         />
-      </div>
-      <div className="theme-filters">
-        <label>
-          主题集
-          <select
-            aria-label="主题集"
-            value={scope}
-            onChange={(event) => {
-              setScope(event.target.value);
-              setPage(0);
-            }}
-          >
-            <option value="featured">精选 · {THEMES.filter((theme) => theme.featured).length}</option>
-            <option value="all">全部 · {THEMES.length}</option>
-            <option value="favorites">收藏 · {appearance.favorites.length}</option>
-          </select>
-        </label>
-        <label>
-          分类
-          <select
-            aria-label="主题分类"
-            value={category}
-            onChange={(event) => {
-              setCategory(event.target.value);
-              if (scope === "featured") setScope("all");
-              setPage(0);
-            }}
-          >
-            <option value="all">所有分类</option>
-            {themeCategories.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          明暗
-          <select
-            aria-label="主题明暗"
-            value={mode}
-            onChange={(event) => {
-              setMode(event.target.value);
-              setPage(0);
-            }}
-          >
-            <option value="all">全部明暗</option>
-            <option value="light">浅色</option>
-            <option value="dark">深色</option>
-          </select>
-        </label>
-      </div>
-      <div className="theme-grid" role="radiogroup" aria-label="外观主题">
-        {visible.map((theme) => (
-          <ThemeTile
-            key={theme.id}
-            theme={theme}
-            selected={props.theme === theme.id}
-            favorite={appearance.favorites.includes(theme.id)}
-            onSelect={() => props.onThemeChange(theme.id)}
-          />
-        ))}
-      </div>
-      {filtered.length === 0 && (
-        <div className="theme-empty" role="status">
-          <span>{scope === "favorites" && !appearance.favorites.length ? "暂无收藏主题" : "没有匹配的主题"}</span>
-          <button type="button" className="secondary" onClick={resetFilters}>
-            查看全部
-          </button>
-        </div>
-      )}
-      <div className="theme-pagination">
-        <span role="status" aria-live="polite">
-          {filtered.length} 套{pageCount > 0 && ` · 第 ${activePage + 1} / ${pageCount} 页`}
-        </span>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="上一页主题"
-          title="上一页主题"
-          disabled={activePage === 0}
-          onClick={() => setPage(activePage - 1)}
-        >
-          <ChevronLeft size={16} />
-        </button>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="下一页主题"
-          title="下一页主题"
-          disabled={activePage + 1 >= pageCount}
-          onClick={() => setPage(activePage + 1)}
-        >
-          <ChevronRight size={16} />
-        </button>
-      </div>
+      ))}
     </div>
   );
 }

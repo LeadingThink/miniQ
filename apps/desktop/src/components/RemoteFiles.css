@@ -16,7 +16,7 @@
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--font-footnote);
 }
 .remote-file-list {
   max-height: 35dvh;

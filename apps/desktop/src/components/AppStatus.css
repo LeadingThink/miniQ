@@ -24,7 +24,7 @@
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
 }
 .open-preview-dialog::backdrop {
@@ -76,7 +76,7 @@
   .statusbar { column-gap: 8px; row-gap: 6px; }
   .statusbar > span:empty { display: none; }
   .statusbar .statusbar-icon-button { width: 44px; height: 44px; }
-  .statusbar .statusbar-action-label { display: inline; font-size: 11px; white-space: nowrap; }
+  .statusbar .statusbar-action-label { display: inline; font-size: var(--font-caption); white-space: nowrap; }
   .statusbar .statusbar-icon-button:has(.statusbar-action-label) { display: inline-flex; align-items: center; justify-content: center; width: auto; gap: 5px; padding-inline: 8px; }
   .statusbar:has(.remote-connection-trigger) > .badge,
   .statusbar:has(.remote-connection-trigger) .distill-button,

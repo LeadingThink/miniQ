@@ -1,27 +1,26 @@
-import { themeCatalog, type ThemeId, type ThemeMode } from "./themeCatalog";
-import { themeCharacters, type ThemeCharacterId } from "./themeCharacters";
+import { LEGACY_THEMES, themeCatalog, type ThemeId, type ThemeMode } from "./themeCatalog";
 
-export { themeCatalog as THEMES } from "./themeCatalog";
-export type { ThemeId } from "./themeCatalog";
+export { themeCatalog as THEMES, LEGACY_THEMES } from "./themeCatalog";
+export type { ThemeId, ThemeMode } from "./themeCatalog";
 export const THEME_STORAGE_KEY = "miniq.appearance.theme";
-export const FAVORITES_STORAGE_KEY = "miniq.appearance.favorites";
-export const CHARACTER_STORAGE_KEY = "miniq.appearance.character";
+export const MODE_STORAGE_KEY = "miniq.appearance.mode";
 export const LAST_THEME_STORAGE_KEY = "miniq.appearance.lastThemes";
-export const LEGACY_THEMES: Record<string, ThemeId> = {
-  paper: "jade",
-  mist: "ocean",
-  grove: "forest",
-  sunrise: "amber",
-  midnight: "navy-office",
-  aurora: "aurora-lake",
-};
+/** 旧版的收藏与角色设置已随主题精简移除，启动时顺带清理。 */
+const RETIRED_STORAGE_KEYS = ["miniq.appearance.favorites", "miniq.appearance.character"];
+
+/** “自动”跟随系统明暗，和 macOS 外观设置一致。 */
+export type AppearanceMode = "system" | ThemeMode;
 
 export interface Appearance {
+  /** 当前实际生效的主题。 */
   theme: ThemeId;
-  character: ThemeCharacterId;
-  favorites: ThemeId[];
+  mode: AppearanceMode;
+  /** 浅色、深色各自选用的主题。 */
   lastThemes: Record<ThemeMode, ThemeId>;
 }
+
+const DEFAULT_THEMES: Record<ThemeMode, ThemeId> = { light: "jade", dark: "night" };
+const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 let current: Appearance | undefined;
 const listeners = new Set<() => void>();
@@ -30,9 +29,17 @@ export function isThemeId(value: unknown): value is ThemeId {
   return typeof value === "string" && themeCatalog.some((theme) => theme.id === value);
 }
 
+export function themeById(id: ThemeId) {
+  return themeCatalog.find((theme) => theme.id === id)!;
+}
+
 export function resolveTheme(value: unknown, fallback: ThemeId = "jade"): ThemeId {
   if (isThemeId(value)) return value;
   return typeof value === "string" && Object.hasOwn(LEGACY_THEMES, value) ? LEGACY_THEMES[value] : fallback;
+}
+
+function systemMode(): ThemeMode {
+  return typeof window !== "undefined" && window.matchMedia?.(DARK_QUERY).matches ? "dark" : "light";
 }
 
 function read(key: string): string | null {
@@ -59,44 +66,63 @@ function persist(key: string, value: string) {
   }
 }
 
+function remove(key: string) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Nothing to clean up in restricted webviews.
+  }
+}
+
+function effectiveTheme(mode: AppearanceMode, lastThemes: Record<ThemeMode, ThemeId>): ThemeId {
+  return lastThemes[mode === "system" ? systemMode() : mode];
+}
+
 export function readStoredTheme(): ThemeId {
-  const dark = typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-  return resolveTheme(read(THEME_STORAGE_KEY), dark ? "night" : "jade");
+  return readAppearance().theme;
 }
 
 function readAppearance(): Appearance {
-  const favorites = readJson(FAVORITES_STORAGE_KEY);
-  const character = themeCharacters.find((item) => item.id === read(CHARACTER_STORAGE_KEY))?.id ?? "none";
+  const storedRaw = read(THEME_STORAGE_KEY);
+  const stored = storedRaw === null ? undefined : resolveTheme(storedRaw, DEFAULT_THEMES[systemMode()]);
   const last = readJson(LAST_THEME_STORAGE_KEY) as Partial<Record<ThemeMode, unknown>> | null;
-  const lastThemes: Record<ThemeMode, ThemeId> = { light: "jade", dark: "night" };
+  const lastThemes = { ...DEFAULT_THEMES };
+  if (stored) {
+    // 只选过一种明暗的老用户：另一侧默认用同色系的配对主题。
+    const theme = themeById(stored);
+    lastThemes[theme.mode] = stored;
+    lastThemes[theme.mode === "light" ? "dark" : "light"] = theme.pair as ThemeId;
+  }
   for (const mode of ["light", "dark"] as const) {
     const id = resolveTheme(last?.[mode], lastThemes[mode]);
-    if (themeCatalog.find((theme) => theme.id === id)?.mode === mode) lastThemes[mode] = id;
+    if (themeById(id).mode === mode) lastThemes[mode] = id;
   }
-  const theme = readStoredTheme();
-  lastThemes[themeCatalog.find((item) => item.id === theme)!.mode] = theme;
-  return {
-    theme,
-    character,
-    lastThemes,
-    favorites: Array.isArray(favorites) ? [...new Set(favorites.filter(isThemeId))] : [],
-  };
+  if (stored) lastThemes[themeById(stored).mode] = stored;
+  const storedMode = read(MODE_STORAGE_KEY);
+  // 新用户默认跟随系统；老用户保留原来选定的明暗。
+  const mode: AppearanceMode =
+    storedMode === "system" || storedMode === "light" || storedMode === "dark"
+      ? storedMode
+      : stored
+        ? themeById(stored).mode
+        : "system";
+  return { theme: effectiveTheme(mode, lastThemes), mode, lastThemes };
 }
 
 export function getAppearance(): Appearance {
   return (current ??= readAppearance());
 }
 
+function notify() {
+  listeners.forEach((listener) => listener());
+}
+
 function syncStorage(event: StorageEvent) {
   if (event.storageArea && event.storageArea !== window.localStorage) return;
-  if (
-    event.key !== null &&
-    ![THEME_STORAGE_KEY, CHARACTER_STORAGE_KEY, FAVORITES_STORAGE_KEY, LAST_THEME_STORAGE_KEY].includes(event.key)
-  )
-    return;
+  if (event.key !== null && ![THEME_STORAGE_KEY, MODE_STORAGE_KEY, LAST_THEME_STORAGE_KEY].includes(event.key)) return;
   current = readAppearance();
-  applyAppearance(current);
-  listeners.forEach((listener) => listener());
+  applyTheme(current.theme);
+  notify();
 }
 
 export function subscribeAppearance(listener: () => void): () => void {
@@ -124,59 +150,58 @@ export function accentForeground(accent: string): string {
 }
 
 export function applyTheme(id: ThemeId) {
-  const theme = themeCatalog.find((item) => item.id === id)!;
+  const theme = themeById(id);
   const root = document.documentElement;
   root.dataset.theme = id;
   root.dataset.themeMode = theme.mode;
-  root.dataset.themePattern = theme.pattern;
   root.style.colorScheme = theme.mode;
   for (const [name, value] of Object.entries(theme.preview)) root.style.setProperty(`--theme-${name}`, value);
   root.style.setProperty("--accent-fg", accentForeground(theme.preview.accent));
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme.preview.page);
 }
 
-function applyAppearance(appearance: Appearance) {
-  applyTheme(appearance.theme);
-  const character = themeCharacters.find((item) => item.id === appearance.character)!;
-  const root = document.documentElement;
-  root.dataset.themeCharacter = character.id;
-  root.style.setProperty(
-    "--theme-character-watermark",
-    character.watermarkAsset ? `url("${new URL(character.watermarkAsset, document.baseURI).href}")` : "none"
-  );
+let systemQuery: MediaQueryList | undefined;
+function followSystem() {
+  const appearance = getAppearance();
+  if (appearance.mode !== "system") return;
+  const theme = effectiveTheme("system", appearance.lastThemes);
+  if (theme === appearance.theme) return;
+  update({ ...appearance, theme });
 }
 
 export function initializeAppearance() {
   current = readAppearance();
-  applyAppearance(current);
+  applyTheme(current.theme);
+  // 一次写全，避免新用户下次启动时被当成"只存了主题"的老用户而锁定明暗。
   persist(THEME_STORAGE_KEY, current.theme);
+  persist(MODE_STORAGE_KEY, current.mode);
+  persist(LAST_THEME_STORAGE_KEY, JSON.stringify(current.lastThemes));
+  RETIRED_STORAGE_KEYS.forEach(remove);
+  if (!systemQuery && typeof window !== "undefined" && window.matchMedia) {
+    systemQuery = window.matchMedia(DARK_QUERY);
+    systemQuery.addEventListener?.("change", followSystem);
+  }
 }
 
-function updateAppearance(next: Appearance) {
+function update(next: Appearance) {
   current = next;
-  applyAppearance(next);
-  listeners.forEach((listener) => listener());
+  persist(THEME_STORAGE_KEY, next.theme);
+  persist(MODE_STORAGE_KEY, next.mode);
+  persist(LAST_THEME_STORAGE_KEY, JSON.stringify(next.lastThemes));
+  applyTheme(next.theme);
+  notify();
 }
 
+/** 选定某个主题：记为对应明暗的首选；固定明暗时切到该主题所在的明暗。 */
 export function storeTheme(theme: ThemeId) {
   const appearance = getAppearance();
-  const mode = themeCatalog.find((item) => item.id === theme)!.mode;
-  const lastThemes = { ...appearance.lastThemes, [mode]: theme };
-  persist(THEME_STORAGE_KEY, theme);
-  persist(LAST_THEME_STORAGE_KEY, JSON.stringify(lastThemes));
-  updateAppearance({ ...appearance, theme, lastThemes });
+  const themeMode = themeById(theme).mode;
+  const lastThemes = { ...appearance.lastThemes, [themeMode]: theme };
+  const mode = appearance.mode === "system" ? "system" : themeMode;
+  update({ mode, lastThemes, theme: effectiveTheme(mode, lastThemes) });
 }
 
-export function storeCharacter(character: ThemeCharacterId) {
-  persist(CHARACTER_STORAGE_KEY, character);
-  updateAppearance({ ...getAppearance(), character });
-}
-
-export function toggleFavorite(theme: ThemeId) {
+export function storeAppearanceMode(mode: AppearanceMode) {
   const appearance = getAppearance();
-  const favorites = appearance.favorites.includes(theme)
-    ? appearance.favorites.filter((id) => id !== theme)
-    : [...appearance.favorites, theme];
-  persist(FAVORITES_STORAGE_KEY, JSON.stringify(favorites));
-  updateAppearance({ ...appearance, favorites });
+  update({ ...appearance, mode, theme: effectiveTheme(mode, appearance.lastThemes) });
 }

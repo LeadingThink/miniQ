@@ -24,10 +24,10 @@
   flex: 1 0 auto;
   padding: 8px 7px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-mid);
-  font-size: 12px;
+  font-size: var(--font-footnote);
   cursor: pointer;
 }
 .workbench-toolbar [role="tab"][aria-selected="true"] {
@@ -40,7 +40,7 @@
   cursor: default;
 }
 .workbench-toolbar small {
-  font-size: 10px;
+  font-size: var(--font-caption);
   color: var(--text-dim);
 }
 .workbench-toolbar > .icon-button {
@@ -70,7 +70,7 @@
   padding: 6px 9px;
   color: var(--text);
   background: transparent;
-  font-size: 14px;
+  font-size: var(--font-body);
 }
 .workbench-panel[data-layout="mobile"] .workbench-toolbar {
   flex-wrap: wrap;
@@ -81,7 +81,7 @@
 }
 .workbench-panel[data-layout="mobile"] .workbench-toolbar [role="tab"] {
   min-height: 44px;
-  font-size: 13px;
+  font-size: var(--font-body);
 }
 @media (min-width: 580px) and (max-height: 520px) {
   .workbench-panel[data-layout="mobile"] .workbench-toolbar { flex-wrap: nowrap; }
@@ -120,17 +120,17 @@
 .workbench-overview h2,
 .workbench-file-index h2 {
   margin: 4px 0 14px;
-  font-size: 16px;
+  font-size: var(--font-callout);
   overflow-wrap: anywhere;
 }
 .workbench-overview h3 {
   margin: 20px 0 10px;
-  font-size: 13px;
+  font-size: var(--font-body);
 }
 .workbench-overview > p,
 .workbench-file-index > p {
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--font-footnote);
   line-height: 1.7;
 }
 .workbench-overview .artifact-card {

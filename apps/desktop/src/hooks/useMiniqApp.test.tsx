@@ -474,7 +474,7 @@ it("unmounts the complete session page without orphaned child-task DOM nodes", a
   const logged = vi.spyOn(console, "error").mockImplementation(() => {});
   function TestApp() {
     return (
-      <AppShell app={useMiniqApp()} theme="grid" onThemeChange={() => {}} />
+      <AppShell app={useMiniqApp()} theme="jade" onThemeChange={() => {}} />
     );
   }
   render(<TestApp />);
@@ -509,7 +509,7 @@ it("gives the task browser the workbench without a competing review panel", asyn
   let app!: ReturnType<typeof useMiniqApp>;
   function TestApp() {
     app = useMiniqApp();
-    return <AppShell app={app} theme="grid" onThemeChange={() => {}} />;
+    return <AppShell app={app} theme="jade" onThemeChange={() => {}} />;
   }
   try {
     render(<TestApp />);
@@ -542,7 +542,7 @@ it("opens desktop observations on remote clients without launching a separate if
   let app!: ReturnType<typeof useMiniqApp>;
   function TestApp() {
     app = useMiniqApp();
-    return <AppShell app={app} theme="grid" onThemeChange={() => {}} />;
+    return <AppShell app={app} theme="jade" onThemeChange={() => {}} />;
   }
   try {
     render(<TestApp />);
@@ -587,7 +587,7 @@ it("adopts a default-project draft browser before its first task can request tha
   let app!: ReturnType<typeof useMiniqApp>;
   function TestApp() {
     app = useMiniqApp();
-    return <AppShell app={app} theme="grid" onThemeChange={() => {}} />;
+    return <AppShell app={app} theme="jade" onThemeChange={() => {}} />;
   }
   try {
     render(<TestApp />);
@@ -645,7 +645,7 @@ it("reveals observation pages by their exact id without reopening or crossing co
   const activePanel = () => document.querySelector<HTMLElement>(".browser-panel:not(.browser-panel-inactive)")!;
   function TestApp() {
     app = useMiniqApp();
-    return <AppShell app={app} theme="grid" onThemeChange={() => {}} />;
+    return <AppShell app={app} theme="jade" onThemeChange={() => {}} />;
   }
   try {
     render(<TestApp />);

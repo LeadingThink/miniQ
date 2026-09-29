@@ -47,17 +47,16 @@ describe("appearance settings integration", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("does not submit provider settings from theme selection, favorites, search or Enter", async () => {
+  it("does not submit provider settings from theme or appearance selection, or Enter", async () => {
     render(<Fixture />);
     await waitFor(() => expect(call).toHaveBeenCalledWith("settings.get"));
     fireEvent.click(screen.getByRole("tab", { name: "外观" }));
     expect(screen.queryByRole("button", { name: "保存并开始使用" })).toBeNull();
-    const night = screen.getByRole("radio", { name: "夜墨" });
-    night.focus();
-    fireEvent.click(night);
-    expect(document.activeElement).toBe(night);
-    fireEvent.click(screen.getByRole("button", { name: "收藏夜墨" }));
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "rose" } });
+    const dark = screen.getByRole("radio", { name: "深色" });
+    dark.focus();
+    fireEvent.click(dark);
+    expect(document.activeElement).toBe(dark);
+    fireEvent.click(screen.getByRole("radio", { name: "夜墨" }));
     fireEvent.submit(screen.getByRole("dialog"));
     expect(call.mock.calls.every(([method]) => ["settings.get", "model.list"].includes(method))).toBe(true);
     expect(getAppearance().theme).toBe("night");
@@ -75,7 +74,7 @@ describe("appearance settings integration", () => {
     expect(screen.queryByText("API 协议")).toBeNull();
     expect(screen.queryByLabelText("Relay URL")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "外观" }));
-    fireEvent.click(screen.getByRole("radio", { name: "玫瑰" }));
+    fireEvent.click(screen.getByRole("radio", { name: "琥珀" }));
     fireEvent.click(screen.getByRole("tab", { name: "服务与远程" }));
     expect((screen.getByLabelText(/服务地址/) as HTMLInputElement).value).toBe("https://example.test/v1");
     expect(screen.getByRole("link", { name: "获取在问 API Key" })).toBeTruthy();

@@ -5,11 +5,11 @@
   justify-content: space-between;
   gap: 12px;
 }
-.ssh-connections h3 { margin: 0; font-size: 14px; }
+.ssh-connections h3 { margin: 0; font-size: var(--font-body); }
 .ssh-section-heading p, .ssh-help {
   margin: 6px 0 12px;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--font-footnote);
   line-height: 1.7;
 }
 .ssh-host-row {
@@ -22,7 +22,7 @@
 }
 .ssh-connections small {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -67,16 +67,16 @@
 }
 .ssh-host-select > span { display: grid; flex: 1; min-width: 0; gap: 4px; }
 .ssh-host-select > small { flex: none; }
-.ssh-host-select strong { font-size: 13px; overflow-wrap: anywhere; }
+.ssh-host-select strong { font-size: var(--font-body); overflow-wrap: anywhere; }
 .ssh-host-select[aria-pressed="true"] { color: var(--accent); background: var(--bg-active); }
 .ssh-host-row > p { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
 .ssh-discovered { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-.ssh-discovered p { flex-basis: 100%; margin: 0; font-size: 12px; color: var(--text-mid); }
+.ssh-discovered p { flex-basis: 100%; margin: 0; font-size: var(--font-footnote); color: var(--text-mid); }
 .ssh-discovered button { color: var(--text); background: var(--bg-active); flex-wrap: wrap; }
 .ssh-add-host { display: flex; gap: 8px; margin: 7px 0; }
 .ssh-add-host input { flex: 1; min-width: 0; }
-.ssh-error { color: var(--danger, #c4364b); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
-.ssh-setup-help { margin-top: 16px; color: var(--text-mid); font-size: 12px; line-height: 1.7; }
+.ssh-error { color: var(--danger, #c4364b); font-size: var(--font-footnote); line-height: 1.6; overflow-wrap: anywhere; }
+.ssh-setup-help { margin-top: 16px; color: var(--text-mid); font-size: var(--font-footnote); line-height: 1.7; }
 .ssh-setup-help summary { cursor: pointer; color: var(--text); }
 .ssh-setup-help ol { padding-left: 20px; }
 .ssh-setup-help li { margin-block: 6px; }
