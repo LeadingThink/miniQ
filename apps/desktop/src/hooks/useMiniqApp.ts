@@ -5,6 +5,7 @@ import { isTauriRuntime } from "../runtime";
 import { isMobileLayout } from "../mobileViewport";
 import { useDesktopHost } from "../desktopHost";
 import { hostKey } from "../hostWorkspace";
+import { loadUnread, saveUnread, withUnread } from "../unreadStore";
 import type { SettingsTab } from "../settingsNavigation";
 import type {
   QueuedMessage,
@@ -545,7 +546,14 @@ export function useMiniqApp(active = true) {
   const desktop = useDesktopHost();
   const client = useRpcClient();
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => new Set());
+  const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => (desktop ? new Set() : loadUnread(hostKey(client.sshHost))));
+  const persistedUnread = useRef(unreadSessionIds);
+  useEffect(() => {
+    // With a desktop host, the shared host catalogs own persistence.
+    if (desktop || persistedUnread.current === unreadSessionIds) return;
+    persistedUnread.current = unreadSessionIds;
+    saveUnread(hostKey(client.sshHost), unreadSessionIds);
+  }, [desktop, client, unreadSessionIds]);
   const catalog = useCatalog(client);
   const [sessionError, setError, setSessionError] = useSessionError(
     catalog.currentSessionId ?? `draft:${catalog.selectedWorkspace?.id ?? ""}`,
@@ -565,6 +573,14 @@ export function useMiniqApp(active = true) {
       return next;
     });
   }, [desktop?.markSeen, client]);
+  const markSessionUnread = useCallback((sessionId: string) => {
+    desktop?.setUnread(client.sshHost, sessionId, true);
+    setUnreadSessionIds((current) => withUnread(current, sessionId, true) ?? current);
+  }, [desktop?.setUnread, client]);
+  const markAllSessionsRead = useCallback(() => {
+    desktop?.markAllSeen();
+    setUnreadSessionIds((current) => (current.size ? new Set() : current));
+  }, [desktop?.markAllSeen]);
   const handleSessionStatusChanged = useCallback(
     (sessionId: string, status: SessionStatus) => {
       const previous = catalog.sessions.find((session) => session.id === sessionId)?.status;
@@ -705,6 +721,8 @@ export function useMiniqApp(active = true) {
     catalog,
     unreadSessionIds,
     markSessionSeen,
+    markSessionUnread,
+    markAllSessionsRead,
     navigation,
     feed,
     review,

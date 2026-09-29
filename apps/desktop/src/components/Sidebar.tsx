@@ -64,6 +64,8 @@ interface SidebarProps {
   onEditWorkspace: (workspaceId: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSessionSeen: (sessionId: string) => void;
+  onSessionUnread?: (sessionId: string) => void;
+  onMarkAllRead?: () => void;
   onDeleteSession: (sessionId: string) => void;
   onRenameSession: (sessionId: string, title: string) => void;
   onSetSessionPinned: (sessionId: string, pinned: boolean) => void;
@@ -131,7 +133,7 @@ export function Sidebar(props: SidebarProps) {
       </div>
 
       <div className="sidebar-scroll" role="navigation" aria-label="项目与会话" onKeyDown={handleSidebarNavigation}>
-        {props.workspaces.length > 0 && <SidebarFilters query={query} filter={filter} counts={navigation.counts} onQuery={setQuery} onFilter={setFilter} />}
+        {props.workspaces.length > 0 && <SidebarFilters query={query} filter={filter} counts={navigation.counts} onQuery={setQuery} onFilter={setFilter} onMarkAllRead={props.onMarkAllRead} />}
         {props.hostGroups?.filter((host) => !host.workspaceIds.length).map((host) => <HostHeading key={host.key} host={host} />)}
         {navigation.groups.map(({ workspace, sessions }, index) => (
           <Fragment key={workspace.id}>
@@ -150,6 +152,7 @@ export function Sidebar(props: SidebarProps) {
             onEditWorkspace={props.onEditWorkspace}
             onSelectSession={props.onSelectSession}
             onSessionSeen={props.onSessionSeen}
+            onSessionUnread={props.onSessionUnread}
             onDeleteSession={props.onDeleteSession}
             onRenameSession={props.onRenameSession}
             onSetSessionPinned={props.onSetSessionPinned}
@@ -199,6 +202,7 @@ export function Sidebar(props: SidebarProps) {
                   contextLabel={workspaceLabels.get(session.workspaceId)}
                   onSelect={props.onSelectSession}
                   onSeen={props.onSessionSeen}
+                  onMarkUnread={props.onSessionUnread}
                   unread={props.unreadSessionIds.has(session.id)}
                   onDelete={props.onDeleteSession}
                   onRename={props.onRenameSession}
@@ -302,6 +306,7 @@ interface WorkspaceGroupProps {
   onEditWorkspace: (workspaceId: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSessionSeen: (sessionId: string) => void;
+  onSessionUnread?: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
   onRenameSession: (sessionId: string, title: string) => void;
   onSetSessionPinned: (sessionId: string, pinned: boolean) => void;
@@ -470,6 +475,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
           session={session}
           onSelect={props.onSelectSession}
           onSeen={props.onSessionSeen}
+                  onMarkUnread={props.onSessionUnread}
           unread={props.unreadSessionIds.has(session.id)}
           onDelete={props.onDeleteSession}
           onRename={props.onRenameSession}

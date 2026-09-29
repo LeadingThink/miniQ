@@ -43,6 +43,8 @@ export function UnifiedSidebar({ app }: { app: MiniqAppController }) {
     },
     unreadSessionIds: new Set(catalogs.flatMap((catalog) => [...catalog.unreadSessionIds].map((id) => scopedKey(catalog.hostId, id)))),
     markSessionSeen: (key) => { const [host, id] = decode(key); desktop.markSeen(host, id); },
+    markSessionUnread: (key) => { const [host, id] = decode(key); desktop.setUnread(host, id, true); },
+    markAllSessionsRead: desktop.markAllSeen,
     navigation: { ...app.navigation, setEditingWorkspaceId: (value) => { if (typeof value === "string") select(value, "workspace", "edit"); } },
     actions: { ...app.actions,
       selectWorkspace: (key) => select(key, "workspace"),
