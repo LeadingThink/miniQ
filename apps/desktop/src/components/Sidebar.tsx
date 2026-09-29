@@ -433,6 +433,13 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
             open={menuOpen}
             onClose={() => setMenuOpen(false)}
           >
+            <button type="button" className="dropdown-item" onClick={(event) => {
+              event.stopPropagation();
+              setMenuOpen(false);
+              props.onCreateSession(props.workspace.id);
+            }}>
+              <Plus size={13} /><span>在此项目新建会话</span>
+            </button>
             <button type="button" className="dropdown-item" onClick={() => {
               setMenuOpen(false);
               props.onEditWorkspace(props.workspace.id);
