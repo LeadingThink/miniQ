@@ -5,6 +5,8 @@ import { isTauriRuntime } from "../runtime";
 import type { PluginInfo, PluginListResult } from "../types";
 import { RemotePathDialog } from "./RemotePathDialog";
 import { ApprovalRulesSection } from "./ApprovalRules";
+import { ConfirmDialog } from "./ui/Dialog";
+import { EmptyState } from "./ui/EmptyState";
 
 /** "连接器：linear" label for plugins that contribute MCP servers. */
 export function connectorLabel(plugin: Pick<PluginInfo, "mcpServers">): string | null {
@@ -18,6 +20,7 @@ export function PluginsPanel(props: { client: RpcClient }) {
   const [status, setStatus] = useState<string | null>(null);
   const [remotePicker, setRemotePicker] = useState(false);
   const [remotePluginUpdate, setRemotePluginUpdate] = useState(false);
+  const [confirming, setConfirming] = useState<{ kind: "trust" | "uninstall"; plugin: PluginInfo } | null>(null);
 
   useEffect(() => {
     void props.client
@@ -62,14 +65,10 @@ export function PluginsPanel(props: { client: RpcClient }) {
     }
   };
 
-  const setEnabled = async (plugin: PluginInfo, enabled: boolean) => {
-    let confirmTrustedCode = false;
-    if (enabled && plugin.trustedCode) {
-      confirmTrustedCode = window.confirm(
-        `启用可信 Node.js 插件“${plugin.name}”？\n\n` +
-          "它能够以当前用户权限运行代码，请仅启用你信任的插件。",
-      );
-      if (!confirmTrustedCode) return;
+  const setEnabled = async (plugin: PluginInfo, enabled: boolean, confirmTrustedCode = false) => {
+    if (enabled && plugin.trustedCode && !confirmTrustedCode) {
+      setConfirming({ kind: "trust", plugin });
+      return;
     }
 
     setBusy(plugin.id);
@@ -131,8 +130,11 @@ export function PluginsPanel(props: { client: RpcClient }) {
     }
   };
 
-  const uninstall = async (plugin: PluginInfo) => {
-    if (!window.confirm(`卸载“${plugin.name}”并删除已安装的插件文件？`)) return;
+  const uninstall = async (plugin: PluginInfo, confirmed = false) => {
+    if (!confirmed) {
+      setConfirming({ kind: "uninstall", plugin });
+      return;
+    }
     setBusy(plugin.id);
     setStatus(null);
     try {
@@ -150,6 +152,29 @@ export function PluginsPanel(props: { client: RpcClient }) {
 
   return (
     <div className="page">
+      <ConfirmDialog
+        open={confirming !== null}
+        tone="danger"
+        title={
+          confirming?.kind === "trust"
+            ? `启用可信 Node.js 插件“${confirming.plugin.name}”？`
+            : `卸载“${confirming?.plugin.name ?? ""}”？`
+        }
+        description={
+          confirming?.kind === "trust"
+            ? "它能够以当前用户权限运行代码，请仅启用你信任的插件。"
+            : "将删除已安装的插件文件，此操作无法撤销。"
+        }
+        confirmLabel={confirming?.kind === "trust" ? "启用插件" : "卸载"}
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => {
+          const current = confirming;
+          setConfirming(null);
+          if (!current) return;
+          if (current.kind === "trust") void setEnabled(current.plugin, true, true);
+          else void uninstall(current.plugin, true);
+        }}
+      />
       {remotePicker && props.client.sshHost && <RemotePathDialog host={props.client.sshHost} purpose="plugin"
         onClose={() => setRemotePicker(false)} onSubmit={async (path) => {
           const result = await props.client.call<PluginListResult>("plugin.install", { path, update: remotePluginUpdate });
@@ -169,11 +194,11 @@ export function PluginsPanel(props: { client: RpcClient }) {
         </div>
         {status && <div className="settings-status">{status}</div>}
         {plugins.length === 0 ? (
-          <div className="schedule-empty">
-            <Package className="plugin-empty-icon" size={32} />
-            <div className="schedule-empty-title">还没有插件</div>
-            <div className="schedule-empty-sub">内置插件会在 miniQ 启动时自动安装；也可以添加一个包含 manifest.toml 的插件或技能包文件夹</div>
-          </div>
+          <EmptyState
+            icon={<Package size={28} />}
+            title="还没有插件"
+            description="内置插件会在 miniQ 启动时自动安装；也可以添加一个包含 manifest.toml 的插件或技能包文件夹"
+          />
         ) : (
           <div className="card-grid">
             {plugins.map((plugin) => (

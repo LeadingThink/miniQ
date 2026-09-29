@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { ToastProvider } from "./components/ui/Toast";
 // Bundled fonts (self-hosted, offline). Latin: Inter (UI) + JetBrains Mono
 // (code); CJK: MiSans VF subset (@font-face lives in styles/base.css).
 import "@fontsource-variable/inter/wght.css";
@@ -29,7 +30,9 @@ void initializeMobileRuntime();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <ToastProvider>
+      <App />
+    </ToastProvider>
   </React.StrictMode>,
 );
 

@@ -2,7 +2,8 @@ import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
-import { LoaderCircle, PlugZap, Sparkles } from "lucide-react";
+import { PlugZap, Sparkles } from "lucide-react";
+import { Spinner } from "./ui/Spinner";
 import { Fragment, lazy, Suspense, useState } from "react";
 import { Composer, ComposerCard } from "./Composer";
 import { PlanStepPill } from "./ExecutionActivity";
@@ -162,7 +163,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
       <Suspense
         fallback={
           <div className="timeline-loading">
-            <LoaderCircle className="connection-spinner" size={18} />
+            <Spinner size={18} />
             正在加载会话
           </div>
         }

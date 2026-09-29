@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { RpcClient } from "../rpc";
@@ -88,11 +89,18 @@ it("keeps the confirmed policy on a failed update and allows retry", async () =>
 it("asks for confirmation before a remote client raises permissions", async () => {
   const call = vi.fn().mockResolvedValue({ mode: null, effective: "auto" });
   const rpc = { ...client(call), mode: "remote" } as unknown as RpcClient;
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   render(<SessionPermissionControls client={rpc} sessionId="one" />);
   fireEvent.click(await screen.findByRole("button", { name: "替我审批" }));
   fireEvent.click(screen.getByRole("option", { name: /完全访问/ }));
-  expect(confirm).toHaveBeenCalledOnce();
+  const dialog = screen.getByRole("alertdialog");
+  expect(dialog.textContent).toContain("完全访问");
+  fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(call).toHaveBeenCalledTimes(1);
-  confirm.mockRestore();
+
+  fireEvent.click(screen.getByRole("button", { name: "替我审批" }));
+  fireEvent.click(screen.getByRole("option", { name: /完全访问/ }));
+  fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "提升权限" }));
+  await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
+  expect(call).toHaveBeenLastCalledWith("session.approval.update", { sessionId: "one", mode: "fullAccess" });
 });

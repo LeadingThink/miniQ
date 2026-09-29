@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Upload } from "lucide-react";
+import { Sparkles, Upload } from "lucide-react";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 import { RemotePathDialog } from "./RemotePathDialog";
+import { EmptyState } from "./ui/EmptyState";
+import { Switch } from "./ui/Switch";
+import { showUndoToast, useToast } from "./ui/Toast";
 
 interface SkillView {
   name: string;
@@ -80,16 +83,12 @@ function SkillGrid(props: {
             <div className="asset-name" title={skill.name}>
               {skill.name}
             </div>
-            <div
-              className={`switch ${skill.enabled ? "on" : ""}`}
+            <Switch
+              checked={skill.enabled}
+              label={`${skill.enabled ? "停用" : "启用"}${skill.name}`}
               title={skill.enabled ? "点击禁用" : "点击启用"}
-              onClick={(event) => {
-                event.stopPropagation();
-                props.onToggle(skill);
-              }}
-            >
-              <div className="switch-knob" />
-            </div>
+              onChange={() => props.onToggle(skill)}
+            />
           </div>
           <div className="asset-desc">{skill.description || "(无描述)"}</div>
           <div className="asset-meta">
@@ -109,13 +108,11 @@ function SkillGrid(props: {
 
 function EmptySkills() {
   return (
-    <div className="schedule-empty">
-      <div className="schedule-empty-icon">✦</div>
-      <div className="schedule-empty-title">还没有技能</div>
-      <div className="schedule-empty-sub">
-        完成一次任务后,点右上角「保存为技能」,agent 就会学会这个工作流
-      </div>
-    </div>
+    <EmptyState
+      icon={<Sparkles size={28} />}
+      title="还没有技能"
+      description="完成一次任务后，点右上角“保存为技能”，agent 就会学会这个工作流"
+    />
   );
 }
 
@@ -124,6 +121,8 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
   const [detail, setDetail] = useState<SkillDetailView | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [remotePicker, setRemotePicker] = useState(false);
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
+  const toast = useToast();
   const scope = props.workspaceId ? { workspaceId: props.workspaceId } : {};
 
   const refresh = useCallback(async () => {
@@ -156,16 +155,35 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
     setDetail(result);
   };
 
+  const unhide = (name: string) =>
+    setHidden((current) => {
+      const next = new Set(current);
+      next.delete(name);
+      return next;
+    });
+
   const remove = async (skill: SkillView) => {
-    if (!window.confirm(`删除技能"${skill.name}"?`)) return;
-    try {
-      await props.client.call("skill.delete", { name: skill.name, ...scope });
-      setDetail(null);
-      await refresh();
-    } catch (error) {
-      setStatus(errorMessage(error));
-    }
+    const deleteScope = scope;
+    setHidden((current) => new Set(current).add(skill.name));
+    setDetail(null);
+    showUndoToast(toast, {
+      message: `已删除技能“${skill.name}”`,
+      onUndo: () => unhide(skill.name),
+      onCommit: () => {
+        void (async () => {
+          try {
+            await props.client.call("skill.delete", { name: skill.name, ...deleteScope });
+            await refresh();
+          } catch (error) {
+            setStatus(errorMessage(error));
+          } finally {
+            unhide(skill.name);
+          }
+        })();
+      },
+    });
   };
+  const visibleSkills = skills.filter((skill) => !hidden.has(skill.name));
 
   const importPackage = async () => {
     if (props.client.sshHost) {
@@ -223,10 +241,10 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
         {status && <div className="settings-status">{status}</div>}
         {detail ? (
           <SkillDetail detail={detail} onBack={() => setDetail(null)} onRemove={remove} />
-        ) : skills.length === 0 ? (
+        ) : visibleSkills.length === 0 ? (
           <EmptySkills />
         ) : (
-          <SkillGrid skills={skills} onOpen={(skill) => void open(skill)} onToggle={toggle} />
+          <SkillGrid skills={visibleSkills} onOpen={(skill) => void open(skill)} onToggle={toggle} />
         )}
       </div>
     </div>

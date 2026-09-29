@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "./ui/useFocusTrap";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
 
@@ -93,6 +94,8 @@ function CloseActions(props: { onClose: () => void }) {
 }
 
 export function DistillModal(props: DistillModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(panelRef, true);
   const [phase, setPhase] = useState<DistillPhase>("loading");
   const [reason, setReason] = useState("");
   const [draft, setDraft] = useState("");
@@ -156,7 +159,21 @@ export function DistillModal(props: DistillModalProps) {
 
   return (
     <div className="settings-overlay" onClick={props.onClose}>
-      <div className="settings-panel skills-panel" onClick={(event) => event.stopPropagation()}>
+      <div
+        ref={panelRef}
+        className="settings-panel skills-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Save as skill"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            props.onClose();
+          }
+        }}
+      >
         <h2>Save as skill</h2>
         {error && <div className="error-banner">{error}</div>}
         <PhaseMessage phase={phase} reason={reason} />
