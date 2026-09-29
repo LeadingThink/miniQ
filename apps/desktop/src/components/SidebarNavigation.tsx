@@ -1,5 +1,5 @@
 import { useCallback, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import { ListFilter, Search, X } from "lucide-react";
+import { CheckCheck, ListFilter, Search, X } from "lucide-react";
 import { isSessionRunning } from "../sessionStatus";
 import { isMobileLayout, MOBILE_LAYOUT_QUERY } from "../mobileViewport";
 import type { Session, Workspace } from "../types";
@@ -107,6 +107,7 @@ export function SidebarFilters(props: {
   counts: Record<SidebarFilter, number>;
   onQuery: (value: string) => void;
   onFilter: (value: SidebarFilter) => void;
+  onMarkAllRead?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const mobile = useMobileSidebarLayout();
@@ -116,6 +117,10 @@ export function SidebarFilters(props: {
     <div className="sidebar-filters">
       <div className="sidebar-section sidebar-section-heading">
         <span>项目与会话</span>
+        {props.onMarkAllRead && props.counts.unread > 0 && <button type="button" className="sidebar-filter-toggle sidebar-mark-all-read"
+          aria-label="全部标为已读" title="全部标为已读（⇧Esc）" onClick={props.onMarkAllRead}>
+          <CheckCheck size={14} />
+        </button>}
         {!mobile && <button type="button" className={`sidebar-filter-toggle ${active ? "active" : ""}`}
           aria-label="筛选项目和会话" aria-expanded={controlsVisible} aria-controls="sidebar-filter-controls"
           title={active ? "筛选已启用，点击调整" : "筛选项目和会话"} onClick={() => setExpanded(!expanded)}>

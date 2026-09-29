@@ -50,6 +50,8 @@ export function AppSidebar({ app, hostGroups, onCreateSession }: { app: MiniqApp
           void app.actions.openSession(sessionId);
         }}
         onSessionSeen={app.markSessionSeen}
+        onSessionUnread={app.markSessionUnread}
+        onMarkAllRead={app.markAllSessionsRead}
         onDeleteSession={(sessionId) =>
           void app.actions.deleteSession(sessionId)
         }

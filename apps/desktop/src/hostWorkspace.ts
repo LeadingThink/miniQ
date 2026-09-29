@@ -1,4 +1,5 @@
 import type { Session, Workspace } from "./types";
+import { loadUnread } from "./unreadStore";
 
 export type HostState = "connected" | "connecting" | "disconnected" | "error";
 export interface SavedHost {
@@ -25,7 +26,7 @@ export type HostDestination = HostNavigation & { action?: "edit" | "create"; rev
 export const hostKey = (host: string | null) => JSON.stringify(host);
 export const scopedKey = (host: string | null, id: string) => JSON.stringify([host, id]);
 export const emptyCatalog = (hostId: string | null, label: string): HostCatalog => ({
-  hostId, label, state: "disconnected", workspaces: [], sessions: [], unreadSessionIds: new Set(),
+  hostId, label, state: "disconnected", workspaces: [], sessions: [], unreadSessionIds: loadUnread(hostKey(hostId)),
 });
 
 export function validSshTarget(value: string): boolean {

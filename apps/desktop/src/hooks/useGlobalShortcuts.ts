@@ -3,6 +3,7 @@ import {
   containsUnsupportedInput,
   navigateTextSelection,
 } from "../textInputNavigation";
+import { isApplePlatform, matchShortcut, type ShortcutMatch } from "../shortcuts";
 
 export interface ShortcutHandlers {
   /** ⌘/Ctrl+K — open the command palette. */
@@ -18,6 +19,9 @@ export interface ShortcutHandlers {
   /** ⌘/Ctrl+F (or Option+F on macOS) — focus the current session search.
    * Return false when no active conversation search is available. */
   onSessionSearch?: () => boolean | void;
+  /** Registry shortcuts from `shortcuts.ts` (session navigation, ⌘/ ...).
+   * Return false to leave the key event untouched. */
+  onShortcut?: (match: ShortcutMatch) => boolean | void;
   /** Escape — close topmost overlay (handled by overlays themselves). */
 }
 
@@ -35,11 +39,6 @@ function textControl(
     return target;
   }
   return null;
-}
-
-function isApplePlatform(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return /Mac|iPhone|iPad/.test(`${navigator.platform} ${navigator.userAgent}`);
 }
 
 function handleTextNavigation(event: KeyboardEvent): boolean {
@@ -90,6 +89,14 @@ export function useGlobalShortcuts(handlers: ShortcutHandlers, enabled = true) {
     if (!enabled) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (handleTextNavigation(e)) return;
+
+      if (handlers.onShortcut && !e.defaultPrevented) {
+        const match = matchShortcut(e, isApplePlatform());
+        if (match) {
+          if (handlers.onShortcut(match) !== false) e.preventDefault();
+          return;
+        }
+      }
 
       const mod = e.metaKey || e.ctrlKey;
       // Keep the browser's find shortcut scoped to the current conversation.

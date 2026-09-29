@@ -555,3 +555,11 @@ button.ui-list-row-main:active:not(:disabled) {
     animation-duration: 2.4s;
   }
 }
+
+/* KeyboardShortcutsDialog */
+.keyboard-shortcuts { display: grid; gap: 14px; max-height: 60vh; overflow: auto; }
+.keyboard-shortcuts h3 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--text-muted, inherit); }
+.keyboard-shortcuts dl { margin: 0; display: grid; gap: 4px; }
+.keyboard-shortcut-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
+.keyboard-shortcut-row dt { margin: 0; }
+.keyboard-shortcut-row dd { margin: 0; display: flex; gap: 3px; }

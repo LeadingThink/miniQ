@@ -10,6 +10,7 @@ import {
   SearchX,
   Settings,
   Sparkles,
+  type LucideIcon,
 } from "lucide-react";
 import type { RpcClient } from "../rpc";
 import type { Message, Session, Workspace } from "../types";
@@ -24,7 +25,8 @@ export interface PaletteCommand {
   id: string;
   label: string;
   hint?: string;
-  icon: "new" | "settings" | "skills" | "mcp" | "schedule";
+  /** A built-in icon name or any lucide icon component. */
+  icon: PaletteIconName | LucideIcon;
   run: () => void;
   /** Keyboard shortcut shown as a key cap, e.g. "⌘N". Falls back to `hint` when it looks like one. */
   shortcut?: string;
@@ -39,6 +41,8 @@ const COMMAND_ICONS = {
   mcp: Plug,
   schedule: CalendarClock,
 } as const;
+
+export type PaletteIconName = keyof typeof COMMAND_ICONS;
 
 export const PALETTE_RECENT_KEY = "miniq.palette.recent";
 const RECENT_LIMIT = 6;
@@ -160,7 +164,7 @@ export function SearchOverlay(props: {
       liveSessions.find((session) => session.workspaceId === workspaceId);
 
     const commandEntry = (command: PaletteCommand, section: string, indices: number[] = []): PaletteEntry => {
-      const Icon = COMMAND_ICONS[command.icon];
+      const Icon = typeof command.icon === "string" ? COMMAND_ICONS[command.icon] : command.icon;
       const shortcut = shortcutOf(command);
       return {
         key: `cmd:${command.id}`,
@@ -222,8 +226,14 @@ export function SearchOverlay(props: {
         if (entry) recentEntries.push(entry);
       }
       const shown = new Set(recentEntries.map((entry) => entry.key));
+      const pinnedEntries = liveSessions
+        .filter((session) => session.pinned)
+        .map((session) => sessionEntry(session, "已置顶"))
+        .filter((entry) => !shown.has(entry.key));
+      for (const entry of pinnedEntries) shown.add(entry.key);
       return [
         ...recentEntries,
+        ...pinnedEntries,
         ...commands.map((command) => commandEntry(command, "命令")).filter((entry) => !shown.has(entry.key)),
         ...liveSessions
           .slice(0, SESSION_LIMIT)
