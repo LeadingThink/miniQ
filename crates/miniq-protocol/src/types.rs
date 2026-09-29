@@ -97,6 +97,16 @@ pub struct Session {
     pub external: Option<crate::ExternalSessionLink>,
     pub created_at: String,
     pub updated_at: String,
+    /// `session.list` only: timestamp of the newest message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_at: Option<String>,
+    /// `session.list` only: newest user/assistant message as one trimmed line
+    /// of at most 80 characters (display summary, not message content).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+    /// `session.list` only: number of user messages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]

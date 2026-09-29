@@ -31,6 +31,7 @@ pub mod state;
 pub mod turn;
 mod turn_checkpoint;
 mod turn_clock;
+mod turn_summary;
 
 use miniq_models::{ModelProvider, ProviderConfig};
 use rand::distr::Alphanumeric;

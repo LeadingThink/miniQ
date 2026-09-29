@@ -80,10 +80,9 @@ async fn newly_opened_or_created_projects_and_empty_sessions_broadcast_matching_
         json!({"workspaceId":created["result"]["id"]}),
     )
     .await;
-    assert_eq!(
-        sessions["result"]["sessions"],
-        json!([session["result"].clone()])
-    );
+    let mut listed = session["result"].clone();
+    listed["turnCount"] = json!(0);
+    assert_eq!(sessions["result"]["sessions"], json!([listed]));
     let opened = call(
         &mut observer,
         "empty",

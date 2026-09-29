@@ -88,6 +88,9 @@ impl Store {
             external: None,
             created_at: now.clone(),
             updated_at: now,
+            last_activity_at: None,
+            preview: None,
+            turn_count: None,
         };
         transaction.execute(
             "INSERT INTO sessions (id, workspace_id, title, status, pinned, created_at, updated_at)
@@ -126,39 +129,6 @@ impl Store {
         )
         .optional()?
         .ok_or_else(|| MemoryError::NotFound(format!("session {id}")))
-    }
-
-    pub fn list_sessions(&self, workspace_id: Option<&str>) -> Result<Vec<Session>> {
-        let conn = self.conn.lock().unwrap();
-        match workspace_id {
-            Some(workspace_id) => {
-                let mut stmt = conn.prepare(
-                    "SELECT s.id, s.workspace_id, s.title, s.status, s.created_at, s.updated_at,
-                            s.pinned, s.archived,
-                            e.provider, e.external_id, e.source_path, e.continuation_mode,
-                            e.imported_at, e.last_synced_at, s.working_directory
-                     FROM sessions s
-                     LEFT JOIN external_session_links e ON e.session_id = s.id
-                     WHERE s.workspace_id = ?1
-                     ORDER BY s.pinned DESC, s.updated_at DESC",
-                )?;
-                let rows = stmt.query_map(params![workspace_id], row_to_session)?;
-                Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
-            }
-            None => {
-                let mut stmt = conn.prepare(
-                    "SELECT s.id, s.workspace_id, s.title, s.status, s.created_at, s.updated_at,
-                            s.pinned, s.archived,
-                            e.provider, e.external_id, e.source_path, e.continuation_mode,
-                            e.imported_at, e.last_synced_at, s.working_directory
-                     FROM sessions s
-                     LEFT JOIN external_session_links e ON e.session_id = s.id
-                     ORDER BY s.pinned DESC, s.updated_at DESC",
-                )?;
-                let rows = stmt.query_map([], row_to_session)?;
-                Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
-            }
-        }
     }
 
     pub fn update_session_status(&self, id: &str, status: SessionStatus) -> Result<()> {

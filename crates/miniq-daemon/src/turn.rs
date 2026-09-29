@@ -214,9 +214,9 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
             Err(TurnError::Cancelled) => ("cancelled", TurnTimingStatus::Cancelled),
             Err(TurnError::Fatal(_)) => ("failed", TurnTimingStatus::Failed),
         };
-        if let Some(clock) = clock {
-            clock.finish(&state, &session_id, timing_status);
-        }
+        let summary = clock
+            .map(|clock| clock.finish(&state, &session_id, timing_status))
+            .and_then(|timing| crate::turn_summary::build(&state, &session_id, &timing));
         if let Err(error) = state.store.record_turn_outcome(&session_id, outcome) {
             tracing::error!(%error, %session_id, "failed to persist turn outcome");
         }
@@ -252,6 +252,7 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
                 });
                 state.emit(Event::TurnCompleted {
                     session_id: session_id.clone(),
+                    summary,
                 });
             }
             Err(TurnError::Cancelled) => {
@@ -266,6 +267,7 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
                     state.emit(Event::TurnFailed {
                         session_id: session_id.clone(),
                         error: "cancelled".to_string(),
+                        summary,
                     });
                 }
             }
@@ -281,6 +283,7 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
                 state.emit(Event::TurnFailed {
                     session_id: session_id.clone(),
                     error: err,
+                    summary,
                 });
             }
         }

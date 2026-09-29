@@ -688,7 +688,7 @@ impl AppState {
             } if message.role == miniq_protocol::Role::Assistant => {
                 self.clear_streaming_text(session_id)
             }
-            Event::TurnCompleted { session_id } | Event::TurnFailed { session_id, .. } => {
+            Event::TurnCompleted { session_id, .. } | Event::TurnFailed { session_id, .. } => {
                 self.clear_streaming_text(session_id)
             }
             _ => {}

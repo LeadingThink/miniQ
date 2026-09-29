@@ -218,6 +218,9 @@ impl Store {
             external: None,
             created_at: now.clone(),
             updated_at: now,
+            last_activity_at: None,
+            preview: None,
+            turn_count: None,
         };
         transaction.commit()?;
         Ok(session)

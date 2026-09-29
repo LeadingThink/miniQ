@@ -1147,6 +1147,54 @@
         ],
         "type": "object"
       },
+      "TurnSummary": {
+        "description": "Aggregate facts about one finished turn, attached to the terminal turn event. Tool calls and file changes cover everything recorded for the session since the turn clock started, including sub-agent calls.",
+        "properties": {
+          "durationMs": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "failedToolCalls": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "filesChanged": {
+            "description": "Distinct file paths checkpointed by write tools during the turn.",
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/definitions/TurnSummaryStatus"
+          },
+          "toolCalls": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "failedToolCalls",
+          "filesChanged",
+          "status",
+          "toolCalls"
+        ],
+        "type": "object"
+      },
+      "TurnSummaryStatus": {
+        "description": "Terminal outcome reported in [`TurnSummary`].",
+        "enum": [
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
       "TurnTiming": {
         "description": "One execution of a user request. Phase changes and model retries do not restart this clock. Missing elapsed time means it could not be measured, for example after an unclean daemon restart.",
         "properties": {
@@ -1856,6 +1904,16 @@
           "sessionId": {
             "type": "string"
           },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TurnSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "type": {
             "enum": [
               "turn_completed"
@@ -1877,6 +1935,16 @@
           },
           "sessionId": {
             "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TurnSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "type": {
             "enum": [
@@ -4757,15 +4825,38 @@
       "id": {
         "type": "string"
       },
+      "lastActivityAt": {
+        "description": "`session.list` only: timestamp of the newest message.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "pinned": {
         "default": false,
         "type": "boolean"
+      },
+      "preview": {
+        "description": "`session.list` only: newest user/assistant message as one trimmed line of at most 80 characters (display summary, not message content).",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "status": {
         "$ref": "#/definitions/SessionStatus"
       },
       "title": {
         "type": "string"
+      },
+      "turnCount": {
+        "description": "`session.list` only: number of user messages.",
+        "format": "uint32",
+        "minimum": 0.0,
+        "type": [
+          "integer",
+          "null"
+        ]
       },
       "updatedAt": {
         "type": "string"
