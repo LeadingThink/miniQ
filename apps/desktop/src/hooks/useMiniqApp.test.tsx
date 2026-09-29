@@ -548,7 +548,8 @@ it("opens desktop observations on remote clients without launching a separate if
     render(<TestApp />);
     await screen.findByRole("button", { name: "a，执行中" });
     await act(async () => { await app.actions.openSession("a"); });
-    fireEvent.click(screen.getByRole("button", { name: "查看桌面网页记录" }));
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "查看桌面网页记录" }));
     await screen.findByRole("complementary", { name: "桌面网页记录" });
     expect(screen.queryByTitle("网页预览")).toBeNull();
     await act(async () => { await app.actions.openSession("b"); });

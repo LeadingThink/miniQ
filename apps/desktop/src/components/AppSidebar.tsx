@@ -62,18 +62,6 @@ export function AppSidebar({ app, hostGroups, onCreateSession }: { app: MiniqApp
         onSetSessionArchived={(sessionId, archived) =>
           void app.actions.setSessionArchived(sessionId, archived)
         }
-        onShowSkills={() => {
-          app.navigation.setPage("skills");
-          closeMobileSidebar();
-        }}
-        onShowMcp={() => {
-          app.navigation.setPage("mcp");
-          closeMobileSidebar();
-        }}
-        onShowPlugins={() => {
-          app.navigation.setPage("plugins");
-          closeMobileSidebar();
-        }}
         onShowSettings={() => {
           app.navigation.setShowSettings(true);
           closeMobileSidebar();

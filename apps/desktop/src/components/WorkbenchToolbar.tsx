@@ -36,8 +36,15 @@ export function WorkbenchToolbar(props: {
       disabled: false,
     },
     {
+      key: "review",
+      label: "审阅",
+      icon: FileDiff,
+      count: props.changes,
+      disabled: !props.hasSession,
+    },
+    {
       key: "files",
-      label: "文件",
+      label: "预览",
       icon: Files,
       count: props.files,
       disabled: !(props.canPreviewFiles ?? props.hasSession),
@@ -49,18 +56,11 @@ export function WorkbenchToolbar(props: {
       count: props.browsers,
       disabled: props.remote && !props.hasSession,
     },
-    {
-      key: "review",
-      label: "审阅",
-      icon: FileDiff,
-      count: props.changes,
-      disabled: !props.hasSession,
-    },
   ] as const;
   return (
-    <header className="workbench-toolbar" aria-label="工作面板">
+    <header className="workbench-toolbar inspector-toolbar" aria-label="检查器">
       {props.mobile && <button type="button" className="workbench-back" onClick={props.onClose}><ArrowLeft size={18} />返回会话</button>}
-      <div role="tablist" aria-label="工作面板内容">
+      <div role="tablist" className="inspector-segmented" aria-label="检查器内容">
         {sections.map(({ key, label, icon: Icon, count, disabled }) => (
           <button
             type="button"

@@ -170,7 +170,7 @@ it("keeps local project file previews available before creating a session", () =
   props.app.catalog.currentSessionId = null;
   render(layout(props));
   expect(
-    (screen.getByRole("tab", { name: "文件" }) as HTMLButtonElement).disabled,
+    (screen.getByRole("tab", { name: "预览" }) as HTMLButtonElement).disabled,
   ).toBe(false);
   expect(
     (screen.getByRole("tab", { name: "审阅" }) as HTMLButtonElement).disabled,

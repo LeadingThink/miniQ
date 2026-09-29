@@ -59,6 +59,12 @@ export interface Session {
   external?: ExternalSessionLink;
   createdAt: string;
   updatedAt: string;
+  /** Optional one-line preview of the latest message, when the daemon provides it. */
+  preview?: string;
+  /** Optional last activity time (RFC3339 string or epoch milliseconds). */
+  lastActivityAt?: string | number;
+  /** Optional number of completed turns. */
+  turnCount?: number;
 }
 
 export type SessionGoalStatus = "active" | "completed" | "paused" | "cancelled";

@@ -56,6 +56,9 @@ export function SidebarSessionItem(props: {
     }
   };
 
+  const preview = props.session.preview?.replace(/\s+/g, " ").trim();
+  const activityAt = sessionActivityAt(props.session);
+
   // Optimistically hidden while the undo toast is visible.
   if (pendingDelete) return null;
 
@@ -107,6 +110,7 @@ export function SidebarSessionItem(props: {
           {props.session.pinned && <Pin className="pin-icon" size={12} />}
           <span className={`session-copy${props.contextLabel ? " with-context" : ""}`}>
           <span className="session-title">{props.session.title}</span>
+          {preview && <span className="session-preview">{preview}</span>}
           <span className="session-meta">
           {props.contextLabel && <span id={contextId} className="session-context">{props.contextLabel}</span>}
           {(unread || props.session.status !== "idle") && (
@@ -118,7 +122,7 @@ export function SidebarSessionItem(props: {
               {statusText}
             </span>
           )}
-          <span className="session-age">{relativeAge(props.session.updatedAt)}</span>
+          <span className="session-age">{relativeAge(activityAt)}</span>
           </span>
           </span>
         </button>
@@ -205,4 +209,11 @@ export function SidebarSessionItem(props: {
       </div>
     </div>
   );
+}
+
+function sessionActivityAt(session: Session): string {
+  const value = session.lastActivityAt;
+  if (typeof value === "number" && Number.isFinite(value)) return new Date(value).toISOString();
+  if (typeof value === "string" && !Number.isNaN(Date.parse(value))) return value;
+  return session.updatedAt;
 }

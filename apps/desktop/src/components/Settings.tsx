@@ -13,7 +13,11 @@ import { useDesktopHost } from "../desktopHost";
 import { SshConnections } from "./SshConnections";
 import { TaskNotificationSettings } from "./TaskNotificationSettings";
 import { MemoryPanel } from "./MemoryPanel";
-import { SettingsTabs, type SettingsTab } from "./SettingsTabs";
+import { SettingsTabs, settingsGroup, settingsGroupsFromSchema, SETTINGS_GROUPS, type SettingsGroup, type SettingsSchema, type SettingsTab } from "./SettingsTabs";
+import { DEFAULT_SETTINGS_TAB } from "../settingsNavigation";
+import { SkillsPanel } from "./Skills";
+import { McpPanel } from "./Mcp";
+import { PluginsPanel } from "./Plugins";
 import { isTauriRuntime } from "../runtime";
 import { TerminalSettings } from "./TerminalSettings";
 
@@ -60,7 +64,22 @@ interface SettingsPanelProps {
 export function SettingsPanel(props: SettingsPanelProps) {
   const desktop = useDesktopHost();
   const canConfigureProvider = (desktop?.root ?? props.client).mode === "local";
-  const [tab, setTab] = useState<SettingsTab>(props.initialTab ?? "services");
+  const [tab, setTab] = useState<SettingsTab>(props.initialTab ?? DEFAULT_SETTINGS_TAB);
+  const [requestedTab, setRequestedTab] = useState(props.initialTab);
+  if (props.initialTab !== requestedTab) {
+    setRequestedTab(props.initialTab);
+    if (props.initialTab) setTab(props.initialTab);
+  }
+  const [groups, setGroups] = useState<readonly SettingsGroup[]>(SETTINGS_GROUPS);
+  const group = settingsGroup(tab, groups);
+  useEffect(() => {
+    // Optional daemon-provided group order/labels; older daemons fall back to the static list.
+    let cancelled = false;
+    props.client.call<SettingsSchema>("settings.schema", null)
+      .then((schema) => { if (!cancelled) setGroups(settingsGroupsFromSchema(schema)); })
+      .catch(() => { /* static SETTINGS_GROUPS stays in place */ });
+    return () => { cancelled = true; };
+  }, [props.client]);
   const [baseUrl, setBaseUrl] = useState(ZAIWEN_API_BASE_URL);
   const [defaultModel, setDefaultModel] = useState(DEFAULT_PROVIDER_MODEL);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
@@ -267,16 +286,33 @@ export function SettingsPanel(props: SettingsPanelProps) {
           if (tab === "services" && canConfigureProvider) void save();
         }}
       >
+        <aside className="settings-sidebar">
+          <h2 id="settings-title" className="settings-sidebar-title">设置</h2>
+          <SettingsTabs selected={tab} onSelect={setTab} groups={groups} />
+        </aside>
+        <section className="settings-content" aria-labelledby="settings-group-title">
         <div className="settings-header">
-          <div>
-            <h2 id="settings-title">设置</h2>
+          <div className="settings-group-heading">
+            <h3 id="settings-group-title">{group.label}</h3>
+            {group.description && <p>{group.description}</p>}
           </div>
           <button type="button" className="icon-button" title="关闭设置" aria-label="关闭设置" onClick={props.onClose}>
             <X size={16} />
           </button>
         </div>
-
-        <SettingsTabs selected={tab} onSelect={setTab} />
+        <div className="settings-content-scroll">
+        <div id="settings-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={tab !== "general"}>
+          {tab === "general" && <TaskNotificationSettings />}
+        </div>
+        <div id="settings-skills" className="settings-embedded-page" role="tabpanel" aria-labelledby="settings-tab-skills" hidden={tab !== "skills"}>
+          {tab === "skills" && <SkillsPanel client={props.client} workspaceId={props.workspaceId ?? null} />}
+        </div>
+        <div id="settings-mcp" className="settings-embedded-page" role="tabpanel" aria-labelledby="settings-tab-mcp" hidden={tab !== "mcp"}>
+          {tab === "mcp" && <McpPanel client={props.client} />}
+        </div>
+        <div id="settings-plugins" className="settings-embedded-page" role="tabpanel" aria-labelledby="settings-tab-plugins" hidden={tab !== "plugins"}>
+          {tab === "plugins" && <PluginsPanel client={props.client} />}
+        </div>
         <div id="settings-memory" role="tabpanel" aria-labelledby="settings-tab-memory" hidden={tab !== "memory"}>
           {tab === "memory" && <MemoryPanel client={props.client} workspaceId={props.workspaceId ?? null} />}
         </div>
@@ -290,7 +326,6 @@ export function SettingsPanel(props: SettingsPanelProps) {
           hidden={tab !== "appearance"}
         >
           <ThemePicker theme={props.theme} onThemeChange={props.onThemeChange} />
-          {tab === "appearance" && <TaskNotificationSettings />}
         </div>
         <div id="settings-services" role="tabpanel" aria-labelledby="settings-tab-services" hidden={tab !== "services"}>
           {props.client.sshHost && <p className="settings-section-description">当前设置属于 SSH 主机 {props.client.sshHost}。模型请求、文件操作和命令在该主机执行；不会自动复制本机的 API Key。</p>}
@@ -543,6 +578,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
             </div>
           )}
         </div>
+        </div>
         <div className="approval-actions">
           {tab === "services" && canConfigureProvider && (
             <button
@@ -556,6 +592,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
             关闭
           </button>
         </div>
+        </section>
       </form>
     </div>
   );
