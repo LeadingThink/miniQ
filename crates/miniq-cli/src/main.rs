@@ -1,6 +1,7 @@
 mod args;
 mod bridge;
 mod client;
+mod listing;
 mod monitor;
 mod onboarding;
 mod output;
@@ -71,7 +72,15 @@ async fn run(cli: Cli) -> Result<u8> {
             let id = sessions::prepare(&mut client, &cli.chat, Some(&id)).await?;
             return monitor::interactive(&mut client, &id, prompt, &cli.chat).await;
         }
-        Some(Commands::Sessions { all }) => sessions::list(&mut client, &cli.chat, all).await?,
+        Some(Commands::Sessions { all, json }) => {
+            let result = sessions::list(&mut client, &cli.chat, all).await?;
+            if json || !io::stdout().is_terminal() {
+                result
+            } else {
+                print!("{}", listing::render(&result, all, time::OffsetDateTime::now_utc()));
+                return Ok(0);
+            }
+        }
         Some(Commands::History { session, limit, before }) => client.call("session.history",
             json!({"sessionId":session,"limit":limit,"before":before.map(|value| serde_json::from_str::<Value>(&value)).transpose()?,"includePayloads":true})).await?,
         Some(Commands::Watch { session, json }) => {

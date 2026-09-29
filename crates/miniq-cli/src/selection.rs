@@ -139,7 +139,11 @@ pub async fn session(client: &mut Client, options: &ChatOptions) -> Result<Optio
             let id = session["id"].as_str().context("session ID missing")?;
             let title = session["title"].as_str().unwrap_or(id);
             let status = session["status"].as_str().unwrap_or("unknown");
-            let updated = session["updatedAt"].as_str().unwrap_or("");
+            let updated = session["lastActivityAt"]
+                .as_str()
+                .or(session["updatedAt"].as_str())
+                .map(|value| crate::listing::relative(value, time::OffsetDateTime::now_utc()))
+                .unwrap_or_default();
             Ok(Choice {
                 id: id.into(),
                 label: format!("{title} · {status} · {updated}\n     {id}"),

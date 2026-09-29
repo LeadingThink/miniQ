@@ -29,4 +29,5 @@ rustyline = "15"
 rpassword = "7"
 reqwest = { workspace = true }
 semver = { workspace = true }
+time = { workspace = true }
 tempfile = "3"

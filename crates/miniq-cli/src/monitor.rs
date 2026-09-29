@@ -188,7 +188,7 @@ pub async fn interactive(
     let mut files = options.attachments.clone();
     // Keep prompt history in this process only; never persist messages or API Keys to disk.
     let mut editor = rustyline::DefaultEditor::new()?;
-    progress(&format!("miniQ {} · Session: {session}\n/model selects this session's model; /effort selects supported reasoning. /help lists commands.\nCtrl+C during a task cancels it; /exit between turns detaches.", env!("CARGO_PKG_VERSION")));
+    progress(&format!("miniQ {} · Session: {session}\n/model selects this session's model; /effort selects supported reasoning. /help lists commands.\nCtrl+C during a task cancels it; /exit between turns detaches. Later: miniq resume {session}", env!("CARGO_PKG_VERSION")));
     let selection = client
         .call("session.modelGet", json!({"sessionId":session}))
         .await?;
@@ -252,7 +252,7 @@ async fn command(
     let result = match command {
         "/exit" | "/quit" => return Ok(true),
         "/help" => {
-            progress("/model              Search/select a text model for this session\n/model MODEL        Switch this session to an exact model ID\n/effort             Select a supported reasoning effort\n/effort LEVEL       Set effort, or default to clear the override\n/attach PATH        Add a file to the next message\n/clear-attachments  Remove pending attachments\n/status             Show this session's effective model\n/history            Show recent messages and the next history cursor\n/exit               Leave the terminal without deleting the session\n\nContinue later: miniq resume (searchable project sessions), or miniq resume --last.\nFor multiline tasks: pipe a file to miniq exec -. History pagination: miniq history SESSION --before CURSOR.");
+            progress(&format!("/model              Search/select a text model for this session\n/model MODEL        Switch this session to an exact model ID\n/effort             Select a supported reasoning effort\n/effort LEVEL       Set effort, or default to clear the override\n/attach PATH        Add a file to the next message\n/clear-attachments  Remove pending attachments\n/status             Show this session's effective model\n/history            Show recent messages and the next history cursor\n/exit               Leave the terminal without deleting the session\n\nThis session: {session}\n\nFrom the shell:\n  miniq resume {session}   Continue this session later\n  miniq resume --last        Continue this project's most recent session\n  miniq sessions [--all]     List sessions (title, status, updated, ID)\n  miniq watch {session}    Follow it from another terminal without sending\n  miniq history {session} --limit 40\n  miniq exec - < task.md     Multiline or scripted tasks\nminiq --help shows the full quick reference."));
             Ok(())
         }
         "/attach" if !arg.is_empty() => {

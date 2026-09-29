@@ -256,6 +256,21 @@ async fn interactive_commands_reject_piped_input_before_connecting() {
 }
 
 #[tokio::test]
+async fn piped_sessions_stay_json_for_scripts() {
+    let fixture = Fixture::new("success").await;
+    let result = fixture.run(&["sessions", "--all"], "").await;
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let value: Value =
+        serde_json::from_slice(&result.stdout).expect("piped sessions output is JSON");
+    assert_eq!(value["sessions"][0]["id"], "session-1");
+    assert_eq!(value["sessions"][0]["title"], "中文项目测试");
+}
+
+#[tokio::test]
 async fn plain_stdout_contains_only_final_answer_and_stdin_is_appended() {
     let fixture = Fixture::new("success").await;
     let result = fixture.run(&["exec", "Review"], "piped context").await;
