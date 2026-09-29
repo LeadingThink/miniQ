@@ -18,8 +18,10 @@ mod records;
 mod row_mappers;
 mod scheduled_tasks;
 mod session_fork;
+mod session_list;
 mod session_settings;
 mod session_titles;
+mod turn_activity;
 mod turn_timing;
 mod workspace_roots;
 mod workspaces;
@@ -28,6 +30,7 @@ pub use agent_tasks::AgentTaskRow;
 pub use external_sessions::ExternalImportOutcome;
 pub use memories::MemoryPage;
 pub use model_context::ModelContextSnapshot;
+pub use turn_activity::TurnActivity;
 
 use std::path::Path;
 use std::sync::Mutex;

@@ -35,7 +35,14 @@ impl TurnClock {
         }
     }
 
-    pub(crate) fn finish(mut self, state: &AppState, session_id: &str, status: TurnTimingStatus) {
+    /// Persists and broadcasts the terminal timing, returning it so callers can
+    /// summarize the finished turn.
+    pub(crate) fn finish(
+        mut self,
+        state: &AppState,
+        session_id: &str,
+        status: TurnTimingStatus,
+    ) -> TurnTiming {
         self.timing.completed_at = Some(miniq_memory::now_iso());
         self.timing.elapsed_ms =
             Some(u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX));
@@ -60,10 +67,11 @@ impl TurnClock {
             Ok(()) => state.emit(Event::TurnTimingChanged {
                 session_id: session_id.into(),
                 message_id: self.message_id,
-                timing: self.timing,
+                timing: self.timing.clone(),
             }),
             Err(error) => tracing::error!(%session_id, %error, "failed to persist turn duration"),
         }
+        self.timing
     }
 }
 

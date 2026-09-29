@@ -27,6 +27,7 @@ mod session_history;
 mod session_model;
 mod session_queue;
 mod settings;
+mod settings_schema;
 mod share;
 mod skill;
 mod system;
@@ -196,6 +197,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "observation.read" => observation::read(state, req.params).await,
         "settings.get" => settings::get(state),
         "settings.models" => settings::models(state, req.params).await,
+        "settings.schema" => settings_schema::schema(),
         "settings.update" => settings::update(state, req.params),
         "settings.status" => settings::status(state),
         "settings.restoreBackup" => settings::restore_backup(state),

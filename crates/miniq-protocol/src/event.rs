@@ -203,12 +203,16 @@ pub enum Event {
     TurnCompleted {
         #[serde(rename = "sessionId")]
         session_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        summary: Option<crate::TurnSummary>,
     },
     /// The current turn failed with an error message.
     TurnFailed {
         #[serde(rename = "sessionId")]
         session_id: String,
         error: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        summary: Option<crate::TurnSummary>,
     },
     /// A session was deleted.
     SessionDeleted {
@@ -294,7 +298,7 @@ impl Event {
             | Event::QuestionRequested { session_id, .. }
             | Event::QuestionResolved { session_id, .. }
             | Event::ArtifactCreated { session_id, .. }
-            | Event::TurnCompleted { session_id }
+            | Event::TurnCompleted { session_id, .. }
             | Event::TurnFailed { session_id, .. }
             | Event::SessionDeleted { session_id }
             | Event::SessionRenamed { session_id, .. }

@@ -164,6 +164,9 @@ pub(super) fn row_to_session(row: &Row<'_>) -> rusqlite::Result<Session> {
             .transpose()?,
         created_at: row.get(4)?,
         updated_at: row.get(5)?,
+        last_activity_at: None,
+        preview: None,
+        turn_count: None,
     })
 }
 
