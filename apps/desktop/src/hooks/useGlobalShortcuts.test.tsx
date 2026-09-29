@@ -156,3 +156,24 @@ it("focuses the active session input and selects its query", () => {
   expect(search.selectionStart).toBe(0);
   expect(search.selectionEnd).toBe(search.value.length);
 });
+
+it("yields Ctrl+F to the Monaco editor inside the file preview", () => {
+  const onSessionSearch = vi.fn();
+  mockPlatform("Win32");
+  render(<Harness handlers={{
+    onPalette: vi.fn(),
+    onNewChat: vi.fn(),
+    onSettings: vi.fn(),
+    onSessionSearch,
+  }} />);
+  const editor = document.createElement("div");
+  editor.className = "monaco-editor";
+  const inner = document.createElement("textarea");
+  editor.append(inner);
+  document.body.append(editor);
+  const event = new KeyboardEvent("keydown", { key: "f", bubbles: true, cancelable: true, ctrlKey: true });
+  inner.dispatchEvent(event);
+  editor.remove();
+  expect(onSessionSearch).not.toHaveBeenCalled();
+  expect(event.defaultPrevented).toBe(false);
+});

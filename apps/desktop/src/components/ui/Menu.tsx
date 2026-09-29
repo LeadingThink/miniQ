@@ -16,6 +16,8 @@ export interface MenuProps {
   onClose: () => void;
   label: string;
   className?: string;
+  /** Open at a viewport point (context menus); focus still returns to the anchor. */
+  point?: { x: number; y: number } | null;
   children: ReactNode;
 }
 
@@ -29,7 +31,7 @@ function menuItems(root: HTMLElement | null) {
 /** Accessible action menu: arrow keys / Home / End navigate, Escape closes and restores focus to the anchor. */
 export function Menu(props: MenuProps) {
   const menu = useRef<HTMLDivElement>(null);
-  const position = useAnchoredPosition(props.anchorRef, menu, props.open);
+  const position = useAnchoredPosition(props.anchorRef, menu, props.open, props.point);
   const { open, onClose, anchorRef } = props;
 
   useEffect(() => {
