@@ -11,6 +11,6 @@ describe("PdfPreview", () => {
     expect(html).toContain('aria-label="下一页"');
     expect(html).toContain('aria-label="缩小 PDF"');
     expect(html).toContain('aria-label="放大 PDF"');
-    expect(html).toContain("正在渲染第 1 页");
+    expect(html).toContain("正在打开 PDF");
   });
 });

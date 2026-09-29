@@ -1,5 +1,5 @@
 import { Check, GitBranch, LoaderCircle, Pencil, RefreshCw, Target, X } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { AnchoredTurnTiming, Message, MessageAttachment, PlanTask, Question, SessionGoal, TurnPlan, TurnProgress } from "../types";
 import type { PendingApproval } from "../App";
 import type { RpcClient } from "../rpc";
@@ -166,9 +166,34 @@ export function TimelineEntries(props: {
     }
   };
 
-  return (
-    <div className="timeline-inner">
-      {props.items.map((item, index) => <Fragment key={timelineGroupKey(item)}>
+  const live = useRef({
+    props, startEditing, cancelEditing, saveMessage, regenerateMessage,
+  });
+  live.current = { props, startEditing, cancelEditing, saveMessage, regenerateMessage };
+  const bridge = useMemo(() => ({
+    openFile: (target: Parameters<NonNullable<TimelineProps["onOpenFile"]>>[0]) =>
+      live.current.props.onOpenFile(target),
+    openUrl: (url: string) => live.current.props.onOpenUrl(url),
+    reportError: (message: string) => live.current.props.onError(message),
+    rollback: ((...args: Parameters<TimelineProps["onRollback"]>) =>
+      live.current.props.onRollback(...args)) as TimelineProps["onRollback"],
+    startEditing: (message: Message) => live.current.startEditing(message),
+    cancelEditing: () => live.current.cancelEditing(),
+    saveMessage: (message: Message) => live.current.saveMessage(message),
+    regenerateMessage: (message: Message) => live.current.regenerateMessage(message),
+    fork: (messageId: string) => {
+      setForkingMessageId(messageId);
+      return Promise.resolve(live.current.props.onFork?.(messageId))
+        .finally(() => setForkingMessageId(null));
+    },
+  }), []);
+  const hasFork = Boolean(props.onFork);
+  const canSpeak = voiceCapabilities.capabilities.speak;
+  // Streaming tokens only change the live tail. Keeping the history subtree's
+  // element identity stable lets React skip every completed message on each
+  // token instead of re-rendering the whole conversation.
+  const history = useMemo(() => (
+props.items.map((item, index) => <Fragment key={timelineGroupKey(item)}>
         {item.kind === "message" && showConversationTimestamp(item.at, props.items[index - 1]?.at)
           && <ConversationTimeSeparator at={item.at} />}
         {
@@ -190,12 +215,12 @@ export function TimelineEntries(props: {
                     rows={Math.max(2, draft.split("\n").length)}
                     onChange={(event) => setDraft(event.target.value)}
                     onKeyDown={(event) => {
-                      if (event.key === "Escape") cancelEditing();
+                      if (event.key === "Escape") bridge.cancelEditing();
                       if (
                         event.key === "Enter" &&
                         (event.ctrlKey || event.metaKey)
                       )
-                        void saveMessage(item.message);
+                        void bridge.saveMessage(item.message);
                     }}
                   />
                 ) : item.message.content ? (
@@ -230,7 +255,7 @@ export function TimelineEntries(props: {
                         title="发送修改"
                         aria-label="发送修改"
                         disabled={!draft.trim() || saving || props.busy}
-                        onClick={() => void saveMessage(item.message)}
+                        onClick={() => void bridge.saveMessage(item.message)}
                       >
                         {saving ? (
                           <LoaderCircle className="spin" size={15} />
@@ -243,7 +268,7 @@ export function TimelineEntries(props: {
                         className="msg-action"
                         title="取消修改"
                         aria-label="取消修改"
-                        onClick={cancelEditing}
+                        onClick={bridge.cancelEditing}
                       >
                         <X size={15} />
                       </button>
@@ -254,7 +279,7 @@ export function TimelineEntries(props: {
                         className="msg-copy"
                         label="复制消息"
                         content={item.message.content}
-                        onError={props.onError}
+                        onError={bridge.reportError}
                       />
                       <button
                         type="button"
@@ -262,7 +287,7 @@ export function TimelineEntries(props: {
                         title="修改消息"
                         aria-label="修改消息"
                         disabled={props.busy}
-                        onClick={() => startEditing(item.message)}
+                        onClick={() => bridge.startEditing(item.message)}
                       >
                         <Pencil size={15} />
                       </button>
@@ -280,8 +305,8 @@ export function TimelineEntries(props: {
               <span>工具记录</span>
               <Md
                 workspacePath={props.workspacePath}
-                onOpenFile={props.onOpenFile}
-                onOpenUrl={props.onOpenUrl}
+                onOpenFile={bridge.openFile}
+                onOpenUrl={bridge.openUrl}
               >
                 {item.message.content}
               </Md>
@@ -295,8 +320,8 @@ export function TimelineEntries(props: {
               <div className="bubble assistant">
                 <Md
                   workspacePath={props.workspacePath}
-                  onOpenFile={props.onOpenFile}
-                  onOpenUrl={props.onOpenUrl}
+                  onOpenFile={bridge.openFile}
+                  onOpenUrl={bridge.openUrl}
                 >
                   {item.message.content}
                 </Md>
@@ -308,14 +333,14 @@ export function TimelineEntries(props: {
                     className="msg-copy"
                     label="复制消息"
                     content={item.message.content}
-                    onError={props.onError}
+                    onError={bridge.reportError}
                   />
-                  {props.client && voiceCapabilities.capabilities.speak && (
+                  {props.client && canSpeak && (
                     <SpeakButton
                       client={props.client}
                       text={item.message.content}
                       disabled={props.busy}
-                      onError={props.onError}
+                      onError={bridge.reportError}
                     />
                   )}
                   <button
@@ -324,11 +349,11 @@ export function TimelineEntries(props: {
                     title="重新生成"
                     aria-label="重新生成"
                     disabled={props.busy}
-                    onClick={() => void regenerateMessage(item.message)}
+                    onClick={() => void bridge.regenerateMessage(item.message)}
                   >
                     <RefreshCw size={15} />
                   </button>
-                  {props.onFork && (
+                  {hasFork && (
                     <button
                       type="button"
                       className="msg-action"
@@ -336,8 +361,7 @@ export function TimelineEntries(props: {
                       aria-label="分支到新聊天"
                       disabled={props.busy || forkingMessageId !== null}
                       onClick={() => {
-                        setForkingMessageId(item.message.id);
-                        void props.onFork!(item.message.id).finally(() => setForkingMessageId(null));
+                        void bridge.fork(item.message.id).finally(() => setForkingMessageId(null));
                       }}
                     >
                       {forkingMessageId === item.message.id ? <LoaderCircle className="spin" size={15} /> : <GitBranch size={15} />}
@@ -356,8 +380,8 @@ export function TimelineEntries(props: {
               artifact={item.artifact}
               workspacePath={props.workspacePath}
               workspacePaths={props.workspacePaths}
-              onOpenFile={props.onOpenFile}
-              onError={props.onError}
+              onOpenFile={bridge.openFile}
+              onError={bridge.reportError}
             />
           </div>
         ) : (
@@ -367,7 +391,7 @@ export function TimelineEntries(props: {
           >
             <ToolGroup
               calls={item.calls}
-              onRollback={props.onRollback}
+              onRollback={bridge.rollback}
               expanded={props.expandGroups}
               client={props.client}
             />
@@ -380,7 +404,17 @@ export function TimelineEntries(props: {
             : null;
         })()}
         {turnEnds.has(timelineGroupKey(item)) && <TurnTimingSummary timing={turnEnds.get(timelineGroupKey(item))!} />}
-      </Fragment>)}
+      </Fragment>)
+  ), [
+    props.items, props.busy, props.workspacePath, props.workspacePaths,
+    props.expandGroups, props.client, editingMessageId, draft, saving,
+    forkingMessageId, goalMessageId, turnEnds, turnPlanEnds, runningAnchor,
+    hasFork, canSpeak, bridge,
+  ]);
+
+  return (
+    <div className="timeline-inner">
+      {history}
       {props.approvals.map((approval) => (
         <ApprovalCard
           key={approval.approval.id}

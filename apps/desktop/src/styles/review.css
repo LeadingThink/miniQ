@@ -115,13 +115,31 @@
   margin: 0;
 }
 
-.pdf-page {
+/* Continuous, virtualized pages: the container reserves the full document
+   height and only pages near the viewport are mounted at absolute offsets. */
+.pdf-pages {
   position: relative;
-  width: max-content;
-  margin: 0 auto 18px;
+  margin: 0 auto;
+  min-width: max-content;
+}
+
+.pdf-page {
+  position: absolute;
+  margin: 0;
   overflow: hidden;
   background: #fff;
   box-shadow: 0 8px 28px rgb(0 0 0 / 14%);
+  contain: layout paint;
+}
+
+.pdf-page-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #a0a1a8;
+  font-size: 12px;
+  pointer-events: none;
 }
 
 .document-loading {
