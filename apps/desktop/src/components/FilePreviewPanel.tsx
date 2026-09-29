@@ -12,6 +12,7 @@ import {
   Maximize2,
   Minimize2,
   MessageSquare,
+  MessageSquarePlus,
   X,
 } from "lucide-react";
 import {
@@ -38,7 +39,8 @@ import {
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SvgPreview } from "./SvgPreview";
 import { DelimitedPreview } from "./DelimitedPreview";
-import { CopyButton } from "./CopyButton";
+import { PreviewOptionsMenu } from "./PreviewOptionsMenu";
+import { addPathToChat, parseLineNumber } from "../fileActions";
 import { HtmlPreview } from "./HtmlPreview";
 import { isHtmlFile } from "../htmlPreview";
 import { isTauriRuntime } from "../runtime";
@@ -227,6 +229,52 @@ function PreviewPanelContent({
     });
   };
 
+  const [goToLine, setGoToLine] = useState<{
+    value: string;
+    max: number;
+    error: string | null;
+  } | null>(null);
+  const goToInput = useRef<HTMLInputElement>(null);
+  const openGoToLine = () => {
+    const max = editorRef.current?.getModel()?.getLineCount() ??
+      (preview.content ?? "").split("\n").length;
+    const current = editorRef.current?.getPosition()?.lineNumber;
+    setGoToLine({ value: current ? String(current) : "", max, error: null });
+    requestAnimationFrame(() => {
+      goToInput.current?.focus();
+      goToInput.current?.select();
+    });
+  };
+  const closeGoToLine = () => {
+    setGoToLine(null);
+    editorRef.current?.focus();
+  };
+  const submitGoToLine = () => {
+    if (!goToLine) return;
+    const parsed = parseLineNumber(goToLine.value, goToLine.max);
+    if (parsed.line === null) {
+      setGoToLine({ ...goToLine, error: parsed.error });
+      return;
+    }
+    setGoToLine(null);
+    const instance = editorRef.current;
+    if (!instance) return;
+    instance.revealLineInCenter(parsed.line);
+    instance.setPosition({ lineNumber: parsed.line, column: 1 });
+    instance.focus();
+  };
+  const findInFile = () => {
+    const instance = editorRef.current;
+    if (!instance) return;
+    instance.focus();
+    const action = instance.getAction("actions.find");
+    if (action) void action.run();
+    else setActionError("当前编辑器不支持文件内查找");
+  };
+  useEffect(() => {
+    if (!sourceVisible) setGoToLine(null);
+  }, [sourceVisible, path]);
+
   const runAction = async (action: () => Promise<void>) => {
     try {
       await action();
@@ -363,11 +411,16 @@ function PreviewPanelContent({
               <WrapText size={16} />
             </button>
           )}
-          <CopyButton
-            content={path}
-            label="复制文件路径"
-            onError={setActionError}
-          />
+          <button
+            type="button"
+            className="icon-button"
+            title="添加到聊天"
+            aria-label="添加到聊天"
+            disabled={!path}
+            onClick={() => addPathToChat(path, roots)}
+          >
+            <MessageSquarePlus size={16} />
+          </button>
           <button
             type="button"
             className="icon-button"
@@ -396,21 +449,58 @@ function PreviewPanelContent({
             target={{ path, line: target?.line, column: target?.column }}
             onError={setActionError}
           />}
-          {!remote && <button
-            className="icon-button"
-            title="在文件夹中显示"
-            aria-label="在文件夹中显示"
-            disabled={!path}
-            onClick={() =>
-              void runAction(() =>
-                revealLocalFile(path, workspacePath, workspacePaths, authorizedFiles),
-              )
+          <PreviewOptionsMenu
+            path={path}
+            roots={roots}
+            content={preview.content}
+            onReveal={
+              remote
+                ? undefined
+                : () => revealLocalFile(path, workspacePath, workspacePaths, authorizedFiles)
             }
-          >
-            <FolderOpen size={16} />
-          </button>}
+            onGoToLine={sourceVisible && preview.content !== null ? openGoToLine : undefined}
+            onFind={sourceVisible && preview.content !== null ? findInFile : undefined}
+            onError={setActionError}
+          />
         </section>
       </header>
+      {goToLine && (
+        <form
+          className="file-preview-goto"
+          role="search"
+          aria-label="转到行"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitGoToLine();
+          }}
+        >
+          <label>
+            <span>转到行</span>
+            <input
+              ref={goToInput}
+              type="text"
+              inputMode="numeric"
+              aria-label="转到行"
+              aria-invalid={Boolean(goToLine.error)}
+              placeholder={`1–${goToLine.max}`}
+              value={goToLine.value}
+              onChange={(event) =>
+                setGoToLine({ ...goToLine, value: event.target.value, error: null })
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  closeGoToLine();
+                }
+              }}
+            />
+          </label>
+          <button type="submit" className="ghost">跳转</button>
+          <button type="button" className="ghost" onClick={closeGoToLine}>取消</button>
+          {goToLine.error && <small role="alert">{goToLine.error}</small>}
+        </form>
+      )}
       {(preview.error || actionError || renderError) && (
         <div className="review-error preview-error" role="alert">
           <span>无法打开：{preview.error ?? actionError ?? renderError}</span>
@@ -503,6 +593,7 @@ function PreviewPanelContent({
               content={preview.content}
               wrap={wrapCode}
               onMount={handleMount}
+              onGoToLine={openGoToLine}
             />
           </Suspense>
         ) : preview.dataBase64 &&

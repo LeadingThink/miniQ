@@ -12,7 +12,11 @@ export function useAnchoredPosition(
   anchorRef: RefObject<HTMLElement | null>,
   floatingRef: RefObject<HTMLElement | null>,
   open: boolean,
+  /** Viewport point (e.g. a context-menu click) used instead of the anchor's rect. */
+  point?: { x: number; y: number } | null,
 ): AnchoredPosition | null {
+  const pointX = point?.x;
+  const pointY = point?.y;
   const [position, setPosition] = useState<AnchoredPosition | null>(null);
   useLayoutEffect(() => {
     if (!open) {
@@ -22,8 +26,11 @@ export function useAnchoredPosition(
     const update = () => {
       const anchor = anchorRef.current;
       const floating = floatingRef.current;
-      if (!anchor || !floating) return;
-      const trigger = anchor.getBoundingClientRect();
+      if (!floating || (!anchor && pointX === undefined)) return;
+      const trigger =
+        pointX !== undefined && pointY !== undefined
+          ? { left: pointX, top: pointY, bottom: pointY }
+          : anchor!.getBoundingClientRect();
       const box = floating.getBoundingClientRect();
       setPosition(
         menuPosition(
@@ -40,6 +47,6 @@ export function useAnchoredPosition(
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [anchorRef, floatingRef, open]);
+  }, [anchorRef, floatingRef, open, pointX, pointY]);
   return position;
 }

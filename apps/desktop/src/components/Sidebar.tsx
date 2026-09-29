@@ -8,6 +8,7 @@ import {
   Clock3,
   Download,
   Folder,
+  FolderOpen,
   MessageSquareText,
   MoreHorizontal,
   PencilLine,
@@ -24,6 +25,8 @@ import type { AppUpdaterState } from "../hooks/useAppUpdater";
 import { openExternalUrl } from "../externalLinks";
 import { UpdateNotice } from "./UpdateNotice";
 import { DropdownMenu } from "./DropdownMenu";
+import { revealInFinder } from "../fileActions";
+import { isTauriRuntime } from "../runtime";
 import { ConfirmDialog } from "./ui/Dialog";
 import { EmptyState } from "./ui/EmptyState";
 import { SidebarPanel } from "./SidebarPanel";
@@ -41,6 +44,8 @@ export interface SidebarHostGroup {
   state: string;
   error?: string;
   workspaceIds: string[];
+  /** False when this host's workspaces are not on this machine. */
+  local?: boolean;
   selected: boolean;
   onSelect: () => void;
 }
@@ -148,6 +153,8 @@ export function Sidebar(props: SidebarProps) {
             onDeleteWorkspace={props.onDeleteWorkspace}
             onRenameWorkspace={props.onRenameWorkspace}
             onEditWorkspace={props.onEditWorkspace}
+            canReveal={isTauriRuntime() && !props.hostGroups?.some((host) => host.local === false && host.workspaceIds.includes(workspace.id))}
+            onError={props.onError}
             onSelectSession={props.onSelectSession}
             onSessionSeen={props.onSessionSeen}
             onDeleteSession={props.onDeleteSession}
@@ -300,6 +307,8 @@ interface WorkspaceGroupProps {
   onDeleteWorkspace: (workspaceId: string) => void;
   onRenameWorkspace: (workspaceId: string, name: string) => void;
   onEditWorkspace: (workspaceId: string) => void;
+  canReveal?: boolean;
+  onError?: (message: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSessionSeen: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
@@ -434,6 +443,16 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
             }}>
               <Folder size={13} /><span>项目目录</span>
             </button>
+            {props.canReveal && (
+              <button type="button" className="dropdown-item" onClick={() => {
+                setMenuOpen(false);
+                void revealInFinder(props.workspace.path, { directory: true }).catch((cause) =>
+                  props.onError?.(cause instanceof Error ? cause.message : String(cause)),
+                );
+              }}>
+                <FolderOpen size={13} /><span>在 Finder 中显示</span>
+              </button>
+            )}
             <button
               type="button"
               className="dropdown-item"

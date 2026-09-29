@@ -22,6 +22,8 @@ import {
   visibleRows,
 } from "../fileTreeModel";
 import type { FileReadOptions, RemoteDirectory } from "../remoteFiles";
+import { isTauriRuntime } from "../runtime";
+import { FileContextMenu, type FileContextTarget } from "./FileContextMenu";
 import { FileKindIcon } from "./FileKindIcon";
 import "./WorkspaceFileTree.css";
 
@@ -50,6 +52,9 @@ export function WorkspaceFileTree({
   onOpen,
   filterRef,
   reveal,
+  workspacePath,
+  workspacePaths = [],
+  authorizedFiles = [],
 }: {
   access: FileReadOptions;
   activePath?: string | null;
@@ -57,6 +62,10 @@ export function WorkspaceFileTree({
   filterRef?: React.Ref<HTMLInputElement>;
   /** Expand, scroll to and focus a folder (e.g. a clicked breadcrumb). Bump nonce to repeat. */
   reveal?: { path: string; nonce: number } | null;
+  /** Local workspace roots for relative paths and Finder / editor actions. */
+  workspacePath?: string | null;
+  workspacePaths?: readonly string[];
+  authorizedFiles?: readonly string[];
 }) {
   const { client, sessionId } = access;
   const [root, setRoot] = useState<string | null>(null);
@@ -68,6 +77,23 @@ export function WorkspaceFileTree({
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState<string | null>(null);
   const generation = useRef(0);
+  const [menu, setMenu] = useState<{
+    target: FileContextTarget;
+    point: { x: number; y: number } | null;
+  } | null>(null);
+  const [menuError, setMenuError] = useState<string | null>(null);
+  const menuAnchor = useRef<HTMLElement | null>(null);
+  const local = isTauriRuntime() && access.client?.mode !== "remote";
+  const openMenu = (
+    element: HTMLElement,
+    entry: TreeEntry,
+    point: { x: number; y: number } | null,
+  ) => {
+    menuAnchor.current = element;
+    setMenuError(null);
+    setFocused(normalizePath(entry.path));
+    setMenu({ target: { path: entry.path, directory: entry.directory }, point });
+  };
   const pending = useRef(new Set<string>());
   const list = useRef<HTMLDivElement>(null);
   const directoriesRef = useRef(directories);
@@ -375,7 +401,17 @@ export function WorkspaceFileTree({
           if (entry.directory) toggle(entry.path);
           else if (!entry.unavailable) onOpen(entry.path);
         }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          if (entry.unavailable) return;
+          openMenu(event.currentTarget, entry, { x: event.clientX, y: event.clientY });
+        }}
         onKeyDown={(event) => {
+          if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+            event.preventDefault();
+            if (!entry.unavailable) openMenu(event.currentTarget, entry, null);
+            return;
+          }
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             if (entry.directory) toggle(entry.path);
@@ -470,6 +506,25 @@ export function WorkspaceFileTree({
           )}
         </div>
       )}
+      {menuError && (
+        <div className="file-tree-note error" role="alert">
+          {menuError}
+          <button type="button" className="ghost" onClick={() => setMenuError(null)}>关闭</button>
+        </div>
+      )}
+      <FileContextMenu
+        target={menu?.target ?? null}
+        point={menu?.point}
+        anchorRef={menuAnchor}
+        onClose={() => setMenu(null)}
+        roots={[root, workspacePath, ...workspacePaths]}
+        local={local}
+        workspacePath={workspacePath}
+        workspacePaths={workspacePaths}
+        authorizedFiles={authorizedFiles}
+        onOpen={onOpen}
+        onError={setMenuError}
+      />
       {query.trim() && (rows.length > 0 || scan === "partial") && (
         <p className="file-tree-hint" role="status">
           {scan === "scanning"

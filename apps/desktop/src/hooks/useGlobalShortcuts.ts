@@ -102,6 +102,13 @@ export function useGlobalShortcuts(handlers: ShortcutHandlers, enabled = true) {
             (e.metaKey && !e.altKey && !e.ctrlKey)
           : e.ctrlKey && !e.altKey && !e.metaKey);
       if (findShortcut) {
+        // Let Monaco's in-file find widget own ⌘F inside the file preview.
+        if (
+          e.target instanceof Element &&
+          e.target.closest(".monaco-editor, .file-preview-panel")
+        ) {
+          return;
+        }
         if (handlers.onSessionSearch) {
           if (handlers.onSessionSearch() !== false) e.preventDefault();
         }

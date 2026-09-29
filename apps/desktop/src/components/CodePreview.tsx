@@ -1,5 +1,6 @@
 import Editor, { type OnMount } from "@monaco-editor/react";
 import "../monacoSetup";
+import { useRef } from "react";
 import { useEditorTheme } from "../hooks/useEditorTheme";
 
 const LANGUAGES: Record<string, string> = {
@@ -50,15 +51,31 @@ export default function CodePreview(props: {
   content: string;
   wrap: boolean;
   onMount: OnMount;
+  /** ⌘L / Ctrl+L and Ctrl+G inside the editor open the "转到行" input. */
+  onGoToLine?: () => void;
 }) {
   const beforeMount = useEditorTheme();
+  const goToLine = useRef(props.onGoToLine);
+  goToLine.current = props.onGoToLine;
+  const handleMount: OnMount = (instance, monaco) => {
+    instance.addAction({
+      id: "miniq.goToLine",
+      label: "转到行",
+      keybindings: [
+        monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyL,
+        monaco.KeyMod.WinCtrl | monaco.KeyCode.KeyG,
+      ],
+      run: () => goToLine.current?.(),
+    });
+    props.onMount(instance, monaco);
+  };
   return (
     <Editor
       saveViewState={false}
       value={props.content}
       path={props.path}
       language={languageForPath(props.path)}
-      onMount={props.onMount}
+      onMount={handleMount}
       beforeMount={beforeMount}
       theme="miniq"
       options={{

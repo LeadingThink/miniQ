@@ -341,6 +341,12 @@ export function AppWorkbench({
                   }
                   filterRef={treeFilter}
                   reveal={treeReveal}
+                  workspacePath={
+                    app.catalog.currentSession?.workingDirectory ??
+                    app.catalog.currentWorkspace?.path
+                  }
+                  workspacePaths={app.catalog.currentWorkspacePaths}
+                  authorizedFiles={app.preview.authorizedFiles}
                   onOpen={(path) =>
                     workbench.openFile({ path, line: null, column: null })
                   }
