@@ -18,6 +18,47 @@
   user-select: text;
 }
 .file-preview-discuss > span { display: none; }
+.file-preview-breadcrumb {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-mid);
+  font-size: var(--font-caption);
+  white-space: nowrap;
+}
+.file-preview-header .file-preview-crumb {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-family: inherit;
+  color: inherit;
+}
+.file-preview-crumb:last-child { flex-shrink: 0; max-width: 60%; }
+.file-preview-crumb > svg { flex: none; color: var(--text-dim); margin-inline: 1px; }
+.file-preview-crumb > button {
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.file-preview-crumb > button:hover { background: var(--bg-hover); color: var(--text); }
+.file-preview-crumb > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.file-preview-header .file-preview-crumb > span {
+  padding: 1px 4px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: inherit;
+}
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
   .file-preview-panel .file-preview-header {
     max-height: 42%;

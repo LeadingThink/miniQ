@@ -1,16 +1,11 @@
 import type { OnMount } from "@monaco-editor/react";
-import { breadcrumb } from "../fileTreeModel";
+import { breadcrumb, breadcrumbSegments } from "../fileTreeModel";
+import { FileKindIcon } from "./FileKindIcon";
 import {
   Code2,
   Eye,
   ExternalLink,
-  FileCode2,
-  FileText,
-  Image,
-  Music,
-  Video,
-  Table2,
-  Presentation,
+  ChevronRight,
   FolderOpen,
   RotateCcw,
   WrapText,
@@ -87,6 +82,8 @@ interface FilePreviewPanelProps {
   expanded?: boolean;
   onToggleExpanded?: () => void;
   withinWorkbench?: boolean;
+  /** Reveal a breadcrumb folder in the project file tree. */
+  onRevealDirectory?: (path: string) => void;
 }
 
 interface PreviewPanelContentProps extends FilePreviewPanelProps {
@@ -138,6 +135,7 @@ function PreviewPanelContent({
   canReopenClosedTab,
   onDiscuss,
   withinWorkbench = false,
+  onRevealDirectory,
   expanded,
   onToggleExpanded,
 }: PreviewPanelContentProps) {
@@ -199,20 +197,8 @@ function PreviewPanelContent({
     preview.kind === "markdown" ||
     (preview.kind === "text" &&
       (isHtmlFile(path) || /\.(svg|csv|tsv)$/i.test(path)));
-  const TypeIcon =
-    preview.kind === "image" || /\.svg$/i.test(path)
-      ? Image
-      : preview.kind === "audio"
-        ? Music
-        : preview.kind === "video"
-          ? Video
-          : preview.kind === "xlsx" || /\.(csv|tsv)$/i.test(path)
-            ? Table2
-            : preview.kind === "pptx"
-              ? Presentation
-                : ["markdown", "docx", "pdf", "officeLegacy"].includes(preview.kind ?? "")
-                ? FileText
-                : FileCode2;
+  const roots = workspacePaths.length ? workspacePaths : [workspacePath];
+  const segments = breadcrumbSegments(path, roots);
   const sourceVisible =
     (preview.kind === "text" && !renderable) || (renderable && markdownSource);
 
@@ -276,13 +262,34 @@ function PreviewPanelContent({
         />
       )}
       <header className="file-preview-header">
-        <TypeIcon size={17} />
+        <FileKindIcon name={fileName(path)} size={17} />
         <div className="file-preview-location">
           <strong>{fileName(path) || "文件预览"}</strong>
-          <details key={path} className="file-preview-path">
-            <summary title={path}><span className="file-path-summary">{breadcrumb(path, workspacePaths.length ? workspacePaths : [workspacePath])}</span><span className="file-path-hint">文件路径</span></summary>
-            <span>{path}</span>
-          </details>
+          {onRevealDirectory && segments.length > 1 ? (
+            <nav className="file-preview-breadcrumb" aria-label="文件位置" title={path}>
+              {segments.map((segment, index) => (
+                <span key={segment.path} className="file-preview-crumb">
+                  {index > 0 && <ChevronRight size={12} aria-hidden />}
+                  {segment.directory ? (
+                    <button
+                      type="button"
+                      title={`在文件树中显示 ${segment.path}`}
+                      onClick={() => onRevealDirectory(segment.path)}
+                    >
+                      {segment.label}
+                    </button>
+                  ) : (
+                    <span aria-current="page">{segment.label}</span>
+                  )}
+                </span>
+              ))}
+            </nav>
+          ) : (
+            <details key={path} className="file-preview-path">
+              <summary title={path}><span className="file-path-summary">{breadcrumb(path, roots)}</span><span className="file-path-hint">文件路径</span></summary>
+              <span>{path}</span>
+            </details>
+          )}
         </div>
         {(target?.line || preview.size !== null) && (
           <small>

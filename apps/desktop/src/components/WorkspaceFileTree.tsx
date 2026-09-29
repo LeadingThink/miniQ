@@ -1,20 +1,9 @@
 import {
   ChevronRight,
-  File,
-  FileArchive,
-  FileAudio,
-  FileCode2,
-  FileImage,
-  FileJson,
-  FileSpreadsheet,
-  FileText,
-  FileVideo,
   Folder,
-  Presentation,
   RefreshCw,
   Search,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -25,8 +14,7 @@ import {
 import { errorMessage } from "../errorMessage";
 import {
   ancestorDirectories,
-  fileKind,
-  type FileKind,
+  isInside,
   normalizePath,
   splitFileName,
   type TreeDirectory,
@@ -34,6 +22,7 @@ import {
   visibleRows,
 } from "../fileTreeModel";
 import type { FileReadOptions, RemoteDirectory } from "../remoteFiles";
+import { FileKindIcon } from "./FileKindIcon";
 import "./WorkspaceFileTree.css";
 
 /** Filtering scans unopened folders breadth-first within these bounds. */
@@ -53,37 +42,21 @@ const SCAN_SKIP = new Set([
 ]);
 type ScanState = "idle" | "scanning" | "partial" | "done";
 
-const ICONS: Record<FileKind, LucideIcon> = {
-  code: FileCode2,
-  web: FileCode2,
-  data: FileJson,
-  sheet: FileSpreadsheet,
-  doc: FileText,
-  pdf: FileText,
-  slides: Presentation,
-  image: FileImage,
-  video: FileVideo,
-  audio: FileAudio,
-  archive: FileArchive,
-  text: File,
-};
-
-export function FileKindIcon({ name, size = 15 }: { name: string; size?: number }) {
-  const kind = fileKind(name);
-  const Icon = ICONS[kind];
-  return <Icon size={size} className={`file-kind-icon file-kind-${kind}`} aria-hidden />;
-}
+export { FileKindIcon };
 
 export function WorkspaceFileTree({
   access,
   activePath,
   onOpen,
   filterRef,
+  reveal,
 }: {
   access: FileReadOptions;
   activePath?: string | null;
   onOpen: (path: string) => void;
   filterRef?: React.Ref<HTMLInputElement>;
+  /** Expand, scroll to and focus a folder (e.g. a clicked breadcrumb). Bump nonce to repeat. */
+  reveal?: { path: string; nonce: number } | null;
 }) {
   const { client, sessionId } = access;
   const [root, setRoot] = useState<string | null>(null);
@@ -210,6 +183,35 @@ export function WorkspaceFileTree({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root, activePath, load]);
 
+  // Reveal a requested folder: clear the filter, expand it and its ancestors,
+  // then scroll to and focus its row once it renders.
+  const revealTarget = useRef<string | null>(null);
+  const [revealed, setRevealed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!root || !reveal) return;
+    const target = normalizePath(reveal.path);
+    if (!isInside(target, root)) return;
+    setQuery("");
+    const dirs = target === root ? [] : [...ancestorDirectories(root, target), target];
+    setExpanded((previous) => {
+      if (dirs.every((dir) => previous.has(dir))) return previous;
+      const next = new Set(previous);
+      dirs.forEach((dir) => next.add(dir));
+      return next;
+    });
+    dirs.forEach((dir) => {
+      if (!directoriesRef.current.has(dir)) void load(dir);
+    });
+    revealTarget.current = target;
+    setRevealed(target);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [root, reveal?.path, reveal?.nonce, load]);
+  useEffect(() => {
+    if (!revealed) return;
+    const timer = window.setTimeout(() => setRevealed(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [revealed]);
+
   // While filtering, walk unopened folders so matches deep in the project show up.
   const filtering = Boolean(query.trim());
   useEffect(() => {
@@ -258,6 +260,29 @@ export function WorkspaceFileTree({
     rows.find((row) => normalizePath(row.entry.path) === focused)?.entry.path ??
     rows.find((row) => normalizePath(row.entry.path) === active)?.entry.path ??
     rows[0]?.entry.path;
+
+  useEffect(() => {
+    const target = revealTarget.current;
+    if (!target || !list.current) return;
+    if (target === root) {
+      revealTarget.current = null;
+      list.current.scrollTo?.({ top: 0 });
+      const first = rows[0]?.entry.path;
+      if (first) focusRow(first);
+      return;
+    }
+    if (!rows.some((row) => normalizePath(row.entry.path) === target)) return;
+    revealTarget.current = null;
+    setFocused(target);
+    requestAnimationFrame(() => {
+      const element = list.current?.querySelector<HTMLElement>(
+        `[data-path="${cssEscape(rows.find((row) => normalizePath(row.entry.path) === target)!.entry.path)}"]`,
+      );
+      element?.scrollIntoView?.({ block: "nearest" });
+      element?.focus({ preventScroll: true });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, root]);
 
   const toggle = (path: string, open?: boolean) => {
     const key = normalizePath(path);
@@ -341,7 +366,7 @@ export function WorkspaceFileTree({
         aria-disabled={entry.unavailable || undefined}
         data-path={entry.path}
         tabIndex={entry.path === current ? 0 : -1}
-        className={`file-tree-row${selected ? " selected" : ""}${entry.unavailable ? " unavailable" : ""}`}
+        className={`file-tree-row${selected ? " selected" : ""}${entry.unavailable ? " unavailable" : ""}${revealed && normalizePath(entry.path) === revealed ? " revealed" : ""}`}
         style={{ paddingInlineStart: indent(depth) }}
         title={entry.path}
         onFocus={() => setFocused(normalizePath(entry.path))}
@@ -361,7 +386,9 @@ export function WorkspaceFileTree({
         }}
       >
         {entry.directory ? (
-          <ChevronRight size={14} className="file-tree-chevron" aria-hidden />
+          <span className={`file-tree-chevron${row.expanded ? " open" : ""}`} aria-hidden>
+            <ChevronRight size={14} />
+          </span>
         ) : (
           <span className="file-tree-chevron-space" aria-hidden />
         )}

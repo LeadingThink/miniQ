@@ -10,6 +10,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
   ancestorDirectories,
   breadcrumb,
+  breadcrumbSegments,
   fileKind,
   sortEntries,
   splitFileName,
@@ -143,4 +144,38 @@ it("filters into unopened folders and skips heavy build folders", async () => {
   expect(call.mock.calls.map(([, params]) => params.path)).not.toContain("/p/node_modules");
   fireEvent.keyDown(filter, { key: "Enter" });
   expect(onOpen).toHaveBeenCalledWith("/p/docs/api/guide.md");
+});
+
+it("splits breadcrumbs into clickable folder segments", () => {
+  expect(breadcrumbSegments("/w/proj/docs/a.md", ["/w", "/w/proj/"])).toEqual([
+    { label: "proj", path: "/w/proj", directory: true },
+    { label: "docs", path: "/w/proj/docs", directory: true },
+    { label: "a.md", path: "/w/proj/docs/a.md", directory: false },
+  ]);
+  expect(breadcrumbSegments("/elsewhere/a.md", ["/w"])).toEqual([]);
+  expect(fileKind("README.md")).toBe("doc");
+});
+
+it("reveals and focuses a requested folder", async () => {
+  const call = vi.fn(async (_method: string, params: { path: string }) => {
+    if (params.path === "") return dir("/p", [entry("/p/src", true), entry("/p/notes.md")]);
+    if (params.path === "/p/src") return dir("/p/src", [entry("/p/src/deep", true)]);
+    if (params.path === "/p/src/deep") return dir("/p/src/deep", [entry("/p/src/deep/x.rs")]);
+    throw new Error("unexpected");
+  });
+  const client = { call, mode: "local" } as never;
+  const props = { access: { client, sessionId: "s1" }, onOpen: vi.fn() };
+  const view = render(<WorkspaceFileTree {...props} />);
+  await screen.findByRole("treeitem", { name: /src/ });
+  await act(async () => {
+    view.rerender(<WorkspaceFileTree {...props} reveal={{ path: "/p/src/deep", nonce: 1 }} />);
+  });
+  const deep = await screen.findByRole("treeitem", { name: /^deep$/ });
+  expect(deep.getAttribute("aria-expanded")).toBe("true");
+  expect(await screen.findByRole("treeitem", { name: /x\.rs/ })).toBeTruthy();
+  await act(async () => {
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+  });
+  expect(deep.className).toContain("revealed");
+  expect(document.activeElement).toBe(deep);
 });

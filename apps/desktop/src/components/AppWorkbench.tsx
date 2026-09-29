@@ -8,6 +8,9 @@ import { WorkbenchPanel } from "./WorkbenchPanel";
 import { WorkbenchToolbar } from "./WorkbenchToolbar";
 import { WorkbenchOverview } from "./WorkbenchOverview";
 import { PreviewViewStore } from "../previewViewState";
+import { openTerminalAt } from "../localFiles";
+import { isTauriRuntime } from "../runtime";
+import type { WorkbenchLauncherActions } from "./WorkbenchLauncher";
 
 const FilePreviewPanel = lazy(() =>
   import("./FilePreviewPanel").then((module) => ({
@@ -40,6 +43,7 @@ export function AppWorkbench({
   const [treeOpen, setTreeOpen] = useState(readTreePreference);
   const treeFilter = useRef<HTMLInputElement>(null);
   const focusTree = useRef(false);
+  const [treeReveal, setTreeReveal] = useState<{ path: string; nonce: number } | null>(null);
   const expanded = expandedScope === workbench.scope;
   const active = workbench.active;
   const sessionId = app.catalog.currentSessionId;
@@ -88,6 +92,35 @@ export function AppWorkbench({
     }
   });
   if (!active && !workbench.hasBrowsers) return null;
+  const remote = app.client.mode === "remote";
+  const workspaceDirectory =
+    app.catalog.currentSession?.workingDirectory ?? app.catalog.currentWorkspace?.path;
+  const launcher: WorkbenchLauncherActions = {
+    onOpenFiles: sessionId ? () => quickOpen.current() : undefined,
+    onOpenBrowser: remote
+      ? sessionId
+        ? () => workbench.select("browser")
+        : undefined
+      : () =>
+          workbench.browserState.tabs.length
+            ? workbench.select("browser")
+            : workbench.newBrowserTab(),
+    browserLabel: remote ? "网页记录" : "浏览器",
+    onOpenReview: sessionId ? () => workbench.select("review") : undefined,
+    changes: app.review.data.files.length,
+    onOpenTerminal:
+      !remote && isTauriRuntime() && workspaceDirectory
+        ? () =>
+            void openTerminalAt(workspaceDirectory).catch((error: unknown) =>
+              app.setError(error instanceof Error ? error.message : String(error)),
+            )
+        : undefined,
+  };
+  const revealInTree = (path: string) => {
+    focusTree.current = false;
+    setTree(true);
+    setTreeReveal({ path, nonce: Date.now() });
+  };
   const overlayOpen =
     app.navigation.showSettings ||
     app.navigation.showSearch ||
@@ -219,6 +252,7 @@ export function AppWorkbench({
             key={`${workbench.scope}:${active}`}
             app={app}
             onOpenFile={workbench.openFile}
+            launcher={launcher}
           />
         )}
         {active === "files" && (
@@ -267,6 +301,9 @@ export function AppWorkbench({
                         : undefined
                     }
                     onOpenFile={workbench.openFile}
+                    onRevealDirectory={
+                      sessionId && layout !== "mobile" ? revealInTree : undefined
+                    }
                     onAuthorizeFile={(target, chooseReplacement) =>
                       void app.preview.authorizeFile(target, chooseReplacement)
                     }
@@ -284,6 +321,11 @@ export function AppWorkbench({
                   onOpenFile={workbench.openFile}
                   filesOnly
                   fileTreeVisible={showTree}
+                  launcher={
+                    sessionId && layout !== "mobile"
+                      ? { onOpenFiles: launcher.onOpenFiles }
+                      : undefined
+                  }
                 />
               )}
             </div>
@@ -298,6 +340,7 @@ export function AppWorkbench({
                       : null
                   }
                   filterRef={treeFilter}
+                  reveal={treeReveal}
                   onOpen={(path) =>
                     workbench.openFile({ path, line: null, column: null })
                   }

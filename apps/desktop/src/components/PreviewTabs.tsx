@@ -1,4 +1,5 @@
-import { File, X } from "lucide-react";
+import { X } from "lucide-react";
+import { FileKindIcon } from "./FileKindIcon";
 import { useEffect, useMemo, useRef } from "react";
 import type { LocalFileTarget } from "../localFiles";
 import { previewTabDirectories } from "../previewTabs";
@@ -87,7 +88,7 @@ export function PreviewTabs(
                 document.getElementById(`${props.id}-${next}`)?.focus();
               }}
             >
-              <File size={13} />
+              <FileKindIcon name={target.path.split(/[\\/]/).at(-1) ?? target.path} size={13} />
               <span>
                 {target.path.split(/[\\/]/).at(-1)}
                 {directories.has(target.path) && (

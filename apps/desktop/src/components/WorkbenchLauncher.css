@@ -1,0 +1,90 @@
+.workbench-launcher {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: min(280px, 100%);
+}
+.workbench-launcher-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius-sm, 8px);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-footnote);
+  text-align: left;
+  cursor: pointer;
+}
+.workbench-launcher-entry > svg {
+  flex: none;
+  color: var(--text-mid);
+}
+.workbench-launcher-entry > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workbench-launcher-entry > kbd {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: var(--font-caption);
+}
+.workbench-launcher-entry:hover {
+  background: var(--bg-hover);
+}
+.workbench-launcher-entry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.workbench-launcher.compact {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+  margin: 4px 0 8px;
+}
+.workbench-launcher.compact .workbench-launcher-entry {
+  width: auto;
+  min-height: 30px;
+  padding: 5px 10px;
+  gap: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+}
+.workbench-launcher.compact .workbench-launcher-entry > span {
+  flex: none;
+}
+/* Empty side panel: centered launcher, like ChatGPT. */
+.workbench-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: min(420px, 70vh);
+  padding: 24px 12px;
+  text-align: center;
+}
+.workbench-empty > svg {
+  color: var(--text-mid);
+}
+.workbench-empty h2 {
+  margin: 0;
+  font-size: var(--font-body);
+}
+.workbench-empty p {
+  margin: -8px 0 0;
+  color: var(--text-dim);
+  font-size: var(--font-footnote);
+}

@@ -10,6 +10,7 @@ mod keep_awake;
 mod local_file;
 mod office_preview;
 mod terminal_install;
+mod terminal_open;
 use keep_awake::KeepAwakeState;
 
 type DaemonState = std::sync::Arc<daemon::DaemonLifecycle>;
@@ -280,6 +281,7 @@ pub fn run() {
             daemon_connection,
             terminal_install::terminal_install_status,
             terminal_install::install_terminal_command,
+            terminal_open::open_terminal,
             set_keep_awake,
             prepare_daemon_update,
             cancel_daemon_update,

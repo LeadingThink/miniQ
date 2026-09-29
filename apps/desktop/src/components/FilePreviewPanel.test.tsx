@@ -199,3 +199,37 @@ it("does not claim to convert legacy WPS files in a remote WebView", () => {
   expect(screen.getByText("暂不支持内嵌预览此格式")).toBeTruthy();
   expect(screen.getByText(/下载到当前设备查看/)).toBeTruthy();
 });
+
+it("shows a file-type icon and clickable breadcrumb folders", () => {
+  const target = { path: "/w/proj/docs/notes.txt", line: null, column: null };
+  const reveal = vi.fn();
+  const { container } = render(
+    <FilePreviewPanel
+      preview={{
+        target,
+        resolvedPath: target.path,
+        content: "hello",
+        kind: "text",
+        mimeType: null,
+        dataBase64: null,
+        size: 5,
+        loading: false,
+        error: null,
+        open: true,
+      }}
+      workspacePath="/w/proj"
+      workspacePaths={[]}
+      onClose={vi.fn()}
+      onOpenFile={vi.fn()}
+      onRetry={vi.fn()}
+      onRevealDirectory={reveal}
+    />,
+  );
+  const nav = screen.getByRole("navigation", { name: "文件位置" });
+  expect(nav.textContent).toBe("projdocsnotes.txt");
+  fireEvent.click(screen.getByRole("button", { name: "docs" }));
+  expect(reveal).toHaveBeenCalledWith("/w/proj/docs");
+  fireEvent.click(screen.getByRole("button", { name: "proj" }));
+  expect(reveal).toHaveBeenLastCalledWith("/w/proj");
+  expect(container.querySelector(".file-preview-header .file-kind-icon")).not.toBeNull();
+});

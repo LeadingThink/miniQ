@@ -1,0 +1,16 @@
+.file-kind-icon {
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+.file-kind-folder { color: #7c8aa5; }
+.file-kind-code { color: #3b82f6; }
+.file-kind-web { color: #e8763a; }
+.file-kind-data { color: #a16207; }
+.file-kind-sheet { color: #16a34a; }
+.file-kind-doc { color: #2563eb; }
+.file-kind-pdf { color: #dc2626; }
+.file-kind-slides { color: #ea580c; }
+.file-kind-image { color: #db2777; }
+.file-kind-video { color: #7c3aed; }
+.file-kind-audio { color: #0891b2; }
+.file-kind-archive { color: #78716c; }

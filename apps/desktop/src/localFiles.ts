@@ -315,3 +315,10 @@ export async function revealLocalFile(
     await invoke("reveal_local_file", { path, workspacePath, workspacePaths, authorizedFiles });
   }
 }
+
+/** Opens the system terminal in a workspace directory (desktop app only). */
+export async function openTerminalAt(directory: string): Promise<void> {
+  if (!isTauriRuntime()) throw new Error("仅桌面应用可以打开终端");
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("open_terminal", { directory });
+}

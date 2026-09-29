@@ -39,7 +39,7 @@ const KINDS: Record<FileKind, string[]> = {
   web: ["html", "htm", "css", "scss", "less"],
   data: ["json", "jsonl", "yaml", "yml", "toml", "xml", "ini", "env", "lock"],
   sheet: ["xlsx", "xls", "xlsm", "csv", "tsv", "numbers", "ods"],
-  doc: ["doc", "docx", "pages", "odt", "rtf"],
+  doc: ["md", "mdx", "markdown", "doc", "docx", "pages", "odt", "rtf"],
   pdf: ["pdf"],
   slides: ["ppt", "pptx", "key", "odp"],
   image: ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "heic", "tiff"],
@@ -161,12 +161,40 @@ export function visibleRows(
 
 /** Project-relative location such as "docs › api › guide.md". */
 export function breadcrumb(path: string, roots: readonly string[]): string {
+  const segments = breadcrumbSegments(path, roots);
+  return segments.length ? segments.map((segment) => segment.label).join(" › ") : path;
+}
+
+export interface BreadcrumbSegment {
+  label: string;
+  /** Absolute path of this segment; the last one is the file itself. */
+  path: string;
+  directory: boolean;
+}
+
+/**
+ * Splits a file path into clickable segments relative to the deepest
+ * workspace root that contains it. Returns [] when the file is outside
+ * every root.
+ */
+export function breadcrumbSegments(
+  path: string,
+  roots: readonly string[],
+): BreadcrumbSegment[] {
   const target = path.replace(/\\/g, "/");
   const root = roots
     .map((value) => value.replace(/\\/g, "/").replace(/\/+$/, ""))
     .filter((value) => value && target.startsWith(`${value}/`))
     .sort((a, b) => b.length - a.length)[0];
-  if (!root) return path;
-  const base = root.split("/").at(-1) || root;
-  return [base, ...target.slice(root.length + 1).split("/").filter(Boolean)].join(" › ");
+  if (!root) return [];
+  const parts = target.slice(root.length + 1).split("/").filter(Boolean);
+  const segments: BreadcrumbSegment[] = [
+    { label: root.split("/").at(-1) || root, path: root, directory: true },
+  ];
+  let current = root;
+  parts.forEach((part, index) => {
+    current = `${current}/${part}`;
+    segments.push({ label: part, path: current, directory: index < parts.length - 1 });
+  });
+  return segments;
 }
