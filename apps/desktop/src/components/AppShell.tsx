@@ -1,5 +1,9 @@
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
+import { focusSessionSearch, useAppCommands } from "../hooks/useAppCommands";
+import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
+import { buildPaletteCommands } from "./paletteCommands";
+import type { CommandId } from "../shortcuts";
 import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
 import { PlugZap, Sparkles } from "lucide-react";
@@ -13,7 +17,7 @@ import { DistillModal } from "./Distill";
 import { ExternalSessionImportDialog } from "./ExternalSessionImport";
 import { ProjectPicker } from "./ProjectPicker";
 import { SchedulePanel } from "./Schedule";
-import { SearchOverlay, type PaletteCommand } from "./Search";
+import { SearchOverlay } from "./Search";
 import { SettingsPanel } from "./Settings";
 import { AppSidebar } from "./AppSidebar";
 import { StarterPrompts } from "./StarterPrompts";
@@ -48,7 +52,7 @@ const Timeline = lazy(async () => {
   return { default: module.Timeline };
 });
 
-function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
+function AppOverlays({ app, theme, onThemeChange, runCommand }: AppShellProps & { runCommand: (id: CommandId) => boolean }) {
   const desktop = useDesktopHost();
   const editingWorkspace = app.catalog.workspaces.find(
     (workspace) => workspace.id === app.navigation.editingWorkspaceId,
@@ -92,7 +96,7 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
         <SearchOverlay
           sessions={app.catalog.sessions}
           workspaces={app.catalog.workspaces}
-          commands={buildPaletteCommands(app)}
+          commands={buildPaletteCommands(app, runCommand)}
           client={app.client}
           onSelectSession={(sessionId) =>
             void app.actions.openSession(sessionId)
@@ -359,43 +363,6 @@ function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onD
   }
 }
 
-function buildPaletteCommands(app: MiniqAppController): PaletteCommand[] {
-  return [
-    {
-      id: "new-chat",
-      label: "新建会话",
-      hint: "⌘N",
-      icon: "new",
-      run: app.actions.newChat,
-    },
-    {
-      id: "settings",
-      label: "打开设置",
-      hint: "⌘,",
-      icon: "settings",
-      run: () => app.navigation.setShowSettings(true),
-    },
-    {
-      id: "skills",
-      label: "技能",
-      icon: "skills",
-      run: () => app.navigation.openSettings("skills"),
-    },
-    {
-      id: "mcp",
-      label: "MCP 连接",
-      icon: "mcp",
-      run: () => app.navigation.openSettings("mcp"),
-    },
-    {
-      id: "schedule",
-      label: "已安排的任务",
-      icon: "schedule",
-      run: () => app.navigation.setPage("schedule"),
-    },
-  ];
-}
-
 export function AppShell({ app, theme, onThemeChange, contentOnly = false, active = true }: AppShellProps) {
   const workbench = useAppWorkbench(app);
   const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
@@ -404,6 +371,7 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
     onOpenReview: () => workbench.select("review"),
   });
 
+  const commands = useAppCommands(app, active);
   useGlobalShortcuts({
     onPalette: () => app.navigation.setShowSearch(!app.navigation.showSearch),
     onNewChat: app.actions.newChat,
@@ -411,15 +379,8 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
     onStop: app.busy ? () => void app.actions.cancelTurn() : undefined,
     onToggleSidebar: () =>
       app.navigation.setSidebarCollapsed(!app.navigation.sidebarCollapsed),
-    onSessionSearch: () => {
-      const search = document.querySelector<HTMLInputElement>(
-        '.main[data-app-active="true"] input[data-session-search="true"]',
-      );
-      if (!search) return false;
-      search.focus();
-      search.select();
-      return true;
-    },
+    onSessionSearch: focusSessionSearch,
+    onShortcut: commands.onShortcut,
   }, active);
 
   const Container = contentOnly ? Fragment : "div";
@@ -442,7 +403,8 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
         <AppErrorBanner app={app} />
         <SettingsLoadErrorBanner client={app.client} />
         <RemotePermissionNotice client={app.client} />
-        {active && <AppOverlays app={app} theme={theme} onThemeChange={onThemeChange} />}
+        {active && <AppOverlays app={app} theme={theme} onThemeChange={onThemeChange} runCommand={commands.runCommand} />}
+        {active && <KeyboardShortcutsDialog open={commands.showShortcuts} onClose={() => commands.setShowShortcuts(false)} />}
         {active && slash.dialogs}
         {active && <MainPage
           app={app}
