@@ -12,6 +12,7 @@ import {
   MoreHorizontal,
   PencilLine,
   Plus,
+  RefreshCw,
   Search,
   SearchX,
   Settings,
@@ -84,7 +85,12 @@ interface SidebarProps {
 export function Sidebar(props: SidebarProps) {
   const mobile = useMobileSidebarLayout();
   const [moreOpen, setMoreOpen] = useState(false);
-  const showSecondary = !mobile || moreOpen;
+  const showSecondary = mobile && moreOpen;
+  const [footerMenuOpen, setFooterMenuOpen] = useState(false);
+  const footerMenuRef = useRef<HTMLButtonElement>(null);
+  const openFeedback = () => void openExternalUrl(FEEDBACK_FORM_URL).catch((cause) => {
+    props.onError(`无法打开反馈页面：${cause instanceof Error ? cause.message : String(cause)}`);
+  });
   const [showArchived, setShowArchived] = useState(() => props.sessions.some((session) => session.id === props.currentSessionId && session.archived));
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SidebarFilter>("all");
@@ -108,8 +114,8 @@ export function Sidebar(props: SidebarProps) {
   const archiveOpen = showArchived || navigation.filtering;
   return (
     <SidebarPanel>
-      <div className="sidebar-brand-row">
-        <div className="brand">miniQ</div>
+      <div className="sidebar-brand-row" data-tauri-drag-region>
+        <div className="brand" data-tauri-drag-region>miniQ</div>
         {mobile && props.onClose && <button type="button" className="sidebar-close" aria-label="关闭项目与会话侧栏" onClick={props.onClose}><X size={19} /></button>}
       </div>
       <div className="sidebar-primary-actions">
@@ -205,12 +211,12 @@ export function Sidebar(props: SidebarProps) {
       </div>
 
       <div className="sidebar-footer">
-        <UpdateNotice
+        {(mobile || updateNeedsAttention(props.updateState)) && <UpdateNotice
           supported={props.updateSupported}
           state={props.updateState}
           onCheck={props.onCheckForUpdates}
           onInstall={props.onInstallUpdate}
-        />
+        />}
         {showSecondary && <div className="sidebar-secondary-actions" id="sidebar-secondary-footer">
         {mobile && <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSchedule}>
           <Clock3 className="nav-icon" size={16} /> 已安排
@@ -222,9 +228,7 @@ export function Sidebar(props: SidebarProps) {
           type="button"
           className="nav-item sidebar-nav-button"
           title="打开反馈表单"
-          onClick={() => void openExternalUrl(FEEDBACK_FORM_URL).catch((cause) => {
-            props.onError(`无法打开反馈页面：${cause instanceof Error ? cause.message : String(cause)}`);
-          })}
+          onClick={openFeedback}
         >
           <MessageSquareText className="nav-icon" size={16} /> 反馈
         </button>
@@ -240,6 +244,31 @@ export function Sidebar(props: SidebarProps) {
             <span className="sidebar-account-avatar" aria-hidden="true">Q</span>
             <span className="sidebar-account-name">本机</span>
           </div>
+          {!mobile && <>
+            <button
+              ref={footerMenuRef}
+              type="button"
+              className="icon-button sidebar-footer-more"
+              aria-label="更多"
+              aria-haspopup="menu"
+              aria-expanded={footerMenuOpen}
+              title="导入会话、反馈与更新"
+              onClick={() => setFooterMenuOpen((open) => !open)}
+            >
+              <MoreHorizontal size={16} />
+            </button>
+            <DropdownMenu triggerRef={footerMenuRef} open={footerMenuOpen} onClose={() => setFooterMenuOpen(false)}>
+              <button type="button" className="dropdown-item" onClick={() => { setFooterMenuOpen(false); props.onImportSessions(); }}>
+                <Download size={13} /><span>导入会话</span>
+              </button>
+              <button type="button" className="dropdown-item" onClick={() => { setFooterMenuOpen(false); openFeedback(); }}>
+                <MessageSquareText size={13} /><span>反馈</span>
+              </button>
+              {props.updateSupported && <button type="button" className="dropdown-item" onClick={() => { setFooterMenuOpen(false); props.onCheckForUpdates(); }}>
+                <RefreshCw size={13} /><span>{updateMenuLabel(props.updateState)}</span>
+              </button>}
+            </DropdownMenu>
+          </>}
           <button type="button" className="nav-item sidebar-nav-button sidebar-settings-button" onClick={props.onShowSettings} title="设置（⌘/Ctrl+,）">
             <Settings className="nav-icon" size={16} /> 设置
           </button>
@@ -473,4 +502,16 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
       />
     </div>
   );
+}
+
+/** Desktop keeps routine update states in the footer menu; only states that
+ *  need the user's attention take a row of their own. */
+export function updateNeedsAttention(state: AppUpdaterState): boolean {
+  return state.phase !== "idle" && state.phase !== "up-to-date" && state.phase !== "unavailable";
+}
+
+function updateMenuLabel(state: AppUpdaterState): string {
+  if (state.phase === "up-to-date") return `检查更新（已是最新${state.version ? ` v${state.version}` : ""}）`;
+  if (state.phase === "unavailable") return "检查更新（当前平台暂无更新）";
+  return "检查更新";
 }

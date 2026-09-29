@@ -1133,18 +1133,25 @@
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
 }
 
+/* Streaming indicator: a soft breathing dot rather than a terminal block. */
 .type-cursor {
   display: inline-block;
   width: 8px;
-  height: 15px;
-  margin-left: 2px;
+  height: 8px;
+  margin-left: 4px;
+  border-radius: 50%;
   background: var(--text);
-  vertical-align: -2px;
-  animation: blink 1s step-start infinite;
+  vertical-align: 1px;
+  animation: type-cursor-breathe 1.2s ease-in-out infinite;
 }
 
-@keyframes blink {
-  50% { opacity: 0; }
+@keyframes type-cursor-breathe {
+  0%, 100% { opacity: 0.9; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .type-cursor { animation: none; opacity: 0.7; }
 }
 
 @keyframes rise {

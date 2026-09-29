@@ -204,7 +204,6 @@ export function Timeline(props: TimelineProps) {
       <div className="conversation-context" data-testid="conversation-context">
         {props.title && (
           <div className="conversation-title" title={props.title}>
-            <span className="conversation-title-label">会话</span>
             <strong>{props.title}</strong>
           </div>
         )}
@@ -224,18 +223,18 @@ export function Timeline(props: TimelineProps) {
             onOpen={props.onOpenAgentPanel}
           />
         )}
+        <TimelineToolbar
+          key={props.sessionId}
+          filter={filter}
+          query={query}
+          exporting={exporting}
+          onFilter={setFilter}
+          onQuery={setQuery}
+          onShare={props.client && props.sessionId ? () => setShowShare(true) : undefined}
+          onDiagnostics={props.client && props.sessionId ? () => setShowDiagnostics(true) : undefined}
+          onExport={(format) => void exportSession(format)}
+        />
       </div>
-      <TimelineToolbar
-        key={props.sessionId}
-        filter={filter}
-        query={query}
-        exporting={exporting}
-        onFilter={setFilter}
-        onQuery={setQuery}
-        onShare={props.client && props.sessionId ? () => setShowShare(true) : undefined}
-        onDiagnostics={props.client && props.sessionId ? () => setShowDiagnostics(true) : undefined}
-        onExport={(format) => void exportSession(format)}
-      />
       {showDiagnostics && props.client && props.sessionId && (
         <ModelDiagnostics
           client={props.client}

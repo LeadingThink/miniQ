@@ -20,11 +20,14 @@ import "./styles/experience.css";
 import "./styles/theme-picker.css";
 import "./external-sessions.css";
 import "./styles/mobile-controls.css";
+import "./styles/window-chrome.css";
 import { initializeAppearance } from "./theme";
 import { initializeMobileRuntime } from "./mobileRuntime";
 import { initializeMobileViewport } from "./mobileViewport";
+import { initializeWindowChrome } from "./windowChrome";
 
 initializeAppearance();
+initializeWindowChrome();
 initializeMobileViewport();
 void initializeMobileRuntime();
 

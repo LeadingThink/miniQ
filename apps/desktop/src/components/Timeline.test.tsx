@@ -74,6 +74,9 @@ describe("Timeline execution flow", () => {
     expect(shell).toBeGreaterThan(toolbar);
     expect(transcript).toBeGreaterThan(shell);
     expect(html).toContain("检查服务状态");
+    expect(html).not.toContain(">会话<");
+    const contextClose = html.indexOf('class="timeline-shell"');
+    expect(html.slice(context, contextClose)).toContain('aria-label="会话记录工具栏"');
   });
 
   it("does not reserve a goal row when a session cannot edit goals", () => {

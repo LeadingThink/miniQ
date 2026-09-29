@@ -204,6 +204,15 @@ export function TimelineEntries(props: {
   const pendingAttention = props.approvals.length > 0 || props.questions.length > 0;
   const history = useMemo(() => {
     const indexByKey = new Map(props.items.map((item, index) => [timelineGroupKey(item), index]));
+    // The newest reply keeps its actions visible; older ones reveal on hover.
+    let latestAssistantId: string | undefined;
+    for (let index = props.items.length - 1; index >= 0; index -= 1) {
+      const candidate = props.items[index];
+      if (candidate.kind === "message" && candidate.message.role === "assistant") {
+        latestAssistantId = candidate.message.id;
+        break;
+      }
+    }
     const renderGroup = (item: TimelineGroup) => {
       const index = indexByKey.get(timelineGroupKey(item)) ?? 0;
       return <Fragment key={timelineGroupKey(item)}>
@@ -327,7 +336,7 @@ export function TimelineEntries(props: {
           ) : (
             <div
               key={item.message.id}
-              className="message-entry assistant"
+              className={`message-entry assistant${item.message.id === latestAssistantId ? " is-latest" : ""}`}
               data-history-anchor={`message:${item.message.id}`}
             >
               <div className="bubble assistant">

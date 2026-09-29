@@ -216,9 +216,8 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 42px;
-  padding: 4px 20px;
-  border-bottom: 1px solid var(--border);
+  min-height: 40px;
+  padding: 2px 16px 2px 20px;
 }
 
 .conversation-title {
@@ -229,12 +228,6 @@
   min-width: 0;
   color: var(--text);
   white-space: nowrap;
-}
-
-.conversation-title-label {
-  flex: none;
-  color: var(--text-dim);
-  font-size: var(--font-caption);
 }
 
 .conversation-title strong {
@@ -329,10 +322,25 @@
   overflow: hidden;
 }
 
-.conversation-view > .timeline-toolbar {
-  flex: 0 0 auto;
-  padding-top: 5px;
-  padding-bottom: 5px;
+/* Record tools share the context row instead of stacking a second header
+   band; the window toolbar already names the session on desktop. */
+.conversation-context > .timeline-toolbar {
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
+  margin-left: auto;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.conversation-context > .timeline-toolbar .timeline-search {
+  flex: 0 1 200px;
+  min-width: 120px;
+}
+
+@media (min-width: 721px) {
+  .conversation-context > .conversation-title {
+    display: none;
+  }
 }
 
 .conversation-view > .timeline-shell {
@@ -381,9 +389,14 @@
     display: none;
   }
 
-  .conversation-view > .timeline-toolbar {
-    padding-top: 2px;
-    padding-bottom: 2px;
+  .conversation-context > .timeline-toolbar {
+    flex: 1 1 100%;
+    margin-left: 0;
+    padding: 2px 0;
+  }
+
+  .conversation-context > .timeline-toolbar .timeline-search {
+    flex: 1 1 auto;
   }
 
   .conversation-context > .execution-summary {
@@ -407,7 +420,7 @@
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
   .native-mobile .conversation-context {
     align-items: center;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 4px;
     min-height: 28px;
     padding: 1px max(10px, var(--safe-right)) 1px max(10px, var(--safe-left));
@@ -907,4 +920,30 @@
   color: var(--danger);
   overflow-wrap: anywhere;
   font-size: var(--font-footnote);
+}
+
+/* Pointer devices: older message metadata stays quiet until the reader
+   engages with that message; touch devices keep every action visible. */
+@media (hover: hover) and (pointer: fine) {
+  .message-entry > .message-footer > .message-time,
+  .message-entry > .message-footer > .message-actions {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .message-entry:hover > .message-footer > .message-time,
+  .message-entry:hover > .message-footer > .message-actions,
+  .message-entry:focus-within > .message-footer > .message-time,
+  .message-entry:focus-within > .message-footer > .message-actions,
+  .message-entry.assistant.is-latest > .message-footer > .message-time,
+  .message-entry.assistant.is-latest > .message-footer > .message-actions,
+  .message-entry:has(.copy-control small) > .message-footer > .message-actions {
+    opacity: 1;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: reduce) {
+  .message-entry > .message-footer > .message-time,
+  .message-entry > .message-footer > .message-actions {
+    transition: none;
+  }
 }
