@@ -5,8 +5,10 @@ mod listing;
 mod monitor;
 mod onboarding;
 mod output;
+mod schema;
 mod selection;
 mod sessions;
+mod subcommands;
 mod updater;
 
 use anyhow::{bail, Context, Result};
@@ -15,17 +17,31 @@ use serde_json::{json, Value};
 use std::io::{self, IsTerminal, Read};
 use std::process::ExitCode;
 
-use args::{Cli, Commands, ExecArgs};
+use args::{Cli, Commands, ExecArgs, ExecCommand, OutputFormat};
 use client::Client;
 use output::{progress, Output};
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let cli = Cli::parse();
-    let json_output = matches!(
-        &cli.command,
-        Some(Commands::Exec(ExecArgs { json: true, .. }) | Commands::Watch { json: true, .. })
-    );
+    let mut cli = Cli::parse();
+    if cli.print && cli.command.is_some() {
+        eprintln!("miniq: --print runs a prompt; it cannot be combined with a subcommand");
+        return ExitCode::from(1);
+    }
+    if cli.print {
+        cli.print = false;
+        cli.command = Some(Commands::Exec(ExecArgs {
+            prompt: cli.prompt.take(),
+            output_format: cli.output_format,
+            output_schema: cli.output_schema.take(),
+            ..ExecArgs::default()
+        }));
+    }
+    let json_output = match &cli.command {
+        Some(Commands::Exec(exec)) => exec.format() != OutputFormat::Text,
+        Some(Commands::Watch { json, .. }) => *json,
+        _ => false,
+    };
     match run(cli).await {
         Ok(code) => ExitCode::from(code),
         Err(error) => {
@@ -49,6 +65,9 @@ async fn run(cli: Cli) -> Result<u8> {
     if let Some(Commands::Update { check }) = cli.command {
         return updater::run(check).await;
     }
+    if cli.continue_last && cli.command.is_some() {
+        bail!("--continue resumes interactively; use `miniq exec --resume-last` for scripts");
+    }
     if cli.command.is_none() || matches!(&cli.command, Some(Commands::Resume { .. })) {
         require_terminal()?;
     }
@@ -70,6 +89,7 @@ async fn run(cli: Cli) -> Result<u8> {
             };
             if !onboarding::ensure(&mut client, true).await? { return Ok(0); }
             let id = sessions::prepare(&mut client, &cli.chat, Some(&id)).await?;
+            apply_approval(&mut client, &cli.chat, &id).await?;
             return monitor::interactive(&mut client, &id, prompt, &cli.chat).await;
         }
         Some(Commands::Sessions { all, json }) => {
@@ -99,7 +119,24 @@ async fn run(cli: Cli) -> Result<u8> {
             Some(model) => client.call("model.describe", json!({"model":model,"apiProtocol":cli.chat.protocol.unwrap_or_else(|| "auto".into())})).await?,
             None => client.call("model.list", json!({})).await?,
         },
-        Some(Commands::Doctor) => doctor(&mut client).await?,
+        Some(Commands::Doctor { json }) => {
+            let report = doctor(&mut client).await?;
+            if json || !io::stdout().is_terminal() {
+                report
+            } else {
+                return Ok(subcommands::doctor_report(&report, &directory));
+            }
+        }
+        Some(Commands::Mcp { command }) => return subcommands::mcp(&mut client, command).await,
+        Some(Commands::Skills { command: args::ListCommand::List { json } }) => return subcommands::skills(&mut client, json).await,
+        Some(Commands::Plugins { command: args::ListCommand::List { json } }) => return subcommands::plugins(&mut client, json).await,
+        Some(Commands::Config { command }) => return subcommands::config(&mut client, command).await,
+        Some(Commands::Diff { session, json }) => {
+            let session = match session { Some(id) => id, None => sessions::last(&mut client, &cli.chat).await? };
+            return subcommands::diff(&mut client, &session, json).await;
+        }
+        Some(Commands::Fork { session, at, title, json }) => return subcommands::fork(&mut client, &session, at, title, json).await,
+        Some(Commands::Rename { session, title, json }) => return subcommands::rename(&mut client, &session, &title, json).await,
         Some(Commands::Status) => client.call("settings.get", json!({})).await?,
         Some(Commands::Logout) => {
             let settings = client.call("settings.get", json!({})).await?;
@@ -114,7 +151,9 @@ async fn run(cli: Cli) -> Result<u8> {
         }
         None => {
             if !onboarding::ensure(&mut client, true).await? { return Ok(0); }
-            let id = sessions::prepare(&mut client, &cli.chat, None).await?;
+            let session = if cli.continue_last { Some(sessions::last(&mut client, &cli.chat).await?) } else { None };
+            let id = sessions::prepare(&mut client, &cli.chat, session.as_deref()).await?;
+            apply_approval(&mut client, &cli.chat, &id).await?;
             return monitor::interactive(&mut client, &id, cli.prompt, &cli.chat).await;
         }
         Some(Commands::Completions { .. } | Commands::Update { .. }) => unreachable!(),
@@ -146,8 +185,60 @@ fn prompt_from_stdin(prompt: Option<String>) -> Result<String> {
     Ok(prompt)
 }
 
-async fn execute(client: &mut Client, options: &args::ChatOptions, exec: ExecArgs) -> Result<u8> {
-    let prompt = prompt_from_stdin(exec.prompt)?;
+/// Store an explicit `--approval` choice on the opened session only.
+async fn apply_approval(client: &mut Client, options: &args::ChatOptions, id: &str) -> Result<()> {
+    if let Some(mode) = options.approval_mode() {
+        client
+            .call(
+                "session.approval.update",
+                json!({"sessionId":id,"mode":mode}),
+            )
+            .await
+            .context("set session approval mode")?;
+        if mode == "fullAccess" {
+            progress("Approval: full access (tools run without confirmation)");
+        }
+    }
+    Ok(())
+}
+
+async fn execute(
+    client: &mut Client,
+    options: &args::ChatOptions,
+    mut exec: ExecArgs,
+) -> Result<u8> {
+    let format = exec.format();
+    let mut resume_last = exec.resume_last;
+    if let Some(ExecCommand::Resume {
+        session,
+        prompt,
+        last,
+    }) = exec.command.take()
+    {
+        if exec.session.is_some() || exec.resume_last || exec.prompt.is_some() {
+            bail!("use either `exec resume ...` or exec's own --session/--resume-last/PROMPT");
+        }
+        match (session, prompt, last) {
+            (Some(prompt), None, true) => exec.prompt = Some(prompt),
+            (Some(_), Some(_), true) => bail!("pass either SESSION_ID or --last, not both"),
+            (None, prompt, true) => exec.prompt = prompt,
+            (Some(session), prompt, false) => {
+                exec.session = Some(session);
+                exec.prompt = prompt;
+            }
+            (None, _, false) => bail!("`miniq exec resume` needs SESSION_ID or --last"),
+        }
+        resume_last = last;
+    }
+    let schema = exec
+        .output_schema
+        .as_deref()
+        .map(schema::load)
+        .transpose()?;
+    let mut prompt = prompt_from_stdin(exec.prompt)?;
+    if let Some(schema) = &schema {
+        prompt.push_str(&schema::instructions(schema));
+    }
     sessions::attachments(&options.attachments)?;
     onboarding::ensure(client, false).await?;
     if let Some(path) = &exec.output {
@@ -158,25 +249,44 @@ async fn execute(client: &mut Client, options: &args::ChatOptions, exec: ExecArg
             );
         }
     }
-    if !exec.use_configured_permissions {
+    if resume_last {
+        exec.session = Some(sessions::last(client, options).await?);
+    }
+    // An explicit --approval replaces the default alwaysAsk requirement.
+    let explicit = options.approval_mode().is_some();
+    if !explicit && !exec.use_configured_permissions {
         sessions::require_unattended_approval(client, exec.session.as_deref()).await?;
     }
     let id = sessions::prepare(client, options, exec.session.as_deref()).await?;
-    if !exec.use_configured_permissions {
+    if explicit {
+        apply_approval(client, options, &id).await?;
+    } else if !exec.use_configured_permissions {
         sessions::require_unattended_approval(client, Some(&id)).await?;
     }
     progress(&format!("Session: {id}"));
-    let mut output = Output::new(exec.json);
+    let mut output = Output::new(format == OutputFormat::StreamJson);
     if let Err(error) = sessions::send(client, &id, &prompt, &options.attachments).await {
-        output.finish(&id, 1, Some(&error.to_string()));
+        finish(&output, format, &id, 1, Some(&error.to_string()), None);
         progress(&error.to_string());
         return Ok(1);
     }
     let result = monitor::wait(client, &id, false, true, &mut output, None).await;
-    let (code, error) = match result {
+    let (mut code, mut error) = match result {
         Ok(code) => (code, None),
         Err(error) => (1, Some(error.to_string())),
     };
+    let mut structured = None;
+    if let (0, Some(schema)) = (code, &schema) {
+        match schema::parse(&output.final_text)
+            .and_then(|value| schema::validate(schema, &value).map(|()| value))
+        {
+            Ok(value) => structured = Some(value),
+            Err(reason) => {
+                code = 1;
+                error = Some(format!("output does not match --output-schema: {reason}"));
+            }
+        }
+    }
     if code == 0 {
         if let Some(path) = exec.output {
             use std::io::Write;
@@ -188,11 +298,38 @@ async fn execute(client: &mut Client, options: &args::ChatOptions, exec: ExecArg
             file.write_all(output.final_text.as_bytes())?;
         }
     }
-    output.finish(&id, code, error.as_deref());
+    finish(
+        &output,
+        format,
+        &id,
+        code,
+        error.as_deref(),
+        structured.as_ref(),
+    );
     if let Some(error) = error {
         progress(&error);
     }
     Ok(code)
+}
+
+fn finish(
+    output: &Output,
+    format: OutputFormat,
+    id: &str,
+    code: u8,
+    error: Option<&str>,
+    structured: Option<&Value>,
+) {
+    if format == OutputFormat::Json {
+        println!(
+            "{}",
+            json!({"type":"result","sessionId":id,"exitCode":code,
+            "status":if code == 0 {"completed"} else {"incomplete"},
+            "text":output.final_text,"structuredOutput":structured,"error":error})
+        );
+    } else {
+        output.finish(id, code, error);
+    }
 }
 
 async fn doctor(client: &mut Client) -> Result<Value> {

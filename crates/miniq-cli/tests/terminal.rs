@@ -107,6 +107,33 @@ impl Fixture {
                             socket.send(Message::text(json!({"type":"assistant_delta","sessionId":"session-1","delta":"partial"}).to_string())).await.unwrap();
                             json!({"message":{"id":"user-1"}})
                         }
+                        "session.approval.update" => {
+                            json!({"mode":request["params"]["mode"],"effective":request["params"]["mode"]})
+                        }
+                        "mcp.list" => json!({"servers":[
+                            {"name":"github","command":"npx","args":["-y","gh"],"enabled":true,"source":"user","status":"connected"},
+                            {"name":"plug","command":"node","args":[],"enabled":true,"source":"plugin","status":"stopped","pluginId":"p1"}]}),
+                        "mcp.update" => json!({"ok":true}),
+                        "skill.list" => {
+                            json!({"skills":[{"name":"review","description":"Code review","version":"1.0","source":"user","enabled":true}]})
+                        }
+                        "plugin.list" => {
+                            json!({"plugins":[{"id":"p1","name":"Plug","version":"0.2","enabled":true,"status":"active","tools":[],"error":null,"description":"Demo"}]})
+                        }
+                        "session.rename" => {
+                            json!({"id":request["params"]["sessionId"],"title":request["params"]["title"]})
+                        }
+                        "session.history" => json!({"messages":[
+                            {"id":"answer-0","role":"assistant","content":"a"},
+                            {"id":"user-2","role":"user","content":"q"},
+                            {"id":"answer-1","role":"assistant","content":"b"}],"toolCalls":[],"nextCursor":null}),
+                        "session.fork" => json!({"id":"session-2","title":"fork"}),
+                        "session.diff" => {
+                            json!({"files":[{"path":"a.txt","oldExists":true,"newExists":true,"binary":false,
+                            "additions":1,"deletions":1,"hunks":[{"oldStart":1,"oldLines":1,"newStart":1,"newLines":1,
+                            "lines":[{"kind":"deletion","content":"old"},{"kind":"addition","content":"new"}]}]}],
+                            "additions":1,"deletions":1})
+                        }
                         _ => panic!("unexpected method {method}"),
                     };
                     socket
@@ -129,6 +156,11 @@ impl Fixture {
                             ],
                             "failure" => vec![
                                 json!({"type":"turn_failed","error":"fixture provider failure"}),
+                            ],
+                            "schema" => vec![
+                                json!({"type":"assistant_replaced","text":""}),
+                                json!({"type":"message_created","message":{"id":"answer-1","role":"assistant","content":"```json\n{\"ok\":true}\n```"}}),
+                                json!({"type":"turn_completed"}),
                             ],
                             _ => vec![
                                 json!({"type":"assistant_replaced","text":""}),
@@ -403,4 +435,273 @@ async fn output_file_is_created_only_on_success_and_never_overwritten() {
             .count(),
         1
     );
+}
+
+fn methods(fixture: &Fixture) -> Vec<Value> {
+    fixture.requests.lock().unwrap().clone()
+}
+
+#[tokio::test]
+async fn explicit_approval_replaces_the_always_ask_requirement() {
+    let fixture = Fixture::new("full").await;
+    let result = fixture
+        .run(&["exec", "task", "--approval", "auto"], "")
+        .await;
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let requests = methods(&fixture);
+    let update = requests
+        .iter()
+        .find(|request| request["method"] == "session.approval.update")
+        .expect("approval update");
+    assert_eq!(
+        update["params"],
+        json!({"sessionId":"session-1","mode":"auto"})
+    );
+    assert!(!requests
+        .iter()
+        .any(|request| request["method"] == "session.approval.get"));
+
+    let fixture = Fixture::new("approval").await;
+    let result = fixture
+        .run(&["-p", "task", "--dangerously-bypass-approvals"], "")
+        .await;
+    assert_eq!(result.status.code(), Some(3));
+    assert!(methods(&fixture)
+        .iter()
+        .any(|request| request["method"] == "session.approval.update"
+            && request["params"]["mode"] == "fullAccess"));
+}
+
+#[tokio::test]
+async fn output_schema_validates_the_final_answer() {
+    let fixture = Fixture::new("schema").await;
+    let good = r#"{"type":"object","required":["ok"],"properties":{"ok":{"type":"boolean"}}}"#;
+    let result = fixture
+        .run(
+            &[
+                "exec",
+                "task",
+                "--output-schema",
+                good,
+                "--output-format",
+                "json",
+            ],
+            "",
+        )
+        .await;
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let value: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(value["type"], "result");
+    assert_eq!(value["structuredOutput"], json!({"ok":true}));
+    let send = methods(&fixture)
+        .into_iter()
+        .find(|request| request["method"] == "session.sendMessage")
+        .unwrap();
+    assert!(send["params"].to_string().contains("JSON Schema"));
+
+    let bad = r#"{"type":"object","properties":{"ok":{"type":"string"}}}"#;
+    let result = fixture
+        .run(&["--print", "task", "--json-schema", bad], "")
+        .await;
+    assert_eq!(result.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("$.ok: expected string"));
+
+    let fixture = Fixture::new("").await;
+    let result = fixture
+        .run(&["exec", "task", "--output-schema", good], "")
+        .await;
+    assert_eq!(result.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("not valid JSON"));
+}
+
+#[tokio::test]
+async fn output_format_json_and_stream_json() {
+    let fixture = Fixture::new("").await;
+    let result = fixture
+        .run(&["exec", "task", "--output-format", "json"], "")
+        .await;
+    assert!(result.status.success());
+    let value: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(value["text"], "fixture answer");
+    assert_eq!(value["exitCode"], 0);
+    let result = fixture
+        .run(&["exec", "task", "--output-format", "stream-json"], "")
+        .await;
+    let stdout = String::from_utf8(result.stdout).unwrap();
+    let last: Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
+    assert_eq!(last["type"], "cli_result");
+    let fixture = Fixture::new("full").await;
+    let result = fixture
+        .run(&["exec", "task", "--output-format", "json"], "")
+        .await;
+    assert_eq!(result.status.code(), Some(1));
+    let value: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(value["type"], "cli_error");
+}
+
+#[tokio::test]
+async fn exec_resume_continues_the_latest_session() {
+    for args in [
+        vec!["exec", "--resume-last", "more"],
+        vec!["exec", "resume", "--last", "more"],
+        vec!["exec", "resume", "session-1", "more"],
+    ] {
+        let fixture = Fixture::new("").await;
+        let result = fixture.run(&args, "").await;
+        assert!(
+            result.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let requests = methods(&fixture);
+        assert!(
+            requests
+                .iter()
+                .any(|request| request["method"] == "session.open"),
+            "{args:?}"
+        );
+        assert!(
+            !requests
+                .iter()
+                .any(|request| request["method"] == "session.create"),
+            "{args:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn management_subcommands_print_tables_and_json() {
+    let fixture = Fixture::new("").await;
+    let result = fixture.run(&["mcp", "list"], "").await;
+    let stdout = String::from_utf8(result.stdout).unwrap();
+    assert!(stdout.starts_with("NAME"), "{stdout}");
+    assert!(stdout.contains("github") && stdout.contains("npx -y gh"));
+    let result = fixture.run(&["mcp", "get", "github", "--json"], "").await;
+    let value: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(value["command"], "npx");
+    assert_eq!(
+        fixture
+            .run(&["mcp", "get", "missing"], "")
+            .await
+            .status
+            .code(),
+        Some(1)
+    );
+
+    let result = fixture
+        .run(
+            &["mcp", "add", "--env", "A=1", "fs", "node", "server.js"],
+            "",
+        )
+        .await;
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let result = fixture.run(&["mcp", "remove", "github"], "").await;
+    assert!(result.status.success());
+    let updates: Vec<Value> = methods(&fixture)
+        .into_iter()
+        .filter(|request| request["method"] == "mcp.update")
+        .map(|request| request["params"]["servers"].clone())
+        .collect();
+    assert_eq!(updates[0].as_array().unwrap().len(), 2);
+    assert_eq!(updates[0][1]["env"], json!({"A":"1"}));
+    assert_eq!(updates[1], json!([]));
+    assert_eq!(
+        fixture
+            .run(&["mcp", "remove", "plug"], "")
+            .await
+            .status
+            .code(),
+        Some(1)
+    );
+
+    let stdout = String::from_utf8(fixture.run(&["skills", "list"], "").await.stdout).unwrap();
+    assert!(stdout.contains("review") && stdout.contains("Code review"));
+    let result = fixture.run(&["plugins", "list", "--json"], "").await;
+    let value: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(value["plugins"][0]["id"], "p1");
+
+    let stdout = String::from_utf8(fixture.run(&["config", "get"], "").await.stdout).unwrap();
+    assert!(stdout.contains("provider.model = fixture"), "{stdout}");
+    let stdout = String::from_utf8(
+        fixture
+            .run(&["config", "get", "provider.model"], "")
+            .await
+            .stdout,
+    )
+    .unwrap();
+    assert_eq!(stdout, "fixture\n");
+    let result = fixture
+        .run(&["config", "set", "provider.model", "other"], "")
+        .await;
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let update = methods(&fixture)
+        .into_iter()
+        .find(|request| request["method"] == "settings.update")
+        .unwrap();
+    assert_eq!(update["params"]["provider"]["model"], "other");
+    assert_eq!(
+        update["params"]["provider"]["baseUrl"],
+        "https://oneapi.zaiwenai.com/v1"
+    );
+}
+
+#[tokio::test]
+async fn session_subcommands_diff_fork_and_rename() {
+    let fixture = Fixture::new("").await;
+    let result = fixture.run(&["diff", "session-1"], "").await;
+    let stdout = String::from_utf8(result.stdout).unwrap();
+    assert!(
+        stdout.contains("--- a/a.txt\n+++ b/a.txt\n@@ -1,1 +1,1 @@\n-old\n+new"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains('\x1b'));
+    let result = fixture.run(&["diff", "--json"], "").await;
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let result = fixture.run(&["fork", "session-1"], "").await;
+    assert!(String::from_utf8(result.stdout)
+        .unwrap()
+        .contains("session-2"));
+    let result = fixture
+        .run(&["fork", "session-1", "--at", "answer-0", "--json"], "")
+        .await;
+    assert!(result.status.success());
+    let forks: Vec<Value> = methods(&fixture)
+        .into_iter()
+        .filter(|request| request["method"] == "session.fork")
+        .map(|request| request["params"]["anchorMessageId"].clone())
+        .collect();
+    assert_eq!(forks, vec![json!("answer-1"), json!("answer-0")]);
+
+    let result = fixture.run(&["rename", "session-1", "新标题"], "").await;
+    assert!(String::from_utf8(result.stdout).unwrap().contains("新标题"));
+}
+
+#[tokio::test]
+async fn doctor_json_keeps_the_report() {
+    let fixture = Fixture::new("").await;
+    let result = fixture.run(&["doctor", "--json"], "").await;
+    let value: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert!(value["daemon"].is_object());
+    assert!(value["terminalDependencies"].is_object());
 }
