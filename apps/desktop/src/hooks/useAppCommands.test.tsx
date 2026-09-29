@@ -100,3 +100,52 @@ it("ignores the bus while inactive", () => {
   act(() => dispatchCommand("newChat"));
   expect((app.actions as unknown as Record<string, ReturnType<typeof vi.fn>>).newChat).not.toHaveBeenCalled();
 });
+
+it("handles every native-menu command id through miniq:command", async () => {
+  const menuIds = [
+    "newChat", "settings", "toggleSidebar", "palette", "find", "showShortcuts", "prevSession", "nextSession",
+    "nextAttention", "archiveSession", "togglePin", "markUnread", "markAllRead", "back", "forward", "copyMarkdown",
+  ] as const;
+  const main = document.createElement("div");
+  main.className = "main";
+  main.dataset.appActive = "true";
+  main.innerHTML = '<input data-session-search="true" />';
+  document.body.append(main);
+  const writeText = vi.fn(() => Promise.resolve());
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  const client = { call: vi.fn(() => Promise.resolve({ messages: [], toolCalls: [], nextCursor: null })) };
+
+  const first = fakeApp("a");
+  const view = render(<Harness app={first} />);
+  const app = Object.assign(fakeApp("b"), { client, unreadSessionIds: new Set(["c"]) });
+  view.rerender(<Harness app={app} />);
+  for (const id of menuIds) {
+    act(() => {
+      window.dispatchEvent(new CustomEvent("miniq:command", { detail: { id } }));
+    });
+  }
+  await vi.waitFor(() => expect(writeText).toHaveBeenCalled());
+  const actions = app.actions as unknown as Record<string, ReturnType<typeof vi.fn>>;
+  expect(actions.newChat).toHaveBeenCalled();
+  expect(app.navigation.setShowSettings).toHaveBeenCalledWith(true);
+  expect(app.navigation.setSidebarCollapsed).toHaveBeenCalled();
+  expect(app.navigation.setShowSearch).toHaveBeenCalled();
+  expect(document.activeElement).toBe(main.querySelector("input"));
+  expect(result.showShortcuts).toBe(true);
+  expect(actions.setSessionArchived).toHaveBeenCalledWith("b", true);
+  expect(actions.setSessionPinned).toHaveBeenCalledWith("b", true);
+  expect(app.markSessionUnread).toHaveBeenCalledWith("b");
+  expect(app.markAllSessionsRead).toHaveBeenCalled();
+  // prev/next session, next attention, back and forward all open sessions.
+  expect(actions.openSession.mock.calls.map(([id]) => id)).toEqual(["a", "c", "c", "a", "b"]);
+  main.remove();
+});
+
+it("keydown and the bus reach the same runner", () => {
+  const app = fakeApp("a");
+  render(<Harness app={app} />);
+  const actions = app.actions as unknown as Record<string, ReturnType<typeof vi.fn>>;
+  act(() => { result.onShortcut({ id: "togglePin" }); });
+  act(() => dispatchCommand("togglePin"));
+  expect(actions.setSessionPinned).toHaveBeenCalledTimes(2);
+});

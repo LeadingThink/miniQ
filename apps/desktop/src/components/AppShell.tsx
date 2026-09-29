@@ -1,6 +1,6 @@
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
-import { focusSessionSearch, useAppCommands } from "../hooks/useAppCommands";
+import { useAppCommands } from "../hooks/useAppCommands";
 import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
 import { buildPaletteCommands } from "./paletteCommands";
 import type { CommandId } from "../shortcuts";
@@ -373,13 +373,13 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
 
   const commands = useAppCommands(app, active);
   useGlobalShortcuts({
-    onPalette: () => app.navigation.setShowSearch(!app.navigation.showSearch),
-    onNewChat: app.actions.newChat,
-    onSettings: () => app.navigation.setShowSettings(true),
+    // Keydown and the native-menu `miniq:command` bus share one runner.
+    onPalette: () => void commands.runCommand("palette"),
+    onNewChat: () => void commands.runCommand("newChat"),
+    onSettings: () => void commands.runCommand("settings"),
     onStop: app.busy ? () => void app.actions.cancelTurn() : undefined,
-    onToggleSidebar: () =>
-      app.navigation.setSidebarCollapsed(!app.navigation.sidebarCollapsed),
-    onSessionSearch: focusSessionSearch,
+    onToggleSidebar: () => void commands.runCommand("toggleSidebar"),
+    onSessionSearch: () => commands.runCommand("find"),
     onShortcut: commands.onShortcut,
   }, active);
 
