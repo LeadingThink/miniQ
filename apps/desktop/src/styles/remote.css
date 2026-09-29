@@ -113,7 +113,7 @@
 .mobile-entry-consent input {
   width: 16px;
   height: 16px;
-  accent-color: var(--accent, #4c8dff);
+  accent-color: var(--accent);
   flex: none;
 }
 
@@ -392,7 +392,7 @@
   margin-left: auto;
   color: var(--accent-fg);
   background: var(--accent);
-  border-radius: 8px 8px 2px 8px;
+  border-radius: var(--radius) var(--radius) var(--radius-sm) var(--radius);
 }
 
 .mobile-chat-message.assistant {

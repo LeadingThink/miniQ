@@ -44,14 +44,14 @@
   background: var(--bg-subtle);
 }
 
-.badge.succeeded { color: var(--ok); border-color: rgba(22, 163, 74, 0.3); background: rgba(22, 163, 74, 0.06); }
-.badge.failed, .badge.rejected { color: var(--danger); border-color: rgba(220, 38, 38, 0.3); background: var(--danger-bg); }
-.badge.running, .badge.waiting_approval { color: var(--warn); border-color: rgba(217, 119, 6, 0.3); background: var(--warn-bg); }
-.badge.medium { color: var(--warn); border-color: rgba(217, 119, 6, 0.3); background: var(--warn-bg); }
-.badge.high, .badge.blocked { color: var(--danger); border-color: rgba(220, 38, 38, 0.3); background: var(--danger-bg); }
+.badge.succeeded { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 30%, transparent); background: color-mix(in srgb, var(--ok) 6%, transparent); }
+.badge.failed, .badge.rejected { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, transparent); background: var(--danger-bg); }
+.badge.running, .badge.waiting_approval { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 30%, transparent); background: var(--warn-bg); }
+.badge.medium { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 30%, transparent); background: var(--warn-bg); }
+.badge.high, .badge.blocked { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, transparent); background: var(--danger-bg); }
 
 .approval-card {
-  border-color: rgba(217, 119, 6, 0.4);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
   background: var(--warn-bg);
   min-width: 0;
   container-type: inline-size;
@@ -297,7 +297,7 @@
   align-items: center;
   justify-content: center;
   z-index: 10;
-  animation: fade 0.12s ease;
+  animation: fade var(--duration-fast) var(--ease-standard);
 }
 
 @keyframes fade {
@@ -315,7 +315,7 @@
   gap: 13px;
   /* Inset white top edge = glass catching light. */
   box-shadow: inset 0 1px 0 var(--glass-highlight), var(--shadow-lg);
-  animation: pop 0.16s ease;
+  animation: pop var(--duration) var(--ease-standard);
 }
 
 @keyframes pop {
@@ -685,7 +685,7 @@
   color: var(--danger);
   padding: 9px 20px;
   font-size: var(--font-body);
-  border-bottom: 1px solid rgba(220, 38, 38, 0.2);
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 .banner-close {
@@ -709,12 +709,12 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(20, 20, 26, 0.14);
+  background: var(--scrollbar-thumb);
   border-radius: var(--radius-sm);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(20, 20, 26, 0.26);
+  background: var(--scrollbar-thumb-hover);
 }
 
 ::-webkit-scrollbar-track {

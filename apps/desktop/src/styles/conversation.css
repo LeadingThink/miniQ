@@ -62,7 +62,7 @@
   pointer-events: none;
   opacity: 0;
   transform: translateY(-3px);
-  transition: opacity 120ms ease, transform 120ms ease;
+  transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
 }
 
 .statusbar-icon-button[data-tooltip]:hover::after,
@@ -208,7 +208,7 @@
   background: var(--bg);
   color: var(--text);
   text-align: left;
-  transition: border-color 0.12s ease;
+  transition: border-color var(--duration-fast) var(--ease-standard);
 }
 
 .hero-card:focus-visible {
@@ -371,7 +371,7 @@
 .session-model-controls { position: relative; display: inline-flex; align-items: center; }
 .model-trigger { display: inline-flex; align-items: center; gap: 5px; background: transparent; color: var(--text-mid); padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-pill); max-width: 190px; }
 .model-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.session-model-popover { position: absolute; z-index: 20; bottom: calc(100% + 8px); left: 0; width: 250px; max-height: 300px; overflow: auto; padding: 8px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow-lg, 0 8px 24px #0003); display: flex; flex-direction: column; gap: 4px; }
+.session-model-popover { position: absolute; z-index: 20; bottom: calc(100% + 8px); left: 0; width: 250px; max-height: 300px; overflow: auto; padding: 8px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; gap: 4px; }
 .session-model-popover input { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-subtle); color: var(--text); }
 .session-model-popover button { background: transparent; color: var(--text); text-align: left; padding: 7px 8px; border-radius: var(--radius-sm); }
 .session-model-popover button:hover { background: var(--bg-hover); opacity: 1; }
@@ -442,15 +442,15 @@
   height: 20px;
   justify-content: center;
   border-radius: 50%;
-  color: #fff;
-  background: rgb(0 0 0 / 65%);
+  color: var(--media-overlay-fg);
+  background: var(--media-overlay-bg);
   border: 2px solid var(--bg);
   z-index: 2;
 }
 
 .attach-image-remove:hover {
-  color: #fff;
-  background: rgb(0 0 0 / 82%);
+  color: var(--media-overlay-fg);
+  background: var(--media-overlay-bg-hover);
 }
 
 .attach-image-remove:disabled {
@@ -836,7 +836,7 @@
   position: relative;
   align-self: stretch;
   font-size: var(--font-footnote);
-  animation: rise 0.18s ease;
+  animation: rise var(--duration) var(--ease-standard);
 }
 
 .tool-step + .tool-step {
@@ -944,7 +944,7 @@
   gap: 8px;
   background: var(--bg-subtle);
   border-left: 2px solid var(--border-strong);
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
 }
 
 .automation-step-summary {
@@ -1021,7 +1021,7 @@
 
 .chevron {
   display: inline-block;
-  transition: transform 0.15s ease;
+  transition: transform var(--duration) var(--ease-standard);
   color: var(--text-dim);
   font-size: var(--font-callout);
 }
@@ -1224,7 +1224,7 @@
 }
 
 .turn-plan-chevron {
-  transition: transform 0.15s ease;
+  transition: transform var(--duration) var(--ease-standard);
 }
 
 .turn-plan.open .turn-plan-chevron {
@@ -1272,7 +1272,7 @@
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: 50% 50%;
-  transition: stroke-dashoffset 0.25s ease;
+  transition: stroke-dashoffset var(--duration) var(--ease-standard);
 }
 
 .plan-step-popover {
@@ -1287,5 +1287,5 @@
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+  box-shadow: var(--shadow-popover);
 }

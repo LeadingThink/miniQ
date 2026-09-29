@@ -108,7 +108,7 @@
   left: 6px;
   width: 4px;
   height: 40px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--text-dim);
   opacity: 0.4;
 }
@@ -116,7 +116,7 @@
   content: "";
   position: absolute;
   inset: 12px 7px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   background: transparent;
 }
 .workbench-resizer:is(:hover, :focus-visible, .dragging)::after {

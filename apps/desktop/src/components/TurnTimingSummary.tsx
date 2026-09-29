@@ -4,6 +4,7 @@ import { LiveElapsed } from "./LiveElapsed";
 import "./MessageTime.css";
 
 export function TurnTimingSummary({ timing, active = false }: { timing: TurnTiming; active?: boolean }) {
+  'use no memo';
   const start = conversationTimestamp(timing.startedAt);
   if (!start) return null;
   const running = timing.status === "running" && active;

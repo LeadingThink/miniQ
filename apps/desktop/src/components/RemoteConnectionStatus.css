@@ -2,7 +2,7 @@
 .statusbar .remote-connection-trigger { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-subtle); color: var(--text-mid); min-width: 0; cursor: pointer; }
 .remote-connection-trigger.connected { color: var(--text); }
 .remote-connection-dialog { width: min(520px, calc(100vw - 24px)); max-height: min(85dvh, var(--app-height, 100dvh)); overflow-y: auto; overscroll-behavior: contain; padding: 20px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); color: var(--text); white-space: normal; }
-.remote-connection-dialog::backdrop { background: #0007; }
+.remote-connection-dialog::backdrop { background: var(--scrim); }
 .remote-connection-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .remote-connection-dialog h2 { margin: 0; font-size: var(--font-headline); }
 .remote-connection-dialog h3 { margin: 0 0 10px; font-size: var(--font-callout); overflow-wrap: anywhere; }
@@ -41,7 +41,7 @@
   .statusbar:has(> .statusbar-identity) > .remote-connection-trigger { flex: 0 1 auto; white-space: nowrap; }
   .statusbar:has(> .statusbar-identity) > .remote-connection-trigger > svg:last-child { display: none; }
   /* Phone header: degraded connection collapses to a tinted icon chip; the label stays in aria-label and the details dialog. */
-  .statusbar:has(> .statusbar-identity) > .remote-connection-trigger { flex: 0 0 auto; min-width: 40px; justify-content: center; color: var(--warning, #d97706); border-color: currentColor; }
+  .statusbar:has(> .statusbar-identity) > .remote-connection-trigger { flex: 0 0 auto; min-width: 40px; justify-content: center; color: var(--warn); border-color: currentColor; }
   .statusbar:has(> .statusbar-identity) > .remote-connection-trigger > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .statusbar:has(> .statusbar-identity) :is(.statusbar-icon-button, .review-toggle) { flex: 0 0 auto; min-width: 40px; height: 44px; padding: 0 8px; justify-content: center; }
   .statusbar:has(> .statusbar-identity) .statusbar-action-label { display: none; }

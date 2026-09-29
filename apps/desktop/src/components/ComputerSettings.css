@@ -67,7 +67,7 @@
 }
 .computer-permission-error {
   font-size: var(--font-footnote);
-  color: var(--danger, #c4364b);
+  color: var(--danger);
   overflow-wrap: anywhere;
 }
 .computer-keep-awake {

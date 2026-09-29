@@ -49,6 +49,27 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.05);
   --shadow-sheet: 0 1px 2px rgba(0, 0, 0, 0.03), 0 10px 32px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.05), 0 24px 64px rgba(0, 0, 0, 0.16);
+  /* Small lift for selected segments / toolbars, popovers, paper pages, switch knobs.
+     Dark-mode variants live in themes.css. */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-page: 0 8px 28px rgba(0, 0, 0, 0.14);
+  --shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --scrollbar-thumb: color-mix(in srgb, var(--text) 14%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--text) 26%, transparent);
+  /* Chips drawn over user images/media: always dark glass + white glyph. */
+  --media-overlay-bg: rgba(0, 0, 0, 0.65);
+  --media-overlay-bg-hover: rgba(0, 0, 0, 0.82);
+  --media-overlay-fg: #ffffff;
+  /* Switch knob stays white in every theme (macOS). */
+  --control-knob: #ffffff;
+  /* Document "paper" (PDF / Office / Mermaid previews) is rendered light in
+     every theme because the document content itself assumes a white page. */
+  --paper-bg: #ffffff;
+  --paper-backdrop: #e8e9ec;
+  --paper-fg: #171717;
+  --paper-fg-mid: #53545b;
+  --paper-fg-dim: #a0a1a8;
   font-family: "Inter Variable", "MiSans VF", -apple-system, "Segoe UI",
     "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   font-size: var(--font-body);
@@ -158,7 +179,7 @@ body {
   color: var(--text-mid);
   font-size: var(--font-body);
   user-select: none;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
 }
 
 .nav-item:hover {
@@ -289,7 +310,7 @@ body {
   border-radius: var(--radius-sm);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.1s;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
 .workspace-item:hover .menu-trigger,
@@ -429,15 +450,6 @@ body {
   50% { opacity: 1; box-shadow: 0 0 0 5px var(--focus-shadow); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .session-item .session-status.running,
-  .session-item .session-status.waiting_approval,
-  .session-item .session-status.cancelling,
-  .session-item .session-status.unread {
-    animation: none;
-  }
-}
-
 .session-item .menu-container {
   position: relative;
   flex: none;
@@ -455,7 +467,7 @@ body {
   border-radius: var(--radius-sm);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.1s;
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
 .session-item:hover .menu-trigger,
@@ -476,7 +488,7 @@ body {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-popover);
 }
 
 .dropdown-item {
@@ -614,7 +626,7 @@ button {
   font-size: var(--font-body);
   font-weight: 500;
   font-family: inherit;
-  transition: opacity 0.1s ease, background 0.1s ease, transform 0.06s ease;
+  transition: opacity var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
 }
 
 /* Icon + label buttons: consistent alignment and spacing. Zero specificity so component rules win. */

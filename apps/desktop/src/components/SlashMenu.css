@@ -114,7 +114,7 @@
   overflow-wrap: anywhere;
 }
 .slash-state.error {
-  color: var(--danger, #b42318);
+  color: var(--danger);
 }
 .slash-state button {
   margin-left: 8px;
@@ -133,7 +133,7 @@
   color: var(--text);
 }
 .slash-rename-dialog::backdrop {
-  background: #0006;
+  background: var(--scrim);
 }
 .slash-rename-dialog h2 {
   font-size: var(--font-headline);

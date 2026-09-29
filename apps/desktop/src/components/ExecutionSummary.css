@@ -39,7 +39,7 @@
   gap: 4px;
 }
 .execution-summary .execution-failed {
-  color: var(--danger, #c4364b);
+  color: var(--danger);
 }
 .tool-group-jumps {
   display: flex;
