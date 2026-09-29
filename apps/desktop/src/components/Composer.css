@@ -47,6 +47,19 @@
     flex-wrap: wrap;
   }
 
+  /* One-tap mic beside send on phones/tablets. */
+  .composer-card .composer-voice-inline {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .composer-card .composer-voice-inline .voice-btn {
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 50%;
+  }
+
   .composer-card textarea {
     max-height: min(200px, 28dvh, calc(var(--app-height, 100dvh) * 0.28));
     overflow-y: auto;

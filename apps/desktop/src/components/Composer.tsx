@@ -108,7 +108,10 @@ export function ComposerCard(props: {
   const plusRef = useRef<HTMLDivElement>(null);
   const plusButtonRef = useRef<HTMLButtonElement>(null);
   const plusPanelId = useId();
-  const plusVisible = plusOpen || voicePreview !== null;
+  // Touch devices (the mobile apps) surface the mic next to send for one-tap
+  // dictation; desktop keeps it inside the "+" panel.
+  const voiceInline = inputMode.touch;
+  const plusVisible = plusOpen || (!voiceInline && voicePreview !== null);
   useEffect(() => {
     if (!plusOpen) return;
     const closeOutside = (event: PointerEvent) => {
@@ -361,6 +364,19 @@ export function ComposerCard(props: {
     });
   };
 
+  const voiceControl = props.client && voiceCapabilities.capabilities.transcribe ? (
+    <VoiceInput
+      key={props.draftKey}
+      client={props.client}
+      transcribeModel={voiceCapabilities.capabilities.transcribeModel ?? undefined}
+      disabled={sending || slash.pending}
+      onStart={rememberVoiceInsertion}
+      onTranscribed={applyTranscription}
+      onPreview={setVoicePreview}
+      onError={props.onError}
+    />
+  ) : null;
+
   return (
     <div className="composer-card">
       {showRemoteAttachment && remoteHost && <RemotePathDialog host={remoteHost} purpose="attachment"
@@ -433,7 +449,7 @@ export function ComposerCard(props: {
             type="button"
             className={`composer-plus-trigger${plusVisible ? " open" : ""}`}
             aria-label="更多输入方式"
-            title="附件、目标、命令与语音"
+            title={voiceInline ? "附件、目标与命令" : "附件、目标、命令与语音"}
             aria-haspopup="true"
             aria-expanded={plusVisible}
             aria-controls={plusPanelId}
@@ -498,18 +514,9 @@ export function ComposerCard(props: {
               <Slash size={15} aria-hidden="true" />
               <span>命令与技能</span>
             </button>
-            {props.client && voiceCapabilities.capabilities.transcribe && (
+            {voiceControl && !voiceInline && (
               <div className="composer-plus-voice">
-                <VoiceInput
-                  key={props.draftKey}
-                  client={props.client}
-                  transcribeModel={voiceCapabilities.capabilities.transcribeModel ?? undefined}
-                  disabled={sending || slash.pending}
-                  onStart={rememberVoiceInsertion}
-                  onTranscribed={applyTranscription}
-                  onPreview={setVoicePreview}
-                  onError={props.onError}
-                />
+                {voiceControl}
                 {voicePreview === null && <span aria-hidden="true">语音输入</span>}
               </div>
             )}
@@ -535,6 +542,9 @@ export function ComposerCard(props: {
             <p id={keyboardHintId} className="composer-keyboard-hint">
               {inputMode.keyboardHint}
             </p>
+            {voiceControl && voiceInline && (
+              <div className="composer-voice-inline">{voiceControl}</div>
+            )}
             {props.busy && props.onCancel && (
               <button
                 type="button"
