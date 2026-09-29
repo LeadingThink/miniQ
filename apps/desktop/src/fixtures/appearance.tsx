@@ -108,5 +108,7 @@ function AppearanceFixture() {
 
 if (import.meta.env.DEV) {
   initializeAppearance();
+  const previewTheme = new URLSearchParams(window.location.search).get("theme");
+  if (previewTheme) storeTheme(previewTheme as Parameters<typeof storeTheme>[0]);
   createRoot(document.getElementById("root")!).render(<AppearanceFixture />);
 }
