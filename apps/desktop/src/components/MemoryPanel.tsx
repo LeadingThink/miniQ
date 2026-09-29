@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
 import "./MemoryPanel.css";
+import { EmptyState } from "./ui/EmptyState";
+import { LoadingState } from "./ui/Spinner";
 
 export type MemoryTarget = { scope: "workspace"; workspaceId: string } | { scope: "global" };
 export interface MemoryRecord {
@@ -82,8 +84,8 @@ function MemoryList({ client, target, query }: { client: RpcClient; target: Memo
         <button type="button" className="ghost" disabled={loading} onClick={refresh}>刷新记忆</button>
       </div>
       {error && <p role="alert">{error}</p>}
-      {loading && <p role="status">正在读取记忆…</p>}
-      {page?.memories.length === 0 && <p className="memory-empty">{query ? "没有匹配的记忆" : "这个范围还没有保存记忆"}</p>}
+      {loading && <LoadingState label="正在读取记忆…" />}
+      {page?.memories.length === 0 && <EmptyState compact className="memory-empty" live={Boolean(query)} title={query ? "没有匹配的记忆" : "这个范围还没有保存记忆"} />}
       {page?.memories.map((item) => <MemoryCard key={item.id} item={item} client={client} target={target} onDeleted={refresh} />)}
       <nav className="memory-pagination" aria-label="记忆分页">
         <button type="button" className="ghost" disabled={loading || cursors.length === 1} onClick={() => setCursors((current) => current.slice(0, -1))}>上一页</button>

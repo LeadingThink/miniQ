@@ -5,6 +5,7 @@ import { relativeAge } from "../time";
 import { sessionStatusLabel } from "../sessionStatus";
 import { PROVIDER_LABELS, PROVIDER_MARKS } from "./externalSessionImportModel";
 import { DropdownMenu } from "./DropdownMenu";
+import { showUndoToast, useToast } from "./ui/Toast";
 
 export function SidebarSessionItem(props: {
   session: Session;
@@ -26,6 +27,8 @@ export function SidebarSessionItem(props: {
   const renameCommittedRef = useRef(false);
   const itemRef = useRef<HTMLDivElement>(null);
   const contextId = useId();
+  const toast = useToast();
+  const [pendingDelete, setPendingDelete] = useState(false);
   const external = props.session.external;
   const unread = !props.current && props.unread;
   const statusText = unread ? "新回复" : sessionStatusLabel(props.session.status);
@@ -52,6 +55,9 @@ export function SidebarSessionItem(props: {
       setRenameValue(props.session.title);
     }
   };
+
+  // Optimistically hidden while the undo toast is visible.
+  if (pendingDelete) return null;
 
   return (
     <div
@@ -182,9 +188,14 @@ export function SidebarSessionItem(props: {
             onClick={(event) => {
               event.stopPropagation();
               setMenuOpen(false);
-              if (window.confirm(`确定要删除会话「${props.session.title}」吗？`)) {
-                props.onDelete(props.session.id);
-              }
+              const sessionId = props.session.id;
+              const onDelete = props.onDelete;
+              setPendingDelete(true);
+              showUndoToast(toast, {
+                message: `已删除会话“${props.session.title}”`,
+                onCommit: () => onDelete(sessionId),
+                onUndo: () => setPendingDelete(false),
+              });
             }}
           >
             <Trash2 size={13} />

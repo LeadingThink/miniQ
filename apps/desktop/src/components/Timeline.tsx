@@ -1,3 +1,4 @@
+import { Spinner } from "./ui/Spinner";
 import {
   ArrowDown,
   ChevronUp,
@@ -250,7 +251,7 @@ export function Timeline(props: TimelineProps) {
           <div ref={historyTopRef} className="history-top-sentinel" aria-hidden="true" />
         {(props.loading || (historySearch.loading && !historySearch.page)) && (
           <div className="history-loading" role="status">
-            <LoaderCircle size={16} className="activity-spinner" />
+            <Spinner size={16} />
             正在加载会话
           </div>
         )}

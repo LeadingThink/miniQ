@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
+  FolderPlus,
   Archive,
   ChevronDown,
   ChevronRight,
@@ -24,6 +25,8 @@ import type { AppUpdaterState } from "../hooks/useAppUpdater";
 import { openExternalUrl } from "../externalLinks";
 import { UpdateNotice } from "./UpdateNotice";
 import { DropdownMenu } from "./DropdownMenu";
+import { ConfirmDialog } from "./ui/Dialog";
+import { EmptyState } from "./ui/EmptyState";
 import { SidebarPanel } from "./SidebarPanel";
 import { SidebarSessionItem } from "./SidebarSessionItem";
 import { handleSidebarNavigation, SidebarFilters, sidebarGroups, useMobileSidebarLayout, useProjectDisclosure, type SidebarFilter } from "./SidebarNavigation";
@@ -154,7 +157,13 @@ export function Sidebar(props: SidebarProps) {
           </Fragment>
         ))}
         {props.workspaces.length === 0 && (
-          <div className="sidebar-empty">点击新对话选择或创建一个项目开始协作</div>
+          <EmptyState
+            compact
+            className="sidebar-empty"
+            icon={<FolderPlus size={20} />}
+            title="还没有项目"
+            description="点击新对话选择或创建一个项目开始协作"
+          />
         )}
         {navigation.filtering && navigation.groups.length === 0 && archivedSessions.length === 0 && (
           <div className="sidebar-filter-empty" role="status">
@@ -278,6 +287,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(props.workspace.name);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const renameCommittedRef = useRef(false);
@@ -416,9 +426,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
               onClick={(event) => {
                 event.stopPropagation();
                 setMenuOpen(false);
-                if (window.confirm(`确定要删除项目「${props.workspace.name}」吗？该项目下的所有会话也将被删除。`)) {
-                  props.onDeleteWorkspace(props.workspace.id);
-                }
+                setConfirmDelete(true);
               }}
             >
               <Trash2 size={13} />
@@ -452,6 +460,18 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
           <span>{expanded ? "收起" : `展开 ${hiddenCount} 条会话`}</span>
         </button>
       )}
+      <ConfirmDialog
+        open={confirmDelete}
+        tone="danger"
+        title={`删除项目“${props.workspace.name}”？`}
+        description="该项目下的所有会话也将被删除，此操作无法撤销。"
+        confirmLabel="删除项目"
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          props.onDeleteWorkspace(props.workspace.id);
+        }}
+      />
     </div>
   );
 }

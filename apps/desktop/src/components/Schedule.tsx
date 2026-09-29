@@ -1,9 +1,13 @@
+import { CalendarClock } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
 import { localDateTime, relativeAge } from "../time";
 import type { ScheduledTask, ScheduledTaskRun, ScheduleSpec, Workspace } from "../types";
 import { ScheduleForm, type ScheduleTemplate } from "./ScheduleForm";
+import { EmptyState } from "./ui/EmptyState";
+import { LoadingState } from "./ui/Spinner";
+import { showUndoToast, useToast } from "./ui/Toast";
 
 const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
@@ -84,17 +88,16 @@ function useScheduledTasks(client: RpcClient) {
 }
 
 function TemplateButtons({ empty, onCreate }: { empty: boolean; onCreate: (template?: ScheduleTemplate) => void }) {
-  return <div className={empty ? "schedule-empty" : "schedule-templates"}>
-    {empty && <><div className="schedule-empty-icon">◷</div><div className="schedule-empty-title">创建首个定时任务</div><div className="schedule-empty-sub">从模板开始，或从头自定义</div></>}
-    <div className={empty ? "template-list" : "schedule-templates"}>
+  const list = <div className={empty ? "template-list" : "schedule-templates"}>
       {TEMPLATES.map((template) => <button key={template.key} type="button" className={empty ? "template-card" : "ghost"} onClick={() => onCreate(template)}>
         <span className="template-icon">{template.icon}</span>
         <span className="template-text"><span className="template-label">{template.name}</span>{empty && <span className="template-desc">{template.desc}</span>}</span>
         {empty && <span className="badge">{describeSchedule(template.schedule)}</span>}
       </button>)}
       <button type="button" className={empty ? "template-card custom" : "ghost"} onClick={() => onCreate()}>＋ 自定义任务</button>
-    </div>
-  </div>;
+    </div>;
+  if (!empty) return <div className="schedule-templates">{list}</div>;
+  return <EmptyState className="schedule-empty" icon={<CalendarClock size={28} />} title="创建首个定时任务" description="从模板开始，或从头自定义">{list}</EmptyState>;
 }
 
 function ScheduledTaskList(props: {
@@ -174,31 +177,49 @@ export function SchedulePanel(props: SchedulePanelProps) {
   const [editor, setEditor] = useState<{ revision: number; task?: ScheduledTask; template?: ScheduleTemplate } | null>(null);
   const [saving, setSaving] = useState(false);
   const revision = useRef(0);
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
+  const toast = useToast();
   const openResult = (sessionId: string) => { props.onOpenSession(sessionId); props.onClose(); };
   const openEditor = (task?: ScheduledTask, template?: ScheduleTemplate) => setEditor({ revision: ++revision.current, task, template });
   const toggle = (task: ScheduledTask) => tasks.act(task.id, async () => {
     await props.client.call("schedule.toggle", { id: task.id, enabled: !task.enabled });
     await tasks.refresh();
   });
+  const unhide = (id: string) => setHidden((current) => {
+    const next = new Set(current);
+    next.delete(id);
+    return next;
+  });
   const remove = (task: ScheduledTask) => {
-    if (!window.confirm(`删除定时任务“${task.name}”？`)) return;
-    void tasks.act(task.id, async () => {
-      await props.client.call("schedule.delete", { id: task.id });
-      if (editor?.task?.id === task.id) setEditor(null);
-      await tasks.refresh();
+    setHidden((current) => new Set(current).add(task.id));
+    if (editor?.task?.id === task.id) setEditor(null);
+    showUndoToast(toast, {
+      message: `已删除定时任务“${task.name}”`,
+      onUndo: () => unhide(task.id),
+      onCommit: () => {
+        void tasks.act(task.id, async () => {
+          try {
+            await props.client.call("schedule.delete", { id: task.id });
+            await tasks.refresh();
+          } finally {
+            unhide(task.id);
+          }
+        });
+      },
     });
   };
+  const visibleTasks = tasks.tasks.filter((task) => !hidden.has(task.id));
   const runNow = (task: ScheduledTask) => tasks.act(task.id, async () => {
     const result = await props.client.call<{ sessionId: string }>("schedule.runNow", { id: task.id });
     openResult(result.sessionId);
   });
   return <div className="page"><div className="page-inner">
     <div className="page-header"><div className="page-title">已安排</div><div className="page-sub">定时生成新结果，或持续跟进同一会话。任务记忆会在每次运行时提供给 agent。</div></div>
-    {tasks.loading && <div role="status">正在读取定时任务</div>}
+    {tasks.loading && <LoadingState label="正在读取定时任务" />}
     {tasks.error && <div className="settings-status" role="alert">{tasks.error}<button type="button" className="ghost" disabled={tasks.loading} onClick={() => void tasks.refresh()}>重新加载</button></div>}
-    <ScheduledTaskList client={props.client} tasks={tasks.tasks} latestRuns={tasks.latestRuns} workspaces={props.workspaces} pending={saving || tasks.pending !== null}
+    <ScheduledTaskList client={props.client} tasks={visibleTasks} latestRuns={tasks.latestRuns} workspaces={props.workspaces} pending={saving || tasks.pending !== null}
       onOpenResult={openResult} onRunNow={(task) => void runNow(task)} onToggle={(task) => void toggle(task)} onRemove={remove} onEdit={(task) => openEditor(task)} />
-    {!editor && !tasks.loading && <TemplateButtons empty={tasks.tasks.length === 0} onCreate={(template) => openEditor(undefined, template)} />}
+    {!editor && !tasks.loading && <TemplateButtons empty={visibleTasks.length === 0} onCreate={(template) => openEditor(undefined, template)} />}
     {editor && <ScheduleForm key={editor.revision} client={props.client} workspaces={props.workspaces}
       defaultWorkspaceId={props.defaultWorkspaceId} task={editor.task} template={editor.template}
       onPendingChange={setSaving} onCancel={() => setEditor(null)}

@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { Plug } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
+import { EmptyState } from "./ui/EmptyState";
+import { Switch } from "./ui/Switch";
+import { showUndoToast, useToast } from "./ui/Toast";
 
 interface McpServerView {
   name: string;
@@ -32,6 +36,11 @@ const STATUS_LABEL: Record<string, string> = {
 function useMcpServers(client: RpcClient) {
   const [servers, setServers] = useState<McpServerView[]>([]);
   const [status, setStatus] = useState<string | null>(null);
+  // Names hidden optimistically while an undo toast is pending.
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
+  const serversRef = useRef(servers);
+  serversRef.current = servers;
+  const toast = useToast();
 
   const refresh = useCallback(
     async (connect: boolean) => {
@@ -86,12 +95,30 @@ function useMcpServers(client: RpcClient) {
     );
   };
 
+  const unhide = (name: string) =>
+    setHidden((current) => {
+      const next = new Set(current);
+      next.delete(name);
+      return next;
+    });
+
   const remove = async (server: McpServerView) => {
-    if (!window.confirm(`移除 MCP 服务器"${server.name}"?`)) return;
-    await saveServers(servers.filter((candidate) => candidate.name !== server.name));
+    setHidden((current) => new Set(current).add(server.name));
+    showUndoToast(toast, {
+      message: `已移除 MCP 服务器“${server.name}”`,
+      onUndo: () => unhide(server.name),
+      onCommit: () => {
+        void saveServers(
+          serversRef.current.filter((candidate) => candidate.name !== server.name),
+        )
+          .catch((error: unknown) => setStatus(errorMessage(error)))
+          .finally(() => unhide(server.name));
+      },
+    });
   };
 
-  return { servers, status, refresh, add, toggle, remove };
+  const visible = servers.filter((server) => !hidden.has(server.name));
+  return { servers: visible, status, refresh, add, toggle, remove };
 }
 
 function McpServerCard(props: {
@@ -115,13 +142,12 @@ function McpServerCard(props: {
           {server.name}
         </div>
         {!pluginServer && (
-          <div
-            className={`switch ${server.enabled ? "on" : ""}`}
+          <Switch
+            checked={server.enabled}
+            label={`${server.enabled ? "停用" : "启用"}${server.name}`}
             title={server.enabled ? "点击禁用" : "点击启用"}
-            onClick={() => props.onToggle(server)}
-          >
-            <div className="switch-knob" />
-          </div>
+            onChange={() => props.onToggle(server)}
+          />
         )}
       </div>
       {pluginServer && (
@@ -167,13 +193,12 @@ function McpServerList(props: {
 }) {
   if (props.servers.length === 0) {
     return (
-      <div className="schedule-empty compact">
-        <div className="schedule-empty-icon">🔌</div>
-        <div className="schedule-empty-title">还没有 MCP 服务器</div>
-        <div className="schedule-empty-sub">
-          在下方添加一个 stdio MCP 服务器,agent 即可调用它提供的工具
-        </div>
-      </div>
+      <EmptyState
+        compact
+        icon={<Plug size={24} />}
+        title="还没有 MCP 服务器"
+        description="在下方添加一个 stdio MCP 服务器，agent 即可调用它提供的工具"
+      />
     );
   }
   return (
