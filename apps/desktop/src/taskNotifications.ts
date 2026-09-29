@@ -83,17 +83,23 @@ export function notifyRemotePermissionRaise(device: string, mode: string): Promi
   return send("miniQ · 远程提升了权限", `设备 ${device} 将会话权限提升为「${mode}」，可在 miniQ 中一键撤回。`, () => true);
 }
 
+/** Rejects when the native window state is unavailable; callers treat that as foreground. */
+export async function isAppInBackground(): Promise<boolean> {
+  if (document.hasFocus()) return false;
+  if (isTauriRuntime()) {
+    // An embedded native browser can own focus while the React document is
+    // blurred. The whole desktop window must be in the background.
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    if (await getCurrentWindow().isFocused()) return false;
+  }
+  return !document.hasFocus();
+}
+
 export async function notifyTaskResult(outcome: TaskOutcome, sessionTitle: string): Promise<boolean> {
   const allowed = async () => {
-    if (document.hasFocus()) return false;
-    if (isTauriRuntime()) {
-      // An embedded native browser can own focus while the React document is
-      // blurred. The whole desktop window must be in the background.
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
-      if (await getCurrentWindow().isFocused()) return false;
-    }
+    if (!await isAppInBackground()) return false;
     const mode = getTaskNotificationMode();
-    return !document.hasFocus() && (mode === "all" || (mode === "failures" && outcome === "failed"));
+    return mode === "all" || (mode === "failures" && outcome === "failed");
   };
   const name = sessionTitle || "当前会话";
   return outcome === "completed"

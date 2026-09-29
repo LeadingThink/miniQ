@@ -11,7 +11,7 @@ import { DEFAULT_MODEL_SETTINGS } from "./modelSelection";
 vi.mock("@capacitor/app", () => ({ App: { addListener: () => Promise.resolve({ remove: vi.fn() }) } }));
 vi.mock("./rpc", async (original) => ({ ...await original<typeof import("./rpc")>(), resolveConnection: vi.fn().mockResolvedValue({ kind: "local", port: 1, token: "fixture" }) }));
 const notifyTaskResult = vi.hoisted(() => vi.fn());
-vi.mock("./taskNotifications", () => ({ notifyTaskResult }));
+vi.mock("./taskNotifications", () => ({ notifyTaskResult, isAppInBackground: async () => false }));
 const updater = vi.hoisted(() => ({ state: { phase: "idle" }, supported: false, checkNow: vi.fn(), install: vi.fn() }));
 vi.mock("./hooks/useAppUpdater", () => ({ useAppUpdater: () => updater }));
 vi.mock("./localFiles", async (original) => ({ ...await original<typeof import("./localFiles")>(), readLocalFilePreview: async (path: string, _workspace: unknown, _paths: unknown, options: { client: { sshHost: string | null } }) => ({ path, content: `${options.client.sshHost ?? "local"} file contents`, kind: "text", mimeType: "text/plain", dataBase64: null, size: 10 }) }));

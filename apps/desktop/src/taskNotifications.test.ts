@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getTaskNotificationMode,
+  isAppInBackground,
   notifyTaskResult,
   requestTaskNotificationPermission,
   sendTaskNotificationTest,
@@ -42,6 +43,16 @@ afterEach(() => {
 });
 
 describe("background task notifications", () => {
+  it("reports background only when both the document and native window are unfocused", async () => {
+    expect(await isAppInBackground()).toBe(true);
+    platform.native = true;
+    expect(await isAppInBackground()).toBe(true);
+    isWindowFocused.mockResolvedValue(true);
+    expect(await isAppInBackground()).toBe(false);
+    vi.mocked(document.hasFocus).mockReturnValue(true);
+    expect(await isAppInBackground()).toBe(false);
+  });
+
   it("retains each notification mode across reads", () => {
     expect(getTaskNotificationMode()).toBe("all");
     for (const mode of ["failures", "off", "all"] as const) {

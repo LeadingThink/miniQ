@@ -5,6 +5,9 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:app:allow-default-window-icon",
+    "core:window:allow-set-badge-count",
+    "core:window:allow-set-icon",
     "dialog:default",
     "notification:default",
     "opener:default",

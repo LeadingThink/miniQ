@@ -3,6 +3,7 @@ import type { RpcClient } from "../rpc";
 import type { DaemonEvent, EventCursor } from "../types";
 import { hostKey, scopedKey, type HostCatalog } from "../hostWorkspace";
 import { notifyTaskResult } from "../taskNotifications";
+import { clearTurnBadgeOnFocus, createTurnBadge } from "../turnBadge";
 
 /** One subscription at the desktop root covers every host, including hidden ones. */
 export function useTaskNotifications(root: RpcClient, catalogs: Record<string, HostCatalog>) {
@@ -11,6 +12,8 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
 
   useEffect(() => {
     const seen = new Map<string, EventCursor>();
+    const badge = createTurnBadge();
+    const offFocus = clearTurnBadgeOnFocus(badge);
     const receive = (host: string | null, event: DaemonEvent) => {
       if (event.type === "session_deleted") {
         seen.delete(scopedKey(host, event.sessionId));
@@ -32,11 +35,12 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
         ? session?.title ?? ""
         : `${catalog?.label || host} · ${session?.title || "当前会话"}`;
       void notifyTaskResult(event.type === "turn_completed" ? "completed" : "failed", title);
+      void badge.recordTurnEnd();
     };
     const offLocal = root.onEvent((event) => receive(null, event));
     const offHost = root.onHostEvent((event) => {
       if (event.type === "host_event" && event.event.type !== "remote_resync") receive(event.hostId, event.event);
     });
-    return () => { offLocal(); offHost(); };
+    return () => { offLocal(); offHost(); offFocus(); badge.clear(); };
   }, [root]);
 }
