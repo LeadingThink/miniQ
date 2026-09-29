@@ -350,7 +350,7 @@ impl Repl {
             text.push_str(&format!(
                 "{} {}\n",
                 style.yellow("│"),
-                style.bold(&terminal_text(&render::tool_summary(tool, input)))
+                style.bold(&terminal_text(&render::tool_request(tool, input)))
             ));
             let detail = serde_json::to_string_pretty(input).unwrap_or_default();
             for line in detail.lines().take(8) {

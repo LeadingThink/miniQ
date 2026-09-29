@@ -95,12 +95,17 @@ Codex 和 Claude Code 的共同核心是：运行中可继续输入（排队或�
 
 - `cargo test -p miniq-cli -p miniq-daemon -p miniq-local` 全部通过；`cargo clippy -p miniq-cli --all-targets --no-deps -D warnings` 通过；`cargo fmt` 通过。
 - 真实 PTY 冒烟测试 [pty_smoke.py](pty_smoke.py)，使用隔离数据目录，17/17 通过：启动、`/he` Tab 补全、`/help`、`/permissions`、Shift+Tab、`/goal` 设置/暂停/查看、`@` 补全、`!cmd`、Alt+Enter 多行、历史回溯、`/skills`、`/usage`、双击 Ctrl+C 退出、历史落盘。
+- 真实模型 PTY 测试 [pty_live.py](pty_live.py)（隔离数据目录，只复制 provider，关闭远程访问，审批模式 alwaysAsk）：
+  - 第一轮：Enter 排队并在当前回合后执行、Tab steer 生效、Esc 中断，全部通过。
+  - 第二轮：审批卡（风险等级、参数、四个选项）→ 按 1 → 文件实际写入；问题卡 `1. Apple / 2. Banana` → 输入 2 → 模型收到 Banana；`/usage` 显示真实调用（5 次，60692 输入 / 44800 cached / 83 输出）。7/7 通过。
+  - 发现并修复：审批卡原本在批准前就显示过去时的 “Edited file_write”，现改为 “file_write: 路径”。
+  - 说明：低风险命令（如 `echo`）在 alwaysAsk 下也不弹审批，这是 daemon 的既有策略，不是 CLI 问题。
 - REPL 用到的 20 个 RPC 已逐个对照 daemon 的参数和返回结构：approval / question / queue / goal / fork / skill / modelCalls。
 
 ### 4.3 未做与风险
 
 - **未做**：上下文百分比、`/compact`、`/undo`、`--max-turns`、Hooks/keymap/vim。前三项需要 daemon 新增能力。
-- **未端到端验证**：排队、steer、审批卡、问题卡需要真实模型回合，PTY 测试用的是假 key，只验证了参数和字段与 daemon 一致。
+- **未端到端验证**：审批的 2/3/4 选项（本会话 / 总是允许 / 拒绝）只核对了 RPC 取值，没有逐一实跑；问题卡处于等待状态时，输入的 `/命令` 会被当作答案提交。
 - `--full-auto` 在 miniQ 中等于 full-access，比 Codex 同名参数（workspace-write + on-request）更激进，help 中已标注 RISK。
 - `config set` 会整组提交 provider 设置，桌面端同时修改时可能互相覆盖。
 - 终端宽度变化时，状态栏重绘可能有残留。
