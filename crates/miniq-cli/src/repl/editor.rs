@@ -109,6 +109,7 @@ impl Editor {
         self.buffer.is_empty()
     }
 
+    #[cfg(test)]
     pub fn history(&self) -> &[String] {
         &self.history
     }
@@ -173,9 +174,9 @@ impl Editor {
         }
 
         match key.code {
+            // Raw mode reports a bare LF as Ctrl+J; scripts and PTY tests submit with it.
             KeyCode::Char('j') if ctrl => {
-                self.insert("\n");
-                Action::Redraw
+                self.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
             }
             KeyCode::Enter => {
                 if shift || alt {
@@ -378,7 +379,8 @@ impl Editor {
             if !replacement.ends_with('/') {
                 replacement.push(' ');
             }
-            self.buffer.replace_range(menu.start..menu.end, &replacement);
+            self.buffer
+                .replace_range(menu.start..menu.end, &replacement);
             self.cursor = menu.start + replacement.len();
             if item.ends_with('/') {
                 self.refresh_menu();
@@ -460,14 +462,21 @@ impl Editor {
         let trimmed = head.trim_end_matches(|c: char| !c.is_alphanumeric());
         trimmed
             .rfind(|c: char| !c.is_alphanumeric())
-            .map_or(0, |i| i + trimmed[i..].chars().next().map_or(1, char::len_utf8))
+            .map_or(0, |i| {
+                i + trimmed[i..].chars().next().map_or(1, char::len_utf8)
+            })
     }
 
     fn word_right(&self) -> usize {
         let tail = &self.buffer[self.cursor..];
-        let skip = tail.len() - tail.trim_start_matches(|c: char| !c.is_alphanumeric()).len();
+        let skip = tail.len()
+            - tail
+                .trim_start_matches(|c: char| !c.is_alphanumeric())
+                .len();
         let rest = &tail[skip..];
-        let word = rest.find(|c: char| !c.is_alphanumeric()).unwrap_or(rest.len());
+        let word = rest
+            .find(|c: char| !c.is_alphanumeric())
+            .unwrap_or(rest.len());
         self.cursor + skip + word
     }
 
@@ -563,9 +572,9 @@ impl Editor {
                 end: self.cursor,
             });
         }
-        let start = head
-            .rfind(char::is_whitespace)
-            .map_or(0, |i| i + head[i..].chars().next().map_or(1, char::len_utf8));
+        let start = head.rfind(char::is_whitespace).map_or(0, |i| {
+            i + head[i..].chars().next().map_or(1, char::len_utf8)
+        });
         let token = &head[start..];
         if let Some(query) = token.strip_prefix('@') {
             let query = query.to_string();
@@ -616,7 +625,10 @@ impl Editor {
             let lead = if row == 0 { prompt } else { &continuation };
             if self.cursor >= offset && self.cursor <= offset + text.len() {
                 let before = &text[..self.cursor - offset];
-                cursor = (row, UnicodeWidthStr::width(lead) + UnicodeWidthStr::width(before));
+                cursor = (
+                    row,
+                    UnicodeWidthStr::width(lead) + UnicodeWidthStr::width(before),
+                );
             }
             lines.push(format!("{lead}{text}"));
             offset += text.len() + 1;
@@ -746,7 +758,11 @@ fn score(path: &str, query: &str) -> Option<i64> {
         }
         last = Some(index);
     }
-    let base = lower.trim_end_matches('/').rsplit('/').next().unwrap_or(&lower);
+    let base = lower
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or(&lower);
     let mut score = 1000 - gaps * 3 - lower.len() as i64;
     if base.contains(query) {
         score += 500;

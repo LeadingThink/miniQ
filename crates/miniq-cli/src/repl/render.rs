@@ -18,6 +18,7 @@ impl Style {
         Self { color }
     }
 
+    #[cfg(test)]
     pub fn plain() -> Self {
         Self { color: false }
     }
@@ -127,8 +128,15 @@ fn render_block(line: &str, style: Style) -> String {
             text.to_string()
         });
     }
-    if let Some(rest) = trimmed.strip_prefix("> ").or(trimmed.strip_prefix('>').filter(|r| r.is_empty())) {
-        return format!("{pad}{} {}", style.dim("▌"), style.italic(&inline(rest, style)));
+    if let Some(rest) = trimmed
+        .strip_prefix("> ")
+        .or(trimmed.strip_prefix('>').filter(|r| r.is_empty()))
+    {
+        return format!(
+            "{pad}{} {}",
+            style.dim("▌"),
+            style.italic(&inline(rest, style))
+        );
     }
     if let Some(rest) = trimmed
         .strip_prefix("- [ ] ")
@@ -152,7 +160,10 @@ fn render_block(line: &str, style: Style) -> String {
 
 fn heading(line: &str) -> Option<usize> {
     let level = line.chars().take_while(|c| *c == '#').count();
-    (1..=6).contains(&level).then_some(level).filter(|l| line[*l..].starts_with(' '))
+    (1..=6)
+        .contains(&level)
+        .then_some(level)
+        .filter(|l| line[*l..].starts_with(' '))
 }
 
 /// Inline Markdown: `code`, **bold**, *italic* / _italic_.
@@ -175,7 +186,10 @@ pub fn inline(text: &str, style: Style) -> String {
             }
         }
         if let Some(after) = rest.strip_prefix('*') {
-            if let Some(end) = after.find('*').filter(|e| *e > 0 && !after.starts_with(' ')) {
+            if let Some(end) = after
+                .find('*')
+                .filter(|e| *e > 0 && !after.starts_with(' '))
+            {
                 out.push_str(&style.italic(&after[..end]));
                 rest = &after[end + 1..];
                 continue;
@@ -204,7 +218,11 @@ pub fn diff_line(line: &str, style: Style) -> String {
 
 /// Render the result of `session.diff`.
 pub fn diff(result: &Value, style: Style) -> String {
-    let files = result.get("files").and_then(Value::as_array).cloned().unwrap_or_default();
+    let files = result
+        .get("files")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     if files.is_empty() {
         return "No changes in this session.\n".to_string();
     }
@@ -219,7 +237,12 @@ pub fn diff(result: &Value, style: Style) -> String {
             style.green(&format!("+{add}")),
             style.red(&format!("-{del}"))
         ));
-        for hunk in file.get("hunks").and_then(Value::as_array).into_iter().flatten() {
+        for hunk in file
+            .get("hunks")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             if let Some(header) = hunk.get("header").and_then(Value::as_str) {
                 out.push_str(&style.magenta(&terminal_text(header)));
                 out.push('\n');
@@ -227,8 +250,14 @@ pub fn diff(result: &Value, style: Style) -> String {
                 out.push_str(&style.magenta("@@"));
                 out.push('\n');
             }
-            for line in hunk.get("lines").and_then(Value::as_array).into_iter().flatten() {
-                let content = terminal_text(line.get("content").and_then(Value::as_str).unwrap_or(""));
+            for line in hunk
+                .get("lines")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let content =
+                    terminal_text(line.get("content").and_then(Value::as_str).unwrap_or(""));
                 let content = content.trim_end_matches('\n');
                 let text = match line.get("kind").and_then(Value::as_str) {
                     Some("addition") => style.green(&format!("+{content}")),
@@ -250,26 +279,48 @@ pub fn tool_summary(name: &str, input: &Value) -> String {
             .find_map(|k| input.get(*k).and_then(Value::as_str))
             .map(|s| s.to_string())
     };
-    let detail = field(&["command", "cmd", "path", "file_path", "pattern", "query", "url", "prompt"])
-        .or_else(|| {
-            input
-                .get("commands")
-                .and_then(Value::as_array)
-                .map(|c| c.iter().filter_map(Value::as_str).collect::<Vec<_>>().join("; "))
+    let detail = field(&[
+        "command",
+        "cmd",
+        "path",
+        "file_path",
+        "pattern",
+        "query",
+        "url",
+        "prompt",
+    ])
+    .or_else(|| {
+        input.get("commands").and_then(Value::as_array).map(|c| {
+            c.iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join("; ")
         })
-        .unwrap_or_else(|| {
-            let text = if input.is_null() { String::new() } else { input.to_string() };
-            text
-        });
+    })
+    .unwrap_or_else(|| {
+        if input.is_null() {
+            String::new()
+        } else {
+            input.to_string()
+        }
+    });
     let detail = truncate(&terminal_text(&detail).replace('\n', " ⏎ "), 100);
     let lower = name.to_ascii_lowercase();
     let verb = if lower.contains("shell") || lower.contains("bash") || lower.contains("exec") {
         "Ran"
     } else if lower.contains("read") || lower.contains("view") {
         "Read"
-    } else if lower.contains("write") || lower.contains("edit") || lower.contains("patch") || lower.contains("replace") {
+    } else if lower.contains("write")
+        || lower.contains("edit")
+        || lower.contains("patch")
+        || lower.contains("replace")
+    {
         "Edited"
-    } else if lower.contains("search") || lower.contains("grep") || lower.contains("glob") || lower.contains("find") {
+    } else if lower.contains("search")
+        || lower.contains("grep")
+        || lower.contains("glob")
+        || lower.contains("find")
+    {
         "Searched"
     } else {
         "Called"
@@ -289,7 +340,11 @@ pub fn tool_started(name: &str, input: &Value, style: Style) -> String {
 /// Completion mark plus up to `max` lines of output.
 pub fn tool_finished(status: &str, output: Option<&Value>, max: usize, style: Style) -> String {
     let ok = matches!(status, "completed" | "succeeded" | "success" | "ok");
-    let mark = if ok { style.green("✓") } else { style.red(&format!("✗ {}", terminal_text(status))) };
+    let mark = if ok {
+        style.green("✓")
+    } else {
+        style.red(&format!("✗ {}", terminal_text(status)))
+    };
     let text = match output {
         Some(Value::String(s)) => s.clone(),
         Some(Value::Null) | None => String::new(),
@@ -310,10 +365,18 @@ pub fn tool_finished(status: &str, output: Option<&Value>, max: usize, style: St
     }
     out.push('\n');
     for line in lines.iter().take(max) {
-        out.push_str(&format!("  {} {}\n", style.dim("│"), style.dim(&truncate(line, 160))));
+        out.push_str(&format!(
+            "  {} {}\n",
+            style.dim("│"),
+            style.dim(&truncate(line, 160))
+        ));
     }
     if lines.len() > max {
-        out.push_str(&format!("  {} {}\n", style.dim("│"), style.dim(&format!("… {} more lines", lines.len() - max))));
+        out.push_str(&format!(
+            "  {} {}\n",
+            style.dim("│"),
+            style.dim(&format!("… {} more lines", lines.len() - max))
+        ));
     }
     out
 }
@@ -330,7 +393,9 @@ pub fn plan(tasks: &Value, style: Style) -> String {
         let text = terminal_text(text);
         let line = match task.get("status").and_then(Value::as_str) {
             Some("completed" | "done") => format!("  {} {}", style.green("☑"), style.dim(&text)),
-            Some("in_progress" | "inProgress" | "running") => format!("  {} {}", style.yellow("◐"), style.bold(&text)),
+            Some("in_progress" | "inProgress" | "running") => {
+                format!("  {} {}", style.yellow("◐"), style.bold(&text))
+            }
             _ => format!("  ☐ {text}"),
         };
         out.push_str(&line);
@@ -352,7 +417,10 @@ pub fn turn_summary(summary: Option<&Value>, elapsed: std::time::Duration, style
         }
     }
     if let Some(files) = summary.and_then(|s| s.get("filesChanged")) {
-        let count = files.as_u64().or_else(|| files.as_array().map(|a| a.len() as u64)).unwrap_or(0);
+        let count = files
+            .as_u64()
+            .or_else(|| files.as_array().map(|a| a.len() as u64))
+            .unwrap_or(0);
         if count > 0 {
             parts.push(format!("{count} files changed"));
         }
@@ -425,13 +493,22 @@ mod tests {
         let out = diff(&result, PLAIN);
         assert!(out.contains("a.rs +1 -1"));
         assert!(out.contains(" x\n-old\n+new\n"));
-        assert_eq!(diff(&json!({"files": []}), PLAIN), "No changes in this session.\n");
+        assert_eq!(
+            diff(&json!({"files": []}), PLAIN),
+            "No changes in this session.\n"
+        );
     }
 
     #[test]
     fn tool_lines() {
-        assert_eq!(tool_summary("shell", &json!({"command": "ls -la"})), "Ran shell: ls -la");
-        assert_eq!(tool_summary("file_read", &json!({"path": "a"})), "Read file_read: a");
+        assert_eq!(
+            tool_summary("shell", &json!({"command": "ls -la"})),
+            "Ran shell: ls -la"
+        );
+        assert_eq!(
+            tool_summary("file_read", &json!({"path": "a"})),
+            "Read file_read: a"
+        );
         let out = tool_finished("completed", Some(&json!("1\n2\n3\n4\n5\n6\n7")), 5, PLAIN);
         assert!(out.starts_with("  ✓\n"));
         assert!(out.contains("│ 5\n"));
@@ -442,9 +519,18 @@ mod tests {
 
     #[test]
     fn plan_and_summary() {
-        let out = plan(&json!([{"content": "a", "status": "completed"}, {"content": "b", "status": "in_progress"}, {"content": "c", "status": "pending"}]), PLAIN);
+        let out = plan(
+            &json!([{"content": "a", "status": "completed"}, {"content": "b", "status": "in_progress"}, {"content": "c", "status": "pending"}]),
+            PLAIN,
+        );
         assert_eq!(out, "  ☑ a\n  ◐ b\n  ☐ c\n");
-        let s = turn_summary(Some(&json!({"toolCalls": 3, "failedToolCalls": 1, "filesChanged": 2, "durationMs": 12500})), Default::default(), PLAIN);
+        let s = turn_summary(
+            Some(
+                &json!({"toolCalls": 3, "failedToolCalls": 1, "filesChanged": 2, "durationMs": 12500}),
+            ),
+            Default::default(),
+            PLAIN,
+        );
         assert_eq!(s, "─ 12.5s · 3 tools (1 failed) · 2 files changed ─\n");
         assert_eq!(duration(75_000), "1m15s");
     }

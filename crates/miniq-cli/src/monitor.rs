@@ -185,8 +185,13 @@ pub async fn interactive(
     mut initial: Option<String>,
     options: &crate::args::ChatOptions,
 ) -> Result<u8> {
+    if crate::repl::supported() {
+        // Rich REPL: persistent history in <data dir>/cli_history (MINIQ_NO_HISTORY=1
+        // disables it; entries that look like secrets are never written).
+        return crate::repl::run(client, session, initial, options).await;
+    }
     let mut files = options.attachments.clone();
-    // Keep prompt history in this process only; never persist messages or API Keys to disk.
+    // Line mode (TERM=dumb / MINIQ_REPL=line): prompt history stays in this process only.
     let mut editor = rustyline::DefaultEditor::new()?;
     progress(&format!("miniQ {} · Session: {session}\n/model selects this session's model; /effort selects supported reasoning. /help lists commands.\nCtrl+C during a task cancels it; /exit between turns detaches. Later: miniq resume {session}", env!("CARGO_PKG_VERSION")));
     let selection = client
@@ -294,7 +299,12 @@ async fn command(
     Ok(false)
 }
 
-async fn change_model(client: &mut Client, session: &str, command: &str, arg: &str) -> Result<()> {
+pub(crate) async fn change_model(
+    client: &mut Client,
+    session: &str,
+    command: &str,
+    arg: &str,
+) -> Result<()> {
     let selected = if !arg.is_empty() {
         Some(arg.to_owned())
     } else {
