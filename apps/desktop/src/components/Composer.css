@@ -28,12 +28,6 @@
     min-height: 40px;
   }
 
-  .composer-card .session-model-controls > select {
-    flex: 0 1 auto;
-    max-width: 45%;
-    min-height: 40px;
-  }
-
   .composer-card :is(.attach-btn, .send-btn, .mode-trigger, .composer-goal-btn) {
     min-width: 44px;
     min-height: 44px;
@@ -85,19 +79,6 @@
     min-width: 44px;
     min-height: 44px;
     justify-content: center;
-  }
-
-  /* Still announced through aria-describedby, but no longer costs a row. */
-  .composer-card .composer-keyboard-hint {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-    border: 0;
   }
 
 }

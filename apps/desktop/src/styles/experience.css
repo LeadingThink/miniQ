@@ -11,13 +11,19 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 6px;
-  font-size: var(--model-font-size);
-  font-weight: var(--model-font-weight);
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  font-size: var(--font-footnote);
+  font-weight: 500;
   color: var(--text-mid);
   background: transparent;
   min-width: 0;
   max-width: 260px;
+}
+.model-trigger:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 .model-trigger span {
   overflow-wrap: anywhere;
@@ -26,16 +32,6 @@
 .model-trigger svg,
 .session-model-controls svg {
   flex-shrink: 0;
-}
-.session-model-controls select {
-  color: var(--text-mid);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 4px;
-  max-width: 100%;
-  font: inherit;
-  font-size: var(--font-footnote);
 }
 .session-model-popover {
   position: absolute;

@@ -43,6 +43,7 @@ fn project_codex_user_content(content: String) -> Option<String> {
     let leading_trimmed = content.trim_start();
     if leading_trimmed.starts_with("# AGENTS.md")
         || leading_trimmed.starts_with("<environment_context>")
+        || leading_trimmed.starts_with("<codex_internal_context")
     {
         return None;
     }
@@ -214,6 +215,25 @@ mod tests {
         assert_eq!(
             projected_content(ExternalProvider::Codex, Role::User, content.to_owned()),
             Some("Keep the complete prompt\nacross lines".to_owned())
+        );
+    }
+
+    #[test]
+    fn hides_codex_internal_goal_continuation_prompts() {
+        let content = concat!(
+            "<codex_internal_context source=\"goal\">
+",
+            "Continue working toward the active thread goal.
+",
+            "<objective>
+find final
+</objective>
+",
+            "</codex_internal_context>",
+        );
+        assert_eq!(
+            projected_content(ExternalProvider::Codex, Role::User, content.to_owned()),
+            None
         );
     }
 

@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import type { ComponentProps, ReactNode } from "react";
-import { ArrowUp, LoaderCircle, Paperclip, Plus, Slash, Square, Target } from "lucide-react";
+import { ArrowUp, Folder, LoaderCircle, Paperclip, Plus, Slash, Square, Target } from "lucide-react";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import {
   canSendComposer,
@@ -516,7 +516,12 @@ export function ComposerCard(props: {
           </div>
         </div>
         {props.chipSlot}
-        {props.chip && <span className="chip">🗂 {props.chip}</span>}
+        {props.chip && (
+          <span className="chip" title={props.chip}>
+            <Folder aria-hidden="true" />
+            <span>{props.chip}</span>
+          </span>
+        )}
         {props.approvalMode && props.onApprovalModeChange && (
           <ApprovalModeSelect
             mode={props.approvalMode}

@@ -1,6 +1,7 @@
 /* ============ Main column ============ */
 .main {
   --conversation-content-width: 1080px;
+  --hero-content-width: 760px;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -136,19 +137,12 @@
 
 .hero .hero-composer {
   width: 100%;
-  max-width: var(--conversation-content-width);
-}
-
-.hero-cards {
-  display: flex;
-  gap: 14px;
-  width: 100%;
-  max-width: var(--conversation-content-width);
+  max-width: var(--hero-content-width);
 }
 
 .starter-prompts {
   width: 100%;
-  max-width: var(--conversation-content-width);
+  max-width: var(--hero-content-width);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
@@ -158,8 +152,8 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 12px;
+  padding: 12px 14px;
   color: var(--text-mid);
   text-align: left;
   background: var(--bg-subtle);
@@ -187,47 +181,16 @@
 
 .starter-prompt-copy strong {
   color: var(--text);
-  font-size: var(--font-footnote);
-  font-weight: 650;
+  font-size: var(--font-body);
+  font-weight: 500;
 }
 
 .starter-prompt-copy small {
   overflow: hidden;
   color: var(--text-dim);
-  font-size: var(--font-caption);
+  font-size: var(--font-footnote);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.hero-card {
-  flex: 1;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px;
-  cursor: pointer;
-  background: var(--bg);
-  color: var(--text);
-  text-align: left;
-  transition: border-color var(--duration-fast) var(--ease-standard);
-}
-
-.hero-card:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.hero-card:hover {
-  border-color: var(--border-strong);
-  background: var(--bg-subtle);
-}
-
-.hero-card .hero-card-title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-weight: 600;
-  font-size: var(--font-body);
-  margin-bottom: 4px;
 }
 
 @media (max-height: 720px) {
@@ -236,21 +199,12 @@
     padding-top: 7vh;
     padding-bottom: 24px;
   }
-
-  .hero-cards {
-    display: none;
-  }
 }
 
 @media (max-width: 720px) {
   .starter-prompts {
     grid-template-columns: 1fr;
   }
-}
-
-.hero-card .hero-card-sub {
-  color: var(--text-dim);
-  font-size: var(--font-footnote);
 }
 
 /* ============ Composer card ============ */
@@ -295,14 +249,17 @@
   padding: 0 6px;
 }
 
+/* Announced to the textarea through aria-describedby without crowding the toolbar. */
 .composer-keyboard-hint {
-  margin: 0;
-  color: var(--text-mid);
-  font-size: var(--font-footnote);
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-  text-align: right;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
   white-space: nowrap;
+  border: 0;
 }
 
 .composer-submit {
@@ -334,15 +291,17 @@
   min-width: 0;
 }
 
+/* Sits on the textarea first line: same top padding, same line box height. */
 .composer-goal-prefix {
   flex: none;
-  margin-top: 4px;
+  margin: 10px -4px 0 10px;
   border-radius: var(--radius-sm);
-  padding: 2px 6px;
+  padding: 0 6px;
   background: var(--accent-soft);
   color: var(--accent);
   font-size: var(--font-footnote);
-  font-weight: 600;
+  font-weight: 500;
+  line-height: calc(var(--font-callout) * 1.5);
 }
 
 .composer-goal-btn {
@@ -368,9 +327,6 @@
   color: var(--accent);
 }
 
-.session-model-controls { position: relative; display: inline-flex; align-items: center; }
-.model-trigger { display: inline-flex; align-items: center; gap: 5px; background: transparent; color: var(--text-mid); padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-pill); max-width: 190px; }
-.model-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-model-popover { position: absolute; z-index: 20; bottom: calc(100% + 8px); left: 0; width: 250px; max-height: 300px; overflow: auto; padding: 8px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; gap: 4px; }
 .session-model-popover input { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-subtle); color: var(--text); }
 .session-model-popover button { background: transparent; color: var(--text); text-align: left; padding: 7px 8px; border-radius: var(--radius-sm); }
@@ -379,14 +335,22 @@
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: var(--font-footnote);
-  color: var(--text-mid);
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  padding: 4px 11px;
+  gap: 5px;
+  min-width: 0;
   max-width: 220px;
+  padding: 4px 8px;
+  font-size: var(--font-footnote);
+  font-weight: 500;
+  color: var(--text-mid);
+}
+
+.chip > svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+
+.chip > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -667,6 +631,7 @@
   justify-content: center;
   width: 34px;
   height: 34px;
+  padding: 0;
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--glass);

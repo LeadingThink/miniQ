@@ -309,35 +309,23 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
         onSelect={(prompt) =>
           setDraftRequest({ id: Date.now(), content: prompt.prompt })
         }
+        shortcuts={[
+          {
+            id: "skills",
+            title: "技能",
+            description: "查看可复用的工作流，或从任务中学习新技能",
+            icon: Sparkles,
+            onSelect: () => app.navigation.openSettings("skills"),
+          },
+          {
+            id: "mcp",
+            title: "连接 MCP",
+            description: "接入外部工具与服务，扩展 agent 能力",
+            icon: PlugZap,
+            onSelect: () => app.navigation.openSettings("mcp"),
+          },
+        ]}
       />
-      <div className="hero-cards">
-        <button
-          type="button"
-          className="hero-card"
-          onClick={() => app.navigation.openSettings("skills")}
-        >
-          <div className="hero-card-title">
-            <Sparkles size={14} />
-            技能
-          </div>
-          <div className="hero-card-sub">
-            查看可复用的工作流,或从任务中学习新技能
-          </div>
-        </button>
-        <button
-          type="button"
-          className="hero-card"
-          onClick={() => app.navigation.openSettings("mcp")}
-        >
-          <div className="hero-card-title">
-            <PlugZap size={14} />
-            连接 MCP
-          </div>
-          <div className="hero-card-sub">
-            接入外部工具与服务,扩展 agent 能力
-          </div>
-        </button>
-      </div>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
 import type { RpcClient } from "../rpc";
 import type { useSessionModel } from "../hooks/useSessionModel";
 import { SessionModelSurface } from "./SessionModelSurface";
+import { MenuSelect } from "./MenuSelect";
 
 const MODEL_DIALOG_QUERY = "(max-width: 720px), (pointer: coarse)";
 function needsModelDialog() {
@@ -159,8 +160,8 @@ export function SessionModelControls({
         <Cpu size={14} />
         <span>{model.effective?.model ?? "模型"}</span>
       </button>
-      <select
-        aria-label="会话推理强度"
+      <MenuSelect<ReasoningEffort | "">
+        menuLabel="会话推理强度"
         title={
           description?.reasoningEfforts.length
             ? "推理强度"
@@ -168,23 +169,23 @@ export function SessionModelControls({
         }
         disabled={disabled || !description?.reasoningEfforts.length}
         value={model.settings.reasoningEffort ?? ""}
-        onChange={(event) =>
+        options={[
+          { value: "", label: "默认推理" },
+          ...(description?.reasoningEfforts ?? []).map((effort) => ({
+            value: effort,
+            label: EFFORT_LABELS[effort],
+          })),
+        ]}
+        onChange={(effort) =>
           void model
             .update({
               ...model.settings,
               apiProtocol: "auto",
-              reasoningEffort: (event.target.value as ReasoningEffort) || null,
+              reasoningEffort: effort || null,
             })
             .catch(() => {})
         }
-      >
-        <option value="">默认推理</option>
-        {description?.reasoningEfforts.map((effort) => (
-          <option key={effort} value={effort}>
-            {EFFORT_LABELS[effort]}
-          </option>
-        ))}
-      </select>
+      />
       {model.error && (
         <span role="alert" className="model-error">
           {model.error}
