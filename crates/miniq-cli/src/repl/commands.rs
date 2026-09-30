@@ -41,6 +41,12 @@ const COMMANDS: &[(&str, &str)] = &[
     ("/skills", "list skills"),
     ("/agents", "list sub-agents of this session"),
     ("/clear", "clear the screen"),
+    ("/keybindings", "show the effective key bindings"),
+    ("/vim", "toggle vim / emacs editing (saved to cli.json)"),
+    (
+        "/statusline",
+        "show the custom status line command and result",
+    ),
     ("/exit", "leave (the session is kept)"),
     ("/quit", "alias of /exit"),
 ];
@@ -55,6 +61,8 @@ pub fn list() -> Vec<(String, String)> {
 const KEYS: &str = "Keys: Enter send (queues while running) · Tab steer running turn / complete · Shift+Enter, Alt+Enter or \\ Enter newline
   Esc interrupt · Ctrl+C clear/interrupt, twice to exit · Ctrl+D exit on empty line · Shift+Tab cycle permissions
   Up/Down history · Ctrl+R search history · Ctrl+L clear screen · Ctrl+G edit in $EDITOR
+  Customize keys, editorMode (emacs|vim) and statusLine in cli.json: see /keybindings, /vim, /statusline
+  Vim mode: Esc for NORMAL (h j k l w b e 0 ^ $ i a I A o O x X dd D C cc dw cw db d$ yy p P u r G gg)
   @path attaches an existing file (Tab completes paths) · !cmd runs a local shell command, output is not sent";
 
 /// Run one slash command. Returns `Some(code)` to exit.
@@ -356,6 +364,41 @@ pub async fn run(
                 crossterm::cursor::MoveTo(0, 0)
             );
             let _ = out.flush();
+        }
+        "/keybindings" => {
+            let text = format!(
+                "Key bindings (editor mode: {}):\n{}\nOverride in {} under \"keybindings\", e.g. {{\"keybindings\": {{\"submit\": [\"enter\"], \"newline\": \"ctrl+o\"}}}}",
+                if editor.vim_enabled() { "vim" } else { "emacs" },
+                editor.keymap().describe().trim_end(),
+                super::prefs::path(&repl.prefs_dir).display()
+            );
+            repl.emit(&text);
+        }
+        "/vim" => {
+            let vim = !editor.vim_enabled();
+            editor.set_vim(vim);
+            let mode = if vim {
+                super::prefs::EditorMode::Vim
+            } else {
+                super::prefs::EditorMode::Emacs
+            };
+            match super::prefs::save_editor_mode(&repl.prefs_dir, mode) {
+                Ok(path) => repl.info(&format!(
+                    "Editor mode: {} (saved to {})",
+                    mode.as_str(),
+                    path.display()
+                )),
+                Err(error) => repl.error(&format!(
+                    "Editor mode: {} for this session; not saved: {error:#}",
+                    mode.as_str()
+                )),
+            }
+        }
+        "/statusline" => {
+            let text = repl
+                .statusline
+                .describe(&super::prefs::path(&repl.prefs_dir));
+            repl.emit(&text);
         }
         "/compact" => repl.info("/compact is not available: miniQ compacts context automatically."),
         _ => repl.info("Unknown or incomplete command. /help lists commands."),

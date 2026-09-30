@@ -10,6 +10,9 @@ use std::path::{Path, PathBuf};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use unicode_width::UnicodeWidthStr;
 
+use super::keymap::{Command, KeySpec, Keymap};
+use super::vim::{Effect, Mode, Vim};
+
 pub const HISTORY_LIMIT: usize = 1000;
 
 /// Result of feeding one key to the editor.
@@ -66,6 +69,9 @@ pub struct Editor {
     commands: Vec<(String, String)>,
     root: PathBuf,
     files: Option<Vec<String>>,
+    keymap: Keymap,
+    /// Vim emulation state; `None` in emacs mode.
+    vim: Option<Vim>,
 }
 
 pub struct View {
@@ -89,7 +95,33 @@ impl Editor {
             commands,
             root,
             files: None,
+            keymap: Keymap::default(),
+            vim: None,
         }
+    }
+
+    /// Use `keymap` instead of the built-in bindings.
+    pub fn with_keymap(mut self, keymap: Keymap) -> Self {
+        self.keymap = keymap;
+        self
+    }
+
+    pub fn keymap(&self) -> &Keymap {
+        &self.keymap
+    }
+
+    /// Enable or disable vim emulation (starts in INSERT mode).
+    pub fn set_vim(&mut self, enabled: bool) {
+        self.vim = enabled.then(Vim::default);
+    }
+
+    pub fn vim_enabled(&self) -> bool {
+        self.vim.is_some()
+    }
+
+    /// `-- INSERT --` / `-- NORMAL --` when vim emulation is on.
+    pub fn mode_indicator(&self) -> Option<&'static str> {
+        self.vim.as_ref().map(Vim::indicator)
     }
 
     /// Enable persistent history stored at `path`.
@@ -126,6 +158,9 @@ impl Editor {
         self.browsing = None;
         self.search = None;
         self.menu = None;
+        if let Some(vim) = self.vim.as_mut() {
+            vim.reset();
+        }
     }
 
     pub fn searching(&self) -> bool {
@@ -161,8 +196,6 @@ impl Editor {
 
     pub fn key(&mut self, key: KeyEvent) -> Action {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-        let alt = key.modifiers.contains(KeyModifiers::ALT);
-        let shift = key.modifiers.contains(KeyModifiers::SHIFT);
 
         if self.search.is_some() {
             return self.search_key(key, ctrl);
@@ -172,17 +205,61 @@ impl Editor {
                 return action;
             }
         }
-
-        match key.code {
-            // Raw mode reports a bare LF as Ctrl+J; scripts and PTY tests submit with it.
-            KeyCode::Char('j') if ctrl => {
-                self.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
-            }
-            KeyCode::Enter => {
-                if shift || alt {
-                    self.insert("\n");
-                    return Action::Redraw;
+        if let Some(vim) = self.vim.as_mut() {
+            if vim.mode == Mode::Normal {
+                let effect = vim.normal_key(&key, &mut self.buffer, &mut self.cursor);
+                if effect != Effect::Unhandled {
+                    self.menu = None;
                 }
+                match effect {
+                    Effect::Handled => {
+                        self.browsing = None;
+                        return Action::Redraw;
+                    }
+                    Effect::Unhandled => {}
+                    Effect::Submit => return self.run(Command::Submit),
+                    Effect::HistoryPrev => {
+                        self.history_prev();
+                        self.normal_cursor();
+                        return Action::Redraw;
+                    }
+                    Effect::HistoryNext => {
+                        self.history_next();
+                        self.normal_cursor();
+                        return Action::Redraw;
+                    }
+                    Effect::Escape => return Action::Escape,
+                }
+            }
+        }
+
+        let spec = KeySpec::from_event(&key);
+        let command = self.keymap.lookup_spec(spec).or_else(|| {
+            // Keep modified navigation keys (Shift+Left, Alt+Up, ...) working like
+            // the plain key unless they are bound explicitly.
+            let plain = !matches!(spec.code, KeyCode::Char(_)) && !spec.modifiers.is_empty();
+            plain
+                .then(|| KeySpec::from_event(&KeyEvent::new(key.code, KeyModifiers::NONE)))
+                .and_then(|spec| self.keymap.lookup_spec(spec))
+                .filter(|command| *command != Command::Complete)
+        });
+        if let Some(command) = command {
+            return self.run(command);
+        }
+        match key.code {
+            KeyCode::Char(c) if !ctrl => {
+                let mut tmp = [0u8; 4];
+                self.insert(c.encode_utf8(&mut tmp));
+                Action::Redraw
+            }
+            _ => Action::Redraw,
+        }
+    }
+
+    /// Execute a bound editor command.
+    fn run(&mut self, command: Command) -> Action {
+        match command {
+            Command::Submit => {
                 if self.buffer[..self.cursor].ends_with('\\') {
                     self.cursor -= 1;
                     self.buffer.remove(self.cursor);
@@ -193,10 +270,40 @@ impl Editor {
                 self.cursor = 0;
                 self.browsing = None;
                 self.menu = None;
+                if let Some(vim) = self.vim.as_mut() {
+                    vim.reset();
+                }
                 Action::Submit(text)
             }
-            KeyCode::Char('c') if ctrl => Action::Interrupt,
-            KeyCode::Char('d') if ctrl => {
+            Command::Newline => {
+                self.insert("\n");
+                Action::Redraw
+            }
+            Command::Interrupt => Action::Interrupt,
+            Command::Cancel => {
+                if let Some(vim) = self.vim.as_mut() {
+                    if vim.mode == Mode::Insert {
+                        let empty = self.buffer.is_empty();
+                        vim.enter_normal(&self.buffer, &mut self.cursor);
+                        self.menu = None;
+                        // On an empty prompt Esc still reaches the REPL (interrupt a turn).
+                        return if empty {
+                            Action::Escape
+                        } else {
+                            Action::Redraw
+                        };
+                    }
+                }
+                Action::Escape
+            }
+            Command::ClearLine => {
+                self.buffer.clear();
+                self.cursor = 0;
+                self.browsing = None;
+                self.menu = None;
+                Action::Redraw
+            }
+            Command::Exit => {
                 if self.buffer.is_empty() {
                     Action::Eof
                 } else {
@@ -204,24 +311,24 @@ impl Editor {
                     Action::Redraw
                 }
             }
-            KeyCode::Char('l') if ctrl => Action::ClearScreen,
-            KeyCode::Char('g') if ctrl => Action::External,
-            KeyCode::Char('r') if ctrl => {
+            Command::ClearScreen => Action::ClearScreen,
+            Command::ExternalEditor => Action::External,
+            Command::HistorySearch => {
                 self.search = Some(Search {
                     query: String::new(),
                     matched: None,
                 });
                 Action::Redraw
             }
-            KeyCode::Char('a') if ctrl => {
+            Command::LineStart => {
                 self.cursor = self.line_start();
                 Action::Redraw
             }
-            KeyCode::Char('e') if ctrl => {
+            Command::LineEnd => {
                 self.cursor = self.line_end();
                 Action::Redraw
             }
-            KeyCode::Char('k') if ctrl => {
+            Command::DeleteToLineEnd => {
                 let end = self.line_end();
                 if end == self.cursor && end < self.buffer.len() {
                     self.buffer.remove(self.cursor);
@@ -231,50 +338,43 @@ impl Editor {
                 self.refresh_menu();
                 Action::Redraw
             }
-            KeyCode::Char('u') if ctrl => {
+            Command::DeleteToLineStart => {
                 let start = self.line_start();
                 self.buffer.replace_range(start..self.cursor, "");
                 self.cursor = start;
                 self.refresh_menu();
                 Action::Redraw
             }
-            KeyCode::Char('w') if ctrl => {
+            Command::DeleteWordBack => {
                 let start = self.word_left();
                 self.buffer.replace_range(start..self.cursor, "");
                 self.cursor = start;
                 self.refresh_menu();
                 Action::Redraw
             }
-            KeyCode::Char('b') if alt => {
+            Command::DeleteWordForward => {
+                let end = self.word_right();
+                self.buffer.replace_range(self.cursor..end, "");
+                self.refresh_menu();
+                Action::Redraw
+            }
+            Command::WordLeft => {
                 self.cursor = self.word_left();
                 Action::Redraw
             }
-            KeyCode::Char('f') if alt => {
+            Command::WordRight => {
                 self.cursor = self.word_right();
                 Action::Redraw
             }
-            KeyCode::Left if alt || ctrl => {
-                self.cursor = self.word_left();
-                Action::Redraw
-            }
-            KeyCode::Right if alt || ctrl => {
-                self.cursor = self.word_right();
-                Action::Redraw
-            }
-            KeyCode::Char('b') if ctrl => {
+            Command::CursorLeft => {
                 self.left();
                 Action::Redraw
             }
-            KeyCode::Char('f') if ctrl => {
+            Command::CursorRight => {
                 self.right();
                 Action::Redraw
             }
-            KeyCode::Char(c) if !ctrl => {
-                let mut tmp = [0u8; 4];
-                self.insert(c.encode_utf8(&mut tmp));
-                Action::Redraw
-            }
-            KeyCode::Backspace => {
+            Command::DeleteBack => {
                 if self.cursor > 0 {
                     self.left();
                     self.buffer.remove(self.cursor);
@@ -282,27 +382,11 @@ impl Editor {
                 self.refresh_menu();
                 Action::Redraw
             }
-            KeyCode::Delete => {
+            Command::DeleteForward => {
                 self.delete_forward();
                 Action::Redraw
             }
-            KeyCode::Left => {
-                self.left();
-                Action::Redraw
-            }
-            KeyCode::Right => {
-                self.right();
-                Action::Redraw
-            }
-            KeyCode::Home => {
-                self.cursor = self.line_start();
-                Action::Redraw
-            }
-            KeyCode::End => {
-                self.cursor = self.line_end();
-                Action::Redraw
-            }
-            KeyCode::Up => {
+            Command::HistoryPrev => {
                 if self.buffer[..self.cursor].contains('\n') {
                     self.vertical(-1);
                 } else {
@@ -310,7 +394,7 @@ impl Editor {
                 }
                 Action::Redraw
             }
-            KeyCode::Down => {
+            Command::HistoryNext => {
                 if self.buffer[self.cursor..].contains('\n') {
                     self.vertical(1);
                 } else {
@@ -318,16 +402,22 @@ impl Editor {
                 }
                 Action::Redraw
             }
-            KeyCode::Tab => {
+            Command::Complete => {
                 if self.complete() {
                     Action::Redraw
                 } else {
                     Action::Tab
                 }
             }
-            KeyCode::BackTab => Action::BackTab,
-            KeyCode::Esc => Action::Escape,
-            _ => Action::Redraw,
+            Command::CycleMode => Action::BackTab,
+        }
+    }
+
+    /// In NORMAL mode the cursor rests on a character, not past the line end.
+    fn normal_cursor(&mut self) {
+        let end = self.line_end();
+        if self.cursor >= end && end > self.line_start() {
+            self.left();
         }
     }
 
@@ -946,5 +1036,38 @@ mod tests {
         typed(&mut e, "see @li");
         e.key(key(KeyCode::Tab));
         assert_eq!(e.buffer(), "see @lib.rs ");
+    }
+
+    #[test]
+    fn vim_normal_mode_editing() {
+        let mut e = editor();
+        e.set_vim(true);
+        assert_eq!(e.mode_indicator(), Some("-- INSERT --"));
+        typed(&mut e, "hello world");
+        e.key(key(KeyCode::Esc));
+        assert_eq!(e.mode_indicator(), Some("-- NORMAL --"));
+        typed(&mut e, "0dw");
+        assert_eq!(e.buffer(), "world");
+        typed(&mut e, "Aa");
+        assert_eq!(e.mode_indicator(), Some("-- INSERT --"));
+        assert_eq!(e.buffer(), "worlda");
+        e.key(key(KeyCode::Esc));
+        typed(&mut e, "x");
+        assert_eq!(e.buffer(), "world");
+        assert_eq!(e.key(key(KeyCode::Enter)), Action::Submit("world".into()));
+        assert_eq!(e.mode_indicator(), Some("-- INSERT --"));
+    }
+
+    #[test]
+    fn user_keybinding_overrides_defaults() {
+        let mut bindings = std::collections::BTreeMap::new();
+        bindings.insert("newline".to_string(), vec!["ctrl+o".to_string()]);
+        let (keymap, warnings) = Keymap::new(&bindings);
+        assert!(warnings.is_empty());
+        let mut e = editor().with_keymap(keymap);
+        typed(&mut e, "a");
+        e.key(ctrl('o'));
+        typed(&mut e, "b");
+        assert_eq!(e.key(key(KeyCode::Enter)), Action::Submit("a\nb".into()));
     }
 }
