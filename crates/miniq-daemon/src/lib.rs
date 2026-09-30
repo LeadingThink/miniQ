@@ -15,6 +15,7 @@ mod external_import_jobs;
 mod external_scan_jobs;
 pub mod features;
 pub mod gateway;
+pub mod hooks;
 pub mod learn;
 pub mod mcp;
 mod observed_provider;

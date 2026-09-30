@@ -716,3 +716,57 @@ async fn unregistered_tool_is_not_in_effective_set_and_unknown_output_uses_it() 
     let available = output["error"]["availableTools"].as_array().unwrap();
     assert!(!available.iter().any(|name| name == "mcp_call"));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn pre_tool_use_hook_exit_2_blocks_the_tool() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = miniq_memory::Store::open_in_memory().unwrap();
+    let workspace = store
+        .create_workspace(directory.path().to_str().unwrap(), "workspace")
+        .unwrap();
+    let session = store.create_session(&workspace.id, "hooked").unwrap();
+    std::fs::write(directory.path().join("note.txt"), "secret").unwrap();
+    let state = AppState::new(
+        store,
+        "token".to_string(),
+        std::sync::Arc::new(miniq_models::mock::MockProvider::new(Vec::new())),
+    );
+    state.settings.lock().unwrap().hooks = vec![crate::hooks::HookConfig {
+        event: "preToolUse".into(),
+        matcher: Some("file_.*".into()),
+        command: "cat > hook-stdin.json; echo no reading >&2; exit 2".into(),
+        timeout_secs: Some(10),
+        enabled: None,
+    }];
+    let executor = SessionToolExecutor {
+        state: state.clone(),
+        session_id: session.id.clone(),
+        router: state.router.clone(),
+        ctx: ToolContext::new(directory.path().to_path_buf()),
+        cancel: CancellationToken::new(),
+        permission_policy: PermissionPolicy::Inherit,
+        review_plan: Default::default(),
+    };
+    let output = executor
+        .execute(&ToolCallRequest {
+            id: "provider-call".to_string(),
+            name: "file_read".to_string(),
+            arguments: json!({"path": "note.txt"}),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(output["error"], "Blocked by preToolUse hook: no reading");
+    let calls = state.store.list_tool_calls(&session.id).unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].status, ToolCallStatus::Failed);
+    let stdin: Value = serde_json::from_str(
+        &std::fs::read_to_string(directory.path().join("hook-stdin.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(stdin["hookEvent"], "preToolUse");
+    assert_eq!(stdin["toolName"], "file_read");
+    assert_eq!(stdin["toolInput"]["path"], "note.txt");
+    assert_eq!(stdin["sessionId"], session.id);
+}

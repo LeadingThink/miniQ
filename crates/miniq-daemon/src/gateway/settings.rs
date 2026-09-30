@@ -23,6 +23,7 @@ pub(super) fn get(state: &AppState) -> Result<Value, RpcError> {
         "remoteAccess": settings.remote_access,
         "remoteStatus": crate::remote::status(state),
         "turnEndedCommand": settings.turn_ended_command,
+        "hooks": settings.hooks,
     }))
 }
 
@@ -37,6 +38,8 @@ struct UpdateParams {
     remote_access: Option<RemoteAccessUpdate>,
     #[serde(default)]
     turn_ended_command: Option<Option<String>>,
+    #[serde(default)]
+    hooks: Option<Vec<crate::hooks::HookConfig>>,
 }
 
 #[derive(Deserialize)]
@@ -116,6 +119,11 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
             ));
         }
         settings.turn_ended_command = (!command.trim().is_empty()).then_some(command);
+    }
+    if let Some(hooks) = input.hooks {
+        crate::hooks::validate(&hooks)
+            .map_err(|error| RpcError::new(ErrorCode::InvalidParams, error))?;
+        settings.hooks = hooks;
     }
 
     state
@@ -361,6 +369,11 @@ pub(super) fn restore_backup(state: &AppState) -> Result<Value, RpcError> {
         .restore_settings_backup()
         .map_err(|error| RpcError::new(ErrorCode::InternalError, error))?;
     status(state)
+}
+
+/// `hooks.list`: configured lifecycle hooks and whether the flag is on.
+pub(super) fn hooks_list(state: &AppState) -> Result<Value, RpcError> {
+    Ok(crate::hooks::list_view(state))
 }
 
 pub(super) fn features_get(state: &AppState) -> Result<Value, RpcError> {

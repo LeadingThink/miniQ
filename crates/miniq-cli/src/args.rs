@@ -291,6 +291,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: ListCommand,
     },
+    /// List configured lifecycle hooks (see `miniq config set hooks`).
+    Hooks {
+        #[command(subcommand)]
+        command: ListCommand,
+    },
     /// List installed plugins.
     Plugins {
         #[command(subcommand)]
@@ -298,7 +303,7 @@ pub enum Commands {
     },
     /// Read or change shared settings. Secrets are never printed.
     #[command(
-        after_help = "Examples:\n  miniq config get\n  miniq config get provider.model\n  miniq config set approvalMode alwaysAsk\n  miniq config set provider.model gpt-5.6-sol\n\nKeys: provider.baseUrl provider.model provider.apiProtocol approvalMode\n      remoteAccess.enabled remoteAccess.relayUrl remoteAccess.deviceName turnEndedCommand\nAPI keys: use `miniq configure` / `miniq logout`."
+        after_help = "Examples:\n  miniq config get\n  miniq config get provider.model\n  miniq config set approvalMode alwaysAsk\n  miniq config set provider.model gpt-5.6-sol\n\nKeys: provider.baseUrl provider.model provider.apiProtocol approvalMode\n      remoteAccess.enabled remoteAccess.relayUrl remoteAccess.deviceName turnEndedCommand\n      hooks (JSON array, e.g. '[{\"event\":\"preToolUse\",\"matcher\":\"shell_run\",\"command\":\"./check.sh\"}]')\nAPI keys: use `miniq configure` / `miniq logout`."
     )]
     Config {
         #[command(subcommand)]
@@ -507,6 +512,8 @@ mod tests {
             vec!["miniq", "mcp", "remove", "gh"],
             vec!["miniq", "skills", "list"],
             vec!["miniq", "plugins", "list", "--json"],
+            vec!["miniq", "hooks", "list", "--json"],
+            vec!["miniq", "config", "set", "hooks", "[]"],
             vec!["miniq", "config", "get", "provider.model"],
             vec!["miniq", "config", "set", "approvalMode", "auto"],
             vec!["miniq", "doctor", "--json"],

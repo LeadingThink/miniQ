@@ -35,6 +35,9 @@ pub struct DaemonSettings {
     /// Optional local command run after each turn. Empty means disabled.
     #[serde(default)]
     pub turn_ended_command: Option<String>,
+    /// User lifecycle hooks (`preToolUse`, `stop`, ...), run in order.
+    #[serde(default)]
+    pub hooks: Vec<crate::hooks::HookConfig>,
     /// Staged feature flags (plan §4.7). Missing section keeps defaults.
     #[serde(default)]
     pub features: crate::features::FeatureFlags,

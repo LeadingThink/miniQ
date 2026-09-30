@@ -89,6 +89,7 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "mcp.list"
         | "approval.rules.list"
         | "features.get"
+        | "hooks.list"
         | "settings.status" => ReadOnly,
         "approval.rules.revoke" => Allow,
         "plugin.setEnabled" => ToggleOnly,
