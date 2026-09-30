@@ -290,6 +290,21 @@
   gap: 16px;
 }
 
+.skills-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.skills-page-header > :first-child {
+  min-width: 0;
+}
+
+.skills-page-header > button {
+  flex: none;
+}
+
 .plugin-page-header > button,
 .plugin-card-actions button {
   display: inline-flex;
@@ -401,7 +416,8 @@
 }
 
 @media (max-width: 720px) {
-  .plugin-page-header {
+  .plugin-page-header,
+  .skills-page-header {
     align-items: flex-start;
     flex-direction: column;
   }

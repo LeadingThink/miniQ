@@ -317,13 +317,17 @@
   }
 }
 .sidebar-account-row .sidebar-footer-more {
+  display: inline-grid;
+  place-items: center;
   flex: none;
   width: 28px;
   height: 28px;
+  padding: 0;
   color: var(--text-dim);
+  background: transparent;
 }
 .sidebar-account-row .sidebar-footer-more:hover,
 .sidebar-account-row .sidebar-footer-more[aria-expanded="true"] {
   color: var(--text);
-  background: var(--bg-hover);
+  background: transparent;
 }

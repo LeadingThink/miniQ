@@ -226,7 +226,7 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
         }}
       />}
       <div className="page-inner wide">
-        <div className="page-header">
+        <div className="page-header skills-page-header">
           <div>
             <div className="page-title">技能</div>
             <div className="page-sub">
