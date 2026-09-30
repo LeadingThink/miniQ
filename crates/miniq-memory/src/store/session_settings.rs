@@ -248,15 +248,26 @@ mod tests {
             )
             .unwrap()
         };
-        assert_eq!(store.set_session_plan(&session.id, &plan("orphan")).unwrap(), None);
-        let first = store.append_message(&session.id, Role::User, "one").unwrap();
+        assert_eq!(
+            store
+                .set_session_plan(&session.id, &plan("orphan"))
+                .unwrap(),
+            None
+        );
+        let first = store
+            .append_message(&session.id, Role::User, "one")
+            .unwrap();
         assert_eq!(
             store.set_session_plan(&session.id, &plan("a")).unwrap(),
             Some(first.id.clone())
         );
         store.set_session_plan(&session.id, &plan("a2")).unwrap();
-        let answer = store.append_message(&session.id, Role::Assistant, "done").unwrap();
-        let second = store.append_message(&session.id, Role::User, "two").unwrap();
+        let answer = store
+            .append_message(&session.id, Role::Assistant, "done")
+            .unwrap();
+        let second = store
+            .append_message(&session.id, Role::User, "two")
+            .unwrap();
         store.set_session_plan(&session.id, &plan("b")).unwrap();
 
         let turns = store.session_turn_plans(&session.id).unwrap();

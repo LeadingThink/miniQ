@@ -135,7 +135,8 @@ mod tests {
     #[test]
     fn semver_string_version_is_accepted() {
         let (meta, _) =
-            parse_skill_md("---\nname: a\ndescription: d\nversion: '4.0.506'\n---\nbody\n").unwrap();
+            parse_skill_md("---\nname: a\ndescription: d\nversion: '4.0.506'\n---\nbody\n")
+                .unwrap();
         assert_eq!(meta.version, 4);
         let (meta, _) =
             parse_skill_md("---\nname: a\ndescription: d\nversion: v0.8.1\n---\nbody\n").unwrap();

@@ -109,19 +109,14 @@ pub struct Session {
     pub turn_count: Option<u32>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionGoalStatus {
+    #[default]
     Active,
     Completed,
     Paused,
     Cancelled,
-}
-
-impl Default for SessionGoalStatus {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -222,17 +217,12 @@ pub struct MessageAttachment {
 }
 
 /// How a recurring task is delivered. Existing tasks default to `newSession`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum ScheduledTaskMode {
+    #[default]
     NewSession,
     Heartbeat,
-}
-
-impl Default for ScheduledTaskMode {
-    fn default() -> Self {
-        Self::NewSession
-    }
 }
 
 impl ScheduledTaskMode {
