@@ -205,17 +205,23 @@ pub fn run(config: &StatusLineConfig, payload: &str) -> Outcome {
     if let Some(stdout) = child.stdout.take() {
         thread::spawn(move || {
             let mut line = Vec::new();
-            let result = BufReader::new(stdout.take(MAX_OUTPUT))
+            let mut reader = BufReader::new(stdout.take(MAX_OUTPUT));
+            let result = reader
                 .read_until(b'\n', &mut line)
                 .map(|_| String::from_utf8_lossy(&line).into_owned());
             let _ = line_tx.send(result);
+            // Keep draining so a command that prints more lines does not die
+            // with SIGPIPE (and fail) once we have what we need.
+            let _ = std::io::copy(&mut reader.into_inner().into_inner(), &mut std::io::sink());
         });
     }
     let (err_tx, err_rx) = mpsc::channel();
     if let Some(stderr) = child.stderr.take() {
         thread::spawn(move || {
             let mut text = String::new();
-            let _ = stderr.take(MAX_OUTPUT).read_to_string(&mut text);
+            let mut limited = stderr.take(MAX_OUTPUT);
+            let _ = limited.read_to_string(&mut text);
+            let _ = std::io::copy(&mut limited.into_inner(), &mut std::io::sink());
             let _ = err_tx.send(text);
         });
     }
@@ -342,6 +348,15 @@ mod tests {
             "{\"a\":1}",
         );
         assert_eq!(result.unwrap(), "got {\"a\":1}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn long_output_after_first_line_is_not_a_failure() {
+        // More than a pipe buffer after the first line: closing stdout early
+        // used to kill the command with SIGPIPE.
+        let result = run(&config("echo first; head -c 200000 /dev/zero", 5000), "{}");
+        assert_eq!(result.unwrap(), "first");
     }
 
     #[cfg(unix)]
