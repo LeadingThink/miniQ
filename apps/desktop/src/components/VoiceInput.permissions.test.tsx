@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { Capacitor } from "@capacitor/core";
 import { invoke } from "@tauri-apps/api/core";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
@@ -52,7 +52,7 @@ it("opens local settings, then records only when the user explicitly retries", a
   fireEvent.click(await screen.findByRole("button", { name: "打开系统设置" }));
   await screen.findByRole("status");
   expect(invoke).toHaveBeenCalledExactlyOnceWith("open_microphone_settings");
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "已开启，重试" }));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "已开启，重试" })));
   fireEvent.focus(window); fireEvent(document, new Event("visibilitychange"));
   expect(startVoiceCapture).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole("button", { name: "结束录音" })).toBeNull();

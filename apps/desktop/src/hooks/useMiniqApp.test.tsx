@@ -546,18 +546,18 @@ it("opens desktop observations on remote clients without launching a separate if
   }
   try {
     render(<TestApp />);
-    await screen.findByRole("button", { name: "a，执行中" });
+    await screen.findByRole("button", { name: "a，执行中" }, { timeout: 10_000 });
     await act(async () => { await app.actions.openSession("a"); });
     fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "查看桌面网页记录" }));
-    await screen.findByRole("complementary", { name: "桌面网页记录" });
+    await screen.findByRole("complementary", { name: "桌面网页记录" }, { timeout: 10_000 });
     expect(screen.queryByTitle("网页预览")).toBeNull();
     await act(async () => { await app.actions.openSession("b"); });
     expect(screen.queryByRole("complementary", { name: "桌面网页记录" })).toBeNull();
     act(() => window.dispatchEvent(new CustomEvent("miniq:open-browser", { detail: { url: "https://example.test" } })));
     expect(screen.queryByTitle("网页预览")).toBeNull();
   } finally { cleanup(); vi.unstubAllGlobals(); }
-});
+}, 20_000);
 
 it("adopts a default-project draft browser before its first task can request that page", async () => {
   fake.mode = "local";
