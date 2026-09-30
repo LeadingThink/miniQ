@@ -1,4 +1,4 @@
-# miniQ 终端 CLI 对标总报告（Codex 0.153.4 / Claude Code 2.1.234 / miniQ 0.1.72）
+# miniQ 终端 CLI 对标总报告（Codex 0.153.4 / Claude Code 2.1.234 / miniQ 0.1.72 → 0.1.74）
 
 详细素材：
 - [01-codex-cli.md](01-codex-cli.md)：Codex 逐项清单，前 25 项
@@ -110,3 +110,37 @@ Codex 和 Claude Code 的共同核心是：运行中可继续输入（排队或�
 - `config set` 会整组提交 provider 设置，桌面端同时修改时可能互相覆盖。
 - 终端宽度变化时，状态栏重绘可能有残留。
 - 首次运行（未配置）时，`miniq -m MODEL` 仍会弹出模型选择；需要改用 `miniq configure --model MODEL`（沿用 0.1.72 的行为）。
+
+## 5. 第二轮：补齐剩余缺口（0.1.74，分支 `cli-gaps`）
+
+提交：`646bccc`（上下文、`/compact`、`/undo`、`--max-turns`）、`c2373d2`（Hooks，经 `66e3284` 合并）、`37cb5b6`（快捷键、vim、状态栏，经 `7588243` 合并）、`2faa1d9`（前端测试稳定性）。本轮 daemon **新增了 RPC**。
+
+### 5.1 逐项落地
+
+| 原缺口 | 结果 | 说明 |
+|---|---|---|
+| 7 上下文百分比 | ✓ | daemon 新增 `session.contextUsage`；状态栏实时显示 `ctx N%`；`/context` 列出窗口大小、已用量和各部分占比 |
+| 11 `/compact` | ✓ | 手动压缩上下文，可附带保留重点说明 |
+| 19 `/undo` | ✓ | 基于 `checkpoint.rollback` 回滚上一回合的文件改动和对话，并把上一条输入回填到输入框 |
+| 20 `--max-turns` | ✓ | daemon 支持单回合步数上限，达到上限后回合以 `StepLimitExceeded` 失败结束 |
+| 25 Hooks | ✓ | `settings.json` 的 `hooks`：`preToolUse` / `postToolUse` / `userPromptSubmit` / `stop` / `sessionStart`；stdin 传事件 JSON，退出码 2 阻止（或把反馈追加给模型），超时默认 30 秒；`hooks` 特性开关可整体关闭；`miniq hooks` 与 `/hooks` 查看 |
+| 25 keymap | ✓ | `cli.json` 的 `keybindings` 覆盖任意编辑动作；`/keybindings` 查看生效绑定 |
+| 25 vim | ✓ | `editorMode: vim` 或 `/vim` 切换（写回 `cli.json`），状态栏显示 NORMAL/INSERT |
+| 25 statusline | ✓ | `statusLine.command` 以 JSON 接收会话状态，输出追加或替换状态栏；`/statusline` 查看最近一次结果和错误 |
+| 25 IDE 集成 | ✗ | 不在本轮范围，需要另行设计 |
+
+安全：Hooks 只能通过本地 `settings.update` 配置，远程策略不放行（`remote_policy.rs`），执行记录写入审计日志并截断。
+
+### 5.2 验证
+
+- 全工作区 Rust 测试 1007 个通过；`miniq-cli` clippy `-D warnings` 通过；终端测试 22 个通过。
+- 真实 daemon PTY：`pty_smoke.py` 17/17、`pty_live.py` 12/12、`pty_new.py` 21/21（自定义状态栏、ctx 百分比、`/hooks`、`userPromptSubmit` 拦截、`stop` / `sessionStart` hook 实际执行、`/context`、审批后写文件 → `/undo` 删除文件并回填输入、`/compact`、`/keybindings`、`/statusline`、`/vim` 往返切换）。
+- 前端全量：203 个文件、1377 个测试全部通过；`tsc --noEmit` 通过。修复了高负载下懒加载和焦点时序导致的偶发失败（只改测试等待方式，不改产品代码）。
+
+### 5.3 仍未做与风险
+
+- IDE 集成未做。
+- 审批卡 2/3/4 选项仍未逐一实跑；问题卡等待时输入 `/命令` 会被当作答案。
+- `--full-auto` 等于 full-access；`config set` 整组提交；alwaysAsk 下 `echo` 不弹审批（daemon 既有策略）。
+- Hooks 以用户身份执行任意命令，风险与 Claude Code 相同，配置入口仅限本机。
+- `miniq-protocol` 等 crate 仍有 34 条既存 clippy 警告（CI 不强制）。
