@@ -163,7 +163,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "agent.message" => agents::message(state, req.params),
         "agent.stop" => agents::action(state, req.params, true).await,
         "session.diff" => session_diff::get(state, req.params),
-        "session.sendMessage" => session::send_message(state, req.params),
+        "session.sendMessage" => session::send_message(state, req.params).await,
         "session.rewriteMessage" => session::rewrite_message(state, req.params),
         "session.pause" => session::pause(state, req.params),
         "session.resume" => session::resume(state, req.params),
@@ -202,6 +202,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "settings.status" => settings::status(state),
         "settings.restoreBackup" => settings::restore_backup(state),
         "features.get" => settings::features_get(state),
+        "hooks.list" => settings::hooks_list(state),
         "features.set" => settings::features_set(state, req.params),
         "remote.status" => serde_json::to_value(crate::remote::status(state))
             .map_err(|error| RpcError::new(ErrorCode::InternalError, error.to_string())),

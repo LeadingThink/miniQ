@@ -39,6 +39,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("/history", "print the session transcript as JSON"),
     ("/mcp", "list MCP servers"),
     ("/skills", "list skills"),
+    ("/hooks", "list lifecycle hooks"),
     ("/agents", "list sub-agents of this session"),
     ("/clear", "clear the screen"),
     ("/exit", "leave (the session is kept)"),
@@ -329,6 +330,10 @@ pub async fn run(
             let result = client.call("mcp.list", json!({})).await?;
             list_names(repl, &result, &["servers", "mcpServers"], "MCP servers");
         }
+        "/hooks" => {
+            let result = client.call("hooks.list", json!({})).await?;
+            list_hooks(repl, &result);
+        }
         "/skills" => {
             // Include project skills: scope the listing to this session's workspace.
             let snapshot = client
@@ -490,6 +495,33 @@ fn usage(result: &Value) -> String {
         text.push_str(&format!(" · {unknown} call(s) without usage data"));
     }
     text
+}
+
+fn list_hooks(repl: &mut Repl, result: &Value) {
+    let hooks = result["hooks"].as_array().cloned().unwrap_or_default();
+    let mut text = String::new();
+    if result["enabled"] == json!(false) {
+        text.push_str("  (hooks feature flag is off)\n");
+    }
+    if hooks.is_empty() {
+        repl.info(&format!("{}No hooks.", text.trim_start()));
+        return;
+    }
+    for hook in hooks {
+        let event = hook["event"].as_str().unwrap_or("?");
+        let matcher = hook["matcher"].as_str().unwrap_or("*");
+        let disabled = if hook["enabled"] == json!(false) {
+            " (disabled)"
+        } else {
+            ""
+        };
+        let command = hook["command"].as_str().unwrap_or("");
+        text.push_str(&format!(
+            "  {event} [{matcher}]{disabled}  {}\n",
+            render::truncate(command, 100)
+        ));
+    }
+    repl.emit(&terminal_text(&text));
 }
 
 fn list_names(repl: &mut Repl, result: &Value, keys: &[&str], label: &str) {

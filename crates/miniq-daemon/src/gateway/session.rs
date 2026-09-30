@@ -53,6 +53,12 @@ pub(super) async fn create(state: &AppState, raw: Option<Value>) -> Result<Value
         session_id: session.id.clone(),
         status: session.status,
     });
+    crate::hooks::spawn_event(
+        state,
+        &session.id,
+        crate::hooks::HookEvent::SessionStart,
+        crate::hooks::HookPayload::default(),
+    );
     to_value(session)
 }
 
@@ -173,7 +179,7 @@ struct IncomingMessage {
     attachments: Vec<String>,
 }
 
-pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+pub(super) async fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: SendMessageParams = params(raw)?;
     let attachments = validate_message(state, &input.message)?;
     let content = input.message.content.trim().to_string();
@@ -181,6 +187,9 @@ pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value
         .store
         .get_session(&input.session_id)
         .map_err(store_err)?;
+    // userPromptSubmit runs before anything is persisted, queued or started,
+    // so a blocking hook leaves no trace besides its audit row.
+    user_prompt_submit_hooks(state, &input.session_id, &content).await?;
 
     let Some(cancel) = state.begin_turn(&input.session_id) else {
         if input.reject_if_busy {
@@ -220,6 +229,32 @@ pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value
     crate::session_titles::spawn(state, &input.session_id);
     crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
     to_value(json!({ "message": message }))
+}
+
+async fn user_prompt_submit_hooks(
+    state: &AppState,
+    session_id: &str,
+    prompt: &str,
+) -> Result<(), RpcError> {
+    use crate::hooks::{self, HookEvent};
+    if hooks::configured(state, HookEvent::UserPromptSubmit, None).is_empty() {
+        return Ok(());
+    }
+    let Some(context) = hooks::HookContext::for_session(state, session_id) else {
+        return Ok(());
+    };
+    let payload = hooks::HookPayload {
+        prompt: Some(prompt.to_string()),
+        ..Default::default()
+    };
+    let outcome = hooks::run_event(state, &context, HookEvent::UserPromptSubmit, payload).await;
+    match outcome.blocked {
+        Some(reason) => Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            format!("Blocked by userPromptSubmit hook: {reason}"),
+        )),
+        None => Ok(()),
+    }
 }
 
 #[derive(Deserialize)]

@@ -289,6 +289,15 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
         }
         state.end_turn(&session_id);
         state.run_turn_ended_hook(&session_id, outcome);
+        crate::hooks::spawn_event(
+            &state,
+            &session_id,
+            crate::hooks::HookEvent::Stop,
+            crate::hooks::HookPayload {
+                turn_status: Some(outcome.to_string()),
+                ..Default::default()
+            },
+        );
         if paused && state.take_turn_resume_request(&session_id) {
             state.resume_turn(&session_id);
             if let Some(cancel) = state.begin_turn(&session_id) {

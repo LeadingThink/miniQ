@@ -130,6 +130,7 @@ async fn run(cli: Cli) -> Result<u8> {
         }
         Some(Commands::Mcp { command }) => return subcommands::mcp(&mut client, command).await,
         Some(Commands::Skills { command: args::ListCommand::List { json } }) => return subcommands::skills(&mut client, json).await,
+        Some(Commands::Hooks { command: args::ListCommand::List { json } }) => return subcommands::hooks(&mut client, json).await,
         Some(Commands::Plugins { command: args::ListCommand::List { json } }) => return subcommands::plugins(&mut client, json).await,
         Some(Commands::Config { command }) => return subcommands::config(&mut client, command).await,
         Some(Commands::Diff { session, json }) => {

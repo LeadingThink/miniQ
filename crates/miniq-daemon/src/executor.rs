@@ -283,6 +283,13 @@ impl SessionToolExecutor {
             created_at: Some(created_at.into()),
         });
 
+        // User preToolUse hooks may veto the call (exit 2).
+        if let Some(reason) = self.pre_tool_use_hooks(call).await {
+            let output = json!({"error": format!("Blocked by preToolUse hook: {reason}")});
+            self.finish(tool_call_id, ToolCallStatus::Failed, &output);
+            return Ok(output);
+        }
+
         // ask_user is interactive: handled here, not by the router.
         if call.name == "ask_user" {
             if let Err(error) = miniq_tools::validate_ask_user_input(&call.arguments) {
@@ -329,16 +336,74 @@ impl SessionToolExecutor {
                     output["checkpointIds"] = json!(checkpoint_ids);
                 }
                 hooks::after_success(self, call, &output);
+                self.post_tool_use_hooks(call, &mut output).await;
                 self.finish(tool_call_id, ToolCallStatus::Succeeded, &output);
                 Ok(output)
             }
             Err(e) => {
                 // Tool errors are surfaced to the model, not fatal to the turn.
-                let output = json!({"error": e.to_string()});
+                let mut output = json!({"error": e.to_string()});
+                self.post_tool_use_hooks(call, &mut output).await;
                 self.finish(tool_call_id, ToolCallStatus::Failed, &output);
                 Ok(output)
             }
         }
+    }
+
+    fn user_hook_context(&self) -> crate::hooks::HookContext {
+        let workspace_id = self.ctx.workspace_id.clone().unwrap_or_else(|| {
+            self.state
+                .store
+                .get_session(&self.session_id)
+                .map(|session| session.workspace_id)
+                .unwrap_or_default()
+        });
+        crate::hooks::HookContext {
+            session_id: self.session_id.clone(),
+            workspace_id,
+            cwd: self.ctx.workspace.clone(),
+        }
+    }
+
+    /// Run user `preToolUse` hooks; `Some(reason)` means the call is blocked.
+    async fn pre_tool_use_hooks(&self, call: &ToolCallRequest) -> Option<String> {
+        use crate::hooks::{configured, run_event, HookEvent, HookPayload};
+        if configured(&self.state, HookEvent::PreToolUse, Some(&call.name)).is_empty() {
+            return None;
+        }
+        let payload = HookPayload {
+            tool_name: Some(call.name.clone()),
+            tool_input: Some(crate::security::redacted(call.arguments.clone())),
+            ..Default::default()
+        };
+        let context = self.user_hook_context();
+        run_event(&self.state, &context, HookEvent::PreToolUse, payload)
+            .await
+            .blocked
+    }
+
+    /// Run user `postToolUse` hooks; exit-2 stderr is appended as feedback.
+    async fn post_tool_use_hooks(&self, call: &ToolCallRequest, output: &mut Value) {
+        use crate::hooks::{configured, run_event, HookEvent, HookPayload};
+        if configured(&self.state, HookEvent::PostToolUse, Some(&call.name)).is_empty() {
+            return;
+        }
+        let payload = HookPayload {
+            tool_name: Some(call.name.clone()),
+            tool_input: Some(crate::security::redacted(call.arguments.clone())),
+            tool_output: Some(crate::security::redacted(output.clone())),
+            ..Default::default()
+        };
+        let context = self.user_hook_context();
+        let outcome = run_event(&self.state, &context, HookEvent::PostToolUse, payload).await;
+        if outcome.feedback.is_empty() {
+            return;
+        }
+        let feedback = format!("postToolUse hook feedback: {}", outcome.feedback.join("\n"));
+        if !output.is_object() {
+            *output = json!({ "result": output.take() });
+        }
+        output["hookFeedback"] = json!(feedback);
     }
 
     fn finish(&self, tool_call_id: &str, status: ToolCallStatus, output: &Value) {

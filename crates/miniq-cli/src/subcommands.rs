@@ -227,6 +227,50 @@ pub async fn skills(client: &mut Client, json: bool) -> Result<u8> {
     Ok(0)
 }
 
+pub async fn hooks(client: &mut Client, json: bool) -> Result<u8> {
+    let result = client.call("hooks.list", json!({})).await?;
+    if json {
+        return Ok(print_json(&result));
+    }
+    let hooks: Vec<Value> = result["hooks"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|mut hook| {
+            if hook["matcher"].is_null() {
+                hook["matcher"] = json!("*");
+            }
+            if hook["timeoutSecs"].is_null() {
+                hook["timeoutSecs"] = json!(30);
+            }
+            if hook["enabled"].is_null() {
+                hook["enabled"] = json!(true);
+            }
+            hook
+        })
+        .collect();
+    let rows = list_rows(
+        &Value::Array(hooks),
+        &["event", "matcher", "timeoutSecs", "enabled", "command"],
+    );
+    if result["enabled"] == json!(false) {
+        println!("Hooks feature flag is off; configured hooks do not run.");
+    }
+    if rows.is_empty() {
+        println!("No hooks configured.");
+    } else {
+        println!(
+            "{}",
+            table(
+                &["EVENT", "MATCHER", "TIMEOUT", "ENABLED", "COMMAND"],
+                &rows
+            )
+        );
+    }
+    Ok(0)
+}
+
 pub async fn plugins(client: &mut Client, json: bool) -> Result<u8> {
     let result = client.call("plugin.list", json!({})).await?;
     if json {
@@ -405,6 +449,18 @@ pub fn config_update(settings: &Value, key: &str, value: &str) -> Result<Value> 
         }
         "turnEndedCommand" => {
             json!({ "turnEndedCommand": if value.is_empty() { Value::Null } else { json!(value) } })
+        }
+        "hooks" => {
+            let hooks: Value = if value.trim().is_empty() {
+                json!([])
+            } else {
+                serde_json::from_str(value)
+                    .map_err(|error| anyhow::anyhow!("hooks must be a JSON array: {error}"))?
+            };
+            if !hooks.is_array() {
+                bail!("hooks must be a JSON array of {{event, matcher?, command, timeoutSecs?, enabled?}}");
+            }
+            json!({ "hooks": hooks })
         }
         key if key.to_ascii_lowercase().contains("key") => {
             bail!("API keys are set with `miniq configure` and cleared with `miniq logout`")
@@ -697,6 +753,26 @@ mod tests {
         assert!(config_update(&settings, "approvalMode", "sometimes").is_err());
         assert!(config_update(&settings, "provider.apiKey", "sk").is_err());
         assert!(config_update(&settings, "unknown", "x").is_err());
+    }
+
+    #[test]
+    fn config_update_parses_hooks_json_arrays() {
+        let settings = json!({});
+        assert_eq!(
+            config_update(
+                &settings,
+                "hooks",
+                r#"[{"event":"preToolUse","matcher":"shell_run","command":"./check.sh"}]"#
+            )
+            .unwrap(),
+            json!({"hooks":[{"event":"preToolUse","matcher":"shell_run","command":"./check.sh"}]})
+        );
+        assert_eq!(
+            config_update(&settings, "hooks", "").unwrap(),
+            json!({"hooks": []})
+        );
+        assert!(config_update(&settings, "hooks", "{not json").is_err());
+        assert!(config_update(&settings, "hooks", r#"{"event":"stop"}"#).is_err());
     }
 
     #[test]
