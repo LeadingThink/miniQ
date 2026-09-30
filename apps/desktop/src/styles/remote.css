@@ -578,7 +578,10 @@
     border-radius: 0;
   }
 
-  .statusbar {
+  /* .statusbar.app-toolbar (shell.css) is more specific than .statusbar, so
+     name it too or the desktop padding hides the Android status-bar inset. */
+  .statusbar,
+  .statusbar.app-toolbar {
     min-height: 50px;
     padding: max(8px, var(--safe-top)) max(12px, var(--safe-right)) 7px max(12px, var(--safe-left));
   }

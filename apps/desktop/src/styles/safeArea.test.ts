@@ -30,4 +30,18 @@ describe("safe area insets", () => {
       .map((path) => relative(srcRoot, path));
     expect(offenders).toEqual([]);
   });
+
+  it("keeps the mobile top bar below the status bar despite the app-toolbar rule", () => {
+    // shell.css styles `.statusbar.app-toolbar` with desktop padding; the mobile
+    // rule must match that specificity or the header slides under the status bar.
+    const shell = readFileSync(new URL("./shell.css", import.meta.url), "utf8");
+    expect(shell).toMatch(/\.statusbar\.app-toolbar\s*\{[^}]*padding/);
+    const remote = readFileSync(new URL("./remote.css", import.meta.url), "utf8");
+    const rule = remote.match(
+      /\.statusbar,\s*\.statusbar\.app-toolbar\s*\{([^}]*)\}/,
+    );
+    expect(rule?.[1]).toContain("max(8px, var(--safe-top))");
+    const shellIndex = readFileSync(new URL("./base.css", import.meta.url), "utf8");
+    expect(shellIndex).toMatch(/@import[^;]*shell\.css/);
+  });
 });
