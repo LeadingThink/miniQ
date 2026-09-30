@@ -5,7 +5,11 @@
 
 pub mod commands;
 pub mod editor;
+pub mod keymap;
+pub mod prefs;
 pub mod render;
+pub mod statusline;
+pub mod vim;
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, IsTerminal, Write};
@@ -72,6 +76,9 @@ pub(crate) struct Repl {
     drawn: Option<usize>,
     raw: bool,
     last_interrupt: Option<Instant>,
+    /// Directory holding `cli.json` (the daemon data directory).
+    pub prefs_dir: PathBuf,
+    pub statusline: statusline::StatusLine,
 }
 
 impl Repl {
@@ -100,6 +107,8 @@ impl Repl {
             drawn: None,
             raw: false,
             last_interrupt: None,
+            prefs_dir: PathBuf::new(),
+            statusline: statusline::StatusLine::new(None),
         }
     }
 
@@ -186,7 +195,34 @@ impl Repl {
         } else {
             parts.push("/ commands · @ files · ! shell · Shift+Tab mode".into());
         }
+        if let Some((text, replace)) = self.statusline.text() {
+            if replace {
+                // Keep the transient hint (last part), drop the built-in fields.
+                let hint = parts.pop().unwrap_or_default();
+                parts = vec![text.to_owned(), hint];
+            } else {
+                parts.push(text.to_owned());
+            }
+        }
+        if let Some(indicator) = editor.mode_indicator() {
+            parts.insert(0, indicator.to_owned());
+        }
         parts.join(" · ")
+    }
+
+    /// Inputs passed to the custom status line command.
+    fn status_input(&self) -> statusline::StatusInput {
+        statusline::StatusInput {
+            session_id: self.session.clone(),
+            session_title: self.statusline.title.clone(),
+            model: self.model.clone(),
+            effort: self.effort.clone(),
+            approval_mode: self.mode.clone(),
+            cwd: self.working_directory().display().to_string(),
+            queue_length: self.queue.len(),
+            attachments: self.files.len(),
+            running: self.running,
+        }
     }
 
     /// Draw prompt, completion menu and status bar below the scrollback.
@@ -194,6 +230,8 @@ impl Repl {
         if !self.raw {
             return;
         }
+        let input = self.status_input();
+        self.statusline.poll(input);
         self.hide();
         let columns = terminal::size()
             .map(|(c, _)| c.max(10) as usize)
@@ -775,6 +813,13 @@ pub async fn run(
 ) -> Result<u8> {
     let mut repl = Repl::new(session, options);
     let style = repl.style;
+    let prefs = prefs::Prefs::load_reporting(&client.directory);
+    let (keymap, warnings) = keymap::Keymap::new(&prefs.keybindings);
+    for warning in warnings {
+        eprintln!("miniq: warning: {warning}");
+    }
+    repl.prefs_dir = client.directory.clone();
+    repl.statusline = statusline::StatusLine::new(prefs.status_line.clone());
     repl.refresh(client).await;
     println!(
         "{} {}\n{}",
@@ -793,11 +838,17 @@ pub async fn run(
     let _restore = Restore;
     repl.enter_raw()?;
     repl.restore(&snapshot);
+    if let Some(title) = snapshot["session"]["title"].as_str() {
+        repl.statusline.title = title.to_owned();
+    }
     if repl.running {
         repl.info("This session is already running; following its output.");
     }
     let root = repl.working_directory();
-    let mut editor = Editor::new(commands::list(), root).with_history(history_path(client));
+    let mut editor = Editor::new(commands::list(), root)
+        .with_history(history_path(client))
+        .with_keymap(keymap);
+    editor.set_vim(prefs.editor_mode == prefs::EditorMode::Vim);
     if let Some(prompt) = initial {
         if let Some(code) = submit(&mut repl, &mut editor, client, prompt).await? {
             repl.suspend();
@@ -810,7 +861,7 @@ pub async fn run(
         let input = tokio::select! {
             key = next_key(&mut repl.keys) => Input::Terminal(key),
             event = client.next_event() => Input::Daemon(event),
-            _ = tick.tick(), if repl.running => Input::Tick,
+            _ = tick.tick(), if repl.running || repl.statusline.config().is_some() => Input::Tick,
         };
         let flow = match input {
             Input::Tick => None,
@@ -883,8 +934,12 @@ async fn key_event(
     client: &mut Client,
     mut key: KeyEvent,
 ) -> Result<Option<u8>> {
-    // In raw mode a bare LF (scripts, some terminals) arrives as Ctrl+J: treat it as Enter.
-    if key.code == KeyCode::Char('j') && key.modifiers == KeyModifiers::CONTROL {
+    // In raw mode a bare LF (scripts, some terminals) arrives as Ctrl+J: treat it as Enter
+    // unless the user rebound Ctrl+J.
+    if key.code == KeyCode::Char('j')
+        && key.modifiers == KeyModifiers::CONTROL
+        && editor.keymap().lookup(&key) == Some(keymap::Command::Submit)
+    {
         key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
     }
     repl.notice.clear();
