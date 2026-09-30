@@ -31,6 +31,6 @@ reqwest = { workspace = true }
 semver = { workspace = true }
 time = { workspace = true }
 tempfile = "3"
-crossterm = { version = "0.28", default-features = false, features = ["bracketed-paste", "events", "event-stream"] }
+crossterm = { version = "0.28", default-features = false, features = ["bracketed-paste", "events", "event-stream", "windows"] }
 unicode-width = "0.2"
 ignore = { workspace = true }
