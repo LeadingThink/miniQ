@@ -162,7 +162,13 @@ struct SendMessageParams {
     message: IncomingMessage,
     #[serde(default)]
     reject_if_busy: bool,
+    /// Optional model-step budget for the turn started by this message.
+    #[serde(default)]
+    max_turns: Option<usize>,
 }
+
+/// Upper bound for `maxTurns`; larger budgets are indistinguishable from none.
+const MAX_TURN_STEPS: usize = 1_000;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -175,6 +181,15 @@ struct IncomingMessage {
 
 pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: SendMessageParams = params(raw)?;
+    if input
+        .max_turns
+        .is_some_and(|max| max == 0 || max > MAX_TURN_STEPS)
+    {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            format!("maxTurns must be between 1 and {MAX_TURN_STEPS}"),
+        ));
+    }
     let attachments = validate_message(state, &input.message)?;
     let content = input.message.content.trim().to_string();
     state
@@ -218,6 +233,7 @@ pub(super) fn send_message(state: &AppState, raw: Option<Value>) -> Result<Value
         return Err(error);
     }
     crate::session_titles::spawn(state, &input.session_id);
+    state.set_turn_step_limit(&input.session_id, input.max_turns);
     crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
     to_value(json!({ "message": message }))
 }

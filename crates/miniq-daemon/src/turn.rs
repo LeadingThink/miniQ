@@ -164,7 +164,7 @@ fn restore_conversation(
     history
 }
 
-fn history_for_turn(
+pub(crate) fn history_for_turn(
     messages: &[Message],
     snapshot: Option<miniq_memory::ModelContextSnapshot>,
     skills_block: &str,
@@ -175,7 +175,7 @@ fn history_for_turn(
     history
 }
 
-fn context_policy() -> ContextPolicy {
+pub(crate) fn context_policy() -> ContextPolicy {
     let mut policy = ContextPolicy::default();
     if let Ok(value) = std::env::var("MINIQ_CONTEXT_TOKENS") {
         if let Ok(tokens) = value.parse::<usize>() {
@@ -206,6 +206,8 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
     tokio::spawn(async move {
         let clock = crate::turn_clock::TurnClock::start(&state, &session_id);
         let result = execute_turn(&state, &session_id, cancel).await;
+        // A budget is one-shot even when the turn failed before using it.
+        state.take_turn_step_limit(&session_id);
         let paused =
             matches!(result, Err(TurnError::Cancelled)) && state.is_turn_paused(&session_id);
         let (outcome, timing_status) = match &result {
@@ -588,6 +590,7 @@ async fn execute_turn(
             .find(|message| message.role == Role::User)
             .map(|message| message.id.clone()),
     );
+    let max_steps = state.take_turn_step_limit(session_id);
     let outcome = run_turn_with_limits(
         &provider,
         &executor,
@@ -597,6 +600,7 @@ async fn execute_turn(
         RunLimits {
             checkpoint: Some(checkpoint.clone()),
             context_policy: context_policy(),
+            max_steps,
             ..RunLimits::default()
         },
     )

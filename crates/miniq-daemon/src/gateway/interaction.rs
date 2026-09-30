@@ -127,7 +127,7 @@ pub(super) fn rollback_checkpoint(state: &AppState, raw: Option<Value>) -> Resul
     }))
 }
 
-fn restore_checkpoint(checkpoint: &miniq_memory::CheckpointRow) -> Result<(), RpcError> {
+pub(super) fn restore_checkpoint(checkpoint: &miniq_memory::CheckpointRow) -> Result<(), RpcError> {
     let target = Path::new(&checkpoint.abs_path);
     if checkpoint.existed {
         let backup = checkpoint.backup_path.as_deref().ok_or_else(|| {

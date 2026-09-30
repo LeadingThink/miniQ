@@ -24,6 +24,12 @@ const COMMANDS: &[(&str, &str)] = &[
     ("/new", "start a new session"),
     ("/resume", "switch to another session"),
     ("/fork", "fork this session at the latest message"),
+    (
+        "/undo",
+        "remove the last prompt and its reply, restore edited files",
+    ),
+    ("/compact", "summarize the conversation now to free context"),
+    ("/context", "estimated context window usage"),
     ("/rename", "rename this session"),
     ("/diff", "show files changed in this session"),
     ("/copy", "copy the last answer to the clipboard"),
@@ -142,6 +148,54 @@ pub async fn run(
             };
             let id = crate::sessions::prepare(client, &repl.options, Some(&id)).await?;
             switch(repl, client, &id).await?;
+        }
+        "/undo" => {
+            idle(repl)?;
+            let result = client
+                .call("session.undo", json!({"sessionId":session}))
+                .await?;
+            let prompt = result["removedMessage"]["content"].as_str().unwrap_or("");
+            let restored = result["restoredFiles"].as_array().map_or(0, Vec::len);
+            let mut text = format!("Undid the last prompt; restored {restored} file(s).");
+            if let Some(failed) = result["failedFiles"].as_array().filter(|f| !f.is_empty()) {
+                text.push_str(&format!(" {} file(s) could not be restored.", failed.len()));
+            }
+            repl.info(&text);
+            if !prompt.is_empty() && editor.is_empty() {
+                editor.set_buffer(prompt);
+            }
+            repl.context_stale = true;
+        }
+        "/compact" => {
+            idle(repl)?;
+            repl.info("Compacting context…");
+            let result = client
+                .call("session.compact", json!({"sessionId":session}))
+                .await?;
+            let before = result["estimatedTokensBefore"].as_u64().unwrap_or(0);
+            let after = result["estimatedTokensAfter"].as_u64().unwrap_or(0);
+            if result["compacted"] == true {
+                repl.info(&format!("Context compacted: ~{before} → ~{after} tokens."));
+            } else {
+                repl.info("Nothing to compact yet.");
+            }
+            repl.context_stale = true;
+        }
+        "/context" => {
+            let usage = client
+                .call("session.contextUsage", json!({"sessionId":session}))
+                .await?;
+            let used = usage["estimatedTokens"].as_u64().unwrap_or(0);
+            let text = match usage["contextWindowTokens"].as_u64() {
+                Some(window) => format!(
+                    "Context: ~{used} / {window} tokens ({:.0}%) · auto-compacts near ~{} tokens",
+                    usage["percentUsed"].as_f64().unwrap_or(0.0),
+                    usage["autoCompactTokens"].as_u64().unwrap_or(0)
+                ),
+                None => format!("Context: ~{used} tokens (model window unknown)"),
+            };
+            repl.context_percent = usage["percentUsed"].as_f64();
+            repl.info(&text);
         }
         "/fork" => {
             idle(repl)?;
@@ -357,7 +411,6 @@ pub async fn run(
             );
             let _ = out.flush();
         }
-        "/compact" => repl.info("/compact is not available: miniQ compacts context automatically."),
         _ => repl.info("Unknown or incomplete command. /help lists commands."),
     }
     Ok(None)
@@ -373,6 +426,8 @@ fn idle(repl: &Repl) -> Result<()> {
 async fn switch(repl: &mut Repl, client: &mut Client, id: &str) -> Result<()> {
     let snapshot = client.call("session.open", json!({"sessionId":id})).await?;
     repl.session = id.to_owned();
+    repl.context_percent = None;
+    repl.context_stale = true;
     repl.last_answer.clear();
     repl.restore(&snapshot);
     repl.refresh(client).await;
@@ -545,12 +600,14 @@ mod tests {
     }
 
     #[test]
-    fn commands_are_unique_and_have_no_compact() {
+    fn commands_are_unique_and_include_context_tools() {
         let names: Vec<_> = COMMANDS.iter().map(|c| c.0).collect();
         let mut sorted = names.clone();
         sorted.sort();
         sorted.dedup();
         assert_eq!(sorted.len(), names.len());
-        assert!(!names.contains(&"/compact"));
+        for name in ["/undo", "/compact", "/context"] {
+            assert!(names.contains(&name), "{name}");
+        }
     }
 }

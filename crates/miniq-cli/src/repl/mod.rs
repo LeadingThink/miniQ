@@ -60,6 +60,10 @@ pub(crate) struct Repl {
     pub last_answer: String,
     pub cards: VecDeque<Card>,
     pub notice: String,
+    /// Latest `session.contextUsage` percentage, when the daemon reports one.
+    pub context_percent: Option<f64>,
+    /// Context usage must be re-read once the session is idle.
+    pub context_stale: bool,
     markdown: Markdown,
     streamed: String,
     tools: HashMap<String, String>,
@@ -87,6 +91,8 @@ impl Repl {
             last_answer: String::new(),
             cards: VecDeque::new(),
             notice: String::new(),
+            context_percent: None,
+            context_stale: true,
             markdown: Markdown::default(),
             streamed: String::new(),
             tools: HashMap::new(),
@@ -153,6 +159,9 @@ impl Repl {
             format!("effort {}", self.effort),
             self.mode.clone(),
         ];
+        if let Some(percent) = self.context_percent {
+            parts.push(format!("ctx {percent:.0}%"));
+        }
         if !self.files.is_empty() {
             parts.push(format!("{} attachment(s)", self.files.len()));
         }
@@ -293,6 +302,16 @@ impl Repl {
                 self.mode = mode.to_owned();
             }
         }
+    }
+
+    /// Re-read the estimated context occupancy (older daemons: silently none).
+    pub async fn refresh_context(&mut self, client: &mut Client) {
+        self.context_stale = false;
+        self.context_percent = client
+            .call("session.contextUsage", json!({"sessionId":self.session}))
+            .await
+            .ok()
+            .and_then(|usage| usage["percentUsed"].as_f64());
     }
 
     /// Apply a `session.open` snapshot (startup, reconnect, resume, fork).
@@ -481,7 +500,13 @@ impl Repl {
                     self.phase = terminal_text(phase);
                 }
             }
-            "context_compacted" => self.info("[context compacted]"),
+            "context_compacted" => {
+                let before = event["estimatedTokensBefore"].as_u64().unwrap_or(0);
+                let after = event["estimatedTokensAfter"].as_u64().unwrap_or(0);
+                self.info(&format!("[context compacted: ~{before} → ~{after} tokens]"));
+                self.context_stale = true;
+            }
+            "session_rewritten" => self.context_stale = true,
             "artifact_created" => {
                 let name = event["artifact"]["name"]
                     .as_str()
@@ -547,6 +572,7 @@ impl Repl {
     }
 
     fn finish_turn(&mut self, elapsed: Duration, status: &str) {
+        self.context_stale = true;
         self.running = false;
         self.started = None;
         self.phase.clear();
@@ -576,14 +602,13 @@ impl Repl {
             self.streamed.clear();
             return Ok(());
         }
-        let result = client
-            .call(
-                "session.sendMessage",
-                json!({"sessionId":self.session, "rejectIfBusy":false,
-                    "message":{"role":"user","content":text,
-                    "attachments":crate::sessions::attachments(&files)?}}),
-            )
-            .await?;
+        let mut params = json!({"sessionId":self.session, "rejectIfBusy":false,
+            "message":{"role":"user","content":text,
+            "attachments":crate::sessions::attachments(&files)?}});
+        if let Some(limit) = client.max_turns {
+            params["maxTurns"] = json!(limit);
+        }
+        let result = client.call("session.sendMessage", params).await?;
         self.files.clear();
         let queued = [
             &result["queued"]["id"],
@@ -690,6 +715,7 @@ fn copy_options(options: &crate::args::ChatOptions) -> crate::args::ChatOptions 
         approval: options.approval,
         full_auto: options.full_auto,
         dangerously_bypass_approvals: options.dangerously_bypass_approvals,
+        max_turns: options.max_turns,
     }
 }
 
@@ -807,6 +833,9 @@ pub async fn run(
         };
         if let Some(code) = flow {
             break code;
+        }
+        if repl.context_stale && !repl.running {
+            repl.refresh_context(client).await;
         }
     };
     repl.hide();

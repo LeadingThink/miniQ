@@ -149,6 +149,9 @@ pub struct ChatOptions {
     /// Alias for `--approval full-access`. RISK: the model may edit, delete and execute unattended.
     #[arg(long, global = true, conflicts_with = "approval")]
     pub dangerously_bypass_approvals: bool,
+    /// Stop each turn after at most N agent steps (model requests), 1-1000.
+    #[arg(long, global = true, value_name = "N", value_parser = clap::value_parser!(u16).range(1..=1000))]
+    pub max_turns: Option<u16>,
 }
 
 impl ChatOptions {
@@ -524,6 +527,11 @@ mod tests {
         );
         assert!(Cli::try_parse_from(["miniq", "resume", "sess-1", "--last"]).is_err());
         assert!(Cli::try_parse_from(["miniq", "--effort", "invalid"]).is_err());
+        let limited = Cli::try_parse_from(["miniq", "exec", "x", "--max-turns", "5"]).unwrap();
+        assert_eq!(limited.chat.max_turns, Some(5));
+        assert!(Cli::try_parse_from(["miniq", "--max-turns", "12"]).is_ok());
+        assert!(Cli::try_parse_from(["miniq", "exec", "x", "--max-turns", "0"]).is_err());
+        assert!(Cli::try_parse_from(["miniq", "exec", "x", "--max-turns", "1001"]).is_err());
         assert!(Cli::try_parse_from(["miniq", "history", "s", "--limit", "101"]).is_err());
         let configured =
             Cli::try_parse_from(["miniq", "configure", "--model", "custom-model"]).unwrap();

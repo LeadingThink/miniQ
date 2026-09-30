@@ -74,6 +74,7 @@ async fn run(cli: Cli) -> Result<u8> {
     }
     let directory = cli.data_dir.clone().unwrap_or_else(miniq_local::data_dir);
     let mut client = client::ensure(&directory, cli.daemon_path.as_deref(), cli.no_start).await?;
+    client.max_turns = cli.chat.max_turns;
     let result = match cli.command {
         Some(Commands::Bridge) => {
             bridge::run(client).await?;

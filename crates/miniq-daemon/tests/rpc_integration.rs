@@ -24,6 +24,9 @@ mod catalog_changes;
 #[path = "rpc_integration/list_summaries.rs"]
 mod list_summaries;
 
+#[path = "rpc_integration/session_context.rs"]
+mod session_context;
+
 async fn start_daemon() -> (u16, String) {
     start_daemon_with(std::sync::Arc::new(miniq_models::mock::MockProvider::text(
         "hello from mock",

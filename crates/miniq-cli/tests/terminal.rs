@@ -128,6 +128,17 @@ impl Fixture {
                             {"id":"user-2","role":"user","content":"q"},
                             {"id":"answer-1","role":"assistant","content":"b"}],"toolCalls":[],"nextCursor":null}),
                         "session.fork" => json!({"id":"session-2","title":"fork"}),
+                        "session.contextUsage" => {
+                            json!({"estimatedTokens":1200,"contextWindowTokens":200000,
+                            "autoCompactTokens":160000,"percentUsed":0.6,"lastRequestTokens":1100})
+                        }
+                        "session.compact" => {
+                            json!({"compacted":true,"estimatedTokensBefore":1200,"estimatedTokensAfter":300})
+                        }
+                        "session.undo" => {
+                            json!({"removedMessage":{"id":"user-1","role":"user","content":"hello"},
+                            "removedMessageIds":["user-1","answer-1"],"restoredFiles":[{"path":"a.txt"}],"failedFiles":[]})
+                        }
                         "session.diff" => {
                             json!({"files":[{"path":"a.txt","oldExists":true,"newExists":true,"binary":false,
                             "additions":1,"deletions":1,"hunks":[{"oldStart":1,"oldLines":1,"newStart":1,"newLines":1,

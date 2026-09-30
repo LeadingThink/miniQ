@@ -188,6 +188,9 @@ pub struct AppState {
     pub(crate) active_turns: Arc<Mutex<HashMap<String, ActiveTurn>>>,
     /// Sessions whose active turn was interrupted for a user-requested pause.
     pub(crate) paused_turns: Arc<Mutex<HashSet<String>>>,
+    /// One-shot model-step budgets requested by `session.sendMessage`
+    /// (`maxTurns`). Consumed by the next turn of that session.
+    pub(crate) turn_step_limits: Arc<Mutex<HashMap<String, usize>>>,
     /// Resume requests received while the paused turn is still cleaning up.
     pub(crate) pending_turn_resumes: Arc<Mutex<HashSet<String>>>,
     pub(crate) activity: crate::activity::ActivityGate,
@@ -297,6 +300,7 @@ impl AppState {
             ssh_hosts,
             active_turns: Arc::new(Mutex::new(HashMap::new())),
             paused_turns: Arc::new(Mutex::new(HashSet::new())),
+            turn_step_limits: Arc::new(Mutex::new(HashMap::new())),
             pending_turn_resumes: Arc::new(Mutex::new(HashSet::new())),
             activity: crate::activity::ActivityGate::default(),
             share_uploads: Arc::new(tokio::sync::Semaphore::new(2)),
@@ -724,6 +728,23 @@ impl AppState {
 
     pub fn end_turn(&self, session_id: &str) {
         self.active_turns.lock().unwrap().remove(session_id);
+    }
+
+    /// Limit the next turn of `session_id` to `max_steps` model requests.
+    pub fn set_turn_step_limit(&self, session_id: &str, max_steps: Option<usize>) {
+        let mut limits = self.turn_step_limits.lock().unwrap();
+        match max_steps {
+            Some(max_steps) => {
+                limits.insert(session_id.to_string(), max_steps);
+            }
+            None => {
+                limits.remove(session_id);
+            }
+        }
+    }
+
+    pub fn take_turn_step_limit(&self, session_id: &str) -> Option<usize> {
+        self.turn_step_limits.lock().unwrap().remove(session_id)
     }
 
     pub fn cancel_turn(&self, session_id: &str) -> bool {

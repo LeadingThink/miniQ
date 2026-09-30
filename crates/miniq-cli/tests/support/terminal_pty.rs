@@ -99,6 +99,44 @@ async fn up_arrow_recalls_previous_prompt_in_session() {
 }
 
 #[tokio::test]
+async fn context_compact_and_undo_commands_drive_the_session() {
+    let fixture = Fixture::new("success").await;
+    let transcript = fixture
+        .run_terminal_with_term(
+            &["--max-turns", "7"],
+            &[
+                ("miniq>", "hello\n"),
+                ("miniq>", "/context\n"),
+                ("auto-compacts", "/compact\n"),
+                ("Context compacted", "/undo\n"),
+                ("Undid the last prompt", "\x15/exit\n"),
+            ],
+            "xterm-256color",
+        )
+        .await;
+    assert!(transcript.contains("restored 1 file(s)"), "{transcript}");
+    let requests = fixture.requests.lock().unwrap();
+    let send = requests
+        .iter()
+        .find(|request| request["method"] == "session.sendMessage")
+        .unwrap();
+    assert_eq!(send["params"]["maxTurns"], 7);
+    for method in ["session.contextUsage", "session.compact", "session.undo"] {
+        let request = requests
+            .iter()
+            .find(|request| request["method"] == method)
+            .unwrap_or_else(|| panic!("missing {method}"));
+        assert_eq!(request["params"]["sessionId"], "session-1");
+    }
+    // The prompt restored into the editor after /undo is cleared, not resent.
+    let sends = requests
+        .iter()
+        .filter(|request| request["method"] == "session.sendMessage")
+        .count();
+    assert_eq!(sends, 1);
+}
+
+#[tokio::test]
 async fn guided_setup_hides_key_searches_models_then_starts_chat() {
     let fixture = Fixture::new("unconfigured").await;
     let transcript = fixture

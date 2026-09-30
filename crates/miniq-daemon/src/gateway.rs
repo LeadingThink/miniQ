@@ -21,6 +21,7 @@ mod schedule;
 mod session;
 mod session_approval;
 mod session_attention;
+mod session_context;
 mod session_diff;
 mod session_goal;
 mod session_history;
@@ -165,6 +166,9 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.diff" => session_diff::get(state, req.params),
         "session.sendMessage" => session::send_message(state, req.params),
         "session.rewriteMessage" => session::rewrite_message(state, req.params),
+        "session.undo" => session_context::undo(state, req.params),
+        "session.compact" => session_context::compact(state, req.params).await,
+        "session.contextUsage" => session_context::context_usage(state, req.params).await,
         "session.pause" => session::pause(state, req.params),
         "session.resume" => session::resume(state, req.params),
         "session.cancel" => session::cancel(state, req.params).await,
