@@ -150,7 +150,7 @@ async fn skill_import_rpc_installs_and_updates_a_package() {
     std::fs::create_dir_all(skill.join("scripts")).unwrap();
     std::fs::write(
         skill.join("SKILL.md"),
-        "---\nname: document-workflow\ndescription: imported docs\nversion: 2\n---\n\nUse doc_read.\n",
+        "---\nname: document-workflow\ndisplayName: 文档工作流\ndescription: imported docs\nversion: 2\n---\n\nUse doc_read.\n",
     )
     .unwrap();
     std::fs::write(skill.join("scripts/check.sh"), "echo ok").unwrap();
@@ -167,6 +167,10 @@ async fn skill_import_rpc_installs_and_updates_a_package() {
         "document-workflow"
     );
     assert_eq!(response["result"]["imported"][0]["version"], 2);
+    assert_eq!(
+        response["result"]["imported"][0]["displayName"],
+        "文档工作流"
+    );
     let detail = call(
         &mut ws,
         "read-imported",
@@ -174,7 +178,50 @@ async fn skill_import_rpc_installs_and_updates_a_package() {
         json!({"name": "document-workflow"}),
     )
     .await;
+    let listed = call(&mut ws, "list-imported", "skill.list", json!({})).await;
+    let listed_skill = listed["result"]["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|skill| skill["name"] == "document-workflow")
+        .unwrap();
+    assert_eq!(listed_skill["displayName"], "文档工作流");
+    assert_eq!(detail["result"]["displayName"], "文档工作流");
     assert_eq!(detail["result"]["files"][0], "scripts/check.sh");
+
+    // Older packages omit the optional label in both RPC response shapes.
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\nname: document-workflow\ndescription: legacy docs\nversion: 3\n---\nLegacy body.\n",
+    )
+    .unwrap();
+    let updated = call(
+        &mut ws,
+        "import-legacy",
+        "skill.import",
+        json!({"path": package.path().to_string_lossy()}),
+    )
+    .await;
+    assert!(updated.get("error").is_none());
+    let legacy_list = call(&mut ws, "list-legacy", "skill.list", json!({})).await;
+    let legacy_skill = legacy_list["result"]["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|skill| skill["name"] == "document-workflow")
+        .unwrap();
+    assert_eq!(legacy_skill["version"], 3);
+    assert!(legacy_skill.get("displayName").is_none());
+    let legacy_read = call(
+        &mut ws,
+        "read-legacy",
+        "skill.read",
+        json!({"name": "document-workflow"}),
+    )
+    .await;
+    assert_eq!(legacy_read["result"]["name"], "document-workflow");
+    assert_eq!(legacy_read["result"]["version"], 3);
+    assert!(legacy_read["result"].get("displayName").is_none());
 }
 
 #[tokio::test]
