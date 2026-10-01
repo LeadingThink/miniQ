@@ -172,6 +172,25 @@ function sidebarProps(overrides: Partial<ComponentProps<typeof Sidebar>> = {}): 
   };
 }
 
+describe("desktop Sidebar footer", () => {
+  it("keeps routine actions in the account menu and surfaces updates that need attention", () => {
+    const onImportSessions = vi.fn();
+    const onCheckForUpdates = vi.fn();
+    const props = sidebarProps({ onImportSessions, onCheckForUpdates, updateSupported: true });
+    const rendered = render(<Sidebar {...props} />);
+    expect(screen.queryByRole("button", { name: "导入会话" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "检查更新" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "导入会话" }));
+    expect(onImportSessions).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "检查更新" }));
+    expect(onCheckForUpdates).toHaveBeenCalledOnce();
+    rendered.rerender(<Sidebar {...props} updateState={{ phase: "available", version: "9.9.9", downloadedBytes: 0, totalBytes: null, error: null }} />);
+    expect(screen.getByRole("button", { name: "更新至 v9.9.9" })).not.toBeNull();
+  });
+});
+
 describe("Sidebar navigation", () => {
   it("preserves project collapse across remounts and reveals a newly selected session", () => {
     const props = sidebarProps();
@@ -317,9 +336,10 @@ describe("mobile Sidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "已安排" }));
     expect(onShowSchedule).toHaveBeenCalledOnce();
     expect(screen.getByRole("button", { name: "导入会话" })).not.toBeNull();
-    expect(screen.getByRole("button", { name: "技能" })).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "收起功能" }));
+    expect(screen.getByRole("button", { name: "反馈" })).not.toBeNull();
     expect(screen.queryByRole("button", { name: "技能" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "收起功能" }));
+    expect(screen.queryByRole("button", { name: "导入会话" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "关闭项目与会话侧栏" }));
     expect(onClose).toHaveBeenCalledOnce();
   });

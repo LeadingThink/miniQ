@@ -17,19 +17,19 @@
   display: inline-flex;
   align-items: baseline;
   gap: 3px;
-  font-size: 11px;
+  font-size: var(--font-caption);
   color: var(--text-mid);
 }
 
 .agent-stat strong {
-  font-size: 12px;
+  font-size: var(--font-footnote);
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-.agent-stat-active strong { color: var(--accent, #3b82f6); }
-.agent-stat-completed strong { color: var(--ok, #2caa70); }
-.agent-stat-failed strong { color: var(--danger, #c4364b); }
+.agent-stat-active strong { color: var(--accent); }
+.agent-stat-completed strong { color: var(--ok); }
+.agent-stat-failed strong { color: var(--danger); }
 
 .agent-summary-segments {
   display: flex;
@@ -37,7 +37,7 @@
   height: 6px;
   gap: 2px;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border);
 }
 
@@ -46,16 +46,16 @@
   height: 100%;
 }
 
-.agent-summary-segment.active { background: var(--accent, #3b82f6); }
-.agent-summary-segment.completed { background: var(--ok, #2caa70); }
-.agent-summary-segment.failed { background: var(--danger, #c4364b); }
+.agent-summary-segment.active { background: var(--accent); }
+.agent-summary-segment.completed { background: var(--ok); }
+.agent-summary-segment.failed { background: var(--danger); }
 .agent-summary-segment.other { background: var(--text-mid); }
 
 .agent-summary-progress {
   max-width: 260px;
   overflow: hidden;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -63,7 +63,7 @@
 .agent-refresh-hint {
   display: block;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 
 .agent-panel-toggle {
@@ -77,28 +77,133 @@
   gap: 6px;
   max-width: 100%;
   margin: 4px 24px 8px;
-  padding: 5px 9px;
+  padding: 3px 9px 3px 4px;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface, var(--bg));
+  border-radius: var(--radius-pill);
+  background: var(--bg);
   color: var(--text-mid);
-  font-size: 11px;
+  font-size: var(--font-caption);
   text-align: left;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: border-color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
 }
 
 .agent-status-indicator:hover,
-.agent-status-indicator:focus-visible {
-  border-color: var(--accent, #3b82f6);
-  background: var(--surface-raised, var(--bg));
+.agent-status-indicator:focus-within {
+  border-color: var(--accent);
+  background: var(--bg);
 }
 
-.agent-status-indicator-label { color: var(--text); font-weight: 600; }
+.agent-status-indicator-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-status-indicator-main:focus-visible,
+.agent-avatar-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+.agent-status-sentence {
+  flex: 0 1 auto;
+  flex-shrink: 0;
+  overflow: hidden;
+  min-width: 6em;
+  max-width: 320px;
+  color: var(--text-mid);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-status-name { color: var(--text); font-weight: 600; }
+.agent-status-indicator-main:hover .agent-status-name { text-decoration: underline; text-underline-offset: 2px; }
+.agent-status-counts { display: inline-flex; flex: none; align-items: center; gap: 6px; }
+/* The phase text is the least important part: it yields space to the named children first. */
+.agent-status-indicator-main .agent-status-indicator-phase { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-status-open-icon { flex: none; color: var(--text-dim); }
+
+/* Seeded agent identity (ChatGPT-style): one stable tone per agent id.
+   Token exception: the 8 tones below are a fixed categorical identity palette
+   (not UI state), mixed with var(--bg) so they adapt to every theme. */
+.agent-avatar {
+  --agent-tone: #3b82f6;
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--agent-tone) 16%, var(--bg));
+  color: var(--agent-tone);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--agent-tone) 35%, transparent);
+  font-size: var(--font-caption);
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+.agent-avatar[data-tone="0"], .agent-status-name[data-tone="0"] { --agent-tone: #3b82f6; }
+.agent-avatar[data-tone="1"], .agent-status-name[data-tone="1"] { --agent-tone: #8b5cf6; }
+.agent-avatar[data-tone="2"], .agent-status-name[data-tone="2"] { --agent-tone: #0d9488; }
+.agent-avatar[data-tone="3"], .agent-status-name[data-tone="3"] { --agent-tone: #d97706; }
+.agent-avatar[data-tone="4"], .agent-status-name[data-tone="4"] { --agent-tone: #db2777; }
+.agent-avatar[data-tone="5"], .agent-status-name[data-tone="5"] { --agent-tone: #0891b2; }
+.agent-avatar[data-tone="6"], .agent-status-name[data-tone="6"] { --agent-tone: #65a30d; }
+.agent-avatar[data-tone="7"], .agent-status-name[data-tone="7"] { --agent-tone: #dc5f3c; }
+.agent-avatar[data-state]::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid var(--bg);
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.agent-avatar[data-state="active"]::after { background: var(--accent); animation: agent-avatar-pulse 1.6s ease-in-out infinite; }
+.agent-avatar[data-state="completed"]::after { background: var(--ok); }
+.agent-avatar[data-state="failed"]::after { background: var(--danger); }
+.agent-avatar[data-state="waiting"]::after { background: var(--warn); }
+@keyframes agent-avatar-pulse { 50% { opacity: 0.35; } }
+.agent-avatar-stack { display: inline-flex; align-items: center; flex: none; }
+.agent-avatar-button {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.agent-avatar-button + .agent-avatar-button { margin-left: -5px; }
+.agent-avatar-stack .agent-avatar { box-shadow: 0 0 0 1.5px var(--bg); }
+.agent-avatar-button:hover { position: relative; z-index: 1; transform: translateY(-1px); }
+
+.agent-panel-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 8px 2px 2px;
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+  font-weight: 600;
+}
+.agent-final-response-label { color: var(--text-dim); font-size: var(--font-caption); font-weight: 600; }
+.agent-row.focused { outline: 1px solid var(--accent); outline-offset: -1px; border-radius: var(--radius); }
+
 .agent-status-chip { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
-.agent-status-chip.running { color: var(--accent, #3b82f6); }
-.agent-status-chip.waiting { color: var(--warning, #b7791f); }
-.agent-status-chip.failed { color: var(--danger, #c4364b); }
-.agent-status-chip.completed { color: var(--ok, #2caa70); }
+.agent-status-chip.running { color: var(--accent); }
+.agent-status-chip.waiting { color: var(--warn); }
+.agent-status-chip.failed { color: var(--danger); }
+.agent-status-chip.completed { color: var(--ok); }
 .agent-status-indicator-phase {
   overflow: hidden;
   max-width: 240px;
@@ -117,6 +222,7 @@
   .agent-summary-progress { max-width: 100%; }
   .agent-status-indicator { margin-left: 12px; margin-right: 12px; }
   .agent-status-indicator-phase { display: none; }
+  .agent-status-sentence { max-width: 180px; }
 }
 
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
@@ -138,9 +244,9 @@
   }
   .native-mobile .agent-panel-toggle .agent-stat {
     gap: 2px;
-    font-size: 10px;
+    font-size: var(--font-caption);
   }
-  .native-mobile .agent-panel-toggle .agent-stat strong { font-size: 11px; }
+  .native-mobile .agent-panel-toggle .agent-stat strong { font-size: var(--font-caption); }
   .native-mobile .agent-panel-toggle .agent-summary-segments { width: 40px; height: 5px; flex: none; }
   .native-mobile .agent-panel-toggle .agent-summary-progress { display: none; }
   .native-mobile .conversation-context .agent-status-indicator { display: none; }

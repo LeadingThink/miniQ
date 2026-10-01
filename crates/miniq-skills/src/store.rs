@@ -38,6 +38,8 @@ pub enum SkillSource {
     Project,
     User,
     Bundled,
+    /// Contributed by an enabled skills plugin (bundled or installed).
+    Plugin,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -83,6 +85,9 @@ pub struct SkillStore {
     /// State file with the disabled set.
     state_path: PathBuf,
     bundled: Vec<BundledSkill>,
+    /// Skill directories contributed by enabled plugins, refreshed by the
+    /// daemon whenever the plugin set changes.
+    plugin_dirs: Mutex<Vec<PathBuf>>,
     disabled: Mutex<HashSet<String>>,
 }
 
@@ -104,12 +109,18 @@ impl SkillStore {
             user_root: data_dir.join("skills"),
             state_path,
             bundled,
+            plugin_dirs: Mutex::new(Vec::new()),
             disabled: Mutex::new(disabled),
         }
     }
 
     pub fn user_root(&self) -> &Path {
         &self.user_root
+    }
+
+    /// Replace the set of skill directories contributed by enabled plugins.
+    pub fn set_plugin_skill_dirs(&self, dirs: Vec<PathBuf>) {
+        *self.plugin_dirs.lock().unwrap() = dirs;
     }
 
     /// Discover all skills visible for a workspace, applying shadowing.
@@ -133,6 +144,12 @@ impl SkillStore {
                         dir: None,
                     },
                 );
+            }
+        }
+        for dir in self.plugin_dirs.lock().unwrap().iter() {
+            if let Some(skill) = load_skill_dir(dir, SkillSource::Plugin) {
+                let enabled = !disabled.contains(&skill.meta.name);
+                by_name.insert(skill.meta.name.clone(), Skill { enabled, ..skill });
             }
         }
         for skill in scan_root(&self.user_root, SkillSource::User) {
@@ -336,40 +353,37 @@ fn scan_root(root: &Path, source: SkillSource) -> Vec<Skill> {
     let Ok(entries) = std::fs::read_dir(root) else {
         return Vec::new();
     };
-    let mut skills = Vec::new();
-    for entry in entries.flatten() {
-        let dir = entry.path();
-        if !dir.is_dir() {
-            continue;
-        }
-        // Refuse symlinked skill dirs (guard against escaping the root).
-        if std::fs::symlink_metadata(&dir)
-            .map(|m| m.file_type().is_symlink())
-            .unwrap_or(true)
-        {
-            continue;
-        }
-        let md_path = dir.join("SKILL.md");
-        let Ok(raw) = std::fs::read_to_string(&md_path) else {
-            continue;
-        };
-        let Ok((meta, _)) = parse_skill_md(&raw) else {
-            continue;
-        };
-        // Directory name must match the skill name to keep identity stable.
-        if dir.file_name().and_then(|n| n.to_str()) != Some(meta.name.as_str()) {
-            continue;
-        }
-        let dependency_status = dependencies(&meta.requires.bins);
-        skills.push(Skill {
-            meta,
-            source,
-            enabled: true,
-            dependencies: dependency_status,
-            dir: Some(dir),
-        });
+    entries
+        .flatten()
+        .filter_map(|entry| load_skill_dir(&entry.path(), source))
+        .collect()
+}
+
+fn load_skill_dir(dir: &Path, source: SkillSource) -> Option<Skill> {
+    if !dir.is_dir() {
+        return None;
     }
-    skills
+    // Refuse symlinked skill dirs (guard against escaping the root).
+    if std::fs::symlink_metadata(dir)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(true)
+    {
+        return None;
+    }
+    let raw = std::fs::read_to_string(dir.join("SKILL.md")).ok()?;
+    let (meta, _) = parse_skill_md(&raw).ok()?;
+    // Directory name must match the skill name to keep identity stable.
+    if dir.file_name().and_then(|n| n.to_str()) != Some(meta.name.as_str()) {
+        return None;
+    }
+    let dependency_status = dependencies(&meta.requires.bins);
+    Some(Skill {
+        meta,
+        source,
+        enabled: true,
+        dependencies: dependency_status,
+        dir: Some(dir.to_path_buf()),
+    })
 }
 
 fn dependencies(commands: &[String]) -> Vec<SkillDependencyStatus> {
@@ -401,19 +415,58 @@ fn command_available(command: &str) -> bool {
     candidates.any(|candidate| candidate.is_file())
 }
 
+/// Upper bound on listed sidecar files so a huge skill pack cannot flood the
+/// `skill_read` result; the model can still browse `skillDir` directly.
+const MAX_SIDECAR_FILES: usize = 400;
+const MAX_SIDECAR_DEPTH: usize = 6;
+
+/// Every supporting file of a skill (relative to its directory), recursing
+/// into nested folders such as `references/triage/*.md` or `rules/*.md`.
+/// Hidden entries and the SKILL.md itself are skipped.
 fn list_sidecar_files(dir: &Path) -> Vec<String> {
-    let mut files = Vec::new();
-    for sub in ["scripts", "templates", "references", "assets"] {
-        let sub_dir = dir.join(sub);
-        let Ok(entries) = std::fs::read_dir(&sub_dir) else {
-            continue;
+    fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<String>) {
+        if depth > MAX_SIDECAR_DEPTH || out.len() >= MAX_SIDECAR_FILES {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
         };
-        for entry in entries.flatten() {
-            if entry.path().is_file() {
-                files.push(format!("{sub}/{}", entry.file_name().to_string_lossy()));
+        let mut entries: Vec<_> = entries.flatten().collect();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with('.') {
+                continue;
+            }
+            let path = entry.path();
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                walk(root, &path, depth + 1, out);
+            } else if kind.is_file() {
+                if depth == 0 && name == "SKILL.md" {
+                    continue;
+                }
+                if out.len() >= MAX_SIDECAR_FILES {
+                    return;
+                }
+                let Ok(relative) = path.strip_prefix(root) else {
+                    continue;
+                };
+                out.push(
+                    relative
+                        .components()
+                        .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                        .collect::<Vec<_>>()
+                        .join("/"),
+                );
             }
         }
     }
+    let mut files = Vec::new();
+    walk(dir, dir, 0, &mut files);
     files.sort();
     files
 }
@@ -475,6 +528,50 @@ mod tests {
     }
 
     #[test]
+    fn plugin_skills_follow_the_registered_directories() {
+        let data = tempfile::tempdir().unwrap();
+        let plugin = tempfile::tempdir().unwrap();
+        let store = store(data.path());
+        write_skill(plugin.path(), "plugin-skill", "from a plugin");
+        write_skill(plugin.path(), "wrong-name-dir", "ignored");
+        std::fs::rename(
+            plugin.path().join("wrong-name-dir"),
+            plugin.path().join("other"),
+        )
+        .unwrap();
+
+        store.set_plugin_skill_dirs(vec![
+            plugin.path().join("plugin-skill"),
+            plugin.path().join("other"),
+        ]);
+        let skills = store.discover(None);
+        let found = skills
+            .iter()
+            .find(|s| s.meta.name == "plugin-skill")
+            .unwrap();
+        assert_eq!(found.source, SkillSource::Plugin);
+        assert!(!skills.iter().any(|s| s.meta.name == "wrong-name-dir"));
+        assert!(store.delete(None, "plugin-skill").is_err());
+
+        // A user skill with the same name shadows the plugin one.
+        write_skill(&data.path().join("skills"), "plugin-skill", "mine");
+        let skills = store.discover(None);
+        let found = skills
+            .iter()
+            .find(|s| s.meta.name == "plugin-skill")
+            .unwrap();
+        assert_eq!(found.source, SkillSource::User);
+        std::fs::remove_dir_all(data.path().join("skills/plugin-skill")).unwrap();
+
+        // Disabling the plugin unregisters its directories.
+        store.set_plugin_skill_dirs(Vec::new());
+        assert!(!store
+            .discover(None)
+            .iter()
+            .any(|s| s.meta.name == "plugin-skill"));
+    }
+
+    #[test]
     fn read_bundled_and_disk() {
         let data = tempfile::tempdir().unwrap();
         let store = store(data.path());
@@ -493,6 +590,36 @@ mod tests {
         assert!(detail.body.contains("body of on-disk"));
         assert_eq!(detail.files, vec!["scripts/run.py"]);
         assert!(detail.skill_dir.is_some());
+    }
+
+    #[test]
+    fn sidecar_files_are_listed_recursively() {
+        let data = tempfile::tempdir().unwrap();
+        let store = store(data.path());
+        let root = data.path().join("skills/deep");
+        write_skill(&data.path().join("skills"), "deep", "deep skill");
+        for rel in [
+            "references/triage/stuck.md",
+            "references/index.md",
+            "rules/a.md",
+            "AGENTS.md",
+            ".hidden/x.md",
+            "references/.DS_Store",
+        ] {
+            let path = root.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "x").unwrap();
+        }
+        let detail = store.read(None, "deep").unwrap();
+        assert_eq!(
+            detail.files,
+            vec![
+                "AGENTS.md",
+                "references/index.md",
+                "references/triage/stuck.md",
+                "rules/a.md"
+            ]
+        );
     }
 
     #[test]

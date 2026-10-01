@@ -1,0 +1,18 @@
+id = "miniq.official.vercel"
+name = "Vercel"
+version = "1.1.0"
+enabled = false
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["vercel-agent-browser", "vercel-agent-browser-verify", "vercel-ai-elements", "vercel-ai-gateway", "vercel-ai-generation-persistence", "vercel-ai-sdk", "vercel-auth", "vercel-bootstrap", "vercel-cdn-caching", "vercel-chat-sdk", "vercel-cms", "vercel-cron-jobs", "vercel-deployments-cicd", "vercel-email", "vercel-env-vars", "vercel-eve", "vercel-geist", "vercel-geistdocs", "vercel-investigation-mode", "vercel-json-render", "vercel-knowledge-update", "vercel-marketplace", "vercel-micro", "vercel-microfrontends", "vercel-ncc", "vercel-next-cache-components", "vercel-next-forge", "vercel-next-upgrade", "vercel-nextjs", "vercel-observability", "vercel-payments", "vercel-react-best-practices", "vercel-routing-middleware", "vercel-runtime-cache", "vercel-satori", "vercel-shadcn", "vercel-sign-in-with-vercel", "vercel-swr", "vercel-turbopack", "vercel-turborepo", "vercel-v0-dev", "vercel-agent", "vercel-api", "vercel-cli", "vercel-connect", "vercel-firewall", "vercel-flags", "vercel-functions", "vercel-queues", "vercel-sandbox", "vercel-services", "vercel-storage", "vercel-verification", "vercel-workflow"]
+requires = ["npx"]
+description = "Vercel 平台全套技能：Next.js、AI SDK、部署、函数、存储、观测与最佳实践，附 Vercel 官方 MCP（默认未启用）"
+author = "miniQ"
+
+[[mcp_servers]]
+name = "vercel"
+description = "Vercel 官方托管 MCP（OAuth 登录）：项目、部署、日志与文档检索"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://mcp.vercel.com"]
+env = []

@@ -65,11 +65,20 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("miniq-daemon listening on ws://{addr}/ws");
 
     let settings_path = dir.join("settings.json");
-    let settings = miniq_daemon::load_settings(&settings_path);
+    let (settings, settings_failure) = miniq_daemon::load_settings_checked(&settings_path);
     let state = AppState::with_settings(store, token, settings, settings_path);
+    if let Some(failure) = settings_failure {
+        state.report_settings_load_error(failure);
+    }
+    if let Err(error) = state.plugins.sync_bundled() {
+        tracing::error!(%error, "failed to install bundled plugins");
+    }
     if let Err(error) = state.plugins.scan_and_load().await {
         tracing::error!(%error, "failed to scan plugin directory");
     }
+    state
+        .skills
+        .set_plugin_skill_dirs(state.plugins.enabled_skill_directories());
     miniq_daemon::schedule::spawn_scheduler(state.clone());
     miniq_daemon::remote::spawn(state.clone());
     let result = server::serve(listener, state).await;

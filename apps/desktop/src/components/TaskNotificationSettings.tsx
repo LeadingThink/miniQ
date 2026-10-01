@@ -1,17 +1,22 @@
 import { Bell } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Switch } from "./ui/Switch";
 import {
   getTaskNotificationPermission,
   requestTaskNotificationPermission,
   sendTaskNotificationTest,
+  setAttentionNotificationPref,
   setTaskNotificationMode,
+  useAttentionNotificationPrefs,
   useTaskNotificationMode,
+  type AttentionKind,
   type TaskNotificationMode,
   type TaskNotificationPermission,
 } from "../taskNotifications";
 
 export function TaskNotificationSettings() {
   const mode = useTaskNotificationMode();
+  const attention = useAttentionNotificationPrefs();
   const [permission, setPermission] = useState<TaskNotificationPermission | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -55,6 +60,15 @@ export function TaskNotificationSettings() {
     }
   };
 
+  const toggleAttention = (kind: AttentionKind, enabled: boolean) => {
+    try {
+      setAttentionNotificationPref(kind, enabled);
+      setStatus(null);
+    } catch {
+      setStatus("无法保存通知设置，请检查本机存储是否可用。");
+    }
+  };
+
   return (
     <section className="settings-section provider-settings" aria-label="任务通知">
       <div>
@@ -80,6 +94,14 @@ export function TaskNotificationSettings() {
           <option value="off">关闭</option>
         </select>
       </label>
+      <div className="settings-toggle-row">
+        <span>需要审批时提醒</span>
+        <Switch checked={attention.approval} onChange={(value) => toggleAttention("approval", value)} label="需要审批时提醒" />
+      </div>
+      <div className="settings-toggle-row">
+        <span>需要我回答时提醒</span>
+        <Switch checked={attention.question} onChange={(value) => toggleAttention("question", value)} label="需要我回答时提醒" />
+      </div>
       {mode !== "off" && <div className="settings-actions">
         <button type="button" className="secondary" disabled={busy || permission === "unsupported"} onClick={() => void enable()}>
           <Bell size={14} />

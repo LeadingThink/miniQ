@@ -109,17 +109,24 @@ impl Tool for ShellRunTool {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
+        // Own process group so a timeout also stops programs the shell launched.
+        #[cfg(unix)]
+        cmd.process_group(0);
 
         let started = std::time::Instant::now();
         let child = cmd
             .spawn()
             .map_err(|e| ToolError::ExecutionFailed(format!("spawn: {e}")))?;
+        let pgid = child.id();
 
         let output = tokio::time::timeout(
             std::time::Duration::from_secs(timeout),
             child.wait_with_output(),
         )
         .await;
+        if output.is_err() {
+            crate::process::force_kill_group(pgid);
+        }
 
         let duration_ms = started.elapsed().as_millis() as u64;
         match output {
@@ -326,6 +333,34 @@ mod tests {
             .unwrap();
         assert_eq!(out["exitCode"], 0);
         assert!(out["stdout"].as_str().unwrap().contains("hello-miniq"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn timeout_stops_descendant_processes() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = ToolContext::new(dir.path().to_path_buf());
+        let marker = dir.path().join("pid");
+        let out = ShellRunTool
+            .execute(
+                &ctx,
+                json!({"command": format!("sleep 30 & echo $! > {}; wait", marker.display()), "timeoutSecs": 1}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(out["timedOut"], true);
+        let pid: i32 = std::fs::read_to_string(&marker)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        // SAFETY: signal 0 only checks whether the process still exists.
+        assert_ne!(
+            unsafe { libc::kill(pid, 0) },
+            0,
+            "descendant survived timeout"
+        );
     }
 
     #[tokio::test]

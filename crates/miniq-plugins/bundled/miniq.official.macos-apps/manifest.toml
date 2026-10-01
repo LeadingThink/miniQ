@@ -1,0 +1,10 @@
+id = "miniq.official.macos-apps"
+name = "macOS 应用开发"
+version = "1.1.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["macos-build-run", "macos-swiftui-appkit", "macos-sign-notarize", "macos-appkit-interop", "macos-build-run-debug", "macos-liquid-glass", "macos-packaging-notarization", "macos-signing-entitlements", "swiftpm-macos", "macos-swiftui-patterns", "macos-telemetry", "macos-test-triage", "macos-view-refactor", "macos-window-management"]
+requires = ["swift", "xcrun"]
+description = "macOS 应用开发：SwiftUI/AppKit、窗口与菜单、构建运行脚本、调试、打包签名与公证"
+author = "miniQ"

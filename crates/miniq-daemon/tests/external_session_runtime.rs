@@ -33,6 +33,7 @@ async fn imported_history_continues_through_miniq_runtime() {
             "sessionId": imported.session.id,
             "message": {"role": "user", "content": "continue here"}
         })),
+        origin: None,
     };
     let response = gateway::dispatch(&state, request).await;
     assert!(response.error.is_none());

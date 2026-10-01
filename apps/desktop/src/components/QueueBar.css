@@ -7,7 +7,7 @@
     min-width: 44px;
   }
   .queue-bar .queue-editor textarea {
-    font-size: 16px;
+    font-size: var(--font-callout);
     max-height: min(220px, calc(var(--app-height, 100dvh) * 0.35));
   }
   .queue-bar .queue-editor-hint { flex-basis: 100%; }

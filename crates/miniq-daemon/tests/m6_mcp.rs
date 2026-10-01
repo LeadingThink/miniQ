@@ -203,21 +203,41 @@ async fn mcp_unknown_server_reports_error() {
     )
     .await;
 
-    let requested = next_event_of(&mut ws, "approval_requested").await;
-    let approval_id = requested["approval"]["id"].as_str().unwrap().to_string();
-    call(
-        &mut ws,
-        "r5",
-        "approval.resolve",
-        json!({"approvalId": approval_id, "decision": "approve"}),
-    )
-    .await;
-
+    // Unconfigured servers are outside the effective set: the call fails
+    // before approval with TOOL_NOT_IN_EFFECTIVE_SET (no approval_requested).
     let finished = next_event_of(&mut ws, "tool_call_finished").await;
     assert_eq!(finished["status"], "failed");
-    assert!(finished["output"]["error"]
-        .as_str()
-        .unwrap()
-        .contains("unknown MCP server"));
+    assert_eq!(
+        finished["output"]["error"]["code"],
+        "TOOL_NOT_IN_EFFECTIVE_SET"
+    );
+    assert_eq!(
+        finished["output"]["error"]["requestedTool"],
+        "mcp:nope:echo"
+    );
     next_event_of(&mut ws, "turn_completed").await;
+}
+
+#[tokio::test]
+async fn bridge_lists_tools_and_names_available_servers() {
+    use miniq_daemon::mcp::{ManagerBridge, McpManager, McpServerConfig};
+    use miniq_tools::McpBridge;
+    let bridge = ManagerBridge {
+        manager: McpManager::new(),
+        servers: vec![McpServerConfig {
+            name: "mock".into(),
+            command: mock_mcp_path(),
+            args: Vec::new(),
+            enabled: true,
+            env: Default::default(),
+        }],
+    };
+    let tools = bridge.list_tools("mock").await.unwrap();
+    assert!(tools.iter().any(|tool| tool["name"] == "echo"));
+    assert!(tools[0].get("inputSchema").is_some());
+    let error = bridge.list_tools("missing").await.unwrap_err();
+    assert!(error.contains("available servers: mock"), "{error}");
+    let error = bridge.call("missing", "echo", json!({})).await.unwrap_err();
+    assert!(error.contains("available servers: mock"), "{error}");
+    bridge.manager.shutdown().await;
 }

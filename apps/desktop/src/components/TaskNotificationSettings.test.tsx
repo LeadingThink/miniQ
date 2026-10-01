@@ -65,3 +65,18 @@ it("shows a save failure instead of pretending the preference was retained", asy
   expect(await screen.findByText("无法保存通知设置，请检查本机存储是否可用。")).toBeTruthy();
   expect(getTaskNotificationMode()).toBe("all");
 });
+
+it("toggles approval and question reminders independently and persists them", () => {
+  const { unmount } = render(<TaskNotificationSettings />);
+  const approval = screen.getByRole("switch", { name: "需要审批时提醒" });
+  const question = screen.getByRole("switch", { name: "需要我回答时提醒" });
+  expect(approval.getAttribute("aria-checked")).toBe("true");
+  expect(question.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(approval);
+  expect(screen.getByRole("switch", { name: "需要审批时提醒" }).getAttribute("aria-checked")).toBe("false");
+  expect(screen.getByRole("switch", { name: "需要我回答时提醒" }).getAttribute("aria-checked")).toBe("true");
+  expect(web.requestPermission).not.toHaveBeenCalled();
+  unmount();
+  render(<TaskNotificationSettings />);
+  expect(screen.getByRole("switch", { name: "需要审批时提醒" }).getAttribute("aria-checked")).toBe("false");
+});

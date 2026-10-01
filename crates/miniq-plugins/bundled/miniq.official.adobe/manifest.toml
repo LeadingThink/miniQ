@@ -1,0 +1,16 @@
+id = "miniq.official.adobe"
+name = "Adobe 创意套件"
+version = "1.1.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["adobe-creativity-cloud", "adobe-batch-edit-photos", "adobe-retouch-portraits", "adobe-create-social-variations", "adobe-edit-quick-cut", "adobe-design-from-template", "adobe-create-mockups", "adobe-desktop-scripting"]
+requires = ["npx", "osascript", "ffmpeg"]
+description = "接入 Adobe 官方创意 MCP 批量修图、人像精修、社媒多尺寸、视频快剪、模板设计与品牌样机，或用脚本驱动本机 PS 与 AI"
+author = "miniQ"
+
+[[mcp_servers]]
+name = "adobe-creativity"
+description = "Adobe for creativity 官方远程 MCP（Adobe 账号 OAuth 登录；部分客户端可能被拒绝）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://adobe-creativity.adobe.io/mcp"]

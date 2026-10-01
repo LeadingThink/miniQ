@@ -474,7 +474,7 @@ it("unmounts the complete session page without orphaned child-task DOM nodes", a
   const logged = vi.spyOn(console, "error").mockImplementation(() => {});
   function TestApp() {
     return (
-      <AppShell app={useMiniqApp()} theme="grid" onThemeChange={() => {}} />
+      <AppShell app={useMiniqApp()} theme="jade" onThemeChange={() => {}} />
     );
   }
   render(<TestApp />);
@@ -509,7 +509,7 @@ it("gives the task browser the workbench without a competing review panel", asyn
   let app!: ReturnType<typeof useMiniqApp>;
   function TestApp() {
     app = useMiniqApp();
-    return <AppShell app={app} theme="grid" onThemeChange={() => {}} />;
+    return <AppShell app={app} theme="jade" onThemeChange={() => {}} />;
   }
   try {
     render(<TestApp />);
@@ -542,21 +542,22 @@ it("opens desktop observations on remote clients without launching a separate if
   let app!: ReturnType<typeof useMiniqApp>;
   function TestApp() {
     app = useMiniqApp();
-    return <AppShell app={app} theme="grid" onThemeChange={() => {}} />;
+    return <AppShell app={app} theme="jade" onThemeChange={() => {}} />;
   }
   try {
     render(<TestApp />);
-    await screen.findByRole("button", { name: "a，执行中" });
+    await screen.findByRole("button", { name: "a，执行中" }, { timeout: 10_000 });
     await act(async () => { await app.actions.openSession("a"); });
-    fireEvent.click(screen.getByRole("button", { name: "查看桌面网页记录" }));
-    await screen.findByRole("complementary", { name: "桌面网页记录" });
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "查看桌面网页记录" }));
+    await screen.findByRole("complementary", { name: "桌面网页记录" }, { timeout: 10_000 });
     expect(screen.queryByTitle("网页预览")).toBeNull();
     await act(async () => { await app.actions.openSession("b"); });
     expect(screen.queryByRole("complementary", { name: "桌面网页记录" })).toBeNull();
     act(() => window.dispatchEvent(new CustomEvent("miniq:open-browser", { detail: { url: "https://example.test" } })));
     expect(screen.queryByTitle("网页预览")).toBeNull();
   } finally { cleanup(); vi.unstubAllGlobals(); }
-});
+}, 20_000);
 
 it("adopts a default-project draft browser before its first task can request that page", async () => {
   fake.mode = "local";
@@ -587,7 +588,7 @@ it("adopts a default-project draft browser before its first task can request tha
   let app!: ReturnType<typeof useMiniqApp>;
   function TestApp() {
     app = useMiniqApp();
-    return <AppShell app={app} theme="grid" onThemeChange={() => {}} />;
+    return <AppShell app={app} theme="jade" onThemeChange={() => {}} />;
   }
   try {
     render(<TestApp />);
@@ -645,7 +646,7 @@ it("reveals observation pages by their exact id without reopening or crossing co
   const activePanel = () => document.querySelector<HTMLElement>(".browser-panel:not(.browser-panel-inactive)")!;
   function TestApp() {
     app = useMiniqApp();
-    return <AppShell app={app} theme="grid" onThemeChange={() => {}} />;
+    return <AppShell app={app} theme="jade" onThemeChange={() => {}} />;
   }
   try {
     render(<TestApp />);

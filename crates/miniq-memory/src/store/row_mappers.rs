@@ -55,6 +55,7 @@ fn parse_approval_status(value: &str) -> rusqlite::Result<ApprovalStatus> {
         "pending" => Ok(ApprovalStatus::Pending),
         "approved" => Ok(ApprovalStatus::Approved),
         "approved_for_session" => Ok(ApprovalStatus::ApprovedForSession),
+        "approved_always" => Ok(ApprovalStatus::ApprovedAlways),
         "rejected" => Ok(ApprovalStatus::Rejected),
         other => Err(invalid_text(format!("approval status {other}"))),
     }
@@ -163,6 +164,9 @@ pub(super) fn row_to_session(row: &Row<'_>) -> rusqlite::Result<Session> {
             .transpose()?,
         created_at: row.get(4)?,
         updated_at: row.get(5)?,
+        last_activity_at: None,
+        preview: None,
+        turn_count: None,
     })
 }
 

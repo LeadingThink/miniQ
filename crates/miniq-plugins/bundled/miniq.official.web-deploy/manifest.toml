@@ -1,0 +1,9 @@
+id = "miniq.official.web-deploy"
+name = "网站部署"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["vercel-deploy", "netlify-deploy", "cloudflare-deploy"]
+description = "通过 Vercel、Netlify、Cloudflare 命令行部署网站，默认先出预览，生产发布需确认"
+author = "miniQ"

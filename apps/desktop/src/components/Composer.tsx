@@ -7,16 +7,20 @@ import {
   useState,
 } from "react";
 import type { ComponentProps, ReactNode } from "react";
-import { ArrowUp, LoaderCircle, Paperclip, Square, Target } from "lucide-react";
+import { ArrowUp, Folder, LoaderCircle, Paperclip, Plus, Slash, Square, Target } from "lucide-react";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import {
+  COMPOSER_PLACEHOLDER,
   canSendComposer,
   handleComposerKeyDown,
   shouldShowComposerSend,
 } from "../composerInput";
 import { useComposerSlash } from "../hooks/useComposerSlash";
+import { useComposerMention } from "../hooks/useComposerMention";
+import { useComposerInsert } from "../hooks/useComposerInsert";
+import { insertComposerText } from "../composerMention";
 import type { ComposerSlashCommand } from "../composerSlash";
-import type { ApprovalMode } from "../types";
+import type { ApprovalMode, Message } from "../types";
 import type { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 import {
@@ -79,6 +83,10 @@ export function ComposerCard(props: {
   onError?: (message: string) => void;
   sendBlocked?: boolean;
   sendBlockedReason?: string;
+  /** Current session: enables `@` file mentions from its project folder. */
+  sessionId?: string;
+  /** This session's messages: ↑ in an empty input recalls the last user one. */
+  messages?: Message[];
 }) {
   const keyboardHintId = useId();
   const inputMode = useTouchComposerInput();
@@ -87,6 +95,22 @@ export function ComposerCard(props: {
   const canAttach = isTauriRuntime() || !!remoteHost;
   const [showRemoteAttachment, setShowRemoteAttachment] = useState(false);
   const [draft, setDraftState] = useState(() => readDraft(props.draftKey));
+  const [caret, setCaret] = useState(-1);
+  // Caret requested by programmatic edits (mention pick, insert bus); applied
+  // after React commits the new value so it is not reset to the end.
+  const pendingCaretRef = useRef<number | null>(null);
+  const placeCaret = (cursor: number) => {
+    pendingCaretRef.current = cursor;
+    setCaret(cursor);
+  };
+  useLayoutEffect(() => {
+    const cursor = pendingCaretRef.current;
+    const textarea = textareaRef.current;
+    if (cursor === null || !textarea) return;
+    pendingCaretRef.current = null;
+    textarea.focus();
+    textarea.setSelectionRange(cursor, cursor);
+  });
   const draftValueRef = useRef(draft);
   draftValueRef.current = draft;
   const [attachments, setAttachments] = useState<string[]>(() =>
@@ -102,6 +126,33 @@ export function ComposerCard(props: {
   const voiceDraftRef = useRef("");
   const [voicePreview, setVoicePreview] = useState<VoicePreview | null>(null);
   const voiceCapabilities = useVoiceCapabilities(props.client);
+  // Secondary inputs live behind "+". The panel stays mounted so an active
+  // voice recording keeps its state, and it is forced open while voice is live.
+  const [plusOpen, setPlusOpen] = useState(false);
+  const plusRef = useRef<HTMLDivElement>(null);
+  const plusButtonRef = useRef<HTMLButtonElement>(null);
+  const plusPanelId = useId();
+  // Touch devices (the mobile apps) surface the mic next to send for one-tap
+  // dictation; desktop keeps it inside the "+" panel.
+  const voiceInline = inputMode.touch;
+  const plusVisible = plusOpen || (!voiceInline && voicePreview !== null);
+  useEffect(() => {
+    if (!plusOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!plusRef.current?.contains(event.target as Node)) setPlusOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setPlusOpen(false);
+      plusButtonRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [plusOpen]);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
@@ -307,6 +358,45 @@ export function ComposerCard(props: {
     },
   });
 
+  const mention = useComposerMention({
+    draft,
+    caret,
+    enabled: !sending && !slash.pending,
+    client: props.client,
+    sessionId: props.sessionId,
+    inputRef: textareaRef,
+    setDraft,
+    placeCaret,
+  });
+
+  // `miniq:composer-insert` (e.g. timeline quotes): insert at the caret when
+  // the input is focused, otherwise append, then leave the caret after it.
+  useComposerInsert(textareaRef, (text) => {
+    const textarea = textareaRef.current;
+    if (!textarea || textarea.readOnly || textarea.disabled) return;
+    const current = draftValueRef.current;
+    const focused = document.activeElement === textarea;
+    const result = insertComposerText(
+      current,
+      text,
+      focused ? { start: textarea.selectionStart, end: textarea.selectionEnd } : null,
+    );
+    setDraft(result.value);
+    placeCaret(result.cursor);
+    textarea.focus();
+  });
+
+  const recallLast = () => {
+    const messages = props.messages ?? [];
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role !== "user") continue;
+      if (props.sessionId && message.sessionId && message.sessionId !== props.sessionId) continue;
+      if (message.content.trim()) return message.content;
+    }
+    return undefined;
+  };
+
   const rememberVoiceInsertion = () => {
     voiceDraftRef.current = draft;
     const textarea = textareaRef.current;
@@ -337,12 +427,26 @@ export function ComposerCard(props: {
     });
   };
 
+  const voiceControl = props.client && voiceCapabilities.capabilities.transcribe ? (
+    <VoiceInput
+      key={props.draftKey}
+      client={props.client}
+      transcribeModel={voiceCapabilities.capabilities.transcribeModel ?? undefined}
+      disabled={sending || slash.pending}
+      onStart={rememberVoiceInsertion}
+      onTranscribed={applyTranscription}
+      onPreview={setVoicePreview}
+      onError={props.onError}
+    />
+  ) : null;
+
   return (
     <div className="composer-card">
       {showRemoteAttachment && remoteHost && <RemotePathDialog host={remoteHost} purpose="attachment"
         onSubmit={async (path) => { addAttachments([path]); }} onClose={() => setShowRemoteAttachment(false)} />}
       {voicePreview && <VoiceTranscript preview={voicePreview} />}
       {slash.menu}
+      {!slash.menu && mention.menu}
       {attachments.length > 0 && (
         <div className="attach-row">
           {attachments.map((path) => (
@@ -377,6 +481,9 @@ export function ComposerCard(props: {
           rows={1}
           enterKeyHint={inputMode.enterSends ? "send" : "enter"}
           {...slash.inputAttributes}
+          {...mention.inputAttributes}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+          onBlur={() => setCaret(-1)}
           onBeforeInput={(e) => {
             const data = (e.nativeEvent as InputEvent).data;
             if (data && containsUnsupportedInput(data)) e.preventDefault();
@@ -390,6 +497,7 @@ export function ComposerCard(props: {
               textarea.selectionEnd,
             );
             setDraft(sanitized.value);
+            setCaret(sanitized.changed ? sanitized.end : textarea.selectionStart);
             if (sanitized.changed) {
               requestAnimationFrame(() => {
                 textarea.setSelectionRange(sanitized.start, sanitized.end);
@@ -398,37 +506,108 @@ export function ComposerCard(props: {
           }}
           onKeyDown={(e) => {
             if (slash.onKeyDown(e)) return;
-            handleComposerKeyDown(e, setDraft, () => void send(), inputMode);
+            if (mention.onKeyDown(e)) return;
+            if (
+              (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey &&
+              e.key.toLowerCase() === "u" && !e.nativeEvent.isComposing
+            ) {
+              e.preventDefault();
+              if (canAttach && !sending) void pickFiles();
+              return;
+            }
+            handleComposerKeyDown(e, setDraft, () => void send(), {
+              enterSends: inputMode.enterSends,
+              recallLast: props.messages ? recallLast : undefined,
+            });
           }}
         />
       </div>
       <div className="composer-row">
-        {props.modelSlot}
-        {props.chipSlot}
-        {props.chip && <span className="chip">🗂 {props.chip}</span>}
-        {canAttach && (
+        <div className="composer-plus" ref={plusRef}>
           <button
+            ref={plusButtonRef}
             type="button"
-            className="attach-btn"
-            title={remoteHost ? "附加远程文件" : "附加文件(也可直接拖入窗口)"}
-            aria-label={remoteHost ? "附加远程文件" : "附加文件"}
-            disabled={sending || slash.pending}
-            onClick={() => void pickFiles()}
+            className={`composer-plus-trigger${plusVisible ? " open" : ""}`}
+            aria-label="更多输入方式"
+            title={voiceInline ? "附件、目标与命令" : "附件、目标、命令与语音"}
+            aria-haspopup="true"
+            aria-expanded={plusVisible}
+            aria-controls={plusPanelId}
+            onClick={() => setPlusOpen((open) => !open)}
           >
-            <Paperclip size={15} />
+            <Plus size={16} aria-hidden="true" />
           </button>
-        )}
-        {props.client && voiceCapabilities.capabilities.transcribe && (
-          <VoiceInput
-            key={props.draftKey}
-            client={props.client}
-            transcribeModel={voiceCapabilities.capabilities.transcribeModel ?? undefined}
-            disabled={sending || slash.pending}
-            onStart={rememberVoiceInsertion}
-            onTranscribed={applyTranscription}
-            onPreview={setVoicePreview}
-            onError={props.onError}
-          />
+          <div
+            id={plusPanelId}
+            className="composer-plus-panel"
+            role="group"
+            aria-label="更多输入方式"
+            hidden={!plusVisible}
+          >
+            {canAttach && (
+              <button
+                type="button"
+                className="composer-plus-item"
+                title={remoteHost ? "附加远程文件" : "附加文件(也可直接拖入窗口)"}
+                aria-label={remoteHost ? "附加远程文件" : "附加文件"}
+                disabled={sending || slash.pending}
+                onClick={() => {
+                  setPlusOpen(false);
+                  void pickFiles();
+                }}
+              >
+                <Paperclip size={15} aria-hidden="true" />
+                <span>{remoteHost ? "附加远程文件" : "附加文件"}</span>
+              </button>
+            )}
+            {props.allowGoal && (
+              <button
+                type="button"
+                className={`composer-plus-item composer-goal-btn${goalMode ? " active" : ""}`}
+                aria-pressed={goalMode}
+                onClick={() => {
+                  setGoalMode((active) => !active);
+                  setPlusOpen(false);
+                  requestAnimationFrame(() => textareaRef.current?.focus());
+                }}
+                title={goalMode ? "取消设为目标" : "将下一条消息设为目标"}
+              >
+                <Target size={15} aria-hidden="true" />
+                <span>目标</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="composer-plus-item"
+              title="命令与技能"
+              disabled={sending || slash.pending}
+              onClick={() => {
+                setPlusOpen(false);
+                const next = draft.startsWith("/") ? draft : `/${draft}`;
+                setDraft(next);
+                requestAnimationFrame(() => {
+                  textareaRef.current?.focus();
+                  textareaRef.current?.setSelectionRange(1, 1);
+                });
+              }}
+            >
+              <Slash size={15} aria-hidden="true" />
+              <span>命令与技能</span>
+            </button>
+            {voiceControl && !voiceInline && (
+              <div className="composer-plus-voice">
+                {voiceControl}
+                {voicePreview === null && <span aria-hidden="true">语音输入</span>}
+              </div>
+            )}
+          </div>
+        </div>
+        {props.chipSlot}
+        {props.chip && (
+          <span className="chip" title={props.chip}>
+            <Folder aria-hidden="true" />
+            <span>{props.chip}</span>
+          </span>
         )}
         {props.approvalMode && props.onApprovalModeChange && (
           <ApprovalModeSelect
@@ -437,26 +616,15 @@ export function ComposerCard(props: {
           />
         )}
         {props.permissionSlot}
-        {props.allowGoal && (
-          <button
-            type="button"
-            className={`composer-goal-btn${goalMode ? " active" : ""}`}
-            aria-pressed={goalMode}
-            onClick={() => {
-              setGoalMode((active) => !active);
-              requestAnimationFrame(() => textareaRef.current?.focus());
-            }}
-            title={goalMode ? "取消设为目标" : "将下一条消息设为目标"}
-          >
-            <Target size={14} aria-hidden="true" />
-            <span>目标</span>
-          </button>
-        )}
+        {props.modelSlot}
         <div className="composer-submit">
           <div className="composer-submit-buttons">
             <p id={keyboardHintId} className="composer-keyboard-hint">
               {inputMode.keyboardHint}
             </p>
+            {voiceControl && voiceInline && (
+              <div className="composer-voice-inline">{voiceControl}</div>
+            )}
             {props.busy && props.onCancel && (
               <button
                 type="button"
@@ -516,7 +684,7 @@ export function Composer(props: Omit<ComponentProps<typeof ComposerCard>, "place
     <div className="composer-outer">
       <ComposerCard
         {...props}
-        placeholder="随心输入，/ 使用命令与技能"
+        placeholder={props.sessionId ? COMPOSER_PLACEHOLDER : "随心输入，/ 使用命令与技能"}
       />
     </div>
   );

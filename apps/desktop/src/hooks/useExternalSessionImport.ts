@@ -4,6 +4,7 @@ import type {
   ExternalProvider,
   ExternalSessionImportJob,
   ExternalSessionScan,
+  ExternalSessionScanJob,
 } from "../types";
 import {
   EXTERNAL_PROVIDERS,
@@ -19,6 +20,7 @@ interface ExternalImportStateInput {
 
 export function useExternalSessionImport(input: ExternalImportStateInput) {
   const [scan, setScan] = useState<ExternalSessionScan | null>(null);
+  const [scanJob, setScanJob] = useState<ExternalSessionScanJob | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [providers, setProviders] = useState<Set<ExternalProvider>>(
     new Set(EXTERNAL_PROVIDERS),
@@ -36,13 +38,20 @@ export function useExternalSessionImport(input: ExternalImportStateInput) {
   const runScan = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setScan(null);
     try {
-      const response = await input.client.call<ExternalSessionScan>("externalSession.scan");
-      setScan(response);
-      setSelected(new Set());
+      const response = await input.client.call<ExternalSessionScanJob>("externalSession.scan");
+      setScanJob(response);
+      if (response.state === "completed" && response.result) {
+        setScan(response.result);
+        setSelected(new Set());
+        setLoading(false);
+      } else if (response.state === "failed") {
+        setError(response.failure ?? "扫描任务失败");
+        setLoading(false);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
       setLoading(false);
     }
   }, [input.client]);
@@ -50,6 +59,43 @@ export function useExternalSessionImport(input: ExternalImportStateInput) {
   useEffect(() => {
     void runScan();
   }, [runScan]);
+
+  useEffect(() => {
+    if (!scanJob || scanJob.state !== "running") return;
+    let active = true;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const next = await input.client.call<ExternalSessionScanJob>(
+          "externalSession.scanStatus",
+          { jobId: scanJob.id },
+        );
+        if (!active) return;
+        setScanJob(next);
+        if (next.state === "completed" && next.result) {
+          setScan(next.result);
+          setSelected(new Set());
+          setLoading(false);
+          return;
+        }
+        if (next.state === "failed") {
+          setError(next.failure ?? "扫描任务失败");
+          setLoading(false);
+          return;
+        }
+        timer = window.setTimeout(poll, 500);
+      } catch (cause) {
+        if (!active) return;
+        setError(cause instanceof Error ? cause.message : String(cause));
+        timer = window.setTimeout(poll, 1_000);
+      }
+    };
+    timer = window.setTimeout(poll, 250);
+    return () => {
+      active = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [input.client, scanJob?.id, scanJob?.state]);
 
   useEffect(() => {
     if (!job || job.state !== "running") return;
@@ -165,6 +211,7 @@ export function useExternalSessionImport(input: ExternalImportStateInput) {
     workspaceId,
     search,
     loading,
+    scanJob,
     importing,
     job,
     error,

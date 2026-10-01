@@ -14,11 +14,17 @@ export function ApprovalCard({
   item,
   onResolve,
   pending = false,
+  allowAlways,
 }: {
   item: PendingApproval;
   onResolve: (approvalId: string, decision: string) => void;
   pending?: boolean;
+  /** Overrides the context-derived default (e.g. the approval inbox). */
+  allowAlways?: boolean;
 }) {
+  // "Always allow" persists a host-wide rule, so it is desktop-only (plan v3 D16).
+  const contextRemote = useSessionFileAccess()?.client?.mode === "remote";
+  const isRemote = allowAlways === undefined ? contextRemote : !allowAlways;
   return (
     <div className="card approval-card">
       <div className="card-head">
@@ -44,6 +50,16 @@ export function ApprovalCard({
         >
           本会话允许
         </button>
+        {!isRemote && (
+          <button
+            className="secondary"
+            disabled={pending}
+            title="以后此工具（同一来源与版本）不再询问，可在插件页撤销"
+            onClick={() => onResolve(item.approval.id, "always_allow_tool")}
+          >
+            总是允许
+          </button>
+        )}
         <button
           disabled={pending}
           className="danger"

@@ -57,9 +57,11 @@ it("restores page and actual zoom only for the same session and file", async () 
   expect((screen.getByLabelText("PDF 页码") as HTMLInputElement).value).toBe(
     "1",
   );
-  expect(
-    view.container.querySelector(".pdf-page")?.getAttribute("data-fit"),
-  ).toBe("true");
+  await waitFor(() =>
+    expect(
+      view.container.querySelector(".pdf-page")?.getAttribute("data-fit"),
+    ).toBe("true"),
+  );
   view.rerender(element("one"));
   await waitFor(() => {
     if (onError.mock.calls.length) throw new Error(onError.mock.calls[0][0]);
@@ -70,9 +72,11 @@ it("restores page and actual zoom only for the same session and file", async () 
       "2",
     ),
   );
-  expect(
-    view.container.querySelector(".pdf-page")?.getAttribute("data-fit"),
-  ).toBe("false");
+  await waitFor(() =>
+    expect(
+      view.container.querySelector(".pdf-page")?.getAttribute("data-fit"),
+    ).toBe("false"),
+  );
 });
 
 function documentFixture(
@@ -237,4 +241,60 @@ it("cancels obsolete rendering and does not reload for callback identity changes
   expect(onError).not.toHaveBeenCalled();
   await act(async () => view.unmount());
   expect(document.destroy).toHaveBeenCalledTimes(1);
+});
+
+it("scrolls continuously through a virtualized page stack", async () => {
+  const { page, document } = documentFixture();
+  page.getViewport = ({ scale }: { scale: number }) => ({
+    width: 600 * scale,
+    height: 800 * scale,
+  });
+  document.numPages = 40;
+  const height = vi
+    .spyOn(HTMLElement.prototype, "clientHeight", "get")
+    .mockReturnValue(1000);
+  const width = vi
+    .spyOn(HTMLElement.prototype, "clientWidth", "get")
+    .mockReturnValue(600);
+  const frame = vi
+    .spyOn(window, "requestAnimationFrame")
+    .mockImplementation((callback) => {
+      callback(0);
+      return 0;
+    });
+  try {
+    const view = render(<PdfPreview dataBase64="AA==" onError={vi.fn()} />);
+    await waitFor(() =>
+      expect(
+        view.container.querySelectorAll(".pdf-page").length,
+      ).toBeGreaterThan(1),
+    );
+    const mounted = view.container.querySelectorAll(".pdf-page").length;
+    expect(mounted).toBeLessThanOrEqual(10);
+    const stage = view.container.querySelector(
+      ".pdf-pages",
+    )!.parentElement as HTMLElement;
+    const pages = view.container.querySelector(".pdf-pages") as HTMLElement;
+    expect(parseFloat(pages.style.height)).toBeGreaterThan(40 * 700);
+    const tops = [...view.container.querySelectorAll<HTMLElement>(".pdf-page")]
+      .map((node) => parseFloat(node.style.top))
+      .sort((a, b) => a - b);
+    const stride = tops[1] - tops[0];
+    act(() => {
+      stage.scrollTop = stride * 20;
+      fireEvent.scroll(stage);
+    });
+    await waitFor(() =>
+      expect(
+        Number((screen.getByLabelText("PDF 页码") as HTMLInputElement).value),
+      ).toBeGreaterThanOrEqual(20),
+    );
+    expect(
+      view.container.querySelectorAll(".pdf-page").length,
+    ).toBeLessThanOrEqual(10);
+  } finally {
+    height.mockRestore();
+    width.mockRestore();
+    frame.mockRestore();
+  }
 });

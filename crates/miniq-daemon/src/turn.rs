@@ -164,7 +164,7 @@ fn restore_conversation(
     history
 }
 
-fn history_for_turn(
+pub(crate) fn history_for_turn(
     messages: &[Message],
     snapshot: Option<miniq_memory::ModelContextSnapshot>,
     skills_block: &str,
@@ -175,7 +175,7 @@ fn history_for_turn(
     history
 }
 
-fn context_policy() -> ContextPolicy {
+pub(crate) fn context_policy() -> ContextPolicy {
     let mut policy = ContextPolicy::default();
     if let Ok(value) = std::env::var("MINIQ_CONTEXT_TOKENS") {
         if let Ok(tokens) = value.parse::<usize>() {
@@ -206,6 +206,8 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
     tokio::spawn(async move {
         let clock = crate::turn_clock::TurnClock::start(&state, &session_id);
         let result = execute_turn(&state, &session_id, cancel).await;
+        // A budget is one-shot even when the turn failed before using it.
+        state.take_turn_step_limit(&session_id);
         let paused =
             matches!(result, Err(TurnError::Cancelled)) && state.is_turn_paused(&session_id);
         let (outcome, timing_status) = match &result {
@@ -214,9 +216,9 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
             Err(TurnError::Cancelled) => ("cancelled", TurnTimingStatus::Cancelled),
             Err(TurnError::Fatal(_)) => ("failed", TurnTimingStatus::Failed),
         };
-        if let Some(clock) = clock {
-            clock.finish(&state, &session_id, timing_status);
-        }
+        let summary = clock
+            .map(|clock| clock.finish(&state, &session_id, timing_status))
+            .and_then(|timing| crate::turn_summary::build(&state, &session_id, &timing));
         if let Err(error) = state.store.record_turn_outcome(&session_id, outcome) {
             tracing::error!(%error, %session_id, "failed to persist turn outcome");
         }
@@ -252,6 +254,7 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
                 });
                 state.emit(Event::TurnCompleted {
                     session_id: session_id.clone(),
+                    summary,
                 });
             }
             Err(TurnError::Cancelled) => {
@@ -266,6 +269,7 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
                     state.emit(Event::TurnFailed {
                         session_id: session_id.clone(),
                         error: "cancelled".to_string(),
+                        summary,
                     });
                 }
             }
@@ -281,11 +285,21 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
                 state.emit(Event::TurnFailed {
                     session_id: session_id.clone(),
                     error: err,
+                    summary,
                 });
             }
         }
         state.end_turn(&session_id);
         state.run_turn_ended_hook(&session_id, outcome);
+        crate::hooks::spawn_event(
+            &state,
+            &session_id,
+            crate::hooks::HookEvent::Stop,
+            crate::hooks::HookPayload {
+                turn_status: Some(outcome.to_string()),
+                ..Default::default()
+            },
+        );
         if paused && state.take_turn_resume_request(&session_id) {
             state.resume_turn(&session_id);
             if let Some(cancel) = state.begin_turn(&session_id) {
@@ -585,6 +599,7 @@ async fn execute_turn(
             .find(|message| message.role == Role::User)
             .map(|message| message.id.clone()),
     );
+    let max_steps = state.take_turn_step_limit(session_id);
     let outcome = run_turn_with_limits(
         &provider,
         &executor,
@@ -594,6 +609,7 @@ async fn execute_turn(
         RunLimits {
             checkpoint: Some(checkpoint.clone()),
             context_policy: context_policy(),
+            max_steps,
             ..RunLimits::default()
         },
     )

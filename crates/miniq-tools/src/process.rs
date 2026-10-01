@@ -17,6 +17,12 @@ use tokio::sync::Mutex;
 
 use crate::router::{parse_input, Tool, ToolContext, ToolError};
 
+/// Time a process group gets to exit after SIGTERM before it is force-killed.
+const KILL_GRACE: Duration = Duration::from_secs(2);
+/// Upper bound for draining output after the tracked shell exits. Detached
+/// grandchildren may keep the pipes open forever, so never wait for EOF blindly.
+const READER_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
+
 #[derive(Default)]
 pub struct ProcessManager {
     processes: Mutex<HashMap<String, ManagedProcess>>,
@@ -26,6 +32,8 @@ struct ManagedProcess {
     command: String,
     cwd: PathBuf,
     child: Option<Child>,
+    /// Process-group id of the spawned shell (Unix); the shell leads its own group.
+    pgid: Option<u32>,
     stdout: Arc<Mutex<Vec<u8>>>,
     stderr: Arc<Mutex<Vec<u8>>>,
     stdout_reader: Option<tokio::task::JoinHandle<()>>,
@@ -33,6 +41,68 @@ struct ManagedProcess {
     started: Instant,
     exit_code: Option<i32>,
     killed: bool,
+}
+
+impl Drop for ManagedProcess {
+    fn drop(&mut self) {
+        // `kill_on_drop` only reaches the shell; also take down its descendants.
+        if self.child.is_some() {
+            signal_group(self.pgid, GroupSignal::Kill);
+        }
+        for reader in [self.stdout_reader.take(), self.stderr_reader.take()]
+            .into_iter()
+            .flatten()
+        {
+            reader.abort();
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum GroupSignal {
+    Terminate,
+    Kill,
+}
+
+/// Signals every process in the group. Returns false when nothing was signalled.
+#[cfg(unix)]
+fn signal_group(pgid: Option<u32>, signal: GroupSignal) -> bool {
+    let Some(pgid) = pgid.and_then(|pgid| libc::pid_t::try_from(pgid).ok()) else {
+        return false;
+    };
+    if pgid <= 1 {
+        return false;
+    }
+    let signal = match signal {
+        GroupSignal::Terminate => libc::SIGTERM,
+        GroupSignal::Kill => libc::SIGKILL,
+    };
+    // SAFETY: killpg only sends a signal to the group miniQ created for this process.
+    unsafe { libc::killpg(pgid, signal) == 0 }
+}
+
+#[cfg(not(unix))]
+fn signal_group(_pgid: Option<u32>, _signal: GroupSignal) -> bool {
+    false
+}
+
+#[cfg(unix)]
+fn group_alive(pgid: Option<u32>) -> bool {
+    let Some(pgid) = pgid.and_then(|pgid| libc::pid_t::try_from(pgid).ok()) else {
+        return false;
+    };
+    // SAFETY: signal 0 performs only an existence/permission check.
+    pgid > 1 && unsafe { libc::killpg(pgid, 0) == 0 }
+}
+
+#[cfg(not(unix))]
+fn group_alive(_pgid: Option<u32>) -> bool {
+    false
+}
+
+/// Force-stops a process group created by miniQ (used after foreground timeouts).
+pub(crate) fn force_kill_group(pgid: Option<u32>) {
+    signal_group(pgid, GroupSignal::Kill);
 }
 
 impl ProcessManager {
@@ -50,6 +120,10 @@ impl ProcessManager {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
+        // Give the shell its own process group so killing it also stops the
+        // programs it launched (e.g. `cd dir && python -m http.server`).
+        #[cfg(unix)]
+        child.process_group(0);
         let mut child = child
             .spawn()
             .map_err(|error| ToolError::ExecutionFailed(format!("spawn: {error}")))?;
@@ -71,6 +145,7 @@ impl ProcessManager {
                 command: command.clone(),
                 cwd: cwd.clone(),
                 child: Some(child),
+                pgid: pid,
                 stdout,
                 stderr,
                 stdout_reader,
@@ -107,24 +182,41 @@ impl ProcessManager {
     }
 
     pub async fn kill(&self, id: &str) -> Result<Value, ToolError> {
-        let mut processes = self.processes.lock().await;
-        let process = processes
-            .get_mut(id)
-            .ok_or_else(|| ToolError::InvalidInput(format!("unknown background process: {id}")))?;
-        if let Some(child) = process.child.as_mut() {
-            if child
-                .try_wait()
-                .map_err(|error| ToolError::ExecutionFailed(format!("wait: {error}")))?
-                .is_none()
-            {
-                child
-                    .kill()
-                    .await
-                    .map_err(|error| ToolError::ExecutionFailed(format!("kill: {error}")))?;
+        let pgid = {
+            let mut processes = self.processes.lock().await;
+            let process = processes.get_mut(id).ok_or_else(|| {
+                ToolError::InvalidInput(format!("unknown background process: {id}"))
+            })?;
+            let running = match process.child.as_mut() {
+                Some(child) => child
+                    .try_wait()
+                    .map_err(|error| ToolError::ExecutionFailed(format!("wait: {error}")))?
+                    .is_none(),
+                None => false,
+            };
+            // Descendants may outlive an already-exited shell; stop them too.
+            if running || group_alive(process.pgid) {
                 process.killed = true;
+                Some(process.pgid)
+            } else {
+                None
+            }
+        };
+        if let Some(pgid) = pgid {
+            signal_group(pgid, GroupSignal::Terminate);
+            let deadline = Instant::now() + KILL_GRACE;
+            while group_alive(pgid) && Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            signal_group(pgid, GroupSignal::Kill);
+            let mut processes = self.processes.lock().await;
+            if let Some(child) = processes.get_mut(id).and_then(|p| p.child.as_mut()) {
+                // Fallback for platforms without process groups; waits for the shell.
+                if child.try_wait().ok().flatten().is_none() {
+                    let _ = child.kill().await;
+                }
             }
         }
-        drop(processes);
         self.refresh(id).await?;
         self.snapshot(id).await
     }
@@ -148,11 +240,15 @@ impl ProcessManager {
         let stdout_reader = process.stdout_reader.take();
         let stderr_reader = process.stderr_reader.take();
         drop(processes);
-        if let Some(reader) = stdout_reader {
-            let _ = reader.await;
-        }
-        if let Some(reader) = stderr_reader {
-            let _ = reader.await;
+        let deadline = tokio::time::Instant::now() + READER_DRAIN_TIMEOUT;
+        for mut reader in [stdout_reader, stderr_reader].into_iter().flatten() {
+            if tokio::time::timeout_at(deadline, &mut reader)
+                .await
+                .is_err()
+            {
+                // A detached descendant still holds the pipe open; keep what we have.
+                reader.abort();
+            }
         }
         Ok(false)
     }
@@ -352,5 +448,74 @@ mod tests {
         let killed = manager.kill(id).await.unwrap();
         assert_eq!(killed["status"], "killed");
         assert!(killed["stdout"].as_str().unwrap().contains("ready"));
+    }
+
+    /// Regression: `cd dir && server` leaves the server as a grandchild holding
+    /// the stdout pipe. Killing only `sh` used to hang process_kill forever.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kill_stops_descendants_and_returns_promptly() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = ProcessManager::default();
+        let started = manager
+            .start(
+                "printf ready; sleep 30 & wait".into(),
+                dir.path().to_path_buf(),
+                BTreeMap::new(),
+            )
+            .await
+            .unwrap();
+        let id = started["shellId"].as_str().unwrap().to_string();
+        let pgid = started["pid"].as_u64().map(|pid| pid as u32);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !manager.output(&id, false, Duration::ZERO).await.unwrap()["stdout"]
+            .as_str()
+            .is_some_and(|stdout| stdout.contains("ready"))
+        {
+            assert!(Instant::now() < deadline, "process never became ready");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let killed = tokio::time::timeout(Duration::from_secs(10), manager.kill(&id))
+            .await
+            .expect("process_kill must not hang")
+            .unwrap();
+        assert_eq!(killed["status"], "killed");
+        assert!(killed["stdout"].as_str().unwrap().contains("ready"));
+        assert!(!group_alive(pgid), "descendants must be stopped");
+    }
+
+    /// A shell that exits while a detached child keeps the pipe open must still
+    /// report completion instead of blocking process_output.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn output_completes_when_descendant_keeps_pipe_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = ProcessManager::default();
+        let started = manager
+            .start(
+                "printf done; sleep 30 &".into(),
+                dir.path().to_path_buf(),
+                BTreeMap::new(),
+            )
+            .await
+            .unwrap();
+        let id = started["shellId"].as_str().unwrap().to_string();
+        let pgid = started["pid"].as_u64().map(|pid| pid as u32);
+        let output = tokio::time::timeout(
+            Duration::from_secs(10),
+            manager.output(&id, true, Duration::from_secs(5)),
+        )
+        .await
+        .expect("process_output must not hang")
+        .unwrap();
+        assert_eq!(output["status"], "completed");
+        assert!(output["stdout"].as_str().unwrap().contains("done"));
+        // The lingering descendant can still be cleaned up explicitly.
+        let killed = tokio::time::timeout(Duration::from_secs(10), manager.kill(&id))
+            .await
+            .expect("process_kill must not hang")
+            .unwrap();
+        assert_eq!(killed["status"], "killed");
+        assert!(!group_alive(pgid));
     }
 }

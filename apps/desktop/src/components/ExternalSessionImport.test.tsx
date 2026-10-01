@@ -9,13 +9,18 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RpcClient } from "../rpc";
-import type { ExternalSessionScan, Workspace } from "../types";
+import type { ExternalSessionScanJob, Workspace } from "../types";
 import { ExternalSessionImportDialog } from "./ExternalSessionImport";
 
-const scan: ExternalSessionScan = {
-  providers: [],
-  sessions: [],
-  errors: [],
+const scan: ExternalSessionScanJob = {
+  id: "scan-1",
+  state: "completed",
+  result: {
+    providers: [],
+    sessions: [],
+    errors: [],
+  },
+  failure: null,
 };
 
 const workspaces: Workspace[] = [

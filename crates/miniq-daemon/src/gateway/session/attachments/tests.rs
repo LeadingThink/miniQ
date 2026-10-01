@@ -134,8 +134,8 @@ fn invalid_later_attachment_rolls_back_snapshots_and_does_not_touch_source_files
     assert_eq!(std::fs::read(&source).unwrap(), b"original");
 }
 
-#[test]
-fn missing_new_attachment_rejects_the_message_without_partial_history_or_snapshots() {
+#[tokio::test]
+async fn missing_new_attachment_rejects_the_message_without_partial_history_or_snapshots() {
     let directory = tempfile::tempdir().unwrap();
     let (state, session, provider) = fixture(directory.path());
     let source = directory.path().join("available.png");
@@ -143,7 +143,9 @@ fn missing_new_attachment_rejects_the_message_without_partial_history_or_snapsho
     std::fs::write(&source, "available image").unwrap();
     let mut input = message(&session, &source);
     input["message"]["attachments"] = json!([source, absent]);
-    let error = super::super::send_message(&state, Some(input)).unwrap_err();
+    let error = super::super::send_message(&state, Some(input))
+        .await
+        .unwrap_err();
     assert_eq!(error.code, ErrorCode::InvalidParams as i64);
     assert!(error.message.contains("missing.png"));
     assert!(state.store.list_messages(&session).unwrap().is_empty());
@@ -191,7 +193,9 @@ async fn send_keeps_pixels_available_after_source_removal_and_store_reopen() {
     let source = directory.path().join("微信临时图片.png");
     std::fs::write(&source, "original image payload").unwrap();
     let mut events = state.events.subscribe();
-    let response = super::super::send_message(&state, Some(message(&session, &source))).unwrap();
+    let response = super::super::send_message(&state, Some(message(&session, &source)))
+        .await
+        .unwrap();
     std::fs::remove_file(source).unwrap();
     completed(&mut events, &session).await;
     let path = response["message"]["attachments"][0]["path"]
@@ -239,14 +243,16 @@ async fn rewritten_user_message_uses_a_new_durable_snapshot() {
     assert_eq!(attachment["mimeType"], "image/jpeg");
 }
 
-#[test]
-fn queued_message_is_snapshot_before_acknowledgement_and_keeps_it_when_promoted() {
+#[tokio::test]
+async fn queued_message_is_snapshot_before_acknowledgement_and_keeps_it_when_promoted() {
     let directory = tempfile::tempdir().unwrap();
     let (state, session, _) = fixture(directory.path());
     let source = directory.path().join("queued.webp");
     std::fs::write(&source, "queued image").unwrap();
     assert!(state.begin_turn(&session).is_some());
-    let response = super::super::send_message(&state, Some(message(&session, &source))).unwrap();
+    let response = super::super::send_message(&state, Some(message(&session, &source)))
+        .await
+        .unwrap();
     let path = response["queued"]["attachments"][0]["path"]
         .as_str()
         .unwrap();
@@ -257,8 +263,8 @@ fn queued_message_is_snapshot_before_acknowledgement_and_keeps_it_when_promoted(
     state.end_turn(&session);
 }
 
-#[test]
-fn rejected_send_and_rewrite_remove_only_uncommitted_snapshots() {
+#[tokio::test]
+async fn rejected_send_and_rewrite_remove_only_uncommitted_snapshots() {
     let directory = tempfile::tempdir().unwrap();
     let (state, session, _) = fixture(directory.path());
     let source = directory.path().join("image.png");
@@ -267,7 +273,9 @@ fn rejected_send_and_rewrite_remove_only_uncommitted_snapshots() {
     assert!(state.begin_turn(&session).is_some());
     let mut input = message(&session, &source);
     input["rejectIfBusy"] = json!(true);
-    assert!(super::super::send_message(&state, Some(input)).is_err());
+    assert!(super::super::send_message(&state, Some(input))
+        .await
+        .is_err());
     assert_eq!(files(&storage), 0);
     state.end_turn(&session);
     let assistant = state
@@ -283,4 +291,39 @@ fn rejected_send_and_rewrite_remove_only_uncommitted_snapshots() {
         state.store.list_messages(&session).unwrap()[0].content,
         "existing answer"
     );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn user_prompt_submit_hook_exit_2_rejects_the_message() {
+    let directory = tempfile::tempdir().unwrap();
+    let (state, session, provider) = fixture(directory.path());
+    state.settings.lock().unwrap().hooks = vec![crate::hooks::HookConfig {
+        event: "userPromptSubmit".into(),
+        matcher: None,
+        command: "echo prompt rejected >&2; exit 2".into(),
+        timeout_secs: Some(10),
+        enabled: None,
+    }];
+    let input = json!({"sessionId": session, "message": {"role": "user", "content": "hello"}});
+    let error = super::super::send_message(&state, Some(input))
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidParams as i64);
+    assert_eq!(
+        error.message,
+        "Blocked by userPromptSubmit hook: prompt rejected"
+    );
+    assert!(state.store.list_messages(&session).unwrap().is_empty());
+    assert!(state
+        .store
+        .list_queued_messages(&session)
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        state.store.get_session(&session).unwrap().status,
+        SessionStatus::Idle
+    );
+    assert!(provider.requests.lock().unwrap().is_empty());
+    assert_eq!(state.store.count_audit_events(&session).unwrap(), 1);
 }

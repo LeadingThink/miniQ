@@ -34,6 +34,7 @@ function fixture() {
       setShowSearch: vi.fn(),
       setShowSettings: vi.fn(),
       setPage: vi.fn(),
+      openSettings: vi.fn(),
       setShowExternalImport: vi.fn(),
       setShowDistill: vi.fn(),
     },
@@ -77,10 +78,12 @@ describe("composer app commands", () => {
     expect(app.navigation.setShowSearch).toHaveBeenCalledWith(true);
     expect(app.navigation.setShowSettings).toHaveBeenCalledWith(true);
     expect(app.navigation.setShowExternalImport).toHaveBeenCalledWith(true);
-    for (const id of ["skills", "mcp", "plugins", "schedule"]) {
+    for (const id of ["skills", "mcp", "plugins"]) {
       await command(app, id).onSelect?.();
-      expect(app.navigation.setPage).toHaveBeenLastCalledWith(id);
+      expect(app.navigation.openSettings).toHaveBeenLastCalledWith(id);
     }
+    await command(app, "schedule").onSelect?.();
+    expect(app.navigation.setPage).toHaveBeenLastCalledWith("schedule");
   });
 
   it("includes all projects and switches to the selected workspace", async () => {

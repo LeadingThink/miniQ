@@ -66,6 +66,8 @@ function setup(mode: "local" | "remote" = "local") {
     setShowSearch: vi.fn(),
     setSidebarCollapsed: vi.fn(),
     setPage: vi.fn(),
+    settingsTab: undefined,
+    openSettings: vi.fn(),
   };
   const feed: SessionFeed = {
     latestTurnTiming: null,
@@ -79,6 +81,7 @@ function setup(mode: "local" | "remote" = "local") {
     approvals: [],
     questions: [],
     plan: [],
+    turnPlans: [],
     artifacts: [],
     queue: [],
     streamingText: "",

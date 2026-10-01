@@ -10,13 +10,20 @@ export function usePdfPage(props: {
   zoom: number;
   fitWidth: number;
   rotation: number;
-  canvas: RefObject<HTMLCanvasElement>;
-  textLayer: RefObject<HTMLDivElement>;
+  canvas: RefObject<HTMLCanvasElement | null>;
+  textLayer: RefObject<HTMLDivElement | null>;
   onError: (message: string) => void;
+  /** Reports the unscaled, rotated page size so a continuous layout can converge. */
+  onMeasure?: (page: number, size: { width: number; height: number }) => void;
+  onText?: (page: number, text: string) => void;
 }) {
   const { pdf, page, zoom, fitWidth, rotation, canvas, textLayer } = props;
   const report = useRef(props.onError);
   report.current = props.onError;
+  const measured = useRef(props.onMeasure);
+  measured.current = props.onMeasure;
+  const texted = useRef(props.onText);
+  texted.current = props.onText;
   const pending = useRef<Promise<unknown>>(Promise.resolve());
   const [state, setState] = useState({ loading: true, text: "", scale: zoom });
   useEffect(() => {
@@ -36,6 +43,10 @@ export function usePdfPage(props: {
         if (cancelled) return;
         const angle = ((current.rotate ?? 0) + rotation) % 360;
         const natural = current.getViewport({ scale: 1, rotation: angle });
+        measured.current?.(page, {
+          width: natural.width,
+          height: natural.height,
+        });
         const scale = fitWidth > 0 ? fitWidth / natural.width : zoom;
         const viewport = current.getViewport({ scale, rotation: angle });
         const raster = pdfRasterSize(
@@ -68,8 +79,11 @@ export function usePdfPage(props: {
           viewport,
         });
         await layer.render();
-        if (!cancelled)
-          setState({ loading: false, text: pdfText(content.items), scale });
+        if (!cancelled) {
+          const text = pdfText(content.items);
+          texted.current?.(page, text);
+          setState({ loading: false, text, scale });
+        }
       } finally {
         current.cleanup();
       }

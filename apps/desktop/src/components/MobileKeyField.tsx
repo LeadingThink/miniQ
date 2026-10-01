@@ -2,7 +2,7 @@ import { ExternalLink, Eye, EyeOff } from "lucide-react";
 import { useId, useState, type RefObject } from "react";
 
 export function MobileKeyField(props: {
-  inputRef: RefObject<HTMLInputElement>;
+  inputRef: RefObject<HTMLInputElement | null>;
   value: string;
   disabled: boolean;
   native: boolean;

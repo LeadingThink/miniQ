@@ -17,6 +17,7 @@ from unittest.mock import patch
 import android_release as release
 
 SOURCE_ROOT = release.ROOT
+PERMISSIONS = "".join(f"\nuses-permission: name='{name}'" for name in release.REQUIRED_PERMISSIONS)
 
 
 class AndroidReleaseTests(unittest.TestCase):
@@ -98,7 +99,7 @@ class AndroidReleaseTests(unittest.TestCase):
                 release.verify_apk(Path("release.apk"), "android-v0.1.21", Path("tools"))
 
     def test_apk_certificate_must_match_pinned_production_key(self):
-        badging = "package: name='com.leadingthink.miniq' versionCode='21' versionName='0.1.21'"
+        badging = "package: name='com.leadingthink.miniq' versionCode='21' versionName='0.1.21'" + PERMISSIONS
         for digest in [None, "a" * 64, release.SIGNING_CERT_SHA256.lower()]:
             signing = "Signer #1 certificate DN: CN=miniQ Release"
             if digest:
@@ -148,6 +149,19 @@ class AndroidReleaseTests(unittest.TestCase):
         outputs = [subprocess.CompletedProcess([], 0, signing), subprocess.CompletedProcess([], 0, badging)]
         with patch.object(release.subprocess, "run", side_effect=outputs), self.assertRaisesRegex(ValueError, "ABI-specific"):
             release.verify_apk(Path("release.apk"), "android-v0.1.21", Path("tools"))
+
+    def test_apk_without_microphone_permission_rejected(self):
+        signing = f"Signer #1 certificate DN: CN=miniQ Release\nSigner #1 certificate SHA-256 digest: {release.SIGNING_CERT_SHA256}"
+        badging = "package: name='com.leadingthink.miniq' versionCode='21' versionName='0.1.21'\nuses-permission: name='android.permission.INTERNET'"
+        outputs = [subprocess.CompletedProcess([], 0, signing), subprocess.CompletedProcess([], 0, badging)]
+        with patch.object(release.subprocess, "run", side_effect=outputs), self.assertRaisesRegex(ValueError, "RECORD_AUDIO"):
+            release.verify_apk(Path("release.apk"), "android-v0.1.21", Path("tools"))
+
+    def test_source_manifest_declares_voice_permissions(self):
+        manifest = (SOURCE_ROOT / "android/app/src/main/AndroidManifest.xml").read_text()
+        for name in release.REQUIRED_PERMISSIONS:
+            with self.subTest(name=name):
+                self.assertIn(f'<uses-permission android:name="{name}" />', manifest)
 
     def test_apk_verified_before_shared_manifest_and_no_latest_json(self):
         with tempfile.TemporaryDirectory() as directory:

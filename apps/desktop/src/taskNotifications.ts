@@ -60,7 +60,7 @@ export async function requestTaskNotificationPermission(): Promise<TaskNotificat
     : Notification.permission;
 }
 
-async function send(title: string, body: string, allowed: () => boolean | Promise<boolean>): Promise<boolean> {
+async function send(title: string, body: string, allowed: () => boolean | Promise<boolean>, onClick?: () => void): Promise<boolean> {
   try {
     if (!await allowed() || await getTaskNotificationPermission() !== "granted" || !await allowed()) return false;
     if (isTauriRuntime()) {
@@ -68,7 +68,8 @@ async function send(title: string, body: string, allowed: () => boolean | Promis
       if (!await allowed()) return false;
       plugin.sendNotification({ title, body });
     } else {
-      new Notification(title, { body });
+      const notification = new Notification(title, { body });
+      if (onClick) notification.onclick = () => { window.focus(); onClick(); notification.close(); };
     }
     return true;
   } catch {
@@ -78,22 +79,93 @@ async function send(title: string, body: string, allowed: () => boolean | Promis
   }
 }
 
+/** Tells the host owner that a remote device raised a session's permissions. */
+export function notifyRemotePermissionRaise(device: string, mode: string): Promise<boolean> {
+  return send("miniQ · 远程提升了权限", `设备 ${device} 将会话权限提升为「${mode}」，可在 miniQ 中一键撤回。`, () => true);
+}
+
+/** Rejects when the native window state is unavailable; callers treat that as foreground. */
+export async function isAppInBackground(): Promise<boolean> {
+  if (document.hasFocus()) return false;
+  if (isTauriRuntime()) {
+    // An embedded native browser can own focus while the React document is
+    // blurred. The whole desktop window must be in the background.
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    if (await getCurrentWindow().isFocused()) return false;
+  }
+  return !document.hasFocus();
+}
+
 export async function notifyTaskResult(outcome: TaskOutcome, sessionTitle: string): Promise<boolean> {
   const allowed = async () => {
-    if (document.hasFocus()) return false;
-    if (isTauriRuntime()) {
-      // An embedded native browser can own focus while the React document is
-      // blurred. The whole desktop window must be in the background.
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
-      if (await getCurrentWindow().isFocused()) return false;
-    }
+    if (!await isAppInBackground()) return false;
     const mode = getTaskNotificationMode();
-    return !document.hasFocus() && (mode === "all" || (mode === "failures" && outcome === "failed"));
+    return mode === "all" || (mode === "failures" && outcome === "failed");
   };
   const name = sessionTitle || "当前会话";
   return outcome === "completed"
     ? send("miniQ · 任务完成", `「${name}」已完成，请返回 miniQ 查看结果。`, allowed)
     : send("miniQ · 任务未完成", `「${name}」执行未完成，请返回 miniQ 查看详情并继续任务。`, allowed);
+}
+
+export type AttentionKind = "approval" | "question";
+export type AttentionNotificationPrefs = Record<AttentionKind, boolean>;
+const ATTENTION_STORAGE_KEY = "miniq.attentionNotifications.v1";
+const DEFAULT_ATTENTION: AttentionNotificationPrefs = { approval: true, question: true };
+let attentionSnapshot: { raw: string | null; prefs: AttentionNotificationPrefs } | null = null;
+
+/** Both reminders default to on; a corrupt value falls back to the defaults. */
+export function getAttentionNotificationPrefs(): AttentionNotificationPrefs {
+  let raw: string | null = null;
+  try { raw = localStorage.getItem(ATTENTION_STORAGE_KEY); } catch { raw = null; }
+  // useSyncExternalStore needs a stable snapshot for an unchanged value.
+  if (attentionSnapshot && attentionSnapshot.raw === raw) return attentionSnapshot.prefs;
+  let prefs = DEFAULT_ATTENTION;
+  try {
+    const parsed = raw ? JSON.parse(raw) as Partial<AttentionNotificationPrefs> : null;
+    if (parsed && typeof parsed === "object") {
+      prefs = {
+        approval: typeof parsed.approval === "boolean" ? parsed.approval : true,
+        question: typeof parsed.question === "boolean" ? parsed.question : true,
+      };
+    }
+  } catch { prefs = DEFAULT_ATTENTION; }
+  attentionSnapshot = { raw, prefs };
+  return prefs;
+}
+
+export function setAttentionNotificationPref(kind: AttentionKind, enabled: boolean): void {
+  localStorage.setItem(ATTENTION_STORAGE_KEY, JSON.stringify({ ...getAttentionNotificationPrefs(), [kind]: enabled }));
+  window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
+function subscribeAttention(notify: () => void) {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === ATTENTION_STORAGE_KEY || event.key === null) notify();
+  };
+  window.addEventListener(CHANGE_EVENT, notify);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(CHANGE_EVENT, notify);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+export function useAttentionNotificationPrefs(): AttentionNotificationPrefs {
+  return useSyncExternalStore(subscribeAttention, getAttentionNotificationPrefs, () => DEFAULT_ATTENTION);
+}
+
+/**
+ * Reminds a backgrounded user that a session is blocked on them. `onClick` is
+ * honoured by web notifications; native desktop notifications only activate
+ * the app, so the caller also navigates when the window regains focus.
+ */
+export function notifyAttention(kind: AttentionKind, sessionTitle: string, detail: string, onClick?: () => void): Promise<boolean> {
+  const allowed = async () => getAttentionNotificationPrefs()[kind] && await isAppInBackground();
+  const name = sessionTitle || "当前会话";
+  const title = kind === "approval" ? `需要你审批：${name}` : `需要你回答：${name}`;
+  const body = detail.trim().slice(0, 140) || (kind === "approval" ? "有操作等待你的批准，请返回 miniQ 处理。" : "助手在等待你的回答，请返回 miniQ 处理。");
+  return send(title, body, allowed, onClick);
 }
 
 export function sendTaskNotificationTest(): Promise<boolean> {

@@ -3,11 +3,12 @@
 
 use miniq_protocol::{
     Event, ExternalSessionImportJob, ExternalSessionImportRequest,
-    ExternalSessionImportStatusRequest, ExternalSessionScan, NodeHelloParams, NodeInitializeParams,
-    NodePluginLogParams, NodePluginMessage, NodeToolCancelParams, NodeToolExecuteParams,
-    NodeToolResultParams, NodeToolsRegisterParams, NodeToolsUnregisterParams,
-    PluginDiagnosticsResult, PluginIdParams, PluginInstallParams, PluginListResult,
-    PluginSetEnabledParams, RpcRequest, RpcResponse, Session,
+    ExternalSessionImportStatusRequest, ExternalSessionScan, ExternalSessionScanJob,
+    ExternalSessionScanStatusRequest, NodeHelloParams, NodeInitializeParams, NodePluginLogParams,
+    NodePluginMessage, NodeToolCancelParams, NodeToolExecuteParams, NodeToolResultParams,
+    NodeToolsRegisterParams, NodeToolsUnregisterParams, PluginDiagnosticsResult, PluginIdParams,
+    PluginInstallParams, PluginListResult, PluginSetEnabledParams, RpcRequest, RpcResponse,
+    Session,
 };
 use schemars::schema_for;
 use serde_json::json;
@@ -101,6 +102,14 @@ fn main() {
             schema_for!(miniq_protocol::ApprovalInboxPage),
         ),
         ("externalSessionScan", schema_for!(ExternalSessionScan)),
+        (
+            "externalSessionScanJob",
+            schema_for!(ExternalSessionScanJob),
+        ),
+        (
+            "externalSessionScanStatusRequest",
+            schema_for!(ExternalSessionScanStatusRequest),
+        ),
         (
             "externalSessionImportRequest",
             schema_for!(ExternalSessionImportRequest),

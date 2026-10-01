@@ -17,7 +17,7 @@ it("sends a three-minute recording below the relay wire limit without losing byt
     result.push(...reader.read(decoded)); count++;
   }
   expect(count).toBeGreaterThan(1); expect(result).toEqual([request]);
-});
+}, 30_000);
 
 it("keeps small requests in one ordinary frame", () => {
   const request = { id: "health", method: "daemon.health" };

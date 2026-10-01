@@ -5,7 +5,7 @@
   place-items: center;
   padding: 7px;
   list-style: none;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--text-mid);
 }
@@ -21,7 +21,7 @@
   max-width: calc(100vw - 32px);
   padding: 6px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--bg);
   box-shadow: var(--shadow-lg);
 }
@@ -48,14 +48,14 @@
     max-width: 112px;
     min-height: 44px;
     padding: 5px;
-    font-size: 16px;
+    font-size: var(--font-callout);
     color: var(--text);
     background: var(--bg-subtle);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius);
   }
   .conversation-tools .timeline-search { flex: 1; min-width: 0; gap: 4px; }
-  .conversation-tools .timeline-search input { width: 100%; min-height: 44px; font-size: 16px; }
+  .conversation-tools .timeline-search input { width: 100%; min-height: 44px; font-size: var(--font-callout); }
   .conversation-tools .timeline-search .icon-button,
   .conversation-tools .timeline-actions > summary { min-width: 44px; height: 44px; padding: 0; }
   .conversation-tools .timeline-action-list button { min-height: 44px; }

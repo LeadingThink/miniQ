@@ -115,6 +115,63 @@ impl Store {
         content: &str,
         attachments: &[MessageAttachment],
     ) -> Result<SessionRewrite> {
+        self.cut_session_at_user_message(session_id, message_id, Some((content, attachments)))
+    }
+
+    /// Remove a user message and everything after it, as if that turn had
+    /// never been sent. The returned message is the removed prompt so clients
+    /// can offer it for editing; its ID is included in `removed_message_ids`.
+    pub fn undo_session_to_user_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<SessionRewrite> {
+        self.cut_session_at_user_message(session_id, message_id, None)
+    }
+
+    /// File checkpoints recorded by tool calls at or after a user message,
+    /// oldest first. Undo restores them newest first.
+    pub fn checkpoints_since_user_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<Vec<super::CheckpointRow>> {
+        let conn = self.conn.lock().unwrap();
+        let created_at: String = conn
+            .query_row(
+                "SELECT created_at FROM messages WHERE id = ?1 AND session_id = ?2 AND role = 'user'",
+                params![message_id, session_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| MemoryError::NotFound(format!("user message {message_id}")))?;
+        let mut stmt = conn.prepare(
+            "SELECT c.id, c.session_id, c.tool_call_id, c.abs_path, c.existed, c.backup_path,
+                    c.created_at
+             FROM checkpoints c JOIN tool_calls t ON t.id = c.tool_call_id
+             WHERE c.session_id = ?1 AND t.session_id = ?1 AND t.created_at >= ?2
+             ORDER BY c.created_at ASC, c.id ASC",
+        )?;
+        let rows = stmt.query_map(params![session_id, created_at], |row| {
+            Ok(super::CheckpointRow {
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                tool_call_id: row.get(2)?,
+                abs_path: row.get(3)?,
+                existed: row.get::<_, i64>(4)? != 0,
+                backup_path: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    fn cut_session_at_user_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+        replacement: Option<(&str, &[MessageAttachment])>,
+    ) -> Result<SessionRewrite> {
         let mut conn = self.conn.lock().unwrap();
         let transaction = conn.transaction()?;
         let message = transaction
@@ -127,13 +184,16 @@ impl Store {
             .optional()?
             .ok_or_else(|| MemoryError::NotFound(format!("user message {message_id}")))?;
 
-        let removed_message_ids = collect_ids_after(
+        let mut removed_message_ids = collect_ids_after(
             &transaction,
             "messages",
             session_id,
             &message.created_at,
             message_id,
         )?;
+        if replacement.is_none() {
+            removed_message_ids.insert(0, message_id.to_string());
+        }
         let removed_tool_call_ids =
             collect_ids_since(&transaction, "tool_calls", session_id, &message.created_at)?;
         let removed_artifact_ids =
@@ -179,19 +239,34 @@ impl Store {
             params![session_id],
         )?;
         transaction.execute(
+            "DELETE FROM turn_plans WHERE session_id = ?1 AND (anchor_message_id = ?2
+               OR anchor_message_id NOT IN (SELECT id FROM messages WHERE session_id = ?1))",
+            params![session_id, message_id],
+        )?;
+        transaction.execute(
             "DELETE FROM queued_messages WHERE session_id = ?1",
             params![session_id],
         )?;
-        transaction.execute(
-            "UPDATE messages SET content = ?3, attachments_json = ?4
-             WHERE id = ?1 AND session_id = ?2",
-            params![
-                message_id,
-                session_id,
-                content,
-                serde_json::to_string(attachments)?
-            ],
-        )?;
+        match replacement {
+            Some((content, attachments)) => {
+                transaction.execute(
+                    "UPDATE messages SET content = ?3, attachments_json = ?4
+                     WHERE id = ?1 AND session_id = ?2",
+                    params![
+                        message_id,
+                        session_id,
+                        content,
+                        serde_json::to_string(attachments)?
+                    ],
+                )?;
+            }
+            None => {
+                transaction.execute(
+                    "DELETE FROM messages WHERE id = ?1 AND session_id = ?2",
+                    params![message_id, session_id],
+                )?;
+            }
+        }
         transaction.execute(
             "UPDATE sessions SET updated_at = ?2 WHERE id = ?1",
             params![session_id, now_iso()],
@@ -208,10 +283,13 @@ impl Store {
             ],
         )?;
 
-        let updated = Message {
-            content: content.to_string(),
-            attachments: attachments.to_vec(),
-            ..message
+        let updated = match replacement {
+            Some((content, attachments)) => Message {
+                content: content.to_string(),
+                attachments: attachments.to_vec(),
+                ..message
+            },
+            None => message,
         };
         transaction.commit()?;
         Ok(SessionRewrite {

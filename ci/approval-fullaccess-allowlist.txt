@@ -1,0 +1,12 @@
+# Files allowed to branch on `ApprovalMode::FullAccess` (plan v3 §4.2).
+# Approval decisions belong in executor/approval.rs; the other entries only
+# derive non-approval capabilities from the mode. Add a file here only after
+# review. Checked by miniq-daemon test `fullaccess_checks_stay_allowlisted`.
+crates/miniq-daemon/src/executor/approval.rs
+crates/miniq-daemon/src/executor/permission_tests.rs
+crates/miniq-daemon/src/gateway/session_approval.rs
+# external path access for the turn / sub-agents, bypassPermissions guard
+crates/miniq-daemon/src/turn.rs
+crates/miniq-daemon/src/agent_tasks.rs
+# default answer for unattended questions
+crates/miniq-daemon/src/executor/interaction.rs

@@ -8,8 +8,16 @@ import { emptyCatalog, hostKey, type HostCatalog } from "../hostWorkspace";
 import { useTaskNotifications } from "./useTaskNotifications";
 
 const notifyTaskResult = vi.hoisted(() => vi.fn());
+const badge = vi.hoisted(() => ({ recordTurnEnd: vi.fn(), clear: vi.fn() }));
+const disposeFocus = vi.hoisted(() => vi.fn());
 vi.mock("../taskNotifications", () => ({ notifyTaskResult }));
-beforeEach(() => { notifyTaskResult.mockReset(); });
+vi.mock("../turnBadge", () => ({ createTurnBadge: () => badge, clearTurnBadgeOnFocus: () => disposeFocus }));
+beforeEach(() => {
+  notifyTaskResult.mockReset();
+  badge.recordTurnEnd.mockReset();
+  badge.clear.mockReset();
+  disposeFocus.mockReset();
+});
 afterEach(cleanup);
 
 function catalog(host: string | null, label: string, title: string): HostCatalog {
@@ -103,4 +111,21 @@ it("keeps one active subscription in StrictMode and removes both subscriptions o
   hook.unmount();
   expect(hook.local.size).toBe(0);
   expect(hook.hosts.size).toBe(0);
+});
+
+it("adds one badge count per new turn end across hosts and skips replays and other events", () => {
+  const hook = setup();
+  const done: DaemonEvent = { type: "turn_completed", sessionId: "same-session", eventCursor: { epoch: "run", sequence: 1 } };
+  hook.emit(null, done);
+  hook.emit("alpha", { ...done, type: "turn_failed", error: "failed" });
+  hook.emit("alpha", { ...done, type: "turn_failed", error: "failed" });
+  hook.emit("alpha", { type: "session_deleted", sessionId: "other" });
+  expect(badge.recordTurnEnd).toHaveBeenCalledTimes(2);
+});
+
+it("clears the badge and stops focus tracking on unmount", () => {
+  const hook = setup();
+  hook.unmount();
+  expect(disposeFocus).toHaveBeenCalledTimes(1);
+  expect(badge.clear).toHaveBeenCalledTimes(1);
 });

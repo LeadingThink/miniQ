@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
+  FolderPlus,
   Archive,
   ChevronDown,
   ChevronRight,
@@ -7,15 +8,15 @@ import {
   Clock3,
   Download,
   Folder,
+  FolderOpen,
   MessageSquareText,
   MoreHorizontal,
   PencilLine,
-  Plug,
-  Puzzle,
   Plus,
+  RefreshCw,
   Search,
+  SearchX,
   Settings,
-  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -24,6 +25,10 @@ import type { AppUpdaterState } from "../hooks/useAppUpdater";
 import { openExternalUrl } from "../externalLinks";
 import { UpdateNotice } from "./UpdateNotice";
 import { DropdownMenu } from "./DropdownMenu";
+import { revealInFinder } from "../fileActions";
+import { isTauriRuntime } from "../runtime";
+import { ConfirmDialog } from "./ui/Dialog";
+import { EmptyState } from "./ui/EmptyState";
 import { SidebarPanel } from "./SidebarPanel";
 import { SidebarSessionItem } from "./SidebarSessionItem";
 import { handleSidebarNavigation, SidebarFilters, sidebarGroups, useMobileSidebarLayout, useProjectDisclosure, type SidebarFilter } from "./SidebarNavigation";
@@ -39,6 +44,8 @@ export interface SidebarHostGroup {
   state: string;
   error?: string;
   workspaceIds: string[];
+  /** False when this host's workspaces are not on this machine. */
+  local?: boolean;
   selected: boolean;
   onSelect: () => void;
 }
@@ -62,12 +69,17 @@ interface SidebarProps {
   onEditWorkspace: (workspaceId: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSessionSeen: (sessionId: string) => void;
+  onSessionUnread?: (sessionId: string) => void;
+  onMarkAllRead?: () => void;
   onDeleteSession: (sessionId: string) => void;
   onRenameSession: (sessionId: string, title: string) => void;
   onSetSessionPinned: (sessionId: string, pinned: boolean) => void;
   onSetSessionArchived: (sessionId: string, archived: boolean) => void;
-  onShowSkills: () => void;
-  onShowMcp: () => void;
+  /** @deprecated 技能 / MCP / 插件已移入设置。保留以兼容旧调用方。 */
+  onShowSkills?: () => void;
+  /** @deprecated */
+  onShowMcp?: () => void;
+  /** @deprecated */
   onShowPlugins?: () => void;
   onShowSettings: () => void;
   updateSupported: boolean;
@@ -80,7 +92,12 @@ interface SidebarProps {
 export function Sidebar(props: SidebarProps) {
   const mobile = useMobileSidebarLayout();
   const [moreOpen, setMoreOpen] = useState(false);
-  const showSecondary = !mobile || moreOpen;
+  const showSecondary = mobile && moreOpen;
+  const [footerMenuOpen, setFooterMenuOpen] = useState(false);
+  const footerMenuRef = useRef<HTMLButtonElement>(null);
+  const openFeedback = () => void openExternalUrl(FEEDBACK_FORM_URL).catch((cause) => {
+    props.onError(`无法打开反馈页面：${cause instanceof Error ? cause.message : String(cause)}`);
+  });
   const [showArchived, setShowArchived] = useState(() => props.sessions.some((session) => session.id === props.currentSessionId && session.archived));
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SidebarFilter>("all");
@@ -104,29 +121,24 @@ export function Sidebar(props: SidebarProps) {
   const archiveOpen = showArchived || navigation.filtering;
   return (
     <SidebarPanel>
-      <div className="sidebar-brand-row">
-        <div className="brand">miniQ</div>
+      <div className="sidebar-brand-row" data-tauri-drag-region>
+        <div className="brand" data-tauri-drag-region>miniQ</div>
         {mobile && props.onClose && <button type="button" className="sidebar-close" aria-label="关闭项目与会话侧栏" onClick={props.onClose}><X size={19} /></button>}
       </div>
       <div className="sidebar-primary-actions">
-      <button type="button" className="nav-item sidebar-nav-button" onClick={props.onNewChat}>
+      <button type="button" className="nav-item sidebar-nav-button" onClick={props.onNewChat} title="新对话（⌘/Ctrl+N）">
         <PencilLine className="nav-icon" size={16} /> 新对话
       </button>
       <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSearch}>
         <Search className="nav-icon" size={16} /> {mobile ? "搜索内容" : "搜索"}
       </button>
-      </div>
-      {showSecondary && <div className="sidebar-secondary-actions" id="sidebar-secondary-actions">
-      <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSchedule}>
+      {!mobile && <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSchedule}>
         <Clock3 className="nav-icon" size={16} /> 已安排
-      </button>
-      <button type="button" className="nav-item sidebar-nav-button" onClick={props.onImportSessions}>
-        <Download className="nav-icon" size={15} /> 导入会话
-      </button>
-      </div>}
+      </button>}
+      </div>
 
       <div className="sidebar-scroll" role="navigation" aria-label="项目与会话" onKeyDown={handleSidebarNavigation}>
-        {props.workspaces.length > 0 && <SidebarFilters query={query} filter={filter} counts={navigation.counts} onQuery={setQuery} onFilter={setFilter} />}
+        {props.workspaces.length > 0 && <SidebarFilters query={query} filter={filter} counts={navigation.counts} onQuery={setQuery} onFilter={setFilter} onMarkAllRead={props.onMarkAllRead} />}
         {props.hostGroups?.filter((host) => !host.workspaceIds.length).map((host) => <HostHeading key={host.key} host={host} />)}
         {navigation.groups.map(({ workspace, sessions }, index) => (
           <Fragment key={workspace.id}>
@@ -143,8 +155,11 @@ export function Sidebar(props: SidebarProps) {
             onDeleteWorkspace={props.onDeleteWorkspace}
             onRenameWorkspace={props.onRenameWorkspace}
             onEditWorkspace={props.onEditWorkspace}
+            canReveal={isTauriRuntime() && !props.hostGroups?.some((host) => host.local === false && host.workspaceIds.includes(workspace.id))}
+            onError={props.onError}
             onSelectSession={props.onSelectSession}
             onSessionSeen={props.onSessionSeen}
+            onSessionUnread={props.onSessionUnread}
             onDeleteSession={props.onDeleteSession}
             onRenameSession={props.onRenameSession}
             onSetSessionPinned={props.onSetSessionPinned}
@@ -154,13 +169,23 @@ export function Sidebar(props: SidebarProps) {
           </Fragment>
         ))}
         {props.workspaces.length === 0 && (
-          <div className="sidebar-empty">点击新对话选择或创建一个项目开始协作</div>
+          <EmptyState
+            compact
+            className="sidebar-empty"
+            icon={<FolderPlus size={20} />}
+            title="还没有项目"
+            description="点击新对话选择或创建一个项目开始协作"
+          />
         )}
         {navigation.filtering && navigation.groups.length === 0 && archivedSessions.length === 0 && (
-          <div className="sidebar-filter-empty" role="status">
-            没有符合条件的会话
-            <button type="button" onClick={() => { setQuery(""); setFilter("all"); }}>清除筛选，查看全部</button>
-          </div>
+          <EmptyState
+            compact
+            live
+            className="sidebar-filter-empty"
+            icon={<SearchX size={20} />}
+            title="没有符合条件的会话"
+            action={<button type="button" className="ghost" onClick={() => { setQuery(""); setFilter("all"); }}>清除筛选，查看全部</button>}
+          />
         )}
         {archivedSessions.length > 0 && (
           <>
@@ -184,6 +209,7 @@ export function Sidebar(props: SidebarProps) {
                   contextLabel={workspaceLabels.get(session.workspaceId)}
                   onSelect={props.onSelectSession}
                   onSeen={props.onSessionSeen}
+                  onMarkUnread={props.onSessionUnread}
                   unread={props.unreadSessionIds.has(session.id)}
                   onDelete={props.onDeleteSession}
                   onRename={props.onRenameSession}
@@ -196,45 +222,67 @@ export function Sidebar(props: SidebarProps) {
       </div>
 
       <div className="sidebar-footer">
-        <UpdateNotice
+        {(mobile || updateNeedsAttention(props.updateState)) && <UpdateNotice
           supported={props.updateSupported}
           state={props.updateState}
           onCheck={props.onCheckForUpdates}
           onInstall={props.onInstallUpdate}
-        />
+        />}
         {showSecondary && <div className="sidebar-secondary-actions" id="sidebar-secondary-footer">
-        <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSkills}>
-          <Sparkles className="nav-icon" size={16} /> 技能
-        </button>
-        <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowMcp}>
-          <Plug className="nav-icon" size={16} /> MCP
-        </button>
-        <button
-          type="button"
-          className="nav-item sidebar-nav-button"
-          onClick={() => props.onShowPlugins?.()}
-        >
-          <Puzzle className="nav-icon" size={16} /> 插件
+        {mobile && <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSchedule}>
+          <Clock3 className="nav-icon" size={16} /> 已安排
+        </button>}
+        <button type="button" className="nav-item sidebar-nav-button" onClick={props.onImportSessions}>
+          <Download className="nav-icon" size={15} /> 导入会话
         </button>
         <button
           type="button"
           className="nav-item sidebar-nav-button"
           title="打开反馈表单"
-          onClick={() => void openExternalUrl(FEEDBACK_FORM_URL).catch((cause) => {
-            props.onError(`无法打开反馈页面：${cause instanceof Error ? cause.message : String(cause)}`);
-          })}
+          onClick={openFeedback}
         >
           <MessageSquareText className="nav-icon" size={16} /> 反馈
         </button>
         </div>}
-        <div className="sidebar-primary-actions">
-        {mobile && <button type="button" className="nav-item sidebar-nav-button" aria-expanded={moreOpen}
-          aria-controls="sidebar-secondary-actions sidebar-secondary-footer" onClick={() => setMoreOpen((value) => !value)}>
+        {mobile && <div className="sidebar-primary-actions">
+        <button type="button" className="nav-item sidebar-nav-button" aria-expanded={moreOpen}
+          aria-controls="sidebar-secondary-footer" onClick={() => setMoreOpen((value) => !value)}>
           <MoreHorizontal className="nav-icon" size={16} /> {moreOpen ? "收起功能" : "更多功能"}
-        </button>}
-        <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSettings}>
-          <Settings className="nav-icon" size={16} /> 设置
         </button>
+        </div>}
+        <div className="sidebar-account-row">
+          <div className="sidebar-account" title="本机账户">
+            <span className="sidebar-account-avatar" aria-hidden="true">Q</span>
+            <span className="sidebar-account-name">本机</span>
+          </div>
+          {!mobile && <>
+            <button
+              ref={footerMenuRef}
+              type="button"
+              className="icon-button sidebar-footer-more"
+              aria-label="更多"
+              aria-haspopup="menu"
+              aria-expanded={footerMenuOpen}
+              title="导入会话、反馈与更新"
+              onClick={() => setFooterMenuOpen((open) => !open)}
+            >
+              <MoreHorizontal size={16} />
+            </button>
+            <DropdownMenu triggerRef={footerMenuRef} open={footerMenuOpen} onClose={() => setFooterMenuOpen(false)}>
+              <button type="button" className="dropdown-item" onClick={() => { setFooterMenuOpen(false); props.onImportSessions(); }}>
+                <Download size={13} /><span>导入会话</span>
+              </button>
+              <button type="button" className="dropdown-item" onClick={() => { setFooterMenuOpen(false); openFeedback(); }}>
+                <MessageSquareText size={13} /><span>反馈</span>
+              </button>
+              {props.updateSupported && <button type="button" className="dropdown-item" onClick={() => { setFooterMenuOpen(false); props.onCheckForUpdates(); }}>
+                <RefreshCw size={13} /><span>{updateMenuLabel(props.updateState)}</span>
+              </button>}
+            </DropdownMenu>
+          </>}
+          <button type="button" className="nav-item sidebar-nav-button sidebar-settings-button" onClick={props.onShowSettings} title="设置（⌘/Ctrl+,）">
+            <Settings className="nav-icon" size={16} /> 设置
+          </button>
         </div>
       </div>
     </SidebarPanel>
@@ -263,8 +311,11 @@ interface WorkspaceGroupProps {
   onDeleteWorkspace: (workspaceId: string) => void;
   onRenameWorkspace: (workspaceId: string, name: string) => void;
   onEditWorkspace: (workspaceId: string) => void;
+  canReveal?: boolean;
+  onError?: (message: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSessionSeen: (sessionId: string) => void;
+  onSessionUnread?: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
   onRenameSession: (sessionId: string, title: string) => void;
   onSetSessionPinned: (sessionId: string, pinned: boolean) => void;
@@ -278,6 +329,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(props.workspace.name);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const renameCommittedRef = useRef(false);
@@ -390,12 +442,29 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
             open={menuOpen}
             onClose={() => setMenuOpen(false)}
           >
+            <button type="button" className="dropdown-item" onClick={(event) => {
+              event.stopPropagation();
+              setMenuOpen(false);
+              props.onCreateSession(props.workspace.id);
+            }}>
+              <Plus size={13} /><span>在此项目新建会话</span>
+            </button>
             <button type="button" className="dropdown-item" onClick={() => {
               setMenuOpen(false);
               props.onEditWorkspace(props.workspace.id);
             }}>
               <Folder size={13} /><span>项目目录</span>
             </button>
+            {props.canReveal && (
+              <button type="button" className="dropdown-item" onClick={() => {
+                setMenuOpen(false);
+                void revealInFinder(props.workspace.path, { directory: true }).catch((cause) =>
+                  props.onError?.(cause instanceof Error ? cause.message : String(cause)),
+                );
+              }}>
+                <FolderOpen size={13} /><span>在 Finder 中显示</span>
+              </button>
+            )}
             <button
               type="button"
               className="dropdown-item"
@@ -416,9 +485,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
               onClick={(event) => {
                 event.stopPropagation();
                 setMenuOpen(false);
-                if (window.confirm(`确定要删除项目「${props.workspace.name}」吗？该项目下的所有会话也将被删除。`)) {
-                  props.onDeleteWorkspace(props.workspace.id);
-                }
+                setConfirmDelete(true);
               }}
             >
               <Trash2 size={13} />
@@ -434,6 +501,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
           session={session}
           onSelect={props.onSelectSession}
           onSeen={props.onSessionSeen}
+                  onMarkUnread={props.onSessionUnread}
           unread={props.unreadSessionIds.has(session.id)}
           onDelete={props.onDeleteSession}
           onRename={props.onRenameSession}
@@ -452,6 +520,30 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
           <span>{expanded ? "收起" : `展开 ${hiddenCount} 条会话`}</span>
         </button>
       )}
+      <ConfirmDialog
+        open={confirmDelete}
+        tone="danger"
+        title={`删除项目“${props.workspace.name}”？`}
+        description="该项目下的所有会话也将被删除，此操作无法撤销。"
+        confirmLabel="删除项目"
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          props.onDeleteWorkspace(props.workspace.id);
+        }}
+      />
     </div>
   );
+}
+
+/** Desktop keeps routine update states in the footer menu; only states that
+ *  need the user's attention take a row of their own. */
+export function updateNeedsAttention(state: AppUpdaterState): boolean {
+  return state.phase !== "idle" && state.phase !== "up-to-date" && state.phase !== "unavailable";
+}
+
+function updateMenuLabel(state: AppUpdaterState): string {
+  if (state.phase === "up-to-date") return `检查更新（已是最新${state.version ? ` v${state.version}` : ""}）`;
+  if (state.phase === "unavailable") return "检查更新（当前平台暂无更新）";
+  return "检查更新";
 }

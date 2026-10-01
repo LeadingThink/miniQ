@@ -56,6 +56,34 @@ pub struct PluginManifest {
     pub author: Option<String>,
     #[serde(default)]
     pub engine: Option<PluginEngine>,
+    /// WASM tools the author declares side-effect free (plan v3 §4.4, the
+    /// API v1 form of `extensions."dev.miniq".nativeTools[].readOnly`).
+    /// They are evaluated as Low risk instead of the Medium default.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub read_only_tools: Vec<String>,
+    /// MCP servers (connectors) contributed while the plugin is enabled.
+    /// Allowed for every runtime and needs no extra capability, so a
+    /// `runtime = "skills"` pack can ship both skills and connectors.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mcp_servers: Vec<PluginMcpServer>,
+}
+
+/// One `[[mcp_servers]]` entry of a plugin manifest: a stdio MCP server the
+/// daemon launches on demand.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PluginMcpServer {
+    /// Globally visible server name (`^[a-z0-9][a-z0-9-]{0,39}$`).
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Names of daemon environment variables forwarded to the server when
+    /// set (values never live in the manifest).
+    #[serde(default)]
+    pub env: Vec<String>,
 }
 
 fn default_enabled() -> bool {
@@ -82,6 +110,10 @@ pub enum ManifestError {
     MissingNodeEngine,
     #[error("engine.node is only valid for Node plugins")]
     UnexpectedNodeEngine,
+    #[error("read_only_tools is only valid for WASM plugins and must list tool names")]
+    InvalidReadOnlyTools,
+    #[error("invalid mcp_servers entry: {0}")]
+    InvalidMcpServer(String),
 }
 
 impl PluginManifest {
@@ -127,6 +159,15 @@ impl PluginManifest {
         {
             return Err(ManifestError::UnsupportedCapability);
         }
+        if !self.read_only_tools.is_empty()
+            && (self.runtime != PluginRuntime::Wasm
+                || self
+                    .read_only_tools
+                    .iter()
+                    .any(|name| name.is_empty() || name.contains(['.', '/', '\\'])))
+        {
+            return Err(ManifestError::InvalidReadOnlyTools);
+        }
         match self.runtime {
             PluginRuntime::Wasm => {
                 if self.engine.is_some() {
@@ -156,8 +197,59 @@ impl PluginManifest {
         if self.runtime != PluginRuntime::Skills && !valid_entry(&self.entry, self.runtime) {
             return Err(ManifestError::InvalidEntry);
         }
+        self.validate_mcp_servers()
+    }
+
+    fn validate_mcp_servers(&self) -> Result<(), ManifestError> {
+        let mut seen = std::collections::BTreeSet::new();
+        for server in &self.mcp_servers {
+            if !valid_mcp_server_name(&server.name) {
+                return Err(ManifestError::InvalidMcpServer(format!(
+                    "name {:?} must match ^[a-z0-9][a-z0-9-]{{0,39}}$",
+                    server.name
+                )));
+            }
+            if !seen.insert(server.name.as_str()) {
+                return Err(ManifestError::InvalidMcpServer(format!(
+                    "duplicate server name {:?}",
+                    server.name
+                )));
+            }
+            if server.command.trim().is_empty() {
+                return Err(ManifestError::InvalidMcpServer(format!(
+                    "server {:?} has an empty command",
+                    server.name
+                )));
+            }
+            if let Some(name) = server.env.iter().find(|name| !valid_env_name(name)) {
+                return Err(ManifestError::InvalidMcpServer(format!(
+                    "server {:?} lists invalid environment variable name {name:?}",
+                    server.name
+                )));
+            }
+        }
         Ok(())
     }
+}
+
+/// `^[a-z0-9][a-z0-9-]{0,39}$`
+pub(crate) fn valid_mcp_server_name(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 40
+        && (bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_digit())
+        && bytes
+            .iter()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+}
+
+/// POSIX-portable environment variable name: `^[A-Za-z_][A-Za-z0-9_]*$`.
+pub(crate) fn valid_env_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 fn valid_plugin_id(id: &str) -> bool {
@@ -217,7 +309,126 @@ mod tests {
             description: None,
             author: None,
             engine: None,
+            read_only_tools: Vec::new(),
+            mcp_servers: Vec::new(),
         }
+    }
+
+    const SKILLS_WITH_MCP: &str = r#"
+id = "dev.miniq.linear"
+name = "Linear"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["linear"]
+
+[[mcp_servers]]
+name = "linear"
+description = "Linear issues"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://mcp.linear.app/mcp"]
+env = []
+
+[[mcp_servers]]
+name = "linear-2"
+command = "linear-mcp"
+env = ["LINEAR_API_KEY", "_X1"]
+"#;
+
+    #[test]
+    fn parses_mcp_servers_on_skills_runtime() {
+        let parsed = PluginManifest::parse(SKILLS_WITH_MCP).unwrap();
+        assert_eq!(parsed.capabilities, vec![PluginCapability::Skills]);
+        assert_eq!(parsed.mcp_servers.len(), 2);
+        let linear = &parsed.mcp_servers[0];
+        assert_eq!(linear.name, "linear");
+        assert_eq!(linear.description.as_deref(), Some("Linear issues"));
+        assert_eq!(linear.command, "npx");
+        assert_eq!(linear.args.len(), 3);
+        assert!(linear.env.is_empty());
+        let second = &parsed.mcp_servers[1];
+        assert!(second.args.is_empty());
+        assert_eq!(second.env, vec!["LINEAR_API_KEY", "_X1"]);
+
+        // Round-trips through the serializer used by set_enabled.
+        let reparsed = PluginManifest::parse(&toml::to_string_pretty(&parsed).unwrap()).unwrap();
+        assert_eq!(reparsed.mcp_servers, parsed.mcp_servers);
+        // Manifests without connectors still serialize without the key.
+        assert!(!toml::to_string_pretty(&manifest())
+            .unwrap()
+            .contains("mcp_servers"));
+    }
+
+    #[test]
+    fn rejects_invalid_mcp_servers() {
+        for (from, to) in [
+            ("name = \"linear-2\"", "name = \"linear\""),
+            ("name = \"linear-2\"", "name = \"Linear\""),
+            ("name = \"linear-2\"", "name = \"-linear\""),
+            ("name = \"linear-2\"", "name = \"\""),
+            (
+                "name = \"linear-2\"",
+                "name = \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+            ),
+            ("name = \"linear-2\"", "name = \"lin_ear\""),
+            ("\"_X1\"", "\"1ABC\""),
+            ("\"_X1\"", "\"A-B\""),
+            ("\"_X1\"", "\"A=B\""),
+            ("command = \"linear-mcp\"", "command = \" \""),
+        ] {
+            let raw = SKILLS_WITH_MCP.replace(from, to);
+            assert!(
+                matches!(
+                    PluginManifest::parse(&raw),
+                    Err(ManifestError::InvalidMcpServer(_))
+                ),
+                "{to} should be rejected"
+            );
+        }
+        let unknown = SKILLS_WITH_MCP.replace("env = []", "env = []\nurl = \"x\"");
+        assert!(matches!(
+            PluginManifest::parse(&unknown),
+            Err(ManifestError::InvalidToml(_))
+        ));
+        let missing_command = SKILLS_WITH_MCP.replace("command = \"npx\"\n", "");
+        assert!(matches!(
+            PluginManifest::parse(&missing_command),
+            Err(ManifestError::InvalidToml(_))
+        ));
+        // Longest valid name (40 chars) is accepted.
+        let longest = SKILLS_WITH_MCP.replace(
+            "name = \"linear-2\"",
+            "name = \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+        );
+        assert!(PluginManifest::parse(&longest).is_ok());
+    }
+
+    #[test]
+    fn read_only_tools_are_wasm_only() {
+        let mut wasm = manifest();
+        wasm.read_only_tools = vec!["count".into()];
+        assert!(wasm.validate().is_ok());
+        wasm.read_only_tools = vec!["other.count".into()];
+        assert!(matches!(
+            wasm.validate(),
+            Err(ManifestError::InvalidReadOnlyTools)
+        ));
+        let parsed = PluginManifest::parse(
+            r#"id = "dev.miniq.node-test"
+name = "Test"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "node"
+entry = "index.mjs"
+capabilities = ["tool"]
+read_only_tools = ["count"]
+
+[engine]
+node = ">=22"
+"#,
+        );
+        assert!(matches!(parsed, Err(ManifestError::InvalidReadOnlyTools)));
     }
 
     #[test]

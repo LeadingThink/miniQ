@@ -1,0 +1,9 @@
+id = "miniq.official.record-replay"
+name = "录制与回放"
+version = "1.1.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["workflow-record", "workflow-replay"]
+description = "录制你在 Mac 上的操作演示（截图与应用切换事件），脱敏后生成并校验可复用技能，再逐步观察验证地回放或演练"
+author = "miniQ"

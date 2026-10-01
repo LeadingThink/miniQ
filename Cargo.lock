@@ -1046,6 +1046,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
+name = "crossterm"
+version = "0.28.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "829d955a0bb380ef178a640b91779e3987da38c9aea133b20614cfed8cdea9c6"
+dependencies = [
+ "bitflags",
+ "crossterm_winapi",
+ "futures-core",
+ "mio",
+ "parking_lot",
+ "rustix 0.38.44",
+ "signal-hook",
+ "signal-hook-mio",
+ "winapi",
+]
+
+[[package]]
+name = "crossterm_winapi"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acdd7c62a3665c7f6830a51635d9ac9b23ed385797f70a83bb8bafe9c572ab2b"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
 name = "crunchy"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2638,7 +2664,7 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniq-agent"
-version = "0.1.56"
+version = "0.1.74"
 dependencies = [
  "async-trait",
  "axum",
@@ -2657,12 +2683,14 @@ dependencies = [
 
 [[package]]
 name = "miniq-cli"
-version = "0.1.56"
+version = "0.1.74"
 dependencies = [
  "anyhow",
  "clap",
  "clap_complete",
+ "crossterm",
  "futures-util",
+ "ignore",
  "miniq-local",
  "miniq-protocol",
  "reqwest",
@@ -2671,14 +2699,16 @@ dependencies = [
  "semver",
  "serde_json",
  "tempfile",
+ "time",
  "tokio",
  "tokio-tungstenite 0.26.2",
+ "unicode-width 0.2.2",
  "url",
 ]
 
 [[package]]
 name = "miniq-daemon"
-version = "0.1.56"
+version = "0.1.74"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2722,7 +2752,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-docs"
-version = "0.1.56"
+version = "0.1.74"
 dependencies = [
  "calamine",
  "csv",
@@ -2738,18 +2768,19 @@ dependencies = [
 
 [[package]]
 name = "miniq-local"
-version = "0.1.56"
+version = "0.1.74"
 dependencies = [
  "base64 0.22.1",
  "fs2",
  "serde",
  "serde_json",
  "tempfile",
+ "tracing",
 ]
 
 [[package]]
 name = "miniq-memory"
-version = "0.1.56"
+version = "0.1.74"
 dependencies = [
  "miniq-protocol",
  "rusqlite",
@@ -2763,7 +2794,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-models"
-version = "0.1.56"
+version = "0.1.74"
 dependencies = [
  "async-trait",
  "axum",
@@ -2783,9 +2814,10 @@ dependencies = [
 
 [[package]]
 name = "miniq-plugins"
-version = "0.1.56"
+version = "0.1.74"
 dependencies = [
  "async-trait",
+ "miniq-local",
  "miniq-protocol",
  "miniq-sandbox",
  "miniq-skills",
@@ -2807,7 +2839,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-protocol"
-version = "0.1.56"
+version = "0.1.74"
 dependencies = [
  "schemars",
  "serde",
@@ -2817,7 +2849,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-sandbox"
-version = "0.1.56"
+version = "0.1.74"
 dependencies = [
  "miniq-protocol",
  "tempfile",
@@ -2826,7 +2858,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-session-connectors"
-version = "0.1.56"
+version = "0.1.74"
 dependencies = [
  "miniq-protocol",
  "rayon",
@@ -2840,7 +2872,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-skills"
-version = "0.1.56"
+version = "0.1.74"
 dependencies = [
  "async-trait",
  "regex",
@@ -2854,7 +2886,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-tools"
-version = "0.1.56"
+version = "0.1.74"
 dependencies = [
  "async-trait",
  "axum",
@@ -2867,6 +2899,7 @@ dependencies = [
  "html2text",
  "ignore",
  "image",
+ "libc",
  "lopdf",
  "miniq-docs",
  "miniq-memory",
@@ -2910,6 +2943,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "02bd0af71c67b473010cbbc60715ee815645a4dc942899111f494b4b737d6fda"
 dependencies = [
  "libc",
+ "log",
  "wasi",
  "windows-sys 0.61.2",
 ]
@@ -4340,6 +4374,27 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
+name = "signal-hook"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d881a16cf4426aa584979d30bd82cb33429027e42122b169753d6ef1085ed6e2"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
+name = "signal-hook-mio"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b75a19a7a740b25bc7944bdee6172368f988763b744e3d4dfe753f6b4ece40cc"
+dependencies = [
+ "libc",
+ "mio",
+ "signal-hook",
+]
 
 [[package]]
 name = "signal-hook-registry"

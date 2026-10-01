@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
+import { applyTheme } from "../theme";
 import { TimelineEntries } from "../components/TimelineEntries";
 import { MobileChatRow } from "../components/MobileChatRow";
-import type { Message } from "../types";
+import type { Message, ToolCall } from "../types";
+import type { TimelineGroup } from "../timelineModel";
 import type { MobileChatMessage } from "../mobileChatData";
 import "@fontsource-variable/inter/wght.css";
 import "@fontsource-variable/jetbrains-mono/wght.css";
@@ -35,7 +37,32 @@ const initialMessages: Message[] = [
   message("last-year-answer", "assistant", "好。", lastYear),
   message("unbroken", "user", "abcdefghijklmnopqrstuvwxyz0123456789".repeat(8)),
   message("multiline", "user", "第一行\n\n第三行保留空行。\n第四行。"),
+  message("fold-request", "user", "跑一遍发布检查，把结果列成表。"),
+  message("table-answer", "assistant", [
+    "本轮发布检查结果如下：",
+    "",
+    "| 序号 | 检查项目 | 负责模块 | 结论与说明 |",
+    "| --- | --- | --- | --- |",
+    "| 1 | 类型检查 | apps/desktop | 通过，无新增错误 |",
+    "| 2 | 单元测试 | vitest | 全部通过，新增折叠与输入框菜单用例 |",
+    "| 10 | 构建产物 | vite build | 通过；主包体积与上一版本基本持平，仅新增会话样式文件 |",
+  ].join("\n")),
 ];
+// One turn of execution so the collapsed fold renders above the table answer.
+const tool = (id: string, toolName: string, input: unknown, status: ToolCall["status"] = "succeeded"): ToolCall => ({
+  id, sessionId: "message-layout", toolName, input, status, output: "ok",
+  createdAt: today.toISOString(), completedAt: new Date(today.getTime() + 4_000).toISOString(),
+});
+const foldTools: ToolCall[] = [
+  tool("fold-tsc", "shell_run", { command: "npx tsc --noEmit" }),
+  tool("fold-vitest", "shell_run", { command: "npx vitest run" }),
+  tool("fold-edit", "file_edit", { path: "src/styles/conversation-v2.css" }),
+  tool("fold-build", "shell_run", { command: "npx vite build" }, "failed"),
+];
+const timelineItems = (messages: Message[]): TimelineGroup[] => messages.flatMap((entry): TimelineGroup[] => [
+  ...(entry.id === "table-answer" ? [{ kind: "tools" as const, at: foldTools[0].createdAt, calls: foldTools }] : []),
+  { kind: "message", at: entry.createdAt, message: entry },
+]);
 const initialMobileMessages: MobileChatMessage[] = [
   { id: "mobile-hello", role: "user", content: "hello", createdAt: today.toISOString() },
   { id: "mobile-answer", role: "assistant", content: "好。", createdAt: lastYear.toISOString(), elapsedMs: 172_801_000 },
@@ -68,7 +95,7 @@ function Fixture() {
       <p className="layout-preview-status" role="status">{status}</p>
       <h2>桌面与远程会话</h2>
       <section className="timeline" aria-label="桌面消息布局">
-        <TimelineEntries items={messages.map((entry) => ({ kind: "message", at: entry.createdAt, message: entry }))}
+        <TimelineEntries items={timelineItems(messages)}
           messages={messages} expandGroups={false} approvals={[]} questions={[]} plan={[]}
           streamingText="" turnProgress={null} thinking={false} busy={false}
           onResolveApproval={noop} onResolveQuestion={noop} onRollback={noop} onOpenFile={noop} onOpenUrl={noop}
@@ -91,4 +118,6 @@ function Fixture() {
   </>;
 }
 
+// Headless --force-dark-mode screenshots: follow the system scheme.
+if (new URLSearchParams(location.search).has("dark") || window.matchMedia?.("(prefers-color-scheme: dark)").matches) applyTheme("night");
 if (import.meta.env.DEV) createRoot(document.getElementById("root")!).render(<Fixture />);

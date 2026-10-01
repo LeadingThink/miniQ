@@ -169,7 +169,7 @@ export function buildComposerSlashCommands(
       group: "扩展",
       keywords: ["skills", "skill", "技能"],
       icon: "skills",
-      onSelect: () => app.navigation.setPage("skills"),
+      onSelect: () => app.navigation.openSettings("skills"),
     },
     {
       id: "mcp",
@@ -178,7 +178,7 @@ export function buildComposerSlashCommands(
       group: "扩展",
       keywords: ["mcp", "tools", "工具", "连接"],
       icon: "mcp",
-      onSelect: () => app.navigation.setPage("mcp"),
+      onSelect: () => app.navigation.openSettings("mcp"),
     },
     {
       id: "plugins",
@@ -187,7 +187,7 @@ export function buildComposerSlashCommands(
       group: "扩展",
       keywords: ["plugin", "plugins", "插件", "扩展"],
       icon: "mcp",
-      onSelect: () => app.navigation.setPage("plugins"),
+      onSelect: () => app.navigation.openSettings("plugins"),
     },
     {
       id: "schedule",

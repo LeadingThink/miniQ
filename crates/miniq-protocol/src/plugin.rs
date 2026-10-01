@@ -52,6 +52,22 @@ pub struct PluginInfo {
     pub trust_confirmed: bool,
     pub skills: Vec<String>,
     pub dependencies: Vec<PluginDependencyStatus>,
+    /// First-party plugin shipped with miniQ: cannot be uninstalled, only
+    /// disabled, and is upgraded automatically with the app.
+    #[serde(default)]
+    pub bundled: bool,
+    /// MCP servers (connectors) this plugin contributes while enabled.
+    #[serde(default)]
+    pub mcp_servers: Vec<PluginMcpServerInfo>,
+}
+
+/// Public, secret-free view of an MCP server declared by a plugin manifest.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginMcpServerInfo {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

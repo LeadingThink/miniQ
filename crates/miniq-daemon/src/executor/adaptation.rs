@@ -1,17 +1,11 @@
 use miniq_models::ToolCallRequest;
-use miniq_tools::ToolRouter;
 use serde_json::{json, Value};
 
 pub(super) fn unknown_tool_output(
-    router: &ToolRouter,
+    available_tools: Vec<String>,
     call: &ToolCallRequest,
     error: &miniq_tools::ToolError,
 ) -> Value {
-    let available_tools = router
-        .specs()
-        .into_iter()
-        .map(|spec| spec.name)
-        .collect::<Vec<_>>();
     json!({
         "error": {
             "code": "unknown_tool",

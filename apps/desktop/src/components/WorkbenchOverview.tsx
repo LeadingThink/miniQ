@@ -1,19 +1,25 @@
-import { FolderOpen } from "lucide-react";
+import { Files, FolderOpen, PanelRight } from "lucide-react";
 import { useState } from "react";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import type { LocalFileTarget } from "../localFiles";
 import { PlanProgress } from "./ExecutionActivity";
 import { ArtifactCard } from "./TimelineInteractions";
 import { RemoteFileBrowser } from "./RemoteFileBrowser";
+import { WorkbenchLauncher, type WorkbenchLauncherActions } from "./WorkbenchLauncher";
 
 export function WorkbenchOverview({
   app,
   onOpenFile,
   filesOnly = false,
+  fileTreeVisible = false,
+  launcher,
 }: {
   app: MiniqAppController;
   onOpenFile: (target: LocalFileTarget) => void;
   filesOnly?: boolean;
+  fileTreeVisible?: boolean;
+  /** Entry points (files, browser, review, terminal) for the empty panel. */
+  launcher?: WorkbenchLauncherActions;
 }) {
   const [query, setQuery] = useState("");
   const [browse, setBrowse] = useState(false);
@@ -22,6 +28,32 @@ export function WorkbenchOverview({
       .toLocaleLowerCase()
       .includes(query.trim().toLocaleLowerCase()),
   );
+  const empty =
+    !app.feed.artifacts.length &&
+    !app.preview.canReopenClosedTab &&
+    (filesOnly || !app.feed.plan.length);
+  if (empty && launcher) {
+    const Icon = filesOnly ? Files : PanelRight;
+    return (
+      <section
+        className="workbench-overview workbench-empty"
+        aria-label={filesOnly ? "会话文件" : "任务概览"}
+      >
+        <Icon size={26} strokeWidth={1.6} aria-hidden />
+        <h2>{filesOnly ? "打开文件" : "工作面板"}</h2>
+        <p>
+          {!app.catalog.currentSessionId
+            ? "打开一个会话后，可以在这里查看文件、网页和修改。"
+            : filesOnly
+              ? fileTreeVisible
+                ? "从右侧文件树选择文件，或按快捷键快速筛选"
+                : "从项目目录中选择要预览的文件"
+              : "任务计划和交付文件会显示在这里，也可以直接打开："}
+        </p>
+        <WorkbenchLauncher actions={launcher} />
+      </section>
+    );
+  }
   return (
     <section
       className="workbench-overview"
@@ -32,6 +64,7 @@ export function WorkbenchOverview({
           ? "会话文件"
           : (app.catalog.currentSession?.title ?? "工作面板")}
       </h2>
+      {!filesOnly && launcher && <WorkbenchLauncher actions={launcher} compact />}
       {!app.catalog.currentSessionId && (
         <p>打开一个会话后，可以在这里查看任务计划、交付文件和修改内容。</p>
       )}
@@ -82,7 +115,10 @@ export function WorkbenchOverview({
       {app.feed.nextCursor && (
         <p>此处列出已加载的交付记录；更早的记录会随会话历史一起加载。</p>
       )}
-      {app.catalog.currentSessionId && (
+      {fileTreeVisible && (
+        <p className="workbench-tree-tip">从右侧文件树打开项目文件，按 ⌘P 可快速筛选。</p>
+      )}
+      {app.catalog.currentSessionId && !fileTreeVisible && (
         <>
           <button
             type="button"

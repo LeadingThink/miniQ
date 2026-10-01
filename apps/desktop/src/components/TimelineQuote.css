@@ -1,0 +1,19 @@
+.timeline-quote-button {
+  position: fixed;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--font-caption);
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+}
+
+.timeline-quote-button:hover {
+  background: var(--bg-hover);
+}

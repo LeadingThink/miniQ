@@ -6,14 +6,14 @@ const URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const WINDOWS_DRIVE = /^[A-Za-z]:[\\/]/;
 const FILE_EXTENSIONS = new Set([
   "7z", "aab", "apk", "bash", "bat", "bmp", "c", "cc", "cjs", "conf",
-  "cpp", "cs", "css", "csv", "doc", "docx", "env", "fish", "gif", "go",
+  "cpp", "cs", "css", "csv", "doc", "docx", "dps", "env", "et", "fish", "gif", "go",
   "gz", "h", "hpp", "htm", "html", "ico", "ini", "ipa", "jar", "java",
   "jpeg", "jpg", "jks", "js", "json", "jsonl", "jsx", "keystore", "kt",
   "kts", "less", "lock", "log", "m4a", "markdown", "md", "mjs", "mov", "mp3",
   "mp4", "pdf", "php", "png", "ppt", "pptx", "ps1", "py", "pyi", "rar",
   "rb", "rs", "rst", "sass", "scss", "sh", "sql", "svelte", "svg", "swift",
   "tar", "tgz", "toml", "ts", "tsv", "tsx", "txt", "vue", "wasm", "wav",
-  "webm", "webp", "xls", "xlsm", "xlsx", "xml", "yaml", "yml", "zsh", "zip",
+  "webm", "webp", "wps", "xls", "xlsm", "xlsx", "xml", "yaml", "yml", "zsh", "zip",
 ]);
 const TEXT_PREVIEW_EXTENSIONS = new Set([
   "bash", "bat", "c", "cc", "cjs", "conf", "cpp", "cs", "css", "csv",
@@ -60,6 +60,7 @@ export type LocalPreviewKind =
   | "docx"
   | "xlsx"
   | "pptx"
+  | "officeLegacy"
   | "unsupported";
 
 export interface LocalFilePreview {
@@ -220,6 +221,23 @@ export async function readLocalFilePreview(
   return invoke<LocalFilePreview>("read_local_file_preview", { path, workspacePath, workspacePaths, authorizedFiles });
 }
 
+export async function convertOfficePreview(
+  path: string,
+  workspacePath: string,
+  workspacePaths: readonly string[] = [],
+  authorizedFiles: readonly string[] = [],
+): Promise<{ mimeType: string; dataBase64: string }> {
+  if (!workspacePath) throw new Error("无法预览文件：当前会话没有工作区");
+  if (!isTauriRuntime()) throw new Error("旧版 Office/WPS 内嵌预览仅在 Windows 桌面应用中可用");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke("convert_office_preview", {
+    path,
+    workspacePath,
+    workspacePaths,
+    authorizedFiles,
+  });
+}
+
 const PASTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 const MAX_PASTED_IMAGE_BYTES = 20 * 1024 * 1024;
 
@@ -296,4 +314,11 @@ export async function revealLocalFile(
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("reveal_local_file", { path, workspacePath, workspacePaths, authorizedFiles });
   }
+}
+
+/** Opens the system terminal in a workspace directory (desktop app only). */
+export async function openTerminalAt(directory: string): Promise<void> {
+  if (!isTauriRuntime()) throw new Error("仅桌面应用可以打开终端");
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("open_terminal", { directory });
 }

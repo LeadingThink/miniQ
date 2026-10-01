@@ -1,9 +1,132 @@
-import { useEffect, useState } from "react";
-import { FolderPlus, Package, RefreshCw, Trash2, Upload } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { ChevronDown, FolderPlus, Info, MoreHorizontal, Package, RefreshCw, Trash2, Upload } from "lucide-react";
 import type { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 import type { PluginInfo, PluginListResult } from "../types";
 import { RemotePathDialog } from "./RemotePathDialog";
+import { ApprovalRulesSection } from "./ApprovalRules";
+import { ConfirmDialog } from "./ui/Dialog";
+import { EmptyState } from "./ui/EmptyState";
+import { Menu, MenuItem, MenuSeparator } from "./ui/Menu";
+import { Switch } from "./ui/Switch";
+
+/** "连接器：linear" label for plugins that contribute MCP servers. */
+export function connectorLabel(plugin: Pick<PluginInfo, "mcpServers">): string | null {
+  const names = (plugin.mcpServers ?? []).map((server) => server.name);
+  return names.length > 0 ? `连接器：${names.join(", ")}` : null;
+}
+
+/** Plugins that failed or still need trust confirmation are listed first. */
+export function pluginNeedsAttention(plugin: PluginInfo): boolean {
+  return Boolean(plugin.error) || plugin.status === "failed" || plugin.processState === "failed" || (plugin.trustedCode && !plugin.trustConfirmed);
+}
+
+const ICON_HUES = [150, 210, 265, 330, 25, 45, 185];
+
+function pluginHue(id: string): number {
+  let hash = 0;
+  for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return ICON_HUES[hash % ICON_HUES.length];
+}
+
+function pluginSummary(plugin: PluginInfo): string {
+  if (plugin.description?.trim()) return plugin.description.trim();
+  if ((plugin.skills ?? []).length > 0) return `技能包：${plugin.skills.join("、")}`;
+  return `${plugin.runtime} 插件`;
+}
+
+function PluginRow(props: {
+  plugin: PluginInfo;
+  busy: boolean;
+  expanded: boolean;
+  onToggleDetails: () => void;
+  onEnabled: (enabled: boolean) => void;
+  onUpdate: () => void;
+  onReload: () => void;
+  onUninstall: () => void;
+}) {
+  const { plugin } = props;
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const connector = connectorLabel(plugin);
+  const warning = plugin.error ?? (plugin.trustedCode && !plugin.trustConfirmed ? "启用前需要确认可信代码权限。" : null);
+  const detailsId = `plugin-details-${plugin.id}`;
+  return (
+    <div className={`plugin-row ${plugin.enabled ? "" : "off"} ${props.expanded ? "expanded" : ""}`.trim()}>
+      <div className="plugin-row-main">
+        <div className="plugin-row-icon" aria-hidden="true" style={{ "--plugin-hue": pluginHue(plugin.id) } as CSSProperties}>
+          {plugin.name.trim().charAt(0).toUpperCase() || <Package size={16} />}
+        </div>
+        <button
+          type="button"
+          className="plugin-row-text"
+          aria-expanded={props.expanded}
+          aria-controls={detailsId}
+          onClick={props.onToggleDetails}
+          title={pluginSummary(plugin)}
+        >
+          <span className="plugin-row-name">
+            {plugin.name}
+            {plugin.bundled && <span className="plugin-row-tag" title="随 miniQ 提供，可停用，不可卸载">内置</span>}
+          </span>
+          <span className="plugin-row-desc">{pluginSummary(plugin)}</span>
+          {connector && <span className="plugin-row-desc">{connector}</span>}
+          {warning && <span className={`plugin-row-warning ${plugin.error ? "error" : ""}`.trim()}>{warning}</span>}
+        </button>
+        <div className="plugin-row-actions">
+          <Switch
+            checked={plugin.enabled}
+            label={`${plugin.enabled ? "停用" : "启用"}${plugin.name}`}
+            disabled={props.busy}
+            onChange={props.onEnabled}
+          />
+          <button
+            ref={moreRef}
+            type="button"
+            className="ghost plugin-row-more"
+            aria-label={`${plugin.name} 更多操作`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <MoreHorizontal size={16} />
+          </button>
+          <Menu open={menuOpen} anchorRef={moreRef} onClose={() => setMenuOpen(false)} label={`${plugin.name} 操作`}>
+            <MenuItem icon={props.expanded ? <ChevronDown size={14} /> : <Info size={14} />} onClick={props.onToggleDetails}>
+              {props.expanded ? "收起详情" : "查看详情"}
+            </MenuItem>
+            <MenuItem icon={<RefreshCw size={14} />} disabled={props.busy || !plugin.enabled} onClick={props.onReload}>重载</MenuItem>
+            {!plugin.bundled && (
+              <MenuItem icon={<Upload size={14} />} disabled={props.busy} onClick={props.onUpdate}>从目录更新…</MenuItem>
+            )}
+            {!plugin.bundled && (
+              <>
+                <MenuSeparator />
+                <MenuItem icon={<Trash2 size={14} />} danger disabled={props.busy} onClick={props.onUninstall}>卸载…</MenuItem>
+              </>
+            )}
+          </Menu>
+        </div>
+      </div>
+      {props.expanded && (
+        <dl className="plugin-row-details" id={detailsId}>
+          <dt>标识</dt><dd>{plugin.id} · {plugin.version || "invalid"}</dd>
+          <dt>状态</dt><dd>{plugin.runtime} · {plugin.status}{plugin.runtime === "node" ? ` · ${plugin.processState}` : ""}</dd>
+          {plugin.entry && (<><dt>入口</dt><dd>{plugin.entry}</dd></>)}
+          <dt>能力</dt><dd>{plugin.capabilities.join(", ") || "无"}</dd>
+          <dt>权限</dt><dd>{plugin.permissions.join(", ") || "无"}</dd>
+          {(plugin.skills ?? []).length > 0 && (<><dt>技能包</dt><dd>{plugin.skills.join(", ")}</dd></>)}
+          {(plugin.mcpServers ?? []).length > 0 && (
+            <><dt>连接器</dt><dd>{plugin.mcpServers.map((server) => server.description ? `${server.name}（${server.description}）` : server.name).join("、")}</dd></>
+          )}
+          {(plugin.dependencies ?? []).length > 0 && (
+            <><dt>依赖</dt><dd>{plugin.dependencies.map((dependency) => `${dependency.command} ${dependency.available ? "✓" : "缺少"}`).join("、")}</dd></>
+          )}
+        </dl>
+      )}
+    </div>
+  );
+}
 
 export function PluginsPanel(props: { client: RpcClient }) {
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
@@ -11,6 +134,13 @@ export function PluginsPanel(props: { client: RpcClient }) {
   const [status, setStatus] = useState<string | null>(null);
   const [remotePicker, setRemotePicker] = useState(false);
   const [remotePluginUpdate, setRemotePluginUpdate] = useState(false);
+  const [confirming, setConfirming] = useState<{ kind: "trust" | "uninstall"; plugin: PluginInfo } | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const sections = [
+    { title: "需要处理", items: plugins.filter(pluginNeedsAttention) },
+    { title: "已启用", items: plugins.filter((plugin) => plugin.enabled && !pluginNeedsAttention(plugin)) },
+    { title: "未启用", items: plugins.filter((plugin) => !plugin.enabled && !pluginNeedsAttention(plugin)) },
+  ];
 
   useEffect(() => {
     void props.client
@@ -55,14 +185,10 @@ export function PluginsPanel(props: { client: RpcClient }) {
     }
   };
 
-  const setEnabled = async (plugin: PluginInfo, enabled: boolean) => {
-    let confirmTrustedCode = false;
-    if (enabled && plugin.trustedCode) {
-      confirmTrustedCode = window.confirm(
-        `启用可信 Node.js 插件“${plugin.name}”？\n\n` +
-          "它能够以当前用户权限运行代码，请仅启用你信任的插件。",
-      );
-      if (!confirmTrustedCode) return;
+  const setEnabled = async (plugin: PluginInfo, enabled: boolean, confirmTrustedCode = false) => {
+    if (enabled && plugin.trustedCode && !confirmTrustedCode) {
+      setConfirming({ kind: "trust", plugin });
+      return;
     }
 
     setBusy(plugin.id);
@@ -124,8 +250,11 @@ export function PluginsPanel(props: { client: RpcClient }) {
     }
   };
 
-  const uninstall = async (plugin: PluginInfo) => {
-    if (!window.confirm(`卸载“${plugin.name}”并删除已安装的插件文件？`)) return;
+  const uninstall = async (plugin: PluginInfo, confirmed = false) => {
+    if (!confirmed) {
+      setConfirming({ kind: "uninstall", plugin });
+      return;
+    }
     setBusy(plugin.id);
     setStatus(null);
     try {
@@ -143,6 +272,29 @@ export function PluginsPanel(props: { client: RpcClient }) {
 
   return (
     <div className="page">
+      <ConfirmDialog
+        open={confirming !== null}
+        tone="danger"
+        title={
+          confirming?.kind === "trust"
+            ? `启用可信 Node.js 插件“${confirming.plugin.name}”？`
+            : `卸载“${confirming?.plugin.name ?? ""}”？`
+        }
+        description={
+          confirming?.kind === "trust"
+            ? "它能够以当前用户权限运行代码，请仅启用你信任的插件。"
+            : "将删除已安装的插件文件，此操作无法撤销。"
+        }
+        confirmLabel={confirming?.kind === "trust" ? "启用插件" : "卸载"}
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => {
+          const current = confirming;
+          setConfirming(null);
+          if (!current) return;
+          if (current.kind === "trust") void setEnabled(current.plugin, true, true);
+          else void uninstall(current.plugin, true);
+        }}
+      />
       {remotePicker && props.client.sshHost && <RemotePathDialog host={props.client.sshHost} purpose="plugin"
         onClose={() => setRemotePicker(false)} onSubmit={async (path) => {
           const result = await props.client.call<PluginListResult>("plugin.install", { path, update: remotePluginUpdate });
@@ -162,91 +314,36 @@ export function PluginsPanel(props: { client: RpcClient }) {
         </div>
         {status && <div className="settings-status">{status}</div>}
         {plugins.length === 0 ? (
-          <div className="schedule-empty">
-            <Package className="plugin-empty-icon" size={32} />
-            <div className="schedule-empty-title">还没有本地插件</div>
-            <div className="schedule-empty-sub">添加一个包含 manifest.toml 的插件或技能包文件夹</div>
-          </div>
+          <EmptyState
+            icon={<Package size={28} />}
+            title="还没有插件"
+            description="内置插件会在 miniQ 启动时自动安装；也可以添加一个包含 manifest.toml 的插件或技能包文件夹"
+          />
         ) : (
-          <div className="card-grid">
-            {plugins.map((plugin) => (
-              <div className={`asset-card plugin-card ${plugin.enabled ? "" : "off"}`} key={plugin.id}>
-                <div className="asset-card-head">
-                  <div className="asset-icon"><Package size={17} /></div>
-                  <div className="plugin-card-title">
-                    <div className="asset-name">{plugin.name}</div>
-                    <div className="asset-cmd">{plugin.id} · {plugin.version || "invalid"}</div>
-                  </div>
-                  <button
-                    className={`switch ${plugin.enabled ? "on" : ""}`}
-                    role="switch"
-                    aria-checked={plugin.enabled}
-                    aria-label={`${plugin.enabled ? "停用" : "启用"}${plugin.name}`}
-                    disabled={busy !== null}
-                    onClick={() => void setEnabled(plugin, !plugin.enabled)}
-                  >
-                    <span className="switch-knob" />
-                  </button>
+          <>
+            {sections.map((section) => section.items.length > 0 && (
+              <section className="plugin-section" key={section.title} aria-label={section.title}>
+                <h3 className="plugin-section-title">{section.title}</h3>
+                <div className="plugin-grid">
+                  {section.items.map((plugin) => (
+                    <PluginRow
+                      key={plugin.id}
+                      plugin={plugin}
+                      busy={busy !== null}
+                      expanded={expanded === plugin.id}
+                      onToggleDetails={() => setExpanded((current) => (current === plugin.id ? null : plugin.id))}
+                      onEnabled={(enabled) => void setEnabled(plugin, enabled)}
+                      onUpdate={() => void update(plugin)}
+                      onReload={() => void reload(plugin)}
+                      onUninstall={() => void uninstall(plugin)}
+                    />
+                  ))}
                 </div>
-                <div className="plugin-badges">
-                  <span className="badge">{plugin.runtime}</span>
-                  <span className={`badge ${plugin.status}`}>{plugin.status}</span>
-                  {plugin.runtime === "node" && plugin.processState === "failed" && (
-                    <span className={`badge ${plugin.processState}`}>{plugin.processState}</span>
-                  )}
-                </div>
-                <div className="plugin-card-meta">入口：{plugin.entry}</div>
-                <div className="plugin-card-meta">
-                  能力：{plugin.capabilities.join(", ") || "无"}
-                </div>
-                <div className="plugin-card-meta">
-                  权限：{plugin.permissions.join(", ") || "无"}
-                </div>
-                {(plugin.skills ?? []).length > 0 && (
-                  <div className="plugin-card-meta">技能包：{(plugin.skills ?? []).join(", ")}</div>
-                )}
-                {(plugin.dependencies ?? []).length > 0 && (
-                  <div className="plugin-card-meta">
-                    依赖：{(plugin.dependencies ?? []).map((dependency) => `${dependency.command} ${dependency.available ? "✓" : "缺少"}`).join("、")}
-                  </div>
-                )}
-                {plugin.trustedCode && !plugin.trustConfirmed && (
-                  <div className="plugin-warning">启用前需要确认可信代码权限。</div>
-                )}
-                {plugin.error && <div className="plugin-error">{plugin.error}</div>}
-                <div className="asset-meta plugin-card-actions">
-                  <button
-                    className="ghost"
-                    disabled={busy !== null}
-                    onClick={() => void update(plugin)}
-                    title="从本地目录导入同一插件的新版本"
-                  >
-                    <Upload size={14} />
-                    更新
-                  </button>
-                  <button
-                    className="ghost"
-                    disabled={busy !== null || !plugin.enabled}
-                    onClick={() => void reload(plugin)}
-                    title="重新加载当前版本"
-                  >
-                    <RefreshCw size={14} />
-                    重载
-                  </button>
-                  <span style={{ flex: 1 }} />
-                  <button
-                    className="ghost danger"
-                    disabled={busy !== null}
-                    onClick={() => void uninstall(plugin)}
-                  >
-                    <Trash2 size={14} />
-                    卸载
-                  </button>
-                </div>
-              </div>
+              </section>
             ))}
-          </div>
+          </>
         )}
+        <ApprovalRulesSection client={props.client} />
       </div>
     </div>
   );

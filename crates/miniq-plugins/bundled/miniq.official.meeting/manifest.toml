@@ -1,0 +1,9 @@
+id = "miniq.official.meeting"
+name = "会议助手"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["meeting-minutes", "meeting-prep"]
+description = "从录音或转写稿生成结构化会议纪要，并在会前整理背景资料与议程简报"
+author = "miniQ"

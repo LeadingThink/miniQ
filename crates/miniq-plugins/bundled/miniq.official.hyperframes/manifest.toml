@@ -1,0 +1,10 @@
+id = "miniq.official.hyperframes"
+name = "HyperFrames 网页转视频"
+version = "1.1.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["hyperframes-video", "hyperframes-gsap", "hyperframes", "hyperframes-cli", "hyperframes-registry", "website-to-hyperframes"]
+requires = ["node", "npx", "ffmpeg"]
+description = "HeyGen HyperFrames：用 HTML/CSS/GSAP 编写视频、官方 CLI 预览与确定性渲染 MP4"
+author = "miniQ"

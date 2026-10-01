@@ -113,6 +113,7 @@ pub(crate) fn sidebar_event(event: &Value) -> bool {
                 | "workspace_model_settings_changed"
                 | "global_model_settings_changed"
                 | "plugins_changed"
+                | "settings_load_failed"
                 | "turn_completed"
                 | "turn_failed"
         )

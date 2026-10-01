@@ -88,6 +88,20 @@ it("keeps total timing across phase changes and completed history while isolatin
   expect(hook.result.current.latestTurnTiming).toBeNull();
 });
 
+it("merges an optional turn_completed summary into the turn timing", () => {
+  const hook = setup();
+  act(() => hook.result.current.load("a", snapshot));
+  const finished = { startedAt: "2026-09-20T00:00:00Z", status: "completed" as const, completedAt: "2026-09-20T00:01:00Z" };
+  hook.emit({ type: "turn_timing_changed", sessionId: "a", messageId: "m-a", timing: finished });
+  const summary = { toolCalls: 12, failedToolCalls: 1, filesChanged: 2, durationMs: 60_000, status: "completed" as const };
+  hook.emit({ type: "turn_completed", sessionId: "a", summary });
+  expect(hook.result.current.latestTurnTiming?.timing).toEqual({ ...finished, summary });
+  expect(hook.result.current.messages[0].turnTiming).toEqual({ ...finished, summary });
+  const failed = { toolCalls: 3, failedToolCalls: 2, filesChanged: 0, status: "failed" as const };
+  hook.emit({ type: "turn_failed", sessionId: "a", error: "boom", summary: failed });
+  expect(hook.result.current.latestTurnTiming?.timing.summary).toEqual(failed);
+});
+
 it("uses daemon tool timestamps when events are received or replayed much later", () => {
   const hook = setup();
   act(() => hook.result.current.load("a", snapshot));
@@ -226,4 +240,26 @@ it("late action failures stay in their originating session, including drafts", (
   act(() => hook.result.current[1](null));
   hook.rerender({ id: "b" });
   expect(hook.result.current[0]).toBe("b failed");
+});
+
+it("anchors plans to their turn, replaces within a turn and drops rewritten turns", () => {
+  const hook = setup();
+  act(() => hook.result.current.load("a", { ...snapshot, turnPlans: [] }));
+  const task = (content: string) => [{ content, status: "pending" as const }];
+  hook.emit({ type: "plan_updated", sessionId: "a", tasks: task("first"), anchorMessageId: "m-a" });
+  hook.emit({ type: "plan_updated", sessionId: "a", tasks: task("replaced"), anchorMessageId: "m-a" });
+  hook.emit({ type: "plan_updated", sessionId: "a", tasks: task("later"), anchorMessageId: "m-b" });
+  expect(hook.result.current.turnPlans.map((plan) => [plan.anchorMessageId, plan.tasks[0].content])).toEqual([
+    ["m-a", "replaced"],
+    ["m-b", "later"],
+  ]);
+  hook.emit({
+    type: "session_rewritten",
+    sessionId: "a",
+    message: { id: "m-a", sessionId: "a", role: "user", content: "edited", createdAt: "2026-09-07" },
+    removedMessageIds: ["m-b"],
+    removedToolCallIds: [],
+    removedArtifactIds: [],
+  });
+  expect(hook.result.current.turnPlans).toEqual([]);
 });

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RpcClient } from "../rpc";
 import type {
   ExternalSessionImportJob,
+  ExternalSessionScanJob,
   ExternalSessionScan,
 } from "../types";
 import { useExternalSessionImport } from "./useExternalSessionImport";
@@ -32,6 +33,13 @@ const scan: ExternalSessionScan = {
   errors: [],
 };
 
+const scanJob: ExternalSessionScanJob = {
+  id: "scan-1",
+  state: "completed",
+  result: scan,
+  failure: null,
+};
+
 function job(state: ExternalSessionImportJob["state"]): ExternalSessionImportJob {
   const complete = state === "completed";
   return {
@@ -56,7 +64,10 @@ describe("useExternalSessionImport", () => {
   it("starts a background import and polls until completion", async () => {
     const onImported = vi.fn(async () => {});
     const call = vi.fn(async (method: string) => {
-      if (method === "externalSession.scan") return scan;
+      if (method === "externalSession.scan") {
+        return { ...scanJob, state: "running", result: null } satisfies ExternalSessionScanJob;
+      }
+      if (method === "externalSession.scanStatus") return scanJob;
       if (method === "externalSession.import") return job("running");
       if (method === "externalSession.importStatus") return job("completed");
       throw new Error(`unexpected method ${method}`);
@@ -64,6 +75,7 @@ describe("useExternalSessionImport", () => {
     const input = { client: { call } as unknown as RpcClient, onImported };
     const hook = renderHook(() => useExternalSessionImport(input));
     await waitFor(() => expect(hook.result.current.loading).toBe(false));
+    expect(call).toHaveBeenCalledWith("externalSession.scanStatus", { jobId: "scan-1" });
 
     act(() => hook.result.current.toggleOne("codex\u0000external-1", true));
     await act(async () => hook.result.current.importSelected());
@@ -102,7 +114,8 @@ describe("useExternalSessionImport", () => {
       errorCount: 1,
     };
     const call = vi.fn(async (method: string, params?: { jobId?: string }) => {
-      if (method === "externalSession.scan") return scan;
+      if (method === "externalSession.scan") return scanJob;
+      if (method === "externalSession.scanStatus") return scanJob;
       if (method === "externalSession.import") {
         importAttempt += 1;
         return { ...job("running"), id: `import-${importAttempt}` };

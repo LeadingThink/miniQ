@@ -33,7 +33,11 @@ export type ToolCallStatus =
 export type RiskLevel = "low" | "medium" | "high" | "blocked";
 
 export type ApprovalStatus =
-  "pending" | "approved" | "approved_for_session" | "rejected";
+  | "pending"
+  | "approved"
+  | "approved_for_session"
+  | "approved_always"
+  | "rejected";
 
 export interface Workspace {
   id: string;
@@ -55,6 +59,12 @@ export interface Session {
   external?: ExternalSessionLink;
   createdAt: string;
   updatedAt: string;
+  /** Optional one-line preview of the latest message, when the daemon provides it. */
+  preview?: string;
+  /** Optional last activity time (RFC3339 string or epoch milliseconds). */
+  lastActivityAt?: string | number;
+  /** Optional number of completed turns. */
+  turnCount?: number;
 }
 
 export type SessionGoalStatus = "active" | "completed" | "paused" | "cancelled";
@@ -140,6 +150,15 @@ export interface ExternalSessionScan {
   errors: ExternalScanError[];
 }
 
+export type ExternalSessionScanState = "running" | "completed" | "failed";
+
+export interface ExternalSessionScanJob {
+  id: string;
+  state: ExternalSessionScanState;
+  result: ExternalSessionScan | null;
+  failure: string | null;
+}
+
 export interface ExternalSessionSelection {
   provider: ExternalProvider;
   externalId: string;
@@ -188,6 +207,17 @@ export interface TurnTiming {
   completedAt?: string;
   elapsedMs?: number;
   status: "running" | "completed" | "failed" | "cancelled" | "interrupted";
+  /** Client-side only: merged from the `summary` carried by turn_completed /
+   * turn_failed events (the daemon never sends it inside TurnTiming). */
+  summary?: TurnSummary;
+}
+
+export interface TurnSummary {
+  toolCalls: number;
+  failedToolCalls: number;
+  filesChanged: number;
+  durationMs?: number;
+  status: "completed" | "failed" | "cancelled";
 }
 
 export interface AnchoredTurnTiming {
@@ -239,6 +269,13 @@ export interface Approval {
 export interface PlanTask {
   content: string;
   status: "pending" | "in_progress" | "completed";
+}
+
+/** The latest plan published during one user turn, anchored to that turn's user message. */
+export interface TurnPlan {
+  anchorMessageId: string;
+  tasks: PlanTask[];
+  updatedAt?: string;
 }
 
 export interface Question {
@@ -329,6 +366,10 @@ export interface PluginInfo {
   trustConfirmed: boolean;
   skills: string[];
   dependencies: { command: string; available: boolean }[];
+  /** First-party plugin shipped with miniQ: can be disabled, not uninstalled. */
+  bundled: boolean;
+  /** MCP servers (connectors) the plugin contributes while enabled. */
+  mcpServers: { name: string; description: string | null }[];
 }
 export interface PluginListResult {
   plugins: PluginInfo[];
@@ -393,6 +434,12 @@ export type DaemonEvent = {
       type: "session_approval_changed";
       sessionId: string;
       mode: ApprovalMode | null;
+      /** `remote:<device>` when a remote client made the change. */
+      actor?: string;
+      /** Effective mode before the change. */
+      previous?: ApprovalMode;
+      /** True when the effective mode became more permissive. */
+      raised?: boolean;
     }
   | {
       type: "model_settings_changed";
@@ -466,7 +513,7 @@ export type DaemonEvent = {
       riskLevel: RiskLevel;
     }
   | { type: "approval_resolved"; sessionId: string; approval: Approval }
-  | { type: "plan_updated"; sessionId: string; tasks: PlanTask[] }
+  | { type: "plan_updated"; sessionId: string; tasks: PlanTask[]; anchorMessageId?: string }
   | { type: "question_requested"; sessionId: string; question: Question }
   | {
       type: "question_resolved";
@@ -475,8 +522,8 @@ export type DaemonEvent = {
       answer: string;
     }
   | { type: "artifact_created"; sessionId: string; artifact: Artifact }
-  | { type: "turn_completed"; sessionId: string }
-  | { type: "turn_failed"; sessionId: string; error: string }
+  | { type: "turn_completed"; sessionId: string; summary?: TurnSummary }
+  | { type: "turn_failed"; sessionId: string; error: string; summary?: TurnSummary }
   | { type: "session_deleted"; sessionId: string }
   | { type: "workspace_deleted"; workspaceId: string }
   | { type: "session_renamed"; sessionId: string; title: string }
@@ -487,4 +534,5 @@ export type DaemonEvent = {
   | { type: "queue_changed"; sessionId: string; queue: QueuedMessage[] }
   | { type: "browser_driver_requested"; request: BrowserDriverRequest }
   | { type: "plugins_changed"; plugins: PluginInfo[] }
+  | { type: "settings_load_failed"; path: string; error: string; backupPath?: string }
 );

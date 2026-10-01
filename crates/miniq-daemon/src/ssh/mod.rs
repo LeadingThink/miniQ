@@ -61,6 +61,17 @@ impl SshHostManager {
         method: &str,
         raw: Option<Value>,
     ) -> Result<Value, RpcError> {
+        self.dispatch_from(method, raw, None).await
+    }
+
+    /// Like [`dispatch`](Self::dispatch) but forwards the caller origin with
+    /// `host.call`, so the target daemon applies the remote policy again.
+    pub async fn dispatch_from(
+        self: &Arc<Self>,
+        method: &str,
+        raw: Option<Value>,
+        origin: Option<String>,
+    ) -> Result<Value, RpcError> {
         if method == "host.list" {
             let hosts = self.hosts.list()?;
             return Ok(match config::hosts() {
@@ -70,7 +81,9 @@ impl SshHostManager {
         }
         if method == "host.call" {
             let input: CallInput = parse(raw)?;
-            return self.call(&input.host_id, &input.method, input.params).await;
+            return self
+                .call_from(&input.host_id, &input.method, input.params, origin)
+                .await;
         }
         let input: HostInput = parse(raw)?;
         config::validate_host(&input.host_id).map_err(invalid)?;
@@ -195,6 +208,16 @@ impl SshHostManager {
         method: &str,
         params: Option<Value>,
     ) -> Result<Value, RpcError> {
+        self.call_from(host, method, params, None).await
+    }
+
+    pub async fn call_from(
+        &self,
+        host: &str,
+        method: &str,
+        params: Option<Value>,
+        origin: Option<String>,
+    ) -> Result<Value, RpcError> {
         if method.trim().is_empty()
             || method.starts_with("host.")
             || matches!(method, "daemon.shutdown" | "daemon.shutdownIfIdle")
@@ -212,7 +235,7 @@ impl SshHostManager {
             .connection
             .clone()
             .ok_or_else(|| failed("SSH 主机未连接，请先连接主机"))?;
-        connection.call(method, params).await
+        connection.call_from(method, params, origin).await
     }
 }
 

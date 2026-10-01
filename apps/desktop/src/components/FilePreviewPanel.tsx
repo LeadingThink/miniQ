@@ -1,21 +1,18 @@
 import type { OnMount } from "@monaco-editor/react";
+import { breadcrumb, breadcrumbSegments } from "../fileTreeModel";
+import { FileKindIcon } from "./FileKindIcon";
 import {
   Code2,
   Eye,
   ExternalLink,
-  FileCode2,
-  FileText,
-  Image,
-  Music,
-  Video,
-  Table2,
-  Presentation,
+  ChevronRight,
   FolderOpen,
   RotateCcw,
   WrapText,
   Maximize2,
   Minimize2,
   MessageSquare,
+  MessageSquarePlus,
   X,
 } from "lucide-react";
 import {
@@ -33,6 +30,7 @@ import { formatFileSize, openLocalFile, revealLocalFile } from "../localFiles";
 import {
   BlobPreview,
   DocxPreview,
+  LegacyOfficePreview,
   PdfPreview,
   PptxPreview,
   SpreadsheetPreview,
@@ -41,7 +39,8 @@ import {
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SvgPreview } from "./SvgPreview";
 import { DelimitedPreview } from "./DelimitedPreview";
-import { CopyButton } from "./CopyButton";
+import { PreviewOptionsMenu } from "./PreviewOptionsMenu";
+import { addPathToChat, parseLineNumber } from "../fileActions";
 import { HtmlPreview } from "./HtmlPreview";
 import { isHtmlFile } from "../htmlPreview";
 import { isTauriRuntime } from "../runtime";
@@ -85,6 +84,8 @@ interface FilePreviewPanelProps {
   expanded?: boolean;
   onToggleExpanded?: () => void;
   withinWorkbench?: boolean;
+  /** Reveal a breadcrumb folder in the project file tree. */
+  onRevealDirectory?: (path: string) => void;
 }
 
 interface PreviewPanelContentProps extends FilePreviewPanelProps {
@@ -136,6 +137,7 @@ function PreviewPanelContent({
   canReopenClosedTab,
   onDiscuss,
   withinWorkbench = false,
+  onRevealDirectory,
   expanded,
   onToggleExpanded,
 }: PreviewPanelContentProps) {
@@ -197,20 +199,8 @@ function PreviewPanelContent({
     preview.kind === "markdown" ||
     (preview.kind === "text" &&
       (isHtmlFile(path) || /\.(svg|csv|tsv)$/i.test(path)));
-  const TypeIcon =
-    preview.kind === "image" || /\.svg$/i.test(path)
-      ? Image
-      : preview.kind === "audio"
-        ? Music
-        : preview.kind === "video"
-          ? Video
-          : preview.kind === "xlsx" || /\.(csv|tsv)$/i.test(path)
-            ? Table2
-            : preview.kind === "pptx"
-              ? Presentation
-              : ["markdown", "docx", "pdf"].includes(preview.kind ?? "")
-                ? FileText
-                : FileCode2;
+  const roots = workspacePaths.length ? workspacePaths : [workspacePath];
+  const segments = breadcrumbSegments(path, roots);
   const sourceVisible =
     (preview.kind === "text" && !renderable) || (renderable && markdownSource);
 
@@ -238,6 +228,52 @@ function PreviewPanelContent({
       selected.dispose();
     });
   };
+
+  const [goToLine, setGoToLine] = useState<{
+    value: string;
+    max: number;
+    error: string | null;
+  } | null>(null);
+  const goToInput = useRef<HTMLInputElement>(null);
+  const openGoToLine = () => {
+    const max = editorRef.current?.getModel()?.getLineCount() ??
+      (preview.content ?? "").split("\n").length;
+    const current = editorRef.current?.getPosition()?.lineNumber;
+    setGoToLine({ value: current ? String(current) : "", max, error: null });
+    requestAnimationFrame(() => {
+      goToInput.current?.focus();
+      goToInput.current?.select();
+    });
+  };
+  const closeGoToLine = () => {
+    setGoToLine(null);
+    editorRef.current?.focus();
+  };
+  const submitGoToLine = () => {
+    if (!goToLine) return;
+    const parsed = parseLineNumber(goToLine.value, goToLine.max);
+    if (parsed.line === null) {
+      setGoToLine({ ...goToLine, error: parsed.error });
+      return;
+    }
+    setGoToLine(null);
+    const instance = editorRef.current;
+    if (!instance) return;
+    instance.revealLineInCenter(parsed.line);
+    instance.setPosition({ lineNumber: parsed.line, column: 1 });
+    instance.focus();
+  };
+  const findInFile = () => {
+    const instance = editorRef.current;
+    if (!instance) return;
+    instance.focus();
+    const action = instance.getAction("actions.find");
+    if (action) void action.run();
+    else setActionError("当前编辑器不支持文件内查找");
+  };
+  useEffect(() => {
+    if (!sourceVisible) setGoToLine(null);
+  }, [sourceVisible, path]);
 
   const runAction = async (action: () => Promise<void>) => {
     try {
@@ -274,13 +310,34 @@ function PreviewPanelContent({
         />
       )}
       <header className="file-preview-header">
-        <TypeIcon size={17} />
+        <FileKindIcon name={fileName(path)} size={17} />
         <div className="file-preview-location">
           <strong>{fileName(path) || "文件预览"}</strong>
-          <details key={path} className="file-preview-path">
-            <summary title={path}><span className="file-path-summary">{path}</span><span className="file-path-hint">文件路径</span></summary>
-            <span>{path}</span>
-          </details>
+          {onRevealDirectory && segments.length > 1 ? (
+            <nav className="file-preview-breadcrumb" aria-label="文件位置" title={path}>
+              {segments.map((segment, index) => (
+                <span key={segment.path} className="file-preview-crumb">
+                  {index > 0 && <ChevronRight size={12} aria-hidden />}
+                  {segment.directory ? (
+                    <button
+                      type="button"
+                      title={`在文件树中显示 ${segment.path}`}
+                      onClick={() => onRevealDirectory(segment.path)}
+                    >
+                      {segment.label}
+                    </button>
+                  ) : (
+                    <span aria-current="page">{segment.label}</span>
+                  )}
+                </span>
+              ))}
+            </nav>
+          ) : (
+            <details key={path} className="file-preview-path">
+              <summary title={path}><span className="file-path-summary">{breadcrumb(path, roots)}</span><span className="file-path-hint">文件路径</span></summary>
+              <span>{path}</span>
+            </details>
+          )}
         </div>
         {(target?.line || preview.size !== null) && (
           <small>
@@ -354,11 +411,16 @@ function PreviewPanelContent({
               <WrapText size={16} />
             </button>
           )}
-          <CopyButton
-            content={path}
-            label="复制文件路径"
-            onError={setActionError}
-          />
+          <button
+            type="button"
+            className="icon-button"
+            title="添加到聊天"
+            aria-label="添加到聊天"
+            disabled={!path}
+            onClick={() => addPathToChat(path, roots)}
+          >
+            <MessageSquarePlus size={16} />
+          </button>
           <button
             type="button"
             className="icon-button"
@@ -387,21 +449,58 @@ function PreviewPanelContent({
             target={{ path, line: target?.line, column: target?.column }}
             onError={setActionError}
           />}
-          {!remote && <button
-            className="icon-button"
-            title="在文件夹中显示"
-            aria-label="在文件夹中显示"
-            disabled={!path}
-            onClick={() =>
-              void runAction(() =>
-                revealLocalFile(path, workspacePath, workspacePaths, authorizedFiles),
-              )
+          <PreviewOptionsMenu
+            path={path}
+            roots={roots}
+            content={preview.content}
+            onReveal={
+              remote
+                ? undefined
+                : () => revealLocalFile(path, workspacePath, workspacePaths, authorizedFiles)
             }
-          >
-            <FolderOpen size={16} />
-          </button>}
+            onGoToLine={sourceVisible && preview.content !== null ? openGoToLine : undefined}
+            onFind={sourceVisible && preview.content !== null ? findInFile : undefined}
+            onError={setActionError}
+          />
         </section>
       </header>
+      {goToLine && (
+        <form
+          className="file-preview-goto"
+          role="search"
+          aria-label="转到行"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitGoToLine();
+          }}
+        >
+          <label>
+            <span>转到行</span>
+            <input
+              ref={goToInput}
+              type="text"
+              inputMode="numeric"
+              aria-label="转到行"
+              aria-invalid={Boolean(goToLine.error)}
+              placeholder={`1–${goToLine.max}`}
+              value={goToLine.value}
+              onChange={(event) =>
+                setGoToLine({ ...goToLine, value: event.target.value, error: null })
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  closeGoToLine();
+                }
+              }}
+            />
+          </label>
+          <button type="submit" className="ghost">跳转</button>
+          <button type="button" className="ghost" onClick={closeGoToLine}>取消</button>
+          {goToLine.error && <small role="alert">{goToLine.error}</small>}
+        </form>
+      )}
       {(preview.error || actionError || renderError) && (
         <div className="review-error preview-error" role="alert">
           <span>无法打开：{preview.error ?? actionError ?? renderError}</span>
@@ -494,6 +593,7 @@ function PreviewPanelContent({
               content={preview.content}
               wrap={wrapCode}
               onMount={handleMount}
+              onGoToLine={openGoToLine}
             />
           </Suspense>
         ) : preview.dataBase64 &&
@@ -533,6 +633,17 @@ function PreviewPanelContent({
             dataBase64={preview.dataBase64}
             onError={reportRenderError}
           />
+          ) : preview.kind === "officeLegacy" && !remote ? (
+            <LegacyOfficePreview
+              key={renderAttempt}
+              path={path}
+              workspacePath={workspacePath}
+              workspacePaths={workspacePaths}
+              authorizedFiles={authorizedFiles}
+              onError={reportRenderError}
+            />
+          ) : preview.kind === "officeLegacy" ? (
+            <UnsupportedPreview remote />
         ) : preview.kind === "unsupported" ? (
           <UnsupportedPreview remote={remote} />
         ) : null}

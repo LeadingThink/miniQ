@@ -373,10 +373,13 @@ impl Tool for WasmTool {
     }
 
     fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
-        Risk {
-            level: RiskLevel::Low,
-            reason: "sandboxed WASM pure-compute plugin".into(),
-        }
+        let read_only = self
+            .plugin
+            .manifest
+            .read_only_tools
+            .iter()
+            .any(|name| *name == self.guest_name);
+        wasm_tool_risk(read_only)
     }
 
     async fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
@@ -384,6 +387,24 @@ impl Tool for WasmTool {
             .execute(&self.guest_name, input, self.cancellation.child_token())
             .await
             .map_err(|error| ToolError::ExecutionFailed(error.to_string()))
+    }
+}
+
+/// Plan v3 §4.3/§4.4: third-party code defaults to Medium even when
+/// sandboxed, so Auto mode asks once; a tool the manifest declares read-only
+/// (WASM has no filesystem, network or process access) drops to Low.
+fn wasm_tool_risk(read_only: bool) -> Risk {
+    if read_only {
+        Risk {
+            level: RiskLevel::Low,
+            reason: "third-party WASM plugin tool declared read-only (sandboxed pure compute)"
+                .into(),
+        }
+    } else {
+        Risk {
+            level: RiskLevel::Medium,
+            reason: "third-party WASM plugin (sandboxed pure compute)".into(),
+        }
     }
 }
 
@@ -429,7 +450,15 @@ mod tests {
             description: None,
             author: None,
             engine: None,
+            read_only_tools: vec!["count".into()],
+            mcp_servers: Vec::new(),
         }
+    }
+
+    #[test]
+    fn wasm_tool_risk_is_medium_unless_declared_read_only() {
+        assert_eq!(wasm_tool_risk(false).level, RiskLevel::Medium);
+        assert_eq!(wasm_tool_risk(true).level, RiskLevel::Low);
     }
 
     #[tokio::test]

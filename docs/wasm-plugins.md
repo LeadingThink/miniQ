@@ -29,6 +29,8 @@ Unknown fields are rejected. Versions must be semantic versions, the API version
 
 Guest tool names use lowercase ASCII letters, digits, `_`, or `-`. The host registers each tool as `<plugin-id>.<tool-name>` in the existing `ToolRouter`. Plugin tools therefore use the same risk evaluation, approval, audit, persistence, checkpoint, hook, and observer pipeline as built-in tools.
 
+WASM tools are evaluated as `medium` risk by default, so `auto` mode asks once before running them. A plugin may list side-effect-free tools in `read_only_tools = ["tool-name"]` (guest names, without the plugin id prefix); those are evaluated as `low` risk. `read_only_tools` is rejected for non-WASM runtimes.
+
 ## Resource limits
 
 The host accepts components up to 16 MiB and creates a fresh Store and Component instance for each call. Default limits are 32 MiB linear memory, 10 million fuel units, a 5 second wall-clock timeout, 1 MiB input, 4 MiB output, four concurrent calls per plugin, and 16 KiB per log message. Unload and disable cancel queued or running calls and drop every `RegistrationHandle`.

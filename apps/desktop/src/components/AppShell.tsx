@@ -1,28 +1,33 @@
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
+import { useAppCommands } from "../hooks/useAppCommands";
+import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
+import { buildPaletteCommands } from "./paletteCommands";
+import type { CommandId } from "../shortcuts";
 import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
-import { LoaderCircle, PlugZap, Sparkles } from "lucide-react";
+import { PlugZap, Sparkles } from "lucide-react";
+import { Spinner } from "./ui/Spinner";
 import { Fragment, lazy, Suspense, useState } from "react";
 import { Composer, ComposerCard } from "./Composer";
+import { PlanStepPill } from "./ExecutionActivity";
 import type { ComposerSlashCommand } from "../composerSlash";
 import { useAppSlashCommands } from "../hooks/useAppSlashCommands";
 import { DistillModal } from "./Distill";
 import { ExternalSessionImportDialog } from "./ExternalSessionImport";
-import { McpPanel } from "./Mcp";
-import { PluginsPanel } from "./Plugins";
 import { ProjectPicker } from "./ProjectPicker";
 import { SchedulePanel } from "./Schedule";
-import { SearchOverlay, type PaletteCommand } from "./Search";
+import { SearchOverlay } from "./Search";
 import { SettingsPanel } from "./Settings";
 import { AppSidebar } from "./AppSidebar";
-import { SkillsPanel } from "./Skills";
 import { StarterPrompts } from "./StarterPrompts";
 import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 import { SessionModelControls } from "./SessionModelControls";
+import { SettingsLoadErrorBanner } from "./SettingsLoadErrorBanner";
+import { RemotePermissionNotice } from "./RemotePermissionNotice";
 import { SessionPermissionControls } from "./SessionPermissionControls";
 import { SessionGoalBar } from "./SessionGoalBar";
-import { AgentPanel } from "./AgentPanel";
+import { AgentPanel, type AgentFocusRequest } from "./AgentPanel";
 import { useAgentSummary } from "../hooks/useAgentSummary";
 import { ProjectDirectories } from "./ProjectDirectories";
 import { hostDraftKey, useDesktopHost } from "../desktopHost";
@@ -47,7 +52,7 @@ const Timeline = lazy(async () => {
   return { default: module.Timeline };
 });
 
-function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
+function AppOverlays({ app, theme, onThemeChange, runCommand }: AppShellProps & { runCommand: (id: CommandId) => boolean }) {
   const desktop = useDesktopHost();
   const editingWorkspace = app.catalog.workspaces.find(
     (workspace) => workspace.id === app.navigation.editingWorkspaceId,
@@ -82,6 +87,7 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
           workspaceId={app.catalog.currentSession?.workspaceId ?? app.catalog.selectedWorkspaceId}
           theme={theme}
           onThemeChange={onThemeChange}
+          initialTab={app.navigation.settingsTab}
           onProviderConfigured={() => void app.connection.refreshProviderConfiguration()}
           onClose={() => app.navigation.setShowSettings(false)}
         />
@@ -90,7 +96,7 @@ function AppOverlays({ app, theme, onThemeChange }: AppShellProps) {
         <SearchOverlay
           sessions={app.catalog.sessions}
           workspaces={app.catalog.workspaces}
-          commands={buildPaletteCommands(app)}
+          commands={buildPaletteCommands(app, runCommand)}
           client={app.client}
           onSelectSession={(sessionId) =>
             void app.actions.openSession(sessionId)
@@ -138,8 +144,10 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
     app.catalog.currentSessionId!,
     !!app.busy,
   );
-  const openAgentPanel = () => {
+  const [agentFocus, setAgentFocus] = useState<AgentFocusRequest | null>(null);
+  const openAgentPanel = (agentId?: string) => {
     setAgentPanelOpen(true);
+    if (agentId) setAgentFocus((current) => ({ agentId, nonce: (current?.nonce ?? 0) + 1 }));
   };
   return (
     <>
@@ -152,11 +160,12 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
         onRefreshAgents={agentSummary.refresh}
         open={agentPanelOpen}
         onOpenChange={setAgentPanelOpen}
+        focusRequest={agentFocus}
       />
       <Suspense
         fallback={
           <div className="timeline-loading">
-            <LoaderCircle className="connection-spinner" size={18} />
+            <Spinner size={18} />
             正在加载会话
           </div>
         }
@@ -175,6 +184,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
           approvals={app.feed.approvals}
           questions={app.feed.questions}
           plan={app.feed.plan}
+          turnPlans={app.feed.turnPlans}
           artifacts={app.feed.artifacts}
           queue={app.feed.queue}
           workspacePath={app.catalog.currentSession?.workingDirectory}
@@ -208,6 +218,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
         onCancelTurn={app.actions.cancelTurn}
         onError={app.setError}
       />
+      <PlanStepPill plan={app.feed.plan} busy={!!app.busy} />
       <Composer
         slashCommands={slashCommands}
         workspaceId={app.catalog.currentWorkspace?.id}
@@ -225,6 +236,8 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
         draftRequest={draftRequest}
         onDraftRequestApplied={onDraftRequestApplied}
         client={app.client}
+        sessionId={app.catalog.currentSessionId!}
+        messages={app.feed.messages}
         permissionSlot={
           <SessionPermissionControls
             client={app.client}
@@ -302,35 +315,23 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
         onSelect={(prompt) =>
           setDraftRequest({ id: Date.now(), content: prompt.prompt })
         }
+        shortcuts={[
+          {
+            id: "skills",
+            title: "技能",
+            description: "查看可复用的工作流，或从任务中学习新技能",
+            icon: Sparkles,
+            onSelect: () => app.navigation.openSettings("skills"),
+          },
+          {
+            id: "mcp",
+            title: "连接 MCP",
+            description: "接入外部工具与服务，扩展 agent 能力",
+            icon: PlugZap,
+            onSelect: () => app.navigation.openSettings("mcp"),
+          },
+        ]}
       />
-      <div className="hero-cards">
-        <button
-          type="button"
-          className="hero-card"
-          onClick={() => app.navigation.setPage("skills")}
-        >
-          <div className="hero-card-title">
-            <Sparkles size={14} />
-            技能
-          </div>
-          <div className="hero-card-sub">
-            查看可复用的工作流,或从任务中学习新技能
-          </div>
-        </button>
-        <button
-          type="button"
-          className="hero-card"
-          onClick={() => app.navigation.setPage("mcp")}
-        >
-          <div className="hero-card-title">
-            <PlugZap size={14} />
-            连接 MCP
-          </div>
-          <div className="hero-card-sub">
-            接入外部工具与服务,扩展 agent 能力
-          </div>
-        </button>
-      </div>
     </div>
   );
 }
@@ -347,17 +348,6 @@ function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onD
           onOpenSession={(sessionId) => void app.actions.openSession(sessionId)}
         />
       );
-    case "skills":
-      return (
-        <SkillsPanel
-          client={app.client}
-          workspaceId={app.catalog.selectedWorkspace?.id ?? null}
-        />
-      );
-    case "mcp":
-      return <McpPanel client={app.client} />;
-    case "plugins":
-      return <PluginsPanel client={app.client} />;
     default:
       return app.catalog.currentSessionId ? (
         <SessionPage
@@ -375,43 +365,6 @@ function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onD
   }
 }
 
-function buildPaletteCommands(app: MiniqAppController): PaletteCommand[] {
-  return [
-    {
-      id: "new-chat",
-      label: "新建会话",
-      hint: "⌘N",
-      icon: "new",
-      run: app.actions.newChat,
-    },
-    {
-      id: "settings",
-      label: "打开设置",
-      hint: "⌘,",
-      icon: "settings",
-      run: () => app.navigation.setShowSettings(true),
-    },
-    {
-      id: "skills",
-      label: "技能",
-      icon: "skills",
-      run: () => app.navigation.setPage("skills"),
-    },
-    {
-      id: "mcp",
-      label: "MCP 连接",
-      icon: "mcp",
-      run: () => app.navigation.setPage("mcp"),
-    },
-    {
-      id: "schedule",
-      label: "已安排的任务",
-      icon: "schedule",
-      run: () => app.navigation.setPage("schedule"),
-    },
-  ];
-}
-
 export function AppShell({ app, theme, onThemeChange, contentOnly = false, active = true }: AppShellProps) {
   const workbench = useAppWorkbench(app);
   const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
@@ -420,22 +373,16 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
     onOpenReview: () => workbench.select("review"),
   });
 
+  const commands = useAppCommands(app, active);
   useGlobalShortcuts({
-    onPalette: () => app.navigation.setShowSearch(!app.navigation.showSearch),
-    onNewChat: app.actions.newChat,
-    onSettings: () => app.navigation.setShowSettings(true),
+    // Keydown and the native-menu `miniq:command` bus share one runner.
+    onPalette: () => void commands.runCommand("palette"),
+    onNewChat: () => void commands.runCommand("newChat"),
+    onSettings: () => void commands.runCommand("settings"),
     onStop: app.busy ? () => void app.actions.cancelTurn() : undefined,
-    onToggleSidebar: () =>
-      app.navigation.setSidebarCollapsed(!app.navigation.sidebarCollapsed),
-    onSessionSearch: () => {
-      const search = document.querySelector<HTMLInputElement>(
-        '.main[data-app-active="true"] input[data-session-search="true"]',
-      );
-      if (!search) return false;
-      search.focus();
-      search.select();
-      return true;
-    },
+    onToggleSidebar: () => void commands.runCommand("toggleSidebar"),
+    onSessionSearch: () => commands.runCommand("find"),
+    onShortcut: commands.onShortcut,
   }, active);
 
   const Container = contentOnly ? Fragment : "div";
@@ -456,7 +403,10 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
           }}
         />
         <AppErrorBanner app={app} />
-        {active && <AppOverlays app={app} theme={theme} onThemeChange={onThemeChange} />}
+        <SettingsLoadErrorBanner client={app.client} />
+        <RemotePermissionNotice client={app.client} />
+        {active && <AppOverlays app={app} theme={theme} onThemeChange={onThemeChange} runCommand={commands.runCommand} />}
+        {active && <KeyboardShortcutsDialog open={commands.showShortcuts} onClose={() => commands.setShowShortcuts(false)} />}
         {active && slash.dialogs}
         {active && <MainPage
           app={app}

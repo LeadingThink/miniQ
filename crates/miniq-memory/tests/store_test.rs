@@ -365,3 +365,79 @@ fn session_recovery_only_terminates_the_requested_session() {
         1
     );
 }
+
+#[test]
+fn undo_removes_the_prompt_and_reports_its_checkpoints() {
+    let store = Store::open_in_memory().unwrap();
+    let workspace = store.create_workspace("D:/tmp/proj", "proj").unwrap();
+    let session = store.create_session(&workspace.id, "chat").unwrap();
+    let first = store
+        .append_message(&session.id, Role::User, "first")
+        .unwrap();
+    let early_tool = store
+        .create_tool_call(
+            &session.id,
+            "file_write",
+            &json!({"path": "keep.txt"}),
+            None,
+            ToolCallStatus::Succeeded,
+        )
+        .unwrap();
+    store
+        .create_checkpoint(&session.id, &early_tool.id, "/tmp/keep.txt", false, None)
+        .unwrap();
+    store
+        .append_message(&session.id, Role::Assistant, "kept answer")
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let prompt = store
+        .append_message(&session.id, Role::User, "please edit")
+        .unwrap();
+    let tool = store
+        .create_tool_call(
+            &session.id,
+            "file_write",
+            &json!({"path": "a.txt"}),
+            None,
+            ToolCallStatus::Succeeded,
+        )
+        .unwrap();
+    let first_ckpt = store
+        .create_checkpoint(
+            &session.id,
+            &tool.id,
+            "/tmp/a.txt",
+            true,
+            Some("/tmp/a.bak"),
+        )
+        .unwrap();
+    let second_ckpt = store
+        .create_checkpoint(&session.id, &tool.id, "/tmp/b.txt", false, None)
+        .unwrap();
+    let answer = store
+        .append_message(&session.id, Role::Assistant, "edited")
+        .unwrap();
+
+    let checkpoints = store
+        .checkpoints_since_user_message(&session.id, &prompt.id)
+        .unwrap();
+    let ids: Vec<_> = checkpoints.iter().map(|c| c.id.clone()).collect();
+    assert_eq!(ids, vec![first_ckpt.id, second_ckpt.id]);
+
+    let undo = store
+        .undo_session_to_user_message(&session.id, &prompt.id)
+        .unwrap();
+    assert_eq!(undo.message.content, "please edit");
+    assert_eq!(undo.removed_message_ids, vec![prompt.id.clone(), answer.id]);
+    assert_eq!(undo.removed_tool_call_ids, vec![tool.id]);
+    let messages = store.list_messages(&session.id).unwrap();
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0].id, first.id);
+    assert_eq!(store.list_tool_calls(&session.id).unwrap().len(), 1);
+    assert!(store
+        .checkpoints_since_user_message(&session.id, &prompt.id)
+        .is_err());
+    assert!(store
+        .undo_session_to_user_message(&session.id, &messages[1].id)
+        .is_err());
+}

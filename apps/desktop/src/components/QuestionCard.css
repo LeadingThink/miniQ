@@ -4,10 +4,10 @@
   max-width: 100%;
   padding: 16px;
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--bg);
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--font-body);
   letter-spacing: 0;
 }
 
@@ -26,7 +26,7 @@
 
 .question-heading h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-body);
   font-weight: 600;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -41,7 +41,7 @@
 
 .question-prompt .md {
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--font-body);
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
@@ -49,7 +49,7 @@
 .question-prompt .md p { white-space: pre-wrap; }
 .question-prompt .md > :first-child { margin-top: 0; }
 .question-prompt .md > :last-child { margin-bottom: 0; }
-.question-prompt .md :is(h1, h2, h3, h4, h5, h6) { font-size: 15px; }
+.question-prompt .md :is(h1, h2, h3, h4, h5, h6) { font-size: var(--font-callout); }
 .question-prompt .md :is(code, .file-reference) { overflow-wrap: anywhere; white-space: pre-wrap; }
 
 .question-timeout {
@@ -58,7 +58,7 @@
   gap: 6px;
   margin-top: 12px;
   color: var(--text-mid);
-  font-size: 12px;
+  font-size: var(--font-footnote);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -81,7 +81,7 @@
   margin-bottom: 8px;
   padding: 0;
   color: var(--text-mid);
-  font-size: 12px;
+  font-size: var(--font-footnote);
   font-weight: 500;
 }
 
@@ -105,9 +105,9 @@
 .question-option-paragraph { display: block; }
 .question-option-paragraph + .question-option-paragraph { margin-top: 4px; }
 .question-option :is(.question-option-label, .question-option-description) { display: block; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
-.question-option-description { margin-top: 3px; color: var(--text-mid); font-size: 12px; }
+.question-option-description { margin-top: 3px; color: var(--text-mid); font-size: var(--font-footnote); }
 .question-option code { font-size: 0.95em; }
-.question-clear { display: inline-flex; align-items: center; gap: 5px; margin: -6px 0 12px; padding: 4px 0; background: transparent; border: 0; color: var(--text-mid); font-size: 12px; }
+.question-clear { display: inline-flex; align-items: center; gap: 5px; margin: -6px 0 12px; padding: 4px 0; background: transparent; border: 0; color: var(--text-mid); font-size: var(--font-footnote); }
 
 .question-input {
   display: block;
@@ -117,7 +117,7 @@
   resize: vertical;
   padding: 9px 10px;
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg);
   color: var(--text);
   font: inherit;
@@ -129,19 +129,18 @@
   outline-offset: 2px;
 }
 
-.question-error { margin-top: 8px; color: var(--danger); font-size: 13px; overflow-wrap: anywhere; }
+.question-error { margin-top: 8px; color: var(--danger); font-size: var(--font-body); overflow-wrap: anywhere; }
 .question-footer { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.question-submit-status { color: var(--text-mid); font-size: 12px; }
-.question-submit { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; border-radius: 6px; }
+.question-submit-status { color: var(--text-mid); font-size: var(--font-footnote); }
+.question-submit { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; border-radius: var(--radius-sm); }
 .question-spinner { animation: question-spin 1s linear infinite; }
 @keyframes question-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .question-spinner { animation: none; } }
 @media (max-width: 720px), (pointer: coarse) {
   .question-card { padding: 12px; }
   /* One page scroll keeps long prompts and choices readable on a phone. */
   .question-card .question-prompt { max-height: none; overflow: visible; }
   .question-card .question-clear { min-height: 44px; padding: 8px 0; margin-bottom: 4px; }
-  .question-card .question-input { font-size: 16px; }
+  .question-card .question-input { font-size: var(--font-callout); }
   .question-card .question-submit { min-height: 44px; width: 100%; }
   .question-card .question-footer { justify-content: stretch; }
 }

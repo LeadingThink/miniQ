@@ -15,6 +15,7 @@ function isTouchInput() {
 export function useTouchComposerInput() {
   const touchInput = useSyncExternalStore(subscribe, isTouchInput, () => false);
   return {
+    touch: touchInput,
     enterSends: !touchInput,
     keyboardHint: touchInput ? "回车换行，点击发送按钮" : COMPOSER_KEYBOARD_HINT,
   };

@@ -43,6 +43,8 @@ export function UnifiedSidebar({ app }: { app: MiniqAppController }) {
     },
     unreadSessionIds: new Set(catalogs.flatMap((catalog) => [...catalog.unreadSessionIds].map((id) => scopedKey(catalog.hostId, id)))),
     markSessionSeen: (key) => { const [host, id] = decode(key); desktop.markSeen(host, id); },
+    markSessionUnread: (key) => { const [host, id] = decode(key); desktop.setUnread(host, id, true); },
+    markAllSessionsRead: desktop.markAllSeen,
     navigation: { ...app.navigation, setEditingWorkspaceId: (value) => { if (typeof value === "string") select(value, "workspace", "edit"); } },
     actions: { ...app.actions,
       selectWorkspace: (key) => select(key, "workspace"),
@@ -57,6 +59,7 @@ export function UnifiedSidebar({ app }: { app: MiniqAppController }) {
   };
   return <AppSidebar app={virtual} onCreateSession={(key) => void createSession(key)} hostGroups={catalogs.map((catalog) => ({
     key: hostKey(catalog.hostId), label: catalog.hostId === null ? (desktop.root.mode === "remote" ? "远程桌面" : "本机") : catalog.label,
+    local: catalog.hostId === null && desktop.root.mode !== "remote",
     state: catalog.state, error: catalog.error, selected: catalog.hostId === desktop.host,
     workspaceIds: catalog.workspaces.map((workspace) => scopedKey(catalog.hostId, workspace.id)),
     onSelect: () => void desktop.selectHost(catalog.hostId),

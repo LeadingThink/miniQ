@@ -1,0 +1,9 @@
+id = "miniq.official.web-testing"
+name = "网页测试"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["web-qa-check", "playwright-e2e"]
+description = "用内置浏览器走查网页质量，并为项目编写和运行 Playwright 端到端测试"
+author = "miniQ"

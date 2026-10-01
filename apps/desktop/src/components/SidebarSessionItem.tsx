@@ -1,10 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Archive, ArchiveRestore, MoreHorizontal, PencilLine, Pin, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Mail, MailOpen, MoreHorizontal, PencilLine, Pin, Trash2 } from "lucide-react";
 import type { Session } from "../types";
 import { relativeAge } from "../time";
 import { sessionStatusLabel } from "../sessionStatus";
 import { PROVIDER_LABELS, PROVIDER_MARKS } from "./externalSessionImportModel";
 import { DropdownMenu } from "./DropdownMenu";
+import { showUndoToast, useToast } from "./ui/Toast";
 
 export function SidebarSessionItem(props: {
   session: Session;
@@ -17,6 +18,7 @@ export function SidebarSessionItem(props: {
   onRename: (sessionId: string, title: string) => void;
   onSetPinned: (sessionId: string, pinned: boolean) => void;
   onSetArchived: (sessionId: string, archived: boolean) => void;
+  onMarkUnread?: (sessionId: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -26,6 +28,8 @@ export function SidebarSessionItem(props: {
   const renameCommittedRef = useRef(false);
   const itemRef = useRef<HTMLDivElement>(null);
   const contextId = useId();
+  const toast = useToast();
+  const [pendingDelete, setPendingDelete] = useState(false);
   const external = props.session.external;
   const unread = !props.current && props.unread;
   const statusText = unread ? "新回复" : sessionStatusLabel(props.session.status);
@@ -52,6 +56,12 @@ export function SidebarSessionItem(props: {
       setRenameValue(props.session.title);
     }
   };
+
+  const preview = props.session.preview?.replace(/\s+/g, " ").trim();
+  const activityAt = sessionActivityAt(props.session);
+
+  // Optimistically hidden while the undo toast is visible.
+  if (pendingDelete) return null;
 
   return (
     <div
@@ -101,6 +111,7 @@ export function SidebarSessionItem(props: {
           {props.session.pinned && <Pin className="pin-icon" size={12} />}
           <span className={`session-copy${props.contextLabel ? " with-context" : ""}`}>
           <span className="session-title">{props.session.title}</span>
+          {preview && <span className="session-preview">{preview}</span>}
           <span className="session-meta">
           {props.contextLabel && <span id={contextId} className="session-context">{props.contextLabel}</span>}
           {(unread || props.session.status !== "idle") && (
@@ -112,7 +123,7 @@ export function SidebarSessionItem(props: {
               {statusText}
             </span>
           )}
-          <span className="session-age">{relativeAge(props.session.updatedAt)}</span>
+          <span className="session-age">{relativeAge(activityAt)}</span>
           </span>
           </span>
         </button>
@@ -164,13 +175,38 @@ export function SidebarSessionItem(props: {
             <Pin size={13} />
             <span>{props.session.pinned ? "取消置顶" : "置顶"}</span>
           </button>
+          {props.onMarkUnread && (
+            <button
+              type="button"
+              className="dropdown-item"
+              onClick={(event) => {
+                event.stopPropagation();
+                setMenuOpen(false);
+                if (props.unread) props.onSeen(props.session.id);
+                else props.onMarkUnread?.(props.session.id);
+              }}
+            >
+              {props.unread ? <MailOpen size={13} /> : <Mail size={13} />}
+              <span>{props.unread ? "标为已读" : "标为未读"}</span>
+            </button>
+          )}
           <button
             type="button"
             className="dropdown-item"
             onClick={(event) => {
               event.stopPropagation();
               setMenuOpen(false);
-              props.onSetArchived(props.session.id, !props.session.archived);
+              const sessionId = props.session.id;
+              const archived = !props.session.archived;
+              const onSetArchived = props.onSetArchived;
+              onSetArchived(sessionId, archived);
+              if (archived) {
+                showUndoToast(toast, {
+                  message: `已归档会话“${props.session.title}”`,
+                  onCommit: () => {},
+                  onUndo: () => onSetArchived(sessionId, false),
+                });
+              }
             }}
           >
             {props.session.archived ? <ArchiveRestore size={13} /> : <Archive size={13} />}
@@ -182,9 +218,14 @@ export function SidebarSessionItem(props: {
             onClick={(event) => {
               event.stopPropagation();
               setMenuOpen(false);
-              if (window.confirm(`确定要删除会话「${props.session.title}」吗？`)) {
-                props.onDelete(props.session.id);
-              }
+              const sessionId = props.session.id;
+              const onDelete = props.onDelete;
+              setPendingDelete(true);
+              showUndoToast(toast, {
+                message: `已删除会话“${props.session.title}”`,
+                onCommit: () => onDelete(sessionId),
+                onUndo: () => setPendingDelete(false),
+              });
             }}
           >
             <Trash2 size={13} />
@@ -194,4 +235,11 @@ export function SidebarSessionItem(props: {
       </div>
     </div>
   );
+}
+
+function sessionActivityAt(session: Session): string {
+  const value = session.lastActivityAt;
+  if (typeof value === "number" && Number.isFinite(value)) return new Date(value).toISOString();
+  if (typeof value === "string" && !Number.isNaN(Date.parse(value))) return value;
+  return session.updatedAt;
 }

@@ -202,13 +202,12 @@ pub async fn send(
     if !client.reject_busy {
         bail!("running daemon lacks atomic CLI turn admission. Update it when tasks are idle; status/history/watch remain available. Nothing was sent");
     }
-    let result = client
-        .call(
-            "session.sendMessage",
-            json!({"sessionId":session, "rejectIfBusy":true,
-        "message":{"role":"user", "content":content, "attachments":attachments(paths)?}}),
-        )
-        .await?;
+    let mut params = json!({"sessionId":session, "rejectIfBusy":true,
+        "message":{"role":"user", "content":content, "attachments":attachments(paths)?}});
+    if let Some(limit) = client.max_turns {
+        params["maxTurns"] = json!(limit);
+    }
+    let result = client.call("session.sendMessage", params).await?;
     if result.get("queued").is_some() {
         bail!("daemon queued this message behind an active task; inspect the session before continuing");
     }

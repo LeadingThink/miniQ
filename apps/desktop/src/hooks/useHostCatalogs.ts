@@ -6,6 +6,7 @@ import type { DaemonEvent, Session, Workspace } from "../types";
 import { useDaemonConnection } from "./useDaemonConnection";
 import { isSessionRunning, isSessionTerminal } from "../sessionStatus";
 import { errorMessage } from "../errorMessage";
+import { pruneUnread, saveUnread, withUnread } from "../unreadStore";
 
 const LEGACY_HOSTS = "miniq.ssh.saved-hosts";
 const noop = async () => {};
@@ -53,6 +54,7 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
             state: host === null ? (root.connected ? "connected" : "disconnected") : catalog.state,
             error: host === null || catalog.state === "connected" ? undefined : catalog.error,
             workspaces, sessions,
+            unreadSessionIds: pruneUnread(catalog.unreadSessionIds, sessions.map((session) => session.id)),
           } };
         });
       } while (queued.current.has(key));
@@ -131,12 +133,25 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
     });
     return () => { offLocal(); offHost(); };
   }, [root, refreshCatalog, refreshHosts, reportHostError]);
-  const markSeen = useCallback((host: string | null, sessionId: string) => setCatalogs((current) => {
+  const setUnread = useCallback((host: string | null, sessionId: string, unread: boolean) => setCatalogs((current) => {
     const key = hostKey(host), catalog = current[key];
-    if (!catalog?.unreadSessionIds.has(sessionId)) return current;
-    const unreadSessionIds = new Set(catalog.unreadSessionIds);
-    unreadSessionIds.delete(sessionId);
-    return { ...current, [key]: { ...catalog, unreadSessionIds } };
+    const unreadSessionIds = catalog && withUnread(catalog.unreadSessionIds, sessionId, unread);
+    return unreadSessionIds ? { ...current, [key]: { ...catalog, unreadSessionIds } } : current;
   }), []);
-  return { registry, catalogs, refreshHosts, refreshCatalog, markSeen, error, clearError, connection, reportHostError };
+  const markSeen = useCallback((host: string | null, sessionId: string) => setUnread(host, sessionId, false), [setUnread]);
+  const markAllSeen = useCallback(() => setCatalogs((current) => {
+    if (!Object.values(current).some((catalog) => catalog.unreadSessionIds.size)) return current;
+    return Object.fromEntries(Object.entries(current).map(([key, catalog]) => [key, catalog.unreadSessionIds.size ? { ...catalog, unreadSessionIds: new Set<string>() } : catalog]));
+  }), []);
+  const saved = useRef(new Map<string, ReadonlySet<string>>());
+  useEffect(() => {
+    for (const [key, catalog] of Object.entries(catalogs)) {
+      const previous = saved.current.get(key);
+      if (previous === catalog.unreadSessionIds) continue;
+      saved.current.set(key, catalog.unreadSessionIds);
+      // The initial set came from storage; only write actual changes.
+      if (previous !== undefined || catalog.unreadSessionIds.size) saveUnread(key, catalog.unreadSessionIds);
+    }
+  }, [catalogs]);
+  return { registry, catalogs, refreshHosts, refreshCatalog, markSeen, setUnread, markAllSeen, error, clearError, connection, reportHostError };
 }

@@ -88,8 +88,12 @@ it("toggles goal mode and sends the next message as a goal", async () => {
   );
 
   const permission = screen.getByRole("button", { name: "替我审批" });
+  const plus = screen.getByRole("button", { name: "更多输入方式" });
+  // The visible row stays minimal: "+" comes first, the goal toggle lives in its panel.
+  expect(plus.compareDocumentPosition(permission) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.click(plus);
   const goal = screen.getByRole("button", { name: "目标" });
-  expect(permission.nextElementSibling).toBe(goal);
+  expect(goal.closest(".composer-plus-panel")).not.toBeNull();
   fireEvent.click(goal);
   expect(goal.getAttribute("aria-pressed")).toBe("true");
   expect(screen.getByText("目标", { selector: ".composer-goal-prefix" })).toBeTruthy();
@@ -101,4 +105,23 @@ it("toggles goal mode and sends the next message as a goal", async () => {
 
   await vi.waitFor(() => expect(onSend).toHaveBeenCalledWith("整理发布说明", [], true));
   await vi.waitFor(() => expect(goal.getAttribute("aria-pressed")).toBe("false"));
+});
+
+it("keeps secondary inputs behind the + menu and closes it with Escape", () => {
+  render(<ComposerCard busy={false} placeholder="消息" draftKey="plus-menu" allowGoal onSend={vi.fn(async () => true)} />);
+  const plus = screen.getByRole("button", { name: "更多输入方式" });
+  expect(plus.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("button", { name: "目标" })).toBeNull();
+
+  fireEvent.click(plus);
+  expect(plus.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("button", { name: "目标" })).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: /命令与技能/ }));
+  expect((screen.getByRole("textbox", { name: "消息" }) as HTMLTextAreaElement).value).toBe("/");
+
+  fireEvent.click(plus);
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  expect(plus.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(plus);
 });

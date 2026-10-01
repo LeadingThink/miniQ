@@ -10,7 +10,7 @@
   color: var(--text);
 }
 .microphone-permission-dialog::backdrop {
-  background: #0007;
+  background: var(--scrim);
   backdrop-filter: blur(4px);
 }
 .microphone-permission-dialog header,
@@ -19,9 +19,9 @@
   align-items: center;
   gap: 10px;
 }
-.microphone-permission-dialog h2 { flex: 1; margin: 0; font-size: 18px; }
+.microphone-permission-dialog h2 { flex: 1; margin: 0; font-size: var(--font-headline); }
 .microphone-permission-dialog p,
-.microphone-permission-dialog li { color: var(--text-mid); font-size: 14px; line-height: 1.7; }
+.microphone-permission-dialog li { color: var(--text-mid); font-size: var(--font-body); line-height: 1.7; }
 .microphone-permission-dialog ol { padding-left: 22px; }
 .microphone-permission-dialog li + li { margin-top: 8px; }
 .microphone-permission-dialog footer { justify-content: flex-end; flex-wrap: wrap; margin-top: 24px; }
@@ -36,7 +36,7 @@
   border-radius: var(--radius-sm);
   background: var(--bg);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-body);
   cursor: pointer;
 }
 .microphone-permission-dialog button:hover { background: var(--bg-hover); }

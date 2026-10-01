@@ -1,0 +1,17 @@
+id = "miniq.official.circleci"
+name = "CircleCI"
+version = "1.1.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["circleci-build-triage", "circleci-pipeline-status", "circleci-config", "circleci-builds", "circleci-chunk", "circleci-cli"]
+requires = ["npx"]
+description = "CircleCI 官方技能：排查失败构建、拆分并行测试、CLI 操作、编写并校验 config.yml"
+author = "miniQ"
+
+[[mcp_servers]]
+name = "circleci"
+description = "CircleCI 官方托管 MCP（OAuth2）：流水线、工作流、作业日志、测试结果"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://mcp.circleci.com/v1/mcp"]
+env = []

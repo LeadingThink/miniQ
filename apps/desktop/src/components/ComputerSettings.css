@@ -10,13 +10,13 @@
 }
 .computer-settings-heading h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--font-callout);
 }
 .computer-identity {
   display: grid;
   grid-template-columns: 76px minmax(0, 1fr);
   gap: 10px;
-  font-size: 12px;
+  font-size: var(--font-footnote);
   margin: 20px 0;
 }
 .computer-identity dt {
@@ -29,7 +29,7 @@
 .computer-identity code {
   display: block;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .computer-permission {
   display: flex;
@@ -45,13 +45,13 @@
   min-width: 0;
 }
 .computer-permission strong {
-  font-size: 13px;
+  font-size: var(--font-body);
 }
 .computer-permission span {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--font-footnote);
 }
 .permission-ready {
   color: var(--ok);
@@ -60,14 +60,14 @@
   color: var(--warn);
 }
 .computer-permission-note {
-  font-size: 12px;
+  font-size: var(--font-footnote);
   line-height: 1.6;
   color: var(--text-mid);
   overflow-wrap: anywhere;
 }
 .computer-permission-error {
-  font-size: 12px;
-  color: var(--danger, #c4364b);
+  font-size: var(--font-footnote);
+  color: var(--danger);
   overflow-wrap: anywhere;
 }
 .computer-keep-awake {

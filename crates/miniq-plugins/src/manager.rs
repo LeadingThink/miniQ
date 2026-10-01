@@ -12,11 +12,15 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::{PluginError, PluginFailureKind, PluginLimits};
 use crate::host::{WasmPlugin, WasmTool};
-use crate::manifest::PluginManifest;
+use crate::manifest::{PluginManifest, PluginMcpServer};
 use crate::node::{NodePluginProcess, NodeTool};
 
 const TRUST_STORE_FILE: &str = ".trusted-node.json";
 const NODE_HOST_DIRECTORY: &str = ".miniq-node-plugin-host-v1";
+/// Per-plugin private data directories live here, outside every plugin
+/// directory so that plugin code can never rewrite its own trusted contents.
+const PLUGIN_DATA_DIRECTORY: &str = ".plugin-data";
+const TRUST_FINGERPRINT_VERSION: &[u8] = b"miniq-node-trust-v2";
 static TRUST_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 static INSTALL_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 static BACKUP_TEMP_ID: AtomicU64 = AtomicU64::new(0);
@@ -24,9 +28,20 @@ static BACKUP_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 #[derive(Default, Deserialize, Serialize)]
 struct TrustStore(BTreeMap<String, String>);
 
+/// An MCP server contributed by an enabled plugin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnabledPluginMcpServer {
+    pub plugin_id: String,
+    pub plugin_name: String,
+    pub server: PluginMcpServer,
+}
+
 struct PluginRecord {
     info: PluginInfo,
     manifest_path: PathBuf,
+    /// Full `[[mcp_servers]]` declarations (command/args/env); `info` only
+    /// exposes their public name/description.
+    mcp_servers: Vec<PluginMcpServer>,
     handles: Arc<std::sync::Mutex<Vec<RegistrationHandle>>>,
     cancellation: CancellationToken,
     node: Option<Arc<NodePluginProcess>>,
@@ -92,8 +107,18 @@ impl PluginRecord {
                         available: command_available(command),
                     })
                     .collect(),
+                bundled: crate::bundled::is_bundled(&manifest.id),
+                mcp_servers: manifest
+                    .mcp_servers
+                    .iter()
+                    .map(|server| miniq_protocol::PluginMcpServerInfo {
+                        name: server.name.clone(),
+                        description: server.description.clone(),
+                    })
+                    .collect(),
             },
             manifest_path,
+            mcp_servers: manifest.mcp_servers.clone(),
             handles: Arc::new(std::sync::Mutex::new(Vec::new())),
             cancellation: CancellationToken::new(),
             node: None,
@@ -101,6 +126,7 @@ impl PluginRecord {
     }
 
     fn failed(id: String, name: String, manifest_path: PathBuf, error: PluginError) -> Self {
+        let bundled = crate::bundled::is_bundled(&id);
         Self {
             info: PluginInfo {
                 id,
@@ -122,8 +148,11 @@ impl PluginRecord {
                 trust_confirmed: false,
                 skills: Vec::new(),
                 dependencies: Vec::new(),
+                bundled,
+                mcp_servers: Vec::new(),
             },
             manifest_path,
+            mcp_servers: Vec::new(),
             handles: Arc::new(std::sync::Mutex::new(Vec::new())),
             cancellation: CancellationToken::new(),
             node: None,
@@ -271,6 +300,12 @@ impl PluginManager {
     }
 
     pub async fn uninstall(&self, id: &str) -> Result<(), PluginError> {
+        if crate::bundled::is_bundled(id) {
+            return Err(PluginError::new(
+                PluginFailureKind::Incompatible,
+                "built-in plugins cannot be uninstalled; disable them instead",
+            ));
+        }
         let directory = self
             .records
             .read()
@@ -288,7 +323,144 @@ impl PluginManager {
                 error.to_string(),
             ));
         }
+        let data_dir = self.plugin_data_dir(id);
+        if data_dir.exists() {
+            if let Err(error) = std::fs::remove_dir_all(&data_dir) {
+                tracing::warn!(plugin = id, %error, "failed to remove plugin data directory");
+            }
+        }
         self.set_trust(id, None)
+    }
+
+    /// MCP servers declared by every enabled, healthy plugin, tagged with the
+    /// contributing plugin. Sorted by plugin id, then declaration order.
+    pub fn enabled_mcp_servers(&self) -> Vec<EnabledPluginMcpServer> {
+        let records = self.records.read().unwrap();
+        let mut servers = Vec::new();
+        for record in records.values() {
+            let info = record.current_info();
+            if !info.enabled || info.status == PluginStatus::Failed {
+                continue;
+            }
+            for server in &record.mcp_servers {
+                servers.push(EnabledPluginMcpServer {
+                    plugin_id: info.id.clone(),
+                    plugin_name: info.name.clone(),
+                    server: server.clone(),
+                });
+            }
+        }
+        servers
+    }
+
+    /// Skill directories of every enabled, healthy skills-carrying plugin.
+    pub fn enabled_skill_directories(&self) -> Vec<PathBuf> {
+        let records = self.records.read().unwrap();
+        let mut dirs = Vec::new();
+        for record in records.values() {
+            let info = &record.info;
+            if !info.enabled || info.status == PluginStatus::Failed || info.skills.is_empty() {
+                continue;
+            }
+            let Some(directory) = record.manifest_path.parent() else {
+                continue;
+            };
+            for skill in &info.skills {
+                if let Ok(dir) = secure_directory(directory, Path::new(skill)) {
+                    dirs.push(dir);
+                }
+            }
+        }
+        dirs.sort();
+        dirs
+    }
+
+    /// Materialize the first-party plugins compiled into the binary into the
+    /// plugin root. Missing or outdated copies are (re)written; the user's
+    /// enabled/disabled choice is preserved across upgrades.
+    pub fn sync_bundled(&self) -> Result<(), PluginError> {
+        let io = |error: std::io::Error| {
+            PluginError::new(PluginFailureKind::InvalidEntry, error.to_string())
+        };
+        std::fs::create_dir_all(&self.root).map_err(io)?;
+        for package in crate::bundled::bundled_plugins() {
+            let Some(manifest_raw) = package
+                .files
+                .iter()
+                .find(|(path, _)| path == "manifest.toml")
+                .map(|(_, content)| *content)
+            else {
+                continue;
+            };
+            let mut manifest = PluginManifest::parse(manifest_raw).map_err(|error| {
+                PluginError::new(PluginFailureKind::InvalidManifest, error.to_string())
+            })?;
+            let target = self.root.join(&package.id);
+            let existing = std::fs::read_to_string(target.join("manifest.toml"))
+                .ok()
+                .and_then(|raw| PluginManifest::parse(&raw).ok());
+            if let Some(existing) = &existing {
+                manifest.enabled = existing.enabled;
+            }
+            let up_to_date = existing
+                .as_ref()
+                .is_some_and(|existing| existing.version == manifest.version)
+                && package
+                    .files
+                    .iter()
+                    .filter(|(path, _)| path != "manifest.toml")
+                    .all(|(path, content)| {
+                        std::fs::read_to_string(target.join(path))
+                            .is_ok_and(|disk| disk == *content)
+                    });
+            if up_to_date {
+                continue;
+            }
+            let staging = self.root.join(format!(
+                ".install-bundled-{}-{}",
+                package.id,
+                INSTALL_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+            ));
+            if staging.exists() {
+                std::fs::remove_dir_all(&staging).map_err(io)?;
+            }
+            let serialized = toml::to_string_pretty(&manifest).map_err(|error| {
+                PluginError::new(PluginFailureKind::InvalidManifest, error.to_string())
+            })?;
+            let write_all = || -> std::io::Result<()> {
+                for (path, content) in &package.files {
+                    let file = staging.join(path);
+                    if let Some(parent) = file.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    if path == "manifest.toml" {
+                        std::fs::write(&file, &serialized)?;
+                    } else {
+                        std::fs::write(&file, content)?;
+                        // Skill packs invoke helpers as `./scripts/x.sh`.
+                        #[cfg(unix)]
+                        if content.starts_with("#!") {
+                            use std::os::unix::fs::PermissionsExt;
+                            std::fs::set_permissions(
+                                &file,
+                                std::fs::Permissions::from_mode(0o755),
+                            )?;
+                        }
+                    }
+                }
+                Ok(())
+            };
+            if let Err(error) = write_all() {
+                let _ = std::fs::remove_dir_all(&staging);
+                return Err(io(error));
+            }
+            if target.exists() {
+                std::fs::remove_dir_all(&target).map_err(io)?;
+            }
+            std::fs::rename(&staging, &target).map_err(io)?;
+            tracing::info!(plugin = %package.id, version = %manifest.version, "installed bundled plugin");
+        }
+        Ok(())
     }
 
     pub async fn scan_and_load(&self) -> Result<Vec<PluginInfo>, PluginError> {
@@ -302,6 +474,7 @@ impl PluginManager {
             .filter(|entry| {
                 let name = entry.file_name();
                 name != NODE_HOST_DIRECTORY
+                    && name != PLUGIN_DATA_DIRECTORY
                     && !name.to_string_lossy().starts_with(".install-")
                     && !name.to_string_lossy().starts_with(".backup-")
             })
@@ -378,8 +551,8 @@ impl PluginManager {
                     "plugin directory is missing",
                 )
             })?;
-            let entry = secure_entry(directory, &manifest.entry)?;
-            Some(trust_fingerprint(&manifest, &entry)?)
+            secure_entry(directory, &manifest.entry)?;
+            Some(trust_fingerprint(&manifest, directory)?)
         } else {
             None
         };
@@ -472,7 +645,7 @@ impl PluginManager {
         let mut record = PluginRecord::discovered(&manifest, manifest_path.clone());
         if manifest.runtime == PluginRuntime::Node {
             let confirmed = secure_entry(directory, &manifest.entry)
-                .and_then(|entry| trust_fingerprint(&manifest, &entry))
+                .and_then(|_| trust_fingerprint(&manifest, directory))
                 .ok()
                 .is_some_and(|fingerprint| self.is_trusted(&manifest.id, &fingerprint));
             record.info.trust_confirmed = confirmed;
@@ -568,10 +741,12 @@ impl PluginManager {
             PluginRuntime::Node => {
                 let entry = secure_entry(directory, &manifest.entry)
                     .map_err(|error| (id.clone(), error))?;
+                let data_dir = self.plugin_data_dir(&manifest.id);
                 let (plugin, metadata) = NodePluginProcess::start(
                     manifest.clone(),
                     directory,
                     &entry,
+                    &data_dir,
                     self.limits.clone(),
                     handles.clone(),
                 )
@@ -670,6 +845,12 @@ impl PluginManager {
             .write()
             .unwrap()
             .insert(id.clone(), PluginRecord::failed(id, name, path, error));
+    }
+
+    /// Private, writable data directory for one plugin. It is a sibling of the
+    /// plugin directories (never inside one) and is created on demand.
+    fn plugin_data_dir(&self, id: &str) -> PathBuf {
+        self.root.join(PLUGIN_DATA_DIRECTORY).join(id)
     }
 
     fn is_trusted(&self, id: &str, fingerprint: &str) -> bool {
@@ -805,23 +986,78 @@ fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
     }
 }
 
-fn trust_fingerprint(manifest: &PluginManifest, entry: &Path) -> Result<String, PluginError> {
-    let entry_bytes = std::fs::read(entry)
-        .map_err(|error| PluginError::new(PluginFailureKind::InvalidEntry, error.to_string()))?;
-    let trust_fields = serde_json::to_vec(&(
-        &manifest.id,
-        &manifest.version,
-        manifest.runtime,
-        &manifest.entry,
-        &manifest.permissions,
-        &manifest.engine,
-    ))
-    .map_err(|error| PluginError::new(PluginFailureKind::InvalidManifest, error.to_string()))?;
+/// Trust fingerprint of a Node plugin: the normalized manifest plus a content
+/// hash over the *whole* plugin directory (sorted relative paths and file
+/// contents, `node_modules` included). Only host-generated files are excluded:
+/// the bundled host directory and `manifest.toml`, whose `enabled` flag the
+/// daemon rewrites (every other manifest field is covered by the normalized
+/// manifest). Any change to any other file therefore requires re-trust.
+fn trust_fingerprint(manifest: &PluginManifest, directory: &Path) -> Result<String, PluginError> {
+    let mut normalized = manifest.clone();
+    normalized.enabled = false;
+    let manifest_bytes = serde_json::to_vec(&normalized)
+        .map_err(|error| PluginError::new(PluginFailureKind::InvalidManifest, error.to_string()))?;
     let mut digest = Sha256::new();
-    digest.update(trust_fields);
+    digest.update(TRUST_FINGERPRINT_VERSION);
     digest.update([0]);
-    digest.update(entry_bytes);
+    digest.update((manifest_bytes.len() as u64).to_le_bytes());
+    digest.update(manifest_bytes);
+    digest.update(content_hash(directory)?);
     Ok(format!("{:x}", digest.finalize()))
+}
+
+/// SHA-256 over the directory tree rooted at `directory`, skipping only the
+/// host-generated top-level entries. Symlinks are hashed by their target path
+/// and never followed.
+fn content_hash(directory: &Path) -> Result<[u8; 32], PluginError> {
+    let io_error = |error: std::io::Error| {
+        PluginError::new(PluginFailureKind::InvalidEntry, error.to_string())
+    };
+    let mut entries = Vec::new();
+    let mut pending = vec![PathBuf::new()];
+    while let Some(relative) = pending.pop() {
+        for item in std::fs::read_dir(directory.join(&relative)).map_err(io_error)? {
+            let item = item.map_err(io_error)?;
+            let child = relative.join(item.file_name());
+            if relative.as_os_str().is_empty()
+                && (item.file_name() == NODE_HOST_DIRECTORY || item.file_name() == "manifest.toml")
+            {
+                continue;
+            }
+            let kind = item.file_type().map_err(io_error)?;
+            if kind.is_dir() {
+                pending.push(child.clone());
+            }
+            entries.push((child, kind));
+        }
+    }
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut digest = Sha256::new();
+    for (relative, kind) in entries {
+        let path_bytes = relative
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/")
+            .into_bytes();
+        let (tag, content) = if kind.is_symlink() {
+            let target = std::fs::read_link(directory.join(&relative)).map_err(io_error)?;
+            (b'L', target.to_string_lossy().into_owned().into_bytes())
+        } else if kind.is_dir() {
+            (b'D', Vec::new())
+        } else {
+            (
+                b'F',
+                std::fs::read(directory.join(&relative)).map_err(io_error)?,
+            )
+        };
+        digest.update([tag]);
+        digest.update((path_bytes.len() as u64).to_le_bytes());
+        digest.update(&path_bytes);
+        digest.update((content.len() as u64).to_le_bytes());
+        digest.update(&content);
+    }
+    Ok(digest.finalize().into())
 }
 
 fn secure_entry(directory: &Path, entry: &Path) -> Result<PathBuf, PluginError> {
@@ -1062,6 +1298,148 @@ skills = ["document-workflow"]
     }
 
     #[tokio::test]
+    async fn enabled_mcp_servers_follow_plugin_enablement() {
+        let installed = tempfile::tempdir().unwrap();
+        let source_root = tempfile::tempdir().unwrap();
+        let source = source_root.path().join("source");
+        std::fs::create_dir_all(source.join("linear")).unwrap();
+        std::fs::write(
+            source.join("manifest.toml"),
+            r#"id = "dev.miniq.linear"
+name = "Linear"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["linear"]
+
+[[mcp_servers]]
+name = "linear"
+description = "Linear issues"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://mcp.linear.app/mcp"]
+env = ["LINEAR_TOKEN"]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            source.join("linear/SKILL.md"),
+            "---\nname: linear\ndescription: Linear workflow\n---\n",
+        )
+        .unwrap();
+        let manager = PluginManager::new(
+            installed.path().to_path_buf(),
+            Arc::new(ToolRouter::new()),
+            PluginLimits::default(),
+        );
+
+        let info = manager.install_from_directory(&source).await.unwrap();
+        assert_eq!(
+            info.mcp_servers,
+            vec![miniq_protocol::PluginMcpServerInfo {
+                name: "linear".into(),
+                description: Some("Linear issues".into()),
+            }]
+        );
+        let servers = manager.enabled_mcp_servers();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].plugin_id, "dev.miniq.linear");
+        assert_eq!(servers[0].plugin_name, "Linear");
+        assert_eq!(servers[0].server.command, "npx");
+        assert_eq!(servers[0].server.env, vec!["LINEAR_TOKEN"]);
+
+        let disabled = manager
+            .set_enabled("dev.miniq.linear", false, false)
+            .await
+            .unwrap();
+        assert!(!disabled.enabled);
+        // Still listed for the UI, but no longer contributed at runtime.
+        assert_eq!(disabled.mcp_servers.len(), 1);
+        assert!(manager.enabled_mcp_servers().is_empty());
+
+        manager
+            .set_enabled("dev.miniq.linear", true, false)
+            .await
+            .unwrap();
+        assert_eq!(manager.enabled_mcp_servers().len(), 1);
+
+        manager.uninstall("dev.miniq.linear").await.unwrap();
+        assert!(manager.enabled_mcp_servers().is_empty());
+    }
+
+    #[tokio::test]
+    async fn bundled_plugins_install_expose_skills_and_survive_restarts() {
+        let root = tempfile::tempdir().unwrap();
+        let manager = PluginManager::new(
+            root.path().to_path_buf(),
+            Arc::new(ToolRouter::new()),
+            PluginLimits::default(),
+        );
+        manager.sync_bundled().unwrap();
+        let plugins = manager.scan_and_load().await.unwrap();
+        let bundled = crate::bundled::bundled_plugins();
+        assert!(!bundled.is_empty());
+        for package in &bundled {
+            let info = plugins
+                .iter()
+                .find(|plugin| plugin.id == package.id)
+                .unwrap_or_else(|| panic!("{} not loaded", package.id));
+            assert!(info.bundled);
+            let manifest = package
+                .files
+                .iter()
+                .find(|(path, _)| path == "manifest.toml")
+                .map(|(_, raw)| PluginManifest::parse(raw).unwrap())
+                .unwrap();
+            let expected = if manifest.enabled {
+                PluginStatus::Active
+            } else {
+                PluginStatus::Disabled
+            };
+            assert_eq!(info.status, expected, "{info:?}");
+        }
+        let skill_count: usize = plugins
+            .iter()
+            .filter(|plugin| plugin.status == PluginStatus::Active)
+            .map(|plugin| plugin.skills.len())
+            .sum();
+        assert_eq!(manager.enabled_skill_directories().len(), skill_count);
+
+        let first = plugins
+            .iter()
+            .find(|plugin| plugin.bundled && plugin.status == PluginStatus::Active)
+            .unwrap()
+            .id
+            .clone();
+        assert!(manager.uninstall(&first).await.is_err());
+        manager.set_enabled(&first, false, false).await.unwrap();
+        let disabled_count = manager
+            .diagnostics(&first)
+            .map(|plugin| plugin.skills.len())
+            .unwrap();
+        assert_eq!(
+            manager.enabled_skill_directories().len(),
+            skill_count - disabled_count
+        );
+
+        // A restart (re-sync) keeps the user's disabled choice and repairs
+        // tampered content.
+        let skill_dir = manager
+            .root
+            .join(&first)
+            .join(manager.diagnostics(&first).unwrap().skills[0].clone());
+        std::fs::write(skill_dir.join("SKILL.md"), "tampered").unwrap();
+        manager.sync_bundled().unwrap();
+        manager.scan_and_load().await.unwrap();
+        let info = manager.diagnostics(&first).unwrap();
+        assert!(!info.enabled);
+        assert_ne!(
+            std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap(),
+            "tampered"
+        );
+    }
+
+    #[tokio::test]
     async fn node_manifest_cannot_self_authorize_trusted_code() {
         let temp = tempfile::tempdir().unwrap();
         let directory = temp.path().join("dev.miniq.node-test");
@@ -1097,7 +1475,7 @@ skills = ["document-workflow"]
             "\"workspace_read\"",
         ))
         .unwrap();
-        let fingerprint = trust_fingerprint(&base, &entry).unwrap();
+        let fingerprint = trust_fingerprint(&base, temp.path()).unwrap();
 
         let version_changed = PluginManifest::parse(&node_manifest(
             "dev.miniq.node-test",
@@ -1107,7 +1485,7 @@ skills = ["document-workflow"]
         .unwrap();
         assert_ne!(
             fingerprint,
-            trust_fingerprint(&version_changed, &entry).unwrap()
+            trust_fingerprint(&version_changed, temp.path()).unwrap()
         );
 
         let permissions_changed = PluginManifest::parse(&node_manifest(
@@ -1118,11 +1496,95 @@ skills = ["document-workflow"]
         .unwrap();
         assert_ne!(
             fingerprint,
-            trust_fingerprint(&permissions_changed, &entry).unwrap()
+            trust_fingerprint(&permissions_changed, temp.path()).unwrap()
         );
 
         std::fs::write(&entry, "export default { changed: true };").unwrap();
-        assert_ne!(fingerprint, trust_fingerprint(&base, &entry).unwrap());
+        assert_ne!(fingerprint, trust_fingerprint(&base, temp.path()).unwrap());
+    }
+
+    #[test]
+    fn node_trust_covers_whole_directory_except_host_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        std::fs::write(dir.join("index.mjs"), "import './lib/util.mjs';").unwrap();
+        std::fs::create_dir_all(dir.join("lib")).unwrap();
+        std::fs::write(dir.join("lib/util.mjs"), "export const a = 1;").unwrap();
+        std::fs::create_dir_all(dir.join("node_modules/dep")).unwrap();
+        std::fs::write(dir.join("node_modules/dep/index.js"), "module.exports = 1;").unwrap();
+        let mut manifest = PluginManifest::parse(&node_manifest(
+            "dev.miniq.node-test",
+            "1.0.0",
+            "\"workspace_read\"",
+        ))
+        .unwrap();
+        let base = trust_fingerprint(&manifest, dir).unwrap();
+
+        // Host-generated files and the daemon-managed enabled flag are ignored.
+        std::fs::create_dir_all(dir.join(NODE_HOST_DIRECTORY)).unwrap();
+        std::fs::write(dir.join(NODE_HOST_DIRECTORY).join("host.mjs"), "host").unwrap();
+        std::fs::write(dir.join("manifest.toml"), "rewritten").unwrap();
+        manifest.enabled = !manifest.enabled;
+        assert_eq!(base, trust_fingerprint(&manifest, dir).unwrap());
+
+        // A non-entry source file changes the fingerprint.
+        std::fs::write(dir.join("lib/util.mjs"), "export const a = 2;").unwrap();
+        let changed = trust_fingerprint(&manifest, dir).unwrap();
+        assert_ne!(base, changed);
+
+        // Dependencies in node_modules are covered too.
+        std::fs::write(dir.join("node_modules/dep/index.js"), "module.exports = 2;").unwrap();
+        let dependency_changed = trust_fingerprint(&manifest, dir).unwrap();
+        assert_ne!(changed, dependency_changed);
+
+        // Adding a new file is also a change.
+        std::fs::write(dir.join("extra.js"), "").unwrap();
+        assert_ne!(
+            dependency_changed,
+            trust_fingerprint(&manifest, dir).unwrap()
+        );
+    }
+
+    #[test]
+    fn legacy_entry_only_fingerprint_is_not_trusted() {
+        let temp = tempfile::tempdir().unwrap();
+        let plugin = temp.path().join("dev.miniq.node-test");
+        std::fs::create_dir_all(&plugin).unwrap();
+        std::fs::write(plugin.join("index.mjs"), "export default {};").unwrap();
+        let manifest = PluginManifest::parse(&node_manifest(
+            "dev.miniq.node-test",
+            "1.0.0",
+            "\"workspace_read\"",
+        ))
+        .unwrap();
+        // Recompute the previous (entry-file only) fingerprint format.
+        let legacy = {
+            let fields = serde_json::to_vec(&(
+                &manifest.id,
+                &manifest.version,
+                manifest.runtime,
+                &manifest.entry,
+                &manifest.permissions,
+                &manifest.engine,
+            ))
+            .unwrap();
+            let mut digest = Sha256::new();
+            digest.update(fields);
+            digest.update([0]);
+            digest.update(std::fs::read(plugin.join("index.mjs")).unwrap());
+            format!("{:x}", digest.finalize())
+        };
+        let manager = PluginManager::new(
+            temp.path().to_path_buf(),
+            Arc::new(ToolRouter::new()),
+            PluginLimits::default(),
+        );
+        manager
+            .set_trust("dev.miniq.node-test", Some(legacy.clone()))
+            .unwrap();
+        let current = trust_fingerprint(&manifest, &plugin).unwrap();
+        assert_ne!(legacy, current);
+        assert!(!manager.is_trusted("dev.miniq.node-test", &current));
     }
 
     #[test]

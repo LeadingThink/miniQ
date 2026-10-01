@@ -1,13 +1,14 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { ToastProvider } from "./components/ui/Toast";
 // Bundled fonts (self-hosted, offline). Latin: Inter (UI) + JetBrains Mono
 // (code); CJK: MiSans VF subset (@font-face lives in styles/base.css).
 import "@fontsource-variable/inter/wght.css";
 import "@fontsource-variable/jetbrains-mono/wght.css";
+import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/themes.css";
-import "./styles/theme-patterns.css";
 import "./styles/conversation.css";
 import "./components/ConversationNavigationRail.css";
 import "./styles/interactions.css";
@@ -19,17 +20,24 @@ import "./styles/experience.css";
 import "./styles/theme-picker.css";
 import "./external-sessions.css";
 import "./styles/mobile-controls.css";
+import "./styles/window-chrome.css";
 import { initializeAppearance } from "./theme";
 import { initializeMobileRuntime } from "./mobileRuntime";
 import { initializeMobileViewport } from "./mobileViewport";
+import { initializeWindowChrome } from "./windowChrome";
+import { initializeNativeMenuBridge } from "./nativeMenuBridge";
 
 initializeAppearance();
+initializeWindowChrome();
 initializeMobileViewport();
+initializeNativeMenuBridge();
 void initializeMobileRuntime();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <ToastProvider>
+      <App />
+    </ToastProvider>
   </React.StrictMode>,
 );
 

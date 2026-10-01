@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Artifact, Message, Question, ToolCall, TurnProgress } from "../types";
+import type { Artifact, Message, Question, ToolCall, TurnPlan, TurnProgress } from "../types";
 import type { PendingApproval } from "../hooks/useSessionFeed";
 import type { RpcClient } from "../rpc";
 import { Timeline } from "./Timeline";
@@ -20,6 +20,7 @@ function renderTimeline(options: {
   streamingText?: string;
   turnProgress?: TurnProgress | null;
   plan?: { content: string; status: "pending" | "in_progress" | "completed" }[];
+  turnPlans?: TurnPlan[];
   questions?: Question[];
   approvals?: PendingApproval[];
   artifacts?: Artifact[];
@@ -37,6 +38,7 @@ function renderTimeline(options: {
       approvals={options.approvals ?? []}
       questions={options.questions ?? []}
       plan={options.plan ?? []}
+      turnPlans={options.turnPlans}
       artifacts={options.artifacts ?? []}
       queue={[]}
       streamingText={options.streamingText ?? ""}
@@ -72,6 +74,9 @@ describe("Timeline execution flow", () => {
     expect(shell).toBeGreaterThan(toolbar);
     expect(transcript).toBeGreaterThan(shell);
     expect(html).toContain("检查服务状态");
+    expect(html).not.toContain(">会话<");
+    const contextClose = html.indexOf('class="timeline-shell"');
+    expect(html.slice(context, contextClose)).toContain('aria-label="会话记录工具栏"');
   });
 
   it("does not reserve a goal row when a session cannot edit goals", () => {
@@ -393,11 +398,14 @@ describe("Timeline execution flow", () => {
       messages,
       toolCalls,
       plan: [{ content: "验证结果", status: "completed" }],
+      turnPlans: [{ anchorMessageId: "user-1", tasks: [{ content: "验证结果", status: "completed" }] }],
     });
 
-    expect(html.indexOf("检查这个项目")).toBeLessThan(html.indexOf("运行了命令"));
-    expect(html.indexOf("运行了命令")).toBeLessThan(html.indexOf("检查完成"));
-    expect(html.indexOf("检查完成")).toBeLessThan(html.indexOf("任务步骤已完成"));
+    // Execution details collapse into a single per-turn summary row between
+    // the request and the reply; step and plan details live inside the fold.
+    expect(html.indexOf("检查这个项目")).toBeLessThan(html.indexOf("已执行 1 步"));
+    expect(html.indexOf("已执行 1 步")).toBeLessThan(html.indexOf("检查完成"));
+    expect(html).not.toContain("运行了命令");
     expect(html).not.toContain("task_update");
   });
 
@@ -406,12 +414,31 @@ describe("Timeline execution flow", () => {
     expect(html).toContain("正在分析并准备下一步");
   });
 
-  it("restores an ended plan without claiming completion or spinning forever", () => {
-    const plan = [{ content: "render video", status: "in_progress" as const }];
-    expect(renderTimeline({ plan, busy: false })).toContain("本轮已结束，步骤待核对");
-    expect(renderTimeline({ plan, busy: false })).not.toContain("activity-spinner");
-    expect(renderTimeline({ plan, busy: true })).toContain("activity-spinner");
-    expect(renderTimeline({ plan, busy: true })).not.toContain("本轮已结束");
+  it("keeps each turn's plan collapsed inside that turn instead of the bottom", () => {
+    const at = (second: number) => `2026-09-03T01:00:0${second}Z`;
+    const messages: Message[] = [
+      { id: "u1", sessionId: "session-1", role: "user", content: "第一问", createdAt: at(0) },
+      { id: "a1", sessionId: "session-1", role: "assistant", content: "第一答", createdAt: at(1) },
+      { id: "u2", sessionId: "session-1", role: "user", content: "第二问", createdAt: at(2) },
+      { id: "a2", sessionId: "session-1", role: "assistant", content: "第二答", createdAt: at(3) },
+    ];
+    const turnPlans: TurnPlan[] = [
+      { anchorMessageId: "u1", tasks: [
+        { content: "旧步骤一", status: "completed" },
+        { content: "旧步骤二", status: "in_progress" },
+      ] },
+      { anchorMessageId: "u2", tasks: [{ content: "新步骤", status: "completed" }] },
+    ];
+    const html = renderTimeline({ messages, turnPlans });
+    const first = html.indexOf("共 2 个任务，已完成 1 个");
+    expect(html.indexOf("第一答")).toBeLessThan(first);
+    expect(first).toBeLessThan(html.indexOf("第二问"));
+    expect(html.indexOf("第二答")).toBeLessThan(html.indexOf("共 1 个任务，已完成 1 个"));
+    // Collapsed by default, never spinning for an ended turn.
+    expect(html).not.toContain("旧步骤一");
+    expect(html).not.toContain("activity-spinner");
+    // While the latest turn runs, its plan lives in the composer pill, not the timeline.
+    expect(renderTimeline({ messages, turnPlans, busy: true })).not.toContain("共 1 个任务");
   });
 
   it("shows retries alongside active tools but not for an idle session", () => {
@@ -495,6 +522,7 @@ describe("Timeline execution flow", () => {
     expect(html).toContain("dev.miniq.text-utils.transform");
     expect(html).toContain("允许一次");
     expect(html).toContain("本会话允许");
+    expect(html).toContain("总是允许");
     expect(html).toContain("拒绝");
   });
 

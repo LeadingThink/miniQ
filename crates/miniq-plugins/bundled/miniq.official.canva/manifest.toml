@@ -1,0 +1,16 @@
+id = "miniq.official.canva"
+name = "Canva 可画"
+version = "1.1.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["canva-design-studio", "canva-edit-design", "canva-design-feedback", "canva-implement-feedback", "canva-brand-check", "canva-branded-presentation", "canva-brand-batch", "canva-resize-for-social-media", "canva-translate-design"]
+requires = ["npx"]
+description = "通过 Canva 官方 MCP 生成、编辑、评审、品牌检查、翻译、多尺寸适配与导出设计，并用品牌模板批量出图"
+author = "miniQ"
+
+[[mcp_servers]]
+name = "canva"
+description = "Canva 官方远程 MCP（Streamable HTTP，首次使用需在浏览器登录 Canva 授权）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://mcp.canva.com/mcp"]

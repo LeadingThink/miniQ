@@ -22,6 +22,74 @@ export interface AgentSummary {
 
 const ACTIVE = new Set(["running", "stopping", "finalizing"]);
 const EXCEPTION = new Set(["failed", "interrupted"]);
+const WAITING = new Set(["queued", "waiting", "waiting_approval"]);
+
+export const AGENT_AVATAR_TONES = 8;
+
+/** Stable per-agent tone, so the same child keeps one identity in the
+ * timeline, panel and history (same idea as ChatGPT's seeded avatars). */
+export function agentAvatarTone(seed: string): number {
+  let hash = 0;
+  for (let index = 0; index < seed.length; index++) {
+    hash = (hash * 31 + seed.charCodeAt(index)) % 2147483647;
+  }
+  return hash % AGENT_AVATAR_TONES;
+}
+
+function avatarInitial(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "?";
+  return Array.from(trimmed)[0]!.toLocaleUpperCase();
+}
+
+export function AgentAvatar({
+  seed,
+  name,
+  status,
+  className,
+}: {
+  seed: string;
+  name: string;
+  status?: string;
+  className?: string;
+}) {
+  const state = status
+    ? ACTIVE.has(status)
+      ? "active"
+      : EXCEPTION.has(status)
+        ? "failed"
+        : status === "completed"
+          ? "completed"
+          : WAITING.has(status)
+            ? "waiting"
+            : "other"
+    : undefined;
+  return (
+    <span
+      className={`agent-avatar${className ? ` ${className}` : ""}`}
+      data-tone={agentAvatarTone(seed)}
+      data-state={state}
+      aria-hidden="true"
+    >
+      {avatarInitial(name)}
+    </span>
+  );
+}
+
+const INDICATOR_PRIORITY = (status: string) =>
+  ACTIVE.has(status) ? 0 : WAITING.has(status) ? 1 : EXCEPTION.has(status) ? 2 : status === "completed" ? 3 : 4;
+
+/** Agents in the order the inline summary names them. */
+export function orderAgentsForSummary(agents: AgentSummary[]): AgentSummary[] {
+  return agents
+    .map((agent, index) => ({ agent, index }))
+    .sort((a, b) => INDICATOR_PRIORITY(a.agent.status) - INDICATOR_PRIORITY(b.agent.status) || a.index - b.index)
+    .map(({ agent }) => agent);
+}
+
+function agentDisplayName(agent: AgentSummary): string {
+  return agent.name.trim() || agent.description.trim() || "子任务";
+}
 
 const PHASE_LABELS: Record<TurnProgress["phase"], string> = {
   preparing_context: "读取上下文",
@@ -63,7 +131,7 @@ function summarizeAgents(agents: AgentSummary[]) {
     (agent) => ACTIVE.has(agent.status) && agent.progress?.phase === "waiting_retry",
   ).length;
   const queued = agents.filter(
-    (agent) => ["queued", "waiting", "waiting_approval"].includes(agent.status),
+    (agent) => WAITING.has(agent.status),
   ).length;
   const cancelled = agents.filter((agent) => agent.status === "cancelled").length;
   return {
@@ -133,7 +201,8 @@ export function AgentStatusIndicator({
   onOpen,
 }: {
   agents: AgentSummary[];
-  onOpen: () => void;
+  /** Called with an agent id when a specific child is chosen. */
+  onOpen: (agentId?: string) => void;
 }) {
   if (agents.length === 0) return null;
   const { running, waiting, completed, failed, cancelled, phase, step } = summarizeAgents(agents);
@@ -141,22 +210,63 @@ export function AgentStatusIndicator({
   const label = `子任务：${running} 个执行中，${waiting} 个等待，${failed} 个异常`
     + (completed ? `，${completed} 个已完成` : "")
     + (cancelled ? `，${cancelled} 个已取消` : "");
+  const ordered = orderAgentsForSummary(agents);
+  // Like ChatGPT: name up to three children, or two plus "另外 N 个".
+  const namedCount = ordered.length > 3 ? 2 : ordered.length;
+  const named = ordered.slice(0, namedCount);
+  const hidden = ordered.length - namedCount;
+  const verb = running > 0
+    ? "正在执行"
+    : waiting > 0
+      ? "等待中"
+      : failed > 0
+        ? "已结束，部分异常"
+        : completed > 0
+          ? "已完成"
+          : "已停止";
   return (
-    <button
-      type="button"
-      className="agent-status-indicator"
-      aria-label={label}
-      title={`${label}。点击查看执行活动`}
-      onClick={onOpen}
-    >
-      <Activity size={14} aria-hidden="true" />
-      <span className="agent-status-indicator-label">子任务</span>
-      {running > 0 && <span className="agent-status-chip running"><LoaderCircle size={12} className="activity-spinner" />{running} 执行中</span>}
-      {waiting > 0 && <span className="agent-status-chip waiting"><PauseCircle size={12} />{waiting} 等待</span>}
-      {failed > 0 && <span className="agent-status-chip failed"><CircleAlert size={12} />{failed} 异常</span>}
-      {completed > 0 && <span className="agent-status-chip completed">{completed} 已完成</span>}
-      {cancelled > 0 && <span className="agent-status-chip">{cancelled} 已取消</span>}
-      {progress && <span className="agent-status-indicator-phase">{progress}</span>}
-    </button>
+    <div className="agent-status-indicator" data-state={running > 0 ? "active" : failed > 0 ? "failed" : "idle"}>
+      <span className="agent-avatar-stack">
+        {ordered.slice(0, 3).map((agent) => (
+          <button
+            key={agent.agentId}
+            type="button"
+            className="agent-avatar-button"
+            aria-label={`打开 ${agentDisplayName(agent)} 子任务`}
+            title={`${agentDisplayName(agent)}：${agent.description}`}
+            onClick={() => onOpen(agent.agentId)}
+          >
+            <AgentAvatar seed={agent.agentId} name={agentDisplayName(agent)} status={agent.status} />
+          </button>
+        ))}
+      </span>
+      <button
+        type="button"
+        className="agent-status-indicator-main"
+        aria-label={label}
+        title={`${label}。点击查看执行活动`}
+        onClick={() => onOpen()}
+      >
+        <span className="agent-status-sentence">
+          {named.map((agent, index) => (
+            <span key={agent.agentId}>
+              {index > 0 && (index === named.length - 1 && hidden === 0 ? " 和 " : "、")}
+              <span className="agent-status-name" data-tone={agentAvatarTone(agent.agentId)}>{agentDisplayName(agent)}</span>
+            </span>
+          ))}
+          {hidden > 0 && <span className="agent-status-more"> 和另外 {hidden} 个</span>}
+          <span className="agent-status-verb"> {verb}</span>
+        </span>
+        <span className="agent-status-counts">
+          {running > 0 && <span className="agent-status-chip running"><LoaderCircle size={12} className="activity-spinner" />{running} 执行中</span>}
+          {waiting > 0 && <span className="agent-status-chip waiting"><PauseCircle size={12} />{waiting} 等待</span>}
+          {failed > 0 && <span className="agent-status-chip failed"><CircleAlert size={12} />{failed} 异常</span>}
+          {completed > 0 && <span className="agent-status-chip completed">{completed} 已完成</span>}
+          {cancelled > 0 && <span className="agent-status-chip">{cancelled} 已取消</span>}
+        </span>
+        {progress && <span className="agent-status-indicator-phase">{progress}</span>}
+        <Activity size={13} aria-hidden="true" className="agent-status-open-icon" />
+      </button>
+    </div>
   );
 }

@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RpcClient } from "../rpc";
-import type { ScheduledTask, Session, Workspace } from "../types";
+import type { ScheduledTask, ScheduledTaskRun, Session, Workspace } from "../types";
 import { describeSchedule, SchedulePanel } from "./Schedule";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -135,5 +135,38 @@ describe("SchedulePanel", () => {
     expect(onOpenSession).not.toHaveBeenCalled(); expect(onClose).not.toHaveBeenCalled();
     fireEvent.click(run);
     expect(call.mock.calls.filter(([method]) => method === "schedule.runNow")).toHaveLength(2);
+  });
+
+  it("pages through full run history and opens the selected run session", async () => {
+    const runs: ScheduledTaskRun[] = [{
+      id: "run-new", taskId: task.id, sessionId: "session-new", status: "failed",
+      reason: "模型服务不可用", startedAt: "2026-09-28T08:00:00Z", completedAt: "2026-09-28T08:01:00Z",
+      memoryBefore: "", memoryAfter: null, taskRevision: 1,
+    }];
+    const older: ScheduledTaskRun = {
+      id: "run-old", taskId: task.id, sessionId: null, status: "skipped",
+      reason: "目标会话正在运行", startedAt: "2026-09-27T08:00:00Z", completedAt: "2026-09-27T08:00:00Z",
+      memoryBefore: "", memoryAfter: null, taskRevision: 0,
+    };
+    const { call, onOpenSession, onClose } = setup([task], async (method, params) => {
+      if (method === "schedule.list") return { tasks: [task] };
+      if (method === "schedule.runs" && params.limit === 1) return { runs, nextCursor: null };
+      if (method === "schedule.runs" && params.cursor === "older") return { runs: [older], nextCursor: null };
+      if (method === "schedule.runs") return { runs, nextCursor: "older" };
+      return {};
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "运行历史" }));
+    const history = await screen.findByLabelText("运行历史");
+    expect(within(history).getByText("原因：模型服务不可用")).toBeTruthy();
+    expect(within(history).getByText(/开始/)).toBeTruthy();
+    expect(within(history).getByText(/结束/)).toBeTruthy();
+    fireEvent.click(within(history).getByRole("button", { name: "加载更早记录" }));
+    expect(await within(history).findByText("原因：目标会话正在运行")).toBeTruthy();
+    expect(call).toHaveBeenCalledWith("schedule.runs", { taskId: task.id, cursor: "older", limit: 20 });
+
+    fireEvent.click(within(history).getByRole("button", { name: "查看会话" }));
+    expect(onOpenSession).toHaveBeenCalledWith("session-new");
+    expect(onClose).toHaveBeenCalled();
   });
 });

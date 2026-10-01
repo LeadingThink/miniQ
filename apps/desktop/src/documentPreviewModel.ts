@@ -69,3 +69,76 @@ export function spreadsheetRow<T>(
     (_, index) => row[index] ?? null,
   );
 }
+
+export const PDF_PAGE_GAP = 18;
+
+export type PdfPageSize = { width: number; height: number };
+
+export type PdfLayout = {
+  offsets: number[];
+  sizes: PdfPageSize[];
+  total: number;
+  maxWidth: number;
+};
+
+/** Lays out every page of a continuous PDF without touching the DOM. */
+export function pdfLayout(
+  naturals: PdfPageSize[],
+  scaleOf: (natural: PdfPageSize) => number,
+  gap = PDF_PAGE_GAP,
+): PdfLayout {
+  const offsets: number[] = [];
+  const sizes: PdfPageSize[] = [];
+  let top = 0;
+  let maxWidth = 0;
+  for (const natural of naturals) {
+    const scale = scaleOf(natural);
+    const size = {
+      width: Math.max(1, natural.width * scale),
+      height: Math.max(1, natural.height * scale),
+    };
+    offsets.push(top);
+    sizes.push(size);
+    top += size.height + gap;
+    maxWidth = Math.max(maxWidth, size.width);
+  }
+  return {
+    offsets,
+    sizes,
+    total: Math.max(0, top - (naturals.length ? gap : 0)),
+    maxWidth,
+  };
+}
+
+/** 1-based page whose box starts at or above `position`. */
+export function pdfPageAt(layout: PdfLayout, position: number): number {
+  const { offsets } = layout;
+  if (!offsets.length) return 1;
+  let low = 0;
+  let high = offsets.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (offsets[middle] <= position) low = middle;
+    else high = middle - 1;
+  }
+  return low + 1;
+}
+
+/** Inclusive 1-based range of pages intersecting [top, bottom]. */
+export function pdfVisibleRange(
+  layout: PdfLayout,
+  top: number,
+  bottom: number,
+): [number, number] {
+  if (!layout.offsets.length) return [1, 0];
+  let first = pdfPageAt(layout, top);
+  const firstIndex = first - 1;
+  if (
+    layout.offsets[firstIndex] + layout.sizes[firstIndex].height < top &&
+    first < layout.offsets.length
+  )
+    first += 1;
+  const last = Math.max(first, pdfPageAt(layout, bottom));
+  return [first, last];
+}
+

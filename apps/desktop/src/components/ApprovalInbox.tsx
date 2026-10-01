@@ -278,6 +278,7 @@ function PendingEntry({
                   input: tool.input,
                 }}
                 pending={pending}
+                allowAlways={client.mode !== "remote"}
                 onResolve={(id, decision) => void resolve(id, decision)}
               />
             )}

@@ -4,8 +4,48 @@ import { usePreviewScroll } from "../previewViewState";
 import { acquirePresentationRenderer } from "../presentationRenderer";
 import { DocumentControls } from "./DocumentControls";
 import { useOfficeLayout } from "../hooks/useOfficeLayout";
+import { convertOfficePreview } from "../localFiles";
+import { PdfPreview } from "./PdfPreview";
 
 type Props = { dataBase64: string; onError: (message: string) => void };
+
+type LegacyProps = {
+  path: string;
+  workspacePath: string;
+  workspacePaths: readonly string[];
+  authorizedFiles: readonly string[];
+  onError: (message: string) => void;
+};
+
+export function LegacyOfficePreview({
+  path,
+  workspacePath,
+  workspacePaths,
+  authorizedFiles,
+  onError,
+}: LegacyProps) {
+  const report = useRef(onError);
+  report.current = onError;
+  const [dataBase64, setDataBase64] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setDataBase64(null);
+    void convertOfficePreview(path, workspacePath, workspacePaths, authorizedFiles)
+      .then((preview) => {
+        if (!cancelled) setDataBase64(preview.dataBase64);
+      })
+      .catch((cause) => {
+        if (!cancelled) report.current(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authorizedFiles, path, workspacePath, workspacePaths]);
+  if (!dataBase64) {
+    return <div className="document-loading" role="status">正在调用 WPS/Office 转换为 PDF...</div>;
+  }
+  return <PdfPreview dataBase64={dataBase64} onError={onError} />;
+}
 
 export function DocxPreview(props: Props) {
   return <OfficePreview {...props} kind="docx" />;

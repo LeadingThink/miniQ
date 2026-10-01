@@ -4,6 +4,10 @@ import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
 import type { ApprovalMode } from "../types";
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
+import { APPROVAL_MODE_NAMES } from "./RemotePermissionNotice";
+import { ConfirmDialog } from "./ui/Dialog";
+
+const RANK: Record<ApprovalMode, number> = { alwaysAsk: 0, auto: 1, fullAccess: 2 };
 
 type Settings = { mode: ApprovalMode | null; effective: ApprovalMode };
 type Props = { client: RpcClient; sessionId: string };
@@ -16,6 +20,7 @@ function Controls({ client, sessionId }: Props) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [raiseTo, setRaiseTo] = useState<ApprovalMode | null>(null);
   const updating = useRef(false);
   const epoch = useRef(0);
   const load = useCallback(async () => {
@@ -51,8 +56,18 @@ function Controls({ client, sessionId }: Props) {
       window.removeEventListener("focus", load);
     };
   }, [client, sessionId, load]);
-  const update = async (mode: ApprovalMode | null) => {
+  const update = async (mode: ApprovalMode | null, confirmed = false) => {
     if (updating.current) return;
+    if (
+      !confirmed &&
+      client.mode === "remote" &&
+      mode &&
+      settings &&
+      RANK[mode] > RANK[settings.effective]
+    ) {
+      setRaiseTo(mode);
+      return;
+    }
     updating.current = true;
     setPending(true);
     const request = epoch.current;
@@ -112,6 +127,19 @@ function Controls({ client, sessionId }: Props) {
           </button>
         </span>
       )}
+      <ConfirmDialog
+        open={raiseTo !== null}
+        tone="danger"
+        title={raiseTo ? `将当前会话权限提升为“${APPROVAL_MODE_NAMES[raiseTo]}”？` : ""}
+        description="仅影响该会话，桌面端会收到通知并可撤回。"
+        confirmLabel="提升权限"
+        onCancel={() => setRaiseTo(null)}
+        onConfirm={() => {
+          const mode = raiseTo;
+          setRaiseTo(null);
+          if (mode) void update(mode, true);
+        }}
+      />
     </div>
   );
 }

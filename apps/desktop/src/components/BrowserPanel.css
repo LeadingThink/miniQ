@@ -11,7 +11,7 @@
     order: -1;
   }
   .browser-toolbar input {
-    font-size: 16px;
+    font-size: var(--font-callout);
   }
 }
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {

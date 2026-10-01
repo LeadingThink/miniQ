@@ -1,0 +1,17 @@
+id = "miniq.official.sentry"
+name = "Sentry 错误追踪"
+version = "1.1.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["sentry-issues", "sentry-trace-locate", "sentry-fix-verify", "sentry-cli-api"]
+requires = ["npx"]
+description = "Sentry 官方技能：查看近期问题、sentry-cli 与 API 查询、定位堆栈并修复验证"
+author = "miniQ"
+
+[[mcp_servers]]
+name = "sentry"
+description = "Sentry 官方托管 MCP（OAuth 登录），查询 issue、事件与堆栈"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://mcp.sentry.dev/mcp"]
+env = []

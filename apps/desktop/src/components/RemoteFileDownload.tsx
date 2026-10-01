@@ -25,7 +25,7 @@ interface DownloadProps {
 
 function useRemoteDownload({ path, preview, onError }: DownloadProps) {
   const access = useSessionFileAccess();
-  const request = useRef<AbortController>();
+  const request = useRef<AbortController>(undefined);
   const [progress, setProgress] = useState<number | null>(null);
   const [prepared, setPrepared] = useState<PreparedFile | null>(null);
   const preparedRef = useRef<PreparedFile | null>(null);

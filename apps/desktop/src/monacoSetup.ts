@@ -3,6 +3,8 @@ import * as monaco from "monaco-editor/editor/editor.api";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import JsonWorker from "monaco-editor/language/json/json.worker?worker";
 import "monaco-editor/language/json/monaco.contribution";
+// In-file find widget (actions.find); editor.api ships without contributions.
+import "monaco-editor/features/find/register";
 import "monaco-editor/languages/definitions/cpp/register";
 import "monaco-editor/languages/definitions/csharp/register";
 import "monaco-editor/languages/definitions/css/register";

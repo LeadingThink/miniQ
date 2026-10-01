@@ -6,7 +6,7 @@ use miniq_memory::Store;
 use miniq_protocol::{
     ErrorCode, ExternalImportError, ExternalProvider, ExternalScanError,
     ExternalSessionImportRequest, ExternalSessionImportStatusRequest, ExternalSessionScan,
-    ExternalSessionSelection, ExternalSessionSnapshot, RpcError,
+    ExternalSessionScanStatusRequest, ExternalSessionSelection, ExternalSessionSnapshot, RpcError,
 };
 use miniq_session_connectors::{
     builtin_registry, ConnectorError, ConnectorRegistry, ConnectorScan,
@@ -20,11 +20,30 @@ use crate::state::AppState;
 
 const IMPORT_BATCH_SIZE: usize = 12;
 
-pub(super) async fn scan() -> Result<Value, RpcError> {
-    let scans = tokio::task::spawn_blocking(|| builtin_registry().scan_all())
-        .await
-        .map_err(join_error)?;
-    to_value(scan_response(scans))
+pub(super) async fn scan(state: &AppState) -> Result<Value, RpcError> {
+    let job = state.external_scan_jobs.start()?;
+    let job_id = job.id.clone();
+    let jobs = state.external_scan_jobs.clone();
+    tokio::spawn(async move {
+        let result =
+            tokio::task::spawn_blocking(|| scan_response(builtin_registry().scan_all())).await;
+        match result {
+            Ok(scan) => jobs.complete(&job_id, scan),
+            Err(error) => jobs.fail(&job_id, format!("external session scan failed: {error}")),
+        }
+    });
+    to_value(job)
+}
+
+pub(super) fn scan_status(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let request: ExternalSessionScanStatusRequest = params(raw)?;
+    if request.job_id.trim().is_empty() {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "jobId must not be empty",
+        ));
+    }
+    to_value(state.external_scan_jobs.status(&request.job_id)?)
 }
 
 pub(super) async fn import(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
@@ -252,13 +271,6 @@ fn external_scan_error(provider: ExternalProvider, error: ConnectorError) -> Ext
         source_path,
         message: error.to_string(),
     }
-}
-
-fn join_error(error: tokio::task::JoinError) -> RpcError {
-    RpcError::new(
-        ErrorCode::InternalError,
-        format!("external session task failed: {error}"),
-    )
 }
 
 #[cfg(test)]

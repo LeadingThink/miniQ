@@ -35,6 +35,24 @@ pub struct DaemonSettings {
     /// Optional local command run after each turn. Empty means disabled.
     #[serde(default)]
     pub turn_ended_command: Option<String>,
+    /// User lifecycle hooks (`preToolUse`, `stop`, ...), run in order.
+    #[serde(default)]
+    pub hooks: Vec<crate::hooks::HookConfig>,
+    /// Staged feature flags (plan §4.7). Missing section keeps defaults.
+    #[serde(default)]
+    pub features: crate::features::FeatureFlags,
+}
+
+/// Why `settings.json` could not be used at startup (plan §4.6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsLoadError {
+    pub path: String,
+    pub error: String,
+    /// Copy of the unreadable original. When `None` the copy failed and the
+    /// daemon refuses every save so the original is never overwritten.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_path: Option<String>,
 }
 
 fn uuid_suffix() -> String {
@@ -48,14 +66,89 @@ fn uuid_suffix() -> String {
 
 impl DaemonSettings {
     pub fn load(path: &std::path::Path) -> Self {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|raw| serde_json::from_str(&raw).ok())
-            .unwrap_or_default()
+        Self::load_checked(path).0
+    }
+
+    /// Load settings; a present but unreadable/unparsable file degrades to
+    /// defaults, is copied to `backups/settings.json.corrupt-<unix>` and is
+    /// reported instead of being silently replaced.
+    pub fn load_checked(path: &std::path::Path) -> (Self, Option<SettingsLoadError>) {
+        let raw = match std::fs::read(path) {
+            Ok(raw) => raw,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return (Self::default(), None)
+            }
+            Err(error) => {
+                // Unreadable: we cannot copy it either, so block saves.
+                let failure = SettingsLoadError {
+                    path: path.display().to_string(),
+                    error: error.to_string(),
+                    backup_path: None,
+                };
+                tracing::error!(path = %failure.path, error = %failure.error, "settings file unreadable; saves disabled");
+                return (Self::default(), Some(failure));
+            }
+        };
+        let parsed = std::str::from_utf8(&raw)
+            .map_err(|error| error.to_string())
+            .and_then(|text| serde_json::from_str::<Self>(text).map_err(|e| e.to_string()));
+        match parsed {
+            Ok(settings) => (settings, None),
+            Err(error) => {
+                let backup_path = backup_corrupt(path, &raw);
+                let failure = SettingsLoadError {
+                    path: path.display().to_string(),
+                    error,
+                    backup_path: backup_path.map(|p| p.display().to_string()),
+                };
+                tracing::error!(
+                    path = %failure.path,
+                    error = %failure.error,
+                    backup = ?failure.backup_path,
+                    "settings file is corrupt; starting with defaults"
+                );
+                (Self::default(), Some(failure))
+            }
+        }
     }
 
     pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
         miniq_local::write_private_json(path, self)
+    }
+}
+
+/// `<data_dir>/backups` next to `settings.json`.
+pub fn settings_backup_dir(settings_path: &std::path::Path) -> PathBuf {
+    settings_path
+        .parent()
+        .map(|dir| dir.join("backups"))
+        .unwrap_or_else(|| PathBuf::from("backups"))
+}
+
+/// Last known-good copy kept before each successful save.
+pub fn settings_last_backup(settings_path: &std::path::Path) -> PathBuf {
+    settings_backup_dir(settings_path).join("settings.json.bak")
+}
+
+fn backup_corrupt(path: &std::path::Path, raw: &[u8]) -> Option<PathBuf> {
+    let dir = settings_backup_dir(path);
+    let unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
+    let mut target = dir.join(format!("settings.json.corrupt-{unix}"));
+    let mut n = 1;
+    while target.exists() {
+        target = dir.join(format!("settings.json.corrupt-{unix}-{n}"));
+        n += 1;
+    }
+    let result = miniq_local::write_private_bytes(&target, raw);
+    match result {
+        Ok(()) => Some(target),
+        Err(error) => {
+            tracing::error!(%error, "failed to back up corrupt settings file");
+            None
+        }
     }
 }
 
@@ -64,6 +157,7 @@ impl DaemonSettings {
 pub enum ApprovalDecision {
     Approve,
     ApproveForSession,
+    AlwaysAllowTool,
     Reject,
 }
 
@@ -76,6 +170,8 @@ pub struct AppState {
     pub settings: Arc<Mutex<DaemonSettings>>,
     /// Where settings are persisted; `None` for in-memory (tests).
     pub settings_path: Option<Arc<PathBuf>>,
+    /// Startup settings failure; while set with no backup, saves are refused.
+    pub settings_load_error: Arc<Mutex<Option<SettingsLoadError>>>,
     pub router: Arc<miniq_tools::ToolRouter>,
     pub processes: Arc<miniq_tools::ProcessManager>,
     pub tasks: Arc<miniq_tools::TaskManager>,
@@ -95,6 +191,9 @@ pub struct AppState {
     pub(crate) active_turns: Arc<Mutex<HashMap<String, ActiveTurn>>>,
     /// Sessions whose active turn was interrupted for a user-requested pause.
     pub(crate) paused_turns: Arc<Mutex<HashSet<String>>>,
+    /// One-shot model-step budgets requested by `session.sendMessage`
+    /// (`maxTurns`). Consumed by the next turn of that session.
+    pub(crate) turn_step_limits: Arc<Mutex<HashMap<String, usize>>>,
     /// Resume requests received while the paused turn is still cleaning up.
     pub(crate) pending_turn_resumes: Arc<Mutex<HashSet<String>>>,
     pub(crate) activity: crate::activity::ActivityGate,
@@ -102,6 +201,7 @@ pub struct AppState {
     pub(crate) share_uploads: Arc<tokio::sync::Semaphore>,
     pub(crate) title_jobs: Arc<Mutex<HashSet<String>>>,
     pub(crate) external_import_jobs: Arc<crate::external_import_jobs::ExternalImportJobs>,
+    pub(crate) external_scan_jobs: Arc<crate::external_scan_jobs::ExternalScanJobs>,
     /// Pending approvals waiting for a user decision (approval id -> waker).
     pub pending_approvals: Arc<Mutex<HashMap<String, oneshot::Sender<ApprovalDecision>>>>,
     /// Per-session allowlist of approved tool patterns ("approve for session").
@@ -127,6 +227,8 @@ pub struct AppState {
     pub mcp: Arc<crate::mcp::McpManager>,
     /// Observable state for the outbound encrypted relay connection.
     pub remote_status: Arc<Mutex<crate::remote::RemoteRuntimeStatus>>,
+    /// Persistent "always allow" rules (`<data_dir>/approvals/rules.json`).
+    pub approval_rules: Arc<crate::approval_rules::ApprovalRules>,
 }
 
 impl AppState {
@@ -182,6 +284,7 @@ impl AppState {
             provider_override,
             settings: Arc::new(Mutex::new(settings)),
             settings_path: settings_path.map(Arc::new),
+            settings_load_error: Arc::new(Mutex::new(None)),
             router,
             processes: Arc::new(miniq_tools::ProcessManager::default()),
             tasks: Arc::new(miniq_tools::TaskManager::default()),
@@ -200,6 +303,7 @@ impl AppState {
             ssh_hosts,
             active_turns: Arc::new(Mutex::new(HashMap::new())),
             paused_turns: Arc::new(Mutex::new(HashSet::new())),
+            turn_step_limits: Arc::new(Mutex::new(HashMap::new())),
             pending_turn_resumes: Arc::new(Mutex::new(HashSet::new())),
             activity: crate::activity::ActivityGate::default(),
             share_uploads: Arc::new(tokio::sync::Semaphore::new(2)),
@@ -207,6 +311,7 @@ impl AppState {
             external_import_jobs: Arc::new(
                 crate::external_import_jobs::ExternalImportJobs::default(),
             ),
+            external_scan_jobs: Arc::new(crate::external_scan_jobs::ExternalScanJobs::default()),
             pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             session_allowlist: Arc::new(Mutex::new(HashMap::new())),
             pending_questions: Arc::new(Mutex::new(HashMap::new())),
@@ -218,12 +323,29 @@ impl AppState {
             observations_dir: data_dir.join("observations"),
             mcp: crate::mcp::McpManager::new(),
             remote_status: Arc::new(Mutex::new(crate::remote::RemoteRuntimeStatus::default())),
+            approval_rules: Arc::new(crate::approval_rules::ApprovalRules::new(Some(&data_dir))),
         }
+    }
+
+    /// MCP servers contributed by enabled plugins, with `env` resolved from
+    /// the daemon's own environment.
+    pub fn plugin_mcp_servers(&self) -> Vec<crate::mcp::PluginMcpServerConfig> {
+        crate::mcp::resolve_plugin_servers(self.plugins.enabled_mcp_servers(), |name| {
+            std::env::var(name).ok()
+        })
+    }
+
+    /// User-configured servers plus plugin servers (settings win on name
+    /// collisions). Read on every use, so plugin enable/disable/install/
+    /// uninstall takes effect on the next turn without a restart.
+    pub fn effective_mcp_servers(&self) -> Vec<crate::mcp::McpServerConfig> {
+        let settings = self.settings.lock().unwrap().mcp_servers.clone();
+        crate::mcp::merge_servers(&settings, &self.plugin_mcp_servers())
     }
 
     /// Bridge handed to tools so mcp_call can reach configured servers.
     pub fn mcp_bridge(&self) -> Option<Arc<dyn miniq_tools::McpBridge>> {
-        let servers = self.settings.lock().unwrap().mcp_servers.clone();
+        let servers = self.effective_mcp_servers();
         if servers.is_empty() {
             return None;
         }
@@ -387,9 +509,69 @@ impl AppState {
     /// Apply and persist new settings.
     pub fn update_settings(&self, new_settings: DaemonSettings) -> Result<(), String> {
         if let Some(path) = &self.settings_path {
+            let degraded = self.settings_load_error.lock().unwrap().clone();
+            match &degraded {
+                Some(failure) if failure.backup_path.is_none() => {
+                    return Err(format!(
+                        "settings file {} could not be loaded or backed up; refusing to overwrite it",
+                        failure.path
+                    ));
+                }
+                // The corrupt original is already backed up; keep the last
+                // good `.bak` instead of replacing it with corrupt content.
+                Some(_) => {}
+                None => backup_before_save(path)?,
+            }
             new_settings.save(path).map_err(|e| e.to_string())?;
         }
         *self.settings.lock().unwrap() = new_settings;
+        Ok(())
+    }
+
+    /// Record a startup load failure and announce it to connected clients.
+    pub fn report_settings_load_error(&self, failure: SettingsLoadError) {
+        *self.settings_load_error.lock().unwrap() = Some(failure.clone());
+        self.emit(Event::SettingsLoadFailed {
+            path: failure.path,
+            error: failure.error,
+            backup_path: failure.backup_path,
+        });
+    }
+
+    /// Replace `settings.json` with the last good `.bak` copy.
+    pub fn restore_settings_backup(&self) -> Result<(), String> {
+        let path = self
+            .settings_path
+            .as_ref()
+            .ok_or_else(|| "settings are not persisted".to_string())?;
+        let backup = settings_last_backup(path);
+        let raw = std::fs::read_to_string(&backup)
+            .map_err(|error| format!("no settings backup at {}: {error}", backup.display()))?;
+        let restored: DaemonSettings = serde_json::from_str(&raw)
+            .map_err(|error| format!("settings backup is invalid: {error}"))?;
+        let degraded = self.settings_load_error.lock().unwrap().clone();
+        match degraded {
+            Some(failure) if failure.backup_path.is_none() => {
+                return Err(format!(
+                    "settings file {} was not backed up; refusing to overwrite it",
+                    failure.path
+                ));
+            }
+            Some(_) => {}
+            // Swap: the current good file becomes the new `.bak`.
+            None => {
+                let current = std::fs::read(path.as_ref()).ok();
+                restored.save(path).map_err(|e| e.to_string())?;
+                if let Some(current) = current {
+                    let _ = miniq_local::write_private_bytes(&backup, &current);
+                }
+                *self.settings.lock().unwrap() = restored;
+                return Ok(());
+            }
+        }
+        restored.save(path).map_err(|e| e.to_string())?;
+        *self.settings.lock().unwrap() = restored;
+        *self.settings_load_error.lock().unwrap() = None;
         Ok(())
     }
 
@@ -513,7 +695,7 @@ impl AppState {
             } if message.role == miniq_protocol::Role::Assistant => {
                 self.clear_streaming_text(session_id)
             }
-            Event::TurnCompleted { session_id } | Event::TurnFailed { session_id, .. } => {
+            Event::TurnCompleted { session_id, .. } | Event::TurnFailed { session_id, .. } => {
                 self.clear_streaming_text(session_id)
             }
             _ => {}
@@ -549,6 +731,23 @@ impl AppState {
 
     pub fn end_turn(&self, session_id: &str) {
         self.active_turns.lock().unwrap().remove(session_id);
+    }
+
+    /// Limit the next turn of `session_id` to `max_steps` model requests.
+    pub fn set_turn_step_limit(&self, session_id: &str, max_steps: Option<usize>) {
+        let mut limits = self.turn_step_limits.lock().unwrap();
+        match max_steps {
+            Some(max_steps) => {
+                limits.insert(session_id.to_string(), max_steps);
+            }
+            None => {
+                limits.remove(session_id);
+            }
+        }
+    }
+
+    pub fn take_turn_step_limit(&self, session_id: &str) -> Option<usize> {
+        self.turn_step_limits.lock().unwrap().remove(session_id)
     }
 
     pub fn cancel_turn(&self, session_id: &str) -> bool {
@@ -751,4 +950,15 @@ mod tests {
         *state.settings.lock().unwrap() = settings;
         state.run_turn_ended_hook(&session.id, "succeeded");
     }
+}
+
+/// Keep one previous copy of `settings.json` before overwriting it.
+fn backup_before_save(path: &std::path::Path) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let target = settings_last_backup(path);
+    std::fs::read(path)
+        .and_then(|raw| miniq_local::write_private_bytes(&target, &raw))
+        .map_err(|error| format!("failed to back up settings before saving: {error}"))
 }

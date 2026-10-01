@@ -97,21 +97,26 @@ pub struct Session {
     pub external: Option<crate::ExternalSessionLink>,
     pub created_at: String,
     pub updated_at: String,
+    /// `session.list` only: timestamp of the newest message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_at: Option<String>,
+    /// `session.list` only: newest user/assistant message as one trimmed line
+    /// of at most 80 characters (display summary, not message content).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+    /// `session.list` only: number of user messages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_count: Option<u32>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionGoalStatus {
+    #[default]
     Active,
     Completed,
     Paused,
     Cancelled,
-}
-
-impl Default for SessionGoalStatus {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -212,17 +217,12 @@ pub struct MessageAttachment {
 }
 
 /// How a recurring task is delivered. Existing tasks default to `newSession`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum ScheduledTaskMode {
+    #[default]
     NewSession,
     Heartbeat,
-}
-
-impl Default for ScheduledTaskMode {
-    fn default() -> Self {
-        Self::NewSession
-    }
 }
 
 impl ScheduledTaskMode {
@@ -369,6 +369,7 @@ pub enum ApprovalStatus {
     Pending,
     Approved,
     ApprovedForSession,
+    ApprovedAlways,
     Rejected,
 }
 
@@ -378,6 +379,7 @@ impl ApprovalStatus {
             ApprovalStatus::Pending => "pending",
             ApprovalStatus::Approved => "approved",
             ApprovalStatus::ApprovedForSession => "approved_for_session",
+            ApprovalStatus::ApprovedAlways => "approved_always",
             ApprovalStatus::Rejected => "rejected",
         }
     }
@@ -395,6 +397,15 @@ pub struct Approval {
     pub created_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_at: Option<String>,
+}
+
+/// The latest checklist published during one user turn.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnPlan {
+    pub anchor_message_id: String,
+    pub tasks: Vec<PlanTask>,
+    pub updated_at: String,
 }
 
 /// One step in the agent's plan for the current task.

@@ -151,7 +151,10 @@ async fn reconciles_two_of_five_and_preserves_the_delivered_answer() {
         .any(|message| message.tool_call_id.is_some()));
     let mut updated = false;
     while let Ok(event) = events.try_recv() {
-        if let miniq_protocol::Event::PlanUpdated { session_id, tasks } = event {
+        if let miniq_protocol::Event::PlanUpdated {
+            session_id, tasks, ..
+        } = event
+        {
             assert_eq!(session_id, executor.session_id);
             updated = tasks
                 .iter()

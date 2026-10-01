@@ -1,0 +1,31 @@
+/* macOS overlay title bar (tauri.conf.json: titleBarStyle "Overlay").
+   The traffic lights float over the top-left corner, so the first 44px row of
+   the shell doubles as the window title bar, matching ChatGPT and other
+   full-size-content Mac apps. Other platforms keep their native frame. */
+.platform-macos .sidebar {
+  padding-top: 0;
+}
+
+.platform-macos .sidebar-brand-row {
+  min-height: 44px;
+  padding-left: 72px;
+  margin-bottom: 6px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.platform-macos .sidebar .brand {
+  padding: 0 10px;
+  color: var(--text-mid);
+  font-size: var(--font-footnote);
+  font-weight: 600;
+}
+
+/* With the sidebar hidden the toolbar sits under the traffic lights. */
+.platform-macos .app.sidebar-collapsed .statusbar.app-toolbar {
+  padding-left: 80px;
+}
+
+.platform-macos .app.sidebar-collapsed .main {
+  margin-left: 0;
+}

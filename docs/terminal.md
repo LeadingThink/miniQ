@@ -70,6 +70,45 @@ Approvals show the tool and full input; `y` approves once, anything else rejects
 
 `--add-dir` updates the shared project, preserving existing roots; the backend refuses while that project has active tasks. `-C` cannot move a resumed session. `resume --last` is scoped to the current project's most recently updated, non-archived local session, not a globally pinned session.
 
+## Finding and Reading Sessions
+
+`miniq --help` prints the same quick reference; `miniq help COMMAND` shows per-command examples.
+
+```sh
+# Sessions in the current directory's project
+miniq sessions
+# Sessions across all projects
+miniq sessions --all
+# Sessions of a specific project
+miniq -C /path/to/project sessions
+```
+
+In a terminal, `miniq sessions` prints each session's title, status, relative update time, turn count, ID and last-message preview; archived and imported sessions are marked, and `--all` adds the project directory. When stdout is piped, or with `--json`, it prints the `session.list` JSON instead:
+
+```sh
+miniq sessions --all | jq '.sessions[] | {id, title, status, updatedAt}'
+```
+
+With a session ID:
+
+```sh
+miniq history SESSION_ID --limit 40   # read history (JSON; use nextCursor with --before)
+miniq watch SESSION_ID                # follow a running session without sending anything
+miniq resume SESSION_ID               # continue it
+miniq resume                          # pick a session of the current project
+miniq resume --last                   # continue the current project's most recent session
+```
+
+Inside a chat, `/help` prints the current session ID with the matching `resume`, `watch` and `history` commands.
+
+Notes:
+
+- Without `--all`, only sessions of the current working directory's project are listed.
+- The `miniq resume` picker hides archived and imported (external) sessions; `miniq sessions` lists them.
+- Terminal, desktop and phone share sessions when they connect to the same daemon data directory.
+- Over SSH, `miniq sessions` shows the remote computer's sessions. The same API Key does not merge local sessions from different computers.
+- To view them from the phone, first select the matching remote desktop or SSH host.
+
 ## Scripting
 
 ```sh

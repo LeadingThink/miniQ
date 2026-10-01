@@ -1,0 +1,21 @@
+id = "miniq.official.product-design"
+name = "产品设计工作台"
+version = "1.1.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = [
+  "product-design-router",
+  "product-design-user-context",
+  "product-design-brief",
+  "product-design-research",
+  "product-design-ideate",
+  "product-design-prototype",
+  "product-design-image-to-code",
+  "product-design-url-to-code",
+  "product-design-review",
+  "product-design-qa",
+  "product-design-share",
+]
+description = "从产品构思、调研、方向探索到可点击原型、图片/网址还原、设计审计、QA 与分享的全流程"
+author = "miniQ"

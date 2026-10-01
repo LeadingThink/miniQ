@@ -75,7 +75,7 @@ export function useFilePreview(
   sessionsRef.current = sessions;
   const tabs = sessions[scope] ?? EMPTY_PREVIEW_TABS;
   const requestSequence = useRef(0);
-  const requestController = useRef<AbortController>();
+  const requestController = useRef<AbortController>(undefined);
   const updateTabs = useCallback(
     (update: (current: PreviewTabsState) => PreviewTabsState) => {
       const next = update(sessionsRef.current[scope] ?? EMPTY_PREVIEW_TABS);

@@ -32,4 +32,9 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Voice input: Capacitor's WebChromeClient requests these at runtime for
+         getUserMedia({ audio }). Without the declarations Android denies the
+         WebView silently and the app never appears under Settings > Microphone. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 </manifest>

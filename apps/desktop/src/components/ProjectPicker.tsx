@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, Folder, FolderOpen, Plus } from "lucide-react";
 import { moveMenuIndex } from "../menuNavigation";
 import type { Workspace } from "../types";
 
@@ -131,11 +132,17 @@ function ProjectMenu(props: ProjectMenuProps) {
           className="mode-item"
           onClick={() => props.onNamingChange(true)}
         >
-          <div className="mode-item-label">＋ 新建空白项目</div>
+          <div className="mode-item-label">
+            <Plus className="mode-icon" />
+            新建空白项目
+          </div>
         </button>
       )}
       <button type="button" className="mode-item" onClick={props.onOpenFolder}>
-        <div className="mode-item-label">📂 使用现有文件夹</div>
+        <div className="mode-item-label">
+          <FolderOpen className="mode-icon" />
+          使用现有文件夹
+        </div>
       </button>
     </div>
   );
@@ -202,18 +209,9 @@ export function ProjectPicker(props: ProjectPickerProps) {
         aria-expanded={open}
         onClick={() => (open ? closeMenu(true) : setOpen(true))}
       >
-        🗂 {selected ? selected.name : "选择项目"}
-        <svg
-          className="mode-caret"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="m6 9 6 6 6-6" />
-        </svg>
+        <Folder className="mode-icon" />
+        {selected ? selected.name : "选择项目"}
+        <ChevronDown className="mode-caret" />
       </button>
       {open && (
         <ProjectMenu

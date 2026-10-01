@@ -17,6 +17,7 @@ it("saves late file picker results to the originating draft without changing the
   localStorage.setItem("miniq.draft.A.attachments", JSON.stringify(["/work/original-a.pdf"]));
   localStorage.setItem("miniq.draft.B.attachments", JSON.stringify(["/work/original-b.pdf"]));
   const view = render(<ComposerCard {...props} draftKey="A" />);
+  fireEvent.click(screen.getByRole("button", { name: "更多输入方式" }));
   fireEvent.click(screen.getByRole("button", { name: "附加文件" }));
   await waitFor(() => expect(fake.open).toHaveBeenCalledOnce());
   view.rerender(<ComposerCard {...props} draftKey="B" />);

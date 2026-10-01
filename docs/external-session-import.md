@@ -20,7 +20,8 @@ Codex 标题优先读取 `CODEX_HOME` 中最高版本 `state_<n>.sqlite` 的 `th
 
 ```text
 SessionConnector
-  -> externalSession.scan (仅返回全量摘要)
+  -> externalSession.scan (立即返回后台任务 ID)
+  -> externalSession.scanStatus (扫描完成后返回全量摘要)
   -> 用户选择来源会话和目标 workspace
   -> externalSession.import (立即返回后台任务 ID)
   -> 按 12 个会话分批并行解析 source_path
@@ -30,6 +31,8 @@ SessionConnector
        external_session_events          完整原始事件 JSON
   -> externalSession.importStatus (进度与最终结果)
 ```
+
+扫描与导入共用同一套流式解析器：JSONL 按行读取，扫描阶段只统计消息数、时间范围和标题候选，不在内存中保留原始事件或消息正文；导入阶段才收集完整事件。两者的摘要推导规则相同，扫描结果与导入后的摘要保持一致。
 
 连接器只负责发现和解析供应商数据，不依赖 `ModelProvider`。`ModelProvider` 继续只处理 miniQ 的模型调用，原生 miniQ 会话不经过连接器。
 

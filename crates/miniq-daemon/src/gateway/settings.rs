@@ -23,6 +23,7 @@ pub(super) fn get(state: &AppState) -> Result<Value, RpcError> {
         "remoteAccess": settings.remote_access,
         "remoteStatus": crate::remote::status(state),
         "turnEndedCommand": settings.turn_ended_command,
+        "hooks": settings.hooks,
     }))
 }
 
@@ -37,6 +38,8 @@ struct UpdateParams {
     remote_access: Option<RemoteAccessUpdate>,
     #[serde(default)]
     turn_ended_command: Option<Option<String>>,
+    #[serde(default)]
+    hooks: Option<Vec<crate::hooks::HookConfig>>,
 }
 
 #[derive(Deserialize)]
@@ -116,6 +119,11 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
             ));
         }
         settings.turn_ended_command = (!command.trim().is_empty()).then_some(command);
+    }
+    if let Some(hooks) = input.hooks {
+        crate::hooks::validate(&hooks)
+            .map_err(|error| RpcError::new(ErrorCode::InvalidParams, error))?;
+        settings.hooks = hooks;
     }
 
     state
@@ -340,4 +348,51 @@ mod tests {
         assert!(!result.to_string().contains("secret"));
         server.abort();
     }
+}
+
+/// Startup settings diagnostics (plan §4.6): `{loadError?: {path,error,backupPath?}}`.
+pub(super) fn status(state: &AppState) -> Result<Value, RpcError> {
+    let failure = state.settings_load_error.lock().unwrap().clone();
+    let backup_available = state
+        .settings_path
+        .as_ref()
+        .is_some_and(|path| crate::state::settings_last_backup(path).is_file());
+    let mut result = json!({ "backupAvailable": backup_available });
+    if let Some(failure) = failure {
+        result["loadError"] = json!(failure);
+    }
+    Ok(result)
+}
+
+pub(super) fn restore_backup(state: &AppState) -> Result<Value, RpcError> {
+    state
+        .restore_settings_backup()
+        .map_err(|error| RpcError::new(ErrorCode::InternalError, error))?;
+    status(state)
+}
+
+/// `hooks.list`: configured lifecycle hooks and whether the flag is on.
+pub(super) fn hooks_list(state: &AppState) -> Result<Value, RpcError> {
+    Ok(crate::hooks::list_view(state))
+}
+
+pub(super) fn features_get(state: &AppState) -> Result<Value, RpcError> {
+    let features = state.settings.lock().unwrap().features.clone();
+    Ok(json!({ "features": features }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FeaturesSetParams {
+    features: crate::features::FeatureFlagsPatch,
+}
+
+pub(super) fn features_set(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: FeaturesSetParams = params(raw)?;
+    let mut settings = state.settings.lock().unwrap().clone();
+    input.features.apply(&mut settings.features);
+    state
+        .update_settings(settings)
+        .map_err(|error| RpcError::new(ErrorCode::InternalError, error))?;
+    features_get(state)
 }

@@ -119,6 +119,7 @@ export function ConversationNavigationRail({
   messages,
   scrollRef,
 }: ConversationNavigationRailProps) {
+  'use no memo';
   const userMessages = useMemo(
     () => messages.filter((message) => message.role === "user"),
     [messages],

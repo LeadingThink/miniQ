@@ -177,7 +177,7 @@ pub(super) async fn run(state: &AppState, config: &ActiveConfig) -> anyhow::Resu
                                 let blobs = blobs.clone();
                                 let cipher = identity.cipher.clone();
                                 requests.spawn(async move {
-                                    let response = dispatch(&state, request).await;
+                                    let response = dispatch(&state, &frame.source, request).await;
                                     let mut payload = serde_json::to_value(response)?;
                                     if use_blob && !cancel.is_cancelled() {
                                         match blobs.upload(&cipher, &payload, &cancel).await {
@@ -203,15 +203,20 @@ pub(super) async fn run(state: &AppState, config: &ActiveConfig) -> anyhow::Resu
     }
 }
 
-async fn dispatch(state: &AppState, request: anyhow::Result<RpcRequest>) -> RpcResponse {
+async fn dispatch(
+    state: &AppState,
+    source: &str,
+    request: anyhow::Result<RpcRequest>,
+) -> RpcResponse {
     match request {
-        Ok(request) if remote_request_allowed(&request) => {
+        // The relay is untrusted: always stamp the origin server-side so a
+        // client can never claim to be local. The gateway enforces the
+        // per-method remote policy for every remote origin.
+        Ok(request) => {
+            let device = if source.is_empty() { "unknown" } else { source };
+            let request = request.with_origin(Some(format!("remote:{device}")));
             crate::gateway::dispatch(state, request).await
         }
-        Ok(request) => RpcResponse::err(
-            request.id,
-            RpcError::new(ErrorCode::Unauthorized, "该管理操作只能在桌面端执行"),
-        ),
         Err(error) => RpcResponse::err(
             RequestId::Number(0),
             RpcError::new(ErrorCode::ParseError, format!("远程请求无效: {error}")),

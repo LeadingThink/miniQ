@@ -23,6 +23,15 @@ pub enum Event {
         #[serde(rename = "sessionId")]
         session_id: String,
         mode: Option<crate::ApprovalMode>,
+        /// `remote:<device>` when the change came from a remote client.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        actor: Option<String>,
+        /// Effective mode before the change, so the host can offer a one-click revert.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        previous: Option<crate::ApprovalMode>,
+        /// True when the effective mode became more permissive.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        raised: bool,
     },
     ModelSettingsChanged {
         #[serde(rename = "sessionId")]
@@ -160,6 +169,14 @@ pub enum Event {
         #[serde(rename = "sessionId")]
         session_id: String,
         tasks: Vec<PlanTask>,
+        /// User message that started the turn owning this plan. Clients render
+        /// the checklist inside that turn instead of pinning it to the end.
+        #[serde(
+            rename = "anchorMessageId",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        anchor_message_id: Option<String>,
     },
     /// The agent is waiting for the user to answer a question.
     QuestionRequested {
@@ -186,12 +203,16 @@ pub enum Event {
     TurnCompleted {
         #[serde(rename = "sessionId")]
         session_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        summary: Option<crate::TurnSummary>,
     },
     /// The current turn failed with an error message.
     TurnFailed {
         #[serde(rename = "sessionId")]
         session_id: String,
         error: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        summary: Option<crate::TurnSummary>,
     },
     /// A session was deleted.
     SessionDeleted {
@@ -240,6 +261,18 @@ pub enum Event {
     PluginsChanged {
         plugins: Vec<crate::plugin::PluginInfo>,
     },
+    /// `settings.json` existed but could not be loaded; the daemon runs on
+    /// defaults and never overwrites the unbacked original.
+    SettingsLoadFailed {
+        path: String,
+        error: String,
+        #[serde(
+            rename = "backupPath",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        backup_path: Option<String>,
+    },
 }
 
 impl Event {
@@ -265,7 +298,7 @@ impl Event {
             | Event::QuestionRequested { session_id, .. }
             | Event::QuestionResolved { session_id, .. }
             | Event::ArtifactCreated { session_id, .. }
-            | Event::TurnCompleted { session_id }
+            | Event::TurnCompleted { session_id, .. }
             | Event::TurnFailed { session_id, .. }
             | Event::SessionDeleted { session_id }
             | Event::SessionRenamed { session_id, .. }
@@ -277,7 +310,8 @@ impl Event {
             | Event::WorkspaceDeleted { .. }
             | Event::WorkspaceRenamed { .. }
             | Event::WorkspaceUpdated { .. }
-            | Event::PluginsChanged { .. } => "",
+            | Event::PluginsChanged { .. }
+            | Event::SettingsLoadFailed { .. } => "",
         }
     }
 }

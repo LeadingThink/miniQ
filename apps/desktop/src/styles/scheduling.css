@@ -10,7 +10,7 @@
 }
 
 .form-card-title {
-  font-size: 13.5px;
+  font-size: var(--font-body);
   font-weight: 600;
 }
 
@@ -18,7 +18,7 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  font-size: 12.5px;
+  font-size: var(--font-footnote);
   color: var(--text-mid);
   font-weight: 500;
 }
@@ -27,9 +27,9 @@
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 9px 11px;
-  font-size: 13px;
+  font-size: var(--font-body);
 }
 
 .form-card input:focus {
@@ -48,24 +48,24 @@
 .schedule-empty-icon {
   width: 46px;
   height: 46px;
-  border-radius: 13px;
+  border-radius: var(--radius-lg);
   background: var(--bg-subtle);
   border: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
+  font-size: var(--font-title);
   color: var(--text-mid);
   margin-bottom: 10px;
 }
 
 .schedule-empty-title {
-  font-size: 15px;
+  font-size: var(--font-callout);
   font-weight: 600;
 }
 
 .schedule-empty-sub {
-  font-size: 12.5px;
+  font-size: var(--font-footnote);
   color: var(--text-dim);
   margin: 3px 0 18px;
 }
@@ -88,7 +88,7 @@
   border-radius: var(--radius);
   cursor: pointer;
   user-select: none;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+  transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
 }
 
 .template-card:hover {
@@ -111,12 +111,12 @@
 .template-icon {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--bg-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: var(--font-callout);
   flex: none;
 }
 
@@ -126,12 +126,12 @@
 }
 
 .template-label {
-  font-size: 13.5px;
+  font-size: var(--font-body);
   font-weight: 600;
 }
 
 .template-desc {
-  font-size: 12px;
+  font-size: var(--font-footnote);
   color: var(--text-dim);
   margin-top: 1px;
   overflow: hidden;
@@ -150,6 +150,76 @@
   flex-wrap: wrap;
 }
 
+.schedule-task-item {
+  border-bottom: 1px solid var(--border);
+}
+
+.schedule-task-item > .skill-row {
+  border-bottom: 0;
+}
+
+.schedule-history-toggle {
+  margin: 0 12px 10px;
+}
+
+.schedule-history {
+  margin: 0 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+
+.schedule-run {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.schedule-run-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.schedule-run-time,
+.schedule-run-reason,
+.schedule-history-empty {
+  font-size: var(--font-footnote);
+  color: var(--text-dim);
+}
+
+.schedule-run-reason {
+  flex-basis: 100%;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.schedule-history-empty {
+  padding: 14px 12px;
+}
+
+.schedule-history-more {
+  display: block;
+  margin: 8px auto;
+}
+
+@media (max-width: 720px) {
+  .schedule-run {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .schedule-run > .ghost {
+    align-self: flex-start;
+  }
+}
+
 .schedule-form {
   margin-top: 14px;
   display: flex;
@@ -161,7 +231,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--font-footnote);
   color: var(--text-mid);
 }
 
@@ -171,9 +241,9 @@
 .schedule-when select,
 .schedule-when input {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 7px 10px;
-  font-size: 13px;
+  font-size: var(--font-body);
   background: var(--bg);
   color: var(--text);
 }
@@ -195,7 +265,7 @@
   border-bottom: 1px solid var(--border);
   outline: none;
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: var(--font-body);
   margin-bottom: 4px;
   background: transparent;
 }
@@ -220,7 +290,7 @@
 .project-new-name input {
   flex: 1;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 5px 8px;
-  font-size: 13px;
+  font-size: var(--font-body);
 }

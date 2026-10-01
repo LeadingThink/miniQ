@@ -1,0 +1,9 @@
+id = "miniq.official.computer-use"
+name = "Mac 应用操控"
+version = "1.1.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["mac-app-control", "mac-app-recipes", "computer-use-desktop"]
+description = "用后台无障碍、前台桌面与内置浏览器操控 Mac 应用，附分级确认策略、权限排查与常用应用配方"
+author = "miniQ"

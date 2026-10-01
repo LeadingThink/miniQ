@@ -4,7 +4,7 @@
   padding: 0;
   margin: auto;
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--bg);
   color: var(--text);
   box-shadow: var(--shadow-lg);
@@ -14,7 +14,7 @@
   flex-direction: column;
 }
 .model-diagnostics::backdrop {
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--scrim);
 }
 .model-diagnostics > header,
 .model-diagnostics > footer {
@@ -31,7 +31,7 @@
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 16px;
+  font-size: var(--font-callout);
 }
 .model-diagnostics > footer {
   justify-content: flex-end;
@@ -83,7 +83,7 @@
 .model-call-heading > span {
   flex: 0 0 auto;
   color: var(--text-mid);
-  font-size: 12px;
+  font-size: var(--font-footnote);
 }
 .model-call-heading [data-status="failed"],
 .model-call-error {
@@ -95,13 +95,13 @@
   gap: 4px 12px;
   margin: 8px 0;
   color: var(--text-mid);
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 .model-call-metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px 20px;
-  font-size: 12px;
+  font-size: var(--font-footnote);
 }
 .model-call-metrics dt {
   color: var(--text-mid);
@@ -112,7 +112,7 @@
   font-variant-numeric: tabular-nums;
 }
 .model-call details {
-  font-size: 12px;
+  font-size: var(--font-footnote);
 }
 .model-call summary {
   cursor: pointer;
@@ -120,7 +120,7 @@
 .model-call pre {
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 @media (max-width: 480px) {
   .model-diagnostics > header,

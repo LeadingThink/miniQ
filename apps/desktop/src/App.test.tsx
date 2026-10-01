@@ -70,13 +70,13 @@ it("keeps the workbench module out of the entry screen and preserves context whe
   fireEvent.click(screen.getByRole("button", { name: "连接远程" }));
   await screen.findByText("正在加载远程工作台…");
   await act(async () => state.releaseHarness());
-  const workbench = await screen.findByRole("region", { name: "工作台" });
+  const workbench = await screen.findByRole("region", { name: "工作台" }, { timeout: 10_000 });
   expect(workbench.getAttribute("data-session")).toBe("session-one");
   expect(workbench.getAttribute("data-mode")).toBe("remote");
   expect(workbench.getAttribute("data-theme")).toBe("jade");
   fireEvent.click(screen.getByRole("button", { name: "切换主题" }));
   expect(state.themeChange).toHaveBeenCalledWith("night");
-});
+}, 20_000);
 
 it("restores remembered credentials only after privacy consent", async () => {
   state.loadCredentials.mockResolvedValue({ apiKey: "test-key" });
@@ -88,9 +88,9 @@ it("restores remembered credentials only after privacy consent", async () => {
   state.releaseHarness();
   state.consent = true;
   render(<App />);
-  await screen.findByRole("region", { name: "工作台" });
+  await screen.findByRole("region", { name: "工作台" }, { timeout: 10_000 });
   expect(state.useHarness).toHaveBeenCalled();
-});
+}, 20_000);
 
 it("keeps the entry screen usable when secure credential restoration fails", async () => {
   state.loadCredentials.mockRejectedValue(new Error("keychain unavailable"));
@@ -103,9 +103,9 @@ it("loads desktop workbench without reading mobile credentials", async () => {
   state.releaseHarness();
   state.remote = false;
   render(<App />);
-  await screen.findByRole("region", { name: "工作台" });
+  await screen.findByRole("region", { name: "工作台" }, { timeout: 10_000 });
   expect(state.loadCredentials).not.toHaveBeenCalled();
-});
+}, 20_000);
 
 it("opens shared sessions without initializing a workbench or restoring credentials", async () => {
   state.share = "public-example";

@@ -1,0 +1,333 @@
+/*
+ * App shell: single-line toolbar, inspector segmented control, sidebar
+ * account row and the System Settings–style two-pane settings sheet.
+ * Tokens only — no literal colors.
+ */
+
+/* ---------- Toolbar ---------- */
+.statusbar.app-toolbar {
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-1) var(--space-4);
+  -webkit-user-select: none;
+  user-select: none;
+}
+.app-toolbar-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.app-toolbar-session {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text);
+}
+.app-toolbar-project {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--font-footnote);
+  color: var(--text-dim);
+}
+.app-toolbar-title > .status-badge,
+.app-toolbar-title > .connection-state {
+  flex: none;
+  align-self: center;
+}
+.app-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  flex-wrap: nowrap;
+}
+.app-toolbar-actions .statusbar-icon-button.active {
+  background: var(--bg-active);
+  color: var(--text);
+}
+.app-toolbar-menu {
+  position: fixed;
+  min-width: 240px;
+  z-index: 90;
+}
+.app-toolbar-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+.app-toolbar-menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.app-toolbar-menu-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-mid);
+}
+.app-toolbar-menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: start;
+}
+.app-toolbar-menu-shortcut {
+  flex: none;
+  font-family: inherit;
+  font-size: var(--font-caption);
+  color: var(--text-dim);
+}
+.app-toolbar-menu-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  border-top: 1px solid var(--hairline);
+  font-size: var(--font-caption);
+  color: var(--text-dim);
+}
+
+/* ---------- Inspector segmented control ---------- */
+.inspector-toolbar {
+  gap: var(--space-2);
+}
+.inspector-toolbar .inspector-segmented[role="tablist"] {
+  flex: 1;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  overflow-x: auto;
+}
+.inspector-toolbar .inspector-segmented [role="tab"] {
+  flex: 1 1 0;
+  min-width: max-content;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-footnote);
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.inspector-toolbar .inspector-segmented [role="tab"][aria-selected="true"] {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-sm, none);
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar-primary-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 var(--space-2);
+}
+.sidebar-section-label {
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  font-size: var(--font-caption);
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.sidebar-account-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  border-top: 1px solid var(--hairline);
+}
+.sidebar-account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-account-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-contrast, var(--bg));
+  font-size: var(--font-caption);
+  font-weight: 700;
+}
+.sidebar-account-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-body);
+  color: var(--text-mid);
+}
+.sidebar-account-row .sidebar-settings-button {
+  flex: none;
+  width: auto;
+}
+.session-copy {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.session-preview {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-caption);
+  color: var(--text-dim);
+}
+
+/* ---------- Settings sheet (two panes) ---------- */
+.settings-overlay .settings-panel {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 0;
+  width: min(960px, 92vw);
+  height: min(680px, 88vh);
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
+}
+.settings-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+  padding: var(--space-4) var(--space-2);
+  border-right: 1px solid var(--hairline);
+  background: var(--bg-subtle);
+  overflow-y: auto;
+}
+.settings-panel h2.settings-sidebar-title {
+  padding: 0 var(--space-3) var(--space-2);
+  font-size: var(--font-headline);
+}
+.settings-sidebar-nav .settings-tabs {
+  flex-direction: column;
+  gap: 1px;
+  border-bottom: 0;
+}
+.settings-sidebar-nav .settings-tabs button {
+  justify-content: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-body);
+  text-align: start;
+}
+.settings-sidebar-nav .settings-tabs button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.settings-sidebar-nav .settings-tabs button[aria-selected="true"] {
+  background: var(--bg-active);
+  color: var(--text);
+  border-bottom-color: transparent;
+}
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.settings-content > .settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5) var(--space-3);
+  border-bottom: 1px solid var(--hairline);
+}
+.settings-group-heading {
+  min-width: 0;
+}
+.settings-group-heading h3 {
+  margin: 0;
+  font-size: var(--font-title);
+  font-weight: 650;
+}
+.settings-group-heading p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-footnote);
+  color: var(--text-dim);
+}
+.settings-content-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5);
+}
+.settings-content-scroll > [role="tabpanel"] {
+  min-height: 0;
+}
+.settings-content > .approval-actions {
+  flex: none;
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--hairline);
+}
+/* Skills / MCP / Plugins used to be full pages; flatten their chrome here. */
+.settings-embedded-page .page {
+  padding: 0;
+  overflow: visible;
+}
+.settings-embedded-page .page-inner {
+  max-width: none;
+  min-height: 0;
+}
+.settings-embedded-page .page-title {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .settings-overlay .settings-panel {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    width: 100vw;
+    height: 100dvh;
+  }
+  .settings-sidebar {
+    padding: var(--space-2);
+    border-right: 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .settings-sidebar-nav .settings-tabs {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  .settings-sidebar-nav .settings-tabs button {
+    width: auto;
+    flex: none;
+  }
+}
+.sidebar-account-row .sidebar-footer-more {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-dim);
+  background: transparent;
+}
+.sidebar-account-row .sidebar-footer-more:hover,
+.sidebar-account-row .sidebar-footer-more[aria-expanded="true"] {
+  color: var(--text);
+  background: transparent;
+}

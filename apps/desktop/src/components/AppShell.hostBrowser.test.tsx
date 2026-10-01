@@ -45,7 +45,7 @@ afterEach(() => {
 
 function fixture() {
   const events = new Set<(event: DaemonEvent) => void>();
-  const call = vi.fn(async () => ({}));
+  const call = vi.fn(async (method: string) => (method.startsWith("schedule") ? { tasks: [], runs: [] } : {}));
   const newChat = vi.fn();
   const app = {
     client: {
@@ -61,7 +61,7 @@ function fixture() {
       workspaces: [], sessions: [],
     },
     navigation: {
-      page: "skills", setShowSearch: vi.fn(), setShowSettings: vi.fn(),
+      page: "schedule", setShowSearch: vi.fn(), setShowSettings: vi.fn(),
       setSidebarCollapsed: vi.fn(), setPage: vi.fn(),
     },
     preview: { state: { open: false }, tabs: [], close: vi.fn() },

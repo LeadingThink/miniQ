@@ -43,7 +43,7 @@ fn heartbeat(state: &AppState, session: &Session) -> ScheduledTask {
 async fn completed(events: &mut tokio::sync::broadcast::Receiver<Event>, session: &str) {
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
-            if matches!(events.recv().await.unwrap(), Event::TurnCompleted { session_id } if session_id == session) { break; }
+            if matches!(events.recv().await.unwrap(), Event::TurnCompleted { session_id, .. } if session_id == session) { break; }
         }
     }).await.unwrap();
 }

@@ -1,0 +1,10 @@
+id = "miniq.official.game-studio"
+name = "游戏工作室"
+version = "1.1.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["game-design-doc", "game-prototype", "game-playtest-ship", "game-playtest", "game-studio", "game-ui-frontend", "phaser-2d-game", "react-three-fiber-game", "sprite-pipeline", "three-webgl-game", "web-3d-asset-pipeline", "web-game-foundations"]
+requires = ["npx"]
+description = "网页游戏全流程：玩法策划、Phaser/Three.js/R3F 原型、精灵与素材、试玩测试与发布"
+author = "miniQ"

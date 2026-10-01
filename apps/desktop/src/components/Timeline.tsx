@@ -1,7 +1,7 @@
+import { Spinner } from "./ui/Spinner";
 import {
   ArrowDown,
   ChevronUp,
-  LoaderCircle,
   RefreshCw,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -11,6 +11,7 @@ import type {
   HistoryCursor,
   Message,
   PlanTask,
+  TurnPlan,
   Question,
   QueuedMessage,
   SessionGoal,
@@ -39,6 +40,7 @@ import { ConversationNavigationRail } from "./ConversationNavigationRail";
 import { useConversationScroll } from "../hooks/useConversationScroll";
 import { TimelineEntries } from "./TimelineEntries";
 import { TimelineToolbar } from "./TimelineToolbar";
+import { TimelineQuote } from "./TimelineQuote";
 import { AgentStatusIndicator, type AgentSummary } from "./AgentSummary";
 
 export interface TimelineProps {
@@ -56,6 +58,7 @@ export interface TimelineProps {
   approvals: PendingApproval[];
   questions: Question[];
   plan: PlanTask[];
+  turnPlans?: TurnPlan[];
   artifacts: Artifact[];
   queue: QueuedMessage[];
   workspacePath?: string | null;
@@ -64,7 +67,7 @@ export interface TimelineProps {
   latestTurnTiming?: AnchoredTurnTiming | null;
   busy: boolean;
   agents?: AgentSummary[];
-  onOpenAgentPanel?: () => void;
+  onOpenAgentPanel?: (agentId?: string) => void;
   onResolveApproval: (approvalId: string, decision: string) => void;
   onResolveQuestion: QuestionCardProps["onResolve"];
   onRollback: (checkpointId: string) => void;
@@ -169,9 +172,9 @@ export function Timeline(props: TimelineProps) {
     ? historySearch.loading
     : props.loadingOlder;
   const contentVersion = useMemo(() => [
-    items, props.approvals, props.questions, props.plan, props.streamingText,
+    items, props.approvals, props.questions, props.plan, props.turnPlans, props.streamingText,
     props.turnProgress, props.busy, props.queue,
-  ], [items, props.approvals, props.questions, props.plan, props.streamingText,
+  ], [items, props.approvals, props.questions, props.plan, props.turnPlans, props.streamingText,
     props.turnProgress, props.busy, props.queue]);
   const { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump } = useConversationScroll({
     viewKey: JSON.stringify([props.sessionId, filter, query.trim()]),
@@ -202,7 +205,6 @@ export function Timeline(props: TimelineProps) {
       <div className="conversation-context" data-testid="conversation-context">
         {props.title && (
           <div className="conversation-title" title={props.title}>
-            <span className="conversation-title-label">会话</span>
             <strong>{props.title}</strong>
           </div>
         )}
@@ -222,18 +224,18 @@ export function Timeline(props: TimelineProps) {
             onOpen={props.onOpenAgentPanel}
           />
         )}
+        <TimelineToolbar
+          key={props.sessionId}
+          filter={filter}
+          query={query}
+          exporting={exporting}
+          onFilter={setFilter}
+          onQuery={setQuery}
+          onShare={props.client && props.sessionId ? () => setShowShare(true) : undefined}
+          onDiagnostics={props.client && props.sessionId ? () => setShowDiagnostics(true) : undefined}
+          onExport={(format) => void exportSession(format)}
+        />
       </div>
-      <TimelineToolbar
-        key={props.sessionId}
-        filter={filter}
-        query={query}
-        exporting={exporting}
-        onFilter={setFilter}
-        onQuery={setQuery}
-        onShare={props.client && props.sessionId ? () => setShowShare(true) : undefined}
-        onDiagnostics={props.client && props.sessionId ? () => setShowDiagnostics(true) : undefined}
-        onExport={(format) => void exportSession(format)}
-      />
       {showDiagnostics && props.client && props.sessionId && (
         <ModelDiagnostics
           client={props.client}
@@ -244,11 +246,12 @@ export function Timeline(props: TimelineProps) {
       {showShare && props.client && props.sessionId && <SessionShareDialog client={props.client} sessionId={props.sessionId} title={props.title ?? "miniQ 会话"} artifacts={props.artifacts} onClose={() => setShowShare(false)} />}
       <div className="timeline-shell">
         <ConversationNavigationRail messages={navigationMessages} scrollRef={scrollRef} />
+        <TimelineQuote scrollRef={scrollRef} />
         <div className="timeline" ref={scrollRef} onScroll={onScroll}>
           <div ref={historyTopRef} className="history-top-sentinel" aria-hidden="true" />
         {(props.loading || (historySearch.loading && !historySearch.page)) && (
           <div className="history-loading" role="status">
-            <LoaderCircle size={16} className="activity-spinner" />
+            <Spinner size={16} />
             正在加载会话
           </div>
         )}
@@ -275,7 +278,7 @@ export function Timeline(props: TimelineProps) {
               onClick={loadOlder}
             >
               {loadingOlder ? (
-                <LoaderCircle size={14} className="activity-spinner" />
+                <Spinner size={14} />
               ) : (
                 <ChevronUp size={14} />
               )}
@@ -302,6 +305,7 @@ export function Timeline(props: TimelineProps) {
           approvals={props.approvals}
           questions={props.questions}
           plan={props.plan}
+          turnPlans={props.turnPlans}
           streamingText={props.streamingText}
           turnProgress={props.turnProgress}
           latestTurnTiming={props.latestTurnTiming}

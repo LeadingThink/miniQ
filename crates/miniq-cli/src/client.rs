@@ -19,6 +19,8 @@ pub struct Client {
     connecting: bool,
     pub directory: PathBuf,
     pub reject_busy: bool,
+    /// `--max-turns`: attached to every prompt this client starts.
+    pub max_turns: Option<u16>,
 }
 
 impl Client {
@@ -47,6 +49,7 @@ impl Client {
             connecting: true,
             directory: directory.into(),
             reject_busy: false,
+            max_turns: None,
         };
         let health = client.call("daemon.health", json!({})).await?;
         if health["protocolVersion"] != miniq_protocol::PROTOCOL_VERSION {

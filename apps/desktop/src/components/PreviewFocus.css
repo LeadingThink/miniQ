@@ -12,3 +12,24 @@
   max-width: 960px;
   margin-inline: auto;
 }
+
+.file-preview-goto {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border, rgba(127, 127, 127, 0.2));
+  font-size: 12px;
+}
+.file-preview-goto label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.file-preview-goto input {
+  width: 88px;
+}
+.file-preview-goto input[aria-invalid="true"],
+.file-preview-goto small {
+  color: var(--danger, #d33);
+}

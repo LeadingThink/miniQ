@@ -1,0 +1,17 @@
+id = "miniq.official.datadog"
+name = "Datadog"
+version = "1.1.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["datadog-telemetry-query", "datadog-investigate", "datadog-monitors", "datadog-dashboards", "datadog-apm-performance", "datadog-rum-analytics", "datadog-security-signals", "datadog-incident-response", "datadog-observability-posture"]
+requires = ["npx"]
+description = "通过 Datadog 官方 MCP 查询与分析日志、指标、链路、RUM 与安全信号，排障、可视化、管理监控与 SLO，并推进事件处置与可观测性治理"
+author = "miniQ"
+
+[[mcp_servers]]
+name = "datadog"
+description = "Datadog 官方远程 MCP（US1 站点，默认 core 工具集；首次使用会在浏览器中 OAuth 登录；其他站点或更多工具集请在设置中修改 URL，如追加 ?toolsets=core,alerting）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://mcp.datadoghq.com/v1/mcp"]
+env = []

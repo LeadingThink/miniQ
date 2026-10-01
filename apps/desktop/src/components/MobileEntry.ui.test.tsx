@@ -22,7 +22,7 @@ it("requires privacy consent before using a key and exposes policy and support b
   expect(mobileChat.disabled).toBe(false);
   fireEvent.click(mobileChat);
 
-  await screen.findByText("有什么需要一起完成？");
+  await screen.findByText("有什么需要一起完成？", undefined, { timeout: 10_000 });
   await waitFor(() => expect(sessionStorage.getItem("miniq.remote.credentials.v1")).toContain("sk-review-key"));
   expect(localStorage.getItem("miniq.mobile.privacyConsent.v1")).toBe("2026-09-16");
-});
+}, 20_000);

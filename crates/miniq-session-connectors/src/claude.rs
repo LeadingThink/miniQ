@@ -8,9 +8,9 @@ use miniq_protocol::{
 use rayon::prelude::*;
 use serde_json::Value;
 
+use crate::collector::{FullSession, SessionCollector, SessionTally};
 use crate::common::{
-    env_root, first_and_last_timestamp, first_string, raw_event, read_jsonl, string_at,
-    timestamp_at, SessionFileIndex,
+    env_root, first_string, for_each_jsonl, string_at, timestamp_at, SessionFileIndex,
 };
 use crate::projection::project_claude_message;
 use crate::{ConnectorScan, ExternalSessionSnapshot, SessionConnector};
@@ -56,15 +56,14 @@ impl ClaudeConnector {
         &self,
         path: &Path,
     ) -> Result<Option<ExternalSessionSnapshot>, crate::ConnectorError> {
-        let values = read_jsonl(path)?;
-        if values.is_empty() {
-            return Ok(None);
-        }
-        let mut state = ClaudeParseState::new(path);
-        for (sequence, value) in values.into_iter().enumerate() {
-            state.consume(sequence, value);
-        }
-        Ok(state.finish())
+        parse_file::<FullSession>(path)
+    }
+
+    fn scan_session(
+        &self,
+        path: &Path,
+    ) -> Result<Option<ExternalSessionSummary>, crate::ConnectorError> {
+        parse_file::<SessionTally>(path)
     }
 
     fn load_path(
@@ -114,11 +113,11 @@ impl SessionConnector for ClaudeConnector {
                 let parsed: Vec<_> = files
                     .files()
                     .par_iter()
-                    .map(|file| self.parse_session(file))
+                    .map(|file| self.scan_session(file))
                     .collect();
                 for result in parsed {
                     match result {
-                        Ok(Some(session)) => scan.sessions.push(session.summary),
+                        Ok(Some(summary)) => scan.sessions.push(summary),
                         Ok(None) => {}
                         Err(error) => scan.errors.push(error),
                     }
@@ -139,24 +138,30 @@ impl SessionConnector for ClaudeConnector {
     }
 }
 
-struct ClaudeParseState {
+fn parse_file<C: SessionCollector>(
+    path: &Path,
+) -> Result<Option<C::Output>, crate::ConnectorError> {
+    let mut state = ClaudeParseState::<C>::new(path);
+    for_each_jsonl(path, |sequence, value| state.consume(sequence, value))?;
+    Ok(state.finish())
+}
+
+struct ClaudeParseState<C> {
     source_path: String,
     external_id: Option<String>,
     cwd: Option<String>,
     title: Option<String>,
-    events: Vec<crate::ExternalSessionEvent>,
-    messages: Vec<ExternalSessionMessage>,
+    collector: C,
 }
 
-impl ClaudeParseState {
+impl<C: SessionCollector> ClaudeParseState<C> {
     fn new(path: &Path) -> Self {
         Self {
             source_path: path.to_string_lossy().into_owned(),
             external_id: None,
             cwd: None,
             title: None,
-            events: Vec::new(),
-            messages: Vec::new(),
+            collector: C::default(),
         }
     }
 
@@ -179,8 +184,8 @@ impl ClaudeParseState {
         self.consume_identity(&value);
         self.consume_title(&value, &event_type);
         self.consume_message(&value, &event_type, &event_id, occurred_at.clone());
-        self.events
-            .push(raw_event(value, sequence, raw_id, event_type, occurred_at));
+        self.collector
+            .event(value, sequence, raw_id, event_type, occurred_at);
     }
 
     fn consume_identity(&mut self, value: &Value) {
@@ -229,7 +234,7 @@ impl ClaudeParseState {
             return;
         };
         if let Some(projected) = project_claude_message(role, content) {
-            self.messages.push(ExternalSessionMessage {
+            self.collector.message(ExternalSessionMessage {
                 event_id: event_id.to_owned(),
                 role: projected.role,
                 content: projected.content,
@@ -238,42 +243,28 @@ impl ClaudeParseState {
         }
     }
 
-    fn finish(self) -> Option<ExternalSessionSnapshot> {
-        if self.messages.is_empty() {
+    fn finish(self) -> Option<C::Output> {
+        if !self.collector.has_messages() {
             return None;
         }
         let external_id = self.external_id.unwrap_or_else(|| self.source_path.clone());
-        let title = self.title.unwrap_or_else(|| session_title(&self.messages));
-        let (created_at, updated_at) = first_and_last_timestamp(&self.events);
-        Some(ExternalSessionSnapshot {
-            summary: ExternalSessionSummary {
+        let (title, cwd, source_path) = (self.title, self.cwd, self.source_path);
+        Some(self.collector.finish(|stats| {
+            ExternalSessionSummary {
                 provider: ExternalProvider::ClaudeCode,
                 external_id,
-                title,
-                cwd: self.cwd,
-                source_path: self.source_path,
-                message_count: self.messages.len(),
-                created_at,
-                updated_at,
+                title: title
+                    .or(stats.title)
+                    .unwrap_or_else(|| "Claude Code session".to_owned()),
+                cwd,
+                source_path,
+                message_count: stats.message_count,
+                created_at: stats.created_at,
+                updated_at: stats.updated_at,
                 continuation_mode: ExternalContinuationMode::RecreateOnly,
-            },
-            events: self.events,
-            messages: self.messages,
-        })
+            }
+        }))
     }
-}
-
-fn session_title(messages: &[ExternalSessionMessage]) -> String {
-    messages
-        .iter()
-        .find(|message| message.role == Role::User && !message.content.trim().is_empty())
-        .or_else(|| {
-            messages
-                .iter()
-                .find(|message| !message.content.trim().is_empty())
-        })
-        .map(|message| message.content.clone())
-        .unwrap_or_else(|| "Claude Code session".to_owned())
 }
 
 fn finish_scan(scan: &mut ConnectorScan) {

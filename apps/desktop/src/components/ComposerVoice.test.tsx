@@ -33,6 +33,7 @@ function setup() {
 async function record() {
   // Flush the async voice.capabilities lookup (fake timers break findBy* waits).
   await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "更多输入方式" }));
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "语音输入" })); });
   act(() => samples(new Float32Array(32_000).fill(0.1), 16_000));
   await act(async () => { vi.advanceTimersByTime(2000); });
@@ -81,5 +82,26 @@ it("hides voice input when transcription is unavailable", async () => {
   const props = { busy: false, placeholder: "消息", draftKey: "voice-hidden", client: { call } as unknown as RpcClient, onSend: vi.fn(async () => true) };
   render(<ComposerCard {...props} />);
   await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "更多输入方式" }));
   expect(screen.queryByRole("button", { name: "语音输入" })).toBeNull();
+});
+
+it("puts the mic beside send on touch devices for one-tap dictation", async () => {
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(pointer: coarse)", addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  try {
+    const { view } = setup(); const input = screen.getByRole<HTMLTextAreaElement>("textbox");
+    await act(async () => {});
+    const mic = screen.getByRole("button", { name: "语音输入" });
+    expect(mic.closest(".composer-voice-inline")).not.toBeNull();
+    expect(mic.closest(".composer-plus-panel")).toBeNull();
+    expect(screen.getByRole("button", { name: "更多输入方式" }).getAttribute("aria-expanded")).toBe("false");
+    await act(async () => { fireEvent.click(mic); });
+    act(() => samples(new Float32Array(32_000).fill(0.1), 16_000));
+    await act(async () => { vi.advanceTimersByTime(2000); });
+    // Recording must not pop the "+" panel open on phones.
+    expect(screen.getByRole("button", { name: "更多输入方式" }).getAttribute("aria-expanded")).toBe("false");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "结束录音" })); });
+    expect(input.value).toBe("识别文字");
+    view.unmount();
+  } finally { vi.unstubAllGlobals(); }
 });

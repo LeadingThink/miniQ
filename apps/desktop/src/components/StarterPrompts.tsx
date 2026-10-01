@@ -49,9 +49,25 @@ export const STARTER_PROMPTS: StarterPrompt[] = [
   },
 ];
 
+export interface StarterShortcut {
+  id: string;
+  title: string;
+  description: string;
+  icon: typeof FileSearch;
+  onSelect: () => void;
+}
+
 export function StarterPrompts(props: {
   onSelect: (prompt: StarterPrompt) => void;
+  shortcuts: StarterShortcut[];
 }) {
+  const cards = [
+    ...STARTER_PROMPTS.map((item) => ({
+      ...item,
+      onSelect: () => props.onSelect(item),
+    })),
+    ...props.shortcuts,
+  ];
   return (
     <section className="starter-prompts-v2" aria-labelledby="starter-prompts-title">
       <div className="starter-prompts-v2-heading">
@@ -64,14 +80,14 @@ export function StarterPrompts(props: {
         </span>
       </div>
       <div className="starter-prompts-v2-list" aria-label="办公任务示例">
-      {STARTER_PROMPTS.map((item) => {
+      {cards.map((item) => {
         const Icon = item.icon;
         return (
           <button
             key={item.id}
             type="button"
             className="starter-prompt-v2"
-            onClick={() => props.onSelect(item)}
+            onClick={item.onSelect}
           >
             <span className="starter-prompt-v2-icon" aria-hidden="true">
               <Icon size={16} />

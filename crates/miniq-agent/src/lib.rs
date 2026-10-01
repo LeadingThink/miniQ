@@ -137,12 +137,26 @@ async fn append_text_delta(
     let _ = events.send(AgentEvent::TextDelta(delta)).await;
 }
 
+/// Per-request context used to compute a turn's effective tool set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TurnToolCtx {
+    /// 1-based model step within the current turn.
+    pub step: usize,
+}
+
 /// Executes tool calls on behalf of the agent. Implementations own risk
 /// evaluation, approval, persistence and audit.
 #[async_trait]
 pub trait ToolExecutor: Send + Sync {
     /// Tool specs advertised to the model.
     fn specs(&self) -> Vec<ToolSpec>;
+
+    /// Effective tool specs for one model request of a turn. The runner calls
+    /// this before every provider request so tools unlocked or disabled
+    /// mid-turn (for example via `tool_search`) are reflected immediately.
+    fn specs_for(&self, _ctx: &TurnToolCtx) -> Vec<ToolSpec> {
+        self.specs()
+    }
 
     /// Parallel calls can overlap adjacent parallel calls. Sequential calls
     /// are barriers: all preceding calls finish before one starts, and later
@@ -329,7 +343,6 @@ async fn run_turn_inner(
 ) -> Result<TurnOutcome, AgentError> {
     let image_executor = image_history_tool::ImageHistoryExecutor::new(executor, &state.history);
     let executor = &image_executor;
-    let tools = executor.specs();
     let capabilities = provider.capabilities().await;
     let mut steps = 0;
     let mut last_tool_batch = String::new();
@@ -344,6 +357,8 @@ async fn run_turn_inner(
         }
         steps += 1;
         image_executor.sync(&mut state.history);
+        // Recomputed per request: the effective set may change mid-turn.
+        let tools = executor.specs_for(&TurnToolCtx { step: steps });
         let mut context_policy = effective_context_policy(&limits.context_policy, &capabilities);
         context_policy.soft_limit_tokens =
             context_policy
@@ -852,6 +867,81 @@ mod tests {
                 "全部完成",
             ]
         );
+    }
+
+    /// Mimics `tool_search`: executing the search unlocks another tool, which
+    /// must be advertised on the very next model request of the same turn.
+    struct UnlockingExecutor {
+        unlocked: std::sync::atomic::AtomicBool,
+        steps: Mutex<Vec<usize>>,
+    }
+
+    #[async_trait]
+    impl ToolExecutor for UnlockingExecutor {
+        fn specs(&self) -> Vec<ToolSpec> {
+            let mut specs = vec![ToolSpec {
+                name: "tool_search".to_string(),
+                description: "search".to_string(),
+                parameters: serde_json::json!({ "type": "object" }),
+            }];
+            if self.unlocked.load(Ordering::SeqCst) {
+                specs.push(ToolSpec {
+                    name: "unlocked_tool".to_string(),
+                    description: "unlocked".to_string(),
+                    parameters: serde_json::json!({ "type": "object" }),
+                });
+            }
+            specs
+        }
+
+        fn specs_for(&self, ctx: &TurnToolCtx) -> Vec<ToolSpec> {
+            self.steps.lock().unwrap().push(ctx.step);
+            self.specs()
+        }
+
+        async fn execute(&self, _call: &ToolCallRequest) -> Result<Value, AgentError> {
+            self.unlocked.store(true, Ordering::SeqCst);
+            Ok(serde_json::json!({ "tools": [{"name": "unlocked_tool"}] }))
+        }
+    }
+
+    #[tokio::test]
+    async fn tools_unlocked_mid_turn_are_visible_on_the_next_request() {
+        let provider = MockProvider::new(vec![
+            vec![ChatDelta::ToolCall(ToolCallRequest {
+                id: "call-0".into(),
+                name: "tool_search".into(),
+                arguments: serde_json::json!({"query": "select:unlocked_tool"}),
+            })],
+            vec![ChatDelta::Text("done".into())],
+        ]);
+        let executor = UnlockingExecutor {
+            unlocked: Default::default(),
+            steps: Mutex::new(Vec::new()),
+        };
+        let (events, _receiver) = tokio::sync::mpsc::channel(32);
+        run_turn(
+            &provider,
+            &executor,
+            vec![ChatMessage::user("find")],
+            events,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        let requests = provider.requests.lock().unwrap();
+        let names = |index: usize| {
+            requests[index]
+                .tools
+                .iter()
+                .map(|tool| tool.name.clone())
+                .collect::<Vec<_>>()
+        };
+        assert!(!names(0).contains(&"unlocked_tool".to_string()));
+        assert!(names(1).contains(&"unlocked_tool".to_string()));
+        let steps = executor.steps.lock().unwrap();
+        assert!(steps.contains(&1) && steps.contains(&2));
     }
 
     #[tokio::test]

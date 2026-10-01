@@ -1,0 +1,9 @@
+id = "miniq.official.visualize"
+name = "可视化"
+version = "1.1.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["visual-charts", "visual-diagrams"]
+description = "生成单文件交互图表、流程图、概念讲解与可微调 UI 原型，内置设计令牌、静态检查与本地服务截图自检"
+author = "miniQ"

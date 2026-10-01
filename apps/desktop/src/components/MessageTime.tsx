@@ -5,6 +5,8 @@ import "./MessageTime.css";
 
 /** Native disclosure works with hover, keyboard and touch without a floating overlay. */
 export const MessageTime = memo(function MessageTime({ at }: { at: string | undefined }) {
+  // Labels depend on the current day; useCalendarDay only triggers re-renders.
+  "use no memo";
   useCalendarDay();
   const value = at ? conversationTimestamp(at) : null;
   if (!value) return null;
@@ -17,6 +19,7 @@ export const MessageTime = memo(function MessageTime({ at }: { at: string | unde
 });
 
 export const ConversationTimeSeparator = memo(function ConversationTimeSeparator({ at }: { at: string }) {
+  "use no memo";
   useCalendarDay();
   const value = conversationTimestamp(at);
   if (!value) return null;

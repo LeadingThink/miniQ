@@ -263,6 +263,7 @@
           "pending",
           "approved",
           "approved_for_session",
+          "approved_always",
           "rejected"
         ],
         "type": "string"
@@ -494,6 +495,7 @@
           "pending",
           "approved",
           "approved_for_session",
+          "approved_always",
           "rejected"
         ],
         "type": "string"
@@ -694,6 +696,11 @@
               "null"
             ]
           },
+          "bundled": {
+            "default": false,
+            "description": "First-party plugin shipped with miniQ: cannot be uninstalled, only disabled, and is upgraded automatically with the app.",
+            "type": "boolean"
+          },
           "capabilities": {
             "items": {
               "type": "string"
@@ -732,6 +739,14 @@
           },
           "id": {
             "type": "string"
+          },
+          "mcpServers": {
+            "default": [],
+            "description": "MCP servers (connectors) this plugin contributes while enabled.",
+            "items": {
+              "$ref": "#/definitions/PluginMcpServerInfo"
+            },
+            "type": "array"
           },
           "name": {
             "type": "string"
@@ -789,6 +804,25 @@
           "trustConfirmed",
           "trustedCode",
           "version"
+        ],
+        "type": "object"
+      },
+      "PluginMcpServerInfo": {
+        "description": "Public, secret-free view of an MCP server declared by a plugin manifest.",
+        "properties": {
+          "description": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ],
         "type": "object"
       },
@@ -1006,7 +1040,8 @@
         "enum": [
           "active",
           "completed",
-          "paused"
+          "paused",
+          "cancelled"
         ],
         "type": "string"
       },
@@ -1112,6 +1147,54 @@
         ],
         "type": "object"
       },
+      "TurnSummary": {
+        "description": "Aggregate facts about one finished turn, attached to the terminal turn event. Tool calls and file changes cover everything recorded for the session since the turn clock started, including sub-agent calls.",
+        "properties": {
+          "durationMs": {
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "failedToolCalls": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "filesChanged": {
+            "description": "Distinct file paths checkpointed by write tools during the turn.",
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/definitions/TurnSummaryStatus"
+          },
+          "toolCalls": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "failedToolCalls",
+          "filesChanged",
+          "status",
+          "toolCalls"
+        ],
+        "type": "object"
+      },
+      "TurnSummaryStatus": {
+        "description": "Terminal outcome reported in [`TurnSummary`].",
+        "enum": [
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
       "TurnTiming": {
         "description": "One execution of a user request. Phase changes and model retries do not restart this clock. Missing elapsed time means it could not be measured, for example after an unclean daemon restart.",
         "properties": {
@@ -1210,6 +1293,13 @@
       },
       {
         "properties": {
+          "actor": {
+            "description": "`remote:<device>` when the change came from a remote client.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "mode": {
             "anyOf": [
               {
@@ -1219,6 +1309,21 @@
                 "type": "null"
               }
             ]
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ApprovalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Effective mode before the change, so the host can offer a one-click revert."
+          },
+          "raised": {
+            "description": "True when the effective mode became more permissive.",
+            "type": "boolean"
           },
           "sessionId": {
             "type": "string"
@@ -1690,6 +1795,13 @@
       {
         "description": "The agent updated its step plan for the current task.",
         "properties": {
+          "anchorMessageId": {
+            "description": "User message that started the turn owning this plan. Clients render the checklist inside that turn instead of pinning it to the end.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sessionId": {
             "type": "string"
           },
@@ -1792,6 +1904,16 @@
           "sessionId": {
             "type": "string"
           },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TurnSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "type": {
             "enum": [
               "turn_completed"
@@ -1813,6 +1935,16 @@
           },
           "sessionId": {
             "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/TurnSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "type": {
             "enum": [
@@ -2020,6 +2152,35 @@
         },
         "required": [
           "plugins",
+          "type"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "`settings.json` existed but could not be loaded; the daemon runs on defaults and never overwrites the unbacked original.",
+        "properties": {
+          "backupPath": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "settings_load_failed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "path",
           "type"
         ],
         "type": "object"
@@ -2707,6 +2868,216 @@
       "sessions"
     ],
     "title": "ExternalSessionScan",
+    "type": "object"
+  },
+  "externalSessionScanJob": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "definitions": {
+      "ExternalContinuationMode": {
+        "enum": [
+          "native_resumable",
+          "recreate_only",
+          "read_only"
+        ],
+        "type": "string"
+      },
+      "ExternalProvider": {
+        "enum": [
+          "codex",
+          "claude_code",
+          "opencode"
+        ],
+        "type": "string"
+      },
+      "ExternalProviderStatus": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messageCount": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "provider": {
+            "$ref": "#/definitions/ExternalProvider"
+          },
+          "root": {
+            "type": "string"
+          },
+          "sessionCount": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "available",
+          "messageCount",
+          "provider",
+          "root",
+          "sessionCount"
+        ],
+        "type": "object"
+      },
+      "ExternalScanError": {
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/definitions/ExternalProvider"
+          },
+          "sourcePath": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "message",
+          "provider"
+        ],
+        "type": "object"
+      },
+      "ExternalSessionScan": {
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/definitions/ExternalScanError"
+            },
+            "type": "array"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/definitions/ExternalProviderStatus"
+            },
+            "type": "array"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/definitions/ExternalSessionSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "errors",
+          "providers",
+          "sessions"
+        ],
+        "type": "object"
+      },
+      "ExternalSessionScanState": {
+        "enum": [
+          "running",
+          "completed",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "ExternalSessionSummary": {
+        "properties": {
+          "continuationMode": {
+            "$ref": "#/definitions/ExternalContinuationMode"
+          },
+          "createdAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cwd": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "externalId": {
+            "type": "string"
+          },
+          "messageCount": {
+            "format": "uint",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "provider": {
+            "$ref": "#/definitions/ExternalProvider"
+          },
+          "sourcePath": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "continuationMode",
+          "externalId",
+          "messageCount",
+          "provider",
+          "sourcePath",
+          "title"
+        ],
+        "type": "object"
+      }
+    },
+    "properties": {
+      "failure": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "id": {
+        "type": "string"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ExternalSessionScan"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "state": {
+        "$ref": "#/definitions/ExternalSessionScanState"
+      }
+    },
+    "required": [
+      "id",
+      "state"
+    ],
+    "title": "ExternalSessionScanJob",
+    "type": "object"
+  },
+  "externalSessionScanStatusRequest": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "properties": {
+      "jobId": {
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "jobId"
+    ],
+    "title": "ExternalSessionScanStatusRequest",
     "type": "object"
   },
   "globalModelUpdate": {
@@ -3840,6 +4211,11 @@
               "null"
             ]
           },
+          "bundled": {
+            "default": false,
+            "description": "First-party plugin shipped with miniQ: cannot be uninstalled, only disabled, and is upgraded automatically with the app.",
+            "type": "boolean"
+          },
           "capabilities": {
             "items": {
               "type": "string"
@@ -3878,6 +4254,14 @@
           },
           "id": {
             "type": "string"
+          },
+          "mcpServers": {
+            "default": [],
+            "description": "MCP servers (connectors) this plugin contributes while enabled.",
+            "items": {
+              "$ref": "#/definitions/PluginMcpServerInfo"
+            },
+            "type": "array"
           },
           "name": {
             "type": "string"
@@ -3935,6 +4319,25 @@
           "trustConfirmed",
           "trustedCode",
           "version"
+        ],
+        "type": "object"
+      },
+      "PluginMcpServerInfo": {
+        "description": "Public, secret-free view of an MCP server declared by a plugin manifest.",
+        "properties": {
+          "description": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ],
         "type": "object"
       },
@@ -4037,6 +4440,11 @@
               "null"
             ]
           },
+          "bundled": {
+            "default": false,
+            "description": "First-party plugin shipped with miniQ: cannot be uninstalled, only disabled, and is upgraded automatically with the app.",
+            "type": "boolean"
+          },
           "capabilities": {
             "items": {
               "type": "string"
@@ -4075,6 +4483,14 @@
           },
           "id": {
             "type": "string"
+          },
+          "mcpServers": {
+            "default": [],
+            "description": "MCP servers (connectors) this plugin contributes while enabled.",
+            "items": {
+              "$ref": "#/definitions/PluginMcpServerInfo"
+            },
+            "type": "array"
           },
           "name": {
             "type": "string"
@@ -4132,6 +4548,25 @@
           "trustConfirmed",
           "trustedCode",
           "version"
+        ],
+        "type": "object"
+      },
+      "PluginMcpServerInfo": {
+        "description": "Public, secret-free view of an MCP server declared by a plugin manifest.",
+        "properties": {
+          "description": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ],
         "type": "object"
       },
@@ -4228,6 +4663,13 @@
       },
       "method": {
         "type": "string"
+      },
+      "origin": {
+        "description": "Caller origin. `remote` / `remote:<device>` marks requests from the relay or forwarded by a remote `host.call`; the daemon applies the per-method remote policy to them.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "params": true
     },
@@ -4383,15 +4825,38 @@
       "id": {
         "type": "string"
       },
+      "lastActivityAt": {
+        "description": "`session.list` only: timestamp of the newest message.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "pinned": {
         "default": false,
         "type": "boolean"
+      },
+      "preview": {
+        "description": "`session.list` only: newest user/assistant message as one trimmed line of at most 80 characters (display summary, not message content).",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "status": {
         "$ref": "#/definitions/SessionStatus"
       },
       "title": {
         "type": "string"
+      },
+      "turnCount": {
+        "description": "`session.list` only: number of user messages.",
+        "format": "uint32",
+        "minimum": 0.0,
+        "type": [
+          "integer",
+          "null"
+        ]
       },
       "updatedAt": {
         "type": "string"
