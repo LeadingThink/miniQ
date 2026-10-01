@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 it("explains the draft-first workflow and offers office task examples", () => {
-  render(<StarterPrompts onSelect={vi.fn()} />);
+  render(<StarterPrompts shortcuts={[]} onSelect={vi.fn()} />);
 
   expect(screen.getByRole("heading", { name: "先选一个示例，再编辑任务" })).toBeTruthy();
   expect(screen.getByText("示例只会填入草稿。补充你的要求，确认后再发送。")).toBeTruthy();
@@ -21,7 +21,7 @@ it("explains the draft-first workflow and offers office task examples", () => {
 
 it("returns exactly the selected example", () => {
   const onSelect = vi.fn();
-  render(<StarterPrompts onSelect={onSelect} />);
+  render(<StarterPrompts shortcuts={[]} onSelect={onSelect} />);
 
   fireEvent.click(screen.getByRole("button", { name: /提取 PDF 要点/ }));
 
@@ -43,7 +43,7 @@ it.each(STARTER_PROMPTS)("selecting $title fills an editable draft without sendi
           draftRequest={draftRequest}
           onSend={onSend}
         />
-        <StarterPrompts onSelect={(item) => setDraftRequest({ id: 1, content: item.prompt })} />
+        <StarterPrompts shortcuts={[]} onSelect={(item) => setDraftRequest({ id: 1, content: item.prompt })} />
       </>
     );
   }

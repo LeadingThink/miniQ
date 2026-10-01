@@ -1,5 +1,5 @@
 import { CirclePause, Play, Target, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SessionGoal, SessionGoalStatus } from "../types";
 import type { RpcClient } from "../rpc";
 
@@ -14,13 +14,23 @@ export interface SessionGoalBarProps {
 }
 
 export function SessionGoalBar(props: SessionGoalBarProps) {
-  const [busy, setBusy] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{ id: number; sessionId: string } | null>(null);
   const [savedGoal, setSavedGoal] = useState<SessionGoal | null>(null);
-  const currentGoal = savedGoal ?? props.goal ?? null;
+  const nextActionId = useRef(0);
+  const currentGoal =
+    (savedGoal?.sessionId === props.sessionId ? savedGoal : null) ??
+    (props.goal?.sessionId === props.sessionId ? props.goal : null);
+  const currentGoalRef = useRef(currentGoal);
+  const sessionIdRef = useRef(props.sessionId);
+  currentGoalRef.current = currentGoal;
+  sessionIdRef.current = props.sessionId;
 
   useEffect(() => {
     setSavedGoal((previous) => {
-      if (!props.goal) return null;
+      if (!props.sessionId) return null;
+      if (!props.goal || props.goal.sessionId !== props.sessionId) {
+        return previous?.sessionId === props.sessionId ? previous : null;
+      }
       if (
         previous &&
         previous.sessionId === props.goal.sessionId &&
@@ -30,22 +40,29 @@ export function SessionGoalBar(props: SessionGoalBarProps) {
       }
       return props.goal;
     });
-  }, [props.goal]);
+  }, [props.goal, props.sessionId]);
 
-  const updateGoalStatus = async (status: SessionGoalStatus) => {
+  const updateGoalStatus = async (
+    sessionId: string,
+    goal: SessionGoal,
+    status: SessionGoalStatus,
+  ) => {
     return props.client!.call<SessionGoal>("session.goal.update", {
-      sessionId: props.sessionId,
-      goal: currentGoal!.goal,
+      sessionId,
+      goal: goal.goal,
       status,
-      tokenBudget: currentGoal!.tokenBudget,
+      tokenBudget: goal.tokenBudget,
     });
   };
 
   const changeGoalState = async (
     action: "pause" | "resume" | "cancel",
   ) => {
-    if (!props.client || !props.sessionId || !currentGoal || busy) return;
-    setBusy(true);
+    const sessionId = props.sessionId;
+    const goal = currentGoal;
+    if (!props.client || !sessionId || !goal || pendingAction?.sessionId === sessionId) return;
+    const actionId = ++nextActionId.current;
+    setPendingAction({ id: actionId, sessionId });
     try {
       const status: SessionGoalStatus = action === "pause"
         ? "paused"
@@ -55,19 +72,28 @@ export function SessionGoalBar(props: SessionGoalBarProps) {
       let saved: SessionGoal;
       if (action === "resume") {
         await props.onResumeTurn();
-        saved = await updateGoalStatus(status);
+        saved = await updateGoalStatus(sessionId, goal, status);
       } else {
         if (action === "pause") await props.onPauseTurn();
         else await props.onCancelTurn();
-        saved = await updateGoalStatus(status);
+        saved = await updateGoalStatus(sessionId, goal, status);
       }
-      setSavedGoal(saved);
+      if (
+        sessionIdRef.current === sessionId &&
+        currentGoalRef.current?.sessionId === goal.sessionId &&
+        currentGoalRef.current?.updatedAt === goal.updatedAt &&
+        currentGoalRef.current?.goal === goal.goal
+      ) {
+        setSavedGoal(saved);
+      }
     } catch (cause) {
-      props.onError(
-        `${action === "pause" ? "暂停" : action === "resume" ? "继续" : "取消"}目标失败: ${String(cause)}`,
-      );
+      if (sessionIdRef.current === sessionId) {
+        props.onError(
+          `${action === "pause" ? "暂停" : action === "resume" ? "继续" : "取消"}目标失败: ${String(cause)}`,
+        );
+      }
     } finally {
-      setBusy(false);
+      setPendingAction((pending) => pending?.id === actionId ? null : pending);
     }
   };
 
@@ -96,7 +122,7 @@ export function SessionGoalBar(props: SessionGoalBarProps) {
               <button
                 type="button"
                 className="ghost"
-                disabled={busy}
+                disabled={!props.client || !props.sessionId || pendingAction?.sessionId === props.sessionId}
                 onClick={() => void changeGoalState("pause")}
                 title="暂停目标"
               >
@@ -107,7 +133,7 @@ export function SessionGoalBar(props: SessionGoalBarProps) {
               <button
                 type="button"
                 className="ghost"
-                disabled={busy}
+                disabled={!props.client || !props.sessionId || pendingAction?.sessionId === props.sessionId}
                 onClick={() => void changeGoalState("resume")}
                 title="继续目标"
               >
@@ -118,7 +144,7 @@ export function SessionGoalBar(props: SessionGoalBarProps) {
             <button
               type="button"
               className="ghost session-goal-cancel"
-              disabled={busy}
+              disabled={!props.client || !props.sessionId || pendingAction?.sessionId === props.sessionId}
               onClick={() => void changeGoalState("cancel")}
               title="取消目标"
             >

@@ -1,11 +1,31 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { RpcClient } from "../rpc";
 import type { SessionGoal } from "../types";
 import { SessionGoalBar } from "./SessionGoalBar";
 
 afterEach(cleanup);
+
+it("hides a goal belonging to another session", () => {
+  render(<SessionGoalBar sessionId="session-2" goal={savedGoal} onPauseTurn={vi.fn()} onResumeTurn={vi.fn()} onCancelTurn={vi.fn()} onError={vi.fn()} />);
+  expect(screen.queryByTestId("session-goal")).toBeNull();
+});
+
+it("ignores a completed action after switching sessions", async () => {
+  let resolve!: (goal: SessionGoal) => void;
+  const call = vi.fn(() => new Promise<SessionGoal>((done) => { resolve = done; }));
+  const callbacks = { onPauseTurn: vi.fn(), onResumeTurn: vi.fn(), onCancelTurn: vi.fn(), onError: vi.fn() };
+  const client = { call } as unknown as RpcClient;
+  const view = render(<SessionGoalBar client={client} sessionId="session-1" goal={savedGoal} {...callbacks} />);
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "暂停" })); });
+  const secondGoal = { ...savedGoal, sessionId: "session-2", goal: "第二个会话目标" };
+  view.rerender(<SessionGoalBar client={client} sessionId="session-2" goal={secondGoal} {...callbacks} />);
+  await act(async () => { resolve({ ...savedGoal, status: "paused", updatedAt: "2026-09-24T00:00:02Z" }); });
+  expect(screen.getByText("第二个会话目标")).toBeTruthy();
+  expect(screen.getByText("执行中")).toBeTruthy();
+  expect(screen.queryByText("已暂停")).toBeNull();
+});
 
 const savedGoal: SessionGoal = {
   sessionId: "session-1",

@@ -31,6 +31,7 @@ import { ConfirmDialog } from "./ui/Dialog";
 import { EmptyState } from "./ui/EmptyState";
 import { SidebarPanel } from "./SidebarPanel";
 import { SidebarSessionItem } from "./SidebarSessionItem";
+import { SidebarAttention } from "./SidebarAttention";
 import { handleSidebarNavigation, SidebarFilters, sidebarGroups, useMobileSidebarLayout, useProjectDisclosure, type SidebarFilter } from "./SidebarNavigation";
 import "./Sidebar.css";
 
@@ -138,6 +139,7 @@ export function Sidebar(props: SidebarProps) {
       </div>
 
       <div className="sidebar-scroll" role="navigation" aria-label="项目与会话" onKeyDown={handleSidebarNavigation}>
+        <SidebarAttention sessions={props.sessions} unreadSessionIds={props.unreadSessionIds} workspaceLabels={workspaceLabels} onSelectSession={props.onSelectSession} onClose={props.onClose} />
         {props.workspaces.length > 0 && <SidebarFilters query={query} filter={filter} counts={navigation.counts} onQuery={setQuery} onFilter={setFilter} onMarkAllRead={props.onMarkAllRead} />}
         {props.hostGroups?.filter((host) => !host.workspaceIds.length).map((host) => <HostHeading key={host.key} host={host} />)}
         {navigation.groups.map(({ workspace, sessions }, index) => (
