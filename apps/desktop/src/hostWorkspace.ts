@@ -11,7 +11,10 @@ export interface SavedHost {
 }
 export interface DiscoveredHost { alias: string; hostName?: string; user?: string; port?: number }
 export interface HostList { hosts: SavedHost[]; discovered: DiscoveredHost[] }
+export type CatalogStatus = "idle" | "loading" | "ready" | "error";
 export interface HostCatalog {
+  catalogStatus: CatalogStatus;
+  catalogError?: string;
   hostId: string | null;
   label: string;
   state: HostState;
@@ -26,7 +29,7 @@ export type HostDestination = HostNavigation & { action?: "edit" | "create"; rev
 export const hostKey = (host: string | null) => JSON.stringify(host);
 export const scopedKey = (host: string | null, id: string) => JSON.stringify([host, id]);
 export const emptyCatalog = (hostId: string | null, label: string): HostCatalog => ({
-  hostId, label, state: "disconnected", workspaces: [], sessions: [], unreadSessionIds: loadUnread(hostKey(hostId)),
+  hostId, label, state: "disconnected", catalogStatus: hostId === null ? "loading" : "idle", workspaces: [], sessions: [], unreadSessionIds: loadUnread(hostKey(hostId)),
 });
 
 export function validSshTarget(value: string): boolean {
