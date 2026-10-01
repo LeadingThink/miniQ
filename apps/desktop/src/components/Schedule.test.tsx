@@ -24,7 +24,7 @@ function session(id: string, patch: Partial<Session> = {}): Session {
 function setup(tasks: ScheduledTask[] = [], implementation?: (method: string, params: Record<string, unknown>) => Promise<unknown>) {
   const call = vi.fn((method: string, params: Record<string, unknown>) => implementation
     ? implementation(method, params)
-    : Promise.resolve(method === "schedule.list" ? { tasks } : method === "session.list" ? { sessions: [session("target")] } : {}));
+    : Promise.resolve(method === "schedule.list" ? { tasks } : method === "session.list" ? { sessions: [session("target")] } : method === "schedule.runs" ? { runs: [] } : {}));
   const onOpenSession = vi.fn(), onClose = vi.fn();
   render(<SchedulePanel client={{ call } as unknown as RpcClient} workspaces={workspaces} defaultWorkspaceId="one" onClose={onClose} onOpenSession={onOpenSession} />);
   return { call, onOpenSession, onClose };
@@ -168,5 +168,22 @@ describe("SchedulePanel", () => {
     fireEvent.click(within(history).getByRole("button", { name: "查看会话" }));
     expect(onOpenSession).toHaveBeenCalledWith("session-new");
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("shows a failed latest-run lookup and retries it", async () => {
+    let attempts = 0;
+    const { call } = setup([task], async (method, params) => {
+      if (method === "schedule.list") return { tasks: [task] };
+      if (method === "schedule.runs" && params.limit === 1) {
+        if (++attempts === 1) throw new Error("运行记录服务暂时不可用");
+        return { runs: [{ id: "latest", taskId: task.id, sessionId: null, status: "succeeded", reason: null, startedAt: task.createdAt, completedAt: task.createdAt, memoryBefore: "", memoryAfter: null, taskRevision: 1 }], nextCursor: null };
+      }
+      return { runs: [], nextCursor: null };
+    });
+
+    expect((await screen.findByRole("alert")).textContent).toContain("运行记录加载失败：运行记录服务暂时不可用");
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    await waitFor(() => expect(screen.queryByText("运行记录加载失败：运行记录服务暂时不可用")).toBeNull());
+    expect(call.mock.calls.filter(([method, params]) => method === "schedule.runs" && params.limit === 1)).toHaveLength(2);
   });
 });

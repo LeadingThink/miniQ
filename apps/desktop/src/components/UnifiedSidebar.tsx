@@ -60,6 +60,8 @@ export function UnifiedSidebar({ app }: { app: MiniqAppController }) {
   return <AppSidebar app={virtual} onCreateSession={(key) => void createSession(key)} hostGroups={catalogs.map((catalog) => ({
     key: hostKey(catalog.hostId), label: catalog.hostId === null ? (desktop.root.mode === "remote" ? "远程桌面" : "本机") : catalog.label,
     local: catalog.hostId === null && desktop.root.mode !== "remote",
+    catalogStatus: catalog.catalogStatus, catalogError: catalog.catalogError,
+    onRetry: () => { void desktop.refreshCatalog(catalog.hostId).catch((cause) => desktop.reportHostError(catalog.hostId, cause)); },
     state: catalog.state, error: catalog.error, selected: catalog.hostId === desktop.host,
     workspaceIds: catalog.workspaces.map((workspace) => scopedKey(catalog.hostId, workspace.id)),
     onSelect: () => void desktop.selectHost(catalog.hostId),

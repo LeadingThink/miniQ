@@ -33,8 +33,13 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
   }, []);
   const refreshCatalog = useCallback((host: string | null, changedDuringRequest = false) => {
     const key = hostKey(host);
+    if (host !== null && knownHosts.current && !knownHosts.current.has(host)) return Promise.resolve();
     const previous = inflight.current.get(key);
     if (previous) { if (changedDuringRequest) queued.current.add(key); return previous; }
+    setCatalogs((current) => {
+      const catalog = current[key];
+      return catalog ? { ...current, [key]: { ...catalog, catalogStatus: "loading" } } : current;
+    });
     const pending = (async () => {
       do {
         queued.current.delete(key);
@@ -53,12 +58,18 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
             // A delayed catalog response cannot override a newer disconnect.
             state: host === null ? (root.connected ? "connected" : "disconnected") : catalog.state,
             error: host === null || catalog.state === "connected" ? undefined : catalog.error,
-            workspaces, sessions,
+            catalogStatus: "ready", catalogError: undefined, workspaces, sessions,
             unreadSessionIds: pruneUnread(catalog.unreadSessionIds, sessions.map((session) => session.id)),
           } };
         });
       } while (queued.current.has(key));
-    })().finally(() => inflight.current.delete(key));
+    })().catch((cause) => {
+      if (alive.current) setCatalogs((current) => {
+        const catalog = current[key];
+        return catalog ? { ...current, [key]: { ...catalog, catalogStatus: "error", catalogError: errorMessage(cause) } } : current;
+      });
+      throw cause;
+    }).finally(() => inflight.current.delete(key));
     inflight.current.set(key, pending);
     return pending;
   }, [root, clientFor]);
@@ -70,7 +81,13 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
     setRegistry(result);
     setCatalogs((current) => {
       const next: Record<string, HostCatalog> = { [hostKey(null)]: current[hostKey(null)] };
-      for (const host of result.hosts) next[hostKey(host.hostId)] = { ...(current[hostKey(host.hostId)] ?? emptyCatalog(host.hostId, host.label)), ...host, error: host.error };
+      for (const host of result.hosts) {
+        const key = hostKey(host.hostId);
+        const catalog = current[key] ?? emptyCatalog(host.hostId, host.label);
+        next[key] = { ...catalog, ...host, error: host.error,
+          catalogStatus: host.state !== "connected" && catalog.catalogStatus === "loading" ? "idle" : catalog.catalogStatus,
+        };
+      }
       return next;
     });
     for (const host of result.hosts) (clientFor(host.hostId) as HostRpcClient).setAvailable(host.state === "connected");

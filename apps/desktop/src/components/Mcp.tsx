@@ -35,94 +35,117 @@ const STATUS_LABEL: Record<string, string> = {
 
 function useMcpServers(client: RpcClient) {
   const [servers, setServers] = useState<McpServerView[]>([]);
-  const [status, setStatus] = useState<string | null>(null);
-  // Names hidden optimistically while an undo toast is pending.
+  const [loading, setLoading] = useState(true);
+  const [connecting, setConnecting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
+  const generation = useRef(0);
+  const request = useRef(0);
+  const busy = useRef(false);
   const serversRef = useRef(servers);
   serversRef.current = servers;
   const toast = useToast();
 
-  const refresh = useCallback(
-    async (connect: boolean) => {
-      setStatus(connect ? "正在连接服务器..." : null);
-      try {
-        const result = await client.call<{ servers: McpServerView[] }>("mcp.list", { connect });
-        setServers(result.servers);
-        setStatus(null);
-      } catch (error) {
-        setStatus(errorMessage(error));
+  const refresh = useCallback(async (connect: boolean) => {
+    const owner = generation.current;
+    const id = ++request.current;
+    setLoading(true);
+    setConnecting(connect);
+    setLoadError(null);
+    try {
+      const result = await client.call<{ servers: McpServerView[] }>("mcp.list", { connect });
+      if (owner === generation.current && id === request.current) setServers(result.servers);
+    } catch (error) {
+      if (owner === generation.current && id === request.current) setLoadError(errorMessage(error));
+    } finally {
+      if (owner === generation.current && id === request.current) {
+        setLoading(false);
+        setConnecting(false);
+        busy.current = false;
       }
-    },
-    [client],
-  );
+    }
+  }, [client]);
 
   useEffect(() => {
+    generation.current += 1;
+    setServers([]);
+    setHidden(new Set());
+    setSaving(false);
+    setSaveError(null);
+    busy.current = true;
     void refresh(false);
+    return () => { generation.current += 1; };
   }, [refresh]);
 
-  const saveServers = async (next: McpServerView[]) => {
-    await client.call("mcp.update", {
-      servers: next.filter((server) => !isPluginServer(server)).map((server) => ({
-        name: server.name,
-        command: server.command,
-        args: server.args,
-        enabled: server.enabled,
-      })),
-    });
-    await refresh(false);
+  const reload = (connect: boolean) => {
+    if (busy.current) return;
+    busy.current = true;
+    void refresh(connect);
   };
 
-  const add = async (name: string, command: string, args: string) => {
-    await saveServers([
-      ...servers,
-      {
-        name: name.trim(),
-        command: command.trim(),
-        args: args.trim() ? args.trim().split(/\s+/) : [],
-        enabled: true,
-        status: "configured",
-      },
-    ]);
+  const saveServers = async (next: McpServerView[], expectedGeneration = generation.current) => {
+    if (expectedGeneration !== generation.current || busy.current || loadError !== null) return false;
+    busy.current = true;
+    const owner = generation.current;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await client.call("mcp.update", {
+        servers: next.filter((server) => !isPluginServer(server)).map(({ name, command, args, enabled }) => ({ name, command, args, enabled })),
+      });
+      if (owner !== generation.current) return false;
+      await refresh(false);
+      return owner === generation.current;
+    } catch (error) {
+      if (owner === generation.current) setSaveError(errorMessage(error));
+      return false;
+    } finally {
+      if (owner === generation.current) {
+        busy.current = false;
+        setSaving(false);
+      }
+    }
   };
 
-  const toggle = async (server: McpServerView) => {
-    await saveServers(
-      servers.map((candidate) =>
-        candidate.name === server.name
-          ? { ...candidate, enabled: !candidate.enabled }
-          : candidate,
-      ),
-    );
-  };
+  const add = (name: string, command: string, args: string) => saveServers([
+    ...serversRef.current,
+    { name: name.trim(), command: command.trim(), args: args.trim() ? args.trim().split(/\s+/) : [], enabled: true, status: "configured" },
+  ]);
 
-  const unhide = (name: string) =>
-    setHidden((current) => {
-      const next = new Set(current);
-      next.delete(name);
-      return next;
-    });
+  const toggle = (server: McpServerView) => saveServers(
+    serversRef.current.map((candidate) => candidate.name === server.name ? { ...candidate, enabled: !candidate.enabled } : candidate),
+  );
+
+  const unhide = (name: string) => setHidden((current) => {
+    const next = new Set(current); next.delete(name); return next;
+  });
 
   const remove = async (server: McpServerView) => {
+    if (busy.current || loadError !== null) return;
+    const owner = generation.current;
     setHidden((current) => new Set(current).add(server.name));
     showUndoToast(toast, {
       message: `已移除 MCP 服务器“${server.name}”`,
-      onUndo: () => unhide(server.name),
+      onUndo: () => { if (owner === generation.current) unhide(server.name); },
       onCommit: () => {
-        void saveServers(
-          serversRef.current.filter((candidate) => candidate.name !== server.name),
-        )
-          .catch((error: unknown) => setStatus(errorMessage(error)))
-          .finally(() => unhide(server.name));
+        if (owner !== generation.current) return;
+        void saveServers(serversRef.current.filter((candidate) => candidate.name !== server.name), owner)
+          .finally(() => { if (owner === generation.current) unhide(server.name); });
       },
     });
   };
 
-  const visible = servers.filter((server) => !hidden.has(server.name));
-  return { servers: visible, status, refresh, add, toggle, remove };
+  return {
+    servers: servers.filter((server) => !hidden.has(server.name)), loading, connecting, saving,
+    loadError, saveError, disabled: loading || saving || loadError !== null,
+    reload, add, toggle, remove,
+  };
 }
-
 function McpServerCard(props: {
   server: McpServerView;
+  disabled: boolean;
   onToggle: (server: McpServerView) => void;
   onRemove: (server: McpServerView) => void;
 }) {
@@ -143,6 +166,7 @@ function McpServerCard(props: {
         </div>
         {!pluginServer && (
           <Switch
+            disabled={props.disabled}
             checked={server.enabled}
             label={`${server.enabled ? "停用" : "启用"}${server.name}`}
             title={server.enabled ? "点击禁用" : "点击启用"}
@@ -177,7 +201,7 @@ function McpServerCard(props: {
         </span>
         <span style={{ flex: 1 }} />
         {!pluginServer && (
-          <button className="ghost danger" onClick={() => props.onRemove(server)}>
+          <button className="ghost danger" disabled={props.disabled} onClick={() => props.onRemove(server)}>
             移除
           </button>
         )}
@@ -188,6 +212,7 @@ function McpServerCard(props: {
 
 function McpServerList(props: {
   servers: McpServerView[];
+  disabled: boolean;
   onToggle: (server: McpServerView) => void;
   onRemove: (server: McpServerView) => void;
 }) {
@@ -207,6 +232,7 @@ function McpServerList(props: {
         <McpServerCard
           key={`${server.source ?? "settings"}:${server.pluginId ?? ""}:${server.name}`}
           server={server}
+          disabled={props.disabled}
           onToggle={props.onToggle}
           onRemove={props.onRemove}
         />
@@ -216,7 +242,9 @@ function McpServerList(props: {
 }
 
 function AddServerForm(props: {
-  onAdd: (name: string, command: string, args: string) => Promise<void>;
+  onAdd: (name: string, command: string, args: string) => Promise<boolean>;
+  disabled: boolean;
+  busy: boolean;
   onTest: () => void;
 }) {
   const [name, setName] = useState("");
@@ -224,8 +252,8 @@ function AddServerForm(props: {
   const [args, setArgs] = useState("");
 
   const addServer = async () => {
-    if (!name.trim() || !command.trim()) return;
-    await props.onAdd(name, command, args);
+    if (props.disabled || !name.trim() || !command.trim()) return;
+    if (!await props.onAdd(name, command, args)) return;
     setName("");
     setCommand("");
     setArgs("");
@@ -236,11 +264,12 @@ function AddServerForm(props: {
       <div className="form-card-title">添加服务器</div>
       <label>
         名称
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-server" />
+        <input disabled={props.busy} value={name} onChange={(e) => setName(e.target.value)} placeholder="my-server" />
       </label>
       <label>
         命令
         <input
+          disabled={props.busy}
           value={command}
           onChange={(e) => setCommand(e.target.value)}
           placeholder="npx / python / 可执行文件路径"
@@ -249,16 +278,17 @@ function AddServerForm(props: {
       <label>
         参数(空格分隔)
         <input
+          disabled={props.busy}
           value={args}
           onChange={(e) => setArgs(e.target.value)}
           placeholder="-y @some/mcp-server"
         />
       </label>
       <div className="settings-actions">
-        <button onClick={addServer} disabled={!name.trim() || !command.trim()}>
+        <button onClick={addServer} disabled={props.disabled || !name.trim() || !command.trim()}>
           添加
         </button>
-        <button className="secondary" onClick={props.onTest}>
+        <button className="secondary" disabled={props.busy} onClick={props.onTest}>
           测试连接
         </button>
       </div>
@@ -277,13 +307,22 @@ export function McpPanel(props: { client: RpcClient }) {
             接入外部工具与服务(Model Context Protocol),扩展 agent 的能力。
           </div>
         </div>
-        {model.status && <div className="settings-status">{model.status}</div>}
-        <McpServerList
+        {model.loading && <div className="settings-status" role="status">{model.connecting ? "正在连接服务器..." : "正在加载 MCP 服务器..."}</div>}
+        {model.saving && <div className="settings-status" role="status">正在保存...</div>}
+        {model.loadError !== null && (
+          <div className="settings-status" role="alert">
+            加载 MCP 服务器失败: {model.loadError}
+            <button disabled={model.loading || model.saving} onClick={() => model.reload(false)}>重试</button>
+          </div>
+        )}
+        {model.saveError !== null && <div className="settings-status" role="alert">保存 MCP 服务器失败: {model.saveError}</div>}
+        {(model.loading || model.loadError !== null) ? null : <McpServerList
+          disabled={model.disabled}
           servers={model.servers}
           onToggle={(server) => void model.toggle(server)}
           onRemove={(server) => void model.remove(server)}
-        />
-        <AddServerForm onAdd={model.add} onTest={() => void model.refresh(true)} />
+        />}
+        <AddServerForm disabled={model.disabled} busy={model.loading || model.saving} onAdd={model.add} onTest={() => model.reload(true)} />
       </div>
     </div>
   );

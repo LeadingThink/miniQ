@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { ChevronDown, FolderPlus, Info, MoreHorizontal, Package, RefreshCw, Trash2, Upload } from "lucide-react";
 import type { RpcClient } from "../rpc";
+import { errorMessage } from "../errorMessage";
 import { isTauriRuntime } from "../runtime";
 import type { PluginInfo, PluginListResult } from "../types";
 import { RemotePathDialog } from "./RemotePathDialog";
@@ -129,6 +130,9 @@ function PluginRow(props: {
 }
 
 export function PluginsPanel(props: { client: RpcClient }) {
+  const epoch = useRef(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [plugins, setPlugins] = useState<PluginInfo[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -142,15 +146,34 @@ export function PluginsPanel(props: { client: RpcClient }) {
     { title: "未启用", items: plugins.filter((plugin) => !plugin.enabled && !pluginNeedsAttention(plugin)) },
   ];
 
-  useEffect(() => {
-    void props.client
-      .call<PluginListResult>("plugin.list")
-      .then((result) => setPlugins(result.plugins))
-      .catch((error) => setStatus(String(error)));
-    return props.client.onEvent((event) => {
-      if (event.type === "plugins_changed") setPlugins(event.plugins);
-    });
+  const refresh = useCallback(async () => {
+    const request = ++epoch.current;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const result = await props.client.call<PluginListResult>("plugin.list");
+      if (request === epoch.current) setPlugins(result.plugins);
+    } catch (error) {
+      if (request === epoch.current) setLoadError(errorMessage(error));
+    } finally {
+      if (request === epoch.current) setLoading(false);
+    }
   }, [props.client]);
+
+  useEffect(() => {
+    setPlugins([]);
+    setStatus(null);
+    void refresh();
+    const unsubscribe = props.client.onEvent((event) => {
+      if (event.type === "plugins_changed") {
+        ++epoch.current;
+        setPlugins(event.plugins);
+        setLoading(false);
+        setLoadError(null);
+      }
+    });
+    return () => { ++epoch.current; unsubscribe(); };
+  }, [props.client, refresh]);
 
   const install = async () => {
     if (props.client.sshHost) {
@@ -313,7 +336,14 @@ export function PluginsPanel(props: { client: RpcClient }) {
           </button>
         </div>
         {status && <div className="settings-status">{status}</div>}
-        {plugins.length === 0 ? (
+        {loading ? (
+          <div role="status" className="settings-status">正在加载插件…</div>
+        ) : loadError ? (
+          <div role="alert" className="settings-status">
+            <p>{loadError}</p>
+            <button onClick={() => void refresh()}>重新加载插件</button>
+          </div>
+        ) : plugins.length === 0 ? (
           <EmptyState
             icon={<Package size={28} />}
             title="还没有插件"

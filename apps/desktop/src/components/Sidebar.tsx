@@ -20,6 +20,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import type { CatalogStatus } from "../hostWorkspace";
 import type { Session, Workspace } from "../types";
 import type { AppUpdaterState } from "../hooks/useAppUpdater";
 import { openExternalUrl } from "../externalLinks";
@@ -45,6 +46,9 @@ export interface SidebarHostGroup {
   state: string;
   error?: string;
   workspaceIds: string[];
+  catalogStatus?: CatalogStatus;
+  catalogError?: string;
+  onRetry?: () => void;
   /** False when this host's workspaces are not on this machine. */
   local?: boolean;
   selected: boolean;
@@ -141,7 +145,7 @@ export function Sidebar(props: SidebarProps) {
       <div className="sidebar-scroll" role="navigation" aria-label="项目与会话" onKeyDown={handleSidebarNavigation}>
         <SidebarAttention sessions={props.sessions} unreadSessionIds={props.unreadSessionIds} workspaceLabels={workspaceLabels} onSelectSession={props.onSelectSession} onClose={props.onClose} />
         {props.workspaces.length > 0 && <SidebarFilters query={query} filter={filter} counts={navigation.counts} onQuery={setQuery} onFilter={setFilter} onMarkAllRead={props.onMarkAllRead} />}
-        {props.hostGroups?.filter((host) => !host.workspaceIds.length).map((host) => <HostHeading key={host.key} host={host} />)}
+        {props.hostGroups?.filter((host) => !navigation.groups.some(({ workspace }) => host.workspaceIds.includes(workspace.id))).map((host) => <HostHeading key={host.key} host={host} />)}
         {navigation.groups.map(({ workspace, sessions }, index) => (
           <Fragment key={workspace.id}>
           {props.hostGroups?.filter((host) => host.workspaceIds.includes(workspace.id) && !navigation.groups.slice(0, index).some((group) => host.workspaceIds.includes(group.workspace.id))).map((host) => <HostHeading key={host.key} host={host} />)}
@@ -170,7 +174,7 @@ export function Sidebar(props: SidebarProps) {
           />
           </Fragment>
         ))}
-        {props.workspaces.length === 0 && (
+        {props.workspaces.length === 0 && (!props.hostGroups?.length || props.hostGroups.every((host) => host.catalogStatus === "ready" && !host.catalogError && !host.error && host.state === "connected")) && (
           <EmptyState
             compact
             className="sidebar-empty"
@@ -297,7 +301,12 @@ function HostHeading({ host }: { host: SidebarHostGroup }) {
     <button type="button" className="sidebar-host-heading" aria-current={host.selected ? "location" : undefined} onClick={host.onSelect} title={host.error ?? `${host.label} · ${state}`}>
       <span>{host.label}</span><small>{state}</small>
     </button>
-    {host.error && <p className="sidebar-host-error">{host.error}</p>}
+    {host.error && host.error !== host.catalogError && <p className="sidebar-host-error">{host.error}</p>}
+    {host.catalogError && <p className="sidebar-host-error" role="alert">项目列表加载失败：{host.catalogError}</p>}
+    {host.catalogStatus === "loading" && <p role="status">正在加载项目…</p>}
+    {host.catalogStatus === "idle" && <p role="status">连接电脑后加载项目</p>}
+    {host.catalogStatus === "ready" && !host.workspaceIds.length && <p>此电脑还没有项目</p>}
+    {host.onRetry && host.catalogStatus === "error" && <button type="button" className="ghost" onClick={host.onRetry}>重试加载 {host.label} 的项目</button>}
   </div>;
 }
 

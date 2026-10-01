@@ -426,3 +426,35 @@ describe("mobile Sidebar", () => {
     expect(description?.textContent).toBe("工作电脑 · miniQ");
   });
 });
+
+
+describe("project catalog feedback", () => {
+  const host = { key: "local", label: "本机", state: "connected", workspaceIds: [] as string[], selected: true, onSelect: noop };
+  it("only displays the empty-project prompt after a successful read", () => {
+    const props = sidebarProps({ workspaces: [], sessions: [] });
+    const view = render(<Sidebar {...props} hostGroups={[{ ...host, catalogStatus: "loading" }]} />);
+    expect(screen.getByRole("status").textContent).toContain("正在加载项目");
+    expect(screen.queryByText("还没有项目")).toBeNull();
+    view.rerender(<Sidebar {...props} hostGroups={[{ ...host, catalogStatus: "error", catalogError: "读取超时", onRetry: noop }]} />);
+    expect(screen.getByRole("alert").textContent).toContain("读取超时");
+    expect(screen.queryByText("还没有项目")).toBeNull();
+    view.rerender(<Sidebar {...props} hostGroups={[{ ...host, catalogStatus: "ready" }]} />);
+    expect(screen.getByText("还没有项目")).not.toBeNull();
+  });
+  it("offers retry alongside cached projects and keeps it visible when filtering", () => {
+    const onRetry = vi.fn();
+    render(<Sidebar {...sidebarProps()} hostGroups={[{ ...host, workspaceIds: [workspace.id], catalogStatus: "error", catalogError: "读取超时", onRetry }]} />);
+    expect(screen.getByRole("button", { name: workspace.name })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "筛选项目和会话" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "筛选会话、项目或电脑" }), { target: { value: "无匹配项目" } });
+    fireEvent.click(screen.getByRole("button", { name: "重试加载 本机 的项目" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+    expect(screen.getByRole("alert").textContent).toContain("读取超时");
+  });
+  it("explains an offline host without showing an endless spinner or false empty state", () => {
+    render(<Sidebar {...sidebarProps({ workspaces: [], sessions: [] })} hostGroups={[{ ...host, state: "disconnected", catalogStatus: "idle" }]} />);
+    expect(screen.getByRole("status").textContent).toBe("连接电脑后加载项目");
+    expect(screen.queryByText("正在加载项目…")).toBeNull();
+    expect(screen.queryByText("还没有项目")).toBeNull();
+  });
+});
