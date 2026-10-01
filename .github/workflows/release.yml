@@ -286,7 +286,8 @@ jobs:
           python -m pip install 'qiniu==7.18.0'
           python apps/desktop/scripts/upload_qiniu_release.py \
             --input dist-release/publish \
-            --tag "${{ inputs.tag }}"
+            --tag "${{ inputs.tag }}" \
+            --mode "${{ inputs.draft && 'draft' || 'stable' }}"
       - name: Select GitHub mirror update manifest
         run: mv dist-release/publish/latest.github.json dist-release/publish/latest.json
       - name: Create or update public release
@@ -314,6 +315,8 @@ jobs:
               fi
             fi
             gh "${args[@]}"
+          elif [ "$RELEASE_DRAFT" = "false" ]; then
+            gh release edit "$RELEASE_TAG" --repo LeadingThink/miniQ-releases --draft=false
           fi
           gh release upload "$RELEASE_TAG" dist-release/publish/* --clobber \
             --repo LeadingThink/miniQ-releases

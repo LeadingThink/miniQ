@@ -20,12 +20,14 @@ class UploadItem:
     object_key: str
 
 
-def release_upload_plan(input_dir: Path, tag: str) -> list[UploadItem]:
+def release_upload_plan(input_dir: Path, tag: str, mode: str = "stable") -> list[UploadItem]:
     source_dir = input_dir.resolve()
     if not source_dir.is_dir():
         raise ValueError(f"release directory does not exist: {source_dir}")
     if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
         raise ValueError(f"invalid release tag: {tag}")
+    if mode not in {"draft", "stable"}:
+        raise ValueError(f"invalid release mode: {mode}")
 
     files = sorted(
         path
@@ -38,6 +40,9 @@ def release_upload_plan(input_dir: Path, tag: str) -> list[UploadItem]:
 
     prefix = f"releases/miniq/{tag}"
     versioned = [UploadItem(path, f"{prefix}/{path.name}") for path in files]
+    if mode == "draft":
+        return versioned
+
     terminal = source_dir / "terminal.json"
     terminal_stable = []
     if terminal in files:
@@ -114,20 +119,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--tag", required=True)
+    parser.add_argument("--mode", choices=("draft", "stable"), default="stable")
     args = parser.parse_args()
 
     access_key = required_env("QINIU_ACCESS_KEY")
     secret_key = required_env("QINIU_SECRET_KEY")
     bucket_name = required_env("QINIU_BUCKET")
     primary_domain = required_env("QINIU_DOMAIN")
+    latest = json.loads((args.input / "latest.json").read_text(encoding="utf-8"))
+    if args.mode == "draft":
+        publish(release_upload_plan(args.input, args.tag, args.mode), bucket_name, access_key, secret_key)
+        return 0
+
     legacy_bucket = required_env("QINIU_LEGACY_BUCKET")
     legacy_domain = required_env("QINIU_LEGACY_DOMAIN")
     original = read_manifest(primary_domain)
-    latest = json.loads((args.input / "latest.json").read_text(encoding="utf-8"))
     download_manifest = merge_manifest(
         json.loads(original), latest, args.input, args.tag, primary_domain,
     )
-    publish(release_upload_plan(args.input, args.tag), bucket_name, access_key, secret_key)
+    publish(release_upload_plan(args.input, args.tag, args.mode), bucket_name, access_key, secret_key)
     publish(
         [UploadItem(args.input.resolve() / "latest.json", "latest.json")],
         legacy_bucket,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles, Upload } from "lucide-react";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
@@ -118,6 +118,9 @@ function EmptySkills() {
 
 export function SkillsPanel(props: { client: RpcClient; workspaceId: string | null }) {
   const [skills, setSkills] = useState<SkillView[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const requestGeneration = useRef(0);
   const [detail, setDetail] = useState<SkillDetailView | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [remotePicker, setRemotePicker] = useState(false);
@@ -129,11 +132,16 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
   const scope = props.workspaceId ? { workspaceId: props.workspaceId } : {};
 
   const refresh = useCallback(async () => {
+    const generation = ++requestGeneration.current;
+    setLoading(true);
+    setLoadError(null);
     try {
       const res = await props.client.call<{ skills: SkillView[] }>("skill.list", scope);
-      setSkills(res.skills);
+      if (generation === requestGeneration.current) setSkills(res.skills);
     } catch (error) {
-      setStatus(errorMessage(error));
+      if (generation === requestGeneration.current) setLoadError(errorMessage(error));
+    } finally {
+      if (generation === requestGeneration.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.client, props.workspaceId]);
@@ -246,6 +254,8 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
           </button>
         </div>
         {status && <div className="settings-status">{status}</div>}
+        {loading && <div className="settings-status" role="status">正在加载技能…</div>}
+        {loadError && <div className="settings-status" role="alert">{loadError}<button className="ghost" onClick={() => void refresh()}>重试</button></div>}
         {!detail && visibleSkills.length > 0 && <div className="skill-filters">
           <input aria-label="搜索技能" placeholder="搜索任务、技能名称或描述" value={search} onChange={(event) => setSearch(event.target.value)} />
           <select aria-label="技能来源" value={source} onChange={(event) => setSource(event.target.value)}>
@@ -259,7 +269,7 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
         </div>}
         {detail ? (
           <SkillDetail detail={detail} onBack={() => setDetail(null)} onRemove={remove} />
-        ) : visibleSkills.length === 0 ? (
+        ) : loading && visibleSkills.length === 0 ? null : loadError && visibleSkills.length === 0 ? null : visibleSkills.length === 0 ? (
           <EmptySkills />
         ) : (
           filteredSkills.length === 0 ? <div className="settings-status">没有匹配的技能。试试其他关键词或筛选条件。<button className="ghost" onClick={() => { setSearch(""); setSource("all"); setAvailability("all"); }}>清除筛选</button></div> :

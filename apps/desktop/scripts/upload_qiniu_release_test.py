@@ -47,6 +47,21 @@ class UploadPlanTest(unittest.TestCase):
                 ],
             )
 
+    def test_draft_plan_only_contains_versioned_release_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("latest.json", "terminal.json", "install.sh", "install.ps1", "latest.github.json"):
+                (root / name).write_text("fixture", encoding="utf-8")
+
+            keys = [item.object_key for item in release_upload_plan(root, "v1.2.3", "draft")]
+
+            self.assertEqual(keys, [
+                "releases/miniq/v1.2.3/install.ps1",
+                "releases/miniq/v1.2.3/install.sh",
+                "releases/miniq/v1.2.3/latest.json",
+                "releases/miniq/v1.2.3/terminal.json",
+            ])
+
     def test_latest_manifest_is_required(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, "latest.json"):
@@ -106,6 +121,32 @@ class PublicationTest(unittest.TestCase):
 
     def test_invalid_metadata_stops_before_any_upload(self):
         self.assertEqual(self.run_publication(invalid=True), [])
+
+    def test_draft_upload_skips_stable_manifest_and_cdn_updates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "latest.json").write_text('{"version":"0.1.17"}', encoding="utf-8")
+            writes = []
+
+            with mock.patch.multiple("upload_qiniu_release", publish=mock.DEFAULT,
+                                     required_env=mock.DEFAULT, read_manifest=mock.DEFAULT,
+                                     refresh_manifests=mock.DEFAULT) as mocks:
+                mocks["required_env"].side_effect = lambda name: (
+                    name if name in {
+                        "QINIU_ACCESS_KEY", "QINIU_SECRET_KEY", "QINIU_BUCKET", "QINIU_DOMAIN",
+                    } else self.fail(f"draft unexpectedly requires {name}")
+                )
+                mocks["publish"].side_effect = lambda items, *_: writes.append(
+                    [item.object_key for item in items]
+                )
+                with mock.patch("sys.argv", [
+                    "publisher", "--input", directory, "--tag", "v0.1.17", "--mode", "draft",
+                ]):
+                    self.assertEqual(main(), 0)
+
+                self.assertEqual(writes, [["releases/miniq/v0.1.17/latest.json"]])
+                mocks["read_manifest"].assert_not_called()
+                mocks["refresh_manifests"].assert_not_called()
 
 
 if __name__ == "__main__":

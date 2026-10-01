@@ -30,12 +30,14 @@ export function SidebarAttention({ sessions, unreadSessionIds, workspaceLabels, 
   [sessions, unreadSessionIds]);
 
   if (items.length === 0) return null;
+  const actionableCount = items.filter((item) => item.kind !== "unread").length;
+  const unreadCount = items.filter((item) => item.kind === "unread").length;
   const select = (sessionId: string) => { onSelectSession(sessionId); onClose?.(); };
   return (
     <section className="sidebar-attention" aria-labelledby="sidebar-attention-heading">
       <button type="button" className="sidebar-attention-summary" aria-controls="sidebar-attention-list" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
-        <span className="sidebar-attention-title"><AlertCircle size={15} aria-hidden="true" /><span id="sidebar-attention-heading">待处理</span><strong aria-label={`${items.length} 条待处理`}>{items.length}</strong></span>
-        <span className="sidebar-attention-priority">{items.some((item) => item.kind === "waiting") ? "有待审批" : "需要查看"}</span>
+        <span className="sidebar-attention-title"><AlertCircle size={15} aria-hidden="true" /><span id="sidebar-attention-heading">待处理</span><strong aria-label={`${actionableCount} 条待处理`}>{actionableCount}</strong></span>
+        <span className="sidebar-attention-priority">{items.some((item) => item.kind === "waiting") ? "有待审批" : actionableCount > 0 ? "需要查看" : "暂无待处理"}{unreadCount > 0 && <span className="sidebar-attention-unread">· {unreadCount} 条未读</span>}</span>
         <ChevronDown className="sidebar-attention-chevron" size={15} aria-hidden="true" />
       </button>
       {expanded && <div id="sidebar-attention-list" className="sidebar-attention-list" role="list" aria-label="待处理会话">

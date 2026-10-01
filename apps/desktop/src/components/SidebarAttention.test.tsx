@@ -25,7 +25,7 @@ describe("SidebarAttention", () => {
     ];
     render(<SidebarAttention sessions={sessions} unreadSessionIds={new Set(["unread", "archived"])} workspaceLabels={new Map([["w1", "本机 · 项目一"]])} onSelectSession={vi.fn()} />);
     const summary = screen.getByRole("button", { name: /待处理/ });
-    expect(summary.textContent).toContain("3");
+    expect(summary.textContent).toContain("2");
     expect(summary.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(summary);
     expect(summary.getAttribute("aria-expanded")).toBe("true");
