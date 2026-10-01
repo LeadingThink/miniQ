@@ -1,5 +1,6 @@
 ---
 name: vercel-turbopack
+displayName: Turbopack 构建
 description: Turbopack expert guidance. Use when configuring the Next.js bundler, optimizing HMR, debugging build issues, or understanding the Turbopack vs Webpack differences.
 version: 1
 origin: bundled

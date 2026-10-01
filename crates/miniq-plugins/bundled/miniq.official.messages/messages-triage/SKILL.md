@@ -1,5 +1,6 @@
 ---
 name: messages-triage
+displayName: 未读消息整理与回复草稿
 description: 当用户想批量整理「信息」里的未读或近期消息（例如“帮我看看有哪些消息要回”“起草回复”），需要分类、排优先级并逐条确认后回复时使用。
 version: 1
 ---

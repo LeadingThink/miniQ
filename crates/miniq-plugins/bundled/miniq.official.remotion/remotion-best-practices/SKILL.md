@@ -1,5 +1,6 @@
 ---
 name: remotion-best-practices
+displayName: Remotion 最佳实践
 description: Router for all Remotion skills
 version: 1
 origin: bundled

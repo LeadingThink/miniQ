@@ -1,5 +1,6 @@
 ---
 name: expo-ui-swift-ui
+displayName: Expo SwiftUI 界面
 description: '`@expo/ui/swift-ui` package lets you use SwiftUI Views and modifiers in your app.'
 version: 1
 origin: bundled

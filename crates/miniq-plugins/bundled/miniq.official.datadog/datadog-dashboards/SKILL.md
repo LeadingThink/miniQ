@@ -1,5 +1,6 @@
 ---
 name: datadog-dashboards
+displayName: Datadog 仪表盘、笔记本与可视化
 description: 当用户要把 Datadog 数据可视化时使用：查找或读取现有仪表盘与笔记本，按需求设计并校验组件，在确认后创建或更新仪表盘、笔记本或 Datadog 表格，并返回链接。
 version: 1
 ---

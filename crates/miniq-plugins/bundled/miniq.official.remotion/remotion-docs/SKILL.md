@@ -1,5 +1,6 @@
 ---
 name: remotion-docs
+displayName: Remotion 文档查询
 description: Search Remotion documentation
 version: 1
 origin: bundled

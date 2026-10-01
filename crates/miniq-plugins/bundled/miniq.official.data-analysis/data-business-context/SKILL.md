@@ -1,5 +1,6 @@
 ---
 name: data-business-context
+displayName: 业务上下文检索
 description: 当数据分析需要业务背景支撑时使用，例如查找指标官方定义、目标值、历史结论、上线与活动时间点、组织与产品变更、行业基准或外部事件，并把相关上下文整理成简洁、可溯源的笔记
 version: 1
 ---

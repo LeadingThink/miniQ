@@ -1,5 +1,6 @@
 ---
 name: pdf-workflow
+displayName: PDF 文档工作流
 description: Read, create, and verify PDF documents, including page rendering and form-safe handling.
 version: 1
 origin: bundled

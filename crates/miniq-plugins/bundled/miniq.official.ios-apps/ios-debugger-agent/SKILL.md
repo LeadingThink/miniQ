@@ -1,5 +1,6 @@
 ---
 name: ios-debugger-agent
+displayName: iOS 调试器代理
 description: Build, run, and debug iOS apps on Simulator with XcodeBuildMCP. Use when launching an app, inspecting simulator UI or logs, or diagnosing runtime behavior.
 version: 1
 origin: bundled

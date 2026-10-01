@@ -1,5 +1,6 @@
 ---
 name: expo-deployment
+displayName: Expo 应用部署
 description: Deploying Expo apps to iOS App Store, Android Play Store, web hosting, and API routes
 version: 1
 origin: bundled

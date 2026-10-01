@@ -1,5 +1,6 @@
 ---
 name: figma-design-system-rules
+displayName: 生成项目级设计系统规则
 description: 需要为代码仓库生成或更新“Figma 设计稿转代码”的项目级设计系统规则（组件路径、令牌、样式约定、资源处理），写入 AGENTS.md/CLAUDE.md 等规则文件，让后续设计还原保持一致时使用
 version: 1
 ---

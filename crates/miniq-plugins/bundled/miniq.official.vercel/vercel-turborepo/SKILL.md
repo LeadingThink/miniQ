@@ -1,5 +1,6 @@
 ---
 name: vercel-turborepo
+displayName: Turborepo Monorepo 构建
 description: Turborepo expert guidance. Use when setting up or optimizing monorepo builds, configuring task caching, remote caching, parallel execution, or the --affected flag for incremental CI.
 version: 1
 origin: bundled

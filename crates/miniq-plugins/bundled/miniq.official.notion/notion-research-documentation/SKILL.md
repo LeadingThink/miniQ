@@ -1,5 +1,6 @@
 ---
 name: notion-research-documentation
+displayName: Notion 研究与文档
 description: Research across Notion and synthesize into structured documentation; use when gathering info from multiple Notion sources to produce briefs, comparisons, or reports with citations.
 version: 1
 origin: bundled

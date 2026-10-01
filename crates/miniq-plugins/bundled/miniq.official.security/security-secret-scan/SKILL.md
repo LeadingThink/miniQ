@@ -1,5 +1,6 @@
 ---
 name: security-secret-scan
+displayName: 硬编码密钥扫描
 description: "检查仓库、目录或 git 历史中是否有硬编码的密钥、令牌、密码、私钥等凭据时使用；只报告位置并打码，给出研判与轮换处置。不用于通用漏洞扫描（转 security-scan）或运行时密钥管理设计（转 security-hardening）。"
 version: 1
 ---

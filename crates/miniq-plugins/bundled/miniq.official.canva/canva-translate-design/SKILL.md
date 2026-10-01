@@ -1,5 +1,6 @@
 ---
 name: canva-translate-design
+displayName: Canva 设计翻译（生成译文副本）
 description: 当用户要把 Canva 设计翻译成另一种语言（做英文版、日文版、本地化版本）时使用：先复制出副本，在副本中批量替换全部文字为译文并改标题，预览确认后提交，原稿保持不变
 version: 1
 ---

@@ -1,5 +1,6 @@
 ---
 name: email-draft
+displayName: 邮件起草
 description: 仅在用户明确需要邮件草稿或 .eml 文件时使用，起草并保存可导入邮件客户端的邮件
 version: 2
 origin: bundled

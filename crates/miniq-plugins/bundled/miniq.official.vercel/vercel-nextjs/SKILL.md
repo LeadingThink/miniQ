@@ -1,5 +1,6 @@
 ---
 name: vercel-nextjs
+displayName: Next.js 最佳实践
 description: Next.js App Router expert guidance. Use when building, debugging, or architecting Next.js applications — routing, Server Components, Server Actions, Cache Components, layouts, middleware/proxy, data fetching, rendering strategies, and deployment on Vercel.
 version: 1
 origin: bundled

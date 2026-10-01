@@ -1,5 +1,6 @@
 ---
 name: remotion-create
+displayName: 创建 Remotion 视频
 description: Create a new Remotion video
 version: 1
 origin: bundled

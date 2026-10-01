@@ -1,5 +1,6 @@
 ---
 name: user-writing-style
+displayName: 像我一样写作
 description: 当用户希望 miniQ 用“我的风格/我的口吻”撰写邮件、周报、公众号文章、发言稿等较长文字，或说“写得像我写的”时使用。
 origin: installed
 ---

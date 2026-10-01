@@ -1,5 +1,6 @@
 ---
 name: data-market-sizing
+displayName: 市场规模测算
 description: 当用户需要估算市场规模或机会大小，例如 TAM、SAM、SOM、潜在收入池、新品或新市场的可触达规模，要求自上而下与自下而上交叉验证、区分事实与假设并给出区间与敏感性分析时使用
 version: 1
 ---

@@ -1,5 +1,6 @@
 ---
 name: canva-branded-presentation
+displayName: Canva 品牌演示文稿生成
 description: 当用户要把大纲、会议纪要、简报文档或已有 Canva 文档做成符合品牌的演示文稿（PPT、路演稿、汇报稿）时使用：整理成逐页计划，套用 Canva 品牌工具包生成候选，用户选定后创建可编辑的设计
 version: 1
 ---

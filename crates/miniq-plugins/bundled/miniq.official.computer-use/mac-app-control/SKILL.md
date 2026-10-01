@@ -1,5 +1,6 @@
 ---
 name: mac-app-control
+displayName: Mac 应用操控：选工具 + 观察→操作→验证
 description: 当用户要求 miniQ 在 Mac 上操作某个原生应用（点按钮、填表单、切换设置、读取窗口内容）时使用；负责选择工具、执行“观察→操作→验证”循环，并按确认策略处理有风险的操作。
 version: 1
 ---

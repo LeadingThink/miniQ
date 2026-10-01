@@ -1,5 +1,6 @@
 ---
 name: dispatching-parallel-agents
+displayName: 调度并行代理
 description: Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies
 version: 1
 origin: bundled

@@ -1,5 +1,6 @@
 ---
 name: vercel-ncc
+displayName: @vercel/ncc Node.js 编译器集合
 description: Expert guidance for @vercel/ncc — a simple CLI for compiling Node.js modules into a single file with all dependencies included. Use when bundling serverless functions, CLI tools, or any Node.js project into a self-contained file.
 version: 1
 origin: bundled

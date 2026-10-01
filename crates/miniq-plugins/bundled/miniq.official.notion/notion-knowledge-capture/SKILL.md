@@ -1,5 +1,6 @@
 ---
 name: notion-knowledge-capture
+displayName: Notion 知识捕捉
 description: Capture conversations and decisions into structured Notion pages; use when turning chats/notes into wiki entries, how-tos, decisions, or FAQs with proper linking.
 version: 1
 origin: bundled

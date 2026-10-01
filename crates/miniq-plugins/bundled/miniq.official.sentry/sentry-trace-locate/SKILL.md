@@ -1,5 +1,6 @@
 ---
 name: sentry-trace-locate
+displayName: Sentry 堆栈分析与代码定位
 description: 当用户给出 Sentry issue（链接、短 ID 或 issue ID）并想知道错误出在本地代码哪一行、根因是什么时使用
 origin: installed
 ---

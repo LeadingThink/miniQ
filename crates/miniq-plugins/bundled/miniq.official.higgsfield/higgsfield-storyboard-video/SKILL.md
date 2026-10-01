@@ -1,5 +1,6 @@
 ---
 name: higgsfield-storyboard-video
+displayName: AI 分镜短片流水线
 description: 当用户想用 AI 从一个创意或脚本做出电影感短片、广告片或社媒短视频（分镜、关键帧、镜头生成、配乐配音、剪辑合成）时使用；无出镜旁白解说类频道视频改用 higgsfield-faceless-channel。
 version: 1
 ---

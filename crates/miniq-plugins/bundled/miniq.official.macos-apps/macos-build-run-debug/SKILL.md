@@ -1,5 +1,6 @@
 ---
 name: macos-build-run-debug
+displayName: macOS 构建、运行与调试
 description: Build, run, and debug macOS apps with shell-first Xcode and Swift workflows. Use when launching apps or diagnosing build, startup, or runtime failures.
 version: 1
 origin: bundled

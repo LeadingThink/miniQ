@@ -1,5 +1,6 @@
 ---
 name: vercel-env-vars
+displayName: Vercel 环境变量
 description: Vercel environment variable expert guidance. Use when working with .env files, vercel env commands, OIDC tokens, or managing environment-specific configuration.
 version: 1
 origin: bundled

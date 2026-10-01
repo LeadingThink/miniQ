@@ -1,5 +1,6 @@
 ---
 name: data-kpi-design
+displayName: KPI 设计
 description: 当用户需要为产品、团队或业务目标设计或挑选 KPI，包括北极星指标、驱动指标、护栏指标、指标定义与目标值设定，或评审现有指标体系是否合理时使用
 version: 1
 ---

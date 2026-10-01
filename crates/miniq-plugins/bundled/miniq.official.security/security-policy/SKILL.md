@@ -1,5 +1,6 @@
 ---
 name: security-policy
+displayName: 安全策略（SECURITY.md）起草与审阅
 description: "为仓库或组件起草、审阅、更新 SECURITY.md 安全策略时使用：确定系统边界、信任边界、安全不变量、可报告与不受理范围、上报方式，并核对与代码一致。不用于漏洞扫描（转 security-scan）或威胁建模本身（转 security-threat-model）。"
 version: 1
 ---

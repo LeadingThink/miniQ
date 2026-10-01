@@ -1,5 +1,6 @@
 ---
 name: game-design-doc
+displayName: 游戏设计文档
 description: 当用户想做一款网页小游戏、需要把点子整理成游戏设计文档（核心玩法、关卡、美术与音频清单、技术选型）时使用
 origin: installed
 ---

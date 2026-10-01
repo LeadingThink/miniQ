@@ -1,5 +1,6 @@
 ---
 name: adobe-create-social-variations
+displayName: 社媒多尺寸套装（Adobe）
 description: 当用户想把一张主图或一段视频一次性导出为 Instagram、抖音/TikTok、小红书、LinkedIn、X、YouTube 等多平台尺寸套装时使用；图片可用 AI 扩图或智能重构图，视频做同比例缩放，并提供本地裁切计划脚本。
 version: 1
 ---

@@ -1,5 +1,6 @@
 ---
 name: ios-test-debug
+displayName: iOS 测试与调试
 description: 当用户要运行 iOS 单元或 UI 测试、解析失败结果、查看模拟器日志和崩溃定位问题时使用
 origin: installed
 requires:

@@ -1,5 +1,6 @@
 ---
 name: twilio-webhook-architecture
+displayName: Twilio Webhook 架构
 description: Design, secure, and operate Twilio webhook endpoints. Covers inbound event handling, status callbacks, signature validation, connection overrides for retry and timeout tuning, local development tunneling, and production hardening. Use this skill whenever an agent needs to receive HTTP callbacks from Twilio for any product -- messaging, voice, verify, or event streams.
 version: 1
 origin: bundled

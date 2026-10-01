@@ -1,5 +1,6 @@
 ---
 name: figma-generate-library
+displayName: 分阶段构建 Figma 设计系统
 description: 根据代码库或需求，在 Figma 中分阶段搭建或补全设计系统组件库。依次完成现状侦察、变量令牌、页面结构、组件与变体、集成与 QA 五个阶段，每一步增量写入并验证，同时维护状态账本，支持中断后续跑。基于 figma-use 的规则执行。
 version: 1
 ---

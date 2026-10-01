@@ -1,5 +1,6 @@
 ---
 name: ios-ettrace-performance
+displayName: iOS ETTrace 性能分析
 description: Capture and interpret iOS Simulator ETTrace profiles. Use when profiling launch or runtime latency, comparing traces, or finding CPU-heavy stacks.
 version: 1
 origin: bundled

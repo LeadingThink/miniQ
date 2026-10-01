@@ -1,5 +1,6 @@
 ---
 name: frontend-polish
+displayName: 前端界面润色
 description: 当用户觉得现有网页界面"不够精致"，需要打磨 UI 细节（间距与排版一致性、可访问性、响应式适配、交互状态），并通过前后截图对比验证时使用
 origin: installed
 ---

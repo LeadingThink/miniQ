@@ -1,5 +1,6 @@
 ---
 name: expo-api-routes
+displayName: Expo API 路由与密钥
 description: Guidelines for creating API routes in Expo Router with EAS Hosting
 version: 1
 origin: bundled

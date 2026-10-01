@@ -1,5 +1,6 @@
 ---
 name: vercel-knowledge-update
+displayName: Vercel 知识更新
 description: Corrects outdated LLM knowledge about the Vercel platform and introduces new products. Injected at session start.
 version: 1
 origin: bundled

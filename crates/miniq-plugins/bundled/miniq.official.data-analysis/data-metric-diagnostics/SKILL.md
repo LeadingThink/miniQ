@@ -1,5 +1,6 @@
 ---
 name: data-metric-diagnostics
+displayName: 指标诊断与归因
 description: 当某个指标出现意外涨跌、突增或跌落、与预期或其他报表对不上，需要定位原因、按维度拆解贡献、区分结构变化与率变化、识别集中度或数据问题，并给出有证据的结论时使用
 version: 1
 ---

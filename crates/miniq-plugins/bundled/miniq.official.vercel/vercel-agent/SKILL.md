@@ -1,5 +1,6 @@
 ---
 name: vercel-agent
+displayName: Vercel Agent 代理
 description: Vercel Agent guidance — AI-powered code review, incident investigation, and SDK installation. Automates PR analysis and anomaly debugging. Use when configuring or understanding Vercel's AI development tools.
 version: 1
 origin: bundled

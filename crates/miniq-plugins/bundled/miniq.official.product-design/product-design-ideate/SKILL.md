@@ -1,5 +1,6 @@
 ---
 name: product-design-ideate
+displayName: 视觉方向构思
 description: 用 generate_image 产出 2–4 个真正不同的视觉设计方向供用户挑选。用户要几个方向、几版方案、灵感、改版或重设计（像某某、比某某更好），或只有文字需求需要先定视觉时使用；选定后交给还原或原型技能
 version: 1
 ---

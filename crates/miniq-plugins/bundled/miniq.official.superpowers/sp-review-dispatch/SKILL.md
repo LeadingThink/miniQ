@@ -1,5 +1,6 @@
 ---
 name: sp-review-dispatch
+displayName: 审查与分派任务
 description: 当代码改动即将提交或请求评审前需要自检，或一个任务可以拆成多个相互独立的子任务并行交给子代理完成时使用
 origin: installed
 ---

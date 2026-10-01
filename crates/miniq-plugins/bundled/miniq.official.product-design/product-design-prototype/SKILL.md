@@ -1,5 +1,6 @@
 ---
 name: product-design-prototype
+displayName: 可交互原型
 description: 构建可点击、核心交互可用的本地产品原型（导航、Tab、表单、加载/空/成功态），支持单文件 HTML 或现有前端项目；用户要做原型、demo、可点击稿、把方向或流程做出来时使用，交付前必须经过设计 QA
 version: 1
 ---

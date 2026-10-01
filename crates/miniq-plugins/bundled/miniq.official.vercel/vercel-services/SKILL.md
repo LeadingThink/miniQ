@@ -1,5 +1,6 @@
 ---
 name: vercel-services
+displayName: Vercel 多服务部署
 description: Vercel Services — deploy multiple services within a single Vercel project. Use for monorepo layouts or when combining a backend (Python, Go) with a frontend (Next.js, Vite) in one deployment.
 version: 1
 origin: bundled

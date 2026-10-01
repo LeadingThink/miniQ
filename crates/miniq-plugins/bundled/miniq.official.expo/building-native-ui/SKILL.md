@@ -1,5 +1,6 @@
 ---
 name: building-native-ui
+displayName: Expo 原生界面设计规范
 description: Complete guide for building beautiful apps with Expo Router. Covers fundamentals, styling, components, navigation, animations, patterns, and native tabs.
 version: 1
 origin: bundled

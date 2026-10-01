@@ -1,5 +1,6 @@
 ---
 name: cloudflare-deploy
+displayName: Cloudflare 部署
 description: 当用户要把静态站点部署到 Cloudflare Pages，或把 Worker 脚本部署到 Cloudflare Workers 时使用，基于 wrangler 命令行
 origin: installed
 requires:

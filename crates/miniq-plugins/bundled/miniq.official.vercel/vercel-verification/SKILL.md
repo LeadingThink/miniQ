@@ -1,5 +1,6 @@
 ---
 name: vercel-verification
+displayName: FullStory 验证
 description: 'Full-story verification — infers what the user is building, then verifies the complete flow end-to-end: browser → API → data → response. Triggers on dev server start and ''why isn''t this working'' signals.'
 version: 1
 origin: bundled

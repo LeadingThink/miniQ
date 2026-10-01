@@ -1,5 +1,6 @@
 ---
 name: product-design-research
+displayName: 设计研究
 description: 产品设计研究与洞察综合。用户要调研用户痛点、竞品体验、应用商店或社区评论、访谈与问卷纪要，或设计方向需要证据支撑时使用；输出带来源的痛点、机会与设计启示，可衔接简报与构思
 version: 1
 ---

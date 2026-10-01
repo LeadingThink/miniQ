@@ -1,5 +1,6 @@
 ---
 name: web-game-foundations
+displayName: 网页游戏基础
 description: Set browser-game architecture before implementation. Use when the user needs engine choice, simulation and render boundaries, input model, asset organization, or save/debug/performance strategy.
 version: 1
 origin: bundled

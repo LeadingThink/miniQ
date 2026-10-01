@@ -1,5 +1,6 @@
 ---
 name: datadog-telemetry-query
+displayName: Datadog 遥测即席查询
 description: 当用户想用自然语言查询 Datadog 遥测数据时使用：日志量/错误数按服务统计、指标趋势与 Top N（如 CPU 最高的 10 个服务）、span/RUM 聚合、DDSQL 即席查询，并给出表格和结论。
 version: 1
 ---

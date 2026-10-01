@@ -1,5 +1,6 @@
 ---
 name: netlify-deploy
+displayName: Netlify 部署
 description: 当用户要把静态站点或前端项目部署到 Netlify（草稿预览或正式发布）时使用
 origin: installed
 requires:

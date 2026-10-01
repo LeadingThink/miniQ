@@ -1,5 +1,6 @@
 ---
 name: macos-liquid-glass
+displayName: macOS Liquid Glass 界面
 description: Implement and review macOS SwiftUI Liquid Glass UI. Use when adopting system glass, removing conflicting custom chrome, or building glass surfaces.
 version: 1
 origin: bundled

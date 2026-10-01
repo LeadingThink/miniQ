@@ -1,5 +1,6 @@
 ---
 name: security-fix-finding
+displayName: 修复并验证安全 finding
 description: "当用户明确要求修复某个已验证或疑似的安全 finding，或要求只读核实某个已有修复（提交/PR/diff）是否真正堵住漏洞时使用。不要用于全仓扫描、差异扫描、候选验证或一般代码评审；补丁回归风险评估转 security-patch-risk。"
 version: 1
 ---

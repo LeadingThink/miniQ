@@ -1,5 +1,6 @@
 ---
 name: security-finding-discovery
+displayName: 安全发现（扫描阶段 2）
 description: "安全扫描阶段 2：基于 inventory 与威胁模型，在全仓或差异范围内并行调查攻击面，产出去重后的 candidates.json 并更新覆盖台账。仅在扫描流水线进入发现阶段或用户明确要求找候选漏洞时使用；不负责验证、定级，也不作为完整扫描入口。"
 version: 1
 ---

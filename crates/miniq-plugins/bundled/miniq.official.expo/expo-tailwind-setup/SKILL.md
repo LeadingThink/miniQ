@@ -1,5 +1,6 @@
 ---
 name: expo-tailwind-setup
+displayName: Expo Tailwind CSS 配置
 description: Set up Tailwind CSS v4 in Expo with react-native-css and NativeWind v5 for universal styling
 version: 1
 origin: bundled

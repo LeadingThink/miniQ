@@ -1,5 +1,6 @@
 ---
 name: subagent-driven-development
+displayName: 子代理驱动开发
 description: Use when executing implementation plans with independent tasks in the current session
 version: 1
 origin: bundled

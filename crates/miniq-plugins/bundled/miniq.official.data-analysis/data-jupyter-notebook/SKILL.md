@@ -1,5 +1,6 @@
 ---
 name: data-jupyter-notebook
+displayName: Jupyter Notebook 数据分析
 description: 当用户要新建、整理、修复或执行 Jupyter Notebook（ipynb）时使用，例如把分析脚本改写成可复现的 notebook、清理杂乱的 notebook、从头运行并检查报错、导出 HTML 或脚本、提交前清空输出
 version: 1
 ---

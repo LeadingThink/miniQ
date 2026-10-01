@@ -1,5 +1,6 @@
 ---
 name: macos-view-refactor
+displayName: macOS 视图重构
 description: Refactor macOS SwiftUI views and scenes into stable structure. Use when splitting large views, tightening scene state, or narrowing AppKit escapes.
 version: 1
 origin: bundled

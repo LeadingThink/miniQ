@@ -1,5 +1,6 @@
 ---
 name: figma-use-motion
+displayName: Figma 动效编辑（use_figma + Motion API）
 description: 通过 Figma MCP 的 use_figma 为设计节点添加、修改、检查动效：手动关键帧、动画样式、缓动曲线与时间轴时长。需与 figma-use 一同使用。
 version: 1
 ---

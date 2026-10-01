@@ -1,5 +1,6 @@
 ---
 name: macos-swiftui-patterns
+displayName: macOS SwiftUI 界面模式
 description: Build macOS SwiftUI scenes and components with desktop patterns. Use when shaping windows, commands, toolbars, settings, split views, or inspectors.
 version: 1
 origin: bundled

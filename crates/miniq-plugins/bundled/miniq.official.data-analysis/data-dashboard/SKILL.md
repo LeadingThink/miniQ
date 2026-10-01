@@ -1,5 +1,6 @@
 ---
 name: data-dashboard
+displayName: 数据看板
 description: 当用户需要搭建数据看板或仪表盘时使用，包括单文件交互式 HTML 看板（KPI 卡片、图表、表格、筛选）、Streamlit 应用，或为 BI 平台输出可落地的看板设计规格，并完成数据校验与渲染检查
 version: 1
 ---

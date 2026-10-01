@@ -1,5 +1,6 @@
 ---
 name: figma-rest-export
+displayName: Figma REST API 读取与切图导出
 description: Figma MCP 连接被拒、桌面端不可用或需要批量导出时，用个人访问令牌经 REST API 读取文件/节点 JSON、样式变量，并导出图层切图（PNG/SVG/PDF）
 version: 1
 ---

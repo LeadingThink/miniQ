@@ -1,5 +1,6 @@
 ---
 name: dropbox-cleanup
+displayName: Dropbox 内容清理
 description: 当用户要清理 Dropbox 空间时使用：找出重复、过期、临时和大文件，生成带证据的清理清单，经用户逐项审阅确认后才删除或归档，并说明恢复方式。
 version: 1
 ---

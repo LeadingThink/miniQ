@@ -1,5 +1,6 @@
 ---
 name: twilio-sms-send-message
+displayName: Twilio SMS 消息发送
 description: SMS and MMS deep-dive reference. Covers SMS-specific error codes, message filtering troubleshooting ("Messages Being Filtered or Blocked?" diagnostic checklist), MMS media support (US/CA/AU only), and SMS pumping indicators. For sending SMS, use twilio-send-message instead. Use this skill only when debugging SMS delivery issues or needing SMS-specific details not in the consolidated send skill.
 version: 1
 origin: bundled

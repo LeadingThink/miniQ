@@ -1,5 +1,6 @@
 ---
 name: vercel-cron-jobs
+displayName: Vercel 定时任务
 description: Vercel Cron Jobs configuration and best practices. Use when adding, editing, or debugging scheduled tasks in vercel.json.
 version: 1
 origin: bundled

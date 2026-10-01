@@ -1,5 +1,6 @@
 ---
 name: expo-dev-client
+displayName: Expo 开发客户端（iOS）
 description: Build and distribute Expo development clients locally or via TestFlight
 version: 1
 origin: bundled

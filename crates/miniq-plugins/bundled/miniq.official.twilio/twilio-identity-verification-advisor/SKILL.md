@@ -1,5 +1,6 @@
 ---
 name: twilio-identity-verification-advisor
+displayName: Twilio 身份验证顾问
 description: Planning skill for identity verification and fraud prevention. Qualifies the developer's needs across authentication method, channel selection, fraud risk level, and user experience to recommend the right Twilio Verify + Lookup architecture. Handles login, signup, password reset, and risk-adaptive verification.
 version: 1
 origin: bundled

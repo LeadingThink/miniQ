@@ -7,10 +7,12 @@ import { RemotePathDialog } from "./RemotePathDialog";
 import { EmptyState } from "./ui/EmptyState";
 import { Switch } from "./ui/Switch";
 import { showUndoToast, useToast } from "./ui/Toast";
+import { skillDisplayName } from "../skillDisplay";
 import "./Skills.css";
 
 interface SkillView {
   name: string;
+  displayName?: string;
   description: string;
   version: number;
   origin: string;
@@ -44,10 +46,11 @@ function SkillDetail(props: {
         <button className="ghost" onClick={props.onBack}>
           ← 返回
         </button>
-        <span className="tool-name">{detail.name}</span>
+        <span className="tool-name">{skillDisplayName(detail)}</span>
         <span className="badge">{SOURCE_LABEL[detail.source]}</span>
         <span className="badge">v{detail.version}</span>
       </div>
+      {skillDisplayName(detail) !== detail.name && <div className="settings-status">技能标识：{detail.name}</div>}
       <div style={{ color: "var(--text-dim)", fontSize: 13 }}>{detail.description}</div>
       {detail.files.length > 0 && (
         <div className="settings-status">附带文件: {detail.files.join(", ")}</div>
@@ -79,13 +82,13 @@ function SkillGrid(props: {
           className={`asset-card clickable ${skill.enabled ? "" : "off"}`}
         >
           <div className="asset-card-head">
-            <div className="asset-icon">{skill.name.slice(0, 1).toUpperCase()}</div>
-            <button className="ghost asset-name skill-open" title={`查看 ${skill.name}`} onClick={() => props.onOpen(skill)}>
-              {skill.name}
+            <div className="asset-icon">{skillDisplayName(skill).slice(0, 1).toUpperCase()}</div>
+            <button className="ghost asset-name skill-open" title={`查看 ${skillDisplayName(skill)}（${skill.name}）`} onClick={() => props.onOpen(skill)}>
+              {skillDisplayName(skill)}
             </button>
             <Switch
               checked={skill.enabled}
-              label={`${skill.enabled ? "停用" : "启用"}${skill.name}`}
+              label={`${skill.enabled ? "停用" : "启用"}${skillDisplayName(skill)}`}
               title={skill.enabled ? "点击禁用" : "点击启用"}
               onChange={() => props.onToggle(skill)}
             />
@@ -176,7 +179,7 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
     setHidden((current) => new Set(current).add(skill.name));
     setDetail(null);
     showUndoToast(toast, {
-      message: `已删除技能“${skill.name}”`,
+      message: `已删除技能“${skillDisplayName(skill)}”`,
       onUndo: () => unhide(skill.name),
       onCommit: () => {
         void (async () => {
@@ -195,7 +198,7 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
   const visibleSkills = skills.filter((skill) => !hidden.has(skill.name));
   const query = search.trim().toLocaleLowerCase();
   const filteredSkills = visibleSkills.filter((skill) =>
-    (!query || `${skill.name} ${skill.description}`.toLocaleLowerCase().includes(query)) &&
+    (!query || `${skillDisplayName(skill)} ${skill.name} ${skill.description}`.toLocaleLowerCase().includes(query)) &&
     (source === "all" || skill.source === source) &&
     (availability === "all" || (availability === "enabled" ? skill.enabled :
       (skill.dependencies ?? []).some((dependency) => !dependency.available))));

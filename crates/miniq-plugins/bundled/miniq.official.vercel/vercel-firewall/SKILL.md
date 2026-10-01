@@ -1,5 +1,6 @@
 ---
 name: vercel-firewall
+displayName: Vercel 防火墙
 description: Vercel Firewall expert guidance — automatic DDoS mitigation, the Vercel WAF (custom rules, IP blocking, managed rulesets, rate limiting), Attack Mode, system bypass, bot management, and the `vercel firewall` CLI. Use when configuring platform-level security, responding to attacks, or staging firewall rules.
 version: 1
 origin: bundled

@@ -1,5 +1,6 @@
 ---
 name: datadog-monitors
+displayName: Datadog 监控与 SLO
 description: 当用户要查看、梳理、新建或修改 Datadog 监控告警与 SLO 时使用：盘点监控状态与覆盖缺口，基于基线起草阈值，先校验再在确认后创建，并检查拨测与监控模板。
 version: 1
 ---

@@ -1,5 +1,6 @@
 ---
 name: canva-resize-for-social-media
+displayName: Canva 多平台社媒尺寸适配
 description: 当用户想把一个 Canva 设计一次性改成多个社交平台尺寸（Facebook、Instagram、LinkedIn、小红书、抖音、微信公众号等）时使用：按平台预设尺寸并行生成副本，原稿不动，汇总每个版本的编辑链接
 version: 1
 ---

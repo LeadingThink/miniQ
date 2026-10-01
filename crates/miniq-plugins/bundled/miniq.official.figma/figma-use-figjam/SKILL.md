@@ -1,5 +1,6 @@
 ---
 name: figma-use-figjam
+displayName: 向 FigJam 白板写入内容
 description: 在 FigJam 白板（figma.com/board/ 链接）中用 use_figma 写入便利贴、形状文字、连接线、分区、表格、代码块和文字，适用于头脑风暴、流程梳理、回顾会、看板和标注等场景。重点处理 FigJam 专有节点、调色板配色、布局防重叠和文字编辑规则。
 version: 1
 ---

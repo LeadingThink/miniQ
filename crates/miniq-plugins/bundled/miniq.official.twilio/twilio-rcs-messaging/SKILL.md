@@ -1,5 +1,6 @@
 ---
 name: twilio-rcs-messaging
+displayName: Twilio RCS 消息
 description: Send RCS Business Messages via Twilio. Covers compliance onboarding (7-part US process), sender profile setup, sending rich cards and carousels, SMS fallback, device support (Android + iOS 18 caveats), and common errors. Use this skill when building RCS messaging or onboarding an RCS sender.
 version: 1
 origin: bundled

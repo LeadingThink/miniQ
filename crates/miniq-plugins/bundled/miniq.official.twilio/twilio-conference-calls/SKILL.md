@@ -1,5 +1,6 @@
 ---
 name: twilio-conference-calls
+displayName: Twilio 会议通话
 description: Build multi-party calls using Twilio Conference. Covers warm transfer, cold transfer, coaching (whisper), hold vs mute, participant modes, and supervisor barge. Use this skill for any contact center, support line, or scenario requiring transfers, holds, or multi-party calls.
 version: 1
 origin: bundled

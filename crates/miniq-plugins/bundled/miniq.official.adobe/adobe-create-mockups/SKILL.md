@@ -1,5 +1,6 @@
 ---
 name: adobe-create-mockups
+displayName: 品牌样机生成（Adobe Firefly）
 description: 当用户想把 logo、草图或设计稿放到马克杯、T 恤、名片、手机屏、海报等产品上生成一整套品牌样机，或先从零设计/润色 logo 再出样机时使用；基于 Adobe Firefly 生成。
 version: 1
 ---

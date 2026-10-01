@@ -1,5 +1,6 @@
 ---
 name: gh-pr-create
+displayName: 创建 GitHub Pull Request
 description: 当用户想把当前分支的改动整理成 GitHub Pull Request（写标题、描述、选择目标分支并创建）时使用
 origin: installed
 requires:

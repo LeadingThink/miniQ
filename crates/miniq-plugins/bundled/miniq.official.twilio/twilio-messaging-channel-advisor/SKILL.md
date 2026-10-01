@@ -1,5 +1,6 @@
 ---
 name: twilio-messaging-channel-advisor
+displayName: Twilio 消息渠道顾问
 description: Planning skill that helps the developer pick the right Twilio messaging channel — SMS, MMS, RCS, or WhatsApp — for a given use case. Qualifies intent across content type, geography, use case (marketing / notifications / OTP / support), cost model, and brand presence. Use when the developer asks "which channel should I use", "SMS vs RCS vs WhatsApp", mentions a country or region, asks about branded messaging, rich content, or fallback — and proactively when the developer says "send SMS" but their use case (rich content, international reach, branded experience) would benefit from a different channel.
 version: 1
 origin: bundled

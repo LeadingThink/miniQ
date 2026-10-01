@@ -1,5 +1,6 @@
 ---
 name: data-explore
+displayName: 探索性数据分析（EDA）
 description: 当用户给出 CSV、Excel、JSON 或数据库表，想快速了解数据概况、结构、分布、分组统计与趋势，并得到带图表和数字依据的探索性分析结论时使用
 version: 1
 ---

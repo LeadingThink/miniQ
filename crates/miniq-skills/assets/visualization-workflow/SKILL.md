@@ -1,5 +1,6 @@
 ---
 name: visualization-workflow
+displayName: 可视化工作流
 description: Build clear charts and interactive visualizations from structured data with a checked export.
 version: 1
 origin: bundled

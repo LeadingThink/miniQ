@@ -1,5 +1,6 @@
 ---
 name: vercel-shadcn
+displayName: shadcn/ui 组件
 description: shadcn/ui expert guidance — CLI, component installation, composition patterns, custom registries, theming, Tailwind CSS integration, and high-quality interface design. Use when initializing shadcn, adding components, composing product UI, building custom registries, configuring themes, or troubleshooting component issues.
 version: 1
 origin: bundled

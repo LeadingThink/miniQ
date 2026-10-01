@@ -1,5 +1,6 @@
 ---
 name: twilio-notifications-alerts-advisor
+displayName: Twilio 通知与告警顾问
 description: Planning skill for transactional notifications, alerts, and reminders. Qualifies the developer's needs across urgency, channel selection, delivery confirmation, and fallback patterns to recommend the right Twilio notification architecture. Handles both "send shipping updates to customers" and "build a multi-channel alert system with delivery confirmation and fallback."
 version: 1
 origin: bundled

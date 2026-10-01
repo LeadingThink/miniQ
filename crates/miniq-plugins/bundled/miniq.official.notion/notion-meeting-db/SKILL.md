@@ -1,5 +1,6 @@
 ---
 name: notion-meeting-db
+displayName: 会议纪要 → Notion 数据库
 description: 当用户想把会议纪要、录音转写或讨论记录整理后存入 Notion 的会议数据库（带日期、参会人、行动项等属性）时使用。
 origin: installed
 ---

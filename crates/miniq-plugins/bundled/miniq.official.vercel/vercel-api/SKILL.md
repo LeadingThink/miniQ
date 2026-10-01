@@ -1,5 +1,6 @@
 ---
 name: vercel-api
+displayName: Vercel API 与 REST 接口
 description: Vercel app and REST API expert guidance. Use when the agent needs live access to Vercel projects, deployments, environment variables, domains, logs, or documentation through the connected Vercel app or REST API.
 version: 1
 origin: bundled

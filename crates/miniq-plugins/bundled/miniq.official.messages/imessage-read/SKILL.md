@@ -1,5 +1,6 @@
 ---
 name: imessage-read
+displayName: 读取「信息」聊天记录（只读）
 description: 当用户想查看、搜索或总结 Mac「信息」(iMessage/短信) 的聊天记录、未读消息、某个联系人或群聊的对话、附件列表时使用；只读，需完全磁盘访问权限。
 version: 1
 ---

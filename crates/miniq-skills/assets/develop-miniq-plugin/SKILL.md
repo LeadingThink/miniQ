@@ -1,5 +1,6 @@
 ---
 name: develop-miniq-plugin
+displayName: 开发 miniQ 插件
 description: 为 miniQ 设计、编写、构建或排查 API v1 插件，包括 Rust WASM Component 与可信 Node.js/TypeScript 插件
 origin: bundled
 ---

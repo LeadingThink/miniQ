@@ -1,5 +1,6 @@
 ---
 name: expo-eas-build
+displayName: Expo EAS 构建
 description: 当用户要用 EAS 构建 iOS/Android 安装包、提交到 App Store / Google Play、推送 OTA 更新，或查看构建失败与 TestFlight 崩溃反馈时使用
 origin: installed
 requires:

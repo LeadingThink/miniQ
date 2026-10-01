@@ -1,5 +1,6 @@
 ---
 name: linear-issues
+displayName: Linear 议题增删改查
 description: 当用户要在 Linear 中查找、查看、创建、更新议题（issue）或评论，例如“把这个 bug 记到 Linear”“我名下还有哪些未完成的票”时使用。
 origin: installed
 ---

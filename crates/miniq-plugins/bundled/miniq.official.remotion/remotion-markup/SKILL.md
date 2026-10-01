@@ -1,5 +1,6 @@
 ---
 name: remotion-markup
+displayName: Remotion 标记与排版
 description: Content, animation and effects best practices
 version: 1
 origin: bundled

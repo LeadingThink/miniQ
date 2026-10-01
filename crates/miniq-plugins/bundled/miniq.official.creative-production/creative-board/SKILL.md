@@ -1,5 +1,6 @@
 ---
 name: creative-board
+displayName: 创意看板
 description: 创意看板：用本地 board.json + 自包含 HTML 追踪多方向出图的占位、完成、失败、重试、选中与淘汰，并渲染网格或对比视图供用户挑选。生产多方向素材或需要让用户比较选择时使用。
 version: 1
 ---

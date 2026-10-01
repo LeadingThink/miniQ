@@ -1,5 +1,6 @@
 ---
 name: gh-fix-ci
+displayName: 修复 GitHub CI
 description: 当用户说 GitHub Actions / CI 挂了、PR 检查不通过、想知道流水线为什么失败并修复时使用，基于 gh 拉取失败日志、定位根因并在本地修复
 origin: installed
 requires:

@@ -1,5 +1,6 @@
 ---
 name: vercel-agent-browser
+displayName: agent-browser 浏览器自动化
 description: Browser automation CLI for AI agents. Use when the user needs to interact with websites, verify dev server output, test web apps, navigate pages, fill forms, click buttons, take screenshots, extract data, or automate any browser task. Also triggers when a dev server starts so you can verify it visually.
 version: 1
 origin: bundled

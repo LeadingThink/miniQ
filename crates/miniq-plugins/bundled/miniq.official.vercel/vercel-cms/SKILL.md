@@ -1,5 +1,6 @@
 ---
 name: vercel-cms
+displayName: Vercel 无头 CMS 集成
 description: Headless CMS integration guidance — Sanity (native Vercel Marketplace), Contentful, DatoCMS, Storyblok, and Builder.io. Covers studio setup, content modeling, preview mode, revalidation webhooks, and Visual Editing. Use when building content-driven sites with a headless CMS on Vercel.
 version: 1
 origin: bundled

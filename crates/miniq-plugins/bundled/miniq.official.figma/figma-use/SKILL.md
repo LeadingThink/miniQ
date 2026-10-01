@@ -1,5 +1,6 @@
 ---
 name: figma-use
+displayName: 用 Plugin API 写入 Figma
 description: 通过 Figma MCP 的 use_figma 工具执行 Plugin API 脚本，向 Figma 文件写入或修改节点、组件、变量与样式。它是所有写入类 Figma 技能的基础，规定了增量写入、返回节点 ID、字体加载、变量绑定、页面切换和错误恢复等规则。
 version: 1
 ---

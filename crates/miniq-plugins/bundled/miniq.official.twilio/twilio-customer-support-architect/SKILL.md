@@ -1,5 +1,6 @@
 ---
 name: twilio-customer-support-architect
+displayName: Twilio 客户支持架构
 description: Planning skill for building customer service and support systems. Qualifies the developer's needs across the support ladder (self-service → AI agents → contact center), channel mix, and scale to recommend the right Twilio architecture. Handles both "build me a call center" and "add an IVR to my existing support line."
 version: 1
 origin: bundled

@@ -1,5 +1,6 @@
 ---
 name: vercel-next-upgrade
+displayName: 升级 Next.js
 description: Upgrade Next.js to the latest version following official migration guides and codemods. Use when upgrading Next.js versions, running codemods, or migrating between major releases.
 version: 1
 origin: bundled

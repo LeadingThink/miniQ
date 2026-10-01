@@ -1,5 +1,6 @@
 ---
 name: chrome-browser-tasks
+displayName: 内置浏览器完成网页任务（browser_automation）
 description: 当网页任务不需要用户 Chrome 的登录态时使用：公开网页检索、表单填写、网页截图、调试本机 127.0.0.1 开发服务器；走 miniQ 内置浏览器，不打扰用户。
 version: 1
 ---

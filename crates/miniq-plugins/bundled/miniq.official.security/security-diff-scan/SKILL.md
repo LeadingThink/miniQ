@@ -1,5 +1,6 @@
 ---
 name: security-diff-scan
+displayName: 差异安全复审（security-diff-scan）
 description: "对 PR、提交、分支对比或未提交改动做安全复审：先确定差异范围与受影响上下文，再只报告由本次改动引入或暴露的问题。全仓扫描请用 security-scan，修复补丁的回归风险评估请用 security-patch-risk。"
 version: 1
 ---

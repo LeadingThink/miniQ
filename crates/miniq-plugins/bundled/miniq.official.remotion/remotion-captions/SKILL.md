@@ -1,5 +1,6 @@
 ---
 name: remotion-captions
+displayName: Remotion 字幕
 description: Transcribing, displaying and animating captions
 version: 1
 origin: bundled

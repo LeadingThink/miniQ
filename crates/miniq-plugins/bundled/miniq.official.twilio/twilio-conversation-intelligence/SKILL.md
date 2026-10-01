@@ -1,5 +1,6 @@
 ---
 name: twilio-conversation-intelligence
+displayName: Twilio Conversation Intelligence 洞察
 description: Twilio Conversation Intelligence development guide. Use when building real-time or post-call conversation analysis, language operator pipelines, sentiment analysis, agent assist, cross-channel analytics, or querying aggregated conversation insights (sentiment trends, escalation rates, dashboards).
 version: 1
 origin: bundled

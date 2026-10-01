@@ -1,5 +1,6 @@
 ---
 name: vercel-json-render
+displayName: AI 对话响应渲染
 description: AI chat response rendering guidance — handling UIMessage parts, tool call displays, streaming states, and structured data presentation. Use when building custom chat UIs, rendering tool results, or troubleshooting AI response display issues.
 version: 1
 origin: bundled

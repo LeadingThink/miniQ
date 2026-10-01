@@ -1,5 +1,6 @@
 ---
 name: atlassian-confluence
+displayName: Confluence 文档
 description: 当用户要在 Confluence 中搜索、阅读、总结页面，或新建、更新空间下的文档（方案、复盘、知识库文章）时使用。
 origin: installed
 ---

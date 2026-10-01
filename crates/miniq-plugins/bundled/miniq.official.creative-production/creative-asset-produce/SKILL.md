@@ -1,5 +1,6 @@
 ---
 name: creative-asset-produce
+displayName: 创意素材生产
 description: 需要生成或改造创意视觉时使用：广告路线、产品场景、多机位、logo、风格系统、定位图、图表美化，以及配套视频、配音、配乐。默认并行出 4–6 个真正不同的方向到本地看板供比较选择。
 version: 1
 ---

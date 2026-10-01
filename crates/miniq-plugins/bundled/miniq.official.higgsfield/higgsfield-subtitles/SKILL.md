@@ -1,5 +1,6 @@
 ---
 name: higgsfield-subtitles
+displayName: 字幕（Subtitles）
 description: 需要给视频加字幕时使用：用 Whisper 转写取得准确时间轴，文字优先采用脚本原文，按画幅与语言切分成易读的一到两行，生成 SRT/ASS，并用 ffmpeg 烧录成干净、醒目或卡拉 OK 样式。无 Whisper 时给出替代方案。适用于 Higgsfield 生成的成片或任意本地视频。
 version: 1
 ---

@@ -1,5 +1,6 @@
 ---
 name: twilio-debug
+displayName: Twilio 调试
 description: 当 Twilio 消息投递失败、Webhook/TwiML 报错或 Debugger 出现告警，需要按错误码定位原因时使用
 origin: installed
 ---

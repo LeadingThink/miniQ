@@ -1,5 +1,6 @@
 ---
 name: remotion-saas
+displayName: Remotion SaaS 应用
 description: Build an app with Remotion
 version: 1
 origin: bundled

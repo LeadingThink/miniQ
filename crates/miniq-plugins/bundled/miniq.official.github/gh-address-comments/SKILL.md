@@ -1,5 +1,6 @@
 ---
 name: gh-address-comments
+displayName: 处理 GitHub PR 评论
 description: 当用户要处理某个 GitHub Pull Request 上的 review 评论（逐条修改代码、回复评审人）时使用，基于 gh 拉取未解决评论并逐条落实
 origin: installed
 requires:

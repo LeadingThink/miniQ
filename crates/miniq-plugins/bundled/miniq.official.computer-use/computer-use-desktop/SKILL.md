@@ -1,5 +1,6 @@
 ---
 name: computer-use-desktop
+displayName: 前台桌面操控（computer_use）
 description: 当任务必须接管真实桌面（全局拖拽、菜单栏额外项、跨应用拖放、系统弹层或 AX 不可用的应用）时使用；规定事先告知、截图观察、坐标操作、逐步验证与及时释放。
 version: 1
 ---

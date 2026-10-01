@@ -1,5 +1,6 @@
 ---
 name: dropbox-share
+displayName: Dropbox 共享链接
 description: 当用户明确要求分享 Dropbox 内容时使用：为指定文件或文件夹创建共享链接（例如 PDF 分享链接），查看已有链接和链接元数据；优先复用已有链接，从不自动创建，成员邀请需到网页端操作。
 version: 1
 ---

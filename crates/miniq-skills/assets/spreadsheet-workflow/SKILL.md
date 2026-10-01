@@ -1,5 +1,6 @@
 ---
 name: spreadsheet-workflow
+displayName: 电子表格工作流
 description: Modify spreadsheets with formulas, formatting, charts, and recalculation checks.
 version: 1
 origin: bundled

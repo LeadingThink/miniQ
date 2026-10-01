@@ -1,5 +1,6 @@
 ---
 name: ios-swiftui-dev
+displayName: iOS SwiftUI 开发
 description: 当用户要新建或修改 SwiftUI 界面、拆分重构视图、排查 SwiftUI 卡顿和状态问题时使用
 origin: installed
 requires:

@@ -1,5 +1,6 @@
 ---
 name: twilio-security-hardening
+displayName: Twilio 安全加固
 description: Secure Twilio applications against common attacks. Covers credential management (API keys vs auth tokens), request validation (webhook signature verification), PCI DSS compliance, HIPAA account requirements, SMS pumping prevention, geo-permissions, and account isolation patterns. Use this skill when developers are building or deploying Twilio apps.
 version: 1
 origin: bundled

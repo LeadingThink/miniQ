@@ -1,5 +1,6 @@
 ---
 name: playwright-e2e
+displayName: Playwright 端到端测试
 description: 当用户要为 Web 项目编写、运行或修复 Playwright 端到端测试（含安装配置、调试失败用例）时使用
 origin: installed
 requires:

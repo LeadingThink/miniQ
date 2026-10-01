@@ -1,5 +1,6 @@
 ---
 name: chatcut-edit-plan
+displayName: 剪辑计划成片（EDL）
 description: 把多段素材、图片和 AI 生成的配音配乐编排成一条完整短视频时使用。先写 JSON 剪辑计划（EDL），校验后用一条 ffmpeg 命令渲染：统一画幅、变速、淡入淡出、配乐、字幕、响度。适合产品宣传、口播精剪、图文成片。
 version: 1
 ---

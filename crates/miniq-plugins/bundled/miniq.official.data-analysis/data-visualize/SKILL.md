@@ -1,5 +1,6 @@
 ---
 name: data-visualize
+displayName: 数据可视化
 description: 当用户需要把数据做成图表时使用，包括选择合适图型、生成清晰准确的 PNG 或 SVG 静态图、交互式 HTML 图表，以及检查已有图表是否误导，适用于分析过程出图和报告看板配图
 version: 1
 ---

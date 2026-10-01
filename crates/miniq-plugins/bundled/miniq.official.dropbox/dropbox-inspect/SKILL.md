@@ -1,5 +1,6 @@
 ---
 name: dropbox-inspect
+displayName: Dropbox 文件详情检查
 description: 当用户要了解某个 Dropbox 文件或文件夹的详情时使用：查看元数据（大小、修改时间、ID、内容哈希）、已有共享链接及其可见范围，并读取内容做摘要或回答问题。
 version: 1
 ---

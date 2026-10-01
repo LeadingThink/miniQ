@@ -69,6 +69,9 @@ impl Tool for SkillReadTool {
             "files": detail.files,
             "args": p.args,
         });
+        if let Some(display_name) = detail.skill.meta.display_name {
+            out["displayName"] = json!(display_name);
+        }
         if let Some(dir) = detail.skill_dir {
             out["skillDir"] = json!(dir);
             if !out["files"].as_array().unwrap().is_empty() {
@@ -89,7 +92,7 @@ mod tests {
     use std::sync::Arc;
 
     const DEMO: &str =
-        "---\nname: demo-skill\ndescription: demo\n---\n\n## Steps\n1. use file_list\n";
+        "---\nname: demo-skill\ndisplayName: Demo skill\ndescription: demo\n---\n\n## Steps\n1. use file_list\n";
 
     #[tokio::test]
     async fn reads_skill_body() {
@@ -104,6 +107,7 @@ mod tests {
             .await
             .unwrap();
         assert!(out["body"].as_str().unwrap().contains("file_list"));
+        assert_eq!(out["displayName"], "Demo skill");
     }
 
     #[tokio::test]

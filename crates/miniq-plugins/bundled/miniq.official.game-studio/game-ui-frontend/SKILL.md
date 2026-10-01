@@ -1,5 +1,6 @@
 ---
 name: game-ui-frontend
+displayName: 游戏 UI 前端
 description: Design UI surfaces for browser games. Use when the user asks for HUDs, menus, overlays, responsive layouts, or visual direction that must protect the playfield.
 version: 1
 origin: bundled

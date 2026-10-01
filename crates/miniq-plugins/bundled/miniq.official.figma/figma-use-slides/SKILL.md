@@ -1,5 +1,6 @@
 ---
 name: figma-use-slides
+displayName: Figma Slides：用 `use_figma` 制作与编辑演示文稿
 description: 在 Figma Slides 演示文稿中创建、修改、整理幻灯片时使用：用户给出 figma.com/slides/ 链接，或要求做演示文稿/幻灯片、分节、排序、跳过页、写讲者备注。需与 figma-use 一起加载。
 version: 1
 ---

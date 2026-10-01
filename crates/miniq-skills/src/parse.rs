@@ -64,6 +64,10 @@ where
 #[serde(rename_all = "camelCase")]
 pub struct SkillMeta {
     pub name: String,
+    /// Optional human-facing label; `name` remains the stable directory and
+    /// invocation identifier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
     pub description: String,
     #[serde(default = "default_version", deserialize_with = "lenient_version")]
     pub version: u32,
@@ -162,12 +166,35 @@ mod tests {
     }
 
     #[test]
+    fn display_name_parses_and_roundtrips() {
+        let source = "---\nname: weekly-report\ndisplayName: 每周报告\ndescription: Generate a weekly report\n---\nbody\n";
+        let (meta, body) = parse_skill_md(source).unwrap();
+        assert_eq!(meta.display_name.as_deref(), Some("每周报告"));
+
+        let rendered = render_skill_md(&meta, &body);
+        assert!(rendered.contains("displayName: 每周报告"));
+        let (roundtripped, roundtripped_body) = parse_skill_md(&rendered).unwrap();
+        assert_eq!(roundtripped.name, "weekly-report");
+        assert_eq!(roundtripped.display_name, meta.display_name);
+        assert_eq!(roundtripped_body, body);
+    }
+
+    #[test]
     fn defaults_applied() {
         let (meta, _) =
             parse_skill_md("---\nname: simple\ndescription: a simple skill\n---\nbody").unwrap();
         assert_eq!(meta.version, 1);
         assert_eq!(meta.origin, SkillOrigin::User);
+        assert_eq!(meta.display_name, None);
         assert!(meta.requires.bins.is_empty());
+    }
+
+    #[test]
+    fn display_name_is_omitted_when_absent() {
+        let (meta, _) =
+            parse_skill_md("---\nname: simple\ndescription: a simple skill\n---\nbody").unwrap();
+        let yaml = serde_yaml::to_string(&meta).unwrap();
+        assert!(!yaml.contains("displayName"));
     }
 
     #[test]

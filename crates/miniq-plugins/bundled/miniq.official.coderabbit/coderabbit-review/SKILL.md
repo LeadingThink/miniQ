@@ -1,5 +1,6 @@
 ---
 name: coderabbit-review
+displayName: CodeRabbit 代码审查
 description: Reviews code changes using CodeRabbit AI. Use when user asks for code review, PR feedback, code quality checks, security issues, or requests fix-review cycles.
 version: 1
 origin: bundled

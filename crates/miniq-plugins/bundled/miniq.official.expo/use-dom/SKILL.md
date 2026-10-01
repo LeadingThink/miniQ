@@ -1,5 +1,6 @@
 ---
 name: use-dom
+displayName: 在 Expo 中使用 DOM
 description: Use Expo DOM components to run web code in a webview on native and as-is on web. Migrate web code to native incrementally.
 version: 1
 origin: bundled

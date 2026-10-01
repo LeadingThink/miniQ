@@ -1,5 +1,6 @@
 ---
 name: security-scan
+displayName: 标准安全扫描（security-scan）
 description: "对整个仓库或指定子目录做一次标准的单轮安全扫描：范围清单、威胁模型、候选发现、验证、攻击路径与严重度、落盘台账与报告。审查 PR 或差异请用 security-diff-scan，多轮深挖请用 security-deep-scan。"
 version: 1
 ---

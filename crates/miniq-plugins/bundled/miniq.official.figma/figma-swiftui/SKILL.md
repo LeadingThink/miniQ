@@ -1,5 +1,6 @@
 ---
 name: figma-swiftui
+displayName: Figma ↔ SwiftUI 双向转换
 description: 用户提到 SwiftUI/Swift/iOS/iPadOS 并涉及 Figma 时使用：把 Figma 画板实现为 SwiftUI 视图（设计→代码），或把已有 SwiftUI 视图、页面、颜色/字体令牌搭建到 Figma 文件中（代码→设计）。
 version: 1
 ---

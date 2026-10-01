@@ -1,5 +1,6 @@
 ---
 name: notion-meeting-intelligence
+displayName: Notion 会议洞察
 description: Prepare meeting materials with Notion context and supplemental research; use when gathering context, drafting agendas/pre-reads, and tailoring materials to attendees.
 version: 1
 origin: bundled

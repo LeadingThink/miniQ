@@ -1,5 +1,6 @@
 ---
 name: sp-clarify-plan
+displayName: 澄清与细化计划
 description: 当用户提出一个尚不清晰的功能需求或较大的改动，需要先头脑风暴、澄清需求并写出分步实施计划再动手时使用
 origin: installed
 ---

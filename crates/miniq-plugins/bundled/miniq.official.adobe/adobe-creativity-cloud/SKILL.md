@@ -1,5 +1,6 @@
 ---
 name: adobe-creativity-cloud
+displayName: Adobe 创意套件总入口（云端 MCP）
 description: Adobe 创意能力总入口：用户想用 Adobe 云端（Photoshop/Lightroom 修图、Express 模板、Firefly 生成、视频快剪与改尺寸、Stock 素材、PDF）处理图片视频或做设计时先用本技能，负责连接探测、上传下载、错误处理，并按需求分派到 7 个专项技能。
 version: 1
 ---

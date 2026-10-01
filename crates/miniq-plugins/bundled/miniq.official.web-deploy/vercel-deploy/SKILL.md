@@ -1,5 +1,6 @@
 ---
 name: vercel-deploy
+displayName: Vercel 部署
 description: 当用户要把前端或全栈项目（Next.js、Vite、静态站等）部署到 Vercel、获取预览链接或发布生产环境时使用
 origin: installed
 requires:

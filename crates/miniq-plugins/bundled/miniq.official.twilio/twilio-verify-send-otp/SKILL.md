@@ -1,5 +1,6 @@
 ---
 name: twilio-verify-send-otp
+displayName: Twilio Verify 发送 OTP
 description: Send and verify one-time passcodes (OTPs) via Twilio Verify over SMS, RCS, voice, email, or WhatsApp. Covers creating a Verify Service, sending tokens, checking submitted codes, automatic WhatsApp-to-SMS fallback, and service configuration. TOTP is supported via the Factors API (a separate family from channel-based OTP). Use this skill to add phone or email verification or two-factor authentication to any application.
 version: 1
 origin: bundled

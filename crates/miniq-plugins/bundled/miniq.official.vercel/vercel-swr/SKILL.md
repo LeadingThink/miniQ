@@ -1,5 +1,6 @@
 ---
 name: vercel-swr
+displayName: SWR 数据获取 Hooks
 description: SWR data-fetching expert guidance. Use when building React apps with client-side data fetching, caching, revalidation, mutations, optimistic UI, pagination, or infinite loading using the SWR library.
 version: 1
 origin: bundled

@@ -1,5 +1,6 @@
 ---
 name: twilio-voice-twiml
+displayName: Twilio Voice TwiML 通话
 description: Build voice call logic using TwiML (Twilio Markup Language). Covers the core verbs (Say, Play, Gather, Dial, Record, Conference), generating TwiML with Python and Node.js SDKs, and a complete inbound call IVR example. Use this skill to define call behavior for inbound or outbound calls.
 version: 1
 origin: bundled

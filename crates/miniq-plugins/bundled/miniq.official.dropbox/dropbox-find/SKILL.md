@@ -1,5 +1,6 @@
 ---
 name: dropbox-find
+displayName: Dropbox 查找与浏览
 description: 当用户要在 Dropbox 中查找或浏览内容时使用：按关键词、类型、时间搜索文件和文件夹，查看最近修改的文件，浏览目录结构，找出某份资料的来源位置，并给出候选列表供确认。
 version: 1
 ---

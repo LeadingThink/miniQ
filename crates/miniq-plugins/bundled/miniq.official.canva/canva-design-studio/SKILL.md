@@ -1,5 +1,6 @@
 ---
 name: canva-design-studio
+displayName: Canva 设计生成、查找与导出（总入口）
 description: 当用户想在 Canva 中生成海报、社媒图、演示文稿等新设计，搜索/查看已有设计，复制、改尺寸、导入外部文件，或把设计导出为 PDF/PNG/PPTX/MP4 并下载到本地时使用；也是 Canva 插件的总入口（连接、登录、工具发现、故障排查）
 version: 1
 ---

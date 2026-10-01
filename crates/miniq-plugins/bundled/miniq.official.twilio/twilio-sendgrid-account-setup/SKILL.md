@@ -1,5 +1,6 @@
 ---
 name: twilio-sendgrid-account-setup
+displayName: SendGrid 账户配置
 description: Set up a SendGrid account for email delivery. Covers API key creation (SG.-prefix), domain authentication (DKIM/SPF via CNAME records), Single Sender Verification for testing, SDK installation, and the relationship between SendGrid and Twilio credentials. Use before any other SendGrid skill. This skill is for SendGrid only — not the Twilio Email API (comms.twilio.com).
 version: 1
 origin: bundled

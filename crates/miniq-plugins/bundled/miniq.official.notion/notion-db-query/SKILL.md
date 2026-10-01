@@ -1,5 +1,6 @@
 ---
 name: notion-db-query
+displayName: Notion 数据库查询与统计
 description: 当用户想查询、筛选、统计 Notion 数据库中的条目（任务、需求池、CRM、阅读清单等），或批量更新条目属性时使用。
 origin: installed
 ---

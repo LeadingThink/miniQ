@@ -1,5 +1,6 @@
 ---
 name: sp-tdd-debug
+displayName: TDD 调试流程
 description: 当用户要求用测试驱动方式实现功能，或遇到 bug、测试失败、异常行为需要系统化地复现、假设、验证来定位根因时使用
 origin: installed
 ---

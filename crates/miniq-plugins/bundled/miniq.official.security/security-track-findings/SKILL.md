@@ -1,5 +1,6 @@
 ---
 name: security-track-findings
+displayName: 安全 finding 工单登记与跟踪
 description: "把已确认的安全 finding 登记到 GitHub Issues、GitHub 私有草稿安全公告、Jira 或本地 CSV，按指纹去重并维护 tracking.json 状态同步。任何外部写入均先预览再确认。找漏洞或写报告不用本技能。"
 version: 1
 ---

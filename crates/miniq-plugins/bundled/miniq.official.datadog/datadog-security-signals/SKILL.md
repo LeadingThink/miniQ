@@ -1,5 +1,6 @@
 ---
 name: datadog-security-signals
+displayName: Datadog 安全信号与发现
 description: 当用户要在 Datadog 中处理安全事项时使用：检索和分析安全信号与 IOC、分诊并更新状态、查看安全发现与错误配置、管理检测规则和抑制规则、扫描代码密钥、查询审计日志。
 version: 1
 ---

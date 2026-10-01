@@ -1,5 +1,6 @@
 ---
 name: visual-diagrams
+displayName: 图解、交互式讲解与 UI 原型
 description: 当用户需要流程图、时序图、架构图、甘特图、思维导图，或想要可交互的概念讲解页（如“用动画解释 TCP 握手/复利/排序算法”）、可调参数的 UI 原型时使用；输出 Mermaid 或单文件 HTML/SVG，并截图自检。
 version: 1
 ---

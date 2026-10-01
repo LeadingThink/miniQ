@@ -1,5 +1,6 @@
 ---
 name: vercel-next-cache-components
+displayName: Next.js 缓存组件
 description: Next.js 16 Cache Components guidance — PPR, use cache directive, cacheLife, cacheTag, updateTag, and migration from unstable_cache. Use when implementing partial prerendering, caching strategies, or migrating from older Next.js cache patterns.
 version: 1
 origin: bundled

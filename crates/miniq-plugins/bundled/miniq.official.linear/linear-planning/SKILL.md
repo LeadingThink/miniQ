@@ -1,5 +1,6 @@
 ---
 name: linear-planning
+displayName: Linear 规划与周报
 description: 当用户要基于 Linear 做迭代（Cycle）规划、项目进度梳理、积压（backlog）整理，或生成团队/个人周报时使用。
 origin: installed
 ---

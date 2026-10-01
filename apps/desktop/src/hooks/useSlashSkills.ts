@@ -3,8 +3,11 @@ import type { RpcClient } from "../rpc";
 import type { ComposerSlashCommand } from "../composerSlash";
 import { errorMessage } from "../errorMessage";
 
+import { skillDisplayName } from "../skillDisplay";
+
 interface Skill {
   name: string;
+  displayName?: string;
   description: string;
   enabled: boolean;
 }
@@ -41,12 +44,12 @@ export function useSlashSkills(
             .filter((skill) => skill.enabled)
             .map((skill) => ({
               id: `skill:${skill.name}`,
-              name: skill.name,
+              name: skillDisplayName(skill),
               description:
                 skill.description || "将技能添加到消息，再补充任务要求",
               group: "技能",
               icon: "skills",
-              keywords: ["skill", "技能"],
+              keywords: ["skill", "技能", skill.name],
               insertText: `使用技能「${skill.name}」：`,
             })),
         });

@@ -1,5 +1,6 @@
 ---
 name: security-writeup
+displayName: 单漏洞详细报告
 description: "为单个已确认或高度可疑的漏洞撰写披露/安全公告级详细报告：精确源码版本、引入提交与受影响发布、分层证据、PoC 与修复建议。多个漏洞时每个一份报告。找漏洞用 security-scan，判真伪用 security-triage-finding。"
 version: 1
 ---

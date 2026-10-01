@@ -1,5 +1,6 @@
 ---
 name: higgsfield-narrator
+displayName: 旁白配音（Narrator）
 description: 需要用 Higgsfield 语音模型为视频生成旁白配音时使用：把台词逐条生成一致音色的配音，并让每条落在指定时间窗（如 10 秒块内有效语音 9.4–9.8 秒），测算语速、时长、静音与响度，必要时改写台词重生成。供无出镜频道、分镜短片调用，也可单独使用。
 version: 1
 ---

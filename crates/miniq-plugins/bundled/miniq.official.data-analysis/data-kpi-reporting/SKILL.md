@@ -1,5 +1,6 @@
 ---
 name: data-kpi-reporting
+displayName: KPI 周期汇报
 description: 当用户需要制作周期性 KPI 汇报（周报、月报、季报、经营分析会材料），计算环比同比、目标达成与进度，解释驱动因素与业务影响，并以记分卡、报告或看板形式交付时使用
 version: 1
 ---

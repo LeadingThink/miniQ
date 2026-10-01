@@ -1,5 +1,6 @@
 ---
 name: datadog-incident-response
+displayName: Datadog 事件响应与处置
 description: 当用户要在 Datadog 中推进 incident 或采取处置行动时使用：汇总 incident 与时间线、触发 Bits AI 调查、创建或更新 Case 并关联 Jira、执行工作流与远程只读诊断，所有写操作先确认。
 version: 1
 ---

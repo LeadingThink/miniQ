@@ -1,5 +1,6 @@
 ---
 name: twilio-reliability-patterns
+displayName: Twilio 可靠性模式
 description: Handle rate limits, retries, and failures when building on Twilio at scale. Covers 429 exponential backoff with jitter, per-number throughput limits, StatusCallback resilience, thin-receiver pattern, and fallback chains. Use this skill whenever sending messages or making calls at volume, or when building production-grade Twilio integrations.
 version: 1
 origin: bundled

@@ -1,5 +1,6 @@
 ---
 name: web-3d-asset-pipeline
+displayName: Web 3D 资源流水线
 description: Prepare and optimize browser-game 3D assets. Use when the user asks for GLB or glTF shipping work, including Blender cleanup and export, collision or LOD setup, compression, texture packaging, and runtime validation.
 version: 1
 origin: bundled

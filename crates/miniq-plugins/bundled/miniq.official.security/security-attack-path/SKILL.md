@@ -1,5 +1,6 @@
 ---
 name: security-attack-path
+displayName: 攻击路径与严重度校准（security-attack-path）
 description: "为已验证或可信的安全候选构建攻击路径：确认入口可达性、攻击者前置条件、控制是否有效、最终影响，并按 impact × likelihood 矩阵统一定级。发现候选请用 security-finding-discovery，证明真伪请用 security-validation。"
 version: 1
 ---

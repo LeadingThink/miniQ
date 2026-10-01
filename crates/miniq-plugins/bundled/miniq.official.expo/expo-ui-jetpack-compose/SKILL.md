@@ -1,5 +1,6 @@
 ---
 name: expo-ui-jetpack-compose
+displayName: Expo Jetpack Compose 界面
 description: '`@expo/ui/jetpack-compose` package lets you use Jetpack Compose Views and modifiers in your app.'
 version: 1
 origin: bundled

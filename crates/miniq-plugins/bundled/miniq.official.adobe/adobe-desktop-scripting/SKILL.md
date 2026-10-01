@@ -1,5 +1,6 @@
 ---
 name: adobe-desktop-scripting
+displayName: 本机 Photoshop / Illustrator 自动化
 description: 当用户想让 miniQ 操作本机已安装的 Photoshop 或 Illustrator（批量导出/缩放、播放动作、导出画板、替换智能对象、界面操作）或需要编写 ExtendScript/UXP 脚本时使用；也是 Adobe 云端 MCP 不可用时各 Adobe 技能的本地退路。
 version: 1
 ---

@@ -1,5 +1,6 @@
 ---
 name: android-perf-check
+displayName: Android 性能检查
 description: 当用户要检查 Android 应用的启动耗时、掉帧卡顿、内存占用或 ANR 问题时使用
 origin: installed
 requires:

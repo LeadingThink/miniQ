@@ -1,5 +1,6 @@
 ---
 name: data-validate-analysis
+displayName: 分析结论校验（交付前复核）
 description: 当一份数据分析、报告、看板或结论即将分享给他人，用户希望在交付前复核方法、口径、计算、统计陷阱与图表是否可靠，并得到分级问题清单和可分享性评级时使用
 version: 1
 ---

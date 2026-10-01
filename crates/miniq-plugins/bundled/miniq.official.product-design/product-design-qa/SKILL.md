@@ -1,5 +1,6 @@
 ---
 name: product-design-qa
+displayName: 设计 QA（阻塞关卡）
 description: 设计 QA 阻塞关卡：把参考图与原型截图在同视口同状态下并排比对，按评分细则登记 P0–P3 问题写入 design-qa.md，修复 P0–P2 并循环直到结论为 passed；截图受阻则 blocked 并停止。任何原型、还原交付前必须使用
 version: 1
 ---

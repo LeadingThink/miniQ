@@ -1,5 +1,6 @@
 ---
 name: hyperframes-video
+displayName: HyperFrames：写 HTML，渲染视频
 description: 当用户想用 HTML/CSS/JS 动画制作视频、把网站或产品页做成宣传短片，或需要可重复渲染的 MP4 时使用（基于 HeyGen 开源的 HyperFrames）
 origin: installed
 requires:

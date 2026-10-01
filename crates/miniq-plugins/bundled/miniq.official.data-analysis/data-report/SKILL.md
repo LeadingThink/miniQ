@@ -1,5 +1,6 @@
 ---
 name: data-report
+displayName: 数据分析报告
 description: 当用户需要把数据分析整理成正式报告时使用，包括面向管理层的高管摘要版和面向分析师的技术版，含结论先行的叙事、图表、KPI、方法与附录，输出 Markdown 与自包含 HTML，并可继续导出 PDF、Word 或 PPT
 version: 1
 ---

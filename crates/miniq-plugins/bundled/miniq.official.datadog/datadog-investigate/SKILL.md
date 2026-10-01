@@ -1,5 +1,6 @@
 ---
 name: datadog-investigate
+displayName: Datadog 故障排查
 description: 当用户要借助 Datadog 排查线上故障、报错或变慢时使用：按服务和时间窗串联告警、incident、日志、指标、APM 链路、变更与 K8s 事件，形成时间线和根因假设，并关联到本地代码。
 version: 1
 ---

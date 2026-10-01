@@ -1,5 +1,6 @@
 ---
 name: mac-app-recipes
+displayName: 常用 Mac 应用操作配方
 description: 当用户需要在 访达、备忘录、日历、系统设置 等常用 Mac 应用中完成具体操作，并希望参考现成做法时使用。
 version: 1
 ---

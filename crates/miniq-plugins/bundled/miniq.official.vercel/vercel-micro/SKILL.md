@@ -1,5 +1,6 @@
 ---
 name: vercel-micro
+displayName: micro 异步 HTTP 微服务
 description: Expert guidance for micro — asynchronous HTTP microservices framework by Vercel. Use when building lightweight HTTP servers, API endpoints, or microservices using the micro library.
 version: 1
 origin: bundled

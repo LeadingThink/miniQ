@@ -1,5 +1,6 @@
 ---
 name: adobe-retouch-portraits
+displayName: 批量人像精修（Adobe）
 description: 当用户想批量精修一组人像/证件照/活动合影（拉直、影调、提亮肤色、美白牙齿、背景虚化、按人脸裁切）时使用；默认非生成式，调用 Adobe 云端图像工具，不可用时回退本机脚本。
 version: 1
 ---

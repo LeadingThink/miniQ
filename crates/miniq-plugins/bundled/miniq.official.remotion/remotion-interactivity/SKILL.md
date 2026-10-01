@@ -1,5 +1,6 @@
 ---
 name: remotion-interactivity
+displayName: Remotion 交互设计
 description: Structure Remotion markup for interactivity
 version: 1
 origin: bundled

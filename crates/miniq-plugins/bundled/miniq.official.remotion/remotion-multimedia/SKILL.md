@@ -1,5 +1,6 @@
 ---
 name: remotion-multimedia
+displayName: Remotion 多媒体
 description: Interacting with Mediabunny
 version: 1
 origin: bundled

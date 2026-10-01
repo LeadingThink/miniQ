@@ -1,5 +1,6 @@
 ---
 name: figma-code-connect
+displayName: Figma Code Connect 组件映射
 description: 当用户提到 Code Connect、要把 Figma 组件映射到代码组件、批量连接设计系统组件，或新建/修改 .figma.js、.figma.ts 模板并发布到 Dev Mode 时使用
 version: 1
 ---

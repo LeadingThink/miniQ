@@ -1,5 +1,6 @@
 ---
 name: presentation-workflow
+displayName: 演示文稿工作流
 description: Create and revise slide decks while checking layout, readability, and media placement.
 version: 1
 origin: bundled

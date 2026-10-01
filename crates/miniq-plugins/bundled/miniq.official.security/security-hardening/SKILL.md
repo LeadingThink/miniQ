@@ -1,5 +1,6 @@
 ---
 name: security-hardening
+displayName: 安全加固提案
 description: "当用户希望基于已有 findings、威胁模型和代码证据，找出系统性安全薄弱点并形成加固机会组合与设计提案时使用（只读，产出文档）。不要用于修复单个漏洞（转 security-fix-finding）或首次查找漏洞（转 security-scan）。"
 version: 1
 ---

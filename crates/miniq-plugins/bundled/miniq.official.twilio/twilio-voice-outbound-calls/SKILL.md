@@ -1,5 +1,6 @@
 ---
 name: twilio-voice-outbound-calls
+displayName: Twilio Voice 外呼
 description: 'Make outbound phone calls via Twilio''s Programmable Voice REST API. Covers the full voice platform: calls.create(), answering machine detection (AMD), conference-based agent bridging, call recording, status tracking, and SIP Trunking. Use this skill for outbound calls, sales dialers, or when asking what voice APIs are available.'
 version: 1
 origin: bundled

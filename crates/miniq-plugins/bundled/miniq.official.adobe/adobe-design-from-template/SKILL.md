@@ -1,5 +1,6 @@
 ---
 name: adobe-design-from-template
+displayName: 用 Adobe Express 模板做设计
 description: 当用户想用 Adobe Express 模板快速做海报、传单、邀请函、社媒图、名片等设计（搜索模板、填文案、换图、改背景色、加动画、导出 PDF）时使用。
 version: 1
 ---

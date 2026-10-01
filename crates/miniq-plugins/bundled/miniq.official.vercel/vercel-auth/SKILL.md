@@ -1,5 +1,6 @@
 ---
 name: vercel-auth
+displayName: Vercel 身份认证集成
 description: Authentication integration guidance — Clerk (native Vercel Marketplace), Descope, and Auth0 setup for Next.js applications. Covers middleware auth patterns, sign-in/sign-up flows, and Marketplace provisioning. Use when implementing user authentication.
 version: 1
 origin: bundled

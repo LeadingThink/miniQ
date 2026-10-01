@@ -1,5 +1,6 @@
 ---
 name: atlassian-jira
+displayName: Jira 工单管理
 description: 当用户要在 Jira 中搜索、查看、创建、更新工单，流转状态、添加评论，或做 Sprint/版本进度统计时使用。
 origin: installed
 ---

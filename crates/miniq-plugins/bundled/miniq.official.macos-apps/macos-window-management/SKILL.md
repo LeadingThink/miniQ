@@ -1,5 +1,6 @@
 ---
 name: macos-window-management
+displayName: macOS 窗口管理
 description: Customize macOS SwiftUI windows and scene behavior. Use when tuning window chrome, drag regions, placement, restoration, launch behavior, or borderless windows.
 version: 1
 origin: bundled

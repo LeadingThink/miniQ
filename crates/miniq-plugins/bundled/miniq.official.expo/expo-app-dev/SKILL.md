@@ -1,5 +1,6 @@
 ---
 name: expo-app-dev
+displayName: Expo 应用开发
 description: 当用户要新建 Expo / React Native 项目、在模拟器中开发调试、排查依赖与配置问题或升级 Expo SDK 时使用
 origin: installed
 requires:

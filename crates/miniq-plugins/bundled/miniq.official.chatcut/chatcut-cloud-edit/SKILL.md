@@ -1,5 +1,6 @@
 ---
 name: chatcut-cloud-edit
+displayName: ChatCut 云端剪辑（MCP）
 description: 当用户明确希望使用 ChatCut 云端剪辑（在 ChatCut 项目里用 AI 剪辑、生成字幕、多轨编辑并在浏览器中继续精修）时使用
 origin: installed
 requires:

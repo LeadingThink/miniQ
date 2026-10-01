@@ -1,5 +1,6 @@
 ---
 name: canva-implement-feedback
+displayName: Canva 按评论落实修改
 description: 当 Canva 设计收到审阅评论、用户要求“按评论改”“处理 PPT 上的批注”“落实反馈”时使用：读取全部评论线程，归类为可自动修改/需手动/已解决，一次确认后批量修改并提交，再输出手动清单并回复评论
 version: 1
 ---

@@ -1,5 +1,6 @@
 ---
 name: vercel-cdn-caching
+displayName: Vercel CDN 缓存
 description: Debug Vercel CDN caching — cache hit rate, stale content, revalidation behavior, ISR + PPR, per-request cache reasons (cacheReason), and costs.
 version: 1
 origin: bundled

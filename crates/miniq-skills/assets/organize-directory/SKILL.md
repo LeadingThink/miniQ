@@ -1,5 +1,6 @@
 ---
 name: organize-directory
+displayName: 整理目录
 description: 盘点一个目录:统计文件类型分布、找出大文件和最近改动,输出一份 markdown 清单报告
 origin: bundled
 ---

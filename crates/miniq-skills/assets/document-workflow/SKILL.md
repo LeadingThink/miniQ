@@ -1,5 +1,6 @@
 ---
 name: document-workflow
+displayName: 文档处理工作流
 description: Create, edit, inspect, and render Word documents with a visual verification pass.
 version: 1
 origin: bundled

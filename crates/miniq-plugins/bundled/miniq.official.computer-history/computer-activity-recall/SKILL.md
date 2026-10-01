@@ -1,5 +1,6 @@
 ---
 name: computer-activity-recall
+displayName: 电脑活动回顾
 description: 当用户问“我最近/昨天下午在电脑上做了什么”“上周我改过的那个表格叫什么”“帮我回忆一下今天的工作并写个日报”时使用。
 origin: installed
 ---

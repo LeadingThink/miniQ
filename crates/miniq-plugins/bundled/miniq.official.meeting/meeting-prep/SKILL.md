@@ -1,5 +1,6 @@
 ---
 name: meeting-prep
+displayName: 会议准备
 description: 当用户即将参加或主持一场会议，需要会前准备简报（背景资料汇总、议程建议、需要决策的问题、参会方信息、上次待办进展）时使用
 origin: installed
 ---

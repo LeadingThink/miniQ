@@ -1,5 +1,6 @@
 ---
 name: circleci-build-triage
+displayName: CircleCI 构建故障分诊
 description: 当用户说 CircleCI 构建失败、某个 job 挂了、想知道失败原因并在本地修复时使用，拉取失败步骤日志与测试结果定位根因
 origin: installed
 ---

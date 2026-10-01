@@ -1,5 +1,6 @@
 ---
 name: vercel-workflow
+displayName: 验证工作流端点可达
 description: Vercel Workflow DevKit (WDK) expert guidance. Use when building durable workflows, long-running tasks, API routes or agents that need pause/resume, retries, step-based execution, or crash-safe orchestration with Vercel Workflow.
 version: 1
 origin: bundled

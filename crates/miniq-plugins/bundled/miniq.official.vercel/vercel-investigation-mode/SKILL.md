@@ -1,5 +1,6 @@
 ---
 name: vercel-investigation-mode
+displayName: Vercel 调查模式
 description: 'Orchestrated debugging coordinator. Triggers on frustration signals (stuck, hung, broken, waiting) and systematically triages: runtime logs → workflow status → browser verify → deploy/env. Reports findings at every step.'
 version: 1
 origin: bundled

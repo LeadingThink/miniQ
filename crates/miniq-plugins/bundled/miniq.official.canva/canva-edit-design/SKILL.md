@@ -1,5 +1,6 @@
 ---
 name: canva-edit-design
+displayName: Canva 设计编辑（事务式安全编辑引擎）
 description: 当用户要修改某个已有 Canva 设计时使用：改错字、替换或翻译文字、换图/插图/删元素、调整字号粗细颜色对齐行距列表、移动或缩放元素、改标题。这是其他 Canva 技能共用的安全编辑引擎（事务 → 操作 → 预览 → 确认后提交）
 version: 1
 ---

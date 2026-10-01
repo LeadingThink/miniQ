@@ -1,5 +1,6 @@
 ---
 name: security-patch-risk
+displayName: 补丁风险评估
 description: "当用户要求评估某个补丁、PR、提交范围或补丁文件的回归风险、是否可以合并或自动合并时使用（只读）。不要用于查找漏洞（转 security-diff-scan）或判断修复是否真正堵住漏洞（转 security-fix-finding 的验证模式）。"
 version: 1
 ---

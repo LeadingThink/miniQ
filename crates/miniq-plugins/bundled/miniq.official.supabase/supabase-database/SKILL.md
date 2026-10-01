@@ -1,5 +1,6 @@
 ---
 name: supabase-database
+displayName: Supabase 数据库
 description: 当用户要查看 Supabase 表结构、执行 SQL、编写或应用迁移、生成 TypeScript 类型、检查 RLS 策略时使用
 origin: installed
 requires:

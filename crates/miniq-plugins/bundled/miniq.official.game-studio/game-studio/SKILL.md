@@ -1,5 +1,6 @@
 ---
 name: game-studio
+displayName: 游戏工作室流程
 description: Route early browser-game work. Use when the user needs stack selection and workflow planning across design, implementation, assets, and playtesting before moving to a specialist skill.
 version: 1
 origin: bundled

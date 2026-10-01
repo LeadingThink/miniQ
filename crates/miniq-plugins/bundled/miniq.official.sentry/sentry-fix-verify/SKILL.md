@@ -1,5 +1,6 @@
 ---
 name: sentry-fix-verify
+displayName: Sentry 问题修复与验证
 description: 当已经定位到 Sentry 错误的代码位置，用户希望修复、补回归测试并确认线上不再复发时使用
 origin: installed
 ---

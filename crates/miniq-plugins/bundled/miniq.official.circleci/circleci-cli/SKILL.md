@@ -1,5 +1,6 @@
 ---
 name: circleci-cli
+displayName: CircleCI 命令行工具
 description: Operate and troubleshoot CircleCI using the CircleCI CLI. Use when users ask to authenticate CLI access, inspect pipeline/workflow/job status, validate configuration locally, rerun pipelines/jobs, trigger pipelines, or gather actionable diagnostics from CLI outputs.
 version: 1
 origin: bundled

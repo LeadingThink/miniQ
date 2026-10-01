@@ -1,5 +1,6 @@
 ---
 name: canva-brand-batch
+displayName: Canva 品牌模板批量出图（每行一个设计）
 description: 当用户要用 Canva 品牌模板加一份数据表（CSV/Excel/粘贴表格）批量生成名片、证书、工牌、商品图、社媒卡片等“每行一个设计”时使用：检查数据、映射字段、试跑、逐行自动填充并输出结果报告
 version: 1
 ---

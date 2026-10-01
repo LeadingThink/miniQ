@@ -1,5 +1,6 @@
 ---
 name: writing-plans
+displayName: 编写开发计划
 description: Use when you have a spec or requirements for a multi-step task, before touching code
 version: 1
 origin: bundled

@@ -1,5 +1,6 @@
 ---
 name: figma-generate-design
+displayName: 从代码/描述在 Figma 中搭建或更新界面
 description: 需要把应用页面、弹窗、抽屉、侧栏、面板等多区块界面从代码或文字描述搭建/更新到 Figma 时使用；优先复用设计系统的组件、变量与样式，按区块增量构建并逐块截图校验。需配合 figma-use
 version: 1
 ---

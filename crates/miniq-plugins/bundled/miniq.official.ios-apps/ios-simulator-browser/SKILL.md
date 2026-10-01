@@ -1,5 +1,6 @@
 ---
 name: ios-simulator-browser
+displayName: iOS 模拟器浏览器
 description: Mirror an iOS Simulator into the miniQ built-in browser (browser_automation) and render SwiftUI previews from importable Swift packages in that simulator with hot reload. Use when a user wants to watch or interact with an iOS app in the browser, see a SwiftUI preview outside Xcode Canvas, iterate live on a preview, or capture browser-visible simulator proof.
 version: 1
 origin: bundled

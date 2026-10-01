@@ -1,5 +1,6 @@
 ---
 name: executing-plans
+displayName: 执行开发计划
 description: Use when you have a written implementation plan to execute in a separate session with review checkpoints
 version: 1
 origin: bundled

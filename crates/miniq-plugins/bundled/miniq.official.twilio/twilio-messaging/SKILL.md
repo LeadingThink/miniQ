@@ -1,5 +1,6 @@
 ---
 name: twilio-messaging
+displayName: Twilio 消息发送
 description: 当用户要通过 Twilio 发送短信/WhatsApp、查询消息投递状态、接入 Verify 验证码或校验 Webhook 签名时使用
 origin: installed
 ---

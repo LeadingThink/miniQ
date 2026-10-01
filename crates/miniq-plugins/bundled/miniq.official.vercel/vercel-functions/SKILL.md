@@ -1,5 +1,6 @@
 ---
 name: vercel-functions
+displayName: Vercel Functions 函数
 description: Vercel Functions expert guidance — Serverless Functions, Edge Functions, Fluid Compute, streaming, Cron Jobs, and runtime configuration. Use when configuring, debugging, or optimizing server-side code running on Vercel.
 version: 1
 origin: bundled

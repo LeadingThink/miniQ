@@ -1,5 +1,6 @@
 ---
 name: macos-sign-notarize
+displayName: macOS 签名与公证
 description: 当用户要给 macOS 应用做 Developer ID 签名、配置 entitlements、提交公证并装订票据以便分发时使用
 origin: installed
 requires:

@@ -1,5 +1,6 @@
 ---
 name: circleci-config
+displayName: CircleCI 配置
 description: Optimize CircleCI configuration for speed, reliability, and maintainability. Use when users ask to improve `.circleci/config.yml`, reduce CI runtime, tune caching/workspaces/parallelism, remove pipeline waste, or fix flaky pipeline behavior caused by configuration choices.
 version: 1
 origin: bundled

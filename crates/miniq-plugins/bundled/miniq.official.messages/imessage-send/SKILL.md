@@ -1,5 +1,6 @@
 ---
 name: imessage-send
+displayName: 通过「信息」发送消息或附件
 description: 当用户要求通过 Mac「信息」给某人或某个群发送 iMessage/短信、回复会话或发送本地文件附件时使用；发送前必须逐字确认收件人和内容。
 version: 1
 ---

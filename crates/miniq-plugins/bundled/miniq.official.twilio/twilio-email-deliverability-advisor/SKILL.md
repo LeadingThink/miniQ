@@ -1,5 +1,6 @@
 ---
 name: twilio-email-deliverability-advisor
+displayName: Twilio 邮件送达率顾问
 description: Deliverability advisor for the Twilio Email API specifically. Use ONLY when the developer explicitly mentions Twilio Email, comms.twilio.com, or a Twilio (non-SendGrid) email program. For all other deliverability questions — including generic ones — use twilio-sendgrid-deliverability-advisor.
 version: 1
 origin: bundled

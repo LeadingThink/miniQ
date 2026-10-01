@@ -1,5 +1,6 @@
 ---
 name: product-design-url-to-code
+displayName: 网址还原为代码
 description: 把一个线上网址的页面截图后还原成本地可运行的前端原型。用户给出网址要求克隆、仿做、复刻、照着这个网站做时使用；先提醒遵守网站条款，必须先成功截图，截不到就停止；以匹配源页面为准，完成后经设计 QA
 version: 1
 ---

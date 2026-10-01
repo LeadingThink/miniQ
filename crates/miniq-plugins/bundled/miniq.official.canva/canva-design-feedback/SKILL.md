@@ -1,5 +1,6 @@
 ---
 name: canva-design-feedback
+displayName: Canva 设计评审（只读）
 description: 当用户想让你评审某个 Canva 设计（海报、PPT、社媒图、传单）并给出改进意见时使用：看视觉层级、排版间距、文案、一致性、可读性与无障碍，按页给出带优先级的具体修改建议。只读，不改动设计
 version: 1
 ---

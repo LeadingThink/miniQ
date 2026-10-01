@@ -1,5 +1,6 @@
 ---
 name: product-design-image-to-code
+displayName: 图片还原为代码
 description: 把截图、设计稿、效果图或手绘草图高保真还原成可运行的前端页面。用户给图片要求照着做、还原、切图、转代码，或 ideate 选定方向后要落地时使用；以匹配原图为准不自行改进，完成后必须经设计 QA 并排比对
 version: 1
 ---

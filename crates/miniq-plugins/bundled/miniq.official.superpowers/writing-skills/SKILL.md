@@ -1,5 +1,6 @@
 ---
 name: writing-skills
+displayName: 编写技能
 description: Use when creating new skills, editing existing skills, or verifying skills work before deployment
 version: 1
 origin: bundled

@@ -1,5 +1,6 @@
 ---
 name: twilio-compliance-onboarding
+displayName: Twilio 合规接入
 description: Registrations required BEFORE Twilio traffic works. Covers messaging programs (A2P 10DLC, toll-free verification, WhatsApp WABA, RCS, short code, alphanumeric sender) and voice trust programs (STIR/SHAKEN, Voice Integrity, Branded Calling, CNAM). Each number/sender type has its own program — registration blocks traffic until complete.
 version: 1
 origin: bundled

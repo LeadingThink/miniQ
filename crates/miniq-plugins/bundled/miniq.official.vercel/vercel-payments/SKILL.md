@@ -1,5 +1,6 @@
 ---
 name: vercel-payments
+displayName: Stripe 支付集成
 description: Stripe payments integration guidance — native Vercel Marketplace setup, checkout sessions, webhook handling, subscription billing, and the Stripe SDK. Use when implementing payments, subscriptions, or processing transactions.
 version: 1
 origin: bundled

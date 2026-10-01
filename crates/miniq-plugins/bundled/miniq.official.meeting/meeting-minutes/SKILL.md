@@ -1,5 +1,6 @@
 ---
 name: meeting-minutes
+displayName: 会议纪要整理
 description: 当用户提供会议录音/视频或转写文字，需要整理成会议纪要（议题摘要、决议、待办事项及负责人和截止时间）时使用
 origin: installed
 ---

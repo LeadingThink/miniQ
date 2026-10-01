@@ -1,5 +1,6 @@
 ---
 name: notion-spec-to-implementation
+displayName: Notion 规格落地实施
 description: Turn Notion specs into implementation plans, tasks, and progress tracking; use when implementing PRDs/feature specs and creating Notion plans + tasks from them.
 version: 1
 origin: bundled

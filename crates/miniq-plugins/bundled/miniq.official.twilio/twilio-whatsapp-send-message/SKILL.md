@@ -1,5 +1,6 @@
 ---
 name: twilio-whatsapp-send-message
+displayName: Twilio WhatsApp 消息发送
 description: WhatsApp messaging deep-dive reference. Covers the 24-hour service window rules (free-form vs template mode), sandbox setup for testing, template approval workflow, production sender requirements, and WhatsApp-specific error handling. For sending WhatsApp messages, use twilio-send-message instead. Use this skill when setting up WhatsApp for the first time or debugging WhatsApp-specific delivery behavior.
 version: 1
 origin: bundled

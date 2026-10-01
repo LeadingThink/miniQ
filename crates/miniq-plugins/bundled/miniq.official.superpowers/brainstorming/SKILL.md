@@ -1,5 +1,6 @@
 ---
 name: brainstorming
+displayName: 把想法构思成设计
 description: You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation.
 version: 1
 origin: bundled

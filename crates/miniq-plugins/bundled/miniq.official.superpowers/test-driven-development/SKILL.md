@@ -1,5 +1,6 @@
 ---
 name: test-driven-development
+displayName: 测试驱动开发（TDD）
 description: Use when implementing any feature or bugfix, before writing implementation code
 version: 1
 origin: bundled

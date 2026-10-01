@@ -1,5 +1,6 @@
 ---
 name: product-design-review
+displayName: 设计审计
 description: 对现有界面、截图、网页或原型做设计审计：可用性启发式、视觉层级、一致性、可访问性（含 WCAG 对比度脚本）与内容文案，输出按严重度排序、附证据截图与修改建议的审计报告；用户要评审、挑毛病、体验走查或打分时使用
 version: 1
 ---

@@ -1,5 +1,6 @@
 ---
 name: adobe-edit-quick-cut
+displayName: 视频快剪高光集锦（Adobe Quick Cut）
 description: 当用户想把一段较长的视频自动剪成 15 秒、30–60 秒或 90 秒左右的高光集锦/短视频（节奏快剪、口播要点、电影感）时使用；优先用 Adobe Quick Cut，不可用时用本机 ffmpeg 按节奏规则拼接。
 version: 1
 ---

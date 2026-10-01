@@ -1,5 +1,6 @@
 ---
 name: twilio-agent-augmentation-architect
+displayName: Twilio 智能代理增强架构
 description: Planning skill for augmenting human agents with real-time AI intelligence. Qualifies the developer's use case across coaching, compliance, QA, and routing to recommend the right Conversation Intelligence + Conversation Memory + TaskRouter architecture. Handles both "I want to add AI coaching to my call center" and "configure Conversation Intelligence operators for script adherence."
 version: 1
 origin: bundled

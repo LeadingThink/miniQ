@@ -1,5 +1,6 @@
 ---
 name: web-app-scaffold
+displayName: Web 应用脚手架
 description: 当用户要从零新建一个前端/Web 应用项目（如 Vite + React/Vue/Svelte、TypeScript），并需要跑通开发服务器与生产构建时使用
 origin: installed
 requires:

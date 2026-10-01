@@ -1,5 +1,6 @@
 ---
 name: security-validation
+displayName: 安全验证（扫描阶段 3）
 description: "安全扫描阶段 3：对 candidates.json 中每个候选建立评判标准，在本地一次性环境用 PoC、单元测试、动态运行或静态追踪验证真伪，产出 validation/<候选ID>/ 证据与结论。在发现阶段之后或用户要求验证某个疑似漏洞时使用；不用于定级或修复。"
 version: 1
 ---

@@ -1,5 +1,6 @@
 ---
 name: dropbox-file-request
+displayName: Dropbox 文件请求（收集文件）
 description: 当用户要通过 Dropbox 向他人收集文件时使用：创建文件请求（标题、目标文件夹、截止时间），查看已有请求及其状态和收到的文件；创建前确认，只提供链接，不代为发送。
 version: 1
 ---

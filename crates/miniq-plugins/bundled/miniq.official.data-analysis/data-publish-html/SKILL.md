@@ -1,5 +1,6 @@
 ---
 name: data-publish-html
+displayName: 发布 HTML 报告
 description: 当用户需要把 HTML 报告或看板发布、分享或托管为网页时使用，包括把图片样式等资源内联成单文件、检查外部依赖与敏感信息、本地预览，以及给出部署到静态托管或内网的步骤
 version: 1
 ---

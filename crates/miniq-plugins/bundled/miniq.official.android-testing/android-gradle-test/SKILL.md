@@ -1,5 +1,6 @@
 ---
 name: android-gradle-test
+displayName: Android Gradle 测试
 description: 当用户要用 Gradle 构建 Android 工程、运行单元测试和设备上的仪器测试并分析失败报告时使用
 origin: installed
 requires:

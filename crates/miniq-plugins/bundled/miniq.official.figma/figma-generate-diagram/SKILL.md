@@ -1,5 +1,6 @@
 ---
 name: figma-generate-diagram
+displayName: 用 Mermaid 在 FigJam 中生成图表
 description: 用户要在 FigJam 中生成流程图、架构图、时序图、ER 图、状态图或甘特图，或提到 Mermaid、要把系统/流程/数据模型可视化时使用；每次调用 generate_diagram 前必须先加载本技能。
 version: 1
 ---

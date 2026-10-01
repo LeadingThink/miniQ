@@ -1,5 +1,6 @@
 ---
 name: chatcut-subtitles
+displayName: 字幕生成与校对
 description: 为视频生成、校对、翻译和烧录字幕时使用：语音转写成 SRT，按停顿对齐已有文稿，检查字幕的阅读速度和行宽，平移时间轴，导出 VTT，烧录硬字幕或封装软字幕。全程在本机处理。
 version: 1
 ---

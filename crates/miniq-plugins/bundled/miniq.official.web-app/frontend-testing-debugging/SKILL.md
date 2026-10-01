@@ -1,5 +1,6 @@
 ---
 name: frontend-testing-debugging
+displayName: 前端测试与调试
 description: 'Use when testing, debugging, or making targeted improvements to rendered frontend apps through the Build Web Apps or web dev plugin: local dev servers, UI regressions, interaction bugs, console errors, responsive layout, and visual QA. Check whether the Browser plugin is available and use it first when it is; otherwise use regular Playwright with the recorded reason.'
 version: 1
 origin: bundled

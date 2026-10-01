@@ -1,5 +1,6 @@
 ---
 name: game-prototype
+displayName: 游戏原型开发
 description: 当用户要用 Phaser、Three.js 或 Canvas 快速做出可玩的网页游戏原型，并生成美术和音乐素材时使用
 origin: installed
 requires:

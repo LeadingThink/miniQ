@@ -1,5 +1,6 @@
 ---
 name: vercel-ai-sdk
+displayName: Vercel AI SDK 开发
 description: Vercel AI SDK expert guidance. Use when building AI-powered features — chat interfaces, text generation, structured output, tool calling, agents, MCP integration, streaming, embeddings, reranking, image generation, or working with any LLM provider.
 version: 1
 origin: bundled

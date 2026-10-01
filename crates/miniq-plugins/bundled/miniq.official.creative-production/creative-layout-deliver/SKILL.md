@@ -1,5 +1,6 @@
 ---
 name: creative-layout-deliver
+displayName: 排版成品与交付
 description: 把选定的主视觉与确认过的文案确定性排版成海报、社媒图、横幅、轮播或多平台尺寸成品，裁切缩放与核验尺寸（render.sh / fit.sh / export_check.py），并打包交付时使用。
 version: 1
 ---

@@ -1,5 +1,6 @@
 ---
 name: knowledge-capture
+displayName: 知识捕捉
 description: 当用户想把当前对话、会议结论、网页或文档资料沉淀为结构化知识笔记（概念、决策、操作步骤、FAQ）并保存到工作区知识库时使用
 origin: installed
 ---

@@ -1,5 +1,6 @@
 ---
 name: workflow-record
+displayName: 录制操作演示 → 生成可复用技能
 description: 当用户想“录一遍我的操作，以后让你照做”，或把一次屏幕演示整理成可复用技能时使用：在用户就绪后开始录制，分析截图与事件，脱敏后生成并校验 SKILL.md。
 version: 1
 ---

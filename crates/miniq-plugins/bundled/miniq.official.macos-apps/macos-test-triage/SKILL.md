@@ -1,5 +1,6 @@
 ---
 name: macos-test-triage
+displayName: macOS 测试分诊
 description: Triage macOS tests across Xcode and SwiftPM. Use when narrowing failures, explaining assertions or crashes, or separating setup from regressions.
 version: 1
 origin: bundled

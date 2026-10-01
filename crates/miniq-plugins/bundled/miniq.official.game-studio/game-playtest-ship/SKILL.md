@@ -1,5 +1,6 @@
 ---
 name: game-playtest-ship
+displayName: 游戏测试与发布
 description: 当用户要自动试玩网页游戏、截图检查画面与性能问题，或把游戏发布到 Vercel、Netlify、Cloudflare 时使用
 origin: installed
 ---

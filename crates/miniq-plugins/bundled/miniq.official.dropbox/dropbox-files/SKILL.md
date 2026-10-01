@@ -1,5 +1,6 @@
 ---
 name: dropbox-files
+displayName: Dropbox 文件读取与保存
 description: 当用户要读取 Dropbox 文件内容，或把本地文件、刚生成的文档（方案、报告、图片）保存或上传到 Dropbox 时使用；按需先定位文件，写入前确认路径与同名处理方式。
 version: 1
 ---

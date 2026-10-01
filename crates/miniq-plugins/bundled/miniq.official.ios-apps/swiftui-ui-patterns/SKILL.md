@@ -1,5 +1,6 @@
 ---
 name: swiftui-ui-patterns
+displayName: SwiftUI 界面模式
 description: Build and refactor SwiftUI UI with component patterns and examples. Use when shaping navigation, state, layouts, controls, or screen composition.
 version: 1
 origin: bundled

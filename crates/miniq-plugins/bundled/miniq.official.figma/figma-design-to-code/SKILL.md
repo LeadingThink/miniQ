@@ -1,5 +1,6 @@
 ---
 name: figma-design-to-code
+displayName: Figma 设计稿 → 代码（实现 + 还原度评审）
 description: 用户给出 Figma 链接或桌面端选中节点，要把设计稿实现为前端/客户端代码、提取变量令牌，或评审已实现 UI 与设计稿的还原度时使用；调用 get_design_context 前必须先加载本技能
 version: 1
 ---

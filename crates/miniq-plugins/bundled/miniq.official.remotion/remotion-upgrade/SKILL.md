@@ -1,5 +1,6 @@
 ---
 name: remotion-upgrade
+displayName: 升级 Remotion
 description: Upgrade Remotion, and related packages
 version: 1
 origin: bundled

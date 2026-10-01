@@ -1,5 +1,6 @@
 ---
 name: remotion-maps
+displayName: Remotion 地图动画
 description: Remotion Map animation knowledge
 version: 1
 origin: bundled

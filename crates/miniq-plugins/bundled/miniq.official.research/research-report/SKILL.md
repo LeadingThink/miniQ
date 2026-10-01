@@ -1,5 +1,6 @@
 ---
 name: research-report
+displayName: 研究报告
 description: 当用户需要就某个主题做联网调研（行业/技术/产品/政策对比等），综合多个来源并产出每条结论都带引用链接的调研报告时使用
 origin: installed
 ---

@@ -1,5 +1,6 @@
 ---
 name: visual-charts
+displayName: 单文件交互图表
 description: 当用户想把数据（CSV/Excel/JSON/表格/描述）做成可交互图表、KPI 仪表盘或数据报告网页，或想直观看懂“变化、对比、分布”时使用；输出单文件 HTML，并经静态检查与浏览器截图自检。
 version: 1
 ---

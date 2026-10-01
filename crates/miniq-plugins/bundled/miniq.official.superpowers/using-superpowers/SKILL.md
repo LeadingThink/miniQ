@@ -1,5 +1,6 @@
 ---
 name: using-superpowers
+displayName: 使用开发技能
 description: Use when starting any conversation - establishes how to find and use skills, requiring skill invocation before ANY response including clarifying questions
 version: 1
 origin: bundled

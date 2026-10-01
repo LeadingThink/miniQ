@@ -1,5 +1,6 @@
 ---
 name: swiftpm-macos
+displayName: macOS SwiftPM 开发
 description: Build, run, and test SwiftPM macOS packages and executables. Use when the repo is package-first or has no Xcode project.
 version: 1
 origin: bundled

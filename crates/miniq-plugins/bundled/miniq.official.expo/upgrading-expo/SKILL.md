@@ -1,5 +1,6 @@
 ---
 name: upgrading-expo
+displayName: 升级 Expo
 description: Guidelines for upgrading Expo SDK versions and fixing dependency issues
 version: 1
 origin: bundled

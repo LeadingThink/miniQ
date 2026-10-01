@@ -1,5 +1,6 @@
 ---
 name: notion-docs
+displayName: Notion 文档与规格撰写
 description: 当用户要在 Notion 中查找、阅读、撰写或更新文档，特别是产品需求/技术规格（PRD、Spec、RFC）页面时使用。
 origin: installed
 ---

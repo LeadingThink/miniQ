@@ -1,5 +1,6 @@
 ---
 name: figma-create-new-file
+displayName: 新建 Figma / FigJam / Slides 文件
 description: 需要新建空白 Figma 设计文件、FigJam 白板或 Figma Slides 演示文稿（例如在用 use_figma 生成设计/图表/幻灯片前需要一个新文件）时使用；调用 create_new_file 前必须先加载本技能
 version: 1
 ---

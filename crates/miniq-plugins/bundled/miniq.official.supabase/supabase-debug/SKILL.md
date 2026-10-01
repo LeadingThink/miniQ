@@ -1,5 +1,6 @@
 ---
 name: supabase-debug
+displayName: Supabase 故障调试
 description: 当用户的 Supabase 项目出现接口报错、认证/存储异常、Edge Function 失败，或想获取安全/性能优化建议、部署 Edge Functions 时使用
 origin: installed
 requires:

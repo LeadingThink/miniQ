@@ -1,5 +1,6 @@
 ---
 name: vercel-queues
+displayName: Vercel Queues 队列
 description: Vercel Queues guidance (public beta) — durable event streaming with topics, consumer groups, retries, and delayed delivery. $0.60/1M ops. Powers Workflow DevKit. Use when building async processing, fan-out patterns, or event-driven architectures.
 version: 1
 origin: bundled

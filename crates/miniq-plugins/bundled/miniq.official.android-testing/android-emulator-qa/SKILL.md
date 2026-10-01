@@ -1,5 +1,6 @@
 ---
 name: android-emulator-qa
+displayName: Android 模拟器质量验证
 description: Use when validating Android feature flows in an emulator with adb-driven launch, input, UI-tree inspection, screenshots, and logcat capture.
 version: 1
 origin: bundled

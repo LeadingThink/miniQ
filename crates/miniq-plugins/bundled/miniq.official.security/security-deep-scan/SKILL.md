@@ -1,5 +1,6 @@
 ---
 name: security-deep-scan
+displayName: 深度安全扫描（security-deep-scan）
 description: "对关键仓库做多轮深度安全扫描：每轮换视角独立发现，聚合去重后统一验证与定级，直到新发现收敛。只审差异请用 security-diff-scan，一次性常规扫描请用 security-scan。"
 version: 1
 ---

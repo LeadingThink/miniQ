@@ -1,5 +1,6 @@
 ---
 name: macos-telemetry
+displayName: macOS 遥测
 description: Add and verify lightweight macOS runtime telemetry. Use when wiring Logger events or inspecting logs for windows, sidebars, menus, and actions.
 version: 1
 origin: bundled

@@ -1,5 +1,6 @@
 ---
 name: higgsfield-faceless-channel
+displayName: 无出镜频道成片（Faceless Channel）
 description: 用户明确要做“无出镜/无真人露脸”的旁白驱动成片时使用：知识解说、历史纪录、儿童动画或儿歌、童话神话、图片故事等多镜头视频，需统一非写实画风、可复用角色场景素材、旁白配音与字幕，最终交付一个完整 MP4。单个镜头、广告、产品演示不适用。
 version: 1
 ---

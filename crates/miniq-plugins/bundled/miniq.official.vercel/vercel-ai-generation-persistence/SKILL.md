@@ -1,5 +1,6 @@
 ---
 name: vercel-ai-generation-persistence
+displayName: AI 生成结果持久化
 description: AI generation persistence patterns — unique IDs, addressable URLs, database storage, and cost tracking for every LLM generation
 version: 1
 origin: bundled

@@ -1,5 +1,6 @@
 ---
 name: twilio-security-api-auth
+displayName: Twilio API 安全认证
 description: Choose the right Twilio authentication method and implement it correctly. Covers Auth Token (testing only), API Keys (production standard), OAuth2 client_credentials (time-limited bearer tokens), Access Tokens (client-side SDKs), and test credentials. Use this skill before making any Twilio API calls in production.
 version: 1
 origin: bundled

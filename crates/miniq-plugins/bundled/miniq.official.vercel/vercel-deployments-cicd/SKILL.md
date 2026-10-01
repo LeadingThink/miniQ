@@ -1,5 +1,6 @@
 ---
 name: vercel-deployments-cicd
+displayName: Vercel 部署与 CI/CD
 description: Vercel deployment and CI/CD expert guidance. Use when deploying, promoting, rolling back, inspecting deployments, building with --prebuilt, or configuring CI workflow files for Vercel.
 version: 1
 origin: bundled

@@ -1,5 +1,6 @@
 ---
 name: adobe-batch-edit-photos
+displayName: 批量统一调色（Adobe）
 description: 当用户想把一组照片调成统一风格（如暖调、电影感、清新、胶片感），或批量拉直、自动影调、统一裁切比例时使用；优先调用 Adobe 云端图像工具，不可用时回退本机 ffmpeg 或 Photoshop 脚本。
 version: 1
 ---

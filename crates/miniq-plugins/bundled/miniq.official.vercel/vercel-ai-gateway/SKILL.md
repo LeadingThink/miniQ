@@ -1,5 +1,6 @@
 ---
 name: vercel-ai-gateway
+displayName: Vercel AI Gateway 网关
 description: Vercel AI Gateway expert guidance. Use when configuring model routing, provider failover, cost tracking, or managing multiple AI providers through a unified API.
 version: 1
 origin: bundled

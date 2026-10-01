@@ -1,5 +1,6 @@
 ---
 name: summarize-changes
+displayName: 总结变更
 description: 汇总一个 git 仓库最近的改动(状态、diff、未提交工作),生成一份 markdown 变更摘要
 origin: bundled
 requires:

@@ -1,5 +1,6 @@
 ---
 name: data-report-pdf
+displayName: 报告导出为 PDF
 description: 当用户需要把数据分析报告导出为 PDF 时使用，包括把自包含 HTML 或 Markdown 报告转成排版良好的 PDF、设置纸张与横竖版、处理分页与中文字体，并对生成的 PDF 做视觉检查
 version: 1
 ---

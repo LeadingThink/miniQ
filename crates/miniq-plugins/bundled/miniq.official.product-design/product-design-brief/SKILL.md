@@ -1,5 +1,6 @@
 ---
 name: product-design-brief
+displayName: 设计简报关卡
 description: 设计简报关卡。任何出方案、原型、还原或重设计之前先用：目标或用户结果不清时一次提问，清楚时一句话复述默认值并同轮继续，缺目标不得实现；用户需要时也产出完整产品简报、页面清单与 Mermaid 用户流程
 version: 1
 ---

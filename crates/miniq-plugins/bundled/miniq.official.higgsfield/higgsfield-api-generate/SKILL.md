@@ -1,5 +1,6 @@
 ---
 name: higgsfield-api-generate
+displayName: Higgsfield 官方 API 生成
 description: 当用户持有 Higgsfield API 密钥，想通过官方 API 调用 Higgsfield 模型生成图片或视频（如 Soul 图像、动作迁移），并轮询取回结果时使用；也可作为 MCP 不可用时其他 Higgsfield 技能的生成后端。
 version: 1
 ---

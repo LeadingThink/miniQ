@@ -1,5 +1,6 @@
 ---
 name: sprite-pipeline
+displayName: 精灵图资源流水线
 description: Generate and normalize 2D sprite animations. Use when the user asks for full-strip generation from approved source frames, consistent anchor and scale normalization, or preview assets for browser-game animation.
 version: 1
 origin: bundled

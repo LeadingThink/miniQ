@@ -1,5 +1,6 @@
 ---
 name: canva-brand-check
+displayName: Canva 品牌合规检查（只读）
 description: 当用户想确认某个 Canva 设计是否符合品牌规范（配色、字体、Logo 用法、文案语气、跨页一致性）时使用：对照 Canva 品牌工具包或用户提供的规范逐项判定，输出只读检查报告，并可转交编辑技能修复
 version: 1
 ---

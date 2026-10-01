@@ -1,5 +1,6 @@
 ---
 name: security-threat-model
+displayName: 威胁建模
 description: "为仓库、服务或新功能建立/复用/更新有源码证据的威胁模型（架构、信任边界、资产、攻击者能力、STRIDE 场景），或作为扫描阶段 1 产出 threat-model.md 与调查任务包时使用；不用于直接找漏洞或做完整扫描。"
 version: 1
 ---

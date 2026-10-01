@@ -1,5 +1,6 @@
 ---
 name: sentry-issues
+displayName: Sentry 近期问题概览
 description: 当用户想查看 Sentry 上最近的错误、高频问题、某个项目或某次发布后新增的 issue 时使用
 origin: installed
 ---

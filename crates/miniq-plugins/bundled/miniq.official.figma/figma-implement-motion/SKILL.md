@@ -1,5 +1,6 @@
 ---
 name: figma-implement-motion
+displayName: Figma 动效实现为代码
 description: 当用户要把 Figma 中的动效（关键帧动画、原型交互/Smart Animate、变体过渡、缓动曲线与时长）实现为项目代码，或 get_design_context 返回动效标记/提示调用 get_motion_context 时使用
 version: 1
 ---

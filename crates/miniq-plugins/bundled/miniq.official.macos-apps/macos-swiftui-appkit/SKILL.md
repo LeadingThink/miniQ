@@ -1,5 +1,6 @@
 ---
 name: macos-swiftui-appkit
+displayName: macOS SwiftUI 与 AppKit
 description: 当用户要编写 macOS 的 SwiftUI 界面、多窗口/菜单栏/设置窗口，或在 SwiftUI 与 AppKit 之间桥接时使用
 origin: installed
 requires:

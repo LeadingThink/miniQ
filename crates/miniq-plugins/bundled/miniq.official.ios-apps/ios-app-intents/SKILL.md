@@ -1,5 +1,6 @@
 ---
 name: ios-app-intents
+displayName: iOS App Intents 集成
 description: Design App Intents, app entities, and App Shortcuts for iOS system surfaces. Use when exposing app actions or content to Shortcuts, Siri, Spotlight, widgets, or controls.
 version: 1
 origin: bundled

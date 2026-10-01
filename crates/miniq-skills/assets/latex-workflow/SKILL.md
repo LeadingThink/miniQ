@@ -1,5 +1,6 @@
 ---
 name: latex-workflow
+displayName: LaTeX 文档工作流
 description: Compile and diagnose LaTeX projects with reproducible logs and a visual PDF check.
 version: 1
 origin: bundled

@@ -1,5 +1,6 @@
 ---
 name: twilio-regulatory-compliance-bundles
+displayName: Twilio 监管合规套餐
 description: Manage regulatory compliance for international phone numbers. Covers what bundles are, which countries require them, how to create End-Users and Supporting Documents, evaluate and submit bundles, fix evaluation failures, update bundles when regulations change, and ISV multi-account patterns. Use this skill when provisioning numbers outside the US.
 version: 1
 origin: bundled

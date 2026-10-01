@@ -1,5 +1,6 @@
 ---
 name: temporal-develop
+displayName: Temporal 工作流开发
 description: 当用户要用 Temporal SDK 编写或修改 Workflow、Activity、Worker，并在本地开发服务器上运行和测试时使用
 origin: installed
 requires:

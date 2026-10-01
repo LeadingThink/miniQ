@@ -1,5 +1,6 @@
 ---
 name: web-qa-check
+displayName: Web 质量检查
 description: 当用户想对一个网页或本地开发中的站点做人工式质量走查（页面能否打开、链接与表单是否可用、控制台报错、不同宽度下的布局）并得到问题清单时使用
 origin: installed
 ---

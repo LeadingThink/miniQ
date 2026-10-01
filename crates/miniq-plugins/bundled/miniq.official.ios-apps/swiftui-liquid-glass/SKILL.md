@@ -1,5 +1,6 @@
 ---
 name: swiftui-liquid-glass
+displayName: SwiftUI Liquid Glass 界面
 description: Implement and review iOS 26+ SwiftUI Liquid Glass UI. Use when adopting Liquid Glass or checking its correctness, performance, and design fit.
 version: 1
 origin: bundled

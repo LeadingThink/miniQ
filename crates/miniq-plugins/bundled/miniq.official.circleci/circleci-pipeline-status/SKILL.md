@@ -1,5 +1,6 @@
 ---
 name: circleci-pipeline-status
+displayName: CircleCI 流水线状态
 description: 当用户想查看 CircleCI 流水线、工作流、作业的当前状态或最近运行记录，或需要重跑、取消工作流时使用
 origin: installed
 ---

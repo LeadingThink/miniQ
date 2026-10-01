@@ -1,5 +1,6 @@
 ---
 name: data-report-office
+displayName: 报告导出为 Word / PPT
 description: 当用户需要把数据分析报告导出为 Word（docx）或 PowerPoint（pptx）等可编辑的办公文档时使用，包括把 Markdown 报告转成文档、把结论做成汇报幻灯片，以及检查导出后的版式；可替代在线文档或在线幻灯片
 version: 1
 ---

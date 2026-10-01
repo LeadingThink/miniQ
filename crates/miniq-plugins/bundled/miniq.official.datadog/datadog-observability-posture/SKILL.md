@@ -1,5 +1,6 @@
 ---
 name: datadog-observability-posture
+displayName: Datadog 可观测性体检与治理
 description: 当用户要评估和改进 Datadog 可观测性体系时使用：服务接入与标签规范、监控覆盖率、指标基数与成本、云成本建议、治理控制台检测、CI 与测试健康、数据可观测性，以及引导式接入。
 version: 1
 ---

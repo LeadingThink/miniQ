@@ -1,5 +1,6 @@
 ---
 name: twilio-messaging-services
+displayName: Twilio Messaging 服务
 description: Create and configure Twilio Messaging Services for production messaging. Covers sender pools, geo-match, sticky sender, message scheduling, compliance toolkit, SMS pumping protection, link shortening, and intelligent alerts. Use this skill when setting up production-ready messaging infrastructure.
 version: 1
 origin: bundled

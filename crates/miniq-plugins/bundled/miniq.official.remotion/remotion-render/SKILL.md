@@ -1,5 +1,6 @@
 ---
 name: remotion-render
+displayName: Remotion 视频渲染
 description: Export a Remotion video
 version: 1
 origin: bundled

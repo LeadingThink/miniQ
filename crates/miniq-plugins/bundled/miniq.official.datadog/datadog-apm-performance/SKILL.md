@@ -1,5 +1,6 @@
 ---
 name: datadog-apm-performance
+displayName: Datadog 性能分析（APM / Profiling / DBM / K8s）
 description: 当用户要用 Datadog 分析服务性能时使用：APM 服务健康与延迟瓶颈、Watchdog 异常、变更关联、持续剖析火焰图、数据库慢查询与执行计划、K8s 与网络，输出优化建议并关联代码。
 version: 1
 ---

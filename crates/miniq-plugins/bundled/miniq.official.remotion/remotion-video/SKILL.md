@@ -1,5 +1,6 @@
 ---
 name: remotion-video
+displayName: Remotion 代码视频
 description: 当用户想用代码（React/Remotion）制作片头、数据可视化动画、产品演示或批量个性化视频，并渲染成 MP4 时使用
 origin: installed
 requires:

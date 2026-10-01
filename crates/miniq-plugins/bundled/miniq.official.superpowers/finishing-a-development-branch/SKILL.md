@@ -1,5 +1,6 @@
 ---
 name: finishing-a-development-branch
+displayName: 完成开发分支
 description: Use when implementation is complete, all tests pass, and you need to decide how to integrate the work
 version: 1
 origin: bundled

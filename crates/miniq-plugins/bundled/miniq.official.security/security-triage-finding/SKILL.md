@@ -1,5 +1,6 @@
 ---
 name: security-triage-finding
+displayName: 外部安全报告分诊
 description: "分诊外部来的安全报告：漏洞赏金报告、用户工单、扫描器告警、GitHub issue/安全公告/Dependabot 或 Jira 单。判断有效/无效/重复/需更多信息/范围外，给出严重度、优先级与排序。自行找漏洞请用 security-scan，修复请用 security-fix-finding。"
 version: 1
 ---

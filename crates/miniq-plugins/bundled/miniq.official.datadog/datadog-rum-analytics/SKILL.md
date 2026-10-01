@@ -1,5 +1,6 @@
 ---
 name: datadog-rum-analytics
+displayName: Datadog 前端体验与产品分析
 description: 当用户要分析前端与产品数据时使用：RUM 页面性能与错误、会话回放、错误追踪 issue、产品分析（用户量按国家、漏斗路径、留存）、实验结果与功能开关状态。
 version: 1
 ---

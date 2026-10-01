@@ -1,5 +1,6 @@
 ---
 name: ios-build-run
+displayName: iOS 构建与运行
 description: 当用户要在命令行构建 iOS 工程、在模拟器里安装启动应用并截图查看效果时使用
 origin: installed
 requires:

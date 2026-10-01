@@ -1,5 +1,6 @@
 ---
 name: product-design-user-context
+displayName: 产品上下文
 description: 保存与读取产品设计上下文 user-context.md（产品定位、用户、平台、地址、代码库与设计系统、品牌、分享偏好），并提供预检脚本。每个设计任务开始时运行预检；首次使用、要求记住产品信息或更新偏好时做引导
 version: 1
 ---

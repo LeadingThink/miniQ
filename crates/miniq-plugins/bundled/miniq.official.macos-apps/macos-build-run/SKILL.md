@@ -1,5 +1,6 @@
 ---
 name: macos-build-run
+displayName: macOS 构建与运行
 description: 当用户要用 swift build 或 xcodebuild 构建运行 macOS 应用、跑测试、看日志并验证窗口界面时使用
 origin: installed
 requires:

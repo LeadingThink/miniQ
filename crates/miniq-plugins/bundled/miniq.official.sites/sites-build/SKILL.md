@@ -1,5 +1,6 @@
 ---
 name: sites-build
+displayName: 静态网站：从内容到上线
 description: 当用户想要一个可以访问的网站，例如个人主页、作品集、活动/产品落地页、简历页、文档站，并希望 miniQ 从内容到上线一步到位时使用。
 origin: installed
 ---

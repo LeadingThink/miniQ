@@ -1,5 +1,6 @@
 ---
 name: three-webgl-game
+displayName: Three WebGL 游戏
 description: Implement browser-game runtimes with plain Three.js. Use when the user wants imperative scene control in TypeScript or Vite with GLB assets, loaders, physics, and low-level WebGL debugging.
 version: 1
 origin: bundled

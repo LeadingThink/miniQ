@@ -1,5 +1,6 @@
 ---
 name: chatcut-ffmpeg-edit
+displayName: 本地对话式剪辑（FFmpeg）
 description: 用户想用一句话在本机剪视频且不上传云端时使用：裁剪片段、去停顿、拼接、变速、转竖屏、压缩、配乐、响度标准化、抽帧检查。多段素材成片请配合 chatcut-edit-plan，字幕请配合 chatcut-subtitles。
 version: 1
 ---

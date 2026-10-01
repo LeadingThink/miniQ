@@ -1,5 +1,6 @@
 ---
 name: supabase-postgres-best-practices
+displayName: Supabase Postgres 最佳实践
 description: Postgres performance optimization and best practices from Supabase. Use this skill when writing, reviewing, or optimizing Postgres queries, schema designs, or database configurations.
 version: 1
 origin: bundled

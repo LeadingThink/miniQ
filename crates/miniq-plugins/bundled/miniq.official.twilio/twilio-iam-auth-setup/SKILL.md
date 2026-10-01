@@ -1,5 +1,6 @@
 ---
 name: twilio-iam-auth-setup
+displayName: Twilio IAM 身份认证配置
 description: 'Set up and manage Twilio authentication credentials: Auth Tokens, API keys (Standard, Main, Restricted), Access Tokens for client-side SDKs, and credential rotation. Use this skill as a prerequisite foundation before making any Twilio API calls.'
 version: 1
 origin: bundled

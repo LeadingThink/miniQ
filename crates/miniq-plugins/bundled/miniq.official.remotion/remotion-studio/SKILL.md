@@ -1,5 +1,6 @@
 ---
 name: remotion-studio
+displayName: Remotion Studio 工作台
 description: Preview a Remotion video
 version: 1
 origin: bundled

@@ -1,5 +1,6 @@
 ---
 name: creative-brief-intake
+displayName: 创意入口与简报
 description: 用户想做创意视觉（logo、广告、产品图、社媒轮播、样机、活动素材等）但没有明确简报，或只说“帮我做点创意/设计”时使用：给出起步选项菜单；需求已具体时直接整理简报交给生产。
 version: 1
 ---

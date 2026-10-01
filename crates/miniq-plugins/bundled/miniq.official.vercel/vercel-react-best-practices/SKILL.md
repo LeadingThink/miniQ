@@ -1,5 +1,6 @@
 ---
 name: vercel-react-best-practices
+displayName: Vercel React 最佳实践
 description: React best-practices reviewer for TSX files. Triggers after editing multiple TSX components to run a condensed quality checklist covering component structure, hooks usage, accessibility, performance, and TypeScript patterns.
 version: 1
 origin: bundled

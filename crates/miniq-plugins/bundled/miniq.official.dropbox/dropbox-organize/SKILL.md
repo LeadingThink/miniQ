@@ -1,5 +1,6 @@
 ---
 name: dropbox-organize
+displayName: Dropbox 文件夹整理
 description: 当用户要整理 Dropbox 文件夹时使用：规划新建目录、复制、移动或重命名，先展示前后对照方案并确认，意图不明时优先用复制，大批量操作轮询任务状态，从不删除文件。
 version: 1
 ---

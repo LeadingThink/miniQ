@@ -1,5 +1,6 @@
 ---
 name: product-design-share
+displayName: 分享原型与设计产出
 description: 把本地原型或设计产出分享给别人：本地预览地址、局域网访问、打包 zip、导出截图与 PDF 汇总，或在用户明确要求时部署到其已有的静态托管服务；用户要发给同事、分享链接、打包或部署原型时使用
 version: 1
 ---

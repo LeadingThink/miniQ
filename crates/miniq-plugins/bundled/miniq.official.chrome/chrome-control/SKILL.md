@@ -1,5 +1,6 @@
 ---
 name: chrome-control
+displayName: 操控用户的 Chrome
 description: 当任务必须借用用户本机 Google Chrome 里已有的状态（已打开的标签页、登录会话、Cookie、扩展），例如“看看我 Chrome 里开着的页面”“在我已登录的后台查订单”时使用。
 version: 1
 ---
