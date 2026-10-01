@@ -7,14 +7,8 @@
     "strict": true,
     "target": "ES2022",
     "module": "commonjs",
-    "types": [
-      "node",
-      "vscode"
-    ],
+    "types": ["node", "vscode"],
     "moduleResolution": "node"
   },
-  "include": [
-    "src/**/*.js",
-    "test/**/*.js"
-  ]
+  "include": ["src/**/*.js", "test/**/*.js"]
 }
