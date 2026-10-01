@@ -1,0 +1,66 @@
+name: iOS App Store
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Explicit ASC action (inspect is read-only; submit sends to Apple; release publishes an approved manual version)
+        type: choice
+        options: [inspect, prepare, submit, release]
+        default: inspect
+        required: true
+      version:
+        description: Exact iOS marketing version (the current public version is 1.1)
+        type: string
+        default: "1.1"
+        required: true
+      build:
+        description: Exact tested build number (required for submit/release; optional for inspect/prepare)
+        type: string
+        required: false
+      whats_new:
+        description: Reviewed Simplified Chinese release notes (prepare only; never generated automatically)
+        type: string
+        required: false
+      build_tested:
+        description: I verified this exact version/build on supported iPhone and iPad devices
+        type: boolean
+        default: false
+      metadata_verified:
+        description: I verified screenshots, privacy, age rating, export compliance, review credentials and all required metadata in ASC
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: miniq-ios-app-store
+  cancel-in-progress: false
+
+jobs:
+  app-store:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify App Store automation with mock API
+        run: node --test scripts/ios_app_store.node-test.mjs
+      - name: Inspect or perform explicitly selected App Store action
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY_BASE64: ${{ secrets.ASC_PRIVATE_KEY_BASE64 }}
+          ASC_ACTION: ${{ inputs.action }}
+          ASC_VERSION: ${{ inputs.version }}
+          ASC_BUILD: ${{ inputs.build }}
+          ASC_WHATS_NEW: ${{ inputs.whats_new }}
+          ASC_BUILD_TESTED: ${{ inputs.build_tested }}
+          ASC_METADATA_VERIFIED: ${{ inputs.metadata_verified }}
+        run: node scripts/ios_app_store.mjs

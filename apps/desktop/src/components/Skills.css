@@ -1,0 +1,6 @@
+.skill-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 18px; }
+.skill-filters input { flex: 1 1 220px; min-width: 0; }
+.skill-filters select { max-width: 100%; }
+.skill-filters [role="status"] { color: var(--text-dim); font-size: 13px; }
+.skill-open { text-align: left; min-width: 0; }
+.skill-open:focus-visible { outline: 2px solid var(--text-dim); outline-offset: 3px; }

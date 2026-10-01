@@ -1,0 +1,115 @@
+{
+  "name": "miniq-vscode",
+  "displayName": "miniQ Terminal Integration",
+  "description": "Open shared miniQ sessions from a trusted VS Code workspace.",
+  "version": "0.0.1",
+  "publisher": "LeadingThink",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "main": "./src/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "miniQ executes tools in the selected workspace."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "miniQ requires a filesystem and native executable on the extension host."
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "miniq.open",
+        "title": "miniQ: Open Project Chat"
+      },
+      {
+        "command": "miniq.resume",
+        "title": "miniQ: Choose Session to Resume"
+      },
+      {
+        "command": "miniq.resumeLast",
+        "title": "miniQ: Resume Last Project Session"
+      },
+      {
+        "command": "miniq.sessions",
+        "title": "miniQ: List Project Sessions"
+      },
+      {
+        "command": "miniq.attachFile",
+        "title": "miniQ: Open Chat with Current Saved File"
+      },
+      {
+        "command": "miniq.doctor",
+        "title": "miniQ: Check Connection and Dependencies"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "miniq.open",
+          "when": "isWorkspaceTrusted"
+        },
+        {
+          "command": "miniq.resume",
+          "when": "isWorkspaceTrusted"
+        },
+        {
+          "command": "miniq.resumeLast",
+          "when": "isWorkspaceTrusted"
+        },
+        {
+          "command": "miniq.sessions",
+          "when": "isWorkspaceTrusted"
+        },
+        {
+          "command": "miniq.attachFile",
+          "when": "isWorkspaceTrusted && (resourceScheme == file || resourceScheme == vscode-remote)"
+        },
+        {
+          "command": "miniq.doctor",
+          "when": "isWorkspaceTrusted"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "miniq.attachFile",
+          "when": "isWorkspaceTrusted && (resourceScheme == file || resourceScheme == vscode-remote)",
+          "group": "miniq"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "miniQ",
+      "properties": {
+        "miniq.executablePath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Absolute path to the trusted native `miniq` executable on this extension host. Empty uses the official per-user installation location. Command strings and shell scripts are unsupported."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "tsc -p jsconfig.json",
+    "format:check": "prettier --check src test package.json jsconfig.json .vscode/launch.json README.md",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -7,6 +7,7 @@ import { RemotePathDialog } from "./RemotePathDialog";
 import { EmptyState } from "./ui/EmptyState";
 import { Switch } from "./ui/Switch";
 import { showUndoToast, useToast } from "./ui/Toast";
+import "./Skills.css";
 
 interface SkillView {
   name: string;
@@ -76,13 +77,12 @@ function SkillGrid(props: {
         <div
           key={skill.name}
           className={`asset-card clickable ${skill.enabled ? "" : "off"}`}
-          onClick={() => props.onOpen(skill)}
         >
           <div className="asset-card-head">
             <div className="asset-icon">{skill.name.slice(0, 1).toUpperCase()}</div>
-            <div className="asset-name" title={skill.name}>
+            <button className="ghost asset-name skill-open" title={`查看 ${skill.name}`} onClick={() => props.onOpen(skill)}>
               {skill.name}
-            </div>
+            </button>
             <Switch
               checked={skill.enabled}
               label={`${skill.enabled ? "停用" : "启用"}${skill.name}`}
@@ -122,6 +122,9 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
   const [status, setStatus] = useState<string | null>(null);
   const [remotePicker, setRemotePicker] = useState(false);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
+  const [search, setSearch] = useState("");
+  const [source, setSource] = useState("all");
+  const [availability, setAvailability] = useState("all");
   const toast = useToast();
   const scope = props.workspaceId ? { workspaceId: props.workspaceId } : {};
 
@@ -140,19 +143,17 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
   }, [refresh]);
 
   const toggle = async (skill: SkillView) => {
-    await props.client.call("skill.setEnabled", {
-      name: skill.name,
-      enabled: !skill.enabled,
-    });
-    await refresh();
+    try {
+      await props.client.call("skill.setEnabled", { name: skill.name, enabled: !skill.enabled });
+      await refresh();
+    } catch (error) { setStatus(errorMessage(error)); }
   };
 
   const open = async (skill: SkillView) => {
-    const result = await props.client.call<SkillDetailView>("skill.read", {
-      name: skill.name,
-      ...scope,
-    });
-    setDetail(result);
+    try {
+      const result = await props.client.call<SkillDetailView>("skill.read", { name: skill.name, ...scope });
+      setDetail(result);
+    } catch (error) { setStatus(errorMessage(error)); }
   };
 
   const unhide = (name: string) =>
@@ -184,6 +185,12 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
     });
   };
   const visibleSkills = skills.filter((skill) => !hidden.has(skill.name));
+  const query = search.trim().toLocaleLowerCase();
+  const filteredSkills = visibleSkills.filter((skill) =>
+    (!query || `${skill.name} ${skill.description}`.toLocaleLowerCase().includes(query)) &&
+    (source === "all" || skill.source === source) &&
+    (availability === "all" || (availability === "enabled" ? skill.enabled :
+      (skill.dependencies ?? []).some((dependency) => !dependency.available))));
 
   const importPackage = async () => {
     if (props.client.sshHost) {
@@ -230,7 +237,7 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
           <div>
             <div className="page-title">技能</div>
             <div className="page-sub">
-              可复用的工作流。启用的技能会在任务中自动使用;完成任务后可通过「保存为技能」蒸馏新技能。
+              搜索你要完成的任务，查看工作流和运行条件。启用后模型可按任务选择技能，并非每次都会执行。
             </div>
           </div>
           <button onClick={() => void importPackage()} title="导入或更新包含一个或多个 SKILL.md 的目录">
@@ -239,12 +246,24 @@ export function SkillsPanel(props: { client: RpcClient; workspaceId: string | nu
           </button>
         </div>
         {status && <div className="settings-status">{status}</div>}
+        {!detail && visibleSkills.length > 0 && <div className="skill-filters">
+          <input aria-label="搜索技能" placeholder="搜索任务、技能名称或描述" value={search} onChange={(event) => setSearch(event.target.value)} />
+          <select aria-label="技能来源" value={source} onChange={(event) => setSource(event.target.value)}>
+            <option value="all">全部来源</option>
+            {Object.entries(SOURCE_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+          <select aria-label="技能运行条件" value={availability} onChange={(event) => setAvailability(event.target.value)}>
+            <option value="all">全部技能</option><option value="enabled">已启用</option><option value="missing">缺少依赖</option>
+          </select>
+          <span role="status">{filteredSkills.length} / {visibleSkills.length} 个技能</span>
+        </div>}
         {detail ? (
           <SkillDetail detail={detail} onBack={() => setDetail(null)} onRemove={remove} />
         ) : visibleSkills.length === 0 ? (
           <EmptySkills />
         ) : (
-          <SkillGrid skills={visibleSkills} onOpen={(skill) => void open(skill)} onToggle={toggle} />
+          filteredSkills.length === 0 ? <div className="settings-status">没有匹配的技能。试试其他关键词或筛选条件。<button className="ghost" onClick={() => { setSearch(""); setSource("all"); setAvailability("all"); }}>清除筛选</button></div> :
+          <SkillGrid skills={filteredSkills} onOpen={(skill) => void open(skill)} onToggle={toggle} />
         )}
       </div>
     </div>
