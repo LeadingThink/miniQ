@@ -1,5 +1,5 @@
 use super::*;
-use axum::{http::Uri, routing::post, Json, Router};
+use axum::{http::Uri, routing::any, Json, Router};
 use tokio::sync::mpsc;
 
 async fn capture_requests() -> (
@@ -8,10 +8,14 @@ async fn capture_requests() -> (
     tokio::task::JoinHandle<()>,
 ) {
     let (sender, receiver) = mpsc::unbounded_channel();
-    let app = Router::new().fallback(post(move |uri: Uri, body: String| {
+    let app = Router::new().fallback(any(move |uri: Uri, body: String| {
         let sender = sender.clone();
         async move {
-            sender.send((uri.path().to_owned(), body)).unwrap();
+            let request_target = match uri.query() {
+                Some(query) => format!("{}?{query}", uri.path()),
+                None => uri.path().to_owned(),
+            };
+            sender.send((request_target, body)).unwrap();
             Json(json!({"id":"fixture-task", "data":[{"url":"https://media.test/image.png"}]}))
         }
     }));
@@ -95,4 +99,53 @@ async fn music_http_body_starts_with_model_before_instrumental_and_keeps_nulls()
         json!({"model":"configured-music", "prompt":"安静的钢琴曲", "instrumental":true, "style":null, "title":null}),
     )
     .await;
+}
+
+#[tokio::test]
+async fn music_clip_query_uses_clip_id_path_and_returns_clip() {
+    let (base_url, mut requests, server) = capture_requests().await;
+    let directory = tempfile::tempdir().unwrap();
+    let mut ctx = ToolContext::new(directory.path().to_path_buf());
+    ctx.media = Some(MediaConfig {
+        base_url,
+        api_key: "test-key".into(),
+        music_model: "configured-music".into(),
+        ..Default::default()
+    });
+
+    let result = GetMusicGenerationTool
+        .execute(&ctx, json!({"clip_id":"clip-123"}))
+        .await
+        .unwrap();
+    server.abort();
+
+    let (path, body) = requests.recv().await.unwrap();
+    assert_eq!(path, "/v1/music/clips/clip-123");
+    assert!(body.is_empty());
+    assert_eq!(result["kind"], "music_task");
+    assert_eq!(result["task"]["id"], "fixture-task");
+}
+
+#[tokio::test]
+async fn music_clips_query_uses_comma_separated_ids() {
+    let (base_url, mut requests, server) = capture_requests().await;
+    let directory = tempfile::tempdir().unwrap();
+    let mut ctx = ToolContext::new(directory.path().to_path_buf());
+    ctx.media = Some(MediaConfig {
+        base_url,
+        api_key: "test-key".into(),
+        music_model: "configured-music".into(),
+        ..Default::default()
+    });
+
+    let result = GetMusicClipsTool
+        .execute(&ctx, json!({"clip_ids":["clip-123", "clip-456"]}))
+        .await
+        .unwrap();
+    server.abort();
+
+    let (path, body) = requests.recv().await.unwrap();
+    assert_eq!(path, "/v1/music/clips?ids=clip-123,clip-456");
+    assert!(body.is_empty());
+    assert_eq!(result["kind"], "music_task");
 }

@@ -88,6 +88,22 @@ struct MusicInput {
     title: Option<String>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct MusicGenerationQueryInput {
+    /// A clip identifier returned in the `clips` array from `generate_music`.
+    #[schemars(regex(pattern = r"^[A-Za-z0-9_-]+$"))]
+    clip_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct MusicClipsQueryInput {
+    /// Up to 20 clip identifiers returned by `generate_music`.
+    #[schemars(length(min = 1, max = 20))]
+    clip_ids: Vec<String>,
+}
+
 fn config(ctx: &ToolContext) -> Result<&MediaConfig, ToolError> {
     let media = ctx.media.as_ref().ok_or_else(|| {
         ToolError::ExecutionFailed(
@@ -493,7 +509,7 @@ impl Tool for GenerateMusicTool {
         "generate_music"
     }
     fn description(&self) -> &str {
-        "Start an original music generation task and return its clip id for progress polling."
+        "Start music generation and preserve all returned clips[].id values. Poll them with get_music_clips; do not submit the same generation twice."
     }
     fn parameters_schema(&self) -> Value {
         serde_json::to_value(schemars::schema_for!(MusicInput)).unwrap()
@@ -516,6 +532,95 @@ impl Tool for GenerateMusicTool {
                 .send()
                 .await
                 .map_err(|e| ToolError::ExecutionFailed(format!("music request: {e}")))?,
+        )
+        .await?;
+        Ok(json!({"kind":"music_task","task":value,"resume":true}))
+    }
+}
+
+fn valid_music_clip_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+}
+
+pub struct GetMusicGenerationTool;
+#[async_trait]
+impl Tool for GetMusicGenerationTool {
+    fn name(&self) -> &str {
+        "get_music_generation"
+    }
+    fn description(&self) -> &str {
+        "Query the status and result of a music clip by its clip id."
+    }
+    fn parameters_schema(&self) -> Value {
+        serde_json::to_value(schemars::schema_for!(MusicGenerationQueryInput)).unwrap()
+    }
+    fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
+        Risk {
+            level: RiskLevel::Low,
+            reason: "query music generation".into(),
+        }
+    }
+    async fn execute(&self, ctx: &ToolContext, raw: Value) -> Result<Value, ToolError> {
+        let input: MusicGenerationQueryInput = parse_input(raw)?;
+        if !valid_music_clip_id(&input.clip_id) {
+            return Err(ToolError::InvalidInput(
+                "clip_id must be a non-empty path-safe identifier".into(),
+            ));
+        }
+        let media = config(ctx)?;
+        let value = response_json(
+            client()?
+                .get(url(media, &format!("/music/clips/{}", input.clip_id)))
+                .bearer_auth(&media.api_key)
+                .send()
+                .await
+                .map_err(|e| ToolError::ExecutionFailed(format!("music status request: {e}")))?,
+        )
+        .await?;
+        Ok(json!({"kind":"music_task","task":value,"resume":true}))
+    }
+}
+
+pub struct GetMusicClipsTool;
+#[async_trait]
+impl Tool for GetMusicClipsTool {
+    fn name(&self) -> &str {
+        "get_music_clips"
+    }
+    fn description(&self) -> &str {
+        "Query 1 to 20 music clips by their ids. Poll every 10 to 20 seconds while pending, partial or running. Stop at succeeded or failed; use non-empty audio_url on success and error.message on failure."
+    }
+    fn parameters_schema(&self) -> Value {
+        serde_json::to_value(schemars::schema_for!(MusicClipsQueryInput)).unwrap()
+    }
+    fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
+        Risk {
+            level: RiskLevel::Low,
+            reason: "query music generation clips".into(),
+        }
+    }
+    async fn execute(&self, ctx: &ToolContext, raw: Value) -> Result<Value, ToolError> {
+        let input: MusicClipsQueryInput = parse_input(raw)?;
+        if input.clip_ids.is_empty()
+            || input.clip_ids.len() > 20
+            || input.clip_ids.iter().any(|id| !valid_music_clip_id(id))
+        {
+            return Err(ToolError::InvalidInput(
+                "clip_ids must contain 1 to 20 non-empty path-safe identifiers".into(),
+            ));
+        }
+        let media = config(ctx)?;
+        let ids = input.clip_ids.join(",");
+        let value = response_json(
+            client()?
+                .get(url(media, &format!("/music/clips?ids={ids}")))
+                .bearer_auth(&media.api_key)
+                .send()
+                .await
+                .map_err(|e| ToolError::ExecutionFailed(format!("music clips request: {e}")))?,
         )
         .await?;
         Ok(json!({"kind":"music_task","task":value,"resume":true}))
@@ -561,6 +666,8 @@ mod tests {
             SynthesizeSpeechTool.spec().name,
             TranscribeAudioTool.spec().name,
             GenerateMusicTool.spec().name,
+            GetMusicGenerationTool.spec().name,
+            GetMusicClipsTool.spec().name,
         ];
         assert_eq!(
             names,
@@ -570,7 +677,9 @@ mod tests {
                 "generate_video",
                 "synthesize_speech",
                 "transcribe_audio",
-                "generate_music"
+                "generate_music",
+                "get_music_generation",
+                "get_music_clips"
             ]
         );
     }
