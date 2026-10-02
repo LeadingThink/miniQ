@@ -18,6 +18,13 @@ import {
 import { isNativeMobileApp } from "../mobileRuntime";
 import { refreshRemotePush, requestRemotePushPermission, useRemotePushStatus, type RemotePushStatus } from "../remotePush";
 import { setQuietHours, useQuietHours } from "../quietHours";
+import {
+  isBackgroundConnectionSupported,
+  isBatteryUnrestricted,
+  openBatterySettings,
+  setBackgroundConnectionEnabled,
+  useBackgroundConnectionEnabled,
+} from "../backgroundConnection";
 
 const DEFAULT_QUIET = { start: "23:00", end: "08:00" };
 const TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -36,6 +43,8 @@ function RemotePushStatusRow({ onStatus }: { onStatus: (text: string) => void })
   const status = useRemotePushStatus();
   const [busy, setBusy] = useState(false);
   if (status === "off") return null;
+  // Android builds without a push provider rely on 后台保持连接 instead.
+  if (status === "unsupported" && isBackgroundConnectionSupported()) return null;
   const allow = async () => {
     if (busy) return;
     setBusy(true);
@@ -57,6 +66,65 @@ function RemotePushStatusRow({ onStatus }: { onStatus: (text: string) => void })
       </button>}
       {status === "error" && <button type="button" className="secondary" onClick={() => refreshRemotePush()}>重试</button>}
     </div>
+  );
+}
+
+function BackgroundConnectionSetting({ onStatus }: { onStatus: (text: string | null) => void }) {
+  const enabled = useBackgroundConnectionEnabled();
+  const [busy, setBusy] = useState(false);
+  const [batteryOk, setBatteryOk] = useState(true);
+
+  useEffect(() => {
+    if (!enabled) return;
+    let active = true;
+    const refresh = () => void isBatteryUnrestricted().then((value) => { if (active) setBatteryOk(value); });
+    refresh();
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [enabled]);
+
+  const toggle = async (value: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const running = await setBackgroundConnectionEnabled(value);
+      onStatus(value && !running ? "未能启动后台连接，请确认已允许 miniQ 发送通知后重试。" : null);
+    } catch {
+      onStatus("无法保存设置，请检查本机存储是否可用。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <label className="remote-access-toggle" htmlFor="task-notification-background">
+        <span>
+          <strong>后台保持连接</strong>
+          <small>切到后台或锁屏后继续与电脑保持连接，任务完成或需要你操作时照常提醒。开启后通知栏会常驻一条「miniQ 正在后台保持连接」，耗电略有增加；从最近任务中划掉 App 后不再提醒。</small>
+        </span>
+        <input
+          id="task-notification-background"
+          type="checkbox"
+          checked={enabled}
+          disabled={busy}
+          onChange={(event) => void toggle(event.target.checked)}
+        />
+      </label>
+      {enabled && !batteryOk && <div className="remote-access-toggle" data-battery-restricted="true">
+        <span>
+          <small role="note">系统电池优化可能在锁屏一段时间后断开连接。建议将 miniQ 设为「不优化 / 无限制」，部分手机还需在系统设置中允许「自启动 / 后台运行」。</small>
+        </span>
+        <button type="button" className="secondary" onClick={() => void openBatterySettings().then((ok) => {
+          if (!ok) onStatus("无法打开系统设置，请在手机「设置 › 应用 › miniQ › 电池」中手动调整。");
+        })}>去设置</button>
+      </div>}
+    </>
   );
 }
 
@@ -221,6 +289,7 @@ export function TaskNotificationSettings() {
         />
       </label>}
       {mobile && mode !== "off" && <RemotePushStatusRow onStatus={setStatus} />}
+      {mobile && mode !== "off" && isBackgroundConnectionSupported() && <BackgroundConnectionSetting onStatus={setStatus} />}
       {mobile && mode !== "off" && <QuietHoursSetting onStatus={setStatus} />}
       {mode !== "off" && <div className="settings-actions">
         <button type="button" className="secondary" disabled={busy || permission === "unsupported"} onClick={() => void enable()}>

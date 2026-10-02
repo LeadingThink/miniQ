@@ -40,6 +40,31 @@ vi.mock("../remotePush", async () => {
     requestRemotePushPermission: push.request,
   };
 });
+const bg = vi.hoisted(() => ({
+  android: false,
+  enabled: false,
+  listeners: new Set<() => void>(),
+  unrestricted: false,
+  set: vi.fn(async (value: boolean) => {
+    bg.enabled = value;
+    for (const listener of bg.listeners) listener();
+    return value;
+  }),
+  open: vi.fn(async () => true),
+}));
+vi.mock("../backgroundConnection", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    isBackgroundConnectionSupported: () => bg.android,
+    isBatteryUnrestricted: async () => bg.unrestricted,
+    openBatterySettings: bg.open,
+    setBackgroundConnectionEnabled: bg.set,
+    useBackgroundConnectionEnabled: () => useSyncExternalStore(
+      (listener) => { bg.listeners.add(listener); return () => bg.listeners.delete(listener); },
+      () => bg.enabled,
+    ),
+  };
+});
 
 import { getQuietHours } from "../quietHours";
 import { TaskNotificationSettings } from "./TaskNotificationSettings";
@@ -48,6 +73,9 @@ beforeEach(() => {
   localStorage.clear();
   push.status = "needs_permission";
   push.request.mockResolvedValue(true);
+  bg.android = false;
+  bg.enabled = false;
+  bg.unrestricted = false;
 });
 afterEach(() => {
   cleanup();
@@ -128,4 +156,24 @@ it("reports a quiet hours save failure", async () => {
   fireEvent.click(screen.getByRole("checkbox", { name: /免打扰时段/ }));
   expect(await screen.findByText("无法保存免打扰时段，请检查本机存储是否可用。")).toBeTruthy();
   expect(getQuietHours()).toBeNull();
+});
+
+it("offers Android background connection instead of an unsupported push row", async () => {
+  bg.android = true;
+  push.status = "unsupported";
+  render(<TaskNotificationSettings />);
+  expect(screen.queryByText("离线推送")).toBeNull();
+  const toggle = screen.getByRole("checkbox", { name: /后台保持连接/ }) as HTMLInputElement;
+  expect(toggle.checked).toBe(false);
+
+  fireEvent.click(toggle);
+  await waitFor(() => expect(bg.set).toHaveBeenCalledWith(true));
+  expect(((await screen.findByRole("checkbox", { name: /后台保持连接/ })) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(await screen.findByRole("button", { name: "去设置" }));
+  await waitFor(() => expect(bg.open).toHaveBeenCalledTimes(1));
+});
+
+it("does not show background connection on iOS", () => {
+  render(<TaskNotificationSettings />);
+  expect(screen.queryByRole("checkbox", { name: /后台保持连接/ })).toBeNull();
 });

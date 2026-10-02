@@ -38,6 +38,13 @@
                 <action android:name="com.leadingthink.miniq.push.EVENT" />
             </intent-filter>
         </receiver>
+
+        <!-- Optional "后台保持连接": keeps the relay WebSocket alive in the background
+             without a third-party push provider (see background/MiniqBackgroundService). -->
+        <service
+            android:name=".background.MiniqBackgroundService"
+            android:exported="false"
+            android:foregroundServiceType="remoteMessaging" />
     </application>
 
     <!-- Permissions -->
@@ -50,4 +57,6 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
 </manifest>

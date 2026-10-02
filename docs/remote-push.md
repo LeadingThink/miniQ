@@ -67,6 +67,15 @@ APNs 根据手机上报的 `environment` 自动选择 sandbox 或 production 网
 - JPush 集成在可选的 `:miniq-jpush` 模块中。只有配置了 app key 才会参与构建，来源可以是以下任意一种：环境变量 `MINIQ_JPUSH_APPKEY`、`-PminiqJpushAppKey=...`，或者 `local.properties` 中的 `miniqJpushAppKey=...`。未配置时构建出的 APK 不含极光 SDK，App 内通知照常工作。
 - Android 13 及以上版本，首次开启推送时会请求 `POST_NOTIFICATIONS` 权限。
 
+### Android 后台保持连接（默认方案，不依赖第三方）
+
+正式包目前不接入极光，Android 改用“后台保持连接”：
+
+- 入口在设置 › 任务通知 › **后台保持连接**，默认关闭。开启后启动前台服务 `MiniqBackgroundService`，类型为 `remoteMessaging`。该服务让 App 进程和 WebView 中的 relay WebSocket 在后台持续存活，任务完成、审批等提醒仍由 App 在本机弹出（`src/taskNotifications.ts`）。
+- 开启期间，通知栏会常驻一条静默通知“miniQ 正在后台保持连接”，使用通道 `miniq-background`，重要性为最低。
+- 如果系统对 miniQ 开启了电池优化，设置页会提示并提供“去设置”入口。部分国产系统还需要用户在系统设置中手动允许“自启动”或“后台运行”。
+- 局限：用户从最近任务中划掉 App 后，WebView 会被销毁，服务也随之停止，之后不再提醒。下次打开 App 时，服务会根据已保存的开关状态自动恢复。
+
 ## 排查
 
 - 设置页显示“推送未启用”：检查 relay 是否配置了对应平台的凭据。
