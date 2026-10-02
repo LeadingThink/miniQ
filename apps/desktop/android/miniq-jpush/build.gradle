@@ -1,0 +1,28 @@
+apply plugin: 'com.android.library'
+
+// Optional module, included by settings.gradle only when a JPush app key is set.
+android {
+    namespace = "com.leadingthink.miniq.jpush"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        minSdkVersion rootProject.ext.minSdkVersion
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    // JPush 5.x receiver API (JPushMessageReceiver). jpush's POM declares
+    // jcore as an open range "[1.0.0,)", so pin it for reproducible builds;
+    // bump both together following the JPush release notes.
+    api 'cn.jiguang.sdk:jpush:5.9.2'
+    api 'cn.jiguang.sdk:jcore:5.2.2'
+}

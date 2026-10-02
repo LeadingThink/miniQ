@@ -3,3 +3,16 @@ include ':capacitor-cordova-android-plugins'
 project(':capacitor-cordova-android-plugins').projectDir = new File('./capacitor-cordova-android-plugins/')
 
 apply from: 'capacitor.settings.gradle'
+
+// Optional JPush (Android remote push for mainland China). Built only when an
+// app key is configured via env MINIQ_JPUSH_APPKEY, -PminiqJpushAppKey=... or
+// miniqJpushAppKey=... in local.properties, so builds without it stay SDK-free.
+def miniqLocalProps = new Properties()
+def miniqLocalFile = new File(settingsDir, 'local.properties')
+if (miniqLocalFile.exists()) miniqLocalFile.withInputStream { miniqLocalProps.load(it) }
+def miniqJpushAppKey = System.getenv('MINIQ_JPUSH_APPKEY') ?:
+    (startParameter.projectProperties.get('miniqJpushAppKey') ?: miniqLocalProps.getProperty('miniqJpushAppKey'))
+if (miniqJpushAppKey?.trim()) {
+    gradle.ext.miniqJpushAppKey = miniqJpushAppKey.trim()
+    include ':miniq-jpush'
+}

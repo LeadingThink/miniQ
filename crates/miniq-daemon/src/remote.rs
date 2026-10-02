@@ -17,6 +17,8 @@ use rand::{Rng, RngCore};
 use serde::{Deserialize, Serialize};
 mod blob;
 pub(crate) mod connection;
+mod keep_awake;
+mod push;
 mod subscriptions;
 mod transport;
 mod upload;
@@ -165,6 +167,7 @@ struct CryptoIdentity {
 }
 
 pub fn spawn(state: AppState) {
+    keep_awake::spawn(state.clone());
     tokio::spawn(async move {
         connection_loop(state).await;
     });

@@ -20,6 +20,12 @@ android {
         versionCode 38
         versionName "0.1.38"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // Consumed by the optional :miniq-jpush module (see settings.gradle).
+        manifestPlaceholders = [
+            JPUSH_PKGNAME: applicationId,
+            JPUSH_APPKEY : gradle.ext.has('miniqJpushAppKey') ? gradle.ext.miniqJpushAppKey : '',
+            JPUSH_CHANNEL: 'default',
+        ]
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -62,6 +68,10 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+    implementation "androidx.core:core:$androidxCoreVersion"
+    if (findProject(':miniq-jpush') != null) {
+        implementation project(':miniq-jpush')
+    }
 }
 
 apply from: 'capacitor.build.gradle'

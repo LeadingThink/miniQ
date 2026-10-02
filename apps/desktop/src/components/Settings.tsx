@@ -7,6 +7,7 @@ import type { ThemeId } from "../theme";
 import { ThemePicker } from "./ThemePicker";
 import { ComputerSettings } from "./ComputerSettings";
 import { MobileUpdateCheck } from "./MobileUpdateCheck";
+import { unregisterRemotePush } from "../remotePush";
 import { clearRemoteCredentials, DEFAULT_RELAY_URL, loadRemoteCredentials, storeRemoteCredentials } from "../remoteAccess";
 import { MINIQ_PRIVACY_URL, MINIQ_SUPPORT_URL } from "../mobilePrivacy";
 import { useDesktopHost } from "../desktopHost";
@@ -240,6 +241,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
       });
       setRemoteKeyDraft("");
       setRemoteKeyStatus("已保存，正在用新 Key 重新连接…");
+      await unregisterRemotePush(props.client);
       // Dropping the socket makes the reconnect loop re-derive the room and
       // encryption key from the new credentials.
       props.client.disconnect();
@@ -255,6 +257,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
     setExitingRemote(true);
     setRemoteKeyStatus(null);
     try {
+      await unregisterRemotePush(props.client, { clearKey: true });
       await clearRemoteCredentials();
       window.location.reload();
     } catch (error) {
@@ -500,7 +503,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 <label className="remote-access-toggle">
                   <span>
                     <strong>允许远程连接</strong>
-                    <small>daemon 主动连接 relay，无需暴露本机端口</small>
+                    <small>daemon 主动连接 relay，无需暴露本机端口。开启期间电脑不会闲置休眠（屏幕仍会熄灭），合盖或手动休眠后手机将无法连接。</small>
                   </span>
                   <input
                     type="checkbox"

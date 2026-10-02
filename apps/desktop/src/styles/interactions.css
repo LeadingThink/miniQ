@@ -434,6 +434,22 @@
   accent-color: var(--accent);
 }
 
+.remote-access-toggle > button {
+  white-space: nowrap;
+}
+
+.task-quiet-hours {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 10px;
+}
+
+.task-quiet-hours small {
+  grid-column: 1 / -1;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
 .remote-access-summary {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);

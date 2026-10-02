@@ -1,0 +1,66 @@
+.task-banner {
+  position: fixed;
+  z-index: 1000;
+  top: calc(var(--app-offset-top, 0px) + max(10px, var(--safe-top)));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 24px));
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
+  animation: task-banner-in 180ms ease-out;
+}
+
+.task-banner-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 4px 12px 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.task-banner-main > svg { flex: none; margin-top: 1px; color: var(--accent); }
+.task-banner-attention .task-banner-main > svg { color: var(--warning, #d97706); }
+.task-banner-failed .task-banner-main > svg { color: var(--danger); }
+
+.task-banner-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.task-banner-text strong { font-size: 13px; }
+.task-banner-text span {
+  font-size: 13px;
+  color: var(--text-dim);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.task-banner-close {
+  flex: none;
+  width: 40px;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.task-banner-close:focus-visible, .task-banner-main:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; border-radius: 12px; }
+
+@keyframes task-banner-in {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-banner { animation: none; }
+}

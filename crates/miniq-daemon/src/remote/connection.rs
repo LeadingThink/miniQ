@@ -85,18 +85,35 @@ pub(super) async fn run(state: &AppState, config: &ActiveConfig) -> anyhow::Resu
     let mut config_check = tokio::time::interval(Duration::from_secs(2));
     let mut seen = SeenNonces::default();
     let mut mobile_clients = ready.mobile_clients;
+    let mut pushes = super::push::PushTracker::default();
+    // The relay pings every 30s. Without any inbound traffic for this long the
+    // TCP path is dead even if the OS has not noticed; reconnect instead of
+    // reporting a "connected" state that no phone can reach.
+    let mut last_inbound = tokio::time::Instant::now();
     loop {
         tokio::select! {
-            _ = state.shutdown.cancelled() => return Ok(()),
+            _ = state.shutdown.cancelled() => { say_goodbye(&controls).await; return Ok(()); },
             result = &mut writer.0 => { return result?; },
             Some(result) = requests.join_next() => { result??; },
             _ = config_check.tick() => {
                 uploads.expire();
                 cancellations.retain(|_, token| !token.is_cancelled());
-                if current_fingerprint(state) != Some(config.fingerprint) { return Ok(()); }
+                if current_fingerprint(state) != Some(config.fingerprint) { say_goodbye(&controls).await; return Ok(()); }
+                if last_inbound.elapsed() > RELAY_IDLE_TIMEOUT { anyhow::bail!("relay 心跳超时"); }
             }
             _ = flush.tick() => subscriptions.flush(&outbound),
             event = events.recv() => match event {
+                Ok(event) if push_candidate(&event.original) => {
+                    // Push frames are emitted even with no phone online: the relay
+                    // decides whether a system notification is needed.
+                    if let Some(push) = pushes.observe(&event.original, std::time::Instant::now()) {
+                        match super::push::push_message(state, &identity.cipher, &push) {
+                            Ok(message) => { let _ = controls.send(Message::Text(message.to_string().into())); }
+                            Err(error) => tracing::warn!(%error, "failed to build remote push frame"),
+                        }
+                    }
+                    if mobile_clients > 0 { subscriptions.event(event.projected.clone()); }
+                }
                 Ok(event) if mobile_clients > 0 && !matches!(event.original, miniq_protocol::Event::BrowserDriverRequested { .. }) => subscriptions.event(event.projected.clone()),
                 Ok(_) => {},
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
@@ -115,6 +132,7 @@ pub(super) async fn run(state: &AppState, config: &ActiveConfig) -> anyhow::Resu
             },
             message = incoming.next() => {
                 let message = message.ok_or_else(|| anyhow::anyhow!("relay 已关闭连接"))??;
+                last_inbound = tokio::time::Instant::now();
                 match message {
                     Message::Ping(payload) => { controls.send(Message::Pong(payload))?; }
                     Message::Close(frame) => anyhow::bail!("relay 已关闭连接: {frame:?}"),
@@ -222,6 +240,30 @@ async fn dispatch(
             RpcError::new(ErrorCode::ParseError, format!("远程请求无效: {error}")),
         ),
     }
+}
+
+const RELAY_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
+
+/// Tells the relay this disconnect is intentional (quit / remote access turned
+/// off or reconfigured), so phones do not get a "desktop offline" push.
+async fn say_goodbye(controls: &mpsc::UnboundedSender<Message>) {
+    let goodbye = json!({"type": "desktop_goodbye"}).to_string();
+    if controls.send(Message::Text(goodbye.into())).is_ok() {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+fn push_candidate(event: &miniq_protocol::Event) -> bool {
+    use miniq_protocol::Event;
+    matches!(
+        event,
+        Event::SessionStatusChanged { .. }
+            | Event::TurnCompleted { .. }
+            | Event::TurnFailed { .. }
+            | Event::SessionDeleted { .. }
+            | Event::ApprovalRequested { .. }
+            | Event::QuestionRequested { .. }
+    )
 }
 
 fn project_host_event(mut envelope: Value) -> Option<Value> {

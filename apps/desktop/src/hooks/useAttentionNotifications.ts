@@ -4,6 +4,7 @@ import type { DaemonEvent } from "../types";
 import { hostKey, scopedKey, type HostCatalog, type HostNavigation } from "../hostWorkspace";
 import { notifyAttention, type AttentionKind } from "../taskNotifications";
 import { isTauriRuntime } from "../runtime";
+import { isNativeMobileApp } from "../mobileRuntime";
 
 export type AttentionNavigate = (host: string | null, navigation: HostNavigation) => void;
 
@@ -29,6 +30,9 @@ export function useAttentionNotifications(
   navigateRef.current = navigate;
 
   useEffect(() => {
+    // Phones get approval/question alerts from useTaskNotifications and the
+    // offline push, which share one per-session notification id.
+    if (isNativeMobileApp()) return;
     const notified = new Set<string>();
     const open = new Set<string>();
     let pendingFocus: Target | null = null;

@@ -5,6 +5,7 @@ import { RelayBroker } from "./broker.js";
 import { configuredBlobStore, type TicketIssuer } from "./blobStore.js";
 import { ShareStore } from "./shareStore.js";
 import { ShareHttp, oneApiShareAuth } from "./shareHttp.js";
+import { configuredPushService, type PushService } from "./push.js";
 
 const DEFAULT_PORT = 9200;
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -22,10 +23,14 @@ export function createRelayServer(options?: {
   blobs?: TicketIssuer;
   shares?: ShareHttp;
   desktopReconnectGraceMs?: number;
+  push?: PushService;
+  desktopOfflinePushMs?: number;
 }): Server {
   const broker = new RelayBroker(
     options?.blobs ?? configuredBlobStore(),
     options?.desktopReconnectGraceMs,
+    options?.push ?? configuredPushService(),
+    options?.desktopOfflinePushMs ?? configuredOfflinePushMs(),
   );
   const allowedOrigins = new Set(options?.allowedOrigins ?? configuredOrigins());
   const shares = options?.shares ?? (process.env.MINIQ_SHARE_DIR ? new ShareHttp(new ShareStore(process.env.MINIQ_SHARE_DIR), oneApiShareAuth()) : undefined);
@@ -95,6 +100,11 @@ export function createRelayServer(options?: {
     socket.on("close", () => clearInterval(heartbeat));
   });
   return server;
+}
+
+function configuredOfflinePushMs(): number | undefined {
+  const minutes = Number(process.env.MINIQ_DESKTOP_OFFLINE_PUSH_MINUTES);
+  return Number.isFinite(minutes) && minutes > 0 ? minutes * 60_000 : undefined;
 }
 
 function configuredOrigins(): string[] {

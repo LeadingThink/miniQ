@@ -21,6 +21,17 @@ export async function deriveRemoteIdentity(apiKey: string): Promise<RemoteIdenti
   };
 }
 
+/**
+ * Raw AES-256-GCM key (base64url) for native push decryption. The iOS
+ * Notification Service Extension and the Android receiver decrypt push
+ * payloads without the JavaScript runtime, so they need the derived key; the
+ * API key itself never leaves JavaScript.
+ */
+export async function deriveRemotePushKey(apiKey: string): Promise<string> {
+  if (!apiKey.trim()) throw new Error("API Key 不能为空");
+  return toBase64Url(await derive(apiKey, "miniq-relay-encryption-v1"));
+}
+
 export async function encryptRemotePayload(key: CryptoKey, value: unknown) {
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   const plaintext = encoder.encode(JSON.stringify(value));

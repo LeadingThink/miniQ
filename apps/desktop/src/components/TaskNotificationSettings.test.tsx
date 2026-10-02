@@ -38,6 +38,12 @@ it("persists modes without requesting permission on mount or mode changes", asyn
   expect(screen.queryByRole("button", { name: "启用系统通知" })).toBeNull();
 });
 
+it("keeps mobile-only push and quiet hours settings off the desktop", () => {
+  render(<TaskNotificationSettings />);
+  expect(screen.queryByText("离线推送")).toBeNull();
+  expect(screen.queryByRole("checkbox", { name: /免打扰时段/ })).toBeNull();
+});
+
 it("requests permission and sends one test after the explicit enable click", async () => {
   render(<TaskNotificationSettings />);
   fireEvent.click(screen.getByRole("button", { name: "启用系统通知" }));

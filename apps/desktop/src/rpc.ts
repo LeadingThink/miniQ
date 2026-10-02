@@ -57,6 +57,9 @@ export class RpcClient {
   private remoteKey: CryptoKey | null = null;
   private reader: RemotePayloadReader | null = null;
   private outgoing: Promise<void> = Promise.resolve();
+  /** Plaintext relay controls replayed after every remote (re)connect. */
+  private relayControls = new Map<string, Record<string, unknown>>();
+  private relayListeners = new Set<(message: Record<string, unknown>) => void>();
 
   /** Idempotent: concurrent calls share one in-flight connection attempt, so
    * React StrictMode's double-mounted effects cannot open two sockets — and
@@ -205,6 +208,11 @@ export class RpcClient {
                 this.notifyStatus(true);
                 finish();
               }
+              for (const control of this.relayControls.values()) ws.send(JSON.stringify(control));
+              return;
+            }
+            if (envelope.type === "push_registered") {
+              for (const listener of this.relayListeners) listener(envelope);
               return;
             }
             if (envelope.type === "error") {
@@ -472,6 +480,27 @@ export class RpcClient {
   onHostEvent(listener: (event: HostEvent) => void): () => void {
     this.hostListeners.add(listener);
     return () => this.hostListeners.delete(listener);
+  }
+
+  /**
+   * Sends a plaintext control message to the relay itself (not the desktop).
+   * The latest message of each `type` is remembered and replayed on reconnect,
+   * so push registration and foreground state survive network changes.
+   */
+  setRelayControl(message: { type: string } & Record<string, unknown>): void {
+    this.relayControls.set(message.type, message);
+    if (this.connectionMode === "remote" && this.remoteKey && this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
+    }
+  }
+
+  clearRelayControl(type: string): void {
+    this.relayControls.delete(type);
+  }
+
+  onRelayMessage(listener: (message: Record<string, unknown>) => void): () => void {
+    this.relayListeners.add(listener);
+    return () => this.relayListeners.delete(listener);
   }
 
   onResync(listener: () => void): () => void {

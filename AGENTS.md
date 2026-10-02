@@ -117,7 +117,7 @@ The iOS app uses bundle identifier `com.leadingthink.miniq`. GitHub Actions buil
 
 - Only upload a new TestFlight build when the user explicitly asks to build or upload an iOS/TestFlight version.
 - Only add an App Store version for review or submit it to Apple when the user explicitly asks for that exact action. Uploading to TestFlight is not authorization to submit an App Store review.
-- Never print, copy into tracked files, or expose the values of `IOS_CERTIFICATE_BASE64`, `IOS_CERTIFICATE_PASSWORD`, `IOS_APP_PROFILE_BASE64`, `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, or `ASC_PRIVATE_KEY_BASE64`.
+- Never print, copy into tracked files, or expose the values of `IOS_CERTIFICATE_BASE64`, `IOS_CERTIFICATE_PASSWORD`, `IOS_APP_PROFILE_BASE64`, `IOS_NSE_PROFILE_BASE64`, `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, or `ASC_PRIVATE_KEY_BASE64`.
 - Keep certificates, `.p12`, `.p8`, `.mobileprovision`, passwords, screenshots, and local App Store preparation files out of Git. The repository-local `苹果注册/` directory is ignored for this purpose.
 - Do not commit generated Xcode archives, IPA files, signing keychains, or downloaded GitHub Actions artifacts.
 

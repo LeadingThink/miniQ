@@ -1,6 +1,7 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type WebSocket from "ws";
 import { MAX_BLOB_BYTES, type TicketIssuer } from "./blobStore.js";
+import { parsePush, parseRegistration, type PushService } from "./push.js";
 
 const MAX_MOBILES_PER_ROOM = 8;
 const MAX_MESSAGES_PER_MINUTE = 240;
@@ -8,6 +9,9 @@ const MAX_MESSAGES_PER_MINUTE = 240;
 // mobile sockets in place while the same room reconnects instead of forcing
 // every phone to restart its session for a transient transport event.
 const DESKTOP_RECONNECT_GRACE_MS = 15_000;
+// Phones get one "desktop is offline" push when the desktop stays away this long
+// without saying goodbye (sleep, crash, network loss).
+const DESKTOP_OFFLINE_PUSH_MS = 5 * 60_000;
 const HASH_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const DEVICE_PATTERN = /^[A-Za-z0-9_-]{8,80}$/;
 
@@ -33,6 +37,10 @@ interface Peer {
   connectionId: string;
   role: "desktop" | "mobile";
   roomId: string;
+  /** Stable client device id from hello (the routing id of mobiles is random per connection). */
+  deviceId: string;
+  /** Mobiles report whether the app is visible; background clients still need system pushes. */
+  foreground: boolean;
   socket: WebSocket;
   windowStartedAt: number;
   messagesInWindow: number;
@@ -49,14 +57,22 @@ export class RelayBroker {
   private readonly rooms = new Map<string, Room>();
   private readonly peers = new WeakMap<WebSocket, Peer>();
   private readonly desktopDisconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly desktopOfflineTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Rooms whose desktop announced an intentional shutdown before closing. */
+  private readonly desktopGoodbyes = new WeakSet<WebSocket>();
   constructor(
     private readonly blobs?: TicketIssuer,
     private readonly desktopReconnectGraceMs = DESKTOP_RECONNECT_GRACE_MS,
+    private readonly push?: PushService,
+    private readonly desktopOfflinePushMs = DESKTOP_OFFLINE_PUSH_MS,
   ) {}
 
   close(): void {
     for (const timer of this.desktopDisconnectTimers.values()) clearTimeout(timer);
+    for (const timer of this.desktopOfflineTimers.values()) clearTimeout(timer);
     this.desktopDisconnectTimers.clear();
+    this.desktopOfflineTimers.clear();
+    this.push?.close();
   }
 
   register(socket: WebSocket, raw: unknown): boolean {
@@ -86,8 +102,13 @@ export class RelayBroker {
         clearTimeout(pendingDisconnect);
         this.desktopDisconnectTimers.delete(hello.roomId);
       }
+      const pendingOffline = this.desktopOfflineTimers.get(hello.roomId);
+      if (pendingOffline) {
+        clearTimeout(pendingOffline);
+        this.desktopOfflineTimers.delete(hello.roomId);
+      }
       existing?.desktop.socket.close(4001, "desktop reconnected");
-      const peer = createPeer(socket, "desktop", hello.roomId, hello.deviceId);
+      const peer = createPeer(socket, "desktop", hello.roomId, hello.deviceId, hello.deviceId);
       const room: Room = {
         authToken: hello.authToken,
         desktop: peer,
@@ -109,7 +130,7 @@ export class RelayBroker {
     if (existing.mobiles.size >= MAX_MOBILES_PER_ROOM) {
       return this.reject(socket, "room_full", "已达到移动设备上限");
     }
-    const peer = createPeer(socket, "mobile", hello.roomId, `mobile-${randomUUID()}`);
+    const peer = createPeer(socket, "mobile", hello.roomId, `mobile-${randomUUID()}`, hello.deviceId);
     existing.mobiles.set(peer.id, peer);
     this.peers.set(socket, peer);
     send(socket, { ...ready(peer.id, true, existing.mobiles.size), desktopConnectionId: existing.desktop.connectionId });
@@ -131,6 +152,7 @@ export class RelayBroker {
       void this.objectTicket(peer, raw);
       return;
     }
+    if (isObject(raw) && typeof raw.type === "string" && this.control(peer, raw)) return;
     const frame = parseFrame(raw);
     if (!frame) {
       this.reject(socket, "invalid_frame", "加密消息格式无效");
@@ -164,6 +186,7 @@ export class RelayBroker {
     const room = this.rooms.get(peer.roomId);
     if (!room) return;
     if (peer.role === "desktop" && room.desktop.socket === socket) {
+      if (!this.desktopGoodbyes.has(socket)) this.scheduleOfflinePush(peer.roomId, socket);
       const timer = setTimeout(() => {
         this.desktopDisconnectTimers.delete(peer.roomId);
         const current = this.rooms.get(peer.roomId);
@@ -184,6 +207,55 @@ export class RelayBroker {
 
   roomCount(): number {
     return this.rooms.size;
+  }
+
+  /** Handles plaintext relay control messages. Returns true when consumed. */
+  private control(peer: Peer, raw: Record<string, unknown>): boolean {
+    const room = this.rooms.get(peer.roomId);
+    switch (raw.type) {
+      case "push": {
+        if (peer.role !== "desktop" || room?.desktop !== peer || !this.push) return true;
+        const notification = parsePush(raw);
+        if (!notification) return true;
+        // A phone that is open and visible already shows the in-app banner.
+        const skip = (deviceId: string) => [...room.mobiles.values()].some((mobile) =>
+          mobile.deviceId === deviceId && mobile.foreground && mobile.socket.readyState === mobile.socket.OPEN);
+        void this.push.deliver(peer.roomId, notification, skip).catch(() => {});
+        return true;
+      }
+      case "desktop_goodbye":
+        if (peer.role === "desktop" && room?.desktop === peer) this.desktopGoodbyes.add(peer.socket);
+        return true;
+      case "push_register": {
+        if (peer.role !== "mobile") return true;
+        const registration = parseRegistration(raw, peer.deviceId);
+        const enabled = Boolean(registration && this.push?.enabled(registration.platform));
+        if (registration && enabled) this.push!.registry.upsert(peer.roomId, registration);
+        send(peer.socket, { type: "push_registered", platform: raw.platform, enabled });
+        return true;
+      }
+      case "push_unregister":
+        if (peer.role === "mobile") this.push?.registry.remove(peer.roomId, peer.deviceId);
+        return true;
+      case "app_state":
+        if (peer.role === "mobile" && typeof raw.foreground === "boolean") peer.foreground = raw.foreground;
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  private scheduleOfflinePush(roomId: string, socket: WebSocket): void {
+    if (!this.push || !this.push.registry.list(roomId).length) return;
+    clearTimeout(this.desktopOfflineTimers.get(roomId));
+    const timer = setTimeout(() => {
+      this.desktopOfflineTimers.delete(roomId);
+      const current = this.rooms.get(roomId);
+      if (current && current.desktop.socket !== socket && current.desktop.socket.readyState === current.desktop.socket.OPEN) return;
+      void this.push?.deliver(roomId, { kind: "desktop_offline", collapseId: "0" }, () => false).catch(() => {});
+    }, this.desktopOfflinePushMs);
+    timer.unref?.();
+    this.desktopOfflineTimers.set(roomId, timer);
   }
 
   private async objectTicket(peer: Peer, raw: Record<string, unknown>): Promise<void> {
@@ -246,8 +318,8 @@ function parseFrame(raw: unknown): FrameMessage | null {
   return raw as unknown as FrameMessage;
 }
 
-function createPeer(socket: WebSocket, role: Peer["role"], roomId: string, id: string): Peer {
-  return { id, connectionId: randomUUID(), role, roomId, socket, windowStartedAt: Date.now(), messagesInWindow: 0, objectBytesInWindow: 0 };
+function createPeer(socket: WebSocket, role: Peer["role"], roomId: string, id: string, deviceId: string): Peer {
+  return { id, connectionId: randomUUID(), role, roomId, deviceId, foreground: true, socket, windowStartedAt: Date.now(), messagesInWindow: 0, objectBytesInWindow: 0 };
 }
 
 function consumeRateLimit(peer: Peer): boolean {

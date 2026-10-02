@@ -11,6 +11,8 @@ import type { FilePreviewCache } from "./hooks/useFilePreview";
 import { hasLocalRunningTasks, useKeepAwake } from "./keepAwake";
 import { useTaskNotifications } from "./hooks/useTaskNotifications";
 import { useAttentionNotifications } from "./hooks/useAttentionNotifications";
+import type { TaskNotificationTarget } from "./taskBanner";
+import { TaskBannerView } from "./components/TaskBanner";
 
 type Destination = Omit<HostDestination, "revision">;
 type DesktopHost = ReturnType<typeof useHostState>;
@@ -50,7 +52,17 @@ function useHostState(suppliedRoot?: RpcClient) {
   const catalogs = useHostCatalogs(root, clientFor, { host, navigation: locations.current.get(hostKey(host)) ?? destination }, transportPaused);
   // The root outlives host/conversation views; only local tasks hold this lease.
   useKeepAwake(hasLocalRunningTasks(root.mode, catalogs.catalogs[hostKey(null)]?.sessions ?? []));
-  useTaskNotifications(root, catalogs.catalogs);
+  const viewRef = useRef({ host, sidebarCollapsed });
+  viewRef.current = { host, sidebarCollapsed };
+  const isViewing = useCallback((target: string | null, sessionId: string) => {
+    const view = viewRef.current;
+    // On phones an expanded sidebar covers the conversation, so nothing is on screen.
+    if (!view.sidebarCollapsed || hostKey(view.host) !== hostKey(target)) return false;
+    return locations.current.get(hostKey(target))?.sessionId === sessionId;
+  }, []);
+  const openSessionRef = useRef<(target: TaskNotificationTarget) => void>(() => undefined);
+  const openSession = useCallback((target: TaskNotificationTarget) => openSessionRef.current(target), []);
+  useTaskNotifications(root, catalogs.catalogs, { isViewing, open: openSession });
   const clearError = useCallback(() => { setError(null); catalogs.clearError(); }, [catalogs.clearError]);
   const registryRef = useRef(catalogs.registry);
   registryRef.current = catalogs.registry;
@@ -89,6 +101,11 @@ function useHostState(suppliedRoot?: RpcClient) {
     finally { if (generation === switching.current) setPending(false); }
   }, [root, clientFor, catalogs.refreshCatalog, catalogs.refreshHosts]);
   useAttentionNotifications(root, catalogs.catalogs, (target, navigation) => { void selectHost(target, navigation); });
+  openSessionRef.current = (target) => {
+    const session = catalogs.catalogs[hostKey(target.host)]?.sessions.find((entry) => entry.id === target.sessionId);
+    if (isMobileLayout()) setSidebarCollapsed(true);
+    void selectHost(target.host, { workspaceId: session?.workspaceId ?? null, sessionId: target.sessionId });
+  };
   const saveHost = useCallback(async (hostId: string) => {
     if (root.mode !== "local") throw new Error("请在桌面端添加 SSH 电脑");
     if (!validSshTarget(hostId)) throw new Error("请输入有效的 SSH 主机地址");
@@ -111,14 +128,14 @@ function useHostState(suppliedRoot?: RpcClient) {
   return useMemo(() => ({ ...catalogs, root, host, pending, error: error ?? catalogs.error, clearError, selectHost, clientFor,
     destination, sidebarCollapsed, setSidebarCollapsed, rememberNavigation, getModelDrafts, getFilePreviewCache,
     setTransportPaused,
-    saveHost, removeHost, disconnectHost }),
-  [root, host, pending, error, clearError, selectHost, clientFor, destination, sidebarCollapsed, rememberNavigation, getModelDrafts, getFilePreviewCache, saveHost, removeHost, disconnectHost, catalogs]);
+    saveHost, removeHost, disconnectHost, openSession }),
+  [root, host, pending, error, clearError, selectHost, clientFor, destination, sidebarCollapsed, rememberNavigation, getModelDrafts, getFilePreviewCache, saveHost, removeHost, disconnectHost, openSession, catalogs]);
 }
 
 /** Transport, host catalogs and sidebar outlive any individual execution view. */
 export function DesktopHostProvider({ children, root }: { children: ReactNode; root?: RpcClient }) {
   const value = useHostState(root);
-  return <Context.Provider value={value}>{children}</Context.Provider>;
+  return <Context.Provider value={value}>{children}<TaskBannerView onOpen={value.openSession} /></Context.Provider>;
 }
 export const useDesktopHost = () => useContext(Context);
 export function hostDraftKey(host: string | null | undefined, key: string) {

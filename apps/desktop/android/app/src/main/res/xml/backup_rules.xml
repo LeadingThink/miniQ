@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and lower. The push key is wrapped by a device-bound Keystore key,
+     so a restored copy is useless; exclude it and the device-specific push token. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="miniq_push.xml" />
+</full-backup-content>

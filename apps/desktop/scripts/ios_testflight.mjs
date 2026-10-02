@@ -4,6 +4,9 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const APP_BUNDLE_ID = "com.leadingthink.miniq";
+// Notification Service Extension that decrypts remote push content.
+export const NSE_BUNDLE_ID = `${APP_BUNDLE_ID}.MiniqNotificationService`;
+export const BUNDLE_IDS = [APP_BUNDLE_ID, NSE_BUNDLE_ID];
 
 const REQUIRED_PRIVACY_DESCRIPTIONS = ["NSCameraUsageDescription", "NSMicrophoneUsageDescription"];
 
@@ -11,6 +14,7 @@ const REQUIRED_SECRETS = [
   "IOS_CERTIFICATE_BASE64",
   "IOS_CERTIFICATE_PASSWORD",
   "IOS_APP_PROFILE_BASE64",
+  "IOS_NSE_PROFILE_BASE64",
   "APPLE_TEAM_ID",
   "ASC_KEY_ID",
   "ASC_ISSUER_ID",
@@ -52,6 +56,7 @@ export function validateEnvironment(environment) {
   validateBuildNumber(environment.IOS_BUILD_NUMBER);
   validateBase64("IOS_CERTIFICATE_BASE64", environment.IOS_CERTIFICATE_BASE64);
   validateBase64("IOS_APP_PROFILE_BASE64", environment.IOS_APP_PROFILE_BASE64);
+  validateBase64("IOS_NSE_PROFILE_BASE64", environment.IOS_NSE_PROFILE_BASE64);
   validateBase64("ASC_PRIVATE_KEY_BASE64", environment.ASC_PRIVATE_KEY_BASE64);
   if (!/^[A-Z0-9]{10}$/.test(environment.APPLE_TEAM_ID)) {
     throw new Error("APPLE_TEAM_ID must be a 10-character Apple team identifier");
@@ -72,8 +77,9 @@ export function validateSource(desktopDirectory) {
     throw new Error(`Capacitor appId must be ${APP_BUNDLE_ID}`);
   }
   const bundleIds = [...project.matchAll(/PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);/g)].map((match) => match[1]);
-  if (bundleIds.length === 0 || bundleIds.some((bundleId) => bundleId !== APP_BUNDLE_ID)) {
-    throw new Error(`every iOS target must use bundle identifier ${APP_BUNDLE_ID}`);
+  const unknown = bundleIds.filter((bundleId) => !BUNDLE_IDS.includes(bundleId));
+  if (unknown.length > 0 || BUNDLE_IDS.some((bundleId) => !bundleIds.includes(bundleId))) {
+    throw new Error(`iOS targets must use exactly the bundle identifiers ${BUNDLE_IDS.join(", ")}`);
   }
   validatePrivacySource(info);
 }
@@ -113,14 +119,14 @@ export function validateBuiltApp(info, marketingVersion, buildNumber) {
   validatePrivacyDescriptions(info);
 }
 
-export function validateProfile(profile, teamId, now = new Date()) {
+export function validateProfile(profile, teamId, now = new Date(), bundleId = APP_BUNDLE_ID) {
   const entitlements = profile.Entitlements ?? {};
-  const expectedIdentifier = `${teamId}.${APP_BUNDLE_ID}`;
+  const expectedIdentifier = `${teamId}.${bundleId}`;
   if (!Array.isArray(profile.TeamIdentifier) || !profile.TeamIdentifier.includes(teamId)) {
     throw new Error("provisioning profile does not belong to APPLE_TEAM_ID");
   }
   if (entitlements["application-identifier"] !== expectedIdentifier) {
-    throw new Error(`provisioning profile must authorize ${APP_BUNDLE_ID}`);
+    throw new Error(`provisioning profile must authorize ${bundleId}`);
   }
   if (entitlements["com.apple.developer.team-identifier"] !== teamId) {
     throw new Error("provisioning profile entitlement has the wrong team identifier");
@@ -148,11 +154,16 @@ function escapeXml(value) {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
-export function buildExportOptions({ teamId, profileName, signingIdentity }) {
-  const values = [teamId, profileName, signingIdentity];
+/** `profiles` maps every bundle identifier in BUNDLE_IDS to its App Store profile name. */
+export function buildExportOptions({ teamId, profiles, signingIdentity }) {
+  const entries = BUNDLE_IDS.map((bundleId) => [bundleId, profiles?.[bundleId]]);
+  const values = [teamId, signingIdentity, ...entries.map(([, name]) => name)];
   if (values.some((value) => typeof value !== "string" || value.length === 0 || /[\r\n]/.test(value))) {
     throw new Error("export signing values must be non-empty single-line strings");
   }
+  const profileEntries = entries
+    .map(([bundleId, name]) => `<key>${bundleId}</key><string>${escapeXml(name)}</string>`)
+    .join("");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -161,7 +172,7 @@ export function buildExportOptions({ teamId, profileName, signingIdentity }) {
   <key>manageAppVersionAndBuildNumber</key><false/>
   <key>method</key><string>app-store-connect</string>
   <key>provisioningProfiles</key>
-  <dict><key>${APP_BUNDLE_ID}</key><string>${escapeXml(profileName)}</string></dict>
+  <dict>${profileEntries}</dict>
   <key>signingCertificate</key><string>${escapeXml(signingIdentity)}</string>
   <key>signingStyle</key><string>manual</string>
   <key>stripSwiftSymbols</key><true/>
@@ -215,16 +226,26 @@ function readProfile(path) {
 }
 
 function prepareProfile() {
-  requireEnvironment(process.env, ["APPLE_TEAM_ID", "IOS_PROFILE_PLIST", "IOS_EXPORT_OPTIONS", "IOS_SIGNING_IDENTITY"]);
-  const profile = validateProfile(readProfile(process.env.IOS_PROFILE_PLIST), process.env.APPLE_TEAM_ID);
+  requireEnvironment(process.env, [
+    "APPLE_TEAM_ID",
+    "IOS_PROFILE_PLIST",
+    "IOS_NSE_PROFILE_PLIST",
+    "IOS_EXPORT_OPTIONS",
+    "IOS_SIGNING_IDENTITY",
+  ]);
+  const teamId = process.env.APPLE_TEAM_ID;
+  const profile = validateProfile(readProfile(process.env.IOS_PROFILE_PLIST), teamId);
+  const nseProfile = validateProfile(readProfile(process.env.IOS_NSE_PROFILE_PLIST), teamId, new Date(), NSE_BUNDLE_ID);
   const options = buildExportOptions({
-    teamId: process.env.APPLE_TEAM_ID,
-    profileName: profile.name,
+    teamId,
+    profiles: { [APP_BUNDLE_ID]: profile.name, [NSE_BUNDLE_ID]: nseProfile.name },
     signingIdentity: process.env.IOS_SIGNING_IDENTITY,
   });
   writeFileSync(process.env.IOS_EXPORT_OPTIONS, options, { mode: 0o600 });
   writeOutput("profile_name", profile.name);
   writeOutput("profile_uuid", profile.uuid);
+  writeOutput("nse_profile_name", nseProfile.name);
+  writeOutput("nse_profile_uuid", nseProfile.uuid);
 }
 
 function main() {
@@ -237,7 +258,7 @@ function main() {
   }
   if (action === "prepare-profile") {
     prepareProfile();
-    console.log("Validated App Store provisioning profile and created export options");
+    console.log("Validated App Store provisioning profiles and created export options");
     return;
   }
   if (action === "validate-app") {

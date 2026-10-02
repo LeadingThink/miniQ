@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import {
   APP_BUNDLE_ID,
+  NSE_BUNDLE_ID,
   buildExportOptions,
   validateBuildNumber,
   validateBuiltApp,
@@ -20,6 +21,7 @@ const environment = {
   IOS_CERTIFICATE_BASE64: "dGVzdA==",
   IOS_CERTIFICATE_PASSWORD: "secret",
   IOS_APP_PROFILE_BASE64: "dGVzdA==",
+  IOS_NSE_PROFILE_BASE64: "dGVzdA==",
   APPLE_TEAM_ID: teamId,
   ASC_KEY_ID: "AB12CD34EF",
   ASC_ISSUER_ID: "12345678-1234-1234-1234-123456789abc",
@@ -85,16 +87,32 @@ test("accepts only a live App Store profile for this bundle and team", () => {
   }
 });
 
+test("validates the notification service extension profile against its own bundle", () => {
+  const nseProfile = appStoreProfile({
+    Entitlements: { ...appStoreProfile().Entitlements, "application-identifier": `${teamId}.${NSE_BUNDLE_ID}` },
+  });
+  const now = new Date("2029-01-01");
+  assert.doesNotThrow(() => validateProfile(nseProfile, teamId, now, NSE_BUNDLE_ID));
+  assert.throws(() => validateProfile(nseProfile, teamId, now), new RegExp(APP_BUNDLE_ID));
+  assert.throws(() => validateProfile(appStoreProfile(), teamId, now, NSE_BUNDLE_ID), /MiniqNotificationService/);
+});
+
 test("export options use manual App Store Connect signing", () => {
+  const signingIdentity = "0123456789ABCDEF0123456789ABCDEF01234567";
   const plist = buildExportOptions({
     teamId,
-    profileName: "miniQ & App Store",
-    signingIdentity: "0123456789ABCDEF0123456789ABCDEF01234567",
+    profiles: { [APP_BUNDLE_ID]: "miniQ & App Store", [NSE_BUNDLE_ID]: "miniQ NSE" },
+    signingIdentity,
   });
   assert.match(plist, /<key>method<\/key><string>app-store-connect<\/string>/);
-  assert.match(plist, new RegExp(`<key>${APP_BUNDLE_ID.replaceAll(".", "\\.")}<\\/key>`));
-  assert.match(plist, /miniQ &amp; App Store/);
+  const escaped = (id) => id.replaceAll(".", "\\.");
+  assert.match(plist, new RegExp(`<key>${escaped(APP_BUNDLE_ID)}<\\/key><string>miniQ &amp; App Store<\\/string>`));
+  assert.match(plist, new RegExp(`<key>${escaped(NSE_BUNDLE_ID)}<\\/key><string>miniQ NSE<\\/string>`));
   assert.match(plist, /<key>manageAppVersionAndBuildNumber<\/key><false\/>/);
+  assert.throws(
+    () => buildExportOptions({ teamId, profiles: { [APP_BUNDLE_ID]: "miniQ" }, signingIdentity }),
+    /single-line/,
+  );
 });
 
 const privacyDescriptions = {
