@@ -98,6 +98,14 @@ struct MusicGenerationQueryInput {
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+struct VideoGenerationQueryInput {
+    /// The `request_id` returned by `generate_video`.
+    #[schemars(regex(pattern = r"^[A-Za-z0-9_-]+$"))]
+    request_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct MusicClipsQueryInput {
     /// Up to 20 clip identifiers returned by `generate_music`.
     #[schemars(length(min = 1, max = 20))]
@@ -161,10 +169,13 @@ fn client() -> Result<reqwest::Client, ToolError> {
 async fn response_json(response: reqwest::Response) -> Result<Value, ToolError> {
     let status = response.status();
     if !status.is_success() {
-        return Err(ToolError::ExecutionFailed(format!(
-            "media provider returned HTTP {}",
-            status.as_u16()
-        )));
+        let body = response.text().await.unwrap_or_default();
+        let detail: String = body.trim().chars().take(500).collect();
+        return Err(ToolError::ExecutionFailed(if detail.is_empty() {
+            format!("media provider returned HTTP {}", status.as_u16())
+        } else {
+            format!("media provider returned HTTP {}: {detail}", status.as_u16())
+        }));
     }
     response
         .json()
@@ -441,6 +452,19 @@ impl Tool for TranscribeAudioTool {
     }
 }
 
+/// Detects the image formats accepted for video reference frames.
+fn video_reference_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
+
 pub struct GenerateVideoTool;
 #[async_trait]
 impl Tool for GenerateVideoTool {
@@ -448,7 +472,7 @@ impl Tool for GenerateVideoTool {
         "generate_video"
     }
     fn description(&self) -> &str {
-        "Start a video generation task. Returns its task id and status URL so the task can be resumed without submitting it twice."
+        "Start a video generation task, optionally animating a JPEG, PNG or WebP reference image. Returns a request_id; call get_video_generation with it to poll status and download the finished video instead of submitting again."
     }
     fn parameters_schema(&self) -> Value {
         serde_json::to_value(schemars::schema_for!(VideoInput)).unwrap()
@@ -482,11 +506,13 @@ impl Tool for GenerateVideoTool {
             let bytes = tokio::fs::read(p)
                 .await
                 .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-            body["image"] = format!(
-                "data:image/png;base64,{}",
+            let mime = video_reference_mime(&bytes).ok_or_else(|| {
+                ToolError::InvalidInput("image_path must be a JPEG, PNG or WebP image".into())
+            })?;
+            body["image"] = json!({"url": format!(
+                "data:{mime};base64,{}",
                 base64::engine::general_purpose::STANDARD.encode(bytes)
-            )
-            .into();
+            )});
         }
         let value = response_json(
             client()?
@@ -543,6 +569,83 @@ fn valid_music_clip_id(id: &str) -> bool {
         && id
             .bytes()
             .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+}
+
+pub struct GetVideoGenerationTool;
+#[async_trait]
+impl Tool for GetVideoGenerationTool {
+    fn name(&self) -> &str {
+        "get_video_generation"
+    }
+    fn description(&self) -> &str {
+        "Query a video generation task by the request_id returned from generate_video. When the task is done, the video is downloaded into the workspace and its local path is returned."
+    }
+    fn parameters_schema(&self) -> Value {
+        serde_json::to_value(schemars::schema_for!(VideoGenerationQueryInput)).unwrap()
+    }
+    fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
+        Risk {
+            level: RiskLevel::Low,
+            reason: "query video generation".into(),
+        }
+    }
+    async fn execute(&self, ctx: &ToolContext, raw: Value) -> Result<Value, ToolError> {
+        let input: VideoGenerationQueryInput = parse_input(raw)?;
+        if !valid_music_clip_id(&input.request_id) {
+            return Err(ToolError::InvalidInput(
+                "request_id must be a non-empty path-safe identifier".into(),
+            ));
+        }
+        let media = config(ctx)?;
+        let http = client()?;
+        let task = response_json(
+            http.get(url(media, &format!("/videos/{}", input.request_id)))
+                .bearer_auth(&media.api_key)
+                .send()
+                .await
+                .map_err(|e| ToolError::ExecutionFailed(format!("video status request: {e}")))?,
+        )
+        .await?;
+        let video_url = task
+            .pointer("/video/url")
+            .and_then(Value::as_str)
+            .filter(|_| task.get("status").and_then(Value::as_str) == Some("done"));
+        let Some(video_url) = video_url else {
+            return Ok(json!({"kind":"video_task","task":task,"resume":true}));
+        };
+        let base = reqwest::Url::parse(&media.base_url)
+            .map_err(|e| ToolError::ExecutionFailed(format!("invalid media base url: {e}")))?;
+        let target = base
+            .join(video_url)
+            .map_err(|e| ToolError::ExecutionFailed(format!("invalid video url: {e}")))?;
+        // Only send the provider credential back to the provider's own origin.
+        let mut request = http.get(target.clone());
+        if target.origin() == base.origin() {
+            request = request.bearer_auth(&media.api_key);
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("video download: {e}")))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(ToolError::ExecutionFailed(format!(
+                "video download returned HTTP {}",
+                status.as_u16()
+            )));
+        }
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| ToolError::ExecutionFailed(format!("video download: {e}")))?;
+        let path = save_bytes(ctx, "mp4", &bytes)?;
+        Ok(json!({
+            "kind":"video_task",
+            "task":task,
+            "resume":false,
+            "video":{"kind":"video","path":path,"mimeType":"video/mp4"}
+        }))
+    }
 }
 
 pub struct GetMusicGenerationTool;
@@ -663,6 +766,7 @@ mod tests {
             GenerateImageTool.spec().name,
             EditImageTool.spec().name,
             GenerateVideoTool.spec().name,
+            GetVideoGenerationTool.spec().name,
             SynthesizeSpeechTool.spec().name,
             TranscribeAudioTool.spec().name,
             GenerateMusicTool.spec().name,
@@ -675,6 +779,7 @@ mod tests {
                 "generate_image",
                 "edit_image",
                 "generate_video",
+                "get_video_generation",
                 "synthesize_speech",
                 "transcribe_audio",
                 "generate_music",

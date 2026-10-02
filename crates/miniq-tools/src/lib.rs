@@ -65,7 +65,7 @@ pub use interact::{validate_ask_user_input, AskUserTool, TaskUpdateTool};
 pub use mcp::{McpBridge, McpCallTool, MCP_LIST_TOOLS};
 pub use media::{
     EditImageTool, GenerateImageTool, GenerateMusicTool, GenerateVideoTool, GetMusicClipsTool,
-    GetMusicGenerationTool, SynthesizeSpeechTool, TranscribeAudioTool,
+    GetMusicGenerationTool, GetVideoGenerationTool, SynthesizeSpeechTool, TranscribeAudioTool,
 };
 pub use memory::{MemorySearchTool, MemoryWriteTool, ScheduledTaskMemoryWriteTool};
 pub use native::{
@@ -142,6 +142,7 @@ pub fn default_router() -> ToolRouter {
         std::sync::Arc::new(GenerateImageTool),
         std::sync::Arc::new(EditImageTool),
         std::sync::Arc::new(GenerateVideoTool),
+        std::sync::Arc::new(GetVideoGenerationTool),
         std::sync::Arc::new(SynthesizeSpeechTool),
         std::sync::Arc::new(TranscribeAudioTool),
         std::sync::Arc::new(GenerateMusicTool),

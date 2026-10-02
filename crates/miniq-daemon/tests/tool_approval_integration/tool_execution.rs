@@ -137,6 +137,7 @@ async fn tool_list_reports_toolset() {
             "generate_video",
             "get_music_clips",
             "get_music_generation",
+            "get_video_generation",
             "git_diff",
             "git_status",
             "http_request",
