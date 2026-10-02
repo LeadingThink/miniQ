@@ -48,6 +48,13 @@
 
 APNs 根据手机上报的 `environment` 自动选择 sandbox 或 production 网关。上述凭据只能放在服务器的 systemd 环境文件中，不要提交到仓库。
 
+### 线上部署
+
+- 线上 relay：`wss://oneapi.zaiwenai.com/miniq-relay/ws`，进程监听 `127.0.0.1:9200`，代码在 `/home/ubuntu/miniq-relay`。
+- systemd drop-in：`sharing.conf`（`MINIQ_SHARE_DIR`）与 `push.conf`（`MINIQ_PUSH_REGISTRY_FILE`），模板在 `services/relay/deploy/`。
+- 凭据追加到 `/etc/miniq-relay/blob.env`；`.p8` 建议放在 `/etc/miniq-relay/` 下（权限 600，属主 ubuntu），用 `MINIQ_APNS_KEY_PATH` 指向它。
+- 更新代码：本地 `npm run build` 并测试，备份线上 `dist` 为 `dist-backup-<时间>`，替换 `dist`，然后 `sudo systemctl restart miniq-relay`；用 `curl -s http://127.0.0.1:9200/health` 确认。回滚时把备份目录改回 `dist` 再重启。
+
 ## 构建配置
 
 ### iOS
