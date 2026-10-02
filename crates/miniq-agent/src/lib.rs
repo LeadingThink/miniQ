@@ -13,6 +13,7 @@ use async_trait::async_trait;
 mod checkpoint;
 mod context;
 mod image_history_tool;
+mod loop_guard;
 mod missing_images;
 mod response_language;
 mod retry;
@@ -345,8 +346,7 @@ async fn run_turn_inner(
     let executor = &image_executor;
     let capabilities = provider.capabilities().await;
     let mut steps = 0;
-    let mut last_tool_batch = String::new();
-    let mut repeated_tool_batch = 0;
+    let mut loop_guard = loop_guard::LoopGuard::default();
 
     loop {
         if cancel.is_cancelled() {
@@ -617,16 +617,9 @@ async fn run_turn_inner(
             .map(|call| executor.call_fingerprint(call))
             .collect::<Vec<_>>()
             .join("\n");
-        if batch_fingerprint == last_tool_batch {
-            repeated_tool_batch += 1;
-        } else {
-            last_tool_batch = batch_fingerprint;
-            repeated_tool_batch = 1;
-        }
-        if repeated_tool_batch >= limits.repeated_tool_batch_limit {
-            return Err(AgentError::RepeatedToolLoop {
-                repetitions: repeated_tool_batch,
-            });
+        let verdict = loop_guard.check(&batch_fingerprint, limits.repeated_tool_batch_limit);
+        if let loop_guard::Verdict::Stop { repetitions } = verdict {
+            return Err(AgentError::RepeatedToolLoop { repetitions });
         }
 
         // Record the assistant message that requested the calls.
@@ -643,7 +636,22 @@ async fn run_turn_inner(
         state.history.push(assistant_msg.clone());
         state.appended.push(assistant_msg);
 
+        if let loop_guard::Verdict::Warn { repetitions } = verdict {
+            // Answer every call without executing it so the model can change
+            // approach instead of losing the whole turn.
+            let warnings: Vec<_> = tool_calls
+                .iter()
+                .map(|call| loop_guard::warning_result(call, repetitions))
+                .collect();
+            state.history.extend(warnings.iter().cloned());
+            state.appended.extend(warnings);
+            state.save(limits, false).await?;
+            continue;
+        }
+
         tool_batch::execute(executor, &tool_calls, state, limits, &cancel).await?;
+        let results = &state.history[state.history.len() - tool_calls.len()..];
+        loop_guard.record(batch_fingerprint, loop_guard::result_fingerprint(results));
     }
 }
 
@@ -1254,9 +1262,10 @@ mod tests {
             repeated.clone(),
             repeated.clone(),
             repeated.clone(),
+            repeated.clone(),
             repeated,
         ]);
-        let (events, _receiver) = tokio::sync::mpsc::channel(8);
+        let (events, _receiver) = tokio::sync::mpsc::channel(64);
 
         let error = run_turn_with_limits(
             &provider,

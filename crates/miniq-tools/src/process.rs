@@ -317,7 +317,7 @@ impl Tool for ProcessOutputTool {
     }
 
     fn description(&self) -> &str {
-        "Read the complete result and status of a managed background process or child agent using its returned id/agentId. Use block=true with a bounded timeout when waiting, after launching other independent work; avoid rapid polling. A running status is not completion."
+        "Read the complete result and status of a managed background process or child agent using its returned id/agentId. Use block=true with a bounded timeout when waiting, after launching other independent work; avoid rapid polling. For long builds, CI or releases prefer one larger timeoutSecs (up to 600) over repeating short waits; identical calls that keep returning identical results are treated as a loop. A running status is not completion."
     }
 
     fn parameters_schema(&self) -> Value {

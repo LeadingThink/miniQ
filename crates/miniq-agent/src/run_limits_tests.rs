@@ -137,7 +137,7 @@ async fn unbounded_turn_can_be_cancelled_after_96_steps() {
 #[tokio::test]
 async fn repeated_call_guard_still_stops_loops_after_96_steps() {
     let mut turns: Vec<_> = (0..100).map(|index| tool_turn(index, index)).collect();
-    turns.extend((100..104).map(|id| tool_turn(id, 100)));
+    turns.extend((100..105).map(|id| tool_turn(id, 100)));
     let provider = MockProvider::new(turns);
     let executor = CountingExecutor::default();
     let error = run_turn(
@@ -154,8 +154,10 @@ async fn repeated_call_guard_still_stops_loops_after_96_steps() {
         error,
         AgentError::RepeatedToolLoop { repetitions: 4 }
     ));
+    // Three identical rounds run, the fourth gets a warning instead of
+    // executing, and repeating it again ends the turn.
     assert_eq!(executor.calls.load(Ordering::SeqCst), 103);
-    assert_eq!(provider.requests.lock().unwrap().len(), 104);
+    assert_eq!(provider.requests.lock().unwrap().len(), 105);
 }
 
 struct WaitingProvider {
@@ -207,4 +209,92 @@ async fn unbounded_turn_can_be_cancelled_while_waiting_for_provider_or_stream() 
                 .expect("cancellation must not wait for the provider");
         assert!(matches!(result, Err(AgentError::Cancelled)));
     }
+}
+
+struct PollingExecutor {
+    polls: AtomicUsize,
+    changing: bool,
+}
+
+#[async_trait]
+impl ToolExecutor for PollingExecutor {
+    fn specs(&self) -> Vec<ToolSpec> {
+        Vec::new()
+    }
+
+    async fn execute(&self, _call: &ToolCallRequest) -> Result<Value, AgentError> {
+        let poll = self.polls.fetch_add(1, Ordering::SeqCst);
+        let status = if self.changing {
+            format!("running step {poll}")
+        } else {
+            "running".into()
+        };
+        Ok(json!({"status": status, "durationMs": poll * 1000}))
+    }
+}
+
+fn poll_turn(id: usize) -> Vec<ChatDelta> {
+    vec![ChatDelta::ToolCall(ToolCallRequest {
+        id: format!("poll-{id}"),
+        name: "process_output".into(),
+        arguments: json!({"id": "shell_1", "block": true, "timeoutSecs": 60}),
+    })]
+}
+
+#[tokio::test]
+async fn identical_polling_with_progress_is_not_a_loop() {
+    let mut turns: Vec<_> = (0..8).map(poll_turn).collect();
+    turns.push(vec![ChatDelta::Text("done".into())]);
+    let provider = MockProvider::new(turns);
+    let executor = PollingExecutor {
+        polls: AtomicUsize::new(0),
+        changing: true,
+    };
+    let outcome = run_turn(
+        &provider,
+        &executor,
+        Vec::new(),
+        discard_events(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(outcome.final_text, "done");
+    assert_eq!(executor.polls.load(Ordering::SeqCst), 8);
+}
+
+#[tokio::test]
+async fn unchanged_polling_gets_a_warning_and_the_turn_can_recover() {
+    let mut turns: Vec<_> = (0..4).map(poll_turn).collect();
+    turns.push(vec![ChatDelta::ToolCall(ToolCallRequest {
+        id: "wait-longer".into(),
+        name: "process_output".into(),
+        arguments: json!({"id": "shell_1", "block": true, "timeoutSecs": 600}),
+    })]);
+    turns.push(vec![ChatDelta::Text("done".into())]);
+    let provider = MockProvider::new(turns);
+    let executor = PollingExecutor {
+        polls: AtomicUsize::new(0),
+        changing: false,
+    };
+    let outcome = run_turn(
+        &provider,
+        &executor,
+        Vec::new(),
+        discard_events(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(outcome.final_text, "done");
+    // The fourth identical poll is answered with a warning, not executed.
+    assert_eq!(executor.polls.load(Ordering::SeqCst), 4);
+    let warning = outcome
+        .appended
+        .iter()
+        .find(|message| message.tool_call_id.as_deref() == Some("poll-3"))
+        .unwrap();
+    assert!(warning.content.contains("\"repeatedToolLoop\":true"));
 }
