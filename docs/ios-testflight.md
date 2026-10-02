@@ -11,6 +11,7 @@ miniQ 的 iOS 包由 `.github/workflows/ios-testflight.yml` 在 GitHub 的 macOS
 | `IOS_CERTIFICATE_BASE64` | 含私钥的 Apple Distribution `.p12` 文件 Base64 |
 | `IOS_CERTIFICATE_PASSWORD` | 导出 `.p12` 时设置的密码 |
 | `IOS_APP_PROFILE_BASE64` | `com.leadingthink.miniq` 的 App Store 描述文件 Base64 |
+| `IOS_NSE_PROFILE_BASE64` | 推送通知扩展 `com.leadingthink.miniq.MiniqNotificationService` 的 App Store 描述文件 Base64（需启用 App Group `group.com.leadingthink.miniq`），见 [remote-push.md](remote-push.md) |
 | `APPLE_TEAM_ID` | Apple Developer Team ID，当前团队为 `W5M6Q4SAV7` |
 | `ASC_KEY_ID` | App Store Connect API Key ID |
 | `ASC_ISSUER_ID` | App Store Connect API Issuer ID |
