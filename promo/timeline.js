@@ -1,5 +1,5 @@
-const DURATION = 55;
-const GOAL = "把这个仓库整理成产品报告，并生成一份周报文档";
+const DURATION = 92;
+const GOAL = "根据项目写一份多模态产品报告，并配上插画与主题音频";
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -11,7 +11,8 @@ const easeInOut = (t) => {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 };
 
-const CUTS = [3.6, 8.4, 14.4, 19.8, 24.8, 29.4, 33.8, 38.0, 41.6];
+// 新的切点：每个重要转场
+const CUTS = [6, 18, 34, 42, 48, 60, 72, 86];
 
 const screens = {
   home: $("sc-home"),
@@ -71,12 +72,13 @@ function mixCam(a, b, u) {
 
 const CAM = {
   hidden: { x: 420, y: 80, s: 0.62, ry: -28, rx: 8, blur: 10, op: 0 },
-  intro: { x: 260, y: 40, s: 0.78, ry: -18, rx: 6, blur: 0, op: 1 },
-  type: { x: 220, y: 20, s: 0.86, ry: -10, rx: 3, blur: 0, op: 1 },
+  result: { x: -80, y: 10, s: 0.92, ry: 10, rx: 2, blur: 0, op: 1 },
+  voiceInput: { x: 220, y: 20, s: 0.86, ry: -10, rx: 3, blur: 0, op: 1 },
   tools: { x: 40, y: -10, s: 0.96, ry: -4, rx: 1, blur: 0, op: 1 },
+  upload: { x: 180, y: 0, s: 0.9, ry: -8, rx: 2, blur: 0, op: 1 },
+  docsOut: { x: -100, y: 20, s: 0.94, ry: 12, rx: 2, blur: 0, op: 1 },
   appr: { x: -20, y: -30, s: 1.08, ry: 0, rx: 0, blur: 0, op: 1 },
-  docs: { x: -80, y: 10, s: 0.92, ry: 10, rx: 2, blur: 0, op: 1 },
-  browser: { x: 10, y: -20, s: 1.0, ry: -6, rx: 0, blur: 0, op: 1 },
+  mobile: { x: 60, y: 0, s: 0.88, ry: -6, rx: 2, blur: 0, op: 1 },
   skill: { x: 80, y: 0, s: 0.9, ry: -8, rx: 2, blur: 0, op: 1 },
   sched: { x: -40, y: 10, s: 0.94, ry: 8, rx: 1, blur: 0, op: 1 },
   remote: { x: 0, y: 20, s: 0.88, ry: 0, rx: 4, blur: 0, op: 1 },
@@ -97,9 +99,9 @@ function typeText(el, full, t, t0, cps = 18) {
 
 function setTools(t) {
   const steps = document.querySelectorAll("[data-tool]");
-  const starts = [8.55, 9.45, 10.4, 11.45, 12.55];
+  const starts = [10.5, 11.5, 12.6, 13.8, 15.0, 19.5, 23.5];
   steps.forEach((el, i) => {
-    const t0 = starts[i];
+    const t0 = starts[i] ?? (15.0 + i);
     const marker = el.querySelector(".tool-step-marker");
     const action = el.querySelector(".tool-action");
     if (t < t0) {
@@ -108,7 +110,7 @@ function setTools(t) {
       return;
     }
     el.style.display = "block";
-    const done = t > t0 + 0.78;
+    const done = t > t0 + 0.9;
     el.className = "tool-step " + (done ? "succeeded" : "running");
     if (done) {
       marker.textContent = "✓";
@@ -176,171 +178,216 @@ window.seek = function seek(t) {
   vis($("approval"), false);
   vis($("art-bar"), false);
   vis($("user-msg"), false);
+  vis($("media-img"), false);
+  vis($("media-audio"), false);
   document.querySelectorAll("[data-tool]").forEach((el) => {
     el.style.display = "none";
   });
   $("nav-sched").classList.remove("active");
-  $("session-home").classList.toggle("selected", t < 8.4);
-  $("session-chat").classList.toggle("selected", t >= 8.4);
+  $("session-home").classList.toggle("selected", t < 18);
+  $("session-chat").classList.toggle("selected", t >= 18);
 
   let camera = CAM.hidden;
   $("copy").style.display = "block";
 
-  if (t < 3.6) {
-    showScreen("home");
-    camera = mixCam(CAM.hidden, CAM.intro, (t - 1.6) / 1.6);
+  // ========== 第一幕：从结果开始 (0–6s) ==========
+  if (t < 6) {
+    showScreen("docs");
+    vis($("art-bar"), true);
+    camera = mixCam(CAM.hidden, CAM.result, t / 1.8);
     setCopy({
-      center: true,
-      kicker: "DESKTOP AI",
-      title: "miniQ",
-      sub: "你说目标，它来执行",
-    });
-    slamCopy(t, 0.38);
-    if (t > 3.3) fadeCopy(t, 3.6, 0.28);
-  } else if (t < 8.4) {
-    showScreen("chat");
-    vis($("user-msg"), false);
-    setTools(0);
-    camera = mixCam(CAM.intro, CAM.type, (t - 3.6) / 1.1);
-    setCopy({
-      kicker: "GOAL",
-      title: "你说一句<br/>目标",
-      sub: "随心输入，Enter 发送",
-      x: 88,
-      y: 210,
-    });
-    slamCopy(t, 3.62);
-    const p = typeText($("typed"), GOAL, t, 4.35, 14);
-    $("home-composer")?.classList.toggle("focus", false);
-    $("chat-composer").classList.toggle("focus", t > 4.2 && t < 8.05);
-    $("send").classList.toggle("pulse", t > 7.95 && t < 8.2);
-    shade.style.opacity = "0.9";
-    if (t > 7.55) aimCursor("send", t, 7.55, 8.05);
-  } else if (t < 14.4) {
-    showScreen("chat");
-    vis($("user-msg"), true);
-    $("typed").innerHTML = `<span class="ph">随心输入,Enter 发送,/ 引用技能</span>`;
-    setTools(t);
-    camera = mixCam(CAM.type, CAM.tools, (t - 8.4) / 0.8);
-    setCopy({
-      kicker: "AGENT",
-      title: "剩下的<br/>它来跑",
-      sub: "读仓库 · 搜代码 · 写文档",
+      kicker: "THE RESULT",
+      title: "报告<br/>已经写好了",
+      sub: "你只说了一句话",
       x: 80,
       y: 180,
     });
-    slamCopy(t, 8.42);
-    shade.style.opacity = "1";
-  } else if (t < 19.8) {
+    slamCopy(t, 0.38);
+    shade.style.opacity = "0.95";
+    if (t > 5.6) fadeCopy(t, 6, 0.36);
+  }
+  // ========== 第二幕 2.1：语音输入 + 任务拆解 (6–18s) ==========
+  else if (t < 18) {
+    showScreen("chat");
+    vis($("user-msg"), t > 9.5);
+    if (t < 9.5) {
+      // 语音输入阶段
+      camera = mixCam(CAM.result, CAM.voiceInput, (t - 6) / 1.2);
+      setCopy({
+        kicker: "HOW IT STARTS",
+        title: "你随口<br/>说一句",
+        sub: "语音输入，实时转写",
+        x: 88,
+        y: 200,
+      });
+      slamCopy(t, 6.05);
+      // 模拟语音转写
+      const voiceProgress = clamp01((t - 7.2) / 2.0);
+      const partialGoal = GOAL.slice(0, Math.floor(GOAL.length * voiceProgress));
+      $("typed").innerHTML = partialGoal + (voiceProgress < 1 ? `<span class="caret"></span>` : "");
+      $("chat-composer").classList.toggle("focus", t > 7.0 && t < 9.3);
+      shade.style.opacity = "0.9";
+    } else {
+      // 工具调用阶段
+      camera = mixCam(CAM.voiceInput, CAM.tools, (t - 9.5) / 1.8);
+      setTools(t);
+      setCopy({
+        kicker: "AGENT",
+        title: "剩下的<br/>它来跑",
+        sub: "读仓库 · 搜代码 · 写文档",
+        x: 80,
+        y: 180,
+      });
+      slamCopy(t, 9.52);
+      $("typed").innerHTML = `<span class="ph">随心输入,Enter 发送,/ 引用技能</span>`;
+      shade.style.opacity = "1";
+    }
+    if (t > 17.6) fadeCopy(t, 18, 0.36);
+  }
+  // ========== 第二幕 2.2：多模态创作与产物 (18–34s) ==========
+  else if (t < 34) {
+    showScreen("chat");
+    vis($("user-msg"), true);
+    setTools(t);
+    vis($("media-img"), t >= 20.4);
+    vis($("media-audio"), t >= 24.4);
+    if (t < 26) {
+      // 文件与多模态创作
+      camera = mixCam(CAM.tools, CAM.upload, (t - 18) / 1.4);
+      setCopy({
+        kicker: "MULTIMODAL CREATION",
+        title: "对话生图<br/>对话配乐",
+        sub: "原生多模态 · 直接落盘视听产物",
+        x: 76,
+        y: 170,
+      });
+      slamCopy(t, 18.05);
+      shade.style.opacity = "1";
+    } else {
+      // 文档与多模态产物展示
+      showScreen("docs");
+      vis($("art-bar"), true);
+      camera = mixCam(CAM.upload, CAM.docsOut, (t - 26) / 1.5);
+      setCopy({
+        kicker: "ARTIFACTS",
+        title: "视听 · 文档<br/>直接落盘",
+        sub: "png · wav · docx · xlsx",
+        x: 80,
+        y: 200,
+      });
+      slamCopy(t, 26.05);
+      shade.style.opacity = "0.95";
+    }
+    if (t > 33.6) fadeCopy(t, 34, 0.36);
+  }
+  // ========== 第三幕 3.1：审批与权限 (34–42s) ==========
+  else if (t < 42) {
     showScreen("chat");
     vis($("user-msg"), true);
     setTools(20);
     vis($("approval"), true);
-    camera = mixCam(CAM.tools, CAM.appr, (t - 14.4) / 0.7);
+    camera = mixCam(CAM.docsOut, CAM.appr, (t - 34) / 1.2);
     setCopy({
-      kicker: "CONTROL",
+      kicker: "YOU STAY IN CONTROL",
       title: "高风险？<br/>先问你",
       sub: "请求批准 · 替我审批 · 完全访问",
       x: 72,
       y: 150,
     });
-    slamCopy(t, 14.42);
-    $("btn-allow").style.transform = t > 18.9 && t < 19.2 ? "scale(0.96)" : "scale(1)";
-    $("appr-badge").textContent = t > 19.1 ? "succeeded" : "waiting_approval";
-    $("appr-badge").className = "badge " + (t > 19.1 ? "succeeded" : "waiting_approval");
+    slamCopy(t, 34.05);
+    $("btn-allow").style.transform = t > 40.5 && t < 40.8 ? "scale(0.96)" : "scale(1)";
+    $("appr-badge").textContent = t > 40.7 ? "succeeded" : "waiting_approval";
+    $("appr-badge").className = "badge " + (t > 40.7 ? "succeeded" : "waiting_approval");
     shade.style.opacity = "1";
-    if (t > 18.55) aimCursor("btn-allow", t, 18.55, 19.02);
-  } else if (t < 24.8) {
-    showScreen("docs");
-    vis($("art-bar"), false);
-    camera = mixCam(CAM.appr, CAM.docs, (t - 19.8) / 0.75);
+    if (t > 40.0) aimCursor("btn-allow", t, 40.0, 40.6);
+    if (t > 41.6) fadeCopy(t, 42, 0.36);
+  }
+  // ========== 第三幕 3.2：移动端接续 (42–48s) ==========
+  else if (t < 48) {
+    showScreen("remote");
+    camera = mixCam(CAM.appr, CAM.mobile, (t - 42) / 1.2);
     setCopy({
-      kicker: "ARTIFACTS",
-      title: "报告<br/>直接落盘",
-      sub: "docx · xlsx · md",
-      x: 80,
-      y: 200,
-    });
-    slamCopy(t, 19.82);
-    shade.style.opacity = "0.95";
-  } else if (t < 29.4) {
-    showScreen("browser");
-    const hit = t > 26.4;
-    $("rpa-btn").classList.toggle("rpa-hit", hit);
-    $("rpa-tag").style.opacity = hit ? "1" : "0";
-    $("rpa-tag").style.left = "210px";
-    $("rpa-tag").style.top = "168px";
-    camera = mixCam(CAM.docs, CAM.browser, (t - 24.8) / 0.7);
-    setCopy({
-      kicker: "BROWSER",
-      title: "浏览器<br/>也能开",
-      sub: "真实页面 · 可点击 · 可填写",
+      kicker: "ANYWHERE",
+      title: "电脑手机<br/>接着干",
+      sub: "同一会话，远程批准",
       x: 80,
       y: 190,
     });
-    slamCopy(t, 24.82);
-    shade.style.opacity = "0.95";
-    if (t > 26.0) aimCursor("rpa-btn", t, 26.0, 26.55);
-  } else if (t < 33.8) {
+    slamCopy(t, 42.05);
+    $("remote-approve").classList.toggle("pulse", t >= 44.5 && t < 45.2);
+    scrim.style.opacity = "0.25";
+    shade.style.opacity = "0.85";
+    if (t > 47.6) fadeCopy(t, 48, 0.36);
+  }
+  // ========== 第四幕 4.1：技能复用 (48–60s) ==========
+  else if (t < 60) {
     showScreen("skill");
-    camera = mixCam(CAM.browser, CAM.skill, (t - 29.4) / 0.65);
+    camera = mixCam(CAM.mobile, CAM.skill, (t - 48) / 1.4);
     setCopy({
-      kicker: "SKILL",
+      kicker: "REUSABLE",
       title: "做完一次<br/>沉淀成技能",
       sub: "/ 引用技能，下次直接用",
       x: 72,
       y: 180,
     });
-    slamCopy(t, 29.42);
+    slamCopy(t, 48.05);
     shade.style.opacity = "1";
-  } else if (t < 38.0) {
+    if (t > 59.6) fadeCopy(t, 60, 0.36);
+  }
+  // ========== 第四幕 4.2：定时任务 (60–72s) ==========
+  else if (t < 72) {
     showScreen("schedule");
     $("nav-sched").classList.add("active");
-    camera = mixCam(CAM.skill, CAM.sched, (t - 33.8) / 0.65);
+    camera = mixCam(CAM.skill, CAM.sched, (t - 60) / 1.4);
     setCopy({
-      kicker: "SCHEDULE",
+      kicker: "SCHEDULED",
       title: "定时任务<br/>自己跑",
       sub: "每日简报 · 每周回顾 · 项目监控",
       x: 80,
       y: 190,
     });
-    slamCopy(t, 33.82);
+    slamCopy(t, 60.05);
     shade.style.opacity = "0.9";
-  } else if (t < 47.0) {
+    if (t > 71.6) fadeCopy(t, 72, 0.36);
+  }
+  // ========== 第四幕 4.3：模型自由度 (72–86s) ==========
+  else if (t < 86) {
     showScreen("remote");
     camera = { ...CAM.remote, op: 0.9, blur: 0, s: 0.88 };
     $("copy").style.display = "none";
     scrim.style.opacity = "0.35";
-    $("remote-pause").classList.toggle("pulse", t >= 38.65 && t < 39.15);
-    $("remote-continue").classList.toggle("pulse", t >= 39.35 && t < 39.9);
-    $("remote-approve").classList.toggle("pulse", t >= 40.15 && t < 40.7);
+    $("remote-pause").classList.toggle("pulse", t >= 73.2 && t < 73.8);
+    $("remote-continue").classList.toggle("pulse", t >= 74.4 && t < 75.0);
+    $("remote-approve").classList.toggle("pulse", t >= 75.6 && t < 76.2);
     const punches = [
-      [38.05, "国内外模型"],
-      [38.72, "同一套工具流"],
-      [39.39, "远程控制"],
-      [40.06, "远程批准"],
-      [40.73, "继续工作"],
+      [72.2, "国内外模型"],
+      [73.3, "同一套工具流"],
+      [74.4, "Claude · GPT"],
+      [75.5, "Gemini · Qwen"],
+      [76.6, "DeepSeek · 豆包"],
     ];
     punch.style.opacity = "0";
     for (const [t0, word] of punches) {
-      if (t >= t0 && t < t0 + 0.78) {
-        const u = easeOut((t - t0) / 0.18);
-        const out = clamp01((t0 + 0.78 - t) / 0.12);
+      if (t >= t0 && t < t0 + 0.9) {
+        const u = easeOut((t - t0) / 0.2);
+        const out = clamp01((t0 + 0.9 - t) / 0.15);
         punch.textContent = word;
         punch.style.opacity = String(Math.min(u, out));
         punch.style.transform = `translate(-50%,-50%) scale(${1.18 - 0.18 * u})`;
         punch.style.filter = `blur(${(1 - u) * 8}px)`;
       }
     }
-  } else {
+  }
+  // ========== 第五幕：品牌收尾 (86–92s) ==========
+  else {
     showScreen("home");
-    camera = mixCam(CAM.remote, CAM.exit, (t - 47.0) / 0.7);
+    camera = mixCam(CAM.remote, CAM.exit, (t - 86) / 1.2);
     $("copy").style.display = "none";
     end.style.display = "flex";
-    const u = easeOut((t - 47.02) / 0.4);
+    const u = easeOut((t - 86.05) / 0.5);
     end.style.opacity = String(u);
     end.style.transform = `scale(${1.12 - 0.12 * u})`;
-    $("end-sub").style.opacity = String(easeOut((t - 47.7) / 0.4));
+    $("end-sub").style.opacity = String(easeOut((t - 87.0) / 0.5));
   }
 
   cam(wrap, camera);

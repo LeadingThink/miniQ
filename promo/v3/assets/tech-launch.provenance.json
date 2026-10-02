@@ -1,0 +1,11 @@
+{
+  "file": "tech-launch.png",
+  "assetId": "20b213a3-768b-4bd3-b751-869ddebe4582",
+  "source": ".miniq/media/sess_45a689c7cddc4792a93d4953718ff7f0/1789358504-182a1fd9-c2a4-404d-8fc4-3274352c5347.png",
+  "provenance": "User supplied native-generated technology launch visual; no duplicate generation performed",
+  "width": 1672,
+  "height": 941,
+  "sha256": "65b61d0e3b7e6330a0794b6caf7f1ccceb4b9d8ae6e0cb76a46624d1579df50c",
+  "intendedScenes": ["opening", "image-generation-result"],
+  "displayLabel": "本片实际生成资产"
+}

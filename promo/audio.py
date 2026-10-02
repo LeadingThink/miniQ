@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""78s / 120 BPM electronic bed + hard-cut SFX for the miniQ promo."""
+"""92s / 120 BPM electronic bed + hard-cut SFX for the miniQ promo (four-act narrative)."""
 from __future__ import annotations
 
 import math
@@ -10,7 +10,7 @@ import wave
 import numpy as np
 
 SR = 44100
-DURATION = 78.0
+DURATION = 92.0
 BPM = 120.0
 BEAT = 60.0 / BPM
 N = int(SR * DURATION)
@@ -197,31 +197,73 @@ def main() -> None:
     rng = np.random.default_rng(11)
     mix = np.zeros(N, dtype=np.float64)
 
-    # Harmonic bed: Am – F – C – G, 2 bars each (4s) starting at 3.6s
+    # ========== 第一幕：从结果开始 (0–6s) ==========
+    # 开场：低沉 pad + reverse cymbal riser
+    pad(0.0, mix, [110, 164.81, 220], 6.5, 0.06)
+    reverse_cymbal(4.5, mix, 1.6)
+    slam(0.42, mix)
+    whoosh(0.15, mix, 0.5, 0.4)
+    
+    # ========== 第二幕 2.1：语音输入 + 任务拆解 (6–18s) ==========
+    # 切入主题：和弦进行开始，鼓点进入
     chords = [
-        (3.6, [220.00, 261.63, 329.63], 110.00),  # Am
-        (7.6, [174.61, 220.00, 261.63], 87.31),  # F
-        (11.6, [130.81, 164.81, 196.00], 65.41),  # C
-        (15.6, [196.00, 246.94, 293.66], 98.00),  # G
-        (19.6, [220.00, 261.63, 329.63], 110.00),
-        (23.6, [174.61, 220.00, 261.63], 87.31),
-        (27.6, [130.81, 164.81, 196.00], 65.41),
-        (31.6, [196.00, 246.94, 293.66], 98.00),
-        (35.6, [220.00, 261.63, 329.63], 110.00),
-        (39.6, [174.61, 220.00, 329.63], 87.31),
+        (6.0, [220.00, 261.63, 329.63], 110.00),   # Am
+        (10.0, [174.61, 220.00, 261.63], 87.31),   # F
+        (14.0, [130.81, 164.81, 196.00], 65.41),   # C
     ]
-    for i in range(8):
-        _, freqs, root = chords[i % 4]
-        chords.append((43.6 + i * 4, freqs, root))
+    
+    # ========== 第二幕 2.2：真实资料到交付文件 (18–34s) ==========
+    chords.extend([
+        (18.0, [196.00, 246.94, 293.66], 98.00),   # G
+        (22.0, [220.00, 261.63, 329.63], 110.00),  # Am
+        (26.0, [174.61, 220.00, 261.63], 87.31),   # F
+        (30.0, [130.81, 164.81, 196.00], 65.41),   # C
+    ])
+    
+    # ========== 第三幕 3.1：审批与权限 (34–42s) ==========
+    chords.extend([
+        (34.0, [196.00, 246.94, 293.66], 98.00),   # G
+        (38.0, [220.00, 261.63, 329.63], 110.00),  # Am
+    ])
+    
+    # ========== 第三幕 3.2：移动端接续 (42–48s) ==========
+    chords.extend([
+        (42.0, [174.61, 220.00, 261.63], 87.31),   # F
+        (46.0, [130.81, 164.81, 196.00], 65.41),   # C
+    ])
+    
+    # ========== 第四幕 4.1：技能复用 (48–60s) ==========
+    chords.extend([
+        (48.0, [196.00, 246.94, 293.66], 98.00),   # G
+        (52.0, [220.00, 261.63, 329.63], 110.00),  # Am
+        (56.0, [174.61, 220.00, 261.63], 87.31),   # F
+    ])
+    
+    # ========== 第四幕 4.2：定时任务 (60–72s) ==========
+    chords.extend([
+        (60.0, [130.81, 164.81, 196.00], 65.41),   # C
+        (64.0, [196.00, 246.94, 293.66], 98.00),   # G
+        (68.0, [220.00, 261.63, 329.63], 110.00),  # Am
+    ])
+    
+    # ========== 第四幕 4.3：模型自由度 (72–86s) ==========
+    chords.extend([
+        (72.0, [174.61, 220.00, 329.63], 87.31),   # F
+        (76.0, [130.81, 164.81, 196.00], 65.41),   # C
+        (80.0, [196.00, 246.94, 293.66], 98.00),   # G
+        (84.0, [220.00, 261.63, 329.63], 110.00),  # Am
+    ])
+    
+    # Render all chords with bass
     for t0, freqs, root in chords:
         pad(t0, mix, freqs, 4.2, 0.07)
         # bass on beats
         for k in range(8):
             bass_note(t0 + k * BEAT, mix, root if k % 4 != 3 else root * 1.5, 0.42, 0.22)
 
-    # Drums from 3.6s (when product enters) through 41.2s
-    drum_start = 3.6
-    drum_end = 72.0
+    # Drums from 6s (when narrative starts) through 86s
+    drum_start = 6.0
+    drum_end = 86.0
     beat_i = 0
     t = drum_start
     while t < drum_end:
@@ -232,62 +274,74 @@ def main() -> None:
         hat(t + 0.25, mix, 0.14)
         if beat_i % 8 == 7:
             hat(t + 0.25, mix, 0.2, open_=True)
-        # arp 16ths on even bars
-        if 8.4 <= t < 72.0:
+        # arp 16ths throughout
+        if 10.0 <= t < 86.0:
             scale = [1.0, 1.2, 1.5, 1.8]
             arp(t + 0.125, mix, 220 * scale[beat_i % 4], 0.07)
         beat_i += 1
         t += BEAT
 
-    # Intro drone + riser
-    pad(0.0, mix, [110, 164.81, 220], 4.0, 0.05)
-    reverse_cymbal(2.2, mix, 1.5)
-    slam(0.42, mix)
-    whoosh(0.15, mix, 0.5, 0.4)
+    # Scene cut whooshes (at each act transition)
+    whoosh(5.88, mix, 0.35, 0.6)     # 0→6: 第一幕结束
+    whoosh(17.88, mix, 0.32, 0.58)   # 6→18: 第二幕 2.1→2.2
+    whoosh(33.88, mix, 0.32, 0.58)   # 18→34: 第二幕→第三幕
+    whoosh(41.88, mix, 0.30, 0.55)   # 34→42: 第三幕 3.1→3.2
+    whoosh(47.88, mix, 0.30, 0.55)   # 42→48: 第三幕→第四幕
+    whoosh(59.88, mix, 0.30, 0.52)   # 48→60: 第四幕 4.1→4.2
+    whoosh(71.88, mix, 0.30, 0.52)   # 60→72: 第四幕 4.2→4.3
+    whoosh(85.88, mix, 0.32, 0.58)   # 72→86: 第四幕→第五幕
 
-    # Scene cuts
-    whoosh(3.52, mix, 0.32, 0.6)
-    whoosh(8.28, mix, 0.3, 0.55)
-    whoosh(14.28, mix, 0.3, 0.55)
-    whoosh(19.68, mix, 0.3, 0.55)
-    whoosh(24.68, mix, 0.3, 0.55)
-    whoosh(29.28, mix, 0.3, 0.5)
-    whoosh(33.68, mix, 0.3, 0.5)
-    whoosh(37.88, mix, 0.28, 0.5)
-
-    # Typing
-    type_t = 4.45
+    # Typing (7.2–9.2s during voice input transcription)
+    type_t = 7.3
     ki = 0
-    while type_t < 7.55:
+    while type_t < 9.2:
         key(type_t, mix, 200 + ki)
         type_t += float(rng.uniform(0.055, 0.095))
         ki += 1
-    click(8.05, mix)
-    tom(8.08, mix, 180, 0.4)
+    
+    # Send click at 9.5s
+    click(9.5, mix)
+    tom(9.52, mix, 180, 0.4)
 
-    # Tool ticks
-    for tt in (8.72, 9.52, 10.32, 11.12, 11.92, 12.72):
+    # Tool step ticks (10.5–24.0s during tool execution)
+    for tt in (10.5, 11.5, 12.6, 13.8, 15.0, 19.5, 23.5):
         click(tt, mix)
         tom(tt, mix, 210, 0.28)
+    # Media arrival chime / chime stabs
+    ding(20.4, mix)
+    ding(24.4, mix)
 
-    # Approve
-    click(19.02, mix)
-    ding(19.12, mix)
+    # Approve click at 40.6s
+    click(40.6, mix)
+    ding(40.7, mix)
 
-    # Feature punches
-    for i, (tt, f) in enumerate(((38.15, 220), (38.95, 261.63), (39.75, 329.63), (40.55, 392.00))):
+    # Mobile remote approve at 44.8s
+    click(44.8, mix)
+    ding(44.9, mix)
+
+    # Skill save at 52s
+    click(52.0, mix)
+    ding(52.15, mix)
+
+    # Schedule task at 64s
+    click(64.0, mix)
+    ding(64.15, mix)
+
+    # Model punches (72–77s)
+    for i, (tt, f) in enumerate([
+        (72.2, 220), (73.3, 261.63), (74.4, 329.63), 
+        (75.5, 392.00), (76.6, 440.00)
+    ]):
         stab(tt, mix, f)
 
-    click(42.0, mix)
-    ding(49.25, mix)
-    click(51.75, mix)
-    ding(55.0, mix)
-    whoosh(57.8, mix)
-    reverse_cymbal(70.5, mix, 1.5)
-    slam(72.0, mix)
-    ding(72.15, mix)
-    pad(72.0, mix, [220, 329.63, 440], 5.8, 0.09)
-    mix *= np.clip((DURATION - np.arange(N) / SR) / 1.4, 0, 1)
+    # ========== 第五幕：品牌收尾 (86–92s) ==========
+    reverse_cymbal(84.5, mix, 1.6)
+    slam(86.0, mix)
+    ding(86.2, mix)
+    pad(86.0, mix, [220, 329.63, 440], 6.5, 0.10)
+    
+    # Final fadeout
+    mix *= np.clip((DURATION - np.arange(N) / SR) / 1.6, 0, 1)
 
     # Gentle sidechain-ish ducking on kicks: already decaying kicks.
     # Highpass rumble + limiter

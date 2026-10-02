@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <title>miniQ promo</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles-media.css" />
 </head>
 <body>
   <div id="stage">
@@ -107,7 +108,7 @@
                 <span class="mode-pill" id="mode-label">替我审批</span>
               </div>
               <div class="timeline" id="timeline">
-                <div class="msg user" id="user-msg">把这个仓库整理成产品报告，并生成一份周报文档</div>
+                <div class="msg user" id="user-msg">根据项目写一份多模态产品报告，并配上插画与主题音频</div>
                 <div class="tool-step" data-tool="0" data-run="正在读取" data-done="已读取">
                   <div class="tool-step-toggle">
                     <span class="tool-step-marker"></span>
@@ -143,6 +144,45 @@
                     <span class="tool-summary">git status</span>
                   </div>
                 </div>
+                <!-- Native Multimodal Steps -->
+                <div class="tool-step" data-tool="5" data-run="正在生成图片" data-done="已生成图片">
+                  <div class="tool-step-toggle">
+                    <span class="tool-step-marker"></span>
+                    <span class="tool-action">正在生成图片</span>
+                    <span class="tool-summary">generate_image: 未来感科技插画</span>
+                  </div>
+                </div>
+                <div class="media-preview-card" id="media-img" style="display:none">
+                  <div class="media-preview-header">
+                    <span class="media-badge">IMAGE</span>
+                    <span>16:9 · 1280x720 · PNG 产物</span>
+                  </div>
+                  <div class="media-preview-body">
+                    <img src="out/media/generated_image.png" alt="Generated Master" />
+                  </div>
+                </div>
+
+                <div class="tool-step" data-tool="6" data-run="正在生成配乐" data-done="已生成配乐">
+                  <div class="tool-step-toggle">
+                    <span class="tool-step-marker"></span>
+                    <span class="tool-action">正在生成配乐</span>
+                    <span class="tool-summary">generate_music: 电子律动 · 44.1kHz</span>
+                  </div>
+                </div>
+                <div class="audio-player-card" id="media-audio" style="display:none">
+                  <div class="audio-play-btn">▶</div>
+                  <div style="font-size:12px;color:#c9d1d9;font-weight:600">miniQ_Electronic_Theme.wav</div>
+                  <div class="audio-waveform">
+                    <div class="audio-wave-bar" style="height:40%"></div>
+                    <div class="audio-wave-bar" style="height:80%"></div>
+                    <div class="audio-wave-bar" style="height:60%"></div>
+                    <div class="audio-wave-bar" style="height:100%"></div>
+                    <div class="audio-wave-bar" style="height:50%"></div>
+                    <div class="audio-wave-bar" style="height:90%"></div>
+                    <div class="audio-wave-bar" style="height:30%"></div>
+                  </div>
+                  <span style="font-size:11px;color:#8b949e">01:32</span>
+                </div>
                 <div class="card approval-card" id="approval">
                   <div class="card-head">
                     <span>需要审批</span>
@@ -160,9 +200,10 @@
                 </div>
               </div>
               <div class="artifacts-bar" id="art-bar">
+                <div class="artifact-chip">🎨 <b>未来插画.png</b></div>
+                <div class="artifact-chip">🎵 <b>主题配乐.wav</b></div>
                 <div class="artifact-chip">📄 <b>产品报告.docx</b></div>
                 <div class="artifact-chip">📊 <b>本周周报.xlsx</b></div>
-                <div class="artifact-chip">📝 <b>架构说明.md</b></div>
               </div>
               <div class="composer-outer">
                 <div class="composer-card" id="chat-composer">
@@ -187,8 +228,9 @@
               <div class="docs-layout">
                 <div class="doc-list">
                   <div class="doc-item active">📄 产品报告.docx</div>
+                  <div class="doc-item">🎨 未来插画.png</div>
+                  <div class="doc-item">🎵 主题配乐.wav</div>
                   <div class="doc-item">📊 本周周报.xlsx</div>
-                  <div class="doc-item">📝 架构说明.md</div>
                 </div>
                 <div class="doc-preview">
                   <div class="doc-page">
@@ -196,9 +238,10 @@
                     <div class="muted">本周自动生成 · 工作区 miniQ</div>
                     <p>miniQ 是桌面 AI 协作助手。你给出目标，它读取仓库、调用工具、在高风险操作前请求批准，并把结果写成可打开的文档。</p>
                     <ul>
+                      <li>多模态生成：原生文生图、文生配乐随需创作</li>
                       <li>会话时间线：读取、搜索、生成、命令逐步可见</li>
                       <li>审批模式：请求批准 / 替我审批 / 完全访问</li>
-                      <li>产物：docx / xlsx / md 直接落在工作区</li>
+                      <li>产物：png / wav / docx / xlsx 直接落在工作区</li>
                     </ul>
                     <p>下一步：把本周流程沉淀成「周报生成」技能，并加入每日简报定时任务。</p>
                   </div>

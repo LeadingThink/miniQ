@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import puppeteer from "puppeteer-core";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const DURATION = 55;
+const DURATION = 92;
 const FPS = 30;
 const FRAMES = DURATION * FPS;
 const WIDTH = 1920;
