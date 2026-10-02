@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <application
         android:allowBackup="true"
         android:fullBackupContent="@xml/backup_rules"
@@ -45,6 +46,14 @@
             android:name=".background.MiniqBackgroundService"
             android:exported="false"
             android:foregroundServiceType="remoteMessaging" />
+
+        <!-- @capacitor/local-notifications re-schedules timed notifications after
+             reboot. miniQ only posts immediate notifications, so drop the boot
+             receiver: boot + exact-alarm + wake-lock on a sideloaded APK makes
+             Samsung / Play Protect flag the app as suspicious. -->
+        <receiver
+            android:name="com.capacitorjs.plugins.localnotifications.LocalNotificationRestoreReceiver"
+            tools:node="remove" />
     </application>
 
     <!-- Permissions -->
@@ -59,4 +68,9 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <!-- Merged in by @capacitor/local-notifications but unused (no timed or
+         boot-restored notifications). Keep the permission surface minimal. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" tools:node="remove" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" tools:node="remove" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:node="remove" />
 </manifest>

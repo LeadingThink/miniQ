@@ -157,6 +157,24 @@ class AndroidReleaseTests(unittest.TestCase):
         with patch.object(release.subprocess, "run", side_effect=outputs), self.assertRaisesRegex(ValueError, "RECORD_AUDIO"):
             release.verify_apk(Path("release.apk"), "android-v0.1.21", Path("tools"))
 
+    def test_apk_with_boot_or_alarm_permission_rejected(self):
+        signing = f"Signer #1 certificate DN: CN=miniQ Release\nSigner #1 certificate SHA-256 digest: {release.SIGNING_CERT_SHA256}"
+        base = "package: name='com.leadingthink.miniq' versionCode='21' versionName='0.1.21'\n" + "\n".join(
+            f"uses-permission: name='{name}'" for name in release.REQUIRED_PERMISSIONS)
+        for name in release.FORBIDDEN_PERMISSIONS:
+            with self.subTest(name=name):
+                outputs = [subprocess.CompletedProcess([], 0, signing),
+                           subprocess.CompletedProcess([], 0, base + f"\nuses-permission: name='{name}'")]
+                with patch.object(release.subprocess, "run", side_effect=outputs), self.assertRaisesRegex(ValueError, name):
+                    release.verify_apk(Path("release.apk"), "android-v0.1.21", Path("tools"))
+
+    def test_source_manifest_removes_plugin_boot_and_alarm_permissions(self):
+        manifest = (SOURCE_ROOT / "android/app/src/main/AndroidManifest.xml").read_text()
+        for name in ("RECEIVE_BOOT_COMPLETED", "WAKE_LOCK", "SCHEDULE_EXACT_ALARM"):
+            with self.subTest(name=name):
+                self.assertIn(f'<uses-permission android:name="android.permission.{name}" tools:node="remove" />', manifest)
+        self.assertIn("LocalNotificationRestoreReceiver", manifest)
+
     def test_source_manifest_declares_voice_permissions(self):
         manifest = (SOURCE_ROOT / "android/app/src/main/AndroidManifest.xml").read_text()
         for name in release.REQUIRED_PERMISSIONS:

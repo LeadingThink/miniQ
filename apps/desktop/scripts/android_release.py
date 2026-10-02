@@ -24,6 +24,14 @@ MANIFEST_KEY = "releases/manifest.json"
 SIGNING_CERT_SHA256 = "05D22724D2AD383290390BC1DBFB25E53940DD8FE2C45FABC065D2F0D600220C"
 # Voice input depends on the WebView being allowed to capture audio.
 REQUIRED_PERMISSIONS = ("android.permission.RECORD_AUDIO", "android.permission.MODIFY_AUDIO_SETTINGS")
+# Unused permissions that plugins merge in. On a sideloaded APK the combination
+# boot + exact alarm + wake lock makes Samsung / Play Protect warn "fake app".
+FORBIDDEN_PERMISSIONS = (
+    "android.permission.RECEIVE_BOOT_COMPLETED",
+    "android.permission.SCHEDULE_EXACT_ALARM",
+    "android.permission.USE_EXACT_ALARM",
+    "android.permission.WAKE_LOCK",
+)
 
 
 def version_for_tag(tag: str) -> str:
@@ -81,6 +89,9 @@ def verify_apk(apk: Path, tag: str, tools: Path) -> None:
     missing = [name for name in REQUIRED_PERMISSIONS if f"uses-permission: name='{name}'" not in badging]
     if missing:
         raise ValueError(f"APK is missing required permissions: {', '.join(missing)}")
+    extra = [name for name in FORBIDDEN_PERMISSIONS if f"uses-permission: name='{name}'" in badging]
+    if extra:
+        raise ValueError(f"APK declares unneeded sensitive permissions: {', '.join(extra)}")
 
 
 def mirror_url(version: str) -> str:
