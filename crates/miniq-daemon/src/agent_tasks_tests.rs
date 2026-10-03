@@ -19,6 +19,9 @@ mod persistence;
 #[path = "agent_tasks_tests/parallel.rs"]
 mod parallel;
 
+#[path = "agent_tasks_tests/settle.rs"]
+mod settle;
+
 fn request(prompt: &str) -> AgentRunRequest {
     AgentRunRequest {
         prompt: prompt.into(),

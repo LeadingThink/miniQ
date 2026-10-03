@@ -365,6 +365,58 @@ impl AgentTaskManager {
         })
     }
 
+    /// Wait until the direct children of `parent_id` (top-level when `None`)
+    /// that are active now have settled, the timeout elapses or the turn is
+    /// cancelled. Returns snapshots of those children; empty when none were
+    /// active, so a finishing turn knows it still owns unfinished work.
+    pub(crate) async fn settle_children(
+        &self,
+        session_id: &str,
+        parent_id: Option<&str>,
+        timeout: Duration,
+        cancel: &CancellationToken,
+    ) -> Vec<Value> {
+        let candidates = self
+            .records
+            .lock()
+            .await
+            .values()
+            .filter(|record| {
+                record.session_id == session_id && record.parent_id.as_deref() == parent_id
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut active = Vec::new();
+        for record in candidates {
+            if record.state.lock().await.status.is_active() {
+                active.push(record);
+            }
+        }
+        if active.is_empty() {
+            return Vec::new();
+        }
+        let deadline = tokio::time::Instant::now() + timeout;
+        for record in &active {
+            loop {
+                let changed = record.changed.notified();
+                if !record.state.lock().await.status.is_active() {
+                    break;
+                }
+                tokio::select! {
+                    _ = changed => {}
+                    _ = cancel.cancelled() => break,
+                    _ = tokio::time::sleep_until(deadline) => break,
+                }
+            }
+        }
+        let mut snapshots = Vec::with_capacity(active.len());
+        for record in active {
+            snapshots.push(self.snapshot(&record.id, &record).await);
+        }
+        snapshots.sort_by(|a, b| a["createdAt"].as_str().cmp(&b["createdAt"].as_str()));
+        snapshots
+    }
+
     pub(crate) async fn output(
         &self,
         session_id: &str,

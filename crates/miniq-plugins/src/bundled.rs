@@ -79,7 +79,8 @@ mod tests {
                     .find(|(path, _)| *path == skill_path)
                     .map(|(_, content)| *content)
                     .unwrap_or_else(|| panic!("{} missing {skill_path}", package.id));
-                let (meta, _) = miniq_skills::parse_skill_md(raw).unwrap();
+                let (meta, _) = miniq_skills::parse_skill_md(raw)
+                    .unwrap_or_else(|e| panic!("{} {skill_path}: {e:?}", package.id));
                 assert_eq!(
                     Some(meta.name.as_str()),
                     skill.file_name().and_then(|name| name.to_str())

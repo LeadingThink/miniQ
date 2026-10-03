@@ -17,6 +17,7 @@ use crate::state::{AppState, ApprovalDecision};
 
 mod adaptation;
 mod approval;
+mod background_gate;
 mod checkpoint;
 mod effective_set;
 mod hooks;
@@ -483,6 +484,11 @@ impl ToolExecutor for SessionToolExecutor {
             .map(|adapted| &adapted.call)
             .unwrap_or(call);
         serde_json::to_string(&(&call.name, &call.arguments)).unwrap_or_default()
+    }
+
+    async fn completion_gate(&self, cancel: &CancellationToken) -> Option<String> {
+        self.background_children_gate(cancel, background_gate::BACKGROUND_SETTLE_TIMEOUT)
+            .await
     }
 
     async fn execute(&self, call: &ToolCallRequest) -> Result<Value, AgentError> {

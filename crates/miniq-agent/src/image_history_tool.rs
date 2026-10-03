@@ -284,6 +284,13 @@ impl ToolExecutor for ImageHistoryExecutor<'_> {
         }
     }
 
+    async fn completion_gate(
+        &self,
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> Option<String> {
+        self.inner.completion_gate(cancel).await
+    }
+
     async fn execute(&self, call: &ToolCallRequest) -> Result<Value, AgentError> {
         if !self.enabled || call.name != TOOL_NAME {
             return self.inner.execute(call).await;

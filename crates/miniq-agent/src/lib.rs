@@ -191,6 +191,15 @@ pub trait ToolExecutor: Send + Sync {
         Ok(())
     }
 
+    /// Called when the model produced a final answer without tool calls.
+    /// Hosts that own unfinished work started by this turn (for example
+    /// background child agents) may wait for it and return an instruction;
+    /// the runner then records the answer as interim and continues the turn
+    /// instead of reporting completion. `None` lets the turn finish.
+    async fn completion_gate(&self, _cancel: &CancellationToken) -> Option<String> {
+        None
+    }
+
     /// Execute one call and return a structured result. Errors and
     /// rejections must be encoded in the returned JSON so the model can
     /// react to them; `Err` is reserved for turn-fatal failures.
@@ -601,6 +610,23 @@ async fn run_turn_inner(
         };
 
         if tool_calls.is_empty() {
+            if let Some(instruction) = executor.completion_gate(&cancel).await {
+                if cancel.is_cancelled() {
+                    return Err(AgentError::Cancelled);
+                }
+                state.partial_text.clear();
+                if !text.trim().is_empty() {
+                    let mut assistant = ChatMessage::assistant(text);
+                    assistant.provider_context = provider_context;
+                    state.history.push(assistant.clone());
+                    state.appended.push(assistant);
+                }
+                let instruction = ChatMessage::user(instruction);
+                state.history.push(instruction.clone());
+                state.appended.push(instruction);
+                state.save(limits, false).await?;
+                continue;
+            }
             let mut provider_history = state.history.clone();
             let mut assistant = ChatMessage::assistant(text.clone());
             assistant.provider_context = provider_context;
@@ -699,6 +725,57 @@ mod tests {
             name: "continue_work".to_string(),
             arguments: serde_json::json!({"index": index}),
         })]
+    }
+
+    struct GatedExecutor {
+        pending: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait]
+    impl ToolExecutor for GatedExecutor {
+        fn specs(&self) -> Vec<ToolSpec> {
+            Vec::new()
+        }
+
+        async fn completion_gate(&self, _cancel: &CancellationToken) -> Option<String> {
+            use std::sync::atomic::Ordering;
+            (self
+                .pending
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                .is_ok())
+            .then(|| "children still running; collect results".to_string())
+        }
+
+        async fn execute(&self, call: &ToolCallRequest) -> Result<Value, AgentError> {
+            Ok(serde_json::json!({ "completed": call.id }))
+        }
+    }
+
+    #[tokio::test]
+    async fn completion_gate_keeps_turn_running_until_released() {
+        let provider = MockProvider::new(vec![
+            vec![ChatDelta::Text("interim done".into())],
+            vec![ChatDelta::Text("really done".into())],
+        ]);
+        let executor = GatedExecutor {
+            pending: std::sync::atomic::AtomicUsize::new(1),
+        };
+        let (events, _receiver) = tokio::sync::mpsc::channel(32);
+        let outcome = run_turn(
+            &provider,
+            &executor,
+            Vec::new(),
+            events,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome.final_text, "really done");
+        assert_eq!(outcome.appended.len(), 2);
+        assert_eq!(outcome.appended[0].content, "interim done");
+        assert!(outcome.appended[1]
+            .content
+            .contains("children still running"));
     }
 
     struct FallibleProvider {
