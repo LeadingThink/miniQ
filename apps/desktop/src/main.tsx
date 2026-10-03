@@ -18,16 +18,20 @@ import "./styles/scheduling.css";
 import "./styles/remote.css";
 import "./styles/experience.css";
 import "./styles/theme-picker.css";
+import "./styles/living-background.css";
 import "./external-sessions.css";
 import "./styles/mobile-controls.css";
 import "./styles/window-chrome.css";
 import { initializeAppearance } from "./theme";
+import { initializeBackground } from "./background";
+import { LivingBackground } from "./components/LivingBackground";
 import { initializeMobileRuntime } from "./mobileRuntime";
 import { initializeMobileViewport } from "./mobileViewport";
 import { initializeWindowChrome } from "./windowChrome";
 import { initializeNativeMenuBridge } from "./nativeMenuBridge";
 
 initializeAppearance();
+initializeBackground();
 initializeWindowChrome();
 initializeMobileViewport();
 initializeNativeMenuBridge();
@@ -36,6 +40,7 @@ void initializeMobileRuntime();
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ToastProvider>
+      <LivingBackground />
       <App />
     </ToastProvider>
   </React.StrictMode>,
