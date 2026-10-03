@@ -11,6 +11,7 @@ import {
   type ThemeMode,
 } from "../theme";
 import type { ThemeDefinition } from "../themeCatalog";
+import { BackgroundPicker } from "./BackgroundPicker";
 
 const MODES: { id: AppearanceMode; label: string }[] = [
   { id: "system", label: "自动" },
@@ -126,6 +127,7 @@ export function ThemePicker(props: { theme: ThemeId; onThemeChange: (theme: Them
           onSelect={props.onThemeChange}
         />
       ))}
+      <BackgroundPicker />
     </div>
   );
 }

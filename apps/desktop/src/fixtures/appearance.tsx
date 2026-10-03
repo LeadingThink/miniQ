@@ -16,6 +16,9 @@ import "../styles/scheduling.css";
 import "../styles/remote.css";
 import "../styles/experience.css";
 import "../styles/theme-picker.css";
+import "../styles/living-background.css";
+import { initializeBackground, storeBackground } from "../background";
+import { LivingBackground } from "../components/LivingBackground";
 
 const settings = {
   provider: { baseUrl: "https://oneapi.zaiwenai.com/v1", model: "gpt-5.6-sol", apiProtocol: "auto", hasApiKey: false },
@@ -63,6 +66,8 @@ function AppearanceFixture() {
   const [open, setOpen] = useState(true);
   const [sourceOpen, setSourceOpen] = useState(false);
   return (
+    <>
+    <LivingBackground />
     <div className="app">
       <aside className="sidebar">
         <div className="brand">miniQ</div>
@@ -103,11 +108,15 @@ function AppearanceFixture() {
         <SettingsPanel client={client} initialTab={initialTab} theme={theme} onThemeChange={storeTheme} onClose={() => setOpen(false)} />
       )}
     </div>
+    </>
   );
 }
 
 if (import.meta.env.DEV) {
   initializeAppearance();
+  initializeBackground();
+  const previewBackground = new URLSearchParams(window.location.search).get("background");
+  if (previewBackground) storeBackground(previewBackground);
   const previewTheme = new URLSearchParams(window.location.search).get("theme");
   if (previewTheme) storeTheme(previewTheme as Parameters<typeof storeTheme>[0]);
   createRoot(document.getElementById("root")!).render(<AppearanceFixture />);

@@ -1,0 +1,181 @@
+/* Living backgrounds: fixed wallpaper layer behind the app shell.
+   Adapted from Zaiwen Web's living-background.scss. */
+.living-background {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: #04050b;
+}
+.living-background.is-light {
+  background: #f4f6fb;
+}
+.living-background-media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.living-background-video {
+  opacity: 0;
+  transition: opacity 600ms ease;
+}
+.living-background-video.is-playing {
+  opacity: 1;
+}
+.living-background-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--wallpaper-scrim);
+}
+
+:root[data-background] {
+  --wallpaper-scrim: color-mix(in srgb, var(--canvas) 16%, transparent);
+  --wallpaper-sheet: color-mix(in srgb, var(--bg) 74%, transparent);
+  --wallpaper-navigation: color-mix(in srgb, var(--sidebar-bg) 52%, transparent);
+  --wallpaper-control: color-mix(in srgb, var(--bg) 90%, transparent);
+}
+
+:root[data-background] body,
+:root[data-background] .app,
+:root[data-background] .mobile-entry,
+:root[data-background] .mobile-chat {
+  background: transparent;
+}
+:root[data-background] .app,
+:root[data-background] .mobile-entry,
+:root[data-background] .mobile-chat {
+  position: relative;
+  z-index: 1;
+}
+:root[data-background] .sidebar {
+  background: linear-gradient(
+    90deg,
+    var(--wallpaper-navigation),
+    color-mix(in srgb, var(--sidebar-bg) 36%, transparent)
+  );
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+}
+:root[data-background] .main {
+  background: var(--wallpaper-sheet);
+  backdrop-filter: blur(18px) saturate(1.05);
+  -webkit-backdrop-filter: blur(18px) saturate(1.05);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 12%);
+}
+:root[data-background] .composer-card {
+  background: var(--wallpaper-control);
+}
+
+@media (max-width: 768px) {
+  :root[data-background] .sidebar {
+    background: var(--wallpaper-sheet);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-background] {
+    --wallpaper-sheet: var(--bg);
+    --wallpaper-navigation: var(--sidebar-bg);
+    --wallpaper-control: var(--bg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .living-background-video {
+    transition: none;
+  }
+}
+
+/* ============ Background picker ============ */
+.background-groups {
+  display: grid;
+  gap: var(--space-3);
+}
+.background-group h4 {
+  margin: 0 0 var(--space-2);
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+  font-weight: 500;
+}
+.background-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.background-choice {
+  position: relative;
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+  min-width: 0;
+  cursor: pointer;
+  color: var(--text);
+}
+.background-choice input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.background-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--hairline);
+  background: var(--bg-subtle);
+  color: var(--text-dim);
+  transition: box-shadow 120ms ease;
+}
+.background-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.background-preview-glyph {
+  background:
+    radial-gradient(circle at 50% 120%, color-mix(in srgb, currentColor 34%, transparent), transparent 70%),
+    #05060c;
+  font-family: var(--font-mono, monospace);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 12px currentColor;
+}
+.background-preview-glyph.is-light {
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, currentColor 18%, transparent), transparent 70%),
+    #f4f6fb;
+  text-shadow: none;
+}
+.background-choice:hover .background-preview {
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+.background-choice:has(input:checked) .background-preview {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.background-choice:has(input:focus-visible) .background-preview {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+.background-choice .theme-copy {
+  max-width: 100%;
+}
+.background-choice .theme-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .background-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
