@@ -56,6 +56,9 @@ pub fn bundled_skills() -> Vec<BundledSkill> {
         BundledSkill {
             content: include_str!("../assets/latex-workflow/SKILL.md"),
         },
+        BundledSkill {
+            content: include_str!("../assets/ste-writing/SKILL.md"),
+        },
     ]
 }
 
