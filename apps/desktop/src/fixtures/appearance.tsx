@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Code, Settings } from "lucide-react";
 import { SettingsPanel } from "../components/Settings";
 import type { RpcClient } from "../rpc";
-import { getAppearance, initializeAppearance, storeTheme, subscribeAppearance } from "../theme";
+import { getAppearance, initializeAppearance, storeAppearanceMode, storeTheme, subscribeAppearance, themeById, isThemeId } from "../theme";
 import "@fontsource-variable/inter/wght.css";
 import "../styles/tokens.css";
 import "../styles/base.css";
@@ -16,6 +16,61 @@ import "../styles/scheduling.css";
 import "../styles/remote.css";
 import "../styles/experience.css";
 import "../styles/theme-picker.css";
+import "../styles/living-background.css";
+import { initializeBackground, storeBackground } from "../background";
+import { LivingBackground } from "../components/LivingBackground";
+import { Timeline } from "../components/Timeline";
+import type { Message } from "../types";
+
+// `?chat` shows a sample conversation so wallpaper legibility can be judged.
+const chatPreview = new URLSearchParams(location.search).has("chat");
+const chatMessages: Message[] = [
+  ["user", "帮我看下这个仓库的背景效果，动态壁纸要能透出来。"],
+  ["assistant", "已检查外观设置。\n\n- 主区域不再整块磨砂\n- 只给输入框和消息保留阅读底色\n- 侧边栏保留轻量分隔\n\n可以切换不同壁纸确认可读性。"],
+  ["user", "再确认一下浅色和深色主题。"],
+  ["assistant", "两种主题都使用同一套局部阅读保护，文字保持清晰，壁纸在消息之间露出。"],
+].map(([role, content], index) => ({
+  id: `bg-${index}`,
+  sessionId: "background-fixture",
+  role: role as Message["role"],
+  content,
+  createdAt: new Date(Date.UTC(2026, 9, 3, 8, index)).toISOString(),
+}));
+const noop = () => undefined;
+const asyncNoop = async () => undefined;
+
+function ChatPreview() {
+  return (
+    <main className="main" style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <section style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+        <Timeline
+          sessionId="background-fixture"
+          messages={chatMessages}
+          toolCalls={[]}
+          approvals={[]}
+          questions={[]}
+          plan={[]}
+          artifacts={[]}
+          queue={[]}
+          streamingText=""
+          turnProgress={null}
+          busy={false}
+          onResolveApproval={noop}
+          onResolveQuestion={noop}
+          onRollback={noop}
+          onOpenFile={noop}
+          onOpenUrl={noop}
+          onSteerQueued={asyncNoop}
+          onRemoveQueued={asyncNoop}
+          onUpdateQueued={asyncNoop}
+          onRewrite={async () => true}
+          onError={noop}
+        />
+      </section>
+      <div className="composer-card" style={{ margin: "0 24px 20px", padding: 16, minHeight: 72 }}>输入消息…</div>
+    </main>
+  );
+}
 
 const settings = {
   provider: { baseUrl: "https://oneapi.zaiwenai.com/v1", model: "gpt-5.6-sol", apiProtocol: "auto", hasApiKey: false },
@@ -60,9 +115,11 @@ const initialTab = tabParam === "appearance" || tabParam === "plugins" ? tabPara
 
 function AppearanceFixture() {
   const { theme } = useSyncExternalStore(subscribeAppearance, getAppearance);
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(!chatPreview);
   const [sourceOpen, setSourceOpen] = useState(false);
   return (
+    <>
+    <LivingBackground />
     <div className="app">
       <aside className="sidebar">
         <div className="brand">miniQ</div>
@@ -75,7 +132,7 @@ function AppearanceFixture() {
           源码预览
         </button>
       </aside>
-      <main className="main" />
+      {chatPreview ? <ChatPreview /> : <main className="main" />}
       {sourceOpen && (
         <Suspense fallback={null}>
           <FilePreviewPanel
@@ -103,12 +160,19 @@ function AppearanceFixture() {
         <SettingsPanel client={client} initialTab={initialTab} theme={theme} onThemeChange={storeTheme} onClose={() => setOpen(false)} />
       )}
     </div>
+    </>
   );
 }
 
 if (import.meta.env.DEV) {
   initializeAppearance();
+  initializeBackground();
+  const previewBackground = new URLSearchParams(window.location.search).get("background");
+  if (previewBackground) storeBackground(previewBackground);
   const previewTheme = new URLSearchParams(window.location.search).get("theme");
-  if (previewTheme) storeTheme(previewTheme as Parameters<typeof storeTheme>[0]);
+  if (isThemeId(previewTheme)) {
+    storeAppearanceMode(themeById(previewTheme as Parameters<typeof storeTheme>[0]).mode);
+    storeTheme(previewTheme as Parameters<typeof storeTheme>[0]);
+  }
   createRoot(document.getElementById("root")!).render(<AppearanceFixture />);
 }
