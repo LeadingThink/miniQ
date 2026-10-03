@@ -11,10 +11,12 @@ import argparse
 import hashlib
 from pathlib import Path
 import tempfile
+import time
 import urllib.request
 
 from upload_qiniu_release import UploadItem, publish, required_env
 
+UPLOAD_ATTEMPTS = 4
 OBJECT_PREFIX = "themes/backgrounds"
 SOURCE_ORIGIN = "https://chat.zaiwenai.com"
 
@@ -67,6 +69,21 @@ def download_sources(source_origin: str, target: Path) -> list[UploadItem]:
     return items
 
 
+def publish_with_retry(
+    items: list[UploadItem], bucket_name: str, access_key: str, secret_key: str
+) -> None:
+    for item in items:
+        for attempt in range(1, UPLOAD_ATTEMPTS + 1):
+            try:
+                publish([item], bucket_name, access_key, secret_key)
+                break
+            except RuntimeError as error:
+                if attempt == UPLOAD_ATTEMPTS:
+                    raise
+                print(f"retrying {item.object_key} after attempt {attempt}: {error}")
+                time.sleep(5 * attempt)
+
+
 def verify_public(domain: str) -> None:
     for background_id in BACKGROUND_VIDEOS:
         verify_bytes(background_id, fetch(f"{domain}/{object_key(background_id)}"))
@@ -82,7 +99,7 @@ def main() -> int:
     if not args.verify_only:
         with tempfile.TemporaryDirectory() as directory:
             items = download_sources(args.source_origin.rstrip("/"), Path(directory))
-            publish(
+            publish_with_retry(
                 items,
                 required_env("QINIU_BUCKET"),
                 required_env("QINIU_ACCESS_KEY"),
