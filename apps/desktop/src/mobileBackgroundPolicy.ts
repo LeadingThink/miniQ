@@ -126,6 +126,8 @@ function networkAllowed(snapshot: Pick<MobilePolicySnapshot, "conditions" | "pre
   return snapshot.conditions.network === "wifi" || (snapshot.conditions.network === "cellular" && snapshot.preferences.network === "cellular-opt-in");
 }
 
+const batteryLevel = (value: unknown): number | null => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
+
 let initializationRefs = 0;
 let initializationStop: (() => void) | undefined;
 
@@ -196,24 +198,28 @@ export class MobileBackgroundPolicy {
       this.cleanups.push(() => media.removeEventListener("change", update));
     }
     let batteryRead: Promise<void> | undefined;
+    let batteryGeneration = 0;
     const refreshBattery = (): Promise<void> => {
+      if (!active()) return Promise.resolve();
       if (batteryRead) return batteryRead;
-      batteryRead = (async () => {
+      const readGeneration = batteryGeneration;
+      const request = (async () => {
         // Read independent native signals together; neither failure masks the other.
         const [battery, power] = await Promise.allSettled([
           Promise.resolve().then(() => (this.options.device ?? Device).getBatteryInfo()),
           Promise.resolve().then(() => (this.options.power ?? getMobilePowerState)()),
         ]);
-        if (!active()) return;
+        if (!active() || readGeneration !== batteryGeneration) return;
         const info = battery.status === "fulfilled" ? battery.value : null;
         const osPower = power.status === "fulfilled" ? power.value : null;
         this.setConditions({
           battery: typeof info?.isCharging === "boolean" ? (info.isCharging ? "charging" : "not-charging") : "unknown",
-          batteryLevel: typeof info?.batteryLevel === "number" ? info.batteryLevel : null,
+          batteryLevel: batteryLevel(info?.batteryLevel),
           lowPower: typeof osPower?.lowPower === "boolean" ? osPower.lowPower : null,
         });
-      })().finally(() => { batteryRead = undefined; });
-      return batteryRead;
+      })().finally(() => { if (batteryRead === request) batteryRead = undefined; });
+      batteryRead = request;
+      return request;
     };
     const poll = setInterval(() => {
       if (active() && this.conditions.lifecycle === "foreground") void refreshBattery();
@@ -225,6 +231,7 @@ export class MobileBackgroundPolicy {
     const applyLifecycle = () => {
       if (!active()) return;
       const lifecycle = typeof document !== "undefined" && document.visibilityState === "hidden" ? "background" : appLifecycle;
+      if (lifecycle !== this.conditions.lifecycle) { batteryGeneration++; batteryRead = undefined; }
       const enteringForeground = lifecycle === "foreground" && this.conditions.lifecycle !== "foreground";
       this.setConditions({ lifecycle, ...(enteringForeground ? { battery: "unknown" as const, batteryLevel: null, lowPower: null } : {}) });
       if (enteringForeground) void refreshBattery();
@@ -243,6 +250,7 @@ export class MobileBackgroundPolicy {
       });
       this.addCleanup(() => { void handle.remove(); }, generation, () => { void handle.remove(); });
     } catch { if (active()) this.setConditions({ lifecycle: "unknown" }); }
+    if (!active()) return;
     const stateVersion = appStateVersion;
     try {
       const state = await app.getState?.();
@@ -251,27 +259,32 @@ export class MobileBackgroundPolicy {
         applyLifecycle();
       }
     } catch { /* Retain listener state, or unknown until an event arrives. */ }
+    if (!active()) return;
     const network = this.options.network ?? Network;
     try {
       const status = await network.getStatus();
-      if (this.started && generation === this.startGeneration) this.setConditions({ network: status.connected === false ? "none" : connectionType(status.connectionType) });
+      if (!active()) return;
+      this.setConditions({ network: status.connected === false ? "none" : connectionType(status.connectionType) });
       if (network.addListener) {
         const handle = await network.addListener("networkStatusChange", (next) => active() && this.setConditions({ network: next.connected === false ? "none" : connectionType(next.connectionType) }));
         this.addCleanup(() => { void handle.remove(); }, generation, () => { void handle.remove(); });
       }
     } catch { if (this.started && generation === this.startGeneration) this.setConditions({ network: "unknown" }); }
+    if (!active()) return;
+    const fallbackGeneration = batteryGeneration;
     await refreshBattery();
-    if (active() && this.conditions.battery === "unknown") {
+    if (!active()) return;
+    if (fallbackGeneration === batteryGeneration && this.conditions.battery === "unknown") {
       const getBattery = this.options.battery ?? (typeof navigator !== "undefined" ? (navigator as BatteryNavigator).getBattery?.bind(navigator) : undefined);
       if (getBattery) try {
         const battery = await getBattery();
-        if (!active()) return;
-        const update = () => { if (active()) this.setConditions({ battery: battery.charging ? "charging" : "not-charging", batteryLevel: battery.level }); };
+        if (!active() || fallbackGeneration !== batteryGeneration) return;
+        const update = () => { if (active() && this.conditions.lifecycle === "foreground") this.setConditions({ battery: typeof battery.charging === "boolean" ? (battery.charging ? "charging" : "not-charging") : "unknown", batteryLevel: batteryLevel(battery.level) }); };
         update(); battery.addEventListener("chargingchange", update); battery.addEventListener("levelchange", update);
         this.cleanups.push(() => { battery.removeEventListener("chargingchange", update); battery.removeEventListener("levelchange", update); });
       } catch { /* Keep unknown power state conservative. */ }
     }
-    this.scheduleRotation();
+    if (active()) this.scheduleRotation();
   }
   stop(): void { this.started = false; this.startGeneration++; this.cleanups.splice(0).forEach((cleanup) => cleanup()); this.setConditions({ lifecycle: "unknown" }); this.cancelDownloads(); this.clearRotationTimer(); }
   setPreferences(patch: Partial<MobilePreferences>): MobilePreferences { this.preferences = writeMobilePreferences({ ...this.preferences, ...patch }, this.options.storage); this.snapshot = undefined; if (!this.getSnapshot().canPlayVideo) this.cancelDownloads(); else if (!this.getCanDownloadVideo()) this.cancelDownloads(true); this.notify(); this.scheduleRotation(); return this.preferences; }

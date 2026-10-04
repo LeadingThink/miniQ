@@ -7,7 +7,7 @@
 以下检查针对方案 D 最终实现执行。自动化与构建通过，不代表已通过真机验收。
 
 - TypeScript `tsc --noEmit` 通过。
-- 背景策略、持久缓存、背景库、外观面板、播放器、Android 返回键、低功耗引擎及桌面背景回归：9 个文件、115 项测试通过。
+- 背景策略、持久缓存、背景库、外观面板、播放器、Android 返回键、低功耗引擎及桌面背景回归：10 个文件、141 项测试通过。
 - 移动回归 `npm run test:mobile`：15 个文件、107 项测试通过。
 - Vite 生产构建与 Capacitor iOS/Android 资源同步通过。
 - Android `assembleDebug` 通过，生成 `apps/desktop/android/app/build/outputs/apk/debug/app-debug.apk`。

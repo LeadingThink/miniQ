@@ -1,6 +1,6 @@
 import * as mobilePower from "./mobilePower";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { createMemoryVideoCache, createMobileBackgroundPolicy, DEFAULT_MOBILE_PREFERENCES } from "./mobileBackgroundPolicy";
+import { createMemoryVideoCache, createMobileBackgroundPolicy, DEFAULT_MOBILE_PREFERENCES, type BatteryLike } from "./mobileBackgroundPolicy";
 
 describe("mobile background policy", () => {
   beforeEach(() => { vi.spyOn(mobilePower, "getState").mockResolvedValue({ lowPower: false }); });
@@ -28,9 +28,13 @@ describe("mobile background policy", () => {
 
   it("returns a stable snapshot until policy conditions change", () => {
     const policy = createMobileBackgroundPolicy({ isNative: () => true });
-    expect(policy.getSnapshot()).toBe(policy.getSnapshot());
+    const before = policy.getSnapshot();
+    expect(policy.getSnapshot()).toBe(before);
     policy.setPreferences({ motion: "low-power" });
-    expect(policy.getSnapshot().canDownloadVideo).toBe(false);
+    const after = policy.getSnapshot();
+    expect(after).not.toBe(before);
+    expect(policy.getSnapshot()).toBe(after);
+    expect(after.canDownloadVideo).toBe(false);
   });
 
   it("enforces cache entry and byte limits with oldest-first eviction", async () => {
@@ -570,6 +574,128 @@ describe("mobile background policy", () => {
     device.getBatteryInfo.mockResolvedValue({ isCharging: false, batteryLevel: 0.9 });
     await vi.advanceTimersByTimeAsync(60_000); await cancelled;
     expect(policy.getSnapshot()).toMatchObject({ canAnimate: true, canPlayVideo: false, canDownloadVideo: false });
+  });
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>(done => { resolve = done; });
+    return { promise, resolve };
+  }
+
+  it.each([NaN, Infinity, -Infinity, -0.1, 1.1, 0, 0.2, 1])("validates native and browser battery level %s", async level => {
+    const valid = Number.isFinite(level) && level >= 0 && level <= 1;
+    for (const browser of [false, true]) {
+      const battery = Object.assign(new EventTarget(), { charging: false, level });
+      const { policy } = await ready({
+        device: { getBatteryInfo: async () => browser ? {} : { isCharging: false, batteryLevel: level } },
+        battery: async () => battery,
+      });
+      policy.setPreferences({ chargingOnly: false });
+      expect(policy.getSnapshot().conditions.batteryLevel).toBe(valid ? level : null);
+      expect(policy.getSnapshot().canAnimate).toBe(valid && level > 0.2);
+    }
+  });
+
+  it.each(["app-listener", "app-state", "network-status", "network-listener", "battery"])("ends stale startup after pending %s", async stage => {
+    const gate = deferred<any>();
+    const remove = vi.fn();
+    const addListener = vi.fn(async () => stage === "app-listener" ? gate.promise : { remove: vi.fn() });
+    const getState = vi.fn(async () => stage === "app-state" ? gate.promise : { isActive: false });
+    const getStatus = vi.fn(async () => stage === "network-status" ? gate.promise : { connectionType: "wifi" });
+    const networkListener = vi.fn(async () => stage === "network-listener" ? gate.promise : { remove: vi.fn() });
+    const getBatteryInfo = vi.fn(async () => stage === "battery" ? gate.promise : {});
+    const battery = vi.fn(async () => Object.assign(new EventTarget(), { charging: true, level: 1 }));
+    const policy = createMobileBackgroundPolicy({ app: { addListener: addListener as any, getState }, network: { getStatus, addListener: networkListener }, device: { getBatteryInfo }, battery });
+    policies.push(policy);
+    const starting = policy.start();
+    const stages = [addListener, getState, getStatus, networkListener, getBatteryInfo, battery];
+    const index = ["app-listener", "app-state", "network-status", "network-listener", "battery"].indexOf(stage);
+    await vi.waitFor(() => expect(stages[index]).toHaveBeenCalledOnce());
+    policy.stop();
+    const snapshot = policy.getSnapshot();
+    gate.resolve({ remove, isActive: true, connectionType: "wifi" });
+    await starting;
+    expect(policy.getSnapshot()).toBe(snapshot);
+    for (const later of stages.slice(index + 1)) expect(later).not.toHaveBeenCalled();
+    if (stage.endsWith("listener")) expect(remove).toHaveBeenCalledOnce();
+  });
+
+  it.each(["old-first", "new-first"])("isolates pending power reads across resume (%s)", async order => {
+    vi.useFakeTimers();
+    const old = deferred<{ isCharging: boolean; batteryLevel: number }>();
+    const fresh = deferred<{ isCharging: boolean; batteryLevel: number }>();
+    const getBatteryInfo = vi.fn(async () => ({ isCharging: true, batteryLevel: 1 }));
+    const { policy, appState } = await ready({ device: { getBatteryInfo } });
+    getBatteryInfo.mockImplementationOnce(() => old.promise).mockImplementationOnce(() => fresh.promise);
+    await vi.advanceTimersByTimeAsync(60_000);
+    const count = getBatteryInfo.mock.calls.length;
+    appState({ isActive: false }); appState({ isActive: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getBatteryInfo).toHaveBeenCalledTimes(count + 1);
+    expect(policy.getSnapshot().canAnimate).toBe(false);
+    if (order === "old-first") {
+      old.resolve({ isCharging: true, batteryLevel: 1 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(policy.getSnapshot().conditions.batteryLevel).toBeNull();
+      // Old cleanup must not remove the fresh in-flight request and allow a duplicate poll.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(getBatteryInfo).toHaveBeenCalledTimes(count + 1);
+    }
+    fresh.resolve({ isCharging: false, batteryLevel: 0.1 });
+    await vi.advanceTimersByTimeAsync(0);
+    const snapshot = policy.getSnapshot();
+    expect(snapshot.conditions.batteryLevel).toBe(0.1);
+    expect(snapshot.canAnimate).toBe(false);
+    if (order === "new-first") {
+      old.resolve({ isCharging: true, batteryLevel: 1 });
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(policy.getSnapshot()).toBe(snapshot);
+  });
+
+  it("removes a late startup listener without disturbing a restarted policy", async () => {
+    const old = deferred<{ remove: () => void }>();
+    const removeOld = vi.fn();
+    const removeNew = vi.fn();
+    const addListener = vi.fn().mockReturnValueOnce(old.promise).mockResolvedValue({ remove: removeNew });
+    const getState = vi.fn(async () => ({ isActive: true }));
+    const getStatus = vi.fn(async () => ({ connectionType: "wifi" }));
+    const policy = createMobileBackgroundPolicy({
+      app: { addListener, getState }, network: { getStatus },
+      device: { getBatteryInfo: async () => ({ isCharging: true, batteryLevel: 1 }) },
+    });
+    policies.push(policy);
+    const starting = policy.start();
+    policy.stop(); await policy.start();
+    const snapshot = policy.getSnapshot();
+    expect(snapshot.canPlayVideo).toBe(true);
+    old.resolve({ remove: removeOld }); await starting;
+    expect(removeOld).toHaveBeenCalledOnce();
+    expect(removeNew).not.toHaveBeenCalled();
+    expect(getState).toHaveBeenCalledOnce();
+    expect(getStatus).toHaveBeenCalledOnce();
+    expect(policy.getSnapshot()).toBe(snapshot);
+    policy.stop(); expect(removeNew).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a browser battery attachment from an earlier foreground", async () => {
+    const gate = deferred<BatteryLike>();
+    const battery = Object.assign(new EventTarget(), { charging: true, level: 1 });
+    const add = vi.spyOn(battery, "addEventListener");
+    let appState!: (state: { isActive: boolean }) => void;
+    const fallback = vi.fn(() => gate.promise);
+    const policy = createMobileBackgroundPolicy({
+      app: { addListener: async (_event: any, callback: any) => { appState = callback; callback({ isActive: true }); return { remove: vi.fn() }; } } as any,
+      network: { getStatus: async () => ({ connectionType: "wifi" }) },
+      device: { getBatteryInfo: async () => ({}) }, battery: fallback,
+    });
+    policies.push(policy);
+    const starting = policy.start();
+    await vi.waitFor(() => expect(fallback).toHaveBeenCalledOnce());
+    appState({ isActive: false }); appState({ isActive: true });
+    gate.resolve(battery); await starting;
+    expect(add).not.toHaveBeenCalled();
+    expect(policy.getSnapshot().canAnimate).toBe(false);
   });
 
 });

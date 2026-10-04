@@ -34,7 +34,8 @@ export function createPersistentMobileVideoCache(
       !Number.isSafeInteger(maxBytes) || maxBytes < 1) {
     throw new RangeError("Mobile video cache limits must be positive safe integers");
   }
-  const factory = options.indexedDB === undefined ? globalThis.indexedDB : options.indexedDB;
+  const useMemory = options.indexedDB === null;
+  const factory = useMemory ? null : options.indexedDB ?? globalThis.indexedDB;
   const dbName = options.dbName ?? "miniq-mobile-video-cache";
   let snapshot = new Map<string, Entry>();
   let memoryQueue: Promise<unknown> = Promise.resolve();
@@ -68,12 +69,13 @@ export function createPersistentMobileVideoCache(
 
   function run<T>(mutate: boolean, operation: (entries: Map<string, Entry>) => T): Promise<T> {
     const execute = async (): Promise<T> => {
-      if (!factory) {
+      if (useMemory) {
         const entries = new Map([...snapshot].map(([key, entry]) => [key, { ...entry }]));
         const result = operation(entries);
         snapshot = entries;
         return result;
       }
+      if (!factory) throw new Error("IndexedDB is unavailable for the mobile video cache");
       const db = await open();
       try {
         return await new Promise<T>((resolve, reject) => {
@@ -106,11 +108,12 @@ export function createPersistentMobileVideoCache(
         db.close();
       }
     };
-    if (!factory) {
+    if (useMemory) {
       const result = memoryQueue.then(execute);
       memoryQueue = result.catch(() => undefined);
       return result;
     }
+    if (!factory) return Promise.reject(new Error("IndexedDB is unavailable for the mobile video cache"));
     let queue = queues.get(factory);
     if (!queue) { queue = new Map(); queues.set(factory, queue); }
     const result = (queue.get(dbName) ?? Promise.resolve()).then(execute);

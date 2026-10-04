@@ -58,14 +58,13 @@ interface Layer {
  */
 export function LivingBackground() {
   const background = useSyncExternalStore(subscribeMobilePolicy, getRenderedBackground, getRenderedBackground);
-  const policyState = useSyncExternalStore(subscribeMobilePolicy, () => JSON.stringify(mobileBackgroundPolicy.getSnapshot()));
+  const mobileSnapshot = useSyncExternalStore(subscribeMobilePolicy, () => mobileBackgroundPolicy.getSnapshot());
   const mobile = isNativeMobileApp();
   useEffect(() => { if (mobile) applyBackground(background); }, [background, mobile]);
   const reduceMotion = useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion);
   const liteMedia = useSyncExternalStore(subscribeLiteMedia, prefersLiteMedia);
   const hidden = useSyncExternalStore(subscribeVisibility, isDocumentHidden);
   useEffect(() => initializeMobileBackgroundPolicy(), []);
-  const mobileSnapshot: ReturnType<typeof mobileBackgroundPolicy.getSnapshot> = JSON.parse(policyState);
   const lowPower = mobile && (mobileSnapshot.preferences.motion === "low-power" || mobileSnapshot.conditions.lowPower === true);
   const still = reduceMotion || liteMedia || (mobileSnapshot.isNative && !mobileSnapshot.canAnimate);
   const [layers, setLayers] = useState<Layer[]>(() => [{ background, leaving: false }]);
@@ -156,7 +155,7 @@ function VideoWallpaper({
           draggable={false}
         />
       )}
-      {source && (
+      {source && !still && allowed && (
         isNativeMobileApp() ? <MobileVideo key={source} src={source} paused={paused} onError={() => setSource(undefined)} /> : <VideoLoop key={source} src={source} drift={drift} paused={paused} onError={() => setSource(undefined)} />
       )}
     </>

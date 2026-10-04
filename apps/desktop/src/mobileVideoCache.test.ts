@@ -212,9 +212,12 @@ it("reports opening and blocking failures instead of silently losing persistence
   expect(blocked.close).toHaveBeenCalledOnce();
 });
 
-it("keeps the selected memory backend stable if IndexedDB appears later", async () => {
+it("requires IndexedDB unless the memory backend is selected explicitly", async () => {
   vi.stubGlobal("indexedDB", undefined);
-  const c = createPersistentMobileVideoCache();
+  const unavailable = createPersistentMobileVideoCache();
+  await expect(unavailable.put("a", blob("a"))).rejects.toThrow("IndexedDB is unavailable");
+  await expect(unavailable.stats()).rejects.toThrow("IndexedDB is unavailable");
+  const c = createPersistentMobileVideoCache({ indexedDB: null });
   await c.put("a", blob("a"));
   vi.stubGlobal("indexedDB", databaseDriver().factory);
   expect(await (await c.get("a"))?.text()).toBe("a");
