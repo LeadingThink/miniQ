@@ -200,24 +200,19 @@ describe("mobile background policy", () => {
     expect(put).not.toHaveBeenCalled();
   });
 
-  it.each(["clear", "remove", "background", "network", "stop"])("guards a deferred disk read cancelled by %s", async reason => {
+  it.each(["clear", "remove", "background", "stop"])("guards a deferred disk read cancelled by %s", async reason => {
     let release!: (blob: Blob | undefined) => void;
     const base = createMemoryVideoCache();
     const get = vi.fn(() => new Promise<Blob | undefined>(resolve => { release = resolve; }));
     const put = vi.spyOn(base, "put");
     vi.stubGlobal("fetch", vi.fn());
-    let networkChange!: (status: { connected: boolean; connectionType: string }) => void;
-    const { policy, appState } = await ready({ cache: { ...base, get }, network: {
-      getStatus: async () => ({ connected: true, connectionType: "wifi" }),
-      addListener: async (_event, listener) => { networkChange = listener; return { remove: vi.fn() }; },
-    } });
+    const { policy, appState } = await ready({ cache: { ...base, get } });
     const rejected = expect(policy.downloadVideo("disk")).rejects.toMatchObject({ name: "AbortError" });
     await vi.waitFor(() => expect(get).toHaveBeenCalled());
     let mutation: Promise<void> | undefined;
     if (reason === "clear") mutation = policy.clearVideoCache();
     if (reason === "remove") mutation = policy.removeCachedVideo("disk");
     if (reason === "background") appState({ isActive: false });
-    if (reason === "network") networkChange({ connected: true, connectionType: "cellular" });
     if (reason === "stop") policy.stop();
     await rejected; // Cancellation must settle even while disk is unresponsive.
     release(new Blob(["late disk result"]));
@@ -269,6 +264,88 @@ describe("mobile background policy", () => {
     expect(await (await next).text()).toBe("new");
     expect(await (await base.get("same"))?.text()).toBe("new");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["none", "unknown", "cellular"])("plays cached video on %s without authorizing downloads", async connectionType => {
+    const saved = new Blob(["offline"]);
+    const get = vi.fn(async (): Promise<Blob | undefined> => saved);
+    vi.stubGlobal("fetch", vi.fn());
+    const { policy } = await ready({
+      cache: { ...createMemoryVideoCache(), get },
+      network: { getStatus: async () => ({ connectionType }) },
+    });
+    expect(policy.getSnapshot()).toMatchObject({ canPlayVideo: true, canDownloadVideo: false });
+    expect(await policy.downloadVideo("disk")).toBe(saved);
+    get.mockResolvedValueOnce(undefined);
+    await expect(policy.downloadVideo("missing")).rejects.toThrow("network policy");
+    expect(fetch).not.toHaveBeenCalled();
+    if (connectionType === "cellular") {
+      policy.setPreferences({ network: "cellular-opt-in" });
+      expect(policy.getSnapshot().canDownloadVideo).toBe(true);
+    }
+  });
+
+  it.each([true, false])("rechecks network after a deferred cache read (hit=%s)", async hit => {
+    let release!: (blob: Blob | undefined) => void;
+    const get = vi.fn(() => new Promise<Blob | undefined>(resolve => { release = resolve; }));
+    let networkChange!: (status: { connected: boolean; connectionType: string }) => void;
+    vi.stubGlobal("fetch", vi.fn());
+    const { policy } = await ready({ cache: { ...createMemoryVideoCache(), get }, network: {
+      getStatus: async () => ({ connectionType: "wifi" }),
+      addListener: async (_event, listener) => { networkChange = listener; return { remove: vi.fn() }; },
+    } });
+    const pending = policy.downloadVideo("disk");
+    await vi.waitFor(() => expect(get).toHaveBeenCalledOnce());
+    networkChange({ connected: false, connectionType: "none" });
+    const saved = new Blob(["cached"]);
+    release(hit ? saved : undefined);
+    if (hit) expect(await pending).toBe(saved);
+    else await expect(pending).rejects.toThrow("network policy");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["clear", "remove"])("orders an offline disk snapshot refresh before %s and a replacement read", async reason => {
+    const base = createMemoryVideoCache();
+    let release!: () => void;
+    const get = vi.fn(async (url: string) => {
+      if (get.mock.calls.length === 1) {
+        await new Promise<void>(resolve => { release = resolve; });
+        await base.put(url, new Blob(["old disk snapshot"]));
+      }
+      return base.get(url);
+    });
+    vi.stubGlobal("fetch", vi.fn());
+    const { policy } = await ready({ cache: { ...base, get }, network: { getStatus: async () => ({ connected: false }) } });
+    const cancelled = expect(policy.downloadVideo("disk")).rejects.toMatchObject({ name: "AbortError" });
+    await vi.waitFor(() => expect(get).toHaveBeenCalledOnce());
+    const mutation = reason === "clear" ? policy.clearVideoCache() : policy.removeCachedVideo("disk");
+    const replacement = expect(policy.downloadVideo("disk")).rejects.toThrow("network policy");
+    await cancelled;
+    release();
+    await Promise.all([mutation, replacement]);
+    expect(base.peek("disk")).toBeUndefined();
+    expect(policy.getCacheStatus().items).toBe(0);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["background", "low-power", "reduced-motion", "battery", "unknown-power"])("keeps offline cached playback subject to %s safety", async reason => {
+    const media = Object.assign(new EventTarget(), { matches: false });
+    vi.stubGlobal("matchMedia", () => media);
+    const get = vi.fn(async () => new Blob(["cached"]));
+    vi.stubGlobal("fetch", vi.fn());
+    const { policy, appState } = await ready({
+      cache: { ...createMemoryVideoCache(), get },
+      network: { getStatus: async () => ({ connected: false }) },
+      ...(reason === "battery" ? { device: { getBatteryInfo: async () => ({ isCharging: false, batteryLevel: 0.9 }) } } : {}),
+      ...(reason === "unknown-power" ? { power: async () => null } : {}),
+    });
+    if (reason === "background") appState({ isActive: false });
+    if (reason === "low-power") policy.setPreferences({ motion: "low-power" });
+    if (reason === "reduced-motion") { media.matches = true; media.dispatchEvent(new Event("change")); }
+    expect(policy.getSnapshot()).toMatchObject({ canPlayVideo: false, canDownloadVideo: false });
+    await expect(policy.downloadVideo("disk")).rejects.toThrow("playback blocked");
+    expect(get).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("refreshes battery on resume, polls only in foreground and cleans up", async () => {
