@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MobileAppearanceSheet } from "./MobileAppearanceSheet";
@@ -70,6 +70,22 @@ it("supports the connected workspace sheet without mounting MobileEntry", async 
   expect(screen.getByText("工作区")).toBeTruthy();
   expect(registrations[0].remove).toHaveBeenCalledOnce();
   expect(native.minimizeApp).not.toHaveBeenCalled();
+});
+
+it("uses the latest close callback without duplicating listeners under StrictMode", async () => {
+  const first = vi.fn(); const latest = vi.fn();
+  const view = render(<StrictMode><MobileAppearanceSheet onClose={first} /></StrictMode>);
+  await act(async () => { await vi.dynamicImportSettled(); });
+  await waitFor(() => expect(registrations).toHaveLength(1));
+  view.rerender(<StrictMode><MobileAppearanceSheet onClose={latest} /></StrictMode>);
+  await pressBack();
+  expect(first).not.toHaveBeenCalled();
+  expect(latest).toHaveBeenCalledOnce();
+  expect(native.addListener).toHaveBeenCalledOnce();
+  view.unmount();
+  await pressBack();
+  expect(latest).toHaveBeenCalledOnce();
+  expect(registrations[0].remove).toHaveBeenCalledOnce();
 });
 
 it("does not register if unmounted before the dynamic import settles", async () => {
