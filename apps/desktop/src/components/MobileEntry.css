@@ -8,3 +8,6 @@
 .mobile-entry-help ol { padding-left: 22px; margin: 6px 0; }
 .mobile-entry-help li + li { margin-top: 8px; }
 .mobile-entry-help p { margin: 8px 0 0; }
+.mobile-entry-brand { position: relative; }
+.mobile-entry-appearance { position: absolute; right: 0; top: 0; min-height: 40px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); }
+.mobile-entry { padding-bottom: calc(24px + env(safe-area-inset-bottom)); padding-top: calc(24px + env(safe-area-inset-top)); }

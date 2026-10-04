@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(MiniqPushPlugin.class);
         registerPlugin(MiniqBackgroundPlugin.class);
+        registerPlugin(MiniqPowerPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

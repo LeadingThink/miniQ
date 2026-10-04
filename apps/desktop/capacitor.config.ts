@@ -18,6 +18,8 @@ const config: CapacitorConfig = {
     // through the native MiniqPush/MiniqBackground plugins instead.
     includePlugins: [
       "@capacitor/app",
+      "@capacitor/network",
+      "@capacitor/device",
       "@capacitor/haptics",
       "@capacitor/keyboard",
       "@capacitor/local-notifications",

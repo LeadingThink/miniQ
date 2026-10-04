@@ -26,14 +26,16 @@ import { initializeAppearance } from "./theme";
 import { initializeBackground } from "./background";
 import { initializeRotation } from "./backgroundRotation";
 import { LivingBackground } from "./components/LivingBackground";
-import { initializeMobileRuntime } from "./mobileRuntime";
+import { initializeMobileRuntime, isNativeMobileApp } from "./mobileRuntime";
 import { initializeMobileViewport } from "./mobileViewport";
 import { initializeWindowChrome } from "./windowChrome";
 import { initializeNativeMenuBridge } from "./nativeMenuBridge";
 
 initializeAppearance();
-initializeBackground();
-initializeRotation();
+if (!isNativeMobileApp()) {
+  initializeBackground();
+  initializeRotation();
+}
 initializeWindowChrome();
 initializeMobileViewport();
 initializeNativeMenuBridge();

@@ -1,4 +1,6 @@
 import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
+import { isNativeMobileApp } from "./mobileRuntime";
+import { MobileAppearanceSheet } from "./components/MobileAppearanceSheet";
 import { MobileEntry } from "./components/MobileEntry";
 import { isRemoteBrowserEntry, loadRemoteCredentials } from "./remoteAccess";
 import { getAppearance, subscribeAppearance, storeTheme, type ThemeId } from "./theme";
@@ -23,6 +25,7 @@ export default function App() {
 /** Remembered credentials reconnect straight to the desktop, so the API key —
  * which is painful to retype on a phone — is only entered once. */
 function RemoteGate(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) => void }) {
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [phase, setPhase] = useState<"restoring" | "entry" | "active">("restoring");
 
   useEffect(() => {
@@ -38,5 +41,5 @@ function RemoteGate(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) => 
 
   if (phase === "restoring") return <p role="status" className="remote-restoring">正在恢复远程连接…</p>;
   if (phase === "entry") return <MobileEntry onRemote={() => setPhase("active")} />;
-  return <DesktopHostProvider><Suspense fallback={<p role="status" className="remote-restoring">正在加载远程工作台…</p>}><ConnectedApp theme={props.theme} onThemeChange={props.onThemeChange} /></Suspense></DesktopHostProvider>;
+  return <><DesktopHostProvider><Suspense fallback={<p role="status" className="remote-restoring">正在加载远程工作台…</p>}><ConnectedApp theme={props.theme} onThemeChange={props.onThemeChange} /></Suspense></DesktopHostProvider>{isNativeMobileApp() && <button className="mobile-workspace-appearance" onClick={() => setAppearanceOpen(true)}>外观</button>}{appearanceOpen && <MobileAppearanceSheet onClose={() => setAppearanceOpen(false)} />}</>;
 }

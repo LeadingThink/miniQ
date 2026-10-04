@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { getActiveBackground, subscribeBackground } from "../background";
+import { applyBackground, getActiveBackground, subscribeBackground } from "../background";
 import type { BackgroundDefinition } from "../backgroundCatalog";
 import { loadBackgroundVideo } from "../backgroundVideo";
+import { getMobileBackground, initializeMobileBackgroundPolicy, mobileBackgroundPolicy } from "../mobileBackgroundPolicy";
+import { isNativeMobileApp } from "../mobileRuntime";
 
 function subscribeReducedMotion(listener: () => void) {
   const query = window.matchMedia?.("(prefers-reduced-motion: reduce)");
@@ -34,6 +36,12 @@ function subscribeVisibility(listener: () => void) {
 }
 const isDocumentHidden = () => document.hidden;
 
+function subscribeMobilePolicy(listener: () => void) {
+  if (!isNativeMobileApp()) return subscribeBackground(listener);
+  return mobileBackgroundPolicy.subscribe(listener);
+}
+const getRenderedBackground = () => isNativeMobileApp() ? getMobileBackground() : getActiveBackground();
+
 /** Enter takes 1.2s; the old layer fades out between 0.6s and 1.5s. */
 const LAYER_SETTLE_MS = 1600;
 
@@ -49,17 +57,22 @@ interface Layer {
  * and data saver (still cover / single frame) and pauses while hidden.
  */
 export function LivingBackground() {
-  const background = useSyncExternalStore(subscribeBackground, getActiveBackground);
+  const background = useSyncExternalStore(subscribeMobilePolicy, getRenderedBackground, getRenderedBackground);
+  const policyState = useSyncExternalStore(subscribeMobilePolicy, () => JSON.stringify(mobileBackgroundPolicy.getSnapshot()));
+  const mobile = isNativeMobileApp();
+  useEffect(() => { if (mobile) applyBackground(background); }, [background, mobile]);
   const reduceMotion = useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion);
   const liteMedia = useSyncExternalStore(subscribeLiteMedia, prefersLiteMedia);
   const hidden = useSyncExternalStore(subscribeVisibility, isDocumentHidden);
-  const still = reduceMotion || liteMedia;
+  useEffect(() => initializeMobileBackgroundPolicy(), []);
+  const mobileSnapshot: ReturnType<typeof mobileBackgroundPolicy.getSnapshot> = JSON.parse(policyState);
+  const still = reduceMotion || liteMedia || (mobileSnapshot.isNative && !mobileSnapshot.canAnimate);
   const [layers, setLayers] = useState<Layer[]>(() => [{ background, leaving: false }]);
 
   const current = layers[layers.length - 1]?.background;
   if (current !== background) {
     // Derive the layer stack during render so the new layer appears in the same frame.
-    const kept = still ? [] : layers.filter((layer) => !layer.leaving).map((layer) => ({ ...layer, leaving: true }));
+    const kept = still || mobile ? [] : layers.filter((layer) => !layer.leaving).map((layer) => ({ ...layer, leaving: true }));
     setLayers([...kept.slice(-1), { background, leaving: false }]);
   }
 
@@ -74,7 +87,7 @@ export function LivingBackground() {
   if (!visible.length) return null;
   return (
     <div
-      className={`living-background${background.light ? " is-light" : ""}${still ? " is-still" : ""}`}
+      className={`living-background${hidden || (mobile && !mobileSnapshot.canAnimate) ? " is-paused" : ""}${mobile ? " is-mobile" : ""}${background.light ? " is-light" : ""}${still ? " is-still" : ""}`}
       data-kind={background.kind}
       aria-hidden="true"
     >
@@ -85,9 +98,9 @@ export function LivingBackground() {
           data-kind={item.kind}
         >
           {item.kind === "video" ? (
-            <VideoWallpaper background={item} still={still} paused={hidden || leaving} />
+            <VideoWallpaper background={item} still={still} paused={hidden || leaving || (mobileSnapshot.isNative && !mobileSnapshot.canPlayVideo)} />
           ) : (
-            <SceneCanvas background={item} still={still} paused={hidden || leaving} />
+            <SceneCanvas background={item} still={still} paused={hidden || leaving || (mobile && !mobileSnapshot.canAnimate)} />
           )}
         </div>
       ))}
@@ -106,12 +119,16 @@ function VideoWallpaper({
   paused: boolean;
 }) {
   const [source, setSource] = useState<string>();
+  const allowed = !isNativeMobileApp() || mobileBackgroundPolicy.getSnapshot().canDownloadVideo;
 
   useEffect(() => {
-    if (still || !background.video) return;
+    if (still || !background.video || !allowed) return;
     let objectUrl: string | undefined;
     let cancelled = false;
-    loadBackgroundVideo(background.video).then(
+    const load = isNativeMobileApp()
+      ? mobileBackgroundPolicy.downloadVideo(background.video)
+      : loadBackgroundVideo(background.video);
+    load.then(
       (blob) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);
@@ -125,9 +142,9 @@ function VideoWallpaper({
       setSource(undefined);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [background.video, still]);
+  }, [background.video, still, allowed]);
 
-  const drift = background.drift !== false && !still;
+  const drift = background.drift !== false && !still && !isNativeMobileApp();
   return (
     <>
       {background.poster && (
@@ -139,10 +156,22 @@ function VideoWallpaper({
         />
       )}
       {source && (
-        <VideoLoop key={source} src={source} drift={drift} paused={paused} onError={() => setSource(undefined)} />
+        isNativeMobileApp() ? <MobileVideo key={source} src={source} paused={paused} onError={() => setSource(undefined)} /> : <VideoLoop key={source} src={source} drift={drift} paused={paused} onError={() => setSource(undefined)} />
       )}
     </>
   );
+}
+
+function MobileVideo({ src, paused, onError }: { src: string; paused: boolean; onError: () => void }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const video = ref.current;
+    if (!video) return;
+    if (paused) video.pause();
+    else void video.play().catch(onError);
+    return () => video.pause();
+  }, [src, paused]);
+  return <video ref={ref} src={src} muted loop playsInline preload="metadata" className="living-background-media" onError={onError} />;
 }
 
 /** Crossfade length in seconds and how early it starts before the clip ends. */

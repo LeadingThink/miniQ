@@ -1,6 +1,7 @@
 import { ArrowLeft, Bot, ExternalLink, Laptop, LifeBuoy, ShieldCheck, Wifi } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { isNativeMobileApp } from "../mobileRuntime";
+import { MobileAppearanceSheet } from "./MobileAppearanceSheet";
 import { isRememberEnabled, loadRemoteCredentials, readRemoteCredentials, setRememberEnabled, storeRemoteCredentials } from "../remoteAccess";
 import { MobileUpdateCheck } from "./MobileUpdateCheck";
 import { clearMobilePrivacyConsent, hasMobilePrivacyConsent, MINIQ_PRIVACY_URL, MINIQ_SUPPORT_URL, recordMobilePrivacyConsent } from "../mobilePrivacy";
@@ -18,6 +19,7 @@ export function MobileEntry(props: { onRemote: () => void }) {
   const [remember, setRemember] = useState(() => isRememberEnabled());
   const [loadingCredentials, setLoadingCredentials] = useState(isNativeMobileApp());
   const [privacyAccepted, setPrivacyAccepted] = useState(hasMobilePrivacyConsent);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const saving = useRef(false);
   const keyInput = useRef<HTMLInputElement>(null);
@@ -108,7 +110,7 @@ export function MobileEntry(props: { onRemote: () => void }) {
 
   return (
     <main className="mobile-entry">
-      <div className="mobile-entry-brand"><span>miniQ</span><small>移动工作台</small></div>
+      <div className="mobile-entry-brand"><span>miniQ</span><small>移动工作台</small><button type="button" className="mobile-entry-appearance" onClick={() => setAppearanceOpen(true)}>外观</button></div>
       <form className="mobile-entry-sheet" aria-busy={pending || loadingCredentials} onSubmit={(event) => {
         event.preventDefault();
         void proceed(section === "remote" ? "remote" : "chat");
@@ -190,6 +192,7 @@ export function MobileEntry(props: { onRemote: () => void }) {
         <a href={MINIQ_PRIVACY_URL} target="_blank" rel="noreferrer"><ShieldCheck size={13} />隐私政策</a>
         <a href={MINIQ_SUPPORT_URL} target="_blank" rel="noreferrer"><LifeBuoy size={13} />技术支持</a>
       </div>
+      {appearanceOpen && <MobileAppearanceSheet onClose={() => setAppearanceOpen(false)} />}
       <p className="mobile-entry-security">API Key 与 AI 请求通过 HTTPS 加密传输，并由所选模型服务处理。远程桌面内容另使用 AES-256-GCM 端到端加密，relay 只转发密文。</p>
     </main>
   );
