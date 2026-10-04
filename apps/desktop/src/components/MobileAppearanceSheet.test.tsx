@@ -77,6 +77,15 @@ describe("MobileAppearanceSheet", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /下载「/ })[0]);
     expect((await screen.findByRole("alert")).textContent).toContain("下载失败");
   });
+  it("explains when the mobile policy blocks a video download", async () => {
+    vi.spyOn(mobileBackgroundPolicy, "retryVideo").mockRejectedValue(new Error("mobile video download blocked by network policy"));
+    render(<MobileAppearanceSheet />);
+    const item = BACKGROUNDS.find((item) => item.kind === "video")!;
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: item.name } });
+    fireEvent.click(screen.getByRole("radio", { name: item.name }));
+    fireEvent.click(screen.getAllByRole("button", { name: /下载「/ })[0]);
+    expect((await screen.findByRole("alert")).textContent).toContain("网络策略禁止下载");
+  });
   it("allows a cached video to retry playback through the explicit retry API", async () => {
     const retryVideo = vi.spyOn(mobileBackgroundPolicy, "retryVideo").mockResolvedValue(new Blob(["video"]));
     const downloadVideo = vi.spyOn(mobileBackgroundPolicy, "downloadVideo");

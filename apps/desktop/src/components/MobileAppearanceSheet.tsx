@@ -76,7 +76,15 @@ export function MobileAppearanceSheet({ onClose }: MobileAppearanceSheetProps) {
     if (!item.video) return;
     setDownloadErrors((errors) => { const next = { ...errors }; delete next[item.id]; return next; });
     try { await mobileBackgroundPolicy.retryVideo(item.video); }
-    catch { setDownloadErrors((errors) => ({ ...errors, [item.id]: "下载失败，请检查网络后重试" })); }
+    catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      const reason = message.includes("network policy")
+        ? "当前网络策略禁止下载，请连接 Wi-Fi 后重试"
+        : message.includes("playback blocked") || message.includes("download cancelled")
+          ? "动效下载需要前台且满足电量设置；如开启“仅充电时播放”，请先连接充电器"
+          : "下载失败，请检查网络后重试";
+      setDownloadErrors((errors) => ({ ...errors, [item.id]: reason }));
+    }
   };
   const clear = async () => {
     setClearing(true); setCacheError("");
