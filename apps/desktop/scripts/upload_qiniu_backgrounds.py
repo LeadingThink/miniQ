@@ -158,8 +158,15 @@ def verify_bytes(background_id: str, data: bytes) -> None:
 
 def fetch(url: str) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": "miniq-background-publisher"})
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return response.read()
+    for attempt in range(1, 4):
+        try:
+            with urllib.request.urlopen(request, timeout=180) as response:
+                return response.read()
+        except (urllib.error.URLError, TimeoutError) as error:
+            if attempt == 3:
+                raise
+            print(f"retrying source download after attempt {attempt}: {url} ({error})")
+            time.sleep(10 * attempt)
 
 
 def download_sources(source_origin: str, target: Path) -> list[UploadItem]:
