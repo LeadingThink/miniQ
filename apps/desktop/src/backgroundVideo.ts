@@ -3,7 +3,7 @@
 
 const DB_NAME = "miniq-backgrounds";
 const STORE = "videos";
-const MAX_CACHED = 3;
+const MAX_CACHED = 6;
 
 interface CachedVideo {
   url: string;

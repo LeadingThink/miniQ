@@ -19,12 +19,80 @@
   object-fit: cover;
   display: block;
 }
-.living-background-video {
+/* Each background is a keyed layer: the new one fades in over the old one. */
+.living-background-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #04050b;
+}
+.living-background-layer.is-entering {
+  z-index: 2;
+  animation: living-layer-enter 1.2s ease-out both;
+}
+.living-background-layer.is-leaving {
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.9s ease-in 0.6s;
+}
+.living-background.is-light .living-background-layer {
+  background: #f4f6fb;
+}
+@keyframes living-layer-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* A/B video loop: the front player fades in over the one behind it. */
+.living-background-loop {
   opacity: 0;
   transition: opacity 600ms ease;
 }
-.living-background-video.is-playing {
+.living-background-loop.is-playing {
   opacity: 1;
+}
+.living-background-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.living-background-video.is-front {
+  z-index: 2;
+  opacity: 1;
+  transition: opacity 1.6s cubic-bezier(0.45, 0, 0.55, 1);
+}
+.living-background-video.is-behind {
+  z-index: 1;
+  opacity: 1;
+}
+.living-background-video.is-idle {
+  z-index: 0;
+  opacity: 0;
+}
+
+/* Slow Ken Burns drift for clips with a fixed camera. */
+.is-drifting {
+  animation: living-loop-drift 56s ease-in-out infinite alternate;
+  transform-origin: 50% 50%;
+  will-change: transform;
+}
+@keyframes living-loop-drift {
+  0% {
+    transform: scale(1.04) translate(-0.6%, 0.4%);
+  }
+  50% {
+    transform: scale(1.09) translate(0.5%, -0.5%);
+  }
+  100% {
+    transform: scale(1.06) translate(0.8%, 0.6%);
+  }
 }
 .living-background-scrim {
   position: absolute;
@@ -115,21 +183,141 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .living-background-video {
-    transition: none;
+  .living-background-loop,
+  .living-background-video.is-front,
+  .living-background-layer.is-leaving {
+    transition-duration: 0.01ms;
+    transition-delay: 0s;
+  }
+  .living-background-layer.is-entering,
+  .is-drifting {
+    animation: none;
   }
 }
 
 /* ============ Background picker ============ */
-.background-groups {
+.background-rotation {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--hairline);
+  background: var(--bg-subtle);
 }
-.background-group h4 {
-  margin: 0 0 var(--space-2);
+.background-rotation-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.background-rotation-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  font-weight: 500;
+  cursor: pointer;
+}
+.background-rotation-head select,
+.background-search {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-caption);
+}
+.background-rotation-button,
+.background-tab,
+.background-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--font-caption);
+  cursor: pointer;
+}
+.background-rotation-button:hover,
+.background-tab:hover,
+.background-more:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.background-tab[aria-selected="true"] {
+  color: var(--text);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.background-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.background-chip {
+  position: relative;
+  cursor: pointer;
+}
+.background-chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.background-chip span {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
   color: var(--text-dim);
   font-size: var(--font-caption);
-  font-weight: 500;
+}
+.background-chip:has(input:checked) span {
+  color: var(--text);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.background-chip:has(input:focus-visible) span {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.background-rotation-detail,
+.background-empty {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+}
+.background-empty {
+  padding: var(--space-4) 0;
+  text-align: center;
+}
+.background-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.background-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+.background-search {
+  flex: 0 1 160px;
+  min-width: 120px;
+}
+.background-more {
+  justify-self: center;
+  margin: var(--space-3) auto 0;
 }
 .background-grid {
   display: grid;
@@ -138,12 +326,47 @@
 }
 .background-choice {
   position: relative;
+  min-width: 0;
+}
+.background-choice > label {
   display: grid;
   gap: var(--space-2);
   justify-items: center;
   min-width: 0;
   cursor: pointer;
   color: var(--text);
+}
+.background-collect {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+.background-choice:hover .background-collect,
+.background-collect:focus-visible,
+.background-collect.is-collected {
+  opacity: 1;
+}
+.background-collect.is-collected {
+  background: var(--accent);
+}
+.background-collect:disabled {
+  cursor: not-allowed;
+  opacity: 0;
+}
+.background-choice:hover .background-collect:disabled {
+  opacity: 0.4;
 }
 .background-choice input {
   position: absolute;

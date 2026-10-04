@@ -24,6 +24,7 @@ import "./styles/mobile-controls.css";
 import "./styles/window-chrome.css";
 import { initializeAppearance } from "./theme";
 import { initializeBackground } from "./background";
+import { initializeRotation } from "./backgroundRotation";
 import { LivingBackground } from "./components/LivingBackground";
 import { initializeMobileRuntime } from "./mobileRuntime";
 import { initializeMobileViewport } from "./mobileViewport";
@@ -32,6 +33,7 @@ import { initializeNativeMenuBridge } from "./nativeMenuBridge";
 
 initializeAppearance();
 initializeBackground();
+initializeRotation();
 initializeWindowChrome();
 initializeMobileViewport();
 initializeNativeMenuBridge();
