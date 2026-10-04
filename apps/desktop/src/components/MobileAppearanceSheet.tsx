@@ -113,7 +113,7 @@ export function MobileAppearanceSheet({ onClose }: MobileAppearanceSheetProps) {
             <p>默认开启，未充电时显示静态预览。</p>
             <div className="mobile-appearance-options" role="radiogroup" aria-label="视频下载网络策略">{([ ["wifi-only", "仅 Wi-Fi"], ["cellular-opt-in", "Wi-Fi 与移动网络"] ] as const).map(([value, label]) => <MotionOption key={value} value={value} label={label} selected={snapshot.preferences.network} onChange={(next) => mobileBackgroundPolicy.setPreferences({ network: next as MobileNetwork })} />)}</div>
             <div className="mobile-appearance-cache"><span><strong>缓存</strong><small>{formatBytes(cacheBytes)}{cachedStatuses.length ? ` · ${cachedStatuses.length} 个视频` : ""}</small></span><button type="button" onClick={() => void clear()} disabled={clearing || cachedStatuses.length === 0}><Trash2 size={15} />{clearing ? "清理中…" : "清理缓存"}</button></div>
-            {cacheError && <p role="alert">{cacheError}</p>}
+            {cacheError && <p className="mobile-appearance-error" role="alert">{cacheError}</p>}
             {Object.entries(downloadErrors).map(([id, error]) => <p className="mobile-appearance-error" role="alert" key={id}><Download size={15} />{error}</p>)}
             {[active].filter((item) => item.kind === "video").map((item) => {
               const status: VideoDownloadStatus = item.video ? mobileBackgroundPolicy.getVideoStatus(item.video).status : "idle";

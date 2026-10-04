@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { Code, Settings } from "lucide-react";
+import { MobileAppearanceSheet } from "../components/MobileAppearanceSheet";
 import { SettingsPanel } from "../components/Settings";
 import type { RpcClient } from "../rpc";
 import { getAppearance, initializeAppearance, storeAppearanceMode, storeTheme, subscribeAppearance, themeById, isThemeId } from "../theme";
@@ -174,5 +175,9 @@ if (import.meta.env.DEV) {
     storeAppearanceMode(themeById(previewTheme as Parameters<typeof storeTheme>[0]).mode);
     storeTheme(previewTheme as Parameters<typeof storeTheme>[0]);
   }
-  createRoot(document.getElementById("root")!).render(<AppearanceFixture />);
+  createRoot(document.getElementById("root")!).render(
+    new URLSearchParams(location.search).has("mobile")
+      ? <MobileAppearanceSheet />
+      : <AppearanceFixture />,
+  );
 }
