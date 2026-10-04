@@ -179,7 +179,7 @@ export function Timeline(props: TimelineProps) {
   const { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump } = useConversationScroll({
     viewKey: JSON.stringify([props.sessionId, filter, query.trim()]),
     cursorKey: historyCursor ? JSON.stringify(historyCursor) : null,
-    autoLoadOlder: props.client?.mode !== "remote",
+    autoLoadOlder: true,
     hasOlder,
     loadingOlder,
     loading: props.loading || (historySearch.loading && !historySearch.page),

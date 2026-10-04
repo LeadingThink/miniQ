@@ -1,5 +1,5 @@
 import { Check, ChevronLeft, ChevronRight, Minus, Plus, Heart, Shuffle, ListOrdered } from "lucide-react";
-import { useDeferredValue, useMemo, useState, useSyncExternalStore } from "react";
+import { useId, useDeferredValue, useMemo, useState, useSyncExternalStore } from "react";
 import { ambientThumbStyle } from "../ambient/ambientPresets";
 import { BACKGROUND_GROUPS, BACKGROUNDS, type BackgroundDefinition } from "../backgroundCatalog";
 import { CUSTOM_LIMIT, PLAYLISTS, ROTATION_INTERVALS, type PlaylistId, type RotationState } from "../backgroundRotation";
@@ -35,6 +35,7 @@ export interface MobileBackgroundLibraryProps {
 }
 
 export function MobileBackgroundLibrary({ className = "", pageSize = PAGE_SIZE }: MobileBackgroundLibraryProps) {
+  const groupId = useId();
   const snapshot = useSnapshot();
   const [tab, setTab] = useState(ALL);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
@@ -98,7 +99,7 @@ export function MobileBackgroundLibrary({ className = "", pageSize = PAGE_SIZE }
           const canToggle = item.kind !== "none" && (collected || !customFull);
           return <article className={`mobile-background-library-card${active === item.id ? " is-selected" : ""}`} key={item.id}>
             <label title={item.story}>
-              <input type="radio" name="mobile-background-library-choice" value={item.id} checked={active === item.id} onChange={() => mobileBackgroundPolicy.selectBackground(item.id)} aria-label={item.name} />
+              <input type="radio" name={groupId} value={item.id} checked={active === item.id} onChange={() => mobileBackgroundPolicy.selectBackground(item.id)} aria-label={item.name} />
               <span className="mobile-background-library-preview"><Preview item={item} /></span>
               <span className="mobile-background-library-name">{item.name}</span>
               {active === item.id && <Check size={16} aria-hidden="true" />}

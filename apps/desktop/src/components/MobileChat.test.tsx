@@ -272,9 +272,65 @@ it("loads older history on demand without dropping any messages from storage", a
   render(<MobileChat apiKey="test-key" onBack={() => {}} />);
   expect(screen.queryByText("消息 0")).toBeNull();
   expect(screen.getByText("消息 79")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: /加载更早的消息/ }));
-  fireEvent.click(screen.getByRole("button", { name: /加载更早的消息/ }));
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: /加载更早的消息/ })); });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: /加载更早的消息/ })); });
   expect(screen.getByText("消息 0")).toBeTruthy();
   expect(JSON.parse(localStorage.getItem(MOBILE_CHAT_STORAGE_KEY) ?? "[]")).toHaveLength(80);
   await screen.findByText("custom-chat");
+});
+
+it("auto expands one page near the top, anchors the visible row and stops at the beginning", async () => {
+  const history = Array.from({ length: 80 }, (_, index) => ({ role: "user", content: `历史 ${index}` }));
+  localStorage.setItem(MOBILE_CHAT_STORAGE_KEY, JSON.stringify(history));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ data: catalog })));
+  vi.spyOn(Element.prototype, "scrollHeight", "get").mockImplementation(function (this: Element) {
+    return this.querySelectorAll(".mobile-chat-message").length * 100;
+  });
+  vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(300);
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    const feed = this.closest(".mobile-chat-feed");
+    const row = this.matches(".mobile-chat-message");
+    const index = feed ? Array.from(feed.querySelectorAll(".mobile-chat-message")).indexOf(this) : 0;
+    const top = row ? index * 100 - (feed?.scrollTop ?? 0) : 0;
+    const height = row ? 100 : 300;
+    return { x: 0, y: top, top, bottom: top + height, left: 0, right: 400, width: 400, height, toJSON() {} };
+  });
+  render(<MobileChat apiKey="test-key" onBack={() => {}} />);
+  await screen.findByText("custom-chat");
+  const feed = screen.getByRole("region", { name: "问答记录" });
+  expect(feed.querySelectorAll("article")).toHaveLength(30);
+  fireEvent.scroll(feed, { target: { scrollTop: 2700 } });
+  expect(feed.querySelectorAll("article")).toHaveLength(30);
+  await act(async () => {
+    fireEvent.scroll(feed, { target: { scrollTop: 250 } });
+    fireEvent.scroll(feed);
+    fireEvent.scroll(feed);
+  });
+  expect(feed.querySelectorAll("article")).toHaveLength(60);
+  expect(feed.scrollTop).toBe(3250);
+  fireEvent.scroll(feed);
+  expect(feed.querySelectorAll("article")).toHaveLength(60);
+  await act(async () => { fireEvent.scroll(feed, { target: { scrollTop: 40 } }); });
+  expect(feed.querySelectorAll("article")).toHaveLength(80);
+  expect(feed.scrollTop).toBe(2040);
+  fireEvent.scroll(feed, { target: { scrollTop: 0 } });
+  expect(screen.queryByRole("button", { name: /加载更早的消息/ })).toBeNull();
+  expect(JSON.parse(localStorage.getItem(MOBILE_CHAT_STORAGE_KEY) ?? "[]")).toHaveLength(80);
+});
+
+it("keeps expanded rows when sending new messages and deleting the first visible row", async () => {
+  const history = Array.from({ length: 80 }, (_, index) => ({ role: "user", content: `旧消息 ${index}` }));
+  localStorage.setItem(MOBILE_CHAT_STORAGE_KEY, JSON.stringify(history));
+  vi.stubGlobal("fetch", vi.fn((url: unknown) => Promise.resolve(modelRequest(url) ? json({ data: catalog }) : doneResponse("新回答"))));
+  render(<MobileChat apiKey="test-key" onBack={() => {}} />);
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: /加载更早的消息/ })); });
+  await enterQuestion("新问题");
+  await screen.findByText("新回答");
+  expect(screen.getByText("旧消息 20")).toBeTruthy();
+  const row = screen.getByText("旧消息 20").closest("article")!;
+  fireEvent.click(row.querySelector("button[aria-expanded]")!);
+  fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+  expect(screen.getByText("旧消息 21")).toBeTruthy();
+  expect(screen.getByText("旧消息 79")).toBeTruthy();
+  expect(screen.getByRole("region", { name: "问答记录" }).querySelectorAll("article")).toHaveLength(61);
 });

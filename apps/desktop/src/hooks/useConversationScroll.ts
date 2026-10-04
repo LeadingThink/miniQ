@@ -4,7 +4,7 @@ interface ConversationScrollOptions {
   viewKey: string;
   /** The actual history cursor, serialized when it is an object. */
   cursorKey: string | null;
-  /** Local history scrolls continuously; remote history needs an explicit request. */
+  /** Allow automatic pagination when the reader scrolls near the top. */
   autoLoadOlder: boolean;
   hasOlder?: boolean;
   loadingOlder?: boolean;
@@ -23,7 +23,6 @@ interface HistoryRequest {
   viewKey: string;
   cursorKey: string | null;
   anchor: ViewportAnchor | null;
-  settled: boolean;
 }
 
 function viewportAnchor(root: HTMLDivElement): ViewportAnchor | null {
@@ -63,6 +62,7 @@ export function useConversationScroll(options: ConversationScrollOptions) {
   const view = useRef(options.viewKey);
   const pinned = useRef(true);
   const request = useRef<HistoryRequest | null>(null);
+  const inFlight = useRef<HistoryRequest | null>(null);
   const attemptedCursors = useRef(new Set<string | null>());
   const [showJump, setShowJump] = useState(false);
 
@@ -70,23 +70,26 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     const current = latest.current;
     // Check the current policy here as well as when attaching observers: a
     // queued scroll/intersection callback may outlive a connection-mode change.
-    if (automatic && !current.autoLoadOlder) return;
+    if (automatic && (!current.autoLoadOlder || pinned.current)) return;
     if (
       !current.hasOlder || current.loading ||
       current.loadingOlder || !current.loadOlder
     ) return;
-    if (request.current && !request.current.settled) return;
+    if (inFlight.current) return;
     if (automatic && attemptedCursors.current.has(current.cursorKey)) return;
     attemptedCursors.current.add(current.cursorKey);
     const pending: HistoryRequest = {
       viewKey: current.viewKey,
       cursorKey: current.cursorKey,
       anchor: scrollRef.current ? viewportAnchor(scrollRef.current) : null,
-      settled: false,
     };
     request.current = pending;
+    inFlight.current = pending;
     pinned.current = false;
-    const settle = () => { pending.settled = true; };
+    setShowJump(true);
+    const settle = () => {
+      if (inFlight.current === pending) inFlight.current = null;
+    };
     // Keep the anchor after settlement: the page can commit on the next render.
     // The caller owns error reporting; failed cursors only retry manually.
     try {
@@ -102,9 +105,9 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     pinned.current = nearBottom(root);
     setShowJump(!pinned.current);
     if (request.current?.viewKey === latest.current.viewKey) {
-      request.current.anchor = viewportAnchor(root);
+      request.current.anchor = pinned.current ? null : viewportAnchor(root);
     }
-    if (root.scrollTop <= 80) requestOlder(true);
+    if (root.scrollTop <= 320) requestOlder(true);
   }, [requestOlder]);
 
   useLayoutEffect(() => {
@@ -112,6 +115,7 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     if (view.current !== options.viewKey) {
       view.current = options.viewKey;
       request.current = null;
+      inFlight.current = null;
       attemptedCursors.current.clear();
       pinned.current = true;
       setShowJump(false);
@@ -119,7 +123,8 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     if (!root) return;
     const pending = request.current;
     if (pending && (pending.cursorKey !== options.cursorKey || !options.hasOlder)) {
-      restoreAnchor(root, pending.anchor);
+      if (pinned.current) root.scrollTop = root.scrollHeight;
+      else restoreAnchor(root, pending.anchor);
       request.current = null;
       pinned.current = nearBottom(root);
       setShowJump(!pinned.current);
@@ -165,7 +170,7 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     let active = true;
     const observer = new IntersectionObserver(([entry]) => {
       if (active && entry?.isIntersecting) requestOlder(true);
-    }, { root, rootMargin: "160px 0px 0px", threshold: 0 });
+    }, { root, rootMargin: "320px 0px 0px", threshold: 0 });
     observer.observe(sentinel);
     return () => { active = false; observer.disconnect(); };
   }, [
@@ -176,11 +181,9 @@ export function useConversationScroll(options: ConversationScrollOptions) {
   const jumpToBottom = useCallback(() => {
     const root = scrollRef.current;
     if (!root) return;
-    root.scrollTo({
-      top: root.scrollHeight,
-      behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-        ? "auto" : "smooth",
-    });
+    // An explicit jump supersedes a page anchor, even while it is in flight.
+    if (request.current) request.current.anchor = null;
+    root.scrollTop = root.scrollHeight;
     pinned.current = true;
     setShowJump(false);
   }, []);

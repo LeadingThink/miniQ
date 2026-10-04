@@ -6,6 +6,7 @@ import { Network } from "@capacitor/network";
 import { Capacitor } from "@capacitor/core";
 import { getBackground, isBackgroundId, NO_BACKGROUND, type BackgroundDefinition } from "./backgroundCatalog";
 import { pickNextBackground, resolvePlaylistItems, type RotationState, normalizeRotation } from "./backgroundRotation";
+import { BACKGROUND_STORAGE_KEY, ROTATION_STORAGE_KEY, WALLPAPER_CHANGE_EVENT, localAppearanceStorage, readAppearanceValue, writeAppearanceValue, migrateWallpaperPreferences, notifyWallpaperChange } from "./appearanceStorage";
 
 export const MOBILE_BACKGROUND_KEYS = {
   background: "miniq.mobile.appearance.background",
@@ -82,18 +83,19 @@ export function createMemoryVideoCache(limits = DEFAULT_CACHE_LIMIT): MobileVide
   };
 }
 
-const read = (storage: Storage | undefined, key: string): string | null => { try { return storage?.getItem(key) ?? null; } catch { return null; } };
-const write = (storage: Storage | undefined, key: string, value: string) => { try { storage?.setItem(key, value); } catch { /* restricted webviews */ } };
+const read = readAppearanceValue;
+const write = writeAppearanceValue;
 export const DEFAULT_MOBILE_PREFERENCES: MobilePreferences = { background: NO_BACKGROUND, rotation: normalizeRotation(null), motion: "standard", network: "cellular-opt-in", chargingOnly: false, favorites: [] };
 
 const normalizeFavorites = (value: unknown): string[] => Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === "string" && isBackgroundId(id)))] : [];
 
-export function readMobilePreferences(storage: Storage | undefined = typeof window !== "undefined" ? window.localStorage : undefined): MobilePreferences {
+export function readMobilePreferences(storage: Storage | undefined = localAppearanceStorage(), mobile = Capacitor.isNativePlatform()): MobilePreferences {
+  migrateWallpaperPreferences(storage, mobile);
   let rotation: unknown;
-  try { rotation = JSON.parse(read(storage, MOBILE_BACKGROUND_KEYS.rotation) ?? "null"); } catch { rotation = null; }
+  try { rotation = JSON.parse(read(storage, ROTATION_STORAGE_KEY) ?? "null"); } catch { rotation = null; }
   let favorites: unknown;
   try { favorites = JSON.parse(read(storage, MOBILE_BACKGROUND_KEYS.favorites) ?? "[]"); } catch { favorites = []; }
-  const background = read(storage, MOBILE_BACKGROUND_KEYS.background);
+  const background = read(storage, BACKGROUND_STORAGE_KEY);
   return {
     chargingOnly: false,
     favorites: normalizeFavorites(favorites),
@@ -103,16 +105,20 @@ export function readMobilePreferences(storage: Storage | undefined = typeof wind
     network: "cellular-opt-in",
   };
 }
-export function writeMobilePreferences(patch: Partial<MobilePreferences>, storage: Storage | undefined = typeof window !== "undefined" ? window.localStorage : undefined): MobilePreferences {
+export function writeMobilePreferences(patch: Partial<MobilePreferences>, storage: Storage | undefined = localAppearanceStorage()): MobilePreferences {
   const next = { ...readMobilePreferences(storage), ...patch };
+  next.background = isBackgroundId(next.background) ? next.background : NO_BACKGROUND;
+  next.rotation = normalizeRotation(next.rotation);
   next.motion = "standard";
   next.network = "cellular-opt-in";
   next.chargingOnly = false;
   next.favorites = normalizeFavorites(next.favorites);
   write(storage, MOBILE_BACKGROUND_KEYS.chargingOnly, JSON.stringify(next.chargingOnly));
   write(storage, MOBILE_BACKGROUND_KEYS.favorites, JSON.stringify(next.favorites));
-  write(storage, MOBILE_BACKGROUND_KEYS.background, next.background); write(storage, MOBILE_BACKGROUND_KEYS.rotation, JSON.stringify(next.rotation));
+  write(storage, BACKGROUND_STORAGE_KEY, next.background);
+  write(storage, ROTATION_STORAGE_KEY, JSON.stringify(next.rotation));
   write(storage, MOBILE_BACKGROUND_KEYS.motion, next.motion); write(storage, MOBILE_BACKGROUND_KEYS.network, next.network);
+  notifyWallpaperChange(storage);
   return next;
 }
 
@@ -146,7 +152,7 @@ export class MobileBackgroundPolicy {
   constructor(options: MobileBackgroundPolicyOptions = {}) {
     const defaultCache = options.cache ?? (Capacitor.isNativePlatform() ? createPersistentMobileVideoCache() : createMemoryVideoCache());
     this.options = { isNative: () => Capacitor.isNativePlatform(), now: Date.now, ...options, cache: defaultCache };
-    this.preferences = readMobilePreferences(options.storage);
+    this.preferences = readMobilePreferences(options.storage, this.options.isNative());
   }
   getSnapshot(): MobilePolicySnapshot {
     if (this.snapshot) return this.snapshot;
@@ -157,6 +163,11 @@ export class MobileBackgroundPolicy {
     const canDownloadVideo = foreground && this.conditions.network !== "none";
     this.snapshot = { preferences: this.preferences, conditions: this.conditions, isNative: this.options.isNative(), osLowPowerModeSupported: this.conditions.lowPower !== null, reducedMotion, canAnimate, canPlayVideo, canDownloadVideo };
     return this.snapshot;
+  }
+  private refreshPreferences() {
+    const next = readMobilePreferences(this.options.storage, this.options.isNative());
+    if (JSON.stringify(next) === JSON.stringify(this.preferences)) return;
+    this.preferences = next; this.notify(); this.scheduleRotation();
   }
   getRevision(): number { return this.revision; }
   private revision = 0;
@@ -176,6 +187,16 @@ export class MobileBackgroundPolicy {
 
   async start(): Promise<void> {
     if (this.started) return;
+    this.refreshPreferences();
+    if (typeof window !== "undefined" && (!this.options.storage || this.options.storage === localAppearanceStorage())) {
+      const sync = (event: Event) => {
+        if (event instanceof StorageEvent && event.storageArea && event.storageArea !== localAppearanceStorage()) return;
+        this.refreshPreferences();
+      };
+      window.addEventListener("storage", sync);
+      window.addEventListener(WALLPAPER_CHANGE_EVENT, sync);
+      this.cleanups.push(() => { window.removeEventListener("storage", sync); window.removeEventListener(WALLPAPER_CHANGE_EVENT, sync); });
+    }
     this.started = true; const generation = ++this.startGeneration;
     const active = () => this.started && generation === this.startGeneration;
     // Hydrate even offline, without delaying lifecycle/power initialization. Keep

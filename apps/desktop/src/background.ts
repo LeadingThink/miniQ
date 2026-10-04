@@ -1,13 +1,15 @@
 import { getBackground, isBackgroundId, NO_BACKGROUND, type BackgroundDefinition } from "./backgroundCatalog";
 
-export const BACKGROUND_STORAGE_KEY = "miniq.appearance.background";
+import { BACKGROUND_STORAGE_KEY, WALLPAPER_CHANGE_EVENT, localAppearanceStorage, readAppearanceValue, writeAppearanceValue, migrateWallpaperPreferences, notifyWallpaperChange } from "./appearanceStorage";
+export { BACKGROUND_STORAGE_KEY } from "./appearanceStorage";
 
 let current: BackgroundDefinition | undefined;
 const listeners = new Set<() => void>();
 
 function readStored(): BackgroundDefinition {
+  migrateWallpaperPreferences();
   try {
-    const value = window.localStorage.getItem(BACKGROUND_STORAGE_KEY);
+    const value = readAppearanceValue(localAppearanceStorage(), BACKGROUND_STORAGE_KEY);
     return getBackground(isBackgroundId(value) ? value : NO_BACKGROUND);
   } catch {
     return getBackground(NO_BACKGROUND);
@@ -36,20 +38,31 @@ function notify() {
   listeners.forEach((listener) => listener());
 }
 
-function syncStorage(event: StorageEvent) {
-  if (event.storageArea && event.storageArea !== window.localStorage) return;
-  if (event.key !== null && event.key !== BACKGROUND_STORAGE_KEY) return;
+function syncStorage(event: Event) {
+  if (event instanceof StorageEvent) {
+    if (event.storageArea && event.storageArea !== localAppearanceStorage()) return;
+    if (event.key !== null && event.key !== BACKGROUND_STORAGE_KEY) return;
+  }
+  if (event instanceof CustomEvent && !event.detail.includes(BACKGROUND_STORAGE_KEY)) return;
   current = readStored();
   applyBackground(current);
   notify();
 }
 
 export function subscribeBackground(listener: () => void): () => void {
-  if (!listeners.size) window.addEventListener("storage", syncStorage);
+  if (!listeners.size) {
+    current = readStored();
+    applyBackground(current);
+    window.addEventListener("storage", syncStorage);
+    window.addEventListener(WALLPAPER_CHANGE_EVENT, syncStorage);
+  }
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
-    if (!listeners.size) window.removeEventListener("storage", syncStorage);
+    if (!listeners.size) {
+      window.removeEventListener("storage", syncStorage);
+      window.removeEventListener(WALLPAPER_CHANGE_EVENT, syncStorage);
+    }
   };
 }
 
@@ -59,9 +72,11 @@ export function initializeBackground() {
 }
 
 export function storeBackground(id: string) {
+  migrateWallpaperPreferences();
   current = getBackground(id);
   try {
-    window.localStorage.setItem(BACKGROUND_STORAGE_KEY, current.id);
+    writeAppearanceValue(localAppearanceStorage(), BACKGROUND_STORAGE_KEY, current.id);
+    notifyWallpaperChange(undefined, [BACKGROUND_STORAGE_KEY]);
   } catch {
     // Keep the in-memory preference usable in restricted webviews.
   }

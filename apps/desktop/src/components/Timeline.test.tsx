@@ -565,6 +565,7 @@ describe("Timeline execution flow", () => {
 
     const timeline = container.querySelector(".timeline");
     expect(timeline).toBeTruthy();
+    Object.defineProperties(timeline!, { scrollHeight: { value: 2000 }, clientHeight: { value: 300 } });
     fireEvent.scroll(timeline!, { target: { scrollTop: 0 } });
     expect(onLoadOlder).toHaveBeenCalledOnce();
   });

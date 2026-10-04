@@ -123,13 +123,13 @@ it("deletes a paginated older message without losing unloaded or newer history",
   installFetcher();
   render(<MobileChat apiKey="test-key" onBack={() => {}} />);
   expect(screen.queryByText("历史消息 0")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: /加载更早的消息/ }));
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: /加载更早的消息/ })); });
   const old = screen.getByText("历史消息 20").closest("article")!;
   confirmDeletion(old);
   expect(screen.queryByText("历史消息 20")).toBeNull();
   expect(storedMessages()).toHaveLength(79);
   expect(storedMessages().map((message) => message.id)).toEqual(Array.from({ length: 80 }, (_, index) => `message-${index}`).filter((id) => id !== "message-20"));
-  fireEvent.click(screen.getByRole("button", { name: /加载更早的消息/ }));
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: /加载更早的消息/ })); });
   expect(screen.getByText("历史消息 0")).toBeTruthy();
   expect(screen.getByText("历史消息 79")).toBeTruthy();
   await screen.findByText("chat-model");

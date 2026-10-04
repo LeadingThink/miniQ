@@ -15,6 +15,30 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); mobileBackgroundPolicy.stop(); });
 
 describe("MobileAppearanceSheet", () => {
+  it("keeps labels and radio groups unique when embedded and floating sheets coexist", () => {
+    render(<><MobileAppearanceSheet embedded /><MobileAppearanceSheet onClose={() => {}} /></>);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    const sheets = Array.from(document.querySelectorAll(".mobile-appearance-sheet"));
+    expect(sheets).toHaveLength(2);
+    const ids = Array.from(document.querySelectorAll("[id]"), (node) => node.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const sheet of sheets) {
+      const labelled = [sheet, ...sheet.querySelectorAll("[aria-labelledby]")];
+      for (const node of labelled) {
+        for (const id of node.getAttribute("aria-labelledby")!.split(" ")) {
+          const label = document.getElementById(id);
+          expect(label).not.toBeNull();
+          expect(sheet.contains(label)).toBe(true);
+        }
+      }
+    }
+    const names = sheets.map((sheet) => new Set(Array.from(sheet.querySelectorAll<HTMLInputElement>('input[type="radio"]'), (radio) => radio.name)));
+    expect(names[0].size).toBeGreaterThan(0);
+    expect(names[1].size).toBe(names[0].size);
+    expect([...names[0]].filter((name) => names[1].has(name))).toEqual([]);
+    expect(screen.getAllByText("应用于手机和远程控制界面；仅在当前设备生效。")).toHaveLength(2);
+  });
+
   it("focuses the dialog and closes with Escape", () => {
     const onClose = vi.fn();
     render(<MobileAppearanceSheet onClose={onClose} />);

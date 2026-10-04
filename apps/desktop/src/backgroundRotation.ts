@@ -1,3 +1,4 @@
+import { isNativeMobileApp } from "./mobileRuntime";
 // Wallpaper playlists and automatic rotation, ported from Zaiwen Web
 // (web/src/theme/theme-rotation.ts).
 // - A playlist is a themed set of backgrounds. "跟随时间" picks by time of day.
@@ -9,7 +10,8 @@
 import { getActiveBackground, storeBackground } from "./background";
 import { BACKGROUNDS, isBackgroundId, NO_BACKGROUND } from "./backgroundCatalog";
 
-export const ROTATION_STORAGE_KEY = "miniq.appearance.rotation";
+import { ROTATION_STORAGE_KEY, WALLPAPER_CHANGE_EVENT, localAppearanceStorage, readAppearanceValue, writeAppearanceValue, migrateWallpaperPreferences, notifyWallpaperChange } from "./appearanceStorage";
+export { ROTATION_STORAGE_KEY } from "./appearanceStorage";
 
 export type RotationOrder = "sequence" | "shuffle";
 export type PlaylistId =
@@ -206,8 +208,9 @@ export function normalizeRotation(value: unknown): RotationState {
 }
 
 export function readRotation(): RotationState {
+  migrateWallpaperPreferences();
   try {
-    return normalizeRotation(JSON.parse(window.localStorage.getItem(ROTATION_STORAGE_KEY) || "null"));
+    return normalizeRotation(JSON.parse(readAppearanceValue(localAppearanceStorage(), ROTATION_STORAGE_KEY) || "null"));
   } catch {
     return normalizeRotation(null);
   }
@@ -262,7 +265,8 @@ function setState(next: RotationState) {
 
 function persist() {
   try {
-    window.localStorage.setItem(ROTATION_STORAGE_KEY, JSON.stringify(state));
+    writeAppearanceValue(localAppearanceStorage(), ROTATION_STORAGE_KEY, JSON.stringify(state));
+    notifyWallpaperChange(undefined, [ROTATION_STORAGE_KEY]);
   } catch {
     // Without storage the setting applies to this window only.
   }
@@ -281,6 +285,7 @@ export function subscribeRotation(listener: () => void): () => void {
 
 /** Switch to the next background in the playlist now. */
 export function advanceRotation(now = Date.now()): string | null {
+  if (isNativeMobileApp()) return null;
   const items = resolvePlaylistItems(state.playlistId, state.custom, new Date(now));
   const next = pickNextBackground(items, getActiveBackground().id, state.order);
   setState({ ...state, lastSwitchAt: now });
@@ -301,6 +306,7 @@ function tick() {
 }
 
 function schedule() {
+  if (isNativeMobileApp()) return;
   window.clearTimeout(timer);
   timer = undefined;
   if (!state.enabled || document.hidden) return;
@@ -317,9 +323,12 @@ function onVisibility() {
   }
 }
 
-function onStorage(event: StorageEvent) {
-  if (event.storageArea && event.storageArea !== window.localStorage) return;
-  if (event.key !== null && event.key !== ROTATION_STORAGE_KEY) return;
+function onStorage(event: Event) {
+  if (event instanceof CustomEvent && !event.detail.includes(ROTATION_STORAGE_KEY)) return;
+  if (event instanceof StorageEvent) {
+    if (event.storageArea && event.storageArea !== localAppearanceStorage()) return;
+    if (event.key !== null && event.key !== ROTATION_STORAGE_KEY) return;
+  }
   setState(readRotation());
   schedule();
 }
@@ -329,11 +338,13 @@ function onStorage(event: StorageEvent) {
  * current background is outside the active time slot, switch now.
  */
 export function initializeRotation() {
+  if (isNativeMobileApp()) return;
   setState(readRotation());
   if (!bound) {
     bound = true;
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("storage", onStorage);
+    window.addEventListener(WALLPAPER_CHANGE_EVENT, onStorage);
   }
   if (!state.enabled) return;
   const items = resolvePlaylistItems(state.playlistId, state.custom);

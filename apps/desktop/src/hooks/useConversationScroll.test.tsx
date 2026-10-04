@@ -113,7 +113,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("useConversationScroll", () => {
-  it("keeps remote history manual and anchors each requested page without fetching the next one", async () => {
+  it("respects disabled automatic loading and anchors each requested page without fetching the next one", async () => {
     let resolve!: () => void;
     const loadOlder = vi.fn().mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }))
       .mockResolvedValue(undefined);
@@ -138,7 +138,7 @@ describe("useConversationScroll", () => {
     expect(loadOlder).toHaveBeenCalledTimes(2);
   });
 
-  it("stops stale automatic callbacks after switching to remote and resumes local scrolling", async () => {
+  it("stops stale automatic callbacks after disabling auto loading and resumes when enabled", async () => {
     const loadOlder = vi.fn().mockResolvedValue(undefined);
     const { rerender } = render(<Harness loadOlder={loadOlder} />);
     const staleObserver = observers.at(-1)!;
@@ -292,4 +292,34 @@ describe("useConversationScroll", () => {
     await act(async () => { scrollTo(40); });
     expect(loadOlder).toHaveBeenCalledTimes(1);
   });
+});
+
+it("does not auto page on initial intersections or bottom-following scroll events", () => {
+  const loadOlder = vi.fn();
+  const { rerender } = render(<Harness loadOlder={loadOlder} />);
+  intersect();
+  scrollTo(900);
+  intersect();
+  rerender(<Harness loadOlder={loadOlder} tail={500} />);
+  expect(loadOlder).not.toHaveBeenCalled();
+  expect(screen.getByTestId("viewport").scrollTop).toBe(1700);
+});
+
+it("keeps following latest when a pending history page commits after an explicit jump", async () => {
+  let resolve!: () => void;
+  const loadOlder = vi.fn(() => new Promise<void>((done) => { resolve = done; }));
+  const { rerender } = render(<Harness loadOlder={loadOlder} />);
+  scrollTo(250);
+  fireEvent.click(screen.getByRole("button", { name: "Jump" }));
+  intersect();
+  expect(loadOlder).toHaveBeenCalledTimes(1);
+  rerender(<Harness loadOlder={loadOlder} cursorKey="cursor-2" prepend={600} tail={700} />);
+  expect(screen.getByTestId("viewport").scrollTop).toBe(2500);
+  expect(screen.queryByRole("button", { name: "Jump" })).toBeNull();
+  // A committed page must not release the in-flight lock prematurely.
+  scrollTo(250);
+  expect(loadOlder).toHaveBeenCalledTimes(1);
+  await act(async () => { resolve(); });
+  await act(async () => { scrollTo(250); });
+  expect(loadOlder).toHaveBeenCalledTimes(2);
 });

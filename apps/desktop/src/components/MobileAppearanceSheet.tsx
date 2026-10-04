@@ -1,6 +1,8 @@
+import { getAppearance, storeTheme, subscribeAppearance } from "../theme";
+import { ThemePicker } from "./ThemePicker";
 import type { AppPlugin } from "@capacitor/app";
 import { Download, Trash2, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useId, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { isNativeMobileApp } from "../mobileRuntime";
 import { BACKGROUNDS, type BackgroundDefinition } from "../backgroundCatalog";
 import { mobileBackgroundPolicy, type VideoDownloadStatus } from "../mobileBackgroundPolicy";
@@ -52,14 +54,18 @@ export function useMobileBackButton(onBack: (app: AppPlugin) => void, enabled = 
 
 export interface MobileAppearanceSheetProps {
   onClose?: () => void;
+  embedded?: boolean;
 }
 
-export function MobileAppearanceSheet({ onClose }: MobileAppearanceSheetProps) {
-  useMobileBackButton(() => onClose?.(), Boolean(onClose));
+export function MobileAppearanceSheet({ onClose, embedded = false }: MobileAppearanceSheetProps) {
+  useMobileBackButton(() => onClose?.(), !embedded && Boolean(onClose));
   const snapshot = useMobilePolicySnapshot();
+  const appearance = useSyncExternalStore(subscribeAppearance, getAppearance, getAppearance);
   const [downloadErrors, setDownloadErrors] = useState<Record<string, string>>({});
   const [clearing, setClearing] = useState(false);
   const [cacheError, setCacheError] = useState("");
+  const titleId = useId();
+  const cacheTitleId = useId();
   const dialog = useRef<HTMLElement>(null);
   const active = useMemo(() => BACKGROUNDS.find((item) => item.id === snapshot.preferences.background) ?? BACKGROUNDS[0], [snapshot.preferences.background]);
   const videoStatuses = useMemo(() => new Map(BACKGROUNDS.filter((item) => item.kind === "video" && item.video).map((item) => [item.id, mobileBackgroundPolicy.getVideoStatus(item.video!)])), [snapshot]);
@@ -67,10 +73,11 @@ export function MobileAppearanceSheet({ onClose }: MobileAppearanceSheetProps) {
   const cacheBytes = cachedStatuses.reduce((sum, status) => sum + (status.bytes ?? 0), 0);
 
   useEffect(() => {
+    if (embedded) return;
     const previous = document.activeElement as HTMLElement | null;
     dialog.current?.focus();
     return () => { previous?.focus(); };
-  }, []);
+  }, [embedded]);
 
   const download = async (item: BackgroundDefinition) => {
     if (!item.video) return;
@@ -88,8 +95,9 @@ export function MobileAppearanceSheet({ onClose }: MobileAppearanceSheetProps) {
   };
 
   return (
-    <div className="mobile-appearance-backdrop" role="presentation">
-      <section ref={dialog} tabIndex={-1} className="mobile-appearance-sheet" role="dialog" aria-modal="true" aria-labelledby="mobile-appearance-title" onKeyDown={(event) => {
+    <div className={embedded ? "mobile-appearance-embedded" : "mobile-appearance-backdrop"} role="presentation">
+      <section ref={dialog} tabIndex={-1} className="mobile-appearance-sheet" role={embedded ? undefined : "dialog"} aria-modal={embedded ? undefined : true} aria-labelledby={titleId} onKeyDown={(event) => {
+        if (embedded) return;
         if (event.key === "Escape" && onClose) { event.preventDefault(); onClose(); }
         if (event.key !== "Tab") return;
         const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]'));
@@ -98,14 +106,16 @@ export function MobileAppearanceSheet({ onClose }: MobileAppearanceSheetProps) {
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
       }}>
         <header className="mobile-appearance-header">
-          <div><p className="mobile-appearance-eyebrow">移动设置</p><h2 id="mobile-appearance-title">外观</h2></div>
+          <div><p className="mobile-appearance-eyebrow">移动设置</p><h2 id={titleId}>外观</h2></div>
           {onClose && <button type="button" className="mobile-appearance-icon" aria-label="关闭外观设置" onClick={onClose}><X size={20} /></button>}
         </header>
 
         <div className="mobile-appearance-scroll">
+          <p>应用于手机和远程控制界面；仅在当前设备生效。</p>
+          <ThemePicker theme={appearance.theme} onThemeChange={storeTheme} showBackground={false} />
           <MobileBackgroundLibrary />
-          <section className="mobile-appearance-section" aria-labelledby="mobile-network-title">
-            <h3 id="mobile-network-title">视频壁纸</h3>
+          <section className="mobile-appearance-section" aria-labelledby={cacheTitleId}>
+            <h3 id={cacheTitleId}>视频壁纸</h3>
             <div className="mobile-appearance-cache"><span><strong>缓存</strong><small>{formatBytes(cacheBytes)}{cachedStatuses.length ? ` · ${cachedStatuses.length} 个视频` : ""}</small></span><button type="button" onClick={() => void clear()} disabled={clearing || cachedStatuses.length === 0}><Trash2 size={15} />{clearing ? "清理中…" : "清理缓存"}</button></div>
             {cacheError && <p className="mobile-appearance-error" role="alert">{cacheError}</p>}
             {Object.entries(downloadErrors).map(([id, error]) => <p className="mobile-appearance-error" role="alert" key={id}><Download size={15} />{error}</p>)}

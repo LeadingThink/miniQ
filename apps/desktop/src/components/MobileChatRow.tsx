@@ -17,7 +17,7 @@ export const MobileChatRow = memo(function MobileChatRow(props: {
   const duration = message.role === "assistant" && !active && message.elapsedMs !== undefined
     ? formatDuration(message.elapsedMs) : null;
 
-  return <article className={`mobile-chat-message ${message.role}`}>
+  return <article data-history-anchor={message.id} className={`mobile-chat-message ${message.role}`}>
     {(message.createdAt || duration) && <div className="mobile-chat-message-time">
       <MessageTime at={message.createdAt} />
       {duration && <span>用时 {duration}</span>}

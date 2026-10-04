@@ -1,10 +1,11 @@
 import { ArrowDown, ArrowLeft, Bot, ImagePlus, RefreshCw, Send, Square, X } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { handleComposerKeyDown } from "../composerInput";
 import { readDraft, storeDraft } from "../composerDraft";
 import { useTouchComposerInput } from "../hooks/useTouchComposerInput";
 import { errorMessage } from "../errorMessage";
 import { readMobileImage, type PendingMobileImage } from "../mobileChatData";
+import { useConversationScroll } from "../hooks/useConversationScroll";
 import { useMobileChat } from "../hooks/useMobileChat";
 import { useMobileChatModels } from "../hooks/useMobileChatModels";
 import { MobileChatRow } from "./MobileChatRow";
@@ -21,30 +22,31 @@ export function MobileChat(props: { apiKey: string; onBack: () => void }) {
   const [imageError, setImageError] = useState<string | null>(null);
   const [readingImage, setReadingImage] = useState(false);
   const imageRead = useRef(0);
-  const [visibleCount, setVisibleCount] = useState(30);
-  const feedRef = useRef<HTMLElement>(null);
-  const following = useRef(true);
-  const previousHeight = useRef<number | null>(null);
-  const [showLatest, setShowLatest] = useState(false);
+  // Keep the first rendered message stable when new messages arrive at the tail.
+  const [windowStart, setWindowStart] = useState(() => {
+    const index = Math.max(0, chat.messages.length - 30);
+    return { id: chat.messages[index]?.id, index };
+  });
+  const firstIndex = chat.messages.findIndex((message) => message.id === windowStart.id);
+  const startIndex = firstIndex < 0 ? Math.min(windowStart.index, chat.messages.length) : firstIndex;
+  const contentVersion = useMemo(() => [chat.messages, chat.error, catalog.error, imageError],
+    [chat.messages, chat.error, catalog.error, imageError]);
+  const { scrollRef: feedRef, historyTopRef, onScroll, loadOlder: loadEarlier,
+    jumpToBottom: jumpToLatest, showJump: showLatest } = useConversationScroll({
+    viewKey: "mobile-chat",
+    cursorKey: startIndex > 0 ? chat.messages[startIndex]?.id ?? null : null,
+    autoLoadOlder: true,
+    hasOlder: startIndex > 0,
+    loadOlder: () => {
+      const index = Math.max(0, startIndex - 30);
+      setWindowStart({ id: chat.messages[index]?.id, index });
+    },
+    contentVersion,
+  });
   const ready = !catalog.loading && catalog.models.includes(catalog.model);
 
   useEffect(() => () => { imageRead.current += 1; }, []);
-  useLayoutEffect(() => {
-    const feed = feedRef.current;
-    if (!feed) return;
-    if (previousHeight.current !== null) {
-      feed.scrollTop += feed.scrollHeight - previousHeight.current;
-      previousHeight.current = null;
-    } else if (following.current) {
-      feed.scrollTop = feed.scrollHeight;
-    }
-  }, [chat.messages, visibleCount, chat.error]);
 
-  const jumpToLatest = () => {
-    following.current = true;
-    setShowLatest(false);
-    if (feedRef.current) feedRef.current.scrollTop = feedRef.current.scrollHeight;
-  };
   const send = () => {
     const content = draft.trim();
     if ((!content && !pendingImage) || !ready || readingImage) return;
@@ -79,18 +81,11 @@ export function MobileChat(props: { apiKey: string; onBack: () => void }) {
         <div><strong>移动问答</strong><small>独立运行</small></div>
         <MobileModelPicker catalog={catalog} disabled={chat.busy} />
       </header>
-      <section className="mobile-chat-feed" ref={feedRef} aria-label="问答记录" onScroll={() => {
-        const feed = feedRef.current;
-        if (!feed) return;
-        following.current = feed.scrollHeight - feed.clientHeight - feed.scrollTop < 80;
-        setShowLatest(!following.current);
-      }}>
+      <section className="mobile-chat-feed" ref={feedRef} aria-label="问答记录" onScroll={onScroll}>
+        <div ref={historyTopRef} aria-hidden="true" />
         {chat.messages.length === 0 && <div className="mobile-chat-empty"><Bot size={28} /><strong>有什么需要一起完成？</strong><span>这里适合随手问答；涉及本地项目时切换到远程桌面。</span></div>}
-        {chat.messages.length > visibleCount && <button type="button" className="mobile-chat-history" onClick={() => {
-          previousHeight.current = feedRef.current?.scrollHeight ?? null;
-          setVisibleCount((value) => value + 30);
-        }}>加载更早的消息（还有 {chat.messages.length - visibleCount} 条）</button>}
-        {chat.messages.slice(-visibleCount).map((message) => (
+        {startIndex > 0 && <button type="button" className="mobile-chat-history" onClick={loadEarlier}>加载更早的消息（还有 {startIndex} 条）</button>}
+        {chat.messages.slice(startIndex).map((message) => (
           <MobileChatRow key={message.id} message={message} active={chat.busy && message.id === chat.activeMessageId} onDelete={chat.deleteMessage} />
         ))}
         {catalog.error && <div className="mobile-entry-error" role="alert">{catalog.error}<button type="button" className="mobile-chat-retry" onClick={catalog.reload}>重新加载模型</button></div>}

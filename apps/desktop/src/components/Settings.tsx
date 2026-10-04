@@ -4,6 +4,8 @@ import { errorMessage } from "../errorMessage";
 import { openExternalUrl } from "../externalLinks";
 import type { RpcClient } from "../rpc";
 import type { ThemeId } from "../theme";
+import { MobileAppearanceSheet } from "./MobileAppearanceSheet";
+import { isNativeMobileApp } from "../mobileRuntime";
 import { ThemePicker } from "./ThemePicker";
 import { ComputerSettings } from "./ComputerSettings";
 import { MobileUpdateCheck } from "./MobileUpdateCheck";
@@ -328,7 +330,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
           aria-labelledby="settings-tab-appearance"
           hidden={tab !== "appearance"}
         >
-          <ThemePicker theme={props.theme} onThemeChange={props.onThemeChange} />
+          {tab === "appearance" && (isNativeMobileApp() ? <MobileAppearanceSheet embedded /> : <ThemePicker theme={props.theme} onThemeChange={props.onThemeChange} />)}
         </div>
         <div id="settings-services" role="tabpanel" aria-labelledby="settings-tab-services" hidden={tab !== "services"}>
           {props.client.sshHost && <p className="settings-section-description">当前设置属于 SSH 主机 {props.client.sshHost}。模型请求、文件操作和命令在该主机执行；不会自动复制本机的 API Key。</p>}

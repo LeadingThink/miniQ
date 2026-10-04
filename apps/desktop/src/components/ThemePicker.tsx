@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import { useSyncExternalStore, type CSSProperties } from "react";
+import { useId, useSyncExternalStore, type CSSProperties } from "react";
 import {
   getAppearance,
   storeAppearanceMode,
@@ -55,6 +55,7 @@ function ThemeRow(props: {
   active: boolean;
   onSelect: (theme: ThemeId) => void;
 }) {
+  const groupId = useId();
   const label = props.mode === "light" ? "浅色主题" : "深色主题";
   return (
     <section className="theme-row" aria-label={label}>
@@ -67,7 +68,7 @@ function ThemeRow(props: {
           <label key={theme.id} className="theme-choice" title={theme.description}>
             <input
               type="radio"
-              name={`appearance-theme-${props.mode}`}
+              name={`${groupId}-${props.mode}`}
               value={theme.id}
               checked={props.selected === theme.id}
               aria-label={theme.name}
@@ -86,7 +87,8 @@ function ThemeRow(props: {
   );
 }
 
-export function ThemePicker(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) => void }) {
+export function ThemePicker(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) => void; showBackground?: boolean }) {
+  const groupId = useId();
   const appearance = useSyncExternalStore(subscribeAppearance, getAppearance, getAppearance);
   const light = themeById(appearance.lastThemes.light);
   const dark = themeById(appearance.lastThemes.dark);
@@ -100,7 +102,7 @@ export function ThemePicker(props: { theme: ThemeId; onThemeChange: (theme: Them
             <label key={mode.id} className="appearance-mode">
               <input
                 type="radio"
-                name="appearance-mode"
+                name={groupId}
                 value={mode.id}
                 checked={appearance.mode === mode.id}
                 aria-label={mode.label}
@@ -127,7 +129,7 @@ export function ThemePicker(props: { theme: ThemeId; onThemeChange: (theme: Them
           onSelect={props.onThemeChange}
         />
       ))}
-      <BackgroundPicker />
+      {props.showBackground !== false && <BackgroundPicker />}
     </div>
   );
 }
