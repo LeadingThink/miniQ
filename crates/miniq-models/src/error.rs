@@ -174,11 +174,29 @@ fn is_transient_error(error: &Value) -> bool {
         .unwrap_or("")
         .to_ascii_lowercase();
     transient_code
-        || detail.contains("overloaded")
-        || detail.contains("temporarily unavailable")
-        || detail.contains("stream_read_error")
-        || detail.contains("stream read error")
-        || detail.contains("premature eof")
+        || [
+            "overloaded",
+            "temporarily unavailable",
+            "stream_read_error",
+            "stream read error",
+            "premature eof",
+            // Gateways such as OneAPI report a dropped upstream SSE stream
+            // with free-form text, e.g. "Upstream response stream was
+            // interrupted". The request itself is valid, so retry it.
+            "stream was interrupted",
+            "stream interrupted",
+            "stream was closed",
+            "stream closed unexpectedly",
+            "connection reset",
+            "connection was reset",
+            "connection closed",
+            "broken pipe",
+            "upstream connect error",
+            "bad gateway",
+            "gateway timeout",
+        ]
+        .iter()
+        .any(|pattern| detail.contains(pattern))
 }
 
 #[cfg(test)]

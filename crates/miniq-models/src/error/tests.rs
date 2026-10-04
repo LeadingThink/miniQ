@@ -92,6 +92,32 @@ fn stream_read_failures_are_retryable() {
 }
 
 #[test]
+fn interrupted_upstream_streams_are_retryable() {
+    for error in [
+        json!({"message":"Upstream response stream was interrupted"}),
+        json!("Upstream response stream was interrupted"),
+        json!({"message":"upstream stream interrupted"}),
+        json!({"message":"Connection reset by peer"}),
+        json!({"message":"upstream connect error or disconnect/reset before headers"}),
+        json!({"message":"502 Bad Gateway"}),
+        json!({"message":"504 Gateway Timeout"}),
+    ] {
+        let classified = ProviderError::from_stream_error("Responses API error", &error);
+        assert!(
+            matches!(classified, ProviderError::Transient(_)),
+            "{error} should be transient, got {classified:?}"
+        );
+        assert!(classified.is_retryable());
+    }
+    // Invalid requests stay permanent even if the gateway text mentions an interruption.
+    let invalid = json!({
+        "type": "invalid_request_error",
+        "message": "stream was interrupted because the tools are invalid"
+    });
+    assert!(!ProviderError::from_stream_error("test", &invalid).is_retryable());
+}
+
+#[test]
 fn retry_after_supports_delta_seconds_and_http_dates_without_shortening_long_hints() {
     let now = httpdate::parse_http_date("Wed, 21 Oct 2015 07:28:00 GMT").unwrap();
     assert_eq!(
