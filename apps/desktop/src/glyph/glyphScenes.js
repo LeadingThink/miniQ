@@ -1,11 +1,14 @@
-// Canvas 2D glyph scenes, ported unchanged from Zaiwen Web
+// Canvas 2D glyph scenes, ported from Zaiwen Web
 // (web/src/theme/glyph/glyph-scenes.js). Only createGlyphEngine is exported;
 // types live in glyphScenes.d.ts.
 /* eslint-disable */
 const MONO = '"SF Mono","JetBrains Mono",Menlo,Consolas,monospace';
 const SANS = '"PingFang SC","Helvetica Neue",Arial,sans-serif';
 
-export function createGlyphEngine(cv) {
+export function createGlyphEngine(cv, { lowPower = false } = {}) {
+const density = lowPower ? .5 : 1;
+const spacing = lowPower ? Math.SQRT2 : 1;
+const particleCount = n => lowPower ? Math.max(1, Math.round(n * density)) : n;
 const ctx = cv.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 const mouse = { x: -9999, y: -9999, tx: -9999, ty: -9999, nx: .5, ny: .5, lastWave: 0, wx: 0, wy: 0 };
@@ -32,7 +35,7 @@ function makeAtlas(chars, size, colors, { weight = 500, font = MONO, glowIf = ()
   g.font = `${weight} ${size}px ${font}`; g.textAlign = 'center'; g.textBaseline = 'middle';
   colors.forEach((col, j) => {
     g.fillStyle = col;
-    if (glowIf(j)) { g.shadowColor = col; g.shadowBlur = size * glow; } else g.shadowBlur = 0;
+    if (!lowPower && glowIf(j)) { g.shadowColor = col; g.shadowBlur = size * glow; } else g.shadowBlur = 0;
     chars.forEach((s, i) => g.fillText(s, i * cw + cw / 2, j * ch + ch / 2 + size * .04));
   });
   const sw = cw * DPR, sh = ch * DPR, idx = {};
@@ -72,7 +75,7 @@ const S_bytes = {
     ].map(L => {
       L.at = makeAtlas(CH, L.size, pal, { glowIf, glow: 1.1 }); L.lh = L.size * 1.18;
       const cols = Math.ceil(W / (L.size * L.gap)); L.streams = [];
-      for (let i = 0; i < cols; i++) if (Math.random() < L.fill) L.streams.push(this.spawn(L, (i + .5) * L.size * L.gap, true));
+      for (let i = 0; i < cols; i++) if (Math.random() < L.fill * density) L.streams.push(this.spawn(L, (i + .5) * L.size * L.gap, true));
       return L;
     });
   },
@@ -117,7 +120,7 @@ const S_globe = {
   id: 'globe', name: '字符星球', light: false,
   desc: '一颗完全由 ASCII 字符“画”出来的星球：大陆是 #%@，海洋是 .:，经纬线是点阵，外圈两条十六进制字符环绕行。鼠标可以轻微转动它。',
   init() {
-    this.fs = Math.max(10, Math.round(Math.min(W, H) / 78)); this.cw = this.fs * .62; this.chh = this.fs * 1.08;
+    this.fs = Math.max(10, Math.round(Math.min(W, H) / 78)); this.cw = this.fs * .62 * spacing; this.chh = this.fs * 1.08 * spacing;
     this.cols = Math.ceil(W / this.cw); this.rows = Math.ceil(H / this.chh);
     this.RAMP = ' .,:;-=+*#%@';
     const pal = [...ramp([[12, 44, 66], [20, 120, 150], [60, 210, 230], [225, 255, 255]], 10),
@@ -125,9 +128,9 @@ const S_globe = {
                  'rgb(100,90,220)', 'rgb(180,165,255)',
                  ...ramp([[70, 34, 10], [220, 140, 60], [255, 232, 185]], 5)];
     this.at = makeAtlas(this.RAMP + '0123456789ABCDEF·', this.fs, pal, { weight: 600, glowIf: j => j === 8 || j === 9 || j === 17 || j >= 21 });
-    this.rings = [{ r: 1.5, inc: .42, sp: .2, n: 230, a: 1 }, { r: 1.82, inc: -.22, sp: -.11, n: 280, a: .55 }];
+    this.rings = [{ r: 1.5, inc: .42, sp: .2, n: particleCount(230), a: 1 }, { r: 1.82, inc: -.22, sp: -.11, n: particleCount(280), a: .55 }];
     this.rc = Array.from({ length: 600 }, () => this.at.idx['0123456789ABCDEF'[Math.random() * 16 | 0]]);
-    this.stars = Array.from({ length: 160 }, () => ({ x: rnd(W), y: rnd(H), c: this.at.idx[['.', '·', '+'][Math.random() * 3 | 0]], ph: rnd(6.28) }));
+    this.stars = Array.from({ length: particleCount(160) }, () => ({ x: rnd(W), y: rnd(H), c: this.at.idx[['.', '·', '+'][Math.random() * 3 | 0]], ph: rnd(6.28) }));
   },
   frame(t) {
     ctx.fillStyle = '#020308'; ctx.fillRect(0, 0, W, H);
@@ -209,7 +212,7 @@ const S_sea = {
     const lg = ctx.createLinearGradient(0, 0, W, 0);
     lg.addColorStop(0, 'rgba(255,200,120,0)'); lg.addColorStop(.5, 'rgba(255,220,160,.7)'); lg.addColorStop(1, 'rgba(255,200,120,0)');
     ctx.fillStyle = lg; ctx.fillRect(0, hy - .5, W, 1);
-    const A = this.at, f = H * .35, camH = 2.1, rows = 54, zN = 1.1, zF = 30, dz = (zF - zN) / rows, v = 1.2;
+    const A = this.at, f = H * .35, camH = 2.1, rows = particleCount(54), zN = 1.1, zF = 30, dz = (zF - zN) / rows, v = 1.2;
     const off = (t * v) % dz, glyphW = A.size * .6, dxw = .42;
     for (let i = rows - 1; i >= 0; i--) {
       const z = zN + i * dz - off; if (z < .7) continue;
@@ -239,7 +242,7 @@ const S_morph = {
     const pal = [...ramp([[18, 36, 84], [40, 120, 220], [90, 220, 255], [235, 255, 255]], 8),
                  ...ramp([[40, 20, 90], [140, 80, 255], [242, 205, 255]], 5)];
     this.at = makeAtlas('01<>/{}[]λΣ#*+=ABCDEF', 11, pal, { weight: 600, glowIf: j => j === 7 || j === 12 });
-    const n = Math.round(Math.min(3400, W * H / 400));
+    const n = particleCount(Math.round(Math.min(3400, W * H / 400)));
     this.ps = Array.from({ length: n }, () => ({ x: rnd(W), y: rnd(H), vx: 0, vy: 0, tx: 0, ty: 0, on: false,
       c: Math.random() * this.at.n | 0, ph: rnd(6.28), acc: Math.random() < .2 }));
     this.words = ['torus', 'helix', 'wave'];
@@ -309,7 +312,7 @@ const S_decode = {
   id: 'decode', name: '解码矩阵', light: false,
   desc: '满屏是暗淡的乱码，一圈圈“解码波”扫过时字符先乱跳、再显出底下真正的代码。整屏乱码中隐约拼出巨大的 ZAIWEN。鼠标划过也会触发解码。',
   init() {
-    this.fs = 13; this.cw = 10; this.chh = 20;
+    this.fs = 13; this.cw = 10 * spacing; this.chh = 20 * spacing;
     this.cols = Math.ceil(W / this.cw); this.rows = Math.ceil(H / this.chh);
     let A = ''; for (let i = 33; i < 127; i++) A += String.fromCharCode(i);
     const pal = [...ramp([[18, 24, 34], [62, 76, 98]], 5), ...ramp([[20, 90, 110], [60, 200, 230], [170, 250, 255]], 6), ...ramp([[210, 245, 255], [255, 255, 255]], 3)];
@@ -380,7 +383,7 @@ const S_tokens = {
       '0x7F', '在问', '思考', '知识', '模型', 'context', 'prompt', '对话', '逻辑', '概率', '梯度', '∂L/∂w', 'softmax', 'RAG', 'agent',
       '记忆', '规划', '多模态', '图像', '代码', '搜索', '引用', '答案', 'query', 'reason', '∞', '≈', '→', 'logits', '采样', '温度',
       'layer[32]', '权重', 'KV cache', '对齐', '幻觉', '证据', 'π', 'Δ', '翻译', '总结', 'vision', '长文本', 'f(x)', '0.97'];
-    const N = 420, step = Math.floor(N / words.length);
+    const N = particleCount(420), step = Math.floor(N / words.length);
     const GL = '01abcdef<>{}·+=';
     this.nodes = Array.from({ length: N }, (_, i) => {
       const y = 1 - 2 * (i + .5) / N, r = Math.sqrt(1 - y * y), ph = i * 2.39996;
@@ -398,7 +401,7 @@ const S_tokens = {
         const e = [a, b]; this.edges.push(e); this.adj.get(a).push([e, b]); this.adj.get(b).push([e, a]);
       }
     }
-    this.pulses = Array.from({ length: 14 }, () => { const e = this.edges[Math.random() * this.edges.length | 0]; return { a: e[0], b: e[1], u: Math.random() }; });
+    this.pulses = Array.from({ length: particleCount(14) }, () => { const e = this.edges[Math.random() * this.edges.length | 0]; return { a: e[0], b: e[1], u: Math.random() }; });
     const gc = document.createElement('canvas'); gc.width = gc.height = 180; const gg = gc.getContext('2d'); const id = gg.createImageData(180, 180);
     for (let i = 0; i < id.data.length; i += 4) { const v = Math.random() * 255 | 0; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 10; }
     gg.putImageData(id, 0, 0); this.grain = ctx.createPattern(gc, 'repeat');
@@ -448,7 +451,7 @@ const S_tokens = {
       p.u += dt * .45;
       if (p.u >= 1) { p.b.hot = 1; const nx = this.adj.get(p.b); const pick = nx[Math.random() * nx.length | 0]; p.a = p.b; p.b = pick[1]; p.u = 0; }
       const x = p.a.sx + (p.b.sx - p.a.sx) * p.u, y = p.a.sy + (p.b.sy - p.a.sy) * p.u, d = Math.min(p.a.d, p.b.d);
-      ctx.globalAlpha = .35 + .65 * d; ctx.shadowColor = 'rgba(47,91,255,.8)'; ctx.shadowBlur = 10;
+      ctx.globalAlpha = .35 + .65 * d; ctx.shadowColor = 'rgba(47,91,255,.8)'; ctx.shadowBlur = lowPower ? 0 : 10;
       ctx.fillStyle = '#2f5bff'; ctx.beginPath(); ctx.arc(x, y, 1.6 + 1.6 * d, 0, 6.29); ctx.fill();
     }
     ctx.shadowBlur = 0;
@@ -477,8 +480,8 @@ const S_fountain = {
   init() {
     const chars = '在问AI·∞∑λΔ∂⌘◌◈◇▹0123456789ABCDEF{}[]<>/';
     this.at = makeAtlas(chars, 15, ramp([[8,28,60],[18,106,155],[80,220,235],[230,255,255]], 14), { weight: 600, glowIf: i => i > 18 });
-    this.cols = Array.from({length: Math.ceil(W/18)+2}, (_,i) => ({ x:i*18+rnd(-3,3), y:rnd(-H*.3,H), v:rnd(18,48), len:4+rnd(13)|0, phase:rnd(6.28), seed:rnd(1000) }));
-    this.bursts = Array.from({length:20},()=>({x:rnd(W), y:rnd(H*.45,H), r:rnd(2,9), a:rnd(6.28)}));
+    this.cols = Array.from({length: Math.ceil(W/(18 * spacing))+2}, (_,i) => ({ x:i*18*spacing+rnd(-3,3), y:rnd(-H*.3,H), v:rnd(18,48), len:4+rnd(13)|0, phase:rnd(6.28), seed:rnd(1000) }));
+    this.bursts = Array.from({length:particleCount(20)},()=>({x:rnd(W), y:rnd(H*.45,H), r:rnd(2,9), a:rnd(6.28)}));
   },
   frame(t,dt) {
     const g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,'#010209'); g.addColorStop(.72,'#030916'); g.addColorStop(1,'#071b2b'); ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
@@ -496,7 +499,7 @@ const S_fountain = {
 const S_fabric = {
   id:'fabric', name:'数据织物', light:false,
   desc:'细密字符横纹像织物一样缓慢展开，明暗波纹和扫描线制造出克制、昂贵的科技质感。',
-  init(){ this.fs=Math.max(12,Math.round(Math.min(W,H)/70)); this.at=makeAtlas('01  ·:;+=<>/{}[]',this.fs,ramp([[24,38,80],[50,95,170],[130,220,255],[235,245,255]],12),{weight:500,glowIf:i=>i>10}); this.rows=Math.ceil(H/(this.fs*1.45))+2; this.str=Array.from({length:this.rows},(_,r)=>({y:r*this.fs*1.45,off:rnd(500),speed:rnd(5,18),amp:rnd(4,16),ph:rnd(6.28)})); },
+  init(){ this.fs=Math.max(12,Math.round(Math.min(W,H)/70))*spacing; this.at=makeAtlas('01  ·:;+=<>/{}[]',this.fs,ramp([[24,38,80],[50,95,170],[130,220,255],[235,245,255]],12),{weight:500,glowIf:i=>i>10}); this.rows=Math.ceil(H/(this.fs*1.45))+2; this.str=Array.from({length:this.rows},(_,r)=>({y:r*this.fs*1.45,off:rnd(500),speed:rnd(5,18),amp:rnd(4,16),ph:rnd(6.28)})); },
   frame(t){ ctx.fillStyle='#04050b';ctx.fillRect(0,0,W,H); const cw=this.fs*.63, ch=this.fs*1.45; ctx.globalCompositeOperation='lighter';
     for(const r of this.str){ const y=r.y; const wave=Math.sin(t*.28+r.ph)*r.amp; for(let c=-2;c<W/cw+2;c++){ const x=c*cw+((r.off+t*r.speed)%cw)-wave*.12; const n=(Math.sin(c*12.9898+r.off)*43758.5453)%1; const a=.05+.22*(.5+.5*Math.sin(c*.09+t*.22+r.ph)); ctx.globalAlpha=Math.max(0,a*(.35+.65*clamp(y/H,0,1))); this.at.draw(Math.abs((n*this.at.n)|0),Math.round(3+10*(.5+.5*Math.sin(c*.14+t*.25+r.ph))),x+wave*Math.sin(c*.025),y); } }
     const scan=(t*38)%(H+140)-70; const sg=ctx.createLinearGradient(0,scan-50,0,scan+50);sg.addColorStop(0,'rgba(80,210,255,0)');sg.addColorStop(.5,'rgba(90,215,255,.18)');sg.addColorStop(1,'rgba(80,210,255,0)');ctx.fillStyle=sg;ctx.fillRect(0,scan-50,W,100); ctx.globalAlpha=.14;ctx.fillStyle='#b4efff';ctx.fillRect(0,scan,W,1);
@@ -507,11 +510,11 @@ const S_fabric = {
 const S_orbit = {
   id:'orbit', name:'轨道协议', light:false,
   desc:'字符沿着几何轨道运行，中心像一枚被唤醒的协议核心；环与环之间有微弱的数据包交换。',
-  init(){ const chars='0123456789ABCDEF·∴∵∆◇'; this.at=makeAtlas(chars,16,ramp([[20,36,90],[60,140,220],[150,240,255],[255,255,255]],14),{weight:600,glowIf:i=>i>12}); this.rings=[{r:.15,n:24,sp:.8},{r:.28,n:38,sp:-.43},{r:.43,n:56,sp:.22},{r:.61,n:78,sp:-.12}]; this.p=[]; },
+  init(){ const chars='0123456789ABCDEF·∴∵∆◇'; this.at=makeAtlas(chars,16,ramp([[20,36,90],[60,140,220],[150,240,255],[255,255,255]],14),{weight:600,glowIf:i=>i>12}); this.rings=[{r:.15,n:particleCount(24),sp:.8},{r:.28,n:particleCount(38),sp:-.43},{r:.43,n:particleCount(56),sp:.22},{r:.61,n:particleCount(78),sp:-.12}]; this.p=[]; },
   frame(t,dt){ ctx.fillStyle='#020309';ctx.fillRect(0,0,W,H);const cx=W*.5+(mouse.nx-.5)*18,cy=H*.5+(mouse.ny-.5)*12,R=Math.min(W,H)*.46;ctx.globalCompositeOperation='lighter';
     const halo=ctx.createRadialGradient(cx,cy,0,cx,cy,R*.8);halo.addColorStop(0,'rgba(48,130,255,.2)');halo.addColorStop(.34,'rgba(100,52,220,.06)');halo.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=halo;ctx.fillRect(0,0,W,H);
     for(const q of this.rings){const rr=R*q.r, tilt=.28+q.r*.2;ctx.globalAlpha=.12;ctx.strokeStyle='#67cfff';ctx.lineWidth=.6;ctx.beginPath();ctx.ellipse(cx,cy,rr,rr*tilt,0,0,6.28);ctx.stroke();for(let i=0;i<q.n;i++){const a=i/q.n*6.28+t*q.sp;const x=cx+Math.cos(a)*rr,y=cy+Math.sin(a)*rr*tilt;ctx.globalAlpha=.18+.72*(.5+.5*Math.sin(a*3+t));this.at.draw((i+q.n+(t*q.sp*3|0))%this.at.n,Math.round(5+9*(.5+.5*Math.sin(a+t))),x,y);}}
-    for(let i=0;i<7;i++){const a=t*.35+i*.897;const rr=R*(.15+.52*((i*17)%10)/10);const x=cx+Math.cos(a)*rr,y=cy+Math.sin(a)*rr*.4;ctx.globalAlpha=.8;ctx.shadowColor='#62e7ff';ctx.shadowBlur=12;ctx.fillStyle='#d7fbff';ctx.beginPath();ctx.arc(x,y,1.5,0,6.28);ctx.fill();ctx.shadowBlur=0;}
+    for(let i=0;i<7;i++){const a=t*.35+i*.897;const rr=R*(.15+.52*((i*17)%10)/10);const x=cx+Math.cos(a)*rr,y=cy+Math.sin(a)*rr*.4;ctx.globalAlpha=.8;ctx.shadowColor='#62e7ff';ctx.shadowBlur=lowPower ? 0 : 12;ctx.fillStyle='#d7fbff';ctx.beginPath();ctx.arc(x,y,1.5,0,6.28);ctx.fill();ctx.shadowBlur=0;}
     ctx.globalAlpha=.9;ctx.strokeStyle='rgba(180,240,255,.6)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(cx,cy,18+Math.sin(t)*2,0,6.28);ctx.stroke();ctx.globalAlpha=.35;ctx.beginPath();ctx.arc(cx,cy,27,0,6.28);ctx.stroke();
   }
 };
@@ -520,7 +523,7 @@ const S_orbit = {
 const S_syntax = {
   id:'syntax', name:'流动语法', light:false,
   desc:'括号、箭头、变量和短词沿柔和的向量场流动，像代码在思考，信息却始终保持呼吸与秩序。',
-  init(){this.at=makeAtlas('const let AI ask() => {} [] <> / 0 1 ·',15,ramp([[18,30,70],[40,110,190],[100,220,245],[255,255,255]],13),{weight:600,glowIf:i=>i>18});this.p=Array.from({length:Math.min(650,Math.round(W*H/2300))},()=>({x:rnd(W),y:rnd(H),v:rnd(16,42),ph:rnd(20),z:rnd(.4,1)}));},
+  init(){this.at=makeAtlas('const let AI ask() => {} [] <> / 0 1 ·',15,ramp([[18,30,70],[40,110,190],[100,220,245],[255,255,255]],13),{weight:600,glowIf:i=>i>18});this.p=Array.from({length:particleCount(Math.min(650,Math.round(W*H/2300)))},()=>({x:rnd(W),y:rnd(H),v:rnd(16,42),ph:rnd(20),z:rnd(.4,1)}));},
   frame(t,dt){ctx.fillStyle='#03040b';ctx.fillRect(0,0,W,H);ctx.globalCompositeOperation='lighter';for(const p of this.p){const nx=(p.x/W-.5)*2,ny=(p.y/H-.5)*2;const ang=Math.sin(ny*3.4+t*.2)*.7+Math.cos(nx*2.1-t*.13)*.38; p.x+=Math.cos(ang)*p.v*dt;p.y+=Math.sin(ang)*p.v*dt;if(p.x<-20)p.x=W+20;if(p.x>W+20)p.x=-20;if(p.y<-20)p.y=H+20;if(p.y>H+20)p.y=-20;const edge=Math.min(p.x,W-p.x,p.y,H-p.y);ctx.globalAlpha=.08+.32*p.z*clamp(edge/100,0,1);this.at.draw((p.ph+(t*2|0))%this.at.n,Math.round(4+9*p.z),p.x,p.y,p.z);p.ph+=dt*(1+p.z);}
     const y=H*.52+Math.sin(t*.3)*H*.04;ctx.globalAlpha=.12;ctx.strokeStyle='#6beaff';ctx.lineWidth=1;ctx.beginPath();for(let x=0;x<W;x+=8){const yy=y+Math.sin(x*.008+t*.5)*16+Math.sin(x*.021-t*.3)*7;x?ctx.lineTo(x,yy):ctx.moveTo(x,yy);}ctx.stroke();
   }
@@ -548,7 +551,7 @@ const S_contour = {
     this.bg.addColorStop(1, '#0c1518');
     this.points = [];
     // 保持字小；大屏只放宽采样间距，以限制字符绘制数量。
-    const gap = Math.max(11, Math.sqrt(W * H / 13000));
+    const gap = Math.max(11, Math.sqrt(W * H / 13000)) * spacing;
     const scale = Math.max(260, Math.min(W, H));
     for (let y = gap * .5; y < H; y += gap) {
       for (let x = gap * .5; x < W; x += gap) {
@@ -607,7 +610,7 @@ const S_lattice = {
     this.bg.addColorStop(0, '#0a1017');
     this.bg.addColorStop(1, '#0d141c');
     this.points = [];
-    const sx = Math.max(40, Math.sqrt(W * H / 950));
+    const sx = Math.max(40, Math.sqrt(W * H / 950)) * spacing;
     const sy = sx * .7;
     const cols = Math.ceil(W / (2 * sx)) + 2;
     const rows = Math.ceil(H / sy) + 2;
@@ -681,7 +684,7 @@ const S_tide = {
         ramp([[71, 79, 89], [143, 152, 164], [210, 217, 225]], 10),
         { weight: 400, pad: 1.7 });
       layer.points = [];
-      const count = Math.min(220, Math.max(8, Math.round(W * H / layer.density)));
+      const count = particleCount(Math.min(220, Math.max(8, Math.round(W * H / layer.density))));
       for (let i = 0; i < count; i++) {
         layer.points.push({
           x: random() * (W + 80), y: random() * (H + 80),
@@ -730,7 +733,7 @@ let motionSpeed = .25, sceneTime = 0;
 let t0 = 0, last = 0, raf = 0, running = false;
 
 function resize() {
-  DPR = Math.min(2, (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) || 1);
+  DPR = Math.min(lowPower ? 1 : 2, (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) || 1);
   W = cv.clientWidth || cv.width || 1; H = cv.clientHeight || cv.height || 1;
   cv.width = W * DPR | 0; cv.height = H * DPR | 0; ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   if (cur) cur.init();
@@ -744,7 +747,7 @@ function select(id) {
 }
 function draw(now) {
   if (!cur) return;
-  const dt = Math.min(.05, Math.max(0, (now - last) / 1000)); last = now;
+  const dt = Math.min(lowPower ? .1 : .05, Math.max(0, (now - last) / 1000)); last = now;
   if (mouse.tx < -9000) { mouse.x = mouse.y = -9999; }
   else if (mouse.x < -9000) { mouse.x = mouse.tx; mouse.y = mouse.ty; }
   else { mouse.x += (mouse.tx - mouse.x) * .2; mouse.y += (mouse.ty - mouse.y) * .2; }
@@ -754,7 +757,8 @@ function draw(now) {
 }
 function loop(now) {
   if (!running) return;
-  if (typeof document === 'undefined' || !document.hidden) draw(now);
+  if ((typeof document === 'undefined' || !document.hidden)
+      && (!lowPower || now - last >= 1000 / 15)) draw(now);
   raf = requestAnimationFrame(loop);
 }
 const onMove = e => { const r = cv.getBoundingClientRect(); mouse.tx = e.clientX - r.left; mouse.ty = e.clientY - r.top; };

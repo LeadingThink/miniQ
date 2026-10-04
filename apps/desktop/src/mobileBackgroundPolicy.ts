@@ -46,6 +46,8 @@ interface DevicePlugin { getBatteryInfo(): Promise<{ batteryLevel?: number; isCh
 export interface MobileCacheStatus { items: number; bytes: number; maxEntries: number; maxBytes: number }
 export interface MobileVideoCache {
   getStatus(): MobileCacheStatus;
+  /** Refreshes the persisted cache snapshot used by getStatus and peek. */
+  stats?(): Promise<{ entries: number; bytes: number }>;
   peek(url: string): Blob | undefined;
   maxEntries: number; maxBytes: number;
   get(url: string): Promise<Blob | undefined>; put(url: string, blob: Blob): Promise<void>;
@@ -154,8 +156,8 @@ export class MobileBackgroundPolicy {
     const powerSafe = this.conditions.battery === "charging" || (this.conditions.battery === "not-charging" && !lowBattery && this.conditions.batteryLevel !== null);
     const foreground = this.conditions.lifecycle === "foreground";
     const systemPowerSafe = this.conditions.lowPower === false;
-    const canAnimate = foreground && powerSafe && !reducedMotion && systemPowerSafe && this.preferences.motion !== "low-power";
-    const canPlayVideo = canAnimate && (!this.preferences.chargingOnly || this.conditions.battery === "charging");
+    const canAnimate = foreground && powerSafe && !reducedMotion && this.conditions.lowPower !== null;
+    const canPlayVideo = canAnimate && systemPowerSafe && this.preferences.motion !== "low-power" && (!this.preferences.chargingOnly || this.conditions.battery === "charging");
     const canDownloadVideo = canPlayVideo && networkAllowed({ preferences: this.preferences, conditions: this.conditions });
     this.snapshot = { preferences: this.preferences, conditions: this.conditions, isNative: this.options.isNative(), osLowPowerModeSupported: this.conditions.lowPower !== null, reducedMotion, canAnimate, canPlayVideo, canDownloadVideo };
     return this.snapshot;
@@ -180,6 +182,13 @@ export class MobileBackgroundPolicy {
     if (this.started) return;
     this.started = true; const generation = ++this.startGeneration;
     const active = () => this.started && generation === this.startGeneration;
+    // Hydrate even offline, without delaying lifecycle/power initialization. Keep
+    // snapshot refreshes ordered with clear/remove so late reads cannot undo them.
+    if (this.options.cache!.stats) {
+      void this.mutateCache(async () => {
+        if (active()) await this.options.cache!.stats!();
+      }).then(() => { if (active()) this.notify(); }, () => { /* Cache failure must not prevent startup. */ });
+    }
     if (typeof matchMedia !== "undefined") {
       const media = matchMedia("(prefers-reduced-motion: reduce)");
       const update = () => { if (active()) this.setConditions({}); };

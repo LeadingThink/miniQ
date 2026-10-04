@@ -1,7 +1,7 @@
 import { ArrowLeft, Bot, ExternalLink, Laptop, LifeBuoy, ShieldCheck, Wifi } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { isNativeMobileApp } from "../mobileRuntime";
-import { MobileAppearanceSheet } from "./MobileAppearanceSheet";
+import { MobileAppearanceSheet, useMobileBackButton } from "./MobileAppearanceSheet";
 import { isRememberEnabled, loadRemoteCredentials, readRemoteCredentials, setRememberEnabled, storeRemoteCredentials } from "../remoteAccess";
 import { MobileUpdateCheck } from "./MobileUpdateCheck";
 import { clearMobilePrivacyConsent, hasMobilePrivacyConsent, MINIQ_PRIVACY_URL, MINIQ_SUPPORT_URL, recordMobilePrivacyConsent } from "../mobilePrivacy";
@@ -38,29 +38,15 @@ export function MobileEntry(props: { onRemote: () => void }) {
     return () => { active = false; };
   }, []);
 
-  useEffect(() => {
-    if (!isNativeMobileApp()) return;
-    let disposed = false;
-    let listener: { remove: () => Promise<void> } | undefined;
-    void import("@capacitor/app").then(async ({ App }) => {
-      if (disposed) return;
-      const handle = await App.addListener("backButton", () => {
-        if (saving.current) return;
-        if (section !== "home") {
-          setError(null);
-          setSection("home");
-        } else {
-          void App.minimizeApp();
-        }
-      });
-      if (disposed) void handle.remove();
-      else listener = handle;
-    }).catch(() => {});
-    return () => {
-      disposed = true;
-      void listener?.remove();
-    };
-  }, [section]);
+  useMobileBackButton((App) => {
+    if (saving.current) return;
+    if (section !== "home") {
+      setError(null);
+      setSection("home");
+    } else {
+      void App.minimizeApp().catch(() => {});
+    }
+  }, !appearanceOpen);
 
   const persist = async () => {
     const key = apiKey.trim();

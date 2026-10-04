@@ -59,7 +59,9 @@ function rgba(hex: string, alpha: number): string {
   return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, alpha)).toFixed(3)})`;
 }
 
-export function createAmbientEngine(canvas: HTMLCanvasElement, initial: AmbientPreset): AmbientEngine {
+export function createAmbientEngine(canvas: HTMLCanvasElement, initial: AmbientPreset, options: { lowPower?: boolean } = {}): AmbientEngine {
+  const lowPower = options.lowPower === true;
+  const frameInterval = lowPower ? 1000 / 15 : FRAME_INTERVAL;
   const ctx = canvas.getContext("2d");
   let preset = initial;
   let W = 1;
@@ -88,7 +90,7 @@ export function createAmbientEngine(canvas: HTMLCanvasElement, initial: AmbientP
   }
 
   function dots(count: number, opts: { r: [number, number]; v: number }): Dot[] {
-    return Array.from({ length: count }, () => ({
+    return Array.from({ length: lowPower ? Math.max(1, Math.round(count * 0.5)) : count }, () => ({
       x: rand() * W,
       y: rand() * H,
       vx: (rand() - 0.5) * opts.v,
@@ -117,7 +119,7 @@ export function createAmbientEngine(canvas: HTMLCanvasElement, initial: AmbientP
         let bands: { c: string; y: number; amp: number; f: number; sp: number; ph: number; h: number }[] = [];
         return {
           init() {
-            bands = Array.from({ length: 4 }, (_, i) => ({
+            bands = Array.from({ length: lowPower ? 2 : 4 }, (_, i) => ({
               c: colors[i % colors.length]!,
               y: H * (0.22 + i * 0.12 + rand() * 0.05),
               amp: H * (0.05 + rand() * 0.06),
@@ -161,7 +163,7 @@ export function createAmbientEngine(canvas: HTMLCanvasElement, initial: AmbientP
         let blobs: { c: string; ax: number; ay: number; fx: number; fy: number; ph: number; r: number }[] = [];
         return {
           init() {
-            blobs = Array.from({ length: 5 }, (_, i) => ({
+            blobs = Array.from({ length: lowPower ? 3 : 5 }, (_, i) => ({
               c: colors[i % colors.length]!,
               ax: 0.25 + rand() * 0.25,
               ay: 0.2 + rand() * 0.25,
@@ -221,7 +223,7 @@ export function createAmbientEngine(canvas: HTMLCanvasElement, initial: AmbientP
               wrap(d, 10);
               const a = Math.max(0, Math.sin(t * 0.9 * d.s + d.p)) * 0.9;
               if (a < 0.02) continue;
-              const glow = d.r * 6;
+              const glow = d.r * (lowPower ? 3 : 6);
               const grad = ctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, glow);
               grad.addColorStop(0, rgba(d.c, a));
               grad.addColorStop(0.25, rgba(d.c, a * 0.35));
@@ -271,7 +273,7 @@ export function createAmbientEngine(canvas: HTMLCanvasElement, initial: AmbientP
         let layers: { c: string; y: number; amp: number; f: number; sp: number; ph: number }[] = [];
         return {
           init() {
-            layers = Array.from({ length: 5 }, (_, i) => ({
+            layers = Array.from({ length: lowPower ? 3 : 5 }, (_, i) => ({
               c: colors[i % colors.length]!,
               y: H * (0.5 + i * 0.1),
               amp: H * (0.03 + rand() * 0.03),
@@ -373,7 +375,7 @@ export function createAmbientEngine(canvas: HTMLCanvasElement, initial: AmbientP
             paintBackdrop();
             ctx.globalCompositeOperation = additive();
             spawn -= dt;
-            if (spawn <= 0 && rings.length < 12) {
+            if (spawn <= 0 && rings.length < (lowPower ? 6 : 12)) {
               rings.push({ x: rand() * W, y: rand() * H, r: 0, max: Math.min(W, H) * (0.18 + rand() * 0.25), c: pick(colors) });
               spawn = 0.7 + rand() * 1.1;
             }
@@ -428,7 +430,7 @@ export function createAmbientEngine(canvas: HTMLCanvasElement, initial: AmbientP
     if (!last) last = now;
     acc += now - last;
     last = now;
-    if (acc < FRAME_INTERVAL) return;
+    if (acc < frameInterval) return;
     // Do not replay a long gap after the page returns from the background.
     const dt = Math.min(acc, 100) / 1000;
     acc = 0;
@@ -452,7 +454,7 @@ export function createAmbientEngine(canvas: HTMLCanvasElement, initial: AmbientP
       if (running) return;
       running = true;
       last = 0;
-      acc = FRAME_INTERVAL;
+      acc = frameInterval;
       raf = requestAnimationFrame(loop);
     },
     stop() {

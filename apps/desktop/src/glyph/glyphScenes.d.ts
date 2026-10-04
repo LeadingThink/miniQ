@@ -18,4 +18,4 @@ export interface GlyphEngine {
   destroy(): void;
 }
 
-export function createGlyphEngine(canvas: HTMLCanvasElement): GlyphEngine;
+export function createGlyphEngine(canvas: HTMLCanvasElement, options?: { lowPower?: boolean }): GlyphEngine;

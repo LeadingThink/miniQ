@@ -66,6 +66,7 @@ export function LivingBackground() {
   const hidden = useSyncExternalStore(subscribeVisibility, isDocumentHidden);
   useEffect(() => initializeMobileBackgroundPolicy(), []);
   const mobileSnapshot: ReturnType<typeof mobileBackgroundPolicy.getSnapshot> = JSON.parse(policyState);
+  const lowPower = mobile && (mobileSnapshot.preferences.motion === "low-power" || mobileSnapshot.conditions.lowPower === true);
   const still = reduceMotion || liteMedia || (mobileSnapshot.isNative && !mobileSnapshot.canAnimate);
   const [layers, setLayers] = useState<Layer[]>(() => [{ background, leaving: false }]);
 
@@ -87,7 +88,7 @@ export function LivingBackground() {
   if (!visible.length) return null;
   return (
     <div
-      className={`living-background${hidden || (mobile && !mobileSnapshot.canAnimate) ? " is-paused" : ""}${mobile ? " is-mobile" : ""}${background.light ? " is-light" : ""}${still ? " is-still" : ""}`}
+      className={`living-background${hidden || (mobile && !mobileSnapshot.canAnimate) ? " is-paused" : ""}${mobile ? " is-mobile" : ""}${lowPower ? " is-low-power" : ""}${background.light ? " is-light" : ""}${still ? " is-still" : ""}`}
       data-kind={background.kind}
       aria-hidden="true"
     >
@@ -100,7 +101,7 @@ export function LivingBackground() {
           {item.kind === "video" ? (
             <VideoWallpaper background={item} still={still} paused={hidden || leaving || (mobileSnapshot.isNative && !mobileSnapshot.canPlayVideo)} />
           ) : (
-            <SceneCanvas background={item} still={still} paused={hidden || leaving || (mobile && !mobileSnapshot.canAnimate)} />
+            <SceneCanvas background={item} lowPower={lowPower} still={still} paused={hidden || leaving || (mobile && !mobileSnapshot.canAnimate)} />
           )}
         </div>
       ))}
@@ -119,7 +120,7 @@ function VideoWallpaper({
   paused: boolean;
 }) {
   const [source, setSource] = useState<string>();
-  const allowed = !isNativeMobileApp() || mobileBackgroundPolicy.getSnapshot().canDownloadVideo;
+  const allowed = !isNativeMobileApp() || mobileBackgroundPolicy.getSnapshot().canPlayVideo;
 
   useEffect(() => {
     if (still || !background.video || !allowed) return;
@@ -331,10 +332,10 @@ interface SceneDriver {
   destroy(): void;
 }
 
-async function loadDriver(canvas: HTMLCanvasElement, background: BackgroundDefinition): Promise<SceneDriver | null> {
+async function loadDriver(canvas: HTMLCanvasElement, background: BackgroundDefinition, lowPower: boolean): Promise<SceneDriver | null> {
   if (background.kind === "glyph") {
     const { createGlyphEngine } = await import("../glyph/glyphScenes");
-    const engine = createGlyphEngine(canvas);
+    const engine = createGlyphEngine(canvas, { lowPower });
     engine.select(background.scene ?? "");
     return engine;
   }
@@ -345,7 +346,7 @@ async function loadDriver(canvas: HTMLCanvasElement, background: BackgroundDefin
     ]);
     const palette = getAmbientPalette(background.palette);
     if (!palette) return null;
-    return createAmbientEngine(canvas, { style: background.style, palette, seed: hashSeed(background.id) });
+    return createAmbientEngine(canvas, { style: background.style, palette, seed: hashSeed(background.id) }, { lowPower });
   }
   return null;
 }
@@ -353,10 +354,12 @@ async function loadDriver(canvas: HTMLCanvasElement, background: BackgroundDefin
 /** Shared canvas host for glyph and ambient scenes. One engine per layer. */
 function SceneCanvas({
   background,
+  lowPower,
   still,
   paused,
 }: {
   background: BackgroundDefinition;
+  lowPower: boolean;
   still: boolean;
   paused: boolean;
 }) {
@@ -368,7 +371,7 @@ function SceneCanvas({
     const canvas = canvasRef.current;
     if (!canvas || !canvas.getContext("2d")) return;
     let cancelled = false;
-    loadDriver(canvas, background).then(
+    loadDriver(canvas, background, lowPower).then(
       (driver) => {
         if (!driver) return;
         // A stale engine must not take over a canvas that has moved on.
@@ -387,7 +390,7 @@ function SceneCanvas({
       driverRef.current = null;
       setReady(false);
     };
-  }, [background]);
+  }, [background, lowPower]);
 
   useEffect(() => {
     const driver = driverRef.current;

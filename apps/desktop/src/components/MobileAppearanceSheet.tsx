@@ -1,5 +1,7 @@
+import type { AppPlugin } from "@capacitor/app";
 import { Download, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { isNativeMobileApp } from "../mobileRuntime";
 import { BACKGROUNDS, type BackgroundDefinition } from "../backgroundCatalog";
 import { mobileBackgroundPolicy, type MobileMotion, type MobileNetwork, type VideoDownloadStatus } from "../mobileBackgroundPolicy";
 import { MobileBackgroundLibrary } from "./MobileBackgroundLibrary";
@@ -18,11 +20,42 @@ function useMobilePolicySnapshot() {
   );
 }
 
+let appModule: Promise<typeof import("@capacitor/app")> | undefined;
+
+// Both the entry screen and the connected workspace use the sheet's back handling.
+export function useMobileBackButton(onBack: (app: AppPlugin) => void, enabled = true) {
+  const callback = useRef(onBack);
+  useLayoutEffect(() => { callback.current = onBack; }, [onBack]);
+
+  useEffect(() => {
+    if (!enabled || !isNativeMobileApp()) return;
+    let disposed = false;
+    let listener: { remove: () => Promise<void> } | undefined;
+    const remove = (handle: { remove: () => Promise<void> }) => {
+      void handle.remove().catch(() => {});
+    };
+    void (appModule ??= import("@capacitor/app")).then(async ({ App }) => {
+      if (disposed) return;
+      const handle = await App.addListener("backButton", () => {
+        // Native removal can finish later; retired callbacks must already be inert.
+        if (!disposed) callback.current(App);
+      });
+      if (disposed) remove(handle);
+      else listener = handle;
+    }).catch(() => {});
+    return () => {
+      disposed = true;
+      if (listener) remove(listener);
+    };
+  }, [enabled]);
+}
+
 export interface MobileAppearanceSheetProps {
   onClose?: () => void;
 }
 
 export function MobileAppearanceSheet({ onClose }: MobileAppearanceSheetProps) {
+  useMobileBackButton(() => onClose?.(), Boolean(onClose));
   const snapshot = useMobilePolicySnapshot();
   const [downloadErrors, setDownloadErrors] = useState<Record<string, string>>({});
   const [clearing, setClearing] = useState(false);
@@ -70,7 +103,7 @@ export function MobileAppearanceSheet({ onClose }: MobileAppearanceSheetProps) {
         <div className="mobile-appearance-scroll">
           <MobileBackgroundLibrary />
           <section className="mobile-appearance-section" aria-labelledby="mobile-motion-title">
-            <h3 id="mobile-motion-title">动态效果</h3>
+            <h3 id="mobile-motion-title">动态效果</h3><p>低功耗模式降低光影和字符动画的帧率与密度，视频显示静态封面。</p>
             <div className="mobile-appearance-options" role="radiogroup" aria-label="动态效果">{([ ["standard", "标准"], ["low-power", "低功耗"], ["system", "跟随系统减少动态"] ] as const).map(([value, label]) => <MotionOption key={value} value={value} label={label} selected={snapshot.preferences.motion} onChange={(next) => mobileBackgroundPolicy.setPreferences({ motion: next as MobileMotion })} />)}</div>
           </section>
 
