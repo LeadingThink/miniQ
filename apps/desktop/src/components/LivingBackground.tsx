@@ -53,8 +53,8 @@ interface Layer {
 /**
  * Fixed layer behind the app shell. A new background fades in over the old one.
  * Video wallpapers show their cover first, then fade in a seamless A/B loop;
- * glyph and ambient scenes animate on a canvas. Respects prefers-reduced-motion
- * and data saver (still cover / single frame) and pauses while hidden.
+ * glyph and ambient scenes animate on a canvas. Desktop respects reduced motion
+ * and data saver; mobile plays the selected scene. Both pause while hidden.
  */
 export function LivingBackground() {
   const background = useSyncExternalStore(subscribeMobilePolicy, getRenderedBackground, getRenderedBackground);
@@ -65,8 +65,7 @@ export function LivingBackground() {
   const liteMedia = useSyncExternalStore(subscribeLiteMedia, prefersLiteMedia);
   const hidden = useSyncExternalStore(subscribeVisibility, isDocumentHidden);
   useEffect(() => initializeMobileBackgroundPolicy(), []);
-  const lowPower = mobile && (mobileSnapshot.preferences.motion === "low-power" || mobileSnapshot.conditions.lowPower === true);
-  const still = reduceMotion || liteMedia || (mobileSnapshot.isNative && !mobileSnapshot.canAnimate);
+  const still = mobile ? !mobileSnapshot.canAnimate : reduceMotion || liteMedia;
   const [layers, setLayers] = useState<Layer[]>(() => [{ background, leaving: false }]);
 
   const current = layers[layers.length - 1]?.background;
@@ -87,7 +86,7 @@ export function LivingBackground() {
   if (!visible.length) return null;
   return (
     <div
-      className={`living-background${hidden || (mobile && !mobileSnapshot.canAnimate) ? " is-paused" : ""}${mobile ? " is-mobile" : ""}${lowPower ? " is-low-power" : ""}${background.light ? " is-light" : ""}${still ? " is-still" : ""}`}
+      className={`living-background${hidden || (mobile && !mobileSnapshot.canAnimate) ? " is-paused" : ""}${mobile ? " is-mobile" : ""}${background.light ? " is-light" : ""}${still ? " is-still" : ""}`}
       data-kind={background.kind}
       aria-hidden="true"
     >
@@ -100,7 +99,7 @@ export function LivingBackground() {
           {item.kind === "video" ? (
             <VideoWallpaper background={item} still={still} paused={hidden || leaving || (mobileSnapshot.isNative && !mobileSnapshot.canPlayVideo)} />
           ) : (
-            <SceneCanvas background={item} lowPower={lowPower} still={still} paused={hidden || leaving || (mobile && !mobileSnapshot.canAnimate)} />
+            <SceneCanvas background={item} lowPower={false} still={still} paused={hidden || leaving || (mobile && !mobileSnapshot.canAnimate)} />
           )}
         </div>
       ))}

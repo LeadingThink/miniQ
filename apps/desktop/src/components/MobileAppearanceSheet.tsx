@@ -3,7 +3,7 @@ import { Download, Trash2, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { isNativeMobileApp } from "../mobileRuntime";
 import { BACKGROUNDS, type BackgroundDefinition } from "../backgroundCatalog";
-import { mobileBackgroundPolicy, type MobileMotion, type MobileNetwork, type VideoDownloadStatus } from "../mobileBackgroundPolicy";
+import { mobileBackgroundPolicy, type VideoDownloadStatus } from "../mobileBackgroundPolicy";
 import { MobileBackgroundLibrary } from "./MobileBackgroundLibrary";
 import "./MobileAppearanceSheet.css";
 
@@ -76,14 +76,8 @@ export function MobileAppearanceSheet({ onClose }: MobileAppearanceSheetProps) {
     if (!item.video) return;
     setDownloadErrors((errors) => { const next = { ...errors }; delete next[item.id]; return next; });
     try { await mobileBackgroundPolicy.retryVideo(item.video); }
-    catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      const reason = message.includes("network policy")
-        ? "当前网络策略禁止下载，请连接 Wi-Fi 后重试"
-        : message.includes("playback blocked") || message.includes("download cancelled")
-          ? "动效下载需要前台且满足电量设置；如开启“仅充电时播放”，请先连接充电器"
-          : "下载失败，请检查网络后重试";
-      setDownloadErrors((errors) => ({ ...errors, [item.id]: reason }));
+    catch {
+      setDownloadErrors((errors) => ({ ...errors, [item.id]: "下载失败，请重试" }));
     }
   };
   const clear = async () => {
@@ -110,16 +104,8 @@ export function MobileAppearanceSheet({ onClose }: MobileAppearanceSheetProps) {
 
         <div className="mobile-appearance-scroll">
           <MobileBackgroundLibrary />
-          <section className="mobile-appearance-section" aria-labelledby="mobile-motion-title">
-            <h3 id="mobile-motion-title">动态效果</h3><p>低功耗模式降低光影和字符动画的帧率与密度，视频显示静态封面。</p>
-            <div className="mobile-appearance-options" role="radiogroup" aria-label="动态效果">{([ ["standard", "标准"], ["low-power", "低功耗"], ["system", "跟随系统减少动态"] ] as const).map(([value, label]) => <MotionOption key={value} value={value} label={label} selected={snapshot.preferences.motion} onChange={(next) => mobileBackgroundPolicy.setPreferences({ motion: next as MobileMotion })} />)}</div>
-          </section>
-
           <section className="mobile-appearance-section" aria-labelledby="mobile-network-title">
             <h3 id="mobile-network-title">视频壁纸</h3>
-            <label className="mobile-appearance-switch"><input type="checkbox" checked={snapshot.preferences.chargingOnly} onChange={(event) => mobileBackgroundPolicy.setPreferences({ chargingOnly: event.target.checked })} /><span>仅充电时播放</span></label>
-            <p>默认开启，未充电时显示静态预览。</p>
-            <div className="mobile-appearance-options" role="radiogroup" aria-label="视频下载网络策略">{([ ["wifi-only", "仅 Wi-Fi"], ["cellular-opt-in", "Wi-Fi 与移动网络"] ] as const).map(([value, label]) => <MotionOption key={value} value={value} label={label} selected={snapshot.preferences.network} onChange={(next) => mobileBackgroundPolicy.setPreferences({ network: next as MobileNetwork })} />)}</div>
             <div className="mobile-appearance-cache"><span><strong>缓存</strong><small>{formatBytes(cacheBytes)}{cachedStatuses.length ? ` · ${cachedStatuses.length} 个视频` : ""}</small></span><button type="button" onClick={() => void clear()} disabled={clearing || cachedStatuses.length === 0}><Trash2 size={15} />{clearing ? "清理中…" : "清理缓存"}</button></div>
             {cacheError && <p className="mobile-appearance-error" role="alert">{cacheError}</p>}
             {Object.entries(downloadErrors).map(([id, error]) => <p className="mobile-appearance-error" role="alert" key={id}><Download size={15} />{error}</p>)}
@@ -132,8 +118,4 @@ export function MobileAppearanceSheet({ onClose }: MobileAppearanceSheetProps) {
       </section>
     </div>
   );
-}
-
-function MotionOption<T extends string>({ value, label, selected, onChange }: { value: T; label: string; selected: string; onChange: (value: T) => void }) {
-  return <label className="mobile-appearance-option"><input type="radio" name={value.startsWith("wifi") || value === "cellular-opt-in" ? "mobile-network" : "mobile-motion"} value={value} checked={selected === value} onChange={() => onChange(value)} /><span>{label}</span></label>;
 }

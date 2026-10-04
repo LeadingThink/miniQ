@@ -16,7 +16,7 @@ export const MOBILE_BACKGROUND_KEYS = {
   favorites: "miniq.mobile.appearance.favorites",
 } as const;
 
-/** Native Low Power Mode and unknown power state conservatively disable motion. */
+/** Legacy preference values are accepted on input and normalized on read/write. */
 export type MobileMotion = "standard" | "low-power" | "system";
 export type MobileNetwork = "wifi-only" | "cellular-opt-in";
 export type MobileNetworkType = "wifi" | "cellular" | "none" | "unknown";
@@ -84,7 +84,7 @@ export function createMemoryVideoCache(limits = DEFAULT_CACHE_LIMIT): MobileVide
 
 const read = (storage: Storage | undefined, key: string): string | null => { try { return storage?.getItem(key) ?? null; } catch { return null; } };
 const write = (storage: Storage | undefined, key: string, value: string) => { try { storage?.setItem(key, value); } catch { /* restricted webviews */ } };
-export const DEFAULT_MOBILE_PREFERENCES: MobilePreferences = { background: NO_BACKGROUND, rotation: normalizeRotation(null), motion: "system", network: "wifi-only", chargingOnly: true, favorites: [] };
+export const DEFAULT_MOBILE_PREFERENCES: MobilePreferences = { background: NO_BACKGROUND, rotation: normalizeRotation(null), motion: "standard", network: "cellular-opt-in", chargingOnly: false, favorites: [] };
 
 const normalizeFavorites = (value: unknown): string[] => Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === "string" && isBackgroundId(id)))] : [];
 
@@ -93,21 +93,21 @@ export function readMobilePreferences(storage: Storage | undefined = typeof wind
   try { rotation = JSON.parse(read(storage, MOBILE_BACKGROUND_KEYS.rotation) ?? "null"); } catch { rotation = null; }
   let favorites: unknown;
   try { favorites = JSON.parse(read(storage, MOBILE_BACKGROUND_KEYS.favorites) ?? "[]"); } catch { favorites = []; }
-  const motion = read(storage, MOBILE_BACKGROUND_KEYS.motion);
-  const network = read(storage, MOBILE_BACKGROUND_KEYS.network);
   const background = read(storage, MOBILE_BACKGROUND_KEYS.background);
   return {
-    chargingOnly: read(storage, MOBILE_BACKGROUND_KEYS.chargingOnly) !== "false",
+    chargingOnly: false,
     favorites: normalizeFavorites(favorites),
     background: isBackgroundId(background) ? background : NO_BACKGROUND,
     rotation: normalizeRotation(rotation),
-    motion: motion === "standard" || motion === "low-power" || motion === "system" ? motion : "system",
-    network: network === "cellular-opt-in" || network === "wifi-only" ? network : "wifi-only",
+    motion: "standard",
+    network: "cellular-opt-in",
   };
 }
 export function writeMobilePreferences(patch: Partial<MobilePreferences>, storage: Storage | undefined = typeof window !== "undefined" ? window.localStorage : undefined): MobilePreferences {
   const next = { ...readMobilePreferences(storage), ...patch };
-  next.chargingOnly = next.chargingOnly !== false;
+  next.motion = "standard";
+  next.network = "cellular-opt-in";
+  next.chargingOnly = false;
   next.favorites = normalizeFavorites(next.favorites);
   write(storage, MOBILE_BACKGROUND_KEYS.chargingOnly, JSON.stringify(next.chargingOnly));
   write(storage, MOBILE_BACKGROUND_KEYS.favorites, JSON.stringify(next.favorites));
@@ -121,9 +121,6 @@ function connectionType(value: string | undefined): MobileNetworkType {
   if (value === "cellular") return "cellular";
   if (value === "none") return "none";
   return "unknown";
-}
-function networkAllowed(snapshot: Pick<MobilePolicySnapshot, "conditions" | "preferences">) {
-  return snapshot.conditions.network === "wifi" || (snapshot.conditions.network === "cellular" && snapshot.preferences.network === "cellular-opt-in");
 }
 
 const batteryLevel = (value: unknown): number | null => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
@@ -154,13 +151,10 @@ export class MobileBackgroundPolicy {
   getSnapshot(): MobilePolicySnapshot {
     if (this.snapshot) return this.snapshot;
     const reducedMotion = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const lowBattery = this.conditions.batteryLevel !== null && this.conditions.batteryLevel <= 0.2 && this.conditions.battery !== "charging";
-    const powerSafe = this.conditions.battery === "charging" || (this.conditions.battery === "not-charging" && !lowBattery && this.conditions.batteryLevel !== null);
     const foreground = this.conditions.lifecycle === "foreground";
-    const systemPowerSafe = this.conditions.lowPower === false;
-    const canAnimate = foreground && powerSafe && !reducedMotion && this.conditions.lowPower !== null;
-    const canPlayVideo = canAnimate && systemPowerSafe && this.preferences.motion !== "low-power" && (!this.preferences.chargingOnly || this.conditions.battery === "charging");
-    const canDownloadVideo = canPlayVideo && networkAllowed({ preferences: this.preferences, conditions: this.conditions });
+    const canAnimate = foreground;
+    const canPlayVideo = foreground;
+    const canDownloadVideo = foreground && this.conditions.network !== "none";
     this.snapshot = { preferences: this.preferences, conditions: this.conditions, isNative: this.options.isNative(), osLowPowerModeSupported: this.conditions.lowPower !== null, reducedMotion, canAnimate, canPlayVideo, canDownloadVideo };
     return this.snapshot;
   }
@@ -282,12 +276,12 @@ export class MobileBackgroundPolicy {
         const update = () => { if (active() && this.conditions.lifecycle === "foreground") this.setConditions({ battery: typeof battery.charging === "boolean" ? (battery.charging ? "charging" : "not-charging") : "unknown", batteryLevel: batteryLevel(battery.level) }); };
         update(); battery.addEventListener("chargingchange", update); battery.addEventListener("levelchange", update);
         this.cleanups.push(() => { battery.removeEventListener("chargingchange", update); battery.removeEventListener("levelchange", update); });
-      } catch { /* Keep unknown power state conservative. */ }
+      } catch { /* Battery reporting is unavailable. */ }
     }
     if (active()) this.scheduleRotation();
   }
   stop(): void { this.started = false; this.startGeneration++; this.cleanups.splice(0).forEach((cleanup) => cleanup()); this.setConditions({ lifecycle: "unknown" }); this.cancelDownloads(); this.clearRotationTimer(); }
-  setPreferences(patch: Partial<MobilePreferences>): MobilePreferences { this.preferences = writeMobilePreferences({ ...this.preferences, ...patch }, this.options.storage); this.snapshot = undefined; if (!this.getSnapshot().canPlayVideo) this.cancelDownloads(); else if (!this.getCanDownloadVideo()) this.cancelDownloads(true); this.notify(); this.scheduleRotation(); return this.preferences; }
+  setPreferences(patch: Partial<MobilePreferences>): MobilePreferences { this.preferences = writeMobilePreferences({ ...this.preferences, ...patch }, this.options.storage); this.notify(); this.scheduleRotation(); return this.preferences; }
   selectBackground(id: string): BackgroundDefinition { const background = getBackground(isBackgroundId(id) ? id : NO_BACKGROUND); this.setPreferences({ background: background.id }); return background; }
   advanceBackgroundRotation(now = this.options.now()): string | null {
     const items = resolvePlaylistItems(this.preferences.rotation.playlistId, this.preferences.rotation.custom, new Date(now));
@@ -325,7 +319,7 @@ export class MobileBackgroundPolicy {
   async downloadVideo(url: string): Promise<Blob> {
     const cache = this.options.cache!;
     const existing = this.downloads.get(url); if (existing) return existing.promise;
-    if (!this.getSnapshot().canPlayVideo) throw new Error("mobile video playback blocked by motion, charging, or lifecycle policy");
+    if (!this.getSnapshot().canPlayVideo) throw new Error("mobile video playback blocked by lifecycle policy");
     const controller = new AbortController(); const generation = this.downloadGeneration;
     let needsNetwork = false;
     const check = () => {

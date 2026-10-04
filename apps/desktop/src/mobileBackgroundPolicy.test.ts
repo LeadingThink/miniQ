@@ -1,6 +1,6 @@
 import * as mobilePower from "./mobilePower";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { createMemoryVideoCache, createMobileBackgroundPolicy, DEFAULT_MOBILE_PREFERENCES, type BatteryLike } from "./mobileBackgroundPolicy";
+import { createMemoryVideoCache, createMobileBackgroundPolicy, DEFAULT_MOBILE_PREFERENCES, readMobilePreferences, writeMobilePreferences, type BatteryLike } from "./mobileBackgroundPolicy";
 
 describe("mobile background policy", () => {
   beforeEach(() => { vi.spyOn(mobilePower, "getState").mockResolvedValue({ lowPower: false }); });
@@ -16,12 +16,20 @@ describe("mobile background policy", () => {
     policies.push(policy); await policy.start(); return { policy, appState };
   }
 
-  it("keeps mobile preferences independent and defaults video downloads to Wi-Fi", () => {
+  it("normalizes defaults and legacy saved restrictions", () => {
     const values = new Map<string, string>();
     const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); }, removeItem: () => {}, clear: () => {}, key: () => null, length: 0 } as unknown as Storage;
     const policy = createMobileBackgroundPolicy({ isNative: () => true, storage });
     expect(policy.getSnapshot().preferences).toMatchObject(DEFAULT_MOBILE_PREFERENCES);
-    policy.setPreferences({ network: "cellular-opt-in" });
+    expect(DEFAULT_MOBILE_PREFERENCES).toMatchObject({ motion: "standard", network: "cellular-opt-in", chargingOnly: false });
+    values.set("miniq.mobile.appearance.motion", "low-power");
+    values.set("miniq.mobile.appearance.network", "wifi-only");
+    values.set("miniq.mobile.appearance.chargingOnly", "true");
+    expect(readMobilePreferences(storage)).toMatchObject({ motion: "standard", network: "cellular-opt-in", chargingOnly: false });
+    expect(writeMobilePreferences({ motion: "system", network: "wifi-only", chargingOnly: true }, storage)).toMatchObject({ motion: "standard", network: "cellular-opt-in", chargingOnly: false });
+    expect(values.get("miniq.mobile.appearance.motion")).toBe("standard");
+    expect(values.get("miniq.mobile.appearance.chargingOnly")).toBe("false");
+    policy.setPreferences({ network: "wifi-only", motion: "low-power", chargingOnly: true });
     expect(policy.getSnapshot().preferences.network).toBe("cellular-opt-in");
     expect(values.get("miniq.mobile.appearance.network")).toBe("cellular-opt-in");
   });
@@ -75,7 +83,8 @@ describe("mobile background policy", () => {
     expect(policy.getSnapshot().conditions.batteryLevel).toBe(0.1);
     expect(policy.getSnapshot().canDownloadVideo).toBe(false);
     appState?.({ isActive: true });
-    expect(policy.getSnapshot().canDownloadVideo).toBe(false);
+    expect(policy.getSnapshot().canDownloadVideo).toBe(true);
+    policy.stop();
   });
 
   it("deduplicates downloads and refuses empty responses", async () => {
@@ -140,14 +149,10 @@ describe("mobile background policy", () => {
     } finally { policy.stop(); vi.unstubAllGlobals(); }
   });
 
-  it("honors system reduced motion even with standard motion selected", () => {
-    vi.stubGlobal("matchMedia", () => ({ matches: true }));
-    try {
-      const policy = createMobileBackgroundPolicy();
-      policy.setPreferences({ motion: "standard" });
-      expect(policy.getSnapshot().reducedMotion).toBe(true);
-      expect(policy.getSnapshot().canAnimate).toBe(false);
-    } finally { vi.unstubAllGlobals(); }
+  it("animates selected backgrounds even when reduced motion is enabled", async () => {
+    vi.stubGlobal("matchMedia", () => Object.assign(new EventTarget(), { matches: true }));
+    const { policy } = await ready();
+    expect(policy.getSnapshot()).toMatchObject({ reducedMotion: true, canAnimate: true, canPlayVideo: true, canDownloadVideo: true });
   });
 
   it("reports actual eviction and cache totals", async () => {
@@ -163,13 +168,16 @@ describe("mobile background policy", () => {
   it.each(["clear", "network"])("cancels on %s even if fetch ignores abort and policy recovers", async (reason) => {
     let release!: (value: Response) => void;
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => { release = resolve; })));
-    const { policy } = await ready({ network: { getStatus: async () => ({ connected: true, connectionType: "cellular" }) } });
-    policy.setPreferences({ network: "cellular-opt-in" });
+    let networkChange!: (status: { connected: boolean; connectionType: string }) => void;
+    const { policy } = await ready({ network: {
+      getStatus: async () => ({ connected: true, connectionType: "cellular" }),
+      addListener: async (_event, listener) => { networkChange = listener; return { remove: vi.fn() }; },
+    } });
     const result = policy.downloadVideo("late");
     const rejected = expect(result).rejects.toMatchObject({ name: "AbortError" });
     await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
     if (reason === "clear") await policy.clearVideoCache();
-    else { policy.setPreferences({ network: "wifi-only" }); policy.setPreferences({ network: "cellular-opt-in" }); }
+    else { networkChange({ connected: false, connectionType: "none" }); networkChange({ connected: true, connectionType: "cellular" }); }
     await rejected;
     release(new Response(new Blob(["late"])));
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -242,7 +250,7 @@ describe("mobile background policy", () => {
     await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
     expect(signal.aborted).toBe(false);
     if (reason === "background") appState({ isActive: false });
-    else networkChange({ connected: true, connectionType: "cellular" });
+    else networkChange({ connected: false, connectionType: "none" });
     expect(signal.aborted).toBe(true);
     await rejected;
   });
@@ -270,22 +278,21 @@ describe("mobile background policy", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it.each(["none", "unknown", "cellular"])("plays cached video on %s without authorizing downloads", async connectionType => {
+  it.each(["none", "unknown", "cellular", "wifi"])("plays cached video on %s and downloads unless offline", async connectionType => {
     const saved = new Blob(["offline"]);
     const get = vi.fn(async (): Promise<Blob | undefined> => saved);
-    vi.stubGlobal("fetch", vi.fn());
-    const { policy } = await ready({
-      cache: { ...createMemoryVideoCache(), get },
-      network: { getStatus: async () => ({ connectionType }) },
-    });
-    expect(policy.getSnapshot()).toMatchObject({ canPlayVideo: true, canDownloadVideo: false });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("fresh")));
+    const { policy } = await ready({ cache: { ...createMemoryVideoCache(), get }, network: { getStatus: async () => ({ connectionType }) } });
+    expect(policy.getSnapshot()).toMatchObject({ canPlayVideo: true, canDownloadVideo: connectionType !== "none" });
     expect(await policy.downloadVideo("disk")).toBe(saved);
-    get.mockResolvedValueOnce(undefined);
-    await expect(policy.downloadVideo("missing")).rejects.toThrow("network policy");
     expect(fetch).not.toHaveBeenCalled();
-    if (connectionType === "cellular") {
-      policy.setPreferences({ network: "cellular-opt-in" });
-      expect(policy.getSnapshot().canDownloadVideo).toBe(true);
+    get.mockResolvedValueOnce(undefined);
+    if (connectionType === "none") {
+      await expect(policy.downloadVideo("missing")).rejects.toThrow("network policy");
+      expect(fetch).not.toHaveBeenCalled();
+    } else {
+      expect(await (await policy.downloadVideo("missing")).text()).toBe("fresh");
+      expect(fetch).toHaveBeenCalledOnce();
     }
   });
 
@@ -332,7 +339,7 @@ describe("mobile background policy", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it.each(["background", "low-power", "reduced-motion", "battery", "unknown-power"])("keeps offline cached playback subject to %s safety", async reason => {
+  it.each(["background", "low-power", "reduced-motion", "battery", "unknown-power"])("keeps offline cached playback available except in background (%s)", async reason => {
     const media = Object.assign(new EventTarget(), { matches: false });
     vi.stubGlobal("matchMedia", () => media);
     const get = vi.fn(async () => new Blob(["cached"]));
@@ -346,9 +353,13 @@ describe("mobile background policy", () => {
     if (reason === "background") appState({ isActive: false });
     if (reason === "low-power") policy.setPreferences({ motion: "low-power" });
     if (reason === "reduced-motion") { media.matches = true; media.dispatchEvent(new Event("change")); }
-    expect(policy.getSnapshot()).toMatchObject({ canPlayVideo: false, canDownloadVideo: false });
-    await expect(policy.downloadVideo("disk")).rejects.toThrow("playback blocked");
-    expect(get).not.toHaveBeenCalled();
+    expect(policy.getSnapshot()).toMatchObject({ canPlayVideo: reason !== "background", canDownloadVideo: false });
+    if (reason === "background") {
+      await expect(policy.downloadVideo("disk")).rejects.toThrow("playback blocked");
+      expect(get).not.toHaveBeenCalled();
+    } else {
+      expect(await (await policy.downloadVideo("disk")).text()).toBe("cached");
+    }
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -417,7 +428,7 @@ describe("mobile background policy", () => {
     const { policy, appState } = await ready({ device: { getBatteryInfo } });
     getBatteryInfo.mockResolvedValue({ isCharging: false, batteryLevel: 0.1 });
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(policy.getSnapshot().canAnimate).toBe(false);
+    expect(policy.getSnapshot().canAnimate).toBe(true);
     expect(policy.getSnapshot().conditions.batteryLevel).toBe(0.1);
     appState({ isActive: false }); const count = getBatteryInfo.mock.calls.length;
     await vi.advanceTimersByTimeAsync(120_000); expect(getBatteryInfo).toHaveBeenCalledTimes(count);
@@ -486,7 +497,7 @@ describe("mobile background policy", () => {
     expect(policy.getSnapshot().conditions.lifecycle).toBe("unknown");
   });
 
-  it("reacts to system motion changes in standard mode and cleans the listener", async () => {
+  it("reports system motion changes without pausing and cleans the listener", async () => {
     const media = Object.assign(new EventTarget(), { matches: false });
     const remove = vi.spyOn(media, "removeEventListener");
     vi.stubGlobal("matchMedia", () => media);
@@ -495,7 +506,7 @@ describe("mobile background policy", () => {
     const notify = vi.fn(); const unsubscribe = policy.subscribe(notify);
     expect(policy.getSnapshot().canAnimate).toBe(true);
     media.matches = true; media.dispatchEvent(new Event("change"));
-    expect(policy.getSnapshot()).toMatchObject({ reducedMotion: true, canAnimate: false, canDownloadVideo: false });
+    expect(policy.getSnapshot()).toMatchObject({ reducedMotion: true, canAnimate: true, canDownloadVideo: true });
     expect(notify).toHaveBeenCalled();
     media.matches = false; media.dispatchEvent(new Event("change"));
     expect(policy.getSnapshot().canAnimate).toBe(true);
@@ -503,28 +514,28 @@ describe("mobile background policy", () => {
     expect(remove).toHaveBeenCalledWith("change", expect.any(Function));
   });
 
-  it("blocks animations when battery safety is unknown", async () => {
+  it("allows animation when battery state is unknown", async () => {
     const { policy } = await ready({ device: { getBatteryInfo: async () => { throw new Error("unsupported"); } }, battery: async () => { throw new Error("unsupported"); } });
-    expect(policy.getSnapshot()).toMatchObject({ conditions: { lifecycle: "foreground", battery: "unknown" }, canAnimate: false, canDownloadVideo: false });
+    expect(policy.getSnapshot()).toMatchObject({ conditions: { lifecycle: "foreground", battery: "unknown" }, canAnimate: true, canDownloadVideo: true });
   });
 
-  it("uses the native power adapter and honors OS low power in every motion mode", async () => {
+  it("reports native low power without limiting motion", async () => {
     const getState = vi.spyOn(mobilePower, "getState").mockResolvedValue({ lowPower: true });
     const { policy } = await ready();
     expect(getState).toHaveBeenCalled();
-    expect(policy.getSnapshot()).toMatchObject({ conditions: { lowPower: true }, osLowPowerModeSupported: true, canAnimate: true, canDownloadVideo: false });
+    expect(policy.getSnapshot()).toMatchObject({ conditions: { lowPower: true }, osLowPowerModeSupported: true, canAnimate: true, canDownloadVideo: true });
     policy.setPreferences({ motion: "standard" });
     expect(policy.getSnapshot().canAnimate).toBe(true);
     policy.setPreferences({ motion: "system" });
     expect(policy.getSnapshot().canAnimate).toBe(true);
   });
 
-  it.each([null, "throw"] as const)("keeps unknown OS power explicit (%s) and disables animation conservatively", async value => {
+  it.each([null, "throw"] as const)("keeps unknown OS power explicit (%s) without limiting animation", async value => {
     const { policy } = await ready({ power: async () => { if (value === "throw") throw new Error("native failure"); return null; } });
-    expect(policy.getSnapshot()).toMatchObject({ conditions: { lowPower: null }, osLowPowerModeSupported: false, canAnimate: false });
+    expect(policy.getSnapshot()).toMatchObject({ conditions: { lowPower: null }, osLowPowerModeSupported: false, canAnimate: true });
   });
 
-  it("polls OS power in foreground, cancels downloads, refreshes on resume, and cleans up", async () => {
+  it("polls OS power without cancelling downloads, refreshes on resume, and cleans up", async () => {
     vi.useFakeTimers();
     let state: { lowPower: boolean } | null = { lowPower: false };
     const power = vi.fn(async () => state);
@@ -534,15 +545,17 @@ describe("mobile background policy", () => {
     const download = policy.downloadVideo("pending");
     const cancelled = expect(download).rejects.toMatchObject({ name: "AbortError" });
     state = { lowPower: true };
-    await vi.advanceTimersByTimeAsync(60_000); await cancelled;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(policy.getVideoStatus("pending").status).toBe("downloading");
     expect(policy.getSnapshot().canAnimate).toBe(true);
     appState({ isActive: false });
+    await cancelled;
     const count = power.mock.calls.length;
     await vi.advanceTimersByTimeAsync(120_000);
     expect(power).toHaveBeenCalledTimes(count);
     state = null; appState({ isActive: true });
     await vi.advanceTimersByTimeAsync(0);
-    expect(policy.getSnapshot()).toMatchObject({ conditions: { lowPower: null }, osLowPowerModeSupported: false, canAnimate: false });
+    expect(policy.getSnapshot()).toMatchObject({ conditions: { lowPower: null }, osLowPowerModeSupported: false, canAnimate: true });
     policy.stop(); const stoppedCount = power.mock.calls.length;
     await vi.advanceTimersByTimeAsync(120_000);
     expect(power).toHaveBeenCalledTimes(stoppedCount);
@@ -559,21 +572,18 @@ describe("mobile background policy", () => {
     expect(policy.getSnapshot()).toMatchObject({ conditions: { lifecycle: "unknown", lowPower: null } });
   });
 
-  it("allows safe canvas motion on battery but requires charging for video", async () => {
-    const { policy } = await ready({ device: { getBatteryInfo: async () => ({ isCharging: false, batteryLevel: 0.9 }) } });
-    expect(policy.getSnapshot()).toMatchObject({ canAnimate: true, canPlayVideo: false, canDownloadVideo: false });
-    await expect(policy.downloadVideo("battery-only")).rejects.toThrow();
-  });
-
-  it("cancels a video download when charging stops even at high battery level", async () => {
+  it("keeps video downloading when charging stops at low battery", async () => {
     vi.useFakeTimers();
     const device = { getBatteryInfo: vi.fn(async () => ({ isCharging: true, batteryLevel: 0.9 })) };
-    const { policy } = await ready({ device, downloadTimeoutMs: 120_000 });
+    const { policy, appState } = await ready({ device, downloadTimeoutMs: 120_000 });
     vi.stubGlobal("fetch", () => new Promise(() => {}));
     const cancelled = expect(policy.downloadVideo("unplugged")).rejects.toMatchObject({ name: "AbortError" });
-    device.getBatteryInfo.mockResolvedValue({ isCharging: false, batteryLevel: 0.9 });
-    await vi.advanceTimersByTimeAsync(60_000); await cancelled;
-    expect(policy.getSnapshot()).toMatchObject({ canAnimate: true, canPlayVideo: false, canDownloadVideo: false });
+    device.getBatteryInfo.mockResolvedValue({ isCharging: false, batteryLevel: 0.1 });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(policy.getVideoStatus("unplugged").status).toBe("downloading");
+    expect(policy.getSnapshot()).toMatchObject({ canAnimate: true, canPlayVideo: true, canDownloadVideo: true });
+    appState({ isActive: false });
+    await cancelled;
   });
 
   function deferred<T>() {
@@ -592,7 +602,7 @@ describe("mobile background policy", () => {
       });
       policy.setPreferences({ chargingOnly: false });
       expect(policy.getSnapshot().conditions.batteryLevel).toBe(valid ? level : null);
-      expect(policy.getSnapshot().canAnimate).toBe(valid && level > 0.2);
+      expect(policy.getSnapshot().canAnimate).toBe(true);
     }
   });
 
@@ -632,7 +642,7 @@ describe("mobile background policy", () => {
     appState({ isActive: false }); appState({ isActive: true });
     await vi.advanceTimersByTimeAsync(0);
     expect(getBatteryInfo).toHaveBeenCalledTimes(count + 1);
-    expect(policy.getSnapshot().canAnimate).toBe(false);
+    expect(policy.getSnapshot().canAnimate).toBe(true);
     if (order === "old-first") {
       old.resolve({ isCharging: true, batteryLevel: 1 });
       await vi.advanceTimersByTimeAsync(0);
@@ -645,7 +655,7 @@ describe("mobile background policy", () => {
     await vi.advanceTimersByTimeAsync(0);
     const snapshot = policy.getSnapshot();
     expect(snapshot.conditions.batteryLevel).toBe(0.1);
-    expect(snapshot.canAnimate).toBe(false);
+    expect(snapshot.canAnimate).toBe(true);
     if (order === "new-first") {
       old.resolve({ isCharging: true, batteryLevel: 1 });
       await vi.advanceTimersByTimeAsync(0);
@@ -695,7 +705,7 @@ describe("mobile background policy", () => {
     appState({ isActive: false }); appState({ isActive: true });
     gate.resolve(battery); await starting;
     expect(add).not.toHaveBeenCalled();
-    expect(policy.getSnapshot().canAnimate).toBe(false);
+    expect(policy.getSnapshot().canAnimate).toBe(true);
   });
 
 });

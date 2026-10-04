@@ -71,7 +71,7 @@ it("loads cached native video offline and keeps it mounted when network permissi
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:video");
 });
 
-it("releases video when system reduced motion changes while playback is allowed", async () => {
+it("keeps the selected native video playing when system reduced motion changes", async () => {
   let reduced = false;
   const listeners = new Set<() => void>();
   vi.stubGlobal("matchMedia", (query: string) => ({
@@ -85,8 +85,8 @@ it("releases video when system reduced motion changes while playback is allowed"
   await act(async () => {});
   expect(container.querySelectorAll("video")).toHaveLength(1);
   await act(async () => { reduced = true; listeners.forEach(listener => listener()); });
-  expect(container.querySelector("video")).toBeNull();
-  expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:video");
+  expect(container.querySelectorAll("video")).toHaveLength(1);
+  expect(URL.revokeObjectURL).not.toHaveBeenCalled();
   await act(async () => { reduced = false; listeners.forEach(listener => listener()); });
   expect(container.querySelectorAll("video")).toHaveLength(1);
 });

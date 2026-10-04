@@ -37,25 +37,14 @@ describe("MobileAppearanceSheet", () => {
     expect(selectBackground).toHaveBeenCalledWith(lastItem.id);
   });
 
-  it("reads and updates independent mobile motion, network, and rotation preferences", () => {
+  it("keeps the appearance sheet focused on background and rotation choices", () => {
     const setPreferences = vi.spyOn(mobileBackgroundPolicy, "setPreferences");
     render(<MobileAppearanceSheet />);
-    fireEvent.click(screen.getByRole("radio", { name: "低功耗" }));
-    fireEvent.click(screen.getByRole("radio", { name: "Wi-Fi 与移动网络" }));
+    expect(screen.queryByText("动态效果")).toBeNull();
+    expect(screen.queryByText("仅充电时播放")).toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: "视频下载网络策略" })).toBeNull();
     fireEvent.click(screen.getByRole("checkbox", { name: "合集轮播" }));
-    expect(setPreferences).toHaveBeenCalledWith({ motion: "low-power" });
-    expect(setPreferences).toHaveBeenCalledWith({ network: "cellular-opt-in" });
     expect(setPreferences).toHaveBeenCalledWith({ rotation: expect.objectContaining({ enabled: true }) });
-  });
-
-  it("defaults to charging-only playback and persists the toggle", () => {
-    render(<MobileAppearanceSheet />);
-    const toggle = screen.getByRole("checkbox", { name: "仅充电时播放" }) as HTMLInputElement;
-    expect(toggle.checked).toBe(true);
-    fireEvent.click(toggle);
-    expect(mobileBackgroundPolicy.getSnapshot().preferences.chargingOnly).toBe(false);
-    fireEvent.click(toggle);
-    expect(mobileBackgroundPolicy.getSnapshot().preferences.chargingOnly).toBe(true);
   });
 
   it("subscribes to cache status and reports clear failures", async () => {
@@ -76,15 +65,6 @@ describe("MobileAppearanceSheet", () => {
     fireEvent.click(screen.getByRole("radio", { name: item.name }));
     fireEvent.click(screen.getAllByRole("button", { name: /下载「/ })[0]);
     expect((await screen.findByRole("alert")).textContent).toContain("下载失败");
-  });
-  it("explains when the mobile policy blocks a video download", async () => {
-    vi.spyOn(mobileBackgroundPolicy, "retryVideo").mockRejectedValue(new Error("mobile video download blocked by network policy"));
-    render(<MobileAppearanceSheet />);
-    const item = BACKGROUNDS.find((item) => item.kind === "video")!;
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: item.name } });
-    fireEvent.click(screen.getByRole("radio", { name: item.name }));
-    fireEvent.click(screen.getAllByRole("button", { name: /下载「/ })[0]);
-    expect((await screen.findByRole("alert")).textContent).toContain("网络策略禁止下载");
   });
   it("allows a cached video to retry playback through the explicit retry API", async () => {
     const retryVideo = vi.spyOn(mobileBackgroundPolicy, "retryVideo").mockResolvedValue(new Blob(["video"]));
