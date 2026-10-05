@@ -59,7 +59,7 @@ jobs:
         run: node scripts/ios_testflight.mjs validate
       - name: Test and build mobile frontend
         run: |
-          node --test scripts/ios_testflight.node-test.mjs
+          node --test scripts/ios_testflight.node-test.mjs scripts/ios_testflight_status.node-test.mjs
           npm run test:mobile
           npm run build
           npx cap sync ios
@@ -164,7 +164,16 @@ jobs:
           xcrun altool --upload-app --type ios --file "$IOS_IPA" \
             --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format json \
             | tee "$IOS_CI_DIR/upload.log"
+      - name: Verify App Store Connect processing and tester groups (read-only)
+        timeout-minutes: 25
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          node scripts/ios_testflight_status.mjs 2>&1 | tee "$IOS_CI_DIR/status.log"
       - name: Save IPA and debug symbols
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: miniq-ios-${{ inputs.marketing_version }}-${{ inputs.build_number }}-${{ github.run_attempt }}
