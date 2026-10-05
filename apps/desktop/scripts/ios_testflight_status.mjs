@@ -18,6 +18,38 @@ export function createToken({ keyId, issuerId, privateKey }, now = Date.now()) {
   return `${input}.${sign("sha256", Buffer.from(input), { key, dsaEncoding: "ieee-p1363" }).toString("base64url")}`;
 }
 
+// Only allowlisted error fields are logged, never headers or raw bodies.
+function diagnosticText(value, credential = "", limit = 512) {
+  if (typeof value !== "string") return null;
+  let text = credential ? value.split(credential).join("[REDACTED]") : value;
+  text = text.replace(/authorization[^\r\n]*/gi, "[REDACTED]")
+    .replace(/Bearer\s+[^\s,;"']+/gi, "[REDACTED]")
+    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, "[REDACTED]")
+    .replace(/[\x00-\x1f\x7f]/g, " ");
+  return text.length > limit ? text.slice(0, limit - 1) + "…" : text;
+}
+
+async function httpFailure(response, url, credential) {
+  let errors = [];
+  let omitted = 0;
+  try {
+    const body = await response.json();
+    if (Array.isArray(body?.errors)) {
+      omitted = Math.max(0, body.errors.length - 5);
+      errors = body.errors.slice(0, 5).map((error) => Object.fromEntries(
+        ["code", "title", "detail"].map((field) => [field, diagnosticText(error?.[field], credential)]),
+      ));
+    }
+  } catch {
+    // Malformed error bodies must not hide the HTTP status or leak content.
+  }
+  const pathname = diagnosticText(url.pathname, credential);
+  const queryNames = [...new Set(url.searchParams.keys())].slice(0, 20)
+    .map((name) => diagnosticText(name, credential, 100));
+  return new Error("ASC GET " + pathname + " queryNames=" + JSON.stringify(queryNames)
+    + " failed: HTTP " + response.status + "; errors=" + JSON.stringify(errors) + "; omittedErrors=" + omitted);
+}
+
 export function createAscClient({ token, fetchImpl = fetch, wait = sleep }) {
   async function get(path) {
     const url = new URL(path, API);
@@ -26,10 +58,12 @@ export function createAscClient({ token, fetchImpl = fetch, wait = sleep }) {
     }
     for (let attempt = 1; attempt <= 3; attempt++) {
       let response;
+      let credential;
       try {
+        credential = token();
         response = await fetchImpl(url, {
           method: "GET",
-          headers: { Authorization: `Bearer ${token()}`, Accept: "application/json" },
+          headers: { Authorization: `Bearer ${credential}`, Accept: "application/json" },
           signal: AbortSignal.timeout(15_000),
           redirect: "error",
         });
@@ -40,7 +74,7 @@ export function createAscClient({ token, fetchImpl = fetch, wait = sleep }) {
       }
       if (response && !response.ok) {
         const retryable = response.status === 429 || response.status >= 500;
-        if (!retryable || attempt === 3) throw new Error(`ASC GET failed: HTTP ${response.status}`);
+        if (!retryable || attempt === 3) throw await httpFailure(response, url, credential);
       }
       await wait(attempt * 2_000);
     }
@@ -75,7 +109,7 @@ export async function verifyBuild({ list, marketingVersion, buildNumber, wait = 
   const apps = await list(`/v1/apps?${new URLSearchParams({ "filter[bundleId]": BUNDLE_ID, limit: "200" })}`);
   const matches = apps.data.filter((app) => app.attributes?.bundleId === BUNDLE_ID);
   if (matches.length !== 1) throw new Error("Expected exactly one ASC app matching com.leadingthink.miniq");
-  const query = new URLSearchParams({ "filter[app]": matches[0].id, "filter[version]": buildNumber, include: "preReleaseVersion,betaBuildDetails", limit: "200" });
+  const query = new URLSearchParams({ "filter[app]": matches[0].id, "filter[version]": buildNumber, include: "preReleaseVersion,buildBetaDetail", limit: "200" });
   for (let poll = 1; poll <= maxPolls; poll++) {
     const result = await list(`/v1/builds?${query}`);
     const builds = result.data.filter((build) => build.attributes?.version === buildNumber);
@@ -89,13 +123,13 @@ export async function verifyBuild({ list, marketingVersion, buildNumber, wait = 
     const state = build?.attributes?.processingState ?? "NOT_VISIBLE";
     log(`ASC poll ${poll}/${maxPolls}: ${marketingVersion} (${buildNumber}), processingState=${JSON.stringify(state)}`);
     if (build) {
-      const detailsId = build.relationships?.betaBuildDetails?.data?.id;
-      const details = result.included.find((resource) => resource.type === "betaBuildDetails" && resource.id === detailsId);
+      const detailsId = build.relationships?.buildBetaDetail?.data?.id;
+      const details = result.included.find((resource) => resource.type === "buildBetaDetails" && resource.id === detailsId);
       log(`ASC build attributes (reported values only; null means unavailable): ${JSON.stringify({
         usesNonExemptEncryption: build.attributes?.usesNonExemptEncryption ?? null,
         expired: build.attributes?.expired ?? null,
       })}`);
-      log(`ASC betaBuildDetails attributes (not proof of installability; null means unavailable): ${JSON.stringify({
+      log(`ASC buildBetaDetails attributes (not proof of installability; null means unavailable): ${JSON.stringify({
         internalBuildState: details?.attributes?.internalBuildState ?? null,
         externalBuildState: details?.attributes?.externalBuildState ?? null,
       })}`);

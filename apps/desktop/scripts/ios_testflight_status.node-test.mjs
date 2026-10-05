@@ -20,13 +20,13 @@ function scenario(states, { version = "1.0", groups = [], buildAttributes = {}, 
     } else if (url.pathname === "/v1/builds") {
       assert.equal(url.searchParams.get("filter[app]"), "app-1");
       assert.equal(url.searchParams.get("filter[version]"), "42");
-      assert.equal(url.searchParams.get("include"), "preReleaseVersion,betaBuildDetails");
+      assert.equal(url.searchParams.get("include"), "preReleaseVersion,buildBetaDetail");
       const state = states[Math.min(polls++, states.length - 1)];
       body = state === null ? { data: [] } : {
-        data: [{ id: "build-1", attributes: { version: "42", processingState: state, ...buildAttributes }, relationships: { preReleaseVersion: { data: { id: "version-1" } }, betaBuildDetails: { data: { id: "details-1" } } } }],
+        data: [{ id: "build-1", attributes: { version: "42", processingState: state, ...buildAttributes }, relationships: { preReleaseVersion: { data: { id: "version-1" } }, buildBetaDetail: { data: { id: "details-1" } } } }],
         included: [{ id: "version-1", type: "preReleaseVersions", attributes: { version, platform: "IOS" } },
-          { id: "other-details", type: "betaBuildDetails", attributes: { internalBuildState: "WRONG_BUILD" } },
-          ...(betaDetails ? [{ id: "details-1", type: "betaBuildDetails", attributes: betaDetails }] : [])],
+          { id: "other-details", type: "buildBetaDetails", attributes: { internalBuildState: "WRONG_BUILD" } },
+          ...(betaDetails ? [{ id: "details-1", type: "buildBetaDetails", attributes: betaDetails }] : [])],
       };
     } else {
       assert.equal(url.pathname, "/v1/builds/build-1/relationships/betaGroups");
@@ -128,7 +128,7 @@ for (const attributes of [
     const s = scenario(["VALID"], { buildAttributes: attributes, betaDetails });
     await s.run();
     const buildLine = s.logs.findIndex((line) => line.startsWith("ASC build attributes"));
-    const detailsLine = s.logs.findIndex((line) => line.startsWith("ASC betaBuildDetails attributes"));
+    const detailsLine = s.logs.findIndex((line) => line.startsWith("ASC buildBetaDetails attributes"));
     const validLine = s.logs.findIndex((line) => line.startsWith("ASC processing VALID"));
     assert.ok(buildLine >= 0 && buildLine < validLine);
     assert.ok(detailsLine >= 0 && detailsLine < validLine);
@@ -146,3 +146,42 @@ test("missing encryption, expiry and beta details are explicitly unavailable", a
   assert.ok(s.logs.some((line) => line.includes('"internalBuildState":null,"externalBuildState":null')));
   assert.ok(s.logs.every((line) => !line.includes("WRONG_BUILD")));
 });
+
+test("HTTP 400 identifies the failing GET and preserves bounded Apple errors safely", async () => {
+  for (const path of ["/v1/apps?filter[bundleId]=hidden-bundle", "/v1/builds?filter[app]=hidden-app&include=hidden-include"]) {
+    let calls = 0;
+    const list = createAscClient({ token: () => "fake-credential", wait: noWait, fetchImpl: async () => {
+      calls++;
+      return { ok: false, status: 400, headers: { sensitive: "hidden-header" }, json: async () => ({
+        headers: "hidden-body-header",
+        errors: [{ code: "PARAMETER_ERROR.INVALID", title: "Invalid include", detail: "buildBetaDetail is required", headers: "hidden-error-header" },
+          { code: "fake-credential", title: "Bearer another-credential", detail: "Authorization: hidden-auth\n" + "x".repeat(800) },
+          ...Array.from({ length: 6 }, () => ({ code: "LONG", title: "t".repeat(800), detail: "d".repeat(800) }))],
+      }) };
+    } });
+    await assert.rejects(list(path), (error) => {
+      assert.match(error.message, /ASC GET \/v1\/(apps|builds) queryNames=/);
+      assert.match(error.message, /filter\[(bundleId|app)\]/);
+      assert.match(error.message, /HTTP 400/);
+      assert.match(error.message, /PARAMETER_ERROR.INVALID/);
+      assert.match(error.message, /buildBetaDetail is required/);
+      assert.doesNotMatch(error.message, /fake-credential|another-credential|hidden-|Authorization|Bearer|headers/);
+      const errors = JSON.parse(error.message.split("; errors=")[1].split("; omittedErrors=")[0]);
+      assert.equal(errors.length, 5);
+      assert.match(error.message, /omittedErrors=3$/);
+      assert.ok(errors.every((item) => Object.values(item).every((value) => value === null || value.length <= 512)));
+      return true;
+    });
+    assert.equal(calls, 1);
+  }
+});
+
+for (const body of [null, {}, { errors: "invalid" }, { errors: [null, { code: {} }] }, "not-json"]) {
+  test(`malformed HTTP error body is safe: ${JSON.stringify(body)}`, async () => {
+    const list = createAscClient({ token: () => "fake", fetchImpl: async () => ({ ok: false, status: 400, json: async () => {
+      if (typeof body === "string") throw new Error("hidden raw response");
+      return body;
+    } }) });
+    await assert.rejects(list("/v1/apps"), (error) => /HTTP 400/.test(error.message) && !/hidden raw response/.test(error.message));
+  });
+}
