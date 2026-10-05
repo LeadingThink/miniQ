@@ -102,3 +102,108 @@ it("does not mount a late video after motion permission is revoked", async () =>
   expect(container.querySelector("video")).toBeNull();
   expect(URL.createObjectURL).not.toHaveBeenCalled();
 });
+
+async function mountNativeVideo() {
+  state.native = true;
+  state.id = BACKGROUNDS.find(x => x.kind === "video")!.id;
+  const result = render(<LivingBackground />);
+  await act(async () => {});
+  return result;
+}
+
+async function visibility(hidden: boolean) {
+  vi.spyOn(document, "hidden", "get").mockReturnValue(hidden);
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+}
+
+it.each(["AbortError", "NotAllowedError"])("retains the player after %s and retries on media readiness", async name => {
+  vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValueOnce(new DOMException("interrupted", name));
+  const { container } = await mountNativeVideo();
+  const video = container.querySelector("video")!;
+  expect(video).not.toBeNull();
+  expect(video.classList.contains("is-playing")).toBe(false);
+  expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+  await act(async () => { video.dispatchEvent(new Event("canplay")); });
+  expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(2);
+  expect(video.classList.contains("is-playing")).toBe(false);
+  await act(async () => { video.dispatchEvent(new Event("playing")); });
+  expect(video.classList.contains("is-playing")).toBe(true);
+  expect(container.querySelectorAll("video")).toHaveLength(1);
+});
+
+it("recovers blocked autoplay with a user gesture without retrying continuously", async () => {
+  vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValueOnce(new DOMException("blocked", "NotAllowedError"));
+  const { container } = await mountNativeVideo();
+  expect(container.querySelector("video")).not.toBeNull();
+  expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+  await act(async () => { document.dispatchEvent(new Event("touchend")); });
+  expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(2);
+  await act(async () => { document.dispatchEvent(new Event("touchend")); });
+  expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(2);
+});
+
+it.each(["resolve", "reject"])("ignores stale play %s after pause and foreground recovery", async outcome => {
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  vi.mocked(HTMLMediaElement.prototype.play).mockReturnValueOnce(new Promise<void>((done, fail) => { resolve = done; reject = fail; }));
+  const { container } = await mountNativeVideo();
+  const video = container.querySelector("video")!;
+  await visibility(true);
+  await act(async () => { video.dispatchEvent(new Event("canplay")); document.dispatchEvent(new Event("touchend")); });
+  expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+  await visibility(false);
+  expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(2);
+  await act(async () => { video.dispatchEvent(new Event("playing")); });
+  const pauses = vi.mocked(HTMLMediaElement.prototype.pause).mock.calls.length;
+  await act(async () => { if (outcome === "resolve") resolve(); else reject(new DOMException("old failure", "NotSupportedError")); });
+  expect(container.querySelector("video")).toBe(video);
+  expect(video.classList.contains("is-playing")).toBe(true);
+  expect(HTMLMediaElement.prototype.pause).toHaveBeenCalledTimes(pauses);
+});
+
+it("keeps the cover for a genuine media error", async () => {
+  const { container } = await mountNativeVideo();
+  await act(async () => { container.querySelector("video")!.dispatchEvent(new Event("error")); });
+  expect(container.querySelector("video")).toBeNull();
+  expect(container.querySelector(".living-background-poster")).not.toBeNull();
+});
+
+it("does not let an unmounted player's rejection remove its replacement", async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(HTMLMediaElement.prototype.play).mockReturnValueOnce(new Promise<void>((_done, fail) => { reject = fail; }));
+  const { container } = await mountNativeVideo();
+  const old = container.querySelector("video");
+  await act(async () => { state.allowed = false; state.listeners.forEach(fn => fn()); });
+  await act(async () => { state.allowed = true; state.listeners.forEach(fn => fn()); });
+  const replacement = container.querySelector("video");
+  expect(replacement).not.toBeNull();
+  expect(replacement).not.toBe(old);
+  await act(async () => reject(new DOMException("old failure", "NotSupportedError")));
+  expect(container.querySelector("video")).toBe(replacement);
+});
+
+it("invalidates pending playback on a media pause event", async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(HTMLMediaElement.prototype.play).mockReturnValueOnce(new Promise<void>((_done, fail) => { reject = fail; }));
+  const { container } = await mountNativeVideo();
+  const video = container.querySelector("video")!;
+  await act(async () => { video.dispatchEvent(new Event("pause")); video.dispatchEvent(new Event("canplay")); });
+  await act(async () => { video.dispatchEvent(new Event("playing")); });
+  await act(async () => reject(new DOMException("old failure", "NotSupportedError")));
+  expect(container.querySelector("video")).toBe(video);
+  expect(video.classList.contains("is-playing")).toBe(true);
+});
+
+it("keeps a cover while play is pending and falls back on unsupported media", async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(HTMLMediaElement.prototype.play).mockReturnValueOnce(new Promise<void>((_done, fail) => { reject = fail; }));
+  const { container } = await mountNativeVideo();
+  const video = container.querySelector("video")!;
+  expect(video.classList.contains("living-background-loop")).toBe(true);
+  expect(video.classList.contains("is-playing")).toBe(false);
+  await act(async () => { video.dispatchEvent(new Event("loadeddata")); video.dispatchEvent(new Event("canplay")); });
+  expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+  await act(async () => reject(new DOMException("unsupported", "NotSupportedError")));
+  expect(container.querySelector("video")).toBeNull();
+  expect(container.querySelector(".living-background-poster")).not.toBeNull();
+});
