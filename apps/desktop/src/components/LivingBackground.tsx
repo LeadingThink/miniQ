@@ -163,14 +163,69 @@ function VideoWallpaper({
 
 function MobileVideo({ src, paused, onError }: { src: string; paused: boolean; onError: () => void }) {
   const ref = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
-    if (paused) video.pause();
-    else void video.play().catch(onError);
-    return () => video.pause();
+    let cancelled = false;
+    let requested = false;
+    let generation = 0;
+    let needsGesture = false;
+    setPlaying(false);
+    if (paused) {
+      video.pause();
+      return;
+    }
+    const play = () => {
+      if (cancelled || document.hidden || requested) return;
+      requested = true;
+      const token = ++generation;
+      needsGesture = false;
+      void video.play().catch((error: unknown) => {
+        // Pausing or unmounting invalidates this request, including fatal failures.
+        if (cancelled || token !== generation) return;
+        requested = false;
+        const name = error && typeof error === "object" && "name" in error ? error.name : undefined;
+        if (name === "AbortError" || name === "NotAllowedError") {
+          needsGesture = name === "NotAllowedError";
+          return;
+        }
+        onError();
+      });
+    };
+    const onPlaying = () => {
+      if (!cancelled && !document.hidden) setPlaying(true);
+    };
+    const onPause = () => {
+      generation += 1;
+      requested = false;
+      setPlaying(false);
+    };
+    const onGesture = () => { if (needsGesture) play(); };
+    video.addEventListener("playing", onPlaying);
+    video.addEventListener("pause", onPause);
+    video.addEventListener("loadeddata", play);
+    video.addEventListener("canplay", play);
+    // Invoke play within the gesture stack when autoplay was denied.
+    document.addEventListener("touchend", onGesture, true);
+    document.addEventListener("pointerup", onGesture, true);
+    document.addEventListener("keydown", onGesture, true);
+    play();
+    return () => {
+      cancelled = true;
+      video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("loadeddata", play);
+      video.removeEventListener("canplay", play);
+      document.removeEventListener("touchend", onGesture, true);
+      document.removeEventListener("pointerup", onGesture, true);
+      document.removeEventListener("keydown", onGesture, true);
+      video.pause();
+    };
   }, [src, paused]);
-  return <video ref={ref} src={src} muted loop playsInline preload="metadata" className="living-background-media" onError={onError} />;
+  return <video ref={ref} src={src} muted loop playsInline preload="metadata" className={
+    `living-background-media living-background-loop${playing && !paused ? " is-playing" : ""}`
+  } onError={onError} />;
 }
 
 /** Crossfade length in seconds and how early it starts before the clip ends. */

@@ -97,6 +97,8 @@
 .living-background-scrim {
   position: absolute;
   inset: 0;
+  /* Tint must cover both entering and leaving media layers. */
+  z-index: 3;
   background: var(--wallpaper-scrim);
 }
 
@@ -152,6 +154,12 @@
 :root[data-background] .bubble.assistant {
   padding: 12px 16px;
   border-radius: var(--radius-lg);
+}
+:root[data-background] .mobile-chat-message.assistant {
+  background: var(--wallpaper-reading);
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  text-shadow: none;
 }
 :root[data-background] .composer-card {
   background: var(--wallpaper-control);
