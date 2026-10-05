@@ -220,12 +220,13 @@ jobs:
     env:
       IOS_MARKETING_VERSION: ${{ inputs.marketing_version }}
       IOS_BUILD_NUMBER: ${{ inputs.build_number }}
-      IOS_CI_DIR: ${{ runner.temp }}/miniq-asc-status
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Set status directory
+        run: echo "IOS_CI_DIR=$RUNNER_TEMP/miniq-asc-status" >> "$GITHUB_ENV"
       - name: Test status query
         run: node --test scripts/ios_testflight_status.node-test.mjs
       - name: Prepare API signing key
