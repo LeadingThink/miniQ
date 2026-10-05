@@ -609,7 +609,7 @@
 
   .hero {
     justify-content: flex-start;
-    padding: 12vh 14px 24px;
+    padding: 12vh max(14px, var(--safe-right)) max(24px, var(--safe-bottom)) max(14px, var(--safe-left));
     overflow-y: auto;
   }
 
