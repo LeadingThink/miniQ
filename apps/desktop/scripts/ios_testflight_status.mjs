@@ -133,7 +133,7 @@ export async function verifyBuild({ list, marketingVersion, buildNumber, wait = 
         internalBuildState: details?.attributes?.internalBuildState ?? null,
         externalBuildState: details?.attributes?.externalBuildState ?? null,
       })}`);
-      const groups = await list(`/v1/builds/${encodeURIComponent(build.id)}/relationships/betaGroups?limit=200`);
+      const groups = await list(`/v1/builds/${encodeURIComponent(build.id)}/betaGroups?limit=200`);
       log(`ASC betaGroups relationships: ${JSON.stringify(groups.data.map(({ id, type }) => ({ id, type })))}`);
       if (!groups.data.length) log("::warning::No betaGroups assigned to this build. No group was assigned by this read-only check; the build is not confirmed available to testers.");
     }

@@ -29,7 +29,7 @@ function scenario(states, { version = "1.0", groups = [], buildAttributes = {}, 
           ...(betaDetails ? [{ id: "details-1", type: "buildBetaDetails", attributes: betaDetails }] : [])],
       };
     } else {
-      assert.equal(url.pathname, "/v1/builds/build-1/relationships/betaGroups");
+      assert.equal(url.pathname, "/v1/builds/build-1/betaGroups");
       body = { data: groups };
     }
     return { ok: true, json: async () => body };
