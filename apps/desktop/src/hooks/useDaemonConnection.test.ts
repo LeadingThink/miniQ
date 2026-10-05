@@ -2,10 +2,26 @@ import { describe, expect, it } from "vitest";
 import { connectionFailureMessage, connectionRetryDelay } from "./useDaemonConnection";
 
 describe("connectionRetryDelay", () => {
-  it("backs off quickly and caps reconnect latency", () => {
-    expect([1, 2, 3, 4, 5, 6].map(connectionRetryDelay)).toEqual([
+  it("backs off quickly and caps local reconnect latency without jitter", () => {
+    expect([1, 2, 3, 4, 5, 6].map((attempt) => connectionRetryDelay(attempt))).toEqual([
       500, 1_000, 2_000, 4_000, 5_000, 5_000,
     ]);
+  });
+
+  it("slows remote retries so an offline desktop does not cause a relay reconnect storm", () => {
+    const midpoint = () => 0.5;
+    const foreground = { remote: true, hidden: false };
+    expect([1, 4, 6, 10].map((attempt) => connectionRetryDelay(attempt, foreground, midpoint))).toEqual([
+      500, 4_000, 15_000, 15_000,
+    ]);
+    const background = { remote: true, hidden: true };
+    expect(connectionRetryDelay(10, background, midpoint)).toBe(60_000);
+  });
+
+  it("spreads remote retries by ±20% jitter", () => {
+    const context = { remote: true, hidden: false };
+    expect(connectionRetryDelay(10, context, () => 0)).toBe(12_000);
+    expect(connectionRetryDelay(10, context, () => 1)).toBe(18_000);
   });
 });
 

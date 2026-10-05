@@ -15,6 +15,7 @@ use miniq_protocol::{ErrorCode, RequestId, RpcError, RpcRequest, RpcResponse};
 use rand::distr::Alphanumeric;
 use rand::{Rng, RngCore};
 use serde::{Deserialize, Serialize};
+mod backoff;
 mod blob;
 pub(crate) mod connection;
 mod keep_awake;
@@ -158,6 +159,9 @@ struct RelayFrame {
     ticket: Option<blob::Ticket>,
     #[serde(default)]
     message: String,
+    /// Machine-readable reason on relay `error` frames (e.g. `rate_limited`).
+    #[serde(default)]
+    code: String,
 }
 
 struct CryptoIdentity {
@@ -178,7 +182,9 @@ pub fn status(state: &AppState) -> RemoteRuntimeStatus {
 }
 
 async fn connection_loop(state: AppState) {
-    let mut retry_seconds = 1_u64;
+    // Failed attempts since the last relay handshake; reset as soon as the
+    // relay answers `ready`, so a long-lived connection retries quickly.
+    let mut attempt = 0_u32;
     loop {
         if state.shutdown.is_cancelled() {
             return;
@@ -193,7 +199,7 @@ async fn connection_loop(state: AppState) {
                 None,
             );
             sleep_or_shutdown(&state, Duration::from_secs(2)).await;
-            retry_seconds = 1;
+            attempt = 0;
             continue;
         }
 
@@ -220,7 +226,7 @@ async fn connection_loop(state: AppState) {
         let config = ActiveConfig::new(remote, provider_key);
         set_status(
             &state,
-            if retry_seconds == 1 {
+            if attempt == 0 {
                 RemoteConnectionState::Connecting
             } else {
                 RemoteConnectionState::Reconnecting
@@ -229,21 +235,24 @@ async fn connection_loop(state: AppState) {
             0,
             None,
         );
-        match connection::run(&state, &config).await {
-            Ok(()) => retry_seconds = 1,
-            Err(error) => {
-                let message = sanitize_connection_error(&error.to_string());
-                tracing::warn!(error = %message, "miniQ remote relay disconnected");
-                set_status(
-                    &state,
-                    RemoteConnectionState::Reconnecting,
-                    config.relay_url.clone(),
-                    0,
-                    Some(message),
-                );
-                sleep_or_shutdown(&state, Duration::from_secs(retry_seconds)).await;
-                retry_seconds = (retry_seconds * 2).min(30);
-            }
+        let mut handshaken = false;
+        let result = connection::run(&state, &config, || handshaken = true).await;
+        if handshaken || result.is_ok() {
+            attempt = 0;
+        }
+        if let Err(error) = result {
+            let message = sanitize_connection_error(&error.to_string());
+            tracing::warn!(error = %message, "miniQ remote relay disconnected");
+            set_status(
+                &state,
+                RemoteConnectionState::Reconnecting,
+                config.relay_url.clone(),
+                0,
+                Some(message),
+            );
+            let delay = backoff::next_retry_delay(attempt, backoff::random_jitter());
+            sleep_or_shutdown(&state, delay).await;
+            attempt = attempt.saturating_add(1);
         }
     }
 }

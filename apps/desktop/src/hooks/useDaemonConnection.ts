@@ -22,12 +22,39 @@ interface ConnectAttemptOptions extends ConnectionOptions {
   onDeviceName: (name: string | null) => void;
   onPhase: (phase: ConnectionPhase) => void;
   onReady: () => void;
+  /** Waits before the next attempt; resolves true when a recovery signal cut the wait short. */
+  sleep: (ms: number) => Promise<boolean>;
 }
 
 export type ConnectionPhase = "connecting" | "connected" | "reconnecting";
 
-export function connectionRetryDelay(attempt: number): number {
-  return Math.min(500 * 2 ** Math.max(0, attempt - 1), 5_000);
+export interface RetryContext {
+  /** Remote attempts go through the shared relay; local ones hit the daemon on this machine. */
+  remote: boolean;
+  /** The page is hidden (app in background, e.g. kept alive by the Android service). */
+  hidden: boolean;
+}
+
+const LOCAL_RETRY_CAP_MS = 5_000;
+const REMOTE_RETRY_CAP_MS = 15_000;
+const HIDDEN_RETRY_CAP_MS = 60_000;
+
+/**
+ * Reconnect delay. The first attempts stay fast so short network blips recover
+ * within seconds. Remote retries then slow down so an offline desktop does not
+ * make every phone hit the relay every few seconds for hours. Foreground,
+ * network-online and manual retry signals interrupt the wait (see `sleep`).
+ * Jitter (±20%) keeps phones from reconnecting in lockstep after a relay restart.
+ */
+export function connectionRetryDelay(
+  attempt: number,
+  context: RetryContext = { remote: false, hidden: false },
+  random: () => number = Math.random,
+): number {
+  const cap = !context.remote ? LOCAL_RETRY_CAP_MS : context.hidden ? HIDDEN_RETRY_CAP_MS : REMOTE_RETRY_CAP_MS;
+  const base = Math.min(500 * 2 ** Math.max(0, attempt - 1), cap);
+  if (!context.remote) return base;
+  return Math.round(base * (0.8 + 0.4 * random()));
 }
 
 export function connectionFailureMessage(error: unknown, reconnecting: boolean): string {
@@ -40,10 +67,12 @@ async function connectWithRetry(
   reconnecting: boolean,
 ): Promise<void> {
   options.onPhase(reconnecting ? "reconnecting" : "connecting");
+  let remote = false;
   for (let attempt = 1; !options.isDisposed(); attempt++) {
     try {
       const info = await resolveConnection();
       if (options.isDisposed()) return;
+      remote = info.kind !== "local";
       await options.client.connect(info);
       if (options.isDisposed()) return;
       options.onConnected(true);
@@ -71,9 +100,11 @@ async function connectWithRetry(
       if (attempt === 3) {
         options.onError(connectionFailureMessage(error, reconnecting));
       }
-      await new Promise((resolve) =>
-        setTimeout(resolve, connectionRetryDelay(attempt)),
-      );
+      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+      const woken = await options.sleep(connectionRetryDelay(attempt, { remote, hidden }));
+      // A foreground/online/manual signal means conditions changed: retry now
+      // and restart the fast part of the backoff.
+      if (woken) attempt = 0;
     }
   }
 }
@@ -95,6 +126,11 @@ export function useDaemonConnection(options: ConnectionOptions) {
     let disposed = false;
     let connectionLoopRunning = false;
     let recovering = false;
+    let wakeRetry: (() => void) | null = null;
+    const sleep = (ms: number) => new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => { wakeRetry = null; resolve(false); }, ms);
+      wakeRetry = () => { clearTimeout(timer); wakeRetry = null; resolve(true); };
+    });
     const updateRetrying = () => { if (!disposed) setRetrying(connectionLoopRunning || recovering); };
     const connect = async (reconnecting: boolean) => {
       if (connectionLoopRunning || disposed) return;
@@ -114,6 +150,7 @@ export function useDaemonConnection(options: ConnectionOptions) {
           onDeviceName: setDeviceName,
           onPhase: setPhase,
           onReady: () => setConnectionEpoch((current) => current + 1),
+          sleep,
         },
         reconnecting,
       ); } finally {
@@ -125,7 +162,12 @@ export function useDaemonConnection(options: ConnectionOptions) {
     const recover = async () => {
       // Capacitor and the DOM both signal a foreground transition. A single
       // probe prevents duplicate transfers and competing reconnect attempts.
-      if (disposed || recovering || connectionLoopRunning) return;
+      if (disposed || recovering) return;
+      if (connectionLoopRunning) {
+        // The loop may be in a long remote backoff; retry right away instead.
+        wakeRetry?.();
+        return;
+      }
       recovering = true;
       updateRetrying();
       try {
@@ -188,6 +230,7 @@ export function useDaemonConnection(options: ConnectionOptions) {
     });
     return () => {
       disposed = true;
+      wakeRetry?.();
       if (recoveryRef.current === recover) recoveryRef.current = null;
       offStatus();
       offWorkspace();

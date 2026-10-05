@@ -12,8 +12,17 @@ use super::{encrypt_payload, URL_SAFE_NO_PAD};
 
 // Base64 inside encrypted JSON stays below the relay's 2 MiB wire limit.
 pub(super) const CHUNK_BYTES: usize = 768 * 1024;
-// Leave headroom below the relay's 240 frames/minute per-peer budget.
-const FRAME_INTERVAL: Duration = Duration::from_millis(350);
+// Token bucket for encrypted frames. The relay allows 240 messages per
+// 60s window per peer; a full burst plus one minute of refill is
+// 20 + 3.5 * 60 = 230, leaving headroom for control messages.
+pub(super) const FRAME_BURST: f64 = 20.0;
+pub(super) const FRAME_REFILL_PER_SECOND: f64 = 3.5;
+// Socket writes get a base budget plus time proportional to the frame size so
+// a 2 MiB chunk on a slow uplink is not mistaken for a dead connection.
+const SEND_TIMEOUT_BASE: Duration = Duration::from_secs(15);
+const SEND_TIMEOUT_PER_STEP: Duration = Duration::from_secs(5);
+const SEND_TIMEOUT_STEP_BYTES: usize = 128 * 1024;
+const SEND_TIMEOUT_MAX: Duration = Duration::from_secs(120);
 
 pub(super) struct Outbound {
     pub target: String,
@@ -117,7 +126,7 @@ where
     S: Sink<Message> + Unpin,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
-    let mut next_frame = tokio::time::Instant::now();
+    let mut budget = FrameBudget::new(tokio::time::Instant::now());
     let mut queued = VecDeque::<Transfer>::new();
     let mut closed = false;
     let mut urgent_frames = 0;
@@ -137,7 +146,7 @@ where
                 Some(_) => {},
                 None => closed = true,
             },
-            _ = tokio::time::sleep_until(next_frame), if !queued.is_empty() => {
+            _ = tokio::time::sleep_until(budget.ready_at(tokio::time::Instant::now())), if !queued.is_empty() => {
                 // RPC replies may pass bulk transfers; event batches keep their original order.
                 // A bounded priority burst keeps history/export downloads making progress too.
                 let index = if urgent_frames < 4 {
@@ -146,9 +155,9 @@ where
                 let mut transfer = queued.remove(index).expect("nonempty queue");
                 if transfer.cancel.is_cancelled() { continue; }
                 urgent_frames = if index > 0 { urgent_frames + 1 } else { 0 };
+                budget.take(tokio::time::Instant::now());
                 send(&mut sink, transfer.frame(&cipher)?).await?;
                 if transfer.offset < transfer.bytes.len() { queued.insert(index, transfer); }
-                next_frame = tokio::time::Instant::now() + FRAME_INTERVAL;
             }
         }
     }
@@ -170,8 +179,50 @@ where
     S: Sink<Message> + Unpin,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
-    tokio::time::timeout(Duration::from_secs(15), sink.send(message)).await??;
+    let limit = send_timeout(message.len());
+    tokio::time::timeout(limit, sink.send(message)).await??;
     Ok(())
+}
+
+pub(super) fn send_timeout(bytes: usize) -> Duration {
+    let steps = u32::try_from(bytes / SEND_TIMEOUT_STEP_BYTES).unwrap_or(u32::MAX);
+    SEND_TIMEOUT_BASE
+        .saturating_add(SEND_TIMEOUT_PER_STEP.saturating_mul(steps))
+        .min(SEND_TIMEOUT_MAX)
+}
+
+/// Relay frame budget: up to [`FRAME_BURST`] frames at once, refilled at
+/// [`FRAME_REFILL_PER_SECOND`].
+pub(super) struct FrameBudget {
+    tokens: f64,
+    updated: tokio::time::Instant,
+}
+
+impl FrameBudget {
+    pub(super) fn new(now: tokio::time::Instant) -> Self {
+        Self {
+            tokens: FRAME_BURST,
+            updated: now,
+        }
+    }
+
+    fn refill(&mut self, now: tokio::time::Instant) {
+        let elapsed = now.saturating_duration_since(self.updated).as_secs_f64();
+        self.tokens = (self.tokens + elapsed * FRAME_REFILL_PER_SECOND).min(FRAME_BURST);
+        self.updated = now;
+    }
+
+    /// Earliest instant at which one whole frame token is available.
+    pub(super) fn ready_at(&mut self, now: tokio::time::Instant) -> tokio::time::Instant {
+        self.refill(now);
+        let missing = (1.0 - self.tokens).max(0.0);
+        now + Duration::from_secs_f64(missing / FRAME_REFILL_PER_SECOND)
+    }
+
+    pub(super) fn take(&mut self, now: tokio::time::Instant) {
+        self.refill(now);
+        self.tokens -= 1.0;
+    }
 }
 
 #[cfg(test)]

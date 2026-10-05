@@ -8,6 +8,7 @@ const servers: ReturnType<typeof createRelayServer>[] = [];
 const clients: WebSocket[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const client of clients.splice(0)) client.terminate();
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
 });
@@ -60,6 +61,35 @@ function nextType(socket: WebSocket, type: string): Promise<Record<string, unkno
 
 function nextClose(socket: WebSocket): Promise<void> {
   return new Promise((resolve) => socket.once("close", () => resolve()));
+}
+
+function closeInfo(socket: WebSocket): Promise<[number, string]> {
+  return new Promise((resolve) => socket.once("close", (code, reason) => resolve([code, reason.toString()])));
+}
+
+function collect(socket: WebSocket, type: string): Record<string, unknown>[] {
+  const seen: Record<string, unknown>[] = [];
+  socket.on("message", (data) => {
+    const value = JSON.parse(data.toString()) as Record<string, unknown>;
+    if (value.type === type) seen.push(value);
+  });
+  return seen;
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function joined(url: string, desktopId = "desktop-1234") {
+  const desktop = await connect(url);
+  desktop.send(JSON.stringify(hello("desktop", "sk-shared", desktopId)));
+  await nextType(desktop, "ready");
+  const mobile = await connect(url);
+  const ready = nextType(mobile, "ready");
+  mobile.send(JSON.stringify(hello("mobile")));
+  return { desktop, mobile, mobileReady: await ready };
+}
+
+function frame(target: string, ciphertext = "opaque-ciphertext-value") {
+  return JSON.stringify({ type: "frame", target, nonce: "AAAAAAAAAAAAAAAA", ciphertext });
 }
 
 function hello(role: "desktop" | "mobile", key = "sk-shared", deviceId = "device-1234") {
@@ -281,5 +311,86 @@ describe("miniQ relay", () => {
     }));
 
     await expect(ready).resolves.toMatchObject({ type: "ready", desktopOnline: true });
+  });
+
+  it("drops excess desktop messages without erroring or closing the desktop", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { desktop, mobile } = await joined(await start());
+    const errors = collect(desktop, "error");
+    const frames = collect(mobile, "frame");
+    for (let i = 0; i < 700; i += 1) desktop.send(frame("mobiles"));
+    await wait(300);
+    expect(errors).toHaveLength(0);
+    expect(desktop.readyState).toBe(WebSocket.OPEN);
+    expect(frames.length).toBeGreaterThanOrEqual(600);
+    expect(frames.length).toBeLessThan(700);
+  });
+
+  it("rejects a mobile that exceeds its rate limit", async () => {
+    const { mobile } = await joined(await start());
+    const rejected = nextType(mobile, "error");
+    const closed = closeInfo(mobile);
+    for (let i = 0; i < 300; i += 1) mobile.send(frame("desktop"));
+    await expect(rejected).resolves.toMatchObject({ code: "rate_limited" });
+    await expect(closed).resolves.toEqual([4000, "rate_limited"]);
+  });
+
+  it("closes the room immediately after desktop_goodbye", async () => {
+    const url = await start(undefined, 60_000);
+    const { desktop, mobile } = await joined(url);
+    const offline = nextType(mobile, "presence");
+    const closed = closeInfo(mobile);
+    desktop.send(JSON.stringify({ type: "desktop_goodbye" }));
+    await expect(offline).resolves.toMatchObject({ desktopOnline: false });
+    await expect(closed).resolves.toEqual([1012, "desktop offline"]);
+
+    const next = await connect(url);
+    const ready = nextType(next, "ready");
+    next.send(JSON.stringify(hello("desktop", "sk-shared", "desktop-next")));
+    await expect(ready).resolves.toMatchObject({ clientId: "desktop-next", mobileClients: 0 });
+  });
+
+  it("does not broadcast presence when a replaced desktop socket closes", async () => {
+    const url = await start();
+    const { desktop, mobile } = await joined(url, "desktop-stable");
+    await wait(20);
+    const presence = collect(mobile, "presence");
+    const replaced = nextClose(desktop);
+    const again = await connect(url);
+    again.send(JSON.stringify(hello("desktop", "sk-shared", "desktop-stable")));
+    await nextType(again, "ready");
+    await replaced;
+    await wait(50);
+    expect(presence).toHaveLength(1);
+  });
+
+  it("rejects oversize ciphertext with an explicit error instead of 1009", async () => {
+    const { mobile } = await joined(await start());
+    const rejected = nextType(mobile, "error");
+    const closed = closeInfo(mobile);
+    mobile.send(frame("desktop", "A".repeat(2 * 1024 * 1024 + 1)));
+    await expect(rejected).resolves.toMatchObject({ code: "frame_too_large" });
+    await expect(closed).resolves.toEqual([4000, "frame_too_large"]);
+  });
+
+  it("closes only the failing socket when a handler throws", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const url = await start({
+      enabledFor: (room) => {
+        if (room === identity("sk-broken").roomId) throw new Error("boom");
+        return false;
+      },
+      ticket: vi.fn(),
+    });
+    const broken = await connect(url);
+    const closed = closeInfo(broken);
+    broken.send(JSON.stringify(hello("desktop", "sk-broken")));
+    await expect(closed).resolves.toEqual([1011, "internal error"]);
+    expect(logged).toHaveBeenCalled();
+
+    const healthy = await connect(url);
+    const ready = nextType(healthy, "ready");
+    healthy.send(JSON.stringify(hello("desktop")));
+    await expect(ready).resolves.toMatchObject({ desktopOnline: true });
   });
 });

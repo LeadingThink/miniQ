@@ -1,6 +1,6 @@
 use super::transport::Outbound;
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Default)]
 struct Peer {
@@ -13,7 +13,10 @@ struct Peer {
 }
 
 #[derive(Default)]
-pub(super) struct Subscriptions(HashMap<String, Peer>);
+/// Peers by mobile id plus the round-robin cursor: the last peer whose batch
+/// was flushed. The outbound queue is shared, so when it fills up the next
+/// flush resumes after this peer instead of starving later peers.
+pub(super) struct Subscriptions(BTreeMap<String, Peer>, Option<String>);
 
 impl Subscriptions {
     pub fn observe(&mut self, source: &str, value: &Value) {
@@ -82,13 +85,21 @@ impl Subscriptions {
     }
 
     pub fn flush(&mut self, sender: &tokio::sync::mpsc::Sender<Outbound>) {
-        for (id, peer) in &mut self.0 {
-            if peer.pending.is_empty() && !peer.resync {
-                continue;
-            }
+        let start = self.1.clone().unwrap_or_default();
+        let ready = |peer: &Peer| !peer.pending.is_empty() || peer.resync;
+        let mut order: Vec<String> = self
+            .0
+            .iter()
+            .filter(|(_, peer)| ready(peer))
+            .map(|(id, _)| id.clone())
+            .collect();
+        let split = order.partition_point(|id| *id <= start);
+        order.rotate_left(split);
+        for id in order {
             let Ok(permit) = sender.try_reserve() else {
-                return;
+                break;
             };
+            let peer = self.0.get_mut(&id).expect("peer listed above");
             let payload = if peer.resync {
                 json!({"type":"remote_resync"})
             } else {
@@ -99,6 +110,7 @@ impl Subscriptions {
             permit.send(outbound);
             peer.bytes = 0;
             peer.resync = false;
+            self.1 = Some(id);
         }
     }
 }

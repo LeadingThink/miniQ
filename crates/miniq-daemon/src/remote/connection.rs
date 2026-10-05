@@ -1,12 +1,16 @@
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use tokio::sync::mpsc;
-use tokio::task::{JoinHandle, JoinSet};
-use tokio_util::sync::CancellationToken;
+use tokio::task::JoinHandle;
 
-use super::transport::{self, Outbound};
+use super::transport;
 use super::*;
+
+mod requests;
+mod session;
+
+use requests::Requests;
+use session::{Inbound, Session};
 
 struct Writer(JoinHandle<anyhow::Result<()>>);
 impl Drop for Writer {
@@ -62,156 +66,97 @@ async fn connect(
     Ok((socket, identity, ready))
 }
 
-pub(super) async fn run(state: &AppState, config: &ActiveConfig) -> anyhow::Result<()> {
+pub(super) async fn run(
+    state: &AppState,
+    config: &ActiveConfig,
+    on_ready: impl FnOnce(),
+) -> anyhow::Result<()> {
     let (socket, identity, ready) = connect(state, config).await?;
-    let (sink, mut incoming) = socket.split();
+    on_ready();
+    let (sink, incoming) = socket.split();
     let (outbound, messages) = mpsc::channel(32);
     let (controls, control_messages) = mpsc::unbounded_channel();
-    let blobs = super::blob::BlobClient::new(controls.clone());
-    let mut writer = Writer(tokio::spawn(transport::write(
+    let writer = Writer(tokio::spawn(transport::write(
         sink,
         identity.cipher.clone(),
         messages,
         control_messages,
     )));
-    let mut requests = JoinSet::new();
-    let mut cancellations = HashMap::<(String, String), CancellationToken>::new();
-    let mut uploads = super::upload::Uploads::default();
+    let session = Session {
+        state,
+        config,
+        cipher: identity.cipher,
+        blob_storage: ready.blob_storage,
+        outbound,
+        blobs: super::blob::BlobClient::new(controls.clone()),
+        controls,
+        requests: Requests::default(),
+        uploads: super::upload::Uploads::default(),
+        subscriptions: super::subscriptions::Subscriptions::default(),
+        seen: SeenNonces::default(),
+        mobile_clients: ready.mobile_clients,
+        pushes: super::push::PushTracker::default(),
+    };
+    serve(session, writer, incoming).await
+}
+
+async fn serve(
+    mut session: Session<'_>,
+    mut writer: Writer,
+    mut incoming: futures_util::stream::SplitStream<RelaySocket>,
+) -> anyhow::Result<()> {
+    let state = session.state;
     let mut events = state.live_events.subscribe();
     let mut host_events = state.ssh_hosts.subscribe();
-    let mut subscriptions = super::subscriptions::Subscriptions::default();
     let mut flush = tokio::time::interval(Duration::from_millis(700));
     flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut config_check = tokio::time::interval(Duration::from_secs(2));
-    let mut seen = SeenNonces::default();
-    let mut mobile_clients = ready.mobile_clients;
-    let mut pushes = super::push::PushTracker::default();
-    // The relay pings every 30s. Without any inbound traffic for this long the
-    // TCP path is dead even if the OS has not noticed; reconnect instead of
-    // reporting a "connected" state that no phone can reach.
+    // Desktop-initiated pings keep NAT/proxy paths warm and make the relay
+    // answer with pongs, so a silent dead path is detected well before the
+    // relay's own 30s heartbeat and the 15s reconnect grace overlap.
+    let mut ping = tokio::time::interval_at(
+        tokio::time::Instant::now() + DESKTOP_PING_INTERVAL,
+        DESKTOP_PING_INTERVAL,
+    );
+    ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut last_inbound = tokio::time::Instant::now();
     loop {
         tokio::select! {
-            _ = state.shutdown.cancelled() => { say_goodbye(&controls).await; return Ok(()); },
+            _ = state.shutdown.cancelled() => { say_goodbye(&session.controls).await; return Ok(()); },
             result = &mut writer.0 => { return result?; },
-            Some(result) = requests.join_next() => { result??; },
+            () = session.requests.join_next() => {},
+            _ = ping.tick() => { session.controls.send(Message::Ping(Vec::new().into()))?; },
             _ = config_check.tick() => {
-                uploads.expire();
-                cancellations.retain(|_, token| !token.is_cancelled());
-                if current_fingerprint(state) != Some(config.fingerprint) { say_goodbye(&controls).await; return Ok(()); }
+                session.uploads.expire();
+                if current_fingerprint(state) != Some(session.config.fingerprint) {
+                    say_goodbye(&session.controls).await;
+                    return Ok(());
+                }
                 if last_inbound.elapsed() > RELAY_IDLE_TIMEOUT { anyhow::bail!("relay 心跳超时"); }
             }
-            _ = flush.tick() => subscriptions.flush(&outbound),
+            _ = flush.tick() => session.subscriptions.flush(&session.outbound),
             event = events.recv() => match event {
-                Ok(event) if push_candidate(&event.original) => {
-                    // Push frames are emitted even with no phone online: the relay
-                    // decides whether a system notification is needed.
-                    if let Some(push) = pushes.observe(&event.original, std::time::Instant::now()) {
-                        match super::push::push_message(state, &identity.cipher, &push) {
-                            Ok(message) => { let _ = controls.send(Message::Text(message.to_string().into())); }
-                            Err(error) => tracing::warn!(%error, "failed to build remote push frame"),
-                        }
-                    }
-                    if mobile_clients > 0 { subscriptions.event(event.projected.clone()); }
-                }
-                Ok(event) if mobile_clients > 0 && !matches!(event.original, miniq_protocol::Event::BrowserDriverRequested { .. }) => subscriptions.event(event.projected.clone()),
-                Ok(_) => {},
+                Ok(event) => session.live_event(event),
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(count)) => {
                     tracing::warn!(count, "remote client missed live events; requesting state resync");
-                    subscriptions.resync();
+                    session.subscriptions.resync();
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => return Ok(()),
             },
             event = host_events.recv() => match event {
-                Ok(event) if mobile_clients > 0 => {
-                    if let Some(event) = project_host_event(event) { subscriptions.event(event); }
-                },
-                Ok(_) => {},
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => subscriptions.resync(),
+                Ok(event) => session.host_event(event),
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => session.subscriptions.resync(),
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => return Ok(()),
             },
             message = incoming.next() => {
                 let message = message.ok_or_else(|| anyhow::anyhow!("relay 已关闭连接"))??;
                 last_inbound = tokio::time::Instant::now();
+                // Pings are answered by tungstenite itself on the read path.
                 match message {
-                    Message::Ping(payload) => { controls.send(Message::Pong(payload))?; }
                     Message::Close(frame) => anyhow::bail!("relay 已关闭连接: {frame:?}"),
                     Message::Text(_) => {
-                        let frame = parse_relay_text(message)?;
-                        match frame.kind.as_str() {
-                            "blob_ticket" => blobs.receive(&frame.request_id, frame.ticket),
-                            "presence" => {
-                                mobile_clients = frame.mobile_clients;
-                                if let Some(ids) = &frame.mobile_ids { subscriptions.retain(ids); uploads.retain_sources(ids); }
-                                set_status(state, RemoteConnectionState::Connected, config.relay_url.clone(), mobile_clients, None);
-                            }
-                            "error" => anyhow::bail!(frame.message),
-                            "frame" if !frame.source.is_empty() => {
-                                if !seen.insert(format!("{}:{}", frame.source, frame.nonce)) { continue; }
-                                let value: Value = match decrypt_payload(&identity.cipher, &frame.nonce, &frame.ciphertext)
-                                    .and_then(|raw| Ok(serde_json::from_slice(&raw)?)) {
-                                        Ok(value) => value,
-                                        Err(_) => continue,
-                                    };
-                                if value["type"] == "remote_cancel" {
-                                    if let Some(id) = value["requestId"].as_str() {
-                                        uploads.cancel(&frame.source, id);
-                                        if let Some(token) = cancellations.remove(&(frame.source.clone(), id.to_string())) { token.cancel(); }
-                                    }
-                                    continue;
-                                }
-                                let upload_request_id = value.get("requestId").cloned();
-                                let value = match uploads.read(&frame.source, value) {
-                                    Ok(Some(value)) => value,
-                                    Ok(None) => continue,
-                                    Err(error) => {
-                                        if let Some(id) = upload_request_id.and_then(|id| serde_json::from_value::<RequestId>(id).ok()) {
-                                            let reply = RpcResponse::err(id, RpcError::new(ErrorCode::InvalidParams, format!("远程上传无效：{error}")));
-                                            let _ = outbound.try_send(Outbound::new(frame.source, serde_json::to_value(reply)?));
-                                        }
-                                        continue;
-                                    }
-                                };
-                                subscriptions.observe(&frame.source, &value);
-                                if value["type"] == "remote_select" { continue; }
-                                cancellations.retain(|_, token| !token.is_cancelled());
-                                let compress = value["acceptEncoding"] == "gzip";
-                                let use_blob = ready.blob_storage && value["acceptBlob"] == true;
-                                let request = serde_json::from_value::<RpcRequest>(value).map_err(Into::into);
-                                if cancellations.len() >= 128 || requests.len() >= 128 {
-                                    if let Ok(request) = &request {
-                                        let busy = RpcResponse::err(request.id.clone(), RpcError::new(ErrorCode::SessionBusy, "远程请求过多，请稍后重试"));
-                                        let _ = outbound.try_send(Outbound::new(frame.source, serde_json::to_value(busy)?));
-                                    }
-                                    continue;
-                                }
-                                let cancel = CancellationToken::new();
-                                if let Ok(ref request) = request {
-                                    let id = match &request.id { RequestId::String(id) => id.clone(), RequestId::Number(id) => id.to_string() };
-                                    if let Some(previous) = cancellations.insert((frame.source.clone(), id), cancel.clone()) { previous.cancel(); }
-                                }
-                                let state = state.clone();
-                                let outbound = outbound.clone();
-                                let blobs = blobs.clone();
-                                let cipher = identity.cipher.clone();
-                                requests.spawn(async move {
-                                    let response = dispatch(&state, &frame.source, request).await;
-                                    let mut payload = serde_json::to_value(response)?;
-                                    if use_blob && !cancel.is_cancelled() {
-                                        match blobs.upload(&cipher, &payload, &cancel).await {
-                                            Ok(Some(reference)) => payload = reference,
-                                            Ok(None) => {},
-                                            Err(_) => tracing::warn!("Object transfer unavailable; using encrypted WebSocket chunks"),
-                                        }
-                                    }
-                                    // Cancel transport only; navigation must never cancel a user's running task.
-                                    if !cancel.is_cancelled() {
-                                        outbound.send(Outbound { target: frame.source, payload, cancel, compress }).await?;
-                                    }
-                                    Ok::<_, anyhow::Error>(())
-                                });
-                            }
-                            _ => {},
+                        if let Inbound::Closed(error) = session.handle_text(message)? {
+                            return Err(error);
                         }
                     }
                     _ => {},
@@ -242,7 +187,9 @@ async fn dispatch(
     }
 }
 
-const RELAY_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
+/// Three missed desktop pings: the relay answers every ping with a pong.
+const RELAY_IDLE_TIMEOUT: Duration = Duration::from_secs(45);
+const DESKTOP_PING_INTERVAL: Duration = Duration::from_secs(15);
 
 /// Tells the relay this disconnect is intentional (quit / remote access turned
 /// off or reconfigured), so phones do not get a "desktop offline" push.

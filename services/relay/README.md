@@ -22,11 +22,17 @@ The reverse proxy must strip `/miniq-relay` before forwarding to
 
 ## Payload Transport
 
-The relay still enforces a 2 MiB WebSocket message limit and 240 routed frames
-per minute per peer. The daemon leaves these safeguards intact: it batches
-live events and spaces all encrypted data frames at least 350 ms apart.
-WebSocket heartbeats are handled independently from RPC execution and payload
-transfers. With no mobile clients, live events are not forwarded.
+The relay accepts ciphertext up to 2 MiB per frame (oversize frames get an
+explicit `frame_too_large` error). Each peer has a token bucket: desktops may
+burst 600 messages and sustain 30/s, phones burst 240 and sustain 4/s. Excess
+desktop messages are dropped and logged (never answered with `error`, which
+would make the daemon reconnect); an over-limit phone is rejected with
+`rate_limited`. Peers with more than 8 MiB of unsent data are terminated. The
+daemon spaces all encrypted data frames at least 350 ms apart and batches live
+events. The relay pings every 15 s, independently from RPC execution and
+payload transfers. `desktop_goodbye` closes the room immediately instead of
+waiting for the reconnect grace. With no mobile clients, live events are not
+forwarded.
 
 Payloads larger than 768 KiB use encrypted `remote_chunk` messages containing
 `transferId`, zero-based `index`, `totalBytes`, `requestId`, and base64url `data`.

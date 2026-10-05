@@ -35,7 +35,7 @@ pub(crate) async fn start() -> (AppState, Socket, JoinHandle<anyhow::Result<()>>
         });
     }
     let connected = state.clone();
-    let task = tokio::spawn(async move { run(&connected, &config).await });
+    let task = tokio::spawn(async move { run(&connected, &config, || {}).await });
     let (stream, _) = listener.accept().await.unwrap();
     // Mirror the production relay's hard message limit.
     let mut socket = accept_async_with_config(
@@ -107,7 +107,7 @@ fn decrypted(message: Message) -> Value {
 pub(crate) async fn next_payload(socket: &mut Socket) -> Value {
     loop {
         let message = next(socket).await;
-        if matches!(message, Message::Pong(_)) {
+        if matches!(message, Message::Ping(_) | Message::Pong(_)) {
             continue;
         }
         return decrypted(message);
@@ -168,8 +168,17 @@ async fn opening_a_large_failed_session_keeps_the_socket_and_heartbeat_alive() {
     .await;
     let mut bytes = Vec::new();
     let mut index = 0;
+    // Pongs are flushed by tungstenite on the read path, so they may arrive
+    // before or after already queued chunks; every ping must still get one.
+    let mut pings = 0;
+    let mut pongs = 0;
     loop {
-        let chunk = next_payload(&mut socket).await;
+        let message = next(&mut socket).await;
+        if matches!(message, Message::Pong(_)) {
+            pongs += 1;
+            continue;
+        }
+        let chunk = decrypted(message);
         assert_eq!(chunk["type"], "remote_chunk");
         assert_eq!(chunk["index"], index);
         assert_eq!(chunk["requestId"], "large");
@@ -185,8 +194,13 @@ async fn opening_a_large_failed_session_keeps_the_socket_and_heartbeat_alive() {
             .send(Message::Ping(vec![1, 2, 3].into()))
             .await
             .unwrap();
-        assert!(matches!(next(&mut socket).await, Message::Pong(_)));
+        pings += 1;
         index += 1;
+    }
+    while pongs < pings {
+        if matches!(next(&mut socket).await, Message::Pong(_)) {
+            pongs += 1;
+        }
     }
     let response: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(response["result"]["session"]["status"], "failed");
@@ -295,4 +309,26 @@ async fn mobile_acknowledgements_and_retry_output_preserve_the_remote_connection
     assert_eq!(next_payload(&mut socket).await["id"], "health");
     state.shutdown.cancel();
     task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn relay_rate_limited_error_keeps_the_session_but_other_errors_close_it() {
+    let (_state, mut socket, task) = start().await;
+    let error = |code: &str| {
+        Message::Text(
+            json!({"type":"error","code":code,"message":"slow down"})
+                .to_string()
+                .into(),
+        )
+    };
+    socket.send(error("rate_limited")).await.unwrap();
+    request(&mut socket, "after-limit", "daemon.health", Value::Null).await;
+    assert_eq!(next_payload(&mut socket).await["id"], "after-limit");
+    assert!(!task.is_finished());
+    socket.send(error("unauthorized")).await.unwrap();
+    let result = tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(result.is_err());
 }

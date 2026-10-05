@@ -145,3 +145,33 @@ it("does not open competing connection loops while connecting or while paused", 
   expect(client.connect).not.toHaveBeenCalled();
   expect(resolveConnection).toHaveBeenCalledTimes(1);
 });
+
+it("cuts a long remote backoff short when the app returns to the foreground", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    resolveConnection.mockResolvedValue({ kind: "remote", url: "wss://example.test" });
+    const connect = vi.fn().mockRejectedValue(new Error("桌面端尚未在线"));
+    const client = { connected: false, connect, call: vi.fn().mockResolvedValue({}), disconnect: vi.fn(),
+      onStatus: () => () => {}, onResync: () => () => {}, onEvent: () => () => {},
+    } as unknown as RpcClient;
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    const onError = vi.fn();
+    const hook = renderHook(() => useDaemonConnection({ client, refreshWorkspaces: refresh, refreshSessions: refresh, onError }));
+    // Attempts 1..6 sleep ~0.5s, 1s, 2s, 4s, 8s, then the 15s remote cap.
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    const before = connect.mock.calls.length;
+    expect(before).toBeGreaterThanOrEqual(5);
+    expect(before).toBeLessThanOrEqual(6);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(connect).toHaveBeenCalledTimes(before);
+    connect.mockResolvedValue(undefined);
+    (client as { connected: boolean }).connected = true;
+    // The remaining backoff is several seconds; the foreground signal must not wait for it.
+    vi.useRealTimers();
+    act(() => { mobile.active?.({ isActive: true }); });
+    await waitFor(() => expect(hook.result.current.connectionEpoch).toBe(1));
+    expect(connect).toHaveBeenCalledTimes(before + 1);
+  } finally {
+    vi.useRealTimers();
+  }
+});

@@ -90,3 +90,24 @@ fn host_scoped_events_retain_batch_compression_and_overflow_resync() {
         json!({"type":"remote_resync"})
     );
 }
+
+#[test]
+fn full_outbound_queue_rotates_batches_so_no_peer_starves() {
+    let mut subscriptions = Subscriptions::default();
+    for peer in ["a", "b", "c"] {
+        subscriptions.observe(
+            peer,
+            &json!({"type":"remote_select","hostId":"alpha","sessionId":"same"}),
+        );
+    }
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    let mut served = Vec::new();
+    for _ in 0..3 {
+        subscriptions.event(detail(Some("alpha")));
+        subscriptions.flush(&tx);
+        served.push(rx.try_recv().unwrap().target);
+    }
+    assert_eq!(served, ["a", "b", "c"]);
+    subscriptions.flush(&tx);
+    assert_eq!(rx.try_recv().unwrap().target, "a");
+}

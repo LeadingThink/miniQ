@@ -115,7 +115,6 @@ async fn large_payload_is_losslessly_chunked_paced_and_keeps_pongs_flowing() {
         .await
         .unwrap();
     let mut assembled = Vec::new();
-    let mut last_frame = None;
     let mut frames = 0;
     while assembled.len() < expected.len() {
         let message = tokio::time::timeout(Duration::from_secs(3), received.recv())
@@ -126,10 +125,6 @@ async fn large_payload_is_losslessly_chunked_paced_and_keeps_pongs_flowing() {
             panic!("expected encrypted data")
         };
         assert!(raw.len() < 2 * 1024 * 1024);
-        if let Some(last) = last_frame {
-            assert!(tokio::time::Instant::now().duration_since(last) >= FRAME_INTERVAL);
-        }
-        last_frame = Some(tokio::time::Instant::now());
         let frame: Value = serde_json::from_str(&raw).unwrap();
         let plain = decrypt_payload(
             &identity.cipher,
@@ -161,8 +156,7 @@ async fn large_payload_is_losslessly_chunked_paced_and_keeps_pongs_flowing() {
     writer.await.unwrap().unwrap();
 }
 
-#[tokio::test]
-async fn normal_rpc_responses_and_event_batches_share_the_same_rate_budget() {
+async fn frame_times(targets: Vec<&'static str>) -> Vec<tokio::time::Instant> {
     let identity = derive_identity("transport-test-key");
     let times = Arc::new(Mutex::new(Vec::new()));
     let recorded = times.clone();
@@ -171,21 +165,71 @@ async fn normal_rpc_responses_and_event_batches_share_the_same_rate_budget() {
         async { Ok::<_, std::io::Error>(()) }
     });
     let (outbound, messages) = mpsc::channel(4);
-    let (controls, control_messages) = mpsc::unbounded_channel();
-    for target in ["mobiles", "mobile-1", "mobiles"] {
+    let (_controls, control_messages) = mpsc::unbounded_channel();
+    let writer = tokio::spawn(write(
+        Box::pin(sink),
+        identity.cipher,
+        messages,
+        control_messages,
+    ));
+    for target in targets {
         outbound
             .send(Outbound::new(target.into(), json!({"ok": true})))
             .await
             .unwrap();
     }
     drop(outbound);
-    write(Box::pin(sink), identity.cipher, messages, control_messages)
-        .await
-        .unwrap();
-    drop(controls);
-    let times = times.lock().unwrap();
-    assert_eq!(times.len(), 3);
-    assert!(times
-        .windows(2)
-        .all(|pair| pair[1].duration_since(pair[0]) >= FRAME_INTERVAL));
+    writer.await.unwrap().unwrap();
+    let times = times.lock().unwrap().clone();
+    times
+}
+
+#[tokio::test(start_paused = true)]
+async fn normal_rpc_responses_and_event_batches_share_the_same_rate_budget() {
+    let start = tokio::time::Instant::now();
+    let targets = (0..30)
+        .map(|index| {
+            if index % 2 == 0 {
+                "mobiles"
+            } else {
+                "mobile-1"
+            }
+        })
+        .collect();
+    let times = frame_times(targets).await;
+    assert_eq!(times.len(), 30);
+    // The burst goes out immediately, then frames follow the refill rate.
+    assert!(times[..20].iter().all(|time| *time == start));
+    let refill = Duration::from_secs_f64(1.0 / FRAME_REFILL_PER_SECOND);
+    let slack = Duration::from_millis(5);
+    for pair in times[20..].windows(2) {
+        assert!(pair[1].duration_since(pair[0]) + slack >= refill);
+    }
+    assert!(times[29].duration_since(times[19]) + slack >= refill * 10);
+}
+
+#[tokio::test(start_paused = true)]
+async fn sustained_frame_rate_stays_within_the_relay_minute_budget() {
+    let start = tokio::time::Instant::now();
+    let times = frame_times(vec!["mobiles"; 300]).await;
+    assert_eq!(times.len(), 300);
+    for (index, first) in times.iter().enumerate() {
+        let window = times[index..]
+            .iter()
+            .take_while(|time| time.duration_since(*first) < Duration::from_secs(60))
+            .count();
+        assert!(window <= 240, "{window} frames inside one relay window");
+    }
+    let sustained = times[299].duration_since(times[20]).as_secs_f64();
+    assert!(279.0 / sustained <= 4.0);
+    assert!(times[299].duration_since(start) < Duration::from_secs(90));
+}
+
+#[test]
+fn socket_write_timeout_scales_with_frame_size_and_is_capped() {
+    assert_eq!(send_timeout(0), Duration::from_secs(15));
+    assert_eq!(send_timeout(128 * 1024 - 1), Duration::from_secs(15));
+    assert_eq!(send_timeout(128 * 1024), Duration::from_secs(20));
+    assert_eq!(send_timeout(2 * 1024 * 1024), Duration::from_secs(95));
+    assert_eq!(send_timeout(64 * 1024 * 1024), Duration::from_secs(120));
 }

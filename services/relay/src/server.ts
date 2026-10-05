@@ -1,13 +1,14 @@
 import { createServer, type Server } from "node:http";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
-import { RelayBroker } from "./broker.js";
+import { MAX_MESSAGE_BYTES, RelayBroker } from "./broker.js";
 import { configuredBlobStore, type TicketIssuer } from "./blobStore.js";
 import { ShareStore } from "./shareStore.js";
 import { ShareHttp, oneApiShareAuth } from "./shareHttp.js";
 import { configuredPushService, type PushService } from "./push.js";
 
 const DEFAULT_PORT = 9200;
+const HEARTBEAT_INTERVAL_MS = 15_000;
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://oneapi.zaiwenai.com",
   "http://localhost:1420",
@@ -54,7 +55,7 @@ export function createRelayServer(options?: {
     server.on("close", () => clearInterval(timer));
   }
   server.on("close", () => broker.close());
-  const sockets = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 });
+  const sockets = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
 
   server.on("upgrade", (request, socket, head) => {
     const path = new URL(request.url ?? "/", "http://relay.local").pathname;
@@ -80,11 +81,16 @@ export function createRelayServer(options?: {
       } catch {
         return socket.close(4000, "invalid json");
       }
-      if (!registered) {
-        registered = broker.register(socket, value);
-        if (registered) clearTimeout(handshakeTimer);
-      } else {
-        broker.route(socket, value);
+      try {
+        if (!registered) {
+          registered = broker.register(socket, value);
+          if (registered) clearTimeout(handshakeTimer);
+        } else {
+          broker.route(socket, value);
+        }
+      } catch (error) {
+        console.error("[relay] message handler failed", error);
+        socket.close(1011, "internal error");
       }
     });
     socket.on("close", () => {
@@ -96,7 +102,9 @@ export function createRelayServer(options?: {
       if (!alive) return socket.terminate();
       alive = false;
       socket.ping();
-    }, 30_000);
+      // 15 s pings detect dead phones within ~30 s and stay well inside the
+      // daemon's 75 s RELAY_IDLE_TIMEOUT, which any inbound ping resets.
+    }, HEARTBEAT_INTERVAL_MS);
     socket.on("close", () => clearInterval(heartbeat));
   });
   return server;

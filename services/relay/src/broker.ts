@@ -1,10 +1,16 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type WebSocket from "ws";
 import { MAX_BLOB_BYTES, type TicketIssuer } from "./blobStore.js";
+import { send, sendRaw } from "./outbound.js";
 import { parsePush, parseRegistration, type PushService } from "./push.js";
+import { DESKTOP_RATE, DropCounter, MOBILE_RATE, ObjectByteBudget, TokenBucket } from "./rateLimit.js";
 
 const MAX_MOBILES_PER_ROOM = 8;
-const MAX_MESSAGES_PER_MINUTE = 240;
+// Daemon chunks are 768 KiB of plaintext (~1 MiB base64 ciphertext); 2 MiB
+// leaves headroom. The WebSocket payload limit adds room for the JSON envelope
+// so oversize ciphertext gets an explicit `frame_too_large` instead of 1009.
+export const MAX_CIPHERTEXT_CHARS = 2 * 1024 * 1024;
+export const MAX_MESSAGE_BYTES = MAX_CIPHERTEXT_CHARS + 16 * 1024;
 // A desktop relay socket can drop briefly during Wi-Fi/TLS changes. Keep
 // mobile sockets in place while the same room reconnects instead of forcing
 // every phone to restart its session for a transient transport event.
@@ -42,9 +48,9 @@ interface Peer {
   /** Mobiles report whether the app is visible; background clients still need system pushes. */
   foreground: boolean;
   socket: WebSocket;
-  windowStartedAt: number;
-  messagesInWindow: number;
-  objectBytesInWindow: number;
+  messages: TokenBucket;
+  objectBytes: ObjectByteBudget;
+  drops: DropCounter;
 }
 
 interface Room {
@@ -58,8 +64,6 @@ export class RelayBroker {
   private readonly peers = new WeakMap<WebSocket, Peer>();
   private readonly desktopDisconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly desktopOfflineTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Rooms whose desktop announced an intentional shutdown before closing. */
-  private readonly desktopGoodbyes = new WeakSet<WebSocket>();
   constructor(
     private readonly blobs?: TicketIssuer,
     private readonly desktopReconnectGraceMs = DESKTOP_RECONNECT_GRACE_MS,
@@ -97,16 +101,7 @@ export class RelayBroker {
           "同一个 Key 已有另一台桌面在线，请先在那台电脑上关闭远程访问",
         );
       }
-      const pendingDisconnect = this.desktopDisconnectTimers.get(hello.roomId);
-      if (pendingDisconnect) {
-        clearTimeout(pendingDisconnect);
-        this.desktopDisconnectTimers.delete(hello.roomId);
-      }
-      const pendingOffline = this.desktopOfflineTimers.get(hello.roomId);
-      if (pendingOffline) {
-        clearTimeout(pendingOffline);
-        this.desktopOfflineTimers.delete(hello.roomId);
-      }
+      this.clearDesktopTimers(hello.roomId);
       existing?.desktop.socket.close(4001, "desktop reconnected");
       const peer = createPeer(socket, "desktop", hello.roomId, hello.deviceId, hello.deviceId);
       const room: Room = {
@@ -144,8 +139,11 @@ export class RelayBroker {
       this.reject(socket, "hello_required", "请先完成握手");
       return;
     }
-    if (!consumeRateLimit(peer)) {
-      this.reject(socket, "rate_limited", "消息过于频繁");
+    if (!peer.messages.take()) {
+      // The daemon treats any `error` as fatal and reconnects, which would turn
+      // a burst into a reconnect loop; drop excess desktop messages instead.
+      if (peer.role === "desktop") peer.drops.record(`desktop room ${peer.roomId.slice(0, 8)}`);
+      else this.reject(socket, "rate_limited", "消息过于频繁");
       return;
     }
     if (isObject(raw) && raw.type === "blob_ticket") {
@@ -154,6 +152,10 @@ export class RelayBroker {
     }
     if (isObject(raw) && typeof raw.type === "string" && this.control(peer, raw)) return;
     const frame = parseFrame(raw);
+    if (frame === "too_large") {
+      this.reject(socket, "frame_too_large", `加密消息超过 ${MAX_CIPHERTEXT_CHARS} 字符上限`);
+      return;
+    }
     if (!frame) {
       this.reject(socket, "invalid_frame", "加密消息格式无效");
       return;
@@ -185,17 +187,13 @@ export class RelayBroker {
     if (!peer) return;
     const room = this.rooms.get(peer.roomId);
     if (!room) return;
-    if (peer.role === "desktop" && room.desktop.socket === socket) {
-      if (!this.desktopGoodbyes.has(socket)) this.scheduleOfflinePush(peer.roomId, socket);
+    if (peer.role === "desktop") {
+      // A replaced or departed desktop socket no longer owns the room.
+      if (room.desktop.socket !== socket) return;
+      this.scheduleOfflinePush(peer.roomId, socket);
       const timer = setTimeout(() => {
         this.desktopDisconnectTimers.delete(peer.roomId);
-        const current = this.rooms.get(peer.roomId);
-        if (!current || current.desktop.socket !== socket) return;
-        for (const mobile of current.mobiles.values()) {
-          send(mobile.socket, { type: "presence", desktopOnline: false, mobileClients: 0 });
-          mobile.socket.close(1012, "desktop offline");
-        }
-        this.rooms.delete(peer.roomId);
+        if (this.rooms.get(peer.roomId)?.desktop.socket === socket) this.closeRoom(peer.roomId);
       }, this.desktopReconnectGraceMs);
       timer.unref?.();
       this.desktopDisconnectTimers.set(peer.roomId, timer);
@@ -207,6 +205,27 @@ export class RelayBroker {
 
   roomCount(): number {
     return this.rooms.size;
+  }
+
+  /** Tells phones the desktop is gone and drops the room immediately. */
+  private closeRoom(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    this.rooms.delete(roomId);
+    // A pending offline push (crash, sleep) must still fire after the grace.
+    clearTimeout(this.desktopDisconnectTimers.get(roomId));
+    this.desktopDisconnectTimers.delete(roomId);
+    for (const mobile of room.mobiles.values()) {
+      send(mobile.socket, { type: "presence", desktopOnline: false, mobileClients: 0 });
+      mobile.socket.close(1012, "desktop offline");
+    }
+  }
+
+  private clearDesktopTimers(roomId: string): void {
+    clearTimeout(this.desktopDisconnectTimers.get(roomId));
+    this.desktopDisconnectTimers.delete(roomId);
+    clearTimeout(this.desktopOfflineTimers.get(roomId));
+    this.desktopOfflineTimers.delete(roomId);
   }
 
   /** Handles plaintext relay control messages. Returns true when consumed. */
@@ -224,7 +243,9 @@ export class RelayBroker {
         return true;
       }
       case "desktop_goodbye":
-        if (peer.role === "desktop" && room?.desktop === peer) this.desktopGoodbyes.add(peer.socket);
+        // An intentional shutdown will not reconnect: skip the grace period and
+        // the offline push so a fresh desktop can claim the room at once.
+        if (peer.role === "desktop" && room?.desktop === peer) this.closeRoom(peer.roomId);
         return true;
       case "push_register": {
         if (peer.role !== "mobile") return true;
@@ -263,11 +284,10 @@ export class RelayBroker {
     const bytes = raw.bytes;
     if (typeof requestId !== "string" || requestId.length > 80) return;
     const room = this.rooms.get(peer.roomId);
-    if (peer.role !== "desktop" || room?.desktop !== peer || !this.blobs?.enabledFor(peer.roomId) || !Number.isSafeInteger(bytes) || (bytes as number) < 16 || (bytes as number) > MAX_BLOB_BYTES || peer.objectBytesInWindow + (bytes as number) > 128 * 1024 * 1024) {
+    if (peer.role !== "desktop" || room?.desktop !== peer || !this.blobs?.enabledFor(peer.roomId) || !Number.isSafeInteger(bytes) || (bytes as number) < 16 || (bytes as number) > MAX_BLOB_BYTES || !peer.objectBytes.reserve(bytes as number)) {
       send(peer.socket, { type: "blob_ticket", requestId, error: "Object transfer unavailable" });
       return;
     }
-    peer.objectBytesInWindow += bytes as number;
     try {
       const ticket = await this.blobs.ticket(peer.roomId, bytes as number);
       if (this.rooms.get(peer.roomId)?.desktop === peer) send(peer.socket, { type: "blob_ticket", requestId, ticket });
@@ -310,27 +330,18 @@ function parseHello(raw: unknown): HelloMessage | null {
   return raw as unknown as HelloMessage;
 }
 
-function parseFrame(raw: unknown): FrameMessage | null {
+function parseFrame(raw: unknown): FrameMessage | "too_large" | null {
   if (!isObject(raw) || raw.type !== "frame") return null;
   if (typeof raw.target !== "string" || raw.target.length > 80) return null;
   if (typeof raw.nonce !== "string" || raw.nonce.length !== 16) return null;
-  if (typeof raw.ciphertext !== "string" || raw.ciphertext.length < 22 || raw.ciphertext.length > 2_700_000) return null;
+  if (typeof raw.ciphertext !== "string" || raw.ciphertext.length < 22) return null;
+  if (raw.ciphertext.length > MAX_CIPHERTEXT_CHARS) return "too_large";
   return raw as unknown as FrameMessage;
 }
 
 function createPeer(socket: WebSocket, role: Peer["role"], roomId: string, id: string, deviceId: string): Peer {
-  return { id, connectionId: randomUUID(), role, roomId, deviceId, foreground: true, socket, windowStartedAt: Date.now(), messagesInWindow: 0, objectBytesInWindow: 0 };
-}
-
-function consumeRateLimit(peer: Peer): boolean {
-  const now = Date.now();
-  if (now - peer.windowStartedAt >= 60_000) {
-    peer.windowStartedAt = now;
-    peer.messagesInWindow = 0;
-    peer.objectBytesInWindow = 0;
-  }
-  peer.messagesInWindow += 1;
-  return peer.messagesInWindow <= MAX_MESSAGES_PER_MINUTE;
+  const messages = new TokenBucket(role === "desktop" ? DESKTOP_RATE : MOBILE_RATE);
+  return { id, connectionId: randomUUID(), role, roomId, deviceId, foreground: true, socket, messages, objectBytes: new ObjectByteBudget(), drops: new DropCounter() };
 }
 
 function sameToken(left: string, right: string): boolean {
@@ -341,14 +352,6 @@ function sameToken(left: string, right: string): boolean {
 
 function ready(clientId: string, desktopOnline: boolean, mobileClients: number) {
   return { type: "ready", clientId, desktopOnline, mobileClients };
-}
-
-function send(socket: WebSocket, value: unknown): void {
-  sendRaw(socket, JSON.stringify(value));
-}
-
-function sendRaw(socket: WebSocket, value: string): void {
-  if (socket.readyState === socket.OPEN) socket.send(value);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
