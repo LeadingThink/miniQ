@@ -133,9 +133,14 @@ export async function verifyBuild({ list, marketingVersion, buildNumber, wait = 
         internalBuildState: details?.attributes?.internalBuildState ?? null,
         externalBuildState: details?.attributes?.externalBuildState ?? null,
       })}`);
-      const groups = await list(`/v1/builds/${encodeURIComponent(build.id)}/betaGroups?limit=200`);
-      log(`ASC betaGroups relationships: ${JSON.stringify(groups.data.map(({ id, type }) => ({ id, type })))}`);
-      if (!groups.data.length) log("::warning::No betaGroups assigned to this build. No group was assigned by this read-only check; the build is not confirmed available to testers.");
+      try {
+        const groups = await list(`/v1/builds/${encodeURIComponent(build.id)}/betaGroups?limit=200`);
+        log(`ASC betaGroups relationships: ${JSON.stringify(groups.data.map(({ id, type }) => ({ id, type })))}`);
+        if (!groups.data.length) log("::warning::No betaGroups assigned to this build. No group was assigned by this read-only check; the build is not confirmed available to testers.");
+      } catch (error) {
+        if (!/HTTP 403/.test(error.message)) throw error;
+        log(`::warning::ASC betaGroups could not be read with the configured API key; tester-group assignment is unconfirmed. ${error.message}`);
+      }
     }
     if (state === "FAILED" || state === "INVALID") throw new Error(`ASC build processing ${state}`);
     if (state === "VALID") {
