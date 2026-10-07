@@ -444,7 +444,7 @@
 .living-background.is-mobile .living-background-layer { animation: none; transition: none; }
 .native-mobile[data-background] .mobile-entry { background: transparent; }
 .native-mobile[data-background] .mobile-entry-card { backdrop-filter: blur(12px); }
-.mobile-workspace-appearance { position: fixed; z-index: 35; right: max(12px, env(safe-area-inset-right)); bottom: calc(80px + env(safe-area-inset-bottom)); min-height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg); color: var(--text); }
+.mobile-workspace-appearance { position: fixed; z-index: 35; right: max(12px, var(--safe-right)); bottom: calc(80px + var(--safe-bottom)); min-height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg); color: var(--text); }
 
 /* Low-power Canvas engines reduce their own work; omit decorative blur too. */
 .living-background.is-low-power .living-background-media { filter: none; }

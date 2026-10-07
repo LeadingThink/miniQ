@@ -112,7 +112,7 @@ export function DropdownMenu({
       style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 10000 }}
     >
       {Children.map(children, (child) =>
-        isValidElement(child)
+        isValidElement(child) && child.type === "button"
           ? cloneElement(child as ReactElement<{ role?: string; type?: "button" }>, {
               role: "menuitem",
               type: "button",

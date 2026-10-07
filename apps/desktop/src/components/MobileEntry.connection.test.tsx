@@ -7,7 +7,7 @@ const state = vi.hoisted(() => ({ native: false, store: vi.fn(), load: vi.fn() }
 vi.mock("../mobileRuntime", () => ({ isNativeMobileApp: () => state.native }));
 vi.mock("../remoteAccess", async (original) => ({ ...await original<typeof import("../remoteAccess")>(), storeRemoteCredentials: state.store, loadRemoteCredentials: state.load }));
 vi.mock("./MobileUpdateCheck", () => ({ MobileUpdateCheck: () => null }));
-vi.mock("@capacitor/app", () => ({ App: { addListener: async () => ({ remove: vi.fn() }) } }));
+vi.mock("@capacitor/app", () => ({ App: { addListener: async () => ({ remove: vi.fn().mockResolvedValue(undefined) }) } }));
 beforeEach(() => {
   localStorage.clear(); sessionStorage.clear(); state.native = false;
   state.store.mockReset().mockResolvedValue({}); state.load.mockReset().mockResolvedValue(null);

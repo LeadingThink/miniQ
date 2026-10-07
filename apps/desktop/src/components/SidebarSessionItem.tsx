@@ -4,6 +4,7 @@ import type { Session } from "../types";
 import { relativeAge } from "../time";
 import { sessionStatusLabel } from "../sessionStatus";
 import { PROVIDER_LABELS, PROVIDER_MARKS } from "./externalSessionImportModel";
+import { SessionPreview } from "./SessionPreview";
 import { DropdownMenu } from "./DropdownMenu";
 import { showUndoToast, useToast } from "./ui/Toast";
 
@@ -67,7 +68,7 @@ export function SidebarSessionItem(props: {
     <div
       ref={itemRef}
       className={`session-item ${props.current ? "active" : ""} ${unread ? "unread" : ""} ${props.session.pinned ? "pinned" : ""}`}
-      title={`${props.session.title}${unread || props.session.status !== "idle" ? ` · ${statusText}` : ""}`}
+
     >
       {renaming ? (
         <input
@@ -88,6 +89,8 @@ export function SidebarSessionItem(props: {
           }}
         />
       ) : (
+        <SessionPreview title={props.session.title} preview={preview} contextLabel={props.contextLabel}
+          detail={`${statusText} · ${relativeAge(activityAt)}`} disabled={menuOpen}>
         <button
           type="button"
           className="session-select"
@@ -111,7 +114,6 @@ export function SidebarSessionItem(props: {
           {props.session.pinned && <Pin className="pin-icon" size={12} />}
           <span className={`session-copy${props.contextLabel ? " with-context" : ""}`}>
           <span className="session-title">{props.session.title}</span>
-          {preview && <span className="session-preview">{preview}</span>}
           <span className="session-meta">
           {props.contextLabel && <span id={contextId} className="session-context">{props.contextLabel}</span>}
           {(unread || props.session.status !== "idle") && (
@@ -123,10 +125,11 @@ export function SidebarSessionItem(props: {
               {statusText}
             </span>
           )}
-          <span className="session-age">{relativeAge(activityAt)}</span>
+          <span className="session-age">{relativeAge(activityAt).replace(/ /g, "").replace("分钟", "分").replace("小时", "时")}</span>
           </span>
           </span>
         </button>
+        </SessionPreview>
       )}
       <div className="menu-container">
         <button
@@ -149,6 +152,11 @@ export function SidebarSessionItem(props: {
           open={menuOpen}
           onClose={() => setMenuOpen(false)}
         >
+          <div className="session-menu-summary">
+            <strong>{props.session.title}</strong>
+            <small>{props.contextLabel ? `${props.contextLabel} · ` : ""}{statusText}</small>
+            {preview && <p>{preview}</p>}
+          </div>
           <button
             type="button"
             className="dropdown-item"
