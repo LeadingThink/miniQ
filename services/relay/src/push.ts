@@ -1,4 +1,4 @@
-import { createPrivateKey, createSign, type KeyObject } from "node:crypto";
+import { createHash, createPrivateKey, createSign, type KeyObject } from "node:crypto";
 import { readFileSync, existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { connect, constants, type ClientHttp2Session } from "node:http2";
 import { dirname } from "node:path";
@@ -37,6 +37,7 @@ export interface QuietHours {
 export interface PushNotification {
   kind: PushKind;
   collapseId: string;
+  desktopDeviceId?: string;
   nonce?: string;
   ciphertext?: string;
   /** Set per device during quiet hours: no sound, no banner interruption. */
@@ -110,7 +111,9 @@ export function parsePush(raw: Record<string, unknown>): PushNotification | null
   if (typeof raw.nonce !== "string" || !NONCE_PATTERN.test(raw.nonce)) return null;
   // APNs payloads are capped at 4 KiB; the daemon truncates titles/errors well below that.
   if (typeof raw.ciphertext !== "string" || raw.ciphertext.length < 22 || raw.ciphertext.length > 2400) return null;
-  return { kind: raw.kind as PushKind, collapseId: raw.collapseId, nonce: raw.nonce, ciphertext: raw.ciphertext };
+  if (raw.desktopDeviceId !== undefined && (typeof raw.desktopDeviceId !== "string" || !/^[A-Za-z0-9_-]{8,80}$/.test(raw.desktopDeviceId))) return null;
+  return { kind: raw.kind as PushKind, collapseId: raw.collapseId, nonce: raw.nonce, ciphertext: raw.ciphertext,
+    ...(typeof raw.desktopDeviceId === "string" ? { desktopDeviceId: raw.desktopDeviceId } : {}) };
 }
 
 /** Room-scoped token registry, optionally persisted to a JSON file. */
@@ -131,6 +134,16 @@ export class PushRegistry {
 
   list(roomId: string): PushRegistration[] {
     return this.rooms.get(roomId) ?? [];
+  }
+
+  /** Legacy room-only registrations have no trustworthy desktop association.
+   * Call after room authentication; bound clients must register again.
+   */
+  discardLegacyRoom(roomId: string): number {
+    if (!roomId || roomId.includes(":")) return 0;
+    const count = this.list(roomId).length;
+    if (this.rooms.delete(roomId)) this.save();
+    return count;
   }
 
   upsert(roomId: string, registration: PushRegistration): void {
@@ -269,7 +282,7 @@ export class ApnsGateway implements PushGateway {
       "apns-topic": this.config.bundleId,
       "apns-push-type": "alert",
       "apns-priority": "10",
-      "apns-collapse-id": notification.collapseId,
+      "apns-collapse-id": apnsCollapseId(notification),
       "apns-expiration": String(Math.floor(Date.now() / 1000) + 24 * 3600),
     };
     const { status, reason } = await this.request(host, headers, body);
@@ -327,6 +340,12 @@ export class ApnsGateway implements PushGateway {
   }
 }
 
+/** Include authenticated desktop identity within APNs' 64-byte limit. */
+export function apnsCollapseId(notification: PushNotification): string {
+  if (!notification.desktopDeviceId) return notification.collapseId;
+  return createHash("sha256").update(`${notification.desktopDeviceId}\0${notification.collapseId}`).digest("hex");
+}
+
 export function apnsPayload(notification: PushNotification): Record<string, unknown> {
   const fallback = FALLBACK_TEXT[notification.kind];
   const quiet = notification.quiet === true;
@@ -338,11 +357,12 @@ export function apnsPayload(notification: PushNotification): Record<string, unkn
       "mutable-content": 1,
       // Opens the notification's "批准 / 拒绝" actions (registered by the app).
       ...(notification.kind === "attention" ? { category: "MINIQ_ATTENTION" } : {}),
-      "thread-id": notification.kind === "desktop_offline" ? "miniq-desktop" : `push:${notification.collapseId}`,
+      "thread-id": notification.kind === "desktop_offline" ? `miniq-desktop:${notification.desktopDeviceId ?? ""}` : `push:${notification.collapseId}`,
       "interruption-level": quiet ? "passive" : notification.kind === "attention" ? "time-sensitive" : "active",
     },
     miniq: {
-      v: 1,
+      v: notification.desktopDeviceId ? 2 : 1,
+      ...(notification.desktopDeviceId ? { desktopDeviceId: notification.desktopDeviceId } : {}),
       kind: notification.kind,
       notificationId: notification.collapseId,
       ...(notification.nonce ? { nonce: notification.nonce, ciphertext: notification.ciphertext } : {}),
@@ -388,6 +408,7 @@ export function jpushPayload(registrationId: string, notification: PushNotificat
   const extras = {
     miniqKind: notification.kind,
     miniqNotificationId: notification.collapseId,
+    ...(notification.desktopDeviceId ? { miniqDesktopDeviceId: notification.desktopDeviceId } : {}),
     ...(quiet ? { miniqQuiet: "1" } : {}),
     ...(notification.nonce ? { miniqNonce: notification.nonce, miniqCiphertext: notification.ciphertext } : {}),
   };
@@ -406,7 +427,7 @@ export function jpushPayload(registrationId: string, notification: PushNotificat
     },
     // Delivered to the app process when it is alive so it can decrypt and show real text.
     message: { msg_content: notification.kind, extras },
-    options: { time_to_live: 86400, apns_production: production, apns_collapse_id: notification.collapseId },
+    options: { time_to_live: 86400, apns_production: production, apns_collapse_id: apnsCollapseId(notification) },
   };
 }
 

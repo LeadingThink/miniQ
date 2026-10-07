@@ -32,6 +32,8 @@ public final class MiniqPushNotifier {
     public static final String EXTRA_NOTIFICATION_ID = "miniq.notificationId";
     public static final String EXTRA_SESSION_ID = "miniq.sessionId";
     public static final String EXTRA_APPROVAL_ID = "miniq.approvalId";
+    public static final String EXTRA_DESKTOP_DEVICE_ID = "miniq.desktopDeviceId";
+    public static final String EXTRA_ROOM_ID = "miniq.roomId";
 
     public static final String CHANNEL_ATTENTION = "miniq-attention";
     public static final String CHANNEL_RESULTS = "miniq-results";
@@ -64,7 +66,10 @@ public final class MiniqPushNotifier {
         if (extras == null) return null;
         SecretKey key = MiniqPushCrypto.loadKey(context);
         if (key == null) return null;
-        return MiniqPushText.from(MiniqPushCrypto.decrypt(key, extras.optString("miniqNonce", ""), extras.optString("miniqCiphertext", "")));
+        MiniqPushText text = MiniqPushText.from(MiniqPushCrypto.decrypt(key, extras.optString("miniqNonce", ""), extras.optString("miniqCiphertext", "")));
+        if (text != null && extras.has("miniqDesktopDeviceId")
+            && !extras.optString("miniqDesktopDeviceId", "").equals(text.desktopDeviceId)) return null;
+        return text;
     }
 
     /**
@@ -81,7 +86,7 @@ public final class MiniqPushNotifier {
         boolean quiet = "1".equals(extras.optString("miniqQuiet", ""));
         boolean attention = "attention".equals(text.kind);
         String channel = quiet ? CHANNEL_QUIET : attention ? CHANNEL_ATTENTION : CHANNEL_RESULTS;
-        String collapse = extras.optString("miniqNotificationId", text.sessionId + ":" + text.kind);
+        String collapse = text.sessionKey() + ":" + extras.optString("miniqNotificationId", text.kind);
         int id = collapse.hashCode() & 0x7fffffff;
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channel)
@@ -90,9 +95,9 @@ public final class MiniqPushNotifier {
             .setContentText(text.body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(text.body))
             .setAutoCancel(true)
-            .setNumber(MiniqBadge.mark(context, text.sessionId))
+            .setNumber(MiniqBadge.mark(context, text.sessionKey()))
             .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
-            .setGroup("session:" + text.sessionId)
+            .setGroup("session:" + text.sessionKey())
             .setCategory(attention ? NotificationCompat.CATEGORY_REMINDER : NotificationCompat.CATEGORY_STATUS)
             .setPriority(quiet ? NotificationCompat.PRIORITY_LOW : attention ? NotificationCompat.PRIORITY_HIGH : NotificationCompat.PRIORITY_DEFAULT)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
@@ -119,6 +124,8 @@ public final class MiniqPushNotifier {
             .putExtra(EXTRA_OPENED, true)
             .putExtra(EXTRA_ACTION_ID, actionId)
             .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+            .putExtra(EXTRA_DESKTOP_DEVICE_ID, text.desktopDeviceId)
+            .putExtra(EXTRA_ROOM_ID, text.roomId)
             .putExtra(EXTRA_SESSION_ID, text.sessionId);
         if (text.approvalId != null) intent.putExtra(EXTRA_APPROVAL_ID, text.approvalId);
         int requestCode = (notificationId * 31 + actionId.hashCode()) & 0x7fffffff;

@@ -73,15 +73,15 @@ describe("notifyMobileTask", () => {
 
   it("posts a per-session system notification in the background", async () => {
     visibility = "hidden";
-    expect(await notifyMobileTask("attention", "部署", { host: "mac", sessionId: "s1" }, true)).toBe(true);
+    expect(await notifyMobileTask("attention", "部署", { host: "mac", sessionId: "s1", targetDeviceId: "desktop-a" }, true)).toBe(true);
     expect(native.createChannel).toHaveBeenCalled();
     expect(native.schedule).toHaveBeenCalledWith({ notifications: [expect.objectContaining({
-      id: notificationId({ host: "mac", sessionId: "s1" }),
+      id: notificationId({ host: "mac", sessionId: "s1", targetDeviceId: "desktop-a" }),
       title: "miniQ · 需要你操作",
       channelId: "miniq-attention",
       interruptionLevel: "timeSensitive",
       threadIdentifier: "session:s1",
-      extra: { miniqTarget: { host: "mac", sessionId: "s1" } },
+      extra: { miniqTarget: { host: "mac", sessionId: "s1", targetDeviceId: "desktop-a" }, miniqTargetDeviceId: "desktop-a" },
     })] });
     expect(getTaskBanner()).toBeNull();
     expect(native.markAppBadge).toHaveBeenCalledWith("mac", "s1");
@@ -109,6 +109,7 @@ describe("notifyMobileTask", () => {
   it("gives each session a stable, distinct notification id", () => {
     expect(notificationId(target)).toBe(notificationId({ ...target }));
     expect(notificationId(target)).not.toBe(notificationId({ host: "mac", sessionId: "s1" }));
+    expect(notificationId({ ...target, targetDeviceId: "desktop-a" })).not.toBe(notificationId({ ...target, targetDeviceId: "desktop-b" }));
     expect(notificationId(target)).toBeGreaterThan(0);
   });
 });

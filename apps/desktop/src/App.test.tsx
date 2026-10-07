@@ -16,6 +16,8 @@ const state = vi.hoisted(() => {
     consent: true,
     share: null as string | null,
     loadCredentials: vi.fn(),
+    directoryMount: vi.fn(),
+    directoryUnmount: vi.fn(),
     loadHarness: vi.fn(),
     useHarness: vi.fn(),
     themeChange: vi.fn(),
@@ -27,6 +29,14 @@ vi.mock("./remoteAccess", () => ({
   isRemoteBrowserEntry: () => state.remote,
   loadRemoteCredentials: state.loadCredentials,
 }));
+vi.mock("./hooks/useRemoteDevices", async () => {
+  const { useState, useEffect } = await import("react");
+  return { useRemoteDevices: () => {
+    useState(() => { state.directoryMount(); return null; });
+    useEffect(() => () => { state.directoryUnmount(); }, []);
+    return { scope: "test-room", devices: [{ id: "desktop-test", name: "测试电脑", online: true }], loading: false, error: "", refresh: vi.fn() };
+  } };
+});
 vi.mock("./mobilePrivacy", () => ({ hasMobilePrivacyConsent: () => state.consent }));
 vi.mock("./sharing", () => ({ sharedSessionId: () => state.share }));
 vi.mock("./theme", () => {
@@ -54,6 +64,7 @@ vi.mock("./components/AppShell", () => ({
 }));
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   state.remote = true;
   state.consent = true;
   state.share = null;
@@ -67,7 +78,9 @@ it("keeps the workbench module out of the entry screen and preserves context whe
   await screen.findByRole("button", { name: "连接远程" });
   expect(state.loadHarness).not.toHaveBeenCalled();
   expect(state.useHarness).not.toHaveBeenCalled();
+  state.loadCredentials.mockResolvedValue({ apiKey: "test-key" });
   fireEvent.click(screen.getByRole("button", { name: "连接远程" }));
+  fireEvent.click(await screen.findByRole("button", { name: /测试电脑/ }));
   await screen.findByText("正在加载远程工作台…");
   await act(async () => state.releaseHarness());
   const workbench = await screen.findByRole("region", { name: "工作台" }, { timeout: 10_000 });
@@ -88,6 +101,7 @@ it("restores remembered credentials only after privacy consent", async () => {
   state.releaseHarness();
   state.consent = true;
   render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: /测试电脑/ }));
   await screen.findByRole("region", { name: "工作台" }, { timeout: 10_000 });
   expect(state.useHarness).toHaveBeenCalled();
 }, 20_000);
@@ -113,4 +127,24 @@ it("opens shared sessions without initializing a workbench or restoring credenti
   await screen.findByText("分享 public-example");
   expect(state.loadCredentials).not.toHaveBeenCalled();
   expect(state.useHarness).not.toHaveBeenCalled();
+});
+
+it("remounts discovery when either apiKey or relayUrl changes during credential loading", async () => {
+  for (const changed of [{ apiKey: "second", relayUrl: "wss://one" }, { apiKey: "first", relayUrl: "wss://two" }]) {
+    state.directoryMount.mockClear(); state.directoryUnmount.mockClear();
+    state.loadCredentials.mockResolvedValueOnce(null);
+    const view = render(<App />);
+    const entry = await screen.findByRole("button", { name: "连接远程" });
+    let first!: (value: object) => void, second!: (value: object) => void;
+    state.loadCredentials.mockReturnValueOnce(new Promise((resolve) => { first = resolve; }))
+      .mockReturnValueOnce(new Promise((resolve) => { second = resolve; }));
+    fireEvent.click(entry); fireEvent.click(entry);
+    await act(async () => first({ apiKey: "first", relayUrl: "wss://one" }));
+    await screen.findByRole("button", { name: /测试电脑/ });
+    expect(state.directoryMount).toHaveBeenCalledTimes(1);
+    await act(async () => second(changed));
+    expect(state.directoryUnmount).toHaveBeenCalledTimes(1);
+    expect(state.directoryMount).toHaveBeenCalledTimes(2);
+    view.unmount();
+  }
 });

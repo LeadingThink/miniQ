@@ -44,12 +44,16 @@ pub(crate) async fn start() -> (AppState, Socket, JoinHandle<anyhow::Result<()>>
     )
     .await
     .unwrap();
-    next(&mut socket).await;
+    let hello = next(&mut socket).await;
+    let hello: Value = serde_json::from_str(hello.to_text().unwrap()).unwrap();
+    assert_eq!(hello["protocol"], 2);
+    assert_eq!(hello["role"], "desktop");
     socket
         .send(Message::Text(
-            json!({"type":"ready","desktopOnline":true,"mobileClients":1})
-                .to_string()
-                .into(),
+            json!({"type":"ready","desktopOnline":true,"mobileClients":1,
+                "desktopDeviceId": hello["deviceId"]})
+            .to_string()
+            .into(),
         ))
         .await
         .unwrap();

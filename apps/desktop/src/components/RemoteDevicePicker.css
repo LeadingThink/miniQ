@@ -1,0 +1,11 @@
+.remote-device-picker { width: min(100%, 36rem); margin-inline: auto; padding: 1rem; }
+.remote-device-picker > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.remote-device-picker h2 { font-size: 1.15rem; margin: 0; }
+.remote-device-picker p { line-height: 1.6; }
+.remote-device-options { display: grid; gap: .65rem; }
+.remote-device-options > button { display: flex; align-items: center; gap: .75rem; padding: .9rem; width: 100%; text-align: left; border: 1px solid currentColor; border-radius: .75rem; background: transparent; color: inherit; min-height: 3.5rem; }
+.remote-device-options > button[aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: 2px; }
+.remote-device-options > button > span { display: grid; gap: .25rem; min-width: 0; overflow-wrap: anywhere; }
+.remote-device-options > button > svg { flex-shrink: 0; }
+.remote-device-options small { opacity: .75; }
+.remote-device-options .remote-device-state { margin-left: auto; flex-shrink: 0; text-align: right; }

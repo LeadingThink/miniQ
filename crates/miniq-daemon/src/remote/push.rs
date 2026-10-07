@@ -156,12 +156,17 @@ impl PushTracker {
     }
 }
 
-/// Same hash as `notificationId({ host: null, sessionId })` in
+/// Same hash as `notificationId({ targetDeviceId: desktopDeviceId, host: null, sessionId })` in
 /// apps/desktop/src/taskNotifications.ts, so a remote push and a local
 /// notification for one session replace each other on the phone.
-pub(super) fn notification_id(session_id: &str) -> i32 {
+pub(super) fn notification_id(desktop_device_id: &str, session_id: &str) -> i32 {
     let mut hash: i32 = 0;
-    for unit in std::iter::once(0_u16).chain(session_id.encode_utf16()) {
+    for unit in [0_u16]
+        .into_iter()
+        .chain(desktop_device_id.encode_utf16())
+        .chain([0_u16])
+        .chain(session_id.encode_utf16())
+    {
         hash = hash.wrapping_mul(31).wrapping_add(i32::from(unit));
     }
     match hash & 0x7fff_ffff {
@@ -184,6 +189,7 @@ fn truncate(text: &str, limit: usize) -> String {
 /// interruption level) and the collapse id (a hash) are visible to the relay.
 pub(super) fn push_message(
     state: &AppState,
+    config: &super::ActiveConfig,
     cipher: &Aes256Gcm,
     push: &PushEvent,
 ) -> anyhow::Result<Value> {
@@ -194,9 +200,12 @@ pub(super) fn push_message(
         .get_session(session_id)
         .map(|session| truncate(&session.title, MAX_TITLE_CHARS))
         .unwrap_or_default();
-    let collapse_id = notification_id(session_id).to_string();
+    let collapse_id = notification_id(&config.device_id, session_id).to_string();
     let mut payload = json!({
-        "v": 1,
+        "v": 2,
+        "roomId": super::derive_identity(&config.api_key).room_id,
+        "desktopDeviceId": config.device_id,
+        "desktopDeviceName": config.device_name,
         "kind": kind.as_str(),
         "sessionId": session_id,
         "title": title,
@@ -215,6 +224,7 @@ pub(super) fn push_message(
     let (nonce, ciphertext) = super::encrypt_payload(cipher, &serde_json::to_vec(&payload)?)?;
     Ok(json!({
         "type": "push",
+        "desktopDeviceId": config.device_id,
         "kind": kind.as_str(),
         "collapseId": collapse_id,
         "nonce": nonce,
@@ -226,6 +236,48 @@ pub(super) fn push_message(
 mod tests {
     use super::*;
 
+    #[test]
+    fn encrypted_push_keeps_the_origin_device_and_account() {
+        let state = AppState::new(
+            miniq_memory::Store::open_in_memory().unwrap(),
+            "test".into(),
+            std::sync::Arc::new(miniq_models::mock::MockProvider::text("unused")),
+        );
+        let config = super::super::ActiveConfig::new(
+            super::super::RemoteAccessSettings {
+                device_id: "desktop-a".into(),
+                device_name: "Desktop A".into(),
+                ..Default::default()
+            },
+            "test-key".into(),
+        );
+        let identity = super::super::derive_identity(&config.api_key);
+        let event = PushEvent {
+            kind: PushKind::Attention,
+            session_id: "same-session".into(),
+            error: None,
+            approval: Some(PushApproval {
+                id: "approval-a".into(),
+                tool: "shell".into(),
+                reason: "test".into(),
+            }),
+        };
+        let message = push_message(&state, &config, &identity.cipher, &event).unwrap();
+        assert_eq!(message["desktopDeviceId"], "desktop-a");
+        let decrypted = super::super::decrypt_payload(
+            &identity.cipher,
+            message["nonce"].as_str().unwrap(),
+            message["ciphertext"].as_str().unwrap(),
+        )
+        .unwrap();
+        let payload: Value = serde_json::from_slice(&decrypted).unwrap();
+        assert_eq!(payload["v"], 2);
+        assert_eq!(payload["desktopDeviceId"], "desktop-a");
+        assert_eq!(payload["desktopDeviceName"], "Desktop A");
+        assert_eq!(payload["roomId"], identity.room_id);
+        assert_eq!(payload["approvalId"], "approval-a");
+    }
+
     fn status(session: &str, status: SessionStatus) -> Event {
         Event::SessionStatusChanged {
             session_id: session.into(),
@@ -235,18 +287,22 @@ mod tests {
 
     #[test]
     fn notification_id_matches_frontend_hash() {
-        // Values computed with notificationId({ host: null, sessionId }) in taskNotifications.ts.
-        assert_eq!(notification_id(""), 1);
+        // UTF-16 hash of host + NUL + desktopDeviceId + NUL + sessionId.
+        assert_eq!(notification_id("", ""), 1);
         let expected = {
-            let text = "\u{0}abc";
+            let text = "\u{0}desktop-a\u{0}abc";
             let mut hash: i32 = 0;
             for unit in text.encode_utf16() {
                 hash = hash.wrapping_mul(31).wrapping_add(i32::from(unit));
             }
             hash & 0x7fff_ffff
         };
-        assert_eq!(notification_id("abc"), expected);
-        assert!(notification_id("0198f0a2-5c1e-7000-8000-000000000000") > 0);
+        assert_eq!(notification_id("desktop-a", "abc"), expected);
+        assert_ne!(
+            notification_id("desktop-a", "abc"),
+            notification_id("desktop-b", "abc")
+        );
+        assert!(notification_id("desktop-a", "0198f0a2-5c1e-7000-8000-000000000000") > 0);
     }
 
     #[test]

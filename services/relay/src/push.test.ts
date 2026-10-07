@@ -105,11 +105,11 @@ describe("relay push", () => {
 
     mobile.send(JSON.stringify({ type: "app_state", foreground: false }));
     await wait(20);
-    desktop.send(JSON.stringify(PUSH));
+    desktop.send(JSON.stringify({ ...PUSH, desktopDeviceId: "desktop-spoofed" }));
     await wait(50);
     expect(gateway.sent).toHaveLength(1);
     expect(gateway.sent[0].registration).toMatchObject({ deviceId: "mobile-phone-1", token: TOKEN, environment: "sandbox" });
-    expect(gateway.sent[0].notification).toEqual({ kind: "completed", collapseId: "12345", nonce: PUSH.nonce, ciphertext: PUSH.ciphertext, quiet: false });
+    expect(gateway.sent[0].notification).toEqual({ kind: "completed", collapseId: "12345", desktopDeviceId: "desktop-0001", nonce: PUSH.nonce, ciphertext: PUSH.ciphertext, quiet: false });
   });
 
   it("pushes to registered phones after they disconnect, and rejects pushes from mobiles", async () => {

@@ -60,8 +60,8 @@ function useHostState(suppliedRoot?: RpcClient) {
     if (!view.sidebarCollapsed || hostKey(view.host) !== hostKey(target)) return false;
     return locations.current.get(hostKey(target))?.sessionId === sessionId;
   }, []);
-  const openSessionRef = useRef<(target: TaskNotificationTarget) => void>(() => undefined);
-  const openSession = useCallback((target: TaskNotificationTarget) => openSessionRef.current(target), []);
+  const openSessionRef = useRef<(target: TaskNotificationTarget, signal?: AbortSignal) => void>(() => undefined);
+  const openSession = useCallback((target: TaskNotificationTarget, signal?: AbortSignal) => openSessionRef.current(target, signal), []);
   useTaskNotifications(root, catalogs.catalogs, { isViewing, open: openSession });
   const clearError = useCallback(() => { setError(null); catalogs.clearError(); }, [catalogs.clearError]);
   const registryRef = useRef(catalogs.registry);
@@ -77,7 +77,8 @@ function useHostState(suppliedRoot?: RpcClient) {
     }
   }, [catalogs.catalogs]);
   const switching = useRef(0);
-  const selectHost = useCallback(async (next: string | null, requested?: Destination) => {
+  const selectHost = useCallback(async (next: string | null, requested?: Destination, signal?: AbortSignal) => {
+    if (signal?.aborted) return;
     const generation = ++switching.current;
     setPending(true); setError(null);
     try {
@@ -86,25 +87,33 @@ function useHostState(suppliedRoot?: RpcClient) {
         const saved = registryRef.current.hosts.find((item) => item.hostId === next);
         if (!saved && root.mode !== "local") throw new Error("请先在桌面端添加 SSH 电脑，移动端只能连接已保存的电脑");
         if (!saved) await root.call("host.save", { hostId: next });
+        if (signal?.aborted) return;
         if (saved?.state !== "connected" || !clientFor(next).connected) {
           await root.call("host.connect", { hostId: next });
+          if (signal?.aborted) return;
           (clientFor(next) as HostRpcClient).setAvailable(true);
           await catalogs.refreshHosts();
+          if (signal?.aborted) return;
           await catalogs.refreshCatalog(next);
         }
       }
       const navigation = requested ?? locations.current.get(hostKey(next)) ?? { workspaceId: null, sessionId: null };
-      if (generation !== switching.current) return;
+      if (signal?.aborted || generation !== switching.current) return;
       setHost(next);
       setDestination((old) => ({ ...navigation, revision: old.revision + 1 }));
-    } catch (cause) { if (generation === switching.current) setError(errorMessage(cause)); }
+    } catch (cause) { if (!signal?.aborted && generation === switching.current) setError(errorMessage(cause)); }
     finally { if (generation === switching.current) setPending(false); }
   }, [root, clientFor, catalogs.refreshCatalog, catalogs.refreshHosts]);
   useAttentionNotifications(root, catalogs.catalogs, (target, navigation) => { void selectHost(target, navigation); });
-  openSessionRef.current = (target) => {
+  openSessionRef.current = (target, signal) => {
+    if (signal?.aborted) return;
+    if (root.targetDeviceId && target.targetDeviceId !== root.targetDeviceId) {
+      window.dispatchEvent(new CustomEvent("miniq:remote-notification-target", { detail: target }));
+      return;
+    }
     const session = catalogs.catalogs[hostKey(target.host)]?.sessions.find((entry) => entry.id === target.sessionId);
     if (isMobileLayout()) setSidebarCollapsed(true);
-    void selectHost(target.host, { workspaceId: session?.workspaceId ?? null, sessionId: target.sessionId });
+    void selectHost(target.host, { workspaceId: session?.workspaceId ?? null, sessionId: target.sessionId }, signal);
   };
   const saveHost = useCallback(async (hostId: string) => {
     if (root.mode !== "local") throw new Error("请在桌面端添加 SSH 电脑");
@@ -138,6 +147,6 @@ export function DesktopHostProvider({ children, root }: { children: ReactNode; r
   return <Context.Provider value={value}>{children}<TaskBannerView onOpen={value.openSession} /></Context.Provider>;
 }
 export const useDesktopHost = () => useContext(Context);
-export function hostDraftKey(host: string | null | undefined, key: string) {
-  return host ? `ssh:${encodeURIComponent(host)}:${key}` : key;
+export function hostDraftKey(host: string | null | undefined, key: string, scope = "") {
+  return scope + (host ? `ssh:${encodeURIComponent(host)}:${key}` : key);
 }

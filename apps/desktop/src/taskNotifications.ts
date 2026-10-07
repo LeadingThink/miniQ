@@ -136,7 +136,7 @@ function ensureAndroidChannels(plugin: typeof import("@capacitor/local-notificat
 
 /** Stable per-session id: a newer notification for the same session replaces the old one. */
 export function notificationId(target: TaskNotificationTarget): number {
-  const text = `${target.host ?? ""}\u0000${target.sessionId}`;
+  const text = `${target.host ?? ""}\u0000${target.targetDeviceId ?? ""}\u0000${target.sessionId}`;
   let hash = 0;
   for (let index = 0; index < text.length; index += 1) hash = (Math.imul(hash, 31) + text.charCodeAt(index)) | 0;
   return (hash & 0x7fffffff) || 1;
@@ -171,7 +171,7 @@ async function send(
         // Approve / reject buttons; only for this phone's own desktop, whose
         // approvals the root client can resolve directly.
         actionTypeId: kind === "attention" && target?.host === null ? ATTENTION_ACTION_TYPE : undefined,
-        extra: target ? { miniqTarget: target } : undefined,
+        extra: target ? { miniqTarget: target, ...(target.targetDeviceId ? { miniqTargetDeviceId: target.targetDeviceId } : {}) } : undefined,
       }] });
       if (target) void markAppBadge(target.host, target.sessionId);
     } else if (isTauriRuntime()) {

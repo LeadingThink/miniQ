@@ -171,6 +171,19 @@ miniq rpc remote.status              # should report the relay as connected
 
 `deviceName` is the name shown on the phone (1–80 characters). Without a saved API key the status stays waiting for a key. Keep the daemon running and the server online; after a reboot run any `miniq` command (for example `miniq status`) to start it again. To turn remote access off, repeat the update with `"enabled":false`. The phone can view and continue tasks, answer questions and approvals, and browse files on the server; native computer use still requires a graphical session on that server.
 
+## Multiple Remote Computers
+
+Desktop and terminal daemons can use the same API key on separate computers. Each daemon has its own device identity, sessions, files and approvals. Give each computer a recognizable `deviceName` when enabling remote access.
+
+1. Enable remote access on each computer with the same saved API key.
+2. Open the mobile or browser remote client with that API key.
+3. Select a computer from the device list.
+4. Use the computer name at the top of the workspace to switch computers.
+
+The client remembers the selected computer. If that computer goes offline, the client shows its offline state and reconnects to that computer. Switching computers leaves tasks running on the previous computer. Notifications identify their source computer; viewing another computer does not cancel an existing notification subscription.
+
+The relay device list is separate from SSH connections configured inside a computer's workspace. Update the relay and clients together for multi-device selection. An older client cannot select a computer when its account has multiple known devices.
+
 ## Desktop Connections over SSH
 
 `miniq bridge` exposes the authenticated local daemon connection as JSONL on standard input/output for miniQ desktop's SSH transport. Install matching `miniq` and `miniq-daemon` binaries on the remote computer first. The bridge discovers the remote user's saved data directory and starts a detached daemon if needed; `--no-start`, `--data-dir` and `--daemon-path` have the same meaning as other CLI commands. It does not listen on a public network port and does not print the daemon token or copy the local computer's provider key to the remote computer.

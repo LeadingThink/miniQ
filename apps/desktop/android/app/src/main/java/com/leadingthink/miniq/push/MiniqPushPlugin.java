@@ -139,6 +139,8 @@ public class MiniqPushPlugin extends Plugin {
 
         String sessionId = intent.getStringExtra(MiniqPushNotifier.EXTRA_SESSION_ID);
         String approvalId = intent.getStringExtra(MiniqPushNotifier.EXTRA_APPROVAL_ID);
+        String desktopDeviceId = intent.getStringExtra(MiniqPushNotifier.EXTRA_DESKTOP_DEVICE_ID);
+        String roomId = intent.getStringExtra(MiniqPushNotifier.EXTRA_ROOM_ID);
         JSONObject extras = MiniqPushEventReceiver.parse(intent.getStringExtra(MiniqPushNotifier.EXTRA_EXTRAS));
         if (extras != null) {
             // Tapped the SDK's generic notification: keep the raw envelope for JS
@@ -152,11 +154,15 @@ public class MiniqPushPlugin extends Plugin {
                 if (text != null) {
                     sessionId = text.sessionId;
                     approvalId = text.approvalId;
+                    desktopDeviceId = text.desktopDeviceId;
+                    roomId = text.roomId;
                 }
             }
         }
         if (sessionId != null) data.put("miniqSessionId", sessionId);
         if (approvalId != null) data.put("miniqApprovalId", approvalId);
+        if (desktopDeviceId != null) data.put("miniqDesktopDeviceId", desktopDeviceId);
+        if (roomId != null) data.put("miniqRoomId", roomId);
 
         MiniqPushNotifier.cancel(getContext(), intent.getIntExtra(MiniqPushNotifier.EXTRA_NOTIFICATION_ID, 0));
         // Consume once so recreating the activity does not replay the tap.

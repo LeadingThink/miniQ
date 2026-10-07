@@ -99,3 +99,24 @@ it("retains the local task sleep lease while viewing SSH and never leases for a 
   await setup(root);
   expect(keepAwake).toHaveBeenLastCalledWith(false);
 });
+
+it("does not complete an aborted notification navigation after SSH connects", async () => {
+  const root = new SshFixtureRoot();
+  root.hosts[0].state = "disconnected";
+  let desktop: ReturnType<typeof useDesktopHost>;
+  function Capture() { desktop = useDesktopHost(); return <Workspace />; }
+  render(<DesktopHostProvider root={root}><Capture /></DesktopHostProvider>);
+  await waitFor(() => expect(screen.getByTestId("catalogs").textContent).toContain("研究项目"));
+  const original = root.call.bind(root);
+  let finish!: () => void;
+  vi.spyOn(root, "call").mockImplementation(async (method, params) => {
+    if (method === "host.connect") await new Promise<void>((resolve) => { finish = resolve; });
+    return original(method, params);
+  });
+  const controller = new AbortController();
+  act(() => desktop!.openSession({ host: "demo-development", sessionId: "old-notification" }, controller.signal));
+  controller.abort();
+  await act(async () => { finish(); });
+  expect(screen.getByTestId("host").textContent).toBe("local");
+  expect(desktop!.destination.sessionId).toBeNull();
+});

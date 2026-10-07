@@ -20,16 +20,22 @@ class NotificationService: UNNotificationServiceExtension {
            let ciphertext = miniq["ciphertext"] as? String,
            let key = MiniqPushKeyStore.load(),
            let payload = MiniqPushCrypto.decrypt(nonce: nonce, ciphertext: ciphertext, key: key),
-           let text = MiniqPushText(payload: payload) {
+           let text = MiniqPushText(payload: payload),
+           miniq["desktopDeviceId"] == nil || (miniq["desktopDeviceId"] as? String) == text.desktopDeviceId {
             content.title = text.title
             content.body = text.body
             var info = content.userInfo
             // Read by pushTarget() in apps/desktop/src/remotePush.ts.
             info["miniqSessionId"] = text.sessionId
+            info.removeValue(forKey: "miniqApprovalId")
+            info.removeValue(forKey: "miniqDesktopDeviceId")
+            info.removeValue(forKey: "miniqRoomId")
+            if let deviceId = text.desktopDeviceId { info["miniqDesktopDeviceId"] = deviceId }
+            if let roomId = text.roomId { info["miniqRoomId"] = roomId }
             if let approvalId = text.approvalId { info["miniqApprovalId"] = approvalId }
             content.userInfo = info
-            content.threadIdentifier = "session:\(text.sessionId)"
-            badgeKey = text.sessionId
+            content.threadIdentifier = "session:\(text.sessionKey)"
+            badgeKey = text.sessionKey
             // Questions have no approval to resolve: plain tap opens the session.
             if text.approvalId == nil, content.categoryIdentifier == MiniqNotificationCategories.attention {
                 content.categoryIdentifier = ""

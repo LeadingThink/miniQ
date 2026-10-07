@@ -78,6 +78,9 @@ struct MiniqPushText {
     let body: String
     let sessionId: String
     let approvalId: String?
+    let desktopDeviceId: String?
+    let roomId: String?
+    var sessionKey: String { "\(roomId ?? ""):\(desktopDeviceId ?? ""):\(sessionId)" }
 
     /// Mirrors `copy()` in apps/desktop/src/taskNotifications.ts.
     init?(payload: [String: Any]) {
@@ -86,7 +89,11 @@ struct MiniqPushText {
         let rawName = (payload["title"] as? String) ?? ""
         let name = rawName.isEmpty ? "当前会话" : rawName
         self.sessionId = sessionId
-        self.approvalId = (payload["approvalId"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        self.desktopDeviceId = (payload["desktopDeviceId"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        self.roomId = (payload["roomId"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        if (payload["v"] as? Int) == 2 && (desktopDeviceId == nil || roomId == nil) { return nil }
+        self.approvalId = desktopDeviceId == nil || roomId == nil ? nil
+            : (payload["approvalId"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         switch kind {
         case "attention":
             title = "miniQ · 需要你操作"

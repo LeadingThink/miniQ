@@ -1,6 +1,7 @@
 import type { RpcClient } from "./rpc";
 import type { Approval } from "./types";
 import { isNativeMobileApp } from "./mobileRuntime";
+import type { TaskNotificationTarget } from "./taskBanner";
 
 /**
  * "批准 / 拒绝" buttons on attention notifications (local and remote).
@@ -68,7 +69,11 @@ export async function resolveFromNotification(
   sessionId: string,
   approvalId: string | undefined,
   decision: NotificationDecision,
+  target?: Pick<TaskNotificationTarget, "targetDeviceId">,
 ): Promise<boolean> {
+  // A notification from an older device (or without an identity) must never
+  // be applied through a newly selected remote desktop.
+  if (client.targetDeviceId && target?.targetDeviceId !== client.targetDeviceId) return false;
   if (!await waitForConnection(client)) return false;
   try {
     let id = approvalId;

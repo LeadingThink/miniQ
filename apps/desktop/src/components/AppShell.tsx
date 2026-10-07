@@ -232,7 +232,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
         sendBlocked={!app.sessionModel.ready || app.sessionModel.pending}
         busy={!!app.busy}
         chip={app.catalog.currentWorkspace?.name}
-        draftKey={hostDraftKey(app.client.sshHost, app.catalog.currentSessionId!)}
+        draftKey={hostDraftKey(app.client.sshHost, app.catalog.currentSessionId!, app.client.storageScope)}
         draftRequest={draftRequest}
         onDraftRequestApplied={onDraftRequestApplied}
         client={app.client}
@@ -279,7 +279,7 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
           }
           busy={false}
           autoFocus
-          draftKey={hostDraftKey(app.client.sshHost, "hero")}
+          draftKey={hostDraftKey(app.client.sshHost, "hero", app.client.storageScope)}
           draftRequest={draftRequest}
           client={app.client}
           placeholder={

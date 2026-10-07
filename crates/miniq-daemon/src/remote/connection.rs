@@ -52,7 +52,8 @@ async fn connect(
     if ready.kind == "error" {
         anyhow::bail!(ready.message);
     }
-    if ready.kind != "ready" || !ready.desktop_online {
+    if ready.kind != "ready" || !ready.desktop_online || ready.desktop_device_id != config.device_id
+    {
         anyhow::bail!("relay 返回了无效握手响应");
     }
     set_status(

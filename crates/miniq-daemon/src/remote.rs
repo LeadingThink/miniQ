@@ -29,7 +29,7 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::state::AppState;
 
 pub const DEFAULT_RELAY_URL: &str = "wss://oneapi.zaiwenai.com/miniq-relay/ws";
-const PROTOCOL_VERSION: u8 = 1;
+const PROTOCOL_VERSION: u8 = 2;
 const MAX_SEEN_NONCES: usize = 2_048;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,6 +147,8 @@ struct RelayFrame {
     ciphertext: String,
     #[serde(default)]
     desktop_online: bool,
+    #[serde(default)]
+    desktop_device_id: String,
     #[serde(default)]
     mobile_clients: usize,
     #[serde(default)]

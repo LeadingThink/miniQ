@@ -17,6 +17,7 @@ export interface LocalConnectionInfo {
 
 export interface RemoteConnectionInfo extends RemoteCredentials {
   kind: "remote";
+  targetDeviceId?: string;
 }
 
 export type ConnectionInfo = LocalConnectionInfo | RemoteConnectionInfo;
@@ -44,6 +45,9 @@ const CONNECTION_TIMEOUT_MS = 15_000;
 const RPC_TIMEOUT_MS = 60_000;
 
 export class RpcClient {
+  constructor(readonly remoteConnection?: RemoteConnectionInfo, readonly storageScope = "") { if (remoteConnection) this.connectionMode = "remote"; }
+  get targetDeviceId(): string | undefined { return this.remoteConnection?.targetDeviceId ?? this.selectedDeviceId; }
+  private selectedDeviceId: string | undefined;
   private ws: WebSocket | null = null;
   private connectPromise: Promise<void> | null = null;
   private connectController: AbortController | null = null;
@@ -73,6 +77,8 @@ export class RpcClient {
       // A status listener may synchronously begin the replacement connection.
       if (this.connectPromise) return this.connectPromise;
     }
+    info = this.remoteConnection ?? info;
+    this.selectedDeviceId = info.kind === "remote" ? info.targetDeviceId : undefined;
     this.connectionMode = info.kind === "local" ? "local" : "remote";
     const controller = new AbortController();
     this.connectController = controller;
@@ -113,12 +119,13 @@ export class RpcClient {
     return this.openSocket(info.relayUrl, (ws) => {
       ws.send(JSON.stringify({
         type: "hello",
-        protocol: 1,
+        protocol: 2,
         role: "mobile",
         roomId: identity.roomId,
         authToken: identity.authToken,
         deviceId: info.deviceId,
         deviceName: info.deviceName,
+        targetDeviceId: info.targetDeviceId,
       }));
     }, signal, identity.encryptionKey);
   }
@@ -199,6 +206,7 @@ export class RpcClient {
             if (settled && this.ws !== ws) return;
             const envelope = JSON.parse(String(message.data)) as Record<string, unknown>;
             if (envelope.type === "ready") {
+              if (this.targetDeviceId && envelope.desktopDeviceId !== this.targetDeviceId) throw new Error("远程电脑身份不匹配，请重新选择电脑");
               desktopConnectionId = String(envelope.desktopConnectionId ?? "");
               if (envelope.desktopOnline !== true) throw new Error("桌面端尚未在线");
               this.remoteKey = remoteKey;

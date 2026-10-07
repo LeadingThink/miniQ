@@ -70,7 +70,7 @@ async function connectWithRetry(
   let remote = false;
   for (let attempt = 1; !options.isDisposed(); attempt++) {
     try {
-      const info = await resolveConnection();
+      const info = options.client.remoteConnection ?? await resolveConnection();
       if (options.isDisposed()) return;
       remote = info.kind !== "local";
       await options.client.connect(info);

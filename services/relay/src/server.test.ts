@@ -118,7 +118,7 @@ describe("miniQ relay", () => {
     const allowed=nextType(desktop,"blob_ticket");
     desktop.send(JSON.stringify({type:"blob_ticket",requestId:"allowed",bytes:1024}));
     await expect(allowed).resolves.toMatchObject({requestId:"allowed",ticket:{getUrl:"https://objects.test/get"}});
-    expect(ticket).toHaveBeenCalledWith(identity("sk-shared").roomId,1024);
+    expect(ticket).toHaveBeenCalledWith(identity("sk-shared").roomId,1024,"device-1234");
     expect(mobile.readyState).toBe(WebSocket.OPEN);
   });
   it("requires an online desktop before a mobile can join", async () => {
@@ -162,7 +162,7 @@ describe("miniQ relay", () => {
     await expect(mobileFrame).resolves.toMatchObject({ type: "frame", source: "device-1234", ciphertext: "opaque-response-ciphertext-value" });
   });
 
-  it("rejects a second desktop with the same key without disrupting the active desktop", async () => {
+  it("allows a second desktop without rebinding existing mobiles", async () => {
     const url = await start();
     const activeDesktop = await connect(url);
     activeDesktop.send(JSON.stringify(hello("desktop", "sk-shared", "desktop-active")));
@@ -173,9 +173,9 @@ describe("miniQ relay", () => {
     await nextJson(mobile);
 
     const secondDesktop = await connect(url);
-    const conflict = nextJson(secondDesktop);
+    const secondReady = nextJson(secondDesktop);
     secondDesktop.send(JSON.stringify(hello("desktop", "sk-shared", "desktop-second")));
-    await expect(conflict).resolves.toMatchObject({ type: "error", code: "desktop_conflict" });
+    await expect(secondReady).resolves.toMatchObject({ type: "ready", desktopDeviceId: "desktop-second" });
 
     const activeFrame = nextType(activeDesktop, "frame");
     mobile.send(JSON.stringify({

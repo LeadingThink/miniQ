@@ -1,0 +1,12 @@
+.remote-workbench { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+.remote-desktop-bar { flex-shrink: 0; padding: max(.35rem, var(--safe-top)) .75rem .35rem; border-bottom: 1px solid var(--border, #8884); z-index: 25; }
+.remote-desktop-bar > button { display: flex; gap: .75rem; justify-content: space-between; align-items: center; width: 100%; min-height: 36px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; }
+.remote-desktop-bar span { font-size: .75rem; opacity: .7; flex-shrink: 0; }
+.remote-workbench-content { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+.remote-workbench-content[hidden] { display: none; }
+.remote-workbench-content > .app { height: 100%; min-height: 0; }
+.remote-device-panel { overflow: auto; flex: 1; padding: 1rem 0; }
+.remote-device-panel > button { display: block; margin: 1rem auto; }
+.remote-offline-notice { position: absolute; z-index: 24; inset: 0 0 auto; padding: .65rem 1rem; background: var(--surface, #262626); color: var(--text, white); font-size: .85rem; }
+
+.remote-workbench-content > .workbench-host-content, .remote-workbench-content > .workbench-host-content > .app-shell { height: 100%; min-height: 0; }

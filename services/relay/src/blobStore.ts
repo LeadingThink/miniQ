@@ -9,7 +9,7 @@ const TICKET_SECONDS = 300;
 export interface BlobTicket { putUrl: string; getUrl: string; expiresAt: number }
 export interface TicketIssuer {
   enabledFor(roomId: string): boolean;
-  ticket(roomId: string, bytes: number): Promise<BlobTicket>;
+  ticket(roomId: string, bytes: number, desktopDeviceId?: string): Promise<BlobTicket>;
 }
 
 export class BlobStore implements TicketIssuer {
@@ -39,10 +39,11 @@ export class BlobStore implements TicketIssuer {
 
   enabledFor(roomId: string): boolean { return this.rooms.has(roomId); }
 
-  async ticket(roomId: string, bytes: number): Promise<BlobTicket> {
+  async ticket(roomId: string, bytes: number, desktopDeviceId?: string): Promise<BlobTicket> {
     if (!this.enabledFor(roomId) || !Number.isSafeInteger(bytes) || bytes < 16 || bytes > MAX_BLOB_BYTES) throw new Error("Invalid object request");
     await this.verified;
-    const key = `remote/${roomId}/${randomUUID()}`;
+    if (desktopDeviceId !== undefined && !/^[A-Za-z0-9_-]{8,80}$/.test(desktopDeviceId)) throw new Error("Invalid desktop device");
+    const key = `remote/${roomId}/${desktopDeviceId ? `${desktopDeviceId}/` : ""}${randomUUID()}`;
     const options = { expiresIn: TICKET_SECONDS };
     const putUrl = await getSignedUrl(this.client, new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentLength: bytes, ContentType: "application/octet-stream" }), options);
     const getUrl = await getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), options);

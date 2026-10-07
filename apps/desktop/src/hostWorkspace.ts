@@ -28,8 +28,8 @@ export type HostDestination = HostNavigation & { action?: "edit" | "create"; rev
 
 export const hostKey = (host: string | null) => JSON.stringify(host);
 export const scopedKey = (host: string | null, id: string) => JSON.stringify([host, id]);
-export const emptyCatalog = (hostId: string | null, label: string): HostCatalog => ({
-  hostId, label, state: "disconnected", catalogStatus: hostId === null ? "loading" : "idle", workspaces: [], sessions: [], unreadSessionIds: loadUnread(hostKey(hostId)),
+export const emptyCatalog = (hostId: string | null, label: string, scope = ""): HostCatalog => ({
+  hostId, label, state: "disconnected", catalogStatus: hostId === null ? "loading" : "idle", workspaces: [], sessions: [], unreadSessionIds: loadUnread(scope + hostKey(hostId)),
 });
 
 export function validSshTarget(value: string): boolean {

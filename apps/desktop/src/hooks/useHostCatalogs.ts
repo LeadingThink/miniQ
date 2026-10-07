@@ -13,7 +13,7 @@ const noop = async () => {};
 
 export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null) => RpcClient, active: { host: string | null; navigation: HostNavigation }, paused = false) {
   const [registry, setRegistry] = useState<HostList>({ hosts: [], discovered: [] });
-  const [catalogs, setCatalogs] = useState<Record<string, HostCatalog>>({ [hostKey(null)]: emptyCatalog(null, "本机") });
+  const [catalogs, setCatalogs] = useState<Record<string, HostCatalog>>({ [hostKey(null)]: emptyCatalog(null, "本机", root.storageScope) });
   const [error, setError] = useState<string | null>(null);
   const clearError = useCallback(() => setError(null), []);
   const activeRef = useRef(active);
@@ -53,7 +53,7 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
         const sessions = sessionResult.sessions.map((session) => ({ ...session, workingDirectory: session.workingDirectory ?? workspaces.find((workspace) => workspace.id === session.workspaceId)?.path ?? "" }));
         setCatalogs((current) => {
           if (host && knownHosts.current && !knownHosts.current.has(host)) return current;
-          const catalog = current[key] ?? emptyCatalog(host, host ?? "本机");
+          const catalog = current[key] ?? emptyCatalog(host, host ?? "本机", root.storageScope);
           return { ...current, [key]: { ...catalog,
             // A delayed catalog response cannot override a newer disconnect.
             state: host === null ? (root.connected ? "connected" : "disconnected") : catalog.state,
@@ -83,7 +83,7 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
       const next: Record<string, HostCatalog> = { [hostKey(null)]: current[hostKey(null)] };
       for (const host of result.hosts) {
         const key = hostKey(host.hostId);
-        const catalog = current[key] ?? emptyCatalog(host.hostId, host.label);
+        const catalog = current[key] ?? emptyCatalog(host.hostId, host.label, root.storageScope);
         next[key] = { ...catalog, ...host, error: host.error,
           catalogStatus: host.state !== "connected" && catalog.catalogStatus === "loading" ? "idle" : catalog.catalogStatus,
         };
@@ -167,7 +167,7 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
       if (previous === catalog.unreadSessionIds) continue;
       saved.current.set(key, catalog.unreadSessionIds);
       // The initial set came from storage; only write actual changes.
-      if (previous !== undefined || catalog.unreadSessionIds.size) saveUnread(key, catalog.unreadSessionIds);
+      if (previous !== undefined || catalog.unreadSessionIds.size) saveUnread((root.storageScope ?? "") + key, catalog.unreadSessionIds);
     }
   }, [catalogs]);
   return { registry, catalogs, refreshHosts, refreshCatalog, markSeen, setUnread, markAllSeen, error, clearError, connection, reportHostError };

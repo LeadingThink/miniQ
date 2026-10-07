@@ -9,10 +9,11 @@ export class HostRpcClient extends RpcClient {
   private connecting: Promise<void> | null = null;
 
   constructor(private readonly root: RpcClient, readonly hostId: string) {
-    super();
+    super(undefined, root.storageScope);
   }
 
   override get mode(): "remote" { return "remote"; }
+  override get targetDeviceId() { return this.root.targetDeviceId; }
   override get sshHost() { return this.hostId; }
   override get connected() { return this.root.connected && this.available; }
 

@@ -171,7 +171,8 @@ impl Session<'_> {
                 .pushes
                 .observe(&event.original, std::time::Instant::now())
             {
-                match super::super::push::push_message(self.state, &self.cipher, &push) {
+                match super::super::push::push_message(self.state, self.config, &self.cipher, &push)
+                {
                     Ok(message) => {
                         let _ = self
                             .controls

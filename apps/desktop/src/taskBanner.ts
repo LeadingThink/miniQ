@@ -6,6 +6,8 @@ export type TaskNotificationKind = "completed" | "failed" | "attention";
 export interface TaskNotificationTarget {
   host: string | null;
   sessionId: string;
+  /** Device identity that owns the session when it came from a remote client. */
+  targetDeviceId?: string;
 }
 
 export interface TaskBanner {

@@ -78,7 +78,7 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
         : `${catalog?.label || host} · ${session?.title || "当前会话"}`;
       if (mobile) {
         const viewing = optionsRef.current.isViewing?.(host, sessionId) ?? false;
-        void notifyMobileTask(kind, title, { host, sessionId }, viewing, isRemotePushCovering(host));
+        void notifyMobileTask(kind, title, { host, sessionId, ...(root.targetDeviceId ? { targetDeviceId: root.targetDeviceId } : {}) }, viewing, isRemotePushCovering(host));
       } else if (kind !== "attention") {
         // Desktop approval/question reminders come from useAttentionNotifications,
         // which carries the request detail and per-kind preferences.
@@ -189,12 +189,12 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
     void import("@capacitor/local-notifications").then(async ({ LocalNotifications }) => {
       const handle = await LocalNotifications.addListener("localNotificationActionPerformed", (action) => {
         const target = action.notification.extra?.miniqTarget as TaskNotificationTarget | undefined;
-        if (!target || typeof target.sessionId !== "string") return;
+        if (disposed || !target || typeof target.sessionId !== "string") return;
         const decision = decisionOf(action.actionId);
         const done = decision && target.host === null
-          ? resolveFromNotification(root, target.sessionId, undefined, decision)
+          ? resolveFromNotification(root, target.sessionId, undefined, decision, target)
           : Promise.resolve(false);
-        void done.then(() => optionsRef.current.open?.(target));
+        void done.then(() => { if (!disposed) optionsRef.current.open?.(target); });
       });
       if (disposed) void handle.remove();
       else remove = () => { void handle.remove(); };

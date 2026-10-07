@@ -50,9 +50,11 @@ it("restores page and actual zoom only for the same session and file", async () 
   );
   fireEvent.click(screen.getByRole("button", { name: "下一页" }));
   fireEvent.click(screen.getByRole("button", { name: "放大 PDF" }));
-  expect(
-    view.container.querySelector(".pdf-page")?.getAttribute("data-fit"),
-  ).toBe("false");
+  await waitFor(() =>
+    expect(
+      view.container.querySelector(".pdf-page")?.getAttribute("data-fit"),
+    ).toBe("false"),
+  );
   view.rerender(element("two"));
   expect((screen.getByLabelText("PDF 页码") as HTMLInputElement).value).toBe(
     "1",
