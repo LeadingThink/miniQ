@@ -1,5 +1,6 @@
 import { cloneElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactElement } from "react";
 import { createPortal } from "react-dom";
+import { isMobileLayout } from "../mobileViewport";
 
 type SessionPreviewProps = {
   children: ReactElement<{ "aria-describedby"?: string }>;
@@ -13,6 +14,7 @@ type SessionPreviewProps = {
 export function SessionPreview({ children, title, preview, contextLabel, detail, disabled = false }: SessionPreviewProps) {
   const id = useId();
   const anchor = useRef<HTMLDivElement>(null);
+  const pointerFocus = useRef(false);
   const tooltip = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [open, setOpen] = useState(false);
@@ -75,20 +77,31 @@ export function SessionPreview({ children, title, preview, contextLabel, detail,
         ref={anchor}
         className="session-preview-anchor"
         onPointerEnter={(event) => {
-          if (event.pointerType !== "mouse" || disabled) return;
+          if (event.pointerType !== "mouse" || disabled || isMobileLayout()) return;
           clearTimer();
-          if (!open) timer.current = setTimeout(() => setOpen(true), 400);
+          if (!open) timer.current = setTimeout(() => {
+            if (!isMobileLayout()) setOpen(true);
+          }, 400);
         }}
         onPointerLeave={(event) => {
           if (event.pointerType === "mouse") leave();
         }}
+        onPointerDownCapture={() => {
+          // Pointer focus precedes click. A portal opened here can cover the
+          // tapped row before WebView dispatches its click.
+          pointerFocus.current = true;
+          close();
+        }}
+        onKeyDownCapture={() => { pointerFocus.current = false; }}
         onFocusCapture={() => {
+          if (disabled || pointerFocus.current || isMobileLayout()) return;
           setFocused(true);
           clearTimer();
-          if (!disabled) setOpen(true);
+          setOpen(true);
         }}
         onBlurCapture={(event) => {
           if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+          pointerFocus.current = false;
           setFocused(false);
           close();
         }}

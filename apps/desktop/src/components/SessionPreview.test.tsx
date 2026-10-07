@@ -129,7 +129,7 @@ it("cleans timers, portal, and window listeners on unmount", () => {
 it.each([
   { viewport: 1000, left: 100, right: 200, expectedLeft: 208, width: 300 },
   { viewport: 1000, left: 800, right: 900, expectedLeft: 492, width: 300 },
-  { viewport: 250, left: 20, right: 120, expectedLeft: 8, width: 234 },
+  { viewport: 740, left: 300, right: 400, expectedLeft: 408, width: 300 },
 ])("positions within viewport $viewport with measured height", ({ viewport, left, right, expectedLeft, width }) => {
   vi.stubGlobal("innerWidth", viewport);
   vi.stubGlobal("innerHeight", 600);
@@ -145,4 +145,39 @@ it.each([
   expect(style.left).toBe(`${expectedLeft}px`);
   expect(style.width).toBe(`${width}px`);
   expect(style.top).toBe("472px");
+});
+
+it.each(["touch", "pen", "mouse"])("does not treat %s pointer focus as keyboard focus or intercept selection", (pointerType) => {
+  const select = vi.fn();
+  render(<SessionPreview {...props}><button onClick={select}>会话</button></SessionPreview>);
+  const button = screen.getByRole("button");
+  fireEvent.pointerDown(button, { pointerType });
+  act(() => button.focus());
+  advance(500);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.pointerUp(button, { pointerType });
+  fireEvent.click(button);
+  expect(select).toHaveBeenCalledTimes(1);
+  act(() => button.blur());
+  fireEvent.keyDown(button, { key: "Tab" });
+  act(() => button.focus());
+  expect(screen.queryByRole("tooltip")).not.toBeNull();
+});
+
+it("does not show desktop previews in the mobile layout, including synthetic mouse hover and focus", () => {
+  vi.stubGlobal("innerWidth", 390);
+  render(view());
+  hover();
+  act(() => screen.getByRole("button").focus());
+  advance(500);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+it("closes an existing desktop preview as soon as a touch starts", () => {
+  render(view());
+  hover();
+  advance(400);
+  expect(screen.queryByRole("tooltip")).not.toBeNull();
+  fireEvent.pointerDown(screen.getByRole("button"), { pointerType: "touch" });
+  expect(screen.queryByRole("tooltip")).toBeNull();
 });

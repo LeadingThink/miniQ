@@ -318,6 +318,21 @@ describe("Sidebar navigation", () => {
 });
 
 describe("mobile Sidebar", () => {
+  it("selects a session on the first focused touch without a preview", () => {
+    mobileViewport();
+    const onSelectSession = vi.fn();
+    render(<Sidebar {...sidebarProps({ onSelectSession })} />);
+    const button = screen.getByRole("button", { name: "完善预览，执行中" });
+    fireEvent.pointerEnter(button, { pointerType: "touch" });
+    fireEvent.pointerDown(button, { pointerType: "touch" });
+    act(() => button.focus());
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.pointerUp(button, { pointerType: "touch" });
+    fireEvent.click(button);
+    expect(onSelectSession).toHaveBeenCalledExactlyOnceWith(session.id);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
   function mobileViewport() {
     const media = Object.assign(new EventTarget(), { matches: true });
     vi.stubGlobal("matchMedia", () => media);
