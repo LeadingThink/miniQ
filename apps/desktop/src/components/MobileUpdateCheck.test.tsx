@@ -10,7 +10,7 @@ vi.mock("@capacitor/core", () => ({
   CapacitorHttp: { get: nativeGet },
 }));
 vi.mock("@capacitor/app", () => ({ App: { getInfo: async () => ({ version: "0.1.22" }) } }));
-vi.mock("../externalLinks", () => ({ openExternalUrl }));
+vi.mock("../mobileUpdateLinks", () => ({ openMobileUpdateUrl: openExternalUrl }));
 
 beforeEach(() => { vi.resetAllMocks(); });
 afterEach(cleanup);
@@ -44,7 +44,7 @@ it("offers a working download-page recovery action and allows another update che
 it("shows the current-version result after a successful native request", async () => {
   nativeGet.mockResolvedValue({
     status: 200, data: { products: { miniq: { platforms: { android: {
-      version: "0.1.22", status: "available", url: "https://oss.zaiwen.top/release.apk",
+      version: "0.1.22", status: "available", url: "https://oss.zaiwen.top/releases/miniq/android/v0.1.22/miniQ.apk",
     } } } } },
   });
   render(<MobileUpdateCheck />);
@@ -52,4 +52,16 @@ it("shows the current-version result after a successful native request", async (
   fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
   await screen.findByText("已是最新版本");
   expect(screen.queryByRole("button", { name: "在浏览器中下载" })).toBeNull();
+});
+
+it("reports download opening failure and allows checking again", async () => {
+  nativeGet.mockResolvedValue({ status: 200, data: { products: { miniq: { platforms: { android: {
+    version: "0.1.23", status: "available", url: "https://oss.zaiwen.top/releases/miniq/android/v0.1.23/miniQ.apk",
+  } } } } } });
+  openExternalUrl.mockRejectedValue(new Error("browser unavailable"));
+  render(<MobileUpdateCheck />); await screen.findByText("当前版本 0.1.22");
+  fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+  fireEvent.click(await screen.findByRole("button", { name: "在浏览器中下载" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("无法打开下载链接");
+  expect(screen.getByRole("button", { name: "检查更新" }).hasAttribute("disabled")).toBe(false);
 });

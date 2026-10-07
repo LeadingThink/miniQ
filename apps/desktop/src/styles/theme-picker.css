@@ -192,3 +192,35 @@
     height: 52px;
   }
 }
+
+.theme-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.theme-filters input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.theme-filters select {
+  flex: 0 1 140px;
+  min-width: 0;
+}
+.theme-filters input,
+.theme-filters select,
+.theme-pagination button {
+  min-height: 44px;
+}
+.theme-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  font-size: var(--font-caption);
+  color: var(--text-mid);
+}
+.theme-copy {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}

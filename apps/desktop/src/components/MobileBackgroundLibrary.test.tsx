@@ -14,6 +14,24 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); mobileBackgroundPolicy.stop(); });
 
 describe("MobileBackgroundLibrary", () => {
+  it("exposes all 227 catalog entries across mobile pages without duplicates", () => {
+    render(<MobileBackgroundLibrary />);
+    const names: string[] = [];
+    for (;;) {
+      const radios = screen.getAllByRole("radio") as HTMLInputElement[];
+      expect(radios.length).toBeLessThanOrEqual(12);
+      names.push(...radios.map((radio) => radio.value));
+      const next = screen.getByRole("button", { name: "下一页背景库" }) as HTMLButtonElement;
+      if (next.disabled) break;
+      fireEvent.click(next);
+    }
+    expect(names).toEqual(BACKGROUNDS.map((item) => item.id));
+    expect(new Set(names).size).toBe(227);
+    fireEvent.click(screen.getByRole("tab", { name: "字符效果" }));
+    expect(screen.getByText("第 1 / 2 页")).toBeTruthy();
+    expect(screen.getAllByRole("radio").length).toBe(12);
+  });
+
   it("searches, pages, and selects through the mobile policy", () => {
     const select = vi.spyOn(mobileBackgroundPolicy, "selectBackground");
     render(<MobileBackgroundLibrary pageSize={2} />);

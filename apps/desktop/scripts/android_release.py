@@ -104,7 +104,8 @@ def verify_mirror(version: str, data: bytes) -> None:
             raise RuntimeError("published GitHub mirror APK does not match local bytes")
 
 
-def merge_manifest(current: dict, version: str, digest: str, size: int, date: str) -> dict:
+def merge_manifest(current: dict, version: str, digest: str, size: int, date: str,
+                   notes: str = "") -> dict:
     result = copy.deepcopy(current)
     try:
         platforms = result["products"]["miniq"]["platforms"]
@@ -126,6 +127,7 @@ def merge_manifest(current: dict, version: str, digest: str, size: int, date: st
         "mirrors": [mirror_url(version)],
         "sha256": digest,
         "fileSize": size,
+        "releaseNotes": [line.strip() for line in notes.splitlines() if line.strip()],
         "minAndroidVersion": "Android 7.0 (API 24)",
         "installationNotes": [
             "需要 Android 7.0 或更高版本。",
@@ -143,7 +145,7 @@ def read_remote(key: str) -> bytes:
         return response.read()
 
 
-def publish_android(apk: Path, tag: str) -> None:
+def publish_android(apk: Path, tag: str, notes: str = "") -> None:
     version = validate_version(tag, (ROOT / "android/app/build.gradle").read_text())
     if apk.name != f"miniQ_{version}_android.apk" or not apk.is_file():
         raise ValueError("expected versioned Android APK")
@@ -153,7 +155,7 @@ def publish_android(apk: Path, tag: str) -> None:
     data = apk.read_bytes()
     digest = hashlib.sha256(data).hexdigest()
     verify_mirror(version, data)
-    metadata = merge_manifest(current, version, digest, len(data), datetime.now(timezone.utc).isoformat())
+    metadata = merge_manifest(current, version, digest, len(data), datetime.now(timezone.utc).isoformat(), notes)
     key = f"releases/miniq/android/v{version}/{apk.name}"
     publish([UploadItem(apk, key)], *credentials)
     remote = read_remote(key)
@@ -177,6 +179,7 @@ def main() -> None:
     parser.add_argument("--tag")
     parser.add_argument("--apk", type=Path)
     parser.add_argument("--tools", type=Path)
+    parser.add_argument("--notes", default="")
     args = parser.parse_args()
     if args.action == "prepare-signing":
         prepare_signing()
@@ -191,7 +194,7 @@ def main() -> None:
             parser.error("--tools is required")
         verify_apk(args.apk, args.tag, args.tools)
     elif args.action == "publish":
-        publish_android(args.apk, args.tag)
+        publish_android(args.apk, args.tag, args.notes)
 
 
 if __name__ == "__main__":

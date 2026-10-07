@@ -419,10 +419,11 @@ jobs:
             --repo LeadingThink/miniQ-releases --clobber
       - name: Verify mirror and publish Android Qiniu origin and shared download manifest
         env:
+          RELEASE_NOTES: ${{ inputs.notes }}
           QINIU_ACCESS_KEY: ${{ secrets.QINIU_ACCESS_KEY }}
           QINIU_SECRET_KEY: ${{ secrets.QINIU_SECRET_KEY }}
           QINIU_BUCKET: ${{ secrets.QINIU_BUCKET }}
         run: |
           python3 -m pip install 'qiniu==7.18.0'
           python3 scripts/android_release.py publish --tag "$RELEASE_TAG" \
-            --apk "../../dist-android/miniQ_${RELEASE_TAG#android-v}_android.apk"
+            --apk "../../dist-android/miniQ_${RELEASE_TAG#android-v}_android.apk" --notes "$RELEASE_NOTES"

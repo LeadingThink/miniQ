@@ -55,16 +55,17 @@ afterEach(() => {
 });
 
 describe("theme catalog", () => {
-  it("keeps three light and three dark themes, each paired with the other side", () => {
-    expect(THEMES).toHaveLength(6);
-    expect(new Set(THEMES.map((theme) => theme.id)).size).toBe(6);
-    expect(THEMES.filter((theme) => theme.mode === "light")).toHaveLength(3);
+  it("covers all palettes with a valid opposite-mode fallback", () => {
+    expect(THEMES).toHaveLength(110);
+    expect(new Set(THEMES.map((theme) => theme.id)).size).toBe(110);
+    expect(THEMES.filter((theme) => theme.mode === "light")).toHaveLength(69);
+    expect(THEMES.filter((theme) => theme.mode === "dark")).toHaveLength(41);
     for (const theme of THEMES) {
       expect(isThemeId(theme.id)).toBe(true);
       expect(resolveTheme(theme.id)).toBe(theme.id);
       const pair = themeById(theme.pair as never);
       expect(pair.mode).not.toBe(theme.mode);
-      expect(pair.pair).toBe(theme.id);
+      expect(isThemeId(theme.pair)).toBe(true);
     }
   });
 
@@ -76,10 +77,10 @@ describe("theme catalog", () => {
   });
 
   it("maps every retired theme to a kept theme of the same brightness", () => {
-    expect(Object.keys(LEGACY_THEMES).length).toBeGreaterThan(100);
+    expect(Object.keys(LEGACY_THEMES)).toEqual(["paper", "mist", "grove", "sunrise", "midnight", "aurora"]);
     for (const next of Object.values(LEGACY_THEMES)) expect(isThemeId(next)).toBe(true);
-    expect(LEGACY_THEMES["starry"] && themeById(LEGACY_THEMES["starry"]).mode).toBe("dark");
-    expect(LEGACY_THEMES["rose"] && themeById(LEGACY_THEMES["rose"]).mode).toBe("light");
+    expect(resolveTheme("starry")).toBe("starry");
+    expect(resolveTheme("rose")).toBe("rose");
   });
 
   it.each(Object.entries(LEGACY_THEMES))("migrates %s to %s", (old, next) => {
@@ -96,6 +97,9 @@ describe("theme catalog", () => {
     expect(bootstrapTheme()).toBe(theme.id);
     expect(root.style.getPropertyValue("--theme-page")).toBe(theme.preview.page);
     expect(root.style.colorScheme).toBe(theme.mode);
+    initializeAppearance();
+    expect(getAppearance().theme).toBe(theme.id);
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe(theme.id);
     applyTheme(theme.id);
     expect(root.dataset.themeMode).toBe(theme.mode);
     expect(root.dataset.themePattern).toBeUndefined();

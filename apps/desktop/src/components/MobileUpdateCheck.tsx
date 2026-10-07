@@ -1,10 +1,11 @@
+import { mobileUpdateScheduler } from "../mobileUpdateScheduler";
 import { Download, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { errorMessage } from "../errorMessage";
-import { openExternalUrl } from "../externalLinks";
+import { openMobileUpdateUrl } from "../mobileUpdateLinks";
 import {
-  checkAndroidUpdate,
   formatFileSize,
+  isOfficialAndroidApk,
   isMobileUpdateSupported,
   MOBILE_DOWNLOAD_PAGE_URL,
   readInstalledVersion,
@@ -36,10 +37,17 @@ export function MobileUpdateCheck() {
     if (state.phase === "checking") return;
     setState({ phase: "checking" });
     try {
-      setState(await checkAndroidUpdate({ currentVersion: installed ?? undefined }));
+      setState(await mobileUpdateScheduler.run(true));
     } catch (error) {
       setState({ phase: "error", error: errorMessage(error) });
     }
+  };
+
+  const download = async (url: string) => {
+    try {
+      if (url !== MOBILE_DOWNLOAD_PAGE_URL && !isOfficialAndroidApk(url)) throw new Error("下载地址无效");
+      await openMobileUpdateUrl(url);
+    } catch { setState({ phase: "error", error: "无法打开下载链接，请稍后重试。" }); }
   };
 
   const release = state.phase === "available" ? state.release : null;
@@ -58,7 +66,7 @@ export function MobileUpdateCheck() {
       {state.phase === "error" && (
         <div>
           <p role="alert">检查更新失败：{state.error}</p>
-          <button type="button" className="secondary" onClick={() => void openExternalUrl(MOBILE_DOWNLOAD_PAGE_URL)}>
+          <button type="button" className="secondary" onClick={() => void download(MOBILE_DOWNLOAD_PAGE_URL)}>
             <Download size={14} />
             前往下载页
           </button>
@@ -70,6 +78,7 @@ export function MobileUpdateCheck() {
             发现新版本 {release.version}
             {size ? `（${size}）` : ""}
           </p>
+          {release.releaseNotes && release.releaseNotes.length > 0 && <ul>{release.releaseNotes.map((note, index) => <li key={index}>{note}</li>)}</ul>}
           {release.installationNotes.length > 0 && (
             <ul>
               {release.installationNotes.map((note) => (
@@ -77,7 +86,7 @@ export function MobileUpdateCheck() {
               ))}
             </ul>
           )}
-          <button type="button" onClick={() => void openExternalUrl(release.url)}>
+          <button type="button" onClick={() => void download(release.url)}>
             <Download size={14} />
             在浏览器中下载
           </button>
