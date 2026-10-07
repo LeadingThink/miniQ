@@ -85,7 +85,7 @@ describe("MobileAppearanceSheet", () => {
     vi.spyOn(mobileBackgroundPolicy, "retryVideo").mockRejectedValue(new Error("offline"));
     render(<MobileAppearanceSheet />);
     const item = BACKGROUNDS.find((item) => item.kind === "video")!;
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: item.name } });
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索背景" }), { target: { value: item.name } });
     fireEvent.click(screen.getByRole("radio", { name: item.name }));
     fireEvent.click(screen.getAllByRole("button", { name: /下载「/ })[0]);
     expect((await screen.findByRole("alert")).textContent).toContain("下载失败");
@@ -97,7 +97,7 @@ describe("MobileAppearanceSheet", () => {
     render(<MobileAppearanceSheet />);
     const videoIndex = BACKGROUNDS.findIndex((item) => item.kind === "video");
     const item = BACKGROUNDS[videoIndex];
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: item.name } });
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索背景" }), { target: { value: item.name } });
     fireEvent.click(screen.getByRole("radio", { name: item.name }));
     const button = screen.getByRole("button", { name: `重试播放「${item.name}」` });
     expect((button as HTMLButtonElement).disabled).toBe(false);

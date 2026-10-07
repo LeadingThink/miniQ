@@ -16,6 +16,8 @@ export interface AndroidRelease {
   fileSize?: number;
   minAndroidVersion?: string;
   installationNotes: string[];
+  releaseNotes?: string[];
+  sha256?: string;
 }
 
 export type MobileUpdateState =
@@ -29,44 +31,50 @@ export function isMobileUpdateSupported(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
 }
 
-/** Numeric-segment comparison; returns >0 when `a` is newer than `b`. */
+/** Android versionName uses two to four numeric segments, with an optional v. */
+export function isReleaseVersion(value: string): boolean {
+  return /^v?\d+(?:\.\d+){1,3}$/i.test(value.trim()) &&
+    value.trim().replace(/^v/i, "").split(".").every((part) => Number.isSafeInteger(Number(part)));
+}
+
 export function compareVersions(a: string, b: string): number {
-  const parse = (value: string) =>
-    value
-      .trim()
-      .replace(/^v/i, "")
-      .split(/[.\-+]/)
-      .map((part) => Number.parseInt(part, 10))
-      .map((part) => (Number.isFinite(part) ? part : 0));
-  const left = parse(a);
-  const right = parse(b);
+  if (!isReleaseVersion(a) || !isReleaseVersion(b)) throw new Error("版本号格式无效");
+  const parts = (value: string) => value.trim().replace(/^v/i, "").split(".").map(Number);
+  const left = parts(a), right = parts(b);
   for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
     const diff = (left[i] ?? 0) - (right[i] ?? 0);
-    if (diff !== 0) return diff;
+    if (diff !== 0) return Math.sign(diff);
   }
   return 0;
 }
 
-/** Fail closed: anything other than a published release with a usable https
- * APK url is treated as "no update available". */
+export function isOfficialAndroidApk(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.origin === "https://oss.zaiwen.top" && !url.username && !url.password &&
+      !url.search && !url.hash && /^\/releases\/miniq\/android\/v[0-9.]+\/[A-Za-z0-9_.-]+\.apk$/.test(url.pathname);
+  } catch { return false; }
+}
+
 export function parseAndroidRelease(manifest: unknown): AndroidRelease | null {
-  const platforms = (manifest as { products?: { miniq?: { platforms?: Record<string, unknown> } } })?.products?.miniq
-    ?.platforms;
-  const entry = platforms?.android as Record<string, unknown> | undefined;
-  if (!entry || typeof entry !== "object") return null;
-  if (entry.status !== undefined && entry.status !== "available") return null;
+  const entry = (manifest as { products?: { miniq?: { platforms?: { android?: Record<string, unknown> } } } })
+    ?.products?.miniq?.platforms?.android;
+  if (!entry || typeof entry !== "object" || Array.isArray(entry) || entry.status !== "available") return null;
   const version = typeof entry.version === "string" ? entry.version.trim() : "";
   const url = typeof entry.url === "string" ? entry.url.trim() : "";
-  if (!version || !url.startsWith("https://")) return null;
+  if (!isReleaseVersion(version) || !isOfficialAndroidApk(url)) return null;
+  if (entry.sha256 !== undefined && (typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/i.test(entry.sha256))) return null;
+  if (entry.fileSize !== undefined && (typeof entry.fileSize !== "number" || !Number.isSafeInteger(entry.fileSize) || entry.fileSize <= 0)) return null;
+  if (entry.releaseNotes !== undefined && (!Array.isArray(entry.releaseNotes) || !entry.releaseNotes.every((note) => typeof note === "string"))) return null;
+  if (entry.installationNotes !== undefined && (!Array.isArray(entry.installationNotes) || !entry.installationNotes.every((note) => typeof note === "string"))) return null;
   return {
-    version,
-    url,
+    version, url,
+    sha256: entry.sha256 as string | undefined,
     releaseDate: typeof entry.releaseDate === "string" ? entry.releaseDate : undefined,
-    fileSize: typeof entry.fileSize === "number" ? entry.fileSize : undefined,
+    fileSize: entry.fileSize as number | undefined,
     minAndroidVersion: typeof entry.minAndroidVersion === "string" ? entry.minAndroidVersion : undefined,
-    installationNotes: Array.isArray(entry.installationNotes)
-      ? entry.installationNotes.filter((note): note is string => typeof note === "string")
-      : [],
+    ...(entry.releaseNotes === undefined ? {} : { releaseNotes: (entry.releaseNotes as string[]).map((note) => note.trim()).filter(Boolean) }),
+    installationNotes: (entry.installationNotes as string[] | undefined) ?? [],
   };
 }
 
@@ -75,7 +83,7 @@ export async function readInstalledVersion(): Promise<string | null> {
   try {
     const { App } = await import("@capacitor/app");
     const info = await App.getInfo();
-    return info.version || null;
+    return isReleaseVersion(info.version) ? info.version : null;
   } catch {
     return null;
   }
@@ -84,7 +92,7 @@ export async function readInstalledVersion(): Promise<string | null> {
 export async function fetchAndroidRelease(
   fetchImpl: typeof fetch = fetch,
   url: string = RELEASE_MANIFEST_URL,
-): Promise<AndroidRelease | null> {
+): Promise<AndroidRelease> {
   const requestUrl = new URL(url);
   requestUrl.searchParams.set("release_check", String(Date.now()));
   const controller = new AbortController();
@@ -100,7 +108,9 @@ export async function fetchAndroidRelease(
       requestReleaseManifest(requestUrl.href, fetchImpl, controller.signal),
       deadline,
     ]);
-    return parseAndroidRelease(manifest);
+    const release = parseAndroidRelease(manifest);
+    if (!release) throw new UpdateRequestError("更新服务返回的发布信息不完整，请稍后重试。");
+    return release;
   } catch (error) {
     if (error instanceof UpdateRequestError) throw error;
     const message = error instanceof Error ? error.message : String(error);
@@ -137,10 +147,11 @@ export async function checkAndroidUpdate(options: {
   fetchImpl?: typeof fetch;
   manifestUrl?: string;
 } = {}): Promise<MobileUpdateState> {
+  if (!isMobileUpdateSupported()) return { phase: "idle" };
   const current = options.currentVersion ?? (await readInstalledVersion());
-  if (!current) return { phase: "error", error: "无法读取当前版本号" };
+  if (!current || !isReleaseVersion(current)) return { phase: "error", error: "无法读取当前版本号" };
   const release = await fetchAndroidRelease(options.fetchImpl ?? fetch, options.manifestUrl ?? RELEASE_MANIFEST_URL);
-  if (!release || compareVersions(release.version, current) <= 0) {
+  if (compareVersions(release.version, current) <= 0) {
     return { phase: "unavailable", version: current };
   }
   return { phase: "available", release };

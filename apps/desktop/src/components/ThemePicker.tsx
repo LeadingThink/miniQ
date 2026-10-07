@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import { useId, useSyncExternalStore, type CSSProperties } from "react";
+import { useId, useState, useSyncExternalStore, type CSSProperties } from "react";
 import {
   getAppearance,
   storeAppearanceMode,
@@ -10,7 +10,7 @@ import {
   type ThemeId,
   type ThemeMode,
 } from "../theme";
-import type { ThemeDefinition } from "../themeCatalog";
+import { themeCategories, type ThemeDefinition } from "../themeCatalog";
 import { BackgroundPicker } from "./BackgroundPicker";
 
 const MODES: { id: AppearanceMode; label: string }[] = [
@@ -54,17 +54,26 @@ function ThemeRow(props: {
   selected: ThemeId;
   active: boolean;
   onSelect: (theme: ThemeId) => void;
+  query: string;
+  category: string;
 }) {
   const groupId = useId();
+  const [page, setPage] = useState(0);
+  const matches = THEMES.filter((theme) => theme.mode === props.mode
+    && (props.category === "all" || theme.category === props.category)
+    && [theme.id, theme.name, theme.description].join(" ").toLowerCase().includes(props.query.trim().toLowerCase()));
+  const pages = Math.max(1, Math.ceil(matches.length / 12));
+  const current = Math.min(page, pages - 1);
+  const selectedIndex = matches.findIndex((theme) => theme.id === props.selected);
   const label = props.mode === "light" ? "浅色主题" : "深色主题";
   return (
     <section className="theme-row" aria-label={label}>
       <h3>
-        {label}
+        {label} · {matches.length}
         {props.active && <span>当前使用</span>}
       </h3>
       <div className="theme-grid" role="radiogroup" aria-label={label}>
-        {THEMES.filter((theme) => theme.mode === props.mode).map((theme) => (
+        {matches.slice(current * 12, (current + 1) * 12).map((theme) => (
           <label key={theme.id} className="theme-choice" title={theme.description}>
             <input
               type="radio"
@@ -83,6 +92,16 @@ function ThemeRow(props: {
           </label>
         ))}
       </div>
+      {!matches.length && <p className="settings-section-description">没有匹配的配色主题，请调整搜索或分类。</p>}
+      <div className="theme-pagination" aria-label={`${label}分页`}>
+        <span>已选：{themeById(props.selected).name}</span>
+        {selectedIndex >= 0 && Math.floor(selectedIndex / 12) !== current && <button type="button" onClick={() => setPage(Math.floor(selectedIndex / 12))}>定位{label}选择</button>}
+        {pages > 1 && <>
+          <button type="button" disabled={current === 0} aria-label={`上一页${label}`} onClick={() => setPage(current - 1)}>上一页</button>
+          <span aria-live="polite">第 {current + 1} / {pages} 页</span>
+          <button type="button" disabled={current === pages - 1} aria-label={`下一页${label}`} onClick={() => setPage(current + 1)}>下一页</button>
+        </>}
+      </div>
     </section>
   );
 }
@@ -90,6 +109,8 @@ function ThemeRow(props: {
 export function ThemePicker(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) => void; showBackground?: boolean }) {
   const groupId = useId();
   const appearance = useSyncExternalStore(subscribeAppearance, getAppearance, getAppearance);
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("all");
   const light = themeById(appearance.lastThemes.light);
   const dark = themeById(appearance.lastThemes.dark);
   const activeMode = themeById(props.theme).mode;
@@ -120,10 +141,23 @@ export function ThemePicker(props: { theme: ThemeId; onThemeChange: (theme: Them
           {appearance.mode === "system" ? "随系统的浅色 / 深色外观自动切换。" : "始终使用所选外观。"}
         </p>
       </section>
+      <section className="theme-library-controls" aria-label="配色主题库">
+        <h3>配色主题 · {THEMES.length}</h3>
+        <p className="settings-section-description">改变界面颜色，无需下载。动态壁纸在下方背景库中独立选择。</p>
+        <div className="theme-filters">
+          <input type="search" aria-label="搜索配色主题" placeholder="搜索名称、描述" value={query} onChange={(event) => setQuery(event.target.value)} />
+          <select aria-label="配色主题分类" value={category} onChange={(event) => setCategory(event.target.value)}>
+            <option value="all">全部分类</option>
+            {themeCategories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </div>
+      </section>
       {(["light", "dark"] as const).map((mode) => (
         <ThemeRow
-          key={mode}
+          key={`${mode}-${category}-${query}`}
           mode={mode}
+          query={query}
+          category={category}
           selected={appearance.lastThemes[mode]}
           active={activeMode === mode}
           onSelect={props.onThemeChange}

@@ -1,3 +1,4 @@
+import { MobileUpdatePrompt } from "./components/MobileUpdatePrompt";
 import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
 import { isNativeMobileApp } from "./mobileRuntime";
 import { MobileAppearanceSheet } from "./components/MobileAppearanceSheet";
@@ -17,7 +18,7 @@ export default function App() {
   const shareId = sharedSessionId();
   if (shareId !== null) return <Suspense fallback={<p role="status">正在加载分享…</p>}><SharedSessionPage key={shareId} id={shareId} /></Suspense>;
 
-  if (isRemoteBrowserEntry()) return <RemoteGate theme={theme} onThemeChange={storeTheme} />;
+  if (isRemoteBrowserEntry()) return <><RemoteGate theme={theme} onThemeChange={storeTheme} /><MobileUpdatePrompt /></>;
   const desktop = <Suspense fallback={<p role="status" className="remote-restoring">正在加载工作台…</p>}><ConnectedApp theme={theme} onThemeChange={storeTheme} /></Suspense>;
   return <DesktopHostProvider>{desktop}</DesktopHostProvider>;
 }

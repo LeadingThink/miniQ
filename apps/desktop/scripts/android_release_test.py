@@ -73,6 +73,15 @@ class AndroidReleaseTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             release.validate_version("android-v0.1.21", gradle.replace('versionName "0.1.21"', 'versionName "0.1.17"'))
 
+    def test_release_notes_replace_previous_version_without_touching_desktop(self):
+        self.current["products"]["miniq"]["platforms"]["android"]["releaseNotes"] = ["Old Android notes"]
+        self.current["products"]["miniq"]["releaseNotes"] = ["Desktop notes"]
+        for notes, expected in [(" 新版提醒\n\n主题扩充 \n", ["新版提醒", "主题扩充"]), ("", [])]:
+            with self.subTest(notes=notes):
+                merged = release.merge_manifest(self.current, "0.1.21", "a" * 64, 42, "date", notes)
+                self.assertEqual(merged["products"]["miniq"]["platforms"]["android"]["releaseNotes"], expected)
+                self.assertEqual(merged["products"]["miniq"]["releaseNotes"], ["Desktop notes"])
+
     def test_malformed_manifest_fails_closed(self):
         for current in [{}, {"products": {}}, {"products": {"miniq": {"platforms": []}}}]:
             with self.assertRaises(ValueError):
@@ -223,6 +232,7 @@ class AndroidReleaseTests(unittest.TestCase):
                         metadata = json.loads(item.source.read_text())
                         android = metadata["products"]["miniq"]["platforms"]["android"]
                         self.assertEqual(android["sha256"], hashlib.sha256(b"apk").hexdigest())
+                        self.assertEqual(android["releaseNotes"], ["Android update", "More themes"])
                         metadata["products"]["miniq"]["platforms"]["android"] = self.current["products"]["miniq"]["platforms"]["android"]
                         self.assertEqual(metadata, self.current)
 
@@ -232,7 +242,7 @@ class AndroidReleaseTests(unittest.TestCase):
 
             qiniu = SimpleNamespace(Auth=lambda *args: None, CdnManager=lambda auth: SimpleNamespace(refresh_urls=refresh))
             with patch.object(release, "required_env", return_value="unused"), patch.object(release, "read_remote", side_effect=read), patch.object(release, "publish", side_effect=upload), patch.dict(sys.modules, {"qiniu": qiniu}):
-                release.publish_android(apk, "android-v0.1.21")
+                release.publish_android(apk, "android-v0.1.21", "Android update\nMore themes")
             key = "releases/miniq/android/v0.1.21/miniQ_0.1.21_android.apk"
             self.assertEqual(events, [("read", release.MANIFEST_KEY), ("upload", key), ("read", key), ("read", release.MANIFEST_KEY), ("upload", release.MANIFEST_KEY)])
 
@@ -245,6 +255,7 @@ class AndroidReleaseTests(unittest.TestCase):
         self.assertNotIn("latest.json", android)
         self.assertNotIn("tauri", android)
         self.assertIn("--latest=false", android)
+        self.assertIn('--notes "$RELEASE_NOTES"', android)
         self.assertLess(android.index('gh release upload'), android.index('scripts/android_release.py publish'))
         self.assertIn("fetch-depth: 0", android)
         self.assertIn("packages: platform-tools", android)
