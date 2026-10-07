@@ -3,7 +3,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const native = vi.hoisted(() => ({
   platform: "android",
-  start: vi.fn(async () => ({ running: true })),
+  checkPermissions: vi.fn(async () => ({ display: "granted" })),
+  requestPermissions: vi.fn(async () => ({ display: "granted" })),
+  start: vi.fn(async () => ({ running: true, notificationsEnabled: true })),
   stop: vi.fn(async () => undefined),
   batteryStatus: vi.fn(async () => ({ unrestricted: false })),
   openBatterySettings: vi.fn(async () => undefined),
@@ -13,6 +15,8 @@ vi.mock("@capacitor/core", () => ({
   Capacitor: { isNativePlatform: () => native.platform !== "web", getPlatform: () => native.platform },
   registerPlugin: () => native,
 }));
+
+vi.mock("@capacitor/local-notifications", () => ({ LocalNotifications: native }));
 
 import {
   getBackgroundConnectionEnabled,
@@ -65,4 +69,33 @@ it("never touches the native plugin on iOS", async () => {
 
 it("reports battery optimization status on Android", async () => {
   await expect(isBatteryUnrestricted()).resolves.toBe(false);
+});
+
+it("requests permission before starting and does not save a denied enable", async () => {
+  native.checkPermissions.mockResolvedValueOnce({ display: "prompt" });
+  native.requestPermissions.mockResolvedValueOnce({ display: "denied" });
+  await expect(setBackgroundConnectionEnabled(true)).rejects.toThrow("允许 miniQ 发送通知");
+  expect(native.requestPermissions).toHaveBeenCalledOnce();
+  expect(native.start).not.toHaveBeenCalled();
+  expect(getBackgroundConnectionEnabled()).toBe(false);
+});
+
+it("rolls back a failed foreground start even with a previously saved preference", async () => {
+  localStorage.setItem("miniq.backgroundConnection.v1", "1");
+  native.start.mockResolvedValueOnce({ running: false, notificationsEnabled: true });
+  await expect(setBackgroundConnectionEnabled(true)).rejects.toThrow("未能启动");
+  expect(getBackgroundConnectionEnabled()).toBe(false);
+  expect(native.stop).toHaveBeenCalledOnce();
+});
+
+it("rejects a disabled notification channel even with runtime permission", async () => {
+  native.start.mockResolvedValueOnce({ running: true, notificationsEnabled: false });
+  await expect(setBackgroundConnectionEnabled(true)).rejects.toThrow("通知已被关闭");
+  expect(getBackgroundConnectionEnabled()).toBe(false);
+});
+
+it("does not ask for permissions during automatic restoration", async () => {
+  localStorage.setItem("miniq.backgroundConnection.v1", "1");
+  await syncBackgroundConnection();
+  expect(native.requestPermissions).not.toHaveBeenCalled();
 });

@@ -19,6 +19,8 @@ import { isNativeMobileApp } from "../mobileRuntime";
 import { refreshRemotePush, requestRemotePushPermission, useRemotePushStatus, type RemotePushStatus } from "../remotePush";
 import { setQuietHours, useQuietHours } from "../quietHours";
 import {
+  getBackgroundConnectionStatus,
+  openBackgroundNotificationSettings,
   isBackgroundConnectionSupported,
   isBatteryUnrestricted,
   openBatterySettings,
@@ -73,11 +75,18 @@ function BackgroundConnectionSetting({ onStatus }: { onStatus: (text: string | n
   const enabled = useBackgroundConnectionEnabled();
   const [busy, setBusy] = useState(false);
   const [batteryOk, setBatteryOk] = useState(true);
+  const [health, setHealth] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) { setHealth(null); return; }
     let active = true;
-    const refresh = () => void isBatteryUnrestricted().then((value) => { if (active) setBatteryOk(value); });
+    const refresh = () => void Promise.all([getBackgroundConnectionStatus(), isBatteryUnrestricted()]).then(([status, battery]) => {
+      if (!active) return;
+      setBatteryOk(battery);
+      setHealth(!status.notificationsEnabled
+        ? "后台连接通知不可见，请检查系统通知权限和「后台保持连接」通知类别。"
+        : !status.running ? "后台连接服务未运行，请关闭开关后重新开启。" : "后台连接服务正在运行。");
+    });
     refresh();
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
@@ -94,8 +103,8 @@ function BackgroundConnectionSetting({ onStatus }: { onStatus: (text: string | n
     try {
       const running = await setBackgroundConnectionEnabled(value);
       onStatus(value && !running ? "未能启动后台连接，请确认已允许 miniQ 发送通知后重试。" : null);
-    } catch {
-      onStatus("无法保存设置，请检查本机存储是否可用。");
+    } catch (error) {
+      onStatus(error instanceof Error ? error.message : "无法更改后台连接设置，请重试。");
     } finally {
       setBusy(false);
     }
@@ -106,7 +115,7 @@ function BackgroundConnectionSetting({ onStatus }: { onStatus: (text: string | n
       <label className="remote-access-toggle" htmlFor="task-notification-background">
         <span>
           <strong>后台保持连接</strong>
-          <small>切到后台或锁屏后继续与电脑保持连接，任务完成或需要你操作时照常提醒。开启后通知栏会常驻一条「miniQ 正在后台保持连接」，耗电略有增加；从最近任务中划掉 App 后不再提醒。</small>
+          <small>通过常驻服务帮助 miniQ 在后台与电脑保持连接。提醒时效仍受网络和手机省电设置影响。开启后通知栏会常驻一条「miniQ 正在后台保持连接」，耗电略有增加；从最近任务中划掉 App 后不再提醒。</small>
         </span>
         <input
           id="task-notification-background"
@@ -116,6 +125,11 @@ function BackgroundConnectionSetting({ onStatus }: { onStatus: (text: string | n
           onChange={(event) => void toggle(event.target.checked)}
         />
       </label>
+      {health && <p role="status">{health}</p>}
+      <button type="button" className="secondary" onClick={() => void openBackgroundNotificationSettings().then((ok) => {
+        if (!ok) onStatus("无法打开系统通知设置，请在手机设置中找到 miniQ 的通知权限。");
+      })}>检查后台通知设置</button>
+      {enabled && <p className="muted">三星手机还需确认 miniQ 未加入「深度休眠应用程序」。</p>}
       {enabled && !batteryOk && <div className="remote-access-toggle" data-battery-restricted="true">
         <span>
           <small role="note">系统电池优化可能在锁屏一段时间后断开连接。建议将 miniQ 设为「不优化 / 无限制」，部分手机还需在系统设置中允许「自启动 / 后台运行」。</small>

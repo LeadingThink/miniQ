@@ -50,11 +50,15 @@ const bg = vi.hoisted(() => ({
     for (const listener of bg.listeners) listener();
     return value;
   }),
+  getStatus: vi.fn(async () => ({ running: true, notificationsEnabled: true })),
+  openNotificationSettings: vi.fn(async () => true),
   open: vi.fn(async () => true),
 }));
 vi.mock("../backgroundConnection", async () => {
   const { useSyncExternalStore } = await import("react");
   return {
+    getBackgroundConnectionStatus: () => bg.getStatus(),
+    openBackgroundNotificationSettings: () => bg.openNotificationSettings(),
     isBackgroundConnectionSupported: () => bg.android,
     isBatteryUnrestricted: async () => bg.unrestricted,
     openBatterySettings: bg.open,
@@ -176,4 +180,21 @@ it("offers Android background connection instead of an unsupported push row", as
 it("does not show background connection on iOS", () => {
   render(<TaskNotificationSettings />);
   expect(screen.queryByRole("checkbox", { name: /后台保持连接/ })).toBeNull();
+});
+
+it("shows when a saved background preference has no running service", async () => {
+  bg.android = true;
+  bg.enabled = true;
+  bg.getStatus.mockResolvedValueOnce({ running: false, notificationsEnabled: true });
+  render(<TaskNotificationSettings />);
+  await screen.findByText("后台连接服务未运行，请关闭开关后重新开启。");
+});
+
+it("explains a rejected enable without leaving the checkbox checked", async () => {
+  bg.android = true;
+  bg.set.mockRejectedValueOnce(new Error("请允许通知后重试"));
+  render(<TaskNotificationSettings />);
+  fireEvent.click(screen.getByRole("checkbox", { name: /后台保持连接/ }));
+  await screen.findByText("请允许通知后重试");
+  expect((screen.getByRole("checkbox", { name: /后台保持连接/ }) as HTMLInputElement).checked).toBe(false);
 });
