@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkAndroidUpdate,
+  checkMobileUpdate,
   compareVersions,
   fetchAndroidRelease,
   isMobileUpdateSupported,
@@ -120,7 +121,7 @@ describe("Android release selection", () => {
     expect(nativeGet).not.toHaveBeenCalled();
   });
 
-  it.each(["ios", "web"])("does not enable the APK updater on %s", (value) => {
+  it.each(["web"])("does not enable the updater on %s", (value) => {
     platform.mockReturnValue(value);
     expect(isMobileUpdateSupported()).toBe(false);
   });
@@ -181,5 +182,31 @@ describe("optional Android release notes", () => {
   });
   it.each([null, "not an array", [42], ["valid", {}]])("rejects invalid notes %j", (releaseNotes) => {
     expect(parseAndroidRelease(manifest({ releaseNotes }))).toBeNull();
+  });
+});
+
+describe("mobile platform dispatch", () => {
+  it("supports iOS and compares installed marketing version, not build", async () => {
+    platform.mockReturnValue("ios"); expect(isMobileUpdateSupported()).toBe(true);
+    appInfo.mockResolvedValue({ version: "1.0", build: "999" });
+    nativeGet.mockResolvedValue(nativeResponse({ resultCount: 1, results: [{ trackId: 6811485613, bundleId: "com.leadingthink.miniq", version: "1.1", trackViewUrl: "https://apps.apple.com/cn/app/id6811485613" }] }));
+    expect(await checkMobileUpdate()).toMatchObject({ phase: "available", release: { platform: "ios", version: "1.1" } });
+    expect(appInfo).toHaveBeenCalledOnce();
+  });
+  it.each(["1.1", "1.2"])("never downgrades installed iOS %s", async (version) => {
+    platform.mockReturnValue("ios"); appInfo.mockResolvedValue({ version });
+    nativeGet.mockResolvedValue(nativeResponse({ resultCount: 1, results: [{ trackId: 6811485613, bundleId: "com.leadingthink.miniq", version: "1.1", trackViewUrl: "https://apps.apple.com/cn/app/id6811485613" }] }));
+    expect(await checkMobileUpdate()).toEqual({ phase: "unavailable", version });
+  });
+  it("dispatches Android compatibly", async () => {
+    expect(await checkMobileUpdate()).toMatchObject({ phase: "available", release: { version: "0.1.23" } });
+  });
+  it("skips web without reading app information", async () => {
+    native.mockReturnValue(false); expect(await checkMobileUpdate()).toEqual({ phase: "idle" });
+    expect(appInfo).not.toHaveBeenCalled(); expect(nativeGet).not.toHaveBeenCalled();
+  });
+  it("reports missing iOS public listing as failure", async () => {
+    platform.mockReturnValue("ios"); nativeGet.mockResolvedValue(nativeResponse({ resultCount: 0, results: [] }));
+    await expect(checkMobileUpdate()).rejects.toThrow();
   });
 });
