@@ -403,8 +403,8 @@ describe("Timeline execution flow", () => {
 
     // Execution details collapse into a single per-turn summary row between
     // the request and the reply; step and plan details live inside the fold.
-    expect(html.indexOf("检查这个项目")).toBeLessThan(html.indexOf("已执行 2 项操作"));
-    expect(html.indexOf("已执行 2 项操作")).toBeLessThan(html.indexOf("检查完成"));
+    expect(html.indexOf("检查这个项目")).toBeLessThan(html.indexOf("已执行 1 项操作"));
+    expect(html.indexOf("已执行 1 项操作")).toBeLessThan(html.indexOf("检查完成"));
     expect(html).not.toContain("运行了命令");
     expect(html).not.toContain("task_update");
   });

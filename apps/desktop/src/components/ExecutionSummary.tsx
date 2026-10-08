@@ -54,11 +54,11 @@ export function ExecutionSummary(props: {
         <strong role="status">{label}</strong>
         {detail && <span title={detail}>{detail}</span>}
         {step && (
-          <em className="execution-summary-step" aria-label={`第 ${step.current} / ${step.total} 步`}>
-            第 {step.current}/{step.total} 步
+          <em className="execution-summary-step" aria-label={`阶段 ${step.current} / ${step.total}`}>
+            阶段 {step.current}/{step.total}
           </em>
         )}
-        <div className="execution-summary-counts" aria-label={summary.partial ? "已加载步骤统计" : "本轮步骤统计"}>
+        <div className="execution-summary-counts" aria-label={summary.partial ? "已加载操作统计" : "本轮操作统计"}>
           {summary.partial && <span>已加载</span>}
           <span>
             <Check size={12} />

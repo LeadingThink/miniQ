@@ -53,7 +53,7 @@ it("shows approvals ahead of model activity", () => {
 it("keeps completed execution counts on the summary title row", () => {
   render(
     <ExecutionSummary
-      messages={[]}
+      messages={[{ role: "user", createdAt: "2026-09-08T00:00:00Z" } as Message]}
       calls={[call(1)]}
       progress={null}
       plan={[]}
@@ -63,7 +63,7 @@ it("keeps completed execution counts on the summary title row", () => {
     />,
   );
   const title = screen.getByRole("status").parentElement;
-  expect(title?.contains(screen.getByLabelText(/步骤统计$/))).toBe(true);
+  expect(title?.contains(screen.getByLabelText("本轮操作统计"))).toBe(true);
 });
 
 it("excludes internal plan updates from visible step counts", () => {
@@ -112,7 +112,7 @@ it("carries the current plan step inside the summary pill while busy", () => {
   const { rerender } = render(
     <ExecutionSummary messages={[]} calls={[]} progress={null} plan={plan} busy approvals={0} questions={0} />,
   );
-  expect(screen.getByLabelText("第 2 / 3 步")).toBeTruthy();
+  expect(screen.getByText("阶段 2/3")).toBeTruthy();
   rerender(<ExecutionSummary messages={[]} calls={[call(1)]} progress={null} plan={plan} busy={false} approvals={0} questions={0} />);
-  expect(screen.queryByLabelText(/步$/)).toBeNull();
+  expect(screen.queryByLabelText(/^阶段 /)).toBeNull();
 });
