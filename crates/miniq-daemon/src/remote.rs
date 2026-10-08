@@ -71,14 +71,53 @@ fn default_relay_url() -> String {
 }
 
 fn default_device_name() -> String {
-    std::env::var("COMPUTERNAME")
-        .or_else(|_| std::env::var("HOSTNAME"))
-        .ok()
-        .filter(|name| !name.trim().is_empty())
+    // Daemons started by systemd/launchd usually lack HOSTNAME; fall back to
+    // the OS host name so several hosts sharing one API key stay distinguishable.
+    ["COMPUTERNAME", "HOSTNAME"]
+        .into_iter()
+        .filter_map(|key| std::env::var(key).ok())
+        .chain(os_host_name())
+        .map(|name| name.trim().chars().take(80).collect::<String>())
+        .find(|name| !name.is_empty() && name != "localhost")
         .unwrap_or_else(|| "我的电脑".to_string())
 }
 
-fn new_device_id() -> String {
+fn os_host_name() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    if let Some(name) = command_output("scutil", &["--get", "ComputerName"]) {
+        return Some(name);
+    }
+    std::fs::read_to_string("/etc/hostname")
+        .ok()
+        .or_else(|| command_output("hostname", &[]))
+}
+
+fn command_output(program: &str, args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new(program)
+        .args(args)
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|name| !name.is_empty())
+}
+
+/// Replaces `stale` with a fresh device id after the relay reports that
+/// another host is already using it (e.g. a copied settings file).
+pub(crate) fn regenerate_device_id(state: &AppState, stale: &str) -> Result<String, String> {
+    let mut settings = state.settings.lock().unwrap().clone();
+    if settings.remote_access.device_id != stale {
+        return Ok(settings.remote_access.device_id);
+    }
+    settings.remote_access.device_id = new_device_id();
+    let fresh = settings.remote_access.device_id.clone();
+    state.update_settings(settings)?;
+    Ok(fresh)
+}
+
+pub(crate) fn new_device_id() -> String {
     let suffix: String = rand::rng()
         .sample_iter(&Alphanumeric)
         .take(24)
@@ -410,6 +449,13 @@ impl SeenNonces {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_device_name_is_never_empty_and_fits_the_relay_limit() {
+        let name = default_device_name();
+        assert!(!name.trim().is_empty());
+        assert!(name.chars().count() <= 80);
+    }
 
     #[test]
     fn identities_are_stable_and_domain_separated() {

@@ -68,16 +68,21 @@ it("isolates push registration, foreground suppression and offline timers per de
   expect(mb.ws.close).not.toHaveBeenCalled();
 });
 
-it("keeps legacy selection deterministic even when known devices go offline", () => {
+it("binds legacy phones to the single online desktop and forgets offline ones", () => {
   vi.useFakeTimers();
   const broker = new RelayBroker(undefined, 10); brokers.push(broker);
-  const a = socket(), b = socket();
+  const a = socket(), b = socket(), a2 = socket();
   broker.register(a.ws, hello("desktop", "desktop-aaaa"));
   broker.disconnect(a.ws); vi.advanceTimersByTime(11);
+  expect(broker.roomCount()).toBe(0);
+  const offline = socket();
+  expect(broker.register(offline.ws, { ...hello("mobile", "mobile-legacy"), protocol: 1 })).toBe(false);
+  expect(offline.messages[0]).toMatchObject({ code: "desktop_offline" });
+  broker.register(b.ws, hello("desktop", "desktop-bbbb"));
   const single = socket();
   expect(broker.register(single.ws, { ...hello("mobile", "mobile-legacy"), protocol: 1 })).toBe(true);
-  expect(single.messages[0]).toMatchObject({ type: "ready", desktopOnline: false, desktopDeviceId: "desktop-aaaa" });
-  broker.register(b.ws, hello("desktop", "desktop-bbbb"));
+  expect(single.messages[0]).toMatchObject({ type: "ready", desktopOnline: true, desktopDeviceId: "desktop-bbbb" });
+  broker.register(a2.ws, hello("desktop", "desktop-aaaa"));
   const ambiguous = socket();
   expect(broker.register(ambiguous.ws, { ...hello("mobile", "mobile-legacy"), protocol: 1 })).toBe(false);
   expect(ambiguous.messages[0]).toMatchObject({ code: "device_selection_required" });

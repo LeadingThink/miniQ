@@ -338,10 +338,12 @@ describe("miniQ relay", () => {
   it("closes the room immediately after desktop_goodbye", async () => {
     const url = await start(undefined, 60_000);
     const { desktop, mobile } = await joined(url);
-    const offline = nextType(mobile, "presence");
+    const presence = collect(mobile, "presence");
     const closed = closeInfo(mobile);
     desktop.send(JSON.stringify({ type: "desktop_goodbye" }));
-    await expect(offline).resolves.toMatchObject({ desktopOnline: false });
+    await closed.then(() => undefined);
+    // The join presence (online) can arrive after `joined`; only the last one matters.
+    expect(presence.at(-1)).toMatchObject({ desktopOnline: false });
     await expect(closed).resolves.toEqual([1012, "desktop offline"]);
 
     const next = await connect(url);

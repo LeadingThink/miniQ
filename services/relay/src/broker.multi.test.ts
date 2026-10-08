@@ -127,7 +127,7 @@ describe("multi-device relay over real WebSockets", () => {
   });
 
   it("discovers retained offline metadata and never routes an offline target to another desktop", async () => {
-    const url = await start(undefined, 10);
+    const url = await start(undefined, 500);
     const discover = await joinV2(url, "mobile", "mobile-scan");
     expect(discover.response).toEqual({ type: "devices", devices: [] });
     const devices = nextType(discover.socket, "devices");
@@ -154,6 +154,55 @@ describe("multi-device relay over real WebSockets", () => {
     const correct = nextType(a2.socket, "frame");
     ma.socket.send(frame("desktop", "encrypted-reconnected-target-approval"));
     await correct;
+  });
+
+  it("prunes offline desktops after the grace period so legacy and v2 phones reach the live host", async () => {
+    const url = await start(undefined, 20);
+    const mac = await joinV2(url, "desktop", "desktop-mac1");
+    const closed = nextClose(mac.socket);
+    mac.socket.close();
+    await closed;
+    await joinV2(url, "desktop", "desktop-cvm1");
+    // Inside the grace window both entries exist; legacy phones still bind to the only online host.
+    const early = await connect(url);
+    const earlyReady = nextType(early, "ready");
+    early.send(JSON.stringify(hello("mobile")));
+    await expect(earlyReady).resolves.toMatchObject({ desktopDeviceId: "desktop-cvm1", desktopOnline: true });
+    await wait(60);
+    const scan = await joinV2(url, "mobile", "mobile-scan");
+    expect(scan.response.devices).toEqual([{ deviceId: "desktop-cvm1", deviceName: "desktop", online: true }]);
+    const stale = await connect(url);
+    const rejected = nextType(stale, "error");
+    stale.send(JSON.stringify({ ...hello("mobile"), protocol: 2, targetDeviceId: "desktop-mac1" }));
+    await expect(rejected).resolves.toMatchObject({ code: "invalid_target" });
+    const mobile = await joinV2(url, "mobile", "mobile-cvm1", "desktop-cvm1");
+    expect(mobile.response).toMatchObject({ desktopOnline: true, desktopDeviceId: "desktop-cvm1" });
+  });
+
+  it("forgets a desktop immediately after goodbye", async () => {
+    const url = await start(undefined, 60_000);
+    const mac = await joinV2(url, "desktop", "desktop-mac1");
+    await joinV2(url, "desktop", "desktop-cvm1");
+    mac.socket.send(JSON.stringify({ type: "desktop_goodbye" }));
+    await nextClose(mac.socket);
+    const scan = await joinV2(url, "mobile", "mobile-scan");
+    expect(scan.response.devices).toEqual([{ deviceId: "desktop-cvm1", deviceName: "desktop", online: true }]);
+  });
+
+  it("stops two hosts sharing one device id from kicking each other forever", async () => {
+    const url = await start();
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    let current = (await joinV2(url, "desktop", "desktop-dup1")).socket;
+    for (let round = 0; round < 3; round += 1) {
+      const kicked = closeInfo(current);
+      current = (await joinV2(url, "desktop", "desktop-dup1")).socket;
+      await expect(kicked).resolves.toEqual([4001, "desktop reconnected"]);
+    }
+    const intruder = await connect(url);
+    const error = nextType(intruder, "error");
+    intruder.send(JSON.stringify({ ...hello("desktop", "sk-shared", "desktop-dup1"), protocol: 2 }));
+    await expect(error).resolves.toMatchObject({ code: "duplicate_device" });
+    expect(current.readyState).toBe(WebSocket.OPEN);
   });
 
   it("rejects discovery business traffic, unknown/malformed targets and ambiguous legacy clients", async () => {

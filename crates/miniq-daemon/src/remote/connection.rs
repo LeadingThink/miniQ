@@ -50,6 +50,12 @@ async fn connect(
         .ok_or_else(|| anyhow::anyhow!("relay 在握手时关闭连接"))??;
     let ready = parse_relay_text(first)?;
     if ready.kind == "error" {
+        if ready.code == "duplicate_device" {
+            let fresh = super::regenerate_device_id(state, &config.device_id)
+                .map_err(|error| anyhow::anyhow!("设备 ID 冲突，重新生成失败: {error}"))?;
+            tracing::warn!(device_id = %fresh, "relay reported a duplicate device id; regenerated it");
+            anyhow::bail!("设备 ID 与另一台电脑冲突，已重新生成，正在重连");
+        }
         anyhow::bail!(ready.message);
     }
     if ready.kind != "ready" || !ready.desktop_online || ready.desktop_device_id != config.device_id
