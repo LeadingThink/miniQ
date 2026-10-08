@@ -681,3 +681,15 @@ button.danger {
   background: var(--danger);
   color: var(--danger-contrast);
 }
+
+/* iOS WebKit zooms the page when a field under 16px gets focus, and it does
+   not zoom back out. On touch screens every text field uses at least 16px,
+   so the layout stays at the device width. Pinch zoom stays available. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  textarea,
+  select,
+  [contenteditable="true"] {
+    font-size: max(16px, 1em) !important;
+  }
+}
