@@ -4,7 +4,7 @@ import { currentExecution } from "../timelineModel";
 import type { AnchoredTurnTiming, Message, PlanTask, ToolCall, TurnProgress } from "../types";
 import { latestMessageTiming } from "../timelineTiming";
 import { TurnTimingSummary } from "./TurnTimingSummary";
-import { toolActionLabel, toolInputSummary } from "./ExecutionActivity";
+import { currentPlanStep, planCounts, toolActionLabel, toolInputSummary } from "./ExecutionActivity";
 import "./ExecutionSummary.css";
 
 export function ExecutionSummary(props: {
@@ -43,12 +43,21 @@ export function ExecutionSummary(props: {
           : Check;
   const task = props.busy ? props.plan.find((task) => task.status === "in_progress") : undefined;
   const detail = task?.content || (active ? toolInputSummary(active) : "");
+  // Phones hide the composer-side PlanStepPill; the step moves into this pill.
+  const step = props.busy && props.plan.length > 0
+    ? { current: currentPlanStep(props.plan), total: planCounts(props.plan).total }
+    : null;
   return (
     <section className="execution-summary" aria-label="当前执行摘要">
       <div className="execution-summary-title">
         <Icon size={16} className={props.busy && !props.approvals && !props.questions ? "activity-spinner" : ""} />
         <strong role="status">{label}</strong>
         {detail && <span title={detail}>{detail}</span>}
+        {step && (
+          <em className="execution-summary-step" aria-label={`第 ${step.current} / ${step.total} 步`}>
+            第 {step.current}/{step.total} 步
+          </em>
+        )}
         <div className="execution-summary-counts" aria-label={summary.partial ? "已加载步骤统计" : "本轮步骤统计"}>
           {summary.partial && <span>已加载</span>}
           <span>

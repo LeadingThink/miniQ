@@ -425,11 +425,59 @@
     min-height: 28px;
     padding: 1px max(10px, var(--safe-right)) 1px max(10px, var(--safe-left));
   }
+  /* One status row: execution pill, sub-task pill, then search icon and ⋯. */
+  .native-mobile .conversation-context {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    column-gap: 6px;
+  }
+  /* Keep the collapsed search icon on the pill row: pills shrink, never wrap. */
+  .native-mobile .conversation-context:has(> .timeline-toolbar[data-search-open="false"]) {
+    flex-wrap: nowrap;
+    align-items: center;
+  }
   .native-mobile .conversation-context > .execution-summary {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     flex-basis: auto;
     min-width: 0;
+    padding: 2px 9px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    background: var(--bg);
+    overflow: hidden;
+    align-self: center;
   }
+  /* The step count is the useful part: the phase label truncates before it. */
+  .native-mobile .conversation-context > .execution-summary .execution-summary-title strong {
+    flex: 0 1 auto;
+  }
+  .native-mobile .conversation-context .execution-summary-step {
+    display: inline;
+    flex: none;
+    font-style: normal;
+    font-size: var(--font-caption);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-mid);
+    white-space: nowrap;
+  }
+  /* Failures stay readable: the execution pill truncates first. */
+  .native-mobile .conversation-context > .agent-status-indicator {
+    flex: 0 0 auto;
+    align-self: center;
+    min-width: 0;
+    max-width: none;
+    margin: 0;
+  }
+  .native-mobile .conversation-context > .timeline-toolbar[data-search-open="false"] {
+    flex: none;
+    margin-left: auto;
+    padding: 0;
+  }
+  .native-mobile .conversation-context > .timeline-toolbar[data-search-open="true"] {
+    flex: 1 1 100%;
+    order: 10;
+  }
+  .native-mobile .plan-step-pill-wrap { display: none; }
   .native-mobile .conversation-context .session-goal-card,
   .native-mobile .conversation-context .session-goal-content,
   .native-mobile .conversation-context .session-goal-add { max-width: 48vw; }
@@ -903,9 +951,6 @@
   }
   .tool-group-toggle {
     gap: 5px;
-  }
-  .composer-row > .session-model-controls {
-    flex-basis: 100%;
   }
 }
 .session-permissions {

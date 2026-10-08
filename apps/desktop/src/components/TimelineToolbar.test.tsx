@@ -36,3 +36,18 @@ it("closes the more menu after actions and outside taps; Escape restores focus",
   fireEvent.click(screen.getByRole("button", { name: "导出 Markdown" }));
   expect(onExport).toHaveBeenCalledWith("md");
 });
+
+it("collapses search behind an icon until opened, and stays open while a query is active", () => {
+  const { container, rerender } = render(<TimelineToolbar filter="all" query="" exporting={false} onFilter={vi.fn()} onQuery={vi.fn()} onExport={vi.fn()} />);
+  const toolbar = container.querySelector(".conversation-tools")!;
+  expect(toolbar.getAttribute("data-search-open")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "搜索和筛选会话" }));
+  expect(toolbar.getAttribute("data-search-open")).toBe("true");
+  expect(document.activeElement).toBe(screen.getByRole("searchbox"));
+  fireEvent.blur(screen.getByRole("searchbox"), { relatedTarget: document.body });
+  expect(toolbar.getAttribute("data-search-open")).toBe("false");
+  rerender(<TimelineToolbar filter="all" query="needle" exporting={false} onFilter={vi.fn()} onQuery={vi.fn()} onExport={vi.fn()} />);
+  expect(toolbar.getAttribute("data-search-open")).toBe("true");
+  rerender(<TimelineToolbar filter="errors" query="" exporting={false} onFilter={vi.fn()} onQuery={vi.fn()} onExport={vi.fn()} />);
+  expect(toolbar.getAttribute("data-search-open")).toBe("true");
+});

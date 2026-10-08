@@ -7,9 +7,12 @@ import { sessionStatusLabel } from "../sessionStatus";
 import { RemoteDeviceBarContext } from "../remoteDeviceBar";
 import "./RemoteConnectionStatus.css";
 
+/** Window event that opens the connection details dialog, e.g. from the toolbar menu. */
+export const REMOTE_CONNECTION_DETAILS_EVENT = "miniq:remote-connection-details";
+
 export function RemoteConnectionStatus({ app, onToggleReview }: { app: MiniqAppController; onToggleReview?: () => void }) {
   const desktop = useDesktopHost();
-  const underDeviceBar = useContext(RemoteDeviceBarContext);
+  const bar = useContext(RemoteDeviceBarContext);
   const [open, setOpen] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -36,19 +39,25 @@ export function RemoteConnectionStatus({ app, onToggleReview }: { app: MiniqAppC
     return () => { element.close(); trigger.current?.focus(); };
   }, [open]);
   useEffect(() => { setOpen(false); }, [desktop?.host]);
-  const show = (button: HTMLButtonElement) => { trigger.current = button; setOpen(true); };
+  const show = (button: HTMLButtonElement | null) => { trigger.current = button; setOpen(true); };
+  useEffect(() => {
+    const openDetails = () => show(null);
+    window.addEventListener(REMOTE_CONNECTION_DETAILS_EVENT, openDetails);
+    return () => window.removeEventListener(REMOTE_CONNECTION_DETAILS_EVENT, openDetails);
+  }, []);
+  const linked = online && connected;
   return <>
     <button type="button" className="statusbar-identity" aria-label="查看完整会话标题与连接信息" aria-haspopup="dialog" onClick={(event) => show(event.currentTarget)}>
-      <span><strong>{session?.title || "选择一个会话，继续工作"}</strong><small>{[
-        // The device bar above already names the selected computer; repeat
-        // only an SSH host, which differs from it.
-        underDeviceBar && !app.client.sshHost ? "" : machine,
+      <span><strong>{session?.title || "选择一个会话，继续工作"}</strong><small><i className={`remote-presence-dot ${linked ? "ok" : "warn"}`} aria-hidden="true" />{[
+        // Phones hide RemoteWorkbench's device bar, so this line names the
+        // selected computer; an SSH host is named instead when one is used.
+        app.client.sshHost ? machine : bar?.name || machine,
         session ? sessionStatusLabel(session.status) : "",
         workspace?.name ?? "",
       ].filter(Boolean).join(" · ")}</small></span><ChevronDown size={15} />
     </button>
-    <button type="button" className={`connection-state remote-connection-trigger ${online && connected ? "connected" : "reconnecting"}`} aria-haspopup="dialog" aria-label={`${label}，查看连接详情`} title="查看连接状态、切换电脑或打开连接设置" onClick={(event) => show(event.currentTarget)}>
-      {!online ? <WifiOff size={14} /> : connected ? <Wifi size={14} /> : <LoaderCircle className="connection-spinner" size={14} />}<span>{label}</span><ChevronDown size={12} />
+    <button type="button" className={`connection-state remote-connection-trigger ${linked ? "connected" : "reconnecting"}`} aria-haspopup="dialog" aria-label={`${label}，查看连接详情`} title="查看连接状态、切换电脑或打开连接设置" onClick={(event) => show(event.currentTarget)}>
+      {!online ? <WifiOff size={14} /> : connected ? <Wifi size={14} /> : <LoaderCircle className="connection-spinner" size={14} />}<span>{label}</span><span className="remote-connection-short" aria-hidden="true">{!online ? "网络断开" : "重连中"}</span><ChevronDown size={12} />
     </button>
     {open && <dialog ref={dialog} className="remote-connection-dialog" aria-label="会话与连接信息" onCancel={(event) => { event.preventDefault(); setOpen(false); }}>
       <header><h2>会话与连接</h2><button type="button" className="icon-button" aria-label="关闭连接信息" onClick={() => setOpen(false)}><X size={20} /></button></header>

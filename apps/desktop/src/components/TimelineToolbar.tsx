@@ -16,7 +16,15 @@ export function TimelineToolbar(props: {
   onExport: (format: "md" | "json") => void;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
+  const search = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
+  // Phones collapse filter + search behind one icon until needed. An active
+  // query or filter keeps them expanded so the user can see why rows are hidden.
+  const [searching, setSearching] = useState(false);
+  const expanded = searching || !!props.query || props.filter !== "all";
+  useEffect(() => {
+    if (searching) search.current?.focus();
+  }, [searching]);
   useEffect(() => {
     if (!open) return;
     const outside = (event: PointerEvent) => {
@@ -30,7 +38,17 @@ export function TimelineToolbar(props: {
     action();
   };
   return (
-    <div className="timeline-toolbar conversation-tools" aria-label="会话记录工具栏">
+    <div
+      className="timeline-toolbar conversation-tools"
+      aria-label="会话记录工具栏"
+      data-search-open={expanded ? "true" : "false"}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSearching(false);
+      }}
+    >
+      <button type="button" className="icon-button timeline-search-toggle" aria-label="搜索和筛选会话" title="搜索和筛选会话" aria-expanded={expanded} onClick={() => setSearching(true)}>
+        <Search size={18} />
+      </button>
       <div className="timeline-modes" role="group" aria-label="记录类型">
         {filters.map(([value, label]) => <button type="button" key={value} aria-pressed={props.filter === value} onClick={() => props.onFilter(value)}>{label}</button>)}
       </div>
@@ -39,7 +57,7 @@ export function TimelineToolbar(props: {
       </select>
       <label className="timeline-search">
         <Search size={14} aria-hidden="true" />
-        <input type="search" aria-label="搜索当前会话" placeholder="搜索会话" data-session-search="true" title="搜索当前会话（⌘/Option+F 或 Ctrl+F）" value={props.query} onChange={(event) => props.onQuery(event.target.value)} />
+        <input ref={search} type="search" aria-label="搜索当前会话" placeholder="搜索会话" data-session-search="true" title="搜索当前会话（⌘/Option+F 或 Ctrl+F）" value={props.query} onChange={(event) => props.onQuery(event.target.value)} />
         {props.query && <button type="button" className="icon-button" title="清空会话搜索" aria-label="清空会话搜索" onClick={() => props.onQuery("")}><X size={14} /></button>}
       </label>
       <details ref={menu} className="timeline-actions" onToggle={(event) => setOpen(event.currentTarget.open)} onKeyDown={(event) => {

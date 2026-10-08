@@ -1,4 +1,5 @@
 .timeline-mobile-filter { display: none; }
+.timeline-search-toggle { display: none; }
 .timeline-actions { position: relative; flex: none; }
 .timeline-actions > summary {
   display: grid;
@@ -67,4 +68,21 @@
   .native-mobile .conversation-tools { gap: 4px; padding: 0 10px; min-height: 44px; }
   .native-mobile .conversation-tools .timeline-mobile-filter { max-width: 112px; }
   .native-mobile .conversation-tools .timeline-search input { min-height: 44px; }
+  /* Collapsed: only the search icon and the ⋯ menu stay, on the status row. */
+  .native-mobile .conversation-tools .timeline-search-toggle {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 36px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-mid);
+  }
+  .native-mobile .conversation-tools[data-search-open="false"] .timeline-mobile-filter,
+  .native-mobile .conversation-tools[data-search-open="false"] .timeline-search { display: none; }
+  .native-mobile .conversation-tools[data-search-open="true"] .timeline-search-toggle { display: none; }
+  .native-mobile .conversation-tools[data-search-open="false"] { padding: 0; min-height: 40px; gap: 0; }
+  .native-mobile .conversation-tools[data-search-open="false"] .timeline-actions > summary { min-width: 36px; height: 40px; }
 }
