@@ -1,7 +1,7 @@
 .statusbar-identity { display: none; }
 .statusbar .remote-connection-trigger { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-subtle); color: var(--text-mid); min-width: 0; cursor: pointer; }
 .remote-connection-trigger.connected { color: var(--text); }
-.remote-connection-dialog { width: min(520px, calc(100vw - 24px)); max-height: min(85dvh, var(--app-height, 100dvh)); overflow-y: auto; overscroll-behavior: contain; padding: 20px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); color: var(--text); white-space: normal; }
+.remote-connection-dialog { box-sizing: border-box; width: min(520px, calc(100vw - 24px)); max-height: min(85dvh, var(--app-height, 100dvh)); overflow-y: auto; overscroll-behavior: contain; padding: 20px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); color: var(--text); white-space: normal; }
 .remote-connection-dialog::backdrop { background: var(--scrim); }
 .remote-connection-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .remote-connection-dialog h2 { margin: 0; font-size: var(--font-headline); }
@@ -30,7 +30,14 @@
   .statusbar-identity small { display: block; font-size: var(--font-caption); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); margin-top: 3px; }
   .statusbar-identity > svg { flex: none; }
   .statusbar .remote-connection-trigger { min-height: 44px; padding: 6px 8px; font-size: var(--font-caption); }
-  .remote-connection-dialog { padding: 16px; }
+  .remote-connection-dialog {
+    position: fixed;
+    inset: var(--app-offset-top, 0px) auto auto 50%;
+    transform: translateX(-50%);
+    margin: max(8px, var(--safe-top)) 0 max(8px, var(--safe-bottom));
+    max-height: calc(var(--app-height, 100dvh) - max(8px, var(--safe-top)) - max(8px, var(--safe-bottom)));
+    padding: 16px;
+  }
   /* Phone remote header: a single row. The identity button opens the same
      connection dialog, so the healthy-connection chip is hidden; it comes back
      with its label whenever the link is degraded. */

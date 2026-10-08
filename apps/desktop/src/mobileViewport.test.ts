@@ -64,6 +64,15 @@ describe("mobile viewport", () => {
     expect(document.documentElement.style.getPropertyValue("--app-height")).toBe("640px");
   });
 
+  it("uses the resized inner height when the layout viewport is stale", () => {
+    const viewport = setupViewport(844);
+    Object.defineProperty(document.documentElement, "clientHeight", { configurable: true, value: 844 });
+    vi.stubGlobal("innerHeight", 512);
+    viewport.height = 844;
+    viewport.dispatchEvent(new Event("resize"));
+    expect(document.documentElement.style.getPropertyValue("--app-height")).toBe("512px");
+  });
+
   it("removes both window and visual viewport listeners when disposed", () => {
     const viewport = setupViewport(800);
     cleanups.splice(0).forEach((cleanup) => cleanup());

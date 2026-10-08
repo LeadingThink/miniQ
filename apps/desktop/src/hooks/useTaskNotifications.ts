@@ -6,7 +6,7 @@ import { clearTurnBadgeOnFocus, createTurnBadge } from "../turnBadge";
 import { notifyMobileTask, notifyTaskResult, type TaskNotificationKind, type TaskNotificationTarget } from "../taskNotifications";
 import { isNativeMobileApp } from "../mobileRuntime";
 import { startAppBadge } from "../appBadge";
-import { getRemotePushStatus, isRemotePushCovering, startRemotePush } from "../remotePush";
+import { startRemotePush } from "../remotePush";
 import { decisionOf, resolveFromNotification } from "../notificationActions";
 
 /** Completed turns shorter than this are not worth a phone notification. */
@@ -66,11 +66,8 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
     const catchUpUntil = new Map<string, number>();
     let allCatchUpUntil = 0;
 
-    const deliver = (host: string | null, sessionId: string, kind: TaskNotificationKind, startedAt: number | undefined, catchUp: boolean) => {
+    const deliver = (host: string | null, sessionId: string, kind: TaskNotificationKind, startedAt: number | undefined) => {
       if (mobile && kind === "completed" && startedAt !== undefined && Date.now() - startedAt < SHORT_TASK_MS) return;
-      // The offline push already alerted for the local desktop; the unread
-      // marker in the session list is enough after reopening the app.
-      if (catchUp && host === null && getRemotePushStatus() === "active") return;
       const catalog = catalogsRef.current[hostKey(host)];
       const session = catalog?.sessions.find((entry) => entry.id === sessionId);
       const title = host === null
@@ -78,7 +75,7 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
         : `${catalog?.label || host} · ${session?.title || "当前会话"}`;
       if (mobile) {
         const viewing = optionsRef.current.isViewing?.(host, sessionId) ?? false;
-        void notifyMobileTask(kind, title, { host, sessionId, ...(root.targetDeviceId ? { targetDeviceId: root.targetDeviceId } : {}) }, viewing, isRemotePushCovering(host));
+        void notifyMobileTask(kind, title, { host, sessionId, ...(root.targetDeviceId ? { targetDeviceId: root.targetDeviceId } : {}) }, viewing);
       } else if (kind !== "attention") {
         // Desktop approval/question reminders come from useAttentionNotifications,
         // which carries the request detail and per-kind preferences.
@@ -124,7 +121,7 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
         started.delete(key);
         if (caughtUp.delete(key)) return;
       }
-      deliver(host, sessionId, kind, startedAt, false);
+      deliver(host, sessionId, kind, startedAt);
     };
 
     /**
@@ -160,7 +157,7 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
           }
           const startedAt = started.get(key);
           if (kind !== "attention") started.delete(key);
-          deliver(host, session.id, kind, startedAt, true);
+          deliver(host, session.id, kind, startedAt);
         }
       }
     };

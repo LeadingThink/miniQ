@@ -6,6 +6,7 @@ import type { DaemonEvent, Session, Workspace } from "../types";
 import { useDaemonConnection } from "./useDaemonConnection";
 import { isSessionRunning, isSessionTerminal } from "../sessionStatus";
 import { errorMessage } from "../errorMessage";
+import { isNativeMobileApp } from "../mobileRuntime";
 import { pruneUnread, saveUnread, withUnread } from "../unreadStore";
 
 const LEGACY_HOSTS = "miniq.ssh.saved-hosts";
@@ -18,6 +19,9 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
   const clearError = useCallback(() => setError(null), []);
   const activeRef = useRef(active);
   activeRef.current = active;
+  const isViewing = useCallback((host: string | null, sessionId: string) =>
+    document.visibilityState === "visible" && (isNativeMobileApp() || document.hasFocus())
+      && activeRef.current.host === host && activeRef.current.navigation.sessionId === sessionId, []);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const inflight = useRef(new Map<string, Promise<void>>());
@@ -54,12 +58,20 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
         setCatalogs((current) => {
           if (host && knownHosts.current && !knownHosts.current.has(host)) return current;
           const catalog = current[key] ?? emptyCatalog(host, host ?? "本机", root.storageScope);
+          const unreadSessionIds = new Set(pruneUnread(catalog.unreadSessionIds, sessions.map((session) => session.id)));
+          // Catalog refreshes recover terminal transitions missed while disconnected.
+          // The first snapshot is a baseline, not evidence of an unseen completion.
+          for (const session of sessions) {
+            const previous = catalog.sessions.find((entry) => entry.id === session.id);
+            if (previous && isSessionRunning(previous.status) && isSessionTerminal(session.status)
+              && !isViewing(host, session.id)) unreadSessionIds.add(session.id);
+          }
           return { ...current, [key]: { ...catalog,
             // A delayed catalog response cannot override a newer disconnect.
             state: host === null ? (root.connected ? "connected" : "disconnected") : catalog.state,
             error: host === null || catalog.state === "connected" ? undefined : catalog.error,
             catalogStatus: "ready", catalogError: undefined, workspaces, sessions,
-            unreadSessionIds: pruneUnread(catalog.unreadSessionIds, sessions.map((session) => session.id)),
+            unreadSessionIds,
           } };
         });
       } while (queued.current.has(key));
@@ -72,7 +84,7 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
     }).finally(() => inflight.current.delete(key));
     inflight.current.set(key, pending);
     return pending;
-  }, [root, clientFor]);
+  }, [root, clientFor, isViewing]);
   const refreshHosts = useCallback(async () => {
     const generation = ++registryEpoch.current;
     const result = await root.call<HostList>("host.list");
@@ -134,7 +146,7 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
           const previous = catalog.sessions.find((session) => session.id === value.sessionId);
           const completed = value.type !== "session_status_changed"
             || (isSessionTerminal(value.status) && previous && isSessionRunning(previous.status));
-          if (completed && (activeRef.current.host !== host || activeRef.current.navigation.sessionId !== value.sessionId)) unread.add(value.sessionId);
+          if (completed && !isViewing(host, value.sessionId)) unread.add(value.sessionId);
           const sessions = value.type === "session_status_changed"
             ? catalog.sessions.map((session) => session.id === value.sessionId ? { ...session, status: value.status } : session)
             : catalog.sessions;
@@ -149,13 +161,16 @@ export function useHostCatalogs(root: RpcClient, clientFor: (host: string | null
       else event(value.hostId, value.event);
     });
     return () => { offLocal(); offHost(); };
-  }, [root, refreshCatalog, refreshHosts, reportHostError]);
+  }, [root, refreshCatalog, refreshHosts, reportHostError, isViewing]);
   const setUnread = useCallback((host: string | null, sessionId: string, unread: boolean) => setCatalogs((current) => {
     const key = hostKey(host), catalog = current[key];
     const unreadSessionIds = catalog && withUnread(catalog.unreadSessionIds, sessionId, unread);
     return unreadSessionIds ? { ...current, [key]: { ...catalog, unreadSessionIds } } : current;
   }), []);
-  const markSeen = useCallback((host: string | null, sessionId: string) => setUnread(host, sessionId, false), [setUnread]);
+  const markSeen = useCallback((host: string | null, sessionId: string) => {
+    // An in-flight session.open may resolve after the app was backgrounded.
+    if (document.visibilityState === "visible") setUnread(host, sessionId, false);
+  }, [setUnread]);
   const markAllSeen = useCallback(() => setCatalogs((current) => {
     if (!Object.values(current).some((catalog) => catalog.unreadSessionIds.size)) return current;
     return Object.fromEntries(Object.entries(current).map(([key, catalog]) => [key, catalog.unreadSessionIds.size ? { ...catalog, unreadSessionIds: new Set<string>() } : catalog]));
