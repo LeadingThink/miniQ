@@ -52,12 +52,19 @@ jobs:
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
       - name: Install frontend dependencies
         working-directory: apps/desktop
         run: npm ci
       - name: Validate release version
         working-directory: apps/desktop
         run: npm run release:check-version -- ${{ inputs.tag }}
+      - name: Test and type-check desktop frontend
+        working-directory: apps/desktop
+        run: |
+          npm test
+          npm run build
       - name: Test release manifest builder
         working-directory: apps/desktop
         run: |
@@ -156,6 +163,11 @@ jobs:
             apps/desktop/src-tauri -> apps/desktop/src-tauri/target
       - name: Build daemon and terminal client
         run: cargo build --release --locked -p miniq-daemon -p miniq-cli --bin miniq-daemon --bin miniq --target ${{ matrix.target }}
+      - name: Test daemon and check workspace on Windows
+        if: runner.os == 'Windows'
+        run: |
+          cargo test --release --locked -p miniq-daemon --target ${{ matrix.target }}
+          cargo check --release --locked --workspace --target ${{ matrix.target }}
       - name: Build Windows terminal launcher
         if: runner.os == 'Windows'
         run: cargo build --release --locked -p miniq-cli --bin miniq-launcher --target ${{ matrix.target }}
@@ -223,6 +235,9 @@ jobs:
             fi
           fi
           npm run tauri build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Check desktop Rust application on Windows
+        if: runner.os == 'Windows'
+        run: cargo check --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --target ${{ matrix.target }}
       - name: Verify macOS microphone permission in signed application
         if: runner.os == 'macOS'
         working-directory: apps/desktop
