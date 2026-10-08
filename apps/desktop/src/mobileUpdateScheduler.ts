@@ -1,4 +1,4 @@
-import { checkAndroidUpdate, isMobileUpdateSupported, type MobileUpdateState } from "./mobileUpdate";
+import { checkMobileUpdate, isMobileUpdateSupported, type MobileUpdateState } from "./mobileUpdate";
 
 export const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
 export const UPDATE_REMINDER_COOLDOWN = 24 * 60 * 60 * 1000;
@@ -11,7 +11,7 @@ export class MobileUpdateScheduler {
   private manual = false;
   private memory = new Map<string, number>();
   constructor(
-    private check = checkAndroidUpdate,
+    private check = checkMobileUpdate,
     private supported = isMobileUpdateSupported,
     private now = Date.now,
   ) {}

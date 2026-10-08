@@ -53,3 +53,15 @@ it("retains cooldown without storage", async () => {
   await scheduler.run(); expect(await scheduler.run()).toEqual({ phase: "idle" }); expect(check).toHaveBeenCalledTimes(1);
   get.mockRestore(); set.mockRestore();
 });
+
+const { mobileCheck } = vi.hoisted(() => ({ mobileCheck: vi.fn() }));
+vi.mock("./mobileUpdate", async (original) => ({
+  ...await original<typeof import("./mobileUpdate")>(), checkMobileUpdate: mobileCheck,
+}));
+it("uses mobile dispatcher by default and preserves iOS release", async () => {
+  const ios = { phase: "available", release: { platform: "ios", version: "1.1", url: "https://apps.apple.com/cn/app/id6811485613", installationNotes: [] } };
+  mobileCheck.mockResolvedValue(ios);
+  const scheduler = new MobileUpdateScheduler(undefined, () => true);
+  expect(await scheduler.run()).toEqual(ios);
+  expect(mobileCheck).toHaveBeenCalledOnce();
+});

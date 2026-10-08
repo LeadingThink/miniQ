@@ -1,4 +1,6 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
+import { fetchIosAppStoreRelease, isIosReleaseVersion } from "./iosAppStore";
+export { IOS_APP_STORE_URL, isOfficialIosAppStoreUrl } from "./iosAppStore";
 
 /** Android builds ship outside an app store, so updates are discovered by
  * comparing the local versionName against the public release manifest. */
@@ -10,6 +12,7 @@ const UPDATE_TIMEOUT_MESSAGE = "连接更新服务超时，请检查网络后重
 class UpdateRequestError extends Error {}
 
 export interface AndroidRelease {
+  platform?: "android" | "ios";
   version: string;
   url: string;
   releaseDate?: string;
@@ -28,7 +31,7 @@ export type MobileUpdateState =
   | { phase: "error"; error: string };
 
 export function isMobileUpdateSupported(): boolean {
-  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
+  return Capacitor.isNativePlatform() && ["android", "ios"].includes(Capacitor.getPlatform());
 }
 
 /** Android versionName uses two to four numeric segments, with an optional v. */
@@ -83,7 +86,8 @@ export async function readInstalledVersion(): Promise<string | null> {
   try {
     const { App } = await import("@capacitor/app");
     const info = await App.getInfo();
-    return isReleaseVersion(info.version) ? info.version : null;
+    const valid = Capacitor.getPlatform() === "ios" ? isIosReleaseVersion : isReleaseVersion;
+    return valid(info.version) ? info.version : null;
   } catch {
     return null;
   }
@@ -147,7 +151,7 @@ export async function checkAndroidUpdate(options: {
   fetchImpl?: typeof fetch;
   manifestUrl?: string;
 } = {}): Promise<MobileUpdateState> {
-  if (!isMobileUpdateSupported()) return { phase: "idle" };
+  if (!isMobileUpdateSupported() || Capacitor.getPlatform() !== "android") return { phase: "idle" };
   const current = options.currentVersion ?? (await readInstalledVersion());
   if (!current || !isReleaseVersion(current)) return { phase: "error", error: "无法读取当前版本号" };
   const release = await fetchAndroidRelease(options.fetchImpl ?? fetch, options.manifestUrl ?? RELEASE_MANIFEST_URL);
@@ -155,6 +159,18 @@ export async function checkAndroidUpdate(options: {
     return { phase: "unavailable", version: current };
   }
   return { phase: "available", release };
+}
+
+/** Android keeps its existing options and rejection contract; iOS uses Apple lookup. */
+export async function checkMobileUpdate(options: Parameters<typeof checkAndroidUpdate>[0] = {}): Promise<MobileUpdateState> {
+  if (!isMobileUpdateSupported()) return { phase: "idle" };
+  if (Capacitor.getPlatform() === "android") return checkAndroidUpdate(options);
+  const current = options.currentVersion ?? (await readInstalledVersion());
+  if (!current || !isIosReleaseVersion(current)) return { phase: "error", error: "无法读取当前版本号" };
+  const release = await fetchIosAppStoreRelease();
+  return compareVersions(release.version, current) > 0
+    ? { phase: "available", release }
+    : { phase: "unavailable", version: current };
 }
 
 export function formatFileSize(bytes: number | undefined): string | null {

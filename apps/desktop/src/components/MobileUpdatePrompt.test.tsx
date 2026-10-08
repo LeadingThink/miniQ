@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { IOS_APP_STORE_URL } from "../mobileUpdate";
 import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -18,7 +19,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 const start = async () => { await act(async () => { await vi.advanceTimersByTimeAsync(2_000); }); };
-it("never registers or checks outside Android", async () => {
+it("never registers or checks on unsupported platforms", async () => {
   supported.mockReturnValue(false); render(<MobileUpdatePrompt />); await start();
   expect(listen).not.toHaveBeenCalled(); expect(run).not.toHaveBeenCalled();
 });
@@ -96,4 +97,14 @@ it("shows release notes separately from installation instructions", () => {
 it.each([undefined, []])("shows a factual fallback when release notes are absent or empty", (releaseNotes) => {
   render(<MobileUpdateDialog release={{ ...release, releaseNotes }} onClose={vi.fn()} />);
   expect(screen.getByText("新版本已发布，欢迎更新体验。")).toBeTruthy();
+});
+
+it("offers App Store navigation for iOS and never describes APK installation", async () => {
+  const close = vi.fn();
+  render(<MobileUpdateDialog release={{ ...release, platform: "ios", url: IOS_APP_STORE_URL, installationNotes: [] }} onClose={close} />);
+  expect(screen.getByRole("button", { name: "稍后提醒" })).toBeTruthy();
+  expect(screen.queryByText(/官方 APK/)).toBeNull();
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "前往 App Store" })); });
+  expect(open).toHaveBeenCalledWith(IOS_APP_STORE_URL);
+  expect(close).toHaveBeenCalledOnce();
 });

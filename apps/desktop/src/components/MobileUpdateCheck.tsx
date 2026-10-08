@@ -1,3 +1,5 @@
+import { Capacitor } from "@capacitor/core";
+import { iosInstalledReleaseNotices } from "../iosInstalledReleaseNotice";
 import { mobileUpdateScheduler } from "../mobileUpdateScheduler";
 import { Download, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -5,6 +7,8 @@ import { errorMessage } from "../errorMessage";
 import { openMobileUpdateUrl } from "../mobileUpdateLinks";
 import {
   formatFileSize,
+  IOS_APP_STORE_URL,
+  isOfficialIosAppStoreUrl,
   isOfficialAndroidApk,
   isMobileUpdateSupported,
   MOBILE_DOWNLOAD_PAGE_URL,
@@ -12,10 +16,9 @@ import {
   type MobileUpdateState,
 } from "../mobileUpdate";
 
-/** Android APKs are distributed outside an app store, so the client offers an
- * explicit "check for updates" action and hands the APK url to the system
- * browser — no install permission is requested. */
+/** Settings entry for native Android and iOS updates. */
 export function MobileUpdateCheck() {
+  const ios = Capacitor.getPlatform() === "ios";
   const [supported] = useState(() => isMobileUpdateSupported());
   const [installed, setInstalled] = useState<string | null>(null);
   const [state, setState] = useState<MobileUpdateState>({ phase: "idle" });
@@ -37,7 +40,9 @@ export function MobileUpdateCheck() {
     if (state.phase === "checking") return;
     setState({ phase: "checking" });
     try {
-      setState(await mobileUpdateScheduler.run(true));
+      const result = await mobileUpdateScheduler.run(true);
+      if (result.phase === "available") iosInstalledReleaseNotices.cache(result.release);
+      setState(result);
     } catch (error) {
       setState({ phase: "error", error: errorMessage(error) });
     }
@@ -45,7 +50,7 @@ export function MobileUpdateCheck() {
 
   const download = async (url: string) => {
     try {
-      if (url !== MOBILE_DOWNLOAD_PAGE_URL && !isOfficialAndroidApk(url)) throw new Error("下载地址无效");
+      if (ios ? !isOfficialIosAppStoreUrl(url) : url !== MOBILE_DOWNLOAD_PAGE_URL && !isOfficialAndroidApk(url)) throw new Error("下载地址无效");
       await openMobileUpdateUrl(url);
     } catch { setState({ phase: "error", error: "无法打开下载链接，请稍后重试。" }); }
   };
@@ -66,9 +71,9 @@ export function MobileUpdateCheck() {
       {state.phase === "error" && (
         <div>
           <p role="alert">检查更新失败：{state.error}</p>
-          <button type="button" className="secondary" onClick={() => void download(MOBILE_DOWNLOAD_PAGE_URL)}>
+          <button type="button" className="secondary" onClick={() => void download(ios ? IOS_APP_STORE_URL : MOBILE_DOWNLOAD_PAGE_URL)}>
             <Download size={14} />
-            前往下载页
+            {ios ? "前往 App Store" : "前往下载页"}
           </button>
         </div>
       )}
@@ -88,7 +93,7 @@ export function MobileUpdateCheck() {
           )}
           <button type="button" onClick={() => void download(release.url)}>
             <Download size={14} />
-            在浏览器中下载
+            {ios ? "前往 App Store" : "在浏览器中下载"}
           </button>
         </div>
       )}
