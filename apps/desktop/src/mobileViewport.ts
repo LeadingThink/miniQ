@@ -10,10 +10,9 @@ export function initializeMobileViewport(): () => void {
     // A pinch also shrinks visualViewport.height. Relaying that shrink into
     // layout feeds the zoom back into itself and makes the UI jump in size.
     if (viewport && Math.abs((viewport.scale ?? 1) - 1) > 0.01) return;
-    const layoutHeight = Math.max(
-      1,
-      document.documentElement.clientHeight || window.innerHeight,
-    );
+    // innerHeight follows Android adjustResize. clientHeight can remain the
+    // full layout viewport while the IME is open, so it must not win here.
+    const layoutHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight);
     const height = Math.max(1, Math.min(layoutHeight, viewport?.height ?? layoutHeight));
     root.style.setProperty("--app-height", `${height}px`);
     root.style.setProperty("--app-offset-top", `${Math.max(0, viewport?.offsetTop ?? 0)}px`);

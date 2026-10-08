@@ -231,8 +231,6 @@ export async function notifyMobileTask(
   sessionTitle: string,
   target: TaskNotificationTarget,
   viewing: boolean,
-  /** True when a remote push for this event reaches the phone anyway. */
-  pushCovered = false,
 ): Promise<boolean> {
   if (!wants(kind)) return false;
   const { title, body } = copy(kind, sessionTitle);
@@ -242,9 +240,8 @@ export async function notifyMobileTask(
     if (!isWithinQuietHours(getQuietHours())) void vibrate(kind);
     return true;
   }
-  // The remote push uses the same identifier and would replace this one,
-  // alerting twice; let the push be the single system notification.
-  if (pushCovered) return false;
+  // Registration is not a delivery receipt. Keep the local fallback when an
+  // event reaches this process, even if offline push is registered.
   return send(title, body, () => document.visibilityState !== "visible" && wants(kind), kind, target);
 }
 

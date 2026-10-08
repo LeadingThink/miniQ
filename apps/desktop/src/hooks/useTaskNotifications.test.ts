@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../remotePush", () => ({
   getRemotePushStatus: () => mocks.pushStatus,
-  isRemotePushCovering: () => false,
+  isRemotePushCovering: () => mocks.pushStatus === "active",
   startRemotePush: () => () => undefined,
 }));
 
@@ -77,7 +77,7 @@ describe("useTaskNotifications on mobile", () => {
     root.emit({ type: "session_status_changed", sessionId: "s1", status: "waiting_approval", eventCursor: next() });
     root.emit({ type: "session_status_changed", sessionId: "s1", status: "waiting_approval", eventCursor: next() });
     expect(mocks.notifyMobileTask).toHaveBeenCalledTimes(1);
-    expect(mocks.notifyMobileTask).toHaveBeenCalledWith("attention", "整理报告", { host: null, sessionId: "s1" }, false, false);
+    expect(mocks.notifyMobileTask).toHaveBeenCalledWith("attention", "整理报告", { host: null, sessionId: "s1" }, false);
     root.emit({ type: "session_status_changed", sessionId: "s1", status: "running", eventCursor: next() });
     root.emit({ type: "session_status_changed", sessionId: "s1", status: "waiting_approval", eventCursor: next() });
     expect(mocks.notifyMobileTask).toHaveBeenCalledTimes(2);
@@ -91,7 +91,7 @@ describe("useTaskNotifications on mobile", () => {
     expect(mocks.notifyMobileTask).not.toHaveBeenCalled();
     root.emit({ type: "session_status_changed", sessionId: "s1", status: "running", eventCursor: next() });
     root.emit({ type: "turn_failed", sessionId: "s1", eventCursor: next() });
-    expect(mocks.notifyMobileTask).toHaveBeenCalledWith("failed", "整理报告", { host: null, sessionId: "s1" }, false, false);
+    expect(mocks.notifyMobileTask).toHaveBeenCalledWith("failed", "整理报告", { host: null, sessionId: "s1" }, false);
   });
 
   it("notifies long completed turns with the remote host label", () => {
@@ -100,7 +100,14 @@ describe("useTaskNotifications on mobile", () => {
     vi.setSystemTime(SHORT_TASK_MS + 1);
     root.emitHost("mac", { type: "turn_completed", sessionId: "s2", eventCursor: next() });
     expect(isViewing).toHaveBeenCalledWith("mac", "s2");
-    expect(mocks.notifyMobileTask).toHaveBeenCalledWith("completed", "办公室 Mac · 部署", { host: "mac", sessionId: "s2" }, true, false);
+    expect(mocks.notifyMobileTask).toHaveBeenCalledWith("completed", "办公室 Mac · 部署", { host: "mac", sessionId: "s2" }, true);
+  });
+
+  it("keeps the local fallback when remote push is registered", () => {
+    mocks.pushStatus = "active";
+    const { root } = setup();
+    root.emit({ type: "turn_failed", sessionId: "s1", eventCursor: next() });
+    expect(mocks.notifyMobileTask).toHaveBeenCalledWith("failed", "整理报告", { host: null, sessionId: "s1" }, false);
   });
 
   it("ignores replayed events", () => {
@@ -153,7 +160,7 @@ describe("reconnect catch-up", () => {
     show("disconnected", "running");
     show("connected", "running");
     show("connected", "waiting_approval");
-    expect(mocks.notifyMobileTask).toHaveBeenCalledWith("attention", "办公室 Mac · 部署", { host: "mac", sessionId: "s2" }, false, false);
+    expect(mocks.notifyMobileTask).toHaveBeenCalledWith("attention", "办公室 Mac · 部署", { host: "mac", sessionId: "s2" }, false);
     show("connected", "waiting_approval");
     root.emitHost("mac", { type: "session_status_changed", sessionId: "s2", status: "waiting_approval", eventCursor: next() });
     expect(mocks.notifyMobileTask).toHaveBeenCalledTimes(1);
@@ -163,7 +170,7 @@ describe("reconnect catch-up", () => {
     const { root, show } = mount();
     show("disconnected", "running");
     show("connected", "failed");
-    expect(mocks.notifyMobileTask).toHaveBeenCalledWith("failed", "办公室 Mac · 部署", { host: "mac", sessionId: "s2" }, false, false);
+    expect(mocks.notifyMobileTask).toHaveBeenCalledWith("failed", "办公室 Mac · 部署", { host: "mac", sessionId: "s2" }, false);
     root.emitHost("mac", { type: "turn_failed", sessionId: "s2", eventCursor: next() });
     expect(mocks.notifyMobileTask).toHaveBeenCalledTimes(1);
   });
@@ -183,14 +190,14 @@ describe("reconnect catch-up", () => {
     const { root, show } = mount();
     root.emitHost("mac", { type: "remote_resync" });
     show("connected", "idle");
-    expect(mocks.notifyMobileTask).toHaveBeenCalledWith("completed", "办公室 Mac · 部署", { host: "mac", sessionId: "s2" }, false, false);
+    expect(mocks.notifyMobileTask).toHaveBeenCalledWith("completed", "办公室 Mac · 部署", { host: "mac", sessionId: "s2" }, false);
   });
 
-  it("leaves the local desktop to the offline push", () => {
+  it("does not mistake push registration for confirmed catch-up delivery", () => {
     mocks.pushStatus = "active";
     const { show } = mount(null);
     show("disconnected", "running");
     show("connected", "waiting_approval");
-    expect(mocks.notifyMobileTask).not.toHaveBeenCalled();
+    expect(mocks.notifyMobileTask).toHaveBeenCalledWith("attention", "部署", { host: null, sessionId: "s2" }, false);
   });
 });
