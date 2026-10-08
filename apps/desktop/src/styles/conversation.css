@@ -1028,6 +1028,12 @@
   font-weight: 600;
 }
 
+.execution-prelude .execution-total-time {
+  color: var(--text-mid);
+  font-size: var(--font-footnote);
+  font-variant-numeric: tabular-nums;
+}
+
 .execution-prelude span {
   color: var(--text-dim);
   font-size: var(--font-caption);

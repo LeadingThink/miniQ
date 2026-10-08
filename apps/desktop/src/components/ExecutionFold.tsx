@@ -43,10 +43,10 @@ export function ExecutionFold({
   const open = forceOpen || (needsUser && userOpen !== false) || userOpen === true;
   const regionId = useId();
   const current = running ? liveStep(calls) : null;
-  const parts = [`已执行 ${data.steps} 步`];
-  if (data.failed) parts.push(`${data.failed} 步未成功`);
+  const parts = [`已执行 ${data.steps} 项操作`];
+  if (data.failed) parts.push(`${data.failed} 项操作失败`);
   if (data.filesChanged) parts.push(`修改 ${data.filesChanged} 个文件`);
-  if (!running && data.durationMs !== undefined) parts.push(`用时 ${compactDuration(data.durationMs)}`);
+  if (!running && data.durationMs !== undefined) parts.push(`总运行时间 ${compactDuration(data.durationMs)}`);
   const state = running ? "running" : data.failed || data.status === "failed" ? "failed"
     : data.status === "cancelled" ? "cancelled" : "done";
   return (
@@ -63,13 +63,13 @@ export function ExecutionFold({
             : state === "failed" ? <CircleAlert size={14} /> : <Layers size={14} />}
         </span>
         <span className="execution-fold-label">
-          {running ? (current ?? `正在执行 · 已完成 ${calls.filter((call) => call.status === "succeeded").length} 步`) : parts.join(" · ")}
+          {running ? (current ?? `正在执行 · 已完成 ${calls.filter((call) => call.status === "succeeded").length} 项操作`) : parts.join(" · ")}
         </span>
         {state === "cancelled" && !running && <span className="execution-fold-tag">已停止</span>}
         <ChevronRight size={14} className="execution-fold-chevron" aria-hidden="true" />
       </button>
       {open && (
-        <div className="execution-fold-body" id={regionId} role="region" aria-label="本轮执行详情">
+        <div className="execution-fold-body" id={regionId} role="region" aria-label="当前阶段的执行详情">
           <InsideExecutionFold.Provider value={true}>{children}</InsideExecutionFold.Provider>
         </div>
       )}

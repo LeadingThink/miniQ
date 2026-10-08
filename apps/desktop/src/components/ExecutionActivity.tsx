@@ -325,7 +325,7 @@ export function TurnPlanSummary({ plan, busy = false }: { plan: PlanTask[]; busy
   );
 }
 
-/** Compact "step x / y" pill above the composer while a turn is running. */
+/** Compact "phase x / y" pill above the composer while a turn is running. */
 export function PlanStepPill({ plan, busy }: { plan: PlanTask[]; busy: boolean }) {
   const [open, setOpen] = useState(false);
   const listId = useId();
@@ -345,7 +345,7 @@ export function PlanStepPill({ plan, busy }: { plan: PlanTask[]; busy: boolean }
         className="plan-step-pill"
         aria-expanded={open}
         aria-controls={listId}
-        aria-label={`第 ${step} / ${total} 步，已完成 ${done} 个`}
+        aria-label={`阶段 ${step} / ${total}，已完成 ${done} 个阶段`}
         onClick={() => setOpen((value) => !value)}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
@@ -361,7 +361,7 @@ export function PlanStepPill({ plan, busy }: { plan: PlanTask[]; busy: boolean }
             strokeDashoffset={circumference * (1 - done / total)}
           />
         </svg>
-        <span>第 {step} / {total} 步</span>
+        <span>阶段 {step} / {total}</span>
       </button>
       {open && (
         <div id={listId} className="plan-step-popover execution-plan" role="tooltip">
@@ -460,21 +460,11 @@ export function ExecutionPrelude({
       <div>
         <strong>{turnProgressLabel(progress)}</strong>
         {progress?.retry && <RetryNotice progress={progress} />}
-        {progress?.modelStep && (
-          <span className="execution-phase-meta">
-            第 {progress.modelStep} 轮
-            <LiveElapsed
-              startedAt={progress.startedAt}
-              className="execution-elapsed"
-              prefix="本步骤已用"
-            />
-          </span>
-        )}
-        {progress && !progress.modelStep && (
+        {progress && (
           <LiveElapsed
             startedAt={progress.startedAt}
             className="execution-elapsed"
-            prefix="本步骤已用"
+            prefix="当前处理已用"
           />
         )}
         {activeTask && <span>{activeTask.content}</span>}

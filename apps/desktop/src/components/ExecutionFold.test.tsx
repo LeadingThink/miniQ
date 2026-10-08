@@ -23,12 +23,12 @@ it("collapses a finished turn into one summary row and toggles details", () => {
       <p>工具明细</p>
     </ExecutionFold>,
   );
-  const toggle = screen.getByRole("button", { name: /已执行 2 步 · 用时 1分20秒/ });
+  const toggle = screen.getByRole("button", { name: /已执行 2 项操作 · 总运行时间 1分20秒/ });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText("工具明细")).toBeNull();
   fireEvent.click(toggle);
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  expect(screen.getByRole("region", { name: "本轮执行详情" }).textContent).toContain("工具明细");
+  expect(screen.getByRole("region", { name: "当前阶段的执行详情" }).textContent).toContain("工具明细");
   fireEvent.click(toggle);
   expect(screen.queryByText("工具明细")).toBeNull();
 });
@@ -39,7 +39,7 @@ it("auto-expands on failures, pending approvals and questions", () => {
       <p>失败明细</p>
     </ExecutionFold>,
   );
-  expect(screen.getByRole("button", { name: /1 步未成功/ }).getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("button", { name: /1 项操作失败/ }).getAttribute("aria-expanded")).toBe("true");
   expect(screen.getByText("失败明细")).toBeTruthy();
 
   rerender(
@@ -72,7 +72,7 @@ it("prefers the daemon turn summary over locally derived counts", () => {
       <p>明细</p>
     </ExecutionFold>,
   );
-  expect(screen.getByRole("button", { name: "已执行 12 步 · 修改 3 个文件 · 用时 5秒" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "已执行 12 项操作 · 修改 3 个文件 · 总运行时间 5秒" })).toBeTruthy();
 });
 
 it("tags stopped turns", () => {

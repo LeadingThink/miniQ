@@ -8,12 +8,30 @@ afterEach(cleanup);
 it("keeps mobile filtering and complete queries on the same callbacks as desktop", () => {
   const onFilter = vi.fn(), onQuery = vi.fn();
   render(<TimelineToolbar filter="all" query="" exporting={false} onFilter={onFilter} onQuery={onQuery} onExport={vi.fn()} />);
-  fireEvent.change(screen.getByRole("combobox", { name: "筛选会话记录" }), { target: { value: "errors" } });
+  fireEvent.click(screen.getByRole("button", { name: "筛选会话记录" }));
+  fireEvent.click(screen.getByRole("button", { name: /异常记录/ }));
   expect(onFilter).toHaveBeenCalledWith("errors");
   fireEvent.click(screen.getByRole("button", { name: "回答" }));
   expect(onFilter).toHaveBeenLastCalledWith("answers");
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "完整的长查询，不截断任何内容" } });
   expect(onQuery).toHaveBeenCalledWith("完整的长查询，不截断任何内容");
+});
+
+it("closes the mobile filter with Escape, the close button, or the scrim", () => {
+  render(<TimelineToolbar filter="all" query="" exporting={false} onFilter={vi.fn()} onQuery={vi.fn()} onExport={vi.fn()} />);
+  const trigger = screen.getByRole("button", { name: "筛选会话记录" });
+  fireEvent.click(trigger);
+  const dialog = screen.getByRole("dialog", { name: "筛选记录" });
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "筛选记录" })).toBeNull();
+
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("button", { name: "关闭记录筛选" }));
+  expect(screen.queryByRole("dialog", { name: "筛选记录" })).toBeNull();
+
+  fireEvent.click(trigger);
+  fireEvent.mouseDown(screen.getByRole("dialog", { name: "筛选记录" }).parentElement!);
+  expect(screen.queryByRole("dialog", { name: "筛选记录" })).toBeNull();
 });
 
 it("closes the more menu after actions and outside taps; Escape restores focus", async () => {

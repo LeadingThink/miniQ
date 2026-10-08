@@ -144,7 +144,7 @@ describe("execution activity", () => {
     expect(renderToStaticMarkup(<PlanProgress plan={[]} busy={false} />)).toBe("");
   });
 
-  it("describes the observable model phase and round", () => {
+  it("describes the observable model phase without exposing internal rounds", () => {
     const progress = {
       phase: "receiving_model" as const,
       modelStep: 3,
@@ -156,8 +156,8 @@ describe("execution activity", () => {
       <ExecutionPrelude plan={[]} progress={progress} />,
     );
     expect(html).toContain("模型正在生成响应");
-    expect(html).toContain("第 3 轮");
-    expect(html).toContain("本步骤已用");
+    expect(html).not.toContain("第 3 轮");
+    expect(html).toContain("当前处理已用");
   });
 });
 
@@ -176,7 +176,7 @@ describe("turn plan display", () => {
 
   it("shows the step pill only while the turn runs", () => {
     const html = renderToStaticMarkup(<PlanStepPill plan={plan} busy />);
-    expect(html).toContain("第 3 / 3 步");
+    expect(html).toContain("阶段 3 / 3");
     expect(renderToStaticMarkup(<PlanStepPill plan={plan} busy={false} />)).toBe("");
     expect(renderToStaticMarkup(<PlanStepPill plan={[]} busy />)).toBe("");
   });

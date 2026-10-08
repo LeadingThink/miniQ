@@ -403,8 +403,8 @@ describe("Timeline execution flow", () => {
 
     // Execution details collapse into a single per-turn summary row between
     // the request and the reply; step and plan details live inside the fold.
-    expect(html.indexOf("检查这个项目")).toBeLessThan(html.indexOf("已执行 1 步"));
-    expect(html.indexOf("已执行 1 步")).toBeLessThan(html.indexOf("检查完成"));
+    expect(html.indexOf("检查这个项目")).toBeLessThan(html.indexOf("已执行 2 项操作"));
+    expect(html.indexOf("已执行 2 项操作")).toBeLessThan(html.indexOf("检查完成"));
     expect(html).not.toContain("运行了命令");
     expect(html).not.toContain("task_update");
   });
@@ -469,7 +469,7 @@ describe("Timeline execution flow", () => {
 
     expect(html).toContain("已经完成前一阶段。");
     expect(html).toContain("正在将执行结果交给模型");
-    expect(html).toContain("第 4 轮");
+    expect(html).not.toContain("第 4 轮");
   });
 
   it("renders native question headings, option details, and multi-select controls", () => {

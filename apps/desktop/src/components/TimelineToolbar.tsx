@@ -1,6 +1,7 @@
-import { Activity, Download, LoaderCircle, MoreHorizontal, Search, Share2, X } from "lucide-react";
+import { Activity, ChevronDown, Download, LoaderCircle, MoreHorizontal, Search, Share2, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { TimelineFilter } from "../timelineModel";
+import { TimelineFilterSheet } from "./TimelineFilterSheet";
 import "./TimelineToolbar.css";
 
 const filters = [["all", "全部"], ["answers", "回答"], ["activity", "执行"], ["errors", "异常"]] as const;
@@ -9,6 +10,7 @@ export function TimelineToolbar(props: {
   filter: TimelineFilter;
   query: string;
   exporting: boolean;
+  filterCounts?: Record<TimelineFilter, number>;
   onFilter: (filter: TimelineFilter) => void;
   onQuery: (query: string) => void;
   onShare?: () => void;
@@ -29,6 +31,7 @@ export function TimelineToolbar(props: {
   useEffect(() => {
     if (searching) search.current?.focus();
   }, [searching]);
+  const [filterOpen, setFilterOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
     const outside = (event: PointerEvent) => {
@@ -47,7 +50,7 @@ export function TimelineToolbar(props: {
       aria-label="会话记录工具栏"
       data-search-open={expanded ? "true" : "false"}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setSearching(false);
+        if (!filterOpen && !event.currentTarget.contains(event.relatedTarget as Node | null)) setSearching(false);
       }}
     >
       <button type="button" className="icon-button timeline-search-toggle" aria-label="搜索和筛选会话" title="搜索和筛选会话" aria-expanded={expanded} onClick={() => setSearching(true)}>
@@ -56,9 +59,11 @@ export function TimelineToolbar(props: {
       <div className="timeline-modes" role="group" aria-label="记录类型">
         {filters.map(([value, label]) => <button type="button" key={value} aria-pressed={props.filter === value} onClick={() => props.onFilter(value)}>{label}</button>)}
       </div>
-      <select className="timeline-mobile-filter" aria-label="筛选会话记录" value={props.filter} onChange={(event) => props.onFilter(event.target.value as TimelineFilter)}>
-        {filters.map(([value, label]) => <option key={value} value={value}>{label}记录</option>)}
-      </select>
+      <button type="button" className="timeline-mobile-filter" aria-label="筛选会话记录" aria-haspopup="dialog" aria-expanded={filterOpen} onClick={() => setFilterOpen(true)}>
+        <span>{filters.find(([value]) => value === props.filter)?.[1]}</span>
+        <ChevronDown size={14} aria-hidden="true" />
+      </button>
+      <TimelineFilterSheet open={filterOpen} filter={props.filter} counts={props.filterCounts} onClose={() => setFilterOpen(false)} onFilter={props.onFilter} />
       <label className="timeline-search">
         <Search size={14} aria-hidden="true" />
         <input ref={search} type="search" aria-label="搜索当前会话" placeholder="搜索会话" data-session-search="true" title="搜索当前会话（⌘/Option+F 或 Ctrl+F）" value={props.query} onChange={(event) => props.onQuery(event.target.value)} onKeyDown={(event) => {
