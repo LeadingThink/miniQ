@@ -4,11 +4,11 @@
    rather than source order. Tokens only; no literal colors. */
 
 /* ============ Reading column ============ */
-/* Reading column: ~760px; :root covers fixtures rendered outside .main. */
+/* Reading column: ~920px; :root covers fixtures rendered outside .main. */
 :root,
 body .main {
-  /* Comfortable measure for CJK + Latin prose (~40 CJK chars per line). */
-  --conversation-content-width: 760px;
+  /* Give conversations more room while preserving centered margins. */
+  --conversation-content-width: 920px;
 }
 
 /* ============ Turns ============ */

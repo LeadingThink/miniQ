@@ -1,7 +1,7 @@
 /* ============ Main column ============ */
 .main {
   --conversation-content-width: 1080px;
-  --hero-content-width: 760px;
+  --hero-content-width: var(--conversation-content-width);
   flex: 1;
   display: flex;
   flex-direction: column;
