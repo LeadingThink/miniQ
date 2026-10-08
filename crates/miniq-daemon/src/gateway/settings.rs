@@ -69,6 +69,9 @@ struct RemoteAccessUpdate {
     enabled: bool,
     relay_url: String,
     device_name: String,
+    /// Generate a new relay device id (fixes two hosts sharing a copied id).
+    #[serde(default)]
+    reset_device_id: bool,
 }
 
 pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
@@ -102,7 +105,11 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
     }
     if let Some(remote) = input.remote_access {
         validate_remote(&remote)?;
-        let device_id = settings.remote_access.device_id.clone();
+        let device_id = if remote.reset_device_id {
+            crate::remote::new_device_id()
+        } else {
+            settings.remote_access.device_id.clone()
+        };
         settings.remote_access = crate::remote::RemoteAccessSettings {
             enabled: remote.enabled,
             relay_url: remote.relay_url.trim().to_string(),
@@ -296,6 +303,7 @@ mod tests {
             enabled: true,
             relay_url: "wss://relay.test/ws".to_string(),
             device_name: "x".repeat(81),
+            reset_device_id: false,
         });
         assert!(result.is_err());
     }

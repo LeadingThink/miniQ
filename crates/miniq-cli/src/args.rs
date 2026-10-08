@@ -303,7 +303,7 @@ pub enum Commands {
     },
     /// Read or change shared settings. Secrets are never printed.
     #[command(
-        after_help = "Examples:\n  miniq config get\n  miniq config get provider.model\n  miniq config set approvalMode alwaysAsk\n  miniq config set provider.model gpt-5.6-sol\n\nKeys: provider.baseUrl provider.model provider.apiProtocol approvalMode\n      remoteAccess.enabled remoteAccess.relayUrl remoteAccess.deviceName turnEndedCommand\n      hooks (JSON array, e.g. '[{\"event\":\"preToolUse\",\"matcher\":\"shell_run\",\"command\":\"./check.sh\"}]')\nAPI keys: use `miniq configure` / `miniq logout`."
+        after_help = "Examples:\n  miniq config get\n  miniq config get provider.model\n  miniq config set approvalMode alwaysAsk\n  miniq config set provider.model gpt-5.6-sol\n\nKeys: provider.baseUrl provider.model provider.apiProtocol approvalMode\n      remoteAccess.enabled remoteAccess.relayUrl remoteAccess.deviceName turnEndedCommand\n      remoteAccess.deviceId reset (new id when two hosts share one copied settings file)\n      hooks (JSON array, e.g. '[{\"event\":\"preToolUse\",\"matcher\":\"shell_run\",\"command\":\"./check.sh\"}]')\nAPI keys: use `miniq configure` / `miniq logout`."
     )]
     Config {
         #[command(subcommand)]

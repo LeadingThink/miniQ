@@ -447,6 +447,16 @@ pub fn config_update(settings: &Value, key: &str, value: &str) -> Result<Value> 
             };
             json!({ "remoteAccess": update })
         }
+        "remoteAccess.deviceId" => {
+            if value != "reset" {
+                bail!(
+                    "remoteAccess.deviceId only accepts `reset`, which generates a new device id"
+                );
+            }
+            let remote = &settings["remoteAccess"];
+            json!({ "remoteAccess": {"enabled":remote["enabled"].as_bool().unwrap_or(false),
+                "relayUrl":remote["relayUrl"],"deviceName":remote["deviceName"],"resetDeviceId":true} })
+        }
         "turnEndedCommand" => {
             json!({ "turnEndedCommand": if value.is_empty() { Value::Null } else { json!(value) } })
         }
@@ -746,6 +756,11 @@ mod tests {
             config_update(&settings, "remoteAccess.enabled", "true").unwrap()["remoteAccess"],
             json!({"enabled":true,"relayUrl":"r","deviceName":"d"})
         );
+        assert_eq!(
+            config_update(&settings, "remoteAccess.deviceId", "reset").unwrap()["remoteAccess"],
+            json!({"enabled":false,"relayUrl":"r","deviceName":"d","resetDeviceId":true})
+        );
+        assert!(config_update(&settings, "remoteAccess.deviceId", "desktop-x").is_err());
         assert_eq!(
             config_update(&settings, "approvalMode", "full-access").unwrap()["approvalMode"],
             "fullAccess"

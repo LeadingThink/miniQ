@@ -10,6 +10,9 @@ export const MAX_CIPHERTEXT_CHARS = 2 * 1024 * 1024;
 export const MAX_MESSAGE_BYTES = MAX_CIPHERTEXT_CHARS + 16 * 1024;
 const HASH_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const DEVICE_PATTERN = /^[A-Za-z0-9_-]{8,80}$/;
+/** Live-socket takeovers of one device id within this window mean two hosts share the id. */
+const TAKEOVER_WINDOW_MS = 60_000;
+const TAKEOVER_LIMIT = 3;
 
 export interface HelloMessage {
   type: "hello";
@@ -41,6 +44,8 @@ interface Device {
   mobiles: Map<string, Peer>;
   disconnectTimer?: ReturnType<typeof setTimeout>;
   offlineTimer?: ReturnType<typeof setTimeout>;
+  /** Times a still-open desktop socket was replaced by a new connection. */
+  takeovers: number[];
 }
 interface Room {
   authToken: string;
@@ -76,10 +81,20 @@ export class RelayBroker {
     const room = existing ?? { authToken: hello.authToken, devices: new Map<string, Device>(), mobiles: new Map<string, Peer>() };
     if (hello.role === "desktop") {
       const device = room.devices.get(hello.deviceId) ?? {
-        deviceId: hello.deviceId, deviceName: hello.deviceName, mobiles: new Map<string, Peer>(),
+        deviceId: hello.deviceId, deviceName: hello.deviceName, mobiles: new Map<string, Peer>(), takeovers: [],
       };
-      this.clearTimers(device);
       const previous = device.desktop;
+      if (previous && previous.socket.readyState === previous.socket.OPEN) {
+        const now = Date.now();
+        device.takeovers = device.takeovers.filter((at) => now - at < TAKEOVER_WINDOW_MS);
+        if (device.takeovers.length >= TAKEOVER_LIMIT) {
+          log("reject duplicate_device", hello.roomId, hello.deviceId);
+          return this.reject(socket, "duplicate_device", "另一台电脑正在使用相同的设备 ID，本机需要生成新的设备 ID");
+        }
+        device.takeovers.push(now);
+        log("desktop takeover", hello.roomId, hello.deviceId);
+      }
+      this.clearTimers(device);
       const peer = createPeer(socket, hello, hello.deviceId, hello.deviceId);
       device.desktop = peer;
       device.deviceName = hello.deviceName;
@@ -98,8 +113,10 @@ export class RelayBroker {
     }
     let targetDeviceId = hello.targetDeviceId;
     if (hello.protocol === 1) {
-      if (room.devices.size > 1) return this.reject(socket, "device_selection_required", "请升级移动端并选择桌面设备");
-      targetDeviceId = room.devices.keys().next().value;
+      // Old apps cannot choose: bind to the only online desktop, ignoring stale offline entries.
+      const live = [...room.devices.values()].filter(online);
+      if (live.length > 1) return this.reject(socket, "device_selection_required", "多台电脑在线，请升级移动端并选择桌面设备");
+      targetDeviceId = live[0]?.deviceId ?? (room.devices.size === 1 ? room.devices.keys().next().value : undefined);
       if (!targetDeviceId) return this.reject(socket, "desktop_offline", "桌面端尚未在线");
     }
     const device = targetDeviceId ? room.devices.get(targetDeviceId) : undefined;
@@ -204,7 +221,18 @@ export class RelayBroker {
       mobile.socket.close(1012, "desktop offline");
     }
     device.mobiles.clear();
+    // A pending offline push keeps the entry until it fires; otherwise forget the device now.
+    if (!device.offlineTimer) this.pruneDevice(room, device);
     this.broadcastDevices(room);
+  }
+
+  /** Drops an offline device so stale hosts do not pile up in the device list forever. */
+  private pruneDevice(room: Room, device: Device): void {
+    if (device.desktop || device.mobiles.size || room.devices.get(device.deviceId) !== device) return;
+    room.devices.delete(device.deviceId);
+    for (const [roomId, candidate] of this.rooms) {
+      if (candidate === room && !room.devices.size && !room.mobiles.size) this.rooms.delete(roomId);
+    }
   }
 
   private clearTimers(device: Device): void {
@@ -277,6 +305,11 @@ export class RelayBroker {
     device.offlineTimer = setTimeout(() => {
       device.offlineTimer = undefined;
       if (device.desktop) return;
+      const room = this.rooms.get(roomId);
+      if (room && !device.disconnectTimer) {
+        this.pruneDevice(room, device);
+        this.broadcastDevices(room);
+      }
       void this.push?.deliver(scope, { kind: "desktop_offline", desktopDeviceId: device.deviceId,
         collapseId: createHash("sha256").update(`desktop_offline:${scope}`).digest("hex") }, () => false).catch(() => {});
     }, this.desktopOfflinePushMs);
@@ -361,4 +394,7 @@ function sameToken(left: string, right: string): boolean {
 }
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function log(event: string, roomId: string, deviceId: string): void {
+  console.info(`[relay] ${event} room=${roomId.slice(0, 8)} device=${deviceId.slice(0, 16)}`);
 }
