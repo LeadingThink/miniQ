@@ -8,6 +8,7 @@ import { RpcClient } from "./rpc";
 import { dismissTaskBanner, type TaskNotificationTarget } from "./taskBanner";
 import type { ThemeId } from "./theme";
 import { hostKey } from "./hostWorkspace";
+import { RemoteDeviceBarContext } from "./remoteDeviceBar";
 import "./RemoteWorkbench.css";
 
 const ConnectedApp = lazy(() => import("./ConnectedApp"));
@@ -34,12 +35,12 @@ function DeviceWorkbench({ credentials, device, scope, theme, onThemeChange, not
   const [root] = useState(() => new RpcClient({ ...credentials, kind: "remote", targetDeviceId: device.id }, JSON.stringify([scope, device.id]) + ":"));
   useEffect(() => () => { root.disconnect("selected computer changed"); dismissTaskBanner(); }, [root]);
   return <DesktopHostProvider root={root}><NotificationDestination notification={notification} /><Suspense fallback={<main>正在加载远程工作台…</main>}>
-    <ConnectedApp theme={theme} onThemeChange={onThemeChange} />
+    <RemoteDeviceBarContext.Provider value><ConnectedApp theme={theme} onThemeChange={onThemeChange} /></RemoteDeviceBarContext.Provider>
   </Suspense></DesktopHostProvider>;
 }
 
-export function RemoteWorkbench({ credentials, theme, onThemeChange, onExit }: {
-  credentials: RemoteCredentials; theme: ThemeId; onThemeChange: (theme: ThemeId) => void; onExit?: () => void;
+export function RemoteWorkbench({ credentials, theme, onThemeChange, onExit, onAppearance }: {
+  credentials: RemoteCredentials; theme: ThemeId; onThemeChange: (theme: ThemeId) => void; onExit?: () => void; onAppearance?: () => void;
 }) {
   const directory = useRemoteDevices(credentials);
   const [selected, setSelected] = useState<RemoteDesktop | null>(null);
@@ -79,7 +80,7 @@ export function RemoteWorkbench({ credentials, theme, onThemeChange, onExit }: {
   return <div className="remote-workbench">
     <header className="remote-desktop-bar"><button type="button" onClick={() => setChoosing((value) => !value)} aria-expanded={choosing || !current}>
       {current?.name || "选择连接的电脑"}<span>{directory.error || directory.loading ? "状态待确认" : current?.online ? "在线" : current ? "离线" : ""} · 切换电脑</span>
-    </button></header>
+    </button>{onAppearance && <button type="button" className="remote-appearance-button" onClick={onAppearance}>外观</button>}</header>
     {notice && <p role="status">{notice}</p>}
     {(choosing || !current) && <div className="remote-device-panel"><RemoteDevicePicker devices={directory.devices} selected={current} loading={directory.loading} error={directory.error} onSelect={choose} onRefresh={directory.refresh} />
       <button type="button" onClick={() => { if (directory.scope) clearSelectedDesktop(directory.scope); void clearRemoteCredentials().then(() => onExit?.()); }}>更换 Key</button>

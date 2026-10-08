@@ -1,6 +1,6 @@
-.remote-workbench { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
-.remote-desktop-bar { flex-shrink: 0; padding: max(.35rem, var(--safe-top)) .75rem .35rem; border-bottom: 1px solid var(--border, #8884); z-index: 25; }
-.remote-desktop-bar > button { display: flex; gap: .75rem; justify-content: space-between; align-items: center; width: 100%; min-height: 36px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; }
+.remote-workbench { display: flex; flex-direction: column; flex: 1 1 auto; height: 100%; min-height: 0; overflow: hidden; }
+.remote-desktop-bar { flex-shrink: 0; display: flex; align-items: center; gap: .5rem; padding: max(.25rem, var(--safe-top)) max(.75rem, var(--safe-right)) .25rem max(.75rem, var(--safe-left)); border-bottom: 1px solid var(--border, #8884); background: var(--bg); color: var(--text); z-index: 25; }
+.remote-desktop-bar > button { display: flex; gap: .75rem; justify-content: space-between; align-items: center; flex: 1 1 auto; min-width: 0; min-height: 36px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; }
 .remote-desktop-bar span { font-size: .75rem; opacity: .7; flex-shrink: 0; }
 .remote-workbench-content { flex: 1; min-height: 0; position: relative; overflow: hidden; }
 .remote-workbench-content[hidden] { display: none; }
@@ -10,3 +10,14 @@
 .remote-offline-notice { position: absolute; z-index: 24; inset: 0 0 auto; padding: .65rem 1rem; background: var(--surface, #262626); color: var(--text, white); font-size: .85rem; }
 
 .remote-workbench-content > .workbench-host-content, .remote-workbench-content > .workbench-host-content > .app-shell { height: 100%; min-height: 0; }
+
+/* The device bar above already reserves the status-bar inset, and the
+   embedded app must fill the space left below it instead of the full screen. */
+.remote-desktop-bar > .remote-appearance-button { flex: none; min-height: 32px; padding: 0 .75rem; border: 1px solid var(--border, #8884); border-radius: 10px; background: var(--bg-subtle, transparent); }
+.remote-workbench .remote-workbench-content .app,
+.remote-workbench .remote-workbench-content .app .main,
+.remote-workbench .remote-workbench-content .app.sidebar-collapsed .main { height: 100%; min-height: 0; }
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .remote-workbench .remote-workbench-content .statusbar.app-toolbar,
+  .remote-workbench .remote-workbench-content .statusbar:has(.statusbar-identity) { padding-top: 4px; min-height: 0; }
+}
