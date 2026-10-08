@@ -188,6 +188,16 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     setShowJump(false);
   }, []);
   const loadOlder = useCallback(() => requestOlder(false), [requestOlder]);
+  /** Scroll an element to the upper third and stop following new output. */
+  const reveal = useCallback((element: HTMLElement) => {
+    const root = scrollRef.current;
+    if (!root) return;
+    pinned.current = false;
+    if (request.current) request.current.anchor = null;
+    const offset = element.getBoundingClientRect().top - root.getBoundingClientRect().top;
+    root.scrollTop = Math.max(0, root.scrollTop + offset - root.clientHeight / 3);
+    setShowJump(true);
+  }, []);
 
-  return { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump };
+  return { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump, reveal };
 }

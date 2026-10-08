@@ -410,6 +410,7 @@ export function TimelineEntries(props: {
           <div
             key={item.calls[0].id}
             data-history-anchor={`tool:${item.calls[0].id}`}
+            data-search-records={item.calls.map((call) => `tool:${call.id}`).join(" ")}
           >
             <ToolGroup
               calls={item.calls}
@@ -442,7 +443,13 @@ export function TimelineEntries(props: {
           data-turn-key={turn.key}
         >
           {segments.map((segment) => segment.kind === "group" ? renderGroup(segment.group) : (
-            <div key={segment.key} data-history-anchor={segment.key}>
+            <div
+              key={segment.key}
+              data-history-anchor={segment.key}
+              data-search-records={segment.groups.map((group) => group.kind === "tools"
+                ? group.calls.map((call) => `tool:${call.id}`).join(" ")
+                : timelineGroupKey(group)).join(" ")}
+            >
               <ExecutionFold
                 calls={segment.calls}
                 timing={turn.timing}
