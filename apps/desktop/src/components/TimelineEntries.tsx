@@ -114,6 +114,14 @@ export function TimelineEntries(props: {
   const runningAnchor = props.busy
     ? [...props.messages].reverse().find((message) => message.role === "user")?.id
     : undefined;
+  // Completed turns can be forked while a run is active. The backend copies
+  // only durable history, so only replies in the running turn stay locked.
+  const runningTurnMessageIds = useMemo(() => {
+    if (!props.busy) return null;
+    let start = props.messages.length - 1;
+    while (start >= 0 && props.messages[start].role !== "user") start -= 1;
+    return new Set(start < 0 ? [] : props.messages.slice(start).map((message) => message.id));
+  }, [props.busy, props.messages]);
   const goalMessageId = useMemo(
     () => findGoalMessageId(props.messages, props.goal),
     [props.goal, props.messages],
@@ -379,9 +387,9 @@ export function TimelineEntries(props: {
                     <button
                       type="button"
                       className="msg-action"
-                      title="分支到新聊天"
+                      title={runningTurnMessageIds?.has(item.message.id) ? "本轮完成后可分支" : "分支到新聊天"}
                       aria-label="分支到新聊天"
-                      disabled={props.busy || forkingMessageId !== null}
+                      disabled={Boolean(runningTurnMessageIds?.has(item.message.id)) || forkingMessageId !== null}
                       onClick={() => {
                         void bridge.fork(item.message.id).finally(() => setForkingMessageId(null));
                       }}
@@ -470,7 +478,7 @@ export function TimelineEntries(props: {
   }, [
     props.items, props.busy, props.workspacePath, props.workspacePaths,
     props.expandGroups, props.client, editingMessageId, draft, saving,
-    forkingMessageId, goalMessageId, turnEnds, turnPlanEnds, runningAnchor,
+    forkingMessageId, runningTurnMessageIds, goalMessageId, turnEnds, turnPlanEnds, runningAnchor,
     hasFork, canSpeak, bridge, turns, pendingAttention,
   ]);
 
