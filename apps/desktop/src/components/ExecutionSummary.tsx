@@ -4,7 +4,7 @@ import { currentExecution } from "../timelineModel";
 import type { AnchoredTurnTiming, Message, PlanTask, ToolCall, TurnProgress } from "../types";
 import { latestMessageTiming } from "../timelineTiming";
 import { TurnTimingSummary } from "./TurnTimingSummary";
-import { toolActionLabel, toolInputSummary, turnProgressLabel } from "./ExecutionActivity";
+import { toolActionLabel, toolInputSummary } from "./ExecutionActivity";
 import "./ExecutionSummary.css";
 
 export function ExecutionSummary(props: {
@@ -28,7 +28,9 @@ export function ExecutionSummary(props: {
       : active
         ? toolActionLabel(active.toolName, true)
         : props.busy
-          ? turnProgressLabel(props.progress)
+          // The timeline prelude shows the detailed model phase; repeating it
+          // here put the same sentence on screen twice.
+          ? "任务执行中"
           : "本轮执行记录";
   const Icon = props.approvals
     ? ShieldQuestion

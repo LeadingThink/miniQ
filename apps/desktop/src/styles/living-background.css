@@ -449,3 +449,34 @@
 /* Low-power Canvas engines reduce their own work; omit decorative blur too. */
 .living-background.is-low-power .living-background-media { filter: none; }
 .living-background.is-low-power ~ * .mobile-entry-card { backdrop-filter: none; }
+
+/* Text outside message bubbles must stay readable on bright wallpapers:
+   the conversation header, filter row and live execution status get the
+   same control surface as the composer. */
+:root[data-background] .conversation-context,
+:root[data-background] .remote-desktop-bar {
+  background: var(--wallpaper-control);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  text-shadow: none;
+}
+:root[data-background] .timeline-search,
+:root[data-background] .timeline-mobile-filter,
+:root[data-background] .execution-prelude,
+:root[data-background] .plan-step-pill {
+  background: var(--wallpaper-reading);
+  color: var(--text);
+  border-radius: var(--radius);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  text-shadow: none;
+}
+:root[data-background] .execution-prelude { padding: 8px 12px; }
+:root[data-background] .timeline-search { padding-inline: 8px; }
+:root[data-background] .timeline-search input::placeholder { color: var(--text-mid); opacity: 1; }
+
+/* The pulsing dot after streaming text reads as a stray mark on phones. */
+@media (max-width: 720px) {
+  .type-cursor { display: none; }
+}
+.native-mobile .type-cursor { display: none; }

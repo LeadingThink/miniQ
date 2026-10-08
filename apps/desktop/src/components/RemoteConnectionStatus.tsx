@@ -1,13 +1,15 @@
 import { ChevronDown, Laptop, LoaderCircle, RefreshCw, Server, Settings2, Wifi, WifiOff, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { useDesktopHost } from "../desktopHost";
 import { hostKey } from "../hostWorkspace";
 import { sessionStatusLabel } from "../sessionStatus";
+import { RemoteDeviceBarContext } from "../remoteDeviceBar";
 import "./RemoteConnectionStatus.css";
 
 export function RemoteConnectionStatus({ app, onToggleReview }: { app: MiniqAppController; onToggleReview?: () => void }) {
   const desktop = useDesktopHost();
+  const underDeviceBar = useContext(RemoteDeviceBarContext);
   const [open, setOpen] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -37,7 +39,13 @@ export function RemoteConnectionStatus({ app, onToggleReview }: { app: MiniqAppC
   const show = (button: HTMLButtonElement) => { trigger.current = button; setOpen(true); };
   return <>
     <button type="button" className="statusbar-identity" aria-label="查看完整会话标题与连接信息" aria-haspopup="dialog" onClick={(event) => show(event.currentTarget)}>
-      <span><strong>{session?.title || "选择一个会话，继续工作"}</strong><small>{machine}{session ? ` · ${sessionStatusLabel(session.status)}` : ""}{workspace?.name ? ` · ${workspace.name}` : ""}</small></span><ChevronDown size={15} />
+      <span><strong>{session?.title || "选择一个会话，继续工作"}</strong><small>{[
+        // The device bar above already names the selected computer; repeat
+        // only an SSH host, which differs from it.
+        underDeviceBar && !app.client.sshHost ? "" : machine,
+        session ? sessionStatusLabel(session.status) : "",
+        workspace?.name ?? "",
+      ].filter(Boolean).join(" · ")}</small></span><ChevronDown size={15} />
     </button>
     <button type="button" className={`connection-state remote-connection-trigger ${online && connected ? "connected" : "reconnecting"}`} aria-haspopup="dialog" aria-label={`${label}，查看连接详情`} title="查看连接状态、切换电脑或打开连接设置" onClick={(event) => show(event.currentTarget)}>
       {!online ? <WifiOff size={14} /> : connected ? <Wifi size={14} /> : <LoaderCircle className="connection-spinner" size={14} />}<span>{label}</span><ChevronDown size={12} />
