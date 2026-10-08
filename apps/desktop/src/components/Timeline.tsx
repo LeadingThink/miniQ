@@ -5,6 +5,9 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchNavigation } from "../hooks/useSearchNavigation";
+import { findHitElement, type SearchHit } from "../sessionSearch";
+import { SessionSearchNavigator } from "./SessionSearchNavigator";
 import type {
   Artifact,
   AnchoredTurnTiming,
@@ -176,7 +179,7 @@ export function Timeline(props: TimelineProps) {
     props.turnProgress, props.busy, props.queue,
   ], [items, props.approvals, props.questions, props.plan, props.turnPlans, props.streamingText,
     props.turnProgress, props.busy, props.queue]);
-  const { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump } = useConversationScroll({
+  const { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump, reveal } = useConversationScroll({
     viewKey: JSON.stringify([props.sessionId, filter, query.trim()]),
     cursorKey: historyCursor ? JSON.stringify(historyCursor) : null,
     autoLoadOlder: true,
@@ -186,6 +189,50 @@ export function Timeline(props: TimelineProps) {
     loadOlder: historySearch.enabled ? historySearch.loadOlder : props.onLoadOlder,
     contentVersion,
   });
+  const searching = filter !== "all" || !!query.trim();
+  const navigation = useSearchNavigation({
+    scrollRef,
+    groups: items,
+    enabled: searching,
+    searchKey: JSON.stringify([props.sessionId, filter, query.trim()]),
+    query,
+    hasOlder,
+    loadingOlder: Boolean(loadingOlder),
+    loadOlder,
+    reveal,
+    contentVersion,
+  });
+  // "查看上下文" leaves search and finds the record in the full conversation,
+  // loading older pages until it appears or history runs out.
+  const [locating, setLocating] = useState<SearchHit | null>(null);
+  useEffect(() => setLocating(null), [props.sessionId]);
+  const locate = () => {
+    if (!navigation.current) return;
+    setLocating(navigation.current);
+    setFilter("all");
+    setQuery("");
+  };
+  useEffect(() => {
+    if (!locating || searching) return;
+    const root = scrollRef.current;
+    if (!root || props.loading) return;
+    const frame = requestAnimationFrame(() => {
+      const element = findHitElement(root, locating);
+      if (element) {
+        reveal(element);
+        element.setAttribute("data-search-located", "true");
+        window.setTimeout(() => element.removeAttribute("data-search-located"), 1600);
+        setLocating(null);
+      } else if (props.historyCursor && props.onLoadOlder) {
+        if (!props.loadingOlder) loadOlder();
+      } else {
+        setLocating(null);
+        props.onError("没有在已加载的会话中找到这条记录");
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locating, searching, props.loading, props.loadingOlder, props.historyCursor, items]);
   const navigationMessages = useMemo(
     () => items.flatMap((item) => item.kind === "message" ? [item.message] : []),
     [items],
@@ -234,6 +281,17 @@ export function Timeline(props: TimelineProps) {
           onShare={props.client && props.sessionId ? () => setShowShare(true) : undefined}
           onDiagnostics={props.client && props.sessionId ? () => setShowDiagnostics(true) : undefined}
           onExport={(format) => void exportSession(format)}
+          onStep={searching ? navigation.step : undefined}
+          navigator={searching && !historySearch.error ? (
+            <SessionSearchNavigator
+              count={navigation.count}
+              position={navigation.position}
+              more={hasOlder}
+              loading={Boolean(loadingOlder) || navigation.loadingMore}
+              onStep={navigation.step}
+              onLocate={locate}
+            />
+          ) : null}
         />
       </div>
       {showDiagnostics && props.client && props.sessionId && (
@@ -253,6 +311,12 @@ export function Timeline(props: TimelineProps) {
           <div className="history-loading" role="status">
             <Spinner size={16} />
             正在加载会话
+          </div>
+        )}
+        {locating && (
+          <div className="history-loading" role="status">
+            <Spinner size={16} />
+            正在定位记录
           </div>
         )}
         {historySearch.error && (

@@ -1,5 +1,5 @@
 import { Activity, Download, LoaderCircle, MoreHorizontal, Search, Share2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { TimelineFilter } from "../timelineModel";
 import "./TimelineToolbar.css";
 
@@ -14,6 +14,10 @@ export function TimelineToolbar(props: {
   onShare?: () => void;
   onDiagnostics?: () => void;
   onExport: (format: "md" | "json") => void;
+  /** Result counter and stepping controls, shown while searching. */
+  navigator?: ReactNode;
+  /** Enter steps to an older match; Shift+Enter steps to a newer one. */
+  onStep?: (direction: -1 | 1) => void;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -57,9 +61,18 @@ export function TimelineToolbar(props: {
       </select>
       <label className="timeline-search">
         <Search size={14} aria-hidden="true" />
-        <input ref={search} type="search" aria-label="搜索当前会话" placeholder="搜索会话" data-session-search="true" title="搜索当前会话（⌘/Option+F 或 Ctrl+F）" value={props.query} onChange={(event) => props.onQuery(event.target.value)} />
+        <input ref={search} type="search" aria-label="搜索当前会话" placeholder="搜索会话" data-session-search="true" title="搜索当前会话（⌘/Option+F 或 Ctrl+F）" value={props.query} onChange={(event) => props.onQuery(event.target.value)} onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing && props.onStep) {
+            event.preventDefault();
+            props.onStep(event.shiftKey ? 1 : -1);
+          } else if (event.key === "Escape" && props.query) {
+            event.preventDefault();
+            props.onQuery("");
+          }
+        }} />
         {props.query && <button type="button" className="icon-button" title="清空会话搜索" aria-label="清空会话搜索" onClick={() => props.onQuery("")}><X size={14} /></button>}
       </label>
+      {props.navigator}
       <details ref={menu} className="timeline-actions" onToggle={(event) => setOpen(event.currentTarget.open)} onKeyDown={(event) => {
         if (event.key === "Escape" && menu.current?.open) {
           event.preventDefault();
