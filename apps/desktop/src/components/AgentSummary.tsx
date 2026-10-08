@@ -265,6 +265,11 @@ export function AgentStatusIndicator({
           {cancelled > 0 && <span className="agent-status-chip">{cancelled} 已取消</span>}
         </span>
         {progress && <span className="agent-status-indicator-phase">{progress}</span>}
+        <span className="agent-status-compact" aria-hidden="true">
+          子任务 {completed}/{agents.length}
+          {failed > 0 && <b> · {failed} 异常</b>}
+          {running > 0 && <i> · {running} 执行中</i>}
+        </span>
         <Activity size={13} aria-hidden="true" className="agent-status-open-icon" />
       </button>
     </div>

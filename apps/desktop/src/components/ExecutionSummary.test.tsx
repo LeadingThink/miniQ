@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
-import type { Message, ToolCall } from "../types";
+import type { Message, PlanTask, ToolCall } from "../types";
 import { currentExecution } from "../timelineModel";
 import { ToolGroup } from "./ToolGroup";
 import { ExecutionSummary } from "./ExecutionSummary";
@@ -101,4 +101,18 @@ it("shows automation activity and the latest observation by default", () => {
   expect(screen.getByText("观察了桌面")).toBeTruthy();
   expect(screen.getAllByText("向下拖动 200 px · (10, 20) -> (10, 220)")).toHaveLength(2);
   expect(screen.getByText("查看调用数据")).toBeTruthy();
+});
+
+it("carries the current plan step inside the summary pill while busy", () => {
+  const plan = [
+    { content: "a", status: "completed" },
+    { content: "b", status: "in_progress" },
+    { content: "c", status: "pending" },
+  ] as PlanTask[];
+  const { rerender } = render(
+    <ExecutionSummary messages={[]} calls={[]} progress={null} plan={plan} busy approvals={0} questions={0} />,
+  );
+  expect(screen.getByLabelText("第 2 / 3 步")).toBeTruthy();
+  rerender(<ExecutionSummary messages={[]} calls={[call(1)]} progress={null} plan={plan} busy={false} approvals={0} questions={0} />);
+  expect(screen.queryByLabelText(/步$/)).toBeNull();
 });

@@ -8,7 +8,7 @@ import { RpcClient } from "./rpc";
 import { dismissTaskBanner, type TaskNotificationTarget } from "./taskBanner";
 import type { ThemeId } from "./theme";
 import { hostKey } from "./hostWorkspace";
-import { RemoteDeviceBarContext } from "./remoteDeviceBar";
+import { RemoteDeviceBarContext, type RemoteDeviceBar } from "./remoteDeviceBar";
 import "./RemoteWorkbench.css";
 
 const ConnectedApp = lazy(() => import("./ConnectedApp"));
@@ -28,14 +28,14 @@ function NotificationDestination({ notification }: { notification: PendingNotifi
   return null;
 }
 
-function DeviceWorkbench({ credentials, device, scope, theme, onThemeChange, notification }: {
+function DeviceWorkbench({ credentials, device, scope, theme, onThemeChange, notification, bar }: {
   credentials: RemoteCredentials; device: RemoteDesktop; scope: string; theme: ThemeId; onThemeChange: (theme: ThemeId) => void;
-  notification: PendingNotification | null;
+  notification: PendingNotification | null; bar: RemoteDeviceBar;
 }) {
   const [root] = useState(() => new RpcClient({ ...credentials, kind: "remote", targetDeviceId: device.id }, JSON.stringify([scope, device.id]) + ":"));
   useEffect(() => () => { root.disconnect("selected computer changed"); dismissTaskBanner(); }, [root]);
   return <DesktopHostProvider root={root}><NotificationDestination notification={notification} /><Suspense fallback={<main>正在加载远程工作台…</main>}>
-    <RemoteDeviceBarContext.Provider value><ConnectedApp theme={theme} onThemeChange={onThemeChange} /></RemoteDeviceBarContext.Provider>
+    <RemoteDeviceBarContext.Provider value={bar}><ConnectedApp theme={theme} onThemeChange={onThemeChange} /></RemoteDeviceBarContext.Provider>
   </Suspense></DesktopHostProvider>;
 }
 
@@ -77,9 +77,11 @@ export function RemoteWorkbench({ credentials, theme, onThemeChange, onExit, onA
     setSelected(device); setChoosing(false); setNotice("");
     if (notification?.target.targetDeviceId !== device.id) { notificationController.current?.abort(); setNotification(null); }
   };
+  const online = directory.error || directory.loading ? null : !!current?.online;
+  const bar: RemoteDeviceBar = { name: current?.name ?? "", online, onSwitch: () => setChoosing(true), onAppearance };
   return <div className="remote-workbench">
     <header className="remote-desktop-bar"><button type="button" onClick={() => setChoosing((value) => !value)} aria-expanded={choosing || !current}>
-      {current?.name || "选择连接的电脑"}<span>{directory.error || directory.loading ? "状态待确认" : current?.online ? "在线" : current ? "离线" : ""} · 切换电脑</span>
+      {current?.name || "选择连接的电脑"}<span>{online === null ? "状态待确认" : online ? "在线" : current ? "离线" : ""} · 切换电脑</span>
     </button>{onAppearance && <button type="button" className="remote-appearance-button" onClick={onAppearance}>外观</button>}</header>
     {notice && <p role="status">{notice}</p>}
     {(choosing || !current) && <div className="remote-device-panel"><RemoteDevicePicker devices={directory.devices} selected={current} loading={directory.loading} error={directory.error} onSelect={choose} onRefresh={directory.refresh} />
@@ -87,8 +89,8 @@ export function RemoteWorkbench({ credentials, theme, onThemeChange, onExit, onA
       {current && <button type="button" onClick={() => setChoosing(false)}>返回当前电脑</button>}
     </div>}
     {current && directory.scope && <div className="remote-workbench-content" hidden={choosing}>
-      {!current.online && !directory.loading && !directory.error && <div className="remote-offline-notice" role="status">{current.name} 当前离线，正在等待这台电脑恢复。你也可以点击顶部手动切换电脑。</div>}
-      <DeviceWorkbench key={`${directory.scope}:${current.id}`} credentials={credentials} device={current} scope={directory.scope} theme={theme} onThemeChange={onThemeChange} notification={notification} />
+      {!current.online && !directory.loading && !directory.error && <div className="remote-offline-notice" role="status">{current.name} 当前离线，正在等待这台电脑恢复。你也可以点击顶部或 ⋯ 菜单手动切换电脑。</div>}
+      <DeviceWorkbench key={`${directory.scope}:${current.id}`} credentials={credentials} device={current} scope={directory.scope} theme={theme} onThemeChange={onThemeChange} notification={notification} bar={bar} />
     </div>}
   </div>;
 }

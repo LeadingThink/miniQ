@@ -12,6 +12,8 @@ import { SessionFileAccess } from "../sessionFileAccess";
 import { useSessionModel } from "../hooks/useSessionModel";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { initializeMobileViewport, isMobileLayout } from "../mobileViewport";
+import type { PlanTask } from "../types";
+import type { AgentSummary } from "../components/AgentSummary";
 import type { WorkbenchView } from "../hooks/useAppWorkbench";
 import { fixtureClient, history, report, reportPath, sessions, workspaces } from "./mobileUxData";
 import "../styles/base.css";
@@ -25,6 +27,10 @@ import "../styles/experience.css";
 import "../styles/mobile-controls.css";
 
 const noop = () => {};
+// ?native=1 previews the phone app shell: busy turn, plan step and sub-agent pill.
+const nativePreview = new URLSearchParams(location.search).has("native");
+const fixturePlan = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ content: `步骤 ${n}`, status: n === 1 ? "completed" : n === 2 ? "in_progress" : "pending" })) as PlanTask[];
+const fixtureAgents = Array.from({ length: 57 }, (_, i) => ({ agentId: `a${i}`, parentId: null, name: `子任务 ${i}`, description: "", status: i < 38 ? "completed" : i < 52 ? "failed" : "cancelled", model: null, createdAt: "2026-09-08T00:00:00Z", queuedMessages: 0, error: null })) as AgentSummary[];
 const asyncNoop = async () => {};
 function Fixture() {
   const [collapsed, setCollapsed] = useState(isMobileLayout);
@@ -70,10 +76,11 @@ function Fixture() {
           <span>模拟验收 · 已请求 {pages} 页</span><button className="ghost" onClick={() => setConnected(!connected)}>模拟断线/恢复</button>
         </div>
         {notice && <div role="status" style={{ padding: 8, overflowWrap: "anywhere" }} onClick={() => setNotice("")}>{notice}</div>}
-        <Timeline key={sessionId} client={fixtureClient} sessionId={sessionId} title={session.title} messages={messages.slice(start)} toolCalls={[]} approvals={[]} questions={[]} plan={[]}
+        <Timeline key={sessionId} client={fixtureClient} sessionId={sessionId} title={session.title} messages={messages.slice(start)} toolCalls={[]} approvals={[]} questions={[]} plan={nativePreview ? fixturePlan : []}
+          agents={nativePreview ? fixtureAgents : undefined} onOpenAgentPanel={nativePreview ? () => setNotice("打开子任务面板") : undefined}
           historyCursor={start ? { at: messages[start].createdAt, id: messages[start].id } : null} onLoadOlder={async () => { setStart((value) => Math.max(0, value - 8)); setPages((value) => value + 1); }}
           artifacts={[{ id: "report", sessionId, title: "2026年第三季度用户访谈与产品改进报告完整版.md", path: reportPath, kind: "markdown", createdAt: messages.at(-1)!.createdAt }]} queue={[]} workspacePath={session.workingDirectory}
-          streamingText="" turnProgress={null} busy={false} onResolveApproval={noop} onResolveQuestion={noop} onRollback={noop} onOpenFile={showFile} onOpenUrl={noop} onSteerQueued={asyncNoop} onRemoveQueued={asyncNoop} onUpdateQueued={asyncNoop} onRewrite={async () => true} onError={setNotice} />
+          streamingText="" turnProgress={null} busy={nativePreview} onResolveApproval={noop} onResolveQuestion={noop} onRollback={noop} onOpenFile={showFile} onOpenUrl={noop} onSteerQueued={asyncNoop} onRemoveQueued={asyncNoop} onUpdateQueued={asyncNoop} onRewrite={async () => true} onError={setNotice} />
         <ComposerCard client={fixtureClient} workspaceId={workspaceId} busy={false} placeholder="继续告诉 miniQ 需要做什么…" draftKey={`mobile-ux-fixture-${sessionId}`} draftRequest={draftRequest} onDraftRequestApplied={() => setDraftRequest(undefined)}
           modelSlot={<SessionModelControls client={fixtureClient} model={model} busy={false} />} sendBlocked={!connected} onSend={(content) => { setNotice(`仅模拟发送：${content}`); return true; }} onError={setNotice} />
       </main>
@@ -89,6 +96,7 @@ function Fixture() {
   </SessionFileAccess>;
 }
 if (import.meta.env.DEV) {
+  if (nativePreview) document.documentElement.classList.add("native-mobile");
   initializeMobileViewport();
   createRoot(document.getElementById("root")!).render(<Fixture />);
 }

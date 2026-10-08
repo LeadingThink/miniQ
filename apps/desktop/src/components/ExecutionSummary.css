@@ -38,6 +38,7 @@
   align-items: center;
   gap: 4px;
 }
+.execution-summary-step { display: none; }
 .execution-summary .execution-failed {
   color: var(--danger);
 }

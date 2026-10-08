@@ -1,16 +1,19 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useContext, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   FileDiff,
   Globe2,
+  Laptop,
   LoaderCircle,
   MoreHorizontal,
+  Palette,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRight,
   Server,
   Settings,
   Sparkles,
+  Wifi,
 } from "lucide-react";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { sessionStatusLabel } from "../sessionStatus";
@@ -20,7 +23,8 @@ import type { LocalFileTarget } from "../localFiles";
 import { menuPosition } from "../menuPosition";
 import { moveMenuIndex } from "../menuNavigation";
 import "./AppStatus.css";
-import { RemoteConnectionStatus } from "./RemoteConnectionStatus";
+import { REMOTE_CONNECTION_DETAILS_EVENT, RemoteConnectionStatus } from "./RemoteConnectionStatus";
+import { RemoteDeviceBarContext } from "../remoteDeviceBar";
 
 export function AppStatusBar(props: {
   app: MiniqAppController;
@@ -35,6 +39,7 @@ export function AppStatusBar(props: {
   const currentSession = app.catalog.currentSession;
   const currentWorkspace = app.catalog.currentWorkspace;
   const remote = app.client.mode === "remote";
+  const deviceBar = useContext(RemoteDeviceBarContext);
   const canDistill = Boolean(
     currentSession &&
     !app.busy &&
@@ -54,6 +59,11 @@ export function AppStatusBar(props: {
   const projectName = currentWorkspace?.name;
 
   const menuItems: OverflowItem[] = [
+    ...(remote && deviceBar ? [
+      { id: "switch-computer", label: "切换电脑", icon: <Laptop size={15} />, run: deviceBar.onSwitch },
+      { id: "connection", label: "连接详情", icon: <Wifi size={15} />, run: () => window.dispatchEvent(new Event(REMOTE_CONNECTION_DETAILS_EVENT)) },
+      ...(deviceBar.onAppearance ? [{ id: "appearance", label: "外观", icon: <Palette size={15} />, run: deviceBar.onAppearance }] : []),
+    ] : []),
     { id: "browser", label: browserLabel, icon: <Globe2 size={15} />, disabled: remote && !currentSession, run: props.onOpenBrowser },
     ...(reviewFiles > 0 ? [{ id: "review", label: `审阅代码修改（${reviewFiles} 个文件）`, icon: <FileDiff size={15} />, run: props.onToggleReview }] : []),
     ...(canDistill ? [{ id: "distill", label: "保存为技能", icon: <Sparkles size={15} />, run: () => app.navigation.setShowDistill(true) }] : []),

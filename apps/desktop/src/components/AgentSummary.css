@@ -128,6 +128,7 @@
 /* The phase text is the least important part: it yields space to the named children first. */
 .agent-status-indicator-main .agent-status-indicator-phase { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-status-open-icon { flex: none; color: var(--text-dim); }
+.agent-status-compact { display: none; }
 
 /* Seeded agent identity (ChatGPT-style): one stable tone per agent id.
    Token exception: the 8 tones below are a fixed categorical identity palette
@@ -249,5 +250,26 @@
   .native-mobile .agent-panel-toggle .agent-stat strong { font-size: var(--font-caption); }
   .native-mobile .agent-panel-toggle .agent-summary-segments { width: 40px; height: 5px; flex: none; }
   .native-mobile .agent-panel-toggle .agent-summary-progress { display: none; }
-  .native-mobile .conversation-context .agent-status-indicator { display: none; }
+  /* Phones: a compact "子任务 38/57 · 14 异常 ›" pill replaces the full panel row.
+     Tapping it opens the same panel; the panel row only shows while open. */
+  .native-mobile .conversation-context .agent-status-indicator { padding: 2px 9px; gap: 0; min-height: 26px; }
+  .native-mobile .conversation-context .agent-status-indicator .agent-avatar-stack,
+  .native-mobile .conversation-context .agent-status-indicator .agent-status-sentence,
+  .native-mobile .conversation-context .agent-status-indicator .agent-status-counts,
+  .native-mobile .conversation-context .agent-status-indicator .agent-status-indicator-phase,
+  .native-mobile .conversation-context .agent-status-indicator .agent-status-open-icon { display: none; }
+  .native-mobile .conversation-context .agent-status-indicator-main { min-width: 0; min-height: 22px; }
+  .native-mobile .conversation-context .agent-status-compact {
+    display: inline;
+    overflow: hidden;
+    min-width: 0;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .native-mobile .conversation-context .agent-status-compact::after { content: " ›"; color: var(--text-mid); }
+  .native-mobile .conversation-context .agent-status-compact b { color: var(--danger); font-weight: 600; }
+  .native-mobile .conversation-context .agent-status-compact i { color: var(--accent); font-style: normal; }
+  .native-mobile .agent-panel:not(:has(> .agent-list)):not(:has(> [role="alert"])) { display: none; }
 }
