@@ -41,12 +41,9 @@ it.each(["选择", "恢复"])("手机%s电脑进入工作台后可直接切换�
     if (entry === "选择") fireEvent.click(screen.getByRole("button", { name: /电脑B/ }));
     await screen.findByText("工作台");
     expect(screen.queryByRole("region", { name: "选择连接的电脑" })).toBeNull();
-    const button = screen.getByRole("button", { name: "切换用途" });
-    expect(getComputedStyle(button.parentElement!).display).toBe("flex");
+    expect(screen.queryByRole("button", { name: "切换用途" })).toBeNull();
     expect(screen.queryByRole("button", { name: /切换电脑/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "外观" })).toBeNull();
-    fireEvent.click(button);
-    expect(onSwitchMode).toHaveBeenCalledTimes(1);
   } finally { removeStyles(); }
 });
 
@@ -56,8 +53,8 @@ it("桌面保留完整顶栏与电脑选择交互", async () => {
     rememberSelectedDesktop("room", b);
     render(<RemoteWorkbench credentials={credentials} theme="night" onThemeChange={() => {}} onSwitchMode={() => {}} onAppearance={() => {}} />);
     await screen.findByText("工作台");
-    expect(screen.getByRole("button", { name: "切换用途" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "外观" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "切换用途" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "外观" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /切换电脑/ }));
     expect(screen.getByRole("region", { name: "选择连接的电脑" })).toBeTruthy();
   } finally { removeStyles(); }

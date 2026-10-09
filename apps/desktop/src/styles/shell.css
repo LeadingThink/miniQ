@@ -58,7 +58,7 @@
 .app-toolbar-menu {
   position: fixed;
   min-width: 240px;
-  z-index: 90;
+  z-index: 1000;
 }
 .app-toolbar-menu-item {
   display: flex;

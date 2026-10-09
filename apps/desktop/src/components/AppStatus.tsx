@@ -61,6 +61,7 @@ export function AppStatusBar(props: {
   const menuItems: OverflowItem[] = [
     ...(remote && deviceBar ? [
       { id: "switch-computer", label: "切换电脑", icon: <Laptop size={15} />, run: deviceBar.onSwitch },
+      ...(deviceBar.onSwitchMode ? [{ id: "switch-mode", label: "切换用途", icon: <Laptop size={15} />, run: deviceBar.onSwitchMode }] : []),
       { id: "connection", label: "连接详情", icon: <Wifi size={15} />, run: () => window.dispatchEvent(new Event(REMOTE_CONNECTION_DETAILS_EVENT)) },
       ...(deviceBar.onAppearance ? [{ id: "appearance", label: "外观", icon: <Palette size={15} />, run: deviceBar.onAppearance }] : []),
     ] : []),
