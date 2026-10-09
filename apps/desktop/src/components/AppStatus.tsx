@@ -62,7 +62,7 @@ export function AppStatusBar(props: {
     ...(remote && deviceBar ? [
       { id: "switch-computer", label: "切换电脑", icon: <Laptop size={15} />, run: deviceBar.onSwitch },
       ...(deviceBar.onSwitchMode ? [{ id: "switch-mode", label: "切换用途", icon: <Laptop size={15} />, run: deviceBar.onSwitchMode }] : []),
-      { id: "connection", label: "连接详情", icon: <Wifi size={15} />, run: () => window.dispatchEvent(new Event(REMOTE_CONNECTION_DETAILS_EVENT)) },
+      { id: "connection", label: "连接详情", icon: <Wifi size={15} />, run: () => window.dispatchEvent(new CustomEvent(REMOTE_CONNECTION_DETAILS_EVENT, { detail: app })) },
       ...(deviceBar.onAppearance ? [{ id: "appearance", label: "外观", icon: <Palette size={15} />, run: deviceBar.onAppearance }] : []),
     ] : []),
     { id: "browser", label: browserLabel, icon: <Globe2 size={15} />, disabled: remote && !currentSession, run: props.onOpenBrowser },

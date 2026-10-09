@@ -41,7 +41,10 @@ export function RemoteConnectionStatus({ app, onToggleReview }: { app: MiniqAppC
   useEffect(() => { setOpen(false); }, [desktop?.host]);
   const show = (button: HTMLButtonElement | null) => { trigger.current = button; setOpen(true); };
   useEffect(() => {
-    const openDetails = () => show(null);
+    const openDetails = (event: Event) => {
+      if ((event as CustomEvent<MiniqAppController>).detail !== app) return;
+      show(null);
+    };
     window.addEventListener(REMOTE_CONNECTION_DETAILS_EVENT, openDetails);
     return () => window.removeEventListener(REMOTE_CONNECTION_DETAILS_EVENT, openDetails);
   }, []);
