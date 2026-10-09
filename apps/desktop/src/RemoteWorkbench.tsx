@@ -85,6 +85,7 @@ export function RemoteWorkbench({ credentials, theme, onThemeChange, onExit, onA
     </button></header>
     {notice && <p role="status">{notice}</p>}
     {(choosing || !current) && <div className="remote-device-panel"><RemoteDevicePicker devices={directory.devices} selected={current} loading={directory.loading} error={directory.error} onSelect={choose} onRefresh={directory.refresh} />
+      {!current && onSwitchMode && <button type="button" onClick={onSwitchMode}>切换用途</button>}
       <button type="button" onClick={() => { if (directory.scope) clearSelectedDesktop(directory.scope); void clearRemoteCredentials().then(() => onExit?.()); }}>更换 Key</button>
       {current && <button type="button" onClick={() => setChoosing(false)}>返回当前电脑</button>}
     </div>}
