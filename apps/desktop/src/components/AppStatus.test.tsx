@@ -10,9 +10,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function appFixture(collapsed = true) {
+function appFixture(collapsed = true, mode: "local" | "remote" = "local") {
   return {
-    client: { mode: "local", sshHost: null },
+    client: { mode, sshHost: null },
     connection: {
       connected: true,
       phase: "connected",
@@ -87,13 +87,14 @@ describe("AppStatusBar", () => {
     expect(app.navigation.setShowSettings).toHaveBeenCalledWith(true);
   });
 
-  it("runs all remote overflow actions before closing the portal menu", () => {
+  it("runs all remote overflow actions and closes the portal menu", () => {
+    HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.open = true; });
+    HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) { this.open = false; });
     const onSwitch = vi.fn();
     const onSwitchMode = vi.fn();
     const onAppearance = vi.fn();
     const dispatch = vi.spyOn(window, "dispatchEvent");
-    const app = appFixture();
-    app.client.mode = "remote";
+    const app = appFixture(true, "remote");
     render(
       <RemoteDeviceBarContext.Provider value={{ name: "电脑A", online: true, onSwitch, onSwitchMode, onAppearance }}>
         <AppStatusBar
