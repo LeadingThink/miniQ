@@ -39,6 +39,16 @@
   font-size: var(--font-footnote);
   color: var(--text-dim);
 }
+/* `.statusbar > *` keeps toolbar items at their natural width. The title is
+   the one item that must yield, so long session names cannot push the
+   right-side actions off narrow screens. */
+.statusbar.app-toolbar > .app-toolbar-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.statusbar.app-toolbar > .app-toolbar-actions {
+  flex: none;
+}
 .app-toolbar-title > .status-badge,
 .app-toolbar-title > .connection-state {
   flex: none;
