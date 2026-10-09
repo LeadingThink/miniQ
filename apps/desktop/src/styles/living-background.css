@@ -460,6 +460,14 @@
   -webkit-backdrop-filter: blur(6px);
   text-shadow: none;
 }
+/* backdrop-filter makes the header its own stacking context, which traps the
+   ⋯ menu's z-index. Without this the later, transparent timeline paints over
+   the menu: the menu stays visible but taps land on the timeline and only
+   close it. Lift the header above the timeline. */
+:root[data-background] .conversation-context {
+  position: relative;
+  z-index: 30;
+}
 :root[data-background] .timeline-search,
 :root[data-background] .timeline-mobile-filter,
 :root[data-background] .execution-status-bar,
