@@ -747,7 +747,7 @@ mod tests {
         let out = image_result(&ctx, &value).unwrap();
         let path = out["path"].as_str().unwrap();
         assert!(Path::new(path).is_file());
-        assert!(path.contains(".miniq/media"));
+        assert!(Path::new(path).starts_with(dir.path().join(".miniq").join("media")));
     }
 
     #[tokio::test]
