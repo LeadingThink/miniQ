@@ -8,6 +8,9 @@ import { LiveElapsed } from "./LiveElapsed";
 import { RetryNotice } from "./RetryNotice";
 import "./ExecutionStatusBar.css";
 
+/** A single step running this long is worth a visual hint. */
+export const STEP_SLOW_MS = 120_000;
+
 interface ExecutionStatusBarProps {
   messages: Message[];
   calls: ToolCall[];
@@ -62,8 +65,10 @@ export function ExecutionStatusBar(props: ExecutionStatusBarProps) {
   const task = props.plan.find((item) => item.status === "in_progress");
   const detail = waiting ? "" : task?.content || (active ? toolInputSummary(active) : "");
   const timing = (props.timing ?? latestMessageTiming(props.messages))?.timing;
-  const startedAt = timing?.status === "running" ? timing.startedAt
-    : retry ? props.progress?.startedAt : active?.createdAt ?? props.progress?.startedAt;
+  // The step clock restarts with each tool call or model phase, so a stalled
+  // step is visible even when the whole turn has been running for a long time.
+  const stepStartedAt = retry ? props.progress?.startedAt : active?.createdAt ?? props.progress?.startedAt;
+  const totalStartedAt = timing?.status === "running" ? timing.startedAt : undefined;
   const Icon = props.approvals ? ShieldQuestion : props.questions ? MessageCircleQuestion : LoaderCircle;
   const { done, total } = planCounts(props.plan);
   return (
@@ -71,9 +76,13 @@ export function ExecutionStatusBar(props: ExecutionStatusBarProps) {
       <div className="execution-status-row">
         <Icon size={15} aria-hidden="true" className={waiting ? "" : "activity-spinner"} />
         <strong role="status" aria-live="polite">{activityLabel(props, active)}</strong>
-        {!waiting && startedAt && (
-          <LiveElapsed startedAt={startedAt} className="execution-status-time"
-            prefix={timing?.status === "running" ? "总用时" : active && !retry ? "当前操作" : "当前处理"} />
+        {!waiting && stepStartedAt && (
+          <LiveElapsed key={stepStartedAt} startedAt={stepStartedAt} className="execution-status-time execution-status-step"
+            prefix={active && !retry ? "当前操作" : "当前步骤"} slowAfterMs={STEP_SLOW_MS}
+            slowTitle="当前步骤已持续较长时间，可检查是否卡住" />
+        )}
+        {totalStartedAt && totalStartedAt !== stepStartedAt && (
+          <LiveElapsed startedAt={totalStartedAt} className="execution-status-time" prefix="总用时" />
         )}
         {total > 0 && (
           <button ref={toggle} type="button" className="execution-status-plan-toggle" aria-expanded={open}
