@@ -167,7 +167,14 @@ export async function verifyBuild({ list, marketingVersion, buildNumber, wait = 
       const versionId = build.relationships?.preReleaseVersion?.data?.id;
       return result.included.some((version) => version.type === "preReleaseVersions" && version.id === versionId && version.attributes?.version === marketingVersion && version.attributes?.platform === "IOS");
     });
-    if (builds.length && !candidates.length) throw new Error("ASC marketing version/platform mismatch or missing preReleaseVersion; verification failed");
+    if (builds.length && !candidates.length) {
+      log(`ASC unmatched builds: ${JSON.stringify(builds.map((item) => ({ id: item.id, processingState: item.attributes?.processingState, preReleaseVersion: item.relationships?.preReleaseVersion?.data ?? null })))}`);
+      log(`ASC version metadata: ${JSON.stringify(result.included.filter((item) => item.type === "preReleaseVersions").map((item) => ({ id: item.id, version: item.attributes?.version, platform: item.attributes?.platform })))}`);
+      if (builds.some((item) => item.attributes?.processingState === "PROCESSING")) {
+        if (poll < maxPolls) { await wait(pollMs); continue; }
+      }
+      throw new Error("ASC marketing version/platform mismatch or missing preReleaseVersion; verification failed");
+    }
     if (candidates.length > 1) throw new Error("ASC returned multiple matching iOS builds; verification failed");
     const build = candidates[0];
     const state = build?.attributes?.processingState ?? "NOT_VISIBLE";
