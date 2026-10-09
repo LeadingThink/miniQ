@@ -112,6 +112,9 @@ it.each(["daemon.shutdownIfIdle", "wait_for_daemon_exit", "install"])("restores 
   await waitFor(() => expect(fake.resolveConnection).toHaveBeenCalledTimes(2));
   expect(fake.invoke).toHaveBeenCalledWith("cancel_daemon_update");
   expect(hook.result.current.state.phase).toBe("error");
+  expect(hook.result.current.state.error).toBe(stage === "daemon.shutdownIfIdle"
+    ? "shutdown failed"
+    : stage === "install" ? "installer failed" : "process still running");
   if (stage !== "install") expect(fake.install).not.toHaveBeenCalled();
   expect(fake.relaunch).not.toHaveBeenCalled();
 });
@@ -159,6 +162,31 @@ it("does not fall back to cancelling tasks when idle shutdown is busy or unsuppo
   expect(fake.install).not.toHaveBeenCalled();
   expect(fake.relaunch).not.toHaveBeenCalled();
   expect(fake.invoke).toHaveBeenCalledWith("cancel_daemon_update");
+});
+
+it.each([
+  ["miniQ still has active tasks or requests; retry the update when idle", "任务执行中，请等待任务完成后更新。"],
+  ["miniQ has queued messages; wait for them or explicitly remove them before updating", "还有排队消息，请等待任务完成后更新。"],
+])("preserves work and restores transport on SessionBusy: %s", async (backendMessage, reason) => {
+  const hook = setup();
+  await available(hook);
+  hook.client.call.mockImplementation(async (method: string) => {
+    if (method === "daemon.shutdownIfIdle") throw new Error(`${backendMessage} (code -32003)`);
+    return {};
+  });
+  await act(async () => { await hook.result.current.install(); });
+  expect(hook.result.current.state).toMatchObject({ phase: "error", error: reason });
+  expect(hook.onError).toHaveBeenCalledWith(`更新失败：${reason}`);
+  expect(hook.client.call).toHaveBeenCalledWith("daemon.shutdownIfIdle");
+  expect(hook.client.call.mock.calls.every(([method]) =>
+    ["daemon.health", "settings.get", "daemon.shutdownIfIdle"].includes(method))).toBe(true);
+  expect(fake.install).not.toHaveBeenCalled();
+  expect(fake.relaunch).not.toHaveBeenCalled();
+  expect(fake.invoke).not.toHaveBeenCalledWith("wait_for_daemon_exit");
+  expect(fake.invoke).toHaveBeenCalledWith("cancel_daemon_update");
+  expect(hook.result.current.rootPaused).toBe(false);
+  await waitFor(() => expect(fake.resolveConnection).toHaveBeenCalledTimes(2));
+  expect(hook.client.connected).toBe(true);
 });
 
 it("never sends desktop update shutdown commands to an SSH host", async () => {

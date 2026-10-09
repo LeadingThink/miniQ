@@ -185,6 +185,7 @@ fn is_transient_error(error: &Value) -> bool {
             // interrupted". The request itself is valid, so retry it.
             "stream was interrupted",
             "stream interrupted",
+            "upstream http/2 stream failed",
             "stream was closed",
             "stream closed unexpectedly",
             "connection reset",

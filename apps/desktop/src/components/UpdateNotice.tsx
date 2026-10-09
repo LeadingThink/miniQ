@@ -1,5 +1,6 @@
 import { Download, LoaderCircle, RefreshCw } from "lucide-react";
 import type { AppUpdaterState } from "../hooks/useAppUpdater";
+import "./UpdateNotice.css";
 
 interface UpdateNoticeProps {
   supported: boolean;
@@ -62,11 +63,13 @@ export function UpdateNotice({ supported, state, onCheck, onInstall }: UpdateNot
       <button
         type="button"
         className="nav-item sidebar-nav-button update-notice update-error"
-        title={state.error ?? "更新失败"}
         onClick={onCheck}
       >
         <RefreshCw className="nav-icon" size={16} />
-        <span>更新失败，重试</span>
+        <span className="update-error-content" role="status">
+          <span>更新失败，重试</span>
+          <span className="update-error-reason">{state.error || "更新失败，请稍后重试。"}</span>
+        </span>
       </button>
     );
   }

@@ -1,0 +1,21 @@
+.update-notice.update-error {
+  align-items: flex-start;
+  overflow: visible;
+}
+
+.update-notice.update-error span {
+  display: block;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+
+.update-notice.update-error .update-error-content {
+  flex: 1;
+}
+
+.update-notice.update-error .update-error-reason {
+  margin-top: 4px;
+  font-size: var(--font-footnote);
+}
