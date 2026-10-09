@@ -15,6 +15,7 @@ fn provider() -> ResponsesProvider {
 
 fn request(messages: Vec<ChatMessage>) -> CompletionRequest {
     CompletionRequest {
+        context_compact_threshold: Some(200_000),
         trace: Default::default(),
         messages,
         tools: vec![ToolSpec {
@@ -48,6 +49,18 @@ fn builds_native_responses_input_and_tools() {
     assert_eq!(body["tools"][0]["strict"], false);
     assert_eq!(body["max_output_tokens"], 2048);
     assert_eq!(body["include"][0], "reasoning.encrypted_content");
+    assert_eq!(body["context_management"][0]["type"], "compaction");
+    assert_eq!(body["context_management"][0]["compact_threshold"], 200_000);
+}
+
+#[test]
+fn internal_requests_do_not_enable_native_compaction() {
+    let mut completion = request(vec![ChatMessage::user("summarize")]);
+    completion.context_compact_threshold = None;
+    assert!(provider()
+        .build_body(&completion)
+        .get("context_management")
+        .is_none());
 }
 
 #[test]
@@ -215,6 +228,31 @@ fn decodes_fragmented_function_calls_and_preserves_output_context() {
     );
     assert!(matches!(completed.items[1], Ok(ChatDelta::ResponseInfo(_))));
     assert!(matches!(completed.items[2], Ok(ChatDelta::Finished)));
+}
+
+#[test]
+fn preserves_native_compaction_items_for_the_next_request() {
+    let mut decoder = ResponsesDecoder::default();
+    let completed = decode(
+        &mut decoder,
+        json!({
+            "type":"response.completed",
+            "response":{"output":[
+                {"type":"compaction","id":"cmp-1","encrypted_content":"opaque"},
+                {"type":"message","role":"assistant","content":[]}
+            ]}
+        }),
+    );
+    let context = completed
+        .items
+        .iter()
+        .find_map(|item| match item {
+            Ok(ChatDelta::Context(context)) => Some(context),
+            _ => None,
+        })
+        .expect("completed Responses output should be replayable");
+    assert_eq!(context.data[0]["type"], "compaction");
+    assert_eq!(context.data[0]["id"], "cmp-1");
 }
 
 #[test]

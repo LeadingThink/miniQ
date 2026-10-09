@@ -94,6 +94,7 @@ pub struct ProviderInference {
 impl SkillInference for ProviderInference {
     async fn complete(&self, system: &str, user: &str) -> Result<String, String> {
         let request = CompletionRequest {
+            context_compact_threshold: None,
             trace: miniq_protocol::ModelCallTrace {
                 purpose: miniq_protocol::ModelCallPurpose::SkillLearning,
                 step: None,
@@ -116,7 +117,7 @@ impl SkillInference for ProviderInference {
             match delta.map_err(|e| e.to_string())? {
                 ChatDelta::Text(t) => text.push_str(&t),
                 ChatDelta::ToolCall(_) => {}
-                ChatDelta::Context(_) | ChatDelta::ResponseInfo(_) => {}
+                ChatDelta::FirstEvent(_) | ChatDelta::Context(_) | ChatDelta::ResponseInfo(_) => {}
                 ChatDelta::Finished => break,
             }
         }

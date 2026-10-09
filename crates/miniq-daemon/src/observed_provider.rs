@@ -51,6 +51,36 @@ struct CallGuard {
 }
 
 impl CallGuard {
+    fn elapsed_at(&self, observed: Instant) -> u64 {
+        observed
+            .duration_since(self.started)
+            .as_millis()
+            .try_into()
+            .unwrap_or(u64::MAX)
+    }
+
+    fn observe(&mut self, delta: &ChatDelta) {
+        let changed = match delta {
+            ChatDelta::FirstEvent(observed) if self.record.first_event_ms.is_none() => {
+                self.record.first_event_ms = Some(self.elapsed_at(*observed));
+                true
+            }
+            ChatDelta::Text(text) if !text.is_empty() && self.record.first_text_ms.is_none() => {
+                self.record.first_text_ms = Some(self.elapsed_at(Instant::now()));
+                true
+            }
+            _ => false,
+        };
+        if changed {
+            self.save();
+            tracing::info!(target: "miniq::model_call", call_id = %self.record.id,
+                session_id = %self.record.session_id,
+                stream_ready_ms = self.record.stream_ready_ms,
+                first_event_ms = self.record.first_event_ms,
+                first_text_ms = self.record.first_text_ms, "model response timing");
+        }
+    }
+
     fn save(&self) {
         if let Err(error) = self.store.save_model_call(&self.record) {
             tracing::warn!(call_id = %self.record.id, %error, "could not persist model diagnostics");
@@ -63,13 +93,7 @@ impl CallGuard {
         }
         self.record.status = status;
         self.record.completed_at = Some(now_iso());
-        self.record.elapsed_ms = Some(
-            self.started
-                .elapsed()
-                .as_millis()
-                .try_into()
-                .unwrap_or(u64::MAX),
-        );
+        self.record.elapsed_ms = Some(self.elapsed_at(Instant::now()));
         self.record.error = error.map(|error| {
             let detail = match error {
                 // reqwest embeds URLs, potentially containing credentials.
@@ -99,6 +123,11 @@ impl CallGuard {
                 .to_owned()
         });
         self.save();
+        tracing::info!(target: "miniq::model_call", call_id = %self.record.id,
+            session_id = %self.record.session_id, status = ?self.record.status,
+            elapsed_ms = self.record.elapsed_ms, stream_ready_ms = self.record.stream_ready_ms,
+            first_event_ms = self.record.first_event_ms, first_text_ms = self.record.first_text_ms,
+            "model call finished");
     }
 }
 
@@ -119,6 +148,9 @@ impl Stream for ObservedStream {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
         let next = this.inner.as_mut().poll_next(cx);
+        if let Poll::Ready(Some(Ok(delta))) = &next {
+            this.guard.observe(delta);
+        }
         match &next {
             Poll::Ready(Some(Ok(ChatDelta::ResponseInfo(info)))) => {
                 let sanitized = serde_json::from_value(crate::security::redacted(
@@ -179,6 +211,9 @@ impl ModelProvider for ObservedProvider {
                 started_at: now_iso(),
                 completed_at: None,
                 elapsed_ms: None,
+                stream_ready_ms: None,
+                first_event_ms: None,
+                first_text_ms: None,
                 status: ModelCallStatus::Running,
                 request: None,
                 estimated_input_tokens: miniq_agent::estimate_request_tokens(
@@ -206,6 +241,8 @@ impl ModelProvider for ObservedProvider {
         let requested_max_output_tokens = request.max_output_tokens;
         match self.inner.stream_complete(request).await {
             Ok(inner) => {
+                guard.record.stream_ready_ms = Some(guard.elapsed_at(Instant::now()));
+                guard.save();
                 // Auto protocol negotiation can select a different endpoint while
                 // establishing the stream. Diagnostics must describe that request,
                 // without sacrificing a valid stream if metadata is unavailable.

@@ -146,6 +146,7 @@ fn unreadable_screenshots_become_visible_errors_instead_of_poisoning_history() {
         detail: ImageDetail::Auto,
     });
     let request = crate::CompletionRequest {
+        context_compact_threshold: None,
         trace: Default::default(),
         messages: vec![
             assistant(vec![computer_call("lost")]),

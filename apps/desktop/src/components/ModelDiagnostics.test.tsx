@@ -31,6 +31,9 @@ const record: ModelCallRecord = {
   startedAt: "2026-09-09T01:00:00Z",
   completedAt: "2026-09-09T01:00:01Z",
   elapsedMs: 1000,
+  streamReadyMs: 50,
+  firstEventMs: 80,
+  firstTextMs: 420,
   status: "completed",
   request: {
     model: "requested-model",
@@ -133,6 +136,15 @@ it("shows settings distinct from limits and pages without loading the whole sess
   );
   await screen.findByText("requested-model");
   expect(screen.getByText("未设置")).toBeTruthy();
+  expect(screen.getByText("首字耗时").nextElementSibling?.textContent).toBe(
+    "0.420 秒",
+  );
+  expect(screen.getByText("首个响应事件").nextElementSibling?.textContent).toBe(
+    "0.080 秒",
+  );
+  expect(screen.getByText("响应流就绪").nextElementSibling?.textContent).toBe(
+    "0.050 秒",
+  );
   expect(screen.getByText("100")).toBeTruthy();
   expect(call).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "较早的调用" }));
@@ -143,6 +155,26 @@ it("shows settings distinct from limits and pages without loading the whole sess
     before: cursor,
     limit: 20,
   });
+});
+
+it("shows unknown timings for records without observations instead of inventing zero", async () => {
+  const call = vi.fn().mockResolvedValue({
+    calls: [
+      { ...record, streamReadyMs: null, firstEventMs: null, firstTextMs: null },
+    ],
+    nextCursor: null,
+  });
+  render(
+    <ModelDiagnostics
+      client={client(call)}
+      sessionId="one"
+      onClose={vi.fn()}
+    />,
+  );
+  await screen.findByText("requested-model");
+  expect(screen.getByText("首字耗时").nextElementSibling?.textContent).toBe("未记录");
+  expect(screen.getByText("首个响应事件").nextElementSibling?.textContent).toBe("未记录");
+  expect(screen.getByText("响应流就绪").nextElementSibling?.textContent).toBe("未记录");
 });
 
 it("aborts stale requests and never renders another session's results", async () => {

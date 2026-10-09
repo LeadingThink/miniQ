@@ -118,6 +118,7 @@ async fn compaction_keeps_scoped_language_requirements_as_context_not_new_instru
         history,
         &[],
         &ContextPolicy {
+            auto_limit: false,
             soft_limit_tokens: 8,
             preserve_recent_messages: 2,
             prune_tool_results_over_tokens: 2,

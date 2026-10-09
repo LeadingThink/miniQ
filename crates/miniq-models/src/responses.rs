@@ -33,6 +33,16 @@ impl ResponsesProvider {
             "store": false,
             "include": ["reasoning.encrypted_content"],
         });
+        if let Some(threshold) = request.context_compact_threshold {
+            let threshold = std::env::var("MINIQ_RESPONSES_COMPACT_THRESHOLD")
+                .ok()
+                .and_then(|value| value.parse::<u32>().ok())
+                .filter(|value| *value > 0)
+                .map_or(threshold, |override_value| override_value.min(threshold));
+            body["context_management"] = json!([{
+                "type": "compaction", "compact_threshold": threshold.max(1),
+            }]);
+        }
         crate::reasoning::apply_reasoning(&mut body, &self.config, ApiProtocol::Responses);
         if let Some(temperature) = request.temperature {
             body["temperature"] = json!(temperature);

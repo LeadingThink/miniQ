@@ -20,7 +20,7 @@ impl ToolExecutor for Executor {
     async fn execute(&self, _: &ToolCallRequest) -> Result<Value, AgentError> {
         panic!("history reads must not dispatch filesystem tools")
     }
-    async fn record_image_history(
+    async fn record_history_read(
         &self,
         _: &ToolCallRequest,
         output: &Value,
@@ -223,6 +223,7 @@ async fn compaction_does_not_entrust_the_visual_archive_to_a_text_summary() {
         original,
         &executor.specs(),
         &crate::ContextPolicy {
+            auto_limit: false,
             soft_limit_tokens: 2_000,
             preserve_recent_messages: 1,
             prune_tool_results_over_tokens: 2_000,
@@ -429,6 +430,7 @@ async fn missing_user_reference_survives_compaction_for_provider_recovery() {
         original,
         &[],
         &crate::ContextPolicy {
+            auto_limit: false,
             soft_limit_tokens: 2_000,
             preserve_recent_messages: 1,
             prune_tool_results_over_tokens: 2_000,

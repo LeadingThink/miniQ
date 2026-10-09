@@ -18,7 +18,7 @@ pub(super) fn after_success(
                 .unwrap_or_default();
             publish_plan(executor, tasks, super::plan_review::ReviewPlan::Checklist);
         }
-        "task_create" | "task_get" | "task_list" | "task_item_update" => {
+        "task_create" | "task_item_update" => {
             if let Some(tasks) = super::plan::task_graph_plan(output) {
                 publish_plan(
                     executor,

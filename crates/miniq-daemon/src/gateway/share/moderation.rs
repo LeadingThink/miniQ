@@ -194,6 +194,7 @@ async fn review_item(provider: Arc<dyn ModelProvider>, item: ReviewItem) -> Resu
     ));
     user.images = item.images;
     let request = CompletionRequest {
+        context_compact_threshold: None,
         trace: ModelCallTrace {
             purpose: ModelCallPurpose::ShareModeration,
             step: None,
@@ -232,7 +233,7 @@ async fn collect_decision(
                     "审核模型尝试调用工具，公开分享已停止",
                 ));
             }
-            ChatDelta::Context(_) | ChatDelta::ResponseInfo(_) => {}
+            ChatDelta::FirstEvent(_) | ChatDelta::Context(_) | ChatDelta::ResponseInfo(_) => {}
         }
     }
     decision(&output)

@@ -52,6 +52,15 @@ pub struct SessionToolExecutor {
 }
 
 impl SessionToolExecutor {
+    fn tool_result_status(call: &ToolCallRequest, output: &Value) -> ToolCallStatus {
+        let shell_tool = matches!(call.name.as_str(), "shell_run" | "shell_batch");
+        if shell_tool && output.get("ok") == Some(&Value::Bool(false)) {
+            ToolCallStatus::Failed
+        } else {
+            ToolCallStatus::Succeeded
+        }
+    }
+
     fn owner_agent_id(&self) -> Option<&str> {
         self.ctx
             .agents
@@ -338,7 +347,11 @@ impl SessionToolExecutor {
                 }
                 hooks::after_success(self, call, &output);
                 self.post_tool_use_hooks(call, &mut output).await;
-                self.finish(tool_call_id, ToolCallStatus::Succeeded, &output);
+                self.finish(
+                    tool_call_id,
+                    Self::tool_result_status(call, &output),
+                    &output,
+                );
                 Ok(output)
             }
             Err(e) => {
@@ -437,12 +450,12 @@ impl ToolExecutor for SessionToolExecutor {
         self.effective_set().specs
     }
 
-    async fn record_image_history(
+    async fn record_history_read(
         &self,
         call: &ToolCallRequest,
         output: &Value,
     ) -> Result<(), AgentError> {
-        self.persist_image_history(call, output)
+        self.persist_history_read(call, output)
     }
 
     fn result_images(

@@ -98,6 +98,7 @@ impl Fixture {
         let deltas = self
             .provider
             .stream_complete(CompletionRequest {
+                context_compact_threshold: None,
                 trace: Default::default(),
                 messages: vec![ChatMessage::user("中文问题，保留全文。")],
                 tools: Vec::new(),

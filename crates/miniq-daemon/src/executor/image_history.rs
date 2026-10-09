@@ -1,9 +1,9 @@
-//! Agent-owned image history reads still participate in the host's audit/UI lifecycle.
+//! Agent-owned evidence history reads participate in the host's audit/UI lifecycle.
 
 use super::*;
 
 impl SessionToolExecutor {
-    pub(super) fn persist_image_history(
+    pub(super) fn persist_history_read(
         &self,
         call: &ToolCallRequest,
         output: &Value,
@@ -109,7 +109,7 @@ mod tests {
                 arguments: json!({"action":"read", "ids":["img_1"]}),
             };
             executor
-                .record_image_history(
+                .record_history_read(
                     &call,
                     &json!({"image_references":["img_1"], "historical_evidence":true, "detail":"original"}),
                 )
@@ -151,7 +151,7 @@ mod tests {
     #[tokio::test]
     async fn failed_history_reads_and_sensitive_arguments_are_recorded_safely() {
         let (_directory, executor) = fixture(None);
-        executor.record_image_history(&ToolCallRequest {
+        executor.record_history_read(&ToolCallRequest {
             id: "provider-call".into(), name: "image_history".into(),
             arguments: json!({"action":"read", "ids":["img_unknown"], "api_key":"never-log-input"}),
         }, &json!({"error":"unknown archived image", "password":"never-log-output"})).await.unwrap();
@@ -164,5 +164,29 @@ mod tests {
         let serialized = serde_json::to_string(&calls).unwrap();
         assert!(!serialized.contains("never-log"));
         assert!(serialized.contains("[REDACTED]"));
+    }
+
+    #[tokio::test]
+    async fn tool_evidence_reads_share_the_scoped_history_lifecycle() {
+        let (_directory, executor) = fixture(None);
+        executor
+            .record_history_read(
+                &ToolCallRequest {
+                    id: "recall-1".into(),
+                    name: "tool_history".into(),
+                    arguments: json!({"action":"read","toolCallId":"old-call"}),
+                },
+                &json!({"content":"verified evidence","historical_evidence":true}),
+            )
+            .await
+            .unwrap();
+        let calls = executor
+            .state
+            .store
+            .list_tool_calls(&executor.session_id)
+            .unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].tool_name, "tool_history");
+        assert_eq!(calls[0].status, ToolCallStatus::Succeeded);
     }
 }

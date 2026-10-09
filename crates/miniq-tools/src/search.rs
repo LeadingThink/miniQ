@@ -42,18 +42,16 @@ fn base_path_risk(ctx: &ToolContext, input: &Value, reason: &str) -> Risk {
 }
 
 fn resolve_base(ctx: &ToolContext, path: Option<&str>) -> Result<PathBuf, ToolError> {
-    match path {
-        Some(p) => ctx
-            .resolve_path(p)
-            .map_err(|e| ToolError::SandboxDenied(e.to_string())),
-        None => Ok(ctx.workspace.clone()),
-    }
+    ctx.resolve_path(path.unwrap_or("."))
+        .map_err(|e| ToolError::SandboxDenied(e.to_string()))
 }
 
 fn walker(base: &Path) -> ignore::Walk {
     ignore::WalkBuilder::new(base)
-        // Allow dotfiles; `.git/` itself is still skipped by the walker.
+        // hidden(false) also exposes .git; prune it explicitly, including
+        // worktree .git files, while retaining other searchable dotfiles.
         .hidden(false)
+        .filter_entry(|entry| entry.file_name() != ".git")
         .git_ignore(true)
         .git_exclude(true)
         .require_git(false)
@@ -89,8 +87,9 @@ impl Tool for FileGlobTool {
         "file_glob"
     }
     fn description(&self) -> &str {
-        "Find files by glob pattern (e.g. **/*.xlsx). Respects .gitignore; results \
-         are sorted by modification time, newest first."
+        "Find files by glob pattern (e.g. **/*.xlsx). Respects .gitignore, \
+         skips .git metadata, and sorts results by modification time, newest first. \
+         Prefer a specific pattern and directory for code discovery; page through nextOffset when needed."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -123,7 +122,7 @@ impl Tool for FileGlobTool {
             .map_err(|e| ToolError::InvalidInput(format!("bad glob pattern: {e}")))?
             .compile_matcher();
 
-        let workspace = ctx.workspace.clone();
+        let workspace = resolve_base(ctx, None)?;
         let matches = tokio::task::spawn_blocking(move || {
             let mut found: Vec<(String, std::time::SystemTime)> = Vec::new();
             for entry in walker(&base).flatten() {
@@ -223,7 +222,9 @@ impl Tool for FileGrepTool {
     }
     fn description(&self) -> &str {
         "Search file contents with a regular expression. Supports content, file-list and \
-         count outputs, explicit pagination and multiline matching."
+         count outputs, explicit pagination and multiline matching. Respects .gitignore and \
+         skips .git metadata. For discovery use files_with_matches in the relevant directory, \
+         then request content from selected files instead of broad searches with large context."
     }
     fn parameters_schema(&self) -> Value {
         json!({
@@ -278,7 +279,7 @@ impl Tool for FileGrepTool {
         let before_context = p.before_context;
         let after_context = p.after_context;
 
-        let workspace = ctx.workspace.clone();
+        let workspace = resolve_base(ctx, None)?;
         let (results, total, files_scanned, skipped_large_files) =
             tokio::task::spawn_blocking(move || {
                 let mut results = Vec::new();

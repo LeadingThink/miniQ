@@ -1,6 +1,25 @@
 use super::*;
 use std::time::Duration;
 
+#[test]
+fn failed_shell_observations_are_not_persisted_as_successes() {
+    for name in ["shell_run", "shell_batch"] {
+        let call = ToolCallRequest {
+            id: "call".into(),
+            name: name.into(),
+            arguments: json!({}),
+        };
+        assert_eq!(
+            SessionToolExecutor::tool_result_status(&call, &json!({"ok":false})),
+            ToolCallStatus::Failed
+        );
+        assert_eq!(
+            SessionToolExecutor::tool_result_status(&call, &json!({"ok":true})),
+            ToolCallStatus::Succeeded
+        );
+    }
+}
+
 #[tokio::test]
 async fn unattended_question_uses_default_after_timeout() {
     let (_sender, receiver) = tokio::sync::oneshot::channel();

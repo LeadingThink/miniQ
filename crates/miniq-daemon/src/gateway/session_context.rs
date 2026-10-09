@@ -172,6 +172,7 @@ async fn compact_locked(
     );
     let mut policy = crate::turn::context_policy();
     policy.soft_limit_tokens = 1;
+    policy.auto_limit = false;
     policy.preserve_recent_messages = 2;
     let turn_id = miniq_memory::new_id("compact");
     let provider = crate::observed_provider::ObservedProvider::new(
@@ -258,31 +259,30 @@ pub(super) async fn context_usage(state: &AppState, raw: Option<Value>) -> Resul
         .provider_config_for_session(&input.session_id, None)
         .ok()
         .flatten();
-    let window = match config {
+    let mut capabilities = match config {
         Some(config) => {
             let provider = state.provider_from_config(Some(config));
             tokio::time::timeout(std::time::Duration::from_secs(3), provider.capabilities())
                 .await
                 .ok()
-                .and_then(|capabilities| capabilities.max_context_tokens)
+                .unwrap_or_default()
         }
-        None => None,
-    }
-    .or_else(|| {
+        None => Default::default(),
+    };
+    capabilities.max_context_tokens = capabilities.max_context_tokens.or_else(|| {
         last_call
             .as_ref()
             .and_then(|call| call.advertised_context_tokens)
     });
-    let mut soft_limit = crate::turn::context_policy().soft_limit_tokens;
-    if let Some(window) = window {
-        // Mirrors miniq_agent's effective policy (default output reserve).
-        let input_limit = window
-            .saturating_sub(16_384)
-            .saturating_sub((window / 20).max(1_024)) as usize;
-        if input_limit > 0 {
-            soft_limit = soft_limit.min(input_limit);
-        }
-    }
+    capabilities.max_output_tokens = capabilities.max_output_tokens.or_else(|| {
+        last_call
+            .as_ref()
+            .and_then(|call| call.advertised_output_tokens)
+    });
+    let window = capabilities.max_context_tokens;
+    let soft_limit =
+        miniq_agent::effective_context_policy(&crate::turn::context_policy(), &capabilities)
+            .soft_limit_tokens;
     let percent = window
         .map(|window| ((estimated as f64 / f64::from(window.max(1))) * 100.0).clamp(0.0, 100.0));
     to_value(json!({

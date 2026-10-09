@@ -62,6 +62,38 @@ async fn glob_respects_gitignore_and_paginates() {
 }
 
 #[tokio::test]
+async fn searches_prune_git_metadata_but_keep_other_dotfiles_and_relative_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    for folder in [".git/objects", "nested/.git", ".settings", "worktree"] {
+        std::fs::create_dir_all(dir.path().join(folder)).unwrap();
+    }
+    for file in [".git/objects/blob", "nested/.git/config", "worktree/.git"] {
+        std::fs::write(dir.path().join(file), "needle metadata").unwrap();
+    }
+    std::fs::write(dir.path().join(".settings/config"), "needle project").unwrap();
+    let context = ctx(dir.path());
+    for path in [None, Some("."), Some(".settings")] {
+        let mut input = json!({"pattern":"**/*","limit":1});
+        if let Some(path) = path {
+            input["path"] = json!(path);
+        }
+        let glob = FileGlobTool.execute(&context, input).await.unwrap();
+        assert_eq!(glob["files"], json!([".settings/config"]));
+        assert_eq!(glob["total"], 1);
+        assert_eq!(glob["nextOffset"], Value::Null);
+
+        let mut input = json!({"pattern":"needle"});
+        if let Some(path) = path {
+            input["path"] = json!(path);
+        }
+        let grep = FileGrepTool.execute(&context, input).await.unwrap();
+        assert_eq!(grep["total"], 1);
+        assert_eq!(grep["matches"][0]["path"], ".settings/config");
+        assert_eq!(grep["matches"][0]["text"], "needle project");
+    }
+}
+
+#[tokio::test]
 async fn grep_finds_lines_and_skips_binary() {
     let dir = tempfile::tempdir().unwrap();
     setup(dir.path());

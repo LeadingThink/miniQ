@@ -18,6 +18,7 @@ mod missing_images;
 mod response_language;
 mod retry;
 mod tool_batch;
+mod tool_history;
 mod visual_history;
 
 pub use checkpoint::{CheckpointStore, TurnCheckpoint};
@@ -180,10 +181,10 @@ pub trait ToolExecutor: Send + Sync {
         Vec::new()
     }
 
-    /// Hosts audit the runner's read-only image-history tool through their
+    /// Hosts audit the runner's read-only history tools through their
     /// normal session/agent event channel. References are resolved by the
     /// runner from this conversation only, never from model-supplied paths.
-    async fn record_image_history(
+    async fn record_history_read(
         &self,
         _call: &ToolCallRequest,
         _output: &Value,
@@ -258,7 +259,7 @@ impl Default for RunLimits {
     }
 }
 
-fn effective_context_policy(
+pub fn effective_context_policy(
     configured: &ContextPolicy,
     capabilities: &ModelCapabilities,
 ) -> ContextPolicy {
@@ -270,7 +271,16 @@ fn effective_context_policy(
             .saturating_sub(output_reserve)
             .saturating_sub(safety_margin) as usize;
         if provider_input_limit > 0 {
-            policy.soft_limit_tokens = policy.soft_limit_tokens.min(provider_input_limit);
+            // The built-in 64k value is a fallback for providers that do not
+            // report a window. Once a provider reports a verified capacity,
+            // use it instead of forcing every model through the fallback
+            // compaction path. An explicit fixed policy remains a
+            // caller-owned ceiling.
+            policy.soft_limit_tokens = if configured.auto_limit {
+                provider_input_limit
+            } else {
+                policy.soft_limit_tokens.min(provider_input_limit)
+            };
         }
     }
     policy
@@ -352,7 +362,11 @@ async fn run_turn_inner(
     limits: &RunLimits,
 ) -> Result<TurnOutcome, AgentError> {
     let image_executor = image_history_tool::ImageHistoryExecutor::new(executor, &state.history);
-    let executor = &image_executor;
+    let history_executor = tool_history::ToolHistoryExecutor::new(
+        &image_executor,
+        limits.purpose == miniq_models::ModelCallPurpose::Task,
+    );
+    let executor = &history_executor;
     let capabilities = provider.capabilities().await;
     let mut steps = 0;
     let mut loop_guard = loop_guard::LoopGuard::default();
@@ -387,6 +401,7 @@ async fn run_turn_inner(
         )
         .await?;
         state.history = context.messages;
+        history_executor.sync(&state.history);
 
         let mut retries = retry::ModelRetries::new(limits.max_model_retries);
         let mut placeholder_recovery_used = false;
@@ -403,6 +418,12 @@ async fn run_turn_inner(
                 ));
             }
             let request = CompletionRequest {
+                context_compact_threshold: (limits.purpose == miniq_models::ModelCallPurpose::Task)
+                    .then_some(
+                        (context_policy.soft_limit_tokens.saturating_mul(4) / 5)
+                            .min(u32::MAX as usize)
+                            .max(1) as u32,
+                    ),
                 trace: miniq_models::ModelCallTrace {
                     purpose: limits.purpose,
                     step: Some(steps),
@@ -511,7 +532,7 @@ async fn run_turn_inner(
                         tool_calls.push(call);
                     }
                     ChatDelta::Context(context) => provider_context = Some(context),
-                    ChatDelta::ResponseInfo(_) => {}
+                    ChatDelta::FirstEvent(_) | ChatDelta::ResponseInfo(_) => {}
                     ChatDelta::Finished => break,
                 }
             }
@@ -620,6 +641,8 @@ async fn run_turn_inner(
                     assistant.provider_context = provider_context;
                     state.history.push(assistant.clone());
                     state.appended.push(assistant);
+                    context::native::compact_native_history(&mut state.history, &tools, &events)
+                        .await;
                 }
                 let instruction = ChatMessage::user(instruction);
                 state.history.push(instruction.clone());
@@ -631,6 +654,7 @@ async fn run_turn_inner(
             let mut assistant = ChatMessage::assistant(text.clone());
             assistant.provider_context = provider_context;
             provider_history.push(assistant);
+            context::native::compact_native_history(&mut provider_history, &tools, &events).await;
             return Ok(TurnOutcome {
                 final_text: text,
                 appended: state.appended.clone(),
@@ -655,12 +679,14 @@ async fn run_turn_inner(
             content: text,
             images: Vec::new(),
             image_archive: Vec::new(),
+            working_memory: None,
             tool_call_id: None,
             tool_calls: tool_calls.clone(),
             provider_context,
         };
         state.history.push(assistant_msg.clone());
         state.appended.push(assistant_msg);
+        context::native::compact_native_history(&mut state.history, &tools, &events).await;
 
         if let loop_guard::Verdict::Warn { repetitions } = verdict {
             // Answer every call without executing it so the model can change
@@ -1192,6 +1218,41 @@ mod tests {
         assert_eq!(provider.requests.lock().unwrap()[0].max_output_tokens, None);
     }
 
+    #[test]
+    fn default_context_budget_tracks_provider_capacity_and_preserves_explicit_limits() {
+        let capabilities = ModelCapabilities {
+            max_context_tokens: Some(1_000_000),
+            max_output_tokens: Some(128_000),
+            ..Default::default()
+        };
+        assert_eq!(
+            effective_context_policy(&ContextPolicy::default(), &capabilities).soft_limit_tokens,
+            822_000
+        );
+        let configured = ContextPolicy {
+            auto_limit: false,
+            soft_limit_tokens: 128_000,
+            ..Default::default()
+        };
+        assert_eq!(
+            effective_context_policy(&configured, &capabilities).soft_limit_tokens,
+            128_000
+        );
+        let explicit_default = ContextPolicy {
+            auto_limit: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            effective_context_policy(&explicit_default, &capabilities).soft_limit_tokens,
+            64_000
+        );
+        assert_eq!(
+            effective_context_policy(&ContextPolicy::default(), &ModelCapabilities::default())
+                .soft_limit_tokens,
+            64_000
+        );
+    }
+
     #[tokio::test]
     async fn compacts_before_retrying_a_context_overflow() {
         let provider = FallibleProvider::new(vec![
@@ -1274,10 +1335,13 @@ mod tests {
         ]);
         let (events, mut receiver) = tokio::sync::mpsc::channel(32);
         let history = vec![ChatMessage::user("work")];
-        let request_budget =
-            300 + response_language::token_overhead(&history, miniq_models::ModelCallPurpose::Task);
+        let request_budget = estimate_request_tokens(
+            &response_language::request_messages(&history, miniq_models::ModelCallPurpose::Task),
+            &tool_history::ToolHistoryExecutor::new(&LargeResultExecutor, true).specs(),
+        ) + 300;
         let limits = RunLimits {
             context_policy: ContextPolicy {
+                auto_limit: false,
                 soft_limit_tokens: request_budget,
                 preserve_recent_messages: 0,
                 prune_tool_results_over_tokens: 10,

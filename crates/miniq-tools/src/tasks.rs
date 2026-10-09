@@ -201,7 +201,10 @@ fn task_values(board: &TaskBoard) -> Vec<TaskRecord> {
 }
 
 fn unknown_task(id: &str) -> ToolError {
-    ToolError::InvalidInput(format!("unknown task: {id}"))
+    ToolError::InvalidInput(format!(
+        "unknown task: {id}. Use an ID returned by task_create. A task_update checklist \
+         has no task IDs; update that checklist with task_update instead."
+    ))
 }
 
 #[derive(Deserialize)]
@@ -292,7 +295,8 @@ impl Tool for TaskCreateTool {
         "task_create"
     }
     fn description(&self) -> &str {
-        "Create one structured task in the current session task graph."
+        "Create one ID-bearing task in the current session dependency graph. Use this graph \
+         when task dependencies or ownership are needed; use task_update for an ordinary checklist."
     }
     fn parameters_schema(&self) -> Value {
         create_schema()
@@ -338,7 +342,8 @@ impl Tool for TaskListTool {
         "task_list"
     }
     fn description(&self) -> &str {
-        "List the current session's complete structured task graph."
+        "List only ID-bearing tasks created with task_create. This does not list the \
+         progress checklist published by task_update."
     }
     fn parameters_schema(&self) -> Value {
         json!({"type":"object","properties":{},"additionalProperties":false})
@@ -365,7 +370,10 @@ impl Tool for TaskItemUpdateTool {
         "task_item_update"
     }
     fn description(&self) -> &str {
-        "Update, assign, link, complete, or delete one structured task. Dependencies must be acyclic. All blockers must be completed before a task can be in_progress or completed. Invalid updates leave the graph unchanged."
+        "Update, assign, link, complete, or delete a task using its real ID returned by task_create. \
+         To update a task_update checklist, use task_update instead. Dependencies must be acyclic. \
+         All blockers must be completed before a task can be in_progress or completed. \
+         Invalid updates leave the graph unchanged."
     }
     fn parameters_schema(&self) -> Value {
         update_schema()

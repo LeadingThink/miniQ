@@ -210,6 +210,8 @@ const purpose = {
 };
 const amount = (value: number | null) =>
   value === null ? "未返回" : value.toLocaleString();
+const latency = (value: number | null) =>
+  value === null ? "未记录" : `${(value / 1000).toFixed(3)} 秒`;
 
 function CallRecord({ call }: { call: ModelCallRecord }) {
   const tokens = reportedTokens(call);
@@ -245,6 +247,18 @@ function CallRecord({ call }: { call: ModelCallRecord }) {
               ? "未结束"
               : `${(call.elapsedMs / 1000).toFixed(1)} 秒`}
           </dd>
+        </div>
+        <div>
+          <dt>响应流就绪</dt>
+          <dd>{latency(call.streamReadyMs)}</dd>
+        </div>
+        <div>
+          <dt>首个响应事件</dt>
+          <dd>{latency(call.firstEventMs)}</dd>
+        </div>
+        <div>
+          <dt>首字耗时</dt>
+          <dd>{latency(call.firstTextMs)}</dd>
         </div>
         <div>
           <dt>发送的输出上限</dt>

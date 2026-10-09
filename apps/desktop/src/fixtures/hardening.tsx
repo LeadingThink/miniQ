@@ -153,6 +153,9 @@ const client = {
             startedAt: "2026-09-09T01:00:00Z",
             completedAt: "2026-09-09T01:00:05Z",
             elapsedMs: 5000,
+            streamReadyMs: 200,
+            firstEventMs: 400,
+            firstTextMs: 1800,
             status: "failed",
             request: {
               model: "gpt-5.6-sol",

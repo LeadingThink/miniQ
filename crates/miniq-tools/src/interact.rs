@@ -40,9 +40,10 @@ impl Tool for TaskUpdateTool {
         "task_update"
     }
     fn description(&self) -> &str {
-        "Publish or update your step plan for the current task so the user can follow \
-         progress. Call it when starting a multi-step task and whenever a step's \
-         status changes."
+        "Replace the current turn's complete progress checklist. Use this same tool for \
+         subsequent checklist updates. Checklist entries have no task IDs and are not \
+         records in task_list/task_item_update. For simple work no checklist is needed; \
+         for multi-step work batch the initial checklist with the first independent reads."
     }
     fn parameters_schema(&self) -> Value {
         json!({

@@ -4,6 +4,8 @@ use miniq_models::ChatMessage;
 use miniq_protocol::{ApiProtocol, ModelCallsParams, ProviderResponseInfo};
 use serde_json::json;
 
+mod timing;
+
 struct FixtureProvider {
     fail: bool,
     wait: bool,
@@ -129,6 +131,7 @@ impl ModelProvider for SwitchingProtocolProvider {
 
 fn request() -> CompletionRequest {
     CompletionRequest {
+        context_compact_threshold: None,
         trace: Default::default(),
         messages: vec![ChatMessage::user("private prompt")],
         tools: vec![],
@@ -209,6 +212,9 @@ async fn failed_request_redacts_credentials_and_keeps_usage_unknown() {
     let page = provider.store.model_calls_page(&params).unwrap();
     let record = &page.calls[0];
     assert_eq!(record.status, ModelCallStatus::Failed);
+    assert_eq!(record.stream_ready_ms, None);
+    assert_eq!(record.first_event_ms, None);
+    assert_eq!(record.first_text_ms, None);
     assert_eq!(record.response.usage, None);
     assert!(!record.error.as_ref().unwrap().contains("test-secret"));
     assert!(record.error.as_ref().unwrap().contains("busy"));

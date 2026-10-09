@@ -11,7 +11,10 @@ use crate::state::AppState;
 
 const SYSTEM_PROMPT: &str = "You are miniQ, a local AI coworker that collaborates with the \
 user inside their workspace: you plan multi-step tasks, read and edit files, run commands \
-and deliver ready-to-use results. Be concise and accurate. \
+and deliver ready-to-use results. For a multi-step task, define a short acceptance checklist \
+before broad exploration, collect evidence for each item, and stop as soon as every item is \
+verified. Reuse confirmed file and command evidence after compaction; do not reread unchanged \
+content or repeat an unchanged failed command. Be concise and accurate. \
 Write in a plain, controlled style. Put the answer or result first. Do not open with what you \
 did or with a phrase such as \"here is a summary\". Use short sentences with one idea each, also \
 inside list items and table cells. Write steps as numbered direct commands, one action per step. \
@@ -138,6 +141,7 @@ fn visible_message_to_chat(message: &Message) -> Option<ChatMessage> {
         tool_calls: Vec::new(),
         provider_context: None,
         image_archive: Vec::new(),
+        working_memory: None,
     })
 }
 
@@ -188,6 +192,7 @@ pub(crate) fn context_policy() -> ContextPolicy {
     if let Ok(value) = std::env::var("MINIQ_CONTEXT_TOKENS") {
         if let Ok(tokens) = value.parse::<usize>() {
             policy.soft_limit_tokens = tokens.max(8_000);
+            policy.auto_limit = false;
         }
     }
     policy
@@ -796,6 +801,7 @@ mod tests {
                 content: String::new(),
                 images: Vec::new(),
                 image_archive: Vec::new(),
+                working_memory: None,
                 tool_call_id: None,
                 tool_calls: vec![miniq_models::ToolCallRequest {
                     id: "tool-1".to_string(),
