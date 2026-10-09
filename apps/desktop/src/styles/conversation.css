@@ -241,7 +241,6 @@
   color: var(--text-dim);
 }
 
-
 .composer-row {
   display: flex;
   align-items: center;
@@ -623,7 +622,7 @@
 
 .jump-to-bottom {
   position: absolute;
-  bottom: 110px;
+  bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
   display: inline-flex;
@@ -1003,53 +1002,6 @@
   to { transform: rotate(360deg); }
 }
 
-.execution-prelude {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  padding: 6px 7px;
-  color: var(--accent);
-}
-
-.execution-prelude > svg {
-  flex: none;
-  margin-top: 1px;
-}
-
-.execution-prelude > div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.execution-prelude strong {
-  color: var(--text-mid);
-  font-size: var(--font-footnote);
-  font-weight: 600;
-}
-
-.execution-prelude .execution-total-time {
-  color: var(--text-mid);
-  font-size: var(--font-footnote);
-  font-variant-numeric: tabular-nums;
-}
-
-.execution-prelude span {
-  color: var(--text-dim);
-  font-size: var(--font-caption);
-}
-
-.execution-prelude .execution-phase-meta {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.execution-prelude .execution-elapsed {
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-
 .execution-plan {
   align-self: stretch;
   padding: 7px;
@@ -1139,27 +1091,6 @@
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
 }
 
-/* Streaming indicator: a soft breathing dot rather than a terminal block. */
-.type-cursor {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-left: 4px;
-  border-radius: 50%;
-  background: var(--text);
-  vertical-align: 1px;
-  animation: type-cursor-breathe 1.2s ease-in-out infinite;
-}
-
-@keyframes type-cursor-breathe {
-  0%, 100% { opacity: 0.9; transform: scale(1); }
-  50% { opacity: 0.3; transform: scale(0.8); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .type-cursor { animation: none; opacity: 0.7; }
-}
-
 @keyframes rise {
   from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
@@ -1213,57 +1144,15 @@
   padding: 6px 0 2px 20px;
 }
 
-/* Running-turn step pill above the composer. */
-.plan-step-pill-wrap {
-  position: relative;
-  width: min(calc(100% - 40px), var(--conversation-content-width));
-  margin: 0 auto 6px;
-}
-
-.plan-step-pill {
-  display: inline-flex;
+.tool-group-jumps {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px 4px 7px;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: var(--font-caption);
   color: var(--text-mid);
-  font: inherit;
-  font-size: var(--font-footnote);
-  font-variant-numeric: tabular-nums;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  cursor: default;
+  flex-wrap: wrap;
 }
-
-.plan-ring-track,
-.plan-ring-value {
-  fill: none;
-  stroke-width: 2;
-}
-
-.plan-ring-track {
-  stroke: var(--border-strong);
-}
-
-.plan-ring-value {
-  stroke: var(--accent);
-  stroke-linecap: round;
-  transform: rotate(-90deg);
-  transform-origin: 50% 50%;
-  transition: stroke-dashoffset var(--duration) var(--ease-standard);
-}
-
-.plan-step-popover {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  z-index: 20;
-  width: min(360px, 100%);
-  max-height: 320px;
-  overflow: auto;
-  padding: 10px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-popover);
-}
+.tool-group-jumps .icon-button { width: 28px; height: 28px; }
+.agent-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
+.agent-filters .timeline-search { min-width: 0; flex: 1 1 130px; }

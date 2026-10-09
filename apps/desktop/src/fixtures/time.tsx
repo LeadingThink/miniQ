@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Timeline } from "../components/Timeline";
-import type { Message, TurnTiming } from "../types";
+import { Composer } from "../components/Composer";
+import type { Message, PlanTask, ToolCall, TurnTiming } from "../types";
 import type { RpcClient } from "../rpc";
 import { applyTheme } from "../theme";
 import "../styles/base.css";
@@ -29,11 +30,21 @@ const history: Message[] = [
   }),
   message("partial", "assistant", "已完成环境检查，收到停止指令，现有结果已保留。", -3_574_000),
 ];
+const plan: PlanTask[] = [
+  { content: "确认接口与测试数据", status: "completed" },
+  { content: "读取请求模型，确定压测接口", status: "in_progress" },
+  { content: "执行并发与流式响应测试", status: "pending" },
+  { content: "整理测试结果与运行说明", status: "pending" },
+];
+const calls: ToolCall[] = ["list_directory", "git_status", "file_read"].map((toolName, index) => ({
+  id: `tool-${index}`, sessionId: "time-demo", toolName, input: {}, status: "succeeded", createdAt: iso(-80_000 + index * 1_000),
+}));
 
 function Fixture() {
   const [busy, setBusy] = useState(true);
   const [dark, setDark] = useState(false);
   const [remote, setRemote] = useState(false);
+  const [compacting, setCompacting] = useState(false);
   const [ended, setEnded] = useState<TurnTiming | null>(null);
   const timing: TurnTiming = ended ?? { startedAt: iso(-90_000), status: "running" };
   const active = message("active", "user", "继续刚才的工作，核对两处差异并给出最终结果。", -90_000, timing);
@@ -48,15 +59,17 @@ function Fixture() {
       <button onClick={complete} disabled={!busy}>模拟完成</button>
       <button onClick={() => { setDark(!dark); applyTheme(dark ? "jade" : "night"); }}>切换主题</button>
       <button onClick={() => setRemote(!remote)}>{remote ? "本地显示" : "远程分页显示"}</button>
+      <button onClick={() => setCompacting(!compacting)}>{compacting ? "模拟生成回复" : "模拟整理上下文"}</button>
     </header>
-    <Timeline messages={messages} toolCalls={[]} approvals={[]} questions={[]} plan={[]} artifacts={[]} queue={[]}
+    <Timeline messages={messages} toolCalls={calls} approvals={[]} questions={[]} plan={plan} artifacts={[]} queue={[]}
       client={remote ? { mode: "remote" } as RpcClient : undefined}
       historyCursor={remote ? { id: "older", at: iso(-172_800_000) } : null} onLoadOlder={asyncNoop}
       latestTurnTiming={{ messageId: active.id, timing }}
-      streamingText={busy ? "正在核对资料中的两处差异。阶段切换不会重置上方的整轮用时。" : ""}
-      turnProgress={busy ? { phase: "receiving_model", modelStep: 3, startedAt: iso(-5_000) } : null} busy={busy}
+      streamingText={busy ? "正在核对资料中的两处差异。阶段切换不会重置整轮用时。" : ""}
+      turnProgress={busy ? { phase: compacting ? "compacting_context" : "receiving_model", modelStep: 3, startedAt: iso(-5_000) } : null} busy={busy}
       onResolveApproval={noop} onResolveQuestion={noop} onRollback={noop} onOpenFile={noop} onOpenUrl={noop}
       onSteerQueued={asyncNoop} onRemoveQueued={asyncNoop} onUpdateQueued={asyncNoop} onRewrite={async () => true} onError={noop} />
+    <Composer busy={busy} chip="miniQ" onSend={noop} onCancel={complete} />
   </main>;
 }
 

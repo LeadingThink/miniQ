@@ -409,9 +409,12 @@ describe("Timeline execution flow", () => {
     expect(html).not.toContain("task_update");
   });
 
-  it("shows a descriptive prelude before the first execution step", () => {
+  it("keeps one live status below the scrollable transcript", () => {
     const html = renderTimeline({ busy: true });
     expect(html).toContain("正在分析并准备下一步");
+    expect(html.indexOf('aria-label="当前任务状态"')).toBeGreaterThan(html.indexOf('class="timeline-shell"'));
+    expect(html).not.toContain("execution-prelude");
+    expect(html).not.toContain("execution-summary");
   });
 
   it("keeps each turn's plan collapsed inside that turn instead of the bottom", () => {
@@ -470,6 +473,7 @@ describe("Timeline execution flow", () => {
     expect(html).toContain("已经完成前一阶段。");
     expect(html).toContain("正在将执行结果交给模型");
     expect(html).not.toContain("第 4 轮");
+    expect(html).not.toContain("type-cursor");
   });
 
   it("renders native question headings, option details, and multi-select controls", () => {

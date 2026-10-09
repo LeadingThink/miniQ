@@ -51,14 +51,16 @@ it("auto-expands on failures, pending approvals and questions", () => {
   expect(screen.getByRole("button", { name: /等待确认/ }).getAttribute("aria-expanded")).toBe("true");
 });
 
-it("keeps attention content visible and shows the live step while running", () => {
+it("keeps attention content visible with a static execution record while running", () => {
   render(
     <ExecutionFold calls={[call("a", "succeeded"), call("b", "running")]} timing={{ startedAt: done.startedAt, status: "running" }} active attention>
       <p>请回答问题</p>
     </ExecutionFold>,
   );
   const toggle = screen.getByRole("button", { expanded: true });
-  expect(toggle.textContent).not.toContain("已执行");
+  expect(toggle.textContent).toContain("执行记录 · 1 项已完成");
+  expect(toggle.querySelector(".spin")).toBeNull();
+  expect(toggle.textContent).not.toContain("正在运行");
   expect(screen.getByText("请回答问题")).toBeTruthy();
 });
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ExecutionPrelude } from "../components/ExecutionActivity";
+import { ExecutionStatusBar } from "../components/ExecutionStatusBar";
 import type { TurnProgress } from "../types";
 import "../styles/base.css";
 import "../styles/themes.css";
@@ -24,7 +24,7 @@ function Fixture() {
       <option value="receiving_model">接收响应</option>
       <option value="compacting_context">压缩上下文</option>
     </select>
-    <ExecutionPrelude plan={[]} progress={progress} />
+    <ExecutionStatusBar messages={[]} calls={[]} plan={[]} progress={progress} busy approvals={0} questions={0} />
   </main>;
 }
 

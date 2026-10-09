@@ -1,6 +1,6 @@
 import { Check, GitBranch, LoaderCircle, Pencil, RefreshCw, Target, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import type { AnchoredTurnTiming, Message, MessageAttachment, PlanTask, Question, SessionGoal, TurnPlan, TurnProgress } from "../types";
+import type { AnchoredTurnTiming, Message, MessageAttachment, Question, SessionGoal, TurnPlan } from "../types";
 import type { PendingApproval } from "../App";
 import type { RpcClient } from "../rpc";
 import { readImagePreview } from "../localFiles";
@@ -9,7 +9,7 @@ import type { TimelineProps } from "./Timeline";
 import { ApprovalCard, ArtifactCard } from "./TimelineInteractions";
 import { QuestionCard } from "./QuestionCard";
 import { Md } from "./Md";
-import { ExecutionPrelude, TurnPlanSummary } from "./ExecutionActivity";
+import { TurnPlanSummary } from "./ExecutionActivity";
 import { CopyButton } from "./CopyButton";
 import { SpeakButton } from "./SpeakButton";
 import { useVoiceCapabilities } from "../voiceCapabilities";
@@ -84,12 +84,9 @@ export function TimelineEntries(props: {
   onError: TimelineProps["onError"];
   approvals: PendingApproval[];
   questions: Question[];
-  plan: PlanTask[];
   turnPlans?: TurnPlan[];
   streamingText: string;
-  turnProgress: TurnProgress | null;
   latestTurnTiming?: AnchoredTurnTiming | null;
-  thinking: boolean;
   busy: boolean;
   onResolveApproval: TimelineProps["onResolveApproval"];
   onResolveQuestion: TimelineProps["onResolveQuestion"];
@@ -511,11 +508,7 @@ export function TimelineEntries(props: {
           >
             {props.streamingText}
           </Md>
-          <span className="type-cursor" />
         </div>
-      )}
-      {props.thinking && (
-        <ExecutionPrelude plan={props.plan} progress={props.turnProgress} />
       )}
     </div>
   );

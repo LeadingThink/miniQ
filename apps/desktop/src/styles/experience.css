@@ -237,32 +237,6 @@
   text-overflow: ellipsis;
 }
 
-.conversation-context > .execution-summary {
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 4px 0;
-  border-bottom: 0;
-}
-
-.conversation-context .execution-summary-title {
-  gap: 6px;
-  min-height: 24px;
-  overflow: hidden;
-}
-
-.conversation-context .execution-summary-counts {
-  flex-wrap: nowrap;
-  gap: 9px;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.conversation-context .execution-summary > .turn-timing {
-  margin-top: 0;
-  font-size: var(--font-caption);
-}
-
 .conversation-context .session-goal-card {
   flex: 0 1 auto;
   width: auto;
@@ -399,10 +373,6 @@
     flex: 1 1 auto;
   }
 
-  .conversation-context > .execution-summary {
-    flex-basis: 100%;
-  }
-
   .conversation-context .session-goal-card,
   .conversation-context .session-goal-content,
   .conversation-context .session-goal-add,
@@ -425,42 +395,18 @@
     min-height: 28px;
     padding: 1px max(10px, var(--safe-right)) 1px max(10px, var(--safe-left));
   }
-  /* One status row: execution pill, sub-task pill, then search icon and ⋯. */
+  /* Keep the sub-task indicator and conversation controls compact. */
   .native-mobile .conversation-context {
     flex-wrap: wrap;
     row-gap: 2px;
     column-gap: 6px;
   }
-  /* Keep the collapsed search icon on the pill row: pills shrink, never wrap. */
+  /* Keep the collapsed search icon beside the sub-task indicator. */
   .native-mobile .conversation-context:has(> .timeline-toolbar[data-search-open="false"]) {
     flex-wrap: nowrap;
     align-items: center;
   }
-  .native-mobile .conversation-context > .execution-summary {
-    flex: 0 1 auto;
-    flex-basis: auto;
-    min-width: 0;
-    padding: 2px 9px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
-    background: var(--bg);
-    overflow: hidden;
-    align-self: center;
-  }
-  /* The step count is the useful part: the phase label truncates before it. */
-  .native-mobile .conversation-context > .execution-summary .execution-summary-title strong {
-    flex: 0 1 auto;
-  }
-  .native-mobile .conversation-context .execution-summary-step {
-    display: inline;
-    flex: none;
-    font-style: normal;
-    font-size: var(--font-caption);
-    font-variant-numeric: tabular-nums;
-    color: var(--text-mid);
-    white-space: nowrap;
-  }
-  /* Failures stay readable: the execution pill truncates first. */
+  /* Keep sub-task failures readable. */
   .native-mobile .conversation-context > .agent-status-indicator {
     flex: 0 0 auto;
     align-self: center;
@@ -477,7 +423,6 @@
     flex: 1 1 100%;
     order: 10;
   }
-  .native-mobile .plan-step-pill-wrap { display: none; }
   .native-mobile .conversation-context .session-goal-card,
   .native-mobile .conversation-context .session-goal-content,
   .native-mobile .conversation-context .session-goal-add { max-width: 48vw; }

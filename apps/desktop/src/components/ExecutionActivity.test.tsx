@@ -3,9 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ToolCall } from "../types";
 import { automationResultLabel } from "./automationActivity";
 import {
-  ExecutionPrelude,
   PlanProgress,
-  PlanStepPill,
   TurnPlanSummary,
   currentPlanStep,
   ToolStep,
@@ -152,12 +150,6 @@ describe("execution activity", () => {
     };
     expect(turnProgressLabel(progress)).toBe("模型正在生成响应");
 
-    const html = renderToStaticMarkup(
-      <ExecutionPrelude plan={[]} progress={progress} />,
-    );
-    expect(html).toContain("模型正在生成响应");
-    expect(html).not.toContain("第 3 轮");
-    expect(html).toContain("当前处理已用");
   });
 });
 
@@ -172,13 +164,6 @@ describe("turn plan display", () => {
     expect(currentPlanStep(plan)).toBe(3);
     expect(currentPlanStep(plan.map((task) => ({ ...task, status: task.status === "in_progress" ? "pending" as const : task.status })))).toBe(2);
     expect(currentPlanStep(plan.map((task) => ({ ...task, status: "completed" as const })))).toBe(3);
-  });
-
-  it("shows the step pill only while the turn runs", () => {
-    const html = renderToStaticMarkup(<PlanStepPill plan={plan} busy />);
-    expect(html).toContain("阶段 3 / 3");
-    expect(renderToStaticMarkup(<PlanStepPill plan={plan} busy={false} />)).toBe("");
-    expect(renderToStaticMarkup(<PlanStepPill plan={[]} busy />)).toBe("");
   });
 
   it("collapses a turn plan into one counted line", () => {

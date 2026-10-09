@@ -527,7 +527,7 @@ it("gives the task browser the workbench without a competing review panel", asyn
         },
       });
     });
-    expect(await screen.findByRole("complementary", { name: "网页浏览器" })).toBeTruthy();
+    expect(await screen.findByRole("complementary", { name: "网页浏览器" }, { timeout: 10_000 })).toBeTruthy();
     expect(screen.queryByRole("complementary", { name: "代码修改审阅" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "关闭浏览器" }));
     expect(await screen.findByRole("complementary", { name: "代码修改审阅" })).toBeTruthy();

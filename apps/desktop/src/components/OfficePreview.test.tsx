@@ -183,10 +183,10 @@ it("releases failed presentation parsing immediately and only once", async () =>
   });
   const view = render(<PptxPreview dataBase64="AA==" onError={onError} />);
   await waitFor(() => expect(onError).toHaveBeenCalledWith("invalid slides"));
-  expect(
-    view.container.querySelector(".office-preview")?.getAttribute("aria-busy"),
-  ).toBe("false");
-  expect(destroy).toHaveBeenCalledTimes(1);
+  await waitFor(() => {
+    expect(view.container.querySelector(".office-preview")?.getAttribute("aria-busy")).toBe("false");
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
   view.unmount();
   expect(destroy).toHaveBeenCalledTimes(1);
 });

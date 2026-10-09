@@ -36,7 +36,7 @@ import { downloadSession } from "../sessionExport";
 import type { RpcClient } from "../rpc";
 import { useHistorySearch } from "../hooks/useHistorySearch";
 import { readExportHistory } from "../historyExport";
-import { ExecutionSummary } from "./ExecutionSummary";
+import { ExecutionStatusBar } from "./ExecutionStatusBar";
 import { ModelDiagnostics } from "./ModelDiagnostics";
 import { SessionShareDialog } from "./SessionShareDialog";
 import { ConversationNavigationRail } from "./ConversationNavigationRail";
@@ -237,15 +237,6 @@ export function Timeline(props: TimelineProps) {
     () => items.flatMap((item) => item.kind === "message" ? [item.message] : []),
     [items],
   );
-  const hasRunningTool = props.toolCalls.some(
-    (t) => t.status === "running" || t.status === "waiting_approval",
-  );
-  const thinking =
-    !props.loading &&
-    props.busy &&
-    (!hasRunningTool || !!props.turnProgress?.retry) &&
-    props.approvals.length === 0 &&
-    props.questions.length === 0;
 
   return (
     <div className="conversation-view" data-testid="conversation-view">
@@ -255,16 +246,6 @@ export function Timeline(props: TimelineProps) {
             <strong>{props.title}</strong>
           </div>
         )}
-        <ExecutionSummary
-          messages={props.messages}
-          calls={props.toolCalls}
-          progress={props.turnProgress}
-          plan={props.plan}
-          busy={props.busy}
-          approvals={props.approvals.length}
-          questions={props.questions.length}
-          timing={props.latestTurnTiming}
-        />
         {props.agents && props.onOpenAgentPanel && (
           <AgentStatusIndicator
             agents={props.agents}
@@ -368,12 +349,9 @@ export function Timeline(props: TimelineProps) {
           onError={props.onError}
           approvals={props.approvals}
           questions={props.questions}
-          plan={props.plan}
           turnPlans={props.turnPlans}
           streamingText={props.streamingText}
-          turnProgress={props.turnProgress}
           latestTurnTiming={props.latestTurnTiming}
-          thinking={thinking}
           busy={props.busy}
           onResolveApproval={props.onResolveApproval}
           onResolveQuestion={props.onResolveQuestion}
@@ -393,18 +371,29 @@ export function Timeline(props: TimelineProps) {
             onMove={props.onMoveQueued}
           />
         </div>
+        {showJump && (
+          <button
+            type="button"
+            className="jump-to-bottom"
+            title="回到底部"
+            aria-label="回到底部"
+            onClick={jumpToBottom}
+          >
+            <ArrowDown size={15} />
+          </button>
+        )}
       </div>
-      {showJump && (
-        <button
-          type="button"
-          className="jump-to-bottom"
-          title="回到底部"
-          aria-label="回到底部"
-          onClick={jumpToBottom}
-        >
-          <ArrowDown size={15} />
-        </button>
-      )}
+      {!props.loading && <ExecutionStatusBar
+        key={props.sessionId}
+        messages={props.messages}
+        calls={props.toolCalls}
+        progress={props.turnProgress}
+        plan={props.plan}
+        busy={props.busy}
+        approvals={props.approvals.length}
+        questions={props.questions.length}
+        timing={props.latestTurnTiming}
+      />}
     </div>
   );
 }

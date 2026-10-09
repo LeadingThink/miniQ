@@ -96,8 +96,8 @@ function Fixture() {
       <h2>桌面与远程会话</h2>
       <section className="timeline" aria-label="桌面消息布局">
         <TimelineEntries items={timelineItems(messages)}
-          messages={messages} expandGroups={false} approvals={[]} questions={[]} plan={[]}
-          streamingText="" turnProgress={null} thinking={false} busy={false}
+          messages={messages} expandGroups={false} approvals={[]} questions={[]}
+          streamingText="" busy={false}
           onResolveApproval={noop} onResolveQuestion={noop} onRollback={noop} onOpenFile={noop} onOpenUrl={noop}
           onError={setStatus} onFork={async (id) => { setStatus(`已点击分支：${id}`); return true; }}
           onRewrite={async (id, content) => {

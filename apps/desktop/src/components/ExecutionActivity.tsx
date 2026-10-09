@@ -1,6 +1,7 @@
 import {
   Check,
   ChevronRight,
+  CircleDot,
   CircleSlash,
   CircleX,
   LoaderCircle,
@@ -9,7 +10,6 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import type { PlanTask, ToolCall, TurnProgress } from "../types";
-import { RetryNotice } from "./RetryNotice";
 import { ToolPayload } from "./ToolPayload";
 import { ComputerObservation } from "./ComputerObservation";
 import type { RpcClient } from "../rpc";
@@ -153,7 +153,7 @@ export function ToolStep(props: {
         >
           <span className="tool-step-marker" aria-hidden="true">
             {running ? (
-              <LoaderCircle className="activity-spinner" size={15} />
+              <CircleDot size={15} />
             ) : call.status === "succeeded" ? (
               <Check size={14} />
             ) : call.status === "failed" ? (
@@ -264,7 +264,7 @@ export function planCounts(plan: PlanTask[]) {
   return { done, total: plan.length };
 }
 
-/** The step shown in the composer pill: the first in-progress task, else the
+/** The current task step: the first in-progress task, else the
  * first unfinished task, else the last task. Returns a 1-based index. */
 export function currentPlanStep(plan: PlanTask[]): number {
   const active = plan.findIndex((task) => task.status === "in_progress");
@@ -274,7 +274,7 @@ export function currentPlanStep(plan: PlanTask[]): number {
   return plan.length;
 }
 
-function PlanSteps({ plan, busy }: { plan: PlanTask[]; busy: boolean }) {
+export function PlanSteps({ plan, busy }: { plan: PlanTask[]; busy: boolean }) {
   return (
     <ol>
       {plan.map((task, index) => (
@@ -286,7 +286,7 @@ function PlanSteps({ plan, busy }: { plan: PlanTask[]; busy: boolean }) {
             {task.status === "completed" ? (
               <Check size={12} />
             ) : task.status === "in_progress" && busy ? (
-              <LoaderCircle className="activity-spinner" size={13} />
+              <CircleDot size={13} />
             ) : (
               <span />
             )}
@@ -325,53 +325,6 @@ export function TurnPlanSummary({ plan, busy = false }: { plan: PlanTask[]; busy
   );
 }
 
-/** Compact "phase x / y" pill above the composer while a turn is running. */
-export function PlanStepPill({ plan, busy }: { plan: PlanTask[]; busy: boolean }) {
-  const [open, setOpen] = useState(false);
-  const listId = useId();
-  if (!busy || plan.length === 0) return null;
-  const { done, total } = planCounts(plan);
-  const step = currentPlanStep(plan);
-  const radius = 6;
-  const circumference = 2 * Math.PI * radius;
-  return (
-    <div
-      className="plan-step-pill-wrap"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
-      <button
-        type="button"
-        className="plan-step-pill"
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-label={`阶段 ${step} / ${total}，已完成 ${done} 个阶段`}
-        onClick={() => setOpen((value) => !value)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-          <circle className="plan-ring-track" cx="8" cy="8" r={radius} />
-          <circle
-            className="plan-ring-value"
-            cx="8"
-            cy="8"
-            r={radius}
-            strokeDasharray={circumference}
-            strokeDashoffset={circumference * (1 - done / total)}
-          />
-        </svg>
-        <span>阶段 {step} / {total}</span>
-      </button>
-      {open && (
-        <div id={listId} className="plan-step-popover execution-plan" role="tooltip">
-          <PlanSteps plan={plan} busy={busy} />
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function PlanProgress({
   plan,
   busy,
@@ -401,27 +354,7 @@ export function PlanProgress({
         </span>
       </div>
       <progress value={done} max={plan.length} aria-label="已完成任务步骤" />
-      <ol>
-        {plan.map((task, index) => (
-          <li
-            key={`${index}-${task.content}`}
-            className={
-              !busy && task.status === "in_progress" ? "pending" : task.status
-            }
-          >
-            <span className="plan-step-marker" aria-hidden="true">
-              {task.status === "completed" ? (
-                <Check size={12} />
-              ) : task.status === "in_progress" && busy ? (
-                <LoaderCircle className="activity-spinner" size={13} />
-              ) : (
-                <span />
-              )}
-            </span>
-            <span>{task.content}</span>
-          </li>
-        ))}
-      </ol>
+      <PlanSteps plan={plan} busy={busy} />
     </section>
   );
 }
@@ -444,31 +377,4 @@ export function turnProgressLabel(progress: TurnProgress | null): string {
     case "finalizing":
       return "正在核对任务步骤并保存结果";
   }
-}
-
-export function ExecutionPrelude({
-  plan,
-  progress,
-}: {
-  plan: PlanTask[];
-  progress: TurnProgress | null;
-}) {
-  const activeTask = plan.find((task) => task.status === "in_progress");
-  return (
-    <div className="execution-prelude" role="status" aria-live="polite">
-      <LoaderCircle className="activity-spinner" size={15} />
-      <div>
-        <strong>{turnProgressLabel(progress)}</strong>
-        {progress?.retry && <RetryNotice progress={progress} />}
-        {progress && (
-          <LiveElapsed
-            startedAt={progress.startedAt}
-            className="execution-elapsed"
-            prefix="当前处理已用"
-          />
-        )}
-        {activeTask && <span>{activeTask.content}</span>}
-      </div>
-    </div>
-  );
 }

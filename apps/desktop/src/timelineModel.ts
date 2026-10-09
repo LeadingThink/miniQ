@@ -123,24 +123,16 @@ export function toolCounts(calls: ToolCall[]) {
   };
 }
 
-export function currentExecution(messages: Message[], calls: ToolCall[]) {
+export function currentTurnCalls(messages: Message[], calls: ToolCall[]) {
   let start: string | null = null;
   for (const message of messages) {
     if (message.role === "user" && (!start || compareTimestamps(message.createdAt, start) > 0)) {
       start = message.createdAt;
     }
   }
-  const current = calls.filter(
+  return calls.filter(
     (call) => call.toolName !== "task_update" && (!start || compareTimestamps(call.createdAt, start) >= 0),
   );
-  return {
-    partial: !start,
-    completed: current.filter((call) => call.status === "succeeded").length,
-    failed: current.filter((call) => call.status === "failed").length,
-    cancelled: current.filter((call) => call.status === "cancelled" || call.status === "rejected").length,
-    running: current.filter((call) => call.status === "running" || call.status === "pending"),
-    waiting: current.filter((call) => call.status === "waiting_approval").length,
-  };
 }
 
 export function payloadPage(text: string, query: string, page: number, pageSize = 100) {

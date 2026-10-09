@@ -462,8 +462,8 @@
 }
 :root[data-background] .timeline-search,
 :root[data-background] .timeline-mobile-filter,
-:root[data-background] .execution-prelude,
-:root[data-background] .plan-step-pill {
+:root[data-background] .execution-status-bar,
+:root[data-background] .execution-status-plan {
   background: var(--wallpaper-reading);
   color: var(--text);
   border-radius: var(--radius);
@@ -471,12 +471,6 @@
   -webkit-backdrop-filter: blur(4px);
   text-shadow: none;
 }
-:root[data-background] .execution-prelude { padding: 8px 12px; }
+:root[data-background] .execution-status-bar { padding: 8px 12px; }
 :root[data-background] .timeline-search { padding-inline: 8px; }
 :root[data-background] .timeline-search input::placeholder { color: var(--text-mid); opacity: 1; }
-
-/* The pulsing dot after streaming text reads as a stray mark on phones. */
-@media (max-width: 720px) {
-  .type-cursor { display: none; }
-}
-.native-mobile .type-cursor { display: none; }

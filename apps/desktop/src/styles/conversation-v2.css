@@ -76,13 +76,8 @@ body .main {
   color: var(--text-dim);
 }
 
-.execution-fold.is-running .execution-fold-icon { color: var(--blue); }
 .execution-fold.is-failed .execution-fold-icon,
 .execution-fold.is-failed .execution-fold-label { color: var(--danger); }
-
-.execution-fold-icon .spin {
-  animation: spin 900ms linear infinite;
-}
 
 .execution-fold-label {
   min-width: 0;
