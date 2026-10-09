@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
-import { RemoteConnectionStatus } from "./RemoteConnectionStatus";
+import { REMOTE_CONNECTION_DETAILS_EVENT, RemoteConnectionStatus } from "./RemoteConnectionStatus";
 
 const host = vi.hoisted(() => ({ pending: false, host: "build", error: null as string | null, selectHost: vi.fn(),
   registry: { hosts: [{ hostId: "build", label: "构建服务器", state: "connected" }, { hostId: "other", label: "另一台电脑", state: "disconnected" }] },
@@ -27,6 +27,17 @@ function app() {
     navigation: { setShowSettings: vi.fn() },
   } as unknown as MiniqAppController;
 }
+
+it("opens only the requested workbench after its controller snapshot changes", () => {
+  const first = app();
+  const second = app();
+  const view = render(<><RemoteConnectionStatus app={first} /><RemoteConnectionStatus app={second} /></>);
+  const updated = { ...first };
+  view.rerender(<><RemoteConnectionStatus app={updated} /><RemoteConnectionStatus app={second} /></>);
+  act(() => window.dispatchEvent(new CustomEvent(REMOTE_CONNECTION_DETAILS_EVENT, { detail: updated })));
+  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  expect(HTMLDialogElement.prototype.showModal).toHaveBeenCalledTimes(1);
+});
 
 it("opens the full title, project and exact machine without issuing requests", () => {
   const controller = app();

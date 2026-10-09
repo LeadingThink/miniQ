@@ -47,7 +47,7 @@ export function RemoteConnectionStatus({ app, onToggleReview }: { app: MiniqAppC
     };
     window.addEventListener(REMOTE_CONNECTION_DETAILS_EVENT, openDetails);
     return () => window.removeEventListener(REMOTE_CONNECTION_DETAILS_EVENT, openDetails);
-  }, []);
+  }, [app]);
   const linked = online && connected;
   return <>
     <button type="button" className="statusbar-identity" aria-label="查看完整会话标题与连接信息" aria-haspopup="dialog" onClick={(event) => show(event.currentTarget)}>
