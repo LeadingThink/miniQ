@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest";
 import type { Message, PlanTask, ToolCall } from "../types";
 import { ToolGroup } from "./ToolGroup";
-import { ExecutionStatusBar, STEP_SLOW_MS } from "./ExecutionStatusBar";
+import { ExecutionStatusBar } from "./ExecutionStatusBar";
 
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 const call = (id: number, status = "succeeded") =>
@@ -155,7 +155,7 @@ it("keeps total timing stable across phases and clears clocks when work ends", (
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("shows a live step clock next to the total and flags a stalled step", () => {
+it("shows a live step clock next to the total and restarts it for each step", () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-09-08T00:10:00Z"));
   const timing = { messageId: "user", timing: { status: "running" as const, startedAt: "2026-09-08T00:00:00Z" } };
@@ -164,18 +164,16 @@ it("shows a live step clock next to the total and flags a stalled step", () => {
   const view = render(<ExecutionStatusBar {...props} calls={[running]} />);
   expect(screen.getByText("当前操作 10 秒")).toBeTruthy();
   expect(screen.getByText("总用时 10 分")).toBeTruthy();
-  expect(document.querySelector(".execution-status-step")?.getAttribute("data-slow")).toBeNull();
 
-  act(() => vi.advanceTimersByTime(STEP_SLOW_MS));
-  const step = document.querySelector(".execution-status-step");
-  expect(step?.getAttribute("data-slow")).toBe("true");
-  expect(step?.getAttribute("title")).toContain("卡住");
+  act(() => vi.advanceTimersByTime(5_000));
+  expect(screen.getByText("当前操作 15 秒")).toBeTruthy();
+  expect(screen.getByText("总用时 10 分 5 秒")).toBeTruthy();
 
-  // A new model phase restarts the step clock and clears the warning.
+  // A new model phase restarts the step clock.
   view.rerender(<ExecutionStatusBar {...props} calls={[]}
     progress={{ phase: "requesting_model", startedAt: new Date().toISOString() }} />);
   const restarted = document.querySelector(".execution-status-step");
   expect(restarted?.textContent).toMatch(/^当前步骤/);
-  expect(restarted?.getAttribute("data-slow")).toBeNull();
+  expect(restarted?.textContent).not.toMatch(/分/);
   vi.useRealTimers();
 });

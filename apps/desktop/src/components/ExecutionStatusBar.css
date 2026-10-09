@@ -19,7 +19,6 @@
 .execution-status-row > strong { font-weight: 500; overflow-wrap: anywhere; }
 .execution-status-time { color: var(--text-dim); font-size: var(--font-caption); }
 .execution-status-time + .execution-status-time::before { content: "· "; }
-.execution-status-step.is-slow { color: var(--warn); font-weight: 600; }
 .execution-status-plan-toggle {
   display: inline-flex;
   align-items: center;
