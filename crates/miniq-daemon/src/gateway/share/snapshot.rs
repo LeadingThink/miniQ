@@ -106,11 +106,7 @@ impl Snapshot {
                     .replace(&artifact.path, &format!("miniq-file:{id}"));
                 message["content"] = json!(content);
             }
-            files.push(SharedFile {
-                id,
-                size,
-                handle,
-            });
+            files.push(SharedFile { id, size, handle });
         }
         if files.len() != selected.len() {
             return Err(invalid("文件不属于此会话或已不可用"));
