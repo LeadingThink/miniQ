@@ -2,15 +2,10 @@ use super::*;
 use std::{
     fs::File,
     io::{Seek, SeekFrom},
-    path::PathBuf,
 };
 
 pub(super) struct SharedFile {
     pub id: String,
-    pub name: String,
-    pub path: PathBuf,
-    pub kind: &'static str,
-    pub mime_type: &'static str,
     pub size: u64,
     pub handle: File,
 }
@@ -74,7 +69,6 @@ impl Snapshot {
                 .file_name()
                 .and_then(|name| name.to_str())
                 .ok_or_else(|| invalid("文件名不是有效文本"))?;
-            let (kind, mime_type) = miniq_local::files::preview_format(&path);
             let id = format!(
                 "{:032x}",
                 u128::from_be_bytes(
@@ -114,10 +108,6 @@ impl Snapshot {
             }
             files.push(SharedFile {
                 id,
-                name: name.to_owned(),
-                path,
-                kind,
-                mime_type,
                 size,
                 handle,
             });

@@ -6,6 +6,7 @@ mod app_menu;
 mod browser;
 mod daemon;
 mod daemon_process;
+mod export_file;
 mod html_preview;
 mod keep_awake;
 mod local_file;
@@ -170,6 +171,27 @@ fn close_html_preview(
 }
 
 #[tauri::command]
+async fn save_export_file(
+    app: tauri::AppHandle,
+    files: tauri::State<'_, export_file::ExportedFiles>,
+    file_name: String,
+    extension: String,
+    filter_name: String,
+    contents: String,
+) -> Result<Option<String>, String> {
+    export_file::save(app, &files, file_name, extension, filter_name, contents).await
+}
+
+#[tauri::command]
+fn reveal_exported_file(
+    app: tauri::AppHandle,
+    files: tauri::State<'_, export_file::ExportedFiles>,
+    path: String,
+) -> Result<(), String> {
+    export_file::reveal(&app, &files, &path)
+}
+
+#[tauri::command]
 fn save_pasted_image(
     app: tauri::AppHandle,
     mime_type: String,
@@ -273,6 +295,7 @@ pub fn run() {
         .manage(DaemonState::default())
         .manage(KeepAwakeState::default())
         .manage(html_preview::HtmlPreviews::default())
+        .manage(export_file::ExportedFiles::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -297,6 +320,8 @@ pub fn run() {
             close_html_preview,
             read_image_preview,
             save_pasted_image,
+            save_export_file,
+            reveal_exported_file,
             browser_open,
             browser_resize,
             browser_action,

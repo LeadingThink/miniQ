@@ -1,6 +1,6 @@
 import type { Artifact, Message, PlanTask, ToolCall } from "./types";
 import { createTimelineItems, payloadText } from "./timelineModel";
-import { downloadBlob } from "./downloadBlob";
+import { saveExportFile, type ExportResult } from "./saveExport";
 
 export interface SessionExport {
   title: string;
@@ -66,16 +66,19 @@ export function exportFilename(title: string): string {
   return name;
 }
 
-export function downloadSession(data: SessionExport, format: "md" | "json") {
-  const content =
-    format === "md" ? exportMarkdown(data) : JSON.stringify(data, null, 2);
-  downloadBlob(
-    new Blob([content], {
-      type:
-        format === "md"
-          ? "text/markdown;charset=utf-8"
-          : "application/json;charset=utf-8",
-    }),
-    `${exportFilename(data.title)}.${format}`,
-  );
+export function saveSession(
+  data: SessionExport,
+  format: "md" | "json",
+): Promise<ExportResult> {
+  return saveExportFile({
+    baseName: exportFilename(data.title),
+    extension: format,
+    filterName: format === "md" ? "Markdown" : "JSON",
+    mimeType:
+      format === "md"
+        ? "text/markdown;charset=utf-8"
+        : "application/json;charset=utf-8",
+    contents:
+      format === "md" ? exportMarkdown(data) : JSON.stringify(data, null, 2),
+  });
 }

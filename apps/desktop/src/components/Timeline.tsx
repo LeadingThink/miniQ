@@ -32,7 +32,9 @@ import {
   type TimelineFilter,
   createTimelineItemsWithArtifacts,
 } from "../timelineModel";
-import { downloadSession } from "../sessionExport";
+import { saveSession } from "../sessionExport";
+import { exportResultMessage, revealExportedFile } from "../saveExport";
+import { useToast } from "./ui/Toast";
 import type { RpcClient } from "../rpc";
 import { useHistorySearch } from "../hooks/useHistorySearch";
 import { readExportHistory } from "../historyExport";
@@ -101,6 +103,7 @@ export function Timeline(props: TimelineProps) {
     filter,
     query,
   );
+  const toast = useToast();
   const [exporting, setExporting] = useState(false);
   const exportRequest = useRef<AbortController | null>(null);
   useEffect(() => () => exportRequest.current?.abort(), []);
@@ -118,16 +121,33 @@ export function Timeline(props: TimelineProps) {
               request.signal,
             )
           : { messages: props.messages, toolCalls: props.toolCalls };
-      if (!request.signal.aborted)
-        downloadSession(
-          {
-            title: props.title ?? "miniQ session",
-            ...history,
-            plan: props.plan,
-            artifacts: props.artifacts,
-          },
-          format,
-        );
+      if (request.signal.aborted) return;
+      const result = await saveSession(
+        {
+          title: props.title ?? "miniQ session",
+          ...history,
+          plan: props.plan,
+          artifacts: props.artifacts,
+        },
+        format,
+      );
+      const message = exportResultMessage(result);
+      if (message)
+        toast.show({
+          message,
+          tone: "success",
+          duration: 8000,
+          action:
+            result.status === "saved"
+              ? {
+                  label: "在文件夹中显示",
+                  onAction: () =>
+                    void revealExportedFile(result.path).catch((cause) =>
+                      props.onError(`无法定位文件: ${String(cause)}`),
+                    ),
+                }
+              : undefined,
+        });
     } catch (cause) {
       if (!request.signal.aborted) props.onError(`导出失败: ${String(cause)}`);
     } finally {

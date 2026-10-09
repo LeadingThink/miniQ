@@ -25,7 +25,8 @@ import {
   type SheetFilters,
 } from "../spreadsheetView";
 import { spreadsheetCsv, spreadsheetJson } from "../spreadsheetExport";
-import { downloadBlob } from "../downloadBlob";
+import { exportResultMessage, saveExportFile } from "../saveExport";
+import { useToast } from "./ui/Toast";
 import { exportFilename } from "../sessionExport";
 import { CopyButton } from "./CopyButton";
 import { usePreviewScroll, usePreviewValue } from "../previewViewState";
@@ -76,6 +77,7 @@ export function SpreadsheetDataView(props: {
   onError: (message: string) => void;
 }) {
   const sheets = props.sheets;
+  const toast = useToast();
   const [sheetName, setSheetName] = usePreviewValue<string | null>(
     "sheetName",
     null,
@@ -137,14 +139,23 @@ export function SpreadsheetDataView(props: {
     focusRequested.current = false;
   }, [selected, tableId]);
 
-  const exportData = (format: "csv" | "json") => {
+  const exportData = async (format: "csv" | "json") => {
     try {
-      downloadBlob(
-        format === "csv"
-          ? spreadsheetCsv(visible, columnCount)
-          : spreadsheetJson(sheets),
-        `${exportFilename(sheet?.sheet ?? "workbook")}.${format}`,
-      );
+      const result = await saveExportFile({
+        baseName: exportFilename(sheet?.sheet ?? "workbook"),
+        extension: format,
+        filterName: format === "csv" ? "CSV" : "JSON",
+        mimeType:
+          format === "csv"
+            ? "text/csv;charset=utf-8"
+            : "application/json;charset=utf-8",
+        contents:
+          format === "csv"
+            ? spreadsheetCsv(visible, columnCount)
+            : spreadsheetJson(sheets),
+      });
+      const message = exportResultMessage(result);
+      if (message) toast.show({ message, tone: "success", duration: 8000 });
     } catch (error) {
       props.onError(error instanceof Error ? error.message : String(error));
     }
@@ -250,7 +261,7 @@ export function SpreadsheetDataView(props: {
           className="icon-button"
           aria-label="导出筛选结果 CSV"
           title="导出全部匹配行 CSV（公式字符串按文本处理）"
-          onClick={() => exportData("csv")}
+          onClick={() => void exportData("csv")}
         >
           <Download size={15} />
         </button>
@@ -259,7 +270,7 @@ export function SpreadsheetDataView(props: {
           className="icon-button"
           aria-label="导出完整工作簿 JSON"
           title="导出完整工作簿 JSON（保留原始值和日期类型）"
-          onClick={() => exportData("json")}
+          onClick={() => void exportData("json")}
         >
           <FileJson size={15} />
         </button>
