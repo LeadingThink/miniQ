@@ -4,9 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       status_only:
-        description: Only check an existing uploaded build; do not archive or upload
+        description: Operate on an existing uploaded build; do not archive or upload
         type: boolean
         default: false
+      status_action:
+        description: Existing-build action (requires status_only; distribution only adds to an existing internal group)
+        type: choice
+        options: [inspect, distribute-internal]
+        default: inspect
+      beta_group_id:
+        description: Exact existing internal beta group ID (required for distribute-internal)
+        type: string
+        required: false
       marketing_version:
         description: App Store version shown to testers (for example 1.0)
         required: true
@@ -39,6 +48,10 @@ jobs:
       IOS_BUILD_NUMBER: ${{ inputs.build_number }}
     steps:
       - uses: actions/checkout@v4
+      - name: Reject distribution in upload mode
+        env:
+          STATUS_ACTION: ${{ inputs.status_action }}
+        run: test "$STATUS_ACTION" = inspect
       - name: Set temporary build directory
         run: echo "IOS_CI_DIR=$RUNNER_TEMP/miniq-ios" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
@@ -236,10 +249,12 @@ jobs:
           umask 077
           mkdir -p "$IOS_CI_DIR"
           printf '%s' "$ASC_PRIVATE_KEY_BASE64" | base64 --decode > "$IOS_CI_DIR/AuthKey.p8"
-      - name: Verify existing build (read-only)
+      - name: Inspect existing build or explicitly distribute internally
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          IOS_TESTFLIGHT_ACTION: ${{ inputs.status_action }}
+          IOS_BETA_GROUP_ID: ${{ inputs.beta_group_id }}
         run: node scripts/ios_testflight_status.mjs
       - name: Remove API signing key
         if: ${{ always() }}

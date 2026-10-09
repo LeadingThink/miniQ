@@ -60,3 +60,39 @@ API Key 至少需要能够上传构建；现有“App 管理”权限可以使�
 - 描述文件校验失败：重新创建类型为 App Store、Bundle ID 为 `com.leadingthink.miniq` 的描述文件。
 - 找不到 Apple Distribution identity：确认 `.p12` 导出时同时包含证书和私钥，并更新两个证书 Secrets。
 - 上传成功但 TestFlight 暂时看不到：等待 App Store Connect 完成 Processing，并检查页面上的出口合规提示。
+
+## 查询现有构建与内部测试分发
+
+`status_only=true` 跳过归档和上传。`status_action=inspect` 为默认只读操作；
+选择 `distribute-internal` 并提供精确的 `beta_group_id`，才会向既有内部组添加指定版本和构建。
+脚本先核对 app、iOS marketing version、build number、VALID、未过期、出口声明和内部 beta 状态。
+当前自动化仅支持 `usesNonExemptEncryption=false` 且内部状态为
+`READY_FOR_BETA_TESTING` / `IN_BETA_TESTING` 的构建；声明为 true 的构建应人工核实已批准的出口文档。
+不创建组、测试人员或审核提交，也不修改出口合规声明。
+
+读取使用 `GET /v1/apps/{id}/betaGroups` 和各组的
+`GET /v1/betaGroups/{id}/relationships/builds`，均完整读取分页。
+`GET /v1/builds/{id}/betaGroups` 不支持读取，不应把其 403 当作可忽略的成功。
+写入仅使用 `POST /v1/betaGroups/{id}/relationships/builds`，随后有限轮询读回成员关系；
+已存在关系跳过写入。网络中断时写入结果可能未知，不自动重试 POST。
+权限失败、出口或 beta 状态未解决、读回未确认均失败退出。
+确认组包含构建不代表已确认测试人员账号、邀请送达或真机安装成功。
+
+本地脚本接受 `ASC_KEY_ID`、`ASC_ISSUER_ID` 和 `ASC_PRIVATE_KEY_PATH`，或
+`IOS_CI_DIR/AuthKey.p8`；不要打印文件内容或 JWT。
+`IOS_TESTFLIGHT_ACTION` 默认为 `inspect`，显式分发值为 `distribute-internal`，
+组 ID 通过 `IOS_BETA_GROUP_ID` 提供。版本和构建分别使用
+`IOS_MARKETING_VERSION` / `IOS_BUILD_NUMBER`。
+也可复用工作流已有的 Actions Secrets，在临时目录以 `umask 077` 解码并在结束时删除。
+
+### 出口声明的源码依据与边界
+
+当前 iOS `Info.plist` 未设置 `ITSAppUsesNonExemptEncryption`。
+`src/remoteCrypto.ts` 使用 WKWebView 的 WebCrypto 实现 AES-256-GCM 加解密、SHA-256 派生和随机 nonce；
+`ios/App/App/MiniqPushContent.swift` 通过系统 CryptoKit 的 AES.GCM 解密端到端推送，密钥存储使用 Keychain。
+因此不能声称应用没有加密或只使用 HTTPS。
+Apple 的 [加密出口说明](https://developer.apple.com/documentation/security/complying-with-encryption-export-regulations)
+指出系统内置加密通常免上传出口文档，`false` 也可表示仅使用免文档加密，并非没有加密。
+上述系统实现为评估 `false` 提供依据，但还需核实实际发行包及全部第三方库，
+并按 [Apple 判定表](https://developer.apple.com/help/app-store-connect/manage-app-information/determine-and-upload-app-encryption-documentation)
+完成产品的实际用途和地区要求核实。此次脚本不替产品填写这一声明；ASC 的 null 表示尚未确认，不能按 false 处理。

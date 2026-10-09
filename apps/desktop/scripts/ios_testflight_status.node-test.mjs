@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, verify } from "node:crypto";
 import test from "node:test";
-import { createAscClient, createToken, verifyBuild } from "./ios_testflight_status.mjs";
+import { createAscClient, createToken, verifyBuild, distributeInternal } from "./ios_testflight_status.mjs";
 
 const noWait = async () => {};
 function scenario(states, { version = "1.0", groups = [], buildAttributes = {}, betaDetails } = {}) {
@@ -28,9 +28,11 @@ function scenario(states, { version = "1.0", groups = [], buildAttributes = {}, 
           { id: "other-details", type: "buildBetaDetails", attributes: { internalBuildState: "WRONG_BUILD" } },
           ...(betaDetails ? [{ id: "details-1", type: "buildBetaDetails", attributes: betaDetails }] : [])],
       };
-    } else {
-      assert.equal(url.pathname, "/v1/builds/build-1/betaGroups");
+    } else if (url.pathname === "/v1/apps/app-1/betaGroups") {
       body = { data: groups };
+    } else {
+      assert.match(url.pathname, /^\/v1\/betaGroups\/[^/]+\/relationships\/builds$/);
+      body = { data: [{ type: "builds", id: "build-1" }] };
     }
     return { ok: true, json: async () => body };
   };
@@ -52,7 +54,7 @@ test("ES256 JWT has correct claims, lifetime, and verifiable JOSE signature", ()
 
 test("pending visibility and processing progress to VALID with unassigned warning", async () => {
   const s = scenario([null, "PROCESSING", "VALID"]);
-  assert.deepEqual(await s.run(), { buildId: "build-1", processingState: "VALID" });
+  assert.deepEqual(await s.run(), { appId: "app-1", buildId: "build-1", processingState: "VALID", expired: null, usesNonExemptEncryption: null, internalBuildState: null });
   assert.ok(s.logs.some((line) => line.includes("NOT_VISIBLE")));
   assert.ok(s.logs.some((line) => line.startsWith("::warning::No betaGroups")));
   assert.ok(s.logs.some((line) => line.includes("not publication or proof of installability")));
@@ -185,3 +187,58 @@ for (const body of [null, {}, { errors: "invalid" }, { errors: [null, { code: {}
     await assert.rejects(list("/v1/apps"), (error) => /HTTP 400/.test(error.message) && !/hidden raw response/.test(error.message));
   });
 }
+
+const readyBuild = { appId: "app-1", buildId: "build-1", processingState: "VALID", expired: false, usesNonExemptEncryption: false, internalBuildState: "READY_FOR_BETA_TESTING" };
+function distribution({ assigned = false, internal = true, visible = true } = {}) {
+  let writes = 0;
+  const list = async (path) => path.includes("/apps/")
+    ? { data: [{ id: "group-1", attributes: { isInternalGroup: internal } }] }
+    : { data: assigned || (writes && visible) ? [{ type: "builds", id: "build-1" }] : [] };
+  list.assignBuild = async (groupId, buildId) => {
+    assert.equal(groupId, "group-1"); assert.equal(buildId, "build-1"); writes++;
+  };
+  return { list, writes: () => writes };
+}
+test("internal distribution verifies membership and skips existing assignments", async () => {
+  for (const assigned of [false, true]) {
+    const s = distribution({ assigned });
+    assert.equal((await distributeInternal({ list: s.list, result: readyBuild, groupId: "group-1" })).membershipVerified, true);
+    assert.equal(s.writes(), assigned ? 0 : 1);
+  }
+});
+test("unresolved compliance, expiry, processing and beta state prevent writes", async () => {
+  for (const change of [{ usesNonExemptEncryption: null }, { usesNonExemptEncryption: true }, { expired: true }, { expired: null }, { processingState: "PROCESSING" }, { internalBuildState: "MISSING_EXPORT_COMPLIANCE" }]) {
+    const s = distribution();
+    await assert.rejects(distributeInternal({ list: s.list, result: { ...readyBuild, ...change }, groupId: "group-1" }), /blocked/);
+    assert.equal(s.writes(), 0);
+  }
+});
+test("external and foreign groups prevent writes", async () => {
+  for (const [internal, groupId] of [[false, "group-1"], [true, "other-group"]]) {
+    const s = distribution({ internal });
+    await assert.rejects(distributeInternal({ list: s.list, result: readyBuild, groupId }), /existing internal group/);
+    assert.equal(s.writes(), 0);
+  }
+});
+test("unconfirmed assignment fails within bound", async () => {
+  const s = distribution({ visible: false });
+  await assert.rejects(distributeInternal({ list: s.list, result: readyBuild, groupId: "group-1", maxPolls: 2, wait: noWait }), /not visible/);
+  assert.equal(s.writes(), 1);
+});
+test("client defaults read-only; opt-in POST accepts empty 204; uncertain writes never retry", async () => {
+  let calls = 0;
+  const fetchImpl = async (url, options) => {
+    calls++;
+    assert.equal(url.pathname, "/v1/betaGroups/group-1/relationships/builds");
+    assert.equal(options.method, "POST"); assert.equal(options.redirect, "error");
+    assert.deepEqual(JSON.parse(options.body), { data: [{ type: "builds", id: "build-1" }] });
+    return { ok: true, status: 204 };
+  };
+  await assert.rejects(createAscClient({ token: () => "secret", fetchImpl }).assignBuild("group-1", "build-1"), /opt-in/);
+  assert.equal(calls, 0);
+  await createAscClient({ token: () => "secret", fetchImpl, allowWrites: true }).assignBuild("group-1", "build-1");
+  assert.equal(calls, 1);
+  calls = 0;
+  await assert.rejects(createAscClient({ token: () => "secret", allowWrites: true, fetchImpl: async () => { calls++; throw new Error("secret"); } }).assignBuild("group-1", "build-1"), /outcome unknown/);
+  assert.equal(calls, 1);
+});

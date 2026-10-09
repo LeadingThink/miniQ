@@ -13,7 +13,7 @@
     "release:check-version": "node scripts/check-release-version.mjs",
     "test": "vitest run --maxWorkers=4 --testTimeout=15000 && npm run test:browser-links && npm run test:release-manifest && npm run test:qiniu-publisher && npm run test:ios-testflight && npm run test:macos-privacy",
     "test:browser-links": "node --test src-tauri/src/browser_links.node-test.cjs",
-    "test:ios-testflight": "node --test scripts/ios_testflight.node-test.mjs",
+    "test:ios-testflight": "node --test scripts/ios_testflight.node-test.mjs scripts/ios_testflight_status.node-test.mjs",
     "test:macos-privacy": "node --test scripts/macos_privacy.node-test.mjs",
     "test:mobile": "vitest run --maxWorkers=4 src/components/MobileEntry.test.ts src/components/MobileChat.test.tsx src/components/MobileChat.actions.test.tsx src/components/MobileModelPicker.test.tsx src/mobileChatData.test.ts src/mobileChatStream.test.ts src/remoteCrypto.test.ts src/remotePayload.test.ts src/remoteBlob.test.ts src/hooks/useMobileChat.test.ts src/hooks/useDaemonConnection.test.ts src/hooks/useDaemonConnection.integration.test.tsx src/taskNotifications.mobile.test.ts src/hooks/useTaskNotifications.test.ts src/mobileUpdate.test.ts src/mobileUpdateScheduler.test.ts src/mobileUpdateLinks.test.ts src/iosAppStore.test.ts src/iosInstalledReleaseNotice.test.ts src/components/MobileUpdateCheck.test.tsx src/components/MobileUpdatePrompt.test.tsx src/components/MobileUpdatePrompt.ios.test.tsx src/theme.test.ts src/components/ThemePicker.test.tsx src/components/MobileBackgroundLibrary.test.tsx",
     "test:release-manifest": "node --test scripts/build-release-manifest.node-test.mjs",

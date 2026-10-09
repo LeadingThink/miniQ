@@ -29,7 +29,7 @@ function diagnosticText(value, credential = "", limit = 512) {
   return text.length > limit ? text.slice(0, limit - 1) + "…" : text;
 }
 
-async function httpFailure(response, url, credential) {
+async function httpFailure(response, url, credential, method = "GET") {
   let errors = [];
   let omitted = 0;
   try {
@@ -46,11 +46,11 @@ async function httpFailure(response, url, credential) {
   const pathname = diagnosticText(url.pathname, credential);
   const queryNames = [...new Set(url.searchParams.keys())].slice(0, 20)
     .map((name) => diagnosticText(name, credential, 100));
-  return new Error("ASC GET " + pathname + " queryNames=" + JSON.stringify(queryNames)
+  return new Error("ASC " + method + " " + pathname + " queryNames=" + JSON.stringify(queryNames)
     + " failed: HTTP " + response.status + "; errors=" + JSON.stringify(errors) + "; omittedErrors=" + omitted);
 }
 
-export function createAscClient({ token, fetchImpl = fetch, wait = sleep }) {
+export function createAscClient({ token, fetchImpl = fetch, wait = sleep, allowWrites = false }) {
   async function get(path) {
     const url = new URL(path, API);
     if (url.origin !== API || !url.pathname.startsWith("/v1/")) {
@@ -79,7 +79,7 @@ export function createAscClient({ token, fetchImpl = fetch, wait = sleep }) {
       await wait(attempt * 2_000);
     }
   }
-  return async function list(path) {
+  const list = async function (path) {
     const data = [];
     const included = [];
     const seen = new Set();
@@ -96,6 +96,56 @@ export function createAscClient({ token, fetchImpl = fetch, wait = sleep }) {
     if (path) throw new Error("ASC pagination exceeded 20 pages; verification incomplete");
     return { data, included };
   };
+  // A timed-out write may have succeeded. Never retry it automatically.
+  list.assignBuild = async (groupId, buildId) => {
+    if (!allowWrites) throw new Error("TestFlight writes require explicit opt-in");
+    const url = new URL(`/v1/betaGroups/${encodeURIComponent(groupId)}/relationships/builds`, API);
+    let response;
+    let credential;
+    try {
+      credential = token();
+      response = await fetchImpl(url, {
+        method: "POST", redirect: "error", signal: AbortSignal.timeout(15_000),
+        headers: { Authorization: `Bearer ${credential}`, Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ data: [{ type: "builds", id: buildId }] }),
+      });
+    } catch {
+      throw new Error("ASC assignment outcome unknown; inspect group membership before retrying");
+    }
+    if (!response.ok) throw await httpFailure(response, url, credential, "POST");
+  };
+  return list;
+}
+
+export async function inspectGroups(list, appId, buildId) {
+  const groups = await list(`/v1/apps/${encodeURIComponent(appId)}/betaGroups?limit=200`);
+  const memberships = [];
+  for (const group of groups.data) {
+    const builds = await list(`/v1/betaGroups/${encodeURIComponent(group.id)}/relationships/builds?limit=200`);
+    memberships.push({ id: group.id, isInternalGroup: group.attributes?.isInternalGroup ?? null,
+      assigned: builds.data.some((build) => build.type === "builds" && build.id === buildId) });
+  }
+  return memberships;
+}
+
+export async function distributeInternal({ list, result, groupId, wait = sleep, maxPolls = 10 }) {
+  if (!groupId || !Number.isInteger(maxPolls) || maxPolls < 1 || maxPolls > 30) throw new Error("Exact existing internal group ID and bounded polling required");
+  const groups = await inspectGroups(list, result.appId, result.buildId);
+  const group = groups.find((item) => item.id === groupId);
+  if (group?.isInternalGroup !== true) throw new Error("Target must be an existing internal group belonging to this app");
+  if (result.processingState !== "VALID" || result.expired !== false || result.usesNonExemptEncryption !== false
+    || !["READY_FOR_BETA_TESTING", "IN_BETA_TESTING"].includes(result.internalBuildState)) {
+    throw new Error("Internal distribution blocked: processing, expiry, export compliance or beta state is unresolved");
+  }
+  if (!group.assigned) await list.assignBuild(groupId, result.buildId);
+  for (let poll = 0; poll < maxPolls; poll++) {
+    const builds = await list(`/v1/betaGroups/${encodeURIComponent(groupId)}/relationships/builds?limit=200`);
+    if (builds.data.some((build) => build.type === "builds" && build.id === result.buildId)) {
+      return { groupId, buildId: result.buildId, membershipVerified: true };
+    }
+    if (poll + 1 < maxPolls) await wait(3_000);
+  }
+  throw new Error("ASC group assignment not visible within polling bound; inspect before retrying");
 }
 
 export async function verifyBuild({ list, marketingVersion, buildNumber, wait = sleep, log = console.log, maxPolls = 30, pollMs = 30_000 }) {
@@ -122,9 +172,10 @@ export async function verifyBuild({ list, marketingVersion, buildNumber, wait = 
     const build = candidates[0];
     const state = build?.attributes?.processingState ?? "NOT_VISIBLE";
     log(`ASC poll ${poll}/${maxPolls}: ${marketingVersion} (${buildNumber}), processingState=${JSON.stringify(state)}`);
+    let details;
     if (build) {
       const detailsId = build.relationships?.buildBetaDetail?.data?.id;
-      const details = result.included.find((resource) => resource.type === "buildBetaDetails" && resource.id === detailsId);
+      details = result.included.find((resource) => resource.type === "buildBetaDetails" && resource.id === detailsId);
       log(`ASC build attributes (reported values only; null means unavailable): ${JSON.stringify({
         usesNonExemptEncryption: build.attributes?.usesNonExemptEncryption ?? null,
         expired: build.attributes?.expired ?? null,
@@ -133,19 +184,16 @@ export async function verifyBuild({ list, marketingVersion, buildNumber, wait = 
         internalBuildState: details?.attributes?.internalBuildState ?? null,
         externalBuildState: details?.attributes?.externalBuildState ?? null,
       })}`);
-      try {
-        const groups = await list(`/v1/builds/${encodeURIComponent(build.id)}/betaGroups?limit=200`);
-        log(`ASC betaGroups relationships: ${JSON.stringify(groups.data.map(({ id, type }) => ({ id, type })))}`);
-        if (!groups.data.length) log("::warning::No betaGroups assigned to this build. No group was assigned by this read-only check; the build is not confirmed available to testers.");
-      } catch (error) {
-        if (!/HTTP 403/.test(error.message)) throw error;
-        log(`::warning::ASC betaGroups could not be read with the configured API key; tester-group assignment is unconfirmed. ${error.message}`);
-      }
+      const groups = await inspectGroups(list, matches[0].id, build.id);
+      log(`ASC betaGroups memberships: ${JSON.stringify(groups)}`);
+      if (!groups.some((group) => group.assigned)) log("::warning::No betaGroups assigned to this build. No group was assigned by this read-only check; the build is not confirmed available to testers.");
     }
     if (state === "FAILED" || state === "INVALID") throw new Error(`ASC build processing ${state}`);
     if (state === "VALID") {
       log("ASC processing VALID. Upload/processing completion is not publication or proof of installability; group access, export compliance and any required Beta App Review must still be checked in App Store Connect.");
-      return { buildId: build.id, processingState: state };
+      return { appId: matches[0].id, buildId: build.id, processingState: state,
+        expired: build.attributes?.expired ?? null, usesNonExemptEncryption: build.attributes?.usesNonExemptEncryption ?? null,
+        internalBuildState: details?.attributes?.internalBuildState ?? null };
     }
     if (state !== "PROCESSING" && state !== "NOT_VISIBLE") throw new Error("ASC returned an unknown processing state");
     if (poll < maxPolls) await wait(pollMs);
@@ -155,18 +203,26 @@ export async function verifyBuild({ list, marketingVersion, buildNumber, wait = 
 
 async function main() {
   const env = process.env;
-  for (const name of ["ASC_KEY_ID", "ASC_ISSUER_ID", "IOS_CI_DIR"]) {
+  for (const name of ["ASC_KEY_ID", "ASC_ISSUER_ID"]) {
     if (!env[name]) throw new Error(`Missing ${name}`);
   }
+  if (!env.ASC_PRIVATE_KEY_PATH && !env.IOS_CI_DIR) throw new Error("Missing ASC_PRIVATE_KEY_PATH or IOS_CI_DIR");
   let privateKey;
   try {
-    privateKey = readFileSync(join(env.IOS_CI_DIR, "AuthKey.p8"), "utf8");
+    privateKey = readFileSync(env.ASC_PRIVATE_KEY_PATH || join(env.IOS_CI_DIR, "AuthKey.p8"), "utf8");
     createToken({ keyId: env.ASC_KEY_ID, issuerId: env.ASC_ISSUER_ID, privateKey });
   } catch {
-    throw new Error("Unable to load ASC ES256 signing key from IOS_CI_DIR/AuthKey.p8");
+    throw new Error("Unable to load ASC ES256 signing key from configured private-key path");
   }
   const token = () => createToken({ keyId: env.ASC_KEY_ID, issuerId: env.ASC_ISSUER_ID, privateKey });
-  await verifyBuild({ list: createAscClient({ token }), marketingVersion: env.IOS_MARKETING_VERSION, buildNumber: env.IOS_BUILD_NUMBER });
+  const action = env.IOS_TESTFLIGHT_ACTION || "inspect";
+  if (!["inspect", "distribute-internal"].includes(action)) throw new Error("Invalid IOS_TESTFLIGHT_ACTION");
+  const list = createAscClient({ token, allowWrites: action === "distribute-internal" });
+  const result = await verifyBuild({ list, marketingVersion: env.IOS_MARKETING_VERSION, buildNumber: env.IOS_BUILD_NUMBER });
+  if (action === "distribute-internal") {
+    console.log(`ASC internal distribution: ${JSON.stringify(await distributeInternal({ list, result, groupId: env.IOS_BETA_GROUP_ID }))}`);
+    console.log("Group membership verified; tester accounts, invitations and device installation still require verification.");
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
