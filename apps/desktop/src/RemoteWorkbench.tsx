@@ -78,11 +78,11 @@ export function RemoteWorkbench({ credentials, theme, onThemeChange, onExit, onA
     if (notification?.target.targetDeviceId !== device.id) { notificationController.current?.abort(); setNotification(null); }
   };
   const online = directory.error || directory.loading ? null : !!current?.online;
-  const bar: RemoteDeviceBar = { name: current?.name ?? "", online, onSwitch: () => setChoosing(true), onAppearance };
+  const bar: RemoteDeviceBar = { name: current?.name ?? "", online, onSwitch: () => setChoosing(true), onSwitchMode, onAppearance };
   return <div className="remote-workbench">
     <header className="remote-desktop-bar"><button type="button" onClick={() => setChoosing((value) => !value)} aria-expanded={choosing || !current}>
       {current?.name || "选择连接的电脑"}<span>{online === null ? "状态待确认" : online ? "在线" : current ? "离线" : ""} · 切换电脑</span>
-    </button>{onSwitchMode && <button type="button" className="remote-switch-mode-button" onClick={onSwitchMode}>切换用途</button>}{onAppearance && <button type="button" className="remote-appearance-button" onClick={onAppearance}>外观</button>}</header>
+    </button></header>
     {notice && <p role="status">{notice}</p>}
     {(choosing || !current) && <div className="remote-device-panel"><RemoteDevicePicker devices={directory.devices} selected={current} loading={directory.loading} error={directory.error} onSelect={choose} onRefresh={directory.refresh} />
       <button type="button" onClick={() => { if (directory.scope) clearSelectedDesktop(directory.scope); void clearRemoteCredentials().then(() => onExit?.()); }}>更换 Key</button>

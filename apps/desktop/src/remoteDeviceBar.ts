@@ -8,6 +8,7 @@ export interface RemoteDeviceBar {
   /** null while the device directory is loading or failed. */
   online: boolean | null;
   onSwitch: () => void;
+  onSwitchMode?: () => void;
   onAppearance?: () => void;
 }
 
