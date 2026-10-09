@@ -14,6 +14,11 @@ export function useMobileChatModels(apiKey: string) {
     setLoading(true);
     setError(null);
     setModels([]);
+    if (!apiKey.trim()) {
+      setModel("");
+      setLoading(false);
+      return () => controller.abort();
+    }
     void fetch(`${MOBILE_API_BASE_URL}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` }, signal: controller.signal,
     }).then(async (response) => {

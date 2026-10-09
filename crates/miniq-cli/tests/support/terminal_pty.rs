@@ -152,6 +152,10 @@ async fn guided_setup_hides_key_searches_models_then_starts_chat() {
         .await;
     assert!(!transcript.contains("fixture-private-key"));
     assert!(transcript.contains("1 match(es)"));
+    assert!(transcript.contains("Model catalog loaded; this does not verify a model reply."));
+    assert!(transcript.contains("Configuration saved."));
+    assert!(transcript.contains("No model reply has been tested."));
+    assert!(!transcript.contains("Connected."));
     let requests = fixture.requests.lock().unwrap();
     let update = requests
         .iter()
@@ -174,6 +178,31 @@ async fn guided_setup_hides_key_searches_models_then_starts_chat() {
     assert!(!requests
         .iter()
         .any(|request| request["method"] == "session.sendMessage"));
+    assert!(!requests.iter().any(|request| matches!(
+        request["method"].as_str(),
+        Some("session.modelUpdate" | "model.describe")
+    )));
+}
+
+#[tokio::test]
+async fn configure_keeps_saved_model_without_repeating_selection() {
+    let fixture = Fixture::new("success").await;
+    let transcript = fixture
+        .run_terminal(&["configure"], &[("API Key (hidden", "\n")])
+        .await;
+    assert!(transcript.contains("Configuration saved."));
+    assert!(!transcript.contains("Select/search>"));
+    let requests = methods(&fixture);
+    assert!(!requests.iter().any(|request| matches!(
+        request["method"].as_str(),
+        Some("settings.models" | "model.describe" | "session.create" | "session.sendMessage")
+    )));
+    let update = requests
+        .iter()
+        .find(|request| request["method"] == "settings.update")
+        .unwrap();
+    assert_eq!(update["params"]["provider"]["model"], "fixture");
+    assert_eq!(update["params"]["provider"]["apiProtocol"], "responses");
 }
 
 #[tokio::test]

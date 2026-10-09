@@ -131,3 +131,15 @@ it("leaves web rendering free of native back listeners", async () => {
   fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+it("returns from settings to the selected purpose before returning home", async () => {
+  render(<MobileEntry onRemote={vi.fn()} />);
+  await waitFor(() => expect(registrations).toHaveLength(1));
+  fireEvent.click(screen.getByRole("button", { name: /远程桌面/ }));
+  fireEvent.click(screen.getByRole("button", { name: "设置" }));
+  expect(screen.getByRole("heading", { name: "移动设置" })).toBeTruthy();
+  await pressBack();
+  expect(screen.getByRole("heading", { name: "连接桌面 miniQ" })).toBeTruthy();
+  await pressBack();
+  expect(screen.getByRole("heading", { name: "随时继续工作" })).toBeTruthy();
+});

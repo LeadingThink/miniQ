@@ -39,8 +39,8 @@ function DeviceWorkbench({ credentials, device, scope, theme, onThemeChange, not
   </Suspense></DesktopHostProvider>;
 }
 
-export function RemoteWorkbench({ credentials, theme, onThemeChange, onExit, onAppearance }: {
-  credentials: RemoteCredentials; theme: ThemeId; onThemeChange: (theme: ThemeId) => void; onExit?: () => void; onAppearance?: () => void;
+export function RemoteWorkbench({ credentials, theme, onThemeChange, onExit, onAppearance, onSwitchMode }: {
+  credentials: RemoteCredentials; theme: ThemeId; onThemeChange: (theme: ThemeId) => void; onExit?: () => void; onAppearance?: () => void; onSwitchMode?: () => void;
 }) {
   const directory = useRemoteDevices(credentials);
   const [selected, setSelected] = useState<RemoteDesktop | null>(null);
@@ -82,7 +82,7 @@ export function RemoteWorkbench({ credentials, theme, onThemeChange, onExit, onA
   return <div className="remote-workbench">
     <header className="remote-desktop-bar"><button type="button" onClick={() => setChoosing((value) => !value)} aria-expanded={choosing || !current}>
       {current?.name || "选择连接的电脑"}<span>{online === null ? "状态待确认" : online ? "在线" : current ? "离线" : ""} · 切换电脑</span>
-    </button>{onAppearance && <button type="button" className="remote-appearance-button" onClick={onAppearance}>外观</button>}</header>
+    </button>{onSwitchMode && <button type="button" className="remote-switch-mode-button" onClick={onSwitchMode}>切换用途</button>}{onAppearance && <button type="button" className="remote-appearance-button" onClick={onAppearance}>外观</button>}</header>
     {notice && <p role="status">{notice}</p>}
     {(choosing || !current) && <div className="remote-device-panel"><RemoteDevicePicker devices={directory.devices} selected={current} loading={directory.loading} error={directory.error} onSelect={choose} onRefresh={directory.refresh} />
       <button type="button" onClick={() => { if (directory.scope) clearSelectedDesktop(directory.scope); void clearRemoteCredentials().then(() => onExit?.()); }}>更换 Key</button>

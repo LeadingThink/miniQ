@@ -25,7 +25,6 @@ import { isSessionRunning, isSessionTerminal } from "../sessionStatus";
 import { BROWSER_DRAFT_CREATED_EVENT, type BrowserDraftCreatedDetail } from "../browserTabs";
 
 export type AppPage = "schedule" | null;
-const PROVIDER_ONBOARDING_KEY = "miniq.providerOnboarding.v1";
 
 async function pickDirectory(): Promise<string | null> {
   if (isTauriRuntime()) {
@@ -633,34 +632,57 @@ export function useMiniqApp(active = true) {
     paused: updater.state.phase === "installing" || Boolean(desktop && !client.sshHost),
   });
   const connection = desktop && !client.sshHost ? desktop.connection : scopedConnection;
+  useEffect(() => {
+    if (!active || !connection.connected || connection.providerConfigured !== false) return;
+    let disposed = false;
+    let inFlight = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      if (!disposed) timer = setTimeout(() => { void refresh(); }, 30_000);
+    };
+    const refresh = async () => {
+      if (disposed || inFlight) return;
+      clearTimeout(timer);
+      if (document.visibilityState === "hidden") return;
+      inFlight = true;
+      let configured = false;
+      try {
+        configured = await connection.refreshProviderConfiguration();
+      } catch {
+        // Keep the existing blocked state; a later foreground/recheck can recover.
+      } finally {
+        inFlight = false;
+        if (!configured) schedule();
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") clearTimeout(timer);
+      else void refresh();
+    };
+    // settings.update has no broadcast event. Recheck only while setup is missing,
+    // with one request at a time, and stop completely once configuration is found.
+    schedule();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", refresh);
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [active, connection.connected, connection.providerConfigured, connection.refreshProviderConfiguration]);
   const ensureProviderConfigured = useCallback(async () => {
     if (client.mode !== "local" && !client.sshHost) return true;
     try {
       const configured = connection.providerConfigured === true
         || await connection.refreshProviderConfiguration();
       if (configured) return true;
-      navigation.setShowSettings(true);
       return false;
     } catch (error) {
       setConnectionError(`无法检查模型服务设置：${errorMessage(error)}`);
       return false;
     }
-  }, [client.mode, connection.providerConfigured, connection.refreshProviderConfiguration, navigation.setShowSettings]);
-  useEffect(() => {
-    if (
-      (client.mode !== "local" && !client.sshHost) ||
-      connection.connectionEpoch === 0 ||
-      connection.providerConfigured !== false
-    ) return;
-    try {
-      const key = `${PROVIDER_ONBOARDING_KEY}${client.sshHost ? `:${client.sshHost}` : ""}`;
-      if (window.localStorage.getItem(key) === "seen") return;
-      window.localStorage.setItem(key, "seen");
-    } catch {
-      // Storage can be unavailable; showing the setup screen is still safe.
-    }
-    navigation.setShowSettings(true);
-  }, [client.mode, connection.connectionEpoch, connection.providerConfigured, navigation.setShowSettings]);
+  }, [client.mode, connection.providerConfigured, connection.refreshProviderConfiguration]);
   const navigationActions = useNavigationActions(catalog, navigation, feed);
   const openRemoteFolder = useCallback(() => navigation.setShowRemoteFolder(true), [navigation.setShowRemoteFolder]);
   const workspaceActions = useWorkspaceActions(client, catalog, setError, openRemoteFolder);

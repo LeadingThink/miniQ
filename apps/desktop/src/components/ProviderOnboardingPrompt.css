@@ -1,0 +1,70 @@
+.provider-onboarding {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  width:min(720px,100%);
+  margin:0 auto 16px;
+  padding:12px 14px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  background:color-mix(in srgb,var(--bg) 92%,var(--accent) 8%);
+  color:var(--text-dim);
+  font-size:13px
+}
+
+
+.provider-onboarding>div:first-child {
+  display:grid;
+  gap:3px
+}
+
+.provider-onboarding strong {
+  color:var(--text)
+}
+
+
+.provider-onboarding-actions {
+  display:flex;
+  flex-shrink:0;
+  gap:8px
+}
+
+.provider-onboarding button {
+  border:0;
+  border-radius:7px;
+  padding:6px 9px;
+  background:transparent;
+  color:var(--text-dim);
+  cursor:pointer;
+  font:inherit
+}
+
+.provider-onboarding button:hover {
+  background:var(--bg-hover)
+}
+
+
+.provider-onboarding button.primary {
+  background:var(--accent);
+  color:var(--accent-contrast,white)
+}
+
+.provider-onboarding-deferred {
+  justify-content:flex-start
+}
+
+.provider-onboarding-deferred button {
+  padding:0;
+  color:var(--accent)
+}
+
+
+@media (max-width:620px) {
+  .provider-onboarding {
+  align-items:flex-start;
+  flex-direction:column
+}
+
+
+}

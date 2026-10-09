@@ -399,7 +399,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                     <KeyRound size={15} />
                     <span>连接在问</span>
                   </div>
-                  <p className="settings-section-description">填写 API Key 后即可开始使用，模型和接口协议会自动适配。</p>
+                  <p className="settings-section-description">填写 API Key 后保存并返回对话，原有草稿会保留。模型与推理强度可使用默认值。</p>
                 </div>
                 <label htmlFor="provider-api-key">
                   在问 API Key {hasKey && <span className="badge">已保存</span>}
@@ -410,7 +410,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                     spellCheck={false}
                     value={apiKey}
                     disabled={loading || saving}
-                    placeholder={hasKey ? "已连接；留空可保留当前 Key" : "sk-..."}
+                    placeholder={hasKey ? "已保存；留空可保留当前 Key" : "sk-..."}
                     onChange={(event) => {
                       setApiKey(event.target.value);
                       setStatus(null);
@@ -590,7 +590,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
               type="submit"
               disabled={loading || saving || !baseUrl.trim() || !defaultModel.trim() || (!hasKey && !apiKey.trim()) || !deviceName.trim()}
             >
-              {saving ? "正在保存..." : "保存并开始使用"}
+              {saving ? "正在保存..." : "保存并返回"}
             </button>
           )}
           <button type="button" className="secondary" onClick={props.onClose}>

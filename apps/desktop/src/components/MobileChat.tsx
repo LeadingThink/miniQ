@@ -11,7 +11,7 @@ import { useMobileChatModels } from "../hooks/useMobileChatModels";
 import { MobileChatRow } from "./MobileChatRow";
 import { MobileModelPicker } from "./MobileModelPicker";
 
-export function MobileChat(props: { apiKey: string; onBack: () => void }) {
+export function MobileChat(props: { apiKey: string; onBack: () => void; onSettings?: () => void }) {
   const catalog = useMobileChatModels(props.apiKey);
   const chat = useMobileChat(props.apiKey, catalog.models.includes(catalog.model) ? catalog.model : "");
   const [draft, setDraftValue] = useState(() => readDraft("mobile-chat"));
@@ -43,7 +43,7 @@ export function MobileChat(props: { apiKey: string; onBack: () => void }) {
     },
     contentVersion,
   });
-  const ready = !catalog.loading && catalog.models.includes(catalog.model);
+  const ready = Boolean(props.apiKey) && !catalog.loading && catalog.models.includes(catalog.model);
 
   useEffect(() => () => { imageRead.current += 1; }, []);
 
@@ -80,6 +80,7 @@ export function MobileChat(props: { apiKey: string; onBack: () => void }) {
         <button type="button" className="icon-button" aria-label="返回" title="返回" onClick={props.onBack}><ArrowLeft size={18} /></button>
         <div><strong>移动问答</strong><small>独立运行</small></div>
         <MobileModelPicker catalog={catalog} disabled={chat.busy} />
+        {props.onSettings && <button type="button" onClick={props.onSettings}>设置</button>}
       </header>
       <section className="mobile-chat-feed" ref={feedRef} aria-label="问答记录" onScroll={onScroll}>
         <div ref={historyTopRef} aria-hidden="true" />
@@ -88,6 +89,7 @@ export function MobileChat(props: { apiKey: string; onBack: () => void }) {
         {chat.messages.slice(startIndex).map((message) => (
           <MobileChatRow key={message.id} message={message} active={chat.busy && message.id === chat.activeMessageId} onDelete={chat.deleteMessage} />
         ))}
+        {!props.apiKey && <div role="status">发送前请在设置中保存 Key 并同意隐私政策。{props.onSettings && <button type="button" onClick={props.onSettings}>前往设置</button>}</div>}
         {catalog.error && <div className="mobile-entry-error" role="alert">{catalog.error}<button type="button" className="mobile-chat-retry" onClick={catalog.reload}>重新加载模型</button></div>}
         {(chat.error || imageError) && <div className="mobile-entry-error" role="alert">{imageError || chat.error}</div>}
         {chat.storageWarning && <div className="mobile-entry-error" role="status">设备存储空间不足，本次内容暂时仅保留在当前页面；离开前请复制重要内容。</div>}

@@ -19,9 +19,12 @@
 .remote-workbench .remote-workbench-content .app.sidebar-collapsed .main { height: 100%; min-height: 0; }
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
   /* Phones fold the device bar into the session header (name and presence
-     dot in its subline, switch/appearance in the ⋯ menu). The bar stays
-     while the computer picker is open or no computer is selected. */
-  .remote-workbench:has(> .remote-workbench-content:not([hidden])) > .remote-desktop-bar { display: none; }
+     dot in its subline, switch/appearance in the ⋯ menu). Keep the mode
+     switch directly accessible; show the full bar in the computer picker. */
+  .remote-workbench:has(> .remote-workbench-content:not([hidden])) > .remote-desktop-bar:not(:has(> .remote-switch-mode-button)) { display: none; }
+  .remote-workbench:has(> .remote-workbench-content:not([hidden])) > .remote-desktop-bar > button:not(.remote-switch-mode-button) { display: none; }
   .remote-workbench .remote-workbench-content .statusbar.app-toolbar,
   .remote-workbench .remote-workbench-content .statusbar:has(.statusbar-identity) { padding-top: max(4px, var(--safe-top)); min-height: 0; }
+  .remote-workbench:has(> .remote-desktop-bar > .remote-switch-mode-button) .remote-workbench-content .statusbar.app-toolbar,
+  .remote-workbench:has(> .remote-desktop-bar > .remote-switch-mode-button) .remote-workbench-content .statusbar:has(.statusbar-identity) { padding-top: 4px; }
 }

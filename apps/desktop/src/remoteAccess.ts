@@ -100,7 +100,6 @@ export async function storeRemoteCredentials(
     deviceId: readDeviceId(),
   };
   const serialized = JSON.stringify(credentials);
-  safeWrite(window.sessionStorage, STORAGE_KEY, serialized);
   if (Capacitor.isNativePlatform()) {
     await SecureStoragePlugin.set({ key: NATIVE_STORAGE_KEY, value: serialized });
   } else if (isRememberEnabled()) {
@@ -108,6 +107,7 @@ export async function storeRemoteCredentials(
   } else {
     safeRemove(window.localStorage, PERSIST_KEY);
   }
+  safeWrite(window.sessionStorage, STORAGE_KEY, serialized);
   return credentials;
 }
 

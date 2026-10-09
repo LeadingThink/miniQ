@@ -51,7 +51,7 @@ describe("appearance settings integration", () => {
     render(<Fixture />);
     await waitFor(() => expect(call).toHaveBeenCalledWith("settings.get"));
     fireEvent.click(screen.getByRole("tab", { name: "外观" }));
-    expect(screen.queryByRole("button", { name: "保存并开始使用" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "保存并返回" })).toBeNull();
     const dark = screen.getByRole("radio", { name: "深色" });
     dark.focus();
     fireEvent.click(dark);
@@ -78,7 +78,7 @@ describe("appearance settings integration", () => {
     fireEvent.click(screen.getByRole("tab", { name: "服务与远程" }));
     expect((screen.getByLabelText(/服务地址/) as HTMLInputElement).value).toBe("https://example.test/v1");
     expect(screen.getByRole("link", { name: "获取在问 API Key" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "保存并开始使用" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
     await waitFor(() =>
       expect(call).toHaveBeenCalledWith("settings.update", {
         provider: { baseUrl: "https://example.test/v1", model: "claude-sonnet", apiProtocol: "auto" },
@@ -99,7 +99,7 @@ describe("appearance settings integration", () => {
     const input = screen.getByRole("textbox", { name: /默认 Chat 模型/ });
     expect((input as HTMLInputElement).value).toBe("test");
     fireEvent.change(input, { target: { value: "manual-model" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存并开始使用" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
     await waitFor(() => expect(call).toHaveBeenCalledWith("settings.update", expect.objectContaining({
       provider: expect.objectContaining({ model: "manual-model" }),
     })));
@@ -116,7 +116,7 @@ describe("appearance settings integration", () => {
     const hook = details.querySelector<HTMLInputElement>("#turn-ended-command")!;
     expect(hook.value).toBe("say old");
     fireEvent.change(hook, { target: { value: "say finished" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存并开始使用" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
     await waitFor(() => expect(call).toHaveBeenCalledWith("settings.update", expect.objectContaining({
       turnEndedCommand: "say finished",
     })));
@@ -132,7 +132,7 @@ describe("appearance settings integration", () => {
     render(<Fixture onClose={onClose} />);
     await screen.findByLabelText(/服务地址/);
 
-    fireEvent.click(screen.getByRole("button", { name: "保存并开始使用" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
 
     expect(await screen.findByText("保存失败：update failed")).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
@@ -143,7 +143,7 @@ describe("appearance settings integration", () => {
     call.mockImplementation((method: string) => Promise.resolve(method === "settings.get" ? empty : method === "model.list" ? { models: [] } : settings));
     render(<Fixture />);
     await waitFor(() => expect((screen.getByLabelText(/服务地址/) as HTMLInputElement).value).toBe(ZAIWEN_API_BASE_URL));
-    const save = screen.getByRole("button", { name: "保存并开始使用" }) as HTMLButtonElement;
+    const save = screen.getByRole("button", { name: "保存并返回" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText(/在问 API Key/), { target: { value: "sk-first-run" } });
     expect(save.disabled).toBe(false);
@@ -185,7 +185,7 @@ describe("appearance settings integration", () => {
     fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
     fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "服务与远程" }));
-    expect(screen.getByRole("button", { name: "保存并开始使用" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "保存并返回" })).toBeTruthy();
     unmount();
     expect(document.activeElement).toBe(trigger);
     trigger.remove();

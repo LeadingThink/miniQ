@@ -18,8 +18,11 @@ afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear(); });
 it("loads chat only after selection and lets the user leave while its code is loading", async () => {
   render(<MobileEntry onRemote={vi.fn()} />);
   expect(chat.loaded).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "设置" }));
   fireEvent.change(screen.getByPlaceholderText("sk-..."), { target: { value: " sk-example " } });
   fireEvent.click(screen.getByRole("checkbox", { name: "我已阅读并同意" }));
+  fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+  await screen.findByRole("heading", { name: "随时继续工作" });
   fireEvent.click(screen.getByRole("button", { name: /移动问答/ }));
   await screen.findByText("正在加载移动问答…");
   fireEvent.click(screen.getByRole("button", { name: "返回" }));

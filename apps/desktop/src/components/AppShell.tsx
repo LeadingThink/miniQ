@@ -31,6 +31,7 @@ import { useAgentSummary } from "../hooks/useAgentSummary";
 import { ProjectDirectories } from "./ProjectDirectories";
 import { hostDraftKey, useDesktopHost } from "../desktopHost";
 import { RemotePathDialog } from "./RemotePathDialog";
+import { ProviderOnboardingPrompt } from "./ProviderOnboardingPrompt";
 
 import { useAppWorkbench } from "../hooks/useAppWorkbench";
 import { AppWorkbench } from "./AppWorkbench";
@@ -136,6 +137,14 @@ interface WorkbenchPageProps extends AppOnlyProps {
   onDraftRequestApplied?: () => void;
 }
 
+export function getSendBlockedReason(app: MiniqAppController): string | undefined {
+  if (!app.catalog.currentSessionId && !app.catalog.selectedWorkspace) return "请先选择项目";
+  if (app.connection.providerConfigured === false) return "请先在设置的“服务与远程”中配置模型服务";
+  if (app.sessionModel.pending) return "正在保存模型配置，请稍候";
+  if (!app.sessionModel.ready) return app.sessionModel.error ? "模型配置加载失败，请重试" : "正在加载模型配置，请稍候";
+  return undefined;
+}
+
 function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
   const [agentPanelOpen, setAgentPanelOpen] = useState(false);
   const agentSummary = useAgentSummary(
@@ -217,6 +226,9 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
         onCancelTurn={app.actions.cancelTurn}
         onError={app.setError}
       />
+      {app.connection.providerConfigured === false && (
+        <ProviderOnboardingPrompt onOpenSettings={() => app.navigation.openSettings("services")} />
+      )}
       <Composer
         slashCommands={slashCommands}
         workspaceId={app.catalog.currentWorkspace?.id}
@@ -227,7 +239,8 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
             busy={!!app.busy}
           />
         }
-        sendBlocked={!app.sessionModel.ready || app.sessionModel.pending}
+        sendBlocked={!!getSendBlockedReason(app)}
+        sendBlockedReason={getSendBlockedReason(app)}
         busy={!!app.busy}
         chip={app.catalog.currentWorkspace?.name}
         draftKey={hostDraftKey(app.client.sshHost, app.catalog.currentSessionId!, app.client.storageScope)}
@@ -264,6 +277,9 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
           : "今天想完成什么？"}
       </h1>
       <div className="hero-composer">
+        {app.connection.providerConfigured === false && (
+          <ProviderOnboardingPrompt onOpenSettings={() => app.navigation.openSettings("services")} />
+        )}
         <ComposerCard
           slashCommands={slashCommands}
           workspaceId={selectedWorkspace?.id}
@@ -301,12 +317,8 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
           allowGoal
           onSend={app.actions.startTask}
           onError={app.setError}
-          sendBlocked={
-            !selectedWorkspace ||
-            !app.sessionModel.ready ||
-            app.sessionModel.pending
-          }
-          sendBlockedReason="请先选择项目"
+          sendBlocked={!!getSendBlockedReason(app)}
+          sendBlockedReason={getSendBlockedReason(app)}
         />
       </div>
       <StarterPrompts

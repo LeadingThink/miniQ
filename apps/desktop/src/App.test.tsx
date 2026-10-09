@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
+import { storeMobileEntryMode } from "./mobileEntryMode";
 import { useSessionFileAccess } from "./sessionFileAccess";
 import type { ReactNode } from "react";
 
@@ -44,7 +45,7 @@ vi.mock("./theme", () => {
   return { getAppearance: () => appearance, subscribeAppearance: () => () => {}, storeTheme: state.themeChange };
 });
 vi.mock("./components/MobileEntry", () => ({
-  MobileEntry: ({ onRemote }: { onRemote: () => void }) => <button onClick={onRemote}>连接远程</button>,
+  MobileEntry: ({ onRemote, initialMode }: { onRemote: () => void; initialMode?: string }) => <button data-mode={initialMode} onClick={onRemote}>连接远程</button>,
 }));
 vi.mock("./components/SharedSessionPage", () => ({
   SharedSessionPage: ({ id }: { id: string }) => <div>分享 {id}</div>,
@@ -91,7 +92,8 @@ it("keeps the workbench module out of the entry screen and preserves context whe
   expect(state.themeChange).toHaveBeenCalledWith("night");
 }, 20_000);
 
-it("restores remembered credentials only after privacy consent", async () => {
+it("restores remembered remote mode only after privacy consent", async () => {
+  storeMobileEntryMode("remote");
   state.loadCredentials.mockResolvedValue({ apiKey: "test-key" });
   state.consent = false;
   const view = render(<App />);
@@ -147,4 +149,24 @@ it("remounts discovery when either apiKey or relayUrl changes during credential 
     expect(state.directoryMount).toHaveBeenCalledTimes(2);
     view.unmount();
   }
+});
+
+it.each(["chat", null] as const)("does not force desktop for a saved key when last mode is %s", async (mode) => {
+  if (mode) storeMobileEntryMode(mode);
+  state.loadCredentials.mockResolvedValue({ apiKey: "test-key" });
+  render(<App />);
+  const entry = await screen.findByRole("button", { name: "连接远程" });
+  expect(entry.getAttribute("data-mode")).toBe(mode);
+  expect(state.directoryMount).not.toHaveBeenCalled();
+});
+
+it("returns from desktop discovery to mode selection without clearing credentials", async () => {
+  storeMobileEntryMode("remote");
+  state.loadCredentials.mockResolvedValue({ apiKey: "test-key" });
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "切换用途" }));
+  const entry = await screen.findByRole("button", { name: "连接远程" });
+  expect(entry.getAttribute("data-mode")).toBeNull();
+  fireEvent.click(entry);
+  await screen.findByRole("button", { name: /测试电脑/ });
 });

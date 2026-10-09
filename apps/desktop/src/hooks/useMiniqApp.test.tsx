@@ -12,7 +12,7 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DaemonEvent } from "../types";
 import { useMiniqApp } from "./useMiniqApp";
-import { AppShell } from "../components/AppShell";
+import { AppShell, getSendBlockedReason } from "../components/AppShell";
 import { DEFAULT_MODEL_SETTINGS, type SessionModelSettings } from "../modelSelection";
 
 const fake = vi.hoisted(() => ({
@@ -47,6 +47,7 @@ vi.mock("../rpc", () => ({
 vi.mock("./useAppUpdater", () => ({ useAppUpdater: () => ({ state: { phase: "idle" } }) }));
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   fake.call.mockReset();
   fake.connect.mockReset();
   fake.events.clear();
@@ -74,7 +75,7 @@ beforeEach(() => {
       case "settings.get":
         return {
           approvalMode: "auto",
-          provider: { hasApiKey: fake.providerHasApiKey },
+          provider: { hasApiKey: fake.providerHasApiKey, baseUrl: "https://example.test/v1", model: "test-model", apiProtocol: "auto" },
         };
       case "workspace.list":
         return { workspaces: [{ id: "w", name: "test", path: "/workspace", additionalPaths: [] }] };
@@ -224,17 +225,52 @@ it("activates a goal before sending the first message of a new session", async (
   expect(goalCallIndex).toBeLessThan(sendCallIndex);
 });
 
-it("opens first-run provider setup automatically on a local desktop without an API key", async () => {
+it("keeps provider setup opt-in without storing a seen flag", async () => {
   fake.mode = "local";
   fake.providerHasApiKey = false;
   const hook = renderHook(useMiniqApp);
 
   await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
-  await waitFor(() => expect(hook.result.current.navigation.showSettings).toBe(true));
-  expect(localStorage.getItem("miniq.providerOnboarding.v1")).toBe("seen");
+  expect(hook.result.current.navigation.showSettings).toBe(false);
+  expect(localStorage.getItem("miniq.providerOnboarding.v1")).toBeNull();
 });
 
-it("reopens provider setup and sends nothing when a local task has no API key", async () => {
+it.each(["local", "remote"] as const)("recovers stale missing-provider state on %s without overlapping or persistent polling", async (mode) => {
+  fake.mode = mode;
+  fake.providerHasApiKey = false;
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
+  await act(async () => hook.result.current.actions.openSession("a"));
+  await waitFor(() => expect(hook.result.current.sessionModel.ready).toBe(true));
+  expect(getSendBlockedReason(hook.result.current)).toContain("配置模型服务");
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  let finish!: (value: unknown) => void;
+  const original = fake.call.getMockImplementation()!;
+  fake.call.mockImplementation((method: string, ...args: unknown[]) => method === "settings.get"
+    ? new Promise((resolve) => { finish = resolve; })
+    : original(method, ...args));
+  fake.call.mockClear();
+  act(() => {
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("focus"));
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  expect(fake.call.mock.calls.filter(([method]) => method === "settings.get")).toHaveLength(1);
+  await act(async () => finish({ provider: { hasApiKey: false } }));
+  fake.call.mockImplementation(original);
+  fake.providerHasApiKey = true;
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(hook.result.current.connection.providerConfigured).toBe(true);
+  expect(getSendBlockedReason(hook.result.current)).toBeUndefined();
+  const reads = fake.call.mock.calls.filter(([method]) => method === "settings.get").length;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(90_000);
+    window.dispatchEvent(new Event("focus"));
+  });
+  expect(fake.call.mock.calls.filter(([method]) => method === "settings.get")).toHaveLength(reads);
+});
+
+it("blocks unconfigured tasks and follow-ups without opening settings", async () => {
   fake.mode = "local";
   fake.providerHasApiKey = false;
   localStorage.setItem("miniq.providerOnboarding.v1", "seen");
@@ -245,7 +281,7 @@ it("reopens provider setup and sends nothing when a local task has no API key", 
   await act(async () => {
     expect(await hook.result.current.actions.startTask("keep this draft")).toBe(false);
   });
-  expect(hook.result.current.navigation.showSettings).toBe(true);
+  expect(hook.result.current.navigation.showSettings).toBe(false);
   expect(fake.call.mock.calls.some(([method]) => method === "session.create")).toBe(false);
   expect(fake.call.mock.calls.some(([method]) => method === "session.sendMessage")).toBe(false);
 
@@ -254,7 +290,7 @@ it("reopens provider setup and sends nothing when a local task has no API key", 
   await act(async () => {
     expect(await hook.result.current.actions.sendMessage("keep this follow-up")).toBe(false);
   });
-  expect(hook.result.current.navigation.showSettings).toBe(true);
+  expect(hook.result.current.navigation.showSettings).toBe(false);
   expect(fake.call.mock.calls.some(([method]) => method === "session.sendMessage")).toBe(false);
 });
 
@@ -468,6 +504,32 @@ it("returns question delivery failures to the form and allows another attempt", 
   expect(deliver).toHaveBeenCalledTimes(2);
   expect(deliver).toHaveBeenLastCalledWith({ questionId: "q", answer: "existing files\n/new/video.mp4" });
   expect(fake.connect).toHaveBeenCalledTimes(1);
+});
+
+it.each(["home", "session"])("opens services only on request and preserves the %s draft after settings close", async (page) => {
+  fake.mode = "local";
+  fake.providerHasApiKey = false;
+  let app!: ReturnType<typeof useMiniqApp>;
+  function TestApp() {
+    app = useMiniqApp();
+    return <AppShell app={app} theme="jade" onThemeChange={() => {}} />;
+  }
+  render(<TestApp />);
+  await screen.findByRole("button", { name: "去设置" });
+  if (page === "session") {
+    await act(async () => app.actions.openSession("a"));
+    await waitFor(() => expect(app.catalog.currentSessionId).toBe("a"));
+  }
+  expect(screen.getByText("保存后返回对话，发送第一条消息验证。草稿会保留。")).toBeTruthy();
+  expect(app.navigation.showSettings).toBe(false);
+  const input = screen.getByRole("textbox");
+  fireEvent.change(input, { target: { value: "保留这份草稿" } });
+  fireEvent.click(screen.getByRole("button", { name: "去设置" }));
+  expect(app.navigation.settingsTab).toBe("services");
+  fireEvent.click(await screen.findByRole("button", { name: "关闭设置" }));
+  expect(screen.getByRole("textbox")).toBe(input);
+  expect((input as HTMLTextAreaElement).value).toBe("保留这份草稿");
+  expect(screen.getByRole("button", { name: "去设置" })).toBeTruthy();
 });
 
 it("unmounts the complete session page without orphaned child-task DOM nodes", async () => {

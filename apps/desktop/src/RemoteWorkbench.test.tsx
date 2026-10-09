@@ -5,6 +5,7 @@ import { RemoteWorkbench } from "./RemoteWorkbench";
 import type { useDesktopHost } from "./desktopHost";
 import { hostKey } from "./hostWorkspace";
 import { rememberSelectedDesktop } from "./remoteDevices";
+import { readFileSync } from "node:fs";
 const state = vi.hoisted(() => ({ desktop: null as ReturnType<typeof useDesktopHost>, directory: { scope: "room", devices: [] as { id: string; name: string; online: boolean }[], loading: false, error: "", refresh: vi.fn() }, roots: [] as { targetDeviceId: string; disconnect: ReturnType<typeof vi.fn> }[] }));
 vi.mock("./hooks/useRemoteDevices", () => ({ useRemoteDevices: () => state.directory }));
 vi.mock("./rpc", () => ({ RpcClient: class { targetDeviceId: string; disconnect = vi.fn(); constructor(info: {targetDeviceId: string}) { this.targetDeviceId = info.targetDeviceId; state.roots.push(this); } } }));
@@ -15,6 +16,64 @@ const credentials = { apiKey: "test", relayUrl: "wss://relay.test", deviceId: "p
 const a = { id: "a", name: "电脑A", online: false }, b = { id: "b", name: "电脑B", online: true };
 beforeEach(() => { localStorage.clear(); state.desktop = null; state.roots.length = 0; state.directory.devices = [b]; });
 afterEach(cleanup);
+
+// jsdom does not evaluate viewport media queries. Apply the actual mobile
+// rules explicitly so a hidden ancestor fails these accessibility assertions.
+function applyWorkbenchStyles(mobile: boolean) {
+  const style = document.createElement("style");
+  style.textContent = readFileSync("src/RemoteWorkbench.css", "utf8");
+  document.head.append(style);
+  const rules = Array.from(style.sheet!.cssRules);
+  style.textContent = rules.map((rule) => {
+    if (!(rule instanceof CSSMediaRule)) return rule.cssText;
+    expect(rule.conditionText).toBe("(max-width: 720px), (pointer: coarse) and (max-height: 520px)");
+    return mobile ? Array.from(rule.cssRules).map((child) => child.cssText).join("\n") : "";
+  }).join("\n");
+  return () => style.remove();
+}
+
+it.each(["选择", "恢复"])("手机%s电脑进入工作台后可直接切换用途", async (entry) => {
+  const removeStyles = applyWorkbenchStyles(true);
+  try {
+    if (entry === "恢复") rememberSelectedDesktop("room", b);
+    const onSwitchMode = vi.fn();
+    render(<RemoteWorkbench credentials={credentials} theme="night" onThemeChange={() => {}} onSwitchMode={onSwitchMode} onAppearance={() => {}} />);
+    if (entry === "选择") fireEvent.click(screen.getByRole("button", { name: /电脑B/ }));
+    await screen.findByText("工作台");
+    expect(screen.queryByRole("region", { name: "选择连接的电脑" })).toBeNull();
+    const button = screen.getByRole("button", { name: "切换用途" });
+    expect(getComputedStyle(button.parentElement!).display).toBe("flex");
+    expect(screen.queryByRole("button", { name: /切换电脑/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "外观" })).toBeNull();
+    fireEvent.click(button);
+    expect(onSwitchMode).toHaveBeenCalledTimes(1);
+  } finally { removeStyles(); }
+});
+
+it("桌面保留完整顶栏与电脑选择交互", async () => {
+  const removeStyles = applyWorkbenchStyles(false);
+  try {
+    rememberSelectedDesktop("room", b);
+    render(<RemoteWorkbench credentials={credentials} theme="night" onThemeChange={() => {}} onSwitchMode={() => {}} onAppearance={() => {}} />);
+    await screen.findByText("工作台");
+    expect(screen.getByRole("button", { name: "切换用途" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "外观" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /切换电脑/ }));
+    expect(screen.getByRole("region", { name: "选择连接的电脑" })).toBeTruthy();
+  } finally { removeStyles(); }
+});
+
+it("未提供用途切换时手机工作台仍折叠顶栏", async () => {
+  const removeStyles = applyWorkbenchStyles(true);
+  try {
+    rememberSelectedDesktop("room", b);
+    render(<RemoteWorkbench credentials={credentials} theme="night" onThemeChange={() => {}} />);
+    await screen.findByText("工作台");
+    expect(screen.queryByRole("banner")).toBeNull();
+    expect(screen.queryByRole("button", { name: "切换用途" })).toBeNull();
+  } finally { removeStyles(); }
+});
+
 it("首次即使仅一台在线也等待选择，不创建业务连接", () => {
   render(<RemoteWorkbench credentials={credentials} theme="night" onThemeChange={() => {}} />);
   expect(screen.getByRole("region", { name: "选择连接的电脑" })).toBeTruthy();

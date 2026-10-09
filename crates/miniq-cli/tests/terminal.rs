@@ -12,6 +12,9 @@ use tokio_tungstenite::tungstenite::Message;
 #[path = "support/terminal_pty.rs"]
 mod pty;
 
+#[path = "support/onboarding.rs"]
+mod onboarding;
+
 struct Fixture {
     dir: tempfile::TempDir,
     requests: Arc<Mutex<Vec<Value>>>,
@@ -58,7 +61,7 @@ impl Fixture {
                             json!({"protocolVersion":2,"capabilities":{"rejectBusy":mode != "old"}})
                         }
                         "settings.get" => {
-                            json!({"provider":{"baseUrl":"https://oneapi.zaiwenai.com/v1","model":"fixture","hasApiKey": mode != "unconfigured"},"approvalMode":if matches!(mode, "full" | "session-ask") {"fullAccess"} else {"alwaysAsk"}})
+                            json!({"provider":if mode == "unconfigured" {Value::Null} else {json!({"baseUrl":"https://oneapi.zaiwenai.com/v1","model":"fixture","apiProtocol":"responses","hasApiKey":true})},"approvalMode":if matches!(mode, "full" | "session-ask") {"fullAccess"} else {"alwaysAsk"}})
                         }
                         "settings.update" => json!({"provider":{"hasApiKey":true}}),
                         "settings.models" | "model.list" => {
@@ -195,6 +198,15 @@ impl Fixture {
     }
 
     async fn run(&self, args: &[&str], input: &str) -> std::process::Output {
+        self.run_with_key(args, input, None).await
+    }
+
+    async fn run_with_key(
+        &self,
+        args: &[&str],
+        input: &str,
+        key: Option<&str>,
+    ) -> std::process::Output {
         let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_miniq"));
         command
             .args(["--no-start", "--data-dir"])
@@ -208,6 +220,9 @@ impl Fixture {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        if let Some(key) = key {
+            command.env("MINIQ_API_KEY", key);
+        }
         let mut child = command.spawn().unwrap();
         let mut stdin = child.stdin.take().unwrap();
         stdin.write_all(input.as_bytes()).await.unwrap();
