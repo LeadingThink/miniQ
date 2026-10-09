@@ -283,8 +283,8 @@ function OverflowMenu({ items, status, connected }: { items: OverflowItem[]; sta
               className="dropdown-item app-toolbar-menu-item"
               disabled={item.disabled}
               onClick={() => {
-                close(false);
                 item.run();
+                close(false);
               }}
             >
               <span className="app-toolbar-menu-icon" aria-hidden="true">{item.icon}</span>

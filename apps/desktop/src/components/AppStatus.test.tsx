@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
+import { RemoteDeviceBarContext } from "../remoteDeviceBar";
 import { AppStatusBar } from "./AppStatus";
 
 afterEach(() => {
@@ -84,5 +85,38 @@ describe("AppStatusBar", () => {
     fireEvent.click(more);
     fireEvent.click(screen.getByRole("menuitem", { name: "设置" }));
     expect(app.navigation.setShowSettings).toHaveBeenCalledWith(true);
+  });
+
+  it("runs all remote overflow actions before closing the portal menu", () => {
+    const onSwitch = vi.fn();
+    const onSwitchMode = vi.fn();
+    const onAppearance = vi.fn();
+    const dispatch = vi.spyOn(window, "dispatchEvent");
+    const app = appFixture();
+    app.client.mode = "remote";
+    render(
+      <RemoteDeviceBarContext.Provider value={{ name: "电脑A", online: true, onSwitch, onSwitchMode, onAppearance }}>
+        <AppStatusBar
+          app={app}
+          onOpenBrowser={() => {}}
+          onToggleReview={() => {}}
+          onOpenFile={() => {}}
+          onToggleWorkbench={() => {}}
+          workbenchOpen={false}
+        />
+      </RemoteDeviceBarContext.Provider>,
+    );
+
+    const more = screen.getByRole("button", { name: "更多操作" });
+    for (const label of ["切换电脑", "切换用途", "连接详情", "外观"]) {
+      fireEvent.click(more);
+      fireEvent.click(screen.getByRole("menuitem", { name: label }));
+    }
+
+    expect(onSwitch).toHaveBeenCalledTimes(1);
+    expect(onSwitchMode).toHaveBeenCalledTimes(1);
+    expect(onAppearance).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "miniq:remote-connection-details" }));
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 });
