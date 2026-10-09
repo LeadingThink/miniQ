@@ -1,7 +1,8 @@
 import { Activity, ChevronDown, Download, LoaderCircle, MoreHorizontal, Search, Share2, X } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { TimelineFilter } from "../timelineModel";
 import { TimelineFilterSheet } from "./TimelineFilterSheet";
+import { Menu, MenuItem } from "./ui/Menu";
 import "./TimelineToolbar.css";
 
 const filters = [["all", "全部"], ["answers", "回答"], ["activity", "执行"], ["errors", "异常"]] as const;
@@ -21,7 +22,7 @@ export function TimelineToolbar(props: {
   /** Enter steps to an older match; Shift+Enter steps to a newer one. */
   onStep?: (direction: -1 | 1) => void;
 }) {
-  const menu = useRef<HTMLDetailsElement>(null);
+  const menu = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   // Phones collapse filter + search behind one icon until needed. An active
@@ -32,18 +33,7 @@ export function TimelineToolbar(props: {
     if (searching) search.current?.focus();
   }, [searching]);
   const [filterOpen, setFilterOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    const outside = (event: PointerEvent) => {
-      if (menu.current && !menu.current.contains(event.target as Node)) menu.current.open = false;
-    };
-    document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
-  }, [open]);
-  const run = (action: () => void) => {
-    if (menu.current) menu.current.open = false;
-    action();
-  };
+  const closeMenu = useCallback(() => setOpen(false), []);
   return (
     <div
       className="timeline-toolbar conversation-tools"
@@ -78,22 +68,16 @@ export function TimelineToolbar(props: {
         {props.query && <button type="button" className="icon-button" title="清空会话搜索" aria-label="清空会话搜索" onClick={() => props.onQuery("")}><X size={14} /></button>}
       </label>
       {props.navigator}
-      <details ref={menu} className="timeline-actions" onToggle={(event) => setOpen(event.currentTarget.open)} onKeyDown={(event) => {
-        if (event.key === "Escape" && menu.current?.open) {
-          event.preventDefault();
-          menu.current.open = false;
-          menu.current.querySelector("summary")?.focus();
-        }
-      }}>
-        <summary title="更多会话操作" aria-label="更多会话操作" aria-expanded={open}>
+      <div className="timeline-actions">
+        <button ref={menu} type="button" className="timeline-actions-trigger" title="更多会话操作" aria-label="更多会话操作" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
           {props.exporting ? <LoaderCircle size={18} className="activity-spinner" /> : <MoreHorizontal size={18} />}
-        </summary>
-        <div className="timeline-action-list">
-          {props.onShare && <button type="button" onClick={() => run(props.onShare!)}><Share2 size={16} />分享会话</button>}
-          {props.onDiagnostics && <button type="button" onClick={() => run(props.onDiagnostics!)}><Activity size={16} />模型调用记录</button>}
-          {(["md", "json"] as const).map((format) => <button type="button" key={format} disabled={props.exporting} onClick={() => run(() => props.onExport(format))}><Download size={16} />导出 {format === "md" ? "Markdown" : "JSON"}</button>)}
-        </div>
-      </details>
+        </button>
+        <Menu open={open} anchorRef={menu} onClose={closeMenu} label="更多会话操作" className="timeline-action-list">
+          {props.onShare && <MenuItem icon={<Share2 size={16} />} onClick={props.onShare}>分享会话</MenuItem>}
+          {props.onDiagnostics && <MenuItem icon={<Activity size={16} />} onClick={props.onDiagnostics}>模型调用记录</MenuItem>}
+          {(["md", "json"] as const).map((format) => <MenuItem key={format} disabled={props.exporting} icon={<Download size={16} />} onClick={() => props.onExport(format)}>导出 {format === "md" ? "Markdown" : "JSON"}</MenuItem>)}
+        </Menu>
+      </div>
     </div>
   );
 }

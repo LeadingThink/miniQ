@@ -38,20 +38,20 @@ it("closes the more menu after actions and outside taps; Escape restores focus",
   const share = vi.fn(), onExport = vi.fn();
   render(<TimelineToolbar filter="all" query="" exporting={false} onFilter={vi.fn()} onQuery={vi.fn()} onShare={share} onExport={onExport} />);
   const trigger = screen.getByLabelText("更多会话操作");
-  const menu = trigger.parentElement as HTMLDetailsElement;
+
   await act(async () => { fireEvent.click(trigger); });
-  fireEvent.click(screen.getByRole("button", { name: "分享会话" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "分享会话" }));
   expect(share).toHaveBeenCalledOnce();
-  expect(menu.open).toBe(false);
+  expect(screen.queryByRole("menu")).toBeNull();
   await act(async () => { fireEvent.click(trigger); });
-  fireEvent.keyDown(menu, { key: "Escape" });
-  expect(menu.open).toBe(false);
+  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+  expect(screen.queryByRole("menu")).toBeNull();
   expect(document.activeElement).toBe(trigger);
   await act(async () => { fireEvent.click(trigger); });
-  fireEvent.pointerDown(document.body);
-  expect(menu.open).toBe(false);
+  fireEvent.mouseDown(document.body);
+  expect(screen.queryByRole("menu")).toBeNull();
   await act(async () => { fireEvent.click(trigger); });
-  fireEvent.click(screen.getByRole("button", { name: "导出 Markdown" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "导出 Markdown" }));
   expect(onExport).toHaveBeenCalledWith("md");
 });
 
@@ -68,4 +68,20 @@ it("collapses search behind an icon until opened, and stays open while a query i
   expect(toolbar.getAttribute("data-search-open")).toBe("true");
   rerender(<TimelineToolbar filter="errors" query="" exporting={false} onFilter={vi.fn()} onQuery={vi.fn()} onExport={vi.fn()} />);
   expect(toolbar.getAttribute("data-search-open")).toBe("true");
+});
+
+it("renders all actions outside the clipped wallpaper header and dispatches each once", () => {
+  const onShare = vi.fn(), onDiagnostics = vi.fn(), onExport = vi.fn();
+  const { container } = render(<div style={{ overflow: "hidden", backdropFilter: "blur(6px)", transform: "translateZ(0)" }}><TimelineToolbar filter="all" query="" exporting={false} onFilter={vi.fn()} onQuery={vi.fn()} onShare={onShare} onDiagnostics={onDiagnostics} onExport={onExport} /></div>);
+  for (const name of ["分享会话", "模型调用记录", "导出 Markdown", "导出 JSON"]) {
+    fireEvent.click(screen.getByRole("button", { name: "更多会话操作" }));
+    const popup = screen.getByRole("menu");
+    expect(popup.parentElement).toBe(document.body);
+    expect(container.contains(popup)).toBe(false);
+    fireEvent.click(screen.getByRole("menuitem", { name }));
+    expect(screen.queryByRole("menu")).toBeNull();
+  }
+  expect(onShare).toHaveBeenCalledOnce();
+  expect(onDiagnostics).toHaveBeenCalledOnce();
+  expect(onExport.mock.calls).toEqual([["md"], ["json"]]);
 });

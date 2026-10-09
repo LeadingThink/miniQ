@@ -29,41 +29,22 @@
 }
 @keyframes timeline-filter-sheet-in { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 .timeline-actions { position: relative; flex: none; }
-.timeline-actions > summary {
+.timeline-actions-trigger {
   display: grid;
   place-items: center;
   padding: 7px;
-  list-style: none;
+  border: 0;
+  background: transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--text-mid);
 }
-.timeline-actions > summary::-webkit-details-marker { display: none; }
-.timeline-actions[open] > summary { background: var(--bg-active); color: var(--text); }
-.timeline-action-list {
-  position: absolute;
-  z-index: 35;
-  right: 0;
-  top: calc(100% + 6px);
-  display: grid;
-  width: 200px;
+.timeline-actions-trigger[aria-expanded="true"] { background: var(--bg-active); color: var(--text); }
+.timeline-action-list.ui-menu {
+  width: 220px;
   max-width: calc(100vw - 32px);
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  box-shadow: var(--shadow-lg);
 }
-.timeline-action-list button {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 10px;
-  text-align: left;
-  background: transparent;
-  color: var(--text);
-}
-.timeline-action-list button:hover { background: var(--bg-hover); }
+.timeline-action-list .ui-menu-item { min-height: 44px; }
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
   .timeline-toolbar.conversation-tools {
     flex-wrap: nowrap;
@@ -91,7 +72,7 @@
   .conversation-tools .timeline-search { flex: 1; min-width: 0; gap: 4px; }
   .conversation-tools .timeline-search input { width: 100%; min-height: 44px; font-size: var(--font-callout); }
   .conversation-tools .timeline-search .icon-button,
-  .conversation-tools .timeline-actions > summary { min-width: 44px; height: 44px; padding: 0; }
+  .conversation-tools .timeline-actions-trigger { min-width: 44px; height: 44px; padding: 0; }
   .conversation-tools .timeline-action-list button { min-height: 44px; }
   .timeline .history-pages .ghost { min-height: 44px; }
   .timeline .approval-actions button { min-height: 44px; }
@@ -117,7 +98,7 @@
   .native-mobile .conversation-tools[data-search-open="false"] .timeline-search { display: none; }
   .native-mobile .conversation-tools[data-search-open="true"] .timeline-search-toggle { display: none; }
   .native-mobile .conversation-tools[data-search-open="false"] { padding: 0; min-height: 40px; gap: 0; }
-  .native-mobile .conversation-tools[data-search-open="false"] .timeline-actions > summary { min-width: 36px; height: 40px; }
+  .native-mobile .conversation-tools[data-search-open="false"] .timeline-actions-trigger { min-width: 36px; height: 40px; }
 }
 
 /* Find-in-conversation: counter, stepping and jump to full context. */
