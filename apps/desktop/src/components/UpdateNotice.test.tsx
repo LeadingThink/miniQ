@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppUpdaterState } from "../hooks/useAppUpdater";
 import { UpdateNotice } from "./UpdateNotice";
 
@@ -11,7 +13,25 @@ const IDLE: AppUpdaterState = {
   error: null,
 };
 
+afterEach(cleanup);
+
 describe("UpdateNotice", () => {
+  it.each([
+    "任务执行中，请等待任务完成后更新。",
+    "还有排队消息，请等待任务完成后更新。",
+    "signature invalid: 更新包签名校验失败",
+  ])("renders the failure reason in the notice body: %s", (reason) => {
+    const onCheck = vi.fn();
+    const onInstall = vi.fn();
+    render(<UpdateNotice supported state={{ ...IDLE, phase: "error", error: reason }}
+      onCheck={onCheck} onInstall={onInstall} />);
+    expect(screen.getByRole("status").textContent).toContain(reason);
+    expect(screen.getByText(reason).closest("[title]")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /更新失败，重试/ }));
+    expect(onCheck).toHaveBeenCalledOnce();
+    expect(onInstall).not.toHaveBeenCalled();
+  });
+
   it("reports a completed no-update check with the installed version", () => {
     const html = renderToStaticMarkup(<UpdateNotice supported
       state={{ ...IDLE, phase: "up-to-date", version: "0.1.36" }}
