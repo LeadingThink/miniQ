@@ -97,6 +97,8 @@ fn interrupted_upstream_streams_are_retryable() {
         json!({"message":"Upstream response stream was interrupted"}),
         json!("Upstream response stream was interrupted"),
         json!({"message":"upstream stream interrupted"}),
+        json!({"message":"Upstream HTTP/2 stream failed"}),
+        json!("Upstream HTTP/2 stream failed"),
         json!({"message":"Connection reset by peer"}),
         json!({"message":"upstream connect error or disconnect/reset before headers"}),
         json!({"message":"502 Bad Gateway"}),
@@ -113,6 +115,11 @@ fn interrupted_upstream_streams_are_retryable() {
     let invalid = json!({
         "type": "invalid_request_error",
         "message": "stream was interrupted because the tools are invalid"
+    });
+    assert!(!ProviderError::from_stream_error("test", &invalid).is_retryable());
+    let invalid = json!({
+        "type": "invalid_request_error",
+        "message": "Upstream HTTP/2 stream failed"
     });
     assert!(!ProviderError::from_stream_error("test", &invalid).is_retryable());
 }
