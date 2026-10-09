@@ -120,6 +120,9 @@ pub struct ChatMessage {
     /// Local visual evidence catalog. Never serialized into provider requests.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub image_archive: Vec<ArchivedImage>,
+    /// Local working memory, excluded from every provider wire encoding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_memory: Option<WorkingMemory>,
     /// Set on `Tool` messages: which call this result answers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
@@ -136,6 +139,19 @@ pub struct ChatMessage {
 pub struct ProviderContext {
     pub protocol: ApiProtocol,
     pub data: Value,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkingMemory {
+    pub results: Vec<ArchivedToolResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArchivedToolResult {
+    pub id: String,
+    pub tool: String,
+    pub arguments: Value,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -222,6 +238,7 @@ impl ChatMessage {
             content: content.into(),
             images: Vec::new(),
             image_archive: Vec::new(),
+            working_memory: None,
             tool_call_id: Some(tool_call_id.into()),
             tool_calls: Vec::new(),
             provider_context: None,
@@ -233,6 +250,7 @@ impl ChatMessage {
             content: content.into(),
             images: Vec::new(),
             image_archive: Vec::new(),
+            working_memory: None,
             tool_call_id: None,
             tool_calls: Vec::new(),
             provider_context: None,
@@ -260,6 +278,9 @@ pub struct ToolSpec {
 
 #[derive(Debug, Clone)]
 pub struct CompletionRequest {
+    /// Responses server-side compaction trigger, derived from the input budget.
+    /// Other wire protocols ignore this optional setting.
+    pub context_compact_threshold: Option<u32>,
     /// Local diagnostics only; adapters never encode this in model input.
     pub trace: miniq_protocol::ModelCallTrace,
     pub messages: Vec<ChatMessage>,
@@ -287,6 +308,9 @@ pub struct ModelCapabilities {
 /// Streamed provider output.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChatDelta {
+    /// Transport diagnostic: arrival of the first complete SSE data event.
+    /// Its monotonic timestamp is captured before decoder/channel processing.
+    FirstEvent(std::time::Instant),
     /// Incremental assistant text.
     Text(String),
     /// A complete tool call request (providers accumulate fragments before

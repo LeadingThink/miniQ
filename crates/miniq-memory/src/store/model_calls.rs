@@ -91,6 +91,9 @@ mod tests {
         let one = session(&store, "one");
         let two = session(&store, "two");
         let original = record("request", &one);
+        assert_eq!(original.stream_ready_ms, None);
+        assert_eq!(original.first_event_ms, None);
+        assert_eq!(original.first_text_ms, None);
         store.save_model_call(&original).unwrap();
         let mut conflicting = original.clone();
         conflicting.session_id = two;
@@ -104,11 +107,18 @@ mod tests {
         assert_eq!(page.calls[0].agent_id, original.agent_id);
         conflicting.agent_id = original.agent_id;
         conflicting.status = ModelCallStatus::Completed;
+        conflicting.stream_ready_ms = Some(20);
+        conflicting.first_event_ms = Some(30);
+        conflicting.first_text_ms = Some(40);
         store.save_model_call(&conflicting).unwrap();
         assert_eq!(
             store.model_calls_page(&params).unwrap().calls[0].status,
             ModelCallStatus::Completed
         );
+        let updated = store.model_calls_page(&params).unwrap().calls.remove(0);
+        assert_eq!(updated.stream_ready_ms, Some(20));
+        assert_eq!(updated.first_event_ms, Some(30));
+        assert_eq!(updated.first_text_ms, Some(40));
     }
 
     #[test]

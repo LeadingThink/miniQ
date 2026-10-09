@@ -106,6 +106,12 @@ pub(crate) fn redact_provider_history(history: &mut [ChatMessage]) {
                 }
             }
         }
+        if let Some(memory) = &mut message.working_memory {
+            for result in &mut memory.results {
+                redact_sensitive(&mut result.arguments);
+                result.content = redact_string(&result.content);
+            }
+        }
         message.content = redact_string(&message.content);
     }
 }
@@ -113,6 +119,24 @@ pub(crate) fn redact_provider_history(history: &mut [ChatMessage]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_archive_is_redacted_without_losing_recall_ids() {
+        let mut message = ChatMessage::assistant("handoff");
+        message.working_memory = Some(miniq_models::WorkingMemory {
+            results: vec![miniq_models::ArchivedToolResult {
+                id: "call-1".into(),
+                tool: "shell_run".into(),
+                arguments: serde_json::json!({"api_key":"never-log-key"}),
+                content: r#"{"password":"never-log-output"}"#.into(),
+            }],
+        });
+        redact_provider_history(std::slice::from_mut(&mut message));
+        let stored = serde_json::to_string(&message).unwrap();
+        assert!(!stored.contains("never-log"));
+        assert!(stored.contains("call-1"));
+        assert!(stored.contains(REDACTED));
+    }
 
     #[test]
     fn image_archive_provenance_is_redacted_without_losing_trusted_reference() {

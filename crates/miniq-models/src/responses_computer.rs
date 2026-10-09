@@ -378,6 +378,7 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         let request = crate::CompletionRequest {
+            context_compact_threshold: None,
             trace: Default::default(),
             messages,
             tools: vec![],

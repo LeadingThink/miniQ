@@ -20,20 +20,22 @@ miniQ 的 Agent 运行时吸收了 DeepSeek Harness 与 OpenAI Codex 开源实�
 
 ## 上下文压缩
 
-默认软上限为 64,000 个估算 token，可通过环境变量调整：
+默认从 provider 报告的上下文窗口扣除输出预留和 5% 安全边际，工具 schema 和消息策略开销也计入请求预算。provider 未报告容量时使用 64,000 个估算 token。`MINIQ_CONTEXT_TOKENS` 可以限制本地预算（最低 8,000）。
 
-```text
-MINIQ_CONTEXT_TOKENS=128000
-```
+Responses 任务请求启用 `context_management` compaction，其触发阈值为可用输入预算的 80%，早于本地压缩上限。`MINIQ_RESPONSES_COMPACT_THRESHOLD` 可以进一步降低原生触发阈值。标题、计划审查和本地摘要等内部请求不启用此参数，Chat Completions 和 Anthropic 请求也不携带 Responses 专用字段。
 
-配置值最低为 8,000。达到上限后按以下顺序处理：
+收到成功响应中的 compaction item 后，将其原样保存、回放，并移除它覆盖的旧活动 input。完整工具结果仍保存在本地 checkpoint；模型可通过 `tool_history list/read` 按调用 ID 和 Unicode 字符 offset 分页回读。归档元数据不发送给 provider，持久化仍使用原有敏感字段脱敏。完整聊天记录保持在 SQLite 中。
 
-1. 裁剪较早且超过 4,000 token 的工具结果，保留工具名、调用关系和结果摘要标记。
-2. 如果仍超限，保留最近一个完整用户回合，把更早消息分批交给当前模型生成工作摘要。
-3. 用摘要、最近完整回合和当前消息组成新的模型上下文。
-4. 发出 `context_compacted` 事件，向客户端报告压缩前后估算 token、摘要消息数和被裁剪的工具结果数。
+当活动请求超过本地预算时：
 
-压缩边界会向前回溯到 user 消息，避免留下没有对应 tool call 的孤立 tool result。
+1. 把过大的工具结果替换为可恢复的 `toolCallId` 引用。
+2. 如果仍超限，保留必要系统前缀和最近完整回合，一次生成包含目标、授权、约束、进度、证据、失败原因和下一步的 handoff 摘要；超出可用输入容量时才分批。
+3. 将摘要作为历史数据保留，避免把旧工具输出提升为新系统指令。已收到的原生 compaction item 仍保留。
+4. 发出 `context_compacted` 事件，报告前后估算 token。
+
+压缩保持工具调用与结果的配对边界。系统策略和工具 schema 的前缀在同一任务内保持稳定，有利于 provider 前缀缓存。原生压缩需要 Responses endpoint 支持 `context_management`；本次修改基于当前自定义 provider 已支持该参数的配置，不会对未知参数错误静默重试。
+
+官方接口语义参考：[OpenAI Compaction](https://developers.openai.com/api/docs/guides/compaction)。
 
 ## 工具调度
 
@@ -45,6 +47,22 @@ git_status, git_diff, doc_read, skill_read, memory_search
 ```
 
 文件写入、shell、网络、MCP 和需要审批的操作保持串行。新增工具默认不进入并行白名单，只有确认无副作用、无审批依赖且结果顺序不影响正确性后才能加入。
+
+代码分析先定位相关入口和配置，使用具体文件模式或 `file_grep outputMode=files_with_matches` 发现文件，再读取必要内容；证据不足时才扩大范围。搜索遵守 `.gitignore`，显式排除 `.git` 元数据，Windows canonical 路径与 workspace 使用相同形式，结果保持相对路径。
+
+验证按用户请求、仓库规则和变更风险选择。无修改的分析仅在需要消除具体不确定性时运行相关测试；相关检查通过后，只有用户或仓库明确要求、共享逻辑或高风险改动需要时才扩大到全量测试。
+
+`task_update` 更新本轮完整清单；`task_create/task_item_update` 操作具有 ID 的依赖图。图查询不能改写当前清单；更新图必须使用实际返回的 ID。首次清单可与独立读取一起调用，减少单独规划回合。
+
+## 模型请求耗时诊断
+
+`model_calls.record_json` 和 `session.modelCalls` 为每次请求单独记录 `elapsedMs`、`streamReadyMs`、`firstEventMs` 和 `firstTextMs`。所有耗时从该次请求开始计时，使用单调时钟；重试各自拥有记录，不混入工具运行时间。
+
+- `streamReadyMs`：adapter 返回响应流的时间，包含请求准备、协议协商和建立响应流。
+- `firstEventMs`：传输层收到首个完整 SSE `data` 事件的时间，早于解码和通道处理；注释心跳不算，provider 数据心跳或元数据事件可能算。
+- `firstTextMs`：host 首次观察到非空 assistant 正文的时间；工具调用、推理、元数据和结束事件均不算正文。
+
+首次观测立即持久化；失败、取消和重启保留已观测值，未观测或历史记录显示“未记录”，不能当成零。日志在首次事件、首次正文和请求结束时输出调用 ID 与耗时，不记录提示词或正文。桌面端“模型调用记录”显示这三个时间点。首个事件到正文的间隔可能包含推理或上游缓冲，单凭这些时间仍不能直接证明 provider 排队时间。
 
 ## 失控保护
 

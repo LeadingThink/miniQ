@@ -12,14 +12,29 @@ use crate::router::{parse_input, Tool, ToolContext, ToolError};
 const DEFAULT_TIMEOUT_SECS: u64 = 60;
 const MAX_TIMEOUT_SECS: u64 = 600;
 
+fn command_error_code(stderr: &str) -> Option<&'static str> {
+    let lower = stderr.to_ascii_lowercase();
+    if lower.contains("is not recognized as the name of a cmdlet")
+        || lower.contains("is not recognized as a name of a cmdlet")
+        || lower.contains("is not recognized as an internal or external command")
+        || lower.contains("command not found")
+        || lower.contains(": not found")
+    {
+        Some("COMMAND_NOT_FOUND")
+    } else {
+        None
+    }
+}
+
 #[cfg(windows)]
 const SHELL_DESCRIPTION: &str =
     "Run a Windows PowerShell command with the workspace root as working directory. \
-     PowerShell runs without profiles and without interactive input. Returns exit code, stdout and stderr.";
+     PowerShell runs without profiles and without interactive input. Returns ok, exit code, stdout and stderr; \
+     a non-zero exit is a failed observation.";
 #[cfg(not(windows))]
 const SHELL_DESCRIPTION: &str =
     "Run a POSIX shell command with the workspace root as working directory. \
-     Returns exit code, stdout and stderr.";
+     Returns ok, exit code, stdout and stderr; a non-zero exit is a failed observation.";
 
 pub struct ShellRunTool;
 
@@ -130,15 +145,29 @@ impl Tool for ShellRunTool {
 
         let duration_ms = started.elapsed().as_millis() as u64;
         match output {
-            Ok(Ok(output)) => Ok(json!({
-                "command": p.command,
-                "cwd": cwd,
-                "exitCode": output.status.code(),
-                "stdout": String::from_utf8_lossy(&output.stdout),
-                "stderr": String::from_utf8_lossy(&output.stderr),
-                "durationMs": duration_ms,
-                "timedOut": false,
-            })),
+            Ok(Ok(output)) => {
+                let exit_code = output.status.code();
+                let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+                let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+                let mut result = json!({
+                    "command": p.command,
+                    "cwd": cwd,
+                    "exitCode": exit_code,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "durationMs": duration_ms,
+                    "timedOut": false,
+                    "ok": exit_code == Some(0),
+                });
+                if exit_code != Some(0) {
+                    if let Some(code) =
+                        command_error_code(result["stderr"].as_str().unwrap_or_default())
+                    {
+                        result["errorCode"] = json!(code);
+                    }
+                }
+                Ok(result)
+            }
             Ok(Err(e)) => Err(ToolError::ExecutionFailed(format!("wait: {e}"))),
             Err(_elapsed) => Ok(json!({
                 "command": p.command,
@@ -148,6 +177,8 @@ impl Tool for ShellRunTool {
                 "stderr": format!("command timed out after {timeout}s"),
                 "durationMs": duration_ms,
                 "timedOut": true,
+                "ok": false,
+                "errorCode": "TIMEOUT",
             })),
         }
     }
@@ -176,7 +207,8 @@ impl Tool for ShellBatchTool {
     }
 
     fn description(&self) -> &str {
-        "Run one or more non-interactive shell commands sequentially in the local workspace."
+        "Run one or more non-interactive shell commands sequentially in the local workspace. \
+         Each result includes ok; if any command is not ok, do not repeat it unchanged."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -252,20 +284,28 @@ impl Tool for ShellBatchTool {
                     }),
                 )
                 .await?;
+            let ok = result["ok"] == true;
             let outcome = if result["timedOut"] == true {
                 json!({"type":"timeout"})
             } else {
                 json!({"type":"exit", "exit_code": result["exitCode"]})
             };
-            output.push(json!({
+            let mut entry = json!({
                 "stdout": result["stdout"],
                 "stderr": result["stderr"],
                 "outcome": outcome,
-            }));
+                "ok": ok,
+            });
+            if let Some(error_code) = result.get("errorCode") {
+                entry["errorCode"] = error_code.clone();
+            }
+            output.push(entry);
         }
+        let ok = output.iter().all(|entry| entry["ok"] == true);
         Ok(json!({
             "output": output,
             "maxOutputLength": input.max_output_length,
+            "ok": ok,
         }))
     }
 }
@@ -332,7 +372,38 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(out["exitCode"], 0);
+        assert_eq!(out["ok"], true);
         assert!(out["stdout"].as_str().unwrap().contains("hello-miniq"));
+    }
+
+    #[tokio::test]
+    async fn marks_nonzero_exit_as_failed_observation() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = ToolContext::new(dir.path().to_path_buf());
+        let command = if cfg!(windows) {
+            "cmd.exe /C exit 7"
+        } else {
+            "exit 7"
+        };
+        let out = ShellRunTool
+            .execute(&ctx, json!({"command": command}))
+            .await
+            .unwrap();
+        assert_eq!(out["exitCode"], 7);
+        assert_eq!(out["ok"], false);
+    }
+
+    #[tokio::test]
+    async fn missing_commands_are_explicit_failures_in_a_batch() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = ToolContext::new(dir.path().to_path_buf());
+        let out = ShellBatchTool
+            .execute(&ctx, json!({"commands":["miniq_missing_command_12345"]}))
+            .await
+            .unwrap();
+        assert_eq!(out["ok"], false);
+        assert_eq!(out["output"][0]["errorCode"], "COMMAND_NOT_FOUND");
+        assert_eq!(out["output"][0]["ok"], false);
     }
 
     #[cfg(unix)]

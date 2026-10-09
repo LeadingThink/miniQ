@@ -11,6 +11,7 @@ fn image(path: &std::path::Path) -> ChatImage {
 
 fn request(messages: Vec<ChatMessage>) -> CompletionRequest {
     CompletionRequest {
+        context_compact_threshold: None,
         trace: Default::default(),
         messages,
         tools: vec![ToolSpec {

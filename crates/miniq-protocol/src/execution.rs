@@ -118,6 +118,13 @@ pub struct ModelCallRecord {
     pub started_at: String,
     pub completed_at: Option<String>,
     pub elapsed_ms: Option<u64>,
+    /// Request start to the adapter returning a response stream.
+    pub stream_ready_ms: Option<u64>,
+    /// Request start to the first complete SSE data event, excluding comments.
+    pub first_event_ms: Option<u64>,
+    /// Request start to the first non-empty assistant text delta observed by the host.
+    /// Tool calls, reasoning, metadata and terminal events are not text.
+    pub first_text_ms: Option<u64>,
     pub status: ModelCallStatus,
     pub request: Option<ModelExecutionInfo>,
     pub estimated_input_tokens: usize,

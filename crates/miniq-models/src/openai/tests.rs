@@ -57,6 +57,7 @@ fn provider() -> OpenAiCompatProvider {
 
 fn request(temperature: Option<f32>) -> CompletionRequest {
     CompletionRequest {
+        context_compact_threshold: None,
         trace: Default::default(),
         messages: vec![ChatMessage::user("hello")],
         tools: Vec::new(),

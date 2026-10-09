@@ -1,6 +1,79 @@
 use super::*;
 
 #[tokio::test]
+async fn task_graph_reads_cannot_replace_an_active_checklist() {
+    let (_dir, executor) = fixture();
+    let created = executor
+        .execute(&call(
+            "task_create",
+            json!({"subject":"old graph","description":"old graph"}),
+        ))
+        .await
+        .unwrap();
+    let checklist = json!({"tasks":[task("focused code review", "in_progress")]});
+    executor
+        .execute(&call("task_update", checklist.clone()))
+        .await
+        .unwrap();
+    for read in [
+        call("task_list", json!({})),
+        call("task_get", json!({"taskId":created["task"]["id"]})),
+    ] {
+        executor.execute(&read).await.unwrap();
+        assert_eq!(
+            json!(executor
+                .state
+                .store
+                .session_plan(&executor.session_id)
+                .unwrap()),
+            checklist["tasks"]
+        );
+        assert!(matches!(
+            *executor.review_plan.lock().unwrap(),
+            Some(ReviewPlan::Checklist)
+        ));
+    }
+}
+
+#[tokio::test]
+async fn empty_task_graph_read_preserves_checklist_and_explains_wrong_update() {
+    let (_dir, executor) = fixture();
+    let checklist = json!({"tasks":[task("focused code review", "in_progress")]});
+    executor
+        .execute(&call("task_update", checklist.clone()))
+        .await
+        .unwrap();
+    let wrong = executor
+        .execute(&call(
+            "task_item_update",
+            json!({"taskId":"...","status":"completed"}),
+        ))
+        .await
+        .unwrap();
+    assert!(wrong["error"]
+        .as_str()
+        .unwrap()
+        .contains("update that checklist with task_update"));
+    let listed = executor
+        .execute(&call("task_list", json!({})))
+        .await
+        .unwrap();
+    assert_eq!(listed["tasks"], json!([]));
+    assert_eq!(
+        json!(executor
+            .state
+            .store
+            .session_plan(&executor.session_id)
+            .unwrap()),
+        checklist["tasks"]
+    );
+    assert!(matches!(
+        *executor.review_plan.lock().unwrap(),
+        Some(ReviewPlan::Checklist)
+    ));
+}
+
+#[tokio::test]
 async fn review_cannot_execute_side_effects_or_shrink_rename_reorder_and_downgrade_tasks() {
     let (dir, executor) = fixture();
     let original = json!({"tasks":[task("research", "completed"), task("video", "in_progress")]});

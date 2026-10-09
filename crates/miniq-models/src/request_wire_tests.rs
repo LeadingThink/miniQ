@@ -63,6 +63,7 @@ async fn assert_model_first(protocol: ApiProtocol, path: &str, model: &str) {
     };
     let content = "完整的多步任务上下文，包含引号\"、换行\n与反斜线\\。".repeat(4096);
     let request = CompletionRequest {
+        context_compact_threshold: Some(200_000),
         trace: Default::default(),
         messages: vec![
             ChatMessage::system("Follow the user's language."),
@@ -76,8 +77,24 @@ async fn assert_model_first(protocol: ApiProtocol, path: &str, model: &str) {
         temperature: None,
         max_output_tokens: Some(4096),
     };
+    let mut request = request;
+    request.messages[0].working_memory = Some(crate::WorkingMemory {
+        results: vec![crate::ArchivedToolResult {
+            id: "archived-call".into(),
+            tool: "read".into(),
+            arguments: json!({}),
+            content: "local-only-archived-content".into(),
+        }],
+    });
     let result = provider.stream_complete(request).await;
     let deltas = result.unwrap().try_collect::<Vec<_>>().await.unwrap();
+    assert_eq!(
+        deltas
+            .iter()
+            .filter(|delta| matches!(delta, ChatDelta::FirstEvent(_)))
+            .count(),
+        1
+    );
     server.abort();
     assert!(deltas.contains(&ChatDelta::Text("done".into())));
     assert!(deltas.contains(&ChatDelta::Finished));
@@ -86,6 +103,13 @@ async fn assert_model_first(protocol: ApiProtocol, path: &str, model: &str) {
     assert!(bytes.starts_with(format!("{{\"model\":\"{model}\",").as_bytes()));
     assert_eq!(headers["content-type"], "application/json");
     let body: Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(!body.to_string().contains("local-only-archived-content"));
+    assert!(!body.to_string().contains("working_memory"));
+    if protocol == ApiProtocol::Responses {
+        assert_eq!(body["context_management"][0]["compact_threshold"], 200_000);
+    } else {
+        assert!(body.get("context_management").is_none());
+    }
     assert_eq!(body["model"], model);
     assert_eq!(body["stream"], true);
     assert_eq!(body["tools"].as_array().unwrap().len(), 1);

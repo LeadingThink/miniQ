@@ -243,12 +243,12 @@ impl ToolExecutor for ReviewExecutor<'_> {
         self.inner.call_fingerprint(call)
     }
 
-    async fn record_image_history(
+    async fn record_history_read(
         &self,
         call: &ToolCallRequest,
         output: &Value,
     ) -> Result<(), AgentError> {
-        self.inner.record_image_history(call, output).await
+        self.inner.record_history_read(call, output).await
     }
 
     async fn execute(&self, call: &ToolCallRequest) -> Result<Value, AgentError> {

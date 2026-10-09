@@ -78,6 +78,7 @@ async fn auto_protocol_falls_back_from_oneapi_route_404_and_caches_successful_ro
     });
     let large_context = "previous task context ".repeat(4_000);
     let request = || CompletionRequest {
+        context_compact_threshold: None,
         trace: Default::default(),
         messages: vec![ChatMessage::user(large_context.clone())],
         tools: Vec::new(),
@@ -146,6 +147,7 @@ async fn explicit_protocol_does_not_fallback_on_oneapi_route_404() {
     });
     let error = match provider
         .stream_complete(CompletionRequest {
+            context_compact_threshold: None,
             trace: Default::default(),
             messages: vec![ChatMessage::user("hello")],
             tools: Vec::new(),

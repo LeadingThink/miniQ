@@ -141,6 +141,7 @@ async fn interrupted_responses_retry_without_executing_uncommitted_tools_or_cont
     .await
     .is_ok());
     for output in [
+        ChatDelta::FirstEvent(std::time::Instant::now()),
         ChatDelta::Text("partial text".into()),
         ChatDelta::ToolCall(ToolCallRequest {
             id: "w".into(),
@@ -414,6 +415,7 @@ async fn slow_compaction_can_recover_on_the_tenth_retry() {
     let provider = Scripted::new(attempts).slow();
     let (tx, mut rx) = tokio::sync::mpsc::channel(64);
     let policy = crate::ContextPolicy {
+        auto_limit: false,
         soft_limit_tokens: 8,
         preserve_recent_messages: 1,
         summary_batch_tokens: 1000,
@@ -453,6 +455,7 @@ async fn slow_compaction_can_recover_on_the_tenth_retry() {
 #[tokio::test(start_paused = true)]
 async fn compaction_retries_transient_requests_and_discards_partial_summaries() {
     let policy = crate::ContextPolicy {
+        auto_limit: false,
         soft_limit_tokens: 8,
         preserve_recent_messages: 1,
         summary_batch_tokens: 1000,

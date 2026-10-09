@@ -425,6 +425,7 @@ async fn measure_private_history_wire_bytes_without_sending_to_a_model() {
     ] {
         let mut stream = provider
             .stream_complete(CompletionRequest {
+                context_compact_threshold: None,
                 trace: Default::default(),
                 messages,
                 tools,

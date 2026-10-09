@@ -253,6 +253,14 @@ impl ToolExecutor for ImageHistoryExecutor<'_> {
         self.inner.call_fingerprint(call)
     }
 
+    async fn record_history_read(
+        &self,
+        call: &ToolCallRequest,
+        output: &Value,
+    ) -> Result<(), AgentError> {
+        self.inner.record_history_read(call, output).await
+    }
+
     fn result_images(&self, call: &ToolCallRequest, output: &Value) -> Vec<ChatImage> {
         if self.enabled && call.name == TOOL_NAME {
             if output.get("error").is_some() {
@@ -304,7 +312,7 @@ impl ToolExecutor for ImageHistoryExecutor<'_> {
             .result(&call.arguments)
             .map(|(output, _images)| output)
             .unwrap_or_else(|error| json!({"error": error}));
-        self.inner.record_image_history(call, &output).await?;
+        self.inner.record_history_read(call, &output).await?;
         Ok(output)
     }
 }

@@ -77,7 +77,7 @@ async fn image_history_review_preserves_reference_audit() {
         source: ReviewPlan::Checklist,
     };
     review
-        .record_image_history(
+        .record_history_read(
             &call("image_history", json!({"action":"read","ids":["img_1"]})),
             &json!({
                 "image_references":["img_1"],

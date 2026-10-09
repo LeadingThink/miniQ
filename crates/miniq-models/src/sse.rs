@@ -97,6 +97,7 @@ async fn decode_and_emit<D: EventDecoder>(
     bytes: &[u8],
     decoder: &mut D,
     tx: &tokio::sync::mpsc::Sender<Result<ChatDelta, ProviderError>>,
+    first_event_sent: &mut bool,
 ) -> bool {
     let event = match decode_event_bytes(bytes) {
         Ok(event) => event,
@@ -105,6 +106,16 @@ async fn decode_and_emit<D: EventDecoder>(
             return true;
         }
     };
+    if !*first_event_sent && event_data(event).is_some() {
+        *first_event_sent = true;
+        if tx
+            .send(Ok(ChatDelta::FirstEvent(std::time::Instant::now())))
+            .await
+            .is_err()
+        {
+            return true;
+        }
+    }
     emit_decoded(decoder.decode(event), tx).await
 }
 
@@ -116,6 +127,7 @@ async fn run_response_stream<D>(
     D: EventDecoder,
 {
     let mut buffer = Vec::new();
+    let mut first_event_sent = false;
     let mut byte_stream = response.bytes_stream();
     while let Some(chunk) = byte_stream.next().await {
         match chunk {
@@ -126,13 +138,13 @@ async fn run_response_stream<D>(
             }
         }
         while let Some(event) = take_event(&mut buffer) {
-            if decode_and_emit(&event, &mut decoder, &tx).await {
+            if decode_and_emit(&event, &mut decoder, &tx, &mut first_event_sent).await {
                 return;
             }
         }
     }
     if !buffer.iter().all(u8::is_ascii_whitespace)
-        && decode_and_emit(&buffer, &mut decoder, &tx).await
+        && decode_and_emit(&buffer, &mut decoder, &tx, &mut first_event_sent).await
     {
         return;
     }
@@ -146,6 +158,43 @@ async fn run_response_stream<D>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct EmptyDecoder;
+
+    impl EventDecoder for EmptyDecoder {
+        fn decode(&mut self, _: &str) -> DecodedEvent {
+            DecodedEvent::continue_with(vec![])
+        }
+        fn finish(&mut self) -> Vec<Result<ChatDelta, ProviderError>> {
+            vec![]
+        }
+    }
+
+    #[tokio::test]
+    async fn first_data_event_is_observed_once_even_when_decoder_has_no_output() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+        let mut decoder = EmptyDecoder;
+        let mut sent = false;
+        assert!(!decode_and_emit(b": keep-alive", &mut decoder, &tx, &mut sent).await);
+        assert!(!sent);
+        assert!(rx.try_recv().is_err());
+        let before = std::time::Instant::now();
+        assert!(
+            !decode_and_emit(
+                b"data: {\"type\":\"response.created\"}",
+                &mut decoder,
+                &tx,
+                &mut sent
+            )
+            .await
+        );
+        let Some(Ok(ChatDelta::FirstEvent(observed))) = rx.recv().await else {
+            panic!("missing transport timing");
+        };
+        assert!(observed >= before && observed <= std::time::Instant::now());
+        assert!(!decode_and_emit(b"data: another event", &mut decoder, &tx, &mut sent).await);
+        assert!(rx.try_recv().is_err());
+    }
 
     #[test]
     fn buffers_split_utf8_until_the_complete_event_arrives() {

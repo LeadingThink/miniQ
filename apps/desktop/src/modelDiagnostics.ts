@@ -49,6 +49,9 @@ export interface ModelCallRecord {
   startedAt: string;
   completedAt: string | null;
   elapsedMs: number | null;
+  streamReadyMs: number | null;
+  firstEventMs: number | null;
+  firstTextMs: number | null;
   status: "running" | "completed" | "failed" | "interrupted";
   request: {
     model: string;
