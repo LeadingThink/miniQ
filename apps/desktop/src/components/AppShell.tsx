@@ -225,6 +225,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
         onResumeTurn={app.actions.resumeTurn}
         onCancelTurn={app.actions.cancelTurn}
         onError={app.setError}
+        latestUserMessageAt={[...app.feed.messages].reverse().find((message) => message.role === "user")?.createdAt}
       />
       {app.connection.providerConfigured === false && (
         <ProviderOnboardingPrompt onOpenSettings={() => app.navigation.openSettings("services")} />

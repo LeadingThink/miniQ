@@ -11,6 +11,8 @@ export interface SessionGoalBarProps {
   onResumeTurn: () => void | Promise<void>;
   onCancelTurn: () => void | Promise<void>;
   onError: (message: string) => void;
+  /** Newest user message time. A finished goal stops showing once a later turn starts. */
+  latestUserMessageAt?: string;
 }
 
 export function SessionGoalBar(props: SessionGoalBarProps) {
@@ -98,6 +100,9 @@ export function SessionGoalBar(props: SessionGoalBarProps) {
   };
 
   if (!currentGoal) return null;
+  const finished = currentGoal.status === "cancelled" || currentGoal.status === "completed";
+  if (finished && props.latestUserMessageAt
+    && Date.parse(props.latestUserMessageAt) > Date.parse(currentGoal.updatedAt)) return null;
 
   const statusLabel =
     currentGoal.status === "active"

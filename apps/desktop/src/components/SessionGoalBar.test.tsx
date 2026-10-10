@@ -142,3 +142,17 @@ it("stops the active turn before cancelling a goal", async () => {
   expect(cancelTurn).toHaveBeenCalledOnce();
   expect(screen.queryByRole("button", { name: "取消" })).toBeNull();
 });
+
+it("drops a finished goal once a later turn starts, but keeps active goals", () => {
+  const base = { sessionId: "session-1", goal: "Frontend 新增前沿论坛", tokenBudget: null, usedTokens: 0, usedTimeMs: 0,
+    createdAt: "2026-10-10T10:00:00Z", updatedAt: "2026-10-10T10:10:00Z" };
+  const props = { sessionId: "session-1", onPauseTurn: vi.fn(), onResumeTurn: vi.fn(), onCancelTurn: vi.fn(), onError: vi.fn() };
+  const view = render(<SessionGoalBar {...props} goal={{ ...base, status: "cancelled" }} latestUserMessageAt="2026-10-10T10:05:00Z" />);
+  expect(screen.getByTestId("session-goal").textContent).toContain("已取消");
+  view.rerender(<SessionGoalBar {...props} goal={{ ...base, status: "cancelled" }} latestUserMessageAt="2026-10-10T10:31:00Z" />);
+  expect(screen.queryByTestId("session-goal")).toBeNull();
+  view.rerender(<SessionGoalBar {...props} goal={{ ...base, status: "completed" }} latestUserMessageAt="2026-10-10T10:31:00Z" />);
+  expect(screen.queryByTestId("session-goal")).toBeNull();
+  view.rerender(<SessionGoalBar {...props} goal={{ ...base, status: "active" }} latestUserMessageAt="2026-10-10T10:31:00Z" />);
+  expect(screen.getByTestId("session-goal").textContent).toContain("执行中");
+});
