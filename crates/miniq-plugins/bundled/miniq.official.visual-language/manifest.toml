@@ -1,0 +1,9 @@
+id = "miniq.official.visual-language"
+name = "视觉语言"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["visual-language-core", "cn-typography", "infographic-cn", "poster-cn", "web-deck-cn"]
+description = "miniQ 统一视觉语言：中文排版与字体、传统色主色板、信息图、海报、网页演示稿，所有可视化产物共享同一套设计令牌并截图自检"
+author = "miniQ"

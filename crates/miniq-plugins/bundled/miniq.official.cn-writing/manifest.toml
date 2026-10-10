@@ -1,0 +1,9 @@
+id = "miniq.official.cn-writing"
+name = "中文内容创作"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["wechat-article", "wechat-publish", "xiaohongshu-note", "humanize-cn", "long-doc-cn", "novel-cn", "content-repurpose-cn"]
+description = "公众号长文、公众号发布、小红书笔记、去 AI 味、长文档手稿、中文小说、一稿多发：面向中文创作者的写作与分发工作流"
+author = "miniQ"

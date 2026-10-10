@@ -1,0 +1,45 @@
+id = "miniq.official.tencent-office"
+name = "腾讯办公套件"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["tencent-docs", "tencent-smartsheet", "tencent-meeting", "tencent-survey", "tencent-weiyun", "tencent-lexiang", "tapd-workitems"]
+requires = ["npx"]
+description = "腾讯文档、智能表格、腾讯会议、腾讯问卷、微云、乐享知识库与 TAPD：通过官方远程 MCP / CLI 读写，首次使用在浏览器 OAuth 登录"
+author = "miniQ"
+
+[[mcp_servers]]
+name = "tencent-docs"
+description = "腾讯文档官方远程 MCP（文档、表格、幻灯片、思维导图、智能表格、文件管理；首次使用会在浏览器中 OAuth 登录）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://docs.qq.com/openapi/mcp"]
+env = []
+
+[[mcp_servers]]
+name = "tencent-survey"
+description = "腾讯问卷官方远程 MCP（创建问卷、编辑题目与逻辑、查看回收数据；首次使用会在浏览器中 OAuth 登录）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://wj.qq.com/api/v2/mcp"]
+env = []
+
+[[mcp_servers]]
+name = "tencent-weiyun"
+description = "微云网盘官方远程 MCP（文件列表、上传、下载、删除、分享链接；首次使用会在浏览器中 OAuth 登录）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://www.weiyun.com/api/v3/mcpserver"]
+env = []
+
+[[mcp_servers]]
+name = "tencent-lexiang"
+description = "腾讯乐享知识库官方远程 MCP（搜索、创建、导入 Markdown、标签整理；首次使用会在浏览器中 OAuth 登录）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://mcp.lexiang-app.com/mcp"]
+env = []
+
+[[mcp_servers]]
+name = "tapd"
+description = "TAPD 官方远程 MCP（需求、缺陷、任务、迭代、工时、评论、Wiki；首次使用会在浏览器中 OAuth 登录）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://websocket.tapd.cn/mcp/mcp"]
+env = []

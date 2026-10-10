@@ -1,0 +1,9 @@
+id = "miniq.official.cn-finance"
+name = "投研与财经"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["finance-router", "stock-data-cn", "stock-analysis-cn", "earnings-tracker-cn", "macro-monitor-cn", "company-dd-cn", "portfolio-review"]
+description = "A 股/港股/美股数据获取、个股三维分析、财报追踪、宏观监测、企业尽调报告、持仓复盘：免 key 公开数据 + 统一视觉语言图表，含风险提示"
+author = "miniQ"

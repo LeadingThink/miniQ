@@ -1,0 +1,9 @@
+id = "miniq.official.dev-flow"
+name = "开发协作流"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["grill-me", "handoff", "wait-what", "diagnosing-bugs", "code-review-two-axis", "prototype", "issue-triage", "architecture-review"]
+description = "Claude Code 生态最热门的工程方法移植：追问式需求对齐、会话交接、硬 bug 诊断循环、双轴代码评审、一次性原型、议题分诊、架构深化评审"
+author = "miniQ"

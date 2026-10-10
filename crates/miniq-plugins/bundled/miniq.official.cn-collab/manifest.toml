@@ -1,0 +1,31 @@
+id = "miniq.official.cn-collab"
+name = "国内协作平台"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["wecom-messages", "wecom-schedule-todo", "wecom-docs", "feishu-suite", "kdocs", "qq-mail", "qcc-company"]
+requires = ["npx"]
+description = "企业微信、飞书、金山文档、QQ 邮箱、企查查：消息、日程、待办、文档、智能表格、邮件与企业背调，通过官方 CLI / 远程 MCP 接入"
+author = "miniQ"
+
+[[mcp_servers]]
+name = "kdocs"
+description = "金山文档（WPS 云文档）官方远程 MCP，服务端侧授权：首次调用工具若返回授权链接，请在浏览器中登录金山文档后重试"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://mcp-center.wps.cn/skill_hub/mcp"]
+env = []
+
+[[mcp_servers]]
+name = "qq-mail"
+description = "QQ 邮箱官方远程 MCP（首次使用会在浏览器中 OAuth 登录 QQ 邮箱）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://api.mail.qq.com/mcp"]
+env = []
+
+[[mcp_servers]]
+name = "qcc-company"
+description = "企查查企业信息官方远程 MCP（首次使用会在浏览器中 OAuth 登录企查查账号）"
+command = "npx"
+args = ["-y", "mcp-remote@latest", "https://agent.qcc.com/mcp/company/stream"]
+env = []

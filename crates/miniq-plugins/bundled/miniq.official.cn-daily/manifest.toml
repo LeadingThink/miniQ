@@ -1,0 +1,9 @@
+id = "miniq.official.cn-daily"
+name = "生活与资讯"
+version = "1.0.0"
+api_version = "1.0.0"
+runtime = "skills"
+capabilities = ["skills"]
+skills = ["travel-plan-cn", "train-flight-cn", "weather-cn", "price-compare-cn", "apple-notes-reminders", "daily-briefing-cn", "habit-goal-tracker"]
+description = "国内出行规划、火车机票查询、天气、全网比价、Apple 备忘录与提醒事项、每日资讯简报、习惯与目标追踪"
+author = "miniQ"
