@@ -60,9 +60,9 @@ it("isolates equal session IDs on local and multiple SSH hosts and never forward
   hook.emit("alpha", done);
   hook.emit("beta", { ...done, type: "turn_failed", error: "provider failed with sk-private-secret" });
   expect(notifyTaskResult.mock.calls).toEqual([
-    ["completed", "本机任务"],
-    ["completed", "开发电脑 · 开发任务"],
-    ["failed", "测试电脑 · 测试任务"],
+    ["completed", "本机任务", { host: null, sessionId: "same-session" }, expect.stringMatching(/^completed::same-session:/)],
+    ["completed", "开发电脑 · 开发任务", { host: "alpha", sessionId: "same-session" }, expect.stringMatching(/^completed::same-session:/)],
+    ["failed", "测试电脑 · 测试任务", { host: "beta", sessionId: "same-session" }, expect.stringMatching(/^failed::same-session:/)],
   ]);
   expect(JSON.stringify(notifyTaskResult.mock.calls)).not.toContain("sk-private-secret");
 });
@@ -71,7 +71,7 @@ it("uses updated host labels and titles without adding subscriptions on rerender
   const hook = setup();
   hook.rerender({ entries: { ...hook.catalogs, [hostKey("alpha")]: catalog("alpha", "新电脑名", "新标题") } });
   hook.emit("alpha", { type: "turn_completed", sessionId: "same-session" });
-  expect(notifyTaskResult).toHaveBeenCalledWith("completed", "新电脑名 · 新标题");
+  expect(notifyTaskResult).toHaveBeenCalledWith("completed", "新电脑名 · 新标题", { host: "alpha", sessionId: "same-session" }, expect.stringMatching(/^completed::same-session:/));
   expect(hook.root.onEvent).toHaveBeenCalledTimes(1);
   expect(hook.root.onHostEvent).toHaveBeenCalledTimes(1);
 });
@@ -99,7 +99,7 @@ it("does not suppress separate turns from daemons without event cursors", () => 
 it("never borrows a local title when an SSH catalog is not yet loaded", () => {
   const hook = setup();
   hook.emit("not-loaded", { type: "turn_completed", sessionId: "same-session" });
-  expect(notifyTaskResult).toHaveBeenCalledWith("completed", "not-loaded · 当前会话");
+  expect(notifyTaskResult).toHaveBeenCalledWith("completed", "not-loaded · 当前会话", { host: "not-loaded", sessionId: "same-session" }, expect.stringMatching(/^completed::same-session:/));
 });
 
 it("keeps one active subscription in StrictMode and removes both subscriptions on unmount", () => {

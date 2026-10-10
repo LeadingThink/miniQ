@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { getTaskNotificationMode } from "../taskNotifications";
+import * as taskNotifications from "../taskNotifications";
 import { TaskNotificationSettings } from "./TaskNotificationSettings";
 
 vi.mock("../runtime", () => ({ isTauriRuntime: () => false }));
@@ -38,10 +39,10 @@ it("persists modes without requesting permission on mount or mode changes", asyn
   expect(screen.queryByRole("button", { name: "启用系统通知" })).toBeNull();
 });
 
-it("keeps mobile-only push and quiet hours settings off the desktop", () => {
+it("keeps mobile-only push settings off the desktop while exposing desktop sound quiet hours", () => {
   render(<TaskNotificationSettings />);
   expect(screen.queryByText("离线推送")).toBeNull();
-  expect(screen.queryByRole("checkbox", { name: /免打扰时段/ })).toBeNull();
+  expect(screen.getByRole("checkbox", { name: /免打扰时段/ })).toBeTruthy();
 });
 
 it("requests permission and sends one test after the explicit enable click", async () => {
@@ -85,4 +86,19 @@ it("toggles approval and question reminders independently and persists them", ()
   unmount();
   render(<TaskNotificationSettings />);
   expect(screen.getByRole("switch", { name: "需要审批时提醒" }).getAttribute("aria-checked")).toBe("false");
+});
+
+it("shows task sound settings and starts a preview only from its button", () => {
+  const preview = vi.spyOn(taskNotifications, "playTaskSound").mockResolvedValue(true);
+  render(<TaskNotificationSettings />);
+  expect(screen.getByText("本地音效")).toBeTruthy();
+  expect(screen.getByRole("switch", { name: "开启本地音效" })).toBeTruthy();
+  expect(screen.getByRole("switch", { name: "任务完成音效" })).toBeTruthy();
+  expect(screen.getByRole("switch", { name: "任务失败音效" })).toBeTruthy();
+  expect(screen.getByRole("switch", { name: "需要操作音效" })).toBeTruthy();
+  expect(screen.getByRole("switch", { name: "仅后台播放" })).toBeTruthy();
+  expect(screen.getByRole("slider", { name: "音量" })).toBeTruthy();
+  expect(preview).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "试听音效" }));
+  expect(preview).toHaveBeenCalledWith("completed", { userInitiated: true, ignoreSettings: true });
 });

@@ -65,6 +65,7 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
     const hostConnected = new Map<string, boolean>();
     const catchUpUntil = new Map<string, number>();
     let allCatchUpUntil = 0;
+    let soundSequence = 0;
 
     const deliver = (host: string | null, sessionId: string, kind: TaskNotificationKind, startedAt: number | undefined) => {
       if (mobile && kind === "completed" && startedAt !== undefined && Date.now() - startedAt < SHORT_TASK_MS) return;
@@ -79,7 +80,8 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
       } else if (kind !== "attention") {
         // Desktop approval/question reminders come from useAttentionNotifications,
         // which carries the request detail and per-kind preferences.
-        void notifyTaskResult(kind, title);
+        void notifyTaskResult(kind, title, { host, sessionId, ...(root.targetDeviceId ? { targetDeviceId: root.targetDeviceId } : {}) },
+          `${kind}:${startedAt ?? ""}:${sessionId}:${++soundSequence}`);
       }
     };
 

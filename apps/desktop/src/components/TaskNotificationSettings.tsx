@@ -1,6 +1,7 @@
 import { Bell } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Switch } from "./ui/Switch";
+import { TaskSoundSettings } from "./TaskSoundSettings";
 import {
   getTaskNotificationPermission,
   requestTaskNotificationPermission,
@@ -142,7 +143,7 @@ function BackgroundConnectionSetting({ onStatus }: { onStatus: (text: string | n
   );
 }
 
-function QuietHoursSetting({ onStatus }: { onStatus: (text: string | null) => void }) {
+function QuietHoursSetting({ onStatus, mobile = true }: { onStatus: (text: string | null) => void; mobile?: boolean }) {
   const quiet = useQuietHours();
   const save = (value: { start: string; end: string } | null) => {
     try {
@@ -161,7 +162,7 @@ function QuietHoursSetting({ onStatus }: { onStatus: (text: string | null) => vo
       <label className="remote-access-toggle" htmlFor="task-notification-quiet">
         <span>
           <strong>免打扰时段</strong>
-          <small>时段内的提醒照常送达通知中心，但不响铃、不震动、不弹横幅</small>
+          <small>{mobile ? "时段内的提醒照常送达通知中心，但不响铃、不震动、不弹横幅" : "时段内不播放本地任务音效，系统通知仍按系统设置送达"}</small>
         </span>
         <input
           id="task-notification-quiet"
@@ -282,6 +283,8 @@ export function TaskNotificationSettings() {
         <span>需要我回答时提醒</span>
         <Switch checked={attentionPrefs.question} onChange={(value) => toggleAttention("question", value)} label="需要我回答时提醒" />
       </div>
+      <TaskSoundSettings />
+      <QuietHoursSetting onStatus={setStatus} mobile={false} />
       </>}
       {mobile && mode !== "off" && <label className="remote-access-toggle" htmlFor="task-notification-attention">
         <span>

@@ -56,7 +56,7 @@ export function useAttentionNotifications(
         ? session?.title ?? ""
         : `${catalog?.label || host} · ${session?.title || "当前会话"}`;
       const target: Target = { key, host, navigation: { workspaceId: session?.workspaceId ?? null, sessionId } };
-      void notifyAttention(kind, title, detail, () => go(target)).then((sent) => {
+      void notifyAttention(kind, title, detail, () => go(target), { host, sessionId }, id).then((sent) => {
         if (sent && focusFallback && open.has(key)) pendingFocus = target;
       }).catch(() => undefined);
     };

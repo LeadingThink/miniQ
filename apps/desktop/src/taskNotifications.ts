@@ -1,4 +1,8 @@
 import { useSyncExternalStore } from "react";
+import { isAppInBackground } from "./appFocus";
+import { playTaskSound } from "./taskSounds";
+export { isAppInBackground } from "./appFocus";
+export { getTaskSoundSettings, setTaskSoundSettings, useTaskSoundSettings, playTaskSound } from "./taskSounds";
 import { Capacitor } from "@capacitor/core";
 import { isTauriRuntime } from "./runtime";
 import { isNativeMobileApp } from "./mobileRuntime";
@@ -17,7 +21,6 @@ const CHANGE_EVENT = "miniq-task-notifications-changed";
 const ATTENTION_CHANNEL = "miniq-attention";
 const RESULT_CHANNEL = "miniq-results";
 const QUIET_CHANNEL = "miniq-quiet";
-
 export function getTaskNotificationMode(): TaskNotificationMode {
   try {
     const value = localStorage.getItem(STORAGE_KEY);
@@ -195,18 +198,6 @@ export function notifyRemotePermissionRaise(device: string, mode: string): Promi
   return send("miniQ · 远程提升了权限", `设备 ${device} 将会话权限提升为「${mode}」，可在 miniQ 中一键撤回。`, () => true);
 }
 
-/** Rejects when the native window state is unavailable; callers treat that as foreground. */
-export async function isAppInBackground(): Promise<boolean> {
-  if (document.hasFocus()) return false;
-  if (isTauriRuntime()) {
-    // An embedded native browser can own focus while the React document is
-    // blurred. The whole desktop window must be in the background.
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    if (await getCurrentWindow().isFocused()) return false;
-  }
-  return !document.hasFocus();
-}
-
 function copy(kind: TaskNotificationKind, sessionTitle: string): { title: string; body: string } {
   const name = sessionTitle || "当前会话";
   if (kind === "attention") return { title: "miniQ · 需要你操作", body: `「${name}」正在等待审批或回答，请返回 miniQ 处理。` };
@@ -214,10 +205,26 @@ function copy(kind: TaskNotificationKind, sessionTitle: string): { title: string
   return { title: "miniQ · 任务未完成", body: `「${name}」执行未完成，请返回 miniQ 查看详情并继续任务。` };
 }
 
-export async function notifyTaskResult(outcome: TaskNotificationKind, sessionTitle: string): Promise<boolean> {
+export async function notifyTaskResult(
+  outcome: TaskNotificationKind,
+  sessionTitle: string,
+  target?: TaskNotificationTarget,
+  eventId?: string,
+): Promise<boolean> {
   const allowed = async () => await isAppInBackground() && wants(outcome);
   const { title, body } = copy(outcome, sessionTitle);
-  return send(title, body, allowed, outcome);
+  const sent = await send(title, body, allowed, outcome, target);
+  if (sent && wants(outcome)) playEventSound(outcome, target, eventId, sessionTitle);
+  return sent;
+}
+
+function playEventSound(kind: TaskNotificationKind, target: TaskNotificationTarget | undefined, eventId: string | undefined, fallback: string): void {
+  const scope = [target?.host, target?.targetDeviceId, target?.sessionId];
+  void playTaskSound(kind, {
+    dedupeKey: JSON.stringify([...scope, eventId ?? fallback]),
+    // Legacy callers without an event id only coalesce immediate duplicates.
+    dedupeWindowMs: eventId ? 300_000 : 2_000,
+  });
 }
 
 /**
@@ -307,12 +314,21 @@ export function useAttentionNotificationPrefs(): AttentionNotificationPrefs {
  * honoured by web notifications; native desktop notifications only activate
  * the app, so the caller also navigates when the window regains focus.
  */
-export function notifyAttention(kind: AttentionKind, sessionTitle: string, detail: string, onClick?: () => void): Promise<boolean> {
+export async function notifyAttention(
+  kind: AttentionKind,
+  sessionTitle: string,
+  detail: string,
+  onClick?: () => void,
+  target?: TaskNotificationTarget,
+  requestId?: string,
+): Promise<boolean> {
   const allowed = async () => getAttentionNotificationPrefs()[kind] && await isAppInBackground();
   const name = sessionTitle || "当前会话";
   const title = kind === "approval" ? `需要你审批：${name}` : `需要你回答：${name}`;
   const body = detail.trim().slice(0, 140) || (kind === "approval" ? "有操作等待你的批准，请返回 miniQ 处理。" : "助手在等待你的回答，请返回 miniQ 处理。");
-  return send(title, body, allowed, "attention", undefined, onClick);
+  const sent = await send(title, body, allowed, "attention", target, onClick);
+  if (sent && getAttentionNotificationPrefs()[kind]) playEventSound("attention", target, requestId, `${kind}\u0000${name}\u0000${detail}`);
+  return sent;
 }
 
 export function sendTaskNotificationTest(): Promise<boolean> {
