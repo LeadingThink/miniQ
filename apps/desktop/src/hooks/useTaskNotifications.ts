@@ -42,6 +42,19 @@ function kindOf(event: DaemonEvent): TaskNotificationKind | null {
   return null;
 }
 
+/** Identity comes from the event or a real status transition, never delivery. */
+export function taskResultEventKey(
+  host: string | null,
+  sessionId: string,
+  kind: TaskNotificationKind,
+  identity: { cursor?: EventCursor; turnId?: string; transition?: string },
+): string {
+  const scope = [host, sessionId, kind];
+  if (identity.cursor) return JSON.stringify([...scope, "cursor", identity.cursor.epoch, identity.cursor.sequence]);
+  if (identity.turnId) return JSON.stringify([...scope, "turn", identity.turnId]);
+  return JSON.stringify([...scope, "transition", identity.transition ?? "unknown"]);
+}
+
 /** One subscription at the desktop root covers every host, including hidden ones. */
 export function useTaskNotifications(root: RpcClient, catalogs: Record<string, HostCatalog>, options: TaskNotificationOptions = {}) {
   const catalogsRef = useRef(catalogs);
@@ -65,9 +78,26 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
     const hostConnected = new Map<string, boolean>();
     const catchUpUntil = new Map<string, number>();
     let allCatchUpUntil = 0;
-    let soundSequence = 0;
+    const transitions = new Map<string, number>();
+    const transitionKeys = new Map<string, string>();
+    const turnIds = new Map<string, string>();
+    const legacyResultKeys = new Map<string, Partial<Record<TaskNotificationKind, string>>>();
+    const rememberStatus = (host: string | null, sessionId: string, status: SessionStatus) => {
+      const key = scopedKey(host, sessionId);
+      const previous = known.get(key);
+      if (previous !== status) {
+        // Only genuine status changes advance the fallback identity. Repeated
+        // terminal deliveries retain it, including after started is cleared.
+        const revision = (transitions.get(key) ?? 0) + 1;
+        transitions.set(key, revision);
+        const session = catalogsRef.current[hostKey(host)]?.sessions.find((entry) => entry.id === sessionId);
+        transitionKeys.set(key, JSON.stringify([status, revision, session?.updatedAt, session?.turnCount]));
+        if (status === "running") { turnIds.delete(key); legacyResultKeys.delete(key); }
+      }
+      known.set(key, status);
+    };
 
-    const deliver = (host: string | null, sessionId: string, kind: TaskNotificationKind, startedAt: number | undefined) => {
+    const deliver = (host: string | null, sessionId: string, kind: TaskNotificationKind, startedAt: number | undefined, cursor?: EventCursor) => {
       if (mobile && kind === "completed" && startedAt !== undefined && Date.now() - startedAt < SHORT_TASK_MS) return;
       const catalog = catalogsRef.current[hostKey(host)];
       const session = catalog?.sessions.find((entry) => entry.id === sessionId);
@@ -80,8 +110,17 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
       } else if (kind !== "attention") {
         // Desktop approval/question reminders come from useAttentionNotifications,
         // which carries the request detail and per-kind preferences.
-        void notifyTaskResult(kind, title, { host, sessionId, ...(root.targetDeviceId ? { targetDeviceId: root.targetDeviceId } : {}) },
-          `${kind}:${startedAt ?? ""}:${sessionId}:${++soundSequence}`);
+        const key = scopedKey(host, sessionId);
+        const results = legacyResultKeys.get(key) ?? {};
+        const eventKey = !cursor && results[kind] || taskResultEventKey(host, sessionId, kind, {
+          cursor, turnId: turnIds.get(key), transition: transitionKeys.get(key),
+        });
+        if (!cursor) {
+          // Late terminal status/timing updates must not change a delivered key.
+          results[kind] = eventKey;
+          legacyResultKeys.set(key, results);
+        }
+        void notifyTaskResult(kind, title, { host, sessionId, ...(root.targetDeviceId ? { targetDeviceId: root.targetDeviceId } : {}) }, eventKey);
       }
     };
 
@@ -89,11 +128,18 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
       if (event.type === "session_deleted") {
         const key = scopedKey(host, event.sessionId);
         seen.delete(key); started.delete(key); waiting.delete(key); known.delete(key); caughtUp.delete(key);
+        transitions.delete(key); transitionKeys.delete(key); turnIds.delete(key); legacyResultKeys.delete(key);
         return;
+      }
+      if (event.type === "turn_timing_changed") {
+        const key = scopedKey(host, event.sessionId);
+        const previous = turnIds.get(key);
+        if (previous && previous !== event.messageId) legacyResultKeys.delete(key);
+        turnIds.set(key, event.messageId);
       }
       if (event.type === "session_status_changed") {
         const key = scopedKey(host, event.sessionId);
-        known.set(key, event.status);
+        rememberStatus(host, event.sessionId, event.status);
         if (event.status === "running") {
           caughtUp.delete(key);
           if (!started.has(key)) started.set(key, Date.now());
@@ -123,7 +169,7 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
         started.delete(key);
         if (caughtUp.delete(key)) return;
       }
-      deliver(host, sessionId, kind, startedAt);
+      deliver(host, sessionId, kind, startedAt, cursor);
     };
 
     /**
@@ -146,7 +192,7 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
         for (const session of catalog.sessions) {
           const key = scopedKey(host, session.id);
           const previous = known.get(key);
-          known.set(key, session.status);
+          rememberStatus(host, session.id, session.status);
           if (session.status !== "waiting_approval") waiting.delete(key);
           if (previous === undefined || !catchingUp) continue;
           const kind = missedKind(previous, session.status);

@@ -23,7 +23,6 @@ const plugin = vi.hoisted(() => ({
   sendNotification: vi.fn(),
 }));
 vi.mock("./runtime", () => ({ isTauriRuntime: () => platform.native }));
-vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ isFocused: isWindowFocused }) }));
 vi.mock("@tauri-apps/plugin-notification", () => plugin);
 const web = Object.assign(vi.fn(function () {}), {
   permission: "granted" as NotificationPermission,
@@ -42,6 +41,7 @@ beforeEach(() => {
   plugin.requestPermission.mockReset().mockResolvedValue("granted");
   plugin.sendNotification.mockReset();
   vi.stubGlobal("Notification", web);
+  vi.stubGlobal("__TAURI_INTERNALS__", { metadata: { currentWindow: { label: "main" } }, invoke: isWindowFocused });
   vi.spyOn(document, "hasFocus").mockReturnValue(false);
 });
 afterEach(() => {

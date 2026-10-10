@@ -213,9 +213,8 @@ export async function notifyTaskResult(
 ): Promise<boolean> {
   const allowed = async () => await isAppInBackground() && wants(outcome);
   const { title, body } = copy(outcome, sessionTitle);
-  const sent = await send(title, body, allowed, outcome, target);
-  if (sent && wants(outcome)) playEventSound(outcome, target, eventId, sessionTitle);
-  return sent;
+  playEventSound(outcome, target, eventId, sessionTitle);
+  return send(title, body, allowed, outcome, target);
 }
 
 function playEventSound(kind: TaskNotificationKind, target: TaskNotificationTarget | undefined, eventId: string | undefined, fallback: string): void {
@@ -326,9 +325,8 @@ export async function notifyAttention(
   const name = sessionTitle || "当前会话";
   const title = kind === "approval" ? `需要你审批：${name}` : `需要你回答：${name}`;
   const body = detail.trim().slice(0, 140) || (kind === "approval" ? "有操作等待你的批准，请返回 miniQ 处理。" : "助手在等待你的回答，请返回 miniQ 处理。");
-  const sent = await send(title, body, allowed, "attention", target, onClick);
-  if (sent && getAttentionNotificationPrefs()[kind]) playEventSound("attention", target, requestId, `${kind}\u0000${name}\u0000${detail}`);
-  return sent;
+  playEventSound("attention", target, requestId, `${kind}\u0000${name}\u0000${detail}`);
+  return send(title, body, allowed, "attention", target, onClick);
 }
 
 export function sendTaskNotificationTest(): Promise<boolean> {

@@ -138,9 +138,6 @@ export async function playTaskSound(
         if (expires <= now) playedSoundEvents.delete(entry);
       }
       if (playedSoundEvents.has(key)) return false;
-      // Reserve before scheduling so simultaneous deliveries cannot double-play.
-      playedSoundEvents.set(key, now + (options.dedupeWindowMs ?? 300_000));
-      if (playedSoundEvents.size > 1024) playedSoundEvents.delete(playedSoundEvents.keys().next().value!);
     }
     const start = audioContext.currentTime;
     let offset = 0;
@@ -161,6 +158,12 @@ export async function playTaskSound(
       oscillator.stop(noteEnd);
       oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
       offset += note.duration + 0.035;
+    }
+    // Scheduling is synchronous after the duplicate check: commit only once
+    // every note has started successfully, so a failed attempt can be retried.
+    if (!options.userInitiated && key) {
+      playedSoundEvents.set(key, Date.now() + (options.dedupeWindowMs ?? 300_000));
+      if (playedSoundEvents.size > 1024) playedSoundEvents.delete(playedSoundEvents.keys().next().value!);
     }
     return true;
   } catch {
