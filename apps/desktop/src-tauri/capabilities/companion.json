@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.tauri.app/acl/2",
+  "identifier": "companion",
+  "description": "Local companion only; native commands additionally enforce a fixed whitelist and caller labels.",
+  "windows": ["companion"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging"
+  ]
+}
