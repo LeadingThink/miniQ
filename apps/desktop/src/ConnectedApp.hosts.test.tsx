@@ -124,11 +124,22 @@ it("notifies once when a task on an inactive SSH host completes after switching 
   await act(async () => {
     root.emit({ type: "host_event", hostId: "demo-development", event: { type: "turn_completed", sessionId: "same-session" } });
   });
-  expect(notifyTaskResult.mock.calls).toEqual([["completed", "开发服务器 · 开发项目 · 任务进度"]]);
+  expect(notifyTaskResult).toHaveBeenNthCalledWith(
+    1,
+    "completed",
+    "开发服务器 · 开发项目 · 任务进度",
+    expect.objectContaining({ host: "demo-development", sessionId: "same-session" }),
+    expect.any(String),
+  );
   await act(async () => {
     root.emit({ type: "host_event", hostId: "demo-research", event: { type: "turn_failed", sessionId: "same-session", error: "provider secret" } });
   });
-  expect(notifyTaskResult).toHaveBeenLastCalledWith("failed", "研究服务器 · 研究项目 · 任务进度");
+  expect(notifyTaskResult).toHaveBeenLastCalledWith(
+    "failed",
+    "研究服务器 · 研究项目 · 任务进度",
+    expect.objectContaining({ host: "demo-research", sessionId: "same-session" }),
+    expect.any(String),
+  );
   expect(notifyTaskResult).toHaveBeenCalledTimes(2);
   expect(screen.getByRole("region", { name: "content-demo-research" })).toBeTruthy();
 });
