@@ -8,6 +8,6 @@ mod store;
 
 pub use store::{
     new_id, now_iso, AgentTaskRow, CheckpointRow, ExternalImportOutcome, MemoryError, MemoryPage,
-    MemoryRow, ModelContextSnapshot, SessionRecovery, StartupRecovery, Store, TurnActivity,
-    TurnCheckpoints,
+    MemoryRow, ModelContextSnapshot, ReviewSnapshot, SessionRecovery, StartupRecovery, Store,
+    TurnActivity, TurnCheckpoints,
 };

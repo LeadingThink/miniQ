@@ -16,7 +16,9 @@ mod model_calls;
 mod model_context;
 mod queue;
 mod records;
+mod reviews;
 mod row_mappers;
+pub use reviews::ReviewSnapshot;
 mod scheduled_tasks;
 mod session_fork;
 mod session_list;
@@ -132,6 +134,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0022_steered_messages",
         include_str!("../../../migrations/0022_steered_messages.sql"),
+    ),
+    (
+        "0023_review_runs",
+        include_str!("../../../migrations/0023_review_runs.sql"),
     ),
 ];
 
@@ -288,6 +294,7 @@ impl Store {
     /// Atomically mark process-owned in-flight state as terminal. None of
     /// these operations can still be running after a fresh daemon starts.
     pub fn recover_interrupted_work(&self) -> Result<StartupRecovery> {
+        self.mark_reviews_interrupted()?;
         let mut conn = self.conn.lock().unwrap();
         let transaction = conn.transaction()?;
         turn_timing::interrupt(&transaction, None)?;

@@ -17,6 +17,8 @@ mod mcp;
 mod memory;
 mod observation;
 mod plugin;
+mod review;
+mod review_snapshot;
 mod schedule;
 mod session;
 mod session_approval;
@@ -174,6 +176,10 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.pause" => session::pause(state, req.params),
         "session.resume" => session::resume(state, req.params),
         "session.cancel" => session::cancel(state, req.params).await,
+        "review.start" => review::start(state, req.params),
+        "review.list" => review::list(state, req.params),
+        "review.get" => review::get(state, req.params),
+        "review.cancel" => review::cancel(state, req.params),
         "session.queueList" => session_queue::list(state, req.params),
         "session.queueUpdate" => session_queue::update(state, req.params),
         "session.queueMove" => session_queue::move_item(state, req.params),
