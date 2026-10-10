@@ -43,3 +43,6 @@ pub use types::*;
 /// Protocol schema version. Bumped on breaking changes; no compatibility
 /// layers are kept for older versions.
 pub const PROTOCOL_VERSION: u32 = 2;
+
+pub mod review;
+pub use review::*;

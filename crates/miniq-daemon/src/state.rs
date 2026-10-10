@@ -189,6 +189,7 @@ pub struct AppState {
     pub ssh_hosts: Arc<crate::ssh::SshHostManager>,
     /// Cancellation token per session with an active turn.
     pub(crate) active_turns: Arc<Mutex<HashMap<String, ActiveTurn>>>,
+    pub(crate) review_jobs: Arc<Mutex<HashMap<String, CancellationToken>>>,
     /// Sessions whose active turn was interrupted for a user-requested pause.
     pub(crate) paused_turns: Arc<Mutex<HashSet<String>>>,
     /// One-shot model-step budgets requested by `session.sendMessage`
@@ -302,6 +303,7 @@ impl AppState {
             shutdown,
             ssh_hosts,
             active_turns: Arc::new(Mutex::new(HashMap::new())),
+            review_jobs: Arc::new(Mutex::new(HashMap::new())),
             paused_turns: Arc::new(Mutex::new(HashSet::new())),
             turn_step_limits: Arc::new(Mutex::new(HashMap::new())),
             pending_turn_resumes: Arc::new(Mutex::new(HashSet::new())),
