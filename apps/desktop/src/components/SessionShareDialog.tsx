@@ -17,6 +17,7 @@ function ShareDialog({ client, sessionId, title: initialTitle, artifacts, onClos
   const dialog = useRef<HTMLDialogElement>(null);
   const [title, setTitle] = useState(initialTitle);
   const [days, setDays] = useState(30);
+  const [includeDetails, setIncludeDetails] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [cursor, setCursor] = useState<HistoryPage["nextCursor"]>(null);
   const [selected, setSelected] = useState(new Set<string>());
@@ -66,7 +67,7 @@ function ShareDialog({ client, sessionId, title: initialTitle, artifacts, onClos
     publishId.current ??= crypto.randomUUID().replaceAll("-", "");
     try {
       const link = await client.call<ShareLink>("session.shareCreate", {
-        sessionId, id: publishId.current, title, messageIds: [...selected], artifactIds: [...files], expiresInDays: days,
+        sessionId, id: publishId.current, title, messageIds: [...selected], artifactIds: [...files], expiresInDays: days, includeDetails,
       }, { timeoutMs: 15 * 60 * 1000 });
       if (!mounted.current) return;
       setResult(link); publishId.current = null;
@@ -106,6 +107,8 @@ function ShareDialog({ client, sessionId, title: initialTitle, artifacts, onClos
       <label>分享标题<input value={title} maxLength={300} onChange={(event) => { setTitle(event.target.value); publishId.current = null; }} /></label>
       <label>有效期<select value={days} onChange={(event) => { setDays(Number(event.target.value)); publishId.current = null; }}>
         <option value={7}>7 天</option><option value={30}>30 天</option><option value={90}>90 天</option></select></label>
+      <label className="share-details-toggle"><input type="checkbox" checked={includeDetails} onChange={(event) => { setIncludeDetails(event.target.checked); publishId.current = null; }} />
+        <span><strong>包含模型与交互记录</strong><small>显示每轮使用的模型和用时、你在弹窗中的选择，以及审批结果。不包含工具参数和本地路径。</small></span></label>
       <div className="share-selection-heading"><strong>已选 {selected.size} 条消息</strong>
         <button type="button" onClick={() => { setSelected(new Set(messages.map((message) => message.id))); publishId.current = null; }}>全选已加载</button>
         <button type="button" onClick={() => { setSelected(new Set()); publishId.current = null; }}>清空</button></div>

@@ -33,7 +33,7 @@ it("shares only selected messages and explicitly selected artifacts, and revokes
   expect(screen.getByRole("checkbox", { name: "报告.pdf" }).getAttribute("checked")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "生成分享链接" }));
   await screen.findByDisplayValue(link.url);
-  expect(call).toHaveBeenCalledWith("session.shareCreate", expect.objectContaining({ sessionId: "s1", messageIds: ["m2"], artifactIds: [], expiresInDays: 30 }), expect.any(Object));
+  expect(call).toHaveBeenCalledWith("session.shareCreate", expect.objectContaining({ sessionId: "s1", messageIds: ["m2"], artifactIds: [], expiresInDays: 30, includeDetails: true }), expect.any(Object));
   fireEvent.click(screen.getByRole("button", { name: "撤销分享" }));
   await waitFor(() => expect(call).toHaveBeenCalledWith("session.shareRevoke", { sessionId: "s1", id }));
   await waitFor(() => expect(screen.queryByDisplayValue(link.url)).toBeNull());
@@ -105,4 +105,42 @@ it("reports a public share without credentials and removes its content immediate
     credentials: "omit",
     body: JSON.stringify({ reason: "privacy", detail: "" }),
   }));
+});
+
+it("shows the download entry, summary, per-turn models, question choices and approvals", async () => {
+  const page = { ...link, messageCount: 2, nextPage: null,
+    summary: { turns: 1, elapsedMs: 68000, confirmations: 2, models: [{ model: "gpt-5.6-sol", effort: "high" }] },
+    messages: [
+      { role: "user", content: "做个周会看板", createdAt: "2026-09-11T00:00:00Z", elapsedMs: 68000 },
+      { role: "assistant", content: "看板完成", createdAt: "2026-09-11T00:01:08Z", model: "gpt-5.6-sol", effort: "high", events: [
+        { type: "question", prompt: "看板用哪种形式？", options: ["网页", "PPT"], answer: "网页" },
+        { type: "approval", tool: "write_file", decision: "approved" },
+        { type: "approval", tool: "http_request", decision: "rejected" },
+      ] },
+    ] };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(page))));
+  render(<SharedSessionPage id={id} />);
+  await screen.findByText("看板完成");
+  const downloads = screen.getAllByRole("link", { name: /下载 miniQ/ });
+  expect(downloads.length).toBeGreaterThanOrEqual(3);
+  expect(downloads.every((anchor) => anchor.getAttribute("href") === "https://chat.zaiwenai.com/download")).toBe(true);
+  const summary = screen.getByRole("region", { name: "会话概览" });
+  expect(summary.textContent).toContain("1 轮");
+  expect(summary.textContent).toContain("1 分 8 秒");
+  expect(summary.textContent).toContain("2 次");
+  expect(screen.getAllByText("gpt-5.6-sol · 高推理")).toHaveLength(2);
+  expect(screen.getByText("看板用哪种形式？")).toBeTruthy();
+  expect(screen.getByText("网页").className).toBe("selected");
+  expect(screen.getByText("PPT").className).toBe("");
+  expect(screen.getByText("已允许").parentElement?.textContent).toContain("write_file");
+  expect(screen.getByText("已拒绝").parentElement?.textContent).toContain("http_request");
+  expect(screen.getByText(/用时 1 分 8 秒/)).toBeTruthy();
+});
+
+it("keeps old shares without details readable", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ ...link, messages: [messages[0]], nextPage: null }))));
+  render(<SharedSessionPage id={id} />);
+  await screen.findByText("帮我做报告");
+  expect(screen.queryByRole("region", { name: "会话概览" })).toBeNull();
+  expect(screen.getAllByRole("link", { name: /下载 miniQ/ }).length).toBeGreaterThanOrEqual(1);
 });

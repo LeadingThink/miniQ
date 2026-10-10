@@ -5,6 +5,7 @@ import { formatFileSize } from "../localFiles";
 import { errorMessage } from "../errorMessage";
 import { SharedMarkdown } from "./SharedMarkdown";
 import { SharedFilePreview } from "./SharedFilePreview";
+import { DownloadLink, modelLabel, ShareEvents, ShareSummaryCards, TurnHeader } from "./SharedTurnDetails";
 import "./Sharing.css";
 
 export function SharedSessionPage({ id }: { id: string }) {
@@ -50,19 +51,27 @@ export function SharedSessionPage({ id }: { id: string }) {
     }
   };
   return <div className={`shared-session${file ? " has-preview" : ""}`}>
-    <div className="shared-reading" ref={reading}><header className="shared-brand"><a href="./">miniQ</a><span><Link size={14} /> 会话分享 · 只读</span></header>
+    <div className="shared-reading" ref={reading}><header className="shared-brand"><a href="./" className="shared-logo"><span aria-hidden="true">Q</span>miniQ</a><span className="shared-tag"><Link size={14} /> 会话分享 · 只读</span>
+      <DownloadLink className="shared-download">下载 miniQ</DownloadLink></header>
       <main>
         {reported && <div className="shared-empty" role="status"><h1>举报已提交</h1><p>此分享已立即下架，其他访客无法继续访问。感谢你的反馈。</p></div>}
         {error && !reported && <div className="shared-empty" role="alert"><h1>无法打开分享</h1><p>{error}</p><button type="button" onClick={() => setAttempt((value) => value + 1)}><RefreshCw size={16} />重试</button></div>}
         {!reported && !data && !error && <p className="shared-empty" role="status">正在加载分享内容…</p>}
         {data && <><h1>{data.title}</h1><p className="shared-subtitle">分享于 {new Date(data.createdAt).toLocaleString()} · {data.messageCount} 条消息 · {new Date(data.expiresAt).toLocaleDateString()} 到期</p>
+          {page === 0 && data.summary && <ShareSummaryCards summary={data.summary} fileCount={data.files.length} />}
           {data.files.length > 0 && <section className="shared-artifacts" aria-label="分享文件">{data.files.map((item) => <button key={item.id} type="button" onClick={() => setFile(item)}>
             <FileText size={20} /><span><strong>{item.name}</strong><small>{formatFileSize(item.size)} · 预览 / 下载</small></span></button>)}</section>}
-          {data.messages.map((message, index) => <article className={`shared-message ${message.role}`} key={`${page}:${index}`}><header>{message.role === "user" ? "提问者" : "miniQ"}</header>
-            <SharedMarkdown files={data.files} onFile={setFile}>{message.content}</SharedMarkdown></article>)}
+          <div className="shared-timeline">{data.messages.map((message, index) => <article className={`shared-message ${message.role}`} key={`${page}:${index}`}>
+            {message.role === "user" ? <TurnHeader message={message} />
+              : <header><span className="shared-avatar" aria-hidden="true">Q</span>miniQ{message.model && <span className="shared-chip">{modelLabel(message.model, message.effort)}</span>}</header>}
+            {message.events && message.events.length > 0 && <ShareEvents events={message.events} />}
+            <SharedMarkdown files={data.files} onFile={setFile}>{message.content}</SharedMarkdown></article>)}</div>
           <nav className="shared-pagination" aria-label="分享消息分页"><button type="button" disabled={page === 0} onClick={() => changePage(page - 1)}><ChevronLeft size={16} />上一页</button>
             <span>第 {page + 1} 页</span><button type="button" disabled={data.nextPage === null} onClick={() => changePage(data.nextPage!)}>下一页<ChevronRight size={16} /></button></nav>
-          <p className="shared-subtitle">这是分享者选择的内容快照，不会公开后续对话。AI 输出请结合实际情况核实。</p>
+          <section className="shared-cta"><span className="shared-logo-mark" aria-hidden="true">Q</span>
+            <div><b>这段对话由 miniQ 完成</b><span>能读写文件、操作浏览器、远程控制电脑的 AI 助手。桌面、手机都能用。</span></div>
+            <DownloadLink className="shared-download">下载 miniQ</DownloadLink></section>
+          <p className="shared-subtitle">这是分享者选择的内容快照，不会公开后续对话。工具参数、本地路径和密钥不会被分享。AI 输出请结合实际情况核实。</p>
           <details className="shared-report">
             <summary><Flag size={14} />举报或投诉此分享</summary>
             <form onSubmit={(event) => { event.preventDefault(); void submitReport(); }}>
@@ -82,7 +91,7 @@ export function SharedSessionPage({ id }: { id: string }) {
             </form>
           </details>
         </>}
-      </main><footer className="shared-footer">由 miniQ 生成 · 自然对话，完成任务</footer>
+      </main><footer className="shared-footer">由 miniQ 生成 · 自然对话，完成任务 · <a href="https://chat.zaiwenai.com/download" target="_blank" rel="noreferrer">下载 miniQ</a></footer>
     </div>
     {file && <SharedFilePreview shareId={id} file={file} onClose={() => setFile(null)} />}
   </div>;

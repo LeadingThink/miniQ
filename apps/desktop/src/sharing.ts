@@ -1,9 +1,19 @@
-export interface SharedMessage { role: "user" | "assistant"; content: string; createdAt: string }
+export interface ShareEvent {
+  type: "question" | "approval";
+  prompt?: string; options?: string[]; answer?: string;
+  tool?: string; decision?: "approved" | "rejected";
+}
+export interface SharedMessage {
+  role: "user" | "assistant"; content: string; createdAt: string;
+  elapsedMs?: number; model?: string; effort?: string; events?: ShareEvent[];
+}
+export interface ShareSummary { turns: number; elapsedMs: number | null; models: { model: string; effort: string | null }[]; confirmations: number }
 export interface SharedFile { id: string; name: string; size: number }
 export interface ShareLink {
   id: string; title: string; url: string; createdAt: string; expiresAt: string;
-  published: boolean; messageCount: number; files: SharedFile[];
+  published: boolean; messageCount: number; files: SharedFile[]; summary?: ShareSummary;
 }
+export const MINIQ_DOWNLOAD_URL = "https://chat.zaiwenai.com/download";
 export interface SharePage extends Omit<ShareLink, "url"> { messages: SharedMessage[]; nextPage: number | null }
 
 export function sharedSessionId(search = window.location.search): string | null {

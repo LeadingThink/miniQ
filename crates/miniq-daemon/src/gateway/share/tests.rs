@@ -63,6 +63,7 @@ fn input(session: &str, message: &str) -> CreateInput {
         message_ids: vec![message.into()],
         artifact_ids: vec![],
         expires_in_days: 30,
+        include_details: false,
     }
 }
 
@@ -159,4 +160,99 @@ fn idempotent_snapshot_and_only_oneapi_credentials_are_used() {
     assert!(connection(&state, &session).is_err());
     assert!(!valid_id("../secret"));
     assert!(!valid_id(&"A".repeat(32)));
+}
+
+#[test]
+fn details_attach_turn_models_choices_and_approvals_without_tool_payloads() {
+    use miniq_protocol::{ApprovalStatus, RiskLevel, ToolCallStatus};
+    let pause = || std::thread::sleep(std::time::Duration::from_millis(3));
+    let (state, _dir, session, _first) = setup();
+    pause();
+    let user = state
+        .store
+        .append_message(&session, Role::User, "做个看板")
+        .unwrap();
+    pause();
+    let question = state
+        .store
+        .create_tool_call(
+            &session,
+            "ask_user",
+            &json!({"prompt":"看板用哪种形式？","options":["网页","PPT"]}),
+            None,
+            ToolCallStatus::Running,
+        )
+        .unwrap();
+    state
+        .store
+        .finish_tool_call(
+            &question.id,
+            ToolCallStatus::Succeeded,
+            Some(&json!({"answer":"网页"})),
+        )
+        .unwrap();
+    pause();
+    let write = state
+        .store
+        .create_tool_call(
+            &session,
+            "write_file",
+            &json!({"path":"/Users/secret/dashboard.html","content":"private body"}),
+            None,
+            ToolCallStatus::WaitingApproval,
+        )
+        .unwrap();
+    let approval = state
+        .store
+        .create_approval(&session, &write.id, RiskLevel::Medium, "write")
+        .unwrap();
+    state
+        .store
+        .resolve_approval(&approval.id, ApprovalStatus::Approved)
+        .unwrap();
+    pause();
+    let answer = state
+        .store
+        .append_message(&session, Role::Assistant, "看板完成")
+        .unwrap();
+    let record: miniq_protocol::ModelCallRecord = serde_json::from_value(json!({
+        "id":"call","sessionId":session,"agentId":null,"turnId":"turn","sourceMessageId":user.id,
+        "trace":{"purpose":"task","step":1,"attempt":1},"startedAt":"2026-09-09T00:00:00Z","status":"completed",
+        "request":{"model":"gpt-5.6-sol","apiProtocol":"responses","reasoningEffort":"high","maxOutputTokens":null},
+        "estimatedInputTokens":1,"response":{}
+    }))
+    .unwrap();
+    state.store.save_model_call(&record).unwrap();
+
+    let mut request = input(&session, &answer.id);
+    request.message_ids = vec![user.id.clone(), answer.id.clone()];
+    request.include_details = true;
+    let payload = Snapshot::build(&state, &request, "scope".into())
+        .unwrap()
+        .payload;
+    let reply = &payload["messages"][1];
+    assert_eq!(reply["model"], "gpt-5.6-sol");
+    assert_eq!(reply["effort"], "high");
+    assert_eq!(
+        reply["events"][0],
+        json!({"type":"question","prompt":"看板用哪种形式？","options":["网页","PPT"],"answer":"网页"})
+    );
+    assert_eq!(
+        reply["events"][1],
+        json!({"type":"approval","tool":"write_file","decision":"approved"})
+    );
+    assert_eq!(payload["summary"]["turns"], 1);
+    assert_eq!(payload["summary"]["confirmations"], 2);
+    assert_eq!(
+        payload["summary"]["models"],
+        json!([{"model":"gpt-5.6-sol","effort":"high"}])
+    );
+    let text = payload.to_string();
+    assert!(!text.contains("/Users/secret") && !text.contains("private body"));
+
+    request.include_details = false;
+    let plain = Snapshot::build(&state, &request, "scope".into())
+        .unwrap()
+        .payload;
+    assert!(plain.get("summary").is_none() && plain["messages"][1].get("model").is_none());
 }

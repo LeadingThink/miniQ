@@ -9,14 +9,23 @@ export const MAX_SHARE_BYTES = 512 * 1024 * 1024;
 export class ShareError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
-export interface ShareMessage { role: "user" | "assistant"; content: string; createdAt: string }
+export interface ShareEvent {
+  type: "question" | "approval";
+  prompt?: string; options?: string[]; answer?: string;
+  tool?: string; decision?: "approved" | "rejected";
+}
+export interface ShareMessage {
+  role: "user" | "assistant"; content: string; createdAt: string;
+  elapsedMs?: number; model?: string; effort?: string; events?: ShareEvent[];
+}
+export interface ShareSummary { turns: number; elapsedMs: number | null; models: { model: string; effort: string | null }[]; confirmations: number }
 export interface ShareFile { id: string; name: string; size: number; sha256: string }
-export interface ShareInput { scope: string; title: string; expiresInDays: number; messages: ShareMessage[]; files: ShareFile[] }
+export interface ShareInput { scope: string; title: string; expiresInDays: number; messages: ShareMessage[]; files: ShareFile[]; summary?: ShareSummary }
 export interface ShareReport { reason: "sexual_content" | "violence" | "hate_or_harassment" | "illegal_activity" | "privacy" | "copyright" | "other"; detail: string }
 export interface ShareMeta {
   id: string; owner: string; scope: string; title: string; createdAt: string;
   expiresAt: string; published: boolean; messageCount: number; files: ShareFile[];
-  fingerprint: string;
+  fingerprint: string; summary?: ShareSummary;
 }
 
 export function parseReport(raw: unknown): ShareReport {
@@ -43,7 +52,7 @@ export function parseShare(raw: unknown): ShareInput {
     if (!message || !["user", "assistant"].includes(message.role) || typeof message.content !== "string" ||
         typeof message.createdAt !== "string" || !Number.isFinite(Date.parse(message.createdAt)))
       throw new ShareError(400, "分享消息无效");
-    return { role: message.role, content: message.content, createdAt: message.createdAt };
+    return { role: message.role, content: message.content, createdAt: message.createdAt, ...messageDetails(message) };
   });
   const files = value.files.map((file) => {
     if (!file || typeof file.id !== "string" || !SHARE_ID.test(file.id) || typeof file.name !== "string" || !file.name ||
@@ -54,7 +63,53 @@ export function parseShare(raw: unknown): ShareInput {
   });
   if (new Set(files.map((file) => file.id)).size !== files.length || files.reduce((sum, file) => sum + file.size, 0) > MAX_SHARE_BYTES)
     throw new ShareError(400, "分享文件重复或总大小超过 512 MB");
-  return { scope: value.scope, title: value.title.trim(), expiresInDays: value.expiresInDays, messages, files };
+  return { scope: value.scope, title: value.title.trim(), expiresInDays: value.expiresInDays, messages, files,
+    ...(value.summary === undefined ? {} : { summary: parseSummary(value.summary) }) };
+}
+
+const text = (value: unknown, max: number): value is string => typeof value === "string" && value.length <= max;
+const count = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
+const EFFORT = /^[a-z_]{1,16}$/;
+
+// Public per-turn context only: model names, durations, question choices and
+// approval outcomes. Anything else on a message is dropped.
+function messageDetails(message: ShareMessage): Partial<ShareMessage> {
+  const details: Partial<ShareMessage> = {};
+  if (message.elapsedMs !== undefined) {
+    if (!count(message.elapsedMs)) throw new ShareError(400, "分享耗时无效");
+    details.elapsedMs = message.elapsedMs;
+  }
+  if (message.model !== undefined) {
+    if (!text(message.model, 200) || !message.model) throw new ShareError(400, "分享模型无效");
+    details.model = message.model;
+  }
+  if (message.effort !== undefined) {
+    if (typeof message.effort !== "string" || !EFFORT.test(message.effort)) throw new ShareError(400, "分享推理强度无效");
+    details.effort = message.effort;
+  }
+  if (message.events !== undefined) {
+    if (!Array.isArray(message.events) || message.events.length > 200) throw new ShareError(400, "分享交互记录无效");
+    details.events = message.events.map(parseEvent);
+  }
+  return details;
+}
+
+function parseEvent(raw: ShareEvent): ShareEvent {
+  if (raw?.type === "question" && text(raw.prompt, 4000) && raw.prompt && text(raw.answer, 4000) &&
+      Array.isArray(raw.options) && raw.options.length <= 50 && raw.options.every((option) => text(option, 1000)))
+    return { type: "question", prompt: raw.prompt, options: [...raw.options], answer: raw.answer };
+  if (raw?.type === "approval" && text(raw.tool, 200) && raw.tool && (raw.decision === "approved" || raw.decision === "rejected"))
+    return { type: "approval", tool: raw.tool, decision: raw.decision };
+  throw new ShareError(400, "分享交互记录无效");
+}
+
+function parseSummary(raw: ShareSummary): ShareSummary {
+  if (!raw || !count(raw.turns) || !count(raw.confirmations) || (raw.elapsedMs !== null && !count(raw.elapsedMs)) ||
+      !Array.isArray(raw.models) || raw.models.length > 20 ||
+      !raw.models.every((item) => item && text(item.model, 200) && item.model && (item.effort === null || (typeof item.effort === "string" && EFFORT.test(item.effort)))))
+    throw new ShareError(400, "分享摘要无效");
+  return { turns: raw.turns, elapsedMs: raw.elapsedMs, confirmations: raw.confirmations,
+    models: raw.models.map(({ model, effort }) => ({ model, effort })) };
 }
 
 export class ShareStore {
@@ -108,7 +163,8 @@ export class ShareStore {
     const created = Date.now();
     const meta: ShareMeta = { id, owner, scope: input.scope, title: input.title,
       createdAt: new Date(created).toISOString(), expiresAt: new Date(created + input.expiresInDays * 86400000).toISOString(),
-      published: false, messageCount: input.messages.length, files: input.files, fingerprint };
+      published: false, messageCount: input.messages.length, files: input.files, fingerprint,
+      ...(input.summary ? { summary: input.summary } : {}) };
     try {
       for (let index = 0; index < input.messages.length; index += 50)
         await writeFile(join(draft, `page-${index / 50}.json`), JSON.stringify(input.messages.slice(index, index + 50)), { mode: 0o600 });
@@ -222,7 +278,8 @@ export class ShareStore {
 
 export function publicMeta(meta: ShareMeta) {
   return { id: meta.id, title: meta.title, createdAt: meta.createdAt, expiresAt: meta.expiresAt,
-    published: meta.published, messageCount: meta.messageCount, files: meta.files.map(({ id, name, size }) => ({ id, name, size })) };
+    published: meta.published, messageCount: meta.messageCount, files: meta.files.map(({ id, name, size }) => ({ id, name, size })),
+    ...(meta.summary ? { summary: meta.summary } : {}) };
 }
 
 export function shareOwner(key: string) { return createHash("sha256").update("miniq-share-owner-v1\0").update(key).digest("hex"); }

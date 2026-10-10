@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{collections::HashSet, io::Read, time::Duration};
 
+mod details;
 mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -24,6 +25,9 @@ pub(super) struct CreateInput {
     message_ids: Vec<String>,
     artifact_ids: Vec<String>,
     expires_in_days: u32,
+    /// Add per-turn models, durations, question choices and approval results.
+    #[serde(default)]
+    include_details: bool,
 }
 
 #[derive(Deserialize)]

@@ -134,6 +134,36 @@ describe("public session shares", () => {
     expect(safe).not.toHaveProperty("apiKey"); expect(safe).not.toHaveProperty("tools");
   });
 
+  it("keeps only whitelisted turn details and summary fields", async () => {
+    const { call, base } = await start();
+    const detailed = { ...input(), summary: { turns: 1, elapsedMs: 68000, confirmations: 2, models: [{ model: "gpt-5.6-sol", effort: "high", secret: "x" }] },
+      messages: [
+        { role: "user", content: "做个看板", createdAt: "2026-09-11T00:00:00Z", elapsedMs: 68000, toolInput: "/Users/secret" },
+        { role: "assistant", content: "完成", createdAt: "2026-09-11T00:01:00Z", model: "gpt-5.6-sol", effort: "high", events: [
+          { type: "question", prompt: "形式？", options: ["网页", "PPT"], answer: "网页", raw: "drop" },
+          { type: "approval", tool: "write_file", decision: "approved", input: { path: "/Users/secret" } },
+        ] },
+      ] };
+    const parsed = parseShare(detailed);
+    expect(JSON.stringify(parsed)).not.toContain("secret");
+    expect(JSON.stringify(parsed)).not.toContain("drop");
+    expect(parsed.messages[1].events).toEqual([
+      { type: "question", prompt: "形式？", options: ["网页", "PPT"], answer: "网页" },
+      { type: "approval", tool: "write_file", decision: "approved" },
+    ]);
+    for (const bad of [
+      { ...detailed, summary: { ...detailed.summary, turns: -1 } },
+      { ...detailed, messages: [{ ...detailed.messages[1], events: [{ type: "approval", tool: "x", decision: "maybe" }] }] },
+      { ...detailed, messages: [{ ...detailed.messages[1], effort: "HIGH; rm" }] },
+    ]) expect(() => parseShare(bad)).toThrow();
+    expect((await call(`/${id}`, "PUT", detailed)).status).toBe(200);
+    expect((await call(`/${id}/publish`, "POST")).status).toBe(200);
+    const page = await fetch(`${base}/${id}?page=0`).then((r) => r.json());
+    expect(page.summary).toEqual({ turns: 1, elapsedMs: 68000, confirmations: 2, models: [{ model: "gpt-5.6-sol", effort: "high" }] });
+    expect(page.messages[1].model).toBe("gpt-5.6-sol");
+    expect(page.messages[0].elapsedMs).toBe(68000);
+  });
+
   it("reserves owner quota across concurrent snapshot IDs", async () => {
     const { store } = await start();
     const data = parseShare({ ...input(), files: ["b", "c"].map((letter) => ({ id: letter.repeat(32), name: `${letter}.mp4`, size: 256 * 1024 * 1024, sha256: "d".repeat(64) })) });

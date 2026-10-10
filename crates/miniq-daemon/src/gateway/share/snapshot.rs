@@ -32,7 +32,22 @@ impl Snapshot {
         if selected.is_empty() || selected.len() != input.message_ids.len() {
             return Err(invalid("请选择要分享的消息，且不要重复选择"));
         }
-        let mut messages = selected_messages(state, &session.id, &selected)?;
+        let all = answer_messages(state, &session.id)?;
+        let details = input
+            .include_details
+            .then(|| super::details::build(state, &session.id, &all, &selected))
+            .transpose()?;
+        let mut messages: Vec<Value> = all
+            .iter()
+            .filter(|message| selected.contains(&message.id))
+            .map(|message| {
+                let mut value = json!({"role":message.role,"content":message.content,"createdAt":message.created_at});
+                if let Some(extra) = details.as_ref().and_then(|d| d.extras.get(&message.id)) {
+                    value.as_object_mut().unwrap().extend(extra.clone());
+                }
+                value
+            })
+            .collect();
         if messages.len() != selected.len() {
             return Err(invalid("选中的消息已变化或不属于此会话，请重新选择"));
         }
@@ -111,7 +126,10 @@ impl Snapshot {
         if files.len() != selected.len() {
             return Err(invalid("文件不属于此会话或已不可用"));
         }
-        let payload = json!({"scope":scope,"title":input.title.trim(),"expiresInDays":input.expires_in_days,"messages":messages,"files":metadata});
+        let mut payload = json!({"scope":scope,"title":input.title.trim(),"expiresInDays":input.expires_in_days,"messages":messages,"files":metadata});
+        if let Some(details) = details {
+            payload["summary"] = details.summary;
+        }
         if serde_json::to_vec(&payload).map_err(invalid)?.len() > 16 * 1024 * 1024 {
             return Err(invalid("分享正文超过 16 MB，请选择部分消息；不会截断内容"));
         }
@@ -119,11 +137,11 @@ impl Snapshot {
     }
 }
 
-fn selected_messages(
+/// Every visible user and assistant message, oldest first.
+fn answer_messages(
     state: &AppState,
     session_id: &str,
-    selected: &HashSet<&String>,
-) -> Result<Vec<Value>, RpcError> {
+) -> Result<Vec<miniq_protocol::Message>, RpcError> {
     let mut before = None;
     let mut messages = Vec::new();
     loop {
@@ -141,14 +159,12 @@ fn selected_messages(
             })
             .map_err(store_err)?;
         for message in page.messages.into_iter().rev() {
-            if selected.contains(&message.id)
-                && matches!(message.role, Role::User | Role::Assistant)
-            {
-                messages.push(json!({"role":message.role,"content":message.content,"createdAt":message.created_at}));
+            if matches!(message.role, Role::User | Role::Assistant) {
+                messages.push(message);
             }
         }
         before = page.next_cursor;
-        if before.is_none() || messages.len() == selected.len() {
+        if before.is_none() {
             break;
         }
     }

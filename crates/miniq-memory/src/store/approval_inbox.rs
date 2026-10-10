@@ -43,6 +43,27 @@ impl Store {
             next_cursor,
         })
     }
+
+    /// Resolved approvals of the main conversation, oldest first, with the tool
+    /// name only. Used for public share summaries, so tool input is never read.
+    pub fn resolved_approvals(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<(miniq_protocol::Approval, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut statement = conn.prepare(
+            "SELECT a.id, a.session_id, a.tool_call_id, a.risk_level, a.status,
+              a.reason, a.created_at, a.resolved_at, t.tool_name
+             FROM approvals a JOIN tool_calls t ON t.id = a.tool_call_id AND t.session_id = a.session_id
+             WHERE a.session_id = ?1 AND a.status != 'pending' AND t.agent_id IS NULL
+             ORDER BY a.created_at ASC, a.id ASC",
+        )?;
+        let rows = statement.query_map(params![session_id], |row| {
+            Ok((super::row_mappers::row_to_approval(row)?, row.get(8)?))
+        })?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
 }
 
 #[cfg(test)]
