@@ -2,7 +2,7 @@ use miniq_protocol::Artifact;
 use rusqlite::{params, OptionalExtension};
 use serde_json::Value;
 
-use super::{new_id, now_iso, CheckpointRow, MemoryError, Result, Store};
+use super::{new_id, now_iso, Result, Store};
 
 impl Store {
     pub fn create_artifact(
@@ -50,82 +50,6 @@ impl Store {
                 kind: row.get(3)?,
                 title: row.get(4)?,
                 created_at: row.get(5)?,
-            })
-        })?;
-        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
-    }
-
-    pub fn create_checkpoint(
-        &self,
-        session_id: &str,
-        tool_call_id: &str,
-        abs_path: &str,
-        existed: bool,
-        backup_path: Option<&str>,
-    ) -> Result<CheckpointRow> {
-        let conn = self.conn.lock().unwrap();
-        let checkpoint = CheckpointRow {
-            id: new_id("ckpt"),
-            session_id: session_id.to_string(),
-            tool_call_id: tool_call_id.to_string(),
-            abs_path: abs_path.to_string(),
-            existed,
-            backup_path: backup_path.map(|path| path.to_string()),
-            created_at: now_iso(),
-        };
-        conn.execute(
-            "INSERT INTO checkpoints (id, session_id, tool_call_id, abs_path, existed, backup_path, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                checkpoint.id,
-                checkpoint.session_id,
-                checkpoint.tool_call_id,
-                checkpoint.abs_path,
-                checkpoint.existed as i64,
-                checkpoint.backup_path,
-                checkpoint.created_at
-            ],
-        )?;
-        Ok(checkpoint)
-    }
-
-    pub fn get_checkpoint(&self, id: &str) -> Result<CheckpointRow> {
-        let conn = self.conn.lock().unwrap();
-        conn.query_row(
-            "SELECT id, session_id, tool_call_id, abs_path, existed, backup_path, created_at
-             FROM checkpoints WHERE id = ?1",
-            params![id],
-            |row| {
-                Ok(CheckpointRow {
-                    id: row.get(0)?,
-                    session_id: row.get(1)?,
-                    tool_call_id: row.get(2)?,
-                    abs_path: row.get(3)?,
-                    existed: row.get::<_, i64>(4)? != 0,
-                    backup_path: row.get(5)?,
-                    created_at: row.get(6)?,
-                })
-            },
-        )
-        .optional()?
-        .ok_or_else(|| MemoryError::NotFound(format!("checkpoint {id}")))
-    }
-
-    pub fn list_checkpoints(&self, session_id: &str) -> Result<Vec<CheckpointRow>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, session_id, tool_call_id, abs_path, existed, backup_path, created_at
-             FROM checkpoints WHERE session_id = ?1 ORDER BY created_at ASC, id ASC",
-        )?;
-        let rows = stmt.query_map(params![session_id], |row| {
-            Ok(CheckpointRow {
-                id: row.get(0)?,
-                session_id: row.get(1)?,
-                tool_call_id: row.get(2)?,
-                abs_path: row.get(3)?,
-                existed: row.get::<_, i64>(4)? != 0,
-                backup_path: row.get(5)?,
-                created_at: row.get(6)?,
             })
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)

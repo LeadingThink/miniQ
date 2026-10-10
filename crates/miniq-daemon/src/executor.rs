@@ -18,7 +18,7 @@ use crate::state::{AppState, ApprovalDecision};
 mod adaptation;
 mod approval;
 mod background_gate;
-mod checkpoint;
+pub(crate) mod checkpoint;
 mod effective_set;
 mod hooks;
 mod image_history;
@@ -322,7 +322,7 @@ impl SessionToolExecutor {
         }
 
         // Back up the target before any file-mutating tool runs.
-        let checkpoint_ids = self.take_checkpoints(call, tool_call_id);
+        let checkpoints = self.take_checkpoints(call, tool_call_id);
 
         let mut ctx = self.ctx.clone().with_cancellation(self.cancel.clone());
         if let Some(file) = approved_readable_file {
@@ -330,12 +330,18 @@ impl SessionToolExecutor {
         }
         let result = tokio::select! {
             _ = self.cancel.cancelled() => {
+                self.record_checkpoint_results(&checkpoints);
                 let output = json!({"cancelled": true});
                 self.finish(tool_call_id, ToolCallStatus::Cancelled, &output);
                 return Err(AgentError::Cancelled);
             }
             result = self.router.dispatch(&ctx, &call.name, call.arguments.clone()) => result,
         };
+        self.record_checkpoint_results(&checkpoints);
+        let checkpoint_ids = checkpoints
+            .iter()
+            .map(|checkpoint| checkpoint.id.as_str())
+            .collect::<Vec<_>>();
 
         match result {
             Ok(mut output) => {

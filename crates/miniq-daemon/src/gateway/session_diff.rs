@@ -3,7 +3,7 @@ use std::path::Path;
 
 use miniq_memory::CheckpointRow;
 use miniq_protocol::{
-    DiffHunk, DiffLine, DiffLineKind, ErrorCode, FileDiff, RpcError, SessionDiff,
+    DiffHunk, DiffLine, DiffLineKind, ErrorCode, FileDiff, RpcError, Session, SessionDiff,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -12,10 +12,23 @@ use similar::{ChangeTag, TextDiff};
 use super::common::{params, store_err, to_value};
 use crate::state::AppState;
 
+#[derive(Deserialize, Default, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum DiffScope {
+    #[default]
+    Session,
+    Turn,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DiffParams {
     session_id: String,
+    #[serde(default)]
+    scope: DiffScope,
+    /// User message that started the turn; required for `scope: "turn"`.
+    #[serde(default)]
+    turn_id: Option<String>,
 }
 
 pub(super) fn get(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
@@ -24,20 +37,16 @@ pub(super) fn get(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErro
         .store
         .get_session(&input.session_id)
         .map_err(store_err)?;
-    let checkpoints = state
-        .store
-        .list_checkpoints(&input.session_id)
-        .map_err(store_err)?;
-
-    let mut seen = HashSet::new();
-    let mut files = Vec::new();
-    for checkpoint in checkpoints {
-        if seen.insert(checkpoint.abs_path.clone()) {
-            if let Some(diff) = diff_checkpoint(&session.working_directory, &checkpoint)? {
-                files.push(diff);
-            }
+    let files = match (input.scope, input.turn_id) {
+        (DiffScope::Session, _) => session_files(state, &session)?,
+        (DiffScope::Turn, Some(turn_id)) => turn_files(state, &session, &turn_id)?,
+        (DiffScope::Turn, None) => {
+            return Err(RpcError::new(
+                ErrorCode::InvalidParams,
+                "turnId is required when scope is \"turn\"",
+            ))
         }
-    }
+    };
     let additions = files.iter().map(|file| file.additions).sum();
     let deletions = files.iter().map(|file| file.deletions).sum();
     to_value(SessionDiff {
@@ -47,22 +56,64 @@ pub(super) fn get(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErro
     })
 }
 
-fn diff_checkpoint(
-    workspace_path: &str,
-    checkpoint: &CheckpointRow,
-) -> Result<Option<FileDiff>, RpcError> {
-    let old = checkpoint_contents(checkpoint)?;
-    let target = Path::new(&checkpoint.abs_path);
-    let new = if target.exists() {
-        Some(std::fs::read(target).map_err(io_error)?)
-    } else {
-        None
-    };
-    if old == new {
-        return Ok(None);
+/// Every file the session changed: first checkpoint against the disk.
+fn session_files(state: &AppState, session: &Session) -> Result<Vec<FileDiff>, RpcError> {
+    let checkpoints = state
+        .store
+        .list_checkpoints(&session.id)
+        .map_err(store_err)?;
+    let mut seen = HashSet::new();
+    let mut files = Vec::new();
+    for checkpoint in checkpoints {
+        if seen.insert(checkpoint.abs_path.clone()) {
+            let old = checkpoint_contents(&checkpoint)?;
+            let new = current_contents(&checkpoint.abs_path)?;
+            files.extend(diff_file(
+                &session.working_directory,
+                &checkpoint.abs_path,
+                old,
+                new,
+            ));
+        }
     }
+    Ok(files)
+}
 
-    let path = workspace_relative_path(workspace_path, target);
+/// Files one turn changed: content at turn start against content at turn
+/// end. The end state is the backup taken by the next later write to the
+/// file, or the disk when no later turn touched it.
+fn turn_files(
+    state: &AppState,
+    session: &Session,
+    turn_id: &str,
+) -> Result<Vec<FileDiff>, RpcError> {
+    let turn = state
+        .store
+        .turn_checkpoints(&session.id, turn_id)
+        .map_err(store_err)?;
+    let mut files = Vec::new();
+    for span in super::session_turns::file_spans(&turn.within) {
+        let path = &span.first.abs_path;
+        let old = checkpoint_contents(span.first)?;
+        let new = match turn.after.iter().find(|later| &later.abs_path == path) {
+            Some(later) => checkpoint_contents(later)?,
+            None => current_contents(path)?,
+        };
+        files.extend(diff_file(&session.working_directory, path, old, new));
+    }
+    Ok(files)
+}
+
+fn diff_file(
+    workspace_path: &str,
+    absolute_path: &str,
+    old: Option<Vec<u8>>,
+    new: Option<Vec<u8>>,
+) -> Option<FileDiff> {
+    if old == new {
+        return None;
+    }
+    let path = workspace_relative_path(workspace_path, Path::new(absolute_path));
     let (binary, additions, deletions, hunks) = match (
         old.as_deref().map(std::str::from_utf8).transpose(),
         new.as_deref().map(std::str::from_utf8).transpose(),
@@ -74,20 +125,20 @@ fn diff_checkpoint(
         }
         _ => (true, 0, 0, Vec::new()),
     };
-
-    Ok(Some(FileDiff {
+    Some(FileDiff {
         path,
-        absolute_path: checkpoint.abs_path.clone(),
+        absolute_path: absolute_path.to_string(),
         old_exists: old.is_some(),
         new_exists: new.is_some(),
         binary,
         additions,
         deletions,
         hunks,
-    }))
+    })
 }
 
-fn checkpoint_contents(checkpoint: &CheckpointRow) -> Result<Option<Vec<u8>>, RpcError> {
+/// File content before the checkpointed write; `None` when it did not exist.
+pub(super) fn checkpoint_contents(checkpoint: &CheckpointRow) -> Result<Option<Vec<u8>>, RpcError> {
     if !checkpoint.existed {
         return Ok(None);
     }
@@ -100,7 +151,16 @@ fn checkpoint_contents(checkpoint: &CheckpointRow) -> Result<Option<Vec<u8>>, Rp
     std::fs::read(backup).map(Some).map_err(io_error)
 }
 
-fn workspace_relative_path(workspace_path: &str, absolute_path: &Path) -> String {
+/// Current disk content; `None` when the file does not exist.
+pub(super) fn current_contents(path: &str) -> Result<Option<Vec<u8>>, RpcError> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(io_error(error)),
+    }
+}
+
+pub(super) fn workspace_relative_path(workspace_path: &str, absolute_path: &Path) -> String {
     absolute_path
         .strip_prefix(Path::new(workspace_path))
         .unwrap_or(absolute_path)
@@ -207,11 +267,16 @@ mod tests {
             existed: true,
             backup_path: Some(backup.to_string_lossy().into_owned()),
             created_at: "2026-08-03T00:00:00Z".into(),
+            after_state: None,
         };
 
-        let diff = diff_checkpoint(workspace.path().to_str().unwrap(), &checkpoint)
-            .unwrap()
-            .unwrap();
+        let diff = diff_file(
+            workspace.path().to_str().unwrap(),
+            &checkpoint.abs_path,
+            checkpoint_contents(&checkpoint).unwrap(),
+            current_contents(&checkpoint.abs_path).unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(diff.path, "src.txt");
         assert_eq!((diff.additions, diff.deletions), (1, 1));

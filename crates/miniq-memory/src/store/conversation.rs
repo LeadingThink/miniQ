@@ -129,43 +129,6 @@ impl Store {
         self.cut_session_at_user_message(session_id, message_id, None)
     }
 
-    /// File checkpoints recorded by tool calls at or after a user message,
-    /// oldest first. Undo restores them newest first.
-    pub fn checkpoints_since_user_message(
-        &self,
-        session_id: &str,
-        message_id: &str,
-    ) -> Result<Vec<super::CheckpointRow>> {
-        let conn = self.conn.lock().unwrap();
-        let created_at: String = conn
-            .query_row(
-                "SELECT created_at FROM messages WHERE id = ?1 AND session_id = ?2 AND role = 'user'",
-                params![message_id, session_id],
-                |row| row.get(0),
-            )
-            .optional()?
-            .ok_or_else(|| MemoryError::NotFound(format!("user message {message_id}")))?;
-        let mut stmt = conn.prepare(
-            "SELECT c.id, c.session_id, c.tool_call_id, c.abs_path, c.existed, c.backup_path,
-                    c.created_at
-             FROM checkpoints c JOIN tool_calls t ON t.id = c.tool_call_id
-             WHERE c.session_id = ?1 AND t.session_id = ?1 AND t.created_at >= ?2
-             ORDER BY c.created_at ASC, c.id ASC",
-        )?;
-        let rows = stmt.query_map(params![session_id, created_at], |row| {
-            Ok(super::CheckpointRow {
-                id: row.get(0)?,
-                session_id: row.get(1)?,
-                tool_call_id: row.get(2)?,
-                abs_path: row.get(3)?,
-                existed: row.get::<_, i64>(4)? != 0,
-                backup_path: row.get(5)?,
-                created_at: row.get(6)?,
-            })
-        })?;
-        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
-    }
-
     fn cut_session_at_user_message(
         &self,
         session_id: &str,

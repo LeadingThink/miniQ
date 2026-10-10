@@ -5,6 +5,7 @@ mod agent_history;
 mod agent_tasks;
 mod approval_inbox;
 mod attachments;
+mod checkpoints;
 mod conversation;
 mod execution_events;
 mod external_sessions;
@@ -27,6 +28,7 @@ mod workspace_roots;
 mod workspaces;
 
 pub use agent_tasks::AgentTaskRow;
+pub use checkpoints::TurnCheckpoints;
 pub use external_sessions::ExternalImportOutcome;
 pub use memories::MemoryPage;
 pub use model_context::ModelContextSnapshot;
@@ -123,6 +125,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0020_turn_plans",
         include_str!("../../../migrations/0020_turn_plans.sql"),
     ),
+    (
+        "0021_checkpoint_after_state",
+        include_str!("../../../migrations/0021_checkpoint_after_state.sql"),
+    ),
 ];
 
 #[derive(Debug, Error)]
@@ -162,6 +168,9 @@ pub struct CheckpointRow {
     pub existed: bool,
     pub backup_path: Option<String>,
     pub created_at: String,
+    /// File state after the tool finished: `absent` or `sha256:<hex>`.
+    /// `None` when it was not recorded (older checkpoints).
+    pub after_state: Option<String>,
 }
 
 /// Long-term memory row.
