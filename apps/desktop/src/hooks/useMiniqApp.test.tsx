@@ -784,3 +784,85 @@ it("coalesces session refreshes but reloads changes received during an in-flight
   });
   expect(hook.result.current.catalog.sessions).toEqual([{ ...updated, workingDirectory: "/workspace" }]);
 });
+
+it("replays companion navigation before consumer mount and waits for the local catalog", async () => {
+  fake.mode = "local";
+  const { dispatchCompanionNavigation } = await import("../companionBridge");
+  const original = fake.call.getMockImplementation()!;
+  let finish!: () => void;
+  const catalogGate = new Promise<void>((resolve) => { finish = resolve; });
+  fake.call.mockImplementation(async (method, params) => {
+    if (method === "workspace.list" || method === "session.list") await catalogGate;
+    return original(method, params);
+  });
+  dispatchCompanionNavigation({ action: "session", workspaceId: "w", sessionId: "b" });
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(fake.call).toHaveBeenCalledWith("workspace.list"));
+  expect(fake.call.mock.calls.some(([method]) => method === "session.open")).toBe(false);
+  await act(async () => finish());
+  await waitFor(() => expect(hook.result.current.catalog.currentSessionId).toBe("b"));
+  expect(hook.result.current.catalog.currentWorkspace?.id).toBe("w");
+  expect(fake.call.mock.calls.filter(([method]) => method === "session.open")).toHaveLength(1);
+});
+
+it("rejects remote companion destinations and wrong workspace/session pairing", async () => {
+  const { dispatchCompanionNavigation } = await import("../companionBridge");
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
+  act(() => { dispatchCompanionNavigation({ action: "session", workspaceId: "w", sessionId: "a" }); });
+  await waitFor(() => expect(hook.result.current.error).toContain("不能导航到远程"));
+  expect(fake.call.mock.calls.some(([method]) => method === "session.open")).toBe(false);
+  fake.mode = "local";
+  act(() => { dispatchCompanionNavigation({ action: "session", workspaceId: "other", sessionId: "a" }); });
+  await waitFor(() => expect(hook.result.current.error).toContain("不属于该项目"));
+  expect(fake.call.mock.calls.some(([method]) => method === "session.open")).toBe(false);
+});
+
+it("opens existing services settings and voice composer actions without model/workspace writes", async () => {
+  fake.mode = "local";
+  const { dispatchCompanionNavigation } = await import("../companionBridge");
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
+  act(() => { dispatchCompanionNavigation({ action: "settings" }); });
+  await waitFor(() => expect(hook.result.current.navigation.showSettings).toBe(true));
+  expect(hook.result.current.navigation.settingsTab).toBe("services");
+  act(() => { dispatchCompanionNavigation({ action: "voice", workspaceId: "w", sessionId: "a" }); });
+  await waitFor(() => expect(hook.result.current.companionVoiceRequest?.sessionId).toBe("a"));
+  expect(hook.result.current.catalog.currentSessionId).toBe("a");
+  expect(hook.result.current.navigation.showSettings).toBe(false);
+  act(() => { dispatchCompanionNavigation({ action: "voice", workspaceId: "w" }); });
+  await waitFor(() => expect(hook.result.current.companionVoiceRequest?.sessionId).toBeNull());
+  expect(hook.result.current.catalog.currentSessionId).toBeNull();
+  expect(hook.result.current.catalog.selectedWorkspaceId).toBe("w");
+  expect(fake.call.mock.calls.some(([method]) => /Update$|^workspace\.(create|open|updateRoots)|^session\.create$/.test(method))).toBe(false);
+});
+
+it("opens and marks a persisted local inbox notice through the real AppShell adapter", async () => {
+  fake.mode = "local";
+  const { recordAttentionItem, getAttentionItems } = await import("../companionInbox");
+  recordAttentionItem({ id: "local-notice", host: null, workspaceId: "w", sessionId: "b", kind: "question", eventKey: "local-question", title: "精确本机会话", detail: "需要确认本地结果" });
+  let app!: ReturnType<typeof useMiniqApp>;
+  function TestApp() { app = useMiniqApp(); return <AppShell app={app} theme="jade" onThemeChange={() => {}} />; }
+  render(<TestApp />);
+  await waitFor(() => expect(app.connection.connectionEpoch).toBe(1));
+  fireEvent.click(screen.getByRole("button", { name: "打开提醒收件箱" }));
+  fireEvent.click(await screen.findByRole("button", { name: /精确本机会话/ }));
+  await waitFor(() => expect(app.catalog.currentSessionId).toBe("b"));
+  expect(getAttentionItems().items[0].state).toBe("read");
+});
+
+it("clears consumed or superseded companion voice focus requests", async () => {
+  fake.mode = "local";
+  const { dispatchCompanionNavigation } = await import("../companionBridge");
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.connection.connectionEpoch).toBe(1));
+  act(() => { dispatchCompanionNavigation({ action: "voice", workspaceId: "w", sessionId: "a" }); });
+  await waitFor(() => expect(hook.result.current.companionVoiceRequest?.sessionId).toBe("a"));
+  const requestId = hook.result.current.companionVoiceRequest!.id;
+  act(() => hook.result.current.actions.companionVoiceHandled(requestId));
+  expect(hook.result.current.companionVoiceRequest).toBeUndefined();
+  act(() => { dispatchCompanionNavigation({ action: "voice", workspaceId: "w", sessionId: "a" }); });
+  await waitFor(() => expect(hook.result.current.companionVoiceRequest?.sessionId).toBe("a"));
+  await act(async () => hook.result.current.actions.openSession("b"));
+  expect(hook.result.current.companionVoiceRequest).toBeUndefined();
+});

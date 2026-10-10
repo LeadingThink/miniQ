@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RpcClient } from "../rpc";
 import { DEFAULT_COMPANION_PREFS, listenCompanionPrefs, readCompanionPrefs, setCompanionMode, type CompanionPrefs } from "../companionPrefs";
 import { openCompanionMain, type CompanionDestination } from "../companionBridge";
+import { useCompanionInbox } from "../hooks/useCompanionInbox";
 import { isTauriRuntime } from "../runtime";
 import { errorMessage } from "../errorMessage";
 import { CompanionAvatar } from "./companion/CompanionAvatar";
@@ -22,6 +23,9 @@ export interface CompanionWindowProps {
 
 export default function CompanionWindow(props: CompanionWindowProps) {
   const connection = useCompanionConnection(props.client);
+  const inbox = useCompanionInbox(connection.workspaces, connection.sessions);
+  const notices = props.notices ?? inbox.notices;
+  const onNoticeOpened = props.onNoticeOpened ?? (props.notices ? undefined : inbox.onNoticeOpened);
   const [prefs, setPrefs] = useState(props.initialPrefs ?? DEFAULT_COMPANION_PREFS);
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState<TaskDraft>({ content: "", workspaceId: "", sessionId: null });
@@ -44,7 +48,7 @@ export default function CompanionWindow(props: CompanionWindowProps) {
 
   const selected = connection.sessions.find((s) => s.id === draft.sessionId);
   const relevant = selected ?? mostRelevantSession(connection.sessions);
-  const notice = props.notices?.[0];
+  const notice = notices[0];
   const taskFailure = relevant && connection.failures[relevant.id];
   const state = notice?.state ?? (taskFailure ? "failed" : companionSessionState(relevant, relevant ? connection.questions[relevant.id] : false));
   const project = connection.workspaces.find((w) => w.id === draft.workspaceId);
@@ -72,6 +76,10 @@ export default function CompanionWindow(props: CompanionWindowProps) {
   const openMain = async (destination: CompanionDestination) => {
     try { await (props.openMain ?? openCompanionMain)(destination); return true; }
     catch (cause) { setError(errorMessage(cause)); return false; }
+  };
+  const openNotice = async (item: CompanionNotice) => {
+    if (!await openMain({ action: "session", sessionId: item.sessionId, workspaceId: item.workspaceId })) return;
+    try { onNoticeOpened?.(item.id); } catch (cause) { setError(errorMessage(cause)); }
   };
   const send = async () => {
     if (sendingRef.current || !connection.connected) return;
@@ -106,7 +114,7 @@ export default function CompanionWindow(props: CompanionWindowProps) {
     {expanded && <section className="companion-pane" aria-label="本机任务输入">
       <header><strong>miniQ · 本机</strong><button type="button" aria-label="缩回伙伴" onClick={() => void changeExpanded(false)}>−</button></header>
       <p className="companion-status" role="status">{COMPANION_STATE_LABELS[state]}{!connection.connected && " · 服务未连接"}</p>
-      {!!props.notices?.length && <div className="companion-inbox" aria-label="伙伴提醒收件箱">{props.notices.map((item) => <button key={item.id} className="companion-session-link" type="button" onClick={() => { void openMain({ action: "session", sessionId: item.sessionId, workspaceId: item.workspaceId }).then((opened) => { if (opened) props.onNoticeOpened?.(item.id); }); }}>{COMPANION_STATE_LABELS[item.state]} · {item.text}</button>)}</div>}
+      {!!notices.length && <div className="companion-inbox" aria-label="伙伴提醒收件箱">{notices.map((item) => <button key={item.id} className="companion-session-link" type="button" onClick={() => void openNotice(item)}>{COMPANION_STATE_LABELS[item.state]} · {item.text}</button>)}</div>}
       {relevant && <button className="companion-session-link" type="button" onClick={() => void openMain({ action: "session", sessionId: relevant.id, workspaceId: relevant.workspaceId })}>打开会话：{relevant.title}</button>}
       <form onSubmit={(event) => { event.preventDefault(); void send(); }}>
         <label>项目（本机）<select aria-label="本机项目" value={draft.workspaceId} disabled={sending} onChange={(event) => { setDraft({ ...draft, workspaceId: event.target.value, sessionId: null }); setSent(false); setError(null); }}>

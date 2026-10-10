@@ -36,6 +36,9 @@ import { hostDraftKey, useDesktopHost } from "../desktopHost";
 import { RemotePathDialog } from "./RemotePathDialog";
 import { ProviderOnboardingPrompt } from "./ProviderOnboardingPrompt";
 import { ExtensionCenter } from "./ExtensionCenter";
+import { dispatchCompanionNavigation } from "../companionBridge";
+import { localCompanionNotices } from "../companionInboxAdapter";
+import { hostKey } from "../hostWorkspace";
 import { AttentionInbox } from "./AttentionInbox";
 
 import { useAppWorkbench } from "../hooks/useAppWorkbench";
@@ -267,6 +270,8 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
         <ProviderOnboardingPrompt onOpenSettings={() => app.navigation.openSettings("services")} />
       )}
       <Composer
+        onVoiceFocusApplied={app.actions.companionVoiceHandled}
+        voiceFocusRequest={app.companionVoiceRequest?.sessionId === app.catalog.currentSessionId ? app.companionVoiceRequest.id : undefined}
         slashCommands={slashCommands}
         workspaceId={app.catalog.currentWorkspace?.id}
         modelSlot={
@@ -318,6 +323,8 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
           <ProviderOnboardingPrompt onOpenSettings={() => app.navigation.openSettings("services")} />
         )}
         <ComposerCard
+          onVoiceFocusApplied={app.actions.companionVoiceHandled}
+          voiceFocusRequest={app.companionVoiceRequest?.sessionId === null && app.companionVoiceRequest.workspaceId === selectedWorkspace?.id ? app.companionVoiceRequest.id : undefined}
           slashCommands={slashCommands}
           workspaceId={selectedWorkspace?.id}
           modelSlot={
@@ -420,6 +427,7 @@ function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, onO
 }
 
 export function AppShell({ app, theme, onThemeChange, contentOnly = false, active = true }: AppShellProps) {
+  const desktop = useDesktopHost();
   const workbench = useAppWorkbench(app);
   const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
   const openSessionReview = () => {
@@ -453,7 +461,12 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
     <Container {...(contentOnly ? {} : { className: `app ${app.navigation.sidebarCollapsed ? "sidebar-collapsed" : ""}` })}>
       {!contentOnly && <AppSidebar app={app} />}
       <div className="main" data-app-active={String(active)}>
-        {active && <AttentionInbox app={app} />}
+        {active && <AttentionInbox app={app} onOpenLocalItem={(item) => {
+          const local = desktop?.catalogs[hostKey(null)] ?? (!app.client.sshHost && app.client.mode === "local" ? app.catalog : null);
+          const notice = local && localCompanionNotices([{ ...item, state: "unread" }], local.workspaces, local.sessions)[0];
+          if (!notice) { app.setError("提醒对应的本机项目或会话已不可用"); return false; }
+          return dispatchCompanionNavigation({ action: "session", workspaceId: notice.workspaceId, sessionId: notice.sessionId });
+        }} />}
         <AppStatusBar
           app={app}
           onOpenFile={workbench.openFile}

@@ -108,3 +108,25 @@ it("restores accepted text after an asynchronous provider failure and opens exis
   fireEvent.click(screen.getByRole("button", { name: "打开主窗口设置 / API Key" }));
   expect(openMain).toHaveBeenCalledWith({ action: "settings" });
 });
+
+it("adapts persisted local notices, opens their exact session and marks read only after reveal", async () => {
+  localStorage.clear();
+  const { recordAttentionItem, getAttentionItems } = await import("../companionInbox");
+  recordAttentionItem({ id: "local", host: null, sessionId: "s", kind: "question", eventKey: "q-local", title: "本机提醒", detail: "请确认本机结果" });
+  recordAttentionItem({ id: "ssh", host: "remote", workspaceId: "w", sessionId: "s", kind: "question", eventKey: "q-ssh", title: "远程提醒", detail: "不能混入远程" });
+  recordAttentionItem({ id: "relay", host: null, targetDeviceId: "remote-device", workspaceId: "w", sessionId: "s", kind: "completed", eventKey: "relay", title: "relay", detail: "不能混入relay" });
+  const f = fixture();
+  const openMain = vi.fn().mockRejectedValueOnce(new Error("reveal failed")).mockResolvedValueOnce(undefined);
+  render(<CompanionWindow client={f.client} initialPrefs={{ mode: "pet" }} openMain={openMain} />);
+  fireEvent.click(screen.getByRole("button", { name: /展开任务输入/ }));
+  const notice = await screen.findByRole("button", { name: /请确认本机结果/ });
+  expect(screen.queryByText(/不能混入/)).toBeNull();
+  fireEvent.click(notice);
+  await screen.findByText("reveal failed");
+  expect(getAttentionItems().items.find((item) => item.id === "local")?.state).toBe("unread");
+  fireEvent.click(notice);
+  await waitFor(() => expect(getAttentionItems().items.find((item) => item.id === "local")?.state).toBe("read"));
+  expect(openMain).toHaveBeenLastCalledWith({ action: "session", sessionId: "s", workspaceId: "w" });
+  expect(screen.queryByRole("button", { name: /请确认本机结果/ })).toBeNull();
+  localStorage.clear();
+});

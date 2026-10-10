@@ -16,6 +16,7 @@ import type {
 import { useDaemonConnection } from "./useDaemonConnection";
 import { useAppUpdater } from "./useAppUpdater";
 import { useFilePreview } from "./useFilePreview";
+import { useCompanionNavigation } from "./useCompanionNavigation";
 import { useSessionLifecycleActions } from "./useSessionLifecycleActions";
 import { useSessionFeed } from "./useSessionFeed";
 import { useSessionModel } from "./useSessionModel";
@@ -716,6 +717,10 @@ export function useMiniqApp(active = true) {
   useEffect(() => {
     desktop?.rememberNavigation(client.sshHost, { workspaceId: catalog.selectedWorkspaceId, sessionId: catalog.currentSessionId });
   }, [desktop?.rememberNavigation, client, catalog.selectedWorkspaceId, catalog.currentSessionId]);
+  const companionNavigation = useCompanionNavigation({
+    client, catalog, navigation, active, connectionEpoch: connection.connectionEpoch,
+    openSession: lifecycle.openSession, selectWorkspace: navigationActions.selectWorkspace, setError,
+  });
   const turnActions = useTurnActions(
     client,
     catalog,
@@ -742,6 +747,7 @@ export function useMiniqApp(active = true) {
   return {
     client,
     sessionModel,
+    companionVoiceRequest: companionNavigation.voiceRequest,
     error: connectionError ?? desktop?.error ?? sessionError,
     setError,
     dismissError: () => { setConnectionError(null); desktop?.clearError(); setError(null); },
@@ -758,6 +764,7 @@ export function useMiniqApp(active = true) {
     connection,
     updater,
     actions: {
+      companionVoiceHandled: companionNavigation.voiceHandled,
       ...navigationActions,
       ...workspaceActions,
       ...lifecycle,

@@ -105,3 +105,38 @@ it("puts the mic beside send on touch devices for one-tap dictation", async () =
     view.unmount();
   } finally { vi.unstubAllGlobals(); }
 });
+
+it("exposes and focuses the existing desktop mic on companion request without starting capture", async () => {
+  const { props, view } = setup();
+  await act(async () => {});
+  view.rerender(<ComposerCard {...props} voiceFocusRequest={1} />);
+  await act(async () => { vi.advanceTimersByTime(50); });
+  expect(screen.getByRole("button", { name: "更多输入方式" }).getAttribute("aria-expanded")).toBe("true");
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "语音输入" }));
+  expect(startVoiceCapture).not.toHaveBeenCalled();
+});
+
+it("focuses the composer and reports unavailable voice service on companion request", async () => {
+  const onError = vi.fn();
+  const call = vi.fn(async () => ({ transcribe: false }));
+  render(<ComposerCard busy={false} placeholder="消息" client={{ call } as unknown as RpcClient} onSend={vi.fn()} onError={onError} voiceFocusRequest={1} />);
+  await act(async () => {});
+  await act(async () => { vi.advanceTimersByTime(50); });
+  expect(document.activeElement).toBe(screen.getByRole("textbox"));
+  expect(onError).toHaveBeenCalledWith(expect.stringContaining("当前语音输入不可用"));
+  expect(startVoiceCapture).not.toHaveBeenCalled();
+});
+
+it("consumes companion focus once so returning to a session does not reopen its mic", async () => {
+  const { props, view } = setup();
+  const applied = vi.fn();
+  await act(async () => {});
+  view.rerender(<ComposerCard {...props} voiceFocusRequest={1} onVoiceFocusApplied={applied} />);
+  await act(async () => { vi.advanceTimersByTime(50); });
+  expect(applied).toHaveBeenCalledExactlyOnceWith(1);
+  view.rerender(<ComposerCard {...props} onVoiceFocusApplied={applied} />);
+  fireEvent.click(screen.getByRole("button", { name: "更多输入方式" }));
+  expect(screen.getByRole("button", { name: "更多输入方式" }).getAttribute("aria-expanded")).toBe("false");
+  await act(async () => { vi.advanceTimersByTime(50); });
+  expect(applied).toHaveBeenCalledOnce();
+});

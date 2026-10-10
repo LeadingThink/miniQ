@@ -66,6 +66,9 @@ export function ComposerCard(props: {
   permissionSlot?: ReactNode;
   allowGoal?: boolean;
   autoFocus?: boolean;
+  /** Explicit companion navigation focuses the existing control; it never starts recording. */
+  voiceFocusRequest?: number;
+  onVoiceFocusApplied?: (id: number) => void;
   /** Persist unsent drafts under this key (restored on remount). */
   draftKey?: string;
   /** Replace the draft on an explicit user-selected starter action. */
@@ -88,6 +91,8 @@ export function ComposerCard(props: {
   /** This session's messages: ↑ in an empty input recalls the last user one. */
   messages?: Message[];
 }) {
+  const card = useRef<HTMLDivElement>(null);
+  const focusedVoiceRequest = useRef<number | undefined>(undefined);
   const keyboardHintId = useId();
   const inputMode = useTouchComposerInput();
   const attachmentReads = useAttachmentReads(props.draftKey);
@@ -427,6 +432,23 @@ export function ComposerCard(props: {
     });
   };
 
+  useEffect(() => {
+    if (props.voiceFocusRequest === undefined || voiceCapabilities.loading || focusedVoiceRequest.current === props.voiceFocusRequest) return;
+    if (voiceCapabilities.capabilities.transcribe && !voiceInline && !plusOpen) { setPlusOpen(true); return; }
+    const frame = requestAnimationFrame(() => {
+      const requestId = props.voiceFocusRequest!;
+      focusedVoiceRequest.current = requestId;
+      const trigger = card.current?.querySelector<HTMLButtonElement>(".voice-btn:not(:disabled)");
+      if (trigger) trigger.focus();
+      else {
+        textareaRef.current?.focus();
+        props.onError?.("已打开本机会话输入框，当前语音输入不可用；请在设置中确认语音服务后点击语音输入。");
+      }
+      props.onVoiceFocusApplied?.(requestId);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [props.voiceFocusRequest, voiceCapabilities.loading, voiceCapabilities.capabilities.transcribe, voiceInline, plusOpen, props.onError, props.onVoiceFocusApplied]);
+
   const voiceControl = props.client && voiceCapabilities.capabilities.transcribe ? (
     <VoiceInput
       key={props.draftKey}
@@ -441,7 +463,7 @@ export function ComposerCard(props: {
   ) : null;
 
   return (
-    <div className="composer-card">
+    <div ref={card} className="composer-card">
       {showRemoteAttachment && remoteHost && <RemotePathDialog host={remoteHost} purpose="attachment"
         onSubmit={async (path) => { addAttachments([path]); }} onClose={() => setShowRemoteAttachment(false)} />}
       {voicePreview && <VoiceTranscript preview={voicePreview} />}

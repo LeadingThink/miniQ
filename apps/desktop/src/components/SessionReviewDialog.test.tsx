@@ -97,3 +97,29 @@ it("requires explicit confirmation and sends one new user message", async () => 
   await waitFor(() => expect(calls).toHaveBeenCalledWith("session.sendMessage", expect.objectContaining({ sessionId: "s1", message: expect.objectContaining({ role: "user" }), rejectIfBusy: true })));
   expect(localStorage.getItem("miniq.sessionReview.revision:[\"test\",null,\"s1\",\"a1\"]")).toContain('"sent"');
 });
+
+it("uses the backend-registered review RPCs with exact start/get/cancel parameters", async () => {
+  const { readFileSync } = await import("node:fs");
+  const gateway = readFileSync("../../crates/miniq-daemon/src/gateway.rs", "utf8");
+  let current = run({ status: "queued", verdict: null, findings: [] });
+  const calls = baseCalls([]);
+  const base = calls.getMockImplementation()!;
+  calls.mockImplementation(async (method, params, options) => {
+    if (method.startsWith("review.")) expect(gateway).toContain(`"${method}" => review::`);
+    if (method === "review.start") return { run: current };
+    if (method === "review.get") return { run: current };
+    if (method === "review.cancel") { current = { ...current, status: "cancelled" }; return { run: current }; }
+    return base(method, params, options);
+  });
+  render(<SessionReviewDialog client={client(calls)} sessionId="s1" primaryMessageId="a1" busy={false} onClose={vi.fn()} />);
+  await screen.findByRole("option", { name: "review-model" });
+  expect(calls).toHaveBeenCalledWith("review.list", { sessionId: "s1", primaryMessageId: "a1" }, expect.anything());
+  fireEvent.change(screen.getByRole("combobox", { name: "审查模型" }), { target: { value: "review-model" } });
+  fireEvent.click(screen.getByRole("button", { name: "检查本轮答复" }));
+  await screen.findByRole("button", { name: "取消检查" });
+  expect(calls).toHaveBeenCalledWith("review.start", { sessionId: "s1", primaryMessageId: "a1", model: "review-model" });
+  await waitFor(() => expect(calls).toHaveBeenCalledWith("review.get", { sessionId: "s1", reviewId: "r1" }, expect.anything()));
+  fireEvent.click(screen.getByRole("button", { name: "取消检查" }));
+  await waitFor(() => expect(calls).toHaveBeenCalledWith("review.cancel", { sessionId: "s1", reviewId: "r1" }));
+  expect(calls.mock.calls.some(([method]) => method === "session.modelUpdate")).toBe(false);
+});

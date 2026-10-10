@@ -17,6 +17,7 @@ import "./AttentionInbox.css";
 
 interface AttentionInboxProps {
   app: MiniqAppController;
+  onOpenLocalItem?: (item: AttentionItem) => boolean;
 }
 
 const kindLabel: Record<AttentionItem["kind"], string> = {
@@ -35,7 +36,7 @@ function clipped(value: string, length = 180): string {
   return compact.length > length ? `${compact.slice(0, length)}…` : compact;
 }
 
-export function AttentionInbox({ app }: AttentionInboxProps) {
+export function AttentionInbox({ app, onOpenLocalItem }: AttentionInboxProps) {
   const desktop = useDesktopHost();
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState(snapshot);
@@ -47,6 +48,10 @@ export function AttentionInbox({ app }: AttentionInboxProps) {
   }), []);
 
   const openItem = (item: AttentionItem) => {
+    if (item.host === null && !item.targetDeviceId && onOpenLocalItem) {
+      if (onOpenLocalItem(item)) { markRead(item.id); setOpen(false); }
+      return;
+    }
     const changed = markRead(item.id);
     if (!changed.ok) {
       setResult(snapshot());

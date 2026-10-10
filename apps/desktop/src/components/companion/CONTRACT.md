@@ -2,11 +2,11 @@
 
 Baseline: origin/main 58a15ef. Companion owns its native module, separate route, UI/settings/helpers/tests and prefs. It does not mount ConnectedApp, useMiniqApp, notification/sound hooks, or LivingBackground. General Settings adds only `<CompanionSettings />`. The original Alt+Space toggle remains unchanged.
 
-## Main-window navigation (integrator action required)
+## Main-window navigation (integrated)
 
 `main.tsx` calls `initializeCompanionBridge()` only on the regular main route. Rust `companion_open_main` emits **only to `main`** the Tauri event `companion:navigate`, then shows/unminimizes/focuses the existing main window. The bridge validates its payload and dispatches DOM `miniq:companion-navigate`.
 
-Mount `subscribeCompanionNavigation(handler)` in the main app's useMiniqApp/navigation owner. It replays the latest event received before that consumer mounted. The handler must retain requests until the LOCAL catalog is ready, choose the local host explicitly, refresh known projects/sessions if needed and validate workspace/session pairing before navigating. It must never resolve IDs against an SSH or mobile/relay host just because that host is currently selected.
+`useMiniqApp` mounts `subscribeCompanionNavigation(handler)` through `useCompanionNavigation` in its persistent local navigation owner. It replays the latest event received before that consumer mounted. The handler must retain requests until the LOCAL catalog is ready, choose the local host explicitly, refresh known projects/sessions if needed and validate workspace/session pairing before navigating. It must never resolve IDs against an SSH or mobile/relay host just because that host is currently selected.
 
 Payload is the `CompanionDestination` discriminated union exported by `src/companionBridge.ts`:
 
@@ -20,9 +20,9 @@ Payload is the `CompanionDestination` discriminated union exported by `src/compa
 - `settings`: show existing main Settings, provider/API Key entry. No new configuration system.
 - `voice`: open the existing main Composer for the specified local project/session and expose/focus its existing VoiceInput control; the user starts recording with the usual explicit click. Companion itself never records or listens globally. Its button says **在主窗口语音输入**.
 
-The module intentionally leaves useMiniqApp untouched because it belongs to the integration owner. Without this consumer, native main-window reveal works but session/settings/voice navigation is not complete.
+The local controller remains mounted while SSH content is visible and is the sole navigation consumer. It explicitly selects `null` (local host), waits for catalog readiness, refreshes the local catalog, validates workspace/session pairing, and reuses `openSession` or the existing draft workspace navigation. Remote/relay transports, external sessions and archived sessions are rejected. Settings opens the existing services tab. Voice navigation exposes the existing Composer mic and focuses it without clicking or recording; if unavailable it focuses the Composer input and reports that limitation.
 
-## Cross-window inbox (adapter action required)
+## Cross-window inbox (integrated)
 
 `CompanionWindowProps` is the seam for the other agent's `companionInbox.ts`:
 
@@ -38,7 +38,11 @@ modelLabels?: Readonly<Record<string, string>>; // key: LOCAL session ID
 
 Pass only local notices, ordered newest first. All supplied entries render in a scrolling inbox. The latest entry drives the avatar state. Successful navigation invokes `onNoticeOpened(id)`; failed main-window reveal preserves the inbox entry. The component creates no OS notifications or sounds. No file named companionInbox.ts is created by this branch.
 
-Without injection the independent local socket lists sessions and maps their statuses. live question requested/resolved events maintain needs_input; running->idle and provided turnCount mark ready. A freshly opened companion cannot recover unresolved question details or a completed-turn count absent from session.list; the shared inbox adapter can provide that persisted state.
+Production uses `useCompanionInbox` and `companionInboxAdapter` to inject unread local notices from the existing persisted AttentionInbox, newest first, paging all entries. The main AppShell uses the same adapter for exact local notice navigation; existing DesktopHost notification hooks remain the only producers. Storage events synchronize the same-origin main/companion webviews, without native event emit permissions. SSH and relay/device targets, snoozed/read entries, invalid pairings and unavailable/external/archived sessions are excluded. Entries without workspaceId are resolved only through the local session catalog.
+
+Limitations / TODO: the current native navigation contract acknowledges main-window reveal and event delivery, not completion of `session.open`. An entry is marked read after successful reveal; a subsequent deletion or load failure is reported by the main controller. A future correlated consumer acknowledgment would be required to delay marking read until session history has loaded. Same-origin storage event behavior still needs packaged multi-webview validation. The persisted inbox does not record question/approval resolution; unread historical reminders may remain until opened or marked read.
+
+Without matching persisted notices the independent local socket lists sessions and maps their statuses. live question requested/resolved events maintain needs_input; running->idle and provided turnCount mark ready. A freshly opened companion cannot recover unresolved question details or a completed-turn count absent from session.list; the shared inbox adapter can provide that persisted state.
 
 ## Daemon RPC and model inheritance
 

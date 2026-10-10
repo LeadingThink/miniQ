@@ -143,3 +143,40 @@ it("notifies once when a task on an inactive SSH host completes after switching 
   expect(notifyTaskResult).toHaveBeenCalledTimes(2);
   expect(screen.getByRole("region", { name: "content-demo-research" })).toBeTruthy();
 });
+
+it("routes companion IDs only through the persistent local controller while SSH is selected", async () => {
+  const { dispatchCompanionNavigation } = await import("./companionBridge");
+  const root = new IntegrationRoot();
+  const call = vi.spyOn(root, "call");
+  render(<DesktopHostProvider root={root}><ConnectedApp theme="jade" onThemeChange={() => {}} /></DesktopHostProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: "开发项目 · 任务进度" }));
+  await screen.findByText("demo-development private answer");
+  const before = root.opened.length;
+  act(() => { dispatchCompanionNavigation({ action: "session", workspaceId: "same-workspace", sessionId: "same-session" }); });
+  await waitFor(() => expect(screen.getByRole("region", { name: "content-local" }).getAttribute("data-active")).toBe("true"));
+  await screen.findByText("local private answer");
+  expect(root.opened.slice(before)).toEqual(["local"]);
+  expect(call.mock.calls.some(([method]) => /modelUpdate|updateRoots/.test(method))).toBe(false);
+});
+
+it("rejects an SSH-only session instead of resolving it from the currently selected host", async () => {
+  const { dispatchCompanionNavigation } = await import("./companionBridge");
+  class RemoteOnlyRoot extends IntegrationRoot {
+    override async content<T>(host: string | null, method: string, params?: unknown): Promise<T> {
+      const result = await super.content<T>(host, method, params);
+      if (host && method === "session.list") {
+        const list = result as { sessions: Session[] };
+        return { sessions: [...list.sessions, { ...list.sessions[0], id: "ssh-only", title: "SSH-only task" }] } as T;
+      }
+      return result;
+    }
+  }
+  const root = new RemoteOnlyRoot();
+  render(<DesktopHostProvider root={root}><ConnectedApp theme="jade" onThemeChange={() => {}} /></DesktopHostProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: "开发项目 · 任务进度" }));
+  await screen.findByText("demo-development private answer");
+  const before = root.opened.length;
+  act(() => { dispatchCompanionNavigation({ action: "session", workspaceId: "same-workspace", sessionId: "ssh-only" }); });
+  await waitFor(() => expect(screen.getByTestId("error-local").textContent).toContain("不属于该项目"));
+  expect(root.opened.slice(before)).toEqual([]);
+});
