@@ -4,5 +4,11 @@
 <dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>miniQ 使用麦克风将你的语音转换为输入文字。</string>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <!-- The embedded browser intentionally supports user-entered HTTP pages. -->
+    <key>NSAllowsArbitraryLoads</key>
+    <true/>
+  </dict>
 </dict>
 </plist>
