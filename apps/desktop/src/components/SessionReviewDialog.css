@@ -1,0 +1,28 @@
+.session-review-dialog {
+  width: min(720px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+.session-review-dialog button, .session-review-dialog select,
+.session-review-dialog summary, .session-review-evidence-links a {
+  min-height: 44px;
+}
+.session-review-dialog label { display: grid; gap: 6px; margin-block: 12px; }
+.session-review-dialog select, .session-review-dialog input { width: 100%; min-width: 0; }
+.session-review-dialog input { min-height: 44px; }
+.session-review-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block: 12px; }
+.session-review-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-block: 12px; }
+.session-review-card header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.session-review-card h3 { font-size: inherit; margin-bottom: 8px; }
+.session-review-finding { border-top: 1px solid var(--border); padding-block: 12px; }
+.session-review-severity { font-weight: 600; }
+.session-review-severity.severity-critical { color: var(--danger, #c43434); }
+.session-review-severity.severity-important { color: var(--warning, #9a6400); }
+.session-review-evidence-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.session-review-evidence-links a { display: inline-flex; align-items: center; }
+.session-review-card summary { cursor: pointer; padding-block: 10px; }
+.session-review-card pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; padding: 8px; background: var(--bg-subtle); }
+.message-actions .session-review-trigger { min-width: 44px; min-height: 44px; height: auto; width: auto; padding: 8px; gap: 4px; }
+/* Keep the review entry discoverable on older completed replies too. */
+.message-entry.assistant > .message-footer > .message-actions:has(.session-review-trigger) { opacity: 1; }

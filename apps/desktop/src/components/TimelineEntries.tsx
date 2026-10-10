@@ -28,6 +28,7 @@ import { replyFileArtifacts } from "../replyFiles";
 import { resolveWorkspacePath } from "../localFiles";
 import { turnHasFileWrites } from "../turnChanges";
 import { ConfirmDialog } from "./ui/Dialog";
+import { SessionReviewDialog } from "./SessionReviewDialog";
 
 /** An edit or regenerate that waits for the user to confirm stopping the run. */
 interface PendingRewrite {
@@ -81,6 +82,8 @@ export function TimelineEntries(props: {
   windowHandle?: RefObject<TimelineWindowHandle | null>;
 }) {
   const [pendingRewrite, setPendingRewrite] = useState<PendingRewrite | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<{ sessionId: string; messageId: string } | null>(null);
+  const sessionId = props.messages[0]?.sessionId;
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const voiceCapabilities = useVoiceCapabilities(props.client);
   const [draft, setDraft] = useState("");
@@ -386,6 +389,15 @@ export function TimelineEntries(props: {
                     content={item.message.content}
                     onError={bridge.reportError}
                   />
+                  {props.client && item.message.sessionId && !runningTurnMessageIds?.has(item.message.id) && (
+                    <button
+                      type="button"
+                      className="msg-action session-review-trigger"
+                      aria-label="第二意见"
+                      title="让另一模型检查本轮答复和证据"
+                      onClick={() => setReviewTarget({ sessionId: item.message.sessionId, messageId: item.message.id })}
+                    >第二意见</button>
+                  )}
                   {props.client && canSpeak && (
                     <SpeakButton
                       client={props.client}
@@ -521,6 +533,15 @@ export function TimelineEntries(props: {
         </TimelineTurnFrame>
       ))}
       {turns.length === 0 && streaming}
+      {reviewTarget && reviewTarget.sessionId === sessionId && props.client && (
+        <SessionReviewDialog
+          client={props.client}
+          sessionId={reviewTarget.sessionId}
+          primaryMessageId={reviewTarget.messageId}
+          busy={props.busy}
+          onClose={() => setReviewTarget(null)}
+        />
+      )}
       <ConfirmDialog
         open={pendingRewrite !== null}
         tone="danger"
