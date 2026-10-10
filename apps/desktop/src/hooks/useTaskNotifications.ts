@@ -8,6 +8,7 @@ import { isNativeMobileApp } from "../mobileRuntime";
 import { startAppBadge } from "../appBadge";
 import { startRemotePush } from "../remotePush";
 import { decisionOf, resolveFromNotification } from "../notificationActions";
+import { recordAttentionItem } from "../companionInbox";
 
 /** Completed turns shorter than this are not worth a phone notification. */
 export const SHORT_TASK_MS = 10_000;
@@ -98,29 +99,37 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
     };
 
     const deliver = (host: string | null, sessionId: string, kind: TaskNotificationKind, startedAt: number | undefined, cursor?: EventCursor) => {
-      if (mobile && kind === "completed" && startedAt !== undefined && Date.now() - startedAt < SHORT_TASK_MS) return;
       const catalog = catalogsRef.current[hostKey(host)];
       const session = catalog?.sessions.find((entry) => entry.id === sessionId);
       const title = host === null
         ? session?.title ?? ""
         : `${catalog?.label || host} · ${session?.title || "当前会话"}`;
+      const key = scopedKey(host, sessionId);
+      const results = legacyResultKeys.get(key) ?? {};
+      const stableEventKey = !cursor && results[kind] || taskResultEventKey(host, sessionId, kind, {
+        cursor, turnId: turnIds.get(key), transition: transitionKeys.get(key),
+      });
+      if (kind === "completed" || kind === "failed") {
+        recordAttentionItem({
+          host,
+          ...(root.targetDeviceId ? { targetDeviceId: root.targetDeviceId } : {}),
+          sessionId,
+          ...(session?.workspaceId ? { workspaceId: session.workspaceId } : {}),
+          kind,
+          eventKey: stableEventKey,
+          title: session?.title ?? "当前会话",
+          detail: kind === "completed" ? "任务已完成" : "任务执行失败",
+        });
+      }
+      if (!cursor) { results[kind] = stableEventKey; legacyResultKeys.set(key, results); }
+      if (mobile && kind === "completed" && startedAt !== undefined && Date.now() - startedAt < SHORT_TASK_MS) return;
       if (mobile) {
         const viewing = optionsRef.current.isViewing?.(host, sessionId) ?? false;
         void notifyMobileTask(kind, title, { host, sessionId, ...(root.targetDeviceId ? { targetDeviceId: root.targetDeviceId } : {}) }, viewing);
       } else if (kind !== "attention") {
         // Desktop approval/question reminders come from useAttentionNotifications,
         // which carries the request detail and per-kind preferences.
-        const key = scopedKey(host, sessionId);
-        const results = legacyResultKeys.get(key) ?? {};
-        const eventKey = !cursor && results[kind] || taskResultEventKey(host, sessionId, kind, {
-          cursor, turnId: turnIds.get(key), transition: transitionKeys.get(key),
-        });
-        if (!cursor) {
-          // Late terminal status/timing updates must not change a delivered key.
-          results[kind] = eventKey;
-          legacyResultKeys.set(key, results);
-        }
-        void notifyTaskResult(kind, title, { host, sessionId, ...(root.targetDeviceId ? { targetDeviceId: root.targetDeviceId } : {}) }, eventKey);
+        void notifyTaskResult(kind, title, { host, sessionId, ...(root.targetDeviceId ? { targetDeviceId: root.targetDeviceId } : {}) }, stableEventKey);
       }
     };
 
@@ -205,7 +214,7 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
           }
           const startedAt = started.get(key);
           if (kind !== "attention") started.delete(key);
-          deliver(host, session.id, kind, startedAt);
+          deliver(host, session.id, kind, startedAt, `catchup:${session.id}:${kind}:${session.updatedAt ?? session.lastActivityAt ?? session.status}`);
         }
       }
     };

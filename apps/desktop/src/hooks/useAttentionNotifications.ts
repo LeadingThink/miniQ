@@ -5,6 +5,7 @@ import { hostKey, scopedKey, type HostCatalog, type HostNavigation } from "../ho
 import { notifyAttention, type AttentionKind } from "../taskNotifications";
 import { isTauriRuntime } from "../runtime";
 import { isNativeMobileApp } from "../mobileRuntime";
+import { recordAttentionItem } from "../companionInbox";
 
 export type AttentionNavigate = (host: string | null, navigation: HostNavigation) => void;
 
@@ -30,9 +31,7 @@ export function useAttentionNotifications(
   navigateRef.current = navigate;
 
   useEffect(() => {
-    // Phones get approval/question alerts from useTaskNotifications and the
-    // offline push, which share one per-session notification id.
-    if (isNativeMobileApp()) return;
+    const mobile = isNativeMobileApp();
     const notified = new Set<string>();
     const open = new Set<string>();
     let pendingFocus: Target | null = null;
@@ -56,6 +55,18 @@ export function useAttentionNotifications(
         ? session?.title ?? ""
         : `${catalog?.label || host} · ${session?.title || "当前会话"}`;
       const target: Target = { key, host, navigation: { workspaceId: session?.workspaceId ?? null, sessionId } };
+      recordAttentionItem({
+        host,
+        ...(root.targetDeviceId ? { targetDeviceId: root.targetDeviceId } : {}),
+        sessionId,
+        ...(session?.workspaceId ? { workspaceId: session.workspaceId } : {}),
+        kind,
+        eventKey: `${kind}:${id}`,
+        title: session?.title ?? "当前会话",
+        detail,
+      });
+      // Phones receive the native notification path; the inbox still records the event.
+      if (mobile) return;
       void notifyAttention(kind, title, detail, () => go(target), { host, sessionId }, id).then((sent) => {
         if (sent && focusFallback && open.has(key)) pendingFocus = target;
       }).catch(() => undefined);

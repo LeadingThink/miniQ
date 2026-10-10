@@ -1,0 +1,126 @@
+.attention-inbox-anchor {
+  position: fixed;
+  top: 7px;
+  right: 188px;
+  z-index: 30;
+}
+
+.attention-inbox-trigger {
+  position: relative;
+}
+
+.attention-inbox-badge {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-contrast, var(--bg));
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.attention-inbox-dialog {
+  width: min(560px, calc(100vw - 24px));
+  max-height: min(720px, calc(100dvh - 32px));
+}
+
+.attention-inbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: min(560px, calc(100dvh - 180px));
+  overflow-y: auto;
+  padding: var(--space-1) 0;
+}
+
+.attention-inbox-item {
+  display: flex;
+  gap: var(--space-1);
+  align-items: stretch;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+}
+
+.attention-inbox-item.unread {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--hairline));
+}
+
+.attention-inbox-item-open {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: var(--space-2) var(--space-3);
+  color: var(--text);
+  text-align: start;
+}
+
+.attention-inbox-item-heading {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.attention-inbox-item-heading strong,
+.attention-inbox-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attention-inbox-item-heading strong {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.attention-inbox-detail {
+  width: 100%;
+  color: var(--text-mid);
+  white-space: nowrap;
+}
+
+.attention-inbox-kind,
+.attention-inbox-safe-note {
+  flex: none;
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+}
+
+.attention-inbox-safe-note { color: var(--text-dim); }
+
+.attention-inbox-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-1);
+}
+
+.attention-inbox-item-actions .ghost {
+  width: 28px;
+  height: 28px;
+}
+
+.attention-inbox-empty,
+.attention-inbox-error {
+  margin: var(--space-3) 0;
+  color: var(--text-mid);
+}
+
+.attention-inbox-error { color: var(--danger, var(--text-mid)); }
+
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .attention-inbox-anchor { top: max(8px, var(--safe-top)); right: max(116px, var(--safe-right)); }
+  .attention-inbox-dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+  .attention-inbox-list { max-height: calc(100dvh - 150px); }
+}
