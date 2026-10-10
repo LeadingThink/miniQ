@@ -21,6 +21,7 @@ import { useSessionFeed } from "./useSessionFeed";
 import { useSessionModel } from "./useSessionModel";
 import { useSessionDiff } from "./useSessionDiff";
 import { useSessionError } from "./useSessionError";
+import { useToast } from "../components/ui/Toast";
 import { isSessionRunning, isSessionTerminal } from "../sessionStatus";
 import { BROWSER_DRAFT_CREATED_EVENT, type BrowserDraftCreatedDetail } from "../browserTabs";
 
@@ -503,8 +504,9 @@ function useTurnActions(
 function useInteractionActions(
   client: RpcClient,
   setError: ErrorSetter,
-  refreshDiff: () => Promise<void>,
+  filesRestored: () => void,
 ) {
+  const toast = useToast();
   const resolveApproval = useCallback(
     async (approvalId: string, decision: string) => {
       try {
@@ -528,14 +530,14 @@ function useInteractionActions(
         const result = await client.call<{ restored: string }>("checkpoint.rollback", {
           checkpointId,
         });
-        await refreshDiff();
+        filesRestored();
         setError(null);
-        window.alert(`已恢复: ${result.restored}`);
+        toast.show({ tone: "success", message: `已恢复: ${result.restored}` });
       } catch (error) {
         setError(errorMessage(error));
       }
     },
-    [client, refreshDiff, setError],
+    [client, filesRestored, setError, toast],
   );
 
   return { resolveApproval, resolveQuestion, rollbackCheckpoint };
@@ -621,7 +623,11 @@ export function useMiniqApp(active = true) {
     onSessionCompleted: handleSessionCompleted,
     onError: setSessionError,
   });
-  const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls);
+  const latestTurnId = useMemo(
+    () => [...feed.messages].reverse().find((message) => message.role === "user")?.id ?? null,
+    [feed.messages],
+  );
+  const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls, latestTurnId);
   const preview = useFilePreview(catalog.currentSession?.workingDirectory, catalog.currentSessionId, catalog.currentWorkspacePaths, client, desktop?.getFilePreviewCache(client.sshHost));
   const updater = useAppUpdater(client, setConnectionError, desktop?.setTransportPaused);
   const scopedConnection = useDaemonConnection({
@@ -718,7 +724,7 @@ export function useMiniqApp(active = true) {
     sessionModel,
     ensureProviderConfigured,
   );
-  const interactionActions = useInteractionActions(client, setError, review.refresh);
+  const interactionActions = useInteractionActions(client, setError, review.filesRestored);
   const lastResyncedConnection = useRef(0);
   useEffect(() => {
     if (!active) return;

@@ -27,6 +27,7 @@ mod session_goal;
 mod session_history;
 mod session_model;
 mod session_queue;
+mod session_turns;
 mod settings;
 mod settings_schema;
 mod share;
@@ -164,6 +165,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "agent.message" => agents::message(state, req.params),
         "agent.stop" => agents::action(state, req.params, true).await,
         "session.diff" => session_diff::get(state, req.params),
+        "session.revertTurn" => session_turns::revert(state, req.params),
         "session.sendMessage" => session::send_message(state, req.params).await,
         "session.rewriteMessage" => session::rewrite_message(state, req.params),
         "session.undo" => session_context::undo(state, req.params),

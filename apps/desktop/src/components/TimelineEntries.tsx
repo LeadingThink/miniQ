@@ -23,6 +23,8 @@ import { useTurnWindow } from "../hooks/useTurnWindow";
 import { ExecutionFold } from "./ExecutionFold";
 import { MessageAttachmentPreview } from "./MessageAttachmentPreview";
 import { TimelineTurnFrame } from "./TimelineTurnFrame";
+import { TurnChangesCard } from "./TurnChangesCard";
+import { turnHasFileWrites } from "../turnChanges";
 
 /** Lets the conversation mount a windowed-out turn before revealing a record. */
 export interface TimelineWindowHandle {
@@ -440,6 +442,8 @@ export function TimelineEntries(props: {
         ))}
         {/* Turn end: cards summarising the finished turn. */}
         {!hasFold && planNode}
+        {turn.userMessageId && !(isLast && props.busy) && turnHasFileWrites(turn)
+          && <TurnChangesCard turnId={turn.userMessageId} />}
       </Fragment>;
     });
   }, [

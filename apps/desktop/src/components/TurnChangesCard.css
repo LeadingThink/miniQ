@@ -1,0 +1,136 @@
+/* ============ Turn changes card ============ */
+.turn-changes {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  min-width: 0;
+  margin-top: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  font-size: var(--font-footnote);
+}
+
+.turn-changes-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.turn-changes-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.turn-changes-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.turn-changes-files {
+  margin: 0;
+  padding: 0 0 var(--space-1);
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.turn-changes-files button,
+.turn-changes-more {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 30px;
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--text-mid);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.turn-changes-files button:hover,
+.turn-changes-more:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.turn-changes-files button:focus-visible,
+.turn-changes-more:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+.turn-changes-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-changes-files small {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.turn-changes-stats {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.turn-changes-more {
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+}
+
+.turn-changes-conflicts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 40vh;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.turn-changes-conflicts li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.turn-changes-conflicts small {
+  color: var(--text-dim);
+}
+
+/* Narrow and touch layouts: stack the header and use 44px touch targets. */
+@media (max-width: 720px), (pointer: coarse) {
+  .turn-changes-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .turn-changes-actions .ui-button {
+    flex: 1;
+    min-height: 44px;
+  }
+
+  .turn-changes-files button,
+  .turn-changes-more {
+    min-height: 44px;
+  }
+}

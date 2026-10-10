@@ -8,9 +8,10 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { LocalFileTarget } from "../localFiles";
 import type { DiffHunk, FileDiff, SessionDiff } from "../types";
+import type { ReviewFocus, ReviewScope } from "../hooks/useSessionDiff";
 import {
   PreviewViewProvider,
   PreviewViewStore,
@@ -28,6 +29,11 @@ interface ReviewPanelProps {
   onRetry?: () => void;
   viewStore?: PreviewViewStore;
   viewScope?: string;
+  /** Data scope; the header toggle appears when `onScopeChange` is given. */
+  scope?: ReviewScope;
+  onScopeChange?: (scope: ReviewScope) => void;
+  /** Select this file whenever the nonce changes. */
+  focus?: ReviewFocus | null;
 }
 
 const DIFF_LINE_BATCH = 300;
@@ -293,6 +299,33 @@ function ReviewNavigation({
   );
 }
 
+function ReviewScopeToggle({
+  scope,
+  onChange,
+}: {
+  scope: ReviewScope;
+  onChange: (scope: ReviewScope) => void;
+}) {
+  const options: [ReviewScope, string][] = [
+    ["turn", "本轮"],
+    ["session", "全部"],
+  ];
+  return (
+    <div className="review-scope" role="group" aria-label="审阅范围">
+      {options.map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          aria-pressed={scope === value}
+          onClick={() => onChange(value)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function ReviewPanel(props: ReviewPanelProps) {
   const [localStore] = useState(() => new PreviewViewStore());
   return (
@@ -312,6 +345,9 @@ function ReviewPanelContent({
   onClose,
   error,
   onRetry,
+  scope = "session",
+  onScopeChange,
+  focus,
 }: ReviewPanelProps) {
   const [filter, setFilter] = usePreviewValue("filter", "");
   const [selectedPath, setSelectedPath] = usePreviewValue(
@@ -344,6 +380,13 @@ function ReviewPanelContent({
       : diff.files;
   }, [diff.files, filter]);
   const selected = files.find((file) => file.path === selectedPath) ?? files[0];
+  useEffect(() => {
+    if (!focus) return;
+    setFilter("");
+    setSelectedPath(focus.path);
+    // Only a new focus request (nonce) moves the selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.nonce]);
   const toggleReviewed = () => {
     if (!selected) return;
     const next = new Map(reviewed);
@@ -360,6 +403,9 @@ function ReviewPanelContent({
             {diff.files.length} 个文件 · 已审阅 {reviewedPaths.size}
           </span>
         </div>
+        {onScopeChange && (
+          <ReviewScopeToggle scope={scope} onChange={onScopeChange} />
+        )}
         <div className="diff-stats">
           <span className="diff-add">+{diff.additions}</span>
           <span className="diff-delete">-{diff.deletions}</span>
@@ -424,7 +470,9 @@ function ReviewPanelContent({
           <div className="diff-empty" role="status">
             {diff.files.length
               ? "没有匹配的文件，试试其他路径或清除筛选。"
-              : "暂无文件改动。任务修改文件后，可在这里逐项审阅。"}
+              : scope === "turn"
+                ? "本轮没有文件改动。切换到“全部”查看整个会话的改动。"
+                : "暂无文件改动。任务修改文件后，可在这里逐项审阅。"}
           </div>
         )
       )}
