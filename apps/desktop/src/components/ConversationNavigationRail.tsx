@@ -69,13 +69,19 @@ function useRailPosition(
     const content = root.querySelector<HTMLElement>(".timeline-inner");
     // Resolve the DOM once per rendered history change, not once per message
     // on every scroll event. Dataset lookup also accepts arbitrary message IDs.
-    elements.current = new Map(
-      Array.from(root.querySelectorAll<HTMLElement>("[data-user-message-id]"))
-        .map((element) => [element.dataset.userMessageId!, element]),
-    );
+    // Windowed turns swap a placeholder and the real message element, so
+    // detached entries trigger one rebuild.
+    const rebuild = () => {
+      elements.current = new Map(
+        Array.from(root.querySelectorAll<HTMLElement>("[data-user-message-id]"))
+          .map((element) => [element.dataset.userMessageId!, element]),
+      );
+    };
+    rebuild();
     let frame: number | null = null;
     const updateActive = () => {
       frame = null;
+      if (Array.from(elements.current.values()).some((element) => !root.contains(element))) rebuild();
       const rootRect = root.getBoundingClientRect();
       // Use the actual conversation gutter: a wide window may still contain
       // a narrow conversation when the artifact/browser pane is open.
@@ -149,7 +155,11 @@ export function ConversationNavigationRail({
 
   const jumpToMessage = (id: string) => {
     const root = scrollRef.current;
-    const element = elements.current.get(id);
+    let element = elements.current.get(id);
+    if (root && !(element && root.contains(element))) {
+      element = Array.from(root.querySelectorAll<HTMLElement>("[data-user-message-id]"))
+        .find((candidate) => candidate.dataset.userMessageId === id);
+    }
     if (!root || !element) return;
     const rect = element.getBoundingClientRect();
     root.scrollTo({

@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { formatDuration } from "../time";
 
 /** Mount only for active work. Never leave a ticking clock on completed history. */
-export function LiveElapsed({ startedAt, className, prefix }: {
+export function LiveElapsed({ startedAt, className, prefix, format = formatDuration }: {
   startedAt: string; className?: string; prefix?: string;
+  /** Match the finished label that replaces this clock. */
+  format?: (elapsedMs: number) => string | null;
 }) {
   const [elapsed, setElapsed] = useState(() => Math.max(0, Date.now() - Date.parse(startedAt)));
   useEffect(() => {
@@ -22,7 +24,7 @@ export function LiveElapsed({ startedAt, className, prefix }: {
     document.addEventListener("visibilitychange", visibility);
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", visibility); };
   }, [startedAt]);
-  const duration = formatDuration(elapsed);
+  const duration = format(elapsed);
   if (!duration) return null;
   return <span className={className} style={{ fontVariantNumeric: "tabular-nums" }} aria-live="off">
     {prefix ? `${prefix} ${duration}` : duration}

@@ -1,12 +1,30 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { RpcClient } from "../rpc";
 import type { DaemonEvent } from "../types";
 import { useSessionFeed, type LoadedSessionFeed } from "./useSessionFeed";
 import { useSessionError } from "./useSessionError";
 
-afterEach(cleanup);
+const frames = new Map<number, FrameRequestCallback>();
+let nextFrame = 0;
+beforeEach(() => {
+  frames.clear();
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    frames.set(++nextFrame, callback);
+    return nextFrame;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (frame: number) => frames.delete(frame));
+});
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+function flushFrames() {
+  act(() => {
+    const pending = [...frames.values()];
+    frames.clear();
+    for (const callback of pending) callback(0);
+  });
+}
 
 const snapshot: LoadedSessionFeed = {
   messages: [
@@ -50,22 +68,26 @@ function setup() {
   } as unknown as RpcClient;
   const onError = vi.fn();
   const onSessionCompleted = vi.fn();
+  let renders = 0;
   const hook = renderHook(
-    ({ id }: { id: string | null }) =>
-      useSessionFeed({
+    ({ id }: { id: string | null }) => {
+      renders += 1;
+      return useSessionFeed({
         client,
         currentSessionId: id,
         onError,
         onSessionCompleted,
         refreshSessions: vi.fn(),
         onSessionStatusChanged: vi.fn(),
-      }),
+      });
+    },
     { initialProps: { id: "a" as string | null } }
   );
   return {
     ...hook,
     onError,
     onSessionCompleted,
+    renders: () => renders,
     status: (connected: boolean) => act(() => statuses.forEach((listener) => listener(connected))),
     emit: (event: DaemonEvent) =>
       act(() => listeners.forEach((listener) => listener(event))),
@@ -188,6 +210,7 @@ it("late snapshots and events cannot put session A tasks into B", () => {
   });
   act(() => load("a", snapshot));
   hook.emit({ type: "plan_updated", sessionId: "a", tasks: snapshot.plan });
+  flushFrames();
   expect(hook.result.current.streamingText).toBe("b live");
   expect(hook.result.current.plan).toEqual([]);
   expect(hook.result.current.toolCalls).toEqual([]);
@@ -209,6 +232,7 @@ it("retry replaces only interrupted output and remains isolated across sessions 
   expect(hook.result.current.streamingText).toBe("a streaming");
   hook.emit({ type: "assistant_replaced", sessionId: "a", messageId: "a-stream", text: "committed" });
   hook.emit({ type: "assistant_delta", sessionId: "a", messageId: "a-stream", delta: "\n\nrecovered" });
+  flushFrames();
   expect(hook.result.current.streamingText).toBe("committed\n\nrecovered");
   expect(hook.result.current.toolCalls).toEqual(snapshot.toolCalls);
   expect(hook.result.current.messages).toEqual(snapshot.messages);
@@ -262,4 +286,35 @@ it("anchors plans to their turn, replaces within a turn and drops rewritten turn
     removedArtifactIds: [],
   });
   expect(hook.result.current.turnPlans).toEqual([]);
+});
+
+it("applies a frame's streamed deltas in one render, after earlier events and before later ones", () => {
+  const hook = setup();
+  act(() => hook.result.current.load("a", { ...snapshot, streamingText: "" }));
+  const delta = (text: string): DaemonEvent => ({ type: "assistant_delta", sessionId: "a", messageId: "m", delta: text });
+  const before = hook.renders();
+  for (const text of ["一", "二", "三", "四"]) hook.emit(delta(text));
+  expect(hook.result.current.streamingText).toBe("");
+  expect(frames.size).toBe(1);
+  flushFrames();
+  expect(hook.result.current.streamingText).toBe("一二三四");
+  expect(hook.renders() - before).toBe(1);
+
+  // A created message must not be overtaken by deltas that preceded it.
+  hook.emit(delta("五"));
+  hook.emit({ type: "message_created", sessionId: "a", message: { id: "reply", sessionId: "a", role: "assistant", content: "一二三四五", createdAt: "2026-09-08" } });
+  expect(frames.size).toBe(0);
+  expect(hook.result.current.streamingText).toBe("");
+  expect(hook.result.current.messages.at(-1)?.id).toBe("reply");
+});
+
+it("drops deltas still pending for a session the view has left", () => {
+  const hook = setup();
+  act(() => hook.result.current.load("a", { ...snapshot, streamingText: "" }));
+  hook.emit({ type: "assistant_delta", sessionId: "a", messageId: "m", delta: "late a" });
+  hook.rerender({ id: "b" });
+  flushFrames();
+  expect(hook.result.current.streamingText).toBe("");
+  hook.rerender({ id: "a" });
+  expect(hook.result.current.streamingText).toBe("");
 });

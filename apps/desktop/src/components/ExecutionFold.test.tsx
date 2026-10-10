@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
 import type { ToolCall, ToolCallStatus, TurnTiming } from "../types";
 import { compactDuration, executionSummary } from "../timelineTurns";
 import { ExecutionFold } from "./ExecutionFold";
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 function call(id: string, status: ToolCallStatus, toolName = "shell_exec"): ToolCall {
   return { id, sessionId: "s", toolName, input: { command: "ls" }, status, createdAt: "2026-09-20T00:00:00Z" };
@@ -23,12 +23,18 @@ it("collapses a finished turn into one summary row and toggles details", () => {
       <p>工具明细</p>
     </ExecutionFold>,
   );
-  const toggle = screen.getByRole("button", { name: /已执行 2 项操作 · 总运行时间 1分20秒/ });
+  const toggle = screen.getByRole("button", { name: /已执行 2 项操作 · 用时 1分20秒/ });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText("工具明细")).toBeNull();
   fireEvent.click(toggle);
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  expect(screen.getByRole("region", { name: "当前阶段的执行详情" }).textContent).toContain("工具明细");
+  const region = screen.getByRole("region", { name: "当前阶段的执行详情" });
+  expect(region.textContent).toContain("工具明细");
+  // Start and end live in one compact line; the duration is only in the header.
+  const details = region.querySelector(".turn-timing-details");
+  expect(details?.textContent).toMatch(/^开始 .+ · 结束 .+$/);
+  expect(details?.querySelectorAll("time")).toHaveLength(2);
+  expect(region.textContent).not.toContain("用时");
   fireEvent.click(toggle);
   expect(screen.queryByText("工具明细")).toBeNull();
 });
@@ -74,7 +80,7 @@ it("prefers the daemon turn summary over locally derived counts", () => {
       <p>明细</p>
     </ExecutionFold>,
   );
-  expect(screen.getByRole("button", { name: "已执行 12 项操作 · 修改 3 个文件 · 总运行时间 5秒" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "已执行 12 项操作 · 修改 3 个文件 · 用时 5秒" })).toBeTruthy();
 });
 
 it("tags stopped turns", () => {
@@ -93,4 +99,43 @@ it("summarizes calls and formats compact durations", () => {
   expect(compactDuration(45_000)).toBe("45秒");
   expect(compactDuration(120_000)).toBe("2分");
   expect(compactDuration(3_780_000)).toBe("1小时3分");
+});
+
+it("shows a live 用时 only for the running turn and freezes it when the turn ends", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime("2026-09-20T00:01:05Z");
+  const running: TurnTiming = { startedAt: done.startedAt, status: "running" };
+  const { rerender } = render(
+    <ExecutionFold calls={[call("a", "succeeded"), call("b", "running")]} timing={running} active>
+      <p>明细</p>
+    </ExecutionFold>,
+  );
+  const toggle = () => screen.getByRole("button");
+  expect(toggle().textContent).toBe("执行记录 · 1 项已完成 · 用时 1分5秒");
+  act(() => { vi.advanceTimersByTime(2_000); });
+  expect(toggle().textContent).toBe("执行记录 · 1 项已完成 · 用时 1分7秒");
+  // An older turn that still reports running is not this run: no clock.
+  rerender(
+    <ExecutionFold calls={[call("a", "succeeded")]} timing={running} active={false}>
+      <p>明细</p>
+    </ExecutionFold>,
+  );
+  expect(vi.getTimerCount()).toBe(0);
+  rerender(
+    <ExecutionFold calls={[call("a", "succeeded"), call("b", "succeeded")]} timing={{ ...done, elapsedMs: 67_000 }} active={false}>
+      <p>明细</p>
+    </ExecutionFold>,
+  );
+  expect(toggle().textContent).toBe("已执行 2 项操作 · 用时 1分7秒");
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("says an interrupted turn has no end time instead of inventing a duration", () => {
+  render(
+    <ExecutionFold calls={[call("a", "succeeded")]} timing={{ startedAt: done.startedAt, status: "interrupted" }} active={false} forceOpen>
+      <p>明细</p>
+    </ExecutionFold>,
+  );
+  expect(screen.getByRole("button").textContent).toBe("已执行 1 项操作");
+  expect(document.querySelector(".turn-timing-details")?.textContent).toMatch(/已中断，未记录结束时间$/);
 });

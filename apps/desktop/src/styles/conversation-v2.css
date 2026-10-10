@@ -1,5 +1,5 @@
 /* Conversation v2: per-turn execution folds, minimal composer, turn
-   virtualization and reading typography. Loaded from base.css, i.e. before
+   windowing and reading typography. Loaded from base.css, i.e. before
    conversation.css, so overrides are scoped (`.main …`) to win on specificity
    rather than source order. Tokens only; no literal colors. */
 
@@ -19,12 +19,11 @@ body .main {
   min-width: 0;
 }
 
-/* Long sessions: turns far from the reader skip layout/paint until they
-   approach the viewport. `auto` remembers the last rendered size, which keeps
-   scroll anchoring and the navigation rail stable once a turn has been seen. */
-.timeline-turn.is-light {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 480px;
+/* Long sessions: turns far from the reader are unmounted and keep their
+   measured height (inline) so scrolling and the navigation rail stay stable. */
+.timeline-turn.is-windowed {
+  flex: none;
+  overflow: hidden;
 }
 
 /* ============ Execution fold ============ */

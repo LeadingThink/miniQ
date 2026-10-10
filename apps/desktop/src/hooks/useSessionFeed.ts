@@ -28,7 +28,7 @@ export interface PendingApproval {
 interface SessionFeedState {
   latestTurnTiming: AnchoredTurnTiming | null;
   eventCursor: EventCursor | null;
-  buffered: { event: DaemonEvent; receivedAt: string }[];
+  buffered: ReceivedEvent[];
   loading: boolean;
   syncing: boolean;
   nextCursor: HistoryCursor | null;
@@ -69,7 +69,12 @@ type SessionFeedAction =
   | { kind: "prepend"; page: HistoryPage }
   | { kind: "replay"; events: DaemonEvent[]; cursor: EventCursor }
   | { kind: "load"; feed: LoadedSessionFeed }
-  | { kind: "daemon"; event: DaemonEvent; receivedAt: string };
+  | { kind: "daemon"; events: ReceivedEvent[] };
+
+interface ReceivedEvent {
+  event: DaemonEvent;
+  receivedAt: string;
+}
 
 interface ScopedFeed {
   sessionId: string | null;
@@ -366,15 +371,13 @@ function sessionFeedReducer(
           : action.cursor,
     };
   }
-  if (state.loading || state.syncing)
-    return {
-      ...state,
-      buffered: [
-        ...state.buffered,
-        { event: action.event, receivedAt: action.receivedAt },
-      ],
-    };
-  return applySequencedEvent(state, action.event, action.receivedAt);
+  let next = state;
+  for (const received of action.events) {
+    next = next.loading || next.syncing
+      ? { ...next, buffered: [...next.buffered, received] }
+      : applySequencedEvent(next, received.event, received.receivedAt);
+  }
+  return next;
 }
 
 function applySequencedEvent(
@@ -426,6 +429,25 @@ export function useSessionFeed(options: SessionFeedOptions) {
     onSessionCompleted,
     onError,
   } = options;
+  // Token deltas arrive far faster than the screen refreshes. Collect them and
+  // apply each frame's deltas in one reducer pass and one render. Every other
+  // event and action applies pending deltas first, so ordering is unchanged.
+  const pendingDeltas = useRef<{ sessionId: string | null; events: ReceivedEvent[] } | null>(null);
+  const deltaFrame = useRef<number | null>(null);
+  const flushDeltas = useCallback(() => {
+    if (deltaFrame.current !== null) cancelAnimationFrame(deltaFrame.current);
+    deltaFrame.current = null;
+    const pending = pendingDeltas.current;
+    pendingDeltas.current = null;
+    // Deltas for a session the view already left are reloaded with it.
+    if (pending && pending.sessionId === activeSession.current)
+      dispatch({ kind: "daemon", sessionId: pending.sessionId, events: pending.events });
+  }, []);
+  const discardDeltas = useCallback(() => {
+    if (deltaFrame.current !== null) cancelAnimationFrame(deltaFrame.current);
+    deltaFrame.current = null;
+    pendingDeltas.current = null;
+  }, []);
   const activeSession = useRef(currentSessionId);
   const renderedSession = useRef(currentSessionId);
   // reset() can select the next session before React commits its catalog state.
@@ -437,8 +459,10 @@ export function useSessionFeed(options: SessionFeedOptions) {
   }
 
   useEffect(() => {
-    const pause = () =>
+    const pause = () => {
+      flushDeltas();
       dispatch({ kind: "begin_sync", sessionId: activeSession.current });
+    };
     const offStatus = client.onStatus((connected) => {
       if (!connected) pause();
     });
@@ -447,7 +471,7 @@ export function useSessionFeed(options: SessionFeedOptions) {
       offStatus();
       offResync();
     };
-  }, [client]);
+  }, [client, flushDeltas]);
 
   useEffect(() => {
     return client.onEvent((event) => {
@@ -504,48 +528,59 @@ export function useSessionFeed(options: SessionFeedOptions) {
       if (event.type === "session_status_changed") {
         onSessionStatusChanged(event.sessionId, event.status);
       }
-      dispatch({
-        kind: "daemon",
-        sessionId: currentSessionId,
-        event,
-        receivedAt: new Date().toISOString(),
-      });
+      const received = { event, receivedAt: new Date().toISOString() };
+      if (event.type === "assistant_delta") {
+        pendingDeltas.current ??= { sessionId: currentSessionId, events: [] };
+        pendingDeltas.current.events.push(received);
+        deltaFrame.current ??= requestAnimationFrame(flushDeltas);
+        return;
+      }
+      flushDeltas();
+      dispatch({ kind: "daemon", sessionId: currentSessionId, events: [received] });
     });
   }, [
     client,
     currentSessionId,
+    flushDeltas,
     onError,
     onSessionCompleted,
     onSessionStatusChanged,
     refreshSessions,
   ]);
 
+  useEffect(() => discardDeltas, [currentSessionId, discardDeltas]);
+
   const reset = useCallback(
     (sessionId: string | null = activeSession.current) => {
+      discardDeltas();
       activeSession.current = sessionId;
       dispatch({ kind: "reset", sessionId });
     },
-    [],
+    [discardDeltas],
   );
   const load = useCallback((sessionId: string, feed: LoadedSessionFeed) => {
-    if (sessionId === activeSession.current)
-      dispatch({ kind: "load", sessionId, feed });
-  }, []);
+    if (sessionId !== activeSession.current) return;
+    flushDeltas();
+    dispatch({ kind: "load", sessionId, feed });
+  }, [flushDeltas]);
 
   const prepend = useCallback((sessionId: string, page: HistoryPage) => {
-    if (sessionId === activeSession.current)
-      dispatch({ kind: "prepend", sessionId, page });
-  }, []);
+    if (sessionId !== activeSession.current) return;
+    flushDeltas();
+    dispatch({ kind: "prepend", sessionId, page });
+  }, [flushDeltas]);
   const failLoad = useCallback((sessionId: string) => {
-    if (sessionId === activeSession.current)
-      dispatch({ kind: "load_failed", sessionId });
-  }, []);
+    if (sessionId !== activeSession.current) return;
+    flushDeltas();
+    dispatch({ kind: "load_failed", sessionId });
+  }, [flushDeltas]);
   const applyReplay = useCallback(
     (sessionId: string, events: DaemonEvent[], cursor: EventCursor) => {
-      if (sessionId === activeSession.current)
-        dispatch({ kind: "replay", sessionId, events, cursor });
+      if (sessionId !== activeSession.current) return;
+      flushDeltas();
+      dispatch({ kind: "replay", sessionId, events, cursor });
     },
-    [],
+    [flushDeltas],
   );
 
   return {

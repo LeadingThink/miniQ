@@ -1,6 +1,7 @@
 import { ChevronDown, LoaderCircle, MessageCircleQuestion, ShieldQuestion } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { currentTurnCalls } from "../timelineModel";
+import { compactDuration } from "../timelineTurns";
 import { latestMessageTiming } from "../timelineTiming";
 import type { AnchoredTurnTiming, Message, PlanTask, ToolCall, TurnProgress } from "../types";
 import { currentPlanStep, planCounts, PlanSteps, toolActionLabel, toolInputSummary, turnProgressLabel } from "./ExecutionActivity";
@@ -28,10 +29,11 @@ function activityLabel(props: ExecutionStatusBarProps, active?: ToolCall): strin
     : turnProgressLabel(props.progress);
 }
 
-/** The only live task indicator, outside the scrollable transcript. */
+/** The live task indicator, outside the scrollable transcript. Once the
+ * running turn has an execution fold, its header owns the live "用时". */
 export function ExecutionStatusBar(props: ExecutionStatusBarProps) {
-  const active = useMemo(() => currentTurnCalls(props.messages, props.calls)
-    .filter((call) => call.status === "running" || call.status === "pending").at(-1), [props.messages, props.calls]);
+  const turnCalls = useMemo(() => currentTurnCalls(props.messages, props.calls), [props.messages, props.calls]);
+  const active = turnCalls.filter((call) => call.status === "running" || call.status === "pending").at(-1);
   const [open, setOpen] = useState(false);
   const planId = useId();
   const bar = useRef<HTMLElement>(null);
@@ -65,7 +67,7 @@ export function ExecutionStatusBar(props: ExecutionStatusBarProps) {
   // The step clock restarts with each tool call or model phase, so a stalled
   // step is visible even when the whole turn has been running for a long time.
   const stepStartedAt = retry ? props.progress?.startedAt : active?.createdAt ?? props.progress?.startedAt;
-  const totalStartedAt = timing?.status === "running" ? timing.startedAt : undefined;
+  const totalStartedAt = timing?.status === "running" && turnCalls.length === 0 ? timing.startedAt : undefined;
   const Icon = props.approvals ? ShieldQuestion : props.questions ? MessageCircleQuestion : LoaderCircle;
   const { done, total } = planCounts(props.plan);
   return (
@@ -78,7 +80,7 @@ export function ExecutionStatusBar(props: ExecutionStatusBarProps) {
             prefix={active && !retry ? "当前操作" : "当前步骤"} />
         )}
         {totalStartedAt && totalStartedAt !== stepStartedAt && (
-          <LiveElapsed startedAt={totalStartedAt} className="execution-status-time" prefix="总用时" />
+          <LiveElapsed startedAt={totalStartedAt} className="execution-status-time" prefix="用时" format={compactDuration} />
         )}
         {total > 0 && (
           <button ref={toggle} type="button" className="execution-status-plan-toggle" aria-expanded={open}

@@ -146,16 +146,16 @@ it("keeps total timing stable across phases and clears clocks when work ends", (
   const props = { messages: [], calls: [], plan: [], busy: true, approvals: 0, questions: 0,
     timing: { messageId: "user", timing: { status: "running" as const, startedAt: "2026-09-08T00:00:00Z" } } };
   const view = render(<ExecutionStatusBar {...props} progress={{ phase: "requesting_model", startedAt: "2026-09-08T00:00:29Z" }} />);
-  expect(screen.getByText("总用时 30 秒")).toBeTruthy();
+  expect(screen.getByText("用时 30秒")).toBeTruthy();
   view.rerender(<ExecutionStatusBar {...props} progress={{ phase: "receiving_model", startedAt: "2026-09-08T00:00:30Z" }} />);
-  expect(screen.getByText("总用时 30 秒")).toBeTruthy();
+  expect(screen.getByText("用时 30秒")).toBeTruthy();
   view.rerender(<ExecutionStatusBar {...props} progress={null} busy={false} />);
   act(() => vi.advanceTimersByTime(1_000));
   expect(screen.queryByLabelText("当前任务状态")).toBeNull();
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("shows a live step clock next to the total and restarts it for each step", () => {
+it("shows a live step clock and leaves the turn total to the execution fold header", () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-09-08T00:10:00Z"));
   const timing = { messageId: "user", timing: { status: "running" as const, startedAt: "2026-09-08T00:00:00Z" } };
@@ -163,11 +163,11 @@ it("shows a live step clock next to the total and restarts it for each step", ()
   const props = { messages: [], plan: [], progress: null, busy: true, approvals: 0, questions: 0, timing };
   const view = render(<ExecutionStatusBar {...props} calls={[running]} />);
   expect(screen.getByText("当前操作 10 秒")).toBeTruthy();
-  expect(screen.getByText("总用时 10 分")).toBeTruthy();
+  // The running turn has tool calls, so its fold header shows the live total.
+  expect(screen.queryByText(/^用时/)).toBeNull();
 
   act(() => vi.advanceTimersByTime(5_000));
   expect(screen.getByText("当前操作 15 秒")).toBeTruthy();
-  expect(screen.getByText("总用时 10 分 5 秒")).toBeTruthy();
 
   // A new model phase restarts the step clock.
   view.rerender(<ExecutionStatusBar {...props} calls={[]}
@@ -175,5 +175,7 @@ it("shows a live step clock next to the total and restarts it for each step", ()
   const restarted = document.querySelector(".execution-status-step");
   expect(restarted?.textContent).toMatch(/^当前步骤/);
   expect(restarted?.textContent).not.toMatch(/分/);
+  // Without a fold for this turn, the bar is the only place for the total.
+  expect(screen.getByText("用时 10分5秒")).toBeTruthy();
   vi.useRealTimers();
 });

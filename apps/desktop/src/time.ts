@@ -66,12 +66,24 @@ export function formatDuration(elapsedMs: number): string | null {
   return parts.join(" ");
 }
 
-/** Sparse separators: a new calendar day or a substantial break in conversation. */
-export function showConversationTimestamp(at: string, previous?: string, now = new Date()): boolean {
+const TURN_SEPARATOR_GAP_MS = 30 * 60_000;
+
+/** Turn separators: a new calendar day or a break of at least 30 minutes.
+ * Without a previous turn, compare with now: an old first turn is marked. */
+export function showTurnSeparator(at: string, previous?: string, now = new Date()): boolean {
   const date = new Date(at);
   if (!Number.isFinite(date.getTime())) return false;
-  if (!previous) return now.getTime() - date.getTime() >= 3_600_000 || calendarDay(date) !== calendarDay(now);
-  const before = new Date(previous);
+  const before = previous ? new Date(previous) : now;
   if (!Number.isFinite(before.getTime())) return true;
-  return calendarDay(date) !== calendarDay(before) || date.getTime() - before.getTime() >= 3_600_000;
+  return calendarDay(date) !== calendarDay(before) || Math.abs(before.getTime() - date.getTime()) >= TURN_SEPARATOR_GAP_MS;
+}
+
+const separatorWeekdayFormat = new Intl.DateTimeFormat("zh-CN", { weekday: "short" });
+
+/** "9月11日周五 12:49"; other years are prefixed with the year. */
+export function turnSeparatorLabel(iso: string, now = new Date()): string | null {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return null;
+  const year = date.getFullYear() !== now.getFullYear() ? `${date.getFullYear()}年` : "";
+  return `${year}${date.getMonth() + 1}月${date.getDate()}日${separatorWeekdayFormat.format(date)} ${clockFormat.format(date)}`;
 }

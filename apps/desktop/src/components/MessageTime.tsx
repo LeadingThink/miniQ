@@ -1,4 +1,4 @@
-import { conversationTimestamp } from "../time";
+import { conversationTimestamp, turnSeparatorLabel } from "../time";
 import { memo } from "react";
 import { useCalendarDay } from "../hooks/useCalendarDay";
 import "./MessageTime.css";
@@ -18,12 +18,14 @@ export const MessageTime = memo(function MessageTime({ at }: { at: string | unde
   </details>;
 });
 
+/** Centered date-time between turns separated by a long break or a new day. */
 export const ConversationTimeSeparator = memo(function ConversationTimeSeparator({ at }: { at: string }) {
   "use no memo";
   useCalendarDay();
-  const value = conversationTimestamp(at);
-  if (!value) return null;
-  return <div className="conversation-time-separator" role="separator" aria-label={value.full}>
-    <time dateTime={at} title={value.full}>{value.label}</time>
+  const label = turnSeparatorLabel(at);
+  const full = conversationTimestamp(at)?.full;
+  if (!label) return null;
+  return <div className="conversation-time-separator" role="separator" aria-label={full}>
+    <time dateTime={at} title={full}>{label}</time>
   </div>;
 });

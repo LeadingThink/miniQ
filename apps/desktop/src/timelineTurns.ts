@@ -1,6 +1,7 @@
 import type { AnchoredTurnTiming, ToolCall, TurnSummary, TurnTiming } from "./types";
 import type { TimelineGroup } from "./timelineModel";
 import { timelineGroupKey } from "./timelineTiming";
+import { showTurnSeparator } from "./time";
 
 /** A user message plus everything that followed it until the next user message.
  * The first turn of a partially loaded page may have no user message. */
@@ -58,6 +59,27 @@ export function turnSegments(turn: TimelineTurn): TurnSegment[] {
     ...lifted.map((group): TurnSegment => ({ kind: "group", group })),
     ...turn.groups.slice(last + 1).map((group): TurnSegment => ({ kind: "group", group })),
   ];
+}
+
+/** Search keys of every record the groups show, including each tool call
+ * inside a grouped run. Folded and windowed content lists them so search and
+ * "查看上下文" can find records that are not rendered individually. */
+export function searchRecordKeys(groups: TimelineGroup[]): string {
+  return groups.map((group) => group.kind === "tools"
+    ? group.calls.map((call) => `tool:${call.id}`).join(" ")
+    : timelineGroupKey(group)).join(" ");
+}
+
+/** Start time of each turn that follows a break of at least 30 minutes or a
+ * new calendar day. A page that begins mid-turn has no turn start to mark. */
+export function turnSeparators(turns: TimelineTurn[], now = new Date()): Map<string, string> {
+  const separators = new Map<string, string>();
+  turns.forEach((turn, index) => {
+    if (!turn.userMessageId) return;
+    const at = turn.groups[0].at;
+    if (showTurnSeparator(at, turns[index - 1]?.groups.at(-1)?.at, now)) separators.set(turn.key, at);
+  });
+  return separators;
 }
 
 const FAILED = new Set(["failed", "rejected"]);

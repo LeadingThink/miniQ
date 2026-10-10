@@ -1,31 +1,9 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { TurnTimingSummary } from "./TurnTimingSummary";
 import { MessageTime } from "./MessageTime";
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
-
-it("ticks only active work, freezes at the measured duration and releases its timer", () => {
-  vi.useFakeTimers();
-  vi.setSystemTime("2026-09-20T10:01:00Z");
-  const startedAt = "2026-09-20T10:00:00Z";
-  const { rerender } = render(<TurnTimingSummary timing={{ startedAt, status: "running" }} active />);
-  expect(screen.getByText("正在执行 · 总运行时间 1 分")).toBeTruthy();
-  act(() => { vi.advanceTimersByTime(2000); });
-  expect(screen.getByText("正在执行 · 总运行时间 1 分 2 秒")).toBeTruthy();
-  rerender(<TurnTimingSummary timing={{ startedAt, status: "cancelled", elapsedMs: 62_000, completedAt: "2026-09-20T10:01:02Z" }} />);
-  expect(vi.getTimerCount()).toBe(0);
-  act(() => { vi.advanceTimersByTime(600_000); });
-  expect(screen.getByText("已停止 · 总运行时间 1 分 2 秒")).toBeTruthy();
-});
-
-it("does not invent elapsed time or restart a clock on interrupted history", () => {
-  vi.useFakeTimers();
-  render(<TurnTimingSummary timing={{ startedAt: "2026-09-19T10:00:00Z", status: "interrupted" }} />);
-  expect(screen.getByText("用时记录不完整")).toBeTruthy();
-  expect(vi.getTimerCount()).toBe(0);
-});
 
 it("makes precise time accessible to touch and keyboard, and omits invalid legacy dates", () => {
   const { container, rerender } = render(<MessageTime at="2026-09-20T10:00:00Z" />);

@@ -1,9 +1,8 @@
 import { Check, GitBranch, LoaderCircle, Pencil, RefreshCw, Target, X } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import type { AnchoredTurnTiming, Message, MessageAttachment, Question, SessionGoal, TurnPlan } from "../types";
+import { Fragment, useImperativeHandle, useMemo, useRef, useState, type RefObject } from "react";
+import type { AnchoredTurnTiming, Message, Question, SessionGoal, TurnPlan } from "../types";
 import type { PendingApproval } from "../App";
 import type { RpcClient } from "../rpc";
-import { readImagePreview } from "../localFiles";
 import type { TimelineGroup } from "../timelineModel";
 import type { TimelineProps } from "./Timeline";
 import { ApprovalCard, ArtifactCard } from "./TimelineInteractions";
@@ -15,15 +14,21 @@ import { SpeakButton } from "./SpeakButton";
 import { useVoiceCapabilities } from "../voiceCapabilities";
 import { ToolGroup } from "./ToolGroup";
 import { MessageTime, ConversationTimeSeparator } from "./MessageTime";
-import { showConversationTimestamp } from "../time";
-import { timelineGroupKey, timelineTurnEnds, timelineTurnPlanEnds } from "../timelineTiming";
-import { TurnTimingSummary } from "./TurnTimingSummary";
-import { useSessionFileAccess } from "../sessionFileAccess";
-import { groupTimelineTurns, turnSegments, type TurnSegment } from "../timelineTurns";
+import { timelineGroupKey, timelineTurnPlanEnds } from "../timelineTiming";
+import {
+  groupTimelineTurns, searchRecordKeys, turnSeparators, turnSegments, type TurnSegment,
+} from "../timelineTurns";
+import { WINDOW_MIN_TURNS } from "../timelineWindow";
+import { useTurnWindow } from "../hooks/useTurnWindow";
 import { ExecutionFold } from "./ExecutionFold";
+import { MessageAttachmentPreview } from "./MessageAttachmentPreview";
+import { TimelineTurnFrame } from "./TimelineTurnFrame";
 
-/** Above this many turns, older turns skip layout/paint while offscreen. */
-export const LIGHT_TURN_THRESHOLD = 40;
+/** Lets the conversation mount a windowed-out turn before revealing a record. */
+export interface TimelineWindowHandle {
+  /** Returns true when the record's turn was not mounted; it is after the next commit. */
+  mountRecord: (recordKey: string) => boolean;
+}
 
 export function findGoalMessageId(
   messages: Message[],
@@ -34,45 +39,6 @@ export function findGoalMessageId(
     (message) =>
       message.role === "user" && message.content.trim() === goal.goal.trim(),
   )?.id ?? null;
-}
-
-function MessageAttachmentPreview({
-  attachment,
-}: {
-  attachment: MessageAttachment;
-}) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const access = useSessionFileAccess();
-  const isImage = Boolean(attachment.mimeType?.startsWith("image/"));
-
-  useEffect(() => {
-    if (!isImage) return;
-    let disposed = false;
-    const controller = new AbortController();
-    void readImagePreview(attachment.path, { ...access, signal: controller.signal })
-      .then((preview) => {
-        if (!disposed)
-          setImageUrl(`data:${preview.mimeType};base64,${preview.dataBase64}`);
-      })
-      .catch(() => {
-        if (!disposed) setImageUrl(null);
-      });
-    return () => {
-      disposed = true;
-      controller.abort();
-    };
-  }, [attachment.path, isImage, access]);
-
-  if (imageUrl) {
-    return (
-      <img
-        className="message-attachment-image"
-        src={imageUrl}
-        alt={attachment.name}
-      />
-    );
-  }
-  return <span className="message-attachment-file">{attachment.name}</span>;
 }
 
 export function TimelineEntries(props: {
@@ -97,14 +63,15 @@ export function TimelineEntries(props: {
   onFork?: TimelineProps["onFork"];
   workspacePath?: string | null;
   workspacePaths?: readonly string[];
+  /** The scrolling transcript; enables windowing of long conversations. */
+  scrollRef?: RefObject<HTMLDivElement | null>;
+  windowHandle?: RefObject<TimelineWindowHandle | null>;
 }) {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const voiceCapabilities = useVoiceCapabilities(props.client);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
-  const turnEnds = useMemo(() => props.expandGroups ? new Map() : timelineTurnEnds(props.items, props.latestTurnTiming),
-    [props.items, props.latestTurnTiming, props.expandGroups]);
   const turnPlanEnds = useMemo(() => timelineTurnPlanEnds(props.items, props.turnPlans ?? []),
     [props.items, props.turnPlans]);
   // The running turn's plan lives in the composer pill; it joins the timeline once the turn ends.
@@ -199,16 +166,36 @@ export function TimelineEntries(props: {
   }), []);
   const hasFork = Boolean(props.onFork);
   const canSpeak = voiceCapabilities.capabilities.speak;
-  // Streaming tokens only change the live tail. Keeping the history subtree's
+  // Streaming tokens only change the live tail. Keeping each turn's content
   // element identity stable lets React skip every completed message on each
   // token instead of re-rendering the whole conversation.
   const turns = useMemo(() => groupTimelineTurns(props.items, props.latestTurnTiming),
     [props.items, props.latestTurnTiming]);
+  const turnKeys = useMemo(() => turns.map((turn) => turn.key), [turns]);
+  const separators = useMemo(() => turnSeparators(turns), [turns]);
+  const listRef = useRef<HTMLDivElement>(null);
+  const turnWindow = useTurnWindow({
+    scrollRef: props.scrollRef,
+    listRef,
+    keys: turnKeys,
+    // Search and filter results are short and stepped through element by element.
+    enabled: !props.expandGroups && turns.length >= WINDOW_MIN_TURNS,
+  });
+  const windowState = useRef({ turns, turnWindow });
+  windowState.current = { turns, turnWindow };
+  useImperativeHandle(props.windowHandle, () => ({
+    mountRecord: (recordKey: string) => {
+      const { turns, turnWindow } = windowState.current;
+      const index = turns.findIndex((turn) => searchRecordKeys(turn.groups).split(" ").includes(recordKey));
+      if (index < 0 || turnWindow.isMounted(index)) return false;
+      turnWindow.mount(turns[index].key);
+      return true;
+    },
+  }), []);
   // Approvals and questions always render below history; open the latest turn's
   // execution so the step that asked is visible next to them.
   const pendingAttention = props.approvals.length > 0 || props.questions.length > 0;
-  const history = useMemo(() => {
-    const indexByKey = new Map(props.items.map((item, index) => [timelineGroupKey(item), index]));
+  const turnContents = useMemo(() => {
     // The newest reply keeps its actions visible; older ones reveal on hover.
     let latestAssistantId: string | undefined;
     for (let index = props.items.length - 1; index >= 0; index -= 1) {
@@ -219,10 +206,7 @@ export function TimelineEntries(props: {
       }
     }
     const renderGroup = (item: TimelineGroup) => {
-      const index = indexByKey.get(timelineGroupKey(item)) ?? 0;
       return <Fragment key={timelineGroupKey(item)}>
-        {item.kind === "message" && showConversationTimestamp(item.at, props.items[index - 1]?.at)
-          && <ConversationTimeSeparator at={item.at} />}
         {
         item.kind === "message" ? (
           item.message.role === "user" ? (
@@ -428,60 +412,73 @@ export function TimelineEntries(props: {
       </Fragment>;
     };
     const lastTurn = turns.at(-1);
-    return turns.map((turn, turnIndex) => {
+    return turns.map((turn) => {
       const endKey = timelineGroupKey(turn.groups[turn.groups.length - 1]);
       const turnPlan = turnPlanEnds.get(endKey);
       const planNode = turnPlan && turnPlan.anchorMessageId !== runningAnchor
         ? <TurnPlanSummary plan={turnPlan.tasks} /> : null;
-      const timing = turnEnds.get(endKey);
-      const timingNode = timing ? <TurnTimingSummary timing={timing} /> : null;
       const segments: TurnSegment[] = props.expandGroups
         ? turn.groups.map((group) => ({ kind: "group", group }))
         : turnSegments(turn);
       const hasFold = segments.some((segment) => segment.kind === "execution");
       const isLast = turn === lastTurn;
-      const light = turns.length > LIGHT_TURN_THRESHOLD && turns.length - turnIndex > 2;
-      return (
-        <div
-          key={turn.key}
-          className={`timeline-turn${light ? " is-light" : ""}`}
-          data-turn-key={turn.key}
-        >
-          {segments.map((segment) => segment.kind === "group" ? renderGroup(segment.group) : (
-            <div
-              key={segment.key}
-              data-history-anchor={segment.key}
-              data-search-records={segment.groups.map((group) => group.kind === "tools"
-                ? group.calls.map((call) => `tool:${call.id}`).join(" ")
-                : timelineGroupKey(group)).join(" ")}
+      const separatorAt = props.expandGroups ? undefined : separators.get(turn.key);
+      return <Fragment key={turn.key}>
+        {separatorAt && <ConversationTimeSeparator at={separatorAt} />}
+        {segments.map((segment) => segment.kind === "group" ? renderGroup(segment.group) : (
+          <div key={segment.key} data-history-anchor={segment.key} data-search-records={searchRecordKeys(segment.groups)}>
+            <ExecutionFold
+              calls={segment.calls}
+              timing={turn.timing}
+              active={isLast && props.busy}
+              attention={isLast && pendingAttention}
             >
-              <ExecutionFold
-                calls={segment.calls}
-                timing={turn.timing}
-                active={isLast && props.busy}
-                attention={isLast && pendingAttention}
-              >
-                {segment.groups.map(renderGroup)}
-                {planNode}
-                {timingNode}
-              </ExecutionFold>
-            </div>
-          ))}
-          {!hasFold && planNode}
-          {!hasFold && timingNode}
-        </div>
-      );
+              {segment.groups.map(renderGroup)}
+              {planNode}
+            </ExecutionFold>
+          </div>
+        ))}
+        {/* Turn end: cards summarising the finished turn. */}
+        {!hasFold && planNode}
+      </Fragment>;
     });
   }, [
     props.items, props.busy, props.workspacePath, props.workspacePaths,
     props.expandGroups, props.client, editingMessageId, draft, saving,
-    forkingMessageId, runningTurnMessageIds, goalMessageId, turnEnds, turnPlanEnds, runningAnchor,
-    hasFork, canSpeak, bridge, turns, pendingAttention,
+    forkingMessageId, runningTurnMessageIds, goalMessageId, turnPlanEnds, runningAnchor,
+    hasFork, canSpeak, bridge, turns, separators, pendingAttention,
   ]);
 
+  // The live reply streams at the end of the current turn, where its message
+  // lands when it is created, rather than below approval and question cards.
+  const streaming = props.streamingText ? (
+    <div className="message-entry assistant is-streaming">
+      <div className="bubble assistant">
+        <Md
+          streaming
+          workspacePath={props.workspacePath}
+          onOpenFile={props.onOpenFile}
+          onOpenUrl={props.onOpenUrl}
+        >
+          {props.streamingText}
+        </Md>
+      </div>
+    </div>
+  ) : null;
   return (
-    <div className="timeline-inner">
-      {history}
+    <div className="timeline-inner" ref={listRef}>
+      {turns.map((turn, index) => (
+        <TimelineTurnFrame
+          key={turn.key}
+          turn={turn}
+          mounted={turnWindow.isMounted(index)}
+          placeholderHeight={turnWindow.placeholderHeight}
+        >
+          {turnContents[index]}
+          {index === turns.length - 1 && streaming}
+        </TimelineTurnFrame>
+      ))}
+      {turns.length === 0 && streaming}
       {props.approvals.map((approval) => (
         <ApprovalCard
           key={approval.approval.id}
@@ -499,17 +496,6 @@ export function TimelineEntries(props: {
           onOpenUrl={props.onOpenUrl}
         />
       ))}
-      {props.streamingText && (
-        <div className="bubble assistant">
-          <Md
-            workspacePath={props.workspacePath}
-            onOpenFile={props.onOpenFile}
-            onOpenUrl={props.onOpenUrl}
-          >
-            {props.streamingText}
-          </Md>
-        </div>
-      )}
     </div>
   );
 }

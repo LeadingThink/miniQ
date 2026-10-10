@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { conversationTimestamp, formatDuration, showConversationTimestamp } from "./time";
+import { conversationTimestamp, formatDuration, showTurnSeparator, turnSeparatorLabel } from "./time";
 
 describe("conversation time", () => {
   const now = new Date(2026, 8, 20, 14, 30);
@@ -13,12 +13,19 @@ describe("conversation time", () => {
     expect(conversationTimestamp(at(2026, 9, 20), now)?.full).toContain("2026年9月20日");
     expect(conversationTimestamp("invalid", now)).toBeNull();
   });
-  it("shows separators for day changes and long breaks, not every short exchange", () => {
-    expect(showConversationTimestamp(at(2026, 9, 20, 14, 0), undefined, now)).toBe(false);
-    expect(showConversationTimestamp(at(2026, 9, 20, 10, 0), undefined, now)).toBe(true);
-    expect(showConversationTimestamp(at(2026, 9, 20, 10, 30), at(2026, 9, 20, 10, 0), now)).toBe(false);
-    expect(showConversationTimestamp(at(2026, 9, 20, 11, 0), at(2026, 9, 20, 10, 0), now)).toBe(true);
-    expect(showConversationTimestamp(at(2026, 9, 20, 0, 1), at(2026, 9, 19, 23, 59), now)).toBe(true);
+  it("separates turns after a new day or a break of at least 30 minutes", () => {
+    expect(showTurnSeparator(at(2026, 9, 20, 14, 10), undefined, now)).toBe(false);
+    expect(showTurnSeparator(at(2026, 9, 20, 14, 0), undefined, now)).toBe(true);
+    expect(showTurnSeparator(at(2026, 9, 20, 10, 29), at(2026, 9, 20, 10, 0), now)).toBe(false);
+    expect(showTurnSeparator(at(2026, 9, 20, 10, 30), at(2026, 9, 20, 10, 0), now)).toBe(true);
+    expect(showTurnSeparator(at(2026, 9, 20, 0, 1), at(2026, 9, 19, 23, 59), now)).toBe(true);
+    expect(showTurnSeparator("invalid", at(2026, 9, 19, 23, 59), now)).toBe(false);
+  });
+  it("labels separators with date, weekday and minutes", () => {
+    expect(turnSeparatorLabel(at(2026, 9, 11, 12, 49), now)).toBe("9月11日周五 12:49");
+    expect(turnSeparatorLabel(at(2026, 9, 20, 9, 5), now)).toBe("9月20日周日 09:05");
+    expect(turnSeparatorLabel(at(2025, 12, 31, 23, 0), now)).toBe("2025年12月31日周三 23:00");
+    expect(turnSeparatorLabel("invalid", now)).toBeNull();
   });
   it("uses calendar dates rather than elapsed hours around daylight saving changes", () => {
     // Run this test with TZ=America/New_York too: the previous day is 23 hours long.

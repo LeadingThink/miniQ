@@ -201,14 +201,21 @@ describe("useConversationScroll", () => {
     expect(resizeObservers[1].disconnect).toHaveBeenCalledOnce();
   });
 
-  it("follows streaming content while pinned, and leaves a reader's position alone", () => {
+  it("follows streaming content once per frame while pinned, and leaves a reader's position alone", () => {
     const { rerender } = render(<Harness hasOlder={false} />);
     const viewport = screen.getByTestId("viewport");
     expect(viewport.scrollTop).toBe(1200);
+    rerender(<Harness hasOlder={false} tail={100} />);
+    rerender(<Harness hasOlder={false} tail={200} />);
     rerender(<Harness hasOlder={false} tail={300} />);
+    expect(frames.size).toBe(1);
+    flushFrames();
     expect(viewport.scrollTop).toBe(1500);
+    rerender(<Harness hasOlder={false} tail={400} />);
     scrollTo(450);
+    flushFrames();
     rerender(<Harness hasOlder={false} tail={600} />);
+    flushFrames();
     expect(viewport.scrollTop).toBe(450);
     expect(screen.getByRole("button", { name: "Jump" })).toBeTruthy();
   });
@@ -301,6 +308,7 @@ it("does not auto page on initial intersections or bottom-following scroll event
   scrollTo(900);
   intersect();
   rerender(<Harness loadOlder={loadOlder} tail={500} />);
+  flushFrames();
   expect(loadOlder).not.toHaveBeenCalled();
   expect(screen.getByTestId("viewport").scrollTop).toBe(1700);
 });

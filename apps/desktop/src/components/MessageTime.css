@@ -45,15 +45,10 @@
   background: var(--hairline);
 }
 
-.turn-timing {
-  align-self: flex-start;
+.turn-timing-details {
+  margin: 2px 0 0;
   color: var(--text-dim);
-  font-size: var(--font-footnote);
-  line-height: 1.6;
+  font-size: var(--font-caption);
+  line-height: 1.5;
   font-variant-numeric: tabular-nums;
-  max-width: 100%;
 }
-
-.turn-timing summary { cursor: pointer; width: fit-content; }
-.turn-timing p { margin: 4px 0; font-size: var(--font-caption); }
-.turn-timing summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

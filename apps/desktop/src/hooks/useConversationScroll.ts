@@ -65,6 +65,24 @@ export function useConversationScroll(options: ConversationScrollOptions) {
   const inFlight = useRef<HistoryRequest | null>(null);
   const attemptedCursors = useRef(new Set<string | null>());
   const [showJump, setShowJump] = useState(false);
+  // null until the first layout, which always lands at the bottom.
+  const loadingState = useRef<boolean | undefined | null>(null);
+  // Following new output scrolls at most once per frame, however many
+  // streamed updates or resizes arrive within it.
+  const followFrame = useRef<number | null>(null);
+  const cancelFollow = useCallback(() => {
+    if (followFrame.current !== null) cancelAnimationFrame(followFrame.current);
+    followFrame.current = null;
+  }, []);
+  const follow = useCallback(() => {
+    if (followFrame.current !== null) return;
+    followFrame.current = requestAnimationFrame(() => {
+      followFrame.current = null;
+      const root = scrollRef.current;
+      // Recheck pinning because the reader may have scrolled in the meantime.
+      if (root && pinned.current) root.scrollTop = root.scrollHeight;
+    });
+  }, []);
 
   const requestOlder = useCallback((automatic: boolean) => {
     const current = latest.current;
@@ -112,7 +130,12 @@ export function useConversationScroll(options: ConversationScrollOptions) {
 
   useLayoutEffect(() => {
     const root = scrollRef.current;
+    // Opening a view or finishing its load lands at the bottom before paint.
+    let immediate = loadingState.current !== options.loading;
+    loadingState.current = options.loading;
     if (view.current !== options.viewKey) {
+      immediate = true;
+      cancelFollow();
       view.current = options.viewKey;
       request.current = null;
       inFlight.current = null;
@@ -128,8 +151,11 @@ export function useConversationScroll(options: ConversationScrollOptions) {
       request.current = null;
       pinned.current = nearBottom(root);
       setShowJump(!pinned.current);
-    } else if (pinned.current) {
+    } else if (pinned.current && immediate) {
+      cancelFollow();
       root.scrollTop = root.scrollHeight;
+    } else if (pinned.current) {
+      follow();
     }
   }, [
     options.viewKey, options.cursorKey, options.hasOlder,
@@ -140,15 +166,9 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     const root = scrollRef.current;
     if (!root || typeof ResizeObserver === "undefined") return;
     let active = true;
-    let frame: number | null = null;
+    // Fonts, images and viewport resizing can settle after React renders.
     const observer = new ResizeObserver(() => {
-      if (!active || !pinned.current || frame !== null) return;
-      frame = requestAnimationFrame(() => {
-        frame = null;
-        // Fonts, images and viewport resizing can settle after React renders.
-        // Recheck pinning because the reader may have scrolled in the meantime.
-        if (active && pinned.current) root.scrollTop = root.scrollHeight;
-      });
+      if (active && pinned.current) follow();
     });
     observer.observe(root);
     const content = root.querySelector(".timeline-inner");
@@ -156,9 +176,9 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     return () => {
       active = false;
       observer.disconnect();
-      if (frame !== null) cancelAnimationFrame(frame);
+      cancelFollow();
     };
-  }, [options.viewKey]);
+  }, [options.viewKey, follow, cancelFollow]);
 
   useEffect(() => {
     const root = scrollRef.current;
@@ -183,21 +203,23 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     if (!root) return;
     // An explicit jump supersedes a page anchor, even while it is in flight.
     if (request.current) request.current.anchor = null;
+    cancelFollow();
     root.scrollTop = root.scrollHeight;
     pinned.current = true;
     setShowJump(false);
-  }, []);
+  }, [cancelFollow]);
   const loadOlder = useCallback(() => requestOlder(false), [requestOlder]);
   /** Scroll an element to the upper third and stop following new output. */
   const reveal = useCallback((element: HTMLElement) => {
     const root = scrollRef.current;
     if (!root) return;
     pinned.current = false;
+    cancelFollow();
     if (request.current) request.current.anchor = null;
     const offset = element.getBoundingClientRect().top - root.getBoundingClientRect().top;
     root.scrollTop = Math.max(0, root.scrollTop + offset - root.clientHeight / 3);
     setShowJump(true);
-  }, []);
+  }, [cancelFollow]);
 
   return { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump, reveal };
 }

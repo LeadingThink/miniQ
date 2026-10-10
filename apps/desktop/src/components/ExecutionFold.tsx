@@ -2,13 +2,17 @@ import { ChevronRight, CircleAlert, Layers } from "lucide-react";
 import { createContext, useId, useState, type ReactNode } from "react";
 import type { ToolCall, TurnTiming } from "../types";
 import { compactDuration, executionSummary } from "../timelineTurns";
+import { LiveElapsed } from "./LiveElapsed";
+import { TurnTimingDetails } from "./TurnTimingDetails";
 
 /** True for content rendered inside an ExecutionFold, whose header already
  * summarises the steps; nested groups skip their own header. */
 export const InsideExecutionFold = createContext(false);
 
 /** One collapsible row per turn that stands in for every tool call, plan step
- * and intermediate note. It opens itself whenever the turn needs the user. */
+ * and intermediate note. Its header is the turn's only duration display:
+ * "用时 xx" when finished, a live clock while this turn runs. It opens itself
+ * whenever the turn needs the user. */
 export function ExecutionFold({
   calls,
   timing,
@@ -38,7 +42,8 @@ export function ExecutionFold({
   if (active && data.waitingApproval) parts.push("等待确认");
   if (data.failed) parts.push(`${data.failed} 项操作失败`);
   if (data.filesChanged) parts.push(`修改 ${data.filesChanged} 个文件`);
-  if (!running && data.durationMs !== undefined) parts.push(`总运行时间 ${compactDuration(data.durationMs)}`);
+  if (!running && data.durationMs !== undefined) parts.push(`用时 ${compactDuration(data.durationMs)}`);
+  const liveStartedAt = running && timing?.status === "running" ? timing.startedAt : undefined;
   const state = data.failed || data.status === "failed" ? "failed" : running ? "running"
     : data.status === "cancelled" ? "cancelled" : "done";
   return (
@@ -55,6 +60,7 @@ export function ExecutionFold({
         </span>
         <span className="execution-fold-label">
           {parts.join(" · ")}
+          {liveStartedAt && <> · <LiveElapsed startedAt={liveStartedAt} prefix="用时" format={compactDuration} /></>}
         </span>
         {state === "cancelled" && !running && <span className="execution-fold-tag">已停止</span>}
         <ChevronRight size={14} className="execution-fold-chevron" aria-hidden="true" />
@@ -62,6 +68,7 @@ export function ExecutionFold({
       {open && (
         <div className="execution-fold-body" id={regionId} role="region" aria-label="当前阶段的执行详情">
           <InsideExecutionFold.Provider value={true}>{children}</InsideExecutionFold.Provider>
+          {timing && <TurnTimingDetails timing={timing} />}
         </div>
       )}
     </section>

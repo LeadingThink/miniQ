@@ -1,5 +1,5 @@
 import { FileText } from "lucide-react";
-import { isValidElement, useMemo, useRef } from "react";
+import { isValidElement, memo, useMemo, useRef } from "react";
 import { MarkdownImage } from "./MarkdownImage";
 import { MarkdownCodeBlock } from "./MarkdownCodeBlock";
 import type {
@@ -10,7 +10,7 @@ import type {
 } from "react";
 import "katex/dist/katex.min.css";
 import rehypeKatex from "rehype-katex";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components, type Options as MarkdownRendererOptions } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { openExternalUrl, parseExternalUrl } from "../externalLinks";
@@ -22,6 +22,7 @@ import {
 } from "../localFiles";
 import { normalizeMathDelimiters } from "../markdownMath";
 import { remarkHeadingIds } from "../markdownOutline";
+import { splitMarkdownBlocks } from "../markdownBlocks";
 
 function FileReference(props: {
   children: ReactNode;
@@ -222,6 +223,8 @@ export function Md(props: {
   referenceBasePath?: string | null;
   headingAnchors?: boolean;
   previewAssets?: { workspacePaths: readonly string[] };
+  /** Text is still growing at its end; parse only the open last block. */
+  streaming?: boolean;
   onOpenFile?: (target: LocalFileTarget) => void;
   onOpenUrl?: (url: string) => void;
 }) {
@@ -267,58 +270,75 @@ export function Md(props: {
       );
     };
   }, [roots, workspacePath, referenceBasePath]);
-  // Completed messages keep their parsed subtree while another message streams.
-  // Stable event bridges still dispatch to the latest session's callbacks.
-  const rendered = useMemo(
-    () => (
-      <ReactMarkdown
-        urlTransform={localFileUrlTransform}
-        components={{
-          a: (linkProps) => (
-            <MarkdownLink
-              {...linkProps}
-              workspacePath={props.workspacePath}
-              referenceBasePath={props.referenceBasePath}
-              onOpenFile={hasFileHandler ? handlers.openFile : undefined}
-              onOpenUrl={hasUrlHandler ? handlers.openUrl : undefined}
-            />
-          ),
-          code: (codeProps) => (
-            <MarkdownCode
-              {...codeProps}
-              workspacePath={props.workspacePath}
-              referenceBasePath={props.referenceBasePath}
-              onOpenFile={hasFileHandler ? handlers.openFile : undefined}
-            />
-          ),
-          table: MarkdownTable,
-          pre: props.previewAssets ? DiagramMarkdownPre : MarkdownCodeBlock,
-          ...(ImageRenderer ? { img: ImageRenderer } : {}),
-        }}
-        rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
-        remarkPlugins={
-          props.headingAnchors
-            ? [remarkGfm, remarkMath, remarkHeadingIds]
-            : [remarkGfm, remarkMath]
-        }
-      >
-        {normalizeMathDelimiters(props.children)}
-      </ReactMarkdown>
-    ),
-    [
-      props.children,
-      workspacePath,
-      referenceBasePath,
-      props.headingAnchors,
-      Boolean(props.previewAssets),
-      ImageRenderer,
-      handlers,
-      hasFileHandler,
-      hasUrlHandler,
-    ],
-  );
-  return <div className="md">{rendered}</div>;
+  // Stable event bridges still dispatch to the latest session's callbacks, so
+  // the renderer configuration only changes with real rendering options.
+  const diagrams = Boolean(props.previewAssets);
+  const options = useMemo((): MarkdownOptions => ({
+    components: {
+      a: (linkProps) => (
+        <MarkdownLink
+          {...linkProps}
+          workspacePath={workspacePath}
+          referenceBasePath={referenceBasePath}
+          onOpenFile={hasFileHandler ? handlers.openFile : undefined}
+          onOpenUrl={hasUrlHandler ? handlers.openUrl : undefined}
+        />
+      ),
+      code: (codeProps) => (
+        <MarkdownCode
+          {...codeProps}
+          workspacePath={workspacePath}
+          referenceBasePath={referenceBasePath}
+          onOpenFile={hasFileHandler ? handlers.openFile : undefined}
+        />
+      ),
+      table: MarkdownTable,
+      pre: diagrams ? DiagramMarkdownPre : MarkdownCodeBlock,
+      ...(ImageRenderer ? { img: ImageRenderer } : {}),
+    },
+    remarkPlugins: props.headingAnchors ? HEADING_REMARK_PLUGINS : REMARK_PLUGINS,
+  }), [
+    workspacePath, referenceBasePath, props.headingAnchors, diagrams,
+    ImageRenderer, handlers, hasFileHandler, hasUrlHandler,
+  ]);
+  const source = normalizeMathDelimiters(props.children);
+  if (props.streaming) {
+    // Streaming output grows at the end: completed blocks keep their parsed
+    // subtree and only the open last block is parsed again for each frame.
+    return <div className="md">
+      {splitMarkdownBlocks(source).map((block, index) => (
+        <MarkdownBlock key={index} source={block} options={options} />
+      ))}
+    </div>;
+  }
+  return <div className="md"><MarkdownBlock source={source} options={options} /></div>;
 }
+
+type PluggableList = NonNullable<MarkdownRendererOptions["remarkPlugins"]>;
+
+interface MarkdownOptions {
+  components: Components;
+  remarkPlugins: PluggableList;
+}
+
+const REMARK_PLUGINS: PluggableList = [remarkGfm, remarkMath];
+const HEADING_REMARK_PLUGINS: PluggableList = [remarkGfm, remarkMath, remarkHeadingIds];
+const REHYPE_PLUGINS: PluggableList = [[rehypeKatex, { strict: false, throwOnError: false }]];
+
+/** Completed messages and completed streaming blocks keep their parsed
+ * subtree while another message or the open block changes. */
+const MarkdownBlock = memo(function MarkdownBlock({ source, options }: { source: string; options: MarkdownOptions }) {
+  return (
+    <ReactMarkdown
+      urlTransform={localFileUrlTransform}
+      components={options.components}
+      rehypePlugins={REHYPE_PLUGINS}
+      remarkPlugins={options.remarkPlugins}
+    >
+      {source}
+    </ReactMarkdown>
+  );
+});
 
 type HastNode = { type: string; tagName?: string; value?: string; children?: HastNode[] };
 

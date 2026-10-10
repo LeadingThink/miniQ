@@ -43,7 +43,7 @@ import { ModelDiagnostics } from "./ModelDiagnostics";
 import { SessionShareDialog } from "./SessionShareDialog";
 import { ConversationNavigationRail } from "./ConversationNavigationRail";
 import { useConversationScroll } from "../hooks/useConversationScroll";
-import { TimelineEntries } from "./TimelineEntries";
+import { TimelineEntries, type TimelineWindowHandle } from "./TimelineEntries";
 import { TimelineToolbar } from "./TimelineToolbar";
 import { PendingApprovalBar } from "./PendingApprovalBar";
 import { TimelineQuote } from "./TimelineQuote";
@@ -226,6 +226,8 @@ export function Timeline(props: TimelineProps) {
   // "查看上下文" leaves search and finds the record in the full conversation,
   // loading older pages until it appears or history runs out.
   const [locating, setLocating] = useState<SearchHit | null>(null);
+  const windowHandle = useRef<TimelineWindowHandle>(null);
+  const [mountedForLocate, setMountedForLocate] = useState(0);
   useEffect(() => setLocating(null), [props.sessionId]);
   const locate = () => {
     if (!navigation.current) return;
@@ -238,6 +240,11 @@ export function Timeline(props: TimelineProps) {
     const root = scrollRef.current;
     if (!root || props.loading) return;
     const frame = requestAnimationFrame(() => {
+      // A long conversation may have windowed the record's turn out.
+      if (windowHandle.current?.mountRecord(locating.key)) {
+        setMountedForLocate((value) => value + 1);
+        return;
+      }
       const element = findHitElement(root, locating);
       if (element) {
         reveal(element);
@@ -253,7 +260,7 @@ export function Timeline(props: TimelineProps) {
     });
     return () => cancelAnimationFrame(frame);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locating, searching, props.loading, props.loadingOlder, props.historyCursor, items]);
+  }, [locating, searching, props.loading, props.loadingOlder, props.historyCursor, items, mountedForLocate]);
   const navigationMessages = useMemo(
     () => items.flatMap((item) => item.kind === "message" ? [item.message] : []),
     [items],
@@ -383,6 +390,8 @@ export function Timeline(props: TimelineProps) {
           onFork={props.onFork}
           workspacePath={props.workspacePath}
           workspacePaths={props.workspacePaths}
+          scrollRef={scrollRef}
+          windowHandle={windowHandle}
         />
           <QueueBar
             queue={props.queue}
