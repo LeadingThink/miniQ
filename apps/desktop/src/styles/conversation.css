@@ -663,6 +663,24 @@
   font-size: var(--font-caption);
 }
 
+/* A message steered into the running turn, inline at its injection point. */
+.steer-note {
+  align-self: flex-end;
+  max-width: min(80%, 520px);
+  margin: 4px 0;
+  padding: 4px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md, 10px);
+  color: var(--text-mid);
+  font-size: var(--font-footnote);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.steer-note-label {
+  color: var(--text-dim);
+}
+
 /* ============ Markdown ============ */
 .md {
   line-height: 1.65;

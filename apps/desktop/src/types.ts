@@ -101,6 +101,8 @@ export interface QueuedMessage {
   attachments?: MessageAttachment[];
   position: number;
   createdAt: string;
+  /** Steered into the running turn; it starts as soon as that turn stops. */
+  steered?: boolean;
 }
 
 export type ExternalProvider = "codex" | "claude_code" | "opencode";
@@ -200,6 +202,8 @@ export interface Message {
   attachments?: MessageAttachment[];
   createdAt: string;
   turnTiming?: TurnTiming;
+  /** A user message steered into a running turn; rendered inline in it. */
+  steered?: boolean;
 }
 
 export interface TurnTiming {

@@ -21,6 +21,14 @@ import { TurnTimingSummary } from "./TurnTimingSummary";
 import { useSessionFileAccess } from "../sessionFileAccess";
 import { groupTimelineTurns, turnSegments, type TurnSegment } from "../timelineTurns";
 import { ExecutionFold } from "./ExecutionFold";
+import { ConfirmDialog } from "./ui/Dialog";
+
+/** An edit or regenerate that waits for the user to confirm stopping the run. */
+interface PendingRewrite {
+  kind: "edit" | "regenerate";
+  message: Message;
+  content: string;
+}
 
 /** Above this many turns, older turns skip layout/paint while offscreen. */
 export const LIGHT_TURN_THRESHOLD = 40;
@@ -95,9 +103,11 @@ export function TimelineEntries(props: {
   onOpenUrl: TimelineProps["onOpenUrl"];
   onRewrite: TimelineProps["onRewrite"];
   onFork?: TimelineProps["onFork"];
+  onStopTurn?: TimelineProps["onStopTurn"];
   workspacePath?: string | null;
   workspacePaths?: readonly string[];
 }) {
+  const [pendingRewrite, setPendingRewrite] = useState<PendingRewrite | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const voiceCapabilities = useVoiceCapabilities(props.client);
   const [draft, setDraft] = useState("");
@@ -125,7 +135,6 @@ export function TimelineEntries(props: {
   );
 
   const startEditing = (message: Message) => {
-    if (props.busy) return;
     setEditingMessageId(message.id);
     setDraft(message.content);
   };
@@ -133,22 +142,32 @@ export function TimelineEntries(props: {
     setEditingMessageId(null);
     setDraft("");
   };
-  const saveMessage = async (message: Message) => {
-    const content = draft.trim();
-    if (!content || saving || props.busy) return;
+  // Rewriting while a turn runs first stops it; the daemon waits for the
+  // stopped turn to release the session before replacing history.
+  const rewrite = async ({ kind, message, content }: PendingRewrite, stopFirst: boolean) => {
     setSaving(true);
     try {
+      if (stopFirst) await props.onStopTurn?.();
       const sent = await props.onRewrite(
         message.id,
         content,
         message.attachments?.map((attachment) => attachment.path),
       );
-      if (sent) cancelEditing();
+      if (sent && kind === "edit") cancelEditing();
     } catch (cause) {
-      props.onError(`重新发送消息失败: ${String(cause)}`);
+      props.onError(`${kind === "edit" ? "重新发送消息" : "重新生成回复"}失败: ${String(cause)}`);
     } finally {
       setSaving(false);
     }
+  };
+  const requestRewrite = async (request: PendingRewrite) => {
+    if (props.busy) setPendingRewrite(request);
+    else await rewrite(request, false);
+  };
+  const saveMessage = async (message: Message) => {
+    const content = draft.trim();
+    if (!content || saving) return;
+    await requestRewrite({ kind: "edit", message, content });
   };
   const regenerateMessage = async (message: Message) => {
     const messageIndex = props.messages.findIndex(
@@ -165,15 +184,7 @@ export function TimelineEntries(props: {
       props.onError("找不到这条回复对应的用户消息");
       return;
     }
-    try {
-      await props.onRewrite(
-        userMessage.id,
-        userMessage.content,
-        userMessage.attachments?.map((attachment) => attachment.path),
-      );
-    } catch (cause) {
-      props.onError(`重新生成回复失败: ${String(cause)}`);
-    }
+    await requestRewrite({ kind: "regenerate", message: userMessage, content: userMessage.content });
   };
 
   const live = useRef({
@@ -226,7 +237,16 @@ export function TimelineEntries(props: {
         {
         item.kind === "message" ? (
           item.message.role === "user" ? (
-            <div
+            item.message.steered ? (
+              <div
+                key={item.message.id}
+                className="steer-note"
+                data-history-anchor={`message:${item.message.id}`}
+              >
+                <span className="steer-note-label">引导：</span>
+                {item.message.content}
+              </div>
+            ) : <div
               key={item.message.id}
               className="message-entry user"
               data-user-message-id={item.message.id}
@@ -281,7 +301,7 @@ export function TimelineEntries(props: {
                         className="msg-action"
                         title="发送修改"
                         aria-label="发送修改"
-                        disabled={!draft.trim() || saving || props.busy}
+                        disabled={!draft.trim() || saving}
                         onClick={() => void bridge.saveMessage(item.message)}
                       >
                         {saving ? (
@@ -313,7 +333,6 @@ export function TimelineEntries(props: {
                         className="msg-action"
                         title="修改消息"
                         aria-label="修改消息"
-                        disabled={props.busy}
                         onClick={() => bridge.startEditing(item.message)}
                       >
                         <Pencil size={15} />
@@ -375,7 +394,7 @@ export function TimelineEntries(props: {
                     className="msg-action"
                     title="重新生成"
                     aria-label="重新生成"
-                    disabled={props.busy}
+                    disabled={saving || (props.busy && item.message.id !== latestAssistantId)}
                     onClick={() => void bridge.regenerateMessage(item.message)}
                   >
                     <RefreshCw size={15} />
@@ -482,6 +501,19 @@ export function TimelineEntries(props: {
   return (
     <div className="timeline-inner">
       {history}
+      <ConfirmDialog
+        open={pendingRewrite !== null}
+        tone="danger"
+        title={pendingRewrite?.kind === "regenerate" ? "停止当前任务并重新生成？" : "停止当前任务并发送修改？"}
+        description="当前正在运行的任务会被停止，之后从这条消息重新开始。"
+        confirmLabel="停止并继续"
+        onCancel={() => setPendingRewrite(null)}
+        onConfirm={() => {
+          const request = pendingRewrite;
+          setPendingRewrite(null);
+          if (request) void rewrite(request, true);
+        }}
+      />
       {props.approvals.map((approval) => (
         <ApprovalCard
           key={approval.approval.id}

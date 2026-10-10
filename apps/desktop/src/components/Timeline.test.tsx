@@ -238,7 +238,7 @@ describe("Timeline execution flow", () => {
     ));
   });
 
-  it("disables message rewrites while a turn is active", () => {
+  it("asks before rewriting while a turn is active", () => {
     const onRewrite = vi.fn().mockResolvedValue(true);
     render(
       <Timeline
@@ -282,10 +282,10 @@ describe("Timeline execution flow", () => {
 
     const editButton = screen.getByRole("button", { name: "修改消息" });
     const regenerateButton = screen.getByRole("button", { name: "重新生成" });
-    expect((editButton as HTMLButtonElement).disabled).toBe(true);
-    expect((regenerateButton as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(editButton);
+    expect((editButton as HTMLButtonElement).disabled).toBe(false);
+    expect((regenerateButton as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(regenerateButton);
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
     expect(onRewrite).not.toHaveBeenCalled();
   });
 
