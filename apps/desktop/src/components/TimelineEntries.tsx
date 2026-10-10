@@ -24,6 +24,8 @@ import { ExecutionFold } from "./ExecutionFold";
 import { MessageAttachmentPreview } from "./MessageAttachmentPreview";
 import { TimelineTurnFrame } from "./TimelineTurnFrame";
 import { TurnChangesCard } from "./TurnChangesCard";
+import { replyFileArtifacts } from "../replyFiles";
+import { resolveWorkspacePath } from "../localFiles";
 import { turnHasFileWrites } from "../turnChanges";
 import { ConfirmDialog } from "./ui/Dialog";
 
@@ -218,6 +220,13 @@ export function TimelineEntries(props: {
         break;
       }
     }
+    // Files the daemon already recorded show their own card; replies skip them.
+    const artifactPaths = new Set<string>();
+    for (const candidate of props.items) {
+      if (candidate.kind !== "artifact") continue;
+      const path = resolveWorkspacePath(candidate.artifact.path, props.workspacePath);
+      if (path) artifactPaths.add(path);
+    }
     const renderGroup = (item: TimelineGroup) => {
       return <Fragment key={timelineGroupKey(item)}>
         {
@@ -358,6 +367,16 @@ export function TimelineEntries(props: {
                   {item.message.content}
                 </Md>
               </div>
+              {replyFileArtifacts(item.message, props.workspacePath, artifactPaths).map((artifact) => (
+                <ArtifactCard
+                  key={artifact.id}
+                  artifact={artifact}
+                  workspacePath={props.workspacePath}
+                  workspacePaths={props.workspacePaths}
+                  onOpenFile={bridge.openFile}
+                  onError={bridge.reportError}
+                />
+              ))}
               <div className="message-footer">
                 <MessageTime at={item.message.createdAt} />
                 <div className="message-actions">
