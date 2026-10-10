@@ -106,7 +106,12 @@ export function AppWorkbench({
             ? workbench.select("browser")
             : workbench.newBrowserTab(),
     browserLabel: remote ? "网页记录" : "浏览器",
-    onOpenReview: sessionId ? () => workbench.select("review") : undefined,
+    onOpenReview: sessionId
+      ? () => {
+          app.review.showSession();
+          workbench.select("review");
+        }
+      : undefined,
     changes: app.review.data.files.length,
     onOpenTerminal:
       !remote && isTauriRuntime() && workspaceDirectory
@@ -238,8 +243,11 @@ export function AppWorkbench({
         {active === "review" && (
           <ReviewPanel
             key={app.catalog.currentSessionId}
-            diff={app.review.data}
-            error={app.review.error}
+            diff={app.review.view.diff}
+            error={app.review.view.error}
+            scope={app.review.scope}
+            onScopeChange={app.review.setScope}
+            focus={app.review.focus}
             viewStore={reviewViews}
             viewScope={workbench.scope}
             onRetry={() => void app.review.refresh()}

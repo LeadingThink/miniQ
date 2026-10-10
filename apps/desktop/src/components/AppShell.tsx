@@ -8,7 +8,8 @@ import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
 import { PlugZap, Sparkles } from "lucide-react";
 import { Spinner } from "./ui/Spinner";
-import { Fragment, lazy, Suspense, useState } from "react";
+import { Fragment, lazy, Suspense, useMemo, useState } from "react";
+import { TurnChangesContext, type TurnChangesContextValue } from "../turnChanges";
 import { Composer, ComposerCard } from "./Composer";
 import type { ComposerSlashCommand } from "../composerSlash";
 import { useAppSlashCommands } from "../hooks/useAppSlashCommands";
@@ -133,6 +134,7 @@ interface WorkbenchPageProps extends AppOnlyProps {
   slashCommands: ComposerSlashCommand[];
   onOpenFile: (target: LocalFileTarget) => void;
   onOpenUrl: (url: string) => void;
+  onOpenTurnReview: (turnId: string, path?: string) => void;
   draftRequest?: { id: number; content: string; append?: boolean };
   onDraftRequestApplied?: () => void;
 }
@@ -145,7 +147,7 @@ export function getSendBlockedReason(app: MiniqAppController): string | undefine
   return undefined;
 }
 
-function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
+function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenTurnReview, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
   const [agentPanelOpen, setAgentPanelOpen] = useState(false);
   const agentSummary = useAgentSummary(
     app.client,
@@ -157,6 +159,14 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
     setAgentPanelOpen(true);
     if (agentId) setAgentFocus((current) => ({ agentId, nonce: (current?.nonce ?? 0) + 1 }));
   };
+  const turnChanges = useMemo<TurnChangesContextValue>(() => ({
+    client: app.client,
+    sessionId: app.catalog.currentSessionId!,
+    busy: !!app.busy,
+    epoch: app.review.epoch,
+    openReview: onOpenTurnReview,
+    onReverted: app.review.filesRestored,
+  }), [app.client, app.catalog.currentSessionId, app.busy, app.review.epoch, app.review.filesRestored, onOpenTurnReview]);
   return (
     <>
       <AgentPanel
@@ -178,6 +188,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
           </div>
         }
       >
+        <TurnChangesContext.Provider value={turnChanges}>
         <Timeline
           client={app.client}
           sessionId={app.catalog.currentSessionId!}
@@ -216,6 +227,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
           onFork={app.actions.forkSession}
           onError={app.setError}
         />
+        </TurnChangesContext.Provider>
       </Suspense>
       <SessionGoalBar
         client={app.client}
@@ -347,7 +359,7 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
   );
 }
 
-function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
+function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenTurnReview, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
   switch (app.navigation.page) {
     case "schedule":
       return (
@@ -367,6 +379,7 @@ function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onD
           slashCommands={slashCommands}
           onOpenFile={onOpenFile}
           onOpenUrl={onOpenUrl}
+          onOpenTurnReview={onOpenTurnReview}
           draftRequest={draftRequest}
           onDraftRequestApplied={onDraftRequestApplied}
         />
@@ -379,9 +392,17 @@ function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onD
 export function AppShell({ app, theme, onThemeChange, contentOnly = false, active = true }: AppShellProps) {
   const workbench = useAppWorkbench(app);
   const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
+  const openSessionReview = () => {
+    app.review.showSession();
+    workbench.select("review");
+  };
+  const openTurnReview = (turnId: string, path?: string) => {
+    app.review.showTurn(turnId, path);
+    workbench.select("review");
+  };
   const slash = useAppSlashCommands(app, {
     onOpenBrowser: () => workbench.select("browser"),
-    onOpenReview: () => workbench.select("review"),
+    onOpenReview: openSessionReview,
   });
 
   const commands = useAppCommands(app, active);
@@ -410,7 +431,7 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
           workbenchOpen={!!workbench.active}
           onToggleReview={() => {
             if (workbench.active === "review") workbench.close();
-            else workbench.select("review");
+            else openSessionReview();
           }}
         />
         <AppErrorBanner app={app} />
@@ -424,6 +445,7 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
           slashCommands={slash.commands}
           onOpenUrl={workbench.openUrl}
           onOpenFile={workbench.openFile}
+          onOpenTurnReview={openTurnReview}
           draftRequest={fileQuestion?.sessionId === app.catalog.currentSessionId ? fileQuestion : undefined}
           onDraftRequestApplied={() => setFileQuestion(undefined)}
         />}

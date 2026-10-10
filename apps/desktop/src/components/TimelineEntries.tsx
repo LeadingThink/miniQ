@@ -21,6 +21,8 @@ import { TurnTimingSummary } from "./TurnTimingSummary";
 import { useSessionFileAccess } from "../sessionFileAccess";
 import { groupTimelineTurns, turnSegments, type TurnSegment } from "../timelineTurns";
 import { ExecutionFold } from "./ExecutionFold";
+import { TurnChangesCard } from "./TurnChangesCard";
+import { turnHasFileWrites } from "../turnChanges";
 
 /** Above this many turns, older turns skip layout/paint while offscreen. */
 export const LIGHT_TURN_THRESHOLD = 40;
@@ -469,6 +471,8 @@ export function TimelineEntries(props: {
           ))}
           {!hasFold && planNode}
           {!hasFold && timingNode}
+          {turn.userMessageId && !(isLast && props.busy) && turnHasFileWrites(turn)
+            && <TurnChangesCard turnId={turn.userMessageId} />}
         </div>
       );
     });

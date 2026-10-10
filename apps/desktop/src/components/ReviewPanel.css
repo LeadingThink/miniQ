@@ -101,3 +101,31 @@
   flex: 1;
   min-width: 0;
 }
+.review-scope {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.review-scope button {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--text-mid);
+  font: inherit;
+  font-size: var(--font-footnote);
+}
+.review-scope button[aria-pressed="true"] {
+  background: var(--bg-hover);
+  color: var(--text);
+  font-weight: 500;
+}
+@media (pointer: coarse), (max-width: 720px) {
+  .review-scope button {
+    min-height: 40px;
+    padding: 0 14px;
+  }
+}
