@@ -214,7 +214,7 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
           }
           const startedAt = started.get(key);
           if (kind !== "attention") started.delete(key);
-          deliver(host, session.id, kind, startedAt, `catchup:${session.id}:${kind}:${session.updatedAt ?? session.lastActivityAt ?? session.status}`);
+          deliver(host, session.id, kind, startedAt, undefined);
         }
       }
     };
