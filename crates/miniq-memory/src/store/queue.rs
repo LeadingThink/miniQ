@@ -20,6 +20,7 @@ fn row_to_queued(row: &rusqlite::Row<'_>) -> rusqlite::Result<QueuedMessage> {
         })?,
         position: row.get(4)?,
         created_at: row.get(5)?,
+        steered: row.get(6)?,
     })
 }
 
@@ -57,6 +58,7 @@ impl Store {
             attachments: attachments.to_vec(),
             position,
             created_at: now_iso(),
+            steered: false,
         };
         conn.execute(
             "INSERT INTO queued_messages
@@ -78,7 +80,7 @@ impl Store {
     pub fn list_queued_messages(&self, session_id: &str) -> Result<Vec<QueuedMessage>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, session_id, content, attachments_json, position, created_at
+            "SELECT id, session_id, content, attachments_json, position, created_at, steered
              FROM queued_messages WHERE session_id = ?1 ORDER BY position ASC, id ASC",
         )?;
         let rows = stmt.query_map(params![session_id], row_to_queued)?;
@@ -98,7 +100,7 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let mut message = conn
             .query_row(
-                "SELECT id, session_id, content, attachments_json, position, created_at
+                "SELECT id, session_id, content, attachments_json, position, created_at, steered
                  FROM queued_messages WHERE id = ?1 AND session_id = ?2",
                 params![id, session_id],
                 row_to_queued,
@@ -131,7 +133,7 @@ impl Store {
         let transaction = conn.transaction()?;
         let queued = transaction
             .query_row(
-                "SELECT id, session_id, content, attachments_json, position, created_at
+                "SELECT id, session_id, content, attachments_json, position, created_at, steered
                  FROM queued_messages WHERE session_id = ?1
                  ORDER BY position ASC, id ASC LIMIT 1",
                 params![session_id],
@@ -149,6 +151,7 @@ impl Store {
             attachments: queued.attachments,
             created_at: now_iso(),
             turn_timing: None,
+            steered: queued.steered,
         };
         super::conversation::insert_message(&transaction, &message)?;
         transaction.execute(
@@ -171,7 +174,7 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let message = conn
             .query_row(
-                "SELECT id, session_id, content, attachments_json, position, created_at
+                "SELECT id, session_id, content, attachments_json, position, created_at, steered
                  FROM queued_messages WHERE id = ?1",
                 params![id],
                 row_to_queued,
@@ -187,7 +190,7 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         let message = conn
             .query_row(
-                "SELECT id, session_id, content, attachments_json, position, created_at
+                "SELECT id, session_id, content, attachments_json, position, created_at, steered
                  FROM queued_messages WHERE id = ?1",
                 params![id],
                 row_to_queued,
@@ -210,6 +213,16 @@ impl Store {
         })
     }
 
+    /// Flag a queued message as steered into the running turn. Returns false
+    /// when the message already left the queue (its turn started).
+    pub fn mark_queued_message_steered(&self, id: &str) -> Result<bool> {
+        let changed = self.conn.lock().unwrap().execute(
+            "UPDATE queued_messages SET steered = 1 WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(changed > 0)
+    }
+
     /// Move a queued message one slot while checking its last observed
     /// position. The session id is part of the lookup so a message id from a
     /// different session cannot be reordered accidentally or deliberately.
@@ -224,7 +237,7 @@ impl Store {
         let transaction = conn.transaction()?;
         let message = transaction
             .query_row(
-                "SELECT id, session_id, content, attachments_json, position, created_at
+                "SELECT id, session_id, content, attachments_json, position, created_at, steered
                  FROM queued_messages WHERE id = ?1 AND session_id = ?2",
                 params![id, session_id],
                 row_to_queued,
@@ -432,6 +445,31 @@ mod tests {
 
         let head = store.start_queued_message(&session_id).unwrap().unwrap();
         assert_eq!(head.content, "second");
+    }
+
+    #[test]
+    fn steered_flag_moves_from_queue_into_persisted_history() {
+        let (store, session_id) = store_with_session();
+        let plain = store.enqueue_message(&session_id, "plain").unwrap();
+        let steer = store.enqueue_message(&session_id, "steer").unwrap();
+        store.promote_queued_message(&steer.id).unwrap();
+        assert!(store.mark_queued_message_steered(&steer.id).unwrap());
+        let queue = store.list_queued_messages(&session_id).unwrap();
+        assert!(queue[0].steered && !queue[1].steered);
+
+        let started = store.start_queued_message(&session_id).unwrap().unwrap();
+        assert!(started.steered);
+        assert!(!store.mark_queued_message_steered(&steer.id).unwrap());
+        let next = store.start_queued_message(&session_id).unwrap().unwrap();
+        assert!(!next.steered);
+        assert_eq!(next.content, plain.content);
+
+        let history = store.list_messages(&session_id).unwrap();
+        let flags: Vec<_> = history
+            .iter()
+            .map(|m| (m.content.as_str(), m.steered))
+            .collect();
+        assert_eq!(flags, vec![("steer", true), ("plain", false)]);
     }
 
     #[test]

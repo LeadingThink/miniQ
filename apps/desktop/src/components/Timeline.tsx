@@ -89,6 +89,8 @@ export interface TimelineProps {
     attachments?: string[],
   ) => Promise<boolean>;
   onFork?: (anchorMessageId: string) => Promise<boolean>;
+  /** Stop the running turn so an edit or regenerate can replace it. */
+  onStopTurn?: () => Promise<void>;
   onError: (message: string) => void;
 }
 
@@ -388,6 +390,7 @@ export function Timeline(props: TimelineProps) {
           onOpenUrl={props.onOpenUrl}
           onRewrite={props.onRewrite}
           onFork={props.onFork}
+          onStopTurn={props.onStopTurn}
           workspacePath={props.workspacePath}
           workspacePaths={props.workspacePaths}
           scrollRef={scrollRef}

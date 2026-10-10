@@ -167,7 +167,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.diff" => session_diff::get(state, req.params),
         "session.revertTurn" => session_turns::revert(state, req.params),
         "session.sendMessage" => session::send_message(state, req.params).await,
-        "session.rewriteMessage" => session::rewrite_message(state, req.params),
+        "session.rewriteMessage" => session::rewrite_message(state, req.params).await,
         "session.undo" => session_context::undo(state, req.params),
         "session.compact" => session_context::compact(state, req.params).await,
         "session.contextUsage" => session_context::context_usage(state, req.params).await,

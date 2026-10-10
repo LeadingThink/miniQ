@@ -43,7 +43,7 @@ it("filters agents by status and model without losing the original list", async 
       busy={false}
     />,
   );
-  fireEvent.click(await screen.findByRole("button", { name: /子任务.*总计/ }));
+  await screen.findByText("A child");
   expect(screen.getByLabelText("子任务状态：0 个执行中，1 个已完成，1 个异常")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "异常" }));
   expect(screen.queryByText("A child")).toBeNull();
@@ -74,7 +74,7 @@ it("refreshes a selected result and keeps a result error separate from the list"
       busy={false}
     />,
   );
-  fireEvent.click(await screen.findByRole("button", { name: /子任务.*总计/ }));
+  await screen.findByText("A child");
   fireEvent.click(screen.getByRole("button", { name: /^A child/ }));
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "刷新子任务" })).toBeNull();
@@ -96,9 +96,7 @@ it("clears children and results when the session changes, without relying on a p
   const view = render(
     <AgentPanel client={client} sessionId="a" busy={false} />,
   );
-  await screen.findByRole("button", { name: /子任务/ });
-  fireEvent.click(screen.getByRole("button", { name: /子任务/ }));
-  fireEvent.click(screen.getByRole("button", { name: /^A child/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /^A child/ }));
   view.rerender(<AgentPanel client={client} sessionId="b" busy={false} />);
   expect(screen.queryByText("A child")).toBeNull();
   expect(screen.queryByText("正在读取子任务")).toBeNull();
@@ -137,7 +135,7 @@ it("toggles individual results and ignores results arriving after collapse", asy
   );
   const client = { call, onStatus: () => () => {} } as unknown as RpcClient;
   render(<AgentPanel client={client} sessionId="a" busy={false} />);
-  fireEvent.click(await screen.findByRole("button", { name: /子任务.*总计/ }));
+  await screen.findByText("A child");
   const child = screen.getByRole("button", { name: /^A child/ });
   fireEvent.click(child);
   expect(child.getAttribute("aria-expanded")).toBe("true");
@@ -158,10 +156,6 @@ it("toggles individual results and ignores results arriving after collapse", asy
   expect(
     call.mock.calls.filter(([method]) => method === "agent.output"),
   ).toHaveLength(2);
-  fireEvent.click(screen.getByRole("button", { name: /子任务.*总计/ }));
-  expect(screen.queryByText("A child")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: /子任务.*总计/ }));
-  expect(screen.getByText("A child")).toBeTruthy();
 });
 
 it("shows retry progress for a running child and keeps its stop action available", async () => {
@@ -184,7 +178,7 @@ it("shows retry progress for a running child and keeps its stop action available
   );
   const client = { call, onStatus: () => () => {} } as unknown as RpcClient;
   render(<AgentPanel client={client} sessionId="a" busy={false} />);
-  fireEvent.click(await screen.findByRole("button", { name: /子任务.*总计/ }));
+  await screen.findByText("A child");
   expect(screen.getByText(/自动重试 1\/4/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "停止 A child" }));
   await waitFor(() =>
@@ -216,7 +210,7 @@ it("shows interrupted agents in the exception filter with observed time and held
       busy={false}
     />,
   );
-  fireEvent.click(await screen.findByRole("button", { name: /子任务.*总计/ }));
+  await screen.findByText("A child");
   fireEvent.click(screen.getByRole("button", { name: "异常" }));
   fireEvent.click(screen.getByRole("button", { name: /^A child/ }));
   expect(screen.getByText(/至少 1 秒/)).toBeTruthy();
@@ -227,7 +221,7 @@ it("shows interrupted agents in the exception filter with observed time and held
   ).toBeTruthy();
 });
 
-it("keeps truthful status counts, segments and phases visible while collapsed", async () => {
+it("shows truthful status counts, segments and phases above the agent list", async () => {
   const call = vi.fn().mockResolvedValue({
     agents: [
       agent,
@@ -240,17 +234,12 @@ it("keeps truthful status counts, segments and phases visible while collapsed", 
     ],
   });
   render(<AgentPanel client={{ call, onStatus: () => () => {} } as unknown as RpcClient} sessionId="a" busy={false} />);
-  const toggle = await screen.findByRole("button", { name: /子任务.*总计/ });
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  await screen.findAllByText("A child");
   expect(screen.getByLabelText("子任务状态：1 个执行中，1 个已完成，2 个异常")).toBeTruthy();
   expect(screen.getByRole("img", { name: "状态分段：执行中 1，已完成 1，异常 2，其他 1" })).toBeTruthy();
   expect(screen.getByRole("status").textContent).toBe("阶段：接收响应 · 第 7 轮");
   expect(screen.queryByRole("progressbar")).toBeNull();
-  expect(screen.queryByText("A child")).toBeNull();
-  fireEvent.click(toggle);
   expect(screen.getByText("模型正在生成响应 · 第 7 轮")).toBeTruthy();
-  fireEvent.click(toggle);
-  expect(screen.getByLabelText("子任务状态：1 个执行中，1 个已完成，2 个异常")).toBeTruthy();
 });
 
 describe("recoverable agent refresh", () => {
@@ -281,7 +270,7 @@ describe("recoverable agent refresh", () => {
       Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
       await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
       expect(call).toHaveBeenCalledTimes(1);
-      expect(screen.getByRole("button", { name: /子任务.*总计/ })).toBeTruthy();
+      expect(screen.getByText("A child")).toBeTruthy();
     } finally {
       if (descriptor) Object.defineProperty(document, "visibilityState", descriptor);
       else Reflect.deleteProperty(document, "visibilityState");
@@ -335,7 +324,7 @@ it("groups ongoing and finished children and focuses a child requested from the 
   });
   const client = { call, onStatus: () => () => {} } as unknown as RpcClient;
   const { rerender } = render(
-    <AgentPanel client={client} sessionId="a" busy={false} open onOpenChange={() => {}} />,
+    <AgentPanel client={client} sessionId="a" busy={false} />,
   );
   expect(await screen.findByRole("group", { name: "进行中 1" })).toBeTruthy();
   expect(screen.getByRole("group", { name: "已结束 1" })).toBeTruthy();
@@ -344,8 +333,6 @@ it("groups ongoing and finished children and focuses a child requested from the 
       client={client}
       sessionId="a"
       busy={false}
-      open
-      onOpenChange={() => {}}
       focusRequest={{ agentId: "a-child", nonce: 1 }}
     />,
   );

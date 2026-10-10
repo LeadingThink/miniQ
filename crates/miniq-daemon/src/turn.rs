@@ -656,6 +656,7 @@ async fn execute_turn(
         attachments: Vec::new(),
         created_at: miniq_memory::now_iso(),
         turn_timing: None,
+        steered: false,
     };
     // The first entry is the runtime system prompt, rebuilt on every turn.
     // Keep any compacted summary plus the exact transcript used by the final
@@ -699,6 +700,7 @@ mod tests {
             attachments: Vec::new(),
             created_at: "2026-08-30T00:00:00Z".to_string(),
             turn_timing: None,
+            steered: false,
         }
     }
 

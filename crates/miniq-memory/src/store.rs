@@ -129,6 +129,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0021_checkpoint_after_state",
         include_str!("../../../migrations/0021_checkpoint_after_state.sql"),
     ),
+    (
+        "0022_steered_messages",
+        include_str!("../../../migrations/0022_steered_messages.sql"),
+    ),
 ];
 
 #[derive(Debug, Error)]

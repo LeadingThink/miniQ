@@ -16,19 +16,29 @@ export type TurnSegment =
   | { kind: "group"; group: TimelineGroup }
   | { kind: "execution"; key: string; groups: TimelineGroup[]; calls: ToolCall[] };
 
-const isUser = (group: TimelineGroup) => group.kind === "message" && group.message.role === "user";
+/** A user message that opens a turn. A steered message continues the turn it
+ * interrupted, so it stays inline in that turn's process. */
+const isUser = (group: TimelineGroup) =>
+  group.kind === "message" && group.message.role === "user" && !group.message.steered;
 
 export function groupTimelineTurns(groups: TimelineGroup[], latest?: AnchoredTurnTiming | null): TimelineTurn[] {
   const turns: TimelineTurn[] = [];
   for (const group of groups) {
     const current = turns.at(-1);
     if (!current || isUser(group)) {
-      const userMessageId = group.kind === "message" && group.message.role === "user" ? group.message.id : undefined;
+      const userMessageId = isUser(group) && group.kind === "message" ? group.message.id : undefined;
       const timing = group.kind === "message" && userMessageId
         ? (userMessageId === latest?.messageId ? latest.timing : group.message.turnTiming)
         : undefined;
       turns.push({ key: timelineGroupKey(group), userMessageId, groups: [group], timing });
-    } else current.groups.push(group);
+    } else {
+      current.groups.push(group);
+      // The continuation's timing supersedes the interrupted run's.
+      if (group.kind === "message" && group.message.steered) {
+        const timing = group.message.id === latest?.messageId ? latest.timing : group.message.turnTiming;
+        if (timing) current.timing = timing;
+      }
+    }
   }
   // A page that begins mid-turn still belongs to the latest recorded timing.
   const first = turns[0];

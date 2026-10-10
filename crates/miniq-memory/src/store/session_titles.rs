@@ -19,7 +19,7 @@ impl Store {
             .lock()
             .unwrap()
             .query_row(
-                "SELECT m.id, m.session_id, m.role, m.content, m.attachments_json, m.created_at
+                "SELECT m.id, m.session_id, m.role, m.content, m.attachments_json, m.created_at, m.steered
              FROM messages m JOIN sessions s ON s.id = m.session_id
              WHERE s.id = ?1 AND s.title_auto_pending = 1 AND m.role = 'user'
              ORDER BY m.rowid LIMIT 1",

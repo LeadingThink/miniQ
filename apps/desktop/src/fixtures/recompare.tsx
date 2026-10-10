@@ -41,7 +41,6 @@ const asyncNoop = async () => undefined;
 
 function Fixture() {
   const [page, setPage] = useState("schedule");
-  const [open, setOpen] = useState(false);
   const [focus, setFocus] = useState<AgentFocusRequest | null>(null);
   const [narrow, setNarrow] = useState(false);
   const tasks = useRef(initialTasks);
@@ -78,9 +77,9 @@ function Fixture() {
       <span style={{ color: "var(--text-dim)" }}>验收样例，不执行真实任务</span>
     </nav>
     {page === "schedule" ? <SchedulePanel client={client} workspaces={workspaces} defaultWorkspaceId={workspaces[0].id} onClose={noop} onOpenSession={() => setPage("timeline")} /> : <>
-      <AgentPanel client={client} sessionId={sessions[0].id} busy agents={agents} open={open} onOpenChange={setOpen} focusRequest={focus} />
+      <AgentPanel client={client} sessionId={sessions[0].id} busy agents={agents} focusRequest={focus} />
       <Timeline sessionId={sessions[0].id} messages={[{ id: "message-1", sessionId: sessions[0].id, role: "user", content: "继续完成昨天的核查，资料研究和测试可以并行。", createdAt: now }]}
-        agents={agents} onOpenAgentPanel={(agentId) => { setOpen(true); if (agentId) setFocus((prev) => ({ agentId, nonce: (prev?.nonce ?? 0) + 1 })); }} toolCalls={[]} approvals={[]} questions={[]} plan={[]} artifacts={[]} queue={[]}
+        agents={agents} onOpenAgentPanel={(agentId) => { if (agentId) setFocus((prev) => ({ agentId, nonce: (prev?.nonce ?? 0) + 1 })); }} toolCalls={[]} approvals={[]} questions={[]} plan={[]} artifacts={[]} queue={[]}
         streamingText="正在并行核查资料和测试结果。" turnProgress={{ phase: "receiving_model", modelStep: 3, startedAt: now }} busy
         onResolveApproval={noop} onResolveQuestion={noop} onRollback={noop} onOpenFile={noop} onOpenUrl={noop}
         onSteerQueued={asyncNoop} onRemoveQueued={asyncNoop} onUpdateQueued={asyncNoop} onRewrite={async () => true} onError={noop} />

@@ -261,6 +261,10 @@ async fn steer_interrupts_running_turn_and_promotes_message() {
     )
     .await;
     assert_eq!(resp["result"]["interrupted"], true, "interrupts: {resp}");
+    assert_eq!(
+        resp["result"]["promoted"]["steered"], true,
+        "flagged: {resp}"
+    );
 
     // The cancelled turn ends, then the steered message starts its turn.
     next_event_of(&mut ws, "turn_failed").await; // "cancelled"
@@ -284,6 +288,15 @@ async fn steer_interrupts_running_turn_and_promotes_message() {
         .map(|m| m["content"].as_str().unwrap().to_string())
         .collect();
     assert_eq!(users, vec!["slow task", "steer me", "queued a"]);
+    // Only the steered message continues the interrupted turn.
+    let steered = resp["result"]["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["role"] == "user")
+        .map(|m| m["steered"].as_bool().unwrap_or(false))
+        .collect::<Vec<_>>();
+    assert_eq!(steered, vec![false, true, false]);
     let timings = resp["result"]["messages"]
         .as_array()
         .unwrap()
