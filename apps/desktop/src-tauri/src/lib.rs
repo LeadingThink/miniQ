@@ -4,6 +4,7 @@
 
 mod app_menu;
 mod browser;
+mod companion;
 mod daemon;
 mod daemon_process;
 mod export_file;
@@ -24,8 +25,10 @@ static QUIT_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 
 #[tauri::command]
 async fn daemon_connection(
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, DaemonState>,
 ) -> Result<daemon::ConnectionInfo, String> {
+    companion::authorized(window.label())?;
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || state.ensure())
         .await
@@ -305,6 +308,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(DaemonState::default())
         .manage(KeepAwakeState::default())
+        .manage(companion::CompanionState::default())
         .manage(html_preview::HtmlPreviews::default())
         .manage(export_file::ExportedFiles::default())
         .plugin(tauri_plugin_dialog::init())
@@ -312,41 +316,59 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![
-            daemon_connection,
-            terminal_install::terminal_install_status,
-            terminal_install::install_terminal_command,
-            terminal_open::open_terminal,
-            set_keep_awake,
-            prepare_daemon_update,
-            cancel_daemon_update,
-            wait_for_daemon_exit,
-            open_local_file,
-            reveal_local_file,
-            read_local_text_file,
-            read_local_file_preview,
-            convert_office_preview,
-            office_preview_capabilities,
-            open_html_preview,
-            close_html_preview,
-            read_image_preview,
-            save_pasted_image,
-            save_export_file,
-            reveal_exported_file,
-            browser_open,
-            browser_resize,
-            browser_action,
-            browser_current,
-            browser_close,
-            browser_set_visible,
-            browser_reveal_download,
-            open_microphone_settings,
-            browser_evaluate,
-            browser_screenshot,
-            browser_capabilities
-        ])
+        .invoke_handler(|invoke| {
+            if invoke.message.webview_ref().label() == "companion"
+                && !companion::allowed_command(invoke.message.command())
+            {
+                invoke
+                    .resolver
+                    .reject("Command is unavailable to the companion window");
+                return true;
+            }
+            let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+                companion::companion_get_prefs,
+                companion::companion_set_mode,
+                companion::companion_expand,
+                companion::companion_open_main,
+                daemon_connection,
+                terminal_install::terminal_install_status,
+                terminal_install::install_terminal_command,
+                terminal_open::open_terminal,
+                set_keep_awake,
+                prepare_daemon_update,
+                cancel_daemon_update,
+                wait_for_daemon_exit,
+                open_local_file,
+                reveal_local_file,
+                read_local_text_file,
+                read_local_file_preview,
+                convert_office_preview,
+                office_preview_capabilities,
+                open_html_preview,
+                close_html_preview,
+                read_image_preview,
+                save_pasted_image,
+                save_export_file,
+                reveal_exported_file,
+                browser_open,
+                browser_resize,
+                browser_action,
+                browser_current,
+                browser_close,
+                browser_set_visible,
+                browser_reveal_download,
+                open_microphone_settings,
+                browser_evaluate,
+                browser_screenshot,
+                browser_capabilities
+            ];
+            handler(invoke)
+        })
         .setup(|app| {
             setup_tray(app.handle())?;
+            if let Err(error) = companion::initialize(app.handle()) {
+                eprintln!("[miniq] companion unavailable: {error}");
+            }
             // A broken menu must not keep the app from starting.
             if let Err(error) = app_menu::setup_app_menu(app.handle()) {
                 eprintln!("[miniq] could not install app menu: {error}");
@@ -455,9 +477,11 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::tray::TrayIconBuilder;
 
     let show = MenuItemBuilder::with_id("show", "显示 miniQ").build(app)?;
+    let companion = MenuItemBuilder::with_id("show-companion", "Show companion").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "退出 miniQ").build(app)?;
     let menu = MenuBuilder::new(app)
         .item(&show)
+        .item(&companion)
         .separator()
         .item(&quit)
         .build()?;
@@ -469,6 +493,15 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => show_main_window(app),
+            "show-companion" => {
+                let app = app.clone();
+                // WebView2 requires creating webviews outside synchronous event handlers.
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = companion::show(&app) {
+                        eprintln!("[miniq] could not show companion: {error}");
+                    }
+                });
+            }
             "quit" => {
                 request_quit(app);
             }

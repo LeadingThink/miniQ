@@ -14,6 +14,7 @@ import { clearRemoteCredentials, DEFAULT_RELAY_URL, loadRemoteCredentials, store
 import { MINIQ_PRIVACY_URL, MINIQ_SUPPORT_URL } from "../mobilePrivacy";
 import { useDesktopHost } from "../desktopHost";
 import { SshConnections } from "./SshConnections";
+import { CompanionSettings } from "./CompanionSettings";
 import { TaskNotificationSettings } from "./TaskNotificationSettings";
 import { MemoryPanel } from "./MemoryPanel";
 import { SettingsTabs, settingsGroup, settingsGroupsFromSchema, SETTINGS_GROUPS, type SettingsGroup, type SettingsSchema, type SettingsTab } from "./SettingsTabs";
@@ -308,6 +309,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         <div className="settings-content-scroll">
         <div id="settings-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={tab !== "general"}>
           {tab === "general" && <TaskNotificationSettings />}
+          {tab === "general" && <CompanionSettings />}
         </div>
         <div id="settings-skills" className="settings-embedded-page" role="tabpanel" aria-labelledby="settings-tab-skills" hidden={tab !== "skills"}>
           {tab === "skills" && <SkillsPanel client={props.client} workspaceId={props.workspaceId ?? null} />}
