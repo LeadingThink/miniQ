@@ -141,6 +141,7 @@ impl Store {
             attachments: Vec::new(),
             created_at: now_iso(),
             turn_timing: None,
+            steered: false,
         };
         super::conversation::insert_message(&transaction, &message)?;
         transaction.execute(

@@ -41,6 +41,7 @@ impl CheckpointStore for SessionCheckpoint {
                 attachments: Vec::new(),
                 created_at: miniq_memory::now_iso(),
                 turn_timing: None,
+                steered: false,
             });
         let anchor = message
             .as_ref()

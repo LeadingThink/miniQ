@@ -231,7 +231,9 @@ async fn rewritten_user_message_uses_a_new_durable_snapshot() {
     let mut input = message(&session, &source);
     input["messageId"] = json!(original.id);
     let mut events = state.events.subscribe();
-    let response = super::super::rewrite_message(&state, Some(input)).unwrap();
+    let response = super::super::rewrite_message(&state, Some(input))
+        .await
+        .unwrap();
     std::fs::remove_file(source).unwrap();
     completed(&mut events, &session).await;
     let attachment = &response["message"]["attachments"][0];
@@ -284,7 +286,9 @@ async fn rejected_send_and_rewrite_remove_only_uncommitted_snapshots() {
         .unwrap();
     let mut input = message(&session, &source);
     input["messageId"] = json!(assistant.id);
-    assert!(super::super::rewrite_message(&state, Some(input)).is_err());
+    assert!(super::super::rewrite_message(&state, Some(input))
+        .await
+        .is_err());
     assert_eq!(files(&storage), 0);
     assert_eq!(std::fs::read(&source).unwrap(), b"image");
     assert_eq!(

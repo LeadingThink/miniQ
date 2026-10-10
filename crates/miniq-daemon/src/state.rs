@@ -733,6 +733,31 @@ impl AppState {
         self.active_turns.lock().unwrap().remove(session_id);
     }
 
+    pub fn has_active_turn(&self, session_id: &str) -> bool {
+        self.active_turns.lock().unwrap().contains_key(session_id)
+    }
+
+    /// Wait until a turn that was already cancelled releases its slot.
+    /// Returns false when the session's turn is still running uncancelled or
+    /// does not stop within `timeout`.
+    pub async fn wait_for_cancelled_turn(
+        &self,
+        session_id: &str,
+        timeout: std::time::Duration,
+    ) -> bool {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            let cancelled = match self.active_turns.lock().unwrap().get(session_id) {
+                None => return true,
+                Some(turn) => turn.cancellation.is_cancelled(),
+            };
+            if !cancelled || tokio::time::Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    }
+
     /// Limit the next turn of `session_id` to `max_steps` model requests.
     pub fn set_turn_step_limit(&self, session_id: &str, max_steps: Option<usize>) {
         let mut limits = self.turn_step_limits.lock().unwrap();

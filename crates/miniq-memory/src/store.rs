@@ -123,6 +123,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0020_turn_plans",
         include_str!("../../../migrations/0020_turn_plans.sql"),
     ),
+    (
+        "0022_steered_messages",
+        include_str!("../../../migrations/0022_steered_messages.sql"),
+    ),
 ];
 
 #[derive(Debug, Error)]

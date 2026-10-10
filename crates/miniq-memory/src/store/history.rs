@@ -67,7 +67,7 @@ impl Store {
         for (id, _, kind) in positions.into_iter().rev() {
             if kind == "message" {
                 page.messages.push(conn.query_row(
-                    "SELECT id, session_id, role, content, attachments_json, created_at FROM messages WHERE id = ?1 AND session_id = ?2",
+                    "SELECT id, session_id, role, content, attachments_json, created_at, steered FROM messages WHERE id = ?1 AND session_id = ?2",
                     params![id, input.session_id], row_to_message,
                 )?);
             } else {

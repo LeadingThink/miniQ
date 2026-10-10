@@ -165,6 +165,10 @@ pub struct QueuedMessage {
     pub attachments: Vec<MessageAttachment>,
     pub position: i64,
     pub created_at: String,
+    /// The user steered this message into the running turn; it starts as
+    /// soon as that turn stops.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub steered: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -293,6 +297,10 @@ pub struct Message {
     pub created_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_timing: Option<crate::TurnTiming>,
+    /// A user message steered into a running turn: it interrupted that turn
+    /// and continues it, so clients render it inline in the turn's process.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub steered: bool,
 }
 
 /// Tool call lifecycle status.

@@ -281,7 +281,13 @@ struct RewriteMessageParams {
     message: IncomingMessage,
 }
 
-pub(super) fn rewrite_message(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+/// How long a rewrite waits for a turn the user just stopped to wind down.
+const STOPPING_TURN_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
+
+pub(super) async fn rewrite_message(
+    state: &AppState,
+    raw: Option<Value>,
+) -> Result<Value, RpcError> {
     let input: RewriteMessageParams = params(raw)?;
     let attachments = validate_message(state, &input.message)?;
     let content = input.message.content.trim().to_string();
@@ -289,7 +295,17 @@ pub(super) fn rewrite_message(state: &AppState, raw: Option<Value>) -> Result<Va
         .store
         .get_session(&input.session_id)
         .map_err(store_err)?;
-    let Some(cancel) = state.begin_turn(&input.session_id) else {
+    // Editing while a task runs is "stop, then rewrite": a turn that was
+    // already cancelled is awaited instead of rejected as busy.
+    let mut cancel = state.begin_turn(&input.session_id);
+    if cancel.is_none()
+        && state
+            .wait_for_cancelled_turn(&input.session_id, STOPPING_TURN_WAIT)
+            .await
+    {
+        cancel = state.begin_turn(&input.session_id);
+    }
+    let Some(cancel) = cancel else {
         return Err(RpcError::new(
             ErrorCode::SessionBusy,
             "session already has an active turn",
@@ -646,6 +662,7 @@ mod tests {
             &state,
             rewrite_params(&session_id, &user.id, "new question"),
         )
+        .await
         .unwrap();
 
         assert_eq!(response["message"]["id"], user.id);
@@ -668,8 +685,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn rewrite_rejects_busy_sessions_without_changing_history() {
+    #[tokio::test]
+    async fn rewrite_rejects_busy_sessions_without_changing_history() {
         let (state, session_id) = setup();
         let user = state
             .store
@@ -681,6 +698,7 @@ mod tests {
             &state,
             rewrite_params(&session_id, &user.id, "new question"),
         )
+        .await
         .unwrap_err();
 
         assert_eq!(error.code, ErrorCode::SessionBusy as i64);
@@ -691,8 +709,35 @@ mod tests {
         state.end_turn(&session_id);
     }
 
-    #[test]
-    fn rewrite_releases_the_turn_slot_when_the_anchor_is_not_a_user_message() {
+    #[tokio::test]
+    async fn rewrite_waits_for_a_stopped_turn_to_release_its_slot() {
+        let (state, session_id) = setup();
+        let user = state
+            .store
+            .append_message(&session_id, Role::User, "old question")
+            .unwrap();
+        state.begin_turn(&session_id).unwrap();
+        assert!(state.cancel_turn(&session_id));
+        let ending = state.clone();
+        let ending_session = session_id.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+            ending.end_turn(&ending_session);
+        });
+
+        let response = rewrite_message(
+            &state,
+            rewrite_params(&session_id, &user.id, "edited while running"),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response["message"]["content"], "edited while running");
+        assert!(state.has_active_turn(&session_id));
+    }
+
+    #[tokio::test]
+    async fn rewrite_releases_the_turn_slot_when_the_anchor_is_not_a_user_message() {
         let (state, session_id) = setup();
         let assistant = state
             .store
@@ -703,6 +748,7 @@ mod tests {
             &state,
             rewrite_params(&session_id, &assistant.id, "new question"),
         )
+        .await
         .unwrap_err();
 
         assert!(state.begin_turn(&session_id).is_some());

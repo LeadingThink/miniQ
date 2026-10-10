@@ -114,12 +114,20 @@ pub(super) fn remove(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
 }
 
 /// Promote a queued message and interrupt the running turn; turn-end drains it.
+/// The message is flagged as steered only when a turn is actually running, so
+/// clients render it inline in that turn rather than as a new turn.
 pub(super) fn steer(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: QueueItemParams = params(raw)?;
-    let promoted = state
+    let mut promoted = state
         .store
         .promote_queued_message(&input.queued_message_id)
         .map_err(store_err)?;
+    if state.has_active_turn(&promoted.session_id) {
+        promoted.steered = state
+            .store
+            .mark_queued_message_steered(&promoted.id)
+            .map_err(store_err)?;
+    }
     emit_queue_changed(state, &promoted.session_id);
     let interrupted = state.cancel_turn(&promoted.session_id);
     if interrupted {

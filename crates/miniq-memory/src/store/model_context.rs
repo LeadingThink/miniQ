@@ -117,6 +117,7 @@ mod tests {
             attachments: Vec::new(),
             created_at: now_iso(),
             turn_timing: None,
+            steered: false,
         };
         assert!(store
             .save_context_with_message(
