@@ -99,6 +99,36 @@ fn original_and_auto_preserve_large_coordinate_sensitive_screenshots_byte_for_by
 }
 
 #[test]
+fn oversized_high_image_is_compressed_for_provider_without_mutating_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("large.jpg");
+    let mut source = image::RgbImage::new(2200, 1600);
+    for (index, pixel) in source.pixels_mut().enumerate() {
+        let value = index as u32;
+        *pixel = image::Rgb([
+            (value.wrapping_mul(17) & 0xff) as u8,
+            (value.wrapping_mul(31) & 0xff) as u8,
+            (value.wrapping_mul(47) & 0xff) as u8,
+        ]);
+    }
+    let mut original_bytes = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut original_bytes, 100)
+        .encode_image(&source)
+        .unwrap();
+    assert!(original_bytes.len() > MAX_PROVIDER_IMAGE_BYTES);
+    std::fs::write(&path, &original_bytes).unwrap();
+
+    let encoded = encode_image(&attachment(&path, ImageDetail::High)).unwrap();
+    let sent = decoded_bytes(&encoded);
+    assert_eq!(encoded.mime_type, "image/jpeg");
+    assert!(sent.len() <= MAX_PROVIDER_IMAGE_BYTES);
+    let dimensions = image::load_from_memory(&sent).unwrap();
+    assert!(dimensions.width() <= MAX_PROVIDER_IMAGE_DIMENSION);
+    assert!(dimensions.height() <= MAX_PROVIDER_IMAGE_DIMENSION);
+    assert_eq!(std::fs::read(&path).unwrap(), original_bytes);
+}
+
+#[test]
 fn preview_rejects_animated_gif_even_when_small() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("animated.gif");

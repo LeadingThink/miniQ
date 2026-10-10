@@ -8,6 +8,11 @@ use crate::{ChatImage, ImageDetail, ProviderError};
 
 const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
 const MAX_DECODED_BYTES: u64 = 128 * 1024 * 1024;
+// Anthropic limits the decoded image in a base64 source block to 10 MB. Keep
+// a margin because the surrounding JSON and base64 representation add bytes
+// to the HTTP request.
+const MAX_PROVIDER_IMAGE_BYTES: usize = 7 * 1024 * 1024;
+const MAX_PROVIDER_IMAGE_DIMENSION: u32 = 4096;
 
 pub(crate) struct EncodedImage {
     pub mime_type: String,
@@ -40,10 +45,51 @@ fn encode_image_payload(image: &ChatImage) -> Result<EncodedImage, ProviderError
             mime_type = "image/png".into();
         }
     }
+    if bytes.len() > MAX_PROVIDER_IMAGE_BYTES {
+        bytes = compress_for_provider(&bytes)?;
+        mime_type = "image/jpeg".into();
+    }
     Ok(EncodedImage {
         mime_type,
         base64: base64::engine::general_purpose::STANDARD.encode(bytes),
     })
+}
+
+/// Prepare a provider-only copy below Anthropic's per-image limit.
+/// The source file is never modified.
+fn compress_for_provider(bytes: &[u8]) -> Result<Vec<u8>, ProviderError> {
+    let pixels = decode_static_image(bytes)?;
+    let max_dimension = pixels.width().max(pixels.height());
+    let initial_scale =
+        (f64::from(MAX_PROVIDER_IMAGE_DIMENSION) / f64::from(max_dimension.max(1))).min(1.0);
+
+    // Try progressively smaller dimensions and JPEG qualities. The first
+    // result under the budget keeps the most detail possible.
+    for scale in [1.0_f64, 0.88, 0.75, 0.62, 0.5, 0.4, 0.3, 0.22] {
+        let scale = (initial_scale * scale).min(1.0);
+        let width = ((f64::from(pixels.width()) * scale).round() as u32).max(1);
+        let height = ((f64::from(pixels.height()) * scale).round() as u32).max(1);
+        let candidate = if width == pixels.width() && height == pixels.height() {
+            pixels.clone()
+        } else {
+            pixels.resize(width, height, image::imageops::FilterType::Triangle)
+        };
+        for quality in [82_u8, 72, 62, 52] {
+            let mut output = Cursor::new(Vec::new());
+            let mut encoder =
+                image::codecs::jpeg::JpegEncoder::new_with_quality(&mut output, quality);
+            encoder.encode_image(&candidate).map_err(invalid)?;
+            let encoded = output.into_inner();
+            if encoded.len() <= MAX_PROVIDER_IMAGE_BYTES {
+                return Ok(encoded);
+            }
+        }
+    }
+
+    Err(ProviderError::Config(format!(
+        "image remains larger than {} MB after safe compression",
+        MAX_PROVIDER_IMAGE_BYTES / (1024 * 1024)
+    )))
 }
 
 fn open_image_file(path: &Path) -> Result<std::fs::File, ProviderError> {
