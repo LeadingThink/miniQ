@@ -6,6 +6,8 @@ import { toolCounts } from "../timelineModel";
 import { ToolStep } from "./ExecutionActivity";
 import type { RpcClient } from "../rpc";
 import { automationGroupSummary, isAutomationCall } from "./automationActivity";
+import { ToolRunRow } from "./ToolRunRow";
+import { toolRuns } from "./toolSummary";
 
 export function ToolGroup({
   calls,
@@ -38,9 +40,14 @@ export function ToolGroup({
   const pageCount = Math.max(1, Math.ceil(calls.length / pageSize));
   const currentPage = Math.min(page, pageCount - 1);
   const failedIndex = calls.findIndex((call) => call.status === "failed");
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const pageCalls = calls.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+  const lastAutomationId = calls[lastAutomationIndex]?.id;
+  const stepExpanded = (call: ToolCall) => call.id === focusId || call.id === lastAutomationId;
   const showPage = (index: number) => {
     setOpen(true);
     setPage(Math.floor(index / pageSize));
+    setFocusId(calls[index].id);
   };
   useEffect(() => {
     if (liveAttention || expanded) setOpen(true);
@@ -101,15 +108,27 @@ export function ToolGroup({
               </button>
             )}
           </div>}
-          {calls.slice(currentPage * pageSize, (currentPage + 1) * pageSize).map((call, index) => (
-            <ToolStep
-              key={call.id}
-              call={call}
-              onRollback={onRollback}
-              client={client}
-              defaultExpanded={currentPage * pageSize + index === lastAutomationIndex}
-            />
-          ))}
+          {toolRuns(pageCalls).map((run) => {
+            const first = run.calls[0];
+            return run.calls.length === 1 ? (
+              <ToolStep
+                key={first.id}
+                call={first}
+                onRollback={onRollback}
+                client={client}
+                defaultExpanded={stepExpanded(first)}
+              />
+            ) : (
+              <ToolRunRow
+                key={first.id}
+                run={run}
+                onRollback={onRollback}
+                client={client}
+                focusId={focusId}
+                stepExpanded={stepExpanded}
+              />
+            );
+          })}
           {pageCount > 1 && (
             <nav className="history-pages" aria-label="执行步骤分页">
               <button

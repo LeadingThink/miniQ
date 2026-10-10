@@ -18,6 +18,7 @@ import {
   usePreviewValue,
 } from "../previewViewState";
 import { reviewFileRevision } from "./reviewFileRevision";
+import { HighlightedCode, useLineHighlighter } from "./syntaxHighlight";
 import "./ReviewPanel.css";
 
 interface ReviewPanelProps {
@@ -55,6 +56,7 @@ function DiffFileView({
     DIFF_LINE_BATCH,
   );
   const scroll = usePreviewScroll<HTMLDivElement>(`diff:${file.absolutePath}`);
+  const highlight = useLineHighlighter(file.path);
   const totalLines = useMemo(
     () => file.hunks.reduce((total, hunk) => total + hunk.lines.length, 0),
     [file],
@@ -104,7 +106,7 @@ function DiffFileView({
                     ? "-"
                     : " "}
               </span>
-              <code>{line.content || " "}</code>
+              <HighlightedCode text={line.content} highlight={highlight} />
             </button>
           ))}
         </section>

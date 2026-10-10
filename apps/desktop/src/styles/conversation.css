@@ -936,23 +936,7 @@
   font-size: var(--font-caption);
 }
 
-.automation-raw-data {
-  min-width: 0;
-  color: var(--text-dim);
-}
-
-.automation-raw-data > summary {
-  width: max-content;
-  padding: 3px 0;
-  cursor: pointer;
-  font-size: var(--font-caption);
-}
-
-.automation-raw-data[open] > summary {
-  color: var(--text-mid);
-}
-
-.tool-step-body > div:not(.automation-step-summary) > span {
+.tool-step-body > div:not(.automation-step-summary, .tool-semantic-row) > span {
   display: block;
   margin-bottom: 4px;
   color: var(--text-dim);

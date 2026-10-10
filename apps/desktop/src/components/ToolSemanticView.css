@@ -1,0 +1,230 @@
+/* Semantic step views: terminal output, inline diffs, file and web targets. */
+.tool-terminal,
+.tool-inline-diff,
+.tool-web {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tool-terminal > pre.tool-terminal-output {
+  max-height: none;
+  margin: 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  color: #d4d7dd;
+  background: #15171c;
+  border: 1px solid #2a2d35;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-caption);
+  line-height: 1.5;
+  white-space: pre;
+  word-break: normal;
+}
+
+.tool-terminal pre > span {
+  display: block;
+  min-height: 1.5em;
+}
+
+.tool-terminal-command {
+  color: #f2f3f5;
+  font-weight: 600;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tool-terminal-command i {
+  color: #7ee2a8;
+  font-style: normal;
+}
+
+.tool-terminal .is-stderr {
+  color: #ff9b94;
+}
+
+.tool-terminal-exit {
+  margin-top: 4px;
+  color: #ffb86b;
+}
+
+.tool-show-all {
+  margin-top: 4px;
+  padding: 2px 6px;
+  color: var(--text-mid);
+  font-size: var(--font-caption);
+}
+
+.tool-inline-diff {
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.tool-inline-diff > header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-caption);
+}
+
+.tool-inline-diff > header small {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.tool-inline-diff > header :is(b, i) {
+  flex: none;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.tool-inline-diff > header .diff-add {
+  margin-left: auto;
+  color: var(--ok);
+}
+
+.tool-inline-diff > header .diff-delete {
+  color: var(--danger);
+}
+
+.tool-inline-diff > .tool-show-all {
+  margin: 4px 6px;
+}
+
+.tool-inline-diff-lines {
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-caption);
+  line-height: 1.5;
+}
+
+.tool-diff-line {
+  display: grid;
+  grid-template-columns: 18px minmax(max-content, 1fr);
+}
+
+.tool-diff-line.addition {
+  background: var(--diff-add-bg);
+}
+
+.tool-diff-line.deletion {
+  background: var(--diff-delete-bg);
+}
+
+.tool-diff-line.addition .diff-sign {
+  color: var(--ok);
+}
+
+.tool-diff-line.deletion .diff-sign {
+  color: var(--danger);
+}
+
+.tool-diff-line .diff-sign {
+  text-align: center;
+  user-select: none;
+}
+
+.tool-diff-line code {
+  padding: 0 8px 0 2px;
+  color: var(--text);
+  white-space: pre;
+  font: inherit;
+  background: none;
+}
+
+.tool-semantic-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+  font-size: var(--font-footnote);
+}
+
+.tool-semantic-row > span:not(.tool-semantic-path),
+.tool-semantic-row small,
+.tool-semantic-meta,
+.tool-inline-diff > header small {
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+}
+
+.tool-semantic-row strong {
+  min-width: 0;
+  color: var(--text);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.tool-semantic-path {
+  min-width: 0;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--font-caption);
+  overflow-wrap: anywhere;
+}
+
+.tool-semantic-row a,
+.tool-web-results a {
+  min-width: 0;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.tool-web-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding-left: 20px;
+  font-size: var(--font-footnote);
+}
+
+.tool-web-results small {
+  display: block;
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+  overflow-wrap: anywhere;
+}
+
+.tool-semantic-error {
+  padding: 6px 8px;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-caption);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tool-raw-toggle {
+  align-self: flex-start;
+  padding: 2px 0;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  font-size: var(--font-caption);
+}
+
+.tool-raw-toggle:hover,
+.tool-raw-toggle[aria-expanded="true"] {
+  color: var(--text-mid);
+}
+
+/* Merged run of same-kind steps. */
+.tool-run-steps {
+  margin: 0 0 4px 17px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+}
+
+.tool-run-count {
+  flex: none;
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+}
