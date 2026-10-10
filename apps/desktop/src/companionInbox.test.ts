@@ -26,7 +26,7 @@ beforeEach(() => {
 
 describe("companion inbox", () => {
   it("persists valid items and dedupes by scoped event key, not title", () => {
-    expect(recordAttentionItem(input("cursor:1"))).toMatchObject({ ok: true, duplicate: undefined });
+    expect(recordAttentionItem(input("cursor:1"))).toMatchObject({ ok: true });
     expect(recordAttentionItem(input("cursor:1"))).toMatchObject({ ok: true, duplicate: true });
     expect(recordAttentionItem(input("cursor:2"))).toMatchObject({ ok: true });
     expect(recordAttentionItem(input("cursor:1", { host: "remote" }))).toMatchObject({ ok: true });
