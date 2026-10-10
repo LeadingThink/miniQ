@@ -213,6 +213,7 @@ export function AppWorkbench({
                       url={tab.url}
                       viewId={tab.viewId}
                       browserSessionId={tab.browserSessionId}
+                      autoLoad={Boolean(tab.openerViewId)}
                       active={
                         scope === workbench.scope &&
                         tab.id === workbench.browserState.activeId &&
@@ -222,6 +223,12 @@ export function AppWorkbench({
                       suspended={overlayOpen || suspended}
                       onNavigate={(url) =>
                         workbench.navigateBrowser(scope, tab.id, url)
+                      }
+                      onTitle={(title) =>
+                        workbench.titleBrowserTab(scope, tab.id, title)
+                      }
+                      onOpenWindow={(url) =>
+                        workbench.openBrowserPopup(scope, tab.id, url)
                       }
                       onClose={workbench.hideBrowser}
                       onDiscuss={

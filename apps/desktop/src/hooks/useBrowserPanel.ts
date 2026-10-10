@@ -15,7 +15,10 @@ import {
   resizeBrowser,
   setBrowserVisible,
   shouldSyncBrowserAddress,
+  type BrowserCommandAction,
+  type BrowserNavigationAction,
 } from "../browserWorkbench";
+import { listenBrowserEvent } from "../browserEvents";
 import {
   buildBrowserAutomationScript,
   parseBrowserScriptResult,
@@ -28,12 +31,19 @@ import { errorMessage } from "../errorMessage";
 import { isTauriRuntime } from "../runtime";
 import { useOpenDialog } from "./useOpenDialog";
 
+/** Without a page-load event the navigation is treated as a no-op (e.g. back at history start). */
+export const PAGE_LOAD_GRACE_MS = 3000;
+/** Upper bound for the loading indicator if a finished event never arrives. */
+export const PAGE_LOAD_SAFETY_MS = 30000;
+
 export function useBrowserPanel(
   url: string,
   surface: RefObject<HTMLDivElement | null>,
   requestedSuspension = false,
   requestedViewId?: string,
   requestedBrowserSessionId?: string,
+  /** Load `url` on mount even for an agent-owned tab (e.g. a page popup). */
+  autoLoad = false,
 ) {
   const dialogOpen = useOpenDialog();
   const suspended = requestedSuspension || dialogOpen;
@@ -45,6 +55,10 @@ export function useBrowserPanel(
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const pageLoading = useRef(false);
+  const pageLoadEvents = useRef(0);
+  const graceTimer = useRef<number | undefined>(undefined);
   const editing = useRef(false);
   const mounted = useRef(false);
   const sequence = useRef(0);
@@ -71,6 +85,19 @@ export function useBrowserPanel(
       shouldSyncBrowserAddress(editing.current, value, previous) ? next : value,
     );
   }, []);
+  // The IPC call returns once a navigation is dispatched. Loading then follows
+  // browser://page-load; if no page load starts, the dispatch was a no-op.
+  const settleLoading = useCallback((eventsBefore: number) => {
+    window.clearTimeout(graceTimer.current);
+    if (pageLoading.current) return;
+    if (pageLoadEvents.current !== eventsBefore) {
+      setLoading(false);
+      return;
+    }
+    graceTimer.current = window.setTimeout(() => {
+      if (mounted.current && !pageLoading.current && pageLoadEvents.current === eventsBefore) setLoading(false);
+    }, PAGE_LOAD_GRACE_MS);
+  }, []);
   const reconcileSurface = useCallback(async () => {
     const request = ++surfaceSequence.current;
     const rect = surface.current?.getBoundingClientRect();
@@ -95,6 +122,8 @@ export function useBrowserPanel(
         if (!element || !mounted.current) throw new Error("浏览器面板已关闭");
         if (inFlight.current) throw new Error("浏览器正在执行另一个操作，请稍后重试导航");
         const request = ++sequence.current;
+        const eventsBefore = pageLoadEvents.current;
+        let dispatched = false;
         inFlight.current = true;
         setPending(true);
         setLoading(true);
@@ -137,6 +166,7 @@ export function useBrowserPanel(
           accept(state.url);
           setAddress(state.url);
           setRevision((value) => value + 1);
+          dispatched = true;
         } catch (cause) {
           pendingNavigation.current = undefined;
           if (mounted.current && request === sequence.current) {
@@ -148,7 +178,10 @@ export function useBrowserPanel(
           if (mounted.current && request === sequence.current) {
             inFlight.current = false;
             setPending(false);
-            if (isTauriRuntime()) setLoading(false);
+            if (isTauriRuntime()) {
+              if (dispatched) settleLoading(eventsBefore);
+              else setLoading(false);
+            }
           }
         }
       })();
@@ -158,7 +191,7 @@ export function useBrowserPanel(
       }).catch(() => {});
       return operation;
     },
-    [surface, viewId, accept, reconcileSurface, rememberObservation],
+    [surface, viewId, accept, reconcileSurface, rememberObservation, settleLoading],
   );
 
   useEffect(() => {
@@ -168,6 +201,7 @@ export function useBrowserPanel(
       sequence.current++;
       inFlight.current = false;
       initialLoadStarted.current = false;
+      window.clearTimeout(graceTimer.current);
       // StrictMode's immediate effect remount still owns this same view. Real
       // disposal closes it after that ownership check, including late opens.
       queueMicrotask(() => {
@@ -294,10 +328,31 @@ export function useBrowserPanel(
     });
   }, [load, rememberObservation, requestedBrowserSessionId, surface, viewId]);
   useEffect(() => {
-    if (requestedBrowserSessionId || initialLoadStarted.current) return;
+    if ((requestedBrowserSessionId && !autoLoad) || initialLoadStarted.current) return;
     initialLoadStarted.current = true;
     void load(initialUrl.current).catch(() => {});
-  }, [load, requestedBrowserSessionId]);
+  }, [load, requestedBrowserSessionId, autoLoad]);
+
+  useEffect(() => listenBrowserEvent("browser://page-load", viewId, (event) => {
+    if (!mounted.current) return;
+    pageLoadEvents.current++;
+    pageLoading.current = event.phase === "started";
+    // An explicit navigation in flight settles the indicator itself once its
+    // IPC returns, so a late event from the previous page cannot clear it.
+    if (inFlight.current) return;
+    window.clearTimeout(graceTimer.current);
+    setLoading(event.phase === "started");
+    if (event.phase === "finished" && /^https?:\/\//i.test(event.url)) accept(event.url);
+  }), [viewId, accept]);
+
+  useEffect(() => {
+    if (!loading || !isTauriRuntime()) return;
+    const timer = window.setTimeout(() => {
+      pageLoading.current = false;
+      setLoading(false);
+    }, PAGE_LOAD_SAFETY_MS);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
 
   useEffect(() => {
     const element = surface.current;
@@ -355,7 +410,7 @@ export function useBrowserPanel(
     };
   }, [viewId, accept, suspended]);
 
-  const action = async (command: "back" | "forward" | "reload" | "stop") => {
+  const action = async (command: BrowserNavigationAction) => {
     // Stopping is deliberately allowed while another navigation is in flight;
     // otherwise the toolbar's stop affordance would be inert during loading.
     if (inFlight.current && command !== "stop") return;
@@ -368,7 +423,12 @@ export function useBrowserPanel(
       return;
     }
     const request = command === "stop" ? sequence.current : ++sequence.current;
-    if (command !== "stop") {
+    const eventsBefore = pageLoadEvents.current;
+    let dispatched = false;
+    if (command === "stop") {
+      window.clearTimeout(graceTimer.current);
+      pageLoading.current = false;
+    } else {
       inFlight.current = true;
       setPending(true);
       setLoading(true);
@@ -378,6 +438,7 @@ export function useBrowserPanel(
       if (mounted.current && request === sequence.current) {
         if (state) accept(state.url);
         setError(null);
+        dispatched = command !== "stop";
       }
     } catch (cause) {
       if (mounted.current && request === sequence.current)
@@ -386,9 +447,16 @@ export function useBrowserPanel(
       if (mounted.current && request === sequence.current) {
         inFlight.current = false;
         setPending(false);
-        setLoading(false);
+        if (dispatched) settleLoading(eventsBefore);
+        else setLoading(false);
       }
     }
+  };
+  /** Zoom, print, devtools and data clearing: no navigation, no loading state. */
+  const command = async (name: BrowserCommandAction) => {
+    const state = await browserAction(name, viewId);
+    if (mounted.current && typeof state?.zoom === "number" && Number.isFinite(state.zoom)) setZoom(state.zoom);
+    return state;
   };
   return {
     address,
@@ -403,5 +471,8 @@ export function useBrowserPanel(
     editing,
     load,
     action,
+    command,
+    zoom,
+    viewId,
   };
 }

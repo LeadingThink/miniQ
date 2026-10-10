@@ -2,7 +2,7 @@
 import { createRef, StrictMode } from "react";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useBrowserPanel } from "./useBrowserPanel";
+import { PAGE_LOAD_GRACE_MS, PAGE_LOAD_SAFETY_MS, useBrowserPanel } from "./useBrowserPanel";
 import {
   browserAction,
   closeBrowser,
@@ -17,6 +17,19 @@ import { executeEmbeddedBrowserRequest } from "../embeddedBrowserDriver";
 import { isTauriRuntime } from "../runtime";
 
 vi.mock("../runtime", () => ({ isTauriRuntime: vi.fn(() => false) }));
+const { nativeListeners } = vi.hoisted(() => ({
+  nativeListeners: new Map<string, Set<(event: { payload: unknown }) => void>>(),
+}));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (name: string, handler: (event: { payload: unknown }) => void) => {
+    const set = nativeListeners.get(name) ?? new Set();
+    set.add(handler);
+    nativeListeners.set(name, set);
+    return () => set.delete(handler);
+  }),
+}));
+const emitNative = (name: string, payload: unknown) =>
+  act(() => nativeListeners.get(name)?.forEach((handler) => handler({ payload })));
 vi.mock("../browserWorkbench", async (original) => ({
   ...(await original<typeof import("../browserWorkbench")>()),
   browserCapabilities: vi.fn(async () => ({
@@ -41,6 +54,7 @@ vi.mock("../browserWorkbench", async (original) => ({
 }));
 beforeEach(() => {
   vi.clearAllMocks();
+  nativeListeners.clear();
   vi.mocked(isTauriRuntime).mockReturnValue(false);
   vi.stubGlobal(
     "ResizeObserver",
@@ -497,4 +511,95 @@ it.each(["back", "forward", "reload"])("rejects stale observations before dispat
     },
   })).rejects.toThrow("stale observation");
   expect(browserAction).not.toHaveBeenCalled();
+});
+
+it("follows native page-load events for the loading indicator and address", async () => {
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  const ref = surface();
+  const { result } = renderHook(() => useBrowserPanel("https://example.test/", ref));
+  await waitFor(() => expect(result.current.pending).toBe(false));
+  await waitFor(() => expect(nativeListeners.get("browser://page-load")?.size).toBe(1));
+  const viewId = vi.mocked(openBrowser).mock.calls[0][2];
+  // The IPC returned, but the page has not reported finishing yet.
+  emitNative("browser://page-load", { viewId, url: "https://example.test/", phase: "started" });
+  expect(result.current.loading).toBe(true);
+  emitNative("browser://page-load", { viewId: "other-view", url: "https://other.test/", phase: "finished" });
+  expect(result.current.loading).toBe(true);
+  emitNative("browser://page-load", { viewId, url: "https://example.test/redirected", phase: "finished" });
+  expect(result.current.loading).toBe(false);
+  expect(result.current.activeUrl).toBe("https://example.test/redirected");
+  emitNative("browser://page-load", { viewId, url: "https://example.test/next", phase: "started" });
+  expect(result.current.loading).toBe(true);
+});
+
+it("keeps loading after a native reload until the page finishes", async () => {
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  const ref = surface();
+  const { result } = renderHook(() => useBrowserPanel("https://example.test/", ref));
+  await waitFor(() => expect(nativeListeners.get("browser://page-load")?.size).toBe(1));
+  await waitFor(() => expect(result.current.pending).toBe(false));
+  const viewId = vi.mocked(openBrowser).mock.calls[0][2];
+  emitNative("browser://page-load", { viewId, url: "https://example.test/", phase: "finished" });
+  expect(result.current.loading).toBe(false);
+  vi.mocked(browserAction).mockImplementationOnce(async () => {
+    nativeListeners.get("browser://page-load")?.forEach((handler) =>
+      handler({ payload: { viewId, url: "https://example.test/", phase: "started" } }));
+    return { url: "https://example.test/" };
+  });
+  await act(() => result.current.action("reload"));
+  expect(result.current.pending).toBe(false);
+  expect(result.current.loading).toBe(true);
+  emitNative("browser://page-load", { viewId, url: "https://example.test/", phase: "finished" });
+  expect(result.current.loading).toBe(false);
+});
+
+it("clears loading when a native action starts no page load", async () => {
+  vi.useFakeTimers();
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  vi.mocked(openBrowser).mockResolvedValueOnce({ url: "https://example.test/" });
+  const ref = surface();
+  const { result } = renderHook(() => useBrowserPanel("https://example.test/", ref));
+  await act(async () => {});
+  expect(result.current.pending).toBe(false);
+  expect(result.current.loading).toBe(true);
+  await act(() => vi.advanceTimersByTimeAsync(PAGE_LOAD_GRACE_MS));
+  expect(result.current.loading).toBe(false);
+});
+
+it("caps the loading indicator when a finished event never arrives", async () => {
+  vi.useFakeTimers();
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  const ref = surface();
+  const { result } = renderHook(() => useBrowserPanel("https://example.test/", ref));
+  await act(async () => {});
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  const viewId = vi.mocked(openBrowser).mock.calls[0][2];
+  emitNative("browser://page-load", { viewId, url: "https://example.test/", phase: "started" });
+  await act(() => vi.advanceTimersByTimeAsync(PAGE_LOAD_GRACE_MS * 2));
+  expect(result.current.loading).toBe(true);
+  await act(() => vi.advanceTimersByTimeAsync(PAGE_LOAD_SAFETY_MS));
+  expect(result.current.loading).toBe(false);
+});
+
+it("records the zoom factor returned by zoom commands without navigating", async () => {
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  const ref = surface();
+  const { result } = renderHook(() => useBrowserPanel("https://example.test/", ref));
+  await waitFor(() => expect(result.current.pending).toBe(false));
+  expect(result.current.zoom).toBe(1);
+  vi.mocked(browserAction).mockResolvedValueOnce({ url: "https://example.test/", zoom: 1.25 });
+  await act(() => result.current.command("zoom_in"));
+  expect(browserAction).toHaveBeenLastCalledWith("zoom_in", result.current.viewId);
+  expect(result.current.zoom).toBe(1.25);
+  expect(result.current.pending).toBe(false);
+});
+
+it("auto-loads an agent-owned popup tab but not a plain agent tab", async () => {
+  const plain = renderHook(() => useBrowserPanel("https://agent.test/", surface(), false, "agent-view", "task-1"));
+  await act(async () => {});
+  expect(openBrowser).not.toHaveBeenCalled();
+  plain.unmount();
+  const popup = renderHook(() => useBrowserPanel("https://popup.test/", surface(), false, "popup-view", "task-1", true));
+  await waitFor(() => expect(popup.result.current.pending).toBe(false));
+  expect(openBrowser).toHaveBeenCalledWith("https://popup.test/", expect.any(Object), "popup-view", false);
 });

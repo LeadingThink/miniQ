@@ -50,3 +50,13 @@ it("keeps a focus destination when the last visible tab is closed", () => {
   }
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "新建网页标签" }));
 });
+
+it("labels tabs with the page title and falls back to the hostname", () => {
+  render(<BrowserTabs tabs={[
+    { id: "a", viewId: "view-a", url: "https://a.example.com/", title: "首页 - A" },
+    { id: "b", viewId: "view-b", url: "https://b.example.com/" },
+  ]} activeId="a" onSelect={() => {}} onNew={() => {}} onClose={() => {}} />);
+  expect(screen.getByRole("tab", { name: "首页 - A" })).toBeTruthy();
+  expect(screen.getByRole("tab", { name: "b.example.com" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "关闭网页标签 首页 - A" })).toBeTruthy();
+});

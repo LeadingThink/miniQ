@@ -24,3 +24,64 @@
     order: -1;
   }
 }
+.browser-notice,
+.browser-downloads {
+  flex: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text-mid);
+  font-size: var(--font-caption);
+}
+.browser-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 6px 0 12px;
+}
+.browser-notice span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.browser-notice .icon-button,
+.browser-download .icon-button {
+  flex: none;
+  padding: 4px;
+  background: transparent;
+  color: var(--text-mid);
+}
+.browser-downloads ul {
+  margin: 0;
+  padding: 3px 6px 3px 12px;
+  list-style: none;
+  max-height: 116px;
+  overflow-y: auto;
+}
+.browser-download {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+.browser-download > svg {
+  flex: none;
+  color: var(--text-dim);
+}
+.browser-download-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.browser-download-state {
+  flex: none;
+  color: var(--text-dim);
+}
+.browser-download-failed .browser-download-state {
+  color: var(--danger);
+}

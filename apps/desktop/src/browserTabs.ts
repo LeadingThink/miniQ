@@ -3,6 +3,10 @@ export interface BrowserTab {
   url: string;
   viewId: string;
   browserSessionId?: string;
+  /** Document title reported by the page; the label falls back to the host. */
+  title?: string;
+  /** viewId of the page that opened this tab (window.open / target=_blank). */
+  openerViewId?: string;
 }
 
 export interface BrowserTabsState {
@@ -49,6 +53,34 @@ export function openBrowserTab(state: BrowserTabsState, url: string, browserSess
 
 export function updateBrowserTab(state: BrowserTabsState, id: string, url: string): BrowserTabsState {
   return { ...state, tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, url } : tab)) };
+}
+
+export function setBrowserTabTitle(state: BrowserTabsState, id: string, title: string): BrowserTabsState {
+  const next = title.trim() || undefined;
+  if (!state.tabs.some((tab) => tab.id === id && tab.title !== next)) return state;
+  return { ...state, tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, title: next } : tab)) };
+}
+
+/**
+ * Opens a page popup (window.open / target=_blank) as a new focused tab. A
+ * popup from an agent-owned tab stays in that agent's tab set and becomes its
+ * selected page, like a browser focusing the new window.
+ */
+export function openPopupBrowserTab(state: BrowserTabsState, openerId: string, url: string): BrowserTabsState {
+  const opener = state.tabs.find((tab) => tab.id === openerId);
+  const opened = openBrowserTab(state, url, opener?.browserSessionId);
+  const tab = { ...opened.tabs.at(-1)!, ...(opener ? { openerViewId: opener.viewId } : {}) };
+  const next = { ...opened, tabs: [...opened.tabs.slice(0, -1), tab] };
+  return opener?.browserSessionId ? selectTaskBrowserTab(next, opener.browserSessionId, tab, true) : next;
+}
+
+export function browserTabLabel(tab: Pick<BrowserTab, "url" | "title">): string {
+  if (tab.title?.trim()) return tab.title.trim();
+  try {
+    return new URL(tab.url).hostname || tab.url;
+  } catch {
+    return tab.url;
+  }
 }
 
 export function taskBrowserTabs(state: BrowserTabsState, sessionId: string, browserSessionId: string): BrowserTab[] {

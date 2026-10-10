@@ -1,28 +1,432 @@
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+
 use tauri::{
-    webview::NewWindowResponse, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl,
+    webview::{DownloadEvent, NewWindowResponse, PageLoadEvent},
+    Emitter, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl,
 };
+use tauri_plugin_opener::OpenerExt;
 
 #[path = "browser_capture.rs"]
 mod capture;
 pub use capture::capture as screenshot;
 
+#[cfg(target_os = "macos")]
+#[path = "browser_dialogs.rs"]
+mod dialogs;
+
+const LABEL_PREFIX: &str = "miniq-browser-";
+
+/// One WKWebsiteDataStore shared by every embedded browser view (macOS 14+),
+/// so logins survive new tabs and restarts. Wry falls back to the default
+/// persistent store on older macOS. Never change it: that logs everyone out.
+#[cfg(target_os = "macos")]
+const BROWSER_DATA_STORE_ID: [u8; 16] = [
+    0x6d, 0x69, 0x6e, 0x69, 0x51, 0x2d, 0x42, 0x72, 0x6f, 0x77, 0x73, 0x65, 0x72, 0x2d, 0x76, 0x31,
+];
+
+/// Directory name of the shared browser profile (WebView2 / WebKitGTK data;
+/// on macOS it only keeps browser views out of the main window's context).
+const BROWSER_PROFILE_DIR: &str = "browser-profile";
+
+/// Schemes handed to the operating system. Anything else that is not web
+/// content is blocked: auto-launching arbitrary URL handlers from a page or
+/// an iframe without a prompt is unsafe.
+const EXTERNAL_SCHEMES: &[&str] = &["mailto", "tel", "sms", "facetime", "facetime-audio"];
+
+const ZOOM_STEPS: [f64; 12] = [
+    0.5, 0.67, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0,
+];
+
+const EVENT_PAGE_LOAD: &str = "browser://page-load";
+const EVENT_TITLE: &str = "browser://title";
+const EVENT_NEW_WINDOW: &str = "browser://new-window";
+const EVENT_DOWNLOAD: &str = "browser://download";
+const EVENT_EXTERNAL: &str = "browser://external";
+
+#[derive(Default)]
+struct RequestedUrl {
+    current: String,
+    previous: Option<String>,
+}
+
 /// Last address miniQ asked each embedded browser to load. A failed load (for
 /// example a dead local dev server) leaves WKWebView without a committed URL,
 /// so this is the address to report while the page shows the load error.
-fn requested_urls() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
-    static URLS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> =
-        std::sync::OnceLock::new();
+fn requested_urls() -> &'static Mutex<HashMap<String, RequestedUrl>> {
+    static URLS: OnceLock<Mutex<HashMap<String, RequestedUrl>>> = OnceLock::new();
     URLS.get_or_init(Default::default)
 }
 
 fn remember_url(label: &str, url: &tauri::Url) {
     if let Ok(mut urls) = requested_urls().lock() {
-        urls.insert(label.to_owned(), url.to_string());
+        let entry = urls.entry(label.to_owned()).or_default();
+        let url = url.to_string();
+        if entry.current != url {
+            entry.previous = Some(std::mem::replace(&mut entry.current, url));
+        }
+    }
+}
+
+/// WebKit runs the navigation policy on the opener before asking for a new
+/// window, so a popup URL is briefly recorded for the opener. Undo that.
+fn forget_new_window_url(label: &str, url: &tauri::Url) {
+    if let Ok(mut urls) = requested_urls().lock() {
+        if let Some(entry) = urls.get_mut(label) {
+            if entry.current == url.as_str() {
+                if let Some(previous) = entry.previous.take() {
+                    entry.current = previous;
+                }
+            }
+        }
     }
 }
 
 fn requested_url(label: &str) -> Option<String> {
-    requested_urls().lock().ok()?.get(label).cloned()
+    let urls = requested_urls().lock().ok()?;
+    urls.get(label)
+        .map(|entry| entry.current.clone())
+        .filter(|url| !url.is_empty())
+}
+
+fn zoom_levels() -> &'static Mutex<HashMap<String, f64>> {
+    static ZOOM: OnceLock<Mutex<HashMap<String, f64>>> = OnceLock::new();
+    ZOOM.get_or_init(Default::default)
+}
+
+fn current_zoom(label: &str) -> f64 {
+    zoom_levels()
+        .lock()
+        .ok()
+        .and_then(|levels| levels.get(label).copied())
+        .unwrap_or(1.0)
+}
+
+/// Next zoom factor for `zoom_in` / `zoom_out` / `zoom_reset`, snapping an
+/// off-grid factor to the neighbouring step.
+fn next_zoom(current: f64, action: &str) -> Option<f64> {
+    const EPSILON: f64 = 0.001;
+    let first = ZOOM_STEPS[0];
+    let last = ZOOM_STEPS[ZOOM_STEPS.len() - 1];
+    match action {
+        "zoom_in" => Some(
+            ZOOM_STEPS
+                .into_iter()
+                .find(|step| *step > current + EPSILON)
+                .unwrap_or(last),
+        ),
+        "zoom_out" => Some(
+            ZOOM_STEPS
+                .into_iter()
+                .rev()
+                .find(|step| *step < current - EPSILON)
+                .unwrap_or(first),
+        ),
+        "zoom_reset" => Some(1.0),
+        _ => None,
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum NavigationKind {
+    /// http(s) page; tracked as the view's address.
+    Web,
+    /// Same-document helpers such as `about:blank` iframes and `blob:` URLs.
+    InPage,
+    /// Opened by the OS (mail, phone, ...).
+    External,
+    Blocked,
+}
+
+fn classify_navigation(url: &tauri::Url) -> NavigationKind {
+    match url.scheme() {
+        "http" | "https" if url.username().is_empty() && url.password().is_none() => {
+            NavigationKind::Web
+        }
+        "about" if matches!(url.path(), "blank" | "srcdoc") => NavigationKind::InPage,
+        "blob" => NavigationKind::InPage,
+        scheme if EXTERNAL_SCHEMES.contains(&scheme) => NavigationKind::External,
+        _ => NavigationKind::Blocked,
+    }
+}
+
+fn view_id_of(label: &str) -> &str {
+    label.strip_prefix(LABEL_PREFIX).unwrap_or(label)
+}
+
+fn emit_to_main<S: serde::Serialize + Clone>(app: &tauri::AppHandle, event: &str, payload: S) {
+    if let Err(error) = app.emit_to("main", event, payload) {
+        eprintln!("[miniq] could not emit {event}: {error}");
+    }
+}
+
+/// Keep event payloads small: `data:` download URLs can be megabytes long.
+fn display_url(url: &str) -> String {
+    const LIMIT: usize = 2048;
+    if url.len() <= LIMIT {
+        return url.to_owned();
+    }
+    let mut end = LIMIT;
+    while !url.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &url[..end])
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PageLoadPayload {
+    view_id: String,
+    url: String,
+    phase: &'static str,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TitlePayload {
+    view_id: String,
+    title: String,
+}
+
+/// Shared by `browser://new-window` and `browser://external`.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UrlPayload {
+    view_id: String,
+    url: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadPayload {
+    view_id: String,
+    id: String,
+    url: String,
+    file_name: String,
+    path: String,
+    phase: &'static str,
+}
+
+/// Hand a non-web link to the OS. Throttled so a page cannot spam the mail
+/// or phone app with a navigation loop.
+fn open_external(app: &tauri::AppHandle, label: &str, url: &tauri::Url) {
+    static LAST_OPEN: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+    if let Ok(mut last) = LAST_OPEN.lock() {
+        let now = std::time::Instant::now();
+        if last.is_some_and(|at| now.duration_since(at) < std::time::Duration::from_secs(1)) {
+            return;
+        }
+        *last = Some(now);
+    }
+    if let Err(error) = app.opener().open_url(url.as_str(), None::<&str>) {
+        eprintln!("[miniq] could not open external link: {error}");
+        return;
+    }
+    emit_to_main(
+        app,
+        EVENT_EXTERNAL,
+        UrlPayload {
+            view_id: view_id_of(label).to_owned(),
+            url: url.to_string(),
+        },
+    );
+}
+
+struct PendingDownload {
+    id: String,
+    label: String,
+    url: String,
+    path: PathBuf,
+}
+
+fn pending_downloads() -> &'static Mutex<Vec<PendingDownload>> {
+    static DOWNLOADS: OnceLock<Mutex<Vec<PendingDownload>>> = OnceLock::new();
+    DOWNLOADS.get_or_init(Default::default)
+}
+
+/// Reduce a suggested download name to one safe path component.
+fn sanitize_file_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    let cleaned = cleaned.trim().trim_matches('.').trim();
+    let cleaned: String = cleaned.chars().take(200).collect();
+    if cleaned.is_empty() {
+        "download".to_owned()
+    } else {
+        cleaned
+    }
+}
+
+fn file_name_from_url(url: &tauri::Url) -> String {
+    let segment = url
+        .path_segments()
+        .and_then(|mut segments| segments.next_back())
+        .filter(|segment| !segment.is_empty())
+        .unwrap_or("download");
+    let decoded = url::form_urlencoded::parse(format!("x={segment}").as_bytes())
+        .next()
+        .map(|(_, value)| value.into_owned())
+        .unwrap_or_else(|| segment.to_owned());
+    sanitize_file_name(&decoded)
+}
+
+/// `dir/name`, or `dir/stem (n).ext` for the first free `n`, the way browsers
+/// avoid overwriting earlier downloads.
+fn unique_download_path(dir: &Path, name: &str, taken: impl Fn(&Path) -> bool) -> PathBuf {
+    let candidate = dir.join(name);
+    if !taken(&candidate) {
+        return candidate;
+    }
+    let path = Path::new(name);
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or(name);
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| format!(".{value}"))
+        .unwrap_or_default();
+    for counter in 1..10_000 {
+        let candidate = dir.join(format!("{stem} ({counter}){extension}"));
+        if !taken(&candidate) {
+            return candidate;
+        }
+    }
+    dir.join(format!("{stem} ({}){extension}", uuid::Uuid::new_v4()))
+}
+
+fn download_payload(
+    label: &str,
+    id: String,
+    url: &str,
+    path: &Path,
+    phase: &'static str,
+) -> DownloadPayload {
+    DownloadPayload {
+        view_id: view_id_of(label).to_owned(),
+        id,
+        url: display_url(url),
+        file_name: path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        path: path.to_string_lossy().into_owned(),
+        phase,
+    }
+}
+
+fn handle_download(webview: &tauri::Webview, event: DownloadEvent<'_>) -> bool {
+    let app = webview.app_handle();
+    let label = webview.label();
+    match event {
+        DownloadEvent::Requested { url, destination } => {
+            let name = destination
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(sanitize_file_name)
+                .unwrap_or_else(|| file_name_from_url(&url));
+            let directory = app
+                .path()
+                .download_dir()
+                .map_err(|error| error.to_string())
+                .and_then(|dir| {
+                    std::fs::create_dir_all(&dir)
+                        .map(|_| dir)
+                        .map_err(|error| error.to_string())
+                });
+            let directory = match directory {
+                Ok(directory) => directory,
+                Err(error) => {
+                    eprintln!("[miniq] download folder unavailable: {error}");
+                    let payload = download_payload(
+                        label,
+                        uuid::Uuid::new_v4().to_string(),
+                        url.as_str(),
+                        Path::new(&name),
+                        "failed",
+                    );
+                    emit_to_main(app, EVENT_DOWNLOAD, payload);
+                    return false;
+                }
+            };
+            let id = uuid::Uuid::new_v4().to_string();
+            let path = {
+                let Ok(mut pending) = pending_downloads().lock() else {
+                    return false;
+                };
+                let path = unique_download_path(&directory, &name, |candidate| {
+                    candidate.exists() || pending.iter().any(|item| item.path == candidate)
+                });
+                pending.push(PendingDownload {
+                    id: id.clone(),
+                    label: label.to_owned(),
+                    url: url.to_string(),
+                    path: path.clone(),
+                });
+                path
+            };
+            *destination = path.clone();
+            let payload = download_payload(label, id, url.as_str(), &path, "started");
+            emit_to_main(app, EVENT_DOWNLOAD, payload);
+            true
+        }
+        DownloadEvent::Finished { url, path, success } => {
+            let entry = pending_downloads().lock().ok().and_then(|mut pending| {
+                let index = pending
+                    .iter()
+                    .position(|item| item.label == label && item.url == url.as_str())
+                    .or_else(|| pending.iter().position(|item| item.url == url.as_str()))?;
+                Some(pending.remove(index))
+            });
+            // macOS never reports the final path; use the one we assigned.
+            let (id, saved_path) = match entry {
+                Some(entry) => (entry.id, path.unwrap_or(entry.path)),
+                None => (uuid::Uuid::new_v4().to_string(), path.unwrap_or_default()),
+            };
+            let phase = if success { "finished" } else { "failed" };
+            let payload = download_payload(label, id, url.as_str(), &saved_path, phase);
+            emit_to_main(app, EVENT_DOWNLOAD, payload);
+            true
+        }
+        _ => true,
+    }
+}
+
+/// Canonical form of `path` if it is an existing entry strictly inside
+/// `download_dir` (symlinks resolved, so links cannot escape the folder).
+fn validate_download_path(download_dir: &Path, path: &Path) -> Result<PathBuf, String> {
+    if !path.is_absolute() {
+        return Err("下载文件路径无效".into());
+    }
+    let directory = download_dir
+        .canonicalize()
+        .map_err(|_| "找不到下载文件夹".to_string())?;
+    let file = path
+        .canonicalize()
+        .map_err(|_| "文件不存在或已被移动".to_string())?;
+    if file == directory || !file.starts_with(&directory) {
+        return Err("只能定位下载文件夹中的文件".into());
+    }
+    Ok(file)
+}
+
+pub fn reveal_download(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
+    let download_dir = app
+        .path()
+        .download_dir()
+        .map_err(|error| error.to_string())?;
+    let file = validate_download_path(&download_dir, Path::new(path))?;
+    app.opener()
+        .reveal_item_in_dir(file)
+        .map_err(|error| error.to_string())
 }
 
 /// Never call `Webview::url()` on macOS: wry unwraps WKWebView's nil URL after
@@ -84,7 +488,7 @@ fn browser_label(view_id: &str) -> Result<String, String> {
     {
         return Err("invalid browser instance identifier".into());
     }
-    Ok(format!("miniq-browser-{view_id}"))
+    Ok(format!("{LABEL_PREFIX}{view_id}"))
 }
 
 #[derive(Clone, Copy, serde::Deserialize)]
@@ -100,6 +504,9 @@ pub struct BrowserBounds {
 #[serde(rename_all = "camelCase")]
 pub struct BrowserState {
     url: String,
+    /// Current page zoom factor; reported by `browser_action`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zoom: Option<f64>,
 }
 
 #[derive(serde::Serialize)]
@@ -255,59 +662,95 @@ pub fn open(
             .map_err(|error| error.to_string())?;
         return Ok(BrowserState {
             url: url.to_string(),
+            zoom: None,
         });
     }
 
     let window = app
         .get_window("main")
         .ok_or_else(|| "找不到 miniQ 主窗口".to_string())?;
+    // One profile for every browser view: logins carry over between tabs
+    // and survive restarts.
     let data_directory = app
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?
-        .join("browser-sessions")
-        .join(&label);
+        .join(BROWSER_PROFILE_DIR);
     std::fs::create_dir_all(&data_directory).map_err(|error| error.to_string())?;
     remember_url(&label, &url);
     let navigation_app = app.clone();
     let navigation_label = label.clone();
-    let tracked_label = label.clone();
+    let window_app = app.clone();
+    let window_label = label.clone();
     // Start at the requested remote page. Loading the application shell first
     // exposes an unrelated complete document before remote navigation commits.
     let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(url.clone()));
     if let Some(user_agent) = EMBEDDED_BROWSER_USER_AGENT {
         builder = builder.user_agent(user_agent);
     }
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.data_store_identifier(BROWSER_DATA_STORE_ID);
+    }
     let builder = builder
         .initialization_script(include_str!("browser_links.js"))
         .data_directory(data_directory)
-        .incognito(true)
-        .on_navigation(move |target| {
-            let allowed = matches!(target.scheme(), "http" | "https")
-                && target.username().is_empty()
-                && target.password().is_none();
-            if allowed {
-                remember_url(&tracked_label, target);
+        .incognito(false)
+        .devtools(true)
+        .on_navigation(move |target| match classify_navigation(target) {
+            NavigationKind::Web => {
+                remember_url(&navigation_label, target);
+                true
             }
-            allowed
+            NavigationKind::InPage => true,
+            NavigationKind::External => {
+                open_external(&navigation_app, &navigation_label, target);
+                false
+            }
+            NavigationKind::Blocked => false,
         })
         .on_new_window(move |target, _| {
-            if matches!(target.scheme(), "http" | "https")
-                && target.username().is_empty()
-                && target.password().is_none()
-            {
-                let app = navigation_app.clone();
-                let label = navigation_label.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    if let Some(webview) = app.get_webview(&label) {
-                        if let Err(error) = webview.navigate(target) {
-                            eprintln!("[miniq] embedded link navigation failed: {error}");
-                        }
-                    }
-                });
+            forget_new_window_url(&window_label, &target);
+            match classify_navigation(&target) {
+                NavigationKind::Web => emit_to_main(
+                    &window_app,
+                    EVENT_NEW_WINDOW,
+                    UrlPayload {
+                        view_id: view_id_of(&window_label).to_owned(),
+                        url: target.to_string(),
+                    },
+                ),
+                NavigationKind::External => open_external(&window_app, &window_label, &target),
+                NavigationKind::InPage | NavigationKind::Blocked => {}
             }
             NewWindowResponse::Deny
-        });
+        })
+        .on_page_load(|webview, payload| {
+            let phase = match payload.event() {
+                PageLoadEvent::Started => "started",
+                PageLoadEvent::Finished => "finished",
+            };
+            emit_to_main(
+                webview.app_handle(),
+                EVENT_PAGE_LOAD,
+                PageLoadPayload {
+                    view_id: view_id_of(webview.label()).to_owned(),
+                    url: payload.url().to_string(),
+                    phase,
+                },
+            );
+        })
+        .on_document_title_changed(|webview, title| {
+            emit_to_main(
+                webview.app_handle(),
+                EVENT_TITLE,
+                TitlePayload {
+                    view_id: view_id_of(webview.label()).to_owned(),
+                    title,
+                },
+            );
+        })
+        .on_download(|webview, event| handle_download(&webview, event));
     let native_bounds = viewport_bounds(app, bounds)?;
     let webview = window
         .add_child(
@@ -316,12 +759,32 @@ pub fn open(
             initial_size(bounds),
         )
         .map_err(|error| error.to_string())?;
+    #[cfg(target_os = "macos")]
+    if let Err(error) = webview.with_webview(|platform| {
+        let view: &objc2_web_kit::WKWebView = unsafe { &*platform.inner().cast() };
+        dialogs::install(view);
+    }) {
+        eprintln!("[miniq] could not enable browser dialogs: {error}");
+    }
     if !visible {
         webview.hide().map_err(|error| error.to_string())?;
     }
     Ok(BrowserState {
         url: url.to_string(),
+        zoom: None,
     })
+}
+
+fn print(webview: &tauri::Webview) -> tauri::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        webview.print()
+    }
+    // Tauri's native print is macOS-only; the page API works elsewhere.
+    #[cfg(not(target_os = "macos"))]
+    {
+        webview.eval("window.print()")
+    }
 }
 
 pub fn resize_current(
@@ -349,11 +812,27 @@ pub async fn action(
         "forward" => webview.eval("history.forward()"),
         "reload" => webview.reload(),
         "stop" => webview.eval("window.stop()"),
+        "zoom_in" | "zoom_out" | "zoom_reset" => {
+            let zoom = next_zoom(current_zoom(&label), action).unwrap_or(1.0);
+            webview.set_zoom(zoom).inspect(|_| {
+                if let Ok(mut levels) = zoom_levels().lock() {
+                    levels.insert(label.clone(), zoom);
+                }
+            })
+        }
+        "print" => print(&webview),
+        "devtools" => {
+            webview.open_devtools();
+            Ok(())
+        }
+        // Every browser view shares one profile, so this clears all of them.
+        "clear_data" => webview.clear_all_browsing_data(),
         _ => return Err(format!("未知浏览器操作: {action}")),
     }
     .map_err(|error| error.to_string())?;
     Ok(BrowserState {
         url: committed_url(&webview, &label).await?,
+        zoom: Some(current_zoom(&label)),
     })
 }
 
@@ -364,6 +843,7 @@ pub async fn current(app: &tauri::AppHandle, view_id: &str) -> Result<BrowserSta
         .ok_or_else(|| "内置浏览器尚未打开".to_string())?;
     Ok(BrowserState {
         url: committed_url(&webview, &label).await?,
+        zoom: None,
     })
 }
 
@@ -374,6 +854,9 @@ pub fn close(app: &tauri::AppHandle, view_id: &str) -> Result<(), String> {
     }
     if let Ok(mut urls) = requested_urls().lock() {
         urls.remove(&label);
+    }
+    if let Ok(mut levels) = zoom_levels().lock() {
+        levels.remove(&label);
     }
     Ok(())
 }
@@ -531,6 +1014,151 @@ mod tests {
                 "unexpected token {mobile_token}"
             );
         }
+    }
+
+    #[test]
+    fn zoom_steps_through_the_fixed_scale() {
+        assert_eq!(next_zoom(1.0, "zoom_in"), Some(1.1));
+        assert_eq!(next_zoom(1.0, "zoom_out"), Some(0.9));
+        assert_eq!(next_zoom(0.67, "zoom_out"), Some(0.5));
+        assert_eq!(next_zoom(3.0, "zoom_in"), Some(3.0));
+        assert_eq!(next_zoom(0.5, "zoom_out"), Some(0.5));
+        assert_eq!(next_zoom(2.2, "zoom_reset"), Some(1.0));
+        // Off-grid factors snap to the neighbouring step.
+        assert_eq!(next_zoom(1.3, "zoom_in"), Some(1.5));
+        assert_eq!(next_zoom(1.3, "zoom_out"), Some(1.25));
+        assert_eq!(next_zoom(1.0, "reload"), None);
+    }
+
+    #[test]
+    fn classifies_navigation_schemes() {
+        let kind = |value: &str| classify_navigation(&value.parse().unwrap());
+        assert_eq!(kind("https://example.com/"), NavigationKind::Web);
+        assert_eq!(kind("http://127.0.0.1:3000/"), NavigationKind::Web);
+        assert_eq!(kind("mailto:someone@example.com"), NavigationKind::External);
+        assert_eq!(kind("tel:+8610000000"), NavigationKind::External);
+        assert_eq!(kind("about:blank"), NavigationKind::InPage);
+        assert_eq!(
+            kind("blob:https://example.com/1234"),
+            NavigationKind::InPage
+        );
+        for blocked in [
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "data:text/html,hi",
+            "https://user:pw@example.com/",
+            "https://user@example.com/",
+            "about:config",
+            "ms-msdt:/id",
+            "x-apple.systempreferences:com.apple.preference",
+        ] {
+            assert_eq!(kind(blocked), NavigationKind::Blocked, "{blocked}");
+        }
+    }
+
+    #[test]
+    fn requested_url_ignores_popup_urls_recorded_on_the_opener() {
+        let label = "miniq-browser-popup-test";
+        remember_url(label, &"https://a.example/".parse().unwrap());
+        let popup: tauri::Url = "https://b.example/".parse().unwrap();
+        remember_url(label, &popup);
+        forget_new_window_url(label, &popup);
+        assert_eq!(requested_url(label).as_deref(), Some("https://a.example/"));
+    }
+
+    #[test]
+    fn download_names_never_overwrite_existing_files() {
+        let dir = Path::new("/downloads");
+        let taken = |existing: &'static [&'static str]| {
+            move |path: &Path| existing.iter().any(|name| dir.join(name) == path)
+        };
+        assert_eq!(
+            unique_download_path(dir, "report.pdf", taken(&[])),
+            dir.join("report.pdf")
+        );
+        assert_eq!(
+            unique_download_path(dir, "report.pdf", taken(&["report.pdf", "report (1).pdf"])),
+            dir.join("report (2).pdf")
+        );
+        assert_eq!(
+            unique_download_path(dir, "README", taken(&["README"])),
+            dir.join("README (1)")
+        );
+        assert_eq!(
+            unique_download_path(dir, "a.tar.gz", taken(&["a.tar.gz"])),
+            dir.join("a.tar (1).gz")
+        );
+    }
+
+    #[test]
+    fn download_names_are_single_safe_components() {
+        assert_eq!(sanitize_file_name("../../etc/passwd"), "_.._etc_passwd");
+        assert_eq!(sanitize_file_name("a\\b:c.txt"), "a_b_c.txt");
+        assert_eq!(sanitize_file_name("  "), "download");
+        assert_eq!(sanitize_file_name(".."), "download");
+        assert_eq!(sanitize_file_name("报告.pdf"), "报告.pdf");
+        let url: tauri::Url = "https://example.com/files/%E6%8A%A5%E5%91%8A.pdf?x=1"
+            .parse()
+            .unwrap();
+        assert_eq!(file_name_from_url(&url), "报告.pdf");
+        let root: tauri::Url = "https://example.com/".parse().unwrap();
+        assert_eq!(file_name_from_url(&root), "download");
+    }
+
+    #[test]
+    fn reveal_only_accepts_files_inside_the_download_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let downloads = root.path().join("Downloads");
+        std::fs::create_dir_all(&downloads).unwrap();
+        let inside = downloads.join("a.txt");
+        std::fs::write(&inside, b"x").unwrap();
+        let outside = root.path().join("secret.txt");
+        std::fs::write(&outside, b"x").unwrap();
+
+        assert!(validate_download_path(&downloads, &inside).is_ok());
+        assert!(validate_download_path(&downloads, &outside).is_err());
+        assert!(validate_download_path(&downloads, &downloads).is_err());
+        assert!(validate_download_path(&downloads, &downloads.join("../secret.txt")).is_err());
+        assert!(validate_download_path(&downloads, &downloads.join("missing.txt")).is_err());
+        assert!(validate_download_path(&downloads, Path::new("a.txt")).is_err());
+        #[cfg(unix)]
+        {
+            let link = downloads.join("link.txt");
+            std::os::unix::fs::symlink(&outside, &link).unwrap();
+            assert!(validate_download_path(&downloads, &link).is_err());
+        }
+    }
+
+    #[test]
+    fn browser_state_reports_zoom_only_when_known() {
+        let plain = serde_json::to_value(BrowserState {
+            url: "https://example.com/".into(),
+            zoom: None,
+        })
+        .unwrap();
+        assert!(plain.get("zoom").is_none());
+        let zoomed = serde_json::to_value(BrowserState {
+            url: "https://example.com/".into(),
+            zoom: Some(1.25),
+        })
+        .unwrap();
+        assert_eq!(zoomed["zoom"], 1.25);
+    }
+
+    #[test]
+    fn download_event_payload_uses_camel_case() {
+        let payload = download_payload(
+            "miniq-browser-tab-1",
+            "id-1".into(),
+            "https://example.com/a.pdf",
+            Path::new("/downloads/a.pdf"),
+            "started",
+        );
+        let value = serde_json::to_value(payload).unwrap();
+        assert_eq!(value["viewId"], "tab-1");
+        assert_eq!(value["fileName"], "a.pdf");
+        assert_eq!(value["phase"], "started");
+        assert_eq!(display_url(&"a".repeat(5000)).chars().count(), 2049);
     }
 
     #[test]
