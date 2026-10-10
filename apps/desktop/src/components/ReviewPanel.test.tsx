@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -57,6 +58,26 @@ describe("ReviewPanel", () => {
     expect(html).toContain("-1");
     expect(html).toContain("old");
     expect(html).toContain("new");
+  });
+
+  it("highlights diff lines by file extension and keeps unknown files plain", async () => {
+    const file = DIFF.files[0];
+    const code = (path: string, content: string) => ({
+      ...file,
+      path,
+      absolutePath: `D:/work/app/${path}`,
+      hunks: [{ ...file.hunks[0], lines: [{ kind: "addition" as const, oldLine: null, newLine: 1, content }] }],
+    });
+    const view = render(
+      <ReviewPanel diff={{ ...DIFF, files: [code("src/main.ts", "const value = 1;")] }} onOpenFile={vi.fn()} onClose={vi.fn()} />,
+    );
+    await waitFor(() => expect(view.container.querySelector(".diff-line .hljs-keyword")?.textContent).toBe("const"));
+    expect(view.container.querySelector(".diff-line code")?.textContent).toBe("const value = 1;");
+    view.unmount();
+    const plain = render(
+      <ReviewPanel diff={{ ...DIFF, files: [code("notes.unknownext", "const value = 1;")] }} onOpenFile={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(plain.container.querySelector(".diff-line code")?.innerHTML).toBe("const value = 1;");
   });
 
   it("filters file paths and navigates within matching files without losing the selected file", () => {

@@ -1,0 +1,32 @@
+/* highlight.js token colors, derived from theme variables so every theme works. */
+:is(.hljs-keyword, .hljs-selector-tag, .hljs-meta .hljs-keyword, .hljs-doctag) {
+  color: color-mix(in srgb, var(--accent) 80%, var(--text));
+}
+:is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-template-tag, .hljs-symbol) {
+  color: color-mix(in srgb, var(--ok) 85%, var(--text));
+}
+:is(.hljs-number, .hljs-literal, .hljs-variable.language_, .hljs-bullet) {
+  color: color-mix(in srgb, var(--warn) 85%, var(--text));
+}
+:is(.hljs-comment, .hljs-quote, .hljs-meta) {
+  color: var(--text-dim);
+  font-style: italic;
+}
+:is(.hljs-title, .hljs-section, .hljs-selector-id, .hljs-selector-class) {
+  color: color-mix(in srgb, var(--blue) 85%, var(--text));
+}
+:is(.hljs-type, .hljs-built_in, .hljs-class .hljs-title, .hljs-title.class_) {
+  color: color-mix(in srgb, var(--blue) 60%, var(--accent));
+}
+:is(.hljs-attr, .hljs-attribute, .hljs-property, .hljs-name, .hljs-tag) {
+  color: color-mix(in srgb, var(--blue) 70%, var(--text));
+}
+.hljs-deletion {
+  color: var(--danger);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}

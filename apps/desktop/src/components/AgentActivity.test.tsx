@@ -59,6 +59,7 @@ it("paginates only this child's steps and fetches payloads only when expanded", 
     limit: 20,
   });
   fireEvent.click(open);
+  fireEvent.click(await screen.findByRole("button", { name: "查看详情" }));
   expect(await screen.findByText("verified result")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "较早的子任务步骤" }));
   await waitFor(() =>

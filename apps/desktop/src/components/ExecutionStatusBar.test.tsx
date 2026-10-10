@@ -89,7 +89,7 @@ it("shows automation activity and the latest observation by default", () => {
   expect(screen.getByText("2 次桌面")).toBeTruthy();
   expect(screen.getByText("观察了桌面")).toBeTruthy();
   expect(screen.getAllByText("向下拖动 200 px · (10, 20) -> (10, 220)")).toHaveLength(2);
-  expect(screen.getByText("查看调用数据")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "查看详情" })).toBeTruthy();
 });
 
 it("expands the complete plan from a static step button and hides it when idle", () => {

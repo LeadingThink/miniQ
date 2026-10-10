@@ -16,6 +16,8 @@ import type { RpcClient } from "../rpc";
 import { formatDuration } from "../time";
 import { LiveElapsed } from "./LiveElapsed";
 import { useToolDetail } from "../hooks/useToolDetail";
+import { ToolSemanticView } from "./ToolSemanticView";
+import { toolStepTitle } from "./toolSummary";
 import {
   automationActionLabel,
   automationInputSummary,
@@ -39,6 +41,8 @@ const TOOL_ACTIONS: Record<string, ToolAction> = {
   file_edit: { running: "正在修改文件", finished: "修改了文件" },
   file_patch: { running: "正在应用代码补丁", finished: "应用了代码补丁" },
   shell_run: { running: "正在运行命令", finished: "运行了命令" },
+  shell_batch: { running: "正在运行命令", finished: "运行了命令" },
+  apply_patch: { running: "正在应用代码补丁", finished: "应用了代码补丁" },
   git_status: { running: "正在检查 Git 状态", finished: "检查了 Git 状态" },
   git_diff: { running: "正在查看代码改动", finished: "查看了代码改动" },
   web_search: { running: "正在搜索网页", finished: "搜索了网页" },
@@ -116,6 +120,7 @@ export function ToolStep(props: {
     props.call.status === "failed" &&
     (!props.call.payloadDeferred || props.call.live === true);
   const [open, setOpen] = useState(needsAttention || props.defaultExpanded === true);
+  const [rawOpen, setRawOpen] = useState(false);
   const detailId = useId();
   useEffect(() => {
     if (needsAttention) setOpen(true);
@@ -133,6 +138,8 @@ export function ToolStep(props: {
           string | undefined)
       : undefined;
   const summary = toolInputSummary(call);
+  const title = toolStepTitle(call, running);
+  const headSummary = title ? title.target : summary;
   const duration = toolDuration(call);
   const state = statusText(call);
   const automation = isAutomationCall(call);
@@ -163,11 +170,11 @@ export function ToolStep(props: {
             )}
           </span>
           <span className="tool-action">
-            {toolActionLabel(call.toolName, running, call.input)}
+            {title ? title.verb : toolActionLabel(call.toolName, running, call.input)}
           </span>
-          {summary && (
-            <span className="tool-summary" title={summary}>
-              {summary}
+          {headSummary && (
+            <span className="tool-summary" title={headSummary}>
+              {headSummary}
             </span>
           )}
           {state && (
@@ -235,15 +242,16 @@ export function ToolStep(props: {
               {props.client && (
                 <ComputerObservation call={call} client={props.client} />
               )}
-              {automation ? (
-                <details className="automation-raw-data">
-                  <summary>查看调用数据</summary>
-                  <ToolPayload label="输入" value={call.input} />
-                  {call.output !== undefined && call.output !== null && (
-                    <ToolPayload label="结果" value={call.output} />
-                  )}
-                </details>
-              ) : (
+              <ToolSemanticView call={call} />
+              <button
+                type="button"
+                className="tool-raw-toggle"
+                aria-expanded={rawOpen}
+                onClick={() => setRawOpen((value) => !value)}
+              >
+                {rawOpen ? "收起详情" : "查看详情"}
+              </button>
+              {rawOpen && (
                 <>
                   <ToolPayload label="输入" value={call.input} />
                   {call.output !== undefined && call.output !== null && (

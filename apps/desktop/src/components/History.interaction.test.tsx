@@ -16,10 +16,14 @@ it("keeps historical failures collapsed, paginates all steps and can collapse ag
   expect(document.querySelectorAll(".tool-step")).toHaveLength(0);
   const toggle = screen.getByRole("button", {name:/75 个执行步骤/});
   fireEvent.click(toggle);
-  expect(document.querySelectorAll(".tool-step")).toHaveLength(30);
+  const firstPage = screen.getByRole("button", {name:/运行了 30 条命令/});
+  expect(firstPage.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(firstPage);
+  expect(document.querySelectorAll(".tool-run-steps .tool-step")).toHaveLength(30);
   fireEvent.click(screen.getByRole("button", {name:"下一页步骤"}));
   fireEvent.click(screen.getByRole("button", {name:"下一页步骤"}));
-  expect(document.querySelectorAll(".tool-step")).toHaveLength(15);
+  fireEvent.click(screen.getByRole("button", {name:/运行了 15 条命令/}));
+  expect(document.querySelectorAll(".tool-run-steps .tool-step")).toHaveLength(15);
   fireEvent.click(toggle);
   expect(document.querySelectorAll(".tool-step")).toHaveLength(0);
 });
