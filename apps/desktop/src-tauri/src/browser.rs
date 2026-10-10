@@ -56,6 +56,25 @@ async fn committed_url(webview: &tauri::Webview, label: &str) -> Result<String, 
     }
 }
 
+/// User-Agent for the embedded browser on WebKit platforms.
+///
+/// The default WKWebView / WebKitGTK User-Agent has no `Chrome` token. Many
+/// Chinese government sites run a check such as
+/// `ua.indexOf('chrome') == -1 && !isIE(11)` and then block the page with a
+/// forced "upgrade your browser" screen, even on current Safari. Chromium
+/// shells (Electron, WebView2) pass this check, so we present a desktop
+/// Chrome User-Agent. Windows WebView2 already sends one and keeps its default.
+#[cfg(target_os = "macos")]
+const EMBEDDED_BROWSER_USER_AGENT: Option<&str> = Some(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+);
+#[cfg(all(unix, not(target_os = "macos")))]
+const EMBEDDED_BROWSER_USER_AGENT: Option<&str> = Some(
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+);
+#[cfg(not(unix))]
+const EMBEDDED_BROWSER_USER_AGENT: Option<&str> = None;
+
 fn browser_label(view_id: &str) -> Result<String, String> {
     if view_id.is_empty()
         || view_id.len() > 64
@@ -255,7 +274,11 @@ pub fn open(
     let tracked_label = label.clone();
     // Start at the requested remote page. Loading the application shell first
     // exposes an unrelated complete document before remote navigation commits.
-    let builder = WebviewBuilder::new(&label, WebviewUrl::External(url.clone()))
+    let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(url.clone()));
+    if let Some(user_agent) = EMBEDDED_BROWSER_USER_AGENT {
+        builder = builder.user_agent(user_agent);
+    }
+    let builder = builder
         .initialization_script(include_str!("browser_links.js"))
         .data_directory(data_directory)
         .incognito(true)
@@ -494,6 +517,21 @@ pub async fn evaluate(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn webkit_user_agent_passes_chrome_only_browser_checks() {
+        let user_agent = EMBEDDED_BROWSER_USER_AGENT
+            .expect("WebKit platforms set a User-Agent")
+            .to_lowercase();
+        assert!(user_agent.contains("chrome/"));
+        for mobile_token in ["ipad", "iphone os", "android", "mobile", "msie", "trident/"] {
+            assert!(
+                !user_agent.contains(mobile_token),
+                "unexpected token {mobile_token}"
+            );
+        }
+    }
 
     #[test]
     fn rejects_nonfinite_or_negative_initial_bounds() {
