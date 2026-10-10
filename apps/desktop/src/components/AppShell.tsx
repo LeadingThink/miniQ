@@ -36,6 +36,7 @@ import { hostDraftKey, useDesktopHost } from "../desktopHost";
 import { RemotePathDialog } from "./RemotePathDialog";
 import { ProviderOnboardingPrompt } from "./ProviderOnboardingPrompt";
 import { ExtensionCenter } from "./ExtensionCenter";
+import { AttentionInbox } from "./AttentionInbox";
 
 import { useAppWorkbench } from "../hooks/useAppWorkbench";
 import { AppWorkbench } from "./AppWorkbench";
@@ -452,6 +453,7 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
     <Container {...(contentOnly ? {} : { className: `app ${app.navigation.sidebarCollapsed ? "sidebar-collapsed" : ""}` })}>
       {!contentOnly && <AppSidebar app={app} />}
       <div className="main" data-app-active={String(active)}>
+        {active && <AttentionInbox app={app} />}
         <AppStatusBar
           app={app}
           onOpenFile={workbench.openFile}

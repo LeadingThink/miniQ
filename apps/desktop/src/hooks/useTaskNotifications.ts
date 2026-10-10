@@ -8,6 +8,7 @@ import { isNativeMobileApp } from "../mobileRuntime";
 import { startAppBadge } from "../appBadge";
 import { startRemotePush } from "../remotePush";
 import { decisionOf, resolveFromNotification } from "../notificationActions";
+import { recordAttentionItem } from "../companionInbox";
 
 /** Completed turns shorter than this are not worth a phone notification. */
 export const SHORT_TASK_MS = 10_000;
@@ -42,6 +43,15 @@ function kindOf(event: DaemonEvent): TaskNotificationKind | null {
   return null;
 }
 
+function eventKeyOf(event: DaemonEvent, sessionId: string): string {
+  const cursor = event.eventCursor;
+  if (cursor) return `cursor:${cursor.epoch}:${cursor.sequence}`;
+  const candidate = event as DaemonEvent & { turnId?: string; requestId?: string };
+  if (candidate.turnId) return `turn:${candidate.turnId}`;
+  if (candidate.requestId) return `request:${candidate.requestId}`;
+  return `${event.type}:${sessionId}:${JSON.stringify(event)}`;
+}
+
 /** One subscription at the desktop root covers every host, including hidden ones. */
 export function useTaskNotifications(root: RpcClient, catalogs: Record<string, HostCatalog>, options: TaskNotificationOptions = {}) {
   const catalogsRef = useRef(catalogs);
@@ -66,13 +76,25 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
     const catchUpUntil = new Map<string, number>();
     let allCatchUpUntil = 0;
 
-    const deliver = (host: string | null, sessionId: string, kind: TaskNotificationKind, startedAt: number | undefined) => {
-      if (mobile && kind === "completed" && startedAt !== undefined && Date.now() - startedAt < SHORT_TASK_MS) return;
+    const deliver = (host: string | null, sessionId: string, kind: TaskNotificationKind, startedAt: number | undefined, eventKey: string) => {
       const catalog = catalogsRef.current[hostKey(host)];
       const session = catalog?.sessions.find((entry) => entry.id === sessionId);
       const title = host === null
         ? session?.title ?? ""
         : `${catalog?.label || host} · ${session?.title || "当前会话"}`;
+      if (kind === "completed" || kind === "failed") {
+        recordAttentionItem({
+          host,
+          ...(root.targetDeviceId ? { targetDeviceId: root.targetDeviceId } : {}),
+          sessionId,
+          ...(session?.workspaceId ? { workspaceId: session.workspaceId } : {}),
+          kind,
+          eventKey,
+          title: session?.title ?? "当前会话",
+          detail: kind === "completed" ? "任务已完成" : "任务执行失败",
+        });
+      }
+      if (mobile && kind === "completed" && startedAt !== undefined && Date.now() - startedAt < SHORT_TASK_MS) return;
       if (mobile) {
         const viewing = optionsRef.current.isViewing?.(host, sessionId) ?? false;
         void notifyMobileTask(kind, title, { host, sessionId, ...(root.targetDeviceId ? { targetDeviceId: root.targetDeviceId } : {}) }, viewing);
@@ -121,7 +143,7 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
         started.delete(key);
         if (caughtUp.delete(key)) return;
       }
-      deliver(host, sessionId, kind, startedAt);
+      deliver(host, sessionId, kind, startedAt, eventKeyOf(event, sessionId));
     };
 
     /**
@@ -157,7 +179,7 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
           }
           const startedAt = started.get(key);
           if (kind !== "attention") started.delete(key);
-          deliver(host, session.id, kind, startedAt);
+          deliver(host, session.id, kind, startedAt, `catchup:${session.id}:${kind}:${session.updatedAt ?? session.lastActivityAt ?? session.status}`);
         }
       }
     };
