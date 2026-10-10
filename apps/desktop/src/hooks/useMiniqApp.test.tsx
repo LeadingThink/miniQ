@@ -542,13 +542,14 @@ it("unmounts the complete session page without orphaned child-task DOM nodes", a
   render(<TestApp />);
   await screen.findByRole("button", { name: "a，执行中" });
   fireEvent.click(screen.getByRole("button", { name: "a，执行中" }));
-  fireEvent.click(await screen.findByRole("button", { name: /子任务.*总计/ }));
-  expect(screen.getByText("A child")).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button", { name: /子智能体/ }));
+  expect(await screen.findByText("A child")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "b，执行中" }));
   await waitFor(() =>
     expect(screen.queryByRole("region", { name: "子任务" })).toBeNull()
   );
   fireEvent.click(screen.getByRole("button", { name: "a，执行中" }));
+  fireEvent.click(await screen.findByRole("button", { name: /子智能体/ }));
   await screen.findByRole("region", { name: "子任务" });
   fireEvent.click(screen.getByRole("button", { name: "新对话" }));
   expect(screen.queryByRole("region", { name: "子任务" })).toBeNull();

@@ -1,7 +1,6 @@
 import {
   Activity,
   ChevronRight,
-  GitBranch,
   LoaderCircle,
   RefreshCw,
   Search,
@@ -47,8 +46,6 @@ export function AgentPanel(props: {
   agents?: AgentSummary[];
   agentError?: string | null;
   onRefreshAgents?: () => void;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
   focusRequest?: AgentFocusRequest | null;
 }) {
   'use no memo';
@@ -62,8 +59,6 @@ function SessionAgentPanel({
   agents: suppliedAgents,
   agentError: suppliedError,
   onRefreshAgents: suppliedRefresh,
-  open: suppliedOpen,
-  onOpenChange,
   focusRequest,
 }: {
   client: RpcClient;
@@ -72,8 +67,6 @@ function SessionAgentPanel({
   agents?: AgentSummary[];
   agentError?: string | null;
   onRefreshAgents?: () => void;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
   focusRequest?: AgentFocusRequest | null;
 }) {
   'use no memo';
@@ -84,12 +77,6 @@ function SessionAgentPanel({
   const refreshAgents = () => {
     setActionError(null);
     (suppliedRefresh ?? ownSummary.refresh)();
-  };
-  const [internalOpen, setInternalOpen] = useState(false);
-  const open = suppliedOpen ?? internalOpen;
-  const setOpen = (next: boolean) => {
-    if (suppliedOpen === undefined) setInternalOpen(next);
-    onOpenChange?.(next);
   };
   const [selected, setSelected] = useState<string | null>(null);
   const [result, setResult] = useState<AgentSummary | null>(null);
@@ -164,12 +151,12 @@ function SessionAgentPanel({
     setFocused(focusRequest.agentId);
   }, [focusRequest]);
   useEffect(() => {
-    if (!focused || !open) return;
+    if (!focused) return;
     const row = rowRefs.current.get(focused);
     row?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
     const timer = window.setTimeout(() => setFocused(null), 1600);
     return () => window.clearTimeout(timer);
-  }, [focused, open]);
+  }, [focused]);
   useEffect(() => {
     if (selected) void loadOutput(selected);
     return () => {
@@ -360,18 +347,9 @@ function SessionAgentPanel({
   );
   return (
     <section className="agent-panel" aria-label="子任务">
-      <button
-        className="agent-panel-toggle"
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        <GitBranch size={15} />
-        <strong>子任务</strong>
-        <span>{agents.length} 总计</span>
+      <div className="agent-panel-stats">
         <AgentSummaryStats agents={agents} />
-        <ChevronRight size={14} className={open ? "open" : ""} />
-      </button>
+      </div>
       {error && (
         <div role="alert">
           {error}
@@ -387,58 +365,56 @@ function SessionAgentPanel({
           </button>
         </div>
       )}
-      {open && (
-        <div className="agent-list">
-          <div className="agent-filters">
-            <div
-              className="timeline-modes"
-              role="group"
-              aria-label="子任务状态"
-            >
-              {(
-                [
-                  ["all", "全部"],
-                  ["active", "执行中"],
-                  ["failed", "异常"],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  type="button"
-                  key={value}
-                  aria-pressed={filter === value}
-                  onClick={() => setFilter(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <label className="timeline-search">
-              <Search size={14} />
-              <input
-                type="search"
-                aria-label="搜索子任务"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
+      <div className="agent-list">
+        <div className="agent-filters">
+          <div
+            className="timeline-modes"
+            role="group"
+            aria-label="子任务状态"
+          >
+            {(
+              [
+                ["all", "全部"],
+                ["active", "执行中"],
+                ["failed", "异常"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                type="button"
+                key={value}
+                aria-pressed={filter === value}
+                onClick={() => setFilter(value)}
+              >
+                {label}
+              </button>
+            ))}
           </div>
-          {visible.length === 0 && (
-            <p className="diff-empty" role="status">
-              没有匹配的子任务
-            </p>
-          )}
-          {groups.map(([title, items]) => (
-            <div key={title ?? "all"} className="agent-panel-section" role={title ? "group" : undefined} aria-label={title ? `${title} ${items.length}` : undefined}>
-              {title && (
-                <div className="agent-panel-section-title" aria-hidden="true">
-                  {title} · {items.length}
-                </div>
-              )}
-              {items.map(renderAgent)}
-            </div>
-          ))}
+          <label className="timeline-search">
+            <Search size={14} />
+            <input
+              type="search"
+              aria-label="搜索子任务"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </label>
         </div>
-      )}
+        {visible.length === 0 && (
+          <p className="diff-empty" role="status">
+            没有匹配的子任务
+          </p>
+        )}
+        {groups.map(([title, items]) => (
+          <div key={title ?? "all"} className="agent-panel-section" role={title ? "group" : undefined} aria-label={title ? `${title} ${items.length}` : undefined}>
+            {title && (
+              <div className="agent-panel-section-title" aria-hidden="true">
+                {title} · {items.length}
+              </div>
+            )}
+            {items.map(renderAgent)}
+          </div>
+        ))}
+      </div>
       {diagnostics && (
         <ModelDiagnostics
           client={client}

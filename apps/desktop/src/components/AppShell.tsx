@@ -8,7 +8,7 @@ import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
 import { PlugZap, Sparkles } from "lucide-react";
 import { Spinner } from "./ui/Spinner";
-import { Fragment, lazy, Suspense, useState } from "react";
+import { Fragment, lazy, Suspense, useMemo, useState } from "react";
 import { Composer, ComposerCard } from "./Composer";
 import type { ComposerSlashCommand } from "../composerSlash";
 import { useAppSlashCommands } from "../hooks/useAppSlashCommands";
@@ -27,6 +27,8 @@ import { RemotePermissionNotice } from "./RemotePermissionNotice";
 import { SessionPermissionControls } from "./SessionPermissionControls";
 import { SessionGoalBar } from "./SessionGoalBar";
 import { AgentPanel, type AgentFocusRequest } from "./AgentPanel";
+import { SessionSummaryCard, type SessionSummarySection } from "./SessionSummaryCard";
+import { collectWebSources, detectPullRequests } from "../sessionContext";
 import { useAgentSummary } from "../hooks/useAgentSummary";
 import { ProjectDirectories } from "./ProjectDirectories";
 import { hostDraftKey, useDesktopHost } from "../desktopHost";
@@ -133,6 +135,7 @@ interface WorkbenchPageProps extends AppOnlyProps {
   slashCommands: ComposerSlashCommand[];
   onOpenFile: (target: LocalFileTarget) => void;
   onOpenUrl: (url: string) => void;
+  onOpenReview: () => void;
   draftRequest?: { id: number; content: string; append?: boolean };
   onDraftRequestApplied?: () => void;
 }
@@ -145,8 +148,8 @@ export function getSendBlockedReason(app: MiniqAppController): string | undefine
   return undefined;
 }
 
-function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
-  const [agentPanelOpen, setAgentPanelOpen] = useState(false);
+function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
+  const [summarySection, setSummarySection] = useState<SessionSummarySection | null>(null);
   const agentSummary = useAgentSummary(
     app.client,
     app.catalog.currentSessionId!,
@@ -154,69 +157,88 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, 
   );
   const [agentFocus, setAgentFocus] = useState<AgentFocusRequest | null>(null);
   const openAgentPanel = (agentId?: string) => {
-    setAgentPanelOpen(true);
+    setSummarySection("agents");
     if (agentId) setAgentFocus((current) => ({ agentId, nonce: (current?.nonce ?? 0) + 1 }));
   };
+  const sources = useMemo(() => collectWebSources(app.feed.toolCalls), [app.feed.toolCalls]);
+  const pullRequests = useMemo(
+    () => detectPullRequests(app.feed.messages, app.feed.toolCalls),
+    [app.feed.messages, app.feed.toolCalls],
+  );
   return (
     <>
-      <AgentPanel
-        client={app.client}
-        sessionId={app.catalog.currentSessionId!}
-        busy={!!app.busy}
-        agents={agentSummary.agents}
-        agentError={agentSummary.error}
-        onRefreshAgents={agentSummary.refresh}
-        open={agentPanelOpen}
-        onOpenChange={setAgentPanelOpen}
-        focusRequest={agentFocus}
-      />
-      <Suspense
-        fallback={
-          <div className="timeline-loading">
-            <Spinner size={18} />
-            正在加载会话
-          </div>
-        }
-      >
-        <Timeline
-          client={app.client}
-          sessionId={app.catalog.currentSessionId!}
-          loading={app.feed.loading}
-          historyCursor={app.feed.nextCursor}
-          loadingOlder={app.actions.loadingOlder}
-          onLoadOlder={app.actions.loadOlder}
-          title={app.catalog.currentSession?.title}
-          messages={app.feed.messages}
-          goal={app.feed.goal}
-          toolCalls={app.feed.toolCalls}
-          approvals={app.feed.approvals}
-          questions={app.feed.questions}
-          plan={app.feed.plan}
-          turnPlans={app.feed.turnPlans}
-          artifacts={app.feed.artifacts}
-          queue={app.feed.queue}
-          workspacePath={app.catalog.currentSession?.workingDirectory}
-          workspacePaths={app.catalog.currentWorkspacePaths}
-          streamingText={app.feed.streamingText}
-          turnProgress={app.feed.turnProgress}
+      <div className="session-stage">
+        <SessionSummaryCard
+          diff={app.review.data}
           agents={agentSummary.agents}
-          onOpenAgentPanel={openAgentPanel}
-          latestTurnTiming={app.feed.latestTurnTiming}
-          busy={!!app.busy}
-          onResolveApproval={app.actions.resolveApproval}
-          onResolveQuestion={app.actions.resolveQuestion}
-          onRollback={app.actions.rollbackCheckpoint}
-          onOpenFile={onOpenFile}
+          agentError={agentSummary.error}
+          sources={sources}
+          pullRequests={pullRequests}
+          expanded={summarySection}
+          onExpandedChange={setSummarySection}
+          onOpenReview={onOpenReview}
           onOpenUrl={onOpenUrl}
-          onSteerQueued={app.actions.steerQueued}
-          onRemoveQueued={app.actions.removeQueued}
-          onUpdateQueued={app.actions.updateQueued}
-          onMoveQueued={app.actions.moveQueued}
-          onRewrite={app.actions.rewriteMessage}
-          onFork={app.actions.forkSession}
-          onError={app.setError}
+          agentPanel={
+            <AgentPanel
+              client={app.client}
+              sessionId={app.catalog.currentSessionId!}
+              busy={!!app.busy}
+              agents={agentSummary.agents}
+              agentError={agentSummary.error}
+              onRefreshAgents={agentSummary.refresh}
+              focusRequest={agentFocus}
+            />
+          }
         />
-      </Suspense>
+        <Suspense
+          fallback={
+            <div className="timeline-loading">
+              <Spinner size={18} />
+              正在加载会话
+            </div>
+          }
+        >
+          <Timeline
+            client={app.client}
+            sessionId={app.catalog.currentSessionId!}
+            loading={app.feed.loading}
+            historyCursor={app.feed.nextCursor}
+            loadingOlder={app.actions.loadingOlder}
+            onLoadOlder={app.actions.loadOlder}
+            title={app.catalog.currentSession?.title}
+            messages={app.feed.messages}
+            goal={app.feed.goal}
+            toolCalls={app.feed.toolCalls}
+            approvals={app.feed.approvals}
+            questions={app.feed.questions}
+            plan={app.feed.plan}
+            turnPlans={app.feed.turnPlans}
+            artifacts={app.feed.artifacts}
+            queue={app.feed.queue}
+            workspacePath={app.catalog.currentSession?.workingDirectory}
+            workspacePaths={app.catalog.currentWorkspacePaths}
+            streamingText={app.feed.streamingText}
+            turnProgress={app.feed.turnProgress}
+            agents={agentSummary.agents}
+            onOpenAgentPanel={openAgentPanel}
+            latestTurnTiming={app.feed.latestTurnTiming}
+            busy={!!app.busy}
+            onResolveApproval={app.actions.resolveApproval}
+            onResolveQuestion={app.actions.resolveQuestion}
+            onRollback={app.actions.rollbackCheckpoint}
+            onOpenFile={onOpenFile}
+            onOpenUrl={onOpenUrl}
+            onSteerQueued={app.actions.steerQueued}
+            onRemoveQueued={app.actions.removeQueued}
+            onUpdateQueued={app.actions.updateQueued}
+            onMoveQueued={app.actions.moveQueued}
+            onRewrite={app.actions.rewriteMessage}
+            onFork={app.actions.forkSession}
+            onStopTurn={app.actions.cancelTurn}
+            onError={app.setError}
+          />
+        </Suspense>
+      </div>
       <SessionGoalBar
         client={app.client}
         sessionId={app.catalog.currentSessionId!}
@@ -347,7 +369,7 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
   );
 }
 
-function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
+function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
   switch (app.navigation.page) {
     case "schedule":
       return (
@@ -367,6 +389,7 @@ function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, draftRequest, onD
           slashCommands={slashCommands}
           onOpenFile={onOpenFile}
           onOpenUrl={onOpenUrl}
+          onOpenReview={onOpenReview}
           draftRequest={draftRequest}
           onDraftRequestApplied={onDraftRequestApplied}
         />
@@ -423,6 +446,7 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
           app={app}
           slashCommands={slash.commands}
           onOpenUrl={workbench.openUrl}
+          onOpenReview={() => workbench.select("review")}
           onOpenFile={workbench.openFile}
           draftRequest={fileQuestion?.sessionId === app.catalog.currentSessionId ? fileQuestion : undefined}
           onDraftRequestApplied={() => setFileQuestion(undefined)}

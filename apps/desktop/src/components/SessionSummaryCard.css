@@ -1,0 +1,186 @@
+/* Session summary: a floating card on wide layouts, one chip row otherwise. */
+.session-stage {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.session-summary {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--font-footnote);
+  color: var(--text-mid);
+}
+
+.session-summary-head {
+  display: none;
+}
+
+.session-summary-items {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 14px;
+  padding-inline: max(14px, var(--safe-left, 0px)) max(14px, var(--safe-right, 0px));
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.session-summary-item {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  color: var(--text-mid);
+  white-space: nowrap;
+}
+
+.session-summary-item:hover,
+.session-summary-item[aria-expanded="true"] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.session-summary-label {
+  color: var(--text);
+}
+
+.session-summary-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+}
+
+.session-summary-avatars {
+  display: inline-flex;
+}
+
+.session-summary-avatars .agent-avatar + .agent-avatar {
+  margin-left: -5px;
+}
+
+.session-summary-detail {
+  max-height: 50vh;
+  margin: 0;
+  padding: 0 14px 8px;
+  overflow: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.session-summary-detail .agent-panel {
+  max-height: none;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+}
+
+.session-summary-links {
+  list-style: none;
+}
+
+.session-summary-links button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 4px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.session-summary-links button:hover {
+  background: var(--bg-hover);
+}
+
+.session-summary-links strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.session-summary-links small {
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 1024px) {
+  .session-summary {
+    position: absolute;
+    top: 46px;
+    right: 18px;
+    z-index: 6;
+    width: 280px;
+    max-height: calc(100% - 64px);
+    border: 1px solid var(--hairline, var(--border));
+    border-radius: var(--radius-lg);
+    background: var(--bg);
+    box-shadow: var(--shadow-popover);
+    overflow: hidden;
+  }
+
+  .session-summary-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 6px 2px 12px;
+    color: var(--text-dim);
+    font-size: var(--font-caption);
+  }
+
+  .session-summary-items {
+    flex-direction: column;
+    gap: 0;
+    padding: 0 6px 6px;
+    overflow: visible;
+  }
+
+  .session-summary-item {
+    width: 100%;
+    min-height: 30px;
+    padding: 4px 6px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+  }
+
+  .session-summary-value {
+    margin-left: auto;
+  }
+
+  .session-summary-detail {
+    flex: 1 1 auto;
+    max-height: none;
+    min-height: 0;
+    padding: 0 10px 8px;
+    border-top: 1px solid var(--border);
+    border-bottom: 0;
+  }
+
+  .session-summary.is-collapsed {
+    width: auto;
+  }
+
+  .session-summary.is-collapsed .session-summary-items,
+  .session-summary.is-collapsed .session-summary-detail {
+    display: none;
+  }
+
+  .session-summary.is-collapsed .session-summary-head {
+    gap: 6px;
+    padding: 2px 4px 2px 10px;
+  }
+}

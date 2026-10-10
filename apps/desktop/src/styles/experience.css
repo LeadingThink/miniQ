@@ -432,16 +432,6 @@
 
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
   .native-mobile .agent-panel { padding-inline: max(10px, var(--safe-left)); padding-right: max(10px, var(--safe-right)); }
-  .native-mobile .agent-panel-toggle { min-height: 44px; padding: 3px 0; gap: 6px; flex-wrap: nowrap; overflow: hidden; }
-  .native-mobile .agent-panel-toggle > strong,
-  .native-mobile .agent-panel-toggle > span { flex: none; }
-  .native-mobile .agent-panel-toggle > .agent-summary {
-    width: auto;
-    min-width: 0;
-    flex: 1 1 auto;
-    margin-left: auto;
-  }
-  .native-mobile .agent-panel-toggle > svg:last-child { flex: none; }
 }
 .timeline-modes {
   display: flex;
@@ -736,23 +726,6 @@
   max-height: 35vh;
   overflow: auto;
 }
-.agent-panel-toggle {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  color: var(--text-mid);
-  background: var(--bg);
-  padding: 8px 0;
-  font-size: var(--font-footnote);
-}
-.agent-panel-toggle strong {
-  color: var(--text);
-}
-.agent-panel-toggle .open,
 .agent-open .open {
   transform: rotate(90deg);
 }
