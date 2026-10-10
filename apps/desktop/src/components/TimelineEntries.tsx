@@ -515,19 +515,6 @@ export function TimelineEntries(props: {
           if (request) void rewrite(request, true);
         }}
       />
-      <ConfirmDialog
-        open={pendingRewrite !== null}
-        tone="danger"
-        title={pendingRewrite?.kind === "regenerate" ? "停止当前任务并重新生成？" : "停止当前任务并发送修改？"}
-        description="当前正在运行的任务会被停止，之后从这条消息重新开始。"
-        confirmLabel="停止并继续"
-        onCancel={() => setPendingRewrite(null)}
-        onConfirm={() => {
-          const request = pendingRewrite;
-          setPendingRewrite(null);
-          if (request) void rewrite(request, true);
-        }}
-      />
       {props.approvals.map((approval) => (
         <ApprovalCard
           key={approval.approval.id}
