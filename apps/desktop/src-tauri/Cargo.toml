@@ -13,7 +13,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 miniq-local = { path = "../../../crates/miniq-local" }
-tauri = { version = "2", features = ["tray-icon", "unstable"] }
+# `devtools` lets release builds open the web inspector. Only embedded
+# browser views enable it; the main window is pinned in lib.rs.
+tauri = { version = "2", features = ["tray-icon", "unstable", "devtools"] }
 tauri-plugin-dialog = "2"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
@@ -51,9 +53,9 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 # unnecessary Apple framework dependency.
 block2 = "0.6"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSObject", "NSError", "NSString", "NSData", "NSDictionary", "NSURL"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSImage", "NSImageRep", "NSBitmapImageRep"] }
-objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "WKWebView", "WKSnapshotConfiguration", "block2"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSObject", "NSError", "NSString", "NSData", "NSDictionary", "NSURL", "NSGeometry"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSResponder", "NSTextField", "NSView", "NSWindow"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "WKWebView", "WKSnapshotConfiguration", "WKUIDelegate", "WKFrameInfo", "WKSecurityOrigin", "block2"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

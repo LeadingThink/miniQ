@@ -1,15 +1,7 @@
 import { Globe2, Plus, X } from "lucide-react";
 import { useEffect, useRef } from "react";
-import type { BrowserTab } from "../browserTabs";
+import { browserTabLabel, type BrowserTab } from "../browserTabs";
 import "./BrowserTabs.css";
-
-function hostLabel(url: string) {
-  try {
-    return new URL(url).hostname || url;
-  } catch {
-    return url;
-  }
-}
 
 export function BrowserTabs(props: {
   tabs: BrowserTab[];
@@ -34,7 +26,8 @@ export function BrowserTabs(props: {
   };
   return <div ref={list} className="browser-tabs" role="tablist" aria-label="打开的网页">
     {props.tabs.map((tab) => <div className={`browser-tab ${tab.id === props.activeId ? "active" : ""}`} key={tab.id}>
-      <button type="button" role="tab" aria-selected={tab.id === props.activeId} tabIndex={tab.id === props.activeId ? 0 : -1} title={tab.url} onClick={() => props.onSelect(tab.id)} onKeyDown={(event) => {
+      <button type="button" role="tab" aria-selected={tab.id === props.activeId} tabIndex={tab.id === props.activeId ? 0 : -1} title={tab.title ? `${tab.title}
+${tab.url}` : tab.url} onClick={() => props.onSelect(tab.id)} onKeyDown={(event) => {
         if (event.key === "Delete") {
           event.preventDefault();
           close(tab.id);
@@ -48,9 +41,9 @@ export function BrowserTabs(props: {
         restoreFocus.current = true;
         props.onSelect(props.tabs[next].id);
       }}>
-        <Globe2 size={13} /><span>{hostLabel(tab.url)}</span>
+        <Globe2 size={13} /><span>{browserTabLabel(tab)}</span>
       </button>
-      <button type="button" className="icon-button" aria-label={`关闭网页标签 ${hostLabel(tab.url)}`} title="关闭标签" onClick={() => close(tab.id)}><X size={12} /></button>
+      <button type="button" className="icon-button" aria-label={`关闭网页标签 ${browserTabLabel(tab)}`} title="关闭标签" onClick={() => close(tab.id)}><X size={12} /></button>
     </div>)}
     <button type="button" className="icon-button browser-new-tab" title="新建网页标签" aria-label="新建网页标签" onClick={props.onNew}><Plus size={15} /></button>
   </div>;

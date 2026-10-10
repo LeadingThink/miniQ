@@ -11,6 +11,8 @@ import {
   closeBrowserTab,
   EMPTY_BROWSER_TABS,
   openBrowserTab,
+  openPopupBrowserTab,
+  setBrowserTabTitle,
   updateBrowserTab,
   type BrowserDraftCreatedDetail,
   type BrowserTabsState,
@@ -183,6 +185,17 @@ export function useAppWorkbench(app: MiniqAppController) {
       setBrowserSessions((current) => ({
         ...current,
         [scope]: closeBrowserTab(current[scope] ?? EMPTY_BROWSER_TABS, id),
+      })),
+    titleBrowserTab: (tabScope: string, id: string, title: string) =>
+      setBrowserSessions((current) => {
+        const state = current[tabScope];
+        const next = state && setBrowserTabTitle(state, id, title);
+        return !state || next === state ? current : { ...current, [tabScope]: next! };
+      }),
+    openBrowserPopup: (tabScope: string, openerId: string, url: string) =>
+      setBrowserSessions((current) => ({
+        ...current,
+        [tabScope]: openPopupBrowserTab(current[tabScope] ?? EMPTY_BROWSER_TABS, openerId, url),
       })),
     navigateBrowser: (tabScope: string, id: string, url: string) =>
       setBrowserSessions((current) => ({

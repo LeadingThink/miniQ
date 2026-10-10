@@ -255,6 +255,11 @@ fn browser_set_visible(
     browser::set_visible(&app, &view_id, visible)
 }
 
+#[tauri::command]
+fn browser_reveal_download(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    browser::reveal_download(&app, &path)
+}
+
 /// Open only the local device's microphone privacy pane. No caller-supplied
 /// URL or daemon RPC: remote clients must manage their own microphone access.
 #[tauri::command]
@@ -291,6 +296,12 @@ async fn browser_screenshot(app: tauri::AppHandle, view_id: String) -> Result<St
 }
 
 pub fn run() {
+    let mut context = tauri::generate_context!();
+    // The `devtools` cargo feature exists for embedded browser views. Keep the
+    // main window's inspector to debug builds, as before the feature was on.
+    for window in &mut context.config_mut().app.windows {
+        window.devtools.get_or_insert(cfg!(debug_assertions));
+    }
     tauri::Builder::default()
         .manage(DaemonState::default())
         .manage(KeepAwakeState::default())
@@ -328,6 +339,7 @@ pub fn run() {
             browser_current,
             browser_close,
             browser_set_visible,
+            browser_reveal_download,
             open_microphone_settings,
             browser_evaluate,
             browser_screenshot,
@@ -355,7 +367,7 @@ pub fn run() {
                 }
             }
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building miniQ desktop")
         .run(|_app, _event| {
             if matches!(_event, tauri::RunEvent::Exit) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adoptDraftBrowserTabs, browserDraftScope, closeBrowserTab, EMPTY_BROWSER_TABS, openBrowserTab, resolveTaskBrowserTab, selectTaskBrowserTab, taskBrowserTabs, updateBrowserTab } from "./browserTabs";
+import { adoptDraftBrowserTabs, browserDraftScope, browserTabLabel, openPopupBrowserTab, setBrowserTabTitle, closeBrowserTab, EMPTY_BROWSER_TABS, openBrowserTab, resolveTaskBrowserTab, selectTaskBrowserTab, taskBrowserTabs, updateBrowserTab } from "./browserTabs";
 
 describe("browser tabs", () => {
   it("keeps independent URLs and selects the newest tab", () => {
@@ -55,5 +55,40 @@ describe("browser tabs", () => {
     const closed = closeBrowserTab(manual, first.tabs[0].id);
     expect(resolveTaskBrowserTab(closed, "session", "session:child")).toBe(second.tabs[1]);
     expect(closed.taskActiveIds?.["session:child"]).toBeUndefined();
+  });
+});
+
+describe("page titles and popups", () => {
+  it("labels tabs by title with a hostname fallback", () => {
+    const state = openBrowserTab(EMPTY_BROWSER_TABS, "https://docs.example/guide");
+    const id = state.tabs[0].id;
+    expect(browserTabLabel(state.tabs[0])).toBe("docs.example");
+    const titled = setBrowserTabTitle(state, id, "  使用指南  ");
+    expect(browserTabLabel(titled.tabs[0])).toBe("使用指南");
+    expect(setBrowserTabTitle(titled, id, "使用指南")).toBe(titled);
+    expect(browserTabLabel(setBrowserTabTitle(titled, id, "").tabs[0])).toBe("docs.example");
+  });
+
+  it("opens a manual page popup as a new focused tab", () => {
+    const state = openBrowserTab(openBrowserTab(EMPTY_BROWSER_TABS, "https://a.example/"), "https://b.example/");
+    const opener = state.tabs[0];
+    const next = openPopupBrowserTab({ ...state, activeId: opener.id }, opener.id, "https://login.example/");
+    const popup = next.tabs.at(-1)!;
+    expect(next.tabs).toHaveLength(3);
+    expect(next.activeId).toBe(popup.id);
+    expect(popup).toMatchObject({ url: "https://login.example/", openerViewId: opener.viewId });
+    expect(popup.browserSessionId).toBeUndefined();
+  });
+
+  it("keeps an agent popup in the agent's tab set and selects it for the agent", () => {
+    const agent = openBrowserTab(EMPTY_BROWSER_TABS, "https://task.example/", "child-task");
+    const opener = agent.tabs[0];
+    const next = openPopupBrowserTab(selectTaskBrowserTab(agent, "child-task", opener, true), opener.id, "https://popup.example/");
+    const popup = next.tabs.at(-1)!;
+    expect(popup.browserSessionId).toBe("child-task");
+    expect(next.activeId).toBe(popup.id);
+    expect(next.taskActiveIds?.["child-task"]).toBe(popup.id);
+    expect(taskBrowserTabs(next, "main", "child-task").map((tab) => tab.url)).toEqual(["https://task.example/", "https://popup.example/"]);
+    expect(resolveTaskBrowserTab(next, "main", "child-task")?.id).toBe(popup.id);
   });
 });
