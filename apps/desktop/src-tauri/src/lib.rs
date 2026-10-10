@@ -225,20 +225,20 @@ fn browser_resize(
 }
 
 #[tauri::command]
-fn browser_action(
+async fn browser_action(
     app: tauri::AppHandle,
     view_id: String,
     action: String,
 ) -> Result<browser::BrowserState, String> {
-    browser::action(&app, &view_id, &action)
+    browser::action(&app, &view_id, &action).await
 }
 
 #[tauri::command]
-fn browser_current(
+async fn browser_current(
     app: tauri::AppHandle,
     view_id: String,
 ) -> Result<browser::BrowserState, String> {
-    browser::current(&app, &view_id)
+    browser::current(&app, &view_id).await
 }
 
 #[tauri::command]

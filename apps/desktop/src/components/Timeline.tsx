@@ -45,6 +45,7 @@ import { ConversationNavigationRail } from "./ConversationNavigationRail";
 import { useConversationScroll } from "../hooks/useConversationScroll";
 import { TimelineEntries } from "./TimelineEntries";
 import { TimelineToolbar } from "./TimelineToolbar";
+import { PendingApprovalBar } from "./PendingApprovalBar";
 import { TimelineQuote } from "./TimelineQuote";
 import { AgentStatusIndicator, type AgentSummary } from "./AgentSummary";
 
@@ -403,6 +404,16 @@ export function Timeline(props: TimelineProps) {
           </button>
         )}
       </div>
+      <PendingApprovalBar
+        approvals={props.approvals}
+        onResolve={props.onResolveApproval}
+        onShowDetails={(approvalId) => {
+          const card = scrollRef.current?.querySelector<HTMLElement>(
+            `[data-approval-id="${CSS.escape(approvalId)}"]`,
+          );
+          if (card) reveal(card);
+        }}
+      />
       {!props.loading && <ExecutionStatusBar
         key={props.sessionId}
         messages={props.messages}

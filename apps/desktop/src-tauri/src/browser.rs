@@ -6,6 +6,56 @@ use tauri::{
 mod capture;
 pub use capture::capture as screenshot;
 
+/// Last address miniQ asked each embedded browser to load. A failed load (for
+/// example a dead local dev server) leaves WKWebView without a committed URL,
+/// so this is the address to report while the page shows the load error.
+fn requested_urls() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
+    static URLS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> =
+        std::sync::OnceLock::new();
+    URLS.get_or_init(Default::default)
+}
+
+fn remember_url(label: &str, url: &tauri::Url) {
+    if let Ok(mut urls) = requested_urls().lock() {
+        urls.insert(label.to_owned(), url.to_string());
+    }
+}
+
+fn requested_url(label: &str) -> Option<String> {
+    requested_urls().lock().ok()?.get(label).cloned()
+}
+
+/// Never call `Webview::url()` on macOS: wry unwraps WKWebView's nil URL after
+/// a failed load and aborts the whole app. Read the optional URL directly.
+#[cfg(target_os = "macos")]
+async fn committed_url(webview: &tauri::Webview, label: &str) -> Result<String, String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    webview
+        .with_webview(move |platform| {
+            let view: &objc2_web_kit::WKWebView = unsafe { &*platform.inner().cast() };
+            let url = unsafe { view.URL() }
+                .and_then(|url| url.absoluteString())
+                .map(|value| value.to_string())
+                .filter(|value| !value.is_empty());
+            let _ = sender.send(url);
+        })
+        .map_err(|error| error.to_string())?;
+    let url = tokio::time::timeout(std::time::Duration::from_secs(5), receiver)
+        .await
+        .map_err(|_| "读取内置浏览器地址超时".to_string())?
+        .map_err(|_| "内置浏览器地址通道已关闭".to_string())?;
+    url.or_else(|| requested_url(label))
+        .ok_or_else(|| "内置浏览器尚未加载任何页面".to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn committed_url(webview: &tauri::Webview, label: &str) -> Result<String, String> {
+    match webview.url() {
+        Ok(url) if !url.as_str().is_empty() => Ok(url.to_string()),
+        _ => requested_url(label).ok_or_else(|| "内置浏览器尚未加载任何页面".to_string()),
+    }
+}
+
 fn browser_label(view_id: &str) -> Result<String, String> {
     if view_id.is_empty()
         || view_id.len() > 64
@@ -180,6 +230,7 @@ pub fn open(
             webview.hide()
         }
         .map_err(|error| error.to_string())?;
+        remember_url(&label, &url);
         webview
             .navigate(url.clone())
             .map_err(|error| error.to_string())?;
@@ -198,18 +249,24 @@ pub fn open(
         .join("browser-sessions")
         .join(&label);
     std::fs::create_dir_all(&data_directory).map_err(|error| error.to_string())?;
+    remember_url(&label, &url);
     let navigation_app = app.clone();
     let navigation_label = label.clone();
+    let tracked_label = label.clone();
     // Start at the requested remote page. Loading the application shell first
     // exposes an unrelated complete document before remote navigation commits.
     let builder = WebviewBuilder::new(&label, WebviewUrl::External(url.clone()))
         .initialization_script(include_str!("browser_links.js"))
         .data_directory(data_directory)
         .incognito(true)
-        .on_navigation(|target| {
-            matches!(target.scheme(), "http" | "https")
+        .on_navigation(move |target| {
+            let allowed = matches!(target.scheme(), "http" | "https")
                 && target.username().is_empty()
-                && target.password().is_none()
+                && target.password().is_none();
+            if allowed {
+                remember_url(&tracked_label, target);
+            }
+            allowed
         })
         .on_new_window(move |target, _| {
             if matches!(target.scheme(), "http" | "https")
@@ -255,9 +312,14 @@ pub fn resize_current(
     Ok(())
 }
 
-pub fn action(app: &tauri::AppHandle, view_id: &str, action: &str) -> Result<BrowserState, String> {
+pub async fn action(
+    app: &tauri::AppHandle,
+    view_id: &str,
+    action: &str,
+) -> Result<BrowserState, String> {
+    let label = browser_label(view_id)?;
     let webview = app
-        .get_webview(&browser_label(view_id)?)
+        .get_webview(&label)
         .ok_or_else(|| "内置浏览器尚未打开".to_string())?;
     match action {
         "back" => webview.eval("history.back()"),
@@ -267,27 +329,28 @@ pub fn action(app: &tauri::AppHandle, view_id: &str, action: &str) -> Result<Bro
         _ => return Err(format!("未知浏览器操作: {action}")),
     }
     .map_err(|error| error.to_string())?;
-    let url = webview.url().map_err(|error| error.to_string())?;
     Ok(BrowserState {
-        url: url.to_string(),
+        url: committed_url(&webview, &label).await?,
     })
 }
 
-pub fn current(app: &tauri::AppHandle, view_id: &str) -> Result<BrowserState, String> {
+pub async fn current(app: &tauri::AppHandle, view_id: &str) -> Result<BrowserState, String> {
+    let label = browser_label(view_id)?;
     let webview = app
-        .get_webview(&browser_label(view_id)?)
+        .get_webview(&label)
         .ok_or_else(|| "内置浏览器尚未打开".to_string())?;
     Ok(BrowserState {
-        url: webview
-            .url()
-            .map_err(|error| error.to_string())?
-            .to_string(),
+        url: committed_url(&webview, &label).await?,
     })
 }
 
 pub fn close(app: &tauri::AppHandle, view_id: &str) -> Result<(), String> {
-    if let Some(webview) = app.get_webview(&browser_label(view_id)?) {
+    let label = browser_label(view_id)?;
+    if let Some(webview) = app.get_webview(&label) {
         webview.close().map_err(|error| error.to_string())?;
+    }
+    if let Ok(mut urls) = requested_urls().lock() {
+        urls.remove(&label);
     }
     Ok(())
 }

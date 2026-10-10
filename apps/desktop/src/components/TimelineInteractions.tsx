@@ -26,7 +26,7 @@ export function ApprovalCard({
   const contextRemote = useSessionFileAccess()?.client?.mode === "remote";
   const isRemote = allowAlways === undefined ? contextRemote : !allowAlways;
   return (
-    <div className="card approval-card">
+    <div className="card approval-card" data-approval-id={item.approval.id}>
       <div className="card-head">
         <span>需要审批</span>
         <span className="tool-name">{item.toolName}</span>

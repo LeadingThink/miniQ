@@ -1,0 +1,53 @@
+.pending-approval-bar {
+  flex: 0 0 auto;
+  width: min(calc(100% - 40px), var(--conversation-content-width));
+  min-width: 0;
+  margin: 8px auto 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  color: var(--text);
+  font-size: var(--font-footnote);
+  box-sizing: border-box;
+}
+.pending-approval-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.pending-approval-summary > svg { flex: none; color: var(--warn); }
+.pending-approval-tool {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pending-approval-more { margin-left: auto; flex: none; color: var(--text-mid); }
+.pending-approval-reason {
+  margin: 4px 0 0 21px;
+  overflow: hidden;
+  color: var(--text-mid);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pending-approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.pending-approval-actions button { white-space: nowrap; }
+.pending-approval-details {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .pending-approval-bar { width: calc(100% - 20px); margin-top: 6px; padding: 8px 10px; }
+  .pending-approval-actions button { min-height: 44px; }
+}
