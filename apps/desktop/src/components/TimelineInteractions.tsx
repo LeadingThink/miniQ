@@ -1,4 +1,19 @@
-import { FileText, FolderOpen } from "lucide-react";
+import {
+  File,
+  FileArchive,
+  FileCode,
+  FileImage,
+  FileMusic,
+  FileSpreadsheet,
+  FileText,
+  FileType,
+  FileVideoCamera,
+  FolderOpen,
+  BookOpen,
+  Presentation,
+  type LucideIcon,
+} from "lucide-react";
+import { fileTypeInfo, type FileType as DeliveredFileType } from "../fileTypes";
 import type { Artifact } from "../types";
 import type { PendingApproval } from "../App";
 import { ToolPayload } from "./ToolPayload";
@@ -72,6 +87,22 @@ export function ApprovalCard({
   );
 }
 
+const FILE_TYPE_ICONS: Record<DeliveredFileType, LucideIcon> = {
+  pdf: FileText,
+  word: FileType,
+  excel: FileSpreadsheet,
+  ppt: Presentation,
+  image: FileImage,
+  audio: FileMusic,
+  video: FileVideoCamera,
+  archive: FileArchive,
+  markdown: FileText,
+  html: FileCode,
+  text: FileText,
+  ebook: BookOpen,
+  other: File,
+};
+
 export function ArtifactCard(props: {
   workspacePaths?: readonly string[];
   artifact: Artifact;
@@ -83,11 +114,15 @@ export function ArtifactCard(props: {
   const access = useSessionFileAccess();
   const local = isTauriRuntime() && access?.client?.mode !== "remote";
   const path = resolveWorkspacePath(artifact.path, workspacePath);
+  const fileType = fileTypeInfo(path ?? artifact.path, artifact.kind);
+  const Icon = FILE_TYPE_ICONS[fileType.type];
   return (
     <section className="artifact-card" aria-label="交付产物">
       <div className="artifact-card-label">交付产物</div>
       <div className="artifact-item" title={path ?? artifact.path}>
-        <FileText size={18} aria-hidden="true" />
+        <span className={`artifact-file-icon is-${fileType.type}`} aria-hidden="true">
+          <Icon size={18} />
+        </span>
         <button
           type="button"
           className="artifact-open"
@@ -100,7 +135,7 @@ export function ArtifactCard(props: {
           <span className="artifact-title">{artifact.title}</span>
           <span className="sub">{artifact.path}</span>
         </button>
-        <span className="badge">{artifact.kind}</span>
+        <span className="badge">{fileType.label}</span>
         {local && <button
           type="button"
           className="icon-button"

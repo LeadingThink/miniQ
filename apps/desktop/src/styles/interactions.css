@@ -270,6 +270,30 @@
   cursor: default;
 }
 
+/* File type tile: one tone per type, tinted so it reads in light and dark themes. */
+.artifact-file-icon {
+  --file-tone: var(--text-dim);
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--file-tone);
+  background: color-mix(in srgb, var(--file-tone) 14%, transparent);
+}
+.artifact-file-icon.is-pdf { --file-tone: #e5484d; }
+.artifact-file-icon.is-word { --file-tone: #3e63dd; }
+.artifact-file-icon.is-excel { --file-tone: #30a46c; }
+.artifact-file-icon.is-ppt { --file-tone: #f76b15; }
+.artifact-file-icon.is-image { --file-tone: #8e4ec6; }
+.artifact-file-icon.is-audio { --file-tone: #d6409f; }
+.artifact-file-icon.is-video { --file-tone: #12a594; }
+.artifact-file-icon.is-archive { --file-tone: #a18072; }
+.artifact-file-icon.is-html { --file-tone: #0090ff; }
+.artifact-file-icon.is-ebook { --file-tone: #ad7f58; }
+
 .artifact-title {
   font-weight: 600;
 }
