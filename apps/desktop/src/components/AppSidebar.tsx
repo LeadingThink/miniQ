@@ -33,6 +33,11 @@ export function AppSidebar({ app, hostGroups, onCreateSession }: { app: MiniqApp
           // Expanding a project is navigation within the drawer, not leaving it.
           app.actions.selectWorkspace(workspaceId);
         }}
+        extensionsActive={app.navigation.page === "skills" || app.navigation.page === "mcp" || app.navigation.page === "plugins"}
+        onShowSkills={() => {
+          app.navigation.setPage("skills");
+          closeMobileSidebar();
+        }}
         onCreateSession={(workspaceId) => {
           if (onCreateSession) onCreateSession(workspaceId);
           else void app.actions.createSession(workspaceId).catch((cause) => app.setError(cause instanceof Error ? cause.message : String(cause)));

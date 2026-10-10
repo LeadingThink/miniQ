@@ -1,0 +1,119 @@
+.extension-center {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.extension-center-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 16px 28px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.extension-center-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+}
+.extension-back {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.extension-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-subtle);
+  padding: 4px;
+  border-radius: 12px;
+}
+.extension-tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--text-mid);
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  box-shadow: none;
+}
+.extension-tabs button:hover {
+  background: var(--bg-hover);
+}
+.extension-center .extension-tabs > button[aria-selected="true"] {
+  background: var(--text);
+  color: var(--bg);
+}
+.extension-center .extension-tabs > button[aria-selected="false"] {
+  background: transparent;
+  color: var(--text-mid);
+}
+.extension-center button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.extension-center-caption {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.extension-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.extension-content > .page {
+  padding: 32px clamp(20px, 3vw, 48px) 40px;
+}
+.extension-content .page-inner.wide {
+  width: 100%;
+  max-width: 1240px;
+  gap: 24px;
+}
+.extension-content .page-header {
+  margin: 0;
+}
+@media (max-width: 768px) {
+  .extension-center-toolbar {
+    gap: 12px;
+    padding: 12px 16px;
+    flex-wrap: wrap;
+  }
+  .extension-center-caption {
+    display: none;
+  }
+  .extension-tabs {
+    margin-left: auto;
+  }
+  .extension-tabs button {
+    padding: 8px 12px;
+    min-height: 44px;
+  }
+  .extension-content > .page {
+    padding: 24px 16px;
+  }
+}
+@media (max-width: 440px) {
+  .extension-back span {
+    display: none;
+  }
+  .extension-center-toolbar {
+    gap: 8px;
+  }
+  .extension-back {
+    min-width: 44px;
+  }
+  .extension-tabs {
+    flex: 1;
+  }
+  .extension-tabs button {
+    flex: 1;
+    padding: 8px;
+    gap: 5px;
+  }
+}

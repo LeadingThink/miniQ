@@ -5,6 +5,7 @@ import type { RpcClient } from "../rpc";
 import { EmptyState } from "./ui/EmptyState";
 import { Switch } from "./ui/Switch";
 import { showUndoToast, useToast } from "./ui/Toast";
+import "./Mcp.css";
 
 interface McpServerView {
   name: string;
@@ -296,15 +297,15 @@ function AddServerForm(props: {
   );
 }
 
-export function McpPanel(props: { client: RpcClient }) {
+export function McpPanel(props: { client: RpcClient; onManagePlugins?: () => void }) {
   const model = useMcpServers(props.client);
   return (
     <div className="page">
       <div className="page-inner wide">
         <div className="page-header">
-          <div className="page-title">MCP</div>
+          <div className="page-title">连接器</div>
           <div className="page-sub">
-            接入外部工具与服务(Model Context Protocol),扩展 agent 的能力。
+            接入办公应用、外部工具与数据服务。连接器由 MCP 提供能力，按需启用。
           </div>
         </div>
         {model.loading && <div className="settings-status" role="status">{model.connecting ? "正在连接服务器..." : "正在加载 MCP 服务器..."}</div>}
@@ -322,7 +323,10 @@ export function McpPanel(props: { client: RpcClient }) {
           onToggle={(server) => void model.toggle(server)}
           onRemove={(server) => void model.remove(server)}
         />}
-        <AddServerForm disabled={model.disabled} busy={model.loading || model.saving} onAdd={model.add} onTest={() => model.reload(true)} />
+        <div className="mcp-actions-row">
+          {props.onManagePlugins && <button className="secondary" onClick={props.onManagePlugins}>管理来源扩展包</button>}
+          <AddServerForm disabled={model.disabled} busy={model.loading || model.saving} onAdd={model.add} onTest={() => model.reload(true)} />
+        </div>
       </div>
     </div>
   );

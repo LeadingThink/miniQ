@@ -34,8 +34,8 @@ export function buildPaletteCommands(app: MiniqAppController, run: Run, mac?: bo
   const commands: PaletteCommand[] = [
     { ...command("newChat", "新建会话", "new", ["new chat"]), id: "new-chat" },
     { ...command("settings", "打开设置", "settings", ["settings"]), id: "settings" },
-    { id: "skills", label: "技能", icon: "skills", run: () => app.navigation.openSettings("skills") },
-    { id: "mcp", label: "MCP 连接", icon: "mcp", run: () => app.navigation.openSettings("mcp") },
+    { id: "skills", label: "技能", icon: "skills", keywords: ["工作流", "skills"], run: () => app.navigation.setPage("skills") },
+    { id: "mcp", label: "连接器", icon: "mcp", keywords: ["MCP", "外部工具"], run: () => app.navigation.setPage("mcp") },
     { id: "schedule", label: "已安排的任务", icon: "schedule", run: () => app.navigation.setPage("schedule") },
     command("toggleSidebar", app.navigation.sidebarCollapsed ? "显示侧栏" : "隐藏侧栏", PanelLeft, ["sidebar"]),
     command("showShortcuts", "键盘快捷键", Keyboard, ["shortcuts", "keyboard", "快捷键"]),

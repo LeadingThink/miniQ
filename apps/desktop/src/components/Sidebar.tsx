@@ -17,6 +17,7 @@ import {
   Search,
   SearchX,
   Settings,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -80,8 +81,9 @@ interface SidebarProps {
   onRenameSession: (sessionId: string, title: string) => void;
   onSetSessionPinned: (sessionId: string, pinned: boolean) => void;
   onSetSessionArchived: (sessionId: string, archived: boolean) => void;
-  /** @deprecated 技能 / MCP / 插件已移入设置。保留以兼容旧调用方。 */
+  /** Open the skills and connectors library. */
   onShowSkills?: () => void;
+  extensionsActive?: boolean;
   /** @deprecated */
   onShowMcp?: () => void;
   /** @deprecated */
@@ -139,6 +141,9 @@ export function Sidebar(props: SidebarProps) {
       </button>
       {!mobile && <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSchedule}>
         <Clock3 className="nav-icon" size={16} /> 已安排
+      </button>}
+      {props.onShowSkills && <button type="button" className={`nav-item sidebar-nav-button ${props.extensionsActive ? "active" : ""}`} aria-current={props.extensionsActive ? "page" : undefined} onClick={props.onShowSkills}>
+        <Sparkles className="nav-icon" size={16} /> 技能与连接器
       </button>}
       </div>
 

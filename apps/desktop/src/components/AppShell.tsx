@@ -35,6 +35,7 @@ import { ProjectDirectories } from "./ProjectDirectories";
 import { hostDraftKey, useDesktopHost } from "../desktopHost";
 import { RemotePathDialog } from "./RemotePathDialog";
 import { ProviderOnboardingPrompt } from "./ProviderOnboardingPrompt";
+import { ExtensionCenter } from "./ExtensionCenter";
 
 import { useAppWorkbench } from "../hooks/useAppWorkbench";
 import { AppWorkbench } from "./AppWorkbench";
@@ -366,14 +367,14 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
             title: "技能",
             description: "查看可复用的工作流，或从任务中学习新技能",
             icon: Sparkles,
-            onSelect: () => app.navigation.openSettings("skills"),
+            onSelect: () => app.navigation.setPage("skills"),
           },
           {
             id: "mcp",
-            title: "连接 MCP",
-            description: "接入外部工具与服务，扩展 agent 能力",
+            title: "连接器",
+            description: "接入办公应用、外部工具与数据服务",
             icon: PlugZap,
-            onSelect: () => app.navigation.openSettings("mcp"),
+            onSelect: () => app.navigation.setPage("mcp"),
           },
         ]}
       />
@@ -383,6 +384,11 @@ function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: Compos
 
 function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, onOpenTurnReview, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
   switch (app.navigation.page) {
+    case "skills":
+    case "mcp":
+    case "plugins":
+      return <ExtensionCenter client={app.client} workspaceId={app.catalog.currentSession?.workspaceId ?? app.catalog.selectedWorkspaceId}
+        selected={app.navigation.page} onSelect={app.navigation.setPage} onClose={() => app.navigation.setPage(null)} />;
     case "schedule":
       return (
         <SchedulePanel

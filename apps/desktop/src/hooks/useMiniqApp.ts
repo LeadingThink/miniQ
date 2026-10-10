@@ -25,7 +25,7 @@ import { useToast } from "../components/ui/Toast";
 import { isSessionRunning, isSessionTerminal } from "../sessionStatus";
 import { BROWSER_DRAFT_CREATED_EVENT, type BrowserDraftCreatedDetail } from "../browserTabs";
 
-export type AppPage = "schedule" | null;
+export type AppPage = "schedule" | "skills" | "mcp" | "plugins" | null;
 
 async function pickDirectory(): Promise<string | null> {
   if (isTauriRuntime()) {

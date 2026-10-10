@@ -313,7 +313,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
           {tab === "skills" && <SkillsPanel client={props.client} workspaceId={props.workspaceId ?? null} />}
         </div>
         <div id="settings-mcp" className="settings-embedded-page" role="tabpanel" aria-labelledby="settings-tab-mcp" hidden={tab !== "mcp"}>
-          {tab === "mcp" && <McpPanel client={props.client} />}
+          {tab === "mcp" && <McpPanel client={props.client} onManagePlugins={() => setTab("plugins")} />}
         </div>
         <div id="settings-plugins" className="settings-embedded-page" role="tabpanel" aria-labelledby="settings-tab-plugins" hidden={tab !== "plugins"}>
           {tab === "plugins" && <PluginsPanel client={props.client} />}
