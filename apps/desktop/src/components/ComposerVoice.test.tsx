@@ -33,7 +33,6 @@ function setup() {
 async function record() {
   // Flush the async voice.capabilities lookup (fake timers break findBy* waits).
   await act(async () => {});
-  fireEvent.click(screen.getByRole("button", { name: "更多输入方式" }));
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "语音输入" })); });
   act(() => samples(new Float32Array(32_000).fill(0.1), 16_000));
   await act(async () => { vi.advanceTimersByTime(2000); });
@@ -111,7 +110,7 @@ it("exposes and focuses the existing desktop mic on companion request without st
   await act(async () => {});
   view.rerender(<ComposerCard {...props} voiceFocusRequest={1} />);
   await act(async () => { vi.advanceTimersByTime(50); });
-  expect(screen.getByRole("button", { name: "更多输入方式" }).getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("button", { name: "更多输入方式" }).getAttribute("aria-expanded")).toBe("false");
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "语音输入" }));
   expect(startVoiceCapture).not.toHaveBeenCalled();
 });
@@ -135,7 +134,6 @@ it("consumes companion focus once so returning to a session does not reopen its 
   await act(async () => { vi.advanceTimersByTime(50); });
   expect(applied).toHaveBeenCalledExactlyOnceWith(1);
   view.rerender(<ComposerCard {...props} onVoiceFocusApplied={applied} />);
-  fireEvent.click(screen.getByRole("button", { name: "更多输入方式" }));
   expect(screen.getByRole("button", { name: "更多输入方式" }).getAttribute("aria-expanded")).toBe("false");
   await act(async () => { vi.advanceTimersByTime(50); });
   expect(applied).toHaveBeenCalledOnce();

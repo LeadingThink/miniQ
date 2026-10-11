@@ -8,6 +8,7 @@ fn main() {
 fn build_apple_speech() {
     use std::{env, path::PathBuf, process::Command};
     println!("cargo:rerun-if-changed=native/AppleSpeech.swift");
+    println!("cargo:rerun-if-changed=native/SpeechTranscript.swift");
     println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let arch = match env::var("CARGO_CFG_TARGET_ARCH").unwrap().as_str() {
@@ -31,6 +32,7 @@ fn build_apple_speech() {
             "-target",
             &target,
             "native/AppleSpeech.swift",
+            "native/SpeechTranscript.swift",
             "-o",
         ])
         .arg(out.join("libminiq_apple_speech.a"))

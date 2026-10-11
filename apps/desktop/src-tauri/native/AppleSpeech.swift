@@ -17,6 +17,7 @@ private final class Recognition {
     let request = SFSpeechAudioBufferRecognitionRequest()
     var task: SFSpeechRecognitionTask?
     var ending = false
+    var transcript = SpeechTranscript()
 
     init?(id: String, locale: String, rate: Double, callback: @escaping Callback) {
         guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: locale)),
@@ -40,14 +41,17 @@ private final class Recognition {
             speechQueue.async { [weak self] in
                 guard let self = self, active === self else { return }
                 if let result = result {
+                    let text = self.transcript.update(result.bestTranscription.segments.map {
+                        SpeechTranscript.Segment(text: $0.substring, start: $0.timestamp, end: $0.timestamp + $0.duration)
+                    })
                     // A spontaneous final may be the recognizer's time limit. Fall back with
                     // all captured audio instead of silently losing the remainder of dictation.
                     if result.isFinal {
-                        self.send(self.ending ? "final" : "error", text: self.ending ? result.bestTranscription.formattedString : "local-ended-early")
+                        self.send(self.ending ? "final" : "error", text: self.ending ? text : "local-ended-early")
                         self.stop()
                         return
                     }
-                    self.send("partial", text: result.bestTranscription.formattedString)
+                    self.send("partial", text: text)
                 }
                 if error != nil { self.send("error", text: "local-recognition-failed"); self.stop() }
             }
