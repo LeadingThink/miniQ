@@ -229,6 +229,15 @@ impl SkillStore {
         let dir = self.user_root.join(&meta.name);
         std::fs::create_dir_all(&dir)?;
         let target = dir.join("SKILL.md");
+        // Retrying the same save is a no-op. This keeps the operation safe
+        // when a client retries after a lost response and avoids creating a
+        // needless history entry for identical content.
+        if std::fs::read_to_string(&target)
+            .map(|existing| existing == content)
+            .unwrap_or(false)
+        {
+            return Ok(meta);
+        }
         // Overwrites keep the previous file in a hidden history folder so an
         // edited or regenerated skill can be restored by hand.
         if target.is_file() {

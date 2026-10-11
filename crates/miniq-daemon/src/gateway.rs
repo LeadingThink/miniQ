@@ -235,6 +235,16 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "skill.import" => skill::import(state, req.params),
         "skill.distill" => skill::distill(state, req.params).await,
         "skill.refine" => skill::refine(state, req.params).await,
+        "skill.job.start" => skill::job_start(state, req.params).await,
+        "skill.job.get" | "skill.distill.get" | "skill.refine.get" => {
+            skill::job_get(state, req.params)
+        }
+        "skill.job.list" | "skill.distill.list" | "skill.refine.list" => {
+            skill::job_list(state, req.params)
+        }
+        "skill.job.cancel" | "skill.distill.cancel" | "skill.refine.cancel" => {
+            skill::job_cancel(state, req.params)
+        }
         "skill.save" => skill::save(state, req.params),
         "skill.create" => skill::create(state, req.params).await,
         "skill.validate" => skill::validate(state, req.params).await,

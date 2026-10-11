@@ -203,6 +203,7 @@ pub struct AppState {
     pub(crate) title_jobs: Arc<Mutex<HashSet<String>>>,
     pub(crate) external_import_jobs: Arc<crate::external_import_jobs::ExternalImportJobs>,
     pub(crate) external_scan_jobs: Arc<crate::external_scan_jobs::ExternalScanJobs>,
+    pub(crate) skill_jobs: Arc<crate::skill_jobs::SkillJobs>,
     /// Pending approvals waiting for a user decision (approval id -> waker).
     pub pending_approvals: Arc<Mutex<HashMap<String, oneshot::Sender<ApprovalDecision>>>>,
     /// Per-session allowlist of approved tool patterns ("approve for session").
@@ -314,6 +315,7 @@ impl AppState {
                 crate::external_import_jobs::ExternalImportJobs::default(),
             ),
             external_scan_jobs: Arc::new(crate::external_scan_jobs::ExternalScanJobs::default()),
+            skill_jobs: Arc::new(crate::skill_jobs::SkillJobs::load(&data_dir)),
             pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             session_allowlist: Arc::new(Mutex::new(HashMap::new())),
             pending_questions: Arc::new(Mutex::new(HashMap::new())),

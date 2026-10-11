@@ -63,6 +63,28 @@ async fn next_event_of(ws: &mut WsClient, wanted: &str) -> Value {
     }
 }
 
+async fn wait_skill_job(ws: &mut WsClient, response: Value) -> Value {
+    let job_id = response["result"]["id"]
+        .as_str()
+        .expect("skill start returns a job id")
+        .to_owned();
+    for attempt in 0..50 {
+        let status = call(
+            ws,
+            &format!("job-{attempt}"),
+            "skill.job.get",
+            json!({"jobId": job_id}),
+        )
+        .await;
+        match status["result"]["state"].as_str() {
+            Some("completed") => return status,
+            Some("failed") | Some("cancelled") => panic!("skill job failed: {status}"),
+            _ => tokio::time::sleep(std::time::Duration::from_millis(5)).await,
+        }
+    }
+    panic!("skill job did not finish: {job_id}");
+}
+
 async fn setup_session(ws: &mut WsClient, dir: &std::path::Path) -> String {
     let resp = call(
         ws,
@@ -121,18 +143,20 @@ async fn full_learning_loop() {
     next_event_of(&mut ws, "turn_completed").await;
 
     // 2. Distill it.
-    let resp = call(
+    let start_resp = call(
         &mut ws,
         "r2",
         "skill.distill",
         json!({"sessionId": sess_id}),
     )
     .await;
-    assert_eq!(resp["result"]["skipped"], false);
-    assert_eq!(resp["result"]["name"], "inventory-report");
-    assert_eq!(resp["result"]["existingSkill"], false);
-    assert!(resp["result"]["warnings"].as_array().unwrap().is_empty());
-    let content = resp["result"]["content"].as_str().unwrap().to_string();
+    let resp = wait_skill_job(&mut ws, start_resp).await;
+    let resp = resp["result"]["result"].clone();
+    assert_eq!(resp["skipped"], false);
+    assert_eq!(resp["name"], "inventory-report");
+    assert_eq!(resp["existingSkill"], false);
+    assert!(resp["warnings"].as_array().unwrap().is_empty());
+    let content = resp["content"].as_str().unwrap().to_string();
 
     // The distillation prompt received the real transcript.
     {
@@ -181,15 +205,17 @@ async fn full_learning_loop() {
     }
 
     // 5. Refine from the repeat session.
-    let resp = call(
+    let start_resp = call(
         &mut ws,
         "r6",
         "skill.refine",
         json!({"sessionId": sess2, "name": "inventory-report"}),
     )
     .await;
-    assert_eq!(resp["result"]["kept"], false);
-    let refined = resp["result"]["content"].as_str().unwrap().to_string();
+    let resp = wait_skill_job(&mut ws, start_resp).await;
+    let resp = resp["result"]["result"].clone();
+    assert_eq!(resp["kept"], false);
+    let refined = resp["content"].as_str().unwrap().to_string();
     assert!(refined.contains("version: 2"));
     let resp = call(&mut ws, "r7", "skill.save", json!({"content": refined})).await;
     assert_eq!(resp["result"]["version"], 2);
@@ -226,18 +252,17 @@ async fn distill_skip_and_sensitive_save_guard() {
     .await;
     next_event_of(&mut ws, "turn_completed").await;
 
-    let resp = call(
+    let start_resp = call(
         &mut ws,
         "r2",
         "skill.distill",
         json!({"sessionId": sess_id}),
     )
     .await;
-    assert_eq!(resp["result"]["skipped"], true);
-    assert!(resp["result"]["reason"]
-        .as_str()
-        .unwrap()
-        .contains("question"));
+    let resp = wait_skill_job(&mut ws, start_resp).await;
+    let resp = resp["result"]["result"].clone();
+    assert_eq!(resp["skipped"], true);
+    assert!(resp["reason"].as_str().unwrap().contains("question"));
 
     // Saving a draft with an embedded key is rejected unless forced.
     let dirty = "---\nname: leaky-skill\ndescription: leaks\n---\n\n## 步骤\napi_key = \"sk-abcdefghijklmnop1234\"\n";

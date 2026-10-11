@@ -70,6 +70,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(256);
     let background_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
     let host_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(32));
+    let dispatch_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(64));
 
     let writer = tokio::spawn(async move {
         while let Some(text) = rx.recv().await {
@@ -164,6 +165,36 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 }
                 continue;
             }
+
+            // Every other RPC also runs independently. In particular a
+            // session turn, skill job, or model catalog request must not
+            // prevent a later session.cancel on this same socket from being
+            // dispatched.
+            if let Ok(permit) = dispatch_slots.clone().try_acquire_owned() {
+                let req = request.unwrap();
+                let state = state.clone();
+                let replies = tx.clone();
+                tokio::spawn(async move {
+                    let _permit = permit;
+                    let response = gateway::dispatch(&state, req).await;
+                    if let Ok(text) = serde_json::to_string(&response) {
+                        let _ = replies.send(text).await;
+                    }
+                });
+                continue;
+            }
+            let response = RpcResponse::err(
+                req.id.clone(),
+                RpcError::new(ErrorCode::SessionBusy, "后台请求繁忙，请稍后重试"),
+            );
+            if tx
+                .send(serde_json::to_string(&response).unwrap())
+                .await
+                .is_err()
+            {
+                break;
+            }
+            continue;
         }
         let response = match request {
             Ok(req) => gateway::dispatch(&state, req).await,
