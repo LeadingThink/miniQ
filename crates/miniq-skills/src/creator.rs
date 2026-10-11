@@ -30,6 +30,15 @@ origin: user
 ## 如何确认完成
 <checks the agent can actually verify>
 
+When the user assigns different models to sub-tasks, add an `agents` list to the frontmatter
+and delegate each role with agent_run in the steps:
+
+agents:
+  - role: reader
+    model: <model exactly as the user named it>
+    task: <what this sub-agent does>
+    readOnly: true
+
 Guidance:
 - The agent is already capable. Keep only instructions that change its decisions; drop generic advice.
 - Match strictness to risk: fixed steps only for fragile, destructive or externally visible actions.
@@ -185,6 +194,25 @@ pub fn validate_skill(content: &str, existing_names: &[String]) -> SkillValidati
             format!("疑似敏感内容：{}", warnings.join("；")),
         )
     });
+    if !meta.agents.is_empty() {
+        let unnamed = meta.agents.iter().any(|agent| agent.role.trim().is_empty());
+        let mut roles: Vec<&str> = meta.agents.iter().map(|agent| agent.role.trim()).collect();
+        roles.sort_unstable();
+        roles.dedup();
+        checks.push(if unnamed || roles.len() != meta.agents.len() {
+            check(
+                "agents",
+                CheckLevel::Error,
+                "子任务角色必须有名称且互不重复",
+            )
+        } else {
+            check(
+                "agents",
+                CheckLevel::Ok,
+                format!("声明了 {} 个子任务角色", meta.agents.len()),
+            )
+        });
+    }
     let existing_skill = existing_names.iter().any(|name| name == &meta.name);
     if existing_skill {
         checks.push(check(
@@ -248,6 +276,16 @@ mod tests {
 
         let secret = GOOD.replace("本周提交", "api_key=sk-abcdefghijklmnopqrstu");
         assert!(!validate_skill(&secret, &[]).valid);
+
+        let roles = GOOD.replace("origin: user\n", "origin: user\nagents:\n  - role: reader\n    model: gemini 3.8\n    readOnly: true\n  - role: writer\n    model: gpt-6.1-sol\n");
+        let parsed = validate_skill(&roles, &[]);
+        assert!(parsed.valid);
+        assert!(parsed
+            .checks
+            .iter()
+            .any(|c| c.id == "agents" && c.level == CheckLevel::Ok));
+        let duplicate = roles.replace("role: writer", "role: reader");
+        assert!(!validate_skill(&duplicate, &[]).valid);
 
         let broken = validate_skill("no frontmatter", &[]);
         assert!(!broken.valid && broken.name.is_none());

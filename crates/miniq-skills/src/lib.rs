@@ -21,7 +21,9 @@ pub use learn::{
     distill_skill, refine_skill, scan_sensitive, DistillOutcome, LearnError, RefineOutcome,
     SkillInference,
 };
-pub use parse::{parse_skill_md, render_skill_md, ParseError, SkillMeta, SkillOrigin};
+pub use parse::{
+    parse_skill_md, render_skill_md, ParseError, SkillAgentRole, SkillMeta, SkillOrigin,
+};
 pub use prompt::available_skills_block;
 pub use store::{
     BundledSkill, Skill, SkillDependencyStatus, SkillDetail, SkillSource, SkillStore, StoreError,

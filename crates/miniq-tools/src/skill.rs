@@ -69,6 +69,14 @@ impl Tool for SkillReadTool {
             "files": detail.files,
             "args": p.args,
         });
+        if !detail.skill.meta.agents.is_empty() {
+            out["agents"] = json!(detail.skill.meta.agents);
+            out["agentsNote"] = json!(
+                "Delegate each role with agent_run, passing its model. A model name that \
+                 is not in the catalog fails before start with the closest IDs; ask the \
+                 user before substituting another model."
+            );
+        }
         if let Some(display_name) = detail.skill.meta.display_name {
             out["displayName"] = json!(display_name);
         }

@@ -15,6 +15,7 @@ type Phase = "describe" | "generating" | "review" | "saving";
 const EXAMPLES = [
   "每周五汇总本周 git 提交和会议纪要，生成一份周报草稿，发送前让我确认",
   "检查项目依赖是否有安全更新，列出受影响的包和升级建议，不直接修改文件",
+  "写一篇文章：阅读参考资料用 gemini 3.8，写作用 gpt 6.1 sol，导出 Word 用 deepseek flash，各交给一个子 agent",
 ];
 
 const ICON = { ok: CheckCircle2, warning: AlertTriangle, error: XCircle } as const;

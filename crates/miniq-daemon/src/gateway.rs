@@ -28,6 +28,13 @@ mod session_diff;
 mod session_goal;
 mod session_history;
 mod session_model;
+
+/// Chat model catalog of a provider, shared with sub-agent model resolution.
+pub(crate) async fn chat_model_catalog(
+    config: &miniq_models::ProviderConfig,
+) -> Result<serde_json::Value, miniq_protocol::RpcError> {
+    session_model::catalog_for(config).await
+}
 mod session_queue;
 mod session_turns;
 mod settings;
@@ -230,7 +237,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "skill.refine" => skill::refine(state, req.params).await,
         "skill.save" => skill::save(state, req.params),
         "skill.create" => skill::create(state, req.params).await,
-        "skill.validate" => skill::validate(state, req.params),
+        "skill.validate" => skill::validate(state, req.params).await,
         "mcp.list" => mcp::list(state, req.params).await,
         "mcp.update" => mcp::update(state, req.params),
         "plugin.list" => plugin::list(state),

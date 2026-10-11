@@ -78,6 +78,7 @@ origin: distilled
 <verifiable completion criteria>
 
 Rules:
+- If the transcript delegated sub-tasks with agent_run and an explicit model, add an `agents` frontmatter list (role, model, task, readOnly) with the exact model IDs that actually ran, and say which step delegates to which role. Omit roles whose agent failed because its model did not exist.
 - Steps must name exact tool names used in the transcript.
 - NEVER include API keys, tokens, passwords, or personal data.
 - Generalize file names into placeholders where the pattern matters more than the name.

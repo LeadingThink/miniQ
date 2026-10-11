@@ -78,6 +78,24 @@ pub struct SkillMeta {
     /// Empty = no extra restriction.
     #[serde(default)]
     pub allowed_tools: Vec<String>,
+    /// Sub-agent roles this workflow delegates, each with its own model.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agents: Vec<SkillAgentRole>,
+}
+
+/// One delegated role of a multi-model workflow skill.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillAgentRole {
+    pub role: String,
+    /// Exact provider model ID; omitted roles inherit the session model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<String>,
+    /// Hint that the role only reads and reports.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub read_only: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

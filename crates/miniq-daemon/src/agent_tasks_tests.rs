@@ -369,3 +369,49 @@ async fn background_agent_can_be_stopped_while_waiting_for_the_provider() {
     assert_eq!(completed["status"], "completed");
     assert_eq!(completed["result"], "result 2");
 }
+
+#[tokio::test]
+async fn unknown_or_ambiguous_models_fail_before_an_agent_exists() {
+    use axum::{routing::get, Json, Router};
+    let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = upstream.local_addr().unwrap();
+    let api = Router::new().route(
+        "/v1/models",
+        get(|| async {
+            Json(serde_json::json!({"data": [
+                {"id": "gpt-6.1-sol", "model_type": "chat"},
+                {"id": "gemini-3.7-pro", "model_type": "chat"},
+                {"id": "gemini-3.7-pro-preview", "model_type": "chat"},
+            ]}))
+        }),
+    );
+    tokio::spawn(async move { axum::serve(upstream, api).await.unwrap() });
+    let directory = tempfile::tempdir().unwrap();
+    let bridge = bridge_with_provider(&directory, Arc::new(MockProvider::new(Vec::new())));
+    bridge.state.settings.lock().unwrap().provider = Some(miniq_models::ProviderConfig {
+        base_url: format!("http://{address}/v1"),
+        api_key: String::new(),
+        model: "gpt-6.1-sol".into(),
+        api_protocol: miniq_models::ApiProtocol::Auto,
+        reasoning_effort: None,
+    });
+    for (name, expected) in [
+        ("gemini 3.7", "gemini-3.7-pro-preview"),
+        ("gemini 3.8", "gemini-3.7-pro"),
+    ] {
+        let mut child = request("research");
+        child.model = Some(name.into());
+        let error = bridge.run(child).await.unwrap_err().to_string();
+        assert!(error.contains(expected), "{error}");
+        assert!(error.contains("exact ID"), "{error}");
+    }
+    let stored = bridge
+        .state
+        .store
+        .list_agent_tasks(&bridge.session_id)
+        .unwrap();
+    assert!(
+        stored.is_empty(),
+        "no agent record is created for a model that cannot run"
+    );
+}

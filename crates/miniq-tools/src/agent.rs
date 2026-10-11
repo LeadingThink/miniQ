@@ -145,7 +145,7 @@ impl Tool for AgentRunTool {
                 "prompt": {"type": "string"},
                 "description": {"type": "string"},
                 "subagentType": {"type": "string"},
-                "model": {"type": "string"},
+                "model": {"type": "string", "description": "Model for this sub-agent. Use the exact catalog ID when known; a spoken name such as \"gpt 6.1 sol\" is resolved against the provider catalog before start, and an unknown or ambiguous name fails with the closest IDs."},
                 "resume": {"type": "string"},
                 "runInBackground": {"type": "boolean", "default": false, "description": "Return the agent ID immediately so independent tasks can overlap; collect the result with process_output (id=agentId) before reporting completion"},
                 "maxTurns": {"type": "integer", "minimum": 1, "maximum": 96},

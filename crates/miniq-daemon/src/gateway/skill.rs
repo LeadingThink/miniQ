@@ -275,7 +275,7 @@ pub(super) async fn create(state: &AppState, raw: Option<Value>) -> Result<Value
     let created = miniq_skills::create_skill(goal, input.name.as_deref(), &existing, &inference)
         .await
         .map_err(|error| RpcError::new(ErrorCode::InternalError, error.to_string()))?;
-    let validation = miniq_skills::validate_skill(&created.content, &existing);
+    let validation = validate_with_models(state, &created.content, &existing).await;
     to_value(json!({
         "content": created.content,
         "name": created.name,
@@ -290,8 +290,77 @@ struct ValidateParams {
     content: String,
 }
 
-pub(super) fn validate(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+pub(super) async fn validate(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: ValidateParams = params(raw)?;
     let existing = existing_skill_names(state);
-    to_value(miniq_skills::validate_skill(&input.content, &existing))
+    to_value(validate_with_models(state, &input.content, &existing).await)
+}
+
+/// Structural checks plus a catalog check for every model a role declares.
+async fn validate_with_models(
+    state: &AppState,
+    content: &str,
+    existing: &[String],
+) -> miniq_skills::SkillValidation {
+    use miniq_skills::{CheckLevel, SkillCheck};
+    let mut validation = miniq_skills::validate_skill(content, existing);
+    let Ok((meta, _)) = miniq_skills::parse_skill_md(content) else {
+        return validation;
+    };
+    let models: Vec<(String, String)> = meta
+        .agents
+        .iter()
+        .filter_map(|agent| Some((agent.role.clone(), agent.model.clone()?)))
+        .collect();
+    if models.is_empty() {
+        return validation;
+    }
+    let provider = state.settings.lock().unwrap().provider.clone();
+    let catalog = match provider {
+        Some(config) => crate::model_resolution::chat_models(&config).await,
+        None => None,
+    };
+    let Some(catalog) = catalog else {
+        validation.checks.push(SkillCheck {
+            id: "agent-models",
+            level: CheckLevel::Warning,
+            message: "无法读取模型目录，未核对子任务模型；运行时会再次校验".into(),
+        });
+        return validation;
+    };
+    for (role, model) in models {
+        let (level, message) = match crate::model_resolution::resolve(&model, &catalog) {
+            crate::model_resolution::Resolution::Resolved(id) if id == model => {
+                (CheckLevel::Ok, format!("{role}：模型 {model} 可用"))
+            }
+            crate::model_resolution::Resolution::Resolved(id) => (
+                CheckLevel::Warning,
+                format!("{role}：“{model}”将解析为 {id}，建议直接写精确 ID"),
+            ),
+            crate::model_resolution::Resolution::Ambiguous(ids) => (
+                CheckLevel::Warning,
+                format!(
+                    "{role}：“{model}”对应多个模型（{}），请选一个",
+                    ids.join("、")
+                ),
+            ),
+            crate::model_resolution::Resolution::NotFound(ids) => (
+                CheckLevel::Warning,
+                if ids.is_empty() {
+                    format!("{role}：模型目录中没有“{model}”")
+                } else {
+                    format!(
+                        "{role}：模型目录中没有“{model}”，接近的有 {}",
+                        ids.join("、")
+                    )
+                },
+            ),
+        };
+        validation.checks.push(SkillCheck {
+            id: "agent-models",
+            level,
+            message,
+        });
+    }
+    validation
 }

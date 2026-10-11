@@ -334,6 +334,36 @@ impl DaemonAgentBridge {
         Ok((workspace, None))
     }
 
+    /// Map a written model name to an exact catalog ID before any agent
+    /// record exists. Unknown names fail fast with the closest IDs.
+    async fn resolve_requested_model(
+        &self,
+        request: &mut AgentRunRequest,
+    ) -> Result<(), ToolError> {
+        let Some(requested) = request.model.clone() else {
+            return Ok(());
+        };
+        let Some(config) = self
+            .state
+            .provider_config_for_session(&self.session_id, None)
+            .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?
+        else {
+            return Ok(());
+        };
+        let Some(catalog) = crate::model_resolution::chat_models(&config).await else {
+            return Ok(());
+        };
+        match crate::model_resolution::resolve(&requested, &catalog) {
+            crate::model_resolution::Resolution::Resolved(id) => {
+                request.model = Some(id);
+                Ok(())
+            }
+            unresolved => Err(ToolError::InvalidInput(
+                crate::model_resolution::unresolved_message(&requested, &unresolved),
+            )),
+        }
+    }
+
     async fn run_managed(&self, mut request: AgentRunRequest) -> Result<Value, ToolError> {
         let activity = self
             .state
@@ -351,6 +381,9 @@ impl DaemonAgentBridge {
             )));
         }
         request.validate()?;
+        if request.resume.is_none() {
+            self.resolve_requested_model(&mut request).await?;
+        }
         if request.resume.is_none() && request.model.is_none() {
             request.model = self
                 .state
