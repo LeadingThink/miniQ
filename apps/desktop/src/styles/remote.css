@@ -635,3 +635,10 @@
     grid-template-columns: 1fr;
   }
 }
+
+.mobile-chat-composer.with-voice {
+  grid-template-columns: minmax(0, 1fr) 44px auto 44px;
+}
+.mobile-chat-composer .voice-transcript { grid-column: 1 / -1; min-width: 0; }
+.mobile-chat-composer .voice-input .attach-btn { width: 44px; height: 44px; }
+.mobile-chat-composer .voice-state { display: none; }

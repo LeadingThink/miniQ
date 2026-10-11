@@ -29,7 +29,7 @@ import {
 } from "../textInputNavigation";
 import { insertTranscript, type TextRange } from "../voiceAudio";
 import { VoiceInput } from "./VoiceInput";
-import { useVoiceCapabilities } from "../voiceCapabilities";
+import { useSpeechInput } from "../useSpeechInput";
 import { VoiceTranscript } from "./VoiceTranscript";
 import type { VoicePreview } from "../voiceTranscription";
 import { savePastedImage } from "../localFiles";
@@ -130,7 +130,7 @@ export function ComposerCard(props: {
   const voiceRangeRef = useRef<TextRange>({ start: 0, end: 0 });
   const voiceDraftRef = useRef("");
   const [voicePreview, setVoicePreview] = useState<VoicePreview | null>(null);
-  const voiceCapabilities = useVoiceCapabilities(props.client);
+  const voiceCapabilities = useSpeechInput(props.client);
   // Secondary inputs live behind "+". The panel stays mounted so an active
   // voice recording keeps its state, and it is forced open while voice is live.
   const [plusOpen, setPlusOpen] = useState(false);
@@ -453,6 +453,8 @@ export function ComposerCard(props: {
     <VoiceInput
       key={props.draftKey}
       client={props.client}
+      transcriber={voiceCapabilities.transcriber}
+      preferLocal={voiceCapabilities.preferLocal}
       transcribeModel={voiceCapabilities.capabilities.transcribeModel ?? undefined}
       disabled={sending || slash.pending}
       onStart={rememberVoiceInsertion}

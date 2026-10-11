@@ -2,12 +2,15 @@ import { LoaderCircle, Mic, RotateCcw, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { RpcClient } from "../rpc";
 import { startVoiceCapture, type VoiceCapture } from "../voiceCapture";
-import { VoiceTranscription, type VoicePreview } from "../voiceTranscription";
+import { type VoicePreview, type VoiceTranscriber } from "../voiceTranscription";
+import { AutomaticVoice } from "../automaticVoice";
 import { isMicrophonePermissionError } from "../microphonePermission";
 import { MicrophonePermissionDialog } from "./MicrophonePermissionDialog";
 
 interface Props {
-  client: RpcClient;
+  client?: RpcClient;
+  transcriber?: VoiceTranscriber;
+  preferLocal?: boolean;
   onStart: () => void;
   onTranscribed: (text: string) => void;
   onPreview: (preview: VoicePreview | null) => void;
@@ -18,7 +21,7 @@ interface Props {
 interface Recording {
   abort: AbortController;
   capture?: VoiceCapture;
-  transcript?: VoiceTranscription;
+  transcript?: AutomaticVoice;
   timer?: ReturnType<typeof setInterval>;
   finishing: boolean;
   startedAt: number;
@@ -39,6 +42,7 @@ export function VoiceInput(props: Props) {
   useEffect(() => () => {
     const recording = current.current; current.current = null;
     if (recording) release(recording);
+    callbacks.current.onPreview(null);
   }, []);
 
   const finish = async (recording: Recording) => {
@@ -72,11 +76,11 @@ export function VoiceInput(props: Props) {
     try {
       recording.capture = await startVoiceCapture(recording.abort.signal, (samples, sampleRate) => {
         if (current.current !== recording) return;
-        recording.transcript ??= new VoiceTranscription(props.client, sampleRate, (text, delayed) => {
+        recording.transcript ??= new AutomaticVoice(props.transcriber ?? props.client ?? unavailable, sampleRate, (text, delayed) => {
           if (current.current === recording) callbacks.current.onPreview({
             phase: recording.finishing ? "transcribing" : "recording", text, delayed,
           });
-        }, props.transcribeModel);
+        }, props.transcribeModel, props.preferLocal);
         recording.transcript.append(samples);
       }, () => void finish(recording));
       if (current.current !== recording) { recording.capture.stop(); return; }
@@ -102,7 +106,7 @@ export function VoiceInput(props: Props) {
     trigger.current?.focus();
   };
   const active = state !== "idle";
-  const label = state === "recording" ? "结束录音" : state === "failed" ? "重试语音识别" : state === "idle" ? "语音输入" : state === "starting" ? "正在请求麦克风权限" : "正在校正转录";
+  const label = state === "recording" ? "结束录音" : state === "failed" ? "重试语音识别" : state === "idle" ? "语音输入" : state === "starting" ? "正在准备语音输入" : "正在整理文字";
   return <div className={`voice-input${active ? " active" : ""}`}>
     <button ref={trigger} type="button" className={`attach-btn voice-btn ${state}`} title={label} aria-label={label}
       aria-pressed={state === "recording"} aria-busy={state === "starting" || state === "transcribing"}
@@ -135,3 +139,5 @@ function friendlyError(error: unknown): string {
   if (message.includes("401") || message.includes("403")) return "语音识别鉴权失败，请检查 API Key";
   return message.replace(/ \(code -?\d+\)$/, "");
 }
+
+const unavailable: VoiceTranscriber = async () => { throw new Error("语音识别暂时不可用，请在设置中确认模型服务"); };

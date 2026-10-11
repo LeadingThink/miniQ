@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { mobileVoiceModel } from "../mobileVoice";
 import { errorMessage } from "../errorMessage";
 import { MOBILE_API_BASE_URL, MOBILE_MODEL_STORAGE_KEY, mobileResponseError, textChatModels } from "../mobileChatData";
 
 export function useMobileChatModels(apiKey: string) {
+  const [transcribeModel, setTranscribeModel] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState("");
   const [loading, setLoading] = useState(true);
@@ -14,6 +16,7 @@ export function useMobileChatModels(apiKey: string) {
     setLoading(true);
     setError(null);
     setModels([]);
+    setTranscribeModel(null);
     if (!apiKey.trim()) {
       setModel("");
       setLoading(false);
@@ -23,7 +26,9 @@ export function useMobileChatModels(apiKey: string) {
       headers: { Authorization: `Bearer ${apiKey}` }, signal: controller.signal,
     }).then(async (response) => {
       if (!response.ok) throw new Error(await mobileResponseError(response));
-      return textChatModels(await response.json());
+      const body: unknown = await response.json();
+      if (!controller.signal.aborted) setTranscribeModel(mobileVoiceModel(body));
+      return textChatModels(body);
     }).then((available) => {
       if (controller.signal.aborted) return;
       if (!available.length) throw new Error("这个 Key 暂无可用的文本模型，请检查 Key 的模型权限");
@@ -48,5 +53,5 @@ export function useMobileChatModels(apiKey: string) {
     try { localStorage.setItem(MOBILE_MODEL_STORAGE_KEY, value); } catch { /* Storage is optional. */ }
   };
 
-  return { models, model, selectModel, loading, error, reload: () => setAttempt((value) => value + 1) };
+  return { models, model, selectModel, loading, error, transcribeModel, reload: () => setAttempt((value) => value + 1) };
 }

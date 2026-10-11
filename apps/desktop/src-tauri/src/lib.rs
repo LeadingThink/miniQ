@@ -3,6 +3,7 @@
 //! to it over WebSocket. The shell only hands the connection info to the UI.
 
 mod app_menu;
+mod apple_speech;
 mod browser;
 mod companion;
 mod daemon;
@@ -360,6 +361,11 @@ pub fn run() {
                 browser_set_visible,
                 browser_reveal_download,
                 open_microphone_settings,
+                apple_speech::apple_speech_available,
+                apple_speech::apple_speech_start,
+                apple_speech::apple_speech_append,
+                apple_speech::apple_speech_finish,
+                apple_speech::apple_speech_cancel,
                 browser_evaluate,
                 browser_screenshot,
                 browser_capabilities
