@@ -24,7 +24,7 @@ function setup() {
   return { ...view, client, model };
 }
 
-it("uses a modal top layer on the phone, shows full options without opening the keyboard, and applies once", async () => {
+it("uses a modal top layer on the phone, saves a choice immediately, and closes", async () => {
   const { model } = setup();
   const trigger = screen.getByRole("button", { name: "选择会话模型" });
   fireEvent.click(trigger);
@@ -34,9 +34,6 @@ it("uses a modal top layer on the phone, shows full options without opening the 
   const option = await within(dialog).findByRole("option", { name: "claude-opus-very-long-model-name" });
   fireEvent.mouseDown(option);
   fireEvent.click(option);
-  expect(screen.getByRole("dialog")).toBe(dialog);
-  expect((within(dialog).getByRole("textbox", { name: "模型 ID" }) as HTMLInputElement).value).toBe("claude-opus-very-long-model-name");
-  fireEvent.click(within(dialog).getByRole("button", { name: "应用" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(model.update).toHaveBeenCalledExactlyOnceWith({ model: "claude-opus-very-long-model-name", apiProtocol: "auto", reasoningEffort: null });
   expect(document.activeElement).toBe(trigger);

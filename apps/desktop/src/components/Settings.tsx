@@ -1,3 +1,4 @@
+import { ModelRankingLink } from "./ModelRankingLink";
 import { ExternalLink, KeyRound, MonitorSmartphone, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
@@ -474,6 +475,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                     />
                   )}
                   <small>作为所有项目和新会话的全局默认模型；项目或会话可单独覆盖。</small>
+                  <ModelRankingLink />
                   {hasKey && modelCatalogError && <small role="status">{modelCatalogError}，当前可手动输入模型 ID。</small>}
                   {!hasKey && <small>首次连接会先使用默认模型；保存 API Key 后即可从服务返回的 Chat 模型列表中选择。</small>}
                 </label>

@@ -1,3 +1,4 @@
+import { ModelRankingLink } from "./ModelRankingLink";
 import { Check, ChevronDown, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
@@ -51,6 +52,7 @@ function ModelDialog({ catalog, id, trigger, onClose }: { catalog: Catalog; id: 
       <h2 id={`${id}-title`}>选择问答模型</h2>
       <button type="button" className="icon-button" aria-label="关闭模型选择" onClick={onClose}><X size={18} /></button>
     </header>
+    <ModelRankingLink />
     <input ref={input} className="mobile-chat-model-search" aria-label="搜索模型" placeholder="搜索文本模型" type="search"
       value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => {
         if (event.key === "ArrowDown") { event.preventDefault(); results.current?.querySelector<HTMLButtonElement>("[role=option]")?.focus(); }

@@ -1,3 +1,4 @@
+import { ModelRankingLink } from "./ModelRankingLink";
 import { useRef, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { filterModelIds } from "../modelSelection";
@@ -37,13 +38,14 @@ export function SessionReviewModelPicker({ models, model, primaryModel, disabled
       aria-label={`审查模型：${selected || "未选择"}`}
       title={primaryModel ? `主模型：${primaryModel}（保持不变）` : undefined}
       disabled={disabled}
-      onClick={() => setOpen((value) => !value)}
+      onClick={() => { setQuery(""); setOpen((value) => !value); }}
     >
       <span className="session-review-chip-label">审查：{selected || "选择模型"}</span>
       {selected && sameFamily(selected) && <span className="session-review-tag">同系列</span>}
       <ChevronDown size={12} aria-hidden="true" />
     </button>
     <Popover open={open} anchorRef={anchor} onClose={close} label="选择审查模型" className="session-review-models">
+      <ModelRankingLink />
       <input
         data-autofocus
         className="session-review-models-search"

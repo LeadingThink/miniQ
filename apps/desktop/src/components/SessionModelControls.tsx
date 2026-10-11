@@ -1,3 +1,4 @@
+import { ModelRankingLink } from "./ModelRankingLink";
 import { Check, ChevronDown, Cpu, RefreshCw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
@@ -33,6 +34,7 @@ export function SessionModelControls({
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
+  const [selectedModel, setSelectedModel] = useState("");
   const [description, setDescription] = useState<ModelDescription | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -52,7 +54,9 @@ export function SessionModelControls({
     return () => media?.removeEventListener("change", update);
   }, []);
 
-  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
+  useEffect(() => {
+    if (busy || !model.ready) setOpen(false);
+  }, [busy, model.ready]);
 
   useEffect(() => {
     if (!open) return;
@@ -105,6 +109,10 @@ export function SessionModelControls({
   }, [client, model.effective?.model, model.effective?.apiProtocol, attempt]);
 
   useEffect(() => {
+    setSelectedModel(model.settings.model ?? model.effective?.model ?? "");
+  }, [model.settings.model, model.effective?.model]);
+
+  useEffect(() => {
     if (!open) return;
     let stale = false;
     setLoading(true);
@@ -133,6 +141,21 @@ export function SessionModelControls({
     }
   }, [modelListOpen, models, query]);
 
+  const saveModel = async (id: string | null) => {
+    if (disabled) return;
+    try {
+      await model.update({ model: id, apiProtocol: "auto", reasoningEffort: null });
+      setSelectedModel(id ?? "");
+      setQuery("");
+      setModelListOpen(false);
+      if (mobile) setOpen(false);
+    } catch { /* The model hook exposes the save error. */ }
+  };
+  const reopenList = () => {
+    if (!modelListOpen) setQuery("");
+    setModelListOpen(true);
+  };
+
   return (
     <div
       ref={rootRef}
@@ -155,6 +178,7 @@ export function SessionModelControls({
           setOpen(!open);
           setModelListOpen(mobile);
           setQuery("");
+          setSelectedModel(model.settings.model ?? model.effective?.model ?? "");
         }}
       >
         <Cpu size={14} />
@@ -213,19 +237,12 @@ export function SessionModelControls({
           aria-label="会话模型配置"
           onSubmit={(event) => {
             event.preventDefault();
-            void model
-              .update({
-                model: query.trim() || null,
-                apiProtocol: "auto",
-                reasoningEffort: null,
-              })
-              .then(() => setOpen(false))
-              .catch(() => {});
+            void saveModel(query.trim() || selectedModel || null);
           }}
           onKeyDown={(event) => {
             if (event.key === "Enter" && event.target instanceof HTMLInputElement && mobile) {
               event.preventDefault();
-              if (!event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) setModelListOpen(true);
+              if (!event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) reopenList();
             } else if (event.key === "Escape") {
               event.preventDefault();
               event.stopPropagation();
@@ -235,7 +252,10 @@ export function SessionModelControls({
           }}
         >
           <header>
-            <strong>会话模型</strong>
+            <div>
+              <strong>会话模型</strong>
+              <ModelRankingLink />
+            </div>
             <button
               type="button"
               className="icon-button"
@@ -255,9 +275,11 @@ export function SessionModelControls({
                     autoFocus={!mobile}
                     enterKeyHint={mobile ? "search" : undefined}
                     value={query}
-                    placeholder={model.effective?.model ?? "搜索模型"}
+                    placeholder={selectedModel || "搜索模型"}
                     aria-label="模型 ID"
-                    onFocus={() => setModelListOpen(true)}
+                    disabled={disabled}
+                    onFocus={reopenList}
+                    onClick={reopenList}
                     onChange={(event) => {
                       setQuery(event.target.value);
                       setModelListOpen(true);
@@ -272,20 +294,21 @@ export function SessionModelControls({
                     role="listbox"
                     aria-label="会话模型列表"
                   >
-                    {query && !models.includes(query) && (
+                    {query.trim() && !models.includes(query.trim()) && (
                       <button
                         ref={selectedModelRef}
                         type="button"
                         role="option"
-                        aria-selected="true"
-                        onClick={() => setModelListOpen(false)}
+                        aria-selected={false}
+                        disabled={disabled}
+                        onClick={() => void saveModel(query.trim())}
                       >
-                        <span>{query}</span>
+                        <span>{query.trim()}</span>
                         <Check size={14} />
                       </button>
                     )}
                     {filterModelIds(models, query).map((id) => {
-                      const selected = id === (model.settings.model ?? model.effective?.model);
+                      const selected = id === selectedModel;
                       return (
                         <button
                           key={id}
@@ -293,10 +316,8 @@ export function SessionModelControls({
                           type="button"
                           role="option"
                           aria-selected={selected}
-                          onClick={() => {
-                            setQuery(id);
-                            setModelListOpen(false);
-                          }}
+                          disabled={disabled}
+                          onClick={() => void saveModel(id)}
                         >
                           <span>{id}</span>
                           {selected && <Check size={14} />}
@@ -312,6 +333,7 @@ export function SessionModelControls({
             ) : (
               <input
                 autoFocus={!mobile}
+                disabled={disabled}
                 enterKeyHint={mobile ? "search" : undefined}
                 value={query}
                 placeholder={model.effective?.model ?? "模型 ID"}
@@ -353,11 +375,7 @@ export function SessionModelControls({
               type="button"
               className="ghost"
               disabled={disabled}
-              onClick={() =>
-                void model
-                  .update(DEFAULT_MODEL_SETTINGS)
-                  .catch(() => {})
-              }
+              onClick={() => void saveModel(DEFAULT_MODEL_SETTINGS.model)}
             >
               <RefreshCw size={14} />
               恢复默认

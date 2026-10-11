@@ -61,12 +61,15 @@ it("opens the bounded catalog at the current model and allows switching", async 
   expect(screen.getByRole("option", { name: "deepseek-chat" })).toBeTruthy();
 
   fireEvent.click(screen.getByRole("option", { name: "claude-sonnet" }));
-  expect((screen.getByRole("textbox", { name: "模型 ID" }) as HTMLInputElement).value).toBe("claude-sonnet");
+  await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+  expect((screen.getByRole("textbox", { name: "模型 ID" }) as HTMLInputElement).value).toBe("");
+  expect((screen.getByRole("textbox", { name: "模型 ID" }) as HTMLInputElement).placeholder).toBe("claude-sonnet");
   expect(screen.queryByText("API 协议")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "应用" }));
-  await waitFor(() => expect(model.update).toHaveBeenCalledWith({
+  await waitFor(() => expect(model.update).toHaveBeenCalledExactlyOnceWith({
     model: "claude-sonnet", apiProtocol: "auto", reasoningEffort: null,
   }));
+  fireEvent.focus(screen.getByRole("textbox", { name: "模型 ID" }));
+  expect(screen.getAllByRole("option")).toHaveLength(3);
 });
 
 it("filters the model catalog as the user types", async () => {
@@ -87,6 +90,58 @@ it("filters the model catalog as the user types", async () => {
   expect(screen.getByRole("option", { name: "claude-sonnet" })).toBeTruthy();
   expect(screen.queryByRole("option", { name: "gpt-5.6-sol" })).toBeNull();
   expect(screen.queryByRole("option", { name: "gpt-image-2" })).toBeNull();
+  fireEvent.keyDown(input, { key: "Escape" });
+  fireEvent.click(input);
+  expect(screen.getAllByRole("option")).toHaveLength(3);
+  expect((input as HTMLInputElement).value).toBe("");
+});
+
+it("keeps the desktop panel during a pending save and supports retry after failure", async () => {
+  const client = { call: vi.fn((method: string) => Promise.resolve(method === "model.list"
+    ? { models: ["gpt-test", "claude-test"] } : { reasoningEfforts: [] })) } as unknown as RpcClient;
+  let reject!: (error: Error) => void;
+  const update = vi.fn().mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail; }))
+    .mockResolvedValue(undefined);
+  const model = {
+    settings: { ...DEFAULT_MODEL_SETTINGS }, effective: { ...DEFAULT_MODEL_SETTINGS, model: "gpt-test" },
+    ready: true, pending: false, error: null, update, reload: vi.fn(),
+  } as unknown as ReturnType<typeof useSessionModel>;
+  const view = render(<SessionModelControls client={client} model={model} busy={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "选择会话模型" }));
+  fireEvent.click(await screen.findByRole("option", { name: "claude-test" }));
+  view.rerender(<SessionModelControls client={client} model={{ ...model, pending: true }} busy={false} />);
+  expect(screen.getByRole("form", { name: "会话模型配置" })).toBeTruthy();
+  expect((screen.getByRole("option", { name: "claude-test" }) as HTMLButtonElement).disabled).toBe(true);
+  reject(new Error("save failed"));
+  view.rerender(<SessionModelControls client={client} model={{ ...model, error: "save failed" }} busy={false} />);
+  expect(screen.getByRole("alert").textContent).toContain("save failed");
+  expect(screen.getByRole("option", { name: "gpt-test" }).getAttribute("aria-selected")).toBe("true");
+  fireEvent.click(screen.getByRole("option", { name: "claude-test" }));
+  await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+  expect(update).toHaveBeenCalledTimes(2);
+});
+
+it("keeps custom model IDs submit-able while using query only for filtering", async () => {
+  const client = {
+    call: vi.fn((method: string) => method === "model.list"
+      ? Promise.resolve({ models: ["gpt-5.6-sol"] })
+      : Promise.resolve({ model: "gpt-5.6-sol", apiProtocol: "responses", reasoningEfforts: [] })),
+  } as unknown as RpcClient;
+  const model = {
+    settings: { ...DEFAULT_MODEL_SETTINGS },
+    effective: { model: "gpt-5.6-sol", apiProtocol: "responses", reasoningEffort: null },
+    ready: true, pending: false, error: null, update: vi.fn().mockResolvedValue(undefined), reload: vi.fn(),
+  } as unknown as ReturnType<typeof useSessionModel>;
+  render(<SessionModelControls client={client} model={model} busy={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "选择会话模型" }));
+  await screen.findByRole("option", { name: "gpt-5.6-sol" });
+  const input = screen.getByRole("textbox", { name: "模型 ID" });
+  fireEvent.change(input, { target: { value: "provider/custom-model" } });
+  expect(screen.getByRole("option", { name: "provider/custom-model" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "应用" }));
+  await waitFor(() => expect(model.update).toHaveBeenCalledExactlyOnceWith({
+    model: "provider/custom-model", apiProtocol: "auto", reasoningEffort: null,
+  }));
 });
 
 it("marks the hero model picker to open below its trigger", () => {
