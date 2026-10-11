@@ -211,10 +211,15 @@ export async function notifyTaskResult(
   target?: TaskNotificationTarget,
   eventId?: string,
 ): Promise<boolean> {
-  const allowed = async () => await isAppInBackground() && wants(outcome);
+  const background = await isAppInBackground().catch(() => false);
   const { title, body } = copy(outcome, sessionTitle);
   playEventSound(outcome, target, eventId, sessionTitle);
-  return send(title, body, allowed, outcome, target);
+  if (!wants(outcome)) return false;
+  if (!background) {
+    showTaskBanner({ kind: outcome, title, body, target: target ?? { host: null, sessionId: "" } });
+    return true;
+  }
+  return send(title, body, async () => await isAppInBackground() && wants(outcome), outcome, target);
 }
 
 function playEventSound(kind: TaskNotificationKind, target: TaskNotificationTarget | undefined, eventId: string | undefined, fallback: string): void {
@@ -321,12 +326,17 @@ export async function notifyAttention(
   target?: TaskNotificationTarget,
   requestId?: string,
 ): Promise<boolean> {
-  const allowed = async () => getAttentionNotificationPrefs()[kind] && await isAppInBackground();
+  const background = await isAppInBackground().catch(() => false);
   const name = sessionTitle || "当前会话";
   const title = kind === "approval" ? `需要你审批：${name}` : `需要你回答：${name}`;
   const body = detail.trim().slice(0, 140) || (kind === "approval" ? "有操作等待你的批准，请返回 miniQ 处理。" : "助手在等待你的回答，请返回 miniQ 处理。");
   playEventSound("attention", target, requestId, `${kind}\u0000${name}\u0000${detail}`);
-  return send(title, body, allowed, "attention", target, onClick);
+  if (!getAttentionNotificationPrefs()[kind]) return false;
+  if (!background) {
+    showTaskBanner({ kind: "attention", title, body, target: target ?? { host: null, sessionId: "" } });
+    return true;
+  }
+  return send(title, body, async () => getAttentionNotificationPrefs()[kind] && await isAppInBackground(), "attention", target, onClick);
 }
 
 export function sendTaskNotificationTest(): Promise<boolean> {

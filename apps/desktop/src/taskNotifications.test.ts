@@ -90,25 +90,24 @@ describe("background task notifications", () => {
     expect(web).toHaveBeenCalledTimes(1);
   });
 
-  it("does not notify while miniQ has focus", async () => {
+  it("shows an in-app result while miniQ has focus", async () => {
     vi.mocked(document.hasFocus).mockReturnValue(true);
-    expect(await notifyTaskResult("failed", "任务")).toBe(false);
+    expect(await notifyTaskResult("failed", "任务")).toBe(true);
     expect(web).not.toHaveBeenCalled();
   });
 
-  it("does not notify while the embedded browser owns focus inside the native window", async () => {
+  it("shows an in-app result while the embedded browser owns focus inside the native window", async () => {
     platform.native = true;
     isWindowFocused.mockResolvedValue(true);
-    expect(await notifyTaskResult("completed", "任务")).toBe(false);
+    expect(await notifyTaskResult("completed", "任务")).toBe(true);
     expect(plugin.sendNotification).not.toHaveBeenCalled();
   });
 
-  it("does not notify when the native window focus cannot be checked", async () => {
+  it("falls back when the native window focus cannot be checked", async () => {
     platform.native = true;
     isWindowFocused.mockRejectedValue(new Error("window state unavailable"));
-    expect(await notifyTaskResult("failed", "任务")).toBe(false);
-    expect(plugin.sendNotification).not.toHaveBeenCalled();
-    expect(web).not.toHaveBeenCalled();
+    expect(await notifyTaskResult("failed", "任务")).toBe(true);
+    expect(plugin.sendNotification).toHaveBeenCalledTimes(1);
   });
 
   it("never requests web permission from a task event", async () => {
@@ -194,7 +193,7 @@ describe("desktop task sounds", () => {
       completed: true,
       failed: true,
       attention: true,
-      backgroundOnly: true,
+      backgroundOnly: false,
       volume: 0.55,
     });
     setTaskSoundSettings({ volume: -1 });
@@ -218,7 +217,7 @@ describe("desktop task sounds", () => {
 
     setTaskSoundSettings({ backgroundOnly: true });
     vi.mocked(document.hasFocus).mockReturnValue(true);
-    expect(await notifyTaskResult("failed", "foreground-sound")).toBe(false);
+    expect(await notifyTaskResult("failed", "foreground-sound")).toBe(true);
     expect(oscillators).toHaveLength(7);
   });
 
@@ -294,7 +293,7 @@ describe("attention notifications", () => {
     expect(await notifyAttention("approval", "a", "b")).toBe(false);
     expect(await notifyAttention("question", "a", "b")).toBe(true);
     vi.mocked(document.hasFocus).mockReturnValue(true);
-    expect(await notifyAttention("question", "a", "b")).toBe(false);
+    expect(await notifyAttention("question", "a", "b")).toBe(true);
     expect(web).toHaveBeenCalledTimes(1);
   });
 

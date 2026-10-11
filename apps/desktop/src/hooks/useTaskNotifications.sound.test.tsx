@@ -203,8 +203,8 @@ describe("real task notification sound wiring", () => {
     setQuietHours(null);
     vi.mocked(document.hasFocus).mockReturnValue(true);
     await hook.emit(hook.end("completed", { epoch: "settings", sequence: 5 }));
-    expect(context.createOscillator).not.toHaveBeenCalled();
-    setTaskSoundSettings({ backgroundOnly: false });
+    expect(context.createOscillator).toHaveBeenCalledTimes(2);
+    setTaskSoundSettings({ backgroundOnly: true });
     await hook.emit(hook.end("completed", { epoch: "settings", sequence: 6 }));
     expect(context.createOscillator).toHaveBeenCalledTimes(2);
     expect(web).toHaveBeenCalledTimes(4);

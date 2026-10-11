@@ -21,7 +21,7 @@ export const DEFAULT_TASK_SOUND_SETTINGS: TaskSoundSettings = {
   completed: true,
   failed: true,
   attention: true,
-  backgroundOnly: true,
+  backgroundOnly: false,
   volume: 0.55,
 };
 
