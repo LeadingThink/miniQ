@@ -302,15 +302,30 @@ async fn skill_create_drafts_without_installing_and_validate_flags_secrets() {
     let (port, token) = start(provider).await;
     let mut ws = connect(port, &token).await;
 
-    let created = call(
+    let started = call(
         &mut ws,
         "create",
         "skill.create",
         json!({"goal": "每周五整理周报"}),
     )
     .await;
-    assert_eq!(created["result"]["name"], "weekly-report");
-    assert_eq!(created["result"]["validation"]["valid"], true);
+    let job_id = started["result"]["id"].as_str().unwrap().to_owned();
+    let created = loop {
+        let status = call(
+            &mut ws,
+            "create-status",
+            "skill.job.get",
+            json!({"jobId": job_id}),
+        )
+        .await;
+        match status["result"]["state"].as_str() {
+            Some("completed") => break status["result"]["result"].clone(),
+            Some("failed") | Some("cancelled") => panic!("skill create job failed: {status}"),
+            _ => tokio::time::sleep(std::time::Duration::from_millis(5)).await,
+        }
+    };
+    assert_eq!(created["name"], "weekly-report");
+    assert_eq!(created["validation"]["valid"], true);
     // Drafting never installs: the skill is absent until skill.save.
     let listed = call(&mut ws, "list", "skill.list", json!({})).await;
     assert!(!listed["result"]["skills"]

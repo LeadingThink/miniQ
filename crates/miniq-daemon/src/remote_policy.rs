@@ -146,7 +146,13 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "voice.capabilities"
         | "skill.list"
         | "skill.read"
-        | "skill.validate" => ReadOnly,
+        | "skill.validate"
+        | "skill.job.get"
+        | "skill.distill.get"
+        | "skill.refine.get"
+        | "skill.job.list"
+        | "skill.distill.list"
+        | "skill.refine.list" => ReadOnly,
         "host.connect"
         | "host.disconnect"
         | "workspace.create"
@@ -164,7 +170,11 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "skill.distill"
         | "skill.refine"
         | "skill.save"
-        | "skill.create" => Allow,
+        | "skill.create"
+        | "skill.job.start"
+        | "skill.job.cancel"
+        | "skill.distill.cancel"
+        | "skill.refine.cancel" => Allow,
         "skill.setEnabled" => ToggleOnly,
         _ => return None,
     })
