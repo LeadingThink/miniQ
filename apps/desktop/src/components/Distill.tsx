@@ -15,6 +15,43 @@ interface DistillResult {
 
 type DistillPhase = "loading" | "skipped" | "draft" | "saved";
 
+interface DistillSnapshot {
+  phase: DistillPhase;
+  reason: string;
+  draft: string;
+  name: string;
+  warnings: string[];
+  existing: boolean;
+  error: string | null;
+  listeners: Set<() => void>;
+  initialRequest?: Promise<void>;
+  operation?: Promise<void>;
+}
+
+const snapshots = new WeakMap<RpcClient, Map<string, DistillSnapshot>>();
+
+function snapshotFor(client: RpcClient, sessionId: string): DistillSnapshot {
+  let sessions = snapshots.get(client);
+  if (!sessions) {
+    sessions = new Map();
+    snapshots.set(client, sessions);
+  }
+  const current = sessions.get(sessionId);
+  if (current) return current;
+  const created: DistillSnapshot = {
+    phase: "loading",
+    reason: "",
+    draft: "",
+    name: "",
+    warnings: [],
+    existing: false,
+    error: null,
+    listeners: new Set(),
+  };
+  sessions.set(sessionId, created);
+  return created;
+}
+
 interface DistillModalProps {
   client: RpcClient;
   sessionId: string;
@@ -96,65 +133,70 @@ function CloseActions(props: { onClose: () => void }) {
 export function DistillModal(props: DistillModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef, true);
-  const [phase, setPhase] = useState<DistillPhase>("loading");
-  const [reason, setReason] = useState("");
-  const [draft, setDraft] = useState("");
-  const [name, setName] = useState("");
-  const [warnings, setWarnings] = useState<string[]>([]);
-  const [existing, setExisting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const cache = snapshotFor(props.client, props.sessionId);
+  const [snapshot, setSnapshot] = useState(() => ({ ...cache }));
+
+  const update = (changes: Partial<DistillSnapshot>) => {
+    Object.assign(cache, changes);
+    setSnapshot({ ...cache });
+    for (const listener of cache.listeners) listener();
+  };
 
   useEffect(() => {
-    props.client
+    const listener = () => setSnapshot({ ...cache });
+    cache.listeners.add(listener);
+    return () => { cache.listeners.delete(listener); };
+  }, [cache]);
+
+  useEffect(() => {
+    if (cache.phase !== "loading" || cache.initialRequest) return;
+    cache.initialRequest = props.client
       .call<DistillResult>("skill.distill", { sessionId: props.sessionId })
       .then((result) => {
         if (result.skipped) {
-          setReason(result.reason ?? "");
-          setPhase("skipped");
+          update({ reason: result.reason ?? "", phase: "skipped" });
         } else {
-          setDraft(result.content ?? "");
-          setName(result.name ?? "");
-          setWarnings(result.warnings ?? []);
-          setExisting(result.existingSkill ?? false);
-          setPhase("draft");
+          update({
+            draft: result.content ?? "",
+            name: result.name ?? "",
+            warnings: result.warnings ?? [],
+            existing: result.existingSkill ?? false,
+            phase: "draft",
+          });
         }
       })
-      .catch((caught) => setError(errorMessage(caught)));
+      .catch((caught) => update({ error: errorMessage(caught), phase: "draft" }))
+      .finally(() => { delete cache.initialRequest; });
+    // The cache intentionally outlives this panel so a closed panel can be reopened.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [cache, props.client, props.sessionId]);
 
   const refine = async () => {
-    setPhase("loading");
-    setError(null);
-    try {
-      const result = await props.client.call<{
+    if (cache.operation) return cache.operation;
+    update({ phase: "loading", error: null });
+    cache.operation = props.client.call<{
         kept: boolean;
         content?: string;
         warnings?: string[];
-      }>("skill.refine", { sessionId: props.sessionId, name });
-      if (result.kept) {
-        setReason("现有技能已覆盖本次经验,无需更新。");
-        setPhase("skipped");
-      } else {
-        setDraft(result.content ?? "");
-        setWarnings(result.warnings ?? []);
-        setExisting(false);
-        setPhase("draft");
-      }
-    } catch (caught) {
-      setError(errorMessage(caught));
-      setPhase("draft");
-    }
+      }>("skill.refine", { sessionId: props.sessionId, name: cache.name })
+      .then((result) => {
+        if (result.kept) update({ reason: "现有技能已覆盖本次经验,无需更新。", phase: "skipped" });
+        else update({ draft: result.content ?? "", warnings: result.warnings ?? [], existing: false, phase: "draft" });
+      })
+      .catch((caught) => update({ error: errorMessage(caught), phase: "draft" }))
+      .finally(() => { delete cache.operation; });
+    return cache.operation;
   };
 
   const save = async (force: boolean) => {
-    setError(null);
-    try {
-      await props.client.call("skill.save", { content: draft, force });
-      setPhase("saved");
-    } catch (caught) {
-      setError(errorMessage(caught));
-    }
+    if (cache.operation) return cache.operation;
+    update({ error: null });
+    cache.operation = props.client
+      .call("skill.save", { content: cache.draft, force })
+      .then(() => update({ phase: "saved" }))
+      .catch((caught) => update({ error: errorMessage(caught) }))
+      .finally(() => { delete cache.operation; });
+    return cache.operation;
   };
 
   return (
@@ -175,21 +217,21 @@ export function DistillModal(props: DistillModalProps) {
         }}
       >
         <h2>保存为技能</h2>
-        {error && <div className="error-banner">{error}</div>}
-        <PhaseMessage phase={phase} reason={reason} />
-        {phase === "draft" && (
+        {snapshot.error && <div className="error-banner">{snapshot.error}</div>}
+        <PhaseMessage phase={snapshot.phase} reason={snapshot.reason} />
+        {snapshot.phase === "draft" && (
           <DistillDraft
-            name={name}
-            existing={existing}
-            warnings={warnings}
-            draft={draft}
+            name={snapshot.name}
+            existing={snapshot.existing}
+            warnings={snapshot.warnings}
+            draft={snapshot.draft}
             onRefine={() => void refine()}
-            onDraftChange={setDraft}
+            onDraftChange={(value) => update({ draft: value })}
             onSave={(force) => void save(force)}
             onClose={props.onClose}
           />
         )}
-        {(phase === "skipped" || phase === "saved") && <CloseActions onClose={props.onClose} />}
+        {(snapshot.phase === "skipped" || snapshot.phase === "saved") && <CloseActions onClose={props.onClose} />}
       </div>
     </div>
   );

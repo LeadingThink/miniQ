@@ -346,7 +346,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 <Wifi size={17} />
                 <div>
                   <strong>端到端加密连接已建立</strong>
-                  <p>当前页面操作由桌面 miniQ 执行，relay 无法读取会话内容。</p>
+                  <p>当前页面操作由本机 miniQ daemon 执行；relay 只转发加密数据，无法读取会话内容。</p>
                 </div>
               </div>
               <label htmlFor="remote-api-key">

@@ -51,6 +51,7 @@ export function useSessionLifecycleActions(
       catalog.navigationEpoch.current++;
       opening.current?.abort();
       paging.current?.abort();
+      if (catalog.currentSessionId) failLoad(catalog.currentSessionId);
       return;
     }
     client.selectSession?.(catalog.currentSessionId);

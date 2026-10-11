@@ -21,7 +21,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function setup(mode: "local" | "remote" = "local") {
+function setup(mode: "local" | "remote" = "local", initialActive = true) {
   const client = new RpcClient();
   vi.spyOn(client, "mode", "get").mockReturnValue(mode);
   const call = vi.spyOn(client, "call");
@@ -95,6 +95,7 @@ function setup(mode: "local" | "remote" = "local") {
   };
   const markSeen = vi.fn();
   const setError = vi.fn();
+  let active = initialActive;
   const hook = renderHook(() =>
     useSessionLifecycleActions(
       client,
@@ -103,9 +104,10 @@ function setup(mode: "local" | "remote" = "local") {
       feed,
       markSeen,
       setError,
+      active,
     ),
   );
-  return { ...hook, call, selectSession, catalog, feed, markSeen, setError };
+  return { ...hook, call, selectSession, catalog, feed, markSeen, setError, setActive: (value: boolean) => { active = value; hook.rerender(); } };
 }
 
 const emptyPage: HistoryPage = {
@@ -238,5 +240,25 @@ it("aborts paging on unmount without surfacing a cancelled request as an error",
     await loading;
   });
   expect(test.feed.prepend).not.toHaveBeenCalled();
+  expect(test.setError).not.toHaveBeenCalled();
+});
+
+it("finishes an opening load when the view is deactivated after cancellation", async () => {
+  const test = setup();
+  const request = deferred<unknown>();
+  test.call.mockReturnValueOnce(request.promise);
+  let loading!: Promise<void>;
+  act(() => {
+    loading = test.result.current.openSession("a");
+  });
+  const signal = test.call.mock.calls[0][2]?.signal;
+
+  act(() => test.setActive(false));
+  expect(signal?.aborted).toBe(true);
+  await act(async () => {
+    request.reject(new DOMException("Request cancelled", "AbortError"));
+    await loading;
+  });
+  expect(test.feed.failLoad).toHaveBeenCalledWith("a");
   expect(test.setError).not.toHaveBeenCalled();
 });
