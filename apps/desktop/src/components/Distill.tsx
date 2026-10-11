@@ -13,6 +13,13 @@ interface DistillResult {
   existingSkill?: boolean;
 }
 
+interface SkillJob {
+  id: string;
+  state: "running" | "completed" | "failed" | "cancelled";
+  result?: DistillResult & { kept?: boolean };
+  error?: string;
+}
+
 type DistillPhase = "loading" | "skipped" | "draft" | "saved";
 
 interface DistillSnapshot {
@@ -29,6 +36,27 @@ interface DistillSnapshot {
 }
 
 const snapshots = new WeakMap<RpcClient, Map<string, DistillSnapshot>>();
+
+async function waitForSkillJob<T>(client: RpcClient, jobId: string, sessionId: string): Promise<T> {
+  for (;;) {
+    const job = await client.call<SkillJob>("skill.job.get", { jobId, sessionId });
+    if (job.state === "completed") return job.result as T;
+    if (job.state === "failed" || job.state === "cancelled") {
+      throw new Error(job.error ?? "技能草稿任务未完成");
+    }
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 250));
+  }
+}
+
+async function startSkillJob<T>(
+  client: RpcClient,
+  kind: "distill" | "refine",
+  params: Record<string, unknown>,
+  sessionId: string,
+): Promise<T> {
+  const job = await client.call<SkillJob>("skill.job.start", { kind, ...params, sessionId });
+  return waitForSkillJob<T>(client, job.id, sessionId);
+}
 
 function snapshotFor(client: RpcClient, sessionId: string): DistillSnapshot {
   let sessions = snapshots.get(client);
@@ -150,8 +178,12 @@ export function DistillModal(props: DistillModalProps) {
 
   useEffect(() => {
     if (cache.phase !== "loading" || cache.initialRequest) return;
-    cache.initialRequest = props.client
-      .call<DistillResult>("skill.distill", { sessionId: props.sessionId })
+    cache.initialRequest = startSkillJob<DistillResult>(
+      props.client,
+      "distill",
+      {},
+      props.sessionId,
+    )
       .then((result) => {
         if (result.skipped) {
           update({ reason: result.reason ?? "", phase: "skipped" });
@@ -174,11 +206,11 @@ export function DistillModal(props: DistillModalProps) {
   const refine = async () => {
     if (cache.operation) return cache.operation;
     update({ phase: "loading", error: null });
-    cache.operation = props.client.call<{
+    cache.operation = startSkillJob<{
         kept: boolean;
         content?: string;
         warnings?: string[];
-      }>("skill.refine", { sessionId: props.sessionId, name: cache.name })
+      }>(props.client, "refine", { name: cache.name }, props.sessionId)
       .then((result) => {
         if (result.kept) update({ reason: "现有技能已覆盖本次经验,无需更新。", phase: "skipped" });
         else update({ draft: result.content ?? "", warnings: result.warnings ?? [], existing: false, phase: "draft" });
