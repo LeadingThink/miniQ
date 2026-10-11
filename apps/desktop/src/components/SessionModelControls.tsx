@@ -142,7 +142,7 @@ export function SessionModelControls({
   }, [modelListOpen, models, query]);
 
   const saveModel = async (id: string | null) => {
-    if (disabled) return;
+    if (disabled || (id !== null && (loading || catalogError || !models.includes(id)))) return;
     try {
       await model.update({ model: id, apiProtocol: "auto", reasoningEffort: null });
       setSelectedModel(id ?? "");
@@ -237,10 +237,10 @@ export function SessionModelControls({
           aria-label="会话模型配置"
           onSubmit={(event) => {
             event.preventDefault();
-            void saveModel(query.trim() || selectedModel || null);
+            void saveModel(selectedModel || null);
           }}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && event.target instanceof HTMLInputElement && mobile) {
+            if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
               event.preventDefault();
               if (!event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) reopenList();
             } else if (event.key === "Escape") {
@@ -294,19 +294,6 @@ export function SessionModelControls({
                     role="listbox"
                     aria-label="会话模型列表"
                   >
-                    {query.trim() && !models.includes(query.trim()) && (
-                      <button
-                        ref={selectedModelRef}
-                        type="button"
-                        role="option"
-                        aria-selected={false}
-                        disabled={disabled}
-                        onClick={() => void saveModel(query.trim())}
-                      >
-                        <span>{query.trim()}</span>
-                        <Check size={14} />
-                      </button>
-                    )}
                     {filterModelIds(models, query).map((id) => {
                       const selected = id === selectedModel;
                       return (
@@ -333,7 +320,8 @@ export function SessionModelControls({
             ) : (
               <input
                 autoFocus={!mobile}
-                disabled={disabled}
+                aria-label="模型 ID"
+                disabled
                 enterKeyHint={mobile ? "search" : undefined}
                 value={query}
                 placeholder={model.effective?.model ?? "模型 ID"}
@@ -380,7 +368,7 @@ export function SessionModelControls({
               <RefreshCw size={14} />
               恢复默认
             </button>
-            <button type="submit" disabled={disabled}>
+            <button type="submit" disabled={disabled || loading || Boolean(catalogError) || !models.includes(selectedModel)}>
               <Check size={14} />
               应用
             </button>

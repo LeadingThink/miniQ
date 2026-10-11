@@ -121,7 +121,7 @@ it("keeps the desktop panel during a pending save and supports retry after failu
   expect(update).toHaveBeenCalledTimes(2);
 });
 
-it("keeps custom model IDs submit-able while using query only for filtering", async () => {
+it("never turns search text into a selectable model or submits it", async () => {
   const client = {
     call: vi.fn((method: string) => method === "model.list"
       ? Promise.resolve({ models: ["gpt-5.6-sol"] })
@@ -136,11 +136,13 @@ it("keeps custom model IDs submit-able while using query only for filtering", as
   fireEvent.click(screen.getByRole("button", { name: "选择会话模型" }));
   await screen.findByRole("option", { name: "gpt-5.6-sol" });
   const input = screen.getByRole("textbox", { name: "模型 ID" });
-  fireEvent.change(input, { target: { value: "provider/custom-model" } });
-  expect(screen.getByRole("option", { name: "provider/custom-model" })).toBeTruthy();
+  fireEvent.change(input, { target: { value: "gp" } });
+  expect(screen.queryByRole("option", { name: "gp" })).toBeNull();
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(model.update).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "应用" }));
   await waitFor(() => expect(model.update).toHaveBeenCalledExactlyOnceWith({
-    model: "provider/custom-model", apiProtocol: "auto", reasoningEffort: null,
+    model: "gpt-5.6-sol", apiProtocol: "auto", reasoningEffort: null,
   }));
 });
 
@@ -161,4 +163,18 @@ it("marks the hero model picker to open below its trigger", () => {
   render(<SessionModelControls client={client} model={model} busy={false} placement="below" />);
 
   expect(document.querySelector(".session-model-controls")?.classList.contains("popover-below")).toBe(true);
+});
+
+it.each([[[]], [["other-model"]]])("does not apply an absent model when catalog is %j", async (models) => {
+  const client = { call: vi.fn(async (method: string) => method === "model.list" ? { models } : { reasoningEfforts: [] }) } as unknown as RpcClient;
+  const update = vi.fn();
+  const model = { settings: { ...DEFAULT_MODEL_SETTINGS }, effective: { ...DEFAULT_MODEL_SETTINGS, model: "missing-model" }, ready: true, pending: false, error: null, update, reload: vi.fn() } as unknown as ReturnType<typeof useSessionModel>;
+  render(<SessionModelControls client={client} model={model} busy={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "选择会话模型" }));
+  await waitFor(() => expect(screen.queryByText("正在读取模型列表")).toBeNull());
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "应用" }).disabled).toBe(true);
+  fireEvent.submit(screen.getByRole("form", { name: "会话模型配置" }));
+  expect(update).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "恢复默认" }));
+  await waitFor(() => expect(update).toHaveBeenCalledWith({ model: null, apiProtocol: "auto", reasoningEffort: null }));
 });
