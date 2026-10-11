@@ -1,5 +1,5 @@
 use miniq_models::ApiProtocol;
-use miniq_protocol::{ErrorCode, RpcError};
+use miniq_protocol::{ErrorCode, Event, RpcError, SessionModelSettings};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -77,6 +77,7 @@ struct RemoteAccessUpdate {
 pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: UpdateParams = params(raw)?;
     let mut settings = state.settings.lock().unwrap().clone();
+    let provider_changed = input.provider.is_some();
 
     if let Some(provider) = input.provider {
         validate_provider(&provider)?;
@@ -133,9 +134,21 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
         settings.hooks = hooks;
     }
 
+    let global_model = provider_changed
+        .then(|| settings.provider.as_ref())
+        .flatten()
+        .map(|provider| SessionModelSettings {
+            model: Some(provider.model.clone()),
+            api_protocol: provider.api_protocol,
+            reasoning_effort: None,
+        });
     state
         .update_settings(settings)
         .map_err(|error| RpcError::new(ErrorCode::InternalError, error))?;
+    // Open conversations and empty drafts re-read the inherited default model.
+    if let Some(settings) = global_model {
+        state.emit(Event::GlobalModelSettingsChanged { settings });
+    }
     get(state)
 }
 

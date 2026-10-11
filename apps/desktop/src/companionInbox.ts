@@ -215,6 +215,27 @@ export function markRead(id: string): RecordAttentionResult {
   return updateItem(id, (item) => ({ ...item, state: "read", readAt: now(), snoozeUntil: undefined }));
 }
 
+/** Marks matching unread items handled elsewhere, e.g. resolved in the main window. */
+export function resolveAttention(match: { host: string | null; sessionId?: string; eventKey?: string; kinds?: readonly AttentionKind[] }): number {
+  ensureExternalListeners();
+  const loaded = readState();
+  if (loaded.error) return 0;
+  let changed = 0;
+  const stamp = now();
+  const items = loaded.state.items.map((item) => {
+    const hit = item.state !== "read" && item.host === match.host
+      && (match.sessionId === undefined || item.sessionId === match.sessionId)
+      && (match.eventKey === undefined || item.eventKey === match.eventKey)
+      && (match.kinds === undefined || match.kinds.includes(item.kind));
+    if (!hit) return item;
+    changed += 1;
+    return { ...item, state: "read" as const, readAt: stamp, snoozeUntil: undefined };
+  });
+  if (!changed || writeState({ items })) return 0;
+  dispatchChange("resolve");
+  return changed;
+}
+
 export function snooze(id: string, snoozeUntil: number): RecordAttentionResult {
   if (!Number.isFinite(snoozeUntil) || snoozeUntil <= now()) return { ok: false, error: "提醒稍后时间无效" };
   return updateItem(id, (item) => ({ ...item, state: "snoozed", snoozeUntil }));

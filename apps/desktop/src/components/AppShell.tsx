@@ -8,7 +8,7 @@ import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
 import { PlugZap, Sparkles } from "lucide-react";
 import { Spinner } from "./ui/Spinner";
-import { Fragment, lazy, Suspense, useMemo, useState } from "react";
+import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { TurnChangesContext, type TurnChangesContextValue } from "../turnChanges";
 import { Composer, ComposerCard } from "./Composer";
 import type { ComposerSlashCommand } from "../composerSlash";
@@ -39,6 +39,7 @@ import { ExtensionCenter } from "./ExtensionCenter";
 import { dispatchCompanionNavigation } from "../companionBridge";
 import { localCompanionNotices } from "../companionInboxAdapter";
 import { hostKey } from "../hostWorkspace";
+import { resolveAttention } from "../companionInbox";
 
 import { useAppWorkbench } from "../hooks/useAppWorkbench";
 import { AppWorkbench } from "./AppWorkbench";
@@ -441,6 +442,21 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
     onOpenBrowser: () => workbench.select("browser"),
     onOpenReview: openSessionReview,
   });
+
+  const viewedSessionId = app.catalog.currentSessionId;
+  const viewedHost = app.client.sshHost ?? null;
+  useEffect(() => {
+    if (!active || !viewedSessionId) return;
+    // Opening a finished conversation in the main window settles its reminders everywhere.
+    const settle = () => {
+      if (document.visibilityState === "visible")
+        resolveAttention({ host: viewedHost, sessionId: viewedSessionId, kinds: ["completed", "failed"] });
+    };
+    settle();
+    window.addEventListener("focus", settle);
+    document.addEventListener("visibilitychange", settle);
+    return () => { window.removeEventListener("focus", settle); document.removeEventListener("visibilitychange", settle); };
+  }, [active, viewedSessionId, viewedHost]);
 
   const commands = useAppCommands(app, active);
   useGlobalShortcuts({

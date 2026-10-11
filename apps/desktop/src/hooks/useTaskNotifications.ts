@@ -110,7 +110,11 @@ export function useTaskNotifications(root: RpcClient, catalogs: Record<string, H
         cursor, turnId: turnIds.get(key), transition: transitionKeys.get(key),
       });
       if (kind === "completed" || kind === "failed") {
+        // A result the user is already looking at is recorded as read.
+        const seenNow = !mobile && document.visibilityState === "visible" && document.hasFocus()
+          && (optionsRef.current.isViewing?.(host, sessionId) ?? false);
         recordAttentionItem({
+          ...(seenNow ? { state: "read" as const } : {}),
           host,
           ...(root.targetDeviceId ? { targetDeviceId: root.targetDeviceId } : {}),
           sessionId,

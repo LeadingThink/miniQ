@@ -10,7 +10,10 @@ export function useCompanionInbox(workspaces: readonly Workspace[], sessions: re
     const refresh = () => setItems(getLocalAttentionItems());
     const off = subscribe(refresh);
     refresh(); // Include changes between the render snapshot and subscription.
-    return off;
+    // WebKit does not always deliver storage events between native windows.
+    const timer = window.setInterval(refresh, 1500);
+    window.addEventListener("focus", refresh);
+    return () => { off(); window.clearInterval(timer); window.removeEventListener("focus", refresh); };
   }, []);
   const notices = useMemo(() => localCompanionNotices(items, workspaces, sessions), [items, workspaces, sessions]);
   return { notices, onNoticeOpened: markLocalNoticeRead };

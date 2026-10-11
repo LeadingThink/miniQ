@@ -5,6 +5,7 @@ import {
   getAttentionItems,
   getSummary,
   markRead,
+  resolveAttention,
   recordAttentionItem,
   snooze,
 } from "./companionInbox";
@@ -57,5 +58,19 @@ describe("companion inbox", () => {
     recordAttentionItem(input("new", { createdAt: 2 }));
     expect(getAttentionItems({ offset: 0, limit: 1 })).toMatchObject({ total: 2, hasMore: true, items: [{ eventKey: "new" }] });
     expect(getAttentionItems({ offset: 1, limit: 1 }).items[0].eventKey).toBe("old");
+  });
+});
+
+describe("resolution from other windows", () => {
+  beforeEach(() => localStorage.clear());
+  it("settles a resolved request and a viewed session without touching other hosts", () => {
+    recordAttentionItem({ host: null, sessionId: "s", kind: "approval", eventKey: "approval:a1", title: "t", detail: "" });
+    recordAttentionItem({ host: null, sessionId: "s", kind: "completed", eventKey: "turn:1", title: "t", detail: "" });
+    recordAttentionItem({ host: "ssh", sessionId: "s", kind: "completed", eventKey: "turn:1", title: "t", detail: "" });
+    expect(resolveAttention({ host: null, eventKey: "approval:a1" })).toBe(1);
+    expect(resolveAttention({ host: null, sessionId: "s", kinds: ["completed", "failed"] })).toBe(1);
+    expect(getSummary({ host: null }).unread).toBe(0);
+    expect(getSummary({ host: "ssh" }).unread).toBe(1);
+    expect(resolveAttention({ host: null, sessionId: "s" })).toBe(0);
   });
 });

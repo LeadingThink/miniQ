@@ -401,7 +401,8 @@ function useTurnActions(
         const session = await client.call<Session>("session.create", {
           workspaceId: catalog.selectedWorkspace.id,
           modelSettings: {
-            model: sessionModel.settings.model ?? sessionModel.effective?.model ?? null,
+            // Inherited defaults stay null so the daemon resolves the latest default.
+            model: sessionModel.settings.model ?? null,
             apiProtocol: "auto",
             reasoningEffort: sessionModel.settings.reasoningEffort,
           },

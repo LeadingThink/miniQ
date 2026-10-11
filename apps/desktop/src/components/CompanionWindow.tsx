@@ -164,6 +164,11 @@ export default function CompanionWindow(props: CompanionWindowProps) {
     void drag();
   };
   const endPress = () => { press.current = null; };
+  // Expanded panel moves by its header; header buttons keep their own clicks.
+  const onHeaderPointerDown = (event: ReactPointerEvent) => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
+    press.current = { x: event.clientX, y: event.clientY, dragging: false };
+  };
 
   if (prefs.mode === "hidden") return null;
   const stateText = `${COMPANION_STATE_LABELS[state]}${connection.connected ? "" : " · 服务未连接"}`;
@@ -180,7 +185,8 @@ export default function CompanionWindow(props: CompanionWindowProps) {
       <span className="companion-tooltip" aria-hidden="true">{SHORT_STATE[state]}</span>
     </div>}
     {expanded && <section className="companion-panel" aria-label="本机任务输入" onKeyDown={(event) => { if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); void changeExpanded(false); } }}>
-      <header className="companion-header">
+      <header className="companion-header" data-drag-handle="true" title="拖动以移动"
+        onPointerDown={onHeaderPointerDown} onPointerMove={onAvatarPointerMove} onPointerUp={endPress} onPointerCancel={endPress}>
         <span className="companion-header-avatar"><CompanionAvatar mode={prefs.mode} state={state} size={prefs.mode === "dots" ? 40 : 24} /></span>
         <strong>miniQ</strong>
         <span className="companion-header-state" title={stateText}>{stateText}</span>

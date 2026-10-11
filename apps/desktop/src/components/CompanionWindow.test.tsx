@@ -179,3 +179,19 @@ it("collapsed shows only the avatar with a state tooltip; header menu, Escape an
   fireEvent.keyDown(screen.getByLabelText("任务内容"), { key: "Escape" });
   await waitFor(() => expect(screen.queryByLabelText("任务内容")).toBeNull());
 });
+
+it("moves the expanded panel by its header but not from header buttons", async () => {
+  const startDragging = vi.fn(async () => undefined);
+  vi.stubGlobal("__TAURI_INTERNALS__", { metadata: { currentWindow: { label: "companion" } }, invoke: async () => ({ alignRight: false, alignBottom: false }) });
+  vi.doMock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ startDragging }) }));
+  const f = fixture();
+  const { container } = render(<CompanionWindow client={f.client} initialPrefs={{ mode: "pet" }} initialExpanded />);
+  const header = container.querySelector(".companion-header") as HTMLElement;
+  fireEvent.pointerDown(screen.getByRole("button", { name: "隐藏伙伴" }), { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.pointerMove(header, { buttons: 1, clientX: 30, clientY: 0 });
+  expect(startDragging).not.toHaveBeenCalled();
+  fireEvent.pointerDown(header, { button: 0, clientX: 0, clientY: 0 });
+  fireEvent.pointerMove(header, { buttons: 1, clientX: 30, clientY: 0 });
+  await waitFor(() => expect(startDragging).toHaveBeenCalledTimes(1));
+  vi.unstubAllGlobals();
+});

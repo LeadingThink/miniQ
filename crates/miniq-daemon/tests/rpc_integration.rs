@@ -336,6 +336,8 @@ async fn settings_update_and_masking() {
     tokio::spawn(async move { server::serve(listener, state).await.unwrap() });
 
     let mut ws = connect(port, &token).await;
+    let mut observer = connect(port, &token).await;
+    call(&mut observer, "ready", "daemon.health", Value::Null).await;
 
     let resp = call(&mut ws, "r1", "settings.get", Value::Null).await;
     assert!(resp["result"]["provider"].is_null());
@@ -353,6 +355,9 @@ async fn settings_update_and_masking() {
     .await;
     assert_eq!(resp["result"]["provider"]["model"], "test-model");
     assert_eq!(resp["result"]["provider"]["hasApiKey"], true);
+    // Saving the default model must refresh empty drafts in every client.
+    let changed = next_event_of(&mut observer, "global_model_settings_changed").await;
+    assert_eq!(changed["settings"]["model"], "test-model");
     // The key itself must never be echoed back.
     assert!(!resp["result"].to_string().contains("secret-key"));
 

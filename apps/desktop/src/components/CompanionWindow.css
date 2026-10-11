@@ -240,3 +240,8 @@ html[data-companion] #splash { display: none; }
   .companion-window *, .companion-window *::before, .companion-window *::after,
   .companion-menu, .companion-spin { animation: none !important; transition: none !important; }
 }
+
+/* Expanded panel: the header is the drag handle; its buttons stay clickable. */
+.companion-header[data-drag-handle] { cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none; }
+.companion-header[data-drag-handle]:active { cursor: grabbing; }
+.companion-header[data-drag-handle] button { cursor: pointer; }

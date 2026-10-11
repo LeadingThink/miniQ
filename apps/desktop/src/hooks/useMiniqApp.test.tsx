@@ -129,6 +129,29 @@ beforeEach(() => {
   });
 });
 
+it("creates a task that inherits the latest default instead of freezing the displayed model", async () => {
+  const original = fake.call.getMockImplementation()!;
+  let projectDefault = { model: "old-kimi", apiProtocol: "auto", reasoningEffort: null } as const as { model: string; apiProtocol: "auto"; reasoningEffort: null };
+  fake.call.mockImplementation(async (method, params) => {
+    if (method === "workspace.modelGet") return { settings: { model: null, apiProtocol: "auto", reasoningEffort: null }, effective: projectDefault };
+    if (method === "session.create") return { id: "new", workspaceId: params.workspaceId };
+    if (method === "session.sendMessage") return {};
+    if (method === "session.open" && params.sessionId === "new") {
+      const snapshot = await original("session.open", { sessionId: "a" });
+      return { ...snapshot, session: { ...snapshot.session, id: "new" } };
+    }
+    return original(method, params);
+  });
+  const hook = renderHook(useMiniqApp);
+  await waitFor(() => expect(hook.result.current.sessionModel.effective?.model).toBe("old-kimi"));
+  projectDefault = { model: "gpt-6.1-sol", apiProtocol: "auto", reasoningEffort: null };
+  await act(async () => expect(await hook.result.current.actions.startTask("task")).toBe(true));
+  expect(fake.call).toHaveBeenCalledWith("session.create", {
+    workspaceId: "w",
+    modelSettings: { model: null, apiProtocol: "auto", reasoningEffort: null },
+  });
+});
+
 it("creates a task with its draft model before sending and preserves sibling model selections", async () => {
   const original = fake.call.getMockImplementation()!;
   const selections = new Map<string, SessionModelSettings>([

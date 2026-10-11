@@ -5,7 +5,7 @@ import { hostKey, scopedKey, type HostCatalog, type HostNavigation } from "../ho
 import { notifyAttention, type AttentionKind } from "../taskNotifications";
 import { isTauriRuntime } from "../runtime";
 import { isNativeMobileApp } from "../mobileRuntime";
-import { recordAttentionItem } from "../companionInbox";
+import { recordAttentionItem, resolveAttention } from "../companionInbox";
 
 export type AttentionNavigate = (host: string | null, navigation: HostNavigation) => void;
 
@@ -39,7 +39,9 @@ export function useAttentionNotifications(
       pendingFocus = null;
       if (open.has(target.key)) navigateRef.current(target.host, target.navigation);
     };
-    const resolve = (key: string) => {
+    const resolve = (key: string, host: string | null, eventKey: string) => {
+      // Handled in any window: the companion and the inbox drop it too.
+      resolveAttention({ host, eventKey });
       open.delete(key);
       if (pendingFocus?.key === key) pendingFocus = null;
     };
@@ -75,16 +77,16 @@ export function useAttentionNotifications(
       switch (event.type) {
         case "approval_requested":
           if (event.approval.status === "pending") request(host, event.sessionId, event.approval.id, "approval", event.approval.reason);
-          else resolve(scopedKey(host, `approval:${event.approval.id}`));
+          else resolve(scopedKey(host, `approval:${event.approval.id}`), host, `approval:${event.approval.id}`);
           return;
         case "approval_resolved":
-          resolve(scopedKey(host, `approval:${event.approval.id}`));
+          resolve(scopedKey(host, `approval:${event.approval.id}`), host, `approval:${event.approval.id}`);
           return;
         case "question_requested":
           request(host, event.sessionId, event.question.id, "question", event.question.prompt);
           return;
         case "question_resolved":
-          resolve(scopedKey(host, `question:${event.questionId}`));
+          resolve(scopedKey(host, `question:${event.questionId}`), host, `question:${event.questionId}`);
           return;
         default:
       }
