@@ -845,7 +845,7 @@ it("opens and marks a persisted local inbox notice through the real AppShell ada
   function TestApp() { app = useMiniqApp(); return <AppShell app={app} theme="jade" onThemeChange={() => {}} />; }
   render(<TestApp />);
   await waitFor(() => expect(app.connection.connectionEpoch).toBe(1));
-  fireEvent.click(screen.getByRole("button", { name: "打开提醒收件箱" }));
+  fireEvent.click(screen.getByRole("button", { name: /^提醒(?:，|$)/ }));
   fireEvent.click(await screen.findByRole("button", { name: /精确本机会话/ }));
   await waitFor(() => expect(app.catalog.currentSessionId).toBe("b"));
   expect(getAttentionItems().items[0].state).toBe("read");

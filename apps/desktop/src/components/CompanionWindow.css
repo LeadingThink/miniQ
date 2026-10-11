@@ -14,6 +14,7 @@ html[data-companion] #splash { display: none; }
   --pet-leaf: color-mix(in srgb, var(--accent) 62%, var(--bg));
   --pet-cheek: color-mix(in srgb, var(--danger) 28%, transparent);
   --pet-ink: var(--text);
+  --pet-shine: var(--bg);
   position: relative;
   width: 100%; height: 100%;
   box-sizing: border-box;
@@ -22,6 +23,19 @@ html[data-companion] #splash { display: none; }
   line-height: 1.45;
   background: transparent;
   user-select: none; -webkit-user-select: none;
+}
+:root[data-theme-mode="dark"] .companion-window {
+  --pet-body: color-mix(in srgb, var(--accent) 14%, #fff2d6);
+  --pet-outline: color-mix(in srgb, var(--accent) 28%, #29453d);
+  --pet-leaf: color-mix(in srgb, var(--accent) 24%, #87d9ab);
+  --pet-cheek: #ed9f9b;
+  --pet-ink: #263d35;
+  --pet-shine: #fffdf4;
+}
+:root[data-theme-mode="dark"] .companion-pet.failed {
+  --pet-body: #ddd8ce;
+  --pet-leaf: #a6b5a5;
+  --pet-cheek: transparent;
 }
 .companion-window *, .companion-window *::before, .companion-window *::after { box-sizing: border-box; }
 .companion-window button { font: inherit; color: inherit; }
@@ -64,7 +78,7 @@ html[data-companion] #splash { display: none; }
 .companion-pet .pet-shadow { fill: var(--text); opacity: .1; transform-box: fill-box; transform-origin: center; animation: companion-shadow 4.5s ease-in-out infinite; }
 .companion-pet .pet-figure { transform-box: view-box; transform-origin: 48px 86px; animation: companion-breathe 4.5s ease-in-out infinite; }
 .companion-pet .pet-body { fill: var(--pet-body); stroke: var(--pet-outline); stroke-width: 2.4; }
-.companion-pet .pet-shine { fill: none; stroke: var(--bg); stroke-width: 3; stroke-linecap: round; opacity: .7; }
+.companion-pet .pet-shine { fill: none; stroke: var(--pet-shine); stroke-width: 3; stroke-linecap: round; opacity: .7; }
 .companion-pet .pet-stem { fill: none; stroke: var(--pet-outline); stroke-width: 2.2; stroke-linecap: round; }
 .companion-pet .pet-leaf { fill: var(--pet-leaf); stroke: var(--pet-outline); stroke-width: 2; stroke-linejoin: round; }
 .companion-pet .pet-sprout { transform-box: view-box; transform-origin: 48px 30px; animation: companion-sway 6s ease-in-out infinite; }
