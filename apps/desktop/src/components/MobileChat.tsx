@@ -8,11 +8,20 @@ import { readMobileImage, type PendingMobileImage } from "../mobileChatData";
 import { useConversationScroll } from "../hooks/useConversationScroll";
 import { useMobileChat } from "../hooks/useMobileChat";
 import { useMobileChatModels } from "../hooks/useMobileChatModels";
+import { createMobileVoiceTranscriber } from "../mobileVoice";
+import { VoiceInput } from "./VoiceInput";
+import { VoiceTranscript } from "./VoiceTranscript";
+import { insertTranscript } from "../voiceAudio";
+import type { VoicePreview } from "../voiceTranscription";
 import { MobileChatRow } from "./MobileChatRow";
 import { MobileModelPicker } from "./MobileModelPicker";
 
 export function MobileChat(props: { apiKey: string; onBack: () => void; onSettings?: () => void }) {
   const catalog = useMobileChatModels(props.apiKey);
+  const transcriber = useMemo(() => createMobileVoiceTranscriber(props.apiKey, catalog.transcribeModel ?? "grok-transcribe"), [props.apiKey, catalog.transcribeModel]);
+  const [voicePreview, setVoicePreview] = useState<VoicePreview | null>(null);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const voiceDraft = useRef({ text: "", start: 0, end: 0 });
   const chat = useMobileChat(props.apiKey, catalog.models.includes(catalog.model) ? catalog.model : "");
   const [draft, setDraftValue] = useState(() => readDraft("mobile-chat"));
   const setDraft = (value: string) => { setDraftValue(value); storeDraft("mobile-chat", value); };
@@ -49,7 +58,7 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
 
   const send = () => {
     const content = draft.trim();
-    if ((!content && !pendingImage) || !ready || readingImage) return;
+    if ((!content && !pendingImage) || !ready || readingImage || voicePreview) return;
     const userContent = pendingImage
       ? [...(content ? [{ type: "text" as const, text: content }] : []),
         { type: "image_url" as const, image_url: { url: pendingImage.dataUrl, detail: "auto" as const } }]
@@ -96,16 +105,30 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
         {!chat.busy && chat.canRetry && <button type="button" className="mobile-chat-retry" disabled={!ready} onClick={() => { if (chat.retry()) jumpToLatest(); }}><RefreshCw size={14} />重新回答</button>}
         {showLatest && <button type="button" className="mobile-chat-jump" onClick={jumpToLatest}><ArrowDown size={14} />查看最新内容</button>}
       </section>
-      <form className="mobile-chat-composer" onSubmit={(event) => { event.preventDefault(); send(); }}>
+      <form className={`mobile-chat-composer${catalog.transcribeModel ? " with-voice" : ""}`} onSubmit={(event) => { event.preventDefault(); send(); }}>
         {pendingImage && <div className="mobile-chat-image-chip"><ImagePlus size={14} /><span title={pendingImage.name}>{pendingImage.name}</span><button type="button" aria-label="移除图片" title="移除图片" onClick={() => setPendingImage(null)}><X size={13} /></button></div>}
-        <textarea value={draft} rows={2} aria-label="输入问题或任务" aria-describedby={keyboardHintId} enterKeyHint={inputMode.enterSends ? "send" : "enter"} placeholder="输入问题或任务" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => handleComposerKeyDown(event, setDraft, send, inputMode)} />
+        {voicePreview && <VoiceTranscript preview={voicePreview} />}
+        <textarea ref={textarea} value={draft} rows={2} aria-label="输入问题或任务" aria-describedby={keyboardHintId} enterKeyHint={inputMode.enterSends ? "send" : "enter"} placeholder="输入问题或任务" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => handleComposerKeyDown(event, setDraft, send, inputMode)} />
         <label className="mobile-chat-image-button" title={readingImage ? "正在读取图片" : "附加图片"}><ImagePlus size={16} /><input type="file" aria-label="附加图片" disabled={readingImage} accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => {
           const file = event.target.files?.[0];
           event.currentTarget.value = "";
           if (file) void attachImage(file);
         }} /></label>
+        {catalog.transcribeModel && <VoiceInput key={props.apiKey} transcriber={transcriber} disabled={readingImage}
+          onStart={() => { voiceDraft.current = { text: draft, start: textarea.current?.selectionStart ?? draft.length, end: textarea.current?.selectionEnd ?? draft.length }; }}
+          onPreview={setVoicePreview} onError={setImageError} onTranscribed={(text) => {
+            const input = textarea.current;
+            setDraftValue((current) => {
+              const saved = voiceDraft.current;
+              const range = saved.text === current ? saved : { start: input?.selectionStart ?? current.length, end: input?.selectionEnd ?? current.length };
+              const result = insertTranscript(current, text, range);
+              storeDraft("mobile-chat", result.value);
+              requestAnimationFrame(() => { input?.focus(); input?.setSelectionRange(result.cursor, result.cursor); });
+              return result.value;
+            });
+          }} />}
         {chat.busy ? <button type="button" className="mobile-chat-send" aria-label="停止" title="停止" onClick={chat.stop}><Square size={16} /></button>
-          : <button type="submit" className="mobile-chat-send" aria-label="发送" title="发送" disabled={!ready || readingImage || (!draft.trim() && !pendingImage)}><Send size={17} /></button>}
+          : <button type="submit" className="mobile-chat-send" aria-label="发送" title="发送" disabled={Boolean(voicePreview) || !ready || readingImage || (!draft.trim() && !pendingImage)}><Send size={17} /></button>}
         <div id={keyboardHintId} className="mobile-chat-keyboard-hint">{inputMode.keyboardHint}</div>
       </form>
     </main>

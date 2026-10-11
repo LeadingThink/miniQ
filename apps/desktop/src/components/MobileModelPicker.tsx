@@ -4,7 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "rea
 import { createPortal } from "react-dom";
 import type { useMobileChatModels } from "../hooks/useMobileChatModels";
 
-type Catalog = ReturnType<typeof useMobileChatModels>;
+type Catalog = Omit<ReturnType<typeof useMobileChatModels>, "transcribeModel">;
 
 export function MobileModelPicker({ catalog, disabled }: { catalog: Catalog; disabled: boolean }) {
   const [open, setOpen] = useState(false);

@@ -21,6 +21,8 @@ export interface VoicePreview {
   error?: string;
 }
 
+export type VoiceTranscriber = (audio: Uint8Array, preview: boolean, signal: AbortSignal) => Promise<string>;
+
 /** Bounded, revisable previews; the final pass receives the complete recording. */
 export class VoiceTranscription {
   private segments: Segment[] = [];
@@ -29,7 +31,7 @@ export class VoiceTranscription {
   private abort = new AbortController();
   private retryAt = 0;
   private failures = 0;
-  constructor(private client: RpcClient, readonly sampleRate: number,
+  constructor(private client: RpcClient | VoiceTranscriber, readonly sampleRate: number,
     private update: (text: string, delayed: boolean) => void,
     private transcribeModel?: string) {}
   get duration() { return this.segments.reduce((total, segment) => total + segment.samples, 0) / this.sampleRate; }
@@ -84,6 +86,12 @@ export class VoiceTranscription {
   cancel() { this.abort.abort(); this.segments = []; }
   private async request(chunks: Float32Array[], preview: boolean): Promise<string> {
     const wav = encodeVoiceWav(chunks, this.sampleRate);
+    if (typeof this.client === "function") {
+      const text = await this.client(wav, preview, this.abort.signal);
+      throwIfAborted(this.abort.signal);
+      if (typeof text !== "string") throw new Error("语音识别响应无效");
+      return text.trim();
+    }
     const response = await this.client.call<{ text: string }>("voice.transcribe", {
       audioBase64: bytesToBase64(wav), filename: "record.wav", preview,
       ...(this.transcribeModel ? { transcribeModel: this.transcribeModel } : {}),
