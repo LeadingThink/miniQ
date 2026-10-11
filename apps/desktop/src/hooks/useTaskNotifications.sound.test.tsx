@@ -17,6 +17,7 @@ const plugin = vi.hoisted(() => ({
 vi.mock("../runtime", () => ({ isTauriRuntime: () => platform.native }));
 vi.mock("../mobileRuntime", () => ({ isNativeMobileApp: () => false }));
 vi.mock("@tauri-apps/plugin-notification", () => plugin);
+vi.mock("@tauri-apps/api/core", () => ({ invoke: async (command: string, args: any) => command === "plugin:notification|notify" ? plugin.sendNotification(args.options) : false }));
 vi.mock("../turnBadge", () => ({
   createTurnBadge: () => ({ recordTurnEnd: vi.fn(), clear: vi.fn() }),
   clearTurnBadgeOnFocus: () => () => undefined,

@@ -1,6 +1,6 @@
 import { isTauriRuntime } from "./runtime";
 
-/** Rejects when the native window state is unavailable; callers treat that as foreground. */
+/** Native parent focus covers embedded browser views; document focus is the fallback. */
 export async function isAppInBackground(): Promise<boolean> {
   if (document.hasFocus()) return false;
   if (isTauriRuntime()) {

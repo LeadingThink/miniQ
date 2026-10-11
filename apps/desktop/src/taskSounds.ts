@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { isTauriRuntime } from "./runtime";
 import { isNativeMobileApp } from "./mobileRuntime";
 import { isAppInBackground } from "./appFocus";
 import { getQuietHours, isWithinQuietHours } from "./quietHours";
@@ -88,6 +89,7 @@ const SOUND_NOTES: Record<TaskNotificationKind, readonly SoundNote[]> = {
   ],
 };
 const playedSoundEvents = new Map<string, number>();
+const pendingSoundEvents = new Set<string>();
 let audioContext: AudioContext | null = null;
 
 /** Create/resume during a gesture; background task events never unlock audio. */
@@ -123,8 +125,9 @@ export async function playTaskSound(
 ): Promise<boolean> {
   try {
     if (isNativeMobileApp()) return false;
-    if (options.userInitiated && !await unlockTaskSounds()) return false;
-    if (!audioContext || audioContext.state !== "running") return false;
+    const nativeMac = isTauriRuntime() && /Mac/i.test(navigator.platform);
+    if (!nativeMac && options.userInitiated && !await unlockTaskSounds()) return false;
+    if (!nativeMac && (!audioContext || audioContext.state !== "running")) return false;
     if (!options.ignoreSettings && getTaskSoundSettings().backgroundOnly && !await isAppInBackground()) return false;
     // Read again after the async focus check in case the user just muted sounds.
     const settings = getTaskSoundSettings();
@@ -137,23 +140,35 @@ export async function playTaskSound(
       for (const [entry, expires] of playedSoundEvents) {
         if (expires <= now) playedSoundEvents.delete(entry);
       }
-      if (playedSoundEvents.has(key)) return false;
+      if (playedSoundEvents.has(key) || pendingSoundEvents.has(key)) return false;
     }
-    const start = audioContext.currentTime;
+    if (nativeMac) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      if (!options.userInitiated && key) pendingSoundEvents.add(key);
+      try {
+        await invoke("play_task_sound", { kind, volume: settings.volume });
+      } finally {
+        if (key) pendingSoundEvents.delete(key);
+      }
+      if (!options.userInitiated && key) playedSoundEvents.set(key, Date.now() + (options.dedupeWindowMs ?? 300_000));
+      return true;
+    }
+    const context = audioContext!;
+    const start = context.currentTime;
     let offset = 0;
     const amplitude = settings.volume * 0.18;
     for (const note of SOUND_NOTES[kind]) {
       const noteStart = start + offset;
       const noteEnd = noteStart + note.duration;
-      const oscillator = audioContext.createOscillator();
-      const gain = audioContext.createGain();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
       oscillator.type = "sine";
       oscillator.frequency.setValueAtTime(note.frequency, noteStart);
       gain.gain.setValueAtTime(0, noteStart);
       gain.gain.linearRampToValueAtTime(amplitude, noteStart + 0.012);
       gain.gain.linearRampToValueAtTime(0, noteEnd);
       oscillator.connect(gain);
-      gain.connect(audioContext.destination);
+      gain.connect(context.destination);
       oscillator.start(noteStart);
       oscillator.stop(noteEnd);
       oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };

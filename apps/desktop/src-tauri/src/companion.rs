@@ -289,18 +289,21 @@ fn set_mode(app: &tauri::AppHandle, mode: Mode) -> Result<Prefs, String> {
 }
 
 #[tauri::command]
-pub fn companion_get_prefs(app: tauri::AppHandle, window: WebviewWindow) -> Result<Prefs, String> {
-    authorized(window.label())?;
+pub fn companion_get_prefs(
+    app: tauri::AppHandle,
+    webview: tauri::Webview,
+) -> Result<Prefs, String> {
+    authorized(webview.label())?;
     snapshot(&app)
 }
 
 #[tauri::command]
 pub async fn companion_set_mode(
     app: tauri::AppHandle,
-    window: WebviewWindow,
+    webview: tauri::Webview,
     mode: Mode,
 ) -> Result<Prefs, String> {
-    authorized(window.label())?;
+    authorized(webview.label())?;
     set_mode(&app, mode)
 }
 
@@ -414,10 +417,10 @@ pub enum Destination {
 #[tauri::command]
 pub fn companion_open_main(
     app: tauri::AppHandle,
-    window: WebviewWindow,
+    webview: tauri::Webview,
     destination: Destination,
 ) -> Result<(), String> {
-    authorized(window.label())?;
+    authorized(webview.label())?;
     let ids: Vec<&str> = match &destination {
         Destination::Session {
             session_id,
@@ -539,7 +542,12 @@ mod tests {
     #[test]
     fn prefs_and_command_security() {
         assert_eq!(Prefs::default().mode, Mode::Pet);
-        assert_eq!(serde_json::from_str::<Prefs>(r#"{"mode":"hidden"}"#).unwrap().mode, Mode::Hidden);
+        assert_eq!(
+            serde_json::from_str::<Prefs>(r#"{"mode":"hidden"}"#)
+                .unwrap()
+                .mode,
+            Mode::Hidden
+        );
         assert!(serde_json::from_str::<Prefs>(r#"{"mode":"unknown"}"#).is_err());
         assert!(authorized("main").is_ok());
         assert!(authorized("companion").is_ok());

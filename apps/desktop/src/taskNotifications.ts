@@ -178,9 +178,11 @@ async function send(
       }] });
       if (target) void markAppBadge(target.host, target.sessionId);
     } else if (isTauriRuntime()) {
-      const plugin = await import("@tauri-apps/plugin-notification");
+      const { invoke } = await import("@tauri-apps/api/core");
       if (!await allowed()) return false;
-      plugin.sendNotification({ title, body });
+      // The plugin JS constructor is fire-and-forget. Await the native command
+      // so tests and task delivery can report failures accurately.
+      await invoke("plugin:notification|notify", { options: { title, body } });
     } else {
       const notification = new Notification(title, { body });
       if (onClick) notification.onclick = () => { window.focus(); onClick(); notification.close(); };

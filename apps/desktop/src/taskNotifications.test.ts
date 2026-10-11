@@ -13,6 +13,7 @@ import {
   setTaskSoundSettings,
   setTaskNotificationMode,
 } from "./taskNotifications";
+import { dismissTaskBanner, getTaskBanner } from "./taskBanner";
 import { setQuietHours } from "./quietHours";
 
 const platform = vi.hoisted(() => ({ native: false }));
@@ -24,6 +25,7 @@ const plugin = vi.hoisted(() => ({
 }));
 vi.mock("./runtime", () => ({ isTauriRuntime: () => platform.native }));
 vi.mock("@tauri-apps/plugin-notification", () => plugin);
+vi.mock("@tauri-apps/api/core", () => ({ invoke: async (command: string, args: any) => command === "plugin:notification|notify" ? plugin.sendNotification(args.options) : isWindowFocused() }));
 const web = Object.assign(vi.fn(function () {}), {
   permission: "granted" as NotificationPermission,
   requestPermission: vi.fn(),
@@ -32,6 +34,7 @@ const originalAudioContext = typeof window === "undefined" ? undefined : window.
 
 beforeEach(() => {
   localStorage.clear();
+  dismissTaskBanner();
   platform.native = false;
   isWindowFocused.mockReset().mockResolvedValue(false);
   web.mockClear();
@@ -94,6 +97,7 @@ describe("background task notifications", () => {
     vi.mocked(document.hasFocus).mockReturnValue(true);
     expect(await notifyTaskResult("failed", "任务")).toBe(true);
     expect(web).not.toHaveBeenCalled();
+    expect(getTaskBanner()?.kind).toBe("failed");
   });
 
   it("shows an in-app result while the embedded browser owns focus inside the native window", async () => {
@@ -105,9 +109,10 @@ describe("background task notifications", () => {
 
   it("falls back when the native window focus cannot be checked", async () => {
     platform.native = true;
-    isWindowFocused.mockRejectedValue(new Error("window state unavailable"));
+    isWindowFocused.mockRejectedValue(new Error("current webview is not a WebviewWindow"));
     expect(await notifyTaskResult("failed", "任务")).toBe(true);
     expect(plugin.sendNotification).toHaveBeenCalledTimes(1);
+    expect(await isAppInBackground()).toBe(true);
   });
 
   it("never requests web permission from a task event", async () => {
@@ -256,7 +261,7 @@ describe("explicit notification controls", () => {
 
   it("allows a user-requested native test even if window focus is unavailable", async () => {
     platform.native = true;
-    isWindowFocused.mockRejectedValue(new Error("window state unavailable"));
+    isWindowFocused.mockRejectedValue(new Error("current webview is not a WebviewWindow"));
     expect(await sendTaskNotificationTest()).toBe(true);
     expect(plugin.sendNotification).toHaveBeenCalledTimes(1);
     expect(isWindowFocused).not.toHaveBeenCalled();
@@ -323,4 +328,10 @@ describe("attention notifications", () => {
     expect(plugin.sendNotification).toHaveBeenCalledWith({ title: "需要你回答：会话", body: "问题" });
     expect(web).not.toHaveBeenCalled();
   });
+});
+
+it("awaits an asynchronous native notification failure rather than reporting sent", async () => {
+  platform.native = true;
+  plugin.sendNotification.mockRejectedValueOnce(new Error("system notification failed"));
+  expect(await sendTaskNotificationTest()).toBe(false);
 });

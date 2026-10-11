@@ -261,7 +261,7 @@ export function TaskNotificationSettings() {
         }
       }}
     >
-      <option value="all">后台完成及失败</option>
+      <option value="all">完成及失败</option>
       <option value="failures">仅失败</option>
       <option value="off">关闭</option>
     </select>
@@ -273,7 +273,7 @@ export function TaskNotificationSettings() {
         <section className="settings-section" aria-label="任务通知">
           <div>
             <div className="settings-section-title"><Bell size={15} /><span>任务通知</span></div>
-            <p className="settings-section-description">miniQ 不在前台时用系统通知提醒，不展示原始错误详情。</p>
+            <p className="settings-section-description">前台显示应用内提醒，后台发送系统通知。不展示原始错误详情。</p>
           </div>
           <div className="settings-card">
             <div className="settings-toggle-row">

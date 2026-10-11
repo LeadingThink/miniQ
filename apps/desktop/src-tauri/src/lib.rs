@@ -12,6 +12,7 @@ mod html_preview;
 mod keep_awake;
 mod local_file;
 mod office_preview;
+mod task_sound;
 mod terminal_install;
 mod terminal_open;
 use keep_awake::KeepAwakeState;
@@ -25,10 +26,10 @@ static QUIT_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 
 #[tauri::command]
 async fn daemon_connection(
-    window: tauri::WebviewWindow,
+    webview: tauri::Webview,
     state: tauri::State<'_, DaemonState>,
 ) -> Result<daemon::ConnectionInfo, String> {
-    companion::authorized(window.label())?;
+    companion::authorized(webview.label())?;
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || state.ensure())
         .await
@@ -326,6 +327,7 @@ pub fn run() {
                 return true;
             }
             let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+                task_sound::play_task_sound,
                 companion::companion_get_prefs,
                 companion::companion_set_mode,
                 companion::companion_expand,
@@ -407,7 +409,7 @@ pub fn run() {
 pub(crate) fn show_main_window(app: &tauri::AppHandle) {
     use tauri::Manager;
 
-    let Some(window) = app.get_webview_window("main") else {
+    let Some(window) = app.get_window("main") else {
         return;
     };
     #[cfg(target_os = "macos")]
@@ -439,7 +441,7 @@ fn setup_global_shortcut(app: &tauri::AppHandle) {
                 if event.state() != ShortcutState::Pressed {
                     return;
                 }
-                let Some(window) = app.get_webview_window("main") else {
+                let Some(window) = app.get_window("main") else {
                     return;
                 };
                 let focused = window.is_focused().unwrap_or(false);
