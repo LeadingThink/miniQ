@@ -1,0 +1,107 @@
+/* Settings > 通用: 任务通知 / 提醒音效 / 桌面伙伴.
+   Tokens only (base.css, tokens.css); light/dark safe via semantic colors. */
+
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0 11px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.settings-card > .settings-toggle-row {
+  min-height: 40px;
+  padding: 6px 0;
+}
+
+.settings-card > .settings-toggle-row + .settings-toggle-row {
+  border-top: 1px solid var(--border);
+}
+
+.settings-toggle-row > .settings-row-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-toggle-row select {
+  flex: none;
+  min-width: 140px;
+}
+
+.settings-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.settings-row-actions .ui-button--icon {
+  color: var(--text-dim);
+}
+
+.settings-row-actions .ui-button--icon:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.task-sound-volume input[type="range"] {
+  flex: 1;
+  min-width: 80px;
+  max-width: 220px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.task-sound-volume output {
+  min-width: 38px;
+  color: var(--text-dim);
+  font-size: var(--font-footnote);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.settings-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--font-footnote);
+}
+
+.settings-segmented {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.settings-segmented > button {
+  min-height: 26px;
+  padding: 3px 12px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 2px);
+  font-size: var(--font-footnote);
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.settings-segmented > button:hover:not(:disabled) {
+  color: var(--text);
+  background: transparent;
+}
+
+.settings-segmented > button[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: var(--shadow-sm, none);
+  font-weight: 600;
+}
+
+.settings-segmented > button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

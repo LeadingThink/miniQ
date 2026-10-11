@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
+import { initializeCompanionBridge } from "./companionBridge";
 import { ToastProvider } from "./components/ui/Toast";
 // Bundled fonts (self-hosted, offline). Latin: Inter (UI) + JetBrains Mono
 // (code); CJK: MiSans VF subset (@font-face lives in styles/base.css).
@@ -31,22 +31,36 @@ import { initializeMobileViewport } from "./mobileViewport";
 import { initializeWindowChrome } from "./windowChrome";
 import { initializeNativeMenuBridge } from "./nativeMenuBridge";
 
+const App = React.lazy(() => import("./App"));
+const CompanionWindow = React.lazy(() => import("./components/CompanionWindow"));
+const isCompanion = new URLSearchParams(window.location.search).has("companion");
+
 initializeAppearance();
-if (!isNativeMobileApp()) {
+if (!isCompanion && !isNativeMobileApp()) {
   initializeBackground();
   initializeRotation();
 }
-initializeWindowChrome();
-initializeMobileViewport();
-initializeNativeMenuBridge();
-void initializeMobileRuntime();
+if (isCompanion) {
+  document.documentElement.dataset.companion = "true";
+  document.documentElement.style.background = "transparent";
+  document.body.style.background = "transparent";
+  document.getElementById("splash")?.remove();
+} else {
+  initializeWindowChrome();
+  initializeMobileViewport();
+  initializeNativeMenuBridge();
+  initializeCompanionBridge();
+  void initializeMobileRuntime();
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ToastProvider>
-      <LivingBackground />
-      <App />
-    </ToastProvider>
+    <React.Suspense fallback={null}>
+      {isCompanion ? <CompanionWindow /> : <ToastProvider>
+        <LivingBackground />
+        <App />
+      </ToastProvider>}
+    </React.Suspense>
   </React.StrictMode>,
 );
 

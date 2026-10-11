@@ -1,6 +1,6 @@
 [package]
 name = "miniq-desktop"
-version = "0.1.114"
+version = "0.1.115"
 edition = "2021"
 license = "MIT"
 
@@ -15,7 +15,7 @@ tauri-build = { version = "2", features = [] }
 miniq-local = { path = "../../../crates/miniq-local" }
 # `devtools` lets release builds open the web inspector. Only embedded
 # browser views enable it; the main window is pinned in lib.rs.
-tauri = { version = "2", features = ["tray-icon", "unstable", "devtools"] }
+tauri = { version = "2", features = ["tray-icon", "unstable", "devtools", "macos-private-api"] }
 tauri-plugin-dialog = "2"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }

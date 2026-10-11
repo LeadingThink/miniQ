@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getAttentionNotificationPrefs,
+  getTaskSoundSettings,
   getTaskNotificationMode,
   notifyAttention,
   setAttentionNotificationPref,
@@ -9,8 +10,10 @@ import {
   notifyTaskResult,
   requestTaskNotificationPermission,
   sendTaskNotificationTest,
+  setTaskSoundSettings,
   setTaskNotificationMode,
 } from "./taskNotifications";
+import { setQuietHours } from "./quietHours";
 
 const platform = vi.hoisted(() => ({ native: false }));
 const isWindowFocused = vi.hoisted(() => vi.fn());
@@ -20,12 +23,12 @@ const plugin = vi.hoisted(() => ({
   sendNotification: vi.fn(),
 }));
 vi.mock("./runtime", () => ({ isTauriRuntime: () => platform.native }));
-vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ isFocused: isWindowFocused }) }));
 vi.mock("@tauri-apps/plugin-notification", () => plugin);
 const web = Object.assign(vi.fn(function () {}), {
   permission: "granted" as NotificationPermission,
   requestPermission: vi.fn(),
 });
+const originalAudioContext = typeof window === "undefined" ? undefined : window.AudioContext;
 
 beforeEach(() => {
   localStorage.clear();
@@ -38,11 +41,13 @@ beforeEach(() => {
   plugin.requestPermission.mockReset().mockResolvedValue("granted");
   plugin.sendNotification.mockReset();
   vi.stubGlobal("Notification", web);
+  vi.stubGlobal("__TAURI_INTERNALS__", { metadata: { currentWindow: { label: "main" } }, invoke: isWindowFocused });
   vi.spyOn(document, "hasFocus").mockReturnValue(false);
 });
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  if (typeof window !== "undefined") Object.defineProperty(window, "AudioContext", { configurable: true, value: originalAudioContext });
 });
 
 describe("background task notifications", () => {
@@ -159,6 +164,72 @@ describe("background task notifications", () => {
     });
     expect(await notifyTaskResult("completed", "任务")).toBe(false);
     expect(plugin.sendNotification).not.toHaveBeenCalled();
+  });
+});
+
+describe("desktop task sounds", () => {
+  it("uses the defaults, clamps volume, respects quiet hours and background settings, and deduplicates each event kind", async () => {
+    const oscillators: Array<{ connect: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> }> = [];
+    const context = {
+      state: "running",
+      currentTime: 0,
+      destination: {},
+      resume: vi.fn(async () => undefined),
+      createGain: vi.fn(() => ({
+        gain: { value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() },
+        connect: vi.fn(),
+      })),
+      createOscillator: vi.fn(() => {
+        const oscillator = { frequency: { value: 0, setValueAtTime: vi.fn() }, type: "sine", connect: vi.fn(), start: vi.fn(), stop: vi.fn() };
+        oscillators.push(oscillator);
+        return oscillator;
+      }),
+    };
+    const AudioContextMock = vi.fn(function AudioContextMock() { return context; });
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: AudioContextMock });
+    document.dispatchEvent(new Event("pointerdown"));
+
+    expect(getTaskSoundSettings()).toEqual({
+      enabled: true,
+      completed: true,
+      failed: true,
+      attention: true,
+      backgroundOnly: true,
+      volume: 0.55,
+    });
+    setTaskSoundSettings({ volume: -1 });
+    expect(getTaskSoundSettings().volume).toBe(0);
+    setTaskSoundSettings({ volume: 2 });
+    expect(getTaskSoundSettings().volume).toBe(1);
+    setTaskSoundSettings({ volume: 0.55 });
+
+    setQuietHours({ start: "00:00", end: "00:00" });
+    expect(await notifyTaskResult("completed", "quiet-sound")).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(oscillators).toHaveLength(0);
+    setQuietHours(null);
+
+    expect(await notifyTaskResult("completed", "one-sound")).toBe(true);
+    expect(await notifyTaskResult("completed", "one-sound")).toBe(true);
+    expect(await notifyTaskResult("failed", "one-sound")).toBe(true);
+    expect(await notifyAttention("approval", "one-sound", "需要处理")).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(oscillators).toHaveLength(7);
+
+    setTaskSoundSettings({ backgroundOnly: true });
+    vi.mocked(document.hasFocus).mockReturnValue(true);
+    expect(await notifyTaskResult("failed", "foreground-sound")).toBe(false);
+    expect(oscillators).toHaveLength(7);
+  });
+
+  it("does not let a blocked AudioContext change the notification result", async () => {
+    const broken = { state: "running", currentTime: 0, destination: {}, resume: vi.fn(async () => undefined), createGain: vi.fn(), createOscillator: vi.fn(() => { throw new Error("blocked"); }) };
+    const AudioContextMock = vi.fn(function AudioContextMock() { return broken; });
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: AudioContextMock });
+    document.dispatchEvent(new Event("keydown"));
+    expect(await notifyTaskResult("failed", "audio-failure")).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(web).toHaveBeenCalledTimes(1);
   });
 });
 

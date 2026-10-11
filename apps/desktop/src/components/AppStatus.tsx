@@ -18,6 +18,8 @@ import {
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { sessionStatusLabel } from "../sessionStatus";
 import { ApprovalInboxButton } from "./ApprovalInbox";
+import { AttentionInbox } from "./AttentionInbox";
+import type { AttentionItem } from "../companionInbox";
 import { OpenPreviewButton } from "./OpenPreviewButton";
 import type { LocalFileTarget } from "../localFiles";
 import { menuPosition } from "../menuPosition";
@@ -33,6 +35,9 @@ export function AppStatusBar(props: {
   onOpenFile: (target: LocalFileTarget) => void;
   onToggleWorkbench?: () => void;
   workbenchOpen?: boolean;
+  /** Shows the reminder inbox bell next to the approval inbox (only for the active app). */
+  showAttentionInbox?: boolean;
+  onOpenAttentionLocalItem?: (item: AttentionItem) => boolean;
 }) {
   const { app } = props;
   const { connected, health } = app.connection;
@@ -124,6 +129,9 @@ export function AppStatusBar(props: {
           client={app.client}
           onOpenSession={app.actions.openSession}
         />
+        {props.showAttentionInbox && (
+          <AttentionInbox app={app} onOpenLocalItem={props.onOpenAttentionLocalItem} />
+        )}
         {reviewFiles > 0 && (
           <button
             type="button"

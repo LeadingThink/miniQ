@@ -1,4 +1,4 @@
-import { Check, GitBranch, LoaderCircle, Pencil, RefreshCw, Target, X } from "lucide-react";
+import { Check, GitBranch, LoaderCircle, Pencil, RefreshCw, ScanSearch, Target, X } from "lucide-react";
 import { Fragment, useImperativeHandle, useMemo, useRef, useState, type RefObject } from "react";
 import type { AnchoredTurnTiming, Message, Question, SessionGoal, TurnPlan } from "../types";
 import type { PendingApproval } from "../App";
@@ -28,6 +28,7 @@ import { replyFileArtifacts } from "../replyFiles";
 import { resolveWorkspacePath } from "../localFiles";
 import { turnHasFileWrites } from "../turnChanges";
 import { ConfirmDialog } from "./ui/Dialog";
+import { SessionReviewPanel } from "./SessionReviewDialog";
 
 /** An edit or regenerate that waits for the user to confirm stopping the run. */
 interface PendingRewrite {
@@ -81,6 +82,8 @@ export function TimelineEntries(props: {
   windowHandle?: RefObject<TimelineWindowHandle | null>;
 }) {
   const [pendingRewrite, setPendingRewrite] = useState<PendingRewrite | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<{ sessionId: string; messageId: string } | null>(null);
+  const sessionId = props.messages[0]?.sessionId;
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const voiceCapabilities = useVoiceCapabilities(props.client);
   const [draft, setDraft] = useState("");
@@ -386,6 +389,19 @@ export function TimelineEntries(props: {
                     content={item.message.content}
                     onError={bridge.reportError}
                   />
+                  {props.client && item.message.sessionId && !runningTurnMessageIds?.has(item.message.id) && (
+                    <button
+                      type="button"
+                      className="msg-action session-review-trigger"
+                      aria-label="第二意见：让另一模型检查"
+                      title="第二意见：让另一模型检查"
+                      aria-expanded={reviewTarget?.messageId === item.message.id}
+                      onClick={() => setReviewTarget((current) => current?.messageId === item.message.id
+                        ? null : { sessionId: item.message.sessionId, messageId: item.message.id })}
+                    >
+                      <ScanSearch size={15} />
+                    </button>
+                  )}
                   {props.client && canSpeak && (
                     <SpeakButton
                       client={props.client}
@@ -420,6 +436,16 @@ export function TimelineEntries(props: {
                   )}
                 </div>
               </div>
+              {props.client && reviewTarget && reviewTarget.messageId === item.message.id
+                && reviewTarget.sessionId === item.message.sessionId && reviewTarget.sessionId === sessionId && (
+                <SessionReviewPanel
+                  client={props.client}
+                  sessionId={reviewTarget.sessionId}
+                  primaryMessageId={reviewTarget.messageId}
+                  busy={props.busy}
+                  onClose={() => setReviewTarget(null)}
+                />
+              )}
             </div>
           )
         ) : item.kind === "artifact" ? (
@@ -488,7 +514,7 @@ export function TimelineEntries(props: {
     props.items, props.busy, props.workspacePath, props.workspacePaths,
     props.expandGroups, props.client, editingMessageId, draft, saving,
     forkingMessageId, runningTurnMessageIds, goalMessageId, turnPlanEnds, runningAnchor,
-    hasFork, canSpeak, bridge, turns, separators, pendingAttention,
+    hasFork, canSpeak, bridge, turns, separators, pendingAttention, reviewTarget, sessionId,
   ]);
 
   // The live reply streams at the end of the current turn, where its message

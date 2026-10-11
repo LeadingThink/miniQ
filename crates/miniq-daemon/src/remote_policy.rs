@@ -36,6 +36,8 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
     Some(match method {
         // 13.1.2 session / approval / schedule
         "session.list"
+        | "review.list"
+        | "review.get"
         | "session.open"
         | "session.sync"
         | "session.history"
@@ -53,11 +55,13 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "schedule.list"
         | "schedule.runs" => ReadOnly,
         "session.approval.update"
+        | "review.cancel"
         | "approval.resolve"
         | "schedule.create"
         | "schedule.update"
         | "host.call" => Policy,
         "session.create"
+        | "review.start"
         | "session.fork"
         | "session.sendMessage"
         | "session.rewriteMessage"

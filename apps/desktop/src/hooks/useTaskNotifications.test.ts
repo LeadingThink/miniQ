@@ -122,7 +122,7 @@ describe("useTaskNotifications on mobile", () => {
     mocks.mobile = false;
     const { root } = setup();
     root.emit({ type: "turn_completed", sessionId: "s1", eventCursor: next() });
-    expect(mocks.notifyTaskResult).toHaveBeenCalledWith("completed", "整理报告");
+    expect(mocks.notifyTaskResult).toHaveBeenCalledWith("completed", "整理报告", { host: null, sessionId: "s1" }, expect.stringContaining('"s1","completed","cursor"'));
     expect(mocks.notifyMobileTask).not.toHaveBeenCalled();
   });
 });
