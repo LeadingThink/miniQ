@@ -5,15 +5,20 @@ use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, Webvie
 
 const LABEL: &str = "companion";
 const PREFS_FILE: &str = "companion-prefs.json";
-const COLLAPSED: (f64, f64) = (104.0, 112.0);
-const EXPANDED: (f64, f64) = (360.0, 540.0);
+/// Collapsed window just fits the 64px avatar plus badge/tooltip room.
+const COLLAPSED: (f64, f64) = (96.0, 96.0);
+/// Expanded window: 360px panel + 10px transparent gutter for its shadow; extra
+/// height leaves room for the auto-height panel (max 460px) and its menus.
+const EXPANDED: (f64, f64) = (380.0, 520.0);
+/// Collapsed top-left before expanding, so collapsing returns the avatar exactly.
+static COLLAPSED_ANCHOR: Mutex<Option<Point>> = Mutex::new(None);
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
-    #[default]
     Hidden,
     Dots,
+    #[default]
     Pet,
 }
 
@@ -215,9 +220,8 @@ pub(crate) fn show(app: &tauri::AppHandle) -> Result<(), String> {
                         && url.port() == Some(1420));
                 local && url.query_pairs().any(|(key, _)| key == "companion")
             });
-            // macOS transparency requires macos-private-api, which we deliberately
-            // do not enable. A regular window with transparent CSS remains usable.
-            #[cfg(not(target_os = "macos"))]
+            // macOS transparency relies on `macOSPrivateApi` (enabled in tauri.conf.json).
+            // That only blocks Mac App Store submission; miniQ ships outside the store.
             let builder = builder.transparent(true);
             let window = builder.build().map_err(|e| e.to_string())?;
             let handle = app.clone();
@@ -243,7 +247,9 @@ pub(crate) fn show(app: &tauri::AppHandle) -> Result<(), String> {
             window
         }
     };
-    fit_window(&window, false, position)?;
+    // show() always renders collapsed: return to the pre-expand anchor if one is pending.
+    let anchor = COLLAPSED_ANCHOR.lock().ok().and_then(|mut a| a.take());
+    fit_window(&window, false, anchor.or(position))?;
     window.show().map_err(|e| e.to_string())?; // never set_focus on passive show
     app.emit("companion:prefs", snapshot(app)?)
         .map_err(|e| e.to_string())
@@ -298,12 +304,92 @@ pub async fn companion_set_mode(
     set_mode(&app, mode)
 }
 
+/// Which edge the expanded panel is pinned to, so the UI can align inside the window.
+#[derive(Clone, Copy, Debug, Default, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExpandLayout {
+    align_right: bool,
+    align_bottom: bool,
+}
+
+/// Grow toward the work-area centre: an avatar on the right/bottom half keeps
+/// its right/bottom edge, so the panel opens leftward/upward.
+fn expand_origin(
+    position: Point,
+    collapsed: (u32, u32),
+    expanded: (u32, u32),
+    area: Bounds,
+) -> (Point, ExpandLayout) {
+    let centre_x = i64::from(position.x) + i64::from(collapsed.0) / 2;
+    let centre_y = i64::from(position.y) + i64::from(collapsed.1) / 2;
+    let layout = ExpandLayout {
+        align_right: centre_x > i64::from(area.x) + i64::from(area.width) / 2,
+        align_bottom: centre_y > i64::from(area.y) + i64::from(area.height) / 2,
+    };
+    let shift = |origin: i32, small: u32, large: u32, flip: bool| -> i32 {
+        if flip {
+            (i64::from(origin) + i64::from(small) - i64::from(large))
+                .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+        } else {
+            origin
+        }
+    };
+    (
+        Point {
+            x: shift(position.x, collapsed.0, expanded.0, layout.align_right),
+            y: shift(position.y, collapsed.1, expanded.1, layout.align_bottom),
+        },
+        layout,
+    )
+}
+
 #[tauri::command]
-pub fn companion_expand(window: WebviewWindow, expanded: bool) -> Result<(), String> {
+pub fn companion_expand(window: WebviewWindow, expanded: bool) -> Result<ExpandLayout, String> {
     if window.label() != LABEL {
         return Err("Only companion can resize itself".into());
     }
-    fit_window(&window, expanded, None)
+    let mut anchor = COLLAPSED_ANCHOR.lock().map_err(|e| e.to_string())?;
+    if !expanded {
+        let restore = anchor.take();
+        drop(anchor);
+        fit_window(&window, false, restore)?;
+        return Ok(ExpandLayout::default());
+    }
+    let position = window.outer_position().map_err(|e| e.to_string())?;
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+    let point = Point {
+        x: position.x,
+        y: position.y,
+    };
+    // Re-expanding while already expanded keeps the original collapsed anchor.
+    if anchor.is_none() {
+        *anchor = Some(point);
+    }
+    drop(anchor);
+    let monitor = window.current_monitor().map_err(|e| e.to_string())?;
+    let (origin, layout) = match monitor {
+        Some(monitor) => {
+            let scale = monitor.scale_factor();
+            let area = monitor.work_area();
+            expand_origin(
+                point,
+                (size.width, size.height),
+                (
+                    (EXPANDED.0 * scale).round() as u32,
+                    (EXPANDED.1 * scale).round() as u32,
+                ),
+                Bounds {
+                    x: area.position.x,
+                    y: area.position.y,
+                    width: area.size.width,
+                    height: area.size.height,
+                },
+            )
+        }
+        None => (point, ExpandLayout::default()),
+    };
+    fit_window(&window, true, Some(origin))?;
+    Ok(layout)
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -433,8 +519,27 @@ mod tests {
         );
     }
     #[test]
+    fn expanded_panel_grows_toward_screen_centre() {
+        let area = Bounds {
+            x: 0,
+            y: 0,
+            width: 1000,
+            height: 800,
+        };
+        let (p, layout) = expand_origin(Point { x: 10, y: 10 }, (96, 96), (380, 520), area);
+        assert_eq!(p, Point { x: 10, y: 10 });
+        assert_eq!(layout, ExpandLayout::default());
+        let (p, layout) = expand_origin(Point { x: 880, y: 680 }, (96, 96), (380, 520), area);
+        assert_eq!(p, Point { x: 596, y: 256 });
+        assert!(layout.align_right && layout.align_bottom);
+        let (p, _) = expand_origin(Point { x: i32::MIN, y: 0 }, (96, 96), (380, 520), area);
+        assert_eq!(p.x, i32::MIN);
+    }
+
+    #[test]
     fn prefs_and_command_security() {
-        assert_eq!(Prefs::default().mode, Mode::Hidden);
+        assert_eq!(Prefs::default().mode, Mode::Pet);
+        assert_eq!(serde_json::from_str::<Prefs>(r#"{"mode":"hidden"}"#).unwrap().mode, Mode::Hidden);
         assert!(serde_json::from_str::<Prefs>(r#"{"mode":"unknown"}"#).is_err());
         assert!(authorized("main").is_ok());
         assert!(authorized("companion").is_ok());

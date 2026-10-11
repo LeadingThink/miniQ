@@ -21,16 +21,28 @@ function fixture(failSend = false) {
 }
 afterEach(cleanup);
 
+/** Project / session pickers are themed menus, not native selects. */
+function chooseProject(name = /Known/) {
+  fireEvent.click(screen.getByRole("button", { name: "本机项目" }));
+  fireEvent.click(screen.getByRole("menuitem", { name }));
+}
+function chooseSession(name: RegExp) {
+  fireEvent.click(screen.getByRole("button", { name: "目标会话" }));
+  fireEvent.click(screen.getByRole("menuitem", { name }));
+}
+
 it("requires an explicit project, creates/sends text, and routes known sessions with both IDs", async () => {
   const f = fixture(); const openMain = vi.fn(async () => {});
   render(<CompanionWindow client={f.client} initialPrefs={{ mode: "pet" }} openMain={openMain} />);
   fireEvent.click(screen.getByRole("button", { name: /展开任务输入/ }));
   await screen.findByRole("button", { name: /打开会话：Existing task/ });
-  expect((screen.getByLabelText("本机项目") as HTMLSelectElement).value).toBe("");
+  expect(screen.getByRole("button", { name: "本机项目" }).textContent).toBe("选择项目");
+  expect(document.querySelector("select")).toBeNull();
+  expect((screen.getByRole("button", { name: "目标会话" }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole("button", { name: "发送任务" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: /打开会话：Existing task/ }));
   expect(openMain).toHaveBeenCalledWith({ action: "session", sessionId: "s", workspaceId: "w" });
-  fireEvent.change(screen.getByLabelText("本机项目"), { target: { value: "w" } });
+  chooseProject();
   fireEvent.change(screen.getByLabelText("任务内容"), { target: { value: "执行真实任务" } });
   fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
   await screen.findByText("已发送到本机项目，输入已清空。");
@@ -44,8 +56,8 @@ it("retains failed text and created ID through collapse; API key guidance opens 
   const f = fixture(true); const openMain = vi.fn(async () => {});
   render(<CompanionWindow client={f.client} initialPrefs={{ mode: "dots" }} openMain={openMain} />);
   fireEvent.click(screen.getByRole("button", { name: /展开任务输入/ }));
-  await screen.findByText("Known · /known/root");
-  fireEvent.change(screen.getByLabelText("本机项目"), { target: { value: "w" } });
+  await screen.findByRole("button", { name: /打开会话：Existing task/ });
+  chooseProject();
   fireEvent.change(screen.getByLabelText("任务内容"), { target: { value: "我的草稿" } });
   fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
   await screen.findByText("API key missing");
@@ -55,8 +67,12 @@ it("retains failed text and created ID through collapse; API key guidance opens 
   fireEvent.click(screen.getByRole("button", { name: /展开任务输入/ }));
   await screen.findByLabelText("任务内容");
   expect((screen.getByLabelText("任务内容") as HTMLTextAreaElement).value).toBe("我的草稿");
-  expect((screen.getByLabelText("目标会话") as HTMLSelectElement).value).toBe("new");
-  fireEvent.click(screen.getByRole("button", { name: "打开主窗口设置 / API Key" }));
+  expect(screen.getByRole("button", { name: "目标会话" }).textContent).toBe("Existing task");
+  expect(screen.getByRole("button", { name: "本机项目" }).textContent).toBe("Known");
+  expect(screen.getByRole("alert").textContent).toContain("输入已保留");
+  fireEvent.click(screen.getByRole("button", { name: "打开会话" }));
+  expect(openMain).toHaveBeenCalledWith({ action: "session", sessionId: "new", workspaceId: "w" });
+  fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
   expect(openMain).toHaveBeenCalledWith({ action: "settings" });
 });
 it("only consumes inbox props visually and acknowledges after successful main navigation", async () => {
@@ -75,11 +91,11 @@ it("maps live approvals/questions, completion and inherited model updates withou
   render(<CompanionWindow client={f.client} initialPrefs={{ mode: "pet" }} />);
   fireEvent.click(screen.getByRole("button", { name: /展开任务输入/ }));
   await screen.findByRole("button", { name: /打开会话：Existing task/ });
-  fireEvent.change(screen.getByLabelText("本机项目"), { target: { value: "w" } });
-  fireEvent.change(screen.getByLabelText("目标会话"), { target: { value: "s" } });
+  chooseProject();
+  chooseSession(/Existing task/);
   const input = screen.getByLabelText("任务内容"); input.focus();
   act(() => f.event({ type: "model_settings_changed", sessionId: "s", workspaceId: "w", settings: { model: "inherited-model", apiProtocol: "auto", reasoningEffort: null } }));
-  expect(screen.getByText(/模型：inherited-model/)).toBeTruthy();
+  expect(screen.getByTitle(/模型：inherited-model/).textContent).toBe("inherited-model");
   act(() => f.event({ type: "question_requested", sessionId: "s", question: { id: "q1" } } as DaemonEvent));
   act(() => f.event({ type: "question_requested", sessionId: "s", question: { id: "q2" } } as DaemonEvent));
   act(() => f.event({ type: "question_resolved", sessionId: "s", questionId: "q1" } as DaemonEvent));
@@ -95,8 +111,8 @@ it("restores accepted text after an asynchronous provider failure and opens exis
   const f = fixture(); const openMain = vi.fn(async () => {});
   render(<CompanionWindow client={f.client} initialPrefs={{ mode: "pet" }} openMain={openMain} />);
   fireEvent.click(screen.getByRole("button", { name: /展开任务输入/ }));
-  await screen.findByText("Known · /known/root");
-  fireEvent.change(screen.getByLabelText("本机项目"), { target: { value: "w" } });
+  await screen.findByRole("button", { name: /打开会话：Existing task/ });
+  chooseProject();
   fireEvent.change(screen.getByLabelText("任务内容"), { target: { value: "保留没有 Key 的任务" } });
   fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
   await screen.findByText("已发送到本机项目，输入已清空。");
@@ -105,7 +121,7 @@ it("restores accepted text after an asynchronous provider failure and opens exis
   expect(screen.getByRole("main").getAttribute("data-state")).toBe("failed");
   fireEvent.change(screen.getByLabelText("任务内容"), { target: { value: "" } });
   expect((screen.getByLabelText("任务内容") as HTMLTextAreaElement).value).toBe("");
-  fireEvent.click(screen.getByRole("button", { name: "打开主窗口设置 / API Key" }));
+  fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
   expect(openMain).toHaveBeenCalledWith({ action: "settings" });
 });
 
@@ -129,4 +145,37 @@ it("adapts persisted local notices, opens their exact session and marks read onl
   expect(openMain).toHaveBeenLastCalledWith({ action: "session", sessionId: "s", workspaceId: "w" });
   expect(screen.queryByRole("button", { name: /请确认本机结果/ })).toBeNull();
   localStorage.clear();
+});
+
+it("hidden mode renders nothing", () => {
+  const f = fixture();
+  const { container } = render(<CompanionWindow client={f.client} initialPrefs={{ mode: "hidden" }} />);
+  expect(container.innerHTML).toBe("");
+});
+
+it("collapsed shows only the avatar with a state tooltip; header menu, Escape and ⌘↵ work", async () => {
+  const f = fixture(); const openMain = vi.fn(async () => {});
+  render(<CompanionWindow client={f.client} initialPrefs={{ mode: "pet" }} openMain={openMain} />);
+  const avatar = await screen.findByRole("button", { name: "正在处理，展开任务输入" });
+  expect(screen.getByText("运行中")).toBeTruthy();
+  expect(screen.queryByLabelText("任务内容")).toBeNull();
+  expect(screen.queryByText("⠿")).toBeNull();
+  // A press that moves past the drag threshold must not toggle the panel.
+  fireEvent.pointerDown(avatar, { button: 0, buttons: 1, clientX: 10, clientY: 10 });
+  fireEvent.pointerMove(avatar, { buttons: 1, clientX: 20, clientY: 10 });
+  fireEvent.pointerUp(avatar);
+  fireEvent.click(avatar);
+  expect(screen.queryByLabelText("任务内容")).toBeNull();
+  fireEvent.click(avatar);
+  await screen.findByLabelText("任务内容");
+  fireEvent.click(screen.getByRole("button", { name: "打开主窗口" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /主窗口设置/ }));
+  expect(openMain).toHaveBeenCalledWith({ action: "settings" });
+  chooseProject();
+  fireEvent.change(screen.getByLabelText("任务内容"), { target: { value: "快捷键发送" } });
+  fireEvent.keyDown(screen.getByLabelText("任务内容"), { key: "Enter", metaKey: true });
+  await screen.findByText("已发送到本机项目，输入已清空。");
+  expect(f.call).toHaveBeenCalledWith("session.sendMessage", expect.objectContaining({ message: expect.objectContaining({ content: "快捷键发送" }) }));
+  fireEvent.keyDown(screen.getByLabelText("任务内容"), { key: "Escape" });
+  await waitFor(() => expect(screen.queryByLabelText("任务内容")).toBeNull());
 });

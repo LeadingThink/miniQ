@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { getTaskNotificationMode } from "../taskNotifications";
 import * as taskNotifications from "../taskNotifications";
@@ -88,17 +88,35 @@ it("toggles approval and question reminders independently and persists them", ()
   expect(screen.getByRole("switch", { name: "需要审批时提醒" }).getAttribute("aria-checked")).toBe("false");
 });
 
-it("shows task sound settings and starts a preview only from its button", () => {
+it("splits desktop sound settings into their own section with per-kind previews", () => {
   const preview = vi.spyOn(taskNotifications, "playTaskSound").mockResolvedValue(true);
   render(<TaskNotificationSettings />);
-  expect(screen.getByText("本地音效")).toBeTruthy();
-  expect(screen.getByRole("switch", { name: "开启本地音效" })).toBeTruthy();
-  expect(screen.getByRole("switch", { name: "任务完成音效" })).toBeTruthy();
-  expect(screen.getByRole("switch", { name: "任务失败音效" })).toBeTruthy();
-  expect(screen.getByRole("switch", { name: "需要操作音效" })).toBeTruthy();
-  expect(screen.getByRole("switch", { name: "仅后台播放" })).toBeTruthy();
-  expect(screen.getByRole("slider", { name: "音量" })).toBeTruthy();
+  const sounds = screen.getByRole("region", { name: "提醒音效" });
+  expect(screen.getByRole("region", { name: "任务通知" }).contains(sounds)).toBe(false);
+  expect(within(sounds).getByRole("switch", { name: "提醒音效" }).getAttribute("aria-checked")).toBe("true");
+  for (const label of ["完成", "失败", "需要处理"]) expect(within(sounds).getByRole("switch", { name: `${label}提示音` })).toBeTruthy();
+  expect(within(sounds).getByRole("switch", { name: "仅在 miniQ 不在前台时播放" })).toBeTruthy();
+  expect(within(sounds).getByRole("slider", { name: "音量" })).toBeTruthy();
+  expect(within(sounds).getByText("55%")).toBeTruthy();
+  expect(within(sounds).getByRole("checkbox", { name: /免打扰时段/ })).toBeTruthy();
   expect(preview).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "试听音效" }));
-  expect(preview).toHaveBeenCalledWith("completed", { userInitiated: true, ignoreSettings: true });
+  fireEvent.click(within(sounds).getByRole("button", { name: "试听失败提示音" }));
+  expect(preview).toHaveBeenCalledExactlyOnceWith("failed", { userInitiated: true, ignoreSettings: true });
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("hides sound details when the master switch is off", () => {
+  render(<TaskNotificationSettings />);
+  fireEvent.click(screen.getByRole("switch", { name: "提醒音效" }));
+  expect(screen.getByRole("switch", { name: "提醒音效" }).getAttribute("aria-checked")).toBe("false");
+  expect(screen.queryByRole("slider", { name: "音量" })).toBeNull();
+  expect(screen.queryByRole("switch", { name: "完成提示音" })).toBeNull();
+  expect(screen.queryByRole("checkbox", { name: /免打扰时段/ })).toBeNull();
+});
+
+it("reports a failed preview", async () => {
+  vi.spyOn(taskNotifications, "playTaskSound").mockResolvedValue(false);
+  render(<TaskNotificationSettings />);
+  fireEvent.click(screen.getByRole("button", { name: "试听完成提示音" }));
+  expect((await screen.findByRole("alert")).textContent).toMatch(/音效暂不可用/);
 });

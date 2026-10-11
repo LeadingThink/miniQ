@@ -2,6 +2,7 @@ import { Bell } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Switch } from "./ui/Switch";
 import { TaskSoundSettings } from "./TaskSoundSettings";
+import "./NotificationSettings.css";
 import {
   getTaskNotificationPermission,
   requestTaskNotificationPermission,
@@ -162,7 +163,7 @@ function QuietHoursSetting({ onStatus, mobile = true }: { onStatus: (text: strin
       <label className="remote-access-toggle" htmlFor="task-notification-quiet">
         <span>
           <strong>免打扰时段</strong>
-          <small>{mobile ? "时段内的提醒照常送达通知中心，但不响铃、不震动、不弹横幅" : "时段内不播放本地任务音效，系统通知仍按系统设置送达"}</small>
+          <small>{mobile ? "时段内的提醒照常送达通知中心，但不响铃、不震动、不弹横幅" : "时段内不播放提示音，系统通知不受影响"}</small>
         </span>
         <input
           id="task-notification-quiet"
@@ -247,45 +248,71 @@ export function TaskNotificationSettings() {
     }
   };
 
+  const modeSelect = (
+    <select
+      id="task-notification-mode"
+      value={mode}
+      onChange={(event) => {
+        try {
+          setTaskNotificationMode(event.target.value as TaskNotificationMode);
+          setStatus(null);
+        } catch {
+          setStatus("无法保存通知设置，请检查本机存储是否可用。");
+        }
+      }}
+    >
+      <option value="all">后台完成及失败</option>
+      <option value="failures">仅失败</option>
+      <option value="off">关闭</option>
+    </select>
+  );
+
+  if (!mobile) {
+    return (
+      <>
+        <section className="settings-section" aria-label="任务通知">
+          <div>
+            <div className="settings-section-title"><Bell size={15} /><span>任务通知</span></div>
+            <p className="settings-section-description">miniQ 不在前台时用系统通知提醒，不展示原始错误详情。</p>
+          </div>
+          <div className="settings-card">
+            <div className="settings-toggle-row">
+              <label className="settings-row-label" htmlFor="task-notification-mode">通知方式</label>
+              {modeSelect}
+            </div>
+            <div className="settings-toggle-row">
+              <span className="settings-row-label">需要审批时提醒</span>
+              <Switch checked={attentionPrefs.approval} onChange={(value) => toggleAttention("approval", value)} label="需要审批时提醒" />
+            </div>
+            <div className="settings-toggle-row">
+              <span className="settings-row-label">需要我回答时提醒</span>
+              <Switch checked={attentionPrefs.question} onChange={(value) => toggleAttention("question", value)} label="需要我回答时提醒" />
+            </div>
+          </div>
+          {mode !== "off" && permission !== "unsupported" && <div className="settings-actions">
+            <button type="button" className="secondary" disabled={busy} onClick={() => void enable()}>
+              <Bell size={14} />
+              {busy ? "正在检查…" : permission === "granted" ? "发送测试通知" : "启用系统通知"}
+            </button>
+          </div>}
+          {permission === "unsupported" && <p className="settings-section-description">当前环境不支持系统通知。</p>}
+          {status && <p role="status">{status}</p>}
+        </section>
+        <TaskSoundSettings quietHours={(onStatus) => <QuietHoursSetting onStatus={onStatus} mobile={false} />} />
+      </>
+    );
+  }
+
   return (
     <section className="settings-section provider-settings" aria-label="任务通知">
       <div>
         <div className="settings-section-title"><Bell size={15} /><span>任务通知</span></div>
-        <p className="settings-section-description">{mobile
-          ? "在 App 内时，其他会话的更新以顶部横幅加轻震提醒；切到后台后改用系统通知，App 图标角标显示有未读提醒的会话数，打开 App 即清零。正在查看的会话和 10 秒内完成的任务不提醒，不展示原始错误详情。"
-          : "仅在 miniQ 窗口未处于焦点时提醒；不展示原始错误详情。设置会保留在这台设备上。"}</p>
+        <p className="settings-section-description">在 App 内时，其他会话的更新以顶部横幅加轻震提醒；切到后台后改用系统通知，App 图标角标显示有未读提醒的会话数，打开 App 即清零。正在查看的会话和 10 秒内完成的任务不提醒，不展示原始错误详情。</p>
       </div>
       <label htmlFor="task-notification-mode">
         通知方式
-        <select
-          id="task-notification-mode"
-          value={mode}
-          onChange={(event) => {
-            try {
-              setTaskNotificationMode(event.target.value as TaskNotificationMode);
-              setStatus(null);
-            } catch {
-              setStatus("无法保存通知设置，请检查本机存储是否可用。");
-            }
-          }}
-        >
-          <option value="all">后台完成及失败</option>
-          <option value="failures">仅失败</option>
-          <option value="off">关闭</option>
-        </select>
+        {modeSelect}
       </label>
-      {!mobile && <>
-      <div className="settings-toggle-row">
-        <span>需要审批时提醒</span>
-        <Switch checked={attentionPrefs.approval} onChange={(value) => toggleAttention("approval", value)} label="需要审批时提醒" />
-      </div>
-      <div className="settings-toggle-row">
-        <span>需要我回答时提醒</span>
-        <Switch checked={attentionPrefs.question} onChange={(value) => toggleAttention("question", value)} label="需要我回答时提醒" />
-      </div>
-      <TaskSoundSettings />
-      <QuietHoursSetting onStatus={setStatus} mobile={false} />
-      </>}
       {mobile && mode !== "off" && <label className="remote-access-toggle" htmlFor="task-notification-attention">
         <span>
           <strong>需要我操作时提醒</strong>

@@ -39,7 +39,6 @@ import { ExtensionCenter } from "./ExtensionCenter";
 import { dispatchCompanionNavigation } from "../companionBridge";
 import { localCompanionNotices } from "../companionInboxAdapter";
 import { hostKey } from "../hostWorkspace";
-import { AttentionInbox } from "./AttentionInbox";
 
 import { useAppWorkbench } from "../hooks/useAppWorkbench";
 import { AppWorkbench } from "./AppWorkbench";
@@ -461,14 +460,15 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
     <Container {...(contentOnly ? {} : { className: `app ${app.navigation.sidebarCollapsed ? "sidebar-collapsed" : ""}` })}>
       {!contentOnly && <AppSidebar app={app} />}
       <div className="main" data-app-active={String(active)}>
-        {active && <AttentionInbox app={app} onOpenLocalItem={(item) => {
-          const local = desktop?.catalogs[hostKey(null)] ?? (!app.client.sshHost && app.client.mode === "local" ? app.catalog : null);
-          const notice = local && localCompanionNotices([{ ...item, state: "unread" }], local.workspaces, local.sessions)[0];
-          if (!notice) { app.setError("提醒对应的本机项目或会话已不可用"); return false; }
-          return dispatchCompanionNavigation({ action: "session", workspaceId: notice.workspaceId, sessionId: notice.sessionId });
-        }} />}
         <AppStatusBar
           app={app}
+          showAttentionInbox={active}
+          onOpenAttentionLocalItem={(item) => {
+            const local = desktop?.catalogs[hostKey(null)] ?? (!app.client.sshHost && app.client.mode === "local" ? app.catalog : null);
+            const notice = local && localCompanionNotices([{ ...item, state: "unread" }], local.workspaces, local.sessions)[0];
+            if (!notice) { app.setError("提醒对应的本机项目或会话已不可用"); return false; }
+            return dispatchCompanionNavigation({ action: "session", workspaceId: notice.workspaceId, sessionId: notice.sessionId });
+          }}
           onOpenFile={workbench.openFile}
           onOpenBrowser={() => workbench.select("browser")}
           onToggleWorkbench={() => workbench.active ? workbench.close() : workbench.select("overview")}

@@ -5,13 +5,13 @@ export interface CompanionPrefs {
   mode: CompanionMode;
   position?: { x: number; y: number } | null;
 }
-export const DEFAULT_COMPANION_PREFS: CompanionPrefs = { mode: "hidden", position: null };
+export const DEFAULT_COMPANION_PREFS: CompanionPrefs = { mode: "pet", position: null };
 export const COMPANION_PREFS_EVENT = "companion:prefs";
 
 export function parseCompanionPrefs(value: unknown): CompanionPrefs {
   if (!value || typeof value !== "object") return { ...DEFAULT_COMPANION_PREFS };
   const prefs = value as Record<string, unknown>;
-  const mode = prefs.mode === "dots" || prefs.mode === "pet" ? prefs.mode : "hidden";
+  const mode = prefs.mode === "hidden" || prefs.mode === "dots" || prefs.mode === "pet" ? prefs.mode : DEFAULT_COMPANION_PREFS.mode;
   const position = prefs.position as Record<string, unknown> | undefined;
   const valid = position && Number.isInteger(position.x) && Number.isInteger(position.y)
     && Math.abs(Number(position.x)) <= 2147483647 && Math.abs(Number(position.y)) <= 2147483647;
