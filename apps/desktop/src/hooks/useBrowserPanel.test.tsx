@@ -561,9 +561,139 @@ it("clears loading when a native action starts no page load", async () => {
   const { result } = renderHook(() => useBrowserPanel("https://example.test/", ref));
   await act(async () => {});
   expect(result.current.pending).toBe(false);
+  emitNative("browser://page-load", { viewId: result.current.viewId, url: "https://example.test/", phase: "finished" });
+  await act(() => result.current.action("back"));
   expect(result.current.loading).toBe(true);
   await act(() => vi.advanceTimersByTimeAsync(PAGE_LOAD_GRACE_MS));
   expect(result.current.loading).toBe(false);
+  expect(result.current.loadError).toBeNull();
+});
+
+const refusedUrl = "http://127.0.0.1:1431/task-overview-preview.html";
+const refused = { code: "NSURLErrorDomain:-1004", message: "Could not connect to the server." };
+
+it.each([true, false])("retains a failed navigation arriving during dispatch: %s", async (duringDispatch) => {
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  let finish!: (value: { url: string }) => void;
+  if (duringDispatch) vi.mocked(openBrowser).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  const { result } = renderHook(() => useBrowserPanel(refusedUrl, surface(), false, "failed-view"));
+  await waitFor(() => expect(nativeListeners.get("browser://page-load")?.size).toBe(1));
+  emitNative("browser://page-load", { viewId: "failed-view", url: refusedUrl, phase: "started" });
+  emitNative("browser://page-load", { viewId: "failed-view", url: refusedUrl, phase: "failed", error: refused });
+  expect(result.current.loading).toBe(false);
+  expect(result.current.loadError).toEqual({ url: refusedUrl, ...refused });
+  await act(async () => { if (duringDispatch) finish({ url: refusedUrl }); });
+  expect(result.current.loadError).toEqual({ url: refusedUrl, ...refused });
+  expect(setBrowserVisible).toHaveBeenLastCalledWith("failed-view", false);
+  expect(closeBrowser).not.toHaveBeenCalled();
+  emitNative("browser://page-load", { viewId: "failed-view", url: refusedUrl, phase: "finished" });
+  expect(result.current.loadError).toEqual({ url: refusedUrl, ...refused });
+});
+
+it("recovers a missed failed event from the first native poll", async () => {
+  vi.useFakeTimers();
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  vi.mocked(currentBrowser).mockResolvedValueOnce({ url: refusedUrl, loadError: refused });
+  const { result } = renderHook(() => useBrowserPanel(refusedUrl, surface(), false, "poll-error"));
+  await act(async () => {});
+  await act(() => vi.advanceTimersByTimeAsync(1500));
+  expect(result.current.loading).toBe(false);
+  expect(result.current.loadError).toEqual({ url: refusedUrl, ...refused });
+  expect(setBrowserVisible).toHaveBeenLastCalledWith("poll-error", false);
+});
+
+it("ignores late old URL failures and successes after an explicit navigation", async () => {
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  const { result } = renderHook(() => useBrowserPanel(refusedUrl, surface(), false, "stale-events"));
+  await waitFor(() => expect(result.current.pending).toBe(false));
+  await waitFor(() => expect(nativeListeners.get("browser://page-load")?.size).toBe(1));
+  await act(() => result.current.load("https://new.test/"));
+  emitNative("browser://page-load", { viewId: "stale-events", url: "https://new.test/", phase: "started" });
+  for (const phase of ["failed", "finished", "started"]) {
+    emitNative("browser://page-load", { viewId: "stale-events", url: refusedUrl, phase, error: refused });
+  }
+  expect(result.current.loading).toBe(true);
+  expect(result.current.loadError).toBeNull();
+  expect(result.current.activeUrl).toBe("https://new.test/");
+  emitNative("browser://page-load", { viewId: "stale-events", url: "https://new.test/", phase: "finished" });
+  expect(result.current.loading).toBe(false);
+  expect(result.current.loadError).toBeNull();
+});
+
+it("retries the original failed URL and restores the child while dispatching", async () => {
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  const { result } = renderHook(() => useBrowserPanel(refusedUrl, surface(), false, "retry-error"));
+  await waitFor(() => expect(result.current.pending).toBe(false));
+  await waitFor(() => expect(nativeListeners.get("browser://page-load")?.size).toBe(1));
+  emitNative("browser://page-load", { viewId: "retry-error", url: refusedUrl, phase: "failed", error: refused });
+  let finish!: (value: { url: string }) => void;
+  vi.mocked(openBrowser).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  let retry!: Promise<void>;
+  await act(async () => { retry = result.current.action("reload"); });
+  expect(result.current.loadError).toBeNull();
+  expect(result.current.loading).toBe(true);
+  expect(setBrowserVisible).toHaveBeenLastCalledWith("retry-error", true);
+  expect(openBrowser).toHaveBeenLastCalledWith(refusedUrl, expect.any(Object), "retry-error", false);
+  await act(async () => { finish({ url: refusedUrl }); await retry; });
+  emitNative("browser://page-load", { viewId: "retry-error", url: refusedUrl, phase: "finished" });
+  expect(result.current.loading).toBe(false);
+  expect(result.current.loadError).toBeNull();
+});
+
+it("fails agent navigation promptly without exposing the previous DOM", async () => {
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  const { result } = renderHook(() => useBrowserPanel(refusedUrl, surface(), false, "agent-failure"));
+  await waitFor(() => expect(result.current.pending).toBe(false));
+  vi.mocked(currentBrowser)
+    .mockResolvedValueOnce({ url: refusedUrl, loadError: refused })
+    .mockResolvedValueOnce({ url: refusedUrl, loadError: refused });
+  vi.mocked(evaluateBrowser).mockRejectedValueOnce(new Error("No old document"));
+  await expect(executeEmbeddedBrowserRequest("agent-failure", "navigate", {
+    url: refusedUrl,
+    nextObservationId: "never-old-dom",
+  })).rejects.toThrow(refused.code);
+  expect(result.current.loadError?.url).toBe(refusedUrl);
+});
+
+it("handles a page link after the original navigation has completed", async () => {
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  const { result } = renderHook(() => useBrowserPanel("https://start.test/", surface(), false, "page-link"));
+  await waitFor(() => expect(result.current.pending).toBe(false));
+  await waitFor(() => expect(nativeListeners.get("browser://page-load")?.size).toBe(1));
+  emitNative("browser://page-load", { viewId: "page-link", url: "https://start.test/", phase: "finished" });
+  emitNative("browser://page-load", { viewId: "page-link", url: refusedUrl, phase: "started" });
+  expect(result.current.loading).toBe(true);
+  emitNative("browser://page-load", { viewId: "page-link", url: refusedUrl, phase: "failed", error: refused });
+  expect(result.current.loading).toBe(false);
+  expect(result.current.loadError?.url).toBe(refusedUrl);
+});
+
+it("keeps an old native page hidden if failure arrives during a resize", async () => {
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  let finish!: () => void;
+  vi.mocked(resizeBrowser).mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+  const { result } = renderHook(() => useBrowserPanel(refusedUrl, surface(), false, "resize-failure"));
+  await waitFor(() => expect(nativeListeners.get("browser://page-load")?.size).toBe(1));
+  await waitFor(() => expect(resizeBrowser).toHaveBeenCalled());
+  emitNative("browser://page-load", { viewId: "resize-failure", url: refusedUrl, phase: "failed", error: refused });
+  await act(async () => { finish(); });
+  expect(result.current.loadError?.url).toBe(refusedUrl);
+  expect(setBrowserVisible).toHaveBeenLastCalledWith("resize-failure", false);
+  vi.mocked(resizeBrowser).mockResolvedValue(undefined);
+});
+
+it("reports an explicit timeout even when no native load event arrives", async () => {
+  vi.useFakeTimers();
+  vi.mocked(isTauriRuntime).mockReturnValue(true);
+  const { result } = renderHook(() => useBrowserPanel(refusedUrl, surface(), false, "timeout-error"));
+  await act(async () => {});
+  await act(() => vi.advanceTimersByTimeAsync(PAGE_LOAD_GRACE_MS));
+  expect(result.current.loading).toBe(true);
+  expect(result.current.loadError).toBeNull();
+  await act(() => vi.advanceTimersByTimeAsync(PAGE_LOAD_SAFETY_MS - PAGE_LOAD_GRACE_MS));
+  expect(result.current.loading).toBe(false);
+  expect(result.current.loadError).toEqual({ url: refusedUrl, code: "NAVIGATION_TIMEOUT", message: "网页加载超时，请重试。" });
+  expect(setBrowserVisible).toHaveBeenLastCalledWith("timeout-error", false);
 });
 
 it("caps the loading indicator when a finished event never arrives", async () => {

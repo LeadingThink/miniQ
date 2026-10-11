@@ -101,6 +101,8 @@ export function BrowserPanel(props: {
   const native = isTauriRuntime();
   const apple = isApple();
   const mod = apple ? "⌘" : "Ctrl+";
+  const loadError = browser.loadError ?? null;
+  const failedTargetUrl = loadError?.url ?? browser.activeUrl;
   const onNavigate = useRef(props.onNavigate);
   onNavigate.current = props.onNavigate;
   const callbacks = useRef({ onTitle: props.onTitle, onOpenWindow: props.onOpenWindow });
@@ -282,7 +284,7 @@ export function BrowserPanel(props: {
           title="在系统浏览器中打开"
           aria-label="在系统浏览器中打开"
           onClick={() =>
-            void openExternalUrl(browser.activeUrl).catch((cause) =>
+            void openExternalUrl(failedTargetUrl).catch((cause) =>
               browser.setError(errorMessage(cause)),
             )
           }
@@ -407,9 +409,31 @@ export function BrowserPanel(props: {
         ref={surface}
         className="browser-surface"
         aria-busy={browser.loading}
-        aria-label={browser.loading ? "网页加载中" : "网页内容"}
+        aria-label={loadError ? "网页加载错误" : browser.loading ? "网页加载中" : "网页内容"}
       >
-        {!native && (
+        {loadError ? (
+          <section className="browser-error-state" role="alert" aria-labelledby={`browser-load-error-${viewId}`}>
+            <div className="browser-error-state-icon" aria-hidden="true">
+              <Globe2 size={28} />
+            </div>
+            <h2 id={`browser-load-error-${viewId}`}>无法访问此站点</h2>
+            <p className="browser-error-state-url">{loadError.url}</p>
+            <p className="browser-error-state-message">{loadError.message}</p>
+            <p className="browser-error-state-code">
+              <span>错误代码</span>
+              <code>{loadError.code}</code>
+            </p>
+            <button
+              type="button"
+              className="browser-error-state-retry"
+              disabled={browser.pending}
+              onClick={() => void browser.load(loadError.url).catch(() => {})}
+            >
+              <RefreshCw size={15} />
+              重试
+            </button>
+          </section>
+        ) : !native ? (
           <iframe
             key={browser.revision}
             src={browser.activeUrl}
@@ -421,12 +445,12 @@ export function BrowserPanel(props: {
               browser.setError("网页加载失败");
             }}
           />
-        )}
+        ) : null}
       </div>
       <footer className="browser-status" role="status" aria-live="polite">
         <span className={browser.loading ? "browser-loading" : ""} />
         <span>
-          {browser.loading ? "正在加载" : native ? "内置浏览器" : "网页预览"}
+          {loadError ? "加载失败" : browser.loading ? "正在加载" : native ? "内置浏览器" : "网页预览"}
         </span>
         <code title={browser.activeUrl}>{browser.activeUrl}</code>
       </footer>

@@ -55,7 +55,7 @@ block2 = "0.6"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSObject", "NSError", "NSString", "NSData", "NSDictionary", "NSURL", "NSGeometry"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSResponder", "NSTextField", "NSView", "NSWindow"] }
-objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "WKWebView", "WKSnapshotConfiguration", "WKUIDelegate", "WKFrameInfo", "WKSecurityOrigin", "block2"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "WKWebView", "WKSnapshotConfiguration", "WKUIDelegate", "WKNavigation", "WKNavigationDelegate", "WKFrameInfo", "WKSecurityOrigin", "block2"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

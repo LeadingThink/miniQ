@@ -1,6 +1,110 @@
 .browser-panel {
   container-type: inline-size;
 }
+
+.browser-surface {
+  display: flex;
+  min-width: 0;
+}
+
+.browser-error-state {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 0;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px clamp(20px, 6vw, 72px);
+  overflow-y: auto;
+  color: var(--text-mid);
+  text-align: center;
+}
+
+.browser-error-state-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border));
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg));
+  color: var(--danger);
+}
+
+.browser-error-state h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-title3);
+  font-weight: 650;
+}
+
+.browser-error-state-url {
+  max-width: min(100%, 680px);
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--font-caption);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.browser-error-state-message {
+  max-width: 680px;
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.browser-error-state-code {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+}
+
+.browser-error-state-code code {
+  color: var(--danger);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.browser-error-state-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 4px;
+  padding: 8px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.browser-error-state-retry:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.browser-error-state-retry:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
 @container (max-width: 440px) {
   .browser-panel .browser-toolbar {
     display: flex;

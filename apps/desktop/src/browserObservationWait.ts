@@ -1,5 +1,8 @@
 import type { BrowserScriptResult } from "./browserAutomationScript";
 
+/** A reported native navigation failure cannot recover by rereading the old DOM. */
+export class BrowserNavigationError extends Error {}
+
 export interface BrowserNavigationExpectation {
   url?: string;
   previous?: Pick<BrowserScriptResult, "url"> & Partial<Pick<BrowserScriptResult, "documentId">>;
@@ -62,6 +65,7 @@ export async function waitForBrowserObservation(
         if (stableSamples >= 3) return candidate;
       }
     } catch (cause) {
+      if (cause instanceof BrowserNavigationError) throw cause;
       // Retrying an observation is safe; never replay the preceding mutation.
       lastError = cause;
       latest = undefined;

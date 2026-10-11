@@ -1,5 +1,6 @@
 import { isTauriRuntime } from "./runtime";
 import type { BrowserCapabilities } from "./types";
+import type { BrowserLoadError } from "./browserEvents";
 
 export interface BrowserBounds {
   x: number;
@@ -10,6 +11,7 @@ export interface BrowserBounds {
 
 export interface BrowserState {
   url: string;
+  loadError?: BrowserLoadError;
   /** Current zoom factor; returned by zoom actions. */
   zoom?: number;
 }
