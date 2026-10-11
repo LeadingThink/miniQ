@@ -494,7 +494,7 @@ pub(super) fn install(
                 if let Some(args) = args {
                     let mut cancelled = BOOL::default();
                     args.Cancel(&mut cancelled)?;
-                    if cancelled != 0 {
+                    if cancelled.as_bool() {
                         return Ok(());
                     }
                     let mut id = 0;
@@ -521,7 +521,7 @@ pub(super) fn install(
                     let mut success = BOOL::default();
                     args.NavigationId(&mut id)?;
                     args.IsSuccess(&mut success)?;
-                    if success != 0 {
+                    if success.as_bool() {
                         page_load(&app, &label, id, "finished", None, None);
                     } else {
                         let mut status = COREWEBVIEW2_WEB_ERROR_STATUS::default();
