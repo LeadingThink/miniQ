@@ -16,11 +16,13 @@ import {
   Search,
   Sparkles,
   Upload,
+  Plus,
 } from "lucide-react";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 import { RemotePathDialog } from "./RemotePathDialog";
+import { CreateSkillDialog } from "./CreateSkillDialog";
 import { EmptyState } from "./ui/EmptyState";
 import { Switch } from "./ui/Switch";
 import { showUndoToast, useToast } from "./ui/Toast";
@@ -191,6 +193,7 @@ export function SkillsPanel(props: {
   const [detail, setDetail] = useState<SkillDetailView | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [remotePicker, setRemotePicker] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
   const [search, setSearch] = useState("");
   const [source, setSource] = useState("all");
@@ -361,14 +364,33 @@ export function SkillsPanel(props: {
               发现和管理可复用的工作流。启用后模型可按任务选择技能，并非每次都会执行。
             </div>
           </div>
-          <button
-            onClick={() => void importPackage()}
-            title="导入或更新包含一个或多个 SKILL.md 的目录"
-          >
-            <Upload size={15} />
-            导入技能包
-          </button>
+          <div className="skills-page-actions">
+            <button
+              className="secondary"
+              onClick={() => void importPackage()}
+              title="导入或更新包含一个或多个 SKILL.md 的目录"
+            >
+              <Upload size={15} />
+              导入技能包
+            </button>
+            <button onClick={() => setCreating(true)} title="描述一个重复任务，生成可编辑的技能草稿">
+              <Plus size={15} />
+              新建技能
+            </button>
+          </div>
         </div>
+        {creating && (
+          <CreateSkillDialog
+            client={props.client}
+            onClose={() => setCreating(false)}
+            onSaved={(name) => {
+              setCreating(false);
+              setStatus(`已保存技能 ${name}，新对话即可使用`);
+              setView("mine");
+              void refresh();
+            }}
+          />
+        )}
         {status && <div className="settings-status">{status}</div>}
         {loading && (
           <div className="settings-status" role="status">

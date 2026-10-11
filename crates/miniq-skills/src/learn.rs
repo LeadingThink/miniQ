@@ -114,7 +114,7 @@ pub fn scan_sensitive(content: &str) -> Vec<String> {
     warnings
 }
 
-fn strip_code_fence(raw: &str) -> &str {
+pub(crate) fn strip_code_fence(raw: &str) -> &str {
     let trimmed = raw.trim();
     let Some(inner) = trimmed.strip_prefix("```") else {
         return trimmed;

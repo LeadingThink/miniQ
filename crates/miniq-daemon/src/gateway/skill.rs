@@ -242,3 +242,56 @@ pub(super) fn save(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
     );
     to_value(json!({ "name": metadata.name, "version": metadata.version }))
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateParams {
+    goal: String,
+    #[serde(default)]
+    name: Option<String>,
+}
+
+/// Draft a new skill from a plain-language goal. Nothing is installed until
+/// the user reviews the draft and calls `skill.save`.
+pub(super) async fn create(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: CreateParams = params(raw)?;
+    let goal = input.goal.trim();
+    if goal.chars().count() < 4 {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "describe what the skill should do",
+        ));
+    }
+    if goal.chars().count() > 8000 {
+        return Err(RpcError::new(
+            ErrorCode::InvalidParams,
+            "skill description is too long",
+        ));
+    }
+    let existing = existing_skill_names(state);
+    let inference = crate::learn::ProviderInference {
+        provider: state.current_provider(),
+    };
+    let created = miniq_skills::create_skill(goal, input.name.as_deref(), &existing, &inference)
+        .await
+        .map_err(|error| RpcError::new(ErrorCode::InternalError, error.to_string()))?;
+    let validation = miniq_skills::validate_skill(&created.content, &existing);
+    to_value(json!({
+        "content": created.content,
+        "name": created.name,
+        "description": created.description,
+        "validation": validation,
+    }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ValidateParams {
+    content: String,
+}
+
+pub(super) fn validate(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let input: ValidateParams = params(raw)?;
+    let existing = existing_skill_names(state);
+    to_value(miniq_skills::validate_skill(&input.content, &existing))
+}

@@ -294,3 +294,46 @@ async fn disabled_skill_leaves_prompt() {
     assert!(!system.content.contains("organize-directory"));
     assert!(system.content.contains("summarize-changes"));
 }
+
+#[tokio::test]
+async fn skill_create_drafts_without_installing_and_validate_flags_secrets() {
+    let draft = "---\nname: weekly-report\ndisplayName: 周报整理\ndescription: 汇总本周提交并生成周报草稿，用户要求写周报时使用\nversion: 1\norigin: user\n---\n\n## 步骤\n1. 用 shell_run 读取本周 git log。\n2. 用 doc_write 写周报。\n\n## 如何确认完成\n周报包含本周每个工作日。\n";
+    let provider = Arc::new(MockProvider::text(draft));
+    let (port, token) = start(provider).await;
+    let mut ws = connect(port, &token).await;
+
+    let created = call(
+        &mut ws,
+        "create",
+        "skill.create",
+        json!({"goal": "每周五整理周报"}),
+    )
+    .await;
+    assert_eq!(created["result"]["name"], "weekly-report");
+    assert_eq!(created["result"]["validation"]["valid"], true);
+    // Drafting never installs: the skill is absent until skill.save.
+    let listed = call(&mut ws, "list", "skill.list", json!({})).await;
+    assert!(!listed["result"]["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|s| s["name"] == "weekly-report"));
+
+    let short = call(&mut ws, "short", "skill.create", json!({"goal": "  a "})).await;
+    assert!(short["error"].is_object());
+
+    let secret = draft.replace("本周提交", "api_key=sk-abcdefghijklmnopqrstu");
+    let checked = call(
+        &mut ws,
+        "validate",
+        "skill.validate",
+        json!({"content": secret}),
+    )
+    .await;
+    assert_eq!(checked["result"]["valid"], false);
+    assert!(checked["result"]["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|c| c["id"] == "secrets" && c["level"] == "error"));
+}

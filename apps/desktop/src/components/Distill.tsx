@@ -23,14 +23,14 @@ interface DistillModalProps {
 
 function PhaseMessage(props: { phase: DistillPhase; reason: string }) {
   if (props.phase === "loading") {
-    return <div className="settings-status">Distilling this session into a skill...</div>;
+    return <div className="settings-status">正在从本会话提炼技能…</div>;
   }
   if (props.phase === "skipped") {
-    return <div className="settings-status">Not saved: {props.reason}</div>;
+    return <div className="settings-status">未保存：{props.reason}</div>;
   }
   if (props.phase === "saved") {
     return (
-      <div className="settings-status">Skill saved. It will be available in new turns.</div>
+      <div className="settings-status">技能已保存，新对话即可使用。</div>
     );
   }
   return null;
@@ -51,19 +51,19 @@ function DistillDraft(props: {
     <>
       <div className="card-head">
         <span className="tool-name">{props.name}</span>
-        {props.existing && <span className="badge medium">name exists</span>}
+        {props.existing && <span className="badge medium">已存在同名技能</span>}
       </div>
       {props.existing && (
         <div className="settings-status">
-          A skill with this name already exists —
+          已存在同名技能 —
           <button className="secondary" onClick={props.onRefine} style={{ marginLeft: 8 }}>
-            Update existing skill instead
+            改为更新已有技能
           </button>
         </div>
       )}
       {hasWarnings && (
         <div className="error-banner">
-          Possible sensitive content: {props.warnings.join("; ")} — edit before saving.
+          疑似敏感内容：{props.warnings.join("；")}，请先修改再保存。
         </div>
       )}
       <textarea
@@ -73,10 +73,10 @@ function DistillDraft(props: {
       />
       <div className="approval-actions">
         <button onClick={() => props.onSave(hasWarnings)}>
-          {hasWarnings ? "Save anyway" : "Save skill"}
+          {hasWarnings ? "仍然保存" : "保存技能"}
         </button>
         <button className="secondary" onClick={props.onClose}>
-          Cancel
+          取消
         </button>
       </div>
     </>
@@ -87,7 +87,7 @@ function CloseActions(props: { onClose: () => void }) {
   return (
     <div className="approval-actions">
       <button className="secondary" onClick={props.onClose}>
-        Close
+        关闭
       </button>
     </div>
   );
@@ -164,7 +164,7 @@ export function DistillModal(props: DistillModalProps) {
         className="settings-panel skills-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Save as skill"
+        aria-label="保存为技能"
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
@@ -174,7 +174,7 @@ export function DistillModal(props: DistillModalProps) {
           }
         }}
       >
-        <h2>Save as skill</h2>
+        <h2>保存为技能</h2>
         {error && <div className="error-banner">{error}</div>}
         <PhaseMessage phase={phase} reason={reason} />
         {phase === "draft" && (

@@ -228,7 +228,21 @@ impl SkillStore {
         })?;
         let dir = self.user_root.join(&meta.name);
         std::fs::create_dir_all(&dir)?;
-        std::fs::write(dir.join("SKILL.md"), content)?;
+        let target = dir.join("SKILL.md");
+        // Overwrites keep the previous file in a hidden history folder so an
+        // edited or regenerated skill can be restored by hand.
+        if target.is_file() {
+            let history = dir.join(".history");
+            std::fs::create_dir_all(&history)?;
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_millis())
+                .unwrap_or_default();
+            std::fs::copy(&target, history.join(format!("SKILL.{stamp}.md")))?;
+        }
+        let staging = dir.join(".SKILL.md.tmp");
+        std::fs::write(&staging, content)?;
+        std::fs::rename(staging, target)?;
         Ok(meta)
     }
 
@@ -590,6 +604,30 @@ mod tests {
         assert!(detail.body.contains("body of on-disk"));
         assert_eq!(detail.files, vec!["scripts/run.py"]);
         assert!(detail.skill_dir.is_some());
+    }
+
+    #[test]
+    fn saving_over_a_skill_keeps_a_hidden_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(dir.path(), Vec::new());
+        let first =
+            "---\nname: report\ndescription: first version of the report skill\n---\nbody one";
+        let second = "---\nname: report\ndescription: second version of the report skill\nversion: 2\n---\nbody two";
+        store.save(first).unwrap();
+        store.save(second).unwrap();
+        let skill_dir = store.user_root().join("report");
+        assert!(std::fs::read_to_string(skill_dir.join("SKILL.md"))
+            .unwrap()
+            .contains("body two"));
+        let backups: Vec<_> = std::fs::read_dir(skill_dir.join(".history"))
+            .unwrap()
+            .flatten()
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert!(std::fs::read_to_string(backups[0].path())
+            .unwrap()
+            .contains("body one"));
+        assert!(store.read(None, "report").unwrap().files.is_empty());
     }
 
     #[test]

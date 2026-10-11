@@ -145,7 +145,8 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "remote.status"
         | "voice.capabilities"
         | "skill.list"
-        | "skill.read" => ReadOnly,
+        | "skill.read"
+        | "skill.validate" => ReadOnly,
         "host.connect"
         | "host.disconnect"
         | "workspace.create"
@@ -162,7 +163,8 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "skill.import"
         | "skill.distill"
         | "skill.refine"
-        | "skill.save" => Allow,
+        | "skill.save"
+        | "skill.create" => Allow,
         "skill.setEnabled" => ToggleOnly,
         _ => return None,
     })

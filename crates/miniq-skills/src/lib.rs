@@ -8,11 +8,15 @@
 //! This crate only handles parsing, discovery and prompt generation. Model
 //! calls for distill/refine (M4) are injected behind a trait by the daemon.
 
+mod creator;
 mod learn;
 mod parse;
 mod prompt;
 mod store;
 
+pub use creator::{
+    create_skill, validate_skill, CheckLevel, CreatedSkill, SkillCheck, SkillValidation,
+};
 pub use learn::{
     distill_skill, refine_skill, scan_sensitive, DistillOutcome, LearnError, RefineOutcome,
     SkillInference,
