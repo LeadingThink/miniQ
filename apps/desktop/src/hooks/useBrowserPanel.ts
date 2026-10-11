@@ -18,7 +18,7 @@ import {
   type BrowserCommandAction,
   type BrowserNavigationAction,
 } from "../browserWorkbench";
-import { listenBrowserEvent } from "../browserEvents";
+import { listenBrowserEvent, type BrowserLoadError } from "../browserEvents";
 import {
   buildBrowserAutomationScript,
   parseBrowserScriptResult,
@@ -26,7 +26,7 @@ import {
 } from "../browserAutomationScript";
 import { registerEmbeddedBrowser } from "../embeddedBrowserDriver";
 import { captureBrowserObservation } from "../browserVisualObservation";
-import { waitForBrowserObservation, type BrowserNavigationExpectation } from "../browserObservationWait";
+import { BrowserNavigationError, waitForBrowserObservation, type BrowserNavigationExpectation } from "../browserObservationWait";
 import { errorMessage } from "../errorMessage";
 import { isTauriRuntime } from "../runtime";
 import { useOpenDialog } from "./useOpenDialog";
@@ -54,9 +54,14 @@ export function useBrowserPanel(
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<(BrowserLoadError & { url: string }) | null>(null);
   const [revision, setRevision] = useState(0);
   const [zoom, setZoom] = useState(1);
   const pageLoading = useRef(false);
+  const loadErrorRef = useRef<(BrowserLoadError & { url: string }) | null>(null);
+  const navigationTarget = useRef<string | undefined>(url);
+  const previousNavigationUrl = useRef<string | undefined>(undefined);
+  const navigationCanceled = useRef(false);
   const pageLoadEvents = useRef(0);
   const graceTimer = useRef<number | undefined>(undefined);
   const editing = useRef(false);
@@ -66,12 +71,29 @@ export function useBrowserPanel(
   const opened = useRef(false);
   const pendingLoad = useRef<Promise<void> | null>(null);
   const pendingNavigation = useRef<BrowserNavigationExpectation | undefined>(undefined);
+  const navigationFailure = useRef<(BrowserLoadError & { url: string }) | null>(null);
   const lastObservation = useRef<BrowserScriptResult | undefined>(undefined);
   const initialUrl = useRef(url);
   const initialLoadStarted = useRef(false);
   const surfaceSequence = useRef(0);
   const suspendedRef = useRef(suspended);
   suspendedRef.current = suspended;
+  const clearLoadError = useCallback(() => {
+    loadErrorRef.current = null;
+    navigationFailure.current = null;
+    setLoadError(null);
+  }, []);
+  const failLoad = useCallback((target: string, cause: BrowserLoadError) => {
+    const failure = { url: target, code: cause.code, message: cause.message };
+    loadErrorRef.current = failure;
+    surfaceSequence.current++;
+    pageLoading.current = false;
+    setLoading(false);
+    setError(null);
+    setLoadError(failure);
+    if (pendingNavigation.current?.url === target) navigationFailure.current = failure;
+    void setBrowserVisible(viewId, false).catch(() => {});
+  }, [viewId]);
   const rememberObservation = useCallback((result: BrowserScriptResult) => {
     if (result.readyState !== "loading" && /^https?:\/\//i.test(result.url)) lastObservation.current = result;
     return result;
@@ -86,14 +108,15 @@ export function useBrowserPanel(
     );
   }, []);
   // The IPC call returns once a navigation is dispatched. Loading then follows
-  // browser://page-load; if no page load starts, the dispatch was a no-op.
-  const settleLoading = useCallback((eventsBefore: number) => {
+  // browser://page-load. Only history actions may be a no-op without a load.
+  const settleLoading = useCallback((eventsBefore: number, allowNoOp = true) => {
     window.clearTimeout(graceTimer.current);
     if (pageLoading.current) return;
     if (pageLoadEvents.current !== eventsBefore) {
       setLoading(false);
       return;
     }
+    if (!allowNoOp) return;
     graceTimer.current = window.setTimeout(() => {
       if (mounted.current && !pageLoading.current && pageLoadEvents.current === eventsBefore) setLoading(false);
     }, PAGE_LOAD_GRACE_MS);
@@ -101,7 +124,7 @@ export function useBrowserPanel(
   const reconcileSurface = useCallback(async () => {
     const request = ++surfaceSequence.current;
     const rect = surface.current?.getBoundingClientRect();
-    if (!mounted.current || suspendedRef.current || !rect || rect.width <= 0 || rect.height <= 0) {
+    if (!mounted.current || suspendedRef.current || loadErrorRef.current || !rect || rect.width <= 0 || rect.height <= 0) {
       await setBrowserVisible(viewId, false);
       return;
     }
@@ -109,7 +132,7 @@ export function useBrowserPanel(
     // the background. Move the native child before exposing it to the user.
     await resizeBrowser({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }, viewId);
     if (request !== surfaceSequence.current) return;
-    await setBrowserVisible(viewId, mounted.current && !suspendedRef.current);
+    await setBrowserVisible(viewId, mounted.current && !suspendedRef.current && !loadErrorRef.current);
   }, [surface, viewId]);
   const load = useCallback(
     (target: string) => {
@@ -125,9 +148,16 @@ export function useBrowserPanel(
         const eventsBefore = pageLoadEvents.current;
         let dispatched = false;
         inFlight.current = true;
+        window.clearTimeout(graceTimer.current);
+        previousNavigationUrl.current = active.current;
+        navigationTarget.current = target;
+        navigationCanceled.current = false;
         setPending(true);
         setLoading(true);
         setError(null);
+        const wasFailed = loadErrorRef.current !== null;
+        clearLoadError();
+        if (wasFailed && !suspendedRef.current) void setBrowserVisible(viewId, true).catch(() => {});
         setAddress(target);
         try {
           const navigation: BrowserNavigationExpectation = { url: target };
@@ -164,6 +194,7 @@ export function useBrowserPanel(
           await reconcileSurface();
           if (!mounted.current || request !== sequence.current) return;
           accept(state.url);
+          if (state.loadError && state.url === target) failLoad(state.url, state.loadError);
           setAddress(state.url);
           setRevision((value) => value + 1);
           dispatched = true;
@@ -179,7 +210,7 @@ export function useBrowserPanel(
             inFlight.current = false;
             setPending(false);
             if (isTauriRuntime()) {
-              if (dispatched) settleLoading(eventsBefore);
+              if (dispatched) settleLoading(eventsBefore, false);
               else setLoading(false);
             }
           }
@@ -191,7 +222,7 @@ export function useBrowserPanel(
       }).catch(() => {});
       return operation;
     },
-    [surface, viewId, accept, reconcileSurface, rememberObservation, settleLoading],
+    [surface, viewId, accept, clearLoadError, failLoad, reconcileSurface, rememberObservation, settleLoading],
   );
 
   useEffect(() => {
@@ -214,10 +245,14 @@ export function useBrowserPanel(
       capabilities: browserCapabilities,
       execute: async (operation, arguments_) => {
         if (operation !== "stop" && pendingLoad.current) await pendingLoad.current;
-        const observe = async (snapshotArguments = arguments_) => rememberObservation(parseBrowserScriptResult(await evaluateBrowser(
-          viewId,
-          buildBrowserAutomationScript("snapshot", snapshotArguments, viewId),
-        )));
+        const observe = async (snapshotArguments = arguments_) => {
+          const failure = loadErrorRef.current;
+          if (failure) throw new BrowserNavigationError(`${failure.message} (${failure.code}) ${failure.url}`);
+          return rememberObservation(parseBrowserScriptResult(await evaluateBrowser(
+            viewId,
+            buildBrowserAutomationScript("snapshot", snapshotArguments, viewId),
+          )));
+        };
         const freshSnapshotArguments = () => ({
           nextObservationId: arguments_.nextObservationId,
           offset: arguments_.offset,
@@ -226,10 +261,21 @@ export function useBrowserPanel(
         const observeAfterMutation = () => waitForBrowserObservation(() => observe(freshSnapshotArguments()));
         const observeNavigation = async () => {
           const navigation = pendingNavigation.current;
+          const failure = navigationFailure.current;
+          if (failure && (!navigation || failure.url === navigation.url)) {
+            navigationFailure.current = null;
+            if (pendingNavigation.current === navigation) pendingNavigation.current = undefined;
+            throw new Error(`${failure.message} (${failure.code})`);
+          }
           try {
+            if (isTauriRuntime()) {
+              const state = await currentBrowser(viewId);
+              if (state?.loadError) failLoad(state.url, state.loadError);
+            }
             return await waitForBrowserObservation(() => observe(freshSnapshotArguments()), navigation);
           } finally {
             if (pendingNavigation.current === navigation) pendingNavigation.current = undefined;
+            if (navigationFailure.current === failure) navigationFailure.current = null;
           }
         };
         // A user may hand an already-visible tab to the agent while its first
@@ -271,6 +317,7 @@ export function useBrowserPanel(
           if (operation === "stop") {
             await browserAction("stop", viewId);
             pendingNavigation.current = undefined;
+            navigationFailure.current = null;
             return observe();
           }
           if (operation === "setVisible") {
@@ -326,7 +373,7 @@ export function useBrowserPanel(
         return result;
       },
     });
-  }, [load, rememberObservation, requestedBrowserSessionId, surface, viewId]);
+  }, [load, rememberObservation, failLoad, requestedBrowserSessionId, surface, viewId]);
   useEffect(() => {
     if ((requestedBrowserSessionId && !autoLoad) || initialLoadStarted.current) return;
     initialLoadStarted.current = true;
@@ -335,24 +382,50 @@ export function useBrowserPanel(
 
   useEffect(() => listenBrowserEvent("browser://page-load", viewId, (event) => {
     if (!mounted.current) return;
+    if (navigationCanceled.current) return;
+    const expected = navigationTarget.current;
+    const current = active.current;
+    // A native event from a previous page can arrive after a new navigation.
+    // Redirect completions are allowed while the current navigation is busy.
+    if (expected && event.url !== expected && event.url === previousNavigationUrl.current) return;
+    if (inFlight.current && expected && event.url !== expected && event.url !== current && event.phase !== "finished") return;
+    if (loadErrorRef.current && event.phase !== "started") return;
     pageLoadEvents.current++;
     pageLoading.current = event.phase === "started";
     // An explicit navigation in flight settles the indicator itself once its
     // IPC returns, so a late event from the previous page cannot clear it.
-    if (inFlight.current) return;
+    if (inFlight.current && event.phase !== "failed") {
+      if (event.phase === "finished") {
+        navigationTarget.current = undefined;
+        previousNavigationUrl.current = undefined;
+      }
+      return;
+    }
     window.clearTimeout(graceTimer.current);
     setLoading(event.phase === "started");
-    if (event.phase === "finished" && /^https?:\/\//i.test(event.url)) accept(event.url);
-  }), [viewId, accept]);
+    if (event.phase === "failed") {
+      const failure = event.error ?? { code: "NAVIGATION_FAILED", message: "网页加载失败。" };
+      failLoad(event.url, failure);
+      if (/^https?:\/\//i.test(event.url)) accept(event.url);
+    } else if (event.phase === "finished" && /^https?:\/\//i.test(event.url)) {
+      accept(event.url);
+      clearLoadError();
+      navigationTarget.current = undefined;
+      previousNavigationUrl.current = undefined;
+    }
+  }), [viewId, accept, clearLoadError, failLoad]);
 
   useEffect(() => {
     if (!loading || !isTauriRuntime()) return;
     const timer = window.setTimeout(() => {
+      if (loadErrorRef.current) return;
       pageLoading.current = false;
       setLoading(false);
+      const target = navigationTarget.current ?? active.current;
+      failLoad(target, { code: "NAVIGATION_TIMEOUT", message: "网页加载超时，请重试。" });
     }, PAGE_LOAD_SAFETY_MS);
     return () => window.clearTimeout(timer);
-  }, [loading]);
+  }, [loading, failLoad]);
 
   useEffect(() => {
     const element = surface.current;
@@ -392,8 +465,15 @@ export function useBrowserPanel(
       const request = sequence.current;
       try {
         const state = await currentBrowser(viewId);
-        if (!disposed && request === sequence.current && state)
-          accept(state.url);
+        if (!disposed && request === sequence.current && state) {
+          if (state.loadError) {
+            navigationTarget.current = state.url;
+            if (/^https?:\/\//i.test(state.url)) accept(state.url);
+            failLoad(state.url, state.loadError);
+          } else if (!loadErrorRef.current) {
+            accept(state.url);
+          }
+        }
       } catch (cause) {
         if (!disposed && request === sequence.current)
           setError(`无法同步浏览器状态：${errorMessage(cause)}`);
@@ -408,7 +488,7 @@ export function useBrowserPanel(
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [viewId, accept, suspended]);
+  }, [viewId, accept, failLoad, suspended]);
 
   const action = async (command: BrowserNavigationAction) => {
     // Stopping is deliberately allowed while another navigation is in flight;
@@ -418,9 +498,13 @@ export function useBrowserPanel(
       if (command === "reload") {
         setLoading(true);
         setError(null);
+        clearLoadError();
         setRevision((value) => value + 1);
       }
       return;
+    }
+    if (command === "reload" && loadErrorRef.current) {
+      return load(loadErrorRef.current.url);
     }
     const request = command === "stop" ? sequence.current : ++sequence.current;
     const eventsBefore = pageLoadEvents.current;
@@ -428,15 +512,25 @@ export function useBrowserPanel(
     if (command === "stop") {
       window.clearTimeout(graceTimer.current);
       pageLoading.current = false;
+      navigationCanceled.current = true;
+      navigationTarget.current = undefined;
     } else {
       inFlight.current = true;
+      previousNavigationUrl.current = active.current;
+      navigationTarget.current = command === "reload" ? active.current : undefined;
+      navigationCanceled.current = false;
       setPending(true);
       setLoading(true);
+      setError(null);
+      clearLoadError();
     }
     try {
       const state = await browserAction(command, viewId);
       if (mounted.current && request === sequence.current) {
-        if (state) accept(state.url);
+        if (state) {
+          accept(state.url);
+          if (state.loadError) failLoad(state.url, state.loadError);
+        }
         setError(null);
         dispatched = command !== "stop";
       }
@@ -474,5 +568,6 @@ export function useBrowserPanel(
     command,
     zoom,
     viewId,
+    loadError,
   };
 }

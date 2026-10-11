@@ -3,16 +3,22 @@ import { act, fireEvent, render, cleanup, waitFor } from "@testing-library/react
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BrowserPanel, browserShortcut } from "./BrowserPanel";
 
-const { load, action, command, invoke, nativeListeners, hookArgs } = vi.hoisted(() => ({
+const { load, action, command, invoke, openExternal, nativeListeners, hookArgs } = vi.hoisted(() => ({
   load: vi.fn(async () => {}),
   action: vi.fn(async () => {}),
   command: vi.fn(async () => null),
   invoke: vi.fn(async () => undefined),
+  openExternal: vi.fn(async () => {}),
   nativeListeners: new Map<string, Set<(event: { payload: unknown }) => void>>(),
   hookArgs: [] as unknown[][],
 }));
-const state = { address: "https://next.test/", zoom: 1 };
+const state = {
+  address: "https://next.test/",
+  zoom: 1,
+  loadError: null as { url: string; code: string; message: string } | null,
+};
 vi.mock("../runtime", () => ({ isTauriRuntime: () => true }));
+vi.mock("../externalLinks", () => ({ openExternalUrl: openExternal }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (name: string, handler: (event: { payload: unknown }) => void) => {
@@ -26,13 +32,14 @@ vi.mock("../hooks/useBrowserPanel", () => ({ useBrowserPanel: (...args: unknown[
   hookArgs.push(args);
   return {
     address: state.address, activeUrl: "https://first.test/", pending: false,
-    loading: false, error: null, editing: { current: false }, load,
+    loading: false, error: null, ...(state.loadError ? { loadError: state.loadError } : {}), editing: { current: false }, load,
     setAddress: vi.fn(), setError: vi.fn(), action, command, zoom: state.zoom, viewId: "view-1",
   };
 } }));
 beforeEach(() => {
   state.address = "https://next.test/";
   state.zoom = 1;
+  state.loadError = null;
   hookArgs.length = 0;
   nativeListeners.clear();
 });
@@ -56,6 +63,28 @@ it("explicitly navigates a manual tab without relying on URL metadata effects", 
   fireEvent.submit(view.getByLabelText("网址").closest("form")!);
   expect(load).toHaveBeenCalledExactlyOnceWith("https://next.test/");
   expect(onNavigate).toHaveBeenCalledExactlyOnceWith("https://next.test/");
+});
+
+it("shows a navigation error center with retry details and the failed URL", () => {
+  const loadError = {
+    url: "https://failed.test/path?q=full-value#section",
+    code: "ERR_NAME_NOT_RESOLVED",
+    message: "无法解析主机名 failed.test",
+  };
+  state.loadError = loadError;
+  const view = render(<BrowserPanel url="https://first.test/" onNavigate={vi.fn()} onClose={vi.fn()} />);
+
+  expect(view.getByRole("heading", { name: "无法访问此站点" })).toBeTruthy();
+  expect(view.getByText(loadError.url)).toBeTruthy();
+  expect(view.getByText(loadError.message)).toBeTruthy();
+  expect(view.getByText(loadError.code)).toBeTruthy();
+  expect(view.getByText("加载失败")).toBeTruthy();
+  expect(view.getByLabelText("网页加载错误").querySelector("iframe")).toBeNull();
+
+  fireEvent.click(view.getByRole("button", { name: "重试" }));
+  expect(load).toHaveBeenCalledExactlyOnceWith(loadError.url);
+  fireEvent.click(view.getByRole("button", { name: "在系统浏览器中打开" }));
+  expect(openExternal).toHaveBeenCalledExactlyOnceWith(loadError.url);
 });
 
 it.each([

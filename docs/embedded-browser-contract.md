@@ -23,7 +23,7 @@ Payload fields use camelCase. `viewId` is the id passed to `browser_open`.
 
 | Event | Payload | When |
 |---|---|---|
-| `browser://page-load` | `{ viewId, url, phase: "started" \| "finished" }` | `on_page_load` |
+| `browser://page-load` | `{ viewId, url, phase: "started" \| "finished" \| "failed", error?: { code, message } }` | Native navigation lifecycle. `failed` reports the actual engine error, including failures before a page commits. |
 | `browser://title` | `{ viewId, title }` | `on_document_title_changed` |
 | `browser://new-window` | `{ viewId, url }` | `window.open`, `target=_blank`, context menu "open in new window". Rust denies the native window. Frontend opens a new in-app tab with `url`. |
 | `browser://download` | `{ viewId, id, url, fileName, path, phase: "started" \| "finished" \| "failed" }` | `on_download`. `id` is stable across phases of one download. |
@@ -41,7 +41,10 @@ It still returns `BrowserState { url }`.
 | `devtools` | Open web inspector for this view |
 | `clear_data` | Clear cookies and site data of the shared browser profile |
 
-`BrowserState` gains an optional field `zoom: number` (current factor) for zoom actions.
+`BrowserState` includes an optional field `zoom: number` (current factor) for zoom actions.
+It also includes `loadError?: { code: string, message: string }` after a failed navigation.
+The failed target remains the reported `url`, even when the previous page is still committed.
+Polling this state recovers errors emitted before the frontend event listener was ready.
 
 New command `browser_reveal_download { path }`: reveal a finished download in Finder / Explorer.
 Path must be inside the download directory.
@@ -64,6 +67,11 @@ Path must be inside the download directory.
 1. Address bar: text that is not a URL becomes a Bing search
    (`https://www.bing.com/search?q=`). `localhost`, `127.0.0.1` and private hosts default to `http://`.
 2. Loading indicator follows `browser://page-load`, not the IPC return.
+   Native navigation failures stop the indicator and show an error panel with the
+   target URL, engine error code, and retry action. The native child is hidden
+   while that panel is displayed; it is not closed and its cookies are retained.
+   Navigation cancellation is not a site failure. A navigation with no terminal
+   event gets a distinct timeout message, without guessing the network cause.
 3. Tab label uses `browser://title`, falls back to hostname.
 4. `browser://new-window` opens a new tab and focuses it.
 5. Downloads: a small list/toast with file name, state, and "在访达中显示".
@@ -73,5 +81,5 @@ Path must be inside the download directory.
 ## Out of scope for Phase 1
 
 Find in page, real back/forward enabled state, progress percentage,
-favicon, error pages, basic-auth and certificate prompts, opener-preserving
+favicon, basic-auth and certificate prompts, opener-preserving
 popups, permission prompts, trusted (native) agent input.

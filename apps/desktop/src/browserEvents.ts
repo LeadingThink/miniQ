@@ -1,7 +1,13 @@
 import { isTauriRuntime } from "./runtime";
 
 /** Native browser events emitted by `src-tauri/src/browser.rs` (see docs/embedded-browser-contract.md). */
-export interface BrowserPageLoadEvent { viewId: string; url: string; phase: "started" | "finished" }
+export interface BrowserLoadError { code: string; message: string }
+export interface BrowserPageLoadEvent {
+  viewId: string;
+  url: string;
+  phase: "started" | "finished" | "failed";
+  error?: BrowserLoadError;
+}
 export interface BrowserTitleEvent { viewId: string; title: string }
 export interface BrowserNewWindowEvent { viewId: string; url: string }
 export interface BrowserDownloadEvent {

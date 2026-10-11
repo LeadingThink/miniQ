@@ -1,7 +1,16 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { BrowserScriptResult } from "./browserAutomationScript";
-import { waitForBrowserObservation } from "./browserObservationWait";
+import { BrowserNavigationError, waitForBrowserObservation } from "./browserObservationWait";
+
+it("returns a confirmed native failure without waiting for navigation timeout", async () => {
+  const observe = vi.fn(async () => { throw new BrowserNavigationError("ERR_CONNECTION_REFUSED"); });
+  const waiting = waitForBrowserObservation(observe, { url: "http://127.0.0.1:1431/" });
+  const assertion = expect(waiting).rejects.toThrow("ERR_CONNECTION_REFUSED");
+  await vi.advanceTimersByTimeAsync(100);
+  await assertion;
+  expect(observe).toHaveBeenCalledTimes(1);
+});
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());

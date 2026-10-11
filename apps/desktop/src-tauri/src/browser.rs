@@ -3,10 +3,13 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 use tauri::{
-    webview::{DownloadEvent, NewWindowResponse, PageLoadEvent},
+    webview::{DownloadEvent, NewWindowResponse},
     Emitter, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl,
 };
 use tauri_plugin_opener::OpenerExt;
+
+#[cfg(not(any(target_os = "macos", windows)))]
+use tauri::webview::PageLoadEvent;
 
 #[path = "browser_capture.rs"]
 mod capture;
@@ -15,6 +18,9 @@ pub use capture::capture as screenshot;
 #[cfg(target_os = "macos")]
 #[path = "browser_dialogs.rs"]
 mod dialogs;
+
+#[path = "browser_navigation.rs"]
+mod navigation;
 
 const LABEL_PREFIX: &str = "miniq-browser-";
 
@@ -45,49 +51,19 @@ const EVENT_NEW_WINDOW: &str = "browser://new-window";
 const EVENT_DOWNLOAD: &str = "browser://download";
 const EVENT_EXTERNAL: &str = "browser://external";
 
-#[derive(Default)]
-struct RequestedUrl {
-    current: String,
-    previous: Option<String>,
-}
-
-/// Last address miniQ asked each embedded browser to load. A failed load (for
-/// example a dead local dev server) leaves WKWebView without a committed URL,
-/// so this is the address to report while the page shows the load error.
-fn requested_urls() -> &'static Mutex<HashMap<String, RequestedUrl>> {
-    static URLS: OnceLock<Mutex<HashMap<String, RequestedUrl>>> = OnceLock::new();
-    URLS.get_or_init(Default::default)
-}
-
 fn remember_url(label: &str, url: &tauri::Url) {
-    if let Ok(mut urls) = requested_urls().lock() {
-        let entry = urls.entry(label.to_owned()).or_default();
-        let url = url.to_string();
-        if entry.current != url {
-            entry.previous = Some(std::mem::replace(&mut entry.current, url));
-        }
-    }
+    navigation::remember(label, url.as_str());
 }
 
 /// WebKit runs the navigation policy on the opener before asking for a new
 /// window, so a popup URL is briefly recorded for the opener. Undo that.
 fn forget_new_window_url(label: &str, url: &tauri::Url) {
-    if let Ok(mut urls) = requested_urls().lock() {
-        if let Some(entry) = urls.get_mut(label) {
-            if entry.current == url.as_str() {
-                if let Some(previous) = entry.previous.take() {
-                    entry.current = previous;
-                }
-            }
-        }
-    }
+    navigation::forget_popup(label, url.as_str());
 }
 
+#[cfg(test)]
 fn requested_url(label: &str) -> Option<String> {
-    let urls = requested_urls().lock().ok()?;
-    urls.get(label)
-        .map(|entry| entry.current.clone())
-        .filter(|url| !url.is_empty())
+    navigation::snapshot(label, None).0
 }
 
 fn zoom_levels() -> &'static Mutex<HashMap<String, f64>> {
@@ -180,6 +156,8 @@ struct PageLoadPayload {
     view_id: String,
     url: String,
     phase: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<navigation::LoadError>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -432,7 +410,7 @@ pub fn reveal_download(app: &tauri::AppHandle, path: &str) -> Result<(), String>
 /// Never call `Webview::url()` on macOS: wry unwraps WKWebView's nil URL after
 /// a failed load and aborts the whole app. Read the optional URL directly.
 #[cfg(target_os = "macos")]
-async fn committed_url(webview: &tauri::Webview, label: &str) -> Result<String, String> {
+async fn committed_url(webview: &tauri::Webview) -> Result<Option<String>, String> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
     webview
         .with_webview(move |platform| {
@@ -448,16 +426,29 @@ async fn committed_url(webview: &tauri::Webview, label: &str) -> Result<String, 
         .await
         .map_err(|_| "读取内置浏览器地址超时".to_string())?
         .map_err(|_| "内置浏览器地址通道已关闭".to_string())?;
-    url.or_else(|| requested_url(label))
-        .ok_or_else(|| "内置浏览器尚未加载任何页面".to_string())
+    Ok(url)
 }
 
 #[cfg(not(target_os = "macos"))]
-async fn committed_url(webview: &tauri::Webview, label: &str) -> Result<String, String> {
-    match webview.url() {
-        Ok(url) if !url.as_str().is_empty() => Ok(url.to_string()),
-        _ => requested_url(label).ok_or_else(|| "内置浏览器尚未加载任何页面".to_string()),
-    }
+async fn committed_url(webview: &tauri::Webview) -> Result<Option<String>, String> {
+    Ok(webview
+        .url()
+        .ok()
+        .map(|url| url.to_string())
+        .filter(|url| !url.is_empty()))
+}
+
+async fn browser_state(
+    webview: &tauri::Webview,
+    label: &str,
+    zoom: Option<f64>,
+) -> Result<BrowserState, String> {
+    let (url, load_error) = navigation::snapshot(label, committed_url(webview).await?);
+    Ok(BrowserState {
+        url: url.ok_or_else(|| "内置浏览器尚未加载任何页面".to_string())?,
+        zoom,
+        load_error,
+    })
 }
 
 /// User-Agent for the embedded browser on WebKit platforms.
@@ -507,6 +498,8 @@ pub struct BrowserState {
     /// Current page zoom factor; reported by `browser_action`.
     #[serde(skip_serializing_if = "Option::is_none")]
     zoom: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    load_error: Option<navigation::LoadError>,
 }
 
 #[derive(serde::Serialize)]
@@ -656,13 +649,14 @@ pub fn open(
             webview.hide()
         }
         .map_err(|error| error.to_string())?;
-        remember_url(&label, &url);
+        navigation::request(&label, url.as_str());
         webview
             .navigate(url.clone())
             .map_err(|error| error.to_string())?;
         return Ok(BrowserState {
             url: url.to_string(),
             zoom: None,
+            load_error: navigation::snapshot(&label, None).1,
         });
     }
 
@@ -677,14 +671,18 @@ pub fn open(
         .map_err(|error| error.to_string())?
         .join(BROWSER_PROFILE_DIR);
     std::fs::create_dir_all(&data_directory).map_err(|error| error.to_string())?;
-    remember_url(&label, &url);
+    navigation::request(&label, url.as_str());
     let navigation_app = app.clone();
     let navigation_label = label.clone();
     let window_app = app.clone();
     let window_label = label.clone();
-    // Start at the requested remote page. Loading the application shell first
-    // exposes an unrelated complete document before remote navigation commits.
-    let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(url.clone()));
+    // Attach native observers before the first remote request, including very
+    // fast local connection failures. A blank view never loads the app shell.
+    #[cfg(any(target_os = "macos", windows))]
+    let initial_url = "about:blank".parse().unwrap();
+    #[cfg(not(any(target_os = "macos", windows)))]
+    let initial_url = url.clone();
+    let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(initial_url));
     if let Some(user_agent) = EMBEDDED_BROWSER_USER_AGENT {
         builder = builder.user_agent(user_agent);
     }
@@ -725,20 +723,26 @@ pub fn open(
             }
             NewWindowResponse::Deny
         })
-        .on_page_load(|webview, payload| {
-            let phase = match payload.event() {
-                PageLoadEvent::Started => "started",
-                PageLoadEvent::Finished => "finished",
-            };
-            emit_to_main(
-                webview.app_handle(),
-                EVENT_PAGE_LOAD,
-                PageLoadPayload {
-                    view_id: view_id_of(webview.label()).to_owned(),
-                    url: payload.url().to_string(),
+        .on_page_load(|_webview, _payload| {
+            // Native delegates own this lifecycle on macOS/Windows. Wry's
+            // WebView2 Finished also runs on unsuccessful completions.
+            #[cfg(not(any(target_os = "macos", windows)))]
+            {
+                let webview = _webview;
+                let payload = _payload;
+                let phase = match payload.event() {
+                    PageLoadEvent::Started => "started",
+                    PageLoadEvent::Finished => "finished",
+                };
+                navigation::page_load(
+                    webview.app_handle(),
+                    webview.label(),
+                    0,
                     phase,
-                },
-            );
+                    None,
+                    Some(payload.url().to_string()),
+                );
+            }
         })
         .on_document_title_changed(|webview, title| {
             emit_to_main(
@@ -760,18 +764,42 @@ pub fn open(
         )
         .map_err(|error| error.to_string())?;
     #[cfg(target_os = "macos")]
-    if let Err(error) = webview.with_webview(|platform| {
-        let view: &objc2_web_kit::WKWebView = unsafe { &*platform.inner().cast() };
-        dialogs::install(view);
-    }) {
-        eprintln!("[miniq] could not enable browser dialogs: {error}");
+    {
+        let app = app.clone();
+        let label = label.clone();
+        webview
+            .with_webview(move |platform| {
+                let view: &objc2_web_kit::WKWebView = unsafe { &*platform.inner().cast() };
+                dialogs::install(view);
+                if let Err(error) = navigation::install(view, app, label) {
+                    eprintln!("[miniq] could not observe browser navigation: {error}");
+                }
+            })
+            .map_err(|error| error.to_string())?;
     }
+    #[cfg(windows)]
+    {
+        let app = app.clone();
+        let label = label.clone();
+        webview
+            .with_webview(move |platform| {
+                if let Err(error) = navigation::install(&platform.controller(), app, label) {
+                    eprintln!("[miniq] could not observe browser navigation: {error}");
+                }
+            })
+            .map_err(|error| error.to_string())?;
+    }
+    #[cfg(any(target_os = "macos", windows))]
+    webview
+        .navigate(url.clone())
+        .map_err(|error| error.to_string())?;
     if !visible {
         webview.hide().map_err(|error| error.to_string())?;
     }
     Ok(BrowserState {
         url: url.to_string(),
         zoom: None,
+        load_error: navigation::snapshot(&label, None).1,
     })
 }
 
@@ -810,7 +838,12 @@ pub async fn action(
     match action {
         "back" => webview.eval("history.back()"),
         "forward" => webview.eval("history.forward()"),
-        "reload" => webview.reload(),
+        "reload" => {
+            if let Some(url) = navigation::snapshot(&label, None).0 {
+                navigation::request(&label, &url);
+            }
+            webview.reload()
+        }
         "stop" => webview.eval("window.stop()"),
         "zoom_in" | "zoom_out" | "zoom_reset" => {
             let zoom = next_zoom(current_zoom(&label), action).unwrap_or(1.0);
@@ -830,10 +863,7 @@ pub async fn action(
         _ => return Err(format!("未知浏览器操作: {action}")),
     }
     .map_err(|error| error.to_string())?;
-    Ok(BrowserState {
-        url: committed_url(&webview, &label).await?,
-        zoom: Some(current_zoom(&label)),
-    })
+    browser_state(&webview, &label, Some(current_zoom(&label))).await
 }
 
 pub async fn current(app: &tauri::AppHandle, view_id: &str) -> Result<BrowserState, String> {
@@ -841,10 +871,7 @@ pub async fn current(app: &tauri::AppHandle, view_id: &str) -> Result<BrowserSta
     let webview = app
         .get_webview(&label)
         .ok_or_else(|| "内置浏览器尚未打开".to_string())?;
-    Ok(BrowserState {
-        url: committed_url(&webview, &label).await?,
-        zoom: None,
-    })
+    browser_state(&webview, &label, None).await
 }
 
 pub fn close(app: &tauri::AppHandle, view_id: &str) -> Result<(), String> {
@@ -852,9 +879,7 @@ pub fn close(app: &tauri::AppHandle, view_id: &str) -> Result<(), String> {
     if let Some(webview) = app.get_webview(&label) {
         webview.close().map_err(|error| error.to_string())?;
     }
-    if let Ok(mut urls) = requested_urls().lock() {
-        urls.remove(&label);
-    }
+    navigation::remove(&label);
     if let Ok(mut levels) = zoom_levels().lock() {
         levels.remove(&label);
     }
@@ -1134,15 +1159,49 @@ mod tests {
         let plain = serde_json::to_value(BrowserState {
             url: "https://example.com/".into(),
             zoom: None,
+            load_error: None,
         })
         .unwrap();
         assert!(plain.get("zoom").is_none());
         let zoomed = serde_json::to_value(BrowserState {
             url: "https://example.com/".into(),
             zoom: Some(1.25),
+            load_error: None,
         })
         .unwrap();
         assert_eq!(zoomed["zoom"], 1.25);
+    }
+
+    #[test]
+    fn failure_event_and_polling_state_share_the_error_contract() {
+        let error = navigation::LoadError {
+            code: "ERR_CONNECTION_REFUSED".into(),
+            message: "目标服务器拒绝连接（NSURLErrorDomain -1004）".into(),
+        };
+        let event = serde_json::to_value(PageLoadPayload {
+            view_id: "tab-1".into(),
+            url: "http://127.0.0.1:1431/task-overview-preview.html".into(),
+            phase: "failed",
+            error: Some(error.clone()),
+        })
+        .unwrap();
+        let state = serde_json::to_value(BrowserState {
+            url: event["url"].as_str().unwrap().into(),
+            zoom: None,
+            load_error: Some(error),
+        })
+        .unwrap();
+        assert_eq!(event["phase"], "failed");
+        assert_eq!(event["error"]["code"], "ERR_CONNECTION_REFUSED");
+        assert_eq!(event["error"], state["loadError"]);
+        let success = serde_json::to_value(PageLoadPayload {
+            view_id: "tab-1".into(),
+            url: "https://success.example/".into(),
+            phase: "finished",
+            error: None,
+        })
+        .unwrap();
+        assert!(success.get("error").is_none());
     }
 
     #[test]
