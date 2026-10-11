@@ -29,7 +29,6 @@ interface Recording {
 
 export function VoiceInput(props: Props) {
   const [state, setState] = useState<"idle" | VoicePreview["phase"]>("idle");
-  const [seconds, setSeconds] = useState(0);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const current = useRef<Recording | null>(null);
@@ -37,7 +36,7 @@ export function VoiceInput(props: Props) {
   const cancel = () => {
     const recording = current.current; current.current = null;
     if (recording) release(recording);
-    setState("idle"); setSeconds(0); callbacks.current.onPreview(null);
+    setState("idle"); callbacks.current.onPreview(null);
   };
   useEffect(() => () => {
     const recording = current.current; current.current = null;
@@ -71,7 +70,7 @@ export function VoiceInput(props: Props) {
     if (current.current || props.disabled) return;
     const recording: Recording = { abort: new AbortController(), finishing: false, startedAt: performance.now() };
     current.current = recording;
-    callbacks.current.onStart(); setState("starting"); setSeconds(0);
+    callbacks.current.onStart(); setState("starting");
     callbacks.current.onPreview({ phase: "starting", text: "" });
     try {
       recording.capture = await startVoiceCapture(recording.abort.signal, (samples, sampleRate) => {
@@ -89,7 +88,6 @@ export function VoiceInput(props: Props) {
       let previewAt = 0;
       recording.timer = setInterval(() => {
         const elapsed = (performance.now() - recording.startedAt) / 1000;
-        setSeconds(Math.floor(elapsed));
         if (elapsed >= 180) { void finish(recording); return; }
         if (elapsed - previewAt >= 2) { previewAt = elapsed; void recording.transcript?.preview(); }
       }, 250);
@@ -115,8 +113,7 @@ export function VoiceInput(props: Props) {
       {state === "idle" ? <Mic size={15} /> : state === "recording" ? <Square size={10} fill="currentColor" />
         : state === "failed" ? <RotateCcw size={15} /> : <LoaderCircle className="voice-spinner" size={15} />}
     </button>
-    {active && <><span className="voice-state">{state === "recording" ? `正在听 ${duration(seconds)}` : label}</span>
-      <button type="button" className="attach-btn" aria-label="取消语音输入" title="取消语音输入" onClick={cancel}><X size={14} /></button></>}
+    {active && <button type="button" className="attach-btn" aria-label="取消语音输入" title="取消语音输入" onClick={cancel}><X size={14} /></button>}
     {permissionDenied && <MicrophonePermissionDialog
       disabled={props.disabled}
       onClose={closePermissionDialog}
@@ -129,7 +126,6 @@ function release(recording: Recording) {
   clearInterval(recording.timer); recording.abort.abort();
   recording.capture?.stop(); recording.transcript?.cancel();
 }
-function duration(seconds: number) { return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; }
 function friendlyError(error: unknown): string {
   const name = error instanceof DOMException ? error.name : "";
   if (name === "NotFoundError") return "没有检测到麦克风设备";

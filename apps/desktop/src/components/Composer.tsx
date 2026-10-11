@@ -137,10 +137,8 @@ export function ComposerCard(props: {
   const plusRef = useRef<HTMLDivElement>(null);
   const plusButtonRef = useRef<HTMLButtonElement>(null);
   const plusPanelId = useId();
-  // Touch devices (the mobile apps) surface the mic next to send for one-tap
-  // dictation; desktop keeps it inside the "+" panel.
-  const voiceInline = inputMode.touch;
-  const plusVisible = plusOpen || (!voiceInline && voicePreview !== null);
+  // Keep the mic beside send on every form factor so dictation stays a first-level action.
+  const plusVisible = plusOpen;
   useEffect(() => {
     if (!plusOpen) return;
     const closeOutside = (event: PointerEvent) => {
@@ -434,7 +432,6 @@ export function ComposerCard(props: {
 
   useEffect(() => {
     if (props.voiceFocusRequest === undefined || voiceCapabilities.loading || focusedVoiceRequest.current === props.voiceFocusRequest) return;
-    if (voiceCapabilities.capabilities.transcribe && !voiceInline && !plusOpen) { setPlusOpen(true); return; }
     const frame = requestAnimationFrame(() => {
       const requestId = props.voiceFocusRequest!;
       focusedVoiceRequest.current = requestId;
@@ -447,7 +444,7 @@ export function ComposerCard(props: {
       props.onVoiceFocusApplied?.(requestId);
     });
     return () => cancelAnimationFrame(frame);
-  }, [props.voiceFocusRequest, voiceCapabilities.loading, voiceCapabilities.capabilities.transcribe, voiceInline, plusOpen, props.onError, props.onVoiceFocusApplied]);
+  }, [props.voiceFocusRequest, voiceCapabilities.loading, voiceCapabilities.capabilities.transcribe, props.onError, props.onVoiceFocusApplied]);
 
   const voiceControl = props.client && voiceCapabilities.capabilities.transcribe ? (
     <VoiceInput
@@ -553,7 +550,7 @@ export function ComposerCard(props: {
             type="button"
             className={`composer-plus-trigger${plusVisible ? " open" : ""}`}
             aria-label="更多输入方式"
-            title={voiceInline ? "附件、目标与命令" : "附件、目标、命令与语音"}
+            title="附件、目标与命令"
             aria-haspopup="true"
             aria-expanded={plusVisible}
             aria-controls={plusPanelId}
@@ -618,12 +615,7 @@ export function ComposerCard(props: {
               <Slash size={15} aria-hidden="true" />
               <span>命令与技能</span>
             </button>
-            {voiceControl && !voiceInline && (
-              <div className="composer-plus-voice">
-                {voiceControl}
-                {voicePreview === null && <span aria-hidden="true">语音输入</span>}
-              </div>
-            )}
+
           </div>
         </div>
         {props.chipSlot}
@@ -646,7 +638,7 @@ export function ComposerCard(props: {
             <p id={keyboardHintId} className="composer-keyboard-hint">
               {inputMode.keyboardHint}
             </p>
-            {voiceControl && voiceInline && (
+            {voiceControl && (
               <div className="composer-voice-inline">{voiceControl}</div>
             )}
             {props.busy && props.onCancel && (
