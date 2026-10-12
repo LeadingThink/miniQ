@@ -1,17 +1,30 @@
-use std::{collections::VecDeque, io::Write, time::Duration};
+use std::{
+    collections::VecDeque,
+    io::Write,
+    sync::{Arc, OnceLock},
+    time::{Duration, Instant},
+};
 
 use aes_gcm::Aes256Gcm;
 use base64::Engine;
-use futures_util::{Sink, SinkExt};
+use futures_util::{stream::FuturesOrdered, Sink, SinkExt, StreamExt};
 use serde_json::{json, Value};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Semaphore};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
+
+#[cfg(test)]
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{encrypt_payload, URL_SAFE_NO_PAD};
 
 // Base64 inside encrypted JSON stays below the relay's 2 MiB wire limit.
 pub(super) const CHUNK_BYTES: usize = 768 * 1024;
+// Objects are only worthwhile after the direct encrypted WebSocket chunk
+// limit. Smaller replies avoid the ticket + PUT + GET round trip entirely.
+pub(super) const BLOB_MIN_BYTES: usize = CHUNK_BYTES;
+pub(super) const MAX_BLOB_BYTES: usize = 64 * 1024 * 1024;
+const PREPARE_CONCURRENCY: usize = 2;
 // Token bucket for encrypted frames. The relay allows 240 messages per
 // 60s window per peer; a full burst plus one minute of refill is
 // 20 + 3.5 * 60 = 230, leaving headroom for control messages.
@@ -29,6 +42,25 @@ pub(super) struct Outbound {
     pub payload: Value,
     pub cancel: CancellationToken,
     pub compress: bool,
+    pub prepared: Option<PreparedBytes>,
+}
+
+/// JSON serialization and optional gzip output shared by WebSocket and blob
+/// transport. The bytes are reference counted so blob fallback can reuse the
+/// exact same encoded representation without another compression pass.
+#[derive(Clone)]
+pub(super) struct PreparedBytes {
+    bytes: Arc<[u8]>,
+}
+
+impl PreparedBytes {
+    pub(super) fn as_slice(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.bytes.len()
+    }
 }
 
 impl Outbound {
@@ -38,13 +70,14 @@ impl Outbound {
             payload,
             cancel: CancellationToken::new(),
             compress: false,
+            prepared: None,
         }
     }
 }
 
 struct Transfer {
     target: String,
-    bytes: Vec<u8>,
+    bytes: Arc<[u8]>,
     offset: usize,
     id: String,
     request_id: Value,
@@ -52,11 +85,10 @@ struct Transfer {
 }
 
 impl Transfer {
-    fn new(message: Outbound) -> anyhow::Result<Self> {
-        let bytes = encode(&message.payload, message.compress)?;
-        Ok(Self {
+    fn new(message: Outbound, prepared: PreparedBytes) -> Self {
+        Self {
             target: message.target,
-            bytes,
+            bytes: prepared.bytes,
             offset: 0,
             id: format!("{:032x}", rand::random::<u128>()),
             request_id: message
@@ -66,7 +98,7 @@ impl Transfer {
                 .cloned()
                 .unwrap_or(Value::Null),
             cancel: message.cancel,
-        })
+        }
     }
 
     fn small_reply(&self) -> bool {
@@ -97,8 +129,13 @@ impl Drop for Transfer {
     }
 }
 
+#[cfg(test)]
 pub(super) fn encode(payload: &Value, compress: bool) -> anyhow::Result<Vec<u8>> {
     let plain = serde_json::to_vec(payload)?;
+    encode_plain(payload, plain, compress)
+}
+
+fn encode_plain(payload: &Value, plain: Vec<u8>, compress: bool) -> anyhow::Result<Vec<u8>> {
     if !compress || plain.len() < 16 * 1024 {
         return Ok(plain);
     }
@@ -116,6 +153,107 @@ pub(super) fn encode(payload: &Value, compress: bool) -> anyhow::Result<Vec<u8>>
     })
 }
 
+fn prepare_limit() -> &'static Arc<Semaphore> {
+    static LIMIT: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    LIMIT.get_or_init(|| Arc::new(Semaphore::new(PREPARE_CONCURRENCY)))
+}
+
+fn prepare_sync(payload: Value, compress: bool) -> anyhow::Result<PreparedBytes> {
+    #[cfg(test)]
+    {
+        let delay = if payload["id"] == "slow" {
+            PREPARE_DELAY_MS.load(Ordering::Relaxed)
+        } else {
+            0
+        };
+        if delay > 0 {
+            std::thread::sleep(Duration::from_millis(delay));
+        }
+    }
+    let started = Instant::now();
+    let plain = serde_json::to_vec(&payload)?;
+    let plain_bytes = plain.len();
+    let bytes = encode_plain(&payload, plain, compress)?;
+    let encoded_bytes = bytes.len();
+    tracing::info!(
+        target: "miniq.perf",
+        operation = "remote.encode",
+        plain_bytes,
+        encoded_bytes,
+        compression_requested = compress,
+        compression_used = encoded_bytes < plain_bytes,
+        compression_ratio = encoded_bytes as f64 / plain_bytes.max(1) as f64,
+        encoding_elapsed_ms = started.elapsed().as_secs_f64() * 1000.0,
+        "remote payload encoded"
+    );
+    Ok(PreparedBytes {
+        bytes: bytes.into(),
+    })
+}
+
+#[cfg(test)]
+static PREPARE_DELAY_MS: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(test)]
+struct PrepareDelayGuard;
+
+#[cfg(test)]
+impl Drop for PrepareDelayGuard {
+    fn drop(&mut self) {
+        PREPARE_DELAY_MS.store(0, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+fn prepare_delay(delay: Duration) -> PrepareDelayGuard {
+    PREPARE_DELAY_MS.store(
+        delay.as_millis().try_into().unwrap_or(u64::MAX),
+        Ordering::Relaxed,
+    );
+    PrepareDelayGuard
+}
+
+/// Prepare outside the writer and cap the number of blocking encoders. A
+/// cancelled caller stops waiting immediately; the blocking job retains its
+/// permit until it exits so cancellation cannot defeat the bound.
+pub(super) async fn prepare(
+    payload: Value,
+    compress: bool,
+    cancel: &CancellationToken,
+) -> anyhow::Result<Option<PreparedBytes>> {
+    let permit = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Ok(None),
+        permit = prepare_limit().clone().acquire_owned() => permit?,
+    };
+    let job = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        prepare_sync(payload, compress)
+    });
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Ok(None),
+        result = job => Ok(Some(result??)),
+    }
+}
+
+async fn prepare_message(message: Outbound) -> anyhow::Result<Option<Transfer>> {
+    if message.cancel.is_cancelled() {
+        return Ok(None);
+    }
+    let prepared = match message.prepared.clone() {
+        Some(prepared) => prepared,
+        None => match prepare(message.payload.clone(), message.compress, &message.cancel).await? {
+            Some(prepared) => prepared,
+            None => return Ok(None),
+        },
+    };
+    if message.cancel.is_cancelled() {
+        return Ok(None);
+    }
+    Ok(Some(Transfer::new(message, prepared)))
+}
+
 pub(super) async fn write<S>(
     mut sink: S,
     cipher: Aes256Gcm,
@@ -128,11 +266,14 @@ where
 {
     let mut budget = FrameBudget::new(tokio::time::Instant::now());
     let mut queued = VecDeque::<Transfer>::new();
+    // Preparation may run concurrently, but event batches must enter the
+    // sending queue in their original order so cursors cannot skip events.
+    let mut preparations = FuturesOrdered::new();
     let mut closed = false;
     let mut urgent_frames = 0;
     loop {
         queued.retain(|transfer| !transfer.cancel.is_cancelled());
-        if closed && queued.is_empty() {
+        if closed && queued.is_empty() && preparations.is_empty() {
             return Ok(());
         }
         tokio::select! {
@@ -141,10 +282,18 @@ where
                 Some(control) => send(&mut sink, control).await?,
                 None => return Ok(()),
             },
-            message = messages.recv(), if !closed && queued.len() < 32 => match message {
-                Some(message) if !message.cancel.is_cancelled() => queued.push_back(Transfer::new(message)?),
+            message = messages.recv(), if !closed && queued.len() + preparations.len() < 32 => match message {
+                Some(message) if !message.cancel.is_cancelled() => {
+                    preparations.push_back(prepare_message(message));
+                }
                 Some(_) => {},
                 None => closed = true,
+            },
+            prepared = preparations.next(), if !preparations.is_empty() => match prepared {
+                Some(Ok(Some(transfer))) => queued.push_back(transfer),
+                Some(Ok(None)) => {},
+                Some(Err(error)) => return Err(error),
+                None => {},
             },
             _ = tokio::time::sleep_until(budget.ready_at(tokio::time::Instant::now())), if !queued.is_empty() => {
                 // RPC replies may pass bulk transfers; event batches keep their original order.

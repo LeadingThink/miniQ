@@ -161,6 +161,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
     app.client,
     app.catalog.currentSessionId!,
     !!app.busy,
+    !app.feed.loading,
   );
   const [agentFocus, setAgentFocus] = useState<AgentFocusRequest | null>(null);
   const openAgentPanel = (agentId?: string) => {
@@ -182,7 +183,12 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
   );
   return (
     <>
-      <div className="session-stage">
+      <div className="session-stage" onScrollCapture={(event) => {
+        const root = event.target;
+        if (root instanceof HTMLElement && root.classList.contains("timeline")) {
+          app.actions.setHistoryPrefetchPinned(root.scrollHeight - root.scrollTop - root.clientHeight < 120);
+        }
+      }}>
         <SessionSummaryCard
           diff={app.review.data}
           agents={agentSummary.agents}

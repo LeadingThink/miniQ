@@ -19,5 +19,8 @@ export function sendRaw(socket: OutboundSocket, value: string, maxBuffered = MAX
     socket.terminate();
     return;
   }
+  if (value.length >= 16 * 1024) {
+    console.info(`[relay-perf] outbound_bytes=${Buffer.byteLength(value, "utf8")} buffered_bytes=${socket.bufferedAmount}`);
+  }
   socket.send(value);
 }

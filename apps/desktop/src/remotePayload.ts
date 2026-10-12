@@ -52,9 +52,15 @@ export class RemotePayloadReader {
     for (const item of this.read(payload)) {
       if (item.type !== "remote_compressed") { result.push(item); continue; }
       if (item.encoding !== "gzip" || typeof item.data !== "string") throw new Error("远程压缩消息无效");
+      const started = typeof performance === "undefined" ? 0 : performance.now();
       const bytes = decodeBase64(item.data);
       const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"));
       const decodedBytes = await readBounded(stream, item.uncompressedBytes as number);
+      if (started) {
+        console.info(
+          `[miniq-perf] remote_decompress compressed_bytes=${bytes.length} uncompressed_bytes=${decodedBytes.length} elapsed_ms=${Math.round(performance.now() - started)}`,
+        );
+      }
       const decoded = asPayload(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(decodedBytes)));
       result.push(...this.read(decoded));
     }

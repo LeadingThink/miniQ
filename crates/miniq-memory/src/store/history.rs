@@ -1,5 +1,6 @@
 use miniq_protocol::{HistoryCursor, HistoryPage, HistoryParams, HistoryToolCall};
-use rusqlite::params;
+use rusqlite::{params, params_from_iter};
+use std::collections::HashMap;
 
 use super::row_mappers::{row_to_message, row_to_tool_call};
 use super::{MemoryError, Result, Store};
@@ -64,27 +65,111 @@ impl Store {
             tool_calls: Vec::new(),
             next_cursor,
         };
+        // Fetch details in two bounded queries instead of one query per
+        // timeline position. Remote session.open commonly requests 40 rows;
+        // the old path could issue up to 40 extra SQLite queries before the
+        // response was serialized and sent through the relay.
+        let message_ids = positions
+            .iter()
+            .filter(|(_, _, kind)| kind == "message")
+            .map(|(id, _, _)| id.clone())
+            .collect::<Vec<_>>();
+        let tool_ids = positions
+            .iter()
+            .filter(|(_, _, kind)| kind == "tool")
+            .map(|(id, _, _)| id.clone())
+            .collect::<Vec<_>>();
+        let messages = load_messages(&conn, &input.session_id, &message_ids)?;
+        let tools = load_tools(&conn, &input.session_id, &tool_ids, input.include_payloads)?;
         for (id, _, kind) in positions.into_iter().rev() {
             if kind == "message" {
-                page.messages.push(conn.query_row(
-                    "SELECT id, session_id, role, content, attachments_json, created_at, steered FROM messages WHERE id = ?1 AND session_id = ?2",
-                    params![id, input.session_id], row_to_message,
-                )?);
-            } else {
-                let query = if input.include_payloads {
-                    "SELECT id, session_id, tool_name, input_json, output_json, status, created_at, completed_at, agent_id FROM tool_calls WHERE id = ?1 AND session_id = ?2"
-                } else {
-                    "SELECT id, session_id, tool_name, 'null', NULL, status, created_at, completed_at, agent_id FROM tool_calls WHERE id = ?1 AND session_id = ?2"
-                };
-                page.tool_calls.push(HistoryToolCall {
-                    call: conn.query_row(query, params![id, input.session_id], row_to_tool_call)?,
-                    payload_deferred: !input.include_payloads,
-                });
+                if let Some(message) = messages.get(&id) {
+                    page.messages.push(message.clone());
+                }
+            } else if let Some(tool) = tools.get(&id) {
+                page.tool_calls.push(tool.clone());
             }
         }
         super::turn_timing::attach(&conn, &mut page.messages)?;
         Ok(page)
     }
+}
+
+fn placeholders(count: usize) -> String {
+    std::iter::repeat_n("?", count)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn load_messages(
+    conn: &rusqlite::Connection,
+    session_id: &str,
+    ids: &[String],
+) -> Result<HashMap<String, miniq_protocol::Message>> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let query = format!(
+        "SELECT id, session_id, role, content, attachments_json, created_at, steered FROM messages WHERE session_id = ? AND id IN ({})",
+        placeholders(ids.len())
+    );
+    let mut values = Vec::<&dyn rusqlite::ToSql>::with_capacity(ids.len() + 1);
+    values.push(&session_id);
+    values.extend(ids.iter().map(|id| id as &dyn rusqlite::ToSql));
+    let mut statement = conn.prepare(&query).map_err(MemoryError::from)?;
+    let rows = statement
+        .query_map(params_from_iter(values), row_to_message)
+        .map_err(MemoryError::from)?;
+    let mut output = HashMap::with_capacity(ids.len());
+    for row in rows {
+        let message = row.map_err(MemoryError::from)?;
+        output.insert(message.id.clone(), message);
+    }
+    Ok(output)
+}
+
+fn load_tools(
+    conn: &rusqlite::Connection,
+    session_id: &str,
+    ids: &[String],
+    include_payloads: bool,
+) -> Result<HashMap<String, HistoryToolCall>> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let payload_input = if include_payloads {
+        "input_json"
+    } else {
+        "'null'"
+    };
+    let payload_output = if include_payloads {
+        "output_json"
+    } else {
+        "NULL"
+    };
+    let query = format!(
+        "SELECT id, session_id, tool_name, {payload_input}, {payload_output}, status, created_at, completed_at, agent_id FROM tool_calls WHERE session_id = ? AND id IN ({})",
+        placeholders(ids.len())
+    );
+    let mut values = Vec::<&dyn rusqlite::ToSql>::with_capacity(ids.len() + 1);
+    values.push(&session_id);
+    values.extend(ids.iter().map(|id| id as &dyn rusqlite::ToSql));
+    let mut statement = conn.prepare(&query).map_err(MemoryError::from)?;
+    let rows = statement
+        .query_map(params_from_iter(values), row_to_tool_call)
+        .map_err(MemoryError::from)?;
+    let mut output = HashMap::with_capacity(ids.len());
+    for row in rows {
+        let call = row.map_err(MemoryError::from)?;
+        output.insert(
+            call.id.clone(),
+            HistoryToolCall {
+                call,
+                payload_deferred: !include_payloads,
+            },
+        );
+    }
+    Ok(output)
 }
 
 #[cfg(test)]

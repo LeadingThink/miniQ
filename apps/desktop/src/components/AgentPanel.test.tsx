@@ -105,7 +105,7 @@ it("clears children and results when the session changes, without relying on a p
   );
   expect(screen.queryByText("private A result")).toBeNull();
   await waitFor(() =>
-    expect(call).toHaveBeenCalledWith("agent.list", { sessionId: "b" }),
+    expect(call).toHaveBeenCalledWith("agent.list", { sessionId: "b" }, { signal: expect.any(AbortSignal) }),
   );
 });
 

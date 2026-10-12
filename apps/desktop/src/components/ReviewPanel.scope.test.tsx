@@ -63,7 +63,7 @@ describe("useSessionDiff scope", () => {
 
     act(() => result.current.showTurn("m1", "b.ts"));
     await waitFor(() => expect(result.current.view.diff).toEqual(TURN));
-    expect(call).toHaveBeenCalledWith("session.diff", { sessionId: "s1", scope: "turn", turnId: "m1" });
+    expect(call).toHaveBeenCalledWith("session.diff", { sessionId: "s1", scope: "turn", turnId: "m1" }, { signal: expect.any(AbortSignal) });
     expect(result.current.data).toEqual(SESSION);
     expect(result.current.focus?.path).toBe("b.ts");
 
@@ -71,7 +71,11 @@ describe("useSessionDiff scope", () => {
     expect(result.current.scope).toBe("session");
     act(() => result.current.setScope("turn"));
     await waitFor(() =>
-      expect(call).toHaveBeenCalledWith("session.diff", { sessionId: "s1", scope: "turn", turnId: "latest" }));
+      expect(call).toHaveBeenCalledWith(
+        "session.diff",
+        { sessionId: "s1", scope: "turn", turnId: "latest" },
+        { signal: expect.any(AbortSignal) },
+      ));
 
     const before = call.mock.calls.length;
     act(() => result.current.filesRestored());

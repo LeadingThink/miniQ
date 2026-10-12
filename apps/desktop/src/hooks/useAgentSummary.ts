@@ -29,6 +29,7 @@ export function useAgentSummary(
     let inFlight = false;
     let queued = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let request: AbortController | null = null;
     const schedule = (delay: number) => {
       if (stale || document.visibilityState === "hidden") return;
       if (timer !== null) clearTimeout(timer);
@@ -45,11 +46,13 @@ export function useAgentSummary(
       }
       if (document.visibilityState === "hidden") return;
       inFlight = true;
+      request = new AbortController();
       let nextDelay: number | null = null;
       try {
         const response = await client.call<{ agents: AgentSummary[] }>(
           "agent.list",
           { sessionId },
+          { signal: request.signal },
         );
         if (stale) return;
         setSnapshot({ client, sessionId, agents: response.agents, error: null });
@@ -97,6 +100,7 @@ export function useAgentSummary(
     });
     return () => {
       stale = true;
+      request?.abort();
       if (timer !== null) clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibility);
       reconnect();

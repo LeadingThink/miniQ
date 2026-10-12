@@ -1,5 +1,9 @@
 //! Private object data plane. Tickets carry no session data; objects are AES-GCM ciphertext.
-use super::{encrypt_bytes, transport::encode, URL_SAFE_NO_PAD};
+use super::{
+    encrypt_bytes,
+    transport::{PreparedBytes, BLOB_MIN_BYTES, MAX_BLOB_BYTES},
+    URL_SAFE_NO_PAD,
+};
 use aes_gcm::Aes256Gcm;
 use base64::Engine;
 use serde::Deserialize;
@@ -61,17 +65,18 @@ impl BlobClient {
     pub async fn upload(
         &self,
         cipher: &Aes256Gcm,
-        payload: &Value,
+        request_id: Option<&Value>,
+        prepared: &PreparedBytes,
         cancel: &CancellationToken,
     ) -> anyhow::Result<Option<Value>> {
-        let source = payload.clone();
-        let encoded = tokio::task::spawn_blocking(move || encode(&source, true)).await??;
-        if encoded.len() < 128 * 1024 || encoded.len() + 16 > 64 * 1024 * 1024 {
+        // Direct encrypted WebSocket frames are faster for small responses;
+        // only objects larger than CHUNK_BYTES use ticket + PUT + GET.
+        if !blob_eligible(prepared.len()) {
             return Ok(None);
         }
         tokio::select! {
             _ = cancel.cancelled() => Ok(None),
-            result = self.upload_bytes(cipher, payload.get("id"), &encoded) => result.map(Some),
+            result = self.upload_bytes(cipher, request_id, prepared.as_slice()) => result.map(Some),
         }
     }
     async fn upload_bytes(
@@ -117,6 +122,10 @@ impl BlobClient {
     }
 }
 
+fn blob_eligible(encoded_bytes: usize) -> bool {
+    encoded_bytes > BLOB_MIN_BYTES && encoded_bytes + 16 <= MAX_BLOB_BYTES
+}
+
 fn validate_url(raw: &str) -> anyhow::Result<()> {
     let url = reqwest::Url::parse(raw)?;
     if url.scheme() != "https"
@@ -134,6 +143,14 @@ fn validate_url(raw: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blob_cutoff_keeps_small_encoded_replies_on_websocket() {
+        assert!(!blob_eligible(BLOB_MIN_BYTES));
+        assert!(blob_eligible(BLOB_MIN_BYTES + 1));
+        assert!(!blob_eligible(MAX_BLOB_BYTES - 15));
+    }
+
     #[test]
     fn tickets_cannot_redirect_payloads_to_untrusted_hosts() {
         for url in [

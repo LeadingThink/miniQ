@@ -32,6 +32,51 @@ fn gzip_is_negotiated_lossless_and_skipped_for_small_responses() {
 }
 
 #[tokio::test]
+async fn prepared_bytes_match_the_legacy_wire_encoding() {
+    let payload = json!({"id":"prepared", "result":"x".repeat(40_000)});
+    let cancel = CancellationToken::new();
+    let prepared = prepare(payload.clone(), true, &cancel)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(prepared.as_slice(), encode(&payload, true).unwrap());
+}
+
+#[tokio::test]
+async fn writer_serves_control_frames_while_encoding_runs_off_core() {
+    let _delay = prepare_delay(Duration::from_millis(150));
+    let identity = derive_identity("transport-responsive");
+    let (sent, mut received) = mpsc::unbounded_channel();
+    let sink = Box::pin(futures_util::sink::unfold(
+        sent,
+        |sent, message| async move {
+            sent.send(message).map_err(std::io::Error::other)?;
+            Ok::<_, std::io::Error>(sent)
+        },
+    ));
+    let (outbound, messages) = mpsc::channel(2);
+    let (controls, control_messages) = mpsc::unbounded_channel();
+    let writer = tokio::spawn(write(sink, identity.cipher, messages, control_messages));
+    outbound
+        .send(Outbound::new(
+            "mobile".into(),
+            json!({"id":"slow", "result":"x"}),
+        ))
+        .await
+        .unwrap();
+    controls.send(Message::Pong(vec![1].into())).unwrap();
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_millis(50), received.recv())
+            .await
+            .unwrap(),
+        Some(Message::Pong(_))
+    ));
+    drop(controls);
+    drop(outbound);
+    writer.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn navigation_reply_overtakes_bulk_and_cancellation_stops_remaining_chunks() {
     let identity = derive_identity("transport-priority");
     let (sent, mut received) = mpsc::unbounded_channel();

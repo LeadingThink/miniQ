@@ -23,6 +23,24 @@ interface OpenSessionResult {
   goal?: import("../types").SessionGoal | null;
 }
 
+// Remote history is loaded in two phases. The first response should contain
+// enough recent context to render the conversation. The next page is fetched
+// in the background and merged before the user reaches older content.
+const REMOTE_INITIAL_HISTORY_LIMIT = 16;
+const REMOTE_PREFETCH_HISTORY_LIMIT = 24;
+
+interface HistoryRequest {
+  controller: AbortController;
+  sessionId: string;
+  epoch: number;
+  wanted: boolean;
+  promise: Promise<void>;
+}
+
+function cursorKey(cursor: HistoryCursor) {
+  return JSON.stringify([cursor.at, cursor.id]);
+}
+
 export function useSessionLifecycleActions(
   client: RpcClient,
   catalog: Catalog,
@@ -43,23 +61,88 @@ export function useSessionLifecycleActions(
   const activeRef = useRef(active);
   activeRef.current = active;
   const openingSession = useRef<string | null>(null);
-  const paging = useRef<AbortController | null>(null);
+  const paging = useRef<HistoryRequest | null>(null);
+  const consumed = useRef(new Set<string>());
+  const historySession = useRef(catalog.currentSessionId);
+  const prefetchPinned = useRef(true);
+  const prefetched = useRef<{ sessionId: string; epoch: number; cursor: HistoryCursor; page: HistoryPage } | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  useEffect(() => () => { opening.current?.abort(); paging.current?.abort(); }, []);
+  useEffect(() => () => {
+    opening.current?.abort();
+    paging.current?.controller.abort();
+    paging.current = null;
+    consumed.current.clear();
+    prefetched.current = null;
+  }, [client]);
   useEffect(() => {
     if (!active) {
       catalog.navigationEpoch.current++;
       opening.current?.abort();
-      paging.current?.abort();
+      paging.current?.controller.abort();
+      paging.current = null;
+      prefetched.current = null;
+      setLoadingOlder(false);
       if (catalog.currentSessionId) failLoad(catalog.currentSessionId);
       return;
     }
     client.selectSession?.(catalog.currentSessionId);
     if (openingSession.current !== catalog.currentSessionId) opening.current?.abort();
-    paging.current?.abort();
-    paging.current = null;
-    setLoadingOlder(false);
+    // A catalog commit can follow an already-returned open response. Keep
+    // history started for that same selection alive.
+    if (paging.current && (
+      paging.current.sessionId !== catalog.currentSessionId ||
+      paging.current.epoch !== catalog.navigationEpoch.current
+    )) {
+      paging.current.controller.abort();
+      paging.current = null;
+      setLoadingOlder(false);
+    }
+    if (historySession.current !== catalog.currentSessionId) {
+      historySession.current = catalog.currentSessionId;
+      consumed.current.clear();
+      prefetched.current = null;
+    }
   }, [catalog.currentSessionId, client, active]);
+
+  const fetchHistory = useCallback((sessionId: string, cursor: HistoryCursor, background = false) => {
+    const controller = new AbortController();
+    const epoch = catalog.navigationEpoch.current;
+    const pending: HistoryRequest = { controller, sessionId, epoch, wanted: !background, promise: Promise.resolve() };
+    paging.current = pending;
+    if (!background) setLoadingOlder(true);
+    const current = () => !controller.signal.aborted && activeRef.current && epoch === catalog.navigationEpoch.current;
+    pending.promise = (async () => {
+      try {
+        const page = await client.call<HistoryPage>("session.history", {
+          sessionId, before: cursor,
+          ...(background ? { limit: REMOTE_PREFETCH_HISTORY_LIMIT } : {}),
+        }, { signal: controller.signal });
+        if (!current()) return;
+        if (background && !prefetchPinned.current && !pending.wanted) {
+          // The older-history action merges this one page with its viewport
+          // anchor. Background work must not move an unpinned reader.
+          prefetched.current = { sessionId, epoch, cursor, page };
+        } else {
+          // Hold the consumed cursor through the reducer's next commit.
+          consumed.current.add(cursorKey(cursor));
+          prepend(sessionId, page);
+        }
+      } catch (cause) {
+        if (current() && !background) setSessionError(sessionId, errorMessage(cause));
+        // A prefetch failure is silent and leaves the cursor retryable.
+      } finally {
+        if (paging.current === pending) {
+          paging.current = null;
+          setLoadingOlder(false);
+        }
+      }
+    })();
+    return pending.promise;
+  }, [catalog.navigationEpoch, client, prepend, setSessionError]);
+
+  const setHistoryPrefetchPinned = useCallback((pinned: boolean) => {
+    prefetchPinned.current = pinned;
+  }, []);
 
   const createSession = useCallback(
     async (workspaceId: string) => {
@@ -79,8 +162,12 @@ export function useSessionLifecycleActions(
     async (sessionId: string, markSeen = true) => {
       if (!activeRef.current) return;
       opening.current?.abort();
-      paging.current?.abort();
+      paging.current?.controller.abort();
       paging.current = null;
+      consumed.current.clear();
+      prefetched.current = null;
+      historySession.current = sessionId;
+      prefetchPinned.current = true;
       setLoadingOlder(false);
       const request = new AbortController();
       opening.current = request;
@@ -93,7 +180,7 @@ export function useSessionLifecycleActions(
       // The desktop daemon is local and can afford a larger first page. Keep
       // remote opens small and older pages explicit. Local Timeline scrolling
       // transparently fetches older pages as the reader reaches the top.
-      const initialHistoryLimit = client.mode === "local" ? 100 : 40;
+      const initialHistoryLimit = client.mode === "local" ? 100 : REMOTE_INITIAL_HISTORY_LIMIT;
       try {
         result = await client.call<OpenSessionResult>(
           "session.open",
@@ -102,10 +189,13 @@ export function useSessionLifecycleActions(
         );
       }
       catch (cause) {
-        if (!request.signal.aborted) { failLoad(sessionId); setSessionError(sessionId, errorMessage(cause)); }
+        if (!request.signal.aborted && epoch === catalog.navigationEpoch.current) {
+          failLoad(sessionId);
+          setSessionError(sessionId, errorMessage(cause));
+        }
         return;
       }
-      if (epoch !== catalog.navigationEpoch.current) return;
+      if (request.signal.aborted || epoch !== catalog.navigationEpoch.current) return;
       if (markSeen) markSessionSeen(sessionId);
       setSelectedWorkspaceId(result.session.workspaceId);
       setPage(null);
@@ -125,19 +215,29 @@ export function useSessionLifecycleActions(
         goal: result.goal ?? null,
         latestTurnTiming: result.latestTurnTiming ?? null,
       });
+      if (
+        client.mode === "remote" &&
+        result.nextCursor &&
+        epoch === catalog.navigationEpoch.current &&
+        openingSession.current === sessionId &&
+        !request.signal.aborted
+      ) {
+        void fetchHistory(sessionId, result.nextCursor, true);
+      }
       if (markSeen && result.canAcknowledgeFailure && result.session.status === "failed") {
         try {
           await client.call("session.acknowledgeFailure", {
             sessionId,
             updatedAt: result.session.updatedAt,
-          });
+          }, { signal: request.signal });
+          if (request.signal.aborted || epoch !== catalog.navigationEpoch.current) return;
           await refreshSessions();
         } catch (cause) {
-          setSessionError(sessionId, errorMessage(cause));
+          if (!request.signal.aborted && epoch === catalog.navigationEpoch.current) setSessionError(sessionId, errorMessage(cause));
         }
       }
     },
-    [client, load, failLoad, markSessionSeen, refreshSessions, reset, setCurrentSessionId, setPage, setSelectedWorkspaceId, catalog.navigationEpoch, setSessionError],
+    [client, load, failLoad, fetchHistory, markSessionSeen, refreshSessions, reset, setCurrentSessionId, setPage, setSelectedWorkspaceId, catalog.navigationEpoch, setSessionError],
   );
 
   const forkSession = useCallback(
@@ -183,19 +283,32 @@ export function useSessionLifecycleActions(
 
   const loadOlder = useCallback(async () => {
     const sessionId = catalog.currentSessionId;
-    if (!sessionId || !feed.nextCursor || paging.current) return;
-    const request = new AbortController();
-    paging.current = request;
-    setLoadingOlder(true);
-    try {
-      const page = await client.call<HistoryPage>("session.history", { sessionId, before: feed.nextCursor }, { signal: request.signal });
-      if (!request.signal.aborted) prepend(sessionId, page);
-    } catch (cause) {
-      if (!request.signal.aborted) setSessionError(sessionId, errorMessage(cause));
-    } finally {
-      if (paging.current === request) { paging.current = null; setLoadingOlder(false); }
+    const cursor = feed.nextCursor;
+    if (
+      !activeRef.current || feed.loading || !sessionId || !cursor ||
+      consumed.current.has(cursorKey(cursor))
+    ) return;
+    if (paging.current) {
+      if (paging.current.sessionId === sessionId && paging.current.epoch === catalog.navigationEpoch.current) {
+        paging.current.wanted = true;
+        setLoadingOlder(true);
+        await paging.current.promise;
+      }
+      return;
     }
-  }, [catalog.currentSessionId, client, feed.nextCursor, prepend, setSessionError]);
+    const ready = prefetched.current;
+    if (
+      ready && ready.sessionId === sessionId &&
+      ready.epoch === catalog.navigationEpoch.current &&
+      cursorKey(ready.cursor) === cursorKey(cursor)
+    ) {
+      prefetched.current = null;
+      consumed.current.add(cursorKey(cursor));
+      prepend(sessionId, ready.page);
+      return;
+    }
+    await fetchHistory(sessionId, cursor);
+  }, [catalog.currentSessionId, catalog.navigationEpoch, feed.loading, feed.nextCursor, fetchHistory, prepend]);
 
   const deleteSession = useCallback(
     async (sessionId: string) => {
@@ -263,6 +376,7 @@ export function useSessionLifecycleActions(
     openSession,
     syncSession,
     loadOlder,
+    setHistoryPrefetchPinned,
     loadingOlder,
     deleteSession,
     renameSession,

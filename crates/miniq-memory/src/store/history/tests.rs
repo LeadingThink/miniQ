@@ -177,3 +177,27 @@ fn child_history_filters_are_owned_paginated_and_keep_large_payloads_deferred() 
     input.agent_id = Some("child-other".into());
     assert!(store.history_page(&input).unwrap().tool_calls.is_empty());
 }
+
+#[test]
+fn history_order_indexes_include_the_stable_id_tie_breaker() {
+    let store = Store::open_in_memory().unwrap();
+    let conn = store.conn.lock().unwrap();
+    let indexes = conn
+        .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index'
+             AND name IN ('idx_messages_session_created_id', 'idx_tool_calls_session_created_id')
+             ORDER BY name",
+        )
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    assert_eq!(
+        indexes,
+        vec![
+            "idx_messages_session_created_id".to_string(),
+            "idx_tool_calls_session_created_id".to_string(),
+        ]
+    );
+}

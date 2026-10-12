@@ -27,6 +27,7 @@ import { moveMenuIndex } from "../menuNavigation";
 import "./AppStatus.css";
 import { REMOTE_CONNECTION_DETAILS_EVENT, RemoteConnectionStatus } from "./RemoteConnectionStatus";
 import { RemoteDeviceBarContext } from "../remoteDeviceBar";
+import { isBillingError } from "../errorMessage";
 
 export function AppStatusBar(props: {
   app: MiniqAppController;
@@ -315,9 +316,11 @@ function OverflowMenu({ items, status, connected }: { items: OverflowItem[]; sta
 
 export function AppErrorBanner({ app }: { app: MiniqAppController }) {
   if (!app.error) return null;
+  const billing = isBillingError(app.error);
   return (
     <div className="error-banner" role="alert">
       <span style={{ flex: 1 }}>{app.error}</span>
+      {billing && <button type="button" className="ghost" onClick={() => app.navigation.openSettings("services")}>更换 API Key</button>}
       {app.client.mode === "remote" && !app.connection.connected && <button type="button" className="ghost" onClick={() => app.navigation.setShowSettings(true)}>连接设置</button>}
       <button
         type="button"

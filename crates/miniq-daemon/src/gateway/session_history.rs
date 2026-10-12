@@ -24,12 +24,24 @@ pub(super) fn sync(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
 }
 
 pub(super) fn page(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let started = std::time::Instant::now();
     let input: HistoryParams = params(raw)?;
     state
         .store
         .get_session(&input.session_id)
         .map_err(store_err)?;
-    to_value(state.store.history_page(&input).map_err(store_err)?)
+    let page = state.store.history_page(&input).map_err(store_err)?;
+    tracing::info!(
+        target: "miniq.perf",
+        operation = "session.history",
+        session_id = %input.session_id,
+        history_limit = input.limit,
+        message_count = page.messages.len(),
+        tool_call_count = page.tool_calls.len(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "session history completed"
+    );
+    to_value(page)
 }
 
 pub(super) fn model_calls(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {

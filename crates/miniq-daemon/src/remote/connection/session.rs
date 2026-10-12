@@ -131,11 +131,29 @@ impl Session<'_> {
         self.requests.spawn(key, cancel, async move {
             let response = super::dispatch(&state, &source, request).await;
             let mut payload = serde_json::to_value(response)?;
-            if use_blob && !token.is_cancelled() {
-                match blobs.upload(&cipher, &payload, &token).await {
-                    Ok(Some(reference)) => payload = reference,
+            let prepared =
+                match super::super::transport::prepare(payload.clone(), compress, &token).await? {
+                    Some(prepared) => prepared,
+                    None => return Ok(()),
+                };
+            let mut prepared_for_ws = Some(prepared.clone());
+            if use_blob
+                && !token.is_cancelled()
+                && prepared.len() > super::super::transport::BLOB_MIN_BYTES
+            {
+                match blobs
+                    .upload(&cipher, payload.get("id"), &prepared, &token)
+                    .await
+                {
+                    Ok(Some(reference)) => {
+                        payload = reference;
+                        // The original response is in the object store. The
+                        // small reference is encoded by the writer normally.
+                        prepared_for_ws = None;
+                    }
                     Ok(None) => {}
                     Err(_) => {
+                        // Signed object URLs can occur inside transport errors.
                         tracing::warn!(
                             "Object transfer unavailable; using encrypted WebSocket chunks"
                         )
@@ -149,6 +167,7 @@ impl Session<'_> {
                     payload,
                     cancel: token,
                     compress,
+                    prepared: prepared_for_ws,
                 };
                 outbound.send(reply).await?;
             }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { errorMessage } from "./errorMessage";
+import { errorMessage, isBillingError } from "./errorMessage";
 
 describe("errorMessage", () => {
   it.each([
@@ -27,5 +27,20 @@ describe("errorMessage", () => {
   it("keeps actionable permission and connection copy", () => {
     expect(errorMessage(new Error("403 Forbidden"))).toContain("没有执行此操作的权限");
     expect(errorMessage(new Error("not connected"))).toContain("连接已断开");
+  });
+
+  it.each([
+    "provider returned 402",
+    "insufficient_quota",
+    "credit_balance_too_low",
+    "余额不足",
+    "渠道欠费",
+  ])("recognizes billing failures: %s", (message) => {
+    expect(isBillingError(new Error(message))).toBe(true);
+    expect(errorMessage(new Error(message))).toBe("在问 API Key 的余额或调用额度不足，请充值或更换 API Key。");
+  });
+
+  it("does not classify an unrelated 402-like number as billing", () => {
+    expect(isBillingError(new Error("request 4020 failed"))).toBe(false);
   });
 });

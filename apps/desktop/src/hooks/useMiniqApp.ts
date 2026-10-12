@@ -629,7 +629,7 @@ export function useMiniqApp(active = true) {
     () => [...feed.messages].reverse().find((message) => message.role === "user")?.id ?? null,
     [feed.messages],
   );
-  const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls, latestTurnId);
+  const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls, latestTurnId, active && !feed.loading);
   const preview = useFilePreview(catalog.currentSession?.workingDirectory, catalog.currentSessionId, catalog.currentWorkspacePaths, client, desktop?.getFilePreviewCache(client.sshHost));
   const updater = useAppUpdater(client, setConnectionError, desktop?.setTransportPaused);
   const scopedConnection = useDaemonConnection({

@@ -96,6 +96,7 @@ pub(super) fn list(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
 }
 
 pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let started = std::time::Instant::now();
     let input: miniq_protocol::HistoryParams = params(raw)?;
     let journal = state.event_journal.lock().unwrap();
     let session = state
@@ -139,12 +140,26 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         .store
         .session_goal(&input.session_id)
         .map_err(store_err)?;
-    to_value(json!({
+    let last_turn = state
+        .store
+        .last_turn_outcome(&input.session_id)
+        .map_err(store_err)?;
+    let latest_turn_timing = state
+        .store
+        .latest_turn_timing(&input.session_id)
+        .map_err(store_err)?;
+    let cursor = journal.cursor();
+    // Keep the snapshot/cursor barrier, but release it before logging or
+    // building the response so new task events can proceed immediately.
+    drop(journal);
+    let message_count = history.messages.len();
+    let tool_call_count = history.tool_calls.len();
+    let response = json!({
         "canAcknowledgeFailure": true,
-        "eventCursor": journal.cursor(),
+        "eventCursor": cursor,
         "session": session,
-        "lastTurn": state.store.last_turn_outcome(&input.session_id).map_err(store_err)?,
-        "latestTurnTiming": state.store.latest_turn_timing(&input.session_id).map_err(store_err)?,
+        "lastTurn": last_turn,
+        "latestTurnTiming": latest_turn_timing,
         "messages": history.messages,
         "toolCalls": history.tool_calls,
         "nextCursor": history.next_cursor,
@@ -158,7 +173,18 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         "streamingText": streaming_text,
         "turnProgress": turn_progress,
         "goal": goal,
-    }))
+    });
+    tracing::info!(
+        target: "miniq.perf",
+        operation = "session.open",
+        session_id = %input.session_id,
+        history_limit = input.limit,
+        message_count,
+        tool_call_count,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "session open completed"
+    );
+    Ok(response)
 }
 
 #[derive(Deserialize)]

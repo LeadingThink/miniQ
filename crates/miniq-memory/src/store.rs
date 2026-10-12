@@ -139,6 +139,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0023_review_runs",
         include_str!("../../../migrations/0023_review_runs.sql"),
     ),
+    (
+        "0024_history_order_indexes",
+        include_str!("../../../migrations/0024_history_order_indexes.sql"),
+    ),
 ];
 
 #[derive(Debug, Error)]
