@@ -168,6 +168,9 @@ pub struct AppState {
     /// `settings` on each turn (so settings changes apply immediately).
     pub provider_override: Option<Arc<dyn ModelProvider>>,
     pub settings: Arc<Mutex<DaemonSettings>>,
+    pub media_capabilities: Arc<miniq_tools::MediaCapabilityRegistry>,
+    pub(crate) media_refresh_errors: Arc<Mutex<HashMap<String, String>>>,
+    pub(crate) media_settings_changed: Arc<tokio::sync::Notify>,
     /// Where settings are persisted; `None` for in-memory (tests).
     pub settings_path: Option<Arc<PathBuf>>,
     /// Startup settings failure; while set with no backup, saves are refused.
@@ -281,10 +284,16 @@ impl AppState {
         let agent_tasks = Arc::new(crate::agent_tasks::AgentTaskManager::new(store.clone()));
         let shutdown = CancellationToken::new();
         let ssh_hosts = Arc::new(crate::ssh::SshHostManager::new(&data_dir, shutdown.clone()));
+        let media_cache = settings_path
+            .as_ref()
+            .map(|_| data_dir.join("cache").join("media-capabilities"));
         Self {
             store,
             provider_override,
             settings: Arc::new(Mutex::new(settings)),
+            media_capabilities: Arc::new(miniq_tools::MediaCapabilityRegistry::new(media_cache)),
+            media_refresh_errors: Default::default(),
+            media_settings_changed: Default::default(),
             settings_path: settings_path.map(Arc::new),
             settings_load_error: Arc::new(Mutex::new(None)),
             router,
@@ -529,6 +538,7 @@ impl AppState {
             new_settings.save(path).map_err(|e| e.to_string())?;
         }
         *self.settings.lock().unwrap() = new_settings;
+        self.media_settings_changed.notify_one();
         Ok(())
     }
 
@@ -570,11 +580,13 @@ impl AppState {
                     let _ = miniq_local::write_private_bytes(&backup, &current);
                 }
                 *self.settings.lock().unwrap() = restored;
+                self.media_settings_changed.notify_one();
                 return Ok(());
             }
         }
         restored.save(path).map_err(|e| e.to_string())?;
         *self.settings.lock().unwrap() = restored;
+        self.media_settings_changed.notify_one();
         *self.settings_load_error.lock().unwrap() = None;
         Ok(())
     }

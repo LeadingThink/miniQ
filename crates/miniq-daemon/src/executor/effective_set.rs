@@ -96,6 +96,9 @@ impl SessionToolExecutor {
             });
             set.specs.push(spec);
         }
+        if let Some(media) = &self.ctx.media {
+            miniq_tools::decorate_media_specs(media, &mut set.specs);
+        }
         set
     }
 

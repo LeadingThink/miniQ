@@ -167,6 +167,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "workspace.modelUpdate" => session_model::workspace_update(state, req.params).await,
         "session.modelUpdate" => session_model::update(state, req.params).await,
         "model.list" => session_model::catalog(state).await,
+        "media.capabilities" => crate::media_capabilities::capabilities(state, req.params),
         "model.describe" => session_model::describe(state, req.params).await,
         "agent.list" => agents::list(state, req.params).await,
         "agent.output" => agents::action(state, req.params, false).await,

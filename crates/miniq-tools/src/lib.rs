@@ -25,6 +25,7 @@ mod http;
 mod interact;
 mod mcp;
 mod media;
+mod media_capabilities;
 mod memory;
 mod native;
 mod notebook;
@@ -64,8 +65,12 @@ pub use http::HttpRequestTool;
 pub use interact::{validate_ask_user_input, AskUserTool, TaskUpdateTool};
 pub use mcp::{McpBridge, McpCallTool, MCP_LIST_TOOLS};
 pub use media::{
-    EditImageTool, GenerateImageTool, GenerateMusicTool, GenerateVideoTool, GetMusicClipsTool,
-    GetMusicGenerationTool, GetVideoGenerationTool, SynthesizeSpeechTool, TranscribeAudioTool,
+    decorate_media_specs, EditImageTool, GenerateImageTool, GenerateMusicTool, GenerateVideoTool,
+    GetMusicClipsTool, GetMusicGenerationTool, GetVideoGenerationTool, SynthesizeSpeechTool,
+    TranscribeAudioTool,
+};
+pub use media_capabilities::{
+    MediaCapabilityRegistry, MediaCapabilitySnapshot, MEDIA_REFRESH_INTERVAL_SECS,
 };
 pub use memory::{MemorySearchTool, MemoryWriteTool, ScheduledTaskMemoryWriteTool};
 pub use native::{

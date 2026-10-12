@@ -7,109 +7,106 @@ use base64::Engine;
 use miniq_models::{ChatImage, ModelFirstRequest};
 use miniq_protocol::RiskLevel;
 use miniq_sandbox::Risk;
-use schemars::JsonSchema;
-use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
 use crate::file::path_risk;
 use crate::router::{parse_input, MediaConfig, Tool, ToolContext, ToolError};
 
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct ImageInput {
+mod audio;
+pub use audio::{SynthesizeSpeechTool, TranscribeAudioTool};
+mod image;
+mod video;
+mod video_result;
+pub use video_result::GetVideoGenerationTool;
+mod music;
+pub use image::GenerateImageTool;
+pub use music::GenerateMusicTool;
+pub use video::GenerateVideoTool;
+
+mod inputs;
+mod schema;
+use inputs::*;
+pub use schema::decorate_media_specs;
+use schema::*;
+pub(crate) use schema::{grok_video_schema, h3_video_schema, video_schema};
+
+async fn selected_model(
+    media: &MediaConfig,
+    kind: &str,
+    requested: Option<String>,
+    preferred: &str,
+) -> Result<String, ToolError> {
+    if requested
+        .as_ref()
+        .is_some_and(|model| model.trim().is_empty() || model.chars().any(char::is_control))
+    {
+        return Err(ToolError::InvalidInput(
+            "model must be a nonempty model ID".into(),
+        ));
+    }
+    if let Some(registry) = &media.capabilities {
+        // The daemon also refreshes daily while idle. Refresh on use covers
+        // a channel configured since the last background check.
+        let _ = registry.refresh_due(media).await;
+        if let Some(snapshot) = registry.snapshot(&media.base_url) {
+            return snapshot
+                .select_model(kind, preferred, requested.as_deref())
+                .map_err(ToolError::InvalidInput);
+        }
+    }
+    let model = requested
+        .unwrap_or_else(|| preferred.to_owned())
+        .trim()
+        .to_owned();
+    if model.trim().is_empty() {
+        return Err(ToolError::InvalidInput("model must not be empty".into()));
+    }
+    Ok(model)
+}
+
+fn nonempty_string(value: Option<String>, field: &str) -> Result<Option<String>, ToolError> {
+    let Some(value) = value else { return Ok(None) };
+    let value = value.trim().to_owned();
+    if value.is_empty() {
+        return Err(ToolError::InvalidInput(format!(
+            "{field} must not be empty"
+        )));
+    }
+    Ok(Some(value))
+}
+
+fn image_request_body(media: &MediaConfig, model: String, input: ImageInput) -> Value {
+    if codex_image_route(media, &model) {
+        return json!({"model": model, "prompt": prompt_with_image_options(input.prompt, input.size, input.quality)});
+    }
+    let mut body = json!({"model": model, "prompt": input.prompt});
+    if let Some(value) = input.size {
+        body["size"] = value.into();
+    }
+    if let Some(value) = input.quality {
+        body["quality"] = value.into();
+    }
+    body
+}
+
+fn prompt_with_image_options(
     prompt: String,
-    #[serde(default)]
-    model: Option<String>,
-    #[serde(default)]
     size: Option<String>,
-    #[serde(default)]
     quality: Option<String>,
-}
-
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct EditInput {
-    prompt: String,
-    image_path: String,
-    #[serde(default)]
-    model: Option<String>,
-}
-
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct VideoInput {
-    prompt: String,
-    #[serde(default)]
-    model: Option<String>,
-    #[serde(default)]
-    duration: Option<u8>,
-    #[serde(default)]
-    resolution: Option<String>,
-    #[serde(default)]
-    aspect_ratio: Option<String>,
-    #[serde(default)]
-    image_path: Option<String>,
-}
-
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct SpeechInput {
-    input: String,
-    #[serde(default)]
-    model: Option<String>,
-    #[serde(default)]
-    voice: Option<String>,
-    #[serde(default)]
-    response_format: Option<String>,
-}
-
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct TranscribeInput {
-    path: String,
-    #[serde(default)]
-    model: Option<String>,
-    #[serde(default)]
-    language: Option<String>,
-}
-
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct MusicInput {
-    prompt: String,
-    #[serde(default)]
-    model: Option<String>,
-    #[serde(default)]
-    instrumental: bool,
-    #[serde(default)]
-    style: Option<String>,
-    #[serde(default)]
-    title: Option<String>,
-}
-
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct MusicGenerationQueryInput {
-    /// A clip identifier returned in the `clips` array from `generate_music`.
-    #[schemars(regex(pattern = r"^[A-Za-z0-9_-]+$"))]
-    clip_id: String,
-}
-
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct VideoGenerationQueryInput {
-    /// The `request_id` returned by `generate_video`.
-    #[schemars(regex(pattern = r"^[A-Za-z0-9_-]+$"))]
-    request_id: String,
-}
-
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-struct MusicClipsQueryInput {
-    /// Up to 20 clip identifiers returned by `generate_music`.
-    #[schemars(length(min = 1, max = 20))]
-    clip_ids: Vec<String>,
+) -> String {
+    let mut guidance = Vec::new();
+    if let Some(size) = size.filter(|value| !value.trim().is_empty()) {
+        guidance.push(format!("构图和画幅要求：{size}。"));
+    }
+    if let Some(quality) = quality.filter(|value| !value.trim().is_empty()) {
+        guidance.push(format!("视觉质量要求：{quality}细节。"));
+    }
+    if guidance.is_empty() {
+        prompt
+    } else {
+        format!("{prompt}\n{}", guidance.join(" "))
+    }
 }
 
 fn config(ctx: &ToolContext) -> Result<&MediaConfig, ToolError> {
@@ -249,49 +246,6 @@ fn image_path_output(_ctx: &ToolContext, output: &Value) -> Vec<ChatImage> {
         .unwrap_or_default()
 }
 
-pub struct GenerateImageTool;
-#[async_trait]
-impl Tool for GenerateImageTool {
-    fn name(&self) -> &str {
-        "generate_image"
-    }
-    fn description(&self) -> &str {
-        "Generate an image from a natural-language request. Use for posters, illustrations, diagrams, and visual assets; return the generated image to the user."
-    }
-    fn parameters_schema(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(ImageInput)).unwrap()
-    }
-    fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
-        Risk {
-            level: RiskLevel::Medium,
-            reason: "generate media".into(),
-        }
-    }
-    async fn execute(&self, ctx: &ToolContext, raw: Value) -> Result<Value, ToolError> {
-        let input: ImageInput = parse_input(raw)?;
-        let media = config(ctx)?;
-        let http = client()?;
-        let mut body = json!({"model": input.model.unwrap_or_else(|| media.image_model.clone()), "prompt": input.prompt});
-        if let Some(v) = input.size {
-            body["size"] = v.into();
-        }
-        if let Some(v) = input.quality {
-            body["quality"] = v.into();
-        }
-        let response = http
-            .post(url(media, "/images/generations"))
-            .bearer_auth(&media.api_key)
-            .json(&ModelFirstRequest(&body))
-            .send()
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("image request: {e}")))?;
-        image_result(ctx, &response_json(response).await?)
-    }
-    fn output_images(&self, ctx: &ToolContext, output: &Value) -> Vec<ChatImage> {
-        image_path_output(ctx, output)
-    }
-}
-
 pub struct EditImageTool;
 #[async_trait]
 impl Tool for EditImageTool {
@@ -316,6 +270,7 @@ impl Tool for EditImageTool {
     async fn execute(&self, ctx: &ToolContext, raw: Value) -> Result<Value, ToolError> {
         let input: EditInput = parse_input(raw)?;
         let media = config(ctx)?;
+        let model = selected_model(media, "image", input.model, &media.image_model).await?;
         let path = ctx
             .resolve_read_path(&input.image_path)
             .map_err(|e| ToolError::SandboxDenied(e.to_string()))?;
@@ -332,10 +287,7 @@ impl Tool for EditImageTool {
             .mime_str("image/png")
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
         let form = reqwest::multipart::Form::new()
-            .text(
-                "model",
-                input.model.unwrap_or_else(|| media.image_model.clone()),
-            )
+            .text("model", model)
             .text("prompt", input.prompt)
             .part("image", part);
         let response = client()?
@@ -352,106 +304,6 @@ impl Tool for EditImageTool {
     }
 }
 
-pub struct SynthesizeSpeechTool;
-#[async_trait]
-impl Tool for SynthesizeSpeechTool {
-    fn name(&self) -> &str {
-        "synthesize_speech"
-    }
-    fn description(&self) -> &str {
-        "Turn text into natural speech and return a playable audio file."
-    }
-    fn parameters_schema(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(SpeechInput)).unwrap()
-    }
-    fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
-        Risk {
-            level: RiskLevel::Medium,
-            reason: "synthesize speech".into(),
-        }
-    }
-    async fn execute(&self, ctx: &ToolContext, raw: Value) -> Result<Value, ToolError> {
-        let input: SpeechInput = parse_input(raw)?;
-        let media = config(ctx)?;
-        let format = input.response_format.unwrap_or_else(|| "mp3".into());
-        let body = json!({"model": input.model.unwrap_or_else(|| media.tts_model.clone()), "input": input.input, "voice": input.voice.unwrap_or_else(|| "eve".into()), "response_format": format});
-        let response = client()?
-            .post(url(media, "/audio/speech"))
-            .bearer_auth(&media.api_key)
-            .json(&ModelFirstRequest(&body))
-            .send()
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("speech request: {e}")))?;
-        if !response.status().is_success() {
-            return Err(ToolError::ExecutionFailed(format!(
-                "speech provider returned HTTP {}",
-                response.status().as_u16()
-            )));
-        }
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("read speech: {e}")))?;
-        let path = save_bytes(ctx, &format, &bytes)?;
-        Ok(json!({"kind":"audio","path":path,"mimeType":format!("audio/{format}")}))
-    }
-}
-
-pub struct TranscribeAudioTool;
-#[async_trait]
-impl Tool for TranscribeAudioTool {
-    fn name(&self) -> &str {
-        "transcribe_audio"
-    }
-    fn description(&self) -> &str {
-        "Transcribe a local audio or video file into text."
-    }
-    fn parameters_schema(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(TranscribeInput)).unwrap()
-    }
-    fn evaluate_risk(&self, ctx: &ToolContext, input: &Value) -> Risk {
-        path_risk(ctx, input, RiskLevel::Low, "transcribe local media")
-    }
-    async fn execute(&self, ctx: &ToolContext, raw: Value) -> Result<Value, ToolError> {
-        let input: TranscribeInput = parse_input(raw)?;
-        let media = config(ctx)?;
-        let path = ctx
-            .resolve_read_path(&input.path)
-            .map_err(|e| ToolError::SandboxDenied(e.to_string()))?;
-        let bytes = tokio::fs::read(&path)
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("read audio: {e}")))?;
-        let part = reqwest::multipart::Part::bytes(bytes).file_name(
-            path.file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned(),
-        );
-        let mut form = reqwest::multipart::Form::new()
-            .text(
-                "model",
-                input
-                    .model
-                    .unwrap_or_else(|| media.transcription_model.clone()),
-            )
-            .part("file", part);
-        if let Some(lang) = input.language {
-            form = form.text("language", lang);
-        }
-        let value = response_json(
-            client()?
-                .post(url(media, "/audio/transcriptions"))
-                .bearer_auth(&media.api_key)
-                .multipart(form)
-                .send()
-                .await
-                .map_err(|e| ToolError::ExecutionFailed(format!("transcription request: {e}")))?,
-        )
-        .await?;
-        Ok(json!({"kind":"transcript","text":value.get("text").cloned().unwrap_or(value)}))
-    }
-}
-
 /// Detects the image formats accepted for video reference frames.
 fn video_reference_mime(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
@@ -465,187 +317,11 @@ fn video_reference_mime(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
-pub struct GenerateVideoTool;
-#[async_trait]
-impl Tool for GenerateVideoTool {
-    fn name(&self) -> &str {
-        "generate_video"
-    }
-    fn description(&self) -> &str {
-        "Start a video generation task, optionally animating a JPEG, PNG or WebP reference image. Returns a request_id; call get_video_generation with it to poll status and download the finished video instead of submitting again."
-    }
-    fn parameters_schema(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(VideoInput)).unwrap()
-    }
-    fn evaluate_risk(&self, ctx: &ToolContext, input: &Value) -> Risk {
-        match input.get("image_path") {
-            Some(_) => input_path_risk(ctx, input, "image_path", RiskLevel::High, "generate video"),
-            None => Risk {
-                level: RiskLevel::High,
-                reason: "generate video".into(),
-            },
-        }
-    }
-    async fn execute(&self, ctx: &ToolContext, raw: Value) -> Result<Value, ToolError> {
-        let input: VideoInput = parse_input(raw)?;
-        let media = config(ctx)?;
-        let mut body = json!({"model":input.model.unwrap_or_else(|| media.video_model.clone()),"prompt":input.prompt});
-        if let Some(v) = input.duration {
-            body["duration"] = v.into();
-        }
-        if let Some(v) = input.resolution {
-            body["resolution"] = v.into();
-        }
-        if let Some(v) = input.aspect_ratio {
-            body["aspect_ratio"] = v.into();
-        }
-        if let Some(path) = input.image_path {
-            let p = ctx
-                .resolve_read_path(&path)
-                .map_err(|e| ToolError::SandboxDenied(e.to_string()))?;
-            let bytes = tokio::fs::read(p)
-                .await
-                .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-            let mime = video_reference_mime(&bytes).ok_or_else(|| {
-                ToolError::InvalidInput("image_path must be a JPEG, PNG or WebP image".into())
-            })?;
-            body["image"] = json!({"url": format!(
-                "data:{mime};base64,{}",
-                base64::engine::general_purpose::STANDARD.encode(bytes)
-            )});
-        }
-        let value = response_json(
-            client()?
-                .post(url(media, "/videos/generations"))
-                .bearer_auth(&media.api_key)
-                .json(&ModelFirstRequest(&body))
-                .send()
-                .await
-                .map_err(|e| ToolError::ExecutionFailed(format!("video request: {e}")))?,
-        )
-        .await?;
-        Ok(json!({"kind":"video_task","task":value,"resume":true}))
-    }
-}
-
-pub struct GenerateMusicTool;
-#[async_trait]
-impl Tool for GenerateMusicTool {
-    fn name(&self) -> &str {
-        "generate_music"
-    }
-    fn description(&self) -> &str {
-        "Start music generation and preserve all returned clips[].id values. Poll them with get_music_clips; do not submit the same generation twice."
-    }
-    fn parameters_schema(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(MusicInput)).unwrap()
-    }
-    fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
-        Risk {
-            level: RiskLevel::High,
-            reason: "generate music".into(),
-        }
-    }
-    async fn execute(&self, _ctx: &ToolContext, raw: Value) -> Result<Value, ToolError> {
-        let input: MusicInput = parse_input(raw)?;
-        let media = config(_ctx)?;
-        let body = json!({"model":input.model.unwrap_or_else(||media.music_model.clone()),"prompt":input.prompt,"instrumental":input.instrumental,"style":input.style,"title":input.title});
-        let value = response_json(
-            client()?
-                .post(url(media, "/music/generations"))
-                .bearer_auth(&media.api_key)
-                .json(&ModelFirstRequest(&body))
-                .send()
-                .await
-                .map_err(|e| ToolError::ExecutionFailed(format!("music request: {e}")))?,
-        )
-        .await?;
-        Ok(json!({"kind":"music_task","task":value,"resume":true}))
-    }
-}
-
 fn valid_music_clip_id(id: &str) -> bool {
     !id.is_empty()
         && id
             .bytes()
             .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
-}
-
-pub struct GetVideoGenerationTool;
-#[async_trait]
-impl Tool for GetVideoGenerationTool {
-    fn name(&self) -> &str {
-        "get_video_generation"
-    }
-    fn description(&self) -> &str {
-        "Query a video generation task by the request_id returned from generate_video. When the task is done, the video is downloaded into the workspace and its local path is returned."
-    }
-    fn parameters_schema(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(VideoGenerationQueryInput)).unwrap()
-    }
-    fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
-        Risk {
-            level: RiskLevel::Low,
-            reason: "query video generation".into(),
-        }
-    }
-    async fn execute(&self, ctx: &ToolContext, raw: Value) -> Result<Value, ToolError> {
-        let input: VideoGenerationQueryInput = parse_input(raw)?;
-        if !valid_music_clip_id(&input.request_id) {
-            return Err(ToolError::InvalidInput(
-                "request_id must be a non-empty path-safe identifier".into(),
-            ));
-        }
-        let media = config(ctx)?;
-        let http = client()?;
-        let task = response_json(
-            http.get(url(media, &format!("/videos/{}", input.request_id)))
-                .bearer_auth(&media.api_key)
-                .send()
-                .await
-                .map_err(|e| ToolError::ExecutionFailed(format!("video status request: {e}")))?,
-        )
-        .await?;
-        let video_url = task
-            .pointer("/video/url")
-            .and_then(Value::as_str)
-            .filter(|_| task.get("status").and_then(Value::as_str) == Some("done"));
-        let Some(video_url) = video_url else {
-            return Ok(json!({"kind":"video_task","task":task,"resume":true}));
-        };
-        let base = reqwest::Url::parse(&media.base_url)
-            .map_err(|e| ToolError::ExecutionFailed(format!("invalid media base url: {e}")))?;
-        let target = base
-            .join(video_url)
-            .map_err(|e| ToolError::ExecutionFailed(format!("invalid video url: {e}")))?;
-        // Only send the provider credential back to the provider's own origin.
-        let mut request = http.get(target.clone());
-        if target.origin() == base.origin() {
-            request = request.bearer_auth(&media.api_key);
-        }
-        let response = request
-            .send()
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("video download: {e}")))?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(ToolError::ExecutionFailed(format!(
-                "video download returned HTTP {}",
-                status.as_u16()
-            )));
-        }
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("video download: {e}")))?;
-        let path = save_bytes(ctx, "mp4", &bytes)?;
-        Ok(json!({
-            "kind":"video_task",
-            "task":task,
-            "resume":false,
-            "video":{"kind":"video","path":path,"mimeType":"video/mp4"}
-        }))
-    }
 }
 
 pub struct GetMusicGenerationTool;
@@ -729,6 +405,14 @@ impl Tool for GetMusicClipsTool {
         Ok(json!({"kind":"music_task","task":value,"resume":true}))
     }
 }
+
+#[cfg(test)]
+#[path = "media/contract_tests.rs"]
+mod contract_tests;
+
+#[cfg(test)]
+#[path = "media/live_constraints_tests.rs"]
+mod live_constraints_tests;
 
 #[cfg(test)]
 #[path = "media_request_tests.rs"]

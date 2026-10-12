@@ -22,6 +22,8 @@ pub struct MediaConfig {
     pub tts_model: String,
     pub transcription_model: String,
     pub music_model: String,
+    /// Shared channel metadata cache. It never contains provider credentials.
+    pub capabilities: Option<Arc<crate::MediaCapabilityRegistry>>,
 }
 
 #[derive(Debug, Error)]

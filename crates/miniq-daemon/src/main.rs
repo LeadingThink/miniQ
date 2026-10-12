@@ -81,7 +81,11 @@ async fn main() -> anyhow::Result<()> {
         .set_plugin_skill_dirs(state.plugins.enabled_skill_directories());
     miniq_daemon::schedule::spawn_scheduler(state.clone());
     miniq_daemon::remote::spawn(state.clone());
+    let media_worker = miniq_daemon::media_capabilities::spawn(state.clone());
+    let shutdown = state.shutdown.clone();
     let result = server::serve(listener, state).await;
+    shutdown.cancel();
+    let _ = media_worker.await;
     let _ = std::fs::remove_file(dir.join("daemon.json"));
     result
 }

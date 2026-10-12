@@ -549,15 +549,7 @@ async fn execute_turn(
         session_id: session_id.to_string(),
         router: state.router.clone(),
         ctx: miniq_tools::ToolContext::new(workspace_path)
-            .with_media(config.as_ref().map(|config| miniq_tools::MediaConfig {
-                base_url: config.base_url.clone(),
-                api_key: config.api_key.clone(),
-                image_model: "gpt-image-2.5-flare".into(),
-                video_model: "grok-imagine-video-1.5".into(),
-                tts_model: "grok-tts".into(),
-                transcription_model: "grok-transcribe".into(),
-                music_model: "suno-v5".into(),
-            }))
+            .with_media(config.as_ref().map(|config| state.media_config_for(config)))
             .with_workspace_roots(roots.clone())
             .with_external_paths_allowed(external_paths_allowed)
             .with_readable_files(

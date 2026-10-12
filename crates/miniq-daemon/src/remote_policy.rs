@@ -144,6 +144,7 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "settings.schema"
         | "remote.status"
         | "voice.capabilities"
+        | "media.capabilities"
         | "skill.list"
         | "skill.read"
         | "skill.validate"

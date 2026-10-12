@@ -83,6 +83,9 @@ impl DaemonAgentBridge {
                 crate::session_models::model_identity(config.as_ref()),
             )
             .await?;
+        let media = config
+            .as_ref()
+            .map(|config| self.state.media_config_for(config));
         let provider = self.state.provider_from_config(config);
         crate::parallel_policy::refresh_child_policy(&mut history);
         history.push(ChatMessage::user(request.prompt.clone()));
@@ -109,6 +112,7 @@ impl DaemonAgentBridge {
                     &record.id,
                     cancel.clone(),
                     worktree.is_some(),
+                    media.clone(),
                 ),
                 cancel: cancel.clone(),
                 permission_policy: permission_policy(&request),
@@ -204,12 +208,13 @@ impl DaemonAgentBridge {
         }
     }
 
-    fn child_context(
+    pub(crate) fn child_context(
         &self,
         workspace: PathBuf,
         agent_id: &str,
         cancel: CancellationToken,
         isolated: bool,
+        media: Option<miniq_tools::MediaConfig>,
     ) -> ToolContext {
         let roots = self.child_roots(&workspace, isolated);
         let external_paths_allowed = self
@@ -217,22 +222,7 @@ impl DaemonAgentBridge {
             .approval_mode_for_session(&self.session_id)
             .is_ok_and(|mode| mode == ApprovalMode::FullAccess);
         ToolContext::new(workspace.clone())
-            .with_media(
-                self.state
-                    .settings
-                    .lock()
-                    .ok()
-                    .and_then(|settings| settings.provider.clone())
-                    .map(|config| miniq_tools::MediaConfig {
-                        base_url: config.base_url,
-                        api_key: config.api_key,
-                        image_model: "gpt-image-2.5-flare".into(),
-                        video_model: "grok-imagine-video-1.5".into(),
-                        tts_model: "grok-tts".into(),
-                        transcription_model: "grok-transcribe".into(),
-                        music_model: "suno-v5".into(),
-                    }),
-            )
+            .with_media(media)
             .with_workspace_roots(roots.clone())
             .with_external_paths_allowed(external_paths_allowed)
             .with_readable_files(

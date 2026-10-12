@@ -111,7 +111,7 @@ impl Tool for ToolSearchTool {
         }
     }
 
-    async fn execute(&self, _ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
+    async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let input: ToolSearchInput = parse_input(input)?;
         if input
             .limit
@@ -122,6 +122,9 @@ impl Tool for ToolSearchTool {
             ));
         }
         let mut catalog = (self.catalog)();
+        if let Some(media) = &ctx.media {
+            crate::decorate_media_specs(media, &mut catalog);
+        }
         if !catalog.iter().any(|tool| tool.name == "tool_search") {
             catalog.push(Self::tool_spec());
         }
