@@ -1,7 +1,5 @@
 //! Recover local attachment encoding failures before sending any HTTP request.
 
-use std::borrow::Cow;
-
 use serde_json::{json, Value};
 
 use crate::{ChatMessage, ChatRole, CompletionRequest, ProviderError};
@@ -12,10 +10,31 @@ pub(crate) fn build_with_attachment_recovery(
     request: &CompletionRequest,
     mut build: impl FnMut(&CompletionRequest) -> Result<Value, ProviderError>,
 ) -> Result<Value, ProviderError> {
-    let mut outgoing = Cow::Borrowed(request);
+    let mut outgoing = crate::request_budget::deduplicate(request);
+    crate::request_budget::trim_images(&mut outgoing)?;
     loop {
         let error = match build(outgoing.as_ref()) {
-            Ok(body) => return Ok(body),
+            Ok(body) => {
+                let bytes = crate::request_budget::wire_size(&body)?;
+                let image_bytes = crate::request_budget::image_wire_size(&body);
+                if bytes <= crate::request_budget::MAX_REQUEST_BYTES
+                    && image_bytes <= crate::request_budget::MAX_IMAGE_WIRE_BYTES
+                {
+                    return Ok(body);
+                }
+                if crate::request_budget::evict_oldest(outgoing.to_mut()) {
+                    continue;
+                }
+                let (bytes, limit) = if bytes > crate::request_budget::MAX_REQUEST_BYTES {
+                    (bytes, crate::request_budget::MAX_REQUEST_BYTES)
+                } else {
+                    (image_bytes, crate::request_budget::MAX_IMAGE_WIRE_BYTES)
+                };
+                return Err(ProviderError::RequestTooLarge {
+                    bytes: Some(bytes as u64),
+                    limit: Some(limit as u64),
+                });
+            }
             Err(error) => error,
         };
         let ProviderError::Attachment { path, detail } = &error else {

@@ -34,6 +34,53 @@ fn transient_statuses_and_permanent_errors_are_distinguished() {
 }
 
 #[test]
+fn request_too_large_is_a_safe_non_retryable_error_for_http_413() {
+    let error = ProviderError::from_api_response(
+        413,
+        r#"{"error":{"message":"secret prompt", "api_key":"sk-secret"},"audio":"secret-audio"}"#
+            .into(),
+        Some(Duration::from_secs(1)),
+    );
+    assert!(matches!(
+        error,
+        ProviderError::RequestTooLarge {
+            bytes: None,
+            limit: None
+        }
+    ));
+    assert!(!error.is_retryable());
+    let message = error.to_string();
+    assert!(message.contains("request too large"));
+    assert!(!message.contains("secret prompt"));
+    assert!(!message.contains("sk-secret"));
+    assert!(!message.contains("secret-audio"));
+    assert_eq!(error.retry_after(), None);
+}
+
+#[test]
+fn request_too_large_sse_errors_are_safe_and_non_retryable() {
+    for error in [
+        json!({"code":"request_too_large","message":"secret prompt"}),
+        json!({"type":"body too large","message":"sk-secret"}),
+        json!("request body too large: secret-audio"),
+    ] {
+        let classified = ProviderError::from_stream_error("provider error", &error);
+        assert!(matches!(
+            classified,
+            ProviderError::RequestTooLarge {
+                bytes: None,
+                limit: None
+            }
+        ));
+        assert!(!classified.is_retryable());
+        let message = classified.to_string();
+        assert!(!message.contains("secret"));
+        assert!(!message.contains("sk-secret"));
+        assert!(!message.contains("secret-audio"));
+    }
+}
+
+#[test]
 fn only_oneapi_route_wrapper_404_is_protocol_fallback_eligible() {
     let route_failure = ProviderError::from_api_response(
         404,

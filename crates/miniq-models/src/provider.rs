@@ -32,6 +32,11 @@ pub enum ProviderError {
     OutputLimitReached(OutputTokenUsage),
     #[error("provider context window was exceeded")]
     ContextWindowExceeded,
+    #[error("模型请求体过大（request too large）。请减少图片或附件数量，或先提取字幕/文本再分析；相同请求不会自动重试。")]
+    RequestTooLarge {
+        bytes: Option<u64>,
+        limit: Option<u64>,
+    },
     #[error("provider stream ended before a terminal event")]
     IncompleteStream,
     #[error("tool call {tool} ended with incomplete JSON arguments: {detail}")]

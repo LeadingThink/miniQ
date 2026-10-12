@@ -89,6 +89,13 @@ impl Attachments {
             std::fs::set_permissions(&self.failed, std::fs::Permissions::from_mode(0o600)).unwrap();
         }
         std::fs::write(&self.failed, crate::missing_images::tests::PNG).unwrap();
+        // Use distinct pixels after restoration. This test checks recovery of
+        // two references, rather than requiring duplicate pixels on the wire.
+        let mut pixels = miniq_models::load_static_image(&self.failed)
+            .unwrap()
+            .to_rgba8();
+        pixels.get_pixel_mut(0, 0).0[0] ^= 1;
+        pixels.save(&self.failed).unwrap();
     }
 }
 
