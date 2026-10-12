@@ -13,6 +13,7 @@ mod provider;
 mod reasoning;
 mod request_attachments;
 mod request_body;
+mod request_budget;
 mod response_info;
 pub use miniq_protocol::{ModelCallPurpose, ModelCallTrace};
 mod responses;

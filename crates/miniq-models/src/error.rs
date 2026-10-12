@@ -12,6 +12,12 @@ impl ProviderError {
             .get(reqwest::header::RETRY_AFTER)
             .and_then(|value| value.to_str().ok())
             .and_then(|value| parse_retry_after(value, SystemTime::now()));
+        if status == 413 {
+            return Self::RequestTooLarge {
+                bytes: None,
+                limit: None,
+            };
+        }
         match response.text().await {
             Ok(body) => Self::from_api_response(status, body, retry_after),
             Err(error) => Self::Api {
@@ -27,7 +33,12 @@ impl ProviderError {
         body: String,
         retry_after: Option<Duration>,
     ) -> Self {
-        if indicates_context_window_overflow(&body) {
+        if status == 413 {
+            Self::RequestTooLarge {
+                bytes: None,
+                limit: None,
+            }
+        } else if indicates_context_window_overflow(&body) {
             Self::ContextWindowExceeded
         } else {
             Self::Api {
@@ -39,6 +50,12 @@ impl ProviderError {
     }
 
     pub(crate) fn from_stream_error(prefix: &str, error: &Value) -> Self {
+        if indicates_request_too_large(&error.to_string()) {
+            return Self::RequestTooLarge {
+                bytes: None,
+                limit: None,
+            };
+        }
         let detail = error
             .get("message")
             .and_then(Value::as_str)
@@ -78,6 +95,7 @@ impl ProviderError {
             Self::Refusal
             | Self::InvalidResponse(_)
             | Self::ContextWindowExceeded
+            | Self::RequestTooLarge { .. }
             | Self::Attachment { .. }
             | Self::Config(_) => false,
         }
@@ -145,6 +163,14 @@ fn requires_user_action(error: &Value) -> bool {
     ]
     .iter()
     .any(|value| detail.contains(value))
+}
+
+fn indicates_request_too_large(detail: &str) -> bool {
+    let detail = detail.to_ascii_lowercase();
+    detail.contains("request_too_large")
+        || detail.contains("request too large")
+        || detail.contains("body_too_large")
+        || detail.contains("body too large")
 }
 
 fn is_transient_error(error: &Value) -> bool {

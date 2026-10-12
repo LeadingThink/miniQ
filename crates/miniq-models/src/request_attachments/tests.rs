@@ -241,3 +241,96 @@ fn restored_file_is_sent_again_and_success_does_not_clone_or_inject_notices() {
     );
     assert_eq!(restored["encoded"].as_array().unwrap().len(), 1);
 }
+
+#[test]
+fn identical_pixels_at_different_paths_are_sent_only_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first.png");
+    let second = dir.path().join("second.png");
+    std::fs::write(&first, b"identical original pixels").unwrap();
+    std::fs::write(&second, b"identical original pixels").unwrap();
+    let mut old = ChatMessage::tool_result("old", "old observation metadata");
+    old.images.push(image(&first));
+    let mut latest = ChatMessage::tool_result("new", "latest observation metadata");
+    latest.images.push(image(&second));
+    let original = request(vec![old, latest]);
+    let body = build_with_attachment_recovery(&original, |r| {
+        let count = r.messages.iter().map(|m| m.images.len()).sum::<usize>();
+        Ok(json!({"model":"test", "count":count, "messages":r.messages}))
+    })
+    .unwrap();
+    assert_eq!(body["count"], 1);
+    assert_eq!(original.messages[0].images.len(), 1);
+    assert_eq!(original.messages[1].images.len(), 1);
+    assert!(body.to_string().contains("duplicate"));
+}
+
+#[test]
+fn aggregate_image_payload_is_bounded_and_latest_observation_survives() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut messages = vec![];
+    for index in 0..20 {
+        let path = dir.path().join(format!("{index}.png"));
+        std::fs::write(&path, vec![index as u8; 1024 * 1024]).unwrap();
+        let mut assistant = ChatMessage::assistant("");
+        assistant.tool_calls.push(ToolCallRequest {
+            id: format!("call-{index}"),
+            name: "view_image".into(),
+            arguments: json!({}),
+        });
+        messages.push(assistant);
+        let mut result =
+            ChatMessage::tool_result(format!("call-{index}"), format!("observation-{index}"));
+        result.images.push(image(&path));
+        messages.push(result);
+    }
+    let original = request(messages);
+    let body = build_with_attachment_recovery(&original, |r| {
+        let mut input = vec![];
+        for m in &r.messages {
+            let mut content = vec![json!({"type":"input_text","text":m.content})];
+            for im in &m.images {
+                let encoded = crate::image::encode_image(im)?;
+                content.push(json!({"type":"input_image","image_url":format!("data:{};base64,{}",encoded.mime_type,encoded.base64)}));
+            }
+            input.push(json!({"role":"user","content":content}));
+        }
+        Ok(json!({"model":"test","input":input}))
+    }).unwrap();
+    let wire = serde_json::to_vec(&body).unwrap();
+    assert!(
+        wire.len() <= 17 * 1024 * 1024,
+        "unbounded {} byte payload",
+        wire.len()
+    );
+    let input = body["input"].as_array().unwrap();
+    assert!(input.iter().any(|m| m["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p["text"] == "observation-19")));
+    assert!(input.last().unwrap()["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p["type"] == "input_image"));
+    assert_eq!(
+        original
+            .messages
+            .iter()
+            .map(|m| m.images.len())
+            .sum::<usize>(),
+        20
+    );
+    assert!(body.to_string().contains("request_image_budget"));
+}
+
+#[test]
+fn oversized_non_image_request_is_rejected_without_truncating_text() {
+    let original = request(vec![ChatMessage::user("x".repeat(25 * 1024 * 1024))]);
+    let result = build_with_attachment_recovery(&original, |r| {
+        Ok(json!({"model":"test","input":r.messages}))
+    });
+    assert!(result.is_err(), "oversized body was allowed onto the wire");
+    assert_eq!(original.messages[0].content.len(), 25 * 1024 * 1024);
+}
