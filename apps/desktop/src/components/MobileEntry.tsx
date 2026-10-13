@@ -111,7 +111,7 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
     }
   };
   const configured = Boolean(activeKey) && hasMobilePrivacyConsent();
-  const showKeyFields = section === "settings" || (section === "home" && !configured);
+  const showKeyFields = section === "settings";
 
   return (
     <>
@@ -120,6 +120,7 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
       {chatOpened && <div style={{ display: section === "chat" && !accountOpen ? "contents" : "none" }}>
         <Suspense fallback={<main className="mobile-entry">
           <p role="status">正在加载移动问答…</p>
+          <button type="button" onClick={openSettings}>设置</button>
           <button type="button" onClick={() => setSection("home")}><ArrowLeft size={15} />返回</button>
         </main>}><MobileChat apiKey={configured ? activeKey : ""} onBack={() => setSection("home")} onSettings={openSettings} /></Suspense>
       </div>}
@@ -172,7 +173,7 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
                 }}
               />
               <label htmlFor="mobile-privacy-consent">我已阅读并同意</label>
-              <a href={MINIQ_PRIVACY_URL} target="_blank" rel="noreferrer">《miniQ 隐私政策》<ExternalLink size={12} /></a>
+              <a aria-label="阅读协议" href={MINIQ_PRIVACY_URL} target="_blank" rel="noreferrer">《miniQ 隐私政策》<ExternalLink size={12} /></a>
             </div>
 
             {section === "settings" && (
@@ -191,11 +192,11 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
               {showKeyFields && <button type="submit" disabled={pending || loadingCredentials || !privacyAccepted}>{pending ? "正在保存…" : "保存 Key 并继续"}</button>}
               {configured && isIosIapAvailable() && <button type="button" className="secondary" onClick={() => setAccountOpen(true)}>账户、购买额度与 API Key</button>}
               <div className="mobile-entry-actions">
-                <button type="button" className="mobile-mode-card primary" disabled={loadingCredentials || !configured} onClick={() => chooseMode("chat")}>
+                <button type="button" className="mobile-mode-card primary" disabled={loadingCredentials} onClick={() => chooseMode("chat")}>
                   <span className="mobile-mode-icon"><Bot size={21} /></span>
                   <span><strong>移动问答</strong><small>桌面不在线也能使用，支持流式回答和历史保留</small></span>
                 </button>
-                <button type="button" className="mobile-mode-card" disabled={pending || loadingCredentials || !configured || IS_MOBILE_TEST_API} onClick={() => chooseMode("remote")}>
+                <button type="button" className="mobile-mode-card" disabled={pending || loadingCredentials || IS_MOBILE_TEST_API} onClick={() => chooseMode("remote")}>
                   <span className="mobile-mode-icon"><Laptop size={21} /></span>
                   <span><strong>远程桌面</strong><small>{IS_MOBILE_TEST_API ? "测试环境尚未配置远程桌面服务" : "同步桌面项目、任务进度、会话与待审批操作"}</small></span>
                 </button>
