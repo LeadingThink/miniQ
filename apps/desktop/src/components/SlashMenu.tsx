@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { useComposerPopoverPosition } from "../hooks/useComposerPopoverPosition";
 import {
   AtSign,
@@ -43,6 +44,7 @@ const ICONS: Record<ComposerSlashIcon, LucideIcon> = {
 };
 
 export function SlashMenu(props: {
+  inputRef: RefObject<HTMLTextAreaElement | null>;
   id: string;
   commands: ComposerSlashCommand[];
   activeIndex: number;
@@ -54,15 +56,13 @@ export function SlashMenu(props: {
   onBack: () => void;
   onRetry: () => void;
 }) {
-  const menuRef = useRef<HTMLDivElement>(null);
-  const position = useComposerPopoverPosition(menuRef);
+  const position = useComposerPopoverPosition(props.inputRef);
   const activeRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     activeRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [props.activeIndex, props.commands.length]);
-  return (
+  return createPortal(
     <div
-      ref={menuRef}
       className="slash-menu"
       style={position}
       aria-label="快捷命令"
@@ -162,6 +162,7 @@ export function SlashMenu(props: {
       <footer className="slash-footer">
         ↑↓ 选择 · Enter 确定 · Esc {props.parent ? "返回" : "关闭"}
       </footer>
-    </div>
+    </div>,
+    document.body,
   );
 }

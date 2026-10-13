@@ -1,40 +1,46 @@
 import { useLayoutEffect, useState, type CSSProperties, type RefObject } from "react";
 
-/** Places a fixed popover above (or below) the enclosing `.composer-card`. */
-export function useComposerPopoverPosition(menuRef: RefObject<HTMLElement | null>): CSSProperties {
+/** Positions a body portal relative to the input's `.composer-card`. */
+export function useComposerPopoverPosition(inputRef: RefObject<HTMLTextAreaElement | null>): CSSProperties {
   const [position, setPosition] = useState<CSSProperties>({ visibility: "hidden" });
   useLayoutEffect(() => {
     const place = () => {
-      const composer = menuRef.current?.closest(".composer-card");
+      const composer = inputRef.current?.closest(".composer-card");
       if (!composer) return;
       const bounds = composer.getBoundingClientRect();
       const viewport = window.visualViewport;
       const top = viewport?.offsetTop ?? 0;
+      const left = viewport?.offsetLeft ?? 0;
       const height = viewport?.height ?? window.innerHeight;
       const width = viewport?.width ?? window.innerWidth;
       const above = bounds.top - top - 8;
       const below = top + height - bounds.bottom - 8;
       const placeAbove = above >= below;
       const maxHeight = Math.min(420, Math.max(100, placeAbove ? above - 8 : below - 8));
+      const menuWidth = Math.max(0, Math.min(bounds.width, width - 16));
       setPosition({
-        left: Math.max(8, Math.min(bounds.left, width - bounds.width - 8)),
-        width: Math.min(bounds.width, width - 16),
+        left: Math.max(left + 8, Math.min(bounds.left, left + width - menuWidth - 8)),
+        width: menuWidth,
         maxHeight,
         top: placeAbove ? bounds.top - 8 : bounds.bottom + 8,
         transform: placeAbove ? "translateY(-100%)" : undefined,
       });
     };
     place();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+    const composer = inputRef.current?.closest(".composer-card");
+    if (composer) observer?.observe(composer);
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     window.visualViewport?.addEventListener("resize", place);
     window.visualViewport?.addEventListener("scroll", place);
     return () => {
+      observer?.disconnect();
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
       window.visualViewport?.removeEventListener("resize", place);
       window.visualViewport?.removeEventListener("scroll", place);
     };
-  }, [menuRef]);
+  }, [inputRef]);
   return position;
 }

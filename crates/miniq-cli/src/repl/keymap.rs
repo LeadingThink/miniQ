@@ -56,7 +56,10 @@ const DEFAULTS: &[(Command, &str, &[&str])] = &[
     ),
     (Command::LineStart, "lineStart", &["home", "ctrl+a"]),
     (Command::LineEnd, "lineEnd", &["end", "ctrl+e"]),
-    (Command::DeleteBack, "deleteBack", &["backspace"]),
+    // Some terminals (and a number of SSH/PTY layers) encode Backspace as
+    // Ctrl+H instead of the Backspace key code. Keep both bindings so prompt
+    // editing works consistently across local and remote terminals.
+    (Command::DeleteBack, "deleteBack", &["backspace", "ctrl+h"]),
     (Command::DeleteForward, "deleteForward", &["delete"]),
     (Command::DeleteWordBack, "deleteWordBack", &["ctrl+w"]),
     (Command::DeleteWordForward, "deleteWordForward", &["alt+d"]),

@@ -1,16 +1,80 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ComposerCard } from "./Composer";
 
-const fake = vi.hoisted(() => ({ open: vi.fn(), save: vi.fn() }));
+const attachmentStyles = readFileSync(resolve(process.cwd(), "src/styles/conversation.css"), "utf8");
+
+const fake = vi.hoisted(() => ({ open: vi.fn(), save: vi.fn(), preview: vi.fn().mockRejectedValue(new Error("preview unavailable")) }));
 vi.mock("../runtime", () => ({ isTauriRuntime: () => true }));
-vi.mock("../localFiles", () => ({ savePastedImage: fake.save, readImagePreview: vi.fn().mockRejectedValue(new Error("preview unavailable")) }));
+vi.mock("../localFiles", () => ({ savePastedImage: fake.save, readImagePreview: fake.preview }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: fake.open }));
 vi.mock("@tauri-apps/api/webviewWindow", () => ({ getCurrentWebviewWindow: () => ({ onDragDropEvent: async () => () => {} }) }));
 afterEach(() => { cleanup(); localStorage.clear(); vi.clearAllMocks(); });
 
 const props = { busy: false, placeholder: "消息", onSend: vi.fn() };
+it("keeps the remove control visible beside a long attachment name", () => {
+  const style = document.createElement("style");
+  style.textContent = attachmentStyles;
+  document.head.append(style);
+  try {
+    const name = "需要审核的完整报告及补充材料".repeat(8) + ".pdf";
+    localStorage.setItem("miniq.draft.long-name.attachments", JSON.stringify([`/work/${name}`]));
+    render(<ComposerCard {...props} draftKey="long-name" />);
+    const remove = screen.getByRole("button", { name: `移除附件 ${name}` });
+    const label = screen.getByText(name);
+    expect(parseFloat(getComputedStyle(label).minWidth)).toBe(0);
+    expect(getComputedStyle(label).textOverflow).toBe("ellipsis");
+    expect(getComputedStyle(remove).flexShrink).toBe("0");
+    expect(getComputedStyle(remove).width).toBe("24px");
+  } finally {
+    style.remove();
+  }
+});
+
+it("keeps image removal inside the thumbnail and clears the last attachment", async () => {
+  fake.preview.mockResolvedValueOnce({ mimeType: "image/png", dataBase64: "aW1hZ2U=" });
+  localStorage.setItem("miniq.draft.remove-image.attachments", JSON.stringify(["/work/image.png"]));
+  const style = document.createElement("style");
+  // jsdom does not resolve custom properties in background shorthands.
+  style.textContent = attachmentStyles.replaceAll("var(--media-overlay-bg)", "#123456");
+  document.head.append(style);
+  try {
+    render(<ComposerCard {...props} draftKey="remove-image" />);
+    const remove = await screen.findByRole("button", { name: "移除图片 image.png" });
+    const computed = getComputedStyle(remove);
+    expect(parseFloat(computed.top)).toBeGreaterThanOrEqual(0);
+    expect(parseFloat(computed.right)).toBeGreaterThanOrEqual(0);
+    expect(computed.backgroundColor).toBe("rgb(18, 52, 86)");
+    fireEvent.click(remove);
+    expect(screen.queryByRole("img", { name: "image.png" })).toBeNull();
+    expect(localStorage.getItem("miniq.draft.remove-image.attachments")).toBeNull();
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "发送消息" }).disabled).toBe(true);
+  } finally {
+    style.remove();
+  }
+});
+
+it("removes a selected file from the preview, saved draft and outgoing message", async () => {
+  fake.open.mockResolvedValueOnce(["/work/cancel.pdf", "/work/keep.pdf"]);
+  const onSend = vi.fn().mockResolvedValue(true);
+  const view = render(<ComposerCard {...props} draftKey="remove-file" onSend={onSend} />);
+  fireEvent.click(screen.getByRole("button", { name: "更多输入方式" }));
+  fireEvent.click(screen.getByRole("button", { name: "附加文件" }));
+  await screen.findByText("cancel.pdf");
+  fireEvent.click(screen.getByRole("button", { name: "移除附件 cancel.pdf" }));
+  expect(screen.queryByText("cancel.pdf")).toBeNull();
+  expect(JSON.parse(localStorage.getItem("miniq.draft.remove-file.attachments")!)).toEqual(["/work/keep.pdf"]);
+  view.unmount();
+  render(<ComposerCard {...props} draftKey="remove-file" onSend={onSend} />);
+  expect(screen.queryByText("cancel.pdf")).toBeNull();
+  expect(screen.getByText("keep.pdf")).toBeTruthy();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "发送消息" })));
+  expect(onSend).toHaveBeenCalledExactlyOnceWith("", ["/work/keep.pdf"]);
+});
+
 it("saves late file picker results to the originating draft without changing the new session", async () => {
   let finish!: (paths: string[]) => void;
   fake.open.mockImplementationOnce(() => new Promise<string[]>((resolve) => { finish = resolve; }));

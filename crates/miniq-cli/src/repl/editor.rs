@@ -948,6 +948,17 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_h_is_an_alternate_backspace() {
+        let mut e = editor();
+        typed(&mut e, "hello");
+        e.key(ctrl('h'));
+        assert_eq!(e.buffer(), "hell");
+        e.key(key(KeyCode::Home));
+        e.key(key(KeyCode::Delete));
+        assert_eq!(e.buffer(), "ell");
+    }
+
+    #[test]
     fn history_browse_and_search() {
         let mut e = editor();
         e.remember("first");

@@ -118,6 +118,7 @@ export function useComposerSlash(props: {
   useEffect(() => {
     if (!active) return;
     const closeOutside = (event: PointerEvent) => {
+      if (document.getElementById(id)?.closest(".slash-menu")?.contains(event.target as Node)) return;
       if (
         !props.inputRef.current
           ?.closest(".composer-card")
@@ -127,7 +128,7 @@ export function useComposerSlash(props: {
     };
     document.addEventListener("pointerdown", closeOutside);
     return () => document.removeEventListener("pointerdown", closeOutside);
-  }, [active, dismissalKey, props.inputRef]);
+  }, [active, dismissalKey, props.inputRef, id]);
   const focus = () =>
     requestAnimationFrame(() => props.inputRef.current?.focus());
   const back = () => {
@@ -187,6 +188,7 @@ export function useComposerSlash(props: {
     onKeyDown,
     menu: active ? (
       <SlashMenu
+        inputRef={props.inputRef}
         id={id}
         commands={visible}
         activeIndex={index}

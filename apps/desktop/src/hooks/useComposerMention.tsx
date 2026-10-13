@@ -41,12 +41,13 @@ export function useComposerMention(props: {
   useEffect(() => {
     if (!active) return;
     const closeOutside = (event: PointerEvent) => {
+      if (document.getElementById(id)?.closest(".slash-menu")?.contains(event.target as Node)) return;
       if (!props.inputRef.current?.closest(".composer-card")?.contains(event.target as Node))
         setDismissed(dismissalKey);
     };
     document.addEventListener("pointerdown", closeOutside);
     return () => document.removeEventListener("pointerdown", closeOutside);
-  }, [active, dismissalKey, props.inputRef]);
+  }, [active, dismissalKey, props.inputRef, id]);
 
   const pick = (file: MentionFile) => {
     if (!token) return;
@@ -85,6 +86,7 @@ export function useComposerMention(props: {
     onKeyDown,
     menu: active ? (
       <MentionMenu
+        inputRef={props.inputRef}
         id={id}
         files={visible}
         activeIndex={index}

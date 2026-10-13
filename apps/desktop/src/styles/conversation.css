@@ -377,6 +377,17 @@
   white-space: nowrap;
 }
 
+.attach-chip > svg {
+  flex-shrink: 0;
+}
+
+.attach-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .attach-image-chip {
   position: relative;
   display: inline-flex;
@@ -397,14 +408,40 @@
   object-fit: cover;
 }
 
+.attach-remove {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-mid);
+  padding: 0;
+  cursor: pointer;
+}
+
+.attach-remove:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.attach-remove:focus-visible {
+  outline: 2px solid var(--border-strong);
+  outline-offset: -2px;
+}
+
+.attach-remove:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .attach-image-remove {
   position: absolute;
-  top: -11px;
-  right: -11px;
-  width: 20px;
-  height: 20px;
-  justify-content: center;
-  border-radius: 50%;
+  top: 2px;
+  right: 2px;
   color: var(--media-overlay-fg);
   background: var(--media-overlay-bg);
   border: 2px solid var(--bg);
@@ -414,25 +451,6 @@
 .attach-image-remove:hover {
   color: var(--media-overlay-fg);
   background: var(--media-overlay-bg-hover);
-}
-
-.attach-image-remove:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-
-.attach-remove {
-  display: inline-flex;
-  align-items: center;
-  border: none;
-  background: transparent;
-  color: var(--text-dim);
-  padding: 0;
-  cursor: pointer;
-}
-
-.attach-remove:hover {
-  color: var(--text);
 }
 
 .attach-btn {

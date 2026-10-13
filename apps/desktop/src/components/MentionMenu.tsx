@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { FileText, Folder } from "lucide-react";
 import type { MentionFile } from "../composerMention";
 import { useComposerPopoverPosition } from "../hooks/useComposerPopoverPosition";
@@ -12,6 +13,7 @@ function split(path: string): { name: string; dir: string } {
 
 /** File candidates for `@` mentions; shares the slash menu's look and keys. */
 export function MentionMenu(props: {
+  inputRef: RefObject<HTMLTextAreaElement | null>;
   id: string;
   files: MentionFile[];
   activeIndex: number;
@@ -22,14 +24,13 @@ export function MentionMenu(props: {
   onPick: (file: MentionFile) => void;
   onRetry: () => void;
 }) {
-  const menuRef = useRef<HTMLDivElement>(null);
-  const position = useComposerPopoverPosition(menuRef);
+  const position = useComposerPopoverPosition(props.inputRef);
   const activeRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     activeRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [props.activeIndex, props.files.length]);
-  return (
-    <div ref={menuRef} className="slash-menu mention-menu" style={position} aria-label="引用文件">
+  return createPortal(
+    <div className="slash-menu mention-menu" style={position} aria-label="引用文件">
       <header className="slash-header">
         <strong>引用文件</strong>
         <span>{props.files.length} 项</span>
@@ -77,6 +78,7 @@ export function MentionMenu(props: {
         </div>
       )}
       <footer className="slash-footer">↑↓ 选择 · Enter 或 Tab 插入 · Esc 关闭</footer>
-    </div>
+    </div>,
+    document.body,
   );
 }
