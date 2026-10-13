@@ -48,8 +48,8 @@ impl Tool for GenerateVideoTool {
                     .into(),
         }
     }
-    async fn execute(&self, ctx: &ToolContext, raw: Value) -> Result<Value, ToolError> {
-        let input: VideoInput = parse_input(raw.clone())?;
+    async fn execute(&self, ctx: &ToolContext, mut raw: Value) -> Result<Value, ToolError> {
+        let mut input: VideoInput = parse_input(raw.clone())?;
         let media = config(ctx)?;
         if input.prompt.trim().is_empty() {
             return Err(ToolError::InvalidInput("prompt must not be empty".into()));
@@ -61,6 +61,11 @@ impl Tool for GenerateVideoTool {
         }
         let model = selected_model(media, "video", input.model.clone(), &media.video_model).await?;
         validate_h3_model(&model)?;
+        input.duration = video_duration(media, &model, input.duration)?;
+        raw["model"] = json!(model);
+        if let Some(duration) = input.duration {
+            raw["duration"] = json!(duration);
+        }
         if is_h3_model(&model) {
             return execute_h3(ctx, media, model, input, raw).await;
         }
@@ -103,6 +108,35 @@ impl Tool for GenerateVideoTool {
         Ok(
             json!({"kind":"video_task","request_id":value.get("request_id").or_else(|| value.get("id")),"model":model,"task":value,"resume":true}),
         )
+    }
+}
+
+fn video_duration(
+    media: &MediaConfig,
+    model: &str,
+    requested: Option<u32>,
+) -> Result<Option<u32>, ToolError> {
+    if let Some(duration) = requested {
+        return Ok(Some(duration));
+    }
+    let snapshot = media
+        .capabilities
+        .as_ref()
+        .and_then(|registry| registry.snapshot(&media.base_url));
+    let default = snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.parameter_schema("generate_video", model, "duration"))
+        .and_then(|schema| schema.get("default"));
+    match default {
+        Some(value) => value
+            .as_u64()
+            .and_then(|duration| u32::try_from(duration).ok())
+            .map(Some)
+            .ok_or_else(|| {
+                ToolError::InvalidInput("duration default must be an unsigned integer".into())
+            }),
+        None if model == "grok-imagine-video-1.5" || is_h3_model(model) => Ok(Some(8)),
+        None => Ok(None),
     }
 }
 
@@ -166,7 +200,8 @@ async fn execute_h3(
         raw.as_object_mut().unwrap().remove("image_path");
         raw["reference_images"] = json!(input.reference_images);
     }
-    let seconds = input.duration.unwrap_or(8);
+    let seconds = video_duration(media, &model, input.duration)?
+        .ok_or_else(|| ToolError::InvalidInput("H3 duration default is unavailable".into()))?;
     raw["duration"] = seconds.into();
     // Channel schemas describe provider wire URLs, while this tool also
     // accepts local paths. Validate scalar/count constraints before uploading.

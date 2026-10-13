@@ -7,10 +7,10 @@ impl Tool for SynthesizeSpeechTool {
         "synthesize_speech"
     }
     fn description(&self) -> &str {
-        "Turn text into natural speech and return a playable audio file."
+        super::speech::SPEECH_DESCRIPTION
     }
     fn parameters_schema(&self) -> Value {
-        serde_json::to_value(schemars::schema_for!(SpeechInput)).unwrap()
+        speech_schema()
     }
     fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
         Risk {
@@ -20,28 +20,63 @@ impl Tool for SynthesizeSpeechTool {
     }
     async fn execute(&self, ctx: &ToolContext, raw: Value) -> Result<Value, ToolError> {
         let input: SpeechInput = parse_input(raw)?;
+        if input.input.trim().is_empty() {
+            return Err(ToolError::InvalidInput("input must not be blank".into()));
+        }
         let media = config(ctx)?;
-        let format = input.response_format.unwrap_or_else(|| "mp3".into());
-        let body = json!({"model": input.model.unwrap_or_else(|| media.tts_model.clone()), "input": input.input, "voice": input.voice.unwrap_or_else(|| "eve".into()), "response_format": format});
-        let response = client()?
+        let preferred = if media.tts_model.trim().is_empty() {
+            "grok-tts"
+        } else {
+            &media.tts_model
+        };
+        let model = tokio::select! {
+            biased;
+            _ = ctx.cancellation.cancelled() => return Err(super::speech::cancelled()),
+            result = selected_model(media, "tts", input.model.clone(), preferred) => result?,
+        };
+        let baseline = speech_schema_for(media, &model);
+        let body = super::speech::request_body(media, model, input, &baseline)?;
+        validate_parameters(
+            media,
+            "synthesize_speech",
+            body["model"].as_str().unwrap(),
+            &body,
+            &baseline,
+        )?;
+        super::speech::validate_tags(
+            media,
+            body["model"].as_str().unwrap(),
+            body["input"].as_str().unwrap(),
+        )?;
+        let request = client()?
             .post(url(media, "/audio/speech"))
             .bearer_auth(&media.api_key)
             .json(&ModelFirstRequest(&body))
-            .send()
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("speech request: {e}")))?;
+            .send();
+        let response = tokio::select! {
+            biased;
+            _ = ctx.cancellation.cancelled() => return Err(super::speech::cancelled()),
+            result = request => result.map_err(|e| ToolError::ExecutionFailed(format!("speech request: {e}")))?,
+        };
         if !response.status().is_success() {
             return Err(ToolError::ExecutionFailed(format!(
                 "speech provider returned HTTP {}",
                 response.status().as_u16()
             )));
         }
-        let bytes = response
+        let format = body["response_format"].as_str().unwrap();
+        let mime = super::speech::response_mime(format, &response);
+        let bytes = super::speech::read_response(ctx, response).await?;
+        let extension = if format
             .bytes()
-            .await
-            .map_err(|e| ToolError::ExecutionFailed(format!("read speech: {e}")))?;
-        let path = save_bytes(ctx, &format, &bytes)?;
-        Ok(json!({"kind":"audio","path":path,"mimeType":format!("audio/{format}")}))
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+        {
+            format
+        } else {
+            "bin"
+        };
+        let path = save_bytes(ctx, extension, &bytes)?;
+        Ok(json!({"kind":"audio","path":path,"mimeType":mime}))
     }
 }
 

@@ -17,8 +17,10 @@ use url::Url;
 
 mod fetch;
 mod http;
+mod model_guidance;
 mod provider_document;
 mod schema;
+mod speech_document;
 use fetch::*;
 use http::*;
 use schema::*;
@@ -31,6 +33,12 @@ mod schema_tests;
 
 #[cfg(test)]
 mod route_tests;
+
+#[cfg(test)]
+mod tts_tests;
+
+#[cfg(test)]
+mod wire_tests;
 
 pub const MEDIA_REFRESH_INTERVAL_SECS: u64 = 86_400;
 
@@ -86,6 +94,16 @@ impl MediaCapabilitySnapshot {
         requested: Option<&str>,
     ) -> Result<String, String> {
         let kind = canonical_kind(kind);
+        let tool = match kind {
+            "image" => "generate_image",
+            "video" => "generate_video",
+            "music" => "generate_music",
+            "tts" => "synthesize_speech",
+            _ => "",
+        };
+        let executable = |model: &MediaModel| {
+            !is_dedicated_route(model) && (tool.is_empty() || supports_tool(model, tool))
+        };
         if requested.is_some_and(|model| model.trim().is_empty()) {
             return Err("requested media model must not be empty".into());
         }
@@ -94,6 +112,10 @@ impl MediaCapabilitySnapshot {
             let model = self.models.iter().find(|model| model.id == requested);
             return match model {
                 Some(model) if (model.kind == kind || model.kind == "unknown") && !is_dedicated_route(model) => {
+                    let tool = match kind {"image"=>"generate_image","video"=>"generate_video","music"=>"generate_music","tts"=>"synthesize_speech",_=>""};
+                    if !tool.is_empty() && !supports_tool(model,tool) {
+                        return Err(format!("requested media model `{requested}` does not support {tool}"));
+                    }
                     Ok(model.id.clone())
                 }
                 Some(model) if is_dedicated_route(model) => Err(format!(
@@ -112,7 +134,7 @@ impl MediaCapabilitySnapshot {
         if let Some(model) = self.models.iter().find(|model| {
             (model.kind == kind || model.kind == "unknown")
                 && model.id == preferred
-                && !is_dedicated_route(model)
+                && executable(model)
         }) {
             return Ok(model.id.clone());
         }
@@ -120,7 +142,7 @@ impl MediaCapabilitySnapshot {
         let mut candidates = self
             .models
             .iter()
-            .filter(|model| model.kind == kind && !is_dedicated_route(model))
+            .filter(|model| model.kind == kind && executable(model))
             .map(|model| model.id.as_str())
             .collect::<Vec<_>>();
         candidates.sort_unstable();
@@ -183,28 +205,53 @@ impl MediaCapabilitySnapshot {
                 .iter()
                 .filter(|model| model.kind == kind && supports_tool(model, &spec.name))
                 .collect::<Vec<_>>();
+            let base = schema.clone();
+            let mut effective = Vec::new();
             for model in &models {
-                let model_schema = if spec.name == "generate_video" {
-                    Some(video_model_schema(model, Some(discovered)))
+                let mut model_schema = if spec.name == "generate_video" {
+                    video_model_schema(model, Some(discovered))
+                } else if spec.name == "synthesize_speech" {
+                    schema::speech_model_schema(model, discovered)
                 } else {
-                    model.schemas.get(&spec.name).cloned()
-                };
-                if let Some(model_schema) = model_schema {
-                    let overrides = model_schema
-                        .get("properties")
-                        .cloned()
-                        .unwrap_or_else(|| json!({}));
-                    if schema.get("allOf").is_none() {
-                        schema["allOf"] = json!([]);
+                    let mut value = base.clone();
+                    value.as_object_mut().unwrap().remove("allOf");
+                    if let Some(overrides) = model
+                        .schemas
+                        .get(&spec.name)
+                        .and_then(|s| s.get("properties"))
+                        .and_then(Value::as_object)
+                    {
+                        for (field, constraints) in overrides {
+                            if let (Some(target), Some(constraints)) = (
+                                value["properties"][field].as_object_mut(),
+                                constraints.as_object(),
+                            ) {
+                                target.extend(constraints.clone());
+                            }
+                        }
                     }
-                    if let Some(cases) = schema["allOf"].as_array_mut() {
-                        cases.push(json!({
-                            "if":{"required":["model"],"properties":{"model":{"const":model.id}}},
-                            "then":{"properties":overrides}
-                        }));
+                    value
+                };
+                if spec.name == "generate_image"
+                    && model.id.starts_with("gpt-image-")
+                    && Url::parse(&self.base_url)
+                        .ok()
+                        .is_some_and(|url| url.host_str() == Some("oneapi.zaiwenai.com"))
+                {
+                    for field in ["size", "quality"] {
+                        model_schema["properties"][field] = json!({"type":["string","null"],"description":"Prompt guidance on the Codex route. Not an exact output control."});
                     }
                 }
+                if schema.get("allOf").is_none() {
+                    schema["allOf"] = json!([]);
+                }
+                schema["allOf"].as_array_mut().unwrap().push(json!({
+                    "if":{"required":["model"],"properties":{"model":{"const":model.id}}},
+                    "then":{"properties":model_schema["properties"]}
+                }));
+                effective.push((model.id.as_str(), model_schema));
             }
+            model_guidance::widen_envelope(&mut schema, &effective);
             if !models.is_empty() {
                 let mut ids = models
                     .iter()
@@ -231,6 +278,9 @@ impl MediaCapabilitySnapshot {
                     }
                 }
             }
+            spec.description.push('\n');
+            spec.description
+                .push_str(&self.model_guidance(&spec.name, ""));
             spec.parameters = schema;
         }
     }
@@ -240,6 +290,7 @@ impl MediaCapabilitySnapshot {
             "music" => "suno-v6",
             "image" => "gpt-image-2.5-flare",
             "video" => "grok-imagine-video-1.5",
+            "tts" => "grok-tts",
             _ => "",
         };
         self.select_model(kind, preferred, None).ok().or_else(|| {
@@ -305,6 +356,7 @@ impl MediaCapabilityRegistry {
         state.credential_fingerprint = Some(fingerprint);
         if let Some(snapshot) = channel.snapshot.lock().unwrap().clone() {
             if !changed_credentials
+                && snapshot.schemas.contains_key("synthesize_speech")
                 && now.saturating_sub(snapshot.fetched_at) < MEDIA_REFRESH_INTERVAL_SECS
             {
                 return Ok(snapshot);

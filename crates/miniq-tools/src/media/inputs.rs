@@ -7,12 +7,12 @@ pub(super) struct ImageInput {
     pub(super) prompt: String,
     #[serde(default)]
     pub(super) model: Option<String>,
-    /// Accepted for compatibility. The Codex image route uses prompt guidance
-    /// for composition and size, so this value is added to the prompt.
+    /// Model/channel dependent. GPT images on the OneAPI Codex route use this
+    /// as prompt guidance, not an exact size. Other channels use native size.
     #[serde(default)]
     pub(super) size: Option<String>,
-    /// Accepted for compatibility. The Codex image route does not apply this
-    /// as a wire parameter; describe the requested quality in the prompt.
+    /// Model/channel dependent. GPT images on the OneAPI Codex route use this
+    /// as prompt guidance. Other channels can support native quality values.
     #[serde(default)]
     pub(super) quality: Option<String>,
 }
@@ -54,6 +54,9 @@ pub(super) struct VideoInput {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(super) struct SpeechInput {
+    /// Text to speak, preserved verbatim. Grok supports documented [Tags]
+    /// for pauses and vocal sounds, and <paired> delivery wrappers; use only Tags
+    /// requested or appropriate to the script, with matching nested wrappers.
     pub(super) input: String,
     #[serde(default)]
     pub(super) model: Option<String>,
@@ -61,6 +64,10 @@ pub(super) struct SpeechInput {
     pub(super) voice: Option<String>,
     #[serde(default)]
     pub(super) response_format: Option<String>,
+    /// Speech speed. Grok TTS supports 1 only; other models use the selected
+    /// channel's advertised range and default when available.
+    #[serde(default)]
+    pub(super) speed: Option<f64>,
 }
 
 #[derive(Deserialize, JsonSchema)]

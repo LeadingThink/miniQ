@@ -15,7 +15,7 @@ pub(super) async fn fetch_snapshot(
     let mut models = Vec::new();
     let mut details_unsupported = true;
     let mut details_errors = Vec::new();
-    for kind in ["image", "video", "audio_gen"] {
+    for kind in ["image", "video", "audio_gen", "audio_tts"] {
         match fetch_details(&client, media, base_url, kind).await {
             Ok((rows, source_partial)) => {
                 details_unsupported = false;
@@ -58,6 +58,7 @@ pub(super) async fn fetch_snapshot(
 
     let mut schemas = baseline_schemas();
     let mut openapi_fields: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut speech_openapi = None;
     match fetch_openapi(&client, media, base_url).await {
         Ok((openapi_url, document)) => {
             sources.push(MediaCapabilitySource {
@@ -65,8 +66,16 @@ pub(super) async fn fetch_snapshot(
                 fetched_at,
                 partial: false,
             });
-            for tool in ["generate_image", "generate_video", "generate_music"] {
+            for tool in [
+                "generate_image",
+                "generate_video",
+                "generate_music",
+                "synthesize_speech",
+            ] {
                 if let Some(schema) = schema_for_tool(&document, tool) {
+                    if tool == "synthesize_speech" {
+                        speech_openapi = Some(normalize_tool_schema(tool, &schema));
+                    }
                     if let Some(properties) = schema.get("properties").and_then(Value::as_object) {
                         openapi_fields
                             .insert(tool.to_owned(), properties.keys().cloned().collect());
@@ -83,6 +92,7 @@ pub(super) async fn fetch_snapshot(
             ("generate_image", "docs/guide/api-images"),
             ("generate_video", "docs/guide/api-videos"),
             ("generate_music", "docs/guide/api-music"),
+            ("synthesize_speech", "docs/guide/api-audio"),
         ] {
             match fetch_documentation(&client, media, base_url, path).await {
                 Ok((url, html)) => {
@@ -91,6 +101,43 @@ pub(super) async fn fetch_snapshot(
                         fetched_at,
                         partial: true,
                     });
+                    if tool == "synthesize_speech" {
+                        // Audio docs include STT and Gemini too. Only use the
+                        // section that declares the OpenAI speech endpoint.
+                        if let Some(mut schema) = speech_document::grok_constraints(&html) {
+                            // Explicit API constraints take priority. Doc tables
+                            // fill missing voice/tag data, not override live bounds.
+                            if let Some(api) = &speech_openapi {
+                                if let Some(properties) = schema["properties"].as_object_mut() {
+                                    for (field, constraints) in properties {
+                                        if let Some(constraints) = constraints.as_object_mut() {
+                                            for key in [
+                                                "enum",
+                                                "minimum",
+                                                "maximum",
+                                                "minLength",
+                                                "maxLength",
+                                                "default",
+                                            ] {
+                                                if let Some(value) =
+                                                    api["properties"][field].get(key)
+                                                {
+                                                    constraints.insert(key.into(), value.clone());
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            for model in models
+                                .iter_mut()
+                                .filter(|model| model.id == "grok-tts" && model.kind == "tts")
+                            {
+                                model.schemas.insert(tool.into(), schema.clone());
+                            }
+                        }
+                        continue;
+                    }
                     let scoped = if tool == "generate_video" {
                         let sections = generation_sections(&html);
                         for (route, section) in &sections {
@@ -433,8 +480,8 @@ fn dedup_models(models: &mut Vec<MediaModel>) {
 pub(super) fn canonical_kind(kind: &str) -> &str {
     match kind {
         "audio_gen" | "music" => "music",
-        "text_to_speech" | "tts" => "tts",
-        "speech_to_text" | "stt" | "transcription" => "stt",
+        "audio_tts" | "text_to_speech" | "tts" => "tts",
+        "audio_stt" | "speech_to_text" | "stt" | "transcription" => "stt",
         other => other,
     }
 }

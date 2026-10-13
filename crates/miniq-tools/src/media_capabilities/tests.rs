@@ -127,7 +127,7 @@ async fn concurrent_same_channel_refresh_is_deduplicated() {
     let config = media(base_url);
     let (a, b) = tokio::join!(registry.refresh_due(&config), registry.refresh_due(&config));
     assert!(a.is_ok() && b.is_ok());
-    assert_eq!(state.details_calls.load(Ordering::SeqCst), 6);
+    assert_eq!(state.details_calls.load(Ordering::SeqCst), 8);
     assert!(Arc::ptr_eq(&a.unwrap(), &b.unwrap()));
 }
 

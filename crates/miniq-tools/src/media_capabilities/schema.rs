@@ -5,6 +5,7 @@ pub(super) fn schema_for_tool(document: &Value, tool: &str) -> Option<Value> {
         "generate_music" => "/music/generations",
         "generate_video" => "/videos/generations",
         "generate_image" => "/images/generations",
+        "synthesize_speech" => "/audio/speech",
         _ => return None,
     };
     let paths = document.get("paths")?.as_object()?;
@@ -67,6 +68,10 @@ pub(super) fn baseline_schemas() -> BTreeMap<String, Value> {
         (
             "generate_music".to_owned(),
             crate::Tool::parameters_schema(&crate::GenerateMusicTool),
+        ),
+        (
+            "synthesize_speech".to_owned(),
+            crate::media::generic_speech_schema(),
         ),
     ]
     .into_iter()
@@ -201,6 +206,44 @@ pub(super) fn video_model_schema(model: &MediaModel, generic: Option<&Value>) ->
     } else {
         for field in ["reference_videos", "reference_audios"] {
             schema["properties"][field] = json!({"type":"null"});
+        }
+    }
+    schema
+}
+
+pub(super) fn speech_model_schema(model: &MediaModel, generic: &Value) -> Value {
+    let mut schema = if model.id == "grok-tts" {
+        crate::media::grok_speech_schema()
+    } else {
+        crate::media::generic_speech_schema()
+    };
+    schema["properties"]["input"]["x-speech-tags"] = if model.id == "grok-tts" {
+        crate::media::speech_tags_schema()
+    } else {
+        Value::Null
+    };
+    for source in [Some(generic), model.schemas.get("synthesize_speech")]
+        .into_iter()
+        .flatten()
+    {
+        if let Some(properties) = source["properties"].as_object() {
+            for (field, value) in properties {
+                if let (Some(target), Some(value)) = (
+                    schema["properties"][field].as_object_mut(),
+                    value.as_object(),
+                ) {
+                    if field == "speed"
+                        && value
+                            .keys()
+                            .any(|k| matches!(k.as_str(), "minimum" | "maximum" | "enum"))
+                    {
+                        for key in ["minimum", "maximum", "enum"] {
+                            target.remove(key);
+                        }
+                    }
+                    target.extend(value.clone());
+                }
+            }
         }
     }
     schema
@@ -381,9 +424,15 @@ fn normalize_property(field: &str, property: &Value) -> Value {
     // Pydantic places nullable bounds inside anyOf. Lift the actual bounds so
     // they replace the previous snapshot's bounds instead of intersecting them.
     if let Some(branches) = property.get("anyOf").and_then(Value::as_array).cloned() {
-        for branch in branches
+        let nonnull = branches
             .iter()
             .filter(|branch| branch.get("type").and_then(Value::as_str) != Some("null"))
+            .collect::<Vec<_>>();
+        // Only lift a single nullable branch. Multiple alternatives must not
+        // become one contradictory set of top-level bounds.
+        for branch in nonnull
+            .into_iter()
+            .filter(|_| branches.iter().filter(|b| b["type"] != "null").count() == 1)
         {
             for key in [
                 "minimum",
@@ -402,7 +451,7 @@ fn normalize_property(field: &str, property: &Value) -> Value {
             }
         }
     }
-    if field != "prompt" && field != "instrumental" {
+    if field != "prompt" && field != "input" && field != "instrumental" {
         if let Some(kind) = property
             .get("type")
             .and_then(Value::as_str)
@@ -423,7 +472,7 @@ fn normalize_property(field: &str, property: &Value) -> Value {
     Value::Object(property)
 }
 
-fn tool_fields(tool: &str) -> Vec<&'static str> {
+pub(super) fn tool_fields(tool: &str) -> Vec<&'static str> {
     match tool {
         "generate_image" => vec!["prompt", "model", "size", "quality"],
         "edit_image" => vec!["prompt", "model", "image_path"],
@@ -450,7 +499,7 @@ fn tool_fields(tool: &str) -> Vec<&'static str> {
             "style_weight",
             "weirdness",
         ],
-        "synthesize_speech" => vec!["input", "model", "voice", "response_format"],
+        "synthesize_speech" => vec!["input", "model", "voice", "response_format", "speed"],
         "transcribe_audio" => vec!["path", "model", "language"],
         _ => Vec::new(),
     }
@@ -484,6 +533,13 @@ pub(super) fn supports_tool(model: &MediaModel, tool: &str) -> bool {
 }
 
 pub(super) fn is_dedicated_route(model: &MediaModel) -> bool {
+    if model.id.starts_with("minimax-h3-") && !is_h3_model_id(&model.id) {
+        return true;
+    }
+    // Gemini TTS uses generateContent and needs a separate adapter.
+    if model.kind == "tts" && model.id.starts_with("gemini-") {
+        return true;
+    }
     if model.id.eq_ignore_ascii_case("midjourney") {
         return true;
     }
@@ -500,6 +556,7 @@ pub(super) fn is_dedicated_route(model: &MediaModel) -> bool {
         "image" => "/images/generations",
         "video" => "/videos/generations",
         "music" => "/music/generations",
+        "tts" => "/audio/speech",
         _ => return false,
     };
     model

@@ -143,42 +143,42 @@ pub fn decorate_media_specs(media: &MediaConfig, specs: &mut [ToolSpec]) {
     if let Some(snapshot) = &snapshot {
         snapshot.decorate_specs(specs);
     }
-    for spec in specs
-        .iter_mut()
-        .filter(|spec| spec.name == "generate_video")
-    {
+    for spec in specs.iter_mut() {
+        let (kind, preferred) = match spec.name.as_str() {
+            "generate_image" | "edit_image" => ("image", &media.image_model),
+            "generate_video" => ("video", &media.video_model),
+            "generate_music" => ("music", &media.music_model),
+            "synthesize_speech" => ("tts", &media.tts_model),
+            _ => continue,
+        };
         let default = snapshot
             .as_ref()
-            .and_then(|snapshot| {
-                snapshot
-                    .select_model("video", &media.video_model, None)
-                    .ok()
-            })
-            .unwrap_or_else(|| media.video_model.clone());
+            .and_then(|s| s.select_model(kind, preferred, None).ok())
+            .unwrap_or_else(|| preferred.clone());
         spec.parameters["properties"]["model"]["default"] = json!(default);
-        if snapshot.is_none() && super::video::is_h3_model(&default) {
-            let condition = &mut spec.parameters["allOf"][0]["if"];
-            condition.as_object_mut().unwrap().remove("required");
-            condition["properties"]["model"]["enum"] =
-                json!(["minimax-h3-768p", "minimax-h3-2k", null]);
-        } else if snapshot.is_some() {
-            let fallback = if super::video::is_h3_model(&default) {
-                h3_video_schema()
-            } else {
-                grok_video_schema()
-            };
-            let selected = spec.parameters["allOf"]
-                .as_array()
-                .and_then(|cases| {
-                    cases
-                        .iter()
-                        .find(|case| case["if"]["properties"]["model"]["const"] == default)
-                        .map(|case| case["then"].clone())
-                })
-                .unwrap_or_else(|| json!({"properties":fallback["properties"]}));
-            if spec.parameters.get("allOf").is_none() {
-                spec.parameters["allOf"] = json!([]);
+        spec.description.push_str(&format!(
+            " Default model: {default}. Omit or null model to use this default."
+        ));
+        if snapshot.is_none() {
+            if spec.name == "generate_video" && super::video::is_h3_model(&default) {
+                let condition = &mut spec.parameters["allOf"][0]["if"];
+                condition.as_object_mut().unwrap().remove("required");
+                condition["properties"]["model"]["enum"] =
+                    json!(["minimax-h3-768p", "minimax-h3-2k", null]);
             }
+            if spec.name == "synthesize_speech" && default != "grok-tts" {
+                spec.parameters["allOf"][0]["if"] =
+                    json!({"required":["model"],"properties":{"model":{"const":"grok-tts"}}});
+            }
+            continue;
+        }
+        let selected = spec.parameters["allOf"].as_array().and_then(|cases| {
+            cases
+                .iter()
+                .find(|case| case["if"]["properties"]["model"]["const"] == default)
+                .map(|case| case["then"].clone())
+        });
+        if let Some(selected) = selected {
             spec.parameters["allOf"]
                 .as_array_mut()
                 .unwrap()
@@ -187,12 +187,15 @@ pub fn decorate_media_specs(media: &MediaConfig, specs: &mut [ToolSpec]) {
                 }));
         }
     }
-    if codex_image_route(media, &media.image_model) {
+    if url::Url::parse(&media.base_url)
+        .ok()
+        .is_some_and(|url| url.host_str() == Some("oneapi.zaiwenai.com"))
+    {
         for spec in specs
             .iter_mut()
             .filter(|spec| spec.name == "generate_image")
         {
-            spec.description.push_str(" This channel routes GPT images through Codex. Put aspect ratio and size in prompt. size and quality become prompt hints, not exact output controls.");
+            spec.description.push_str(" For gpt-image-* models, this channel uses Codex. Put aspect ratio and size in prompt. size and quality become prompt hints, not exact output controls. Other image models use their advertised native parameters.");
         }
     }
 }
@@ -254,7 +257,13 @@ fn validate_value(value: &Value, schema: &Value, field: &str) -> Result<(), Tool
         ))
     };
     if let Some(choices) = schema.get("enum").and_then(Value::as_array) {
-        if !choices.contains(value) {
+        if !choices.iter().any(|choice| {
+            choice == value
+                || choice
+                    .as_f64()
+                    .zip(value.as_f64())
+                    .is_some_and(|(a, b)| a == b)
+        }) {
             return Err(invalid(&format!("allowed values {choices:?}")));
         }
     }
@@ -325,13 +334,29 @@ fn validate_value(value: &Value, schema: &Value, field: &str) -> Result<(), Tool
             return Err(invalid("maxItems"));
         }
     }
-    // Nullable OpenAPI properties commonly keep bounds inside anyOf branches.
+    // anyOf is an alternative, not an intersection of all non-null branches.
     if let Some(branches) = schema.get("anyOf").and_then(Value::as_array) {
-        let compatible = branches
-            .iter()
-            .filter(|branch| branch.get("type").and_then(Value::as_str) != Some("null"));
-        for branch in compatible {
-            validate_value(value, branch, field)?;
+        let type_matches = |kind: &str| match kind {
+            "null" => value.is_null(),
+            "string" => value.is_string(),
+            "number" => value.is_number(),
+            "integer" => value.as_i64().is_some() || value.as_u64().is_some(),
+            "boolean" => value.is_boolean(),
+            "array" => value.is_array(),
+            "object" => value.is_object(),
+            _ => true,
+        };
+        if !branches.iter().any(|branch| {
+            let compatible = match branch.get("type") {
+                Some(Value::String(kind)) => type_matches(kind),
+                Some(Value::Array(kinds)) => {
+                    kinds.iter().filter_map(Value::as_str).any(&type_matches)
+                }
+                _ => true,
+            };
+            compatible && validate_value(value, branch, field).is_ok()
+        }) {
+            return Err(invalid("anyOf"));
         }
     }
     Ok(())
@@ -340,6 +365,15 @@ fn validate_value(value: &Value, schema: &Value, field: &str) -> Result<(), Tool
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn advertised_anyof_bounds_are_alternatives_and_numeric_enums_use_numeric_equality() {
+        let schema = json!({"anyOf":[{"type":"number","maximum":1},{"type":"number","minimum":2},{"type":"null"}]});
+        assert!(validate_value(&json!(0.5), &schema, "speed").is_ok());
+        assert!(validate_value(&json!(2.5), &schema, "speed").is_ok());
+        assert!(validate_value(&json!(1.5), &schema, "speed").is_err());
+        assert!(validate_value(&json!("string"), &schema, "speed").is_err());
+        assert!(validate_value(&json!(1.0), &json!({"enum":[1]}), "speed").is_ok());
+    }
     #[test]
     fn prompt_guidance_is_scoped_to_the_confirmed_codex_channel() {
         let known = MediaConfig {

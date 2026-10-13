@@ -15,6 +15,11 @@ use crate::router::{parse_input, MediaConfig, Tool, ToolContext, ToolError};
 
 mod audio;
 pub use audio::{SynthesizeSpeechTool, TranscribeAudioTool};
+mod speech;
+pub(crate) use speech::{
+    generic_speech_schema, grok_speech_schema, speech_schema, speech_schema_for,
+    speech_tags_from_schema, speech_tags_schema,
+};
 mod image;
 mod video;
 mod video_result;
@@ -417,6 +422,9 @@ mod live_constraints_tests;
 #[cfg(test)]
 #[path = "media_request_tests.rs"]
 mod request_tests;
+
+#[cfg(test)]
+mod media_defaults_tests;
 
 #[cfg(test)]
 mod tests {
