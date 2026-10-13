@@ -7,6 +7,9 @@ import { MobileUpdateCheck } from "./MobileUpdateCheck";
 import { clearMobilePrivacyConsent, hasMobilePrivacyConsent, MINIQ_PRIVACY_URL, MINIQ_SUPPORT_URL, recordMobilePrivacyConsent } from "../mobilePrivacy";
 import { storeMobileEntryMode, type MobileEntryMode } from "../mobileEntryMode";
 import { MobileKeyField } from "./MobileKeyField";
+import { MobileAccountPanel } from "./MobileAccountPanel";
+import { isIosIapAvailable } from "../iosIap";
+import { IS_MOBILE_TEST_API } from "../mobileApiConfig";
 import "./MobileEntry.css";
 
 const MobileChat = lazy(() => import("./MobileChat").then((module) => ({ default: module.MobileChat })));
@@ -25,6 +28,8 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
   const [privacyAccepted, setPrivacyAccepted] = useState(hasMobilePrivacyConsent);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [pending, setPending] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountBusy, setAccountBusy] = useState(false);
   const saving = useRef(false);
   const keyInput = useRef<HTMLInputElement>(null);
 
@@ -45,6 +50,10 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
 
   useMobileBackButton((App) => {
     if (saving.current) return;
+    if (accountOpen) {
+      if (!accountBusy) setAccountOpen(false);
+      return;
+    }
     if (section !== "home") {
       setError(null);
       setSection(section === "settings" ? settingsReturn : "home");
@@ -95,38 +104,42 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
     saving.current = true;
     setPending(true);
     try {
-      if (await persist()) setSection(settingsReturn);
+      if (await persist()) setSection(section === "settings" ? settingsReturn : "home");
     } finally {
       saving.current = false;
       setPending(false);
     }
   };
   const configured = Boolean(activeKey) && hasMobilePrivacyConsent();
+  const showKeyFields = section === "settings" || (section === "home" && !configured);
 
   return (
     <>
+      {accountOpen && <MobileAccountPanel onBack={() => { setAccountOpen(false); setPrivacyAccepted(hasMobilePrivacyConsent()); }} onBusyChange={setAccountBusy} />}
       {/* Keep drafts and pending image reads alive while another entry page is visible. */}
-      {chatOpened && <div style={{ display: section === "chat" ? "contents" : "none" }}>
+      {chatOpened && <div style={{ display: section === "chat" && !accountOpen ? "contents" : "none" }}>
         <Suspense fallback={<main className="mobile-entry">
           <p role="status">正在加载移动问答…</p>
           <button type="button" onClick={() => setSection("home")}><ArrowLeft size={15} />返回</button>
         </main>}><MobileChat apiKey={configured ? activeKey : ""} onBack={() => setSection("home")} onSettings={openSettings} /></Suspense>
       </div>}
-      {section !== "chat" && (
+      {section !== "chat" && !accountOpen && (
         <main className="mobile-entry">
           <div className="mobile-entry-brand"><span>miniQ</span><small>移动工作台</small>{section !== "settings" && <button type="button" className="mobile-entry-settings" onClick={openSettings}>设置</button>}<button type="button" className="mobile-entry-appearance" onClick={() => setAppearanceOpen(true)}>外观</button></div>
           <form className="mobile-entry-sheet" aria-busy={pending || loadingCredentials} onSubmit={(event) => {
             event.preventDefault();
-            if (section === "settings") void saveSettings();
+            if (showKeyFields) void saveSettings();
             else if (section === "remote" && configured) props.onRemote();
           }}>
             <div className="mobile-entry-heading">
+              {IS_MOBILE_TEST_API && <p role="status">测试环境：请使用测试账户和 API Key。当前测试包用于登录、内购和移动问答联调。</p>}
               <h1>{section === "settings" ? "移动设置" : section === "remote" ? "连接桌面 miniQ" : "随时继续工作"}</h1>
-              <p>{section === "settings" ? "此 Key 用于手机直接问答和连接电脑；电脑执行任务所用的模型与服务商，请在电脑的模型设置中配置。" : section === "remote" ? "桌面端开启远程访问后，使用同一个 Key 安全连接。" : "移动问答独立运行；远程桌面可以继续项目任务、查看进度并处理审批。"}</p>
+              <p>{section === "settings" ? "此 Key 用于手机直接问答和连接电脑；电脑执行任务所用的模型与服务商，请在电脑的模型设置中配置。" : section === "remote" ? "桌面端开启远程访问后，手机与电脑填写同一个 API Key 即可安全连接。" : "填写 API Key 后开始使用；已有网页创建的 Key 也可以直接填写。"}</p>
             </div>
 
-            {section === "settings" && <>
+            {showKeyFields && <>
             <MobileKeyField inputRef={keyInput} value={apiKey} disabled={loadingCredentials || pending} native={isNativeMobileApp()}
+              onGetKey={isIosIapAvailable() ? () => setAccountOpen(true) : undefined}
               onChange={(value) => { setApiKey(value); setError(null); }} />
             {loadingCredentials && <p className="mobile-entry-progress" role="status">正在读取这台设备保存的 Key…</p>}
             {pending && <p className="mobile-entry-progress" role="status">正在安全保存连接设置…</p>}
@@ -174,16 +187,20 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
             {error && <div className="mobile-entry-error" role="alert">{error}</div>}
 
             {section === "home" ? (
+              <>
+              {showKeyFields && <button type="submit" disabled={pending || loadingCredentials || !privacyAccepted}>{pending ? "正在保存…" : "保存 Key 并继续"}</button>}
+              {configured && isIosIapAvailable() && <button type="button" className="secondary" onClick={() => setAccountOpen(true)}>账户、购买额度与 API Key</button>}
               <div className="mobile-entry-actions">
-                <button type="button" className="mobile-mode-card primary" disabled={loadingCredentials} onClick={() => chooseMode("chat")}>
+                <button type="button" className="mobile-mode-card primary" disabled={loadingCredentials || !configured} onClick={() => chooseMode("chat")}>
                   <span className="mobile-mode-icon"><Bot size={21} /></span>
                   <span><strong>移动问答</strong><small>桌面不在线也能使用，支持流式回答和历史保留</small></span>
                 </button>
-                <button type="button" className="mobile-mode-card" disabled={pending || loadingCredentials} onClick={() => chooseMode("remote")}>
+                <button type="button" className="mobile-mode-card" disabled={pending || loadingCredentials || !configured || IS_MOBILE_TEST_API} onClick={() => chooseMode("remote")}>
                   <span className="mobile-mode-icon"><Laptop size={21} /></span>
-                  <span><strong>远程桌面</strong><small>同步桌面项目、任务进度、会话与待审批操作</small></span>
+                  <span><strong>远程桌面</strong><small>{IS_MOBILE_TEST_API ? "测试环境尚未配置远程桌面服务" : "同步桌面项目、任务进度、会话与待审批操作"}</small></span>
                 </button>
               </div>
+              </>
             ) : (
               <div className="mobile-entry-footer">
                 <button type="button" className="secondary" disabled={pending} onClick={() => { setError(null); setSection(section === "settings" ? settingsReturn : "home"); }}><ArrowLeft size={15} />返回</button>

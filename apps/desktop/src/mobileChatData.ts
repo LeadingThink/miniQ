@@ -1,4 +1,3 @@
-export const MOBILE_API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
 export const MOBILE_CHAT_STORAGE_KEY = "miniq.mobile.chat.v1";
 export const MOBILE_MODEL_STORAGE_KEY = "miniq.mobile.chat.model.v1";
 

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import {
-  MOBILE_API_BASE_URL, mobileResponseError, persistMobileChat, readMobileChat,
+  mobileResponseError, persistMobileChat, readMobileChat,
   type ChatContent, type MobileChatMessage,
 } from "../mobileChatData";
 import { readSse } from "../mobileChatStream";
+import { MOBILE_API_BASE_URL } from "../mobileApiConfig";
 
 export function useMobileChat(apiKey: string, model: string) {
   const [messages, setMessages] = useState<MobileChatMessage[]>(readMobileChat);

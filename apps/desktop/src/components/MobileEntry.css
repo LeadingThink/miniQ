@@ -12,3 +12,14 @@
 .mobile-entry-settings { position: absolute; right: 66px; top: 0; min-height: 40px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); }
 .mobile-entry-appearance { position: absolute; right: 0; top: 0; min-height: 40px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); }
 .mobile-entry { padding-bottom: calc(24px + var(--safe-bottom)); padding-top: calc(24px + var(--safe-top)); }
+.mobile-purchase-panel { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--bg) 88%, var(--accent) 12%); }
+.mobile-purchase-heading { display: flex; gap: 10px; align-items: flex-start; color: var(--accent); }
+.mobile-purchase-heading strong { display: block; color: var(--text); }
+.mobile-purchase-heading p, .mobile-purchase-footnote { margin: 4px 0 0; color: var(--text-mid); font-size: var(--font-caption); line-height: 1.5; }
+.mobile-purchase-options { display: grid; gap: 8px; }
+.mobile-purchase-options button { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 56px; padding: 10px 12px; text-align: left; }
+.mobile-purchase-options button span { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.mobile-purchase-options small { color: inherit; font-size: var(--font-caption); }
+.mobile-purchase-options b { white-space: nowrap; }
+.mobile-purchase-diagnostics { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: var(--font-caption); }
+.mobile-purchase-options button:disabled { opacity: 1; background: var(--bg); color: var(--text-mid); border: 1px solid var(--border); }

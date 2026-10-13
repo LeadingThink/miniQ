@@ -1,4 +1,4 @@
-import { MOBILE_API_BASE_URL } from "./mobileChatData";
+import { MOBILE_API_BASE_URL } from "./mobileApiConfig";
 import type { VoiceTranscriber } from "./voiceTranscription";
 import { throwIfAborted } from "./abortSignal";
 
