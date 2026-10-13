@@ -19,6 +19,7 @@ public class MiniqIapPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     private var transactionListener: Task<Void, Never>?
+    private var storefrontListener: Task<Void, Never>?
 
     public override func load() {
         transactionListener = Task { [weak self] in
@@ -28,9 +29,18 @@ public class MiniqIapPlugin: CAPPlugin, CAPBridgedPlugin {
                 self?.notifyListeners("transactionUpdated", data: [:])
             }
         }
+        storefrontListener = Task { [weak self] in
+            for await _ in Storefront.updates {
+                guard !Task.isCancelled else { return }
+                self?.notifyListeners("storefrontUpdated", data: [:])
+            }
+        }
     }
 
-    deinit { transactionListener?.cancel() }
+    deinit {
+        transactionListener?.cancel()
+        storefrontListener?.cancel()
+    }
 
     @objc func getUnfinishedTransactions(_ call: CAPPluginCall) {
         Task {
@@ -50,8 +60,13 @@ public class MiniqIapPlugin: CAPPlugin, CAPBridgedPlugin {
         let ids = call.getArray("productIds", String.self) ?? []
         Task {
             do {
-                let products = try await Product.products(for: ids)
                 let storefront = await Storefront.current
+                let products = try await Product.products(for: ids)
+                let currentStorefront = await Storefront.current
+                guard storefront?.id == currentStorefront?.id else {
+                    call.reject("Apple 商店在加载期间发生变化，请重新加载购买项目。", "iap_storefront_changed")
+                    return
+                }
                 var result: [String: Any] = ["products": products.map(productPayload)]
                 if let storefront {
                     result["storefront"] = [
@@ -80,10 +95,20 @@ public class MiniqIapPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("缺少有效的购买账户")
             return
         }
+        guard let price = call.getString("expectedPrice"),
+              let expectedPrice = Decimal(string: price, locale: Locale(identifier: "en_US_POSIX")),
+              let currency = call.getString("expectedCurrency"), currency == "CNY" else {
+            call.reject("缺少有效的人民币商品价格")
+            return
+        }
         Task {
             do {
                 guard let product = try await Product.products(for: [productId]).first else {
                     call.reject("商品不存在或尚未在 App Store 生效")
+                    return
+                }
+                guard product.price == expectedPrice, product.priceFormatStyle.currencyCode == currency else {
+                    call.reject("Apple 商品价格或币种已变化，请重新加载购买项目。", "iap_price_changed")
                     return
                 }
                 switch try await product.purchase(options: [.appAccountToken(accountToken)]) {

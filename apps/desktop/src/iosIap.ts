@@ -29,10 +29,10 @@ export interface IapSettlement extends IapPurchaseContext {
 }
 interface IosIapPlugin {
   getProducts(options: { productIds: readonly string[] }): Promise<IosIapCatalog>;
-  purchase(options: { productId: string; appAccountToken: string }): Promise<IosIapTransaction>;
+  purchase(options: { productId: string; appAccountToken: string; expectedPrice: string; expectedCurrency: string }): Promise<IosIapTransaction>;
   getUnfinishedTransactions(): Promise<{ transactions: IosIapTransaction[] }>;
   finishTransaction(options: { transactionId: string }): Promise<void>;
-  addListener(event: "transactionUpdated", listener: () => void): Promise<PluginListenerHandle>;
+  addListener(event: "transactionUpdated" | "storefrontUpdated", listener: () => void): Promise<PluginListenerHandle>;
 }
 const plugin = registerPlugin<IosIapPlugin>("MiniqIap");
 const acknowledgements = new Map<string, Promise<IapSettlement>>();
@@ -67,7 +67,8 @@ export async function purchaseIosCredits(productId: IosIapProductId, context: Ia
   if (!product) throw new Error("Apple 未返回此额度包，请重新加载购买项目。");
   const blockReason = iosIapPurchaseBlockReason(product);
   if (blockReason) throw new Error(blockReason);
-  const transaction = await plugin.purchase({ productId, appAccountToken: context.appAccountToken });
+  const transaction = await plugin.purchase({ productId, appAccountToken: context.appAccountToken,
+    expectedPrice: product.price, expectedCurrency: product.currencyCode });
   return acknowledgeIosTransaction(transaction, context);
 }
 
@@ -118,6 +119,11 @@ export async function retryIosTransactions(context: IapPurchaseContext): Promise
 export async function observeIosTransactions(onUpdate: () => void): Promise<PluginListenerHandle> {
   ensureIos();
   return plugin.addListener("transactionUpdated", onUpdate);
+}
+
+export async function observeIosStorefront(onUpdate: () => void): Promise<PluginListenerHandle> {
+  ensureIos();
+  return plugin.addListener("storefrontUpdated", onUpdate);
 }
 
 export async function recoverIosTransactions(): Promise<void> {

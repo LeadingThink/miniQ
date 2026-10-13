@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { iosIapPurchaseBlockReason, loadIosIapCatalog, purchaseIosCredits, retryIosTransactions, type IosIapCatalog } from "../iosIap";
+import { iosIapPurchaseBlockReason, purchaseIosCredits, retryIosTransactions } from "../iosIap";
 import { loadIapPurchaseContext, type IapPurchaseContext } from "../mobileIapAccount";
 import { iosIapPack } from "../mobileIapConfig";
+import { useIosIapCatalog } from "../hooks/useIosIapCatalog";
 
 export function MobilePurchasePanel(props: { disabled: boolean; onBusyChange: (busy: boolean) => void; onSettled: () => Promise<void> }) {
-  const [catalog, setCatalog] = useState<IosIapCatalog | null>(null);
+  const { catalog, loading, error: catalogError, reload } = useIosIapCatalog();
   const [context, setContext] = useState<IapPurchaseContext | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,15 +19,16 @@ export function MobilePurchasePanel(props: { disabled: boolean; onBusyChange: (b
   };
   const initialize = async () => {
     setContext(null);
-    setCatalog(null);
-    const [account, catalog] = await Promise.all([loadIapPurchaseContext(), loadIosIapCatalog()]);
-    setContext(account); setCatalog(catalog);
+    const account = await loadIapPurchaseContext();
+    setContext(account);
     const count = await retryIosTransactions(account);
     if (count) { setNotice("已处理未完成购买。"); await props.onSettled(); }
   };
   useEffect(() => { run(initialize); }, []);
-  const disabled = pending || props.disabled;
+  const disabled = pending || props.disabled || loading;
   const products = catalog?.products ?? [];
+  const inconsistentCurrency = catalog?.storefront?.countryCode === "CHN"
+    && products.some((product) => product.currencyCode !== "CNY");
   return <section className="mobile-purchase-panel" aria-label="购买 AI 使用额度">
     <div className="mobile-purchase-heading"><div><strong>购买 AI 使用额度</strong>
       <p>通过 Apple App 内购买充值到当前账户，充多少到账多少，不赠送。购买后可以在下方手动创建 Key。</p></div></div>
@@ -36,10 +38,12 @@ export function MobilePurchasePanel(props: { disabled: boolean; onBusyChange: (b
         ? `${catalog.storefront.countryName}（${catalog.storefront.countryCode}），商店 ID：${catalog.storefront.id}`
         : "Apple 暂未返回，无法确认商店地区。"}</p>
       <p>地区来自 Apple 商店信息，不代表你的实际所在地。购买条件是币种为 CNY，且售价与额度包金额一致。</p>
-      <p>以下为本次加载结果。切换商店或调整商品价格后，请重新加载购买项目。</p>
+      <p>切换商店或从系统设置返回时会自动重新查询商品，也可以手动重新加载。</p>
+      {inconsistentCurrency && <p role="alert">Apple 返回的商店是中国，但部分商品币种不是人民币。本次重新查询后仍不一致，暂时无法购买；这不表示你的账号地区设置错误。</p>}
     </div>}
+    {loading && <p role="status">正在重新查询 Apple 商店和商品，旧价格已清除…</p>}
     {pending && <p role="status">正在处理购买信息，请稍候…</p>}
-    {context && products.length === 0 && <p>暂无可购买额度，请稍后重新加载。</p>}
+    {catalog && products.length === 0 && <p>暂无可购买额度，请稍后重新加载。</p>}
     <div className="mobile-purchase-options">
       {products.map((product) => {
         const blockReason = iosIapPurchaseBlockReason(product);
@@ -58,7 +62,7 @@ export function MobilePurchasePanel(props: { disabled: boolean; onBusyChange: (b
       })}
     </div>
     <div className="mobile-account-actions">
-      <button type="button" className="secondary" disabled={disabled} onClick={() => run(initialize)}>重新加载购买项目</button>
+      <button type="button" className="secondary" disabled={disabled} onClick={() => run(async () => { await Promise.all([initialize(), reload()]); })}>重新加载购买项目</button>
       <button type="button" className="secondary" disabled={disabled || !context} onClick={() => run(async () => {
         if (!context) return;
         const count = await retryIosTransactions(context);
@@ -67,6 +71,7 @@ export function MobilePurchasePanel(props: { disabled: boolean; onBusyChange: (b
       })}>检查未完成购买</button>
     </div>
     {notice && <p role="status">{notice}</p>}
+    {catalogError && <p className="mobile-entry-error" role="alert">{catalogError}</p>}
     {error && <p className="mobile-entry-error" role="alert">{error} 如已付款，请检查未完成购买，无需再次付款。</p>}
     <p className="mobile-purchase-footnote">余额跟随在问账户保存。已完成的消耗型购买无需恢复；未到账时，请登录购买时的手机号再检查。</p>
   </section>;

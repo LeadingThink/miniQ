@@ -22,7 +22,8 @@ beforeEach(() => {
 });
 it("binds a purchase to the logged-in account and finishes only after server acknowledgement", async () => {
   expect(await purchaseIosCredits(transaction.productId, context)).toEqual(receipt);
-  expect(mocks.purchase).toHaveBeenCalledWith({ productId: transaction.productId, appAccountToken: context.appAccountToken });
+  expect(mocks.purchase).toHaveBeenCalledWith({ productId: transaction.productId, appAccountToken: context.appAccountToken,
+    expectedPrice: "100", expectedCurrency: "CNY" });
   expect(mocks.request).toHaveBeenCalledWith("/iap/apple/transactions", transaction);
   expect(mocks.finishTransaction).toHaveBeenCalledWith({ transactionId: "123" });
   expect(mocks.request.mock.invocationCallOrder[0]).toBeLessThan(mocks.finishTransaction.mock.invocationCallOrder[0]);
