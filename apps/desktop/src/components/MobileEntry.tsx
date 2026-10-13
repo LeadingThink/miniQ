@@ -111,7 +111,7 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
     }
   };
   const configured = Boolean(activeKey) && hasMobilePrivacyConsent();
-  const showKeyFields = section === "settings";
+  const showKeyFields = section === "settings" || (section === "home" && !configured && isIosIapAvailable());
 
   return (
     <>
@@ -173,7 +173,7 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
                 }}
               />
               <label htmlFor="mobile-privacy-consent">我已阅读并同意</label>
-              <a aria-label="阅读协议" href={MINIQ_PRIVACY_URL} target="_blank" rel="noreferrer">《miniQ 隐私政策》<ExternalLink size={12} /></a>
+              <a aria-label="阅读 miniQ 隐私协议" href={MINIQ_PRIVACY_URL} target="_blank" rel="noreferrer">《miniQ 隐私政策》<ExternalLink size={12} /></a>
             </div>
 
             {section === "settings" && (
