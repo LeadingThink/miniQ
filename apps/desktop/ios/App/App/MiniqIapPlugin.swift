@@ -51,7 +51,20 @@ public class MiniqIapPlugin: CAPPlugin, CAPBridgedPlugin {
         Task {
             do {
                 let products = try await Product.products(for: ids)
-                call.resolve(["products": products.map(productPayload)])
+                let storefront = await Storefront.current
+                var result: [String: Any] = ["products": products.map(productPayload)]
+                if let storefront {
+                    result["storefront"] = [
+                        "id": storefront.id,
+                        "countryCode": storefront.countryCode,
+                        "countryName": Locale(identifier: "zh-Hans").localizedString(
+                            forRegionCode: storefront.countryCode
+                        ) ?? storefront.countryCode,
+                    ]
+                } else {
+                    result["storefront"] = NSNull()
+                }
+                call.resolve(result)
             } catch {
                 call.reject("无法加载 App 内购买项目", "iap_products_failed", error)
             }

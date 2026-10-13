@@ -7,7 +7,7 @@ vi.mock("@capacitor/core", () => ({ Capacitor: { getPlatform: () => "ios" }, reg
 vi.mock("./mobileIapAccount", async (original) => ({ ...(await original<typeof import("./mobileIapAccount")>()),
   oneApiRequest: mocks.request, loadIapPurchaseContext: mocks.context,
 }));
-import { acknowledgeIosTransaction, purchaseIosCredits, recoverIosTransactions, retryIosTransactions, type IosIapTransaction } from "./iosIap";
+import { acknowledgeIosTransaction, loadIosIapCatalog, purchaseIosCredits, recoverIosTransactions, retryIosTransactions, type IosIapTransaction } from "./iosIap";
 const context = { accountId: "u1", appAccountToken: "00000000-0000-4000-8000-000000000001", environment: "Production" as const };
 const transaction: IosIapTransaction = { productId: "com.leadingthink.miniq.credits.100", transactionId: "123", originalTransactionId: "123", signedTransaction: "signed.jws.payload", appAccountToken: context.appAccountToken };
 const receipt = { ...context, transactionId: "123", status: "credited", creditedCents: 10000, balanceYuan: 120.005 };
@@ -27,12 +27,24 @@ it("binds a purchase to the logged-in account and finishes only after server ack
   expect(mocks.finishTransaction).toHaveBeenCalledWith({ transactionId: "123" });
   expect(mocks.request.mock.invocationCallOrder[0]).toBeLessThan(mocks.finishTransaction.mock.invocationCallOrder[0]);
 });
-it("blocks foreign-currency and mismatched-price purchases before payment", async () => {
-  for (const product of [{ price: "100", currencyCode: "USD" }, { price: "98", currencyCode: "CNY" }]) {
-    mocks.getProducts.mockResolvedValue({ products: [{ ...product, productId: transaction.productId }] });
-    await expect(purchaseIosCredits(transaction.productId, context)).rejects.toThrow("地区或价格");
-  }
+it.each([
+  { price: "14.99", currencyCode: "USD", reason: "币种不支持：Apple 返回 USD，目前仅支持人民币（CNY）。" },
+  { price: "98", currencyCode: "CNY", reason: "售价不匹配：Apple 返回 CNY 98，此额度包要求 CNY 100.00。" },
+])("explains why $currencyCode $price is blocked before payment", async ({ reason, ...product }) => {
+  mocks.getProducts.mockResolvedValue({ products: [{ ...product, productId: transaction.productId }] });
+  await expect(purchaseIosCredits(transaction.productId, context)).rejects.toThrow(reason);
   expect(mocks.purchase).not.toHaveBeenCalled();
+});
+it("distinguishes a missing product from currency and price restrictions", async () => {
+  mocks.getProducts.mockResolvedValue({ products: [], storefront: null });
+  await expect(purchaseIosCredits(transaction.productId, context)).rejects.toThrow("Apple 未返回此额度包");
+  expect(mocks.purchase).not.toHaveBeenCalled();
+});
+it("preserves Apple's storefront independently of the product currency", async () => {
+  const storefront = { id: "143465", countryCode: "CHN", countryName: "中国大陆" };
+  const product = { productId: transaction.productId, price: "14.99", currencyCode: "USD" };
+  mocks.getProducts.mockResolvedValue({ storefront, products: [product, { ...product, productId: "unconfigured" }] });
+  expect(await loadIosIapCatalog()).toEqual({ storefront, products: [product] });
 });
 it("blocks account switching before payment and mismatched ownership before submission", async () => {
   mocks.context.mockResolvedValue({ ...context, accountId: "u2" });

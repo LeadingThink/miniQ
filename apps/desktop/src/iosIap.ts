@@ -10,6 +10,10 @@ export interface IosIapProduct {
   price: string;
   currencyCode: string;
 }
+export interface IosIapCatalog {
+  products: IosIapProduct[];
+  storefront: { id: string; countryCode: string; countryName: string } | null;
+}
 export interface IosIapTransaction {
   productId: IosIapProductId;
   transactionId: string;
@@ -24,7 +28,7 @@ export interface IapSettlement extends IapPurchaseContext {
   balanceYuan: number;
 }
 interface IosIapPlugin {
-  getProducts(options: { productIds: readonly string[] }): Promise<{ products: IosIapProduct[] }>;
+  getProducts(options: { productIds: readonly string[] }): Promise<IosIapCatalog>;
   purchase(options: { productId: string; appAccountToken: string }): Promise<IosIapTransaction>;
   getUnfinishedTransactions(): Promise<{ transactions: IosIapTransaction[] }>;
   finishTransaction(options: { transactionId: string }): Promise<void>;
@@ -36,15 +40,22 @@ const acknowledgements = new Map<string, Promise<IapSettlement>>();
 export function isIosIapAvailable(): boolean { return Capacitor.getPlatform() === "ios"; }
 function ensureIos(): void { if (!isIosIapAvailable()) throw new Error("App 内购买仅适用于 iOS App"); }
 
-export function isPurchasablePack(product: IosIapProduct): boolean {
+export function iosIapPurchaseBlockReason(product: IosIapProduct): string | null {
   const pack = iosIapPack(product.productId);
-  return !!pack && product.currencyCode === "CNY" && Number(product.price) * 100 === pack.purchaseCents;
+  if (!pack) return "未配置此额度包，暂时无法购买。";
+  if (product.currencyCode !== "CNY") {
+    return `币种不支持：Apple 返回 ${product.currencyCode}，目前仅支持人民币（CNY）。`;
+  }
+  if (Number(product.price) * 100 !== pack.purchaseCents) {
+    return `售价不匹配：Apple 返回 CNY ${product.price}，此额度包要求 CNY ${(pack.purchaseCents / 100).toFixed(2)}。`;
+  }
+  return null;
 }
 
-export async function loadIosIapProducts(): Promise<IosIapProduct[]> {
+export async function loadIosIapCatalog(): Promise<IosIapCatalog> {
   ensureIos();
   const result = await plugin.getProducts({ productIds: IOS_IAP_PRODUCT_IDS });
-  return result.products.filter((product) => IOS_IAP_PRODUCT_IDS.includes(product.productId));
+  return { ...result, products: result.products.filter((product) => IOS_IAP_PRODUCT_IDS.includes(product.productId)) };
 }
 
 export async function purchaseIosCredits(productId: IosIapProductId, context: IapPurchaseContext): Promise<IapSettlement> {
@@ -52,8 +63,10 @@ export async function purchaseIosCredits(productId: IosIapProductId, context: Ia
   const current = await loadIapPurchaseContext();
   if (current.accountId !== context.accountId || current.appAccountToken !== context.appAccountToken
     || current.environment !== context.environment) throw new Error("登录账户已变化，请重新打开账户页面。");
-  const product = (await loadIosIapProducts()).find((item) => item.productId === productId);
-  if (!product || !isPurchasablePack(product)) throw new Error("当前地区或价格暂不支持此额度包。");
+  const product = (await loadIosIapCatalog()).products.find((item) => item.productId === productId);
+  if (!product) throw new Error("Apple 未返回此额度包，请重新加载购买项目。");
+  const blockReason = iosIapPurchaseBlockReason(product);
+  if (blockReason) throw new Error(blockReason);
   const transaction = await plugin.purchase({ productId, appAccountToken: context.appAccountToken });
   return acknowledgeIosTransaction(transaction, context);
 }
