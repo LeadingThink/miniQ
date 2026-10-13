@@ -141,7 +141,7 @@ pub(super) fn normalize_channel_request_schema(channel: &Value) -> Value {
             }
         }
     }
-    for field in ["resolution", "image_path"] {
+    for field in ["resolution"] {
         normalized["properties"][field] = json!({"type":"null"});
     }
     normalized
@@ -187,7 +187,18 @@ pub(super) fn video_model_schema(model: &MediaModel, generic: Option<&Value>) ->
             .unwrap_or(maximum);
         schema["properties"]["duration"]["maximum"] = json!(previous.min(maximum));
     }
-    if !is_h3_model_id(&model.id) {
+    if is_h3_model_id(&model.id) {
+        // The public tool accepts local paths. The adapter uploads them before
+        // sending URL-only references to the channel. Keep channel counts.
+        schema["properties"]["image_path"] =
+            crate::media::h3_video_schema()["properties"]["image_path"].clone();
+        for field in ["reference_images", "reference_videos", "reference_audios"] {
+            if let Some(items) = schema["properties"][field]["items"].as_object_mut() {
+                items.remove("pattern");
+                items.remove("format");
+            }
+        }
+    } else {
         for field in ["reference_videos", "reference_audios"] {
             schema["properties"][field] = json!({"type":"null"});
         }

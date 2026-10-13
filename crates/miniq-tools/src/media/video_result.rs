@@ -1,4 +1,4 @@
-use super::video::{is_h3_model, saved_video_model, validate_h3_model};
+use super::video::{is_h3_model, redact_storage_urls, saved_video_model, validate_h3_model};
 use super::*;
 
 pub struct GetVideoGenerationTool;
@@ -54,14 +54,24 @@ impl Tool for GetVideoGenerationTool {
         } else {
             format!("/videos/{}", input.request_id)
         };
-        let task = response_json(
+        let mut task = response_json(
             http.get(url(media, &status_path))
                 .bearer_auth(&media.api_key)
                 .send()
                 .await
                 .map_err(|e| ToolError::ExecutionFailed(format!("video status request: {e}")))?,
         )
-        .await?;
+        .await
+        .map_err(|error| {
+            if h3 {
+                ToolError::ExecutionFailed("H3 video status request failed".into())
+            } else {
+                error
+            }
+        })?;
+        if h3 {
+            redact_storage_urls(&mut task);
+        }
         let status = task.get("status").and_then(Value::as_str);
         if matches!(status, Some("failed" | "error")) {
             return Ok(

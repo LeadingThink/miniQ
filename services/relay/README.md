@@ -49,6 +49,79 @@ Deploy the desktop daemon and mobile web/app frontend together when updating
 this endpoint transport. The relay protocol and deployment do not change;
 the relay treats single payloads, chunks, and batches as opaque ciphertext.
 
+## Private object storage and provider media tickets
+
+Configure Qiniu S3 object storage with all of these environment variables:
+
+```bash
+MINIQ_BLOB_ACCESS_KEY=<access key>
+MINIQ_BLOB_SECRET_KEY=<secret key>
+MINIQ_BLOB_BUCKET=<private bucket name>
+MINIQ_BLOB_ENDPOINT=https://s3-cn-east-1.qiniucs.com
+MINIQ_BLOB_REGION=cn-east-1
+MINIQ_BLOB_ALLOWED_ROOMS=<comma-separated room IDs>
+```
+
+Keep credentials in the service's secret environment. The endpoint must use
+HTTPS and a hostname ending in `.qiniucs.com`. Without `MINIQ_BLOB_BUCKET`,
+object storage is disabled; when it is set, every variable above is required.
+
+Before starting the relay, make the bucket private and configure **two** Qiniu
+lifecycle rules, each with `delete_after_days: 1`: one with the exact prefix
+`remote/`, the other with the exact prefix `provider-media/`. Startup verification
+requires both rules, including when only encrypted blob transfers are used.
+A public bucket, a failed bucket-info request, or a missing one-day rule blocks
+all ticket issuance. Existing deployments must add the `provider-media/`
+one-day rule before starting the updated relay: until it is added and startup
+verification succeeds, encrypted `blob_ticket` issuance is also disabled.
+Verification logs a generic failure without SDK URLs.
+URL expiry limits access; the lifecycle rules delete the stored objects after
+one day independently of URL expiry.
+
+The existing WebSocket control exchange remains
+`{ "type": "blob_ticket", "requestId": "...", "bytes": 1024 }`, answered with
+`{ "type": "blob_ticket", "requestId": "...", "ticket": { "putUrl": "...", "getUrl": "...", "expiresAt": 0 } }`
+or an `error` string. Only the current authenticated desktop in an allowed room
+can request a ticket. Encrypted blobs use `remote/<room>/<device>/<uuid>` (the
+issuer also supports the legacy key without a device component), accept
+16 bytes through 64 MiB, and sign PUT with `application/octet-stream`. Both
+PUT and GET URLs expire after 300 seconds; `expiresAt` is Unix time in
+milliseconds.
+
+The private bucket must have a one-day deletion rule for `provider-media/`.
+The existing `remote/` rule remains independent. Media objects contain raw
+provider input. Remote RPC objects remain AES-GCM ciphertext.
+
+The daemon uses `POST /provider-media/ticket` under the relay reverse proxy.
+Send a OneAPI Key in the `Authorization: Bearer ...` header. Send JSON
+`{"bytes":4096,"contentType":"image/png"}`. The handler validates the key through
+`/v1/auth/key`, then derives an owner hash. It does not use the public model catalog
+as an authentication check. Remote access does not need to be enabled.
+
+The response is `{"ticket":{"putUrl":"...","getUrl":"...","expiresAt":0}}`.
+`expiresAt` is Unix time in milliseconds. Both URLs last 900 seconds.
+Upload directly to the PUT URL with the declared MIME type and byte length.
+Do not send the OneAPI Key with the PUT request. Give the GET URL to the provider.
+Do not log these URLs. A URL holder can read the media until the link expires.
+The bucket stays private. Do not delete on task acceptance because the provider
+can fetch references asynchronously. Abandoned uploads expire through the bucket rule.
+
+HTTP objects use `provider-media/accounts/<owner-hash>/<uuid>`.
+Each object is limited to 256 MiB. Each account reserves up to 512 MiB per minute.
+A failed ticket issuance releases its byte reservation. An issued ticket consumes
+quota even if the client does not upload. The JSON body is limited to 4096 bytes.
+Unauthenticated requests are rejected before tickets are issued.
+
+Allowed MIME types are JPEG, PNG, WebP, MP4, WebM, MOV/QuickTime, MP3/MPEG,
+WAV, M4A/MP4, AAC, Ogg and FLAC. The daemon validates content before upload.
+Channel limits can be narrower than storage limits.
+
+A WebSocket `provider_media_ticket` control path remains available for whitelisted
+rooms. Only the active desktop socket can request it. The request has `requestId`,
+`bytes` and `contentType`. The response has `ticket` or a generic `error`.
+Its separate 256 MiB/minute room-device budget survives reconnects. This path does
+not open storage to arbitrary new relay rooms.
+
 ## Conversation sharing
 
 Set `MINIQ_SHARE_DIR` to a persistent directory writable by the service user,

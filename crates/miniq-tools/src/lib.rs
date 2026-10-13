@@ -84,8 +84,9 @@ pub use pdf_visual::ViewPdfTool;
 pub use plan_mode::PlanModeTool;
 pub use process::{ProcessKillTool, ProcessManager, ProcessOutputTool};
 pub use router::{
-    MediaConfig, RegistrationError, RegistrationHandle, ScheduledTaskMemoryContext, Tool,
-    ToolCatalog, ToolContext, ToolError, ToolOrigin, ToolRouter,
+    MediaConfig, ProviderMediaReference, ProviderMediaUploader, RegistrationError,
+    RegistrationHandle, ScheduledTaskMemoryContext, Tool, ToolCatalog, ToolContext, ToolError,
+    ToolOrigin, ToolRouter,
 };
 pub use search::{FileGlobTool, FileGrepTool};
 pub use shell::{ShellBatchTool, ShellRunTool};

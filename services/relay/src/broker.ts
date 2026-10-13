@@ -1,6 +1,6 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import type WebSocket from "ws";
-import { MAX_BLOB_BYTES, type TicketIssuer } from "./blobStore.js";
+import { isProviderMediaContentType, MAX_BLOB_BYTES, MAX_PROVIDER_MEDIA_BYTES, type TicketIssuer } from "./blobStore.js";
 import { send, sendRaw } from "./outbound.js";
 import { parsePush, parseRegistration, type PushService } from "./push.js";
 import { DESKTOP_RATE, DropCounter, MOBILE_RATE, ObjectByteBudget, TokenBucket } from "./rateLimit.js";
@@ -56,6 +56,7 @@ interface Room {
 export class RelayBroker {
   private readonly rooms = new Map<string, Room>();
   private readonly peers = new WeakMap<WebSocket, Peer>();
+  private readonly providerMediaBudgets = new Map<string, { budget: ObjectByteBudget; lastUsedAt: number }>();
   constructor(
     private readonly blobs?: TicketIssuer,
     private readonly desktopReconnectGraceMs = 15_000,
@@ -106,7 +107,8 @@ export class RelayBroker {
         this.peers.delete(previous.socket);
         previous.socket.close(4001, "desktop reconnected");
       }
-      send(socket, { ...this.ready(peer, device), blobStorage: this.blobs?.enabledFor(peer.roomId) ?? false });
+      send(socket, { ...this.ready(peer, device), blobStorage: this.blobs?.enabledFor(peer.roomId) ?? false,
+        providerMediaStorage: Boolean(this.blobs?.enabledFor(peer.roomId) && this.blobs.providerMediaTicket) });
       this.broadcastPresence(device);
       this.broadcastDevices(room);
       return true;
@@ -155,6 +157,10 @@ export class RelayBroker {
     }
     if (isObject(raw) && raw.type === "blob_ticket") {
       void this.objectTicket(peer, device, raw);
+      return;
+    }
+    if (isObject(raw) && raw.type === "provider_media_ticket") {
+      void this.providerMediaTicket(peer, device, raw);
       return;
     }
     if (isObject(raw) && this.control(peer, room, device, raw)) return;
@@ -319,7 +325,12 @@ export class RelayBroker {
   private async objectTicket(peer: Peer, device: Device, raw: Record<string, unknown>): Promise<void> {
     const { requestId, bytes } = raw;
     if (typeof requestId !== "string" || requestId.length > 80) return;
-    if (peer.role !== "desktop" || device.desktop !== peer || !this.blobs?.enabledFor(peer.roomId) || !Number.isSafeInteger(bytes) || (bytes as number) < 16 || (bytes as number) > MAX_BLOB_BYTES || !peer.objectBytes.reserve(bytes as number)) {
+    if (peer.role !== "desktop" || device.desktop !== peer || !this.blobs?.enabledFor(peer.roomId) || !Number.isSafeInteger(bytes) || (bytes as number) < 16 || (bytes as number) > MAX_BLOB_BYTES) {
+      send(peer.socket, { type: "blob_ticket", requestId, error: "Object transfer unavailable" });
+      return;
+    }
+    const reservation = peer.objectBytes.reservation(bytes as number);
+    if (!reservation) {
       send(peer.socket, { type: "blob_ticket", requestId, error: "Object transfer unavailable" });
       return;
     }
@@ -327,8 +338,48 @@ export class RelayBroker {
       const ticket = await this.blobs.ticket(peer.roomId, bytes as number, device.deviceId);
       if (device.desktop === peer) send(peer.socket, { type: "blob_ticket", requestId, ticket });
     } catch {
+      reservation.release();
       if (device.desktop === peer) send(peer.socket, { type: "blob_ticket", requestId, error: "Object transfer unavailable" });
     }
+  }
+
+  private async providerMediaTicket(peer: Peer, device: Device, raw: Record<string, unknown>): Promise<void> {
+    const { requestId, bytes, contentType } = raw;
+    if (typeof requestId !== "string" || !requestId.length || requestId.length > 80) return;
+    const response = { type: "provider_media_ticket", requestId };
+    const unavailable = () => send(peer.socket, { ...response, error: "Provider media transfer unavailable" });
+    if (peer.role !== "desktop" || device.desktop !== peer || !this.blobs?.enabledFor(peer.roomId) || !this.blobs.providerMediaTicket || !Number.isSafeInteger(bytes) || (bytes as number) < 1 || (bytes as number) > MAX_PROVIDER_MEDIA_BYTES || !isProviderMediaContentType(contentType)) {
+      unavailable();
+      return;
+    }
+    const reservation = this.providerMediaBudget(peer).reservation(bytes as number);
+    if (!reservation) {
+      unavailable();
+      return;
+    }
+    try {
+      const ticket = await this.blobs.providerMediaTicket(peer.roomId, bytes as number, contentType, device.deviceId);
+      if (device.desktop === peer) send(peer.socket, { ...response, ticket });
+    } catch {
+      reservation.release();
+      if (device.desktop === peer) unavailable();
+    }
+  }
+
+  /** Room/device budgets survive socket replacement; idle entries expire after a minute. */
+  private providerMediaBudget(peer: Peer): ObjectByteBudget {
+    const now = Date.now();
+    for (const [key, entry] of this.providerMediaBudgets) {
+      if (now - entry.lastUsedAt >= 60_000) this.providerMediaBudgets.delete(key);
+    }
+    const scope = `${peer.roomId}:${peer.deviceId}`;
+    let entry = this.providerMediaBudgets.get(scope);
+    if (!entry) {
+      entry = { budget: new ObjectByteBudget(now, MAX_PROVIDER_MEDIA_BYTES), lastUsedAt: now };
+      this.providerMediaBudgets.set(scope, entry);
+    }
+    entry.lastUsedAt = now;
+    return entry.budget;
   }
 
   private ready(peer: Peer, device: Device) {

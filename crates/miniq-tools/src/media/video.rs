@@ -7,7 +7,7 @@ impl Tool for GenerateVideoTool {
         "generate_video"
     }
     fn description(&self) -> &str {
-        "Start a video task. Grok accepts local image paths. MiniMax H3 accepts HTTP(S) reference URLs. Preserve request_id and model. Use get_video_generation to poll and download the result. Do not submit the same task twice."
+        "Start a video task. Grok accepts local image paths. MiniMax H3 accepts HTTP(S) URLs or authorized local media. Local media uses temporary private storage. Preserve request_id and model. Use get_video_generation to poll and download the result. Do not submit the same task twice."
     }
     fn parameters_schema(&self) -> Value {
         video_schema()
@@ -43,7 +43,9 @@ impl Tool for GenerateVideoTool {
         }
         Risk {
             level: RiskLevel::High,
-            reason: "generate video".into(),
+            reason:
+                "generate video; upload selected local H3 references to temporary private storage"
+                    .into(),
         }
     }
     async fn execute(&self, ctx: &ToolContext, raw: Value) -> Result<Value, ToolError> {
@@ -153,41 +155,81 @@ async fn execute_h3(
     input: VideoInput,
     mut raw: Value,
 ) -> Result<Value, ToolError> {
-    if input.image_path.is_some() {
-        return Err(ToolError::InvalidInput(
-            "H3 uses reference_images instead of image_path".into(),
-        ));
-    }
     if input.resolution.is_some() {
         return Err(ToolError::InvalidInput(
             "H3 resolution is selected by the model ID. Omit resolution.".into(),
         ));
     }
+    let mut input = input;
+    if let Some(path) = input.image_path.take() {
+        input.reference_images = Some(vec![path]);
+        raw.as_object_mut().unwrap().remove("image_path");
+        raw["reference_images"] = json!(input.reference_images);
+    }
     let seconds = input.duration.unwrap_or(8);
     raw["duration"] = seconds.into();
+    // Channel schemas describe provider wire URLs, while this tool also
+    // accepts local paths. Validate scalar/count constraints before uploading.
+    for field in ["reference_images", "reference_videos", "reference_audios"] {
+        if let Some(values) = raw.get_mut(field).and_then(Value::as_array_mut) {
+            for value in values {
+                if value
+                    .as_str()
+                    .is_some_and(|s| reference_http_url(s).is_err())
+                {
+                    *value = json!("https://media-preflight.invalid/reference");
+                }
+            }
+        }
+    }
     validate_parameters(media, "generate_video", &model, &raw, &h3_video_schema())?;
     let mut body = json!({"model":model,"prompt":input.prompt,"seconds":seconds});
     if let Some(ratio) = input.aspect_ratio {
         body["ratio"] = ratio.into();
     }
-    for (field, paths) in [
-        ("reference_images", input.reference_images),
-        ("reference_videos", input.reference_videos),
-        ("reference_audios", input.reference_audios),
+    let mut total_bytes = 0usize;
+    let mut prepared = Vec::new();
+    // Validate every local file before any upload or paid generation request.
+    for (field, paths, kind) in [
+        (
+            "reference_images",
+            input.reference_images,
+            ReferenceKind::Image,
+        ),
+        (
+            "reference_videos",
+            input.reference_videos,
+            ReferenceKind::Video,
+        ),
+        (
+            "reference_audios",
+            input.reference_audios,
+            ReferenceKind::Audio,
+        ),
     ] {
         if let Some(paths) = paths {
+            let mut references = Vec::with_capacity(paths.len());
             for path in &paths {
-                if reference_http_url(path).is_err() {
-                    // Preserve workspace escape rejection for local inputs without reading them.
-                    if !path.contains("://") {
-                        ctx.resolve_read_path(path)
-                            .map_err(|error| ToolError::SandboxDenied(error.to_string()))?;
-                    }
-                    reference_http_url(path)?;
-                }
+                references.push(prepare_h3_reference(ctx, path, kind, &mut total_bytes).await?);
             }
-            body[field] = json!(paths);
+            prepared.push((field, references));
         }
+    }
+    let uploaded_local_media = total_bytes > 0;
+    for (field, references) in prepared {
+        let mut urls = Vec::with_capacity(references.len());
+        for reference in references {
+            if ctx.cancellation.is_cancelled() {
+                return Err(ToolError::ExecutionFailed("media upload cancelled".into()));
+            }
+            urls.push(upload_h3_reference(ctx, reference).await?);
+        }
+        body[field] = json!(urls);
+    }
+    if ctx.cancellation.is_cancelled() {
+        return Err(ToolError::ExecutionFailed(
+            "video submission cancelled".into(),
+        ));
     }
     let task = response_json(
         client()?
@@ -198,7 +240,12 @@ async fn execute_h3(
             .await
             .map_err(|error| ToolError::ExecutionFailed(format!("H3 video request: {error}")))?,
     )
-    .await?;
+    .await;
+    let mut task = task.map_err(|error| {
+        if uploaded_local_media { ToolError::ExecutionFailed("H3 rejected the video request after reference upload; no automatic resubmission was performed".into()) }
+        else { error }
+    })?;
+    redact_storage_urls(&mut task);
     let request_id = task
         .get("id")
         .or_else(|| task.get("task_id"))
@@ -217,6 +264,201 @@ async fn execute_h3(
         json!({"kind":"video_task", "request_id":request_id, "model":model,
         "protocol":"minimax-h3", "task":task, "resume":true,"metadata_error":metadata_error}),
     )
+}
+
+#[derive(Clone, Copy)]
+enum ReferenceKind {
+    Image,
+    Video,
+    Audio,
+}
+
+impl ReferenceKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Image => "image",
+            Self::Video => "video",
+            Self::Audio => "audio",
+        }
+    }
+
+    fn max_bytes(self) -> usize {
+        match self {
+            Self::Image => 20 * 1024 * 1024,
+            Self::Video => 200 * 1024 * 1024,
+            Self::Audio => 50 * 1024 * 1024,
+        }
+    }
+}
+
+const MAX_H3_REFERENCE_BYTES: usize = 300 * 1024 * 1024;
+
+enum PreparedReference {
+    Url(String),
+    Local {
+        bytes: Vec<u8>,
+        content_type: &'static str,
+    },
+}
+
+pub(super) fn redact_storage_urls(value: &mut Value) {
+    match value {
+        Value::String(text)
+            if url::Url::parse(text).ok().is_some_and(|url| {
+                url.host_str()
+                    .is_some_and(|host| host.ends_with(".qiniucs.com"))
+            }) =>
+        {
+            *text = "[temporary media reference]".into();
+        }
+        Value::Array(values) => values.iter_mut().for_each(redact_storage_urls),
+        Value::Object(fields) => fields.values_mut().for_each(redact_storage_urls),
+        _ => {}
+    }
+}
+
+async fn prepare_h3_reference(
+    ctx: &ToolContext,
+    value: &str,
+    kind: ReferenceKind,
+    total_bytes: &mut usize,
+) -> Result<PreparedReference, ToolError> {
+    if reference_http_url(value).is_ok() {
+        return Ok(PreparedReference::Url(value.to_owned()));
+    }
+    if value.contains("://") || value.starts_with("data:") || value.starts_with("blob:") {
+        return Err(ToolError::InvalidInput(format!(
+            "{} reference must be an HTTP(S) URL or a local file",
+            kind.label()
+        )));
+    }
+    let path = ctx
+        .resolve_read_path(value)
+        .map_err(|error| ToolError::SandboxDenied(error.to_string()))?;
+    let size = tokio::fs::metadata(&path)
+        .await
+        .map_err(|error| {
+            ToolError::ExecutionFailed(format!("read {} reference: {error}", kind.label()))
+        })?
+        .len() as usize;
+    if size > kind.max_bytes() {
+        return Err(ToolError::InvalidInput(format!(
+            "{} reference exceeds the {} MiB limit",
+            kind.label(),
+            kind.max_bytes() / (1024 * 1024)
+        )));
+    }
+    if total_bytes.saturating_add(size) > MAX_H3_REFERENCE_BYTES {
+        return Err(ToolError::InvalidInput(
+            "H3 references exceed the 300 MiB total request limit".into(),
+        ));
+    }
+    use tokio::io::AsyncReadExt;
+    let file = tokio::fs::File::open(&path)
+        .await
+        .map_err(|_| ToolError::ExecutionFailed("reference file could not be read".into()))?;
+    let mut bytes = Vec::new();
+    file.take((kind.max_bytes() + 1) as u64)
+        .read_to_end(&mut bytes)
+        .await
+        .map_err(|_| ToolError::ExecutionFailed("reference file could not be read".into()))?;
+    if bytes.is_empty() || bytes.len() != size || bytes.len() > kind.max_bytes() {
+        return Err(ToolError::InvalidInput(
+            "reference file is empty, too large or changed while reading".into(),
+        ));
+    }
+    let content_type = detect_h3_mime(&bytes, kind).ok_or_else(|| {
+        ToolError::InvalidInput(format!(
+            "unsupported or invalid {} reference MIME",
+            kind.label()
+        ))
+    })?;
+    *total_bytes += bytes.len();
+    Ok(PreparedReference::Local {
+        bytes,
+        content_type,
+    })
+}
+
+async fn upload_h3_reference(
+    ctx: &ToolContext,
+    reference: PreparedReference,
+) -> Result<String, ToolError> {
+    let (bytes, content_type) = match reference {
+        PreparedReference::Url(url) => return Ok(url),
+        PreparedReference::Local {
+            bytes,
+            content_type,
+        } => (bytes, content_type),
+    };
+    let size = bytes.len();
+    let uploader = ctx.provider_media_uploader.as_ref().ok_or_else(|| {
+        ToolError::ExecutionFailed(
+            "local H3 media upload is unavailable for this channel; use HTTPS references or the supported OneAPI channel".into(),
+        )
+    })?;
+    let reference = tokio::select! {
+        _ = ctx.cancellation.cancelled() => return Err(ToolError::ExecutionFailed("media upload cancelled".into())),
+        result = uploader.upload(bytes, content_type) => result.map_err(|_| ToolError::ExecutionFailed("reference media upload failed; video generation was not submitted".into()))?,
+    };
+    let url = url::Url::parse(&reference.url)
+        .map_err(|_| ToolError::ExecutionFailed("media uploader returned an invalid URL".into()))?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(ToolError::ExecutionFailed(
+            "media uploader returned a non-HTTPS URL".into(),
+        ));
+    }
+    if reference.content_type != content_type || reference.bytes != size {
+        return Err(ToolError::ExecutionFailed(
+            "media uploader returned inconsistent media metadata".into(),
+        ));
+    }
+    Ok(reference.url)
+}
+
+fn detect_h3_mime(bytes: &[u8], kind: ReferenceKind) -> Option<&'static str> {
+    let detected = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" {
+        let brand = &bytes[8..12];
+        if matches!(brand, b"isom" | b"iso2" | b"mp41" | b"mp42") {
+            Some("video/mp4")
+        } else if brand == b"qt  " {
+            Some("video/quicktime")
+        } else if matches!(brand, b"M4A " | b"M4B ") {
+            Some("audio/mp4")
+        } else {
+            None
+        }
+    } else if bytes.starts_with(b"\x1A\x45\xDF\xA3") {
+        Some("video/webm")
+    } else if bytes.starts_with(b"ID3")
+        || (bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] & 0xE0 == 0xE0)
+    {
+        Some("audio/mpeg")
+    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WAVE" {
+        Some("audio/wav")
+    } else if bytes.starts_with(b"OggS") {
+        Some("audio/ogg")
+    } else if bytes.starts_with(b"fLaC") {
+        Some("audio/flac")
+    } else {
+        None
+    }?;
+    match kind {
+        ReferenceKind::Image if detected.starts_with("image/") => Some(detected),
+        ReferenceKind::Video if detected.starts_with("video/") => Some(detected),
+        ReferenceKind::Audio if detected.starts_with("audio/") => Some(detected),
+        _ => None,
+    }
 }
 
 fn video_metadata_path(ctx: &ToolContext, request_id: &str) -> Result<PathBuf, ToolError> {
@@ -269,3 +511,7 @@ pub(super) fn saved_video_model(
         .ok_or_else(|| ToolError::ExecutionFailed("invalid saved video model".into()))?;
     Ok(Some(model.into()))
 }
+
+#[cfg(test)]
+#[path = "video_local_tests.rs"]
+mod local_reference_tests;

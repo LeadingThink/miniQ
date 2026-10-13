@@ -58,7 +58,7 @@ pub(crate) fn h3_video_schema() -> Value {
         .as_object_mut()
         .unwrap()
         .remove("default");
-    for field in ["resolution", "image_path"] {
+    for field in ["resolution"] {
         properties.insert(field.into(), json!({"type":"null"}));
     }
     for (field, max) in [
@@ -68,8 +68,8 @@ pub(crate) fn h3_video_schema() -> Value {
     ] {
         properties.insert(field.into(), json!({
             "type":["array","null"], "minItems":1,"maxItems":max,
-            "items":{"type":"string","pattern":"^https?://"},
-            "description":"H3 only. Public HTTP(S) reference URLs. Local paths and data URLs are not supported."
+            "items":{"type":"string"},
+            "description":"H3 only. HTTP(S) URLs or authorized local media paths. Local files use temporary private storage; data URLs are not supported."
         }));
     }
     schema
@@ -86,7 +86,7 @@ pub(crate) fn video_schema() -> Value {
         .unwrap()
         .remove("default");
     schema["properties"]["reference_images"]["description"] =
-        json!("Grok: 1 to 7 local JPEG, PNG or WebP paths. H3: 1 to 5 public HTTP(S) URLs.");
+        json!("Grok: 1 to 7 local JPEG, PNG or WebP paths. H3: 1 to 5 HTTP(S) URLs or authorized local image paths.");
     for field in ["reference_videos", "reference_audios"] {
         schema["properties"][field] = h3["properties"][field].clone();
     }

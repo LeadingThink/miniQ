@@ -6,6 +6,7 @@ import { configuredBlobStore, type TicketIssuer } from "./blobStore.js";
 import { ShareStore } from "./shareStore.js";
 import { ShareHttp, oneApiShareAuth } from "./shareHttp.js";
 import { configuredPushService, type PushService } from "./push.js";
+import { ProviderMediaHttp } from "./providerMediaHttp.js";
 
 const DEFAULT_PORT = 9200;
 const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -22,13 +23,16 @@ const DEFAULT_ALLOWED_ORIGINS = [
 export function createRelayServer(options?: {
   allowedOrigins?: string[];
   blobs?: TicketIssuer;
+  providerMedia?: ProviderMediaHttp;
   shares?: ShareHttp;
   desktopReconnectGraceMs?: number;
   push?: PushService;
   desktopOfflinePushMs?: number;
 }): Server {
+  const blobs = options?.blobs ?? configuredBlobStore();
+  const providerMedia = options?.providerMedia ?? (blobs ? new ProviderMediaHttp(blobs, oneApiShareAuth()) : undefined);
   const broker = new RelayBroker(
-    options?.blobs ?? configuredBlobStore(),
+    blobs,
     options?.desktopReconnectGraceMs,
     options?.push ?? configuredPushService(),
     options?.desktopOfflinePushMs ?? configuredOfflinePushMs(),
@@ -36,6 +40,11 @@ export function createRelayServer(options?: {
   const allowedOrigins = new Set(options?.allowedOrigins ?? configuredOrigins());
   const shares = options?.shares ?? (process.env.MINIQ_SHARE_DIR ? new ShareHttp(new ShareStore(process.env.MINIQ_SHARE_DIR), oneApiShareAuth()) : undefined);
   const server = createServer((request, response) => {
+    if (request.url === "/provider-media/ticket") {
+      if (providerMedia) void providerMedia.handle(request, response);
+      else response.writeHead(503, { "content-type": "application/json" }).end(JSON.stringify({ error: "Media storage unavailable" }));
+      return;
+    }
     if (request.url?.startsWith("/shares/")) {
       if (shares) void shares.handle(request, response);
       else response.writeHead(503, { "content-type": "application/json" }).end(JSON.stringify({ error: "分享服务尚未启用" }));

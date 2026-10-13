@@ -42,7 +42,7 @@ export class ObjectByteBudget {
   private windowStartedAt: number;
   private used = 0;
 
-  constructor(now = Date.now()) {
+  constructor(now = Date.now(), private readonly limit = OBJECT_BYTES_PER_MINUTE) {
     this.windowStartedAt = now;
   }
 
@@ -51,9 +51,21 @@ export class ObjectByteBudget {
       this.windowStartedAt = now;
       this.used = 0;
     }
-    if (this.used + bytes > OBJECT_BYTES_PER_MINUTE) return false;
+    if (this.used + bytes > this.limit) return false;
     this.used += bytes;
     return true;
+  }
+
+  /** Failed issuance releases bytes only from the window that reserved them. */
+  reservation(bytes: number, now = Date.now()): { release(): void } | undefined {
+    if (!this.reserve(bytes, now)) return;
+    const windowStartedAt = this.windowStartedAt;
+    let released = false;
+    return { release: () => {
+      if (released) return;
+      released = true;
+      if (this.windowStartedAt === windowStartedAt) this.used -= bytes;
+    } };
   }
 }
 

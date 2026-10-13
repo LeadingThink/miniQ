@@ -35,11 +35,20 @@ MiniMax H3 使用独立接口 `/v1/videos/std/generations`。可选模型为 `mi
 | prompt | prompt | 1–7000 字符 |
 | duration | seconds | 4–15 秒。省略时使用 8 秒 |
 | aspect_ratio | ratio | 21:9、16:9、4:3、1:1、3:4、9:16 |
-| reference_images | reference_images | 1–5 个 HTTP(S) URL |
-| reference_videos | reference_videos | 1–3 个 HTTP(S) URL |
-| reference_audios | reference_audios | 1–3 个 HTTP(S) URL |
+| image_path | reference_images | 单张本地图片，映射为一张参考图 |
+| reference_images | reference_images | 1–5 个 HTTP(S) URL 或本地图片路径 |
+| reference_videos | reference_videos | 1–3 个 HTTP(S) URL 或本地视频路径 |
+| reference_audios | reference_audios | 1–3 个 HTTP(S) URL 或本地音频路径 |
 
-H3 引用使用 URL 字符串数组。渠道文档没有确认 data URL 或本地文件上传协议。miniQ 在提交前拒绝本地路径和 data URL。源文件保持不变。H3 不接收 `image_path` 或 `resolution`。
+H3 上游引用仍使用 URL 字符串数组。miniQ 对授权的本地媒体先检查全部素材，再上传发送副本。`image_path` 与 `reference_images` 不能同时使用。源文件保持不变。H3 不接收 `resolution`。data URL 不受支持。
+
+本地上传使用 `POST /miniq-relay/provider-media/ticket`。服务通过 OneAPI 的 `/v1/auth/key` 验证 Key。daemon 直接向七牛私有桶上传，不经过聊天 WebSocket，也不要求开启远程控制。只有 `https://oneapi.zaiwenai.com` 渠道启用此默认上传服务。自定义渠道继续使用已有 HTTP(S) URL，不把 Key 发送到默认服务。
+
+本地限制为图片 20 MiB、视频 200 MiB、音频 50 MiB、单次总计 300 MiB。daemon 最多同时上传 2 个文件。服务每个账户每分钟预留最多 512 MiB。格式通过文件内容检查；这些本地限制不代表 H3 上游一定接受所有格式或大小。
+
+对象使用独立 `provider-media/` 前缀。签名 GET 和 PUT URL 有效 15 分钟。链接持有者在有效期内可读素材，因此只将 GET 地址传给模型渠道。链接不作为工具结果输出；渠道返回的存储 URL 会被隐藏。桶配置一天删除规则，不在提交成功时删除，因为 H3 可能异步读取素材。取消和上传失败产生的对象也由生命周期清理。清理不是即时撤销。
+
+2026-10-13 实测：私有桶签名 PNG 上传和回读均返回 200，内容哈希一致；匿名请求被拒绝；错误 MIME 的 PUT 返回 403；测试对象删除返回 200。本次没有提交付费 H3 视频任务。
 
 保存 `generate_video` 返回的 `request_id` 和 `model`。调用 `get_video_generation` 时传入这两个字段。miniQ 会在工作区保存 H3 任务模型，省略 `model` 时可恢复协议。保存失败时结果仍返回任务 ID 和模型，不应重新提交。导入的任务需显式提供模型。渠道切换或模型冲突会在查询前报错。H3 轮询和下载使用独立的 std 路由。`queued` 和 `in_progress` 可以继续轮询。`completed` 下载视频，`failed` 停止轮询。H3 建议轮询间隔至少 20 秒。
 

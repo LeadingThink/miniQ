@@ -549,6 +549,9 @@ async fn execute_turn(
         session_id: session_id.to_string(),
         router: state.router.clone(),
         ctx: miniq_tools::ToolContext::new(workspace_path)
+            .with_provider_media_uploader(config.as_ref().and_then(|config| {
+                crate::provider_media::for_media(&state.media_config_for(config), cancel.clone())
+            }))
             .with_media(config.as_ref().map(|config| state.media_config_for(config)))
             .with_workspace_roots(roots.clone())
             .with_external_paths_allowed(external_paths_allowed)

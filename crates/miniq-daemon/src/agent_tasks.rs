@@ -222,6 +222,11 @@ impl DaemonAgentBridge {
             .approval_mode_for_session(&self.session_id)
             .is_ok_and(|mode| mode == ApprovalMode::FullAccess);
         ToolContext::new(workspace.clone())
+            .with_provider_media_uploader(
+                media
+                    .as_ref()
+                    .and_then(|media| crate::provider_media::for_media(media, cancel.clone())),
+            )
             .with_media(media)
             .with_workspace_roots(roots.clone())
             .with_external_paths_allowed(external_paths_allowed)

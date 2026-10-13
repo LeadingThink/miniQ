@@ -26,6 +26,25 @@ pub struct MediaConfig {
     pub capabilities: Option<Arc<crate::MediaCapabilityRegistry>>,
 }
 
+/// A provider-readable reference returned by the host media uploader.
+/// Signed URLs are kept in memory and are never persisted by the tools layer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProviderMediaReference {
+    pub url: String,
+    pub content_type: String,
+    pub bytes: usize,
+}
+
+/// Uploads local media to a provider-readable short-lived URL.
+#[async_trait]
+pub trait ProviderMediaUploader: Send + Sync {
+    async fn upload(
+        &self,
+        bytes: Vec<u8>,
+        content_type: &str,
+    ) -> Result<ProviderMediaReference, String>;
+}
+
 #[derive(Debug, Error)]
 pub enum ToolError {
     #[error("unknown tool: {0}")]
@@ -100,6 +119,8 @@ pub struct ToolContext {
     pub observation_dir: PathBuf,
     pub cancellation: tokio_util::sync::CancellationToken,
     pub media: Option<MediaConfig>,
+    /// Optional host bridge for provider media references.
+    pub provider_media_uploader: Option<Arc<dyn ProviderMediaUploader>>,
     /// Plan-mode guard shared by the executor and plan_mode tool.
     plan_mode: Arc<AtomicBool>,
     pub scheduled_task: Option<ScheduledTaskMemoryContext>,
@@ -125,6 +146,7 @@ impl ToolContext {
                 .join(format!("miniq-observations-{}", uuid::Uuid::new_v4())),
             cancellation: tokio_util::sync::CancellationToken::new(),
             media: None,
+            provider_media_uploader: None,
             plan_mode: Arc::new(AtomicBool::new(false)),
             scheduled_task: None,
         }
@@ -188,6 +210,14 @@ impl ToolContext {
 
     pub fn with_media(mut self, media: Option<MediaConfig>) -> Self {
         self.media = media;
+        self
+    }
+
+    pub fn with_provider_media_uploader(
+        mut self,
+        uploader: Option<Arc<dyn ProviderMediaUploader>>,
+    ) -> Self {
+        self.provider_media_uploader = uploader;
         self
     }
 
