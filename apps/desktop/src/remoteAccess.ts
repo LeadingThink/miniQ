@@ -1,12 +1,13 @@
 import { isTauriRuntime } from "./runtime";
 import { Capacitor } from "@capacitor/core";
 import { SecureStoragePlugin } from "capacitor-secure-storage-plugin";
+import { mobileCredentialStorageKey } from "./mobileApiConfig";
 
 export const DEFAULT_RELAY_URL = "wss://oneapi.zaiwenai.com/miniq-relay/ws";
-const STORAGE_KEY = "miniq.remote.credentials.v1";
-const PERSIST_KEY = "miniq.remote.credentials.persist.v1";
-const REMEMBER_KEY = "miniq.remote.remember.v1";
-const NATIVE_STORAGE_KEY = "miniq.remote.credentials";
+const STORAGE_KEY = mobileCredentialStorageKey("miniq.remote.credentials.v1");
+const PERSIST_KEY = mobileCredentialStorageKey("miniq.remote.credentials.persist.v1");
+const REMEMBER_KEY = mobileCredentialStorageKey("miniq.remote.remember.v1");
+const NATIVE_STORAGE_KEY = mobileCredentialStorageKey("miniq.remote.credentials");
 
 export interface RemoteCredentials {
   apiKey: string;

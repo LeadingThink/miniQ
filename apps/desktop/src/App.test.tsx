@@ -14,6 +14,7 @@ const state = vi.hoisted(() => {
   let release!: () => void;
   return {
     remote: true,
+    testApi: false,
     consent: true,
     share: null as string | null,
     loadCredentials: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock("./hooks/useRemoteDevices", async () => {
   } };
 });
 vi.mock("./mobilePrivacy", () => ({ hasMobilePrivacyConsent: () => state.consent }));
+vi.mock("./mobileApiConfig", () => ({ get IS_MOBILE_TEST_API() { return state.testApi; } }));
 vi.mock("./sharing", () => ({ sharedSessionId: () => state.share }));
 vi.mock("./theme", () => {
   const appearance = { theme: "jade" };
@@ -67,6 +69,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   state.remote = true;
+  state.testApi = false;
   state.consent = true;
   state.share = null;
   state.loadCredentials.mockResolvedValue(null);
@@ -109,10 +112,29 @@ it("restores remembered remote mode only after privacy consent", async () => {
 }, 20_000);
 
 it("keeps the entry screen usable when secure credential restoration fails", async () => {
+  storeMobileEntryMode("chat");
   state.loadCredentials.mockRejectedValue(new Error("keychain unavailable"));
   render(<App />);
-  await screen.findByRole("button", { name: "连接远程" });
+  const entry = await screen.findByRole("button", { name: "连接远程" });
+  expect(entry.getAttribute("data-mode")).toBeNull();
   expect(state.useHarness).not.toHaveBeenCalled();
+});
+
+it("shows Key entry when the last chat mode has no saved credentials", async () => {
+  storeMobileEntryMode("chat");
+  render(<App />);
+  const entry = await screen.findByRole("button", { name: "连接远程" });
+  expect(entry.getAttribute("data-mode")).toBeNull();
+});
+
+it("does not send staging credentials to the production relay when restoring remote mode", async () => {
+  state.testApi = true;
+  storeMobileEntryMode("remote");
+  state.loadCredentials.mockResolvedValue({ apiKey: "sk-staging" });
+  render(<App />);
+  const entry = await screen.findByRole("button", { name: "连接远程" });
+  expect(entry.getAttribute("data-mode")).toBeNull();
+  expect(state.directoryMount).not.toHaveBeenCalled();
 });
 
 it("loads desktop workbench without reading mobile credentials", async () => {

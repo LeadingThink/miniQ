@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { mobileVoiceModel } from "../mobileVoice";
 import { errorMessage } from "../errorMessage";
-import { MOBILE_API_BASE_URL, MOBILE_MODEL_STORAGE_KEY, mobileResponseError, textChatModels } from "../mobileChatData";
+import { MOBILE_MODEL_STORAGE_KEY, mobileResponseError, textChatModels } from "../mobileChatData";
+import { MOBILE_API_BASE_URL } from "../mobileApiConfig";
 
 export function useMobileChatModels(apiKey: string) {
   const [transcribeModel, setTranscribeModel] = useState<string | null>(null);
