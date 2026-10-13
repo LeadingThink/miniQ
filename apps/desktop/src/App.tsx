@@ -9,6 +9,8 @@ import { sharedSessionId } from "./sharing";
 import { hasMobilePrivacyConsent } from "./mobilePrivacy";
 import { readMobileEntryMode } from "./mobileEntryMode";
 import { DesktopHostProvider } from "./desktopHost";
+import { useIosIapRecovery } from "./hooks/useIosIapRecovery";
+import { IS_MOBILE_TEST_API } from "./mobileApiConfig";
 const SharedSessionPage = lazy(() => import("./components/SharedSessionPage").then((module) => ({ default: module.SharedSessionPage })));
 const RemoteWorkbench = lazy(() => import("./RemoteWorkbench").then((module) => ({ default: module.RemoteWorkbench })));
 const ConnectedApp = lazy(() => import("./ConnectedApp"));
@@ -16,6 +18,7 @@ const ConnectedApp = lazy(() => import("./ConnectedApp"));
 export type { PendingApproval } from "./hooks/useSessionFeed";
 
 export default function App() {
+  useIosIapRecovery();
   const { theme } = useSyncExternalStore(subscribeAppearance, getAppearance, getAppearance);
   const shareId = sharedSessionId();
   if (shareId !== null) return <Suspense fallback={<p role="status">正在加载分享…</p>}><SharedSessionPage key={shareId} id={shareId} /></Suspense>;
@@ -35,7 +38,10 @@ function RemoteGate(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) => 
   useEffect(() => {
     let disposed = false;
     const settle = (credentials: RemoteCredentials | null) => {
-      if (!disposed) { setCredentials(credentials); setPhase(credentials && initialMode === "remote" && hasMobilePrivacyConsent() ? "active" : "entry"); }
+      if (disposed) return;
+      if (!credentials || !hasMobilePrivacyConsent() || (IS_MOBILE_TEST_API && initialMode === "remote")) setInitialMode(null);
+      setCredentials(credentials);
+      setPhase(credentials && !IS_MOBILE_TEST_API && initialMode === "remote" && hasMobilePrivacyConsent() ? "active" : "entry");
     };
     void loadRemoteCredentials().then(settle, () => settle(null));
     return () => {

@@ -6,6 +6,7 @@ class MainViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(MiniqPushPlugin())
         bridge?.registerPluginInstance(MiniqPowerPlugin())
+        bridge?.registerPluginInstance(MiniqIapPlugin())
     }
 }
 
