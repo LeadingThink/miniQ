@@ -203,7 +203,7 @@
 }
 
 /* ---------- Settings sheet (two panes) ---------- */
-.settings-overlay .settings-panel {
+.settings-overlay .settings-shell-panel {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   gap: 0;
@@ -306,7 +306,7 @@
 }
 
 @media (max-width: 720px) {
-  .settings-overlay .settings-panel {
+  .settings-overlay .settings-shell-panel {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     width: 100vw;

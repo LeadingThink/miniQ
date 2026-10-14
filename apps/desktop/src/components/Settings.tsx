@@ -284,7 +284,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
       <form
         ref={panelRef}
         tabIndex={-1}
-        className="settings-panel"
+        className="settings-panel settings-shell-panel"
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"

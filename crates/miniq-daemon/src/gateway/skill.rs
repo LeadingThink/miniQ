@@ -351,7 +351,14 @@ pub(super) fn save(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         "skill_saved",
         &json!({"name": metadata.name, "version": metadata.version}),
     );
-    to_value(json!({ "name": metadata.name, "version": metadata.version }))
+    let path = state
+        .skills
+        .user_root()
+        .join(&metadata.name)
+        .join("SKILL.md");
+    to_value(
+        json!({ "name": metadata.name, "version": metadata.version, "path": path.to_string_lossy(), "scope": "user" }),
+    )
 }
 
 #[derive(Deserialize)]

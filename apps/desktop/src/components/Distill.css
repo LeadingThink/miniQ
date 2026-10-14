@@ -1,0 +1,24 @@
+.settings-overlay .distill-panel {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(760px, calc(100vw - 32px));
+  height: auto;
+  max-height: calc(var(--app-height, 100dvh) - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  min-height: 0;
+  padding: 22px;
+  gap: 13px;
+  overflow-y: auto;
+}
+.distill-panel .distill-editor {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 180px;
+  height: min(42dvh, 420px);
+  flex: 1 0 auto;
+}
+.distill-panel .approval-actions {
+  flex: none;
+  flex-wrap: wrap;
+}
+.distill-panel code { overflow-wrap: anywhere; }

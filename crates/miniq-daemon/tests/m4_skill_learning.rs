@@ -169,6 +169,11 @@ async fn full_learning_loop() {
     // 3. Save it.
     let resp = call(&mut ws, "r3", "skill.save", json!({"content": content})).await;
     assert_eq!(resp["result"]["name"], "inventory-report");
+    assert_eq!(resp["result"]["scope"], "user");
+    let saved_path = std::path::PathBuf::from(resp["result"]["path"].as_str().unwrap());
+    assert!(saved_path.is_absolute());
+    assert!(saved_path.ends_with("skills/inventory-report/SKILL.md"));
+    assert_eq!(std::fs::read_to_string(&saved_path).unwrap(), content);
 
     // 4. New session: the skill is advertised in the system prompt.
     let ws_resp = call(
