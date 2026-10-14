@@ -21,6 +21,10 @@ const COMMANDS: &[(&str, &str)] = &[
     ),
     ("/approvals", "alias of /permissions"),
     ("/status", "session, model, mode and queue"),
+    (
+        "/remote",
+        "远程连接设置：开启、关闭、设备名称和状态（这台电脑共用）",
+    ),
     ("/new", "start a new session"),
     ("/resume", "switch to another session"),
     ("/fork", "fork this session at the latest message"),
@@ -90,6 +94,7 @@ pub async fn run(
             for (name, description) in COMMANDS {
                 text.push_str(&format!("  {name:<20} {description}\n"));
             }
+            text.push_str("  /remote on|off       开启或关闭远程连接\n  /remote name NAME    修改设备名称\n  /remote status       查看连接状态\n");
             text.push_str(KEYS);
             repl.emit(&text);
         }
@@ -99,6 +104,12 @@ pub async fn run(
             repl.resume()?;
             result?;
             repl.refresh(client).await;
+        }
+        "/remote" => {
+            repl.suspend();
+            let result = crate::remote_settings::run(client, arg).await;
+            repl.resume()?;
+            result?;
         }
         "/permissions" | "/approvals" => {
             let mode = match arg {

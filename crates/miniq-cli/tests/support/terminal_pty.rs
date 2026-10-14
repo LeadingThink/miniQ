@@ -76,6 +76,48 @@ impl Fixture {
 }
 
 #[tokio::test]
+async fn remote_settings_work_in_both_terminal_modes() {
+    for term in ["dumb", "xterm-256color"] {
+        let fixture = Fixture::new("success").await;
+        let transcript = fixture
+            .run_terminal_with_term(
+                &[],
+                &[
+                    ("miniq>", "/help\n"),
+                    ("/remote status", "/remote\n"),
+                    ("Select/search>", "1\n"),
+                    ("远程设置已保存", "/remote name 我的服务器\n"),
+                    ("远程设置已保存", "/remote status\n"),
+                    ("连接状态：已连接", "/remote off\n"),
+                    ("远程设置已保存", "/exit\n"),
+                ],
+                term,
+            )
+            .await;
+        assert!(transcript.contains("设备名称：我的服务器"), "{transcript}");
+        let requests = fixture.requests.lock().unwrap();
+        let updates = requests
+            .iter()
+            .filter(|r| r["method"] == "settings.update")
+            .map(|r| r["params"].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(updates.len(), 3);
+        assert_eq!(updates[0]["remoteAccess"]["enabled"], true);
+        assert_eq!(updates[1]["remoteAccess"]["deviceName"], "我的服务器");
+        assert_eq!(updates[2]["remoteAccess"]["enabled"], false);
+        for update in updates {
+            assert_eq!(update["remoteAccess"]["relayUrl"], "wss://fixture.test/ws");
+            assert!(update.get("provider").is_none());
+            assert!(update.get("approvalMode").is_none());
+            assert!(update["remoteAccess"].get("deviceId").is_none());
+        }
+        assert!(!requests
+            .iter()
+            .any(|r| r["method"] == "session.sendMessage"));
+    }
+}
+
+#[tokio::test]
 async fn up_arrow_recalls_previous_prompt_in_session() {
     let fixture = Fixture::new("success").await;
     fixture

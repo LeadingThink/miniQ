@@ -49,6 +49,7 @@ impl Fixture {
             .to_string_lossy()
             .into_owned();
         let server = tokio::spawn(async move {
+            let mut remote = json!({"enabled":false,"deviceName":"fixture-host","relayUrl":"wss://fixture.test/ws","deviceId":"fixture-id"});
             loop {
                 let (stream, _) = listener.accept().await.unwrap();
                 let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
@@ -61,9 +62,17 @@ impl Fixture {
                             json!({"protocolVersion":2,"capabilities":{"rejectBusy":mode != "old"}})
                         }
                         "settings.get" => {
-                            json!({"provider":if mode == "unconfigured" {Value::Null} else {json!({"baseUrl":"https://oneapi.zaiwenai.com/v1","model":"fixture","apiProtocol":"responses","hasApiKey":true})},"approvalMode":if matches!(mode, "full" | "session-ask") {"fullAccess"} else {"alwaysAsk"}})
+                            json!({"provider":if mode == "unconfigured" {Value::Null} else {json!({"baseUrl":"https://oneapi.zaiwenai.com/v1","model":"fixture","apiProtocol":"responses","hasApiKey":true})},"remoteAccess":remote,"approvalMode":if matches!(mode, "full" | "session-ask") {"fullAccess"} else {"alwaysAsk"}})
                         }
-                        "settings.update" => json!({"provider":{"hasApiKey":true}}),
+                        "settings.update" => {
+                            if let Some(update) = request["params"]["remoteAccess"].as_object() {
+                                remote.as_object_mut().unwrap().extend(update.clone());
+                            }
+                            json!({"provider":{"hasApiKey":true}})
+                        }
+                        "remote.status" => {
+                            json!({"state":if remote["enabled"] == true {"connected"} else {"disabled"},"mobileClients":0})
+                        }
                         "settings.models" | "model.list" => {
                             json!({"models":["claude-opus", "gemini-3.8-flash", "gpt-5.6-sol"]})
                         }

@@ -159,7 +159,20 @@ The terminal client runs tasks on the computer or server where it is installed. 
 
 ### Terminal-only servers (no desktop app)
 
-Remote access is provided by `miniq-daemon`, so a server with only the terminal package can also be reached from the mobile app. It is off by default and the CLI has no dedicated switch; enable it once through the advanced RPC:
+Remote access is provided by `miniq-daemon`, so a server with only the terminal package can also be reached from the mobile app. It is off by default. In a terminal chat, enter `/remote` to open the settings menu. Select an action to enable or disable access, change the device name, or refresh connection status. `/help` lists this command.
+
+The setting applies to this computer's shared daemon, including its other sessions and desktop client. It does not change the session's approval mode. Use the same Zaiwen API key on the phone and computer.
+
+Inside a chat, these commands also work directly:
+
+```text
+/remote on
+/remote name my-server
+/remote status
+/remote off
+```
+
+Outside a chat, configure remote access with:
 
 ```sh
 miniq configure                      # save the same Zaiwen API key used on the phone
@@ -169,7 +182,7 @@ EOF
 miniq rpc remote.status              # should report the relay as connected
 ```
 
-`deviceName` is the name shown on the phone (1–80 characters). Without a saved API key the status stays waiting for a key. Keep the daemon running and the server online; after a reboot run any `miniq` command (for example `miniq status`) to start it again. To turn remote access off, repeat the update with `"enabled":false`. The phone can view and continue tasks, answer questions and approvals, and browse files on the server; native computer use still requires a graphical session on that server.
+`deviceName` is the name shown on the phone (1–80 characters). Without a saved API key the status stays waiting for a key. Keep the daemon running and the server online; after a reboot run any `miniq` command (for example `miniq status`) to start it again. To turn remote access off, enter `/remote off` in a chat. The phone can view and continue tasks, answer questions and approvals, and browse files on the server; native computer use still requires a graphical session on that server.
 
 ## Multiple Remote Computers
 

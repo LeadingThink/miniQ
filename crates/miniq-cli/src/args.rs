@@ -67,7 +67,7 @@ Good to know:
   - Over SSH, `miniq sessions` shows that computer's sessions. The same API Key does not
     merge local sessions from different computers.
   - To view them from the phone, first select the matching remote desktop or SSH host.
-  - Inside a chat, type /help for slash commands (/model, /effort, /attach, /history, /exit).
+  - Inside a chat, type /help for slash commands (/model, /effort, /remote, /attach, /history, /exit).
 
 Full guide: https://github.com/LeadingThink/miniQ/blob/main/docs/terminal.md";
 

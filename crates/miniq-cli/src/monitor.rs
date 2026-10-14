@@ -256,7 +256,9 @@ async fn command(
     let arg = arg.trim();
     let result = match command {
         "/exit" | "/quit" => return Ok(true),
+        "/remote" => crate::remote_settings::run(client, arg).await,
         "/help" => {
+            progress("/remote             远程连接设置（这台电脑共用）：开启、关闭、设备名称和状态\n/remote on|off      开启或关闭远程连接\n/remote name NAME   修改设备名称\n/remote status      查看连接状态");
             progress(&format!("/model              Search/select a text model for this session\n/model MODEL        Switch this session to an exact model ID\n/effort             Select a supported reasoning effort\n/effort LEVEL       Set effort, or default to clear the override\n/attach PATH        Add a file to the next message\n/clear-attachments  Remove pending attachments\n/status             Show this session's effective model\n/history            Show recent messages and the next history cursor\n/exit               Leave the terminal without deleting the session\n\nThis session: {session}\n\nFrom the shell:\n  miniq resume {session}   Continue this session later\n  miniq resume --last        Continue this project's most recent session\n  miniq sessions [--all]     List sessions (title, status, updated, ID)\n  miniq watch {session}    Follow it from another terminal without sending\n  miniq history {session} --limit 40\n  miniq exec - < task.md     Multiline or scripted tasks\nminiq --help shows the full quick reference."));
             Ok(())
         }
