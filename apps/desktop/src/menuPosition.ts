@@ -2,8 +2,8 @@ export function menuPosition(
   trigger: { left: number; top: number; bottom: number },
   menu: { width: number; height: number },
   viewport: { width: number; height: number },
+  gap = 8,
 ) {
-  const gap = 8;
   const below = Math.max(0, viewport.height - trigger.bottom - gap * 2);
   const above = Math.max(0, trigger.top - gap * 2);
   const openAbove = above >= menu.height || above > below;

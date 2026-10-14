@@ -160,7 +160,7 @@ export function AttentionInbox({ app, onOpenLocalItem }: AttentionInboxProps) {
         <Bell size={16} />
         {unread > 0 && <span className="attention-inbox-badge" aria-hidden="true">{badge}</span>}
       </button>
-      <Popover open={open} anchorRef={anchor} onClose={close} label="提醒" className="attention-inbox-popover">
+      <Popover open={open} anchorRef={anchor} onClose={close} label="提醒" className="attention-inbox-popover" viewportGap={16}>
         <div className="attention-inbox-header">
           <span className="attention-inbox-heading">提醒</span>
           {unread > 0 && <span className="attention-inbox-count">{unread} 条未读</span>}

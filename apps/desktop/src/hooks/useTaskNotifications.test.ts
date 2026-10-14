@@ -27,6 +27,7 @@ vi.mock("@capacitor/local-notifications", () => ({
 }));
 
 import { CATCH_UP_WINDOW_MS, SHORT_TASK_MS, missedKind, useTaskNotifications } from "./useTaskNotifications";
+import { getAttentionItems, getSummary } from "../companionInbox";
 
 type Listener = (event: DaemonEvent) => void;
 function fakeRoot() {
@@ -60,6 +61,7 @@ let cursor = 0;
 const next = () => ({ epoch: "e1", sequence: ++cursor });
 
 beforeEach(() => {
+  localStorage.clear();
   mocks.mobile = true;
   mocks.pushStatus = "unsupported";
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -72,6 +74,19 @@ afterEach(() => {
 });
 
 describe("useTaskNotifications on mobile", () => {
+  it("does not add an unread inbox badge for the visible conversation", () => {
+    const { root } = setup(vi.fn(() => true));
+    root.emit({ type: "turn_completed", sessionId: "s1", eventCursor: next() });
+    expect(getSummary().unread).toBe(0);
+    expect(getAttentionItems().items[0]?.state).toBe("read");
+  });
+
+  it("keeps an inbox item unread for another conversation", () => {
+    const { root } = setup(vi.fn(() => false));
+    root.emit({ type: "turn_completed", sessionId: "s1", eventCursor: next() });
+    expect(getSummary().unread).toBe(1);
+  });
+
   it("raises an attention notice once per waiting period", () => {
     const { root } = setup();
     root.emit({ type: "session_status_changed", sessionId: "s1", status: "waiting_approval", eventCursor: next() });

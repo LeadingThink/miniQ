@@ -14,6 +14,7 @@ export function useAnchoredPosition(
   open: boolean,
   /** Viewport point (e.g. a context-menu click) used instead of the anchor's rect. */
   point?: { x: number; y: number } | null,
+  viewportGap?: number,
 ): AnchoredPosition | null {
   const pointX = point?.x;
   const pointY = point?.y;
@@ -49,6 +50,7 @@ export function useAnchoredPosition(
           width: viewport?.width ?? window.innerWidth,
           height: viewport?.height ?? window.innerHeight,
         },
+        viewportGap,
       );
       setPosition({ ...next, left: next.left + left, top: next.top + top });
     };
@@ -68,6 +70,6 @@ export function useAnchoredPosition(
       window.visualViewport?.removeEventListener("resize", update);
       window.visualViewport?.removeEventListener("scroll", update);
     };
-  }, [anchorRef, floatingRef, open, pointX, pointY]);
+  }, [anchorRef, floatingRef, open, pointX, pointY, viewportGap]);
   return position;
 }

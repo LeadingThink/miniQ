@@ -10,13 +10,14 @@ export interface PopoverProps {
   /** Accessible name for the popover region. */
   label: string;
   className?: string;
+  viewportGap?: number;
   children: ReactNode;
 }
 
 /** Non-modal floating panel anchored to a trigger. Escape / outside click closes; focus returns to the anchor. */
 export function Popover(props: PopoverProps) {
   const panel = useRef<HTMLDivElement>(null);
-  const position = useAnchoredPosition(props.anchorRef, panel, props.open);
+  const position = useAnchoredPosition(props.anchorRef, panel, props.open, null, props.viewportGap);
   const positioned = position !== null;
   const { open, onClose, anchorRef } = props;
 

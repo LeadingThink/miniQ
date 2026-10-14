@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, act } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { DesktopHostProvider, useDesktopHost, hostDraftKey } from "./desktopHost";
+import { DesktopHostProvider, useDesktopHost, hostDraftKey, isConversationOnScreen } from "./desktopHost";
 import { SshFixtureRoot } from "./fixtures/sshModel";
 const keepAwake = vi.hoisted(() => vi.fn());
 vi.mock("./keepAwake", async (original) => ({ ...await original<typeof import("./keepAwake")>(), useKeepAwake: keepAwake }));
@@ -10,6 +10,15 @@ vi.mock("@capacitor/app", () => ({ App: { addListener: () => Promise.resolve({ r
 vi.mock("./rpc", async (original) => ({ ...await original<typeof import("./rpc")>(), resolveConnection: vi.fn().mockResolvedValue({ kind: "local", port: 1, token: "fixture" }) }));
 afterEach(cleanup);
 beforeEach(() => { localStorage.clear(); keepAwake.mockClear(); });
+
+it("treats an expanded sidebar as covering conversations only on mobile", () => {
+  const view = { host: null, sessionId: "current", sidebarCollapsed: false };
+  const target = { host: null, sessionId: "current" };
+  expect(isConversationOnScreen(view, target, false)).toBe(true);
+  expect(isConversationOnScreen(view, target, true)).toBe(false);
+  expect(isConversationOnScreen(view, { host: null, sessionId: "other" }, false)).toBe(false);
+});
+
 function Workspace() {
   const host = useDesktopHost()!; const [filter, setFilter] = useState("");
   return <><span data-testid="host">{host.host ?? "local"}</span><input aria-label="persistent sidebar filter" value={filter} onChange={(event) => setFilter(event.target.value)} />

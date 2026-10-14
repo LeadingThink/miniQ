@@ -18,6 +18,15 @@ type Destination = Omit<HostDestination, "revision">;
 type DesktopHost = ReturnType<typeof useHostState>;
 const Context = createContext<DesktopHost | null>(null);
 
+export function isConversationOnScreen(
+  view: { host: string | null; sessionId: string | null; sidebarCollapsed: boolean },
+  target: { host: string | null; sessionId: string },
+  mobileLayout: boolean,
+): boolean {
+  if (mobileLayout && !view.sidebarCollapsed) return false;
+  return hostKey(view.host) === hostKey(target.host) && view.sessionId === target.sessionId;
+}
+
 function useHostState(suppliedRoot?: RpcClient) {
   const [root] = useState(() => suppliedRoot ?? new RpcClient());
   const clients = useRef(new Map<string, HostRpcClient>());
@@ -57,8 +66,11 @@ function useHostState(suppliedRoot?: RpcClient) {
   const isViewing = useCallback((target: string | null, sessionId: string) => {
     const view = viewRef.current;
     // On phones an expanded sidebar covers the conversation, so nothing is on screen.
-    if (!view.sidebarCollapsed || hostKey(view.host) !== hostKey(target)) return false;
-    return locations.current.get(hostKey(target))?.sessionId === sessionId;
+    return isConversationOnScreen(
+      { ...view, sessionId: locations.current.get(hostKey(target))?.sessionId ?? null },
+      { host: target, sessionId },
+      isMobileLayout(),
+    );
   }, []);
   const openSessionRef = useRef<(target: TaskNotificationTarget, signal?: AbortSignal) => void>(() => undefined);
   const openSession = useCallback((target: TaskNotificationTarget, signal?: AbortSignal) => openSessionRef.current(target, signal), []);
