@@ -60,7 +60,7 @@ export function ComposerCard(props: {
   busy: boolean;
   placeholder: string;
   chip?: string;
-  /** Custom leading element in the bottom row (e.g. a project picker). */
+  /** Project context displayed above the input, alongside approval controls. */
   chipSlot?: ReactNode;
   modelSlot?: ReactNode;
   permissionSlot?: ReactNode;
@@ -461,8 +461,21 @@ export function ComposerCard(props: {
     />
   ) : null;
 
+  const contextControls = (
+    <>
+      {props.chipSlot}
+      {props.approvalMode && props.onApprovalModeChange && (
+        <ApprovalModeSelect
+          mode={props.approvalMode}
+          onChange={props.onApprovalModeChange}
+        />
+      )}
+    </>
+  );
+
   return (
     <div ref={card} className="composer-card">
+      {props.chipSlot && <div className="composer-context">{contextControls}</div>}
       {showRemoteAttachment && remoteHost && <RemotePathDialog host={remoteHost} purpose="attachment"
         onSubmit={async (path) => { addAttachments([path]); }} onClose={() => setShowRemoteAttachment(false)} />}
       {voicePreview && <VoiceTranscript preview={voicePreview} />}
@@ -618,19 +631,13 @@ export function ComposerCard(props: {
 
           </div>
         </div>
-        {props.chipSlot}
         {props.chip && (
           <span className="chip" title={props.chip}>
             <Folder aria-hidden="true" />
             <span>{props.chip}</span>
           </span>
         )}
-        {props.approvalMode && props.onApprovalModeChange && (
-          <ApprovalModeSelect
-            mode={props.approvalMode}
-            onChange={props.onApprovalModeChange}
-          />
-        )}
+        {!props.chipSlot && contextControls}
         {props.permissionSlot}
         {props.modelSlot}
         <div className="composer-submit">

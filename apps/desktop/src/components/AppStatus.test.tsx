@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { RemoteDeviceBarContext } from "../remoteDeviceBar";
@@ -34,6 +34,38 @@ function appFixture(collapsed = true, mode: "local" | "remote" = "local") {
 }
 
 describe("AppStatusBar", () => {
+  it("keeps four remote home actions including a working inspector entry", () => {
+    const onToggleWorkbench = vi.fn();
+    const onToggleReview = vi.fn();
+    const { container } = render(
+      <AppStatusBar
+        app={appFixture(true, "remote")}
+        onOpenBrowser={vi.fn()}
+        onToggleReview={onToggleReview}
+        onOpenFile={vi.fn()}
+        onToggleWorkbench={onToggleWorkbench}
+        showAttentionInbox
+      />,
+    );
+
+    const actions = within(
+      container.querySelector<HTMLElement>(".app-toolbar-actions")!,
+    );
+    expect(
+      actions.getAllByRole("button").map((button) => button.getAttribute("aria-label")),
+    ).toEqual([
+      "待审批总览",
+      "提醒",
+      "显示检查器",
+      "更多操作",
+    ]);
+    const inspector = actions.getByRole("button", { name: "显示检查器" });
+    expect(inspector.title).toContain("审阅");
+    fireEvent.click(inspector);
+    expect(onToggleWorkbench).toHaveBeenCalledOnce();
+    expect(onToggleReview).not.toHaveBeenCalled();
+  });
+
   it("keeps a visible hover hint for every collapsed-layout icon action", () => {
     render(
       <AppStatusBar

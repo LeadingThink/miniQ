@@ -22,6 +22,7 @@ import "./styles/living-background.css";
 import "./external-sessions.css";
 import "./styles/mobile-controls.css";
 import "./styles/window-chrome.css";
+import "./styles/hero.css";
 import { initializeAppearance } from "./theme";
 import { initializeBackground } from "./background";
 import { initializeRotation } from "./backgroundRotation";

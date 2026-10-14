@@ -6,21 +6,19 @@ import { buildPaletteCommands } from "./paletteCommands";
 import type { CommandId } from "../shortcuts";
 import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
-import { PlugZap, Sparkles } from "lucide-react";
 import { Spinner } from "./ui/Spinner";
 import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { TurnChangesContext, type TurnChangesContextValue } from "../turnChanges";
-import { Composer, ComposerCard } from "./Composer";
+import { Composer } from "./Composer";
 import type { ComposerSlashCommand } from "../composerSlash";
 import { useAppSlashCommands } from "../hooks/useAppSlashCommands";
 import { DistillModal } from "./Distill";
 import { ExternalSessionImportDialog } from "./ExternalSessionImport";
-import { ProjectPicker } from "./ProjectPicker";
 import { SchedulePanel } from "./Schedule";
 import { SearchOverlay } from "./Search";
 import { SettingsPanel } from "./Settings";
 import { AppSidebar } from "./AppSidebar";
-import { StarterPrompts } from "./StarterPrompts";
+import { HeroPage } from "./HeroPage";
 import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 import { SessionModelControls } from "./SessionModelControls";
 import { SettingsLoadErrorBanner } from "./SettingsLoadErrorBanner";
@@ -312,90 +310,6 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
   );
 }
 
-function HeroPage({ app, slashCommands }: AppOnlyProps & { slashCommands: ComposerSlashCommand[] }) {
-  const selectedWorkspace = app.catalog.selectedWorkspace;
-  const [draftRequest, setDraftRequest] = useState<
-    { id: number; content: string } | undefined
-  >();
-  return (
-    <div className="hero">
-      <h1>
-        {selectedWorkspace
-          ? `要在 ${selectedWorkspace.name} 中完成什么？`
-          : "今天想完成什么？"}
-      </h1>
-      <div className="hero-composer">
-        {app.connection.providerConfigured === false && (
-          <ProviderOnboardingPrompt onOpenSettings={() => app.navigation.openSettings("services")} />
-        )}
-        <ComposerCard
-          onVoiceFocusApplied={app.actions.companionVoiceHandled}
-          voiceFocusRequest={app.companionVoiceRequest?.sessionId === null && app.companionVoiceRequest.workspaceId === selectedWorkspace?.id ? app.companionVoiceRequest.id : undefined}
-          slashCommands={slashCommands}
-          workspaceId={selectedWorkspace?.id}
-          modelSlot={
-            <SessionModelControls
-              client={app.client}
-              model={app.sessionModel}
-              busy={false}
-              placement="below"
-            />
-          }
-          busy={false}
-          autoFocus
-          draftKey={hostDraftKey(app.client.sshHost, "hero", app.client.storageScope)}
-          draftRequest={draftRequest}
-          client={app.client}
-          placeholder={
-            selectedWorkspace
-              ? "描述你的目标，例如：整理这份资料并生成周报"
-              : "先选择一个项目，再描述你的目标"
-          }
-          chipSlot={
-            <ProjectPicker
-              workspaces={app.catalog.workspaces}
-              selectedId={selectedWorkspace?.id ?? null}
-              onSelect={app.actions.selectProject}
-              onCreateBlank={(name) =>
-                void app.actions.createBlankProject(name)
-              }
-              onOpenFolder={() => void app.actions.openWorkspace()}
-            />
-          }
-          approvalMode={app.connection.approvalMode}
-          onApprovalModeChange={app.connection.changeApprovalMode}
-          allowGoal
-          onSend={app.actions.startTask}
-          onError={app.setError}
-          sendBlocked={!!getSendBlockedReason(app)}
-          sendBlockedReason={getSendBlockedReason(app)}
-        />
-      </div>
-      <StarterPrompts
-        onSelect={(prompt) =>
-          setDraftRequest({ id: Date.now(), content: prompt.prompt })
-        }
-        shortcuts={[
-          {
-            id: "skills",
-            title: "技能",
-            description: "查看可复用的工作流，或从任务中学习新技能",
-            icon: Sparkles,
-            onSelect: () => app.navigation.setPage("skills"),
-          },
-          {
-            id: "mcp",
-            title: "连接器",
-            description: "接入办公应用、外部工具与数据服务",
-            icon: PlugZap,
-            onSelect: () => app.navigation.setPage("mcp"),
-          },
-        ]}
-      />
-    </div>
-  );
-}
-
 function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, onOpenTurnReview, draftRequest, onDraftRequestApplied }: WorkbenchPageProps) {
   switch (app.navigation.page) {
     case "skills":
@@ -427,7 +341,7 @@ function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, onO
           onDraftRequestApplied={onDraftRequestApplied}
         />
       ) : (
-        <HeroPage app={app} slashCommands={slashCommands} />
+        <HeroPage app={app} slashCommands={slashCommands} sendBlockedReason={getSendBlockedReason(app)} />
       );
   }
 }

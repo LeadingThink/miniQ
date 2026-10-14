@@ -1,5 +1,6 @@
 import {
   ClipboardList,
+  ChevronRight,
   FileSearch,
   FileText,
   Table2,
@@ -61,45 +62,84 @@ export function StarterPrompts(props: {
   onSelect: (prompt: StarterPrompt) => void;
   shortcuts: StarterShortcut[];
 }) {
-  const cards = [
-    ...STARTER_PROMPTS.map((item) => ({
-      ...item,
-      onSelect: () => props.onSelect(item),
-    })),
-    ...props.shortcuts,
-  ];
   return (
-    <section className="starter-prompts-v2" aria-labelledby="starter-prompts-title">
-      <div className="starter-prompts-v2-heading">
-        <div>
-          <h2 id="starter-prompts-title">先选一个示例，再编辑任务</h2>
-          <p>示例只会填入草稿。补充你的要求，确认后再发送。</p>
+    <>
+      <section
+        className="starter-prompts-v2"
+        aria-labelledby="starter-prompts-title"
+      >
+        <div className="starter-prompts-v2-heading">
+          <div>
+            <h2 id="starter-prompts-title">先选一个示例，再编辑任务</h2>
+            <p>示例只会填入草稿。补充你的要求，确认后再发送。</p>
+          </div>
+          <span className="starter-prompts-v2-count" aria-hidden="true">
+            {STARTER_PROMPTS.length} 个示例
+          </span>
         </div>
-        <span className="starter-prompts-v2-count" aria-hidden="true">
-          {STARTER_PROMPTS.length} 个示例
-        </span>
-      </div>
-      <div className="starter-prompts-v2-list" aria-label="办公任务示例">
-      {cards.map((item) => {
-        const Icon = item.icon;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            className="starter-prompt-v2"
-            onClick={item.onSelect}
-          >
-            <span className="starter-prompt-v2-icon" aria-hidden="true">
-              <Icon size={16} />
-            </span>
-            <span className="starter-prompt-v2-copy">
-              <strong>{item.title}</strong>
-              <small>{item.description}</small>
-            </span>
-          </button>
-        );
-      })}
-      </div>
-    </section>
+        <div className="starter-prompts-v2-list" aria-label="办公任务示例">
+          {STARTER_PROMPTS.map((item) => (
+            <StarterCard
+              key={item.id}
+              item={item}
+              onSelect={() => props.onSelect(item)}
+            />
+          ))}
+        </div>
+      </section>
+      {props.shortcuts.length > 0 && (
+        <section
+          className="starter-shortcuts"
+          aria-labelledby="starter-shortcuts-title"
+        >
+          <h2 id="starter-shortcuts-title">工作流与扩展能力</h2>
+          <div className="starter-shortcuts-list">
+            {props.shortcuts.map((item) => (
+              <StarterCard
+                key={item.id}
+                item={item}
+                onSelect={item.onSelect}
+                shortcut
+              />
+            ))}
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
+function StarterCard({
+  item,
+  onSelect,
+  shortcut = false,
+}: {
+  item: Pick<StarterPrompt, "id" | "title" | "description" | "icon">;
+  onSelect: () => void;
+  shortcut?: boolean;
+}) {
+  const Icon = item.icon;
+  return (
+    <button
+      type="button"
+      className={`starter-prompt-v2${shortcut ? " starter-shortcut" : ""}`}
+      data-prompt={item.id}
+      onClick={onSelect}
+    >
+      <span className="starter-prompt-v2-icon" aria-hidden="true">
+        <Icon size={20} />
+      </span>
+      <span className="starter-prompt-v2-copy">
+        <strong>{item.title}</strong>
+        <small>{item.description}</small>
+      </span>
+      {shortcut && (
+        <ChevronRight
+          className="starter-shortcut-arrow"
+          size={16}
+          aria-hidden="true"
+        />
+      )}
+    </button>
   );
 }
