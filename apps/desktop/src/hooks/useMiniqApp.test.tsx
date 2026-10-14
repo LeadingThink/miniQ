@@ -14,6 +14,7 @@ import type { DaemonEvent } from "../types";
 import { useMiniqApp } from "./useMiniqApp";
 import { AppShell, getSendBlockedReason } from "../components/AppShell";
 import { DEFAULT_MODEL_SETTINGS, type SessionModelSettings } from "../modelSelection";
+import * as embeddedBrowser from "../embeddedBrowserDriver";
 
 const fake = vi.hoisted(() => ({
   call: vi.fn(),
@@ -586,10 +587,15 @@ it("unmounts the complete session page without orphaned child-task DOM nodes", a
 });
 
 it("gives the task browser the workbench without a competing review panel", async () => {
+  // This test checks panel ownership, not a real iframe navigation.
+  const execute = vi.spyOn(embeddedBrowser, "executeEmbeddedBrowserRequest").mockResolvedValue({
+    result: { url: "https://example.test/form" },
+    capabilities: { navigationControl: true, domSnapshot: true, screenshot: false, tabs: true, pointerInput: true, keyboardInput: true, selectInput: true },
+  });
   fake.mode = "local";
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   const original = fake.call.getMockImplementation()!;
-  fake.call.mockImplementation((method, params) => method === "session.diff"
+  fake.call.mockImplementation((method, params) => method === "browser.resolve" ? Promise.resolve({}) : method === "session.diff"
     ? Promise.resolve({ files: [{ path: "qa.txt", absolutePath: "/workspace/qa.txt", oldExists: true, newExists: true, binary: false, additions: 1, deletions: 0, hunks: [] }], additions: 1, deletions: 0 })
     : original(method, params));
   let app!: ReturnType<typeof useMiniqApp>;
@@ -614,10 +620,15 @@ it("gives the task browser the workbench without a competing review panel", asyn
       });
     });
     expect(await screen.findByRole("complementary", { name: "网页浏览器" }, { timeout: 10_000 })).toBeTruthy();
+    // Drain the browser operation before afterEach resets its RPC mock.
+    await waitFor(() => expect(fake.call).toHaveBeenCalledWith(
+      "browser.resolve", expect.objectContaining({ requestId: "open-task-page" }),
+    ), { timeout: 10_000 });
     expect(screen.queryByRole("complementary", { name: "代码修改审阅" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "关闭浏览器" }));
     expect(await screen.findByRole("complementary", { name: "代码修改审阅" })).toBeTruthy();
   } finally {
+    execute.mockRestore();
     cleanup();
     vi.unstubAllGlobals();
   }
