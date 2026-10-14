@@ -80,13 +80,15 @@ it("navigates all tool pages to active and failed steps without dropping history
   expect(screen.getByText("已执行 tool_0")).toBeTruthy();
 });
 
-it("shows automation activity and the latest observation by default", () => {
+it("shows automation activity after opening the execution details", () => {
   const calls = [
     { ...call(1), toolName: "computer_use", input: { action: "screenshot" } },
     { ...call(2), toolName: "computer_use", input: { action: "drag", x: 10, y: 20, endX: 10, endY: 220 } },
   ];
   render(<ToolGroup calls={calls} onRollback={() => {}} />);
   expect(screen.getByText("2 次桌面")).toBeTruthy();
+  expect(screen.queryByText("观察了桌面")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /2 个执行步骤/ }));
   expect(screen.getByText("观察了桌面")).toBeTruthy();
   expect(screen.getAllByText("向下拖动 200 px · (10, 20) -> (10, 220)")).toHaveLength(2);
   expect(screen.getByRole("button", { name: "查看详情" })).toBeTruthy();
