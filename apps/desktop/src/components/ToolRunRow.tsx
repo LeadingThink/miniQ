@@ -26,15 +26,12 @@ export function ToolRunRow({ run, onRollback, client, focusId, stepExpanded }: {
   stepExpanded: (call: ToolCall) => boolean;
 }) {
   const active = run.calls.find(isActiveCall);
-  const attention = run.calls.some(
-    (call) => (!call.payloadDeferred || call.live) && (call.status === "failed" || call.status === "waiting_approval"),
-  );
   const focused = run.calls.some((call) => call.id === focusId);
-  const [open, setOpen] = useState(attention || focused);
+  const [open, setOpen] = useState(focused);
   const regionId = useId();
   useEffect(() => {
-    if (attention || focused) setOpen(true);
-  }, [attention, focused]);
+    if (focused) setOpen(true);
+  }, [focused]);
   const summary = toolRunSummary(run);
   const failed = run.calls.filter((call) => FAILED.has(call.status)).length;
   const activeTitle = active ? toolStepTitle(active, true) : null;

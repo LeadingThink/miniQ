@@ -77,8 +77,10 @@ describe("semantic step views", () => {
     expect(screen.getByText("1 条结果")).toBeTruthy();
   });
 
-  it("surfaces a failed tool's error without opening the raw payload", () => {
+  it("shows a failed tool's error only after opening its details", () => {
     render(<ToolStep call={call("web_fetch", { url: "https://example.com" }, { error: "timeout" }, "failed")} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /读取了.*https:\/\/example.com/ }));
     expect(screen.getByRole("alert").textContent).toBe("timeout");
   });
 });
@@ -108,22 +110,22 @@ describe("merged tool runs", () => {
     expect(run.querySelector(".tool-duration")?.textContent).toMatch(/秒/);
   });
 
-  it("auto-expands a run with a live failure or approval and locates the failed step", async () => {
+  it("keeps failed and approval runs collapsed and expands a failed step on request", async () => {
     render(<ToolGroup onRollback={vi.fn()} expanded calls={[
       call("file_read", { path: "a.ts" }),
       call("file_read", { path: "b.ts" }, { error: "missing" }, "failed"),
       call("shell_run", { command: "rm -rf build" }, undefined, "waiting_approval"),
       call("shell_run", { command: "ls" }, undefined, "pending"),
     ]} />);
-    expect(screen.getByRole("button", { name: /读取了 2 个文件/ }).getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("alert").textContent).toBe("missing");
+    expect(screen.getByRole("button", { name: /读取了 2 个文件/ }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("alert")).toBeNull();
     const approval = screen.getAllByRole("button", { name: /正在运行\s*rm -rf build/ });
-    expect(approval).toHaveLength(2);
-    expect(approval[0].getAttribute("aria-expanded")).toBe("true");
+    expect(approval).toHaveLength(1);
+    expect(approval[0].getAttribute("aria-expanded")).toBe("false");
     expect(approval[0].textContent).toContain("等待确认");
-    fireEvent.click(screen.getByRole("button", { name: /读取了 2 个文件/ }));
     await act(async () => expand("定位失败步骤"));
     await waitFor(() => expect(screen.getByRole("button", { name: /读取了\s*b\.ts/ }).getAttribute("aria-expanded")).toBe("true"));
+    expect(screen.getByRole("alert").textContent).toBe("missing");
   });
 
   it("keeps per-step rollback inside a merged run", () => {

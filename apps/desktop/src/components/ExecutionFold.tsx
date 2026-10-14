@@ -11,14 +11,13 @@ export const InsideExecutionFold = createContext(false);
 
 /** One collapsible row per turn that stands in for every tool call, plan step
  * and intermediate note. Its header is the turn's only duration display:
- * "用时 xx" when finished, a live clock while this turn runs. It opens itself
- * whenever the turn needs the user. */
+ * "用时 xx" when finished, a live clock while this turn runs. Details open
+ * only when the user clicks the summary. */
 export function ExecutionFold({
   calls,
   timing,
   active,
   attention = false,
-  forceOpen = false,
   children,
 }: {
   calls: ToolCall[];
@@ -27,19 +26,17 @@ export function ExecutionFold({
   active: boolean;
   /** Pending approval or question on this turn. */
   attention?: boolean;
-  forceOpen?: boolean;
   children: ReactNode;
 }) {
   const data = executionSummary(calls, timing);
   const running = active && data.running;
-  const needsUser = attention || data.waitingApproval || data.failed > 0;
-  const [userOpen, setUserOpen] = useState<boolean | null>(null);
-  const open = forceOpen || (needsUser && userOpen !== false) || userOpen === true;
+  const [open, setOpen] = useState(false);
   const regionId = useId();
   const parts = [running
     ? `执行记录 · ${calls.filter((call) => call.status === "succeeded" && call.toolName !== "task_update").length} 项已完成`
     : `已执行 ${data.steps} 项操作`];
   if (active && data.waitingApproval) parts.push("等待确认");
+  else if (active && attention) parts.push("等待回复");
   if (data.failed) parts.push(`${data.failed} 项操作失败`);
   if (data.filesChanged) parts.push(`修改 ${data.filesChanged} 个文件`);
   if (!running && data.durationMs !== undefined) parts.push(`用时 ${compactDuration(data.durationMs)}`);
@@ -53,7 +50,7 @@ export function ExecutionFold({
         className="execution-fold-toggle"
         aria-expanded={open}
         aria-controls={regionId}
-        onClick={() => setUserOpen(!open)}
+        onClick={() => setOpen(!open)}
       >
         <span className="execution-fold-icon" aria-hidden="true">
           {data.failed || state === "failed" ? <CircleAlert size={14} /> : <Layers size={14} />}

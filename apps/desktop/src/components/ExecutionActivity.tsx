@@ -116,15 +116,9 @@ export function ToolStep(props: {
   onRollback?: (checkpointId: string) => void;
   defaultExpanded?: boolean;
 }) {
-  const needsAttention =
-    props.call.status === "failed" &&
-    (!props.call.payloadDeferred || props.call.live === true);
-  const [open, setOpen] = useState(needsAttention || props.defaultExpanded === true);
+  const [open, setOpen] = useState(props.defaultExpanded === true);
   const [rawOpen, setRawOpen] = useState(false);
   const detailId = useId();
-  useEffect(() => {
-    if (needsAttention) setOpen(true);
-  }, [needsAttention]);
   useEffect(() => {
     if (props.defaultExpanded) setOpen(true);
   }, [props.defaultExpanded]);

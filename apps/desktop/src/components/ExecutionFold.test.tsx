@@ -39,35 +39,55 @@ it("collapses a finished turn into one summary row and toggles details", () => {
   expect(screen.queryByText("工具明细")).toBeNull();
 });
 
-it("auto-expands on failures, pending approvals and questions", () => {
+it("keeps failures and pending approvals collapsed until clicked", () => {
   const { rerender } = render(
     <ExecutionFold calls={[call("a", "succeeded"), call("b", "failed")]} timing={done} active={false}>
       <p>失败明细</p>
     </ExecutionFold>,
   );
-  expect(screen.getByRole("button", { name: /1 项操作失败/ }).getAttribute("aria-expanded")).toBe("true");
-  expect(screen.getByText("失败明细")).toBeTruthy();
+  expect(screen.getByRole("button", { name: /1 项操作失败/ }).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("失败明细")).toBeNull();
 
   rerender(
     <ExecutionFold calls={[call("c", "waiting_approval")]} timing={{ startedAt: done.startedAt, status: "running" }} active>
       <p>审批卡片</p>
     </ExecutionFold>,
   );
+  expect(screen.queryByText("审批卡片")).toBeNull();
+  const toggle = screen.getByRole("button", { name: /等待确认/ });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
   expect(screen.getByText("审批卡片")).toBeTruthy();
-  expect(screen.getByRole("button", { name: /等待确认/ }).getAttribute("aria-expanded")).toBe("true");
 });
 
-it("keeps attention content visible with a static execution record while running", () => {
+it("keeps questions collapsed and displays their waiting state in the summary", () => {
   render(
     <ExecutionFold calls={[call("a", "succeeded"), call("b", "running")]} timing={{ startedAt: done.startedAt, status: "running" }} active attention>
       <p>请回答问题</p>
     </ExecutionFold>,
   );
-  const toggle = screen.getByRole("button", { expanded: true });
+  const toggle = screen.getByRole("button", { expanded: false });
   expect(toggle.textContent).toContain("执行记录 · 1 项已完成");
   expect(toggle.querySelector(".spin")).toBeNull();
   expect(toggle.textContent).not.toContain("正在运行");
+  expect(toggle.textContent).toContain("等待回复");
+  expect(screen.queryByText("请回答问题")).toBeNull();
+  fireEvent.click(toggle);
   expect(screen.getByText("请回答问题")).toBeTruthy();
+});
+
+it("does not reopen details when a running operation fails after manual collapse", () => {
+  const { rerender } = render(
+    <ExecutionFold calls={[call("a", "running")]} active><p>操作明细</p></ExecutionFold>,
+  );
+  const toggle = screen.getByRole("button");
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  expect(screen.getByText("操作明细")).toBeTruthy();
+  fireEvent.click(toggle);
+  rerender(<ExecutionFold calls={[call("a", "failed")]} active={false}><p>操作明细</p></ExecutionFold>);
+  expect(screen.getByRole("button", { name: /1 项操作失败/ }).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("操作明细")).toBeNull();
 });
 
 it("prefers the daemon turn summary over locally derived counts", () => {
@@ -132,10 +152,11 @@ it("shows a live 用时 only for the running turn and freezes it when the turn e
 
 it("says an interrupted turn has no end time instead of inventing a duration", () => {
   render(
-    <ExecutionFold calls={[call("a", "succeeded")]} timing={{ startedAt: done.startedAt, status: "interrupted" }} active={false} forceOpen>
+    <ExecutionFold calls={[call("a", "succeeded")]} timing={{ startedAt: done.startedAt, status: "interrupted" }} active={false}>
       <p>明细</p>
     </ExecutionFold>,
   );
   expect(screen.getByRole("button").textContent).toBe("已执行 1 项操作");
+  fireEvent.click(screen.getByRole("button"));
   expect(document.querySelector(".turn-timing-details")?.textContent).toMatch(/已中断，未记录结束时间$/);
 });

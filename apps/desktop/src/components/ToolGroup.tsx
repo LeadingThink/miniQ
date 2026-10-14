@@ -22,9 +22,6 @@ export function ToolGroup({
 }) {
   const bare = useContext(InsideExecutionFold);
   const counts = toolCounts(calls);
-  const liveAttention = calls.some(
-    (call) => (!call.payloadDeferred || call.live) && (call.status === "failed" || call.status === "waiting_approval"),
-  );
   const automationSummary = automationGroupSummary(calls);
   const lastAutomationIndex = calls.reduce(
     (last, call, index) => (isAutomationCall(call) ? index : last),
@@ -33,7 +30,7 @@ export function ToolGroup({
   const runningIndex = calls.findIndex((call) => ["running", "waiting_approval", "pending"].includes(call.status));
   const initialFocusIndex = runningIndex >= 0 ? runningIndex : lastAutomationIndex;
   const pageSize = 30;
-  const [openState, setOpen] = useState(expanded || liveAttention || automationSummary !== null);
+  const [openState, setOpen] = useState(expanded);
   const open = bare || openState;
   const [page, setPage] = useState(() => Math.max(0, Math.floor(initialFocusIndex / pageSize)));
   const regionId = useId();
@@ -42,23 +39,21 @@ export function ToolGroup({
   const failedIndex = calls.findIndex((call) => call.status === "failed");
   const [focusId, setFocusId] = useState<string | null>(null);
   const pageCalls = calls.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
-  const lastAutomationId = calls[lastAutomationIndex]?.id;
-  const stepExpanded = (call: ToolCall) => call.id === focusId || call.id === lastAutomationId;
+  const stepExpanded = (call: ToolCall) => call.id === focusId;
   const showPage = (index: number) => {
     setOpen(true);
     setPage(Math.floor(index / pageSize));
     setFocusId(calls[index].id);
   };
   useEffect(() => {
-    if (liveAttention || expanded) setOpen(true);
-  }, [liveAttention, expanded]);
+    if (expanded) setOpen(true);
+  }, [expanded]);
   if (calls.length === 1) {
     return (
       <ToolStep
         call={calls[0]}
         onRollback={onRollback}
         client={client}
-        defaultExpanded={isAutomationCall(calls[0])}
       />
     );
   }
