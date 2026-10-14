@@ -5,6 +5,7 @@ import { useDesktopHost } from "../desktopHost";
 import { hostKey } from "../hostWorkspace";
 import { sessionStatusLabel } from "../sessionStatus";
 import { RemoteDeviceBarContext } from "../remoteDeviceBar";
+import { RemoteComputerPicker } from "./RemoteComputerPicker";
 import "./RemoteConnectionStatus.css";
 
 /** Window event that opens the connection details dialog, e.g. from the toolbar menu. */
@@ -49,16 +50,16 @@ export function RemoteConnectionStatus({ app, onToggleReview }: { app: MiniqAppC
     return () => window.removeEventListener(REMOTE_CONNECTION_DETAILS_EVENT, openDetails);
   }, [app]);
   const linked = online && connected;
+  const identity = <span><strong>{session?.title || "选择一个会话，继续工作"}</strong><small><i className={`remote-presence-dot ${linked ? "ok" : "warn"}`} aria-hidden="true" />{[
+    app.client.sshHost ? machine : bar?.name || machine,
+    session ? sessionStatusLabel(session.status) : "",
+    workspace?.name ?? "",
+  ].filter(Boolean).join(" · ")}</small></span>;
   return <>
-    <button type="button" className="statusbar-identity" aria-label="查看完整会话标题与连接信息" aria-haspopup="dialog" onClick={(event) => show(event.currentTarget)}>
-      <span><strong>{session?.title || "选择一个会话，继续工作"}</strong><small><i className={`remote-presence-dot ${linked ? "ok" : "warn"}`} aria-hidden="true" />{[
-        // Phones hide RemoteWorkbench's device bar, so this line names the
-        // selected computer; an SSH host is named instead when one is used.
-        app.client.sshHost ? machine : bar?.name || machine,
-        session ? sessionStatusLabel(session.status) : "",
-        workspace?.name ?? "",
-      ].filter(Boolean).join(" · ")}</small></span><ChevronDown size={15} />
-    </button>
+    {bar ? <RemoteComputerPicker bar={bar} onDetails={() => show(null)}>{identity}</RemoteComputerPicker> :
+      <button type="button" className="statusbar-identity" aria-label="查看完整会话标题与连接信息" aria-haspopup="dialog" onClick={(event) => show(event.currentTarget)}>
+        {identity}<ChevronDown size={15} />
+      </button>}
     <button type="button" className={`connection-state remote-connection-trigger ${linked ? "connected" : "reconnecting"}`} aria-haspopup="dialog" aria-label={`${label}，查看连接详情`} title="查看连接状态、切换电脑或打开连接设置" onClick={(event) => show(event.currentTarget)}>
       {!online ? <WifiOff size={14} /> : connected ? <Wifi size={14} /> : <LoaderCircle className="connection-spinner" size={14} />}<span>{label}</span><span className="remote-connection-short" aria-hidden="true">{!online ? "网络断开" : "重连中"}</span><ChevronDown size={12} />
     </button>

@@ -1,0 +1,14 @@
+.reasoning-info-popover {
+  box-sizing: border-box;
+  width: min(280px, calc(100vw - 16px));
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.reasoning-info-popover p {
+  color: var(--text-mid);
+  margin: 8px 0;
+}
+.reasoning-info-popover button {
+  min-height: 44px;
+}

@@ -42,9 +42,8 @@
     max-height: calc(var(--app-height, 100dvh) - max(8px, var(--safe-top)) - max(8px, var(--safe-bottom)));
     padding: 16px;
   }
-  /* Phone remote header: a single row. The identity button opens the same
-     connection dialog, so the healthy-connection chip is hidden; it comes back
-     with its label whenever the link is degraded. */
+  /* Phone remote header: a single row. The computer dropdown also offers
+     connection details; show a separate status chip only for a degraded link. */
   .statusbar:has(.statusbar-identity) { flex-wrap: nowrap; gap: 2px; min-height: 0; padding-top: max(4px, var(--safe-top)); padding-bottom: 4px; }
   .statusbar:has(.statusbar-identity) > span[style] { display: none; }
   .statusbar:has(.statusbar-identity) .statusbar-identity { flex: 1 1 auto; max-width: none; padding: 2px 4px; }

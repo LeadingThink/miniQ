@@ -128,7 +128,7 @@ describe("AppStatusBar", () => {
     const dispatch = vi.spyOn(window, "dispatchEvent");
     const app = appFixture(true, "remote");
     render(
-      <RemoteDeviceBarContext.Provider value={{ name: "电脑A", online: true, onSwitch, onSwitchMode, onAppearance }}>
+      <RemoteDeviceBarContext.Provider value={{ name: "电脑A", online: true, devices: [], selected: null, loading: false, error: null, onSelect: vi.fn(), onRefresh: vi.fn(), onSwitch, onSwitchMode, onAppearance }}>
         <AppStatusBar
           app={app}
           onOpenBrowser={() => {}}

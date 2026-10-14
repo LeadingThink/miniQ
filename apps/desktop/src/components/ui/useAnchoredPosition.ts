@@ -31,21 +31,42 @@ export function useAnchoredPosition(
         pointX !== undefined && pointY !== undefined
           ? { left: pointX, top: pointY, bottom: pointY }
           : anchor!.getBoundingClientRect();
-      const box = floating.getBoundingClientRect();
-      setPosition(
-        menuPosition(
-          { left: trigger.left, top: trigger.top, bottom: trigger.bottom },
-          { width: box.width, height: box.height },
-          { width: window.innerWidth, height: window.innerHeight },
-        ),
+      const viewport = window.visualViewport;
+      const left = viewport?.offsetLeft ?? 0;
+      const top = viewport?.offsetTop ?? 0;
+      // Layout dimensions exclude the pop-in animation's scale/translation.
+      const next = menuPosition(
+        {
+          left: trigger.left - left,
+          top: trigger.top - top,
+          bottom: trigger.bottom - top,
+        },
+        {
+          width: floating.offsetWidth,
+          height: Math.max(floating.offsetHeight, floating.scrollHeight),
+        },
+        {
+          width: viewport?.width ?? window.innerWidth,
+          height: viewport?.height ?? window.innerHeight,
+        },
       );
+      setPosition({ ...next, left: next.left + left, top: next.top + top });
     };
     update();
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
+    window.visualViewport?.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("scroll", update);
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    if (floatingRef.current) observer?.observe(floatingRef.current);
+    if (anchorRef.current) observer?.observe(anchorRef.current);
     return () => {
+      observer?.disconnect();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
+      window.visualViewport?.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("scroll", update);
     };
   }, [anchorRef, floatingRef, open, pointX, pointY]);
   return position;

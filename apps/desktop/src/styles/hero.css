@@ -157,18 +157,33 @@
     padding: 14px;
   }
   .hero .composer-card .composer-row > .session-model-controls {
-    flex: 1 1 160px;
-    flex-wrap: wrap;
+    flex: 1 1 0%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 76px;
     gap: 4px;
   }
   .hero .composer-card .model-trigger {
-    flex: 1 1 auto;
+    width: 100%;
+    max-width: none;
+    min-height: 44px;
     font-size: 11px;
   }
+  .hero .model-trigger > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hero .session-model-controls > .model-error {
+    grid-column: 1 / -1;
+  }
   .hero .composer-card .session-model-controls .mode-trigger {
-    min-height: 36px;
+    width: 100%;
+    min-height: 44px;
     padding-inline: 4px;
     font-size: 11px;
+    white-space: nowrap;
+    justify-content: center;
   }
   .hero .composer-row .composer-plus-trigger {
     width: 44px;
@@ -196,5 +211,13 @@
     color: var(--text-mid);
     font-size: 12px;
     font-weight: 600;
+  }
+}
+
+/* Keep both selectors together when attachment, voice and send need a second row. */
+@media (max-width: 380px) {
+  .hero .composer-card .composer-row > .session-model-controls {
+    flex-basis: 100%;
+    order: -1;
   }
 }

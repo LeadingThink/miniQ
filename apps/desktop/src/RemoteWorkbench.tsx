@@ -78,7 +78,11 @@ export function RemoteWorkbench({ credentials, theme, onThemeChange, onExit, onA
     if (notification?.target.targetDeviceId !== device.id) { notificationController.current?.abort(); setNotification(null); }
   };
   const online = directory.error || directory.loading ? null : !!current?.online;
-  const bar: RemoteDeviceBar = { name: current?.name ?? "", online, onSwitch: () => setChoosing(true), onSwitchMode, onAppearance };
+  const bar: RemoteDeviceBar = {
+    name: current?.name ?? "", online, devices: directory.devices, selected: current,
+    loading: directory.loading, error: directory.error, onSelect: choose, onRefresh: directory.refresh,
+    onSwitch: () => setChoosing(true), onSwitchMode, onAppearance,
+  };
   return <div className="remote-workbench">
     <header className="remote-desktop-bar"><button type="button" onClick={() => setChoosing((value) => !value)} aria-expanded={choosing || !current}>
       {current?.name || "选择连接的电脑"}<span>{online === null ? "状态待确认" : online ? "在线" : current ? "离线" : ""} · 切换电脑</span>

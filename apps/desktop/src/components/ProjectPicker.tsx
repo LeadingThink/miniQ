@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Folder, FolderOpen, Plus } from "lucide-react";
 import { moveMenuIndex } from "../menuNavigation";
 import type { Workspace } from "../types";
+import { Popover } from "./ui/Popover";
 
 interface ProjectPickerProps {
   workspaces: Workspace[];
@@ -25,22 +26,11 @@ interface ProjectMenuProps {
   onActiveIndexChange: (index: number) => void;
   onSubmitNewName: () => void;
   onOpenFolder: () => void;
-  onClose: () => void;
 }
 
 function ProjectMenu(props: ProjectMenuProps) {
   return (
-    <div
-      className="mode-menu project-menu"
-      role="dialog"
-      aria-label="选择项目"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          props.onClose();
-        }
-      }}
-    >
+    <>
       <input
         className="project-search"
         placeholder="搜索项目"
@@ -97,6 +87,7 @@ function ProjectMenu(props: ProjectMenuProps) {
                 </svg>
               )}
             </div>
+            <div className="mode-item-desc">{workspace.path}</div>
           </button>
         ))}
         {props.results.length === 0 && (
@@ -115,7 +106,10 @@ function ProjectMenu(props: ProjectMenuProps) {
             onChange={(e) => props.onNewNameChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") props.onSubmitNewName();
-              if (e.key === "Escape") props.onNamingChange(false);
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                props.onNamingChange(false);
+              }
             }}
           />
           <button
@@ -144,7 +138,7 @@ function ProjectMenu(props: ProjectMenuProps) {
           使用现有文件夹
         </div>
       </button>
-    </div>
+    </>
   );
 }
 
@@ -156,35 +150,24 @@ export function ProjectPicker(props: ProjectPickerProps) {
   const [naming, setNaming] = useState(false);
   const [newName, setNewName] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
-  const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const closeMenu = (restoreFocus = false) => {
+  const closeMenu = useCallback(() => {
     setOpen(false);
     setNaming(false);
     setQuery("");
     setActiveIndex(0);
-    if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus());
-  };
+  }, []);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        closeMenu();
-      }
-    };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
-
-  const selected = props.workspaces.find((w) => w.id === props.selectedId) ?? null;
+  const selected =
+    props.workspaces.find((w) => w.id === props.selectedId) ?? null;
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = q
-      ? props.workspaces.filter((w) => w.name.toLowerCase().includes(q))
+    return q
+      ? props.workspaces.filter((w) =>
+          `${w.name}\n${w.path}`.toLowerCase().includes(q),
+        )
       : props.workspaces;
-    return list.slice(0, 8);
   }, [query, props.workspaces]);
 
   useEffect(() => {
@@ -200,20 +183,26 @@ export function ProjectPicker(props: ProjectPickerProps) {
   };
 
   return (
-    <div className="mode-select" ref={ref}>
+    <div className="mode-select">
       <button
         ref={triggerRef}
         type="button"
         className="mode-trigger"
         aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={() => (open ? closeMenu(true) : setOpen(true))}
+        onClick={() => (open ? closeMenu() : setOpen(true))}
       >
         <Folder className="mode-icon" />
         {selected ? selected.name : "选择项目"}
         <ChevronDown className="mode-caret" />
       </button>
-      {open && (
+      <Popover
+        open={open}
+        anchorRef={triggerRef}
+        onClose={closeMenu}
+        label="选择项目"
+        className="mode-menu project-menu"
+      >
         <ProjectMenu
           query={query}
           results={results}
@@ -234,9 +223,8 @@ export function ProjectPicker(props: ProjectPickerProps) {
             closeMenu();
             props.onOpenFolder();
           }}
-          onClose={() => closeMenu(true)}
         />
-      )}
+      </Popover>
     </div>
   );
 }

@@ -17,10 +17,11 @@ export interface PopoverProps {
 export function Popover(props: PopoverProps) {
   const panel = useRef<HTMLDivElement>(null);
   const position = useAnchoredPosition(props.anchorRef, panel, props.open);
+  const positioned = position !== null;
   const { open, onClose, anchorRef } = props;
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !positioned) return;
     const container = panel.current;
     if (container) {
       const preferred = container.querySelector<HTMLElement>("[data-autofocus]");
@@ -33,7 +34,7 @@ export function Popover(props: PopoverProps) {
     };
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [anchorRef, onClose, open]);
+  }, [anchorRef, onClose, open, positioned]);
 
   if (!open) return null;
   return createPortal(

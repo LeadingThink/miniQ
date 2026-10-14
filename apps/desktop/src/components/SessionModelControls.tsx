@@ -2,16 +2,14 @@ import { ModelRankingLink } from "./ModelRankingLink";
 import { Check, ChevronDown, Cpu, RefreshCw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  EFFORT_LABELS,
   DEFAULT_MODEL_SETTINGS,
   filterModelIds,
   type ModelDescription,
-  type ReasoningEffort,
 } from "../modelSelection";
 import type { RpcClient } from "../rpc";
 import type { useSessionModel } from "../hooks/useSessionModel";
 import { SessionModelSurface } from "./SessionModelSurface";
-import { MenuSelect } from "./MenuSelect";
+import { SessionReasoningControl } from "./SessionReasoningControl";
 
 const MODEL_DIALOG_QUERY = "(max-width: 720px), (pointer: coarse)";
 function needsModelDialog() {
@@ -184,28 +182,18 @@ export function SessionModelControls({
         <Cpu size={14} />
         <span>{model.effective?.model ?? "模型"}</span>
       </button>
-      <MenuSelect<ReasoningEffort | "">
-        menuLabel="会话推理强度"
-        title={
-          description?.reasoningEfforts.length
-            ? "推理强度"
-            : "使用模型默认推理设置"
-        }
-        disabled={disabled || !description?.reasoningEfforts.length}
-        value={model.settings.reasoningEffort ?? ""}
-        options={[
-          { value: "", label: "默认推理" },
-          ...(description?.reasoningEfforts ?? []).map((effort) => ({
-            value: effort,
-            label: EFFORT_LABELS[effort],
-          })),
-        ]}
+      <SessionReasoningControl
+        description={description}
+        error={descriptionError}
+        disabled={disabled}
+        value={model.settings.reasoningEffort}
+        onRetry={() => setAttempt((current) => current + 1)}
         onChange={(effort) =>
           void model
             .update({
               ...model.settings,
               apiProtocol: "auto",
-              reasoningEffort: effort || null,
+              reasoningEffort: effort,
             })
             .catch(() => {})
         }

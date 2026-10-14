@@ -6,11 +6,17 @@ import type { useDesktopHost } from "./desktopHost";
 import { hostKey } from "./hostWorkspace";
 import { rememberSelectedDesktop } from "./remoteDevices";
 import { readFileSync } from "node:fs";
+import { useContext } from "react";
+import { RemoteDeviceBarContext, type RemoteDeviceBar } from "./remoteDeviceBar";
+let latestBar: RemoteDeviceBar | null = null;
 const state = vi.hoisted(() => ({ desktop: null as ReturnType<typeof useDesktopHost>, directory: { scope: "room", devices: [] as { id: string; name: string; online: boolean }[], loading: false, error: "", refresh: vi.fn() }, roots: [] as { targetDeviceId: string; disconnect: ReturnType<typeof vi.fn> }[] }));
 vi.mock("./hooks/useRemoteDevices", () => ({ useRemoteDevices: () => state.directory }));
 vi.mock("./rpc", () => ({ RpcClient: class { targetDeviceId: string; disconnect = vi.fn(); constructor(info: {targetDeviceId: string}) { this.targetDeviceId = info.targetDeviceId; state.roots.push(this); } } }));
 vi.mock("./desktopHost", () => ({ DesktopHostProvider: ({children}: {children: React.ReactNode}) => children, useDesktopHost: () => state.desktop }));
-vi.mock("./ConnectedApp", () => ({ default: () => <div>工作台</div> }));
+vi.mock("./ConnectedApp", () => ({ default: () => {
+  latestBar = useContext(RemoteDeviceBarContext);
+  return <div>工作台</div>;
+} }));
 vi.mock("./taskBanner", () => ({ dismissTaskBanner: vi.fn() }));
 const credentials = { apiKey: "test", relayUrl: "wss://relay.test", deviceId: "phone", deviceName: "phone" };
 const a = { id: "a", name: "电脑A", online: false }, b = { id: "b", name: "电脑B", online: true };
@@ -113,4 +119,19 @@ it("clears a missing-target notification and aborts an older asynchronous destin
   view.rerender(<RemoteWorkbench credentials={credentials} theme="night" onThemeChange={() => {}} />);
   fireEvent.click(screen.getByRole("button", { name: "返回当前电脑" }));
   expect(openSession).toHaveBeenCalledTimes(1);
+});
+
+it("connects directly through the header picker using the selected computer's own workbench", async () => {
+  rememberSelectedDesktop("room", a);
+  render(<RemoteWorkbench credentials={credentials} theme="night" onThemeChange={() => {}} />);
+  await screen.findByText("工作台");
+  expect(latestBar?.selected?.id).toBe("a");
+  expect(latestBar?.devices).toEqual([b]);
+  const original = state.roots[0];
+  act(() => latestBar!.onSelect(b));
+  await waitFor(() => expect(state.roots).toHaveLength(2));
+  expect(original.disconnect).toHaveBeenCalledWith("selected computer changed");
+  expect(state.roots[1].targetDeviceId).toBe("b");
+  await waitFor(() => expect(latestBar?.selected?.id).toBe("b"));
+  expect(screen.queryByRole("region", { name: "选择连接的电脑" })).toBeNull();
 });
