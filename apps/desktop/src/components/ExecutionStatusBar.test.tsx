@@ -91,6 +91,7 @@ it("shows automation activity after opening the execution details", () => {
   fireEvent.click(screen.getByRole("button", { name: /2 个执行步骤/ }));
   expect(screen.getByText("观察了桌面")).toBeTruthy();
   expect(screen.getAllByText("向下拖动 200 px · (10, 20) -> (10, 220)")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: /观察了桌面/ }));
   expect(screen.getByRole("button", { name: "查看详情" })).toBeTruthy();
 });
 
