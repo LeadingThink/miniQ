@@ -4,7 +4,7 @@
   box-sizing: border-box;
   width: min(760px, calc(100vw - 32px));
   height: auto;
-  max-height: calc(var(--app-height, 100dvh) - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height: calc(var(--app-height, 100dvh) - 32px - var(--safe-top, 0px) - var(--safe-bottom, 0px));
   min-height: 0;
   padding: 22px;
   gap: 13px;
