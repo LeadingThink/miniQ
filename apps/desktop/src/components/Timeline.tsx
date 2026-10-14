@@ -4,7 +4,7 @@ import {
   ChevronUp,
   RefreshCw,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchNavigation } from "../hooks/useSearchNavigation";
 import { findHitElement, type SearchHit } from "../sessionSearch";
 import { SessionSearchNavigator } from "./SessionSearchNavigator";
@@ -74,6 +74,7 @@ export interface TimelineProps {
   busy: boolean;
   agents?: AgentSummary[];
   onOpenAgentPanel?: (agentId?: string) => void;
+  summary?: ReactNode;
   onResolveApproval: (approvalId: string, decision: string) => void;
   onResolveQuestion: QuestionCardProps["onResolve"];
   onRollback: (checkpointId: string) => void;
@@ -292,6 +293,7 @@ export function Timeline(props: TimelineProps) {
           onShare={props.client && props.sessionId ? () => setShowShare(true) : undefined}
           onDiagnostics={props.client && props.sessionId ? () => setShowDiagnostics(true) : undefined}
           onExport={(format) => void exportSession(format)}
+          summary={props.summary}
           onStep={searching ? navigation.step : undefined}
           navigator={searching && !historySearch.error ? (
             <SessionSearchNavigator

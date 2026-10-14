@@ -187,28 +187,6 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
           app.actions.setHistoryPrefetchPinned(root.scrollHeight - root.scrollTop - root.clientHeight < 120);
         }
       }}>
-        <SessionSummaryCard
-          diff={app.review.data}
-          agents={agentSummary.agents}
-          agentError={agentSummary.error}
-          sources={sources}
-          pullRequests={pullRequests}
-          expanded={summarySection}
-          onExpandedChange={setSummarySection}
-          onOpenReview={onOpenReview}
-          onOpenUrl={onOpenUrl}
-          agentPanel={
-            <AgentPanel
-              client={app.client}
-              sessionId={app.catalog.currentSessionId!}
-              busy={!!app.busy}
-              agents={agentSummary.agents}
-              agentError={agentSummary.error}
-              onRefreshAgents={agentSummary.refresh}
-              focusRequest={agentFocus}
-            />
-          }
-        />
         <Suspense
           fallback={
             <div className="timeline-loading">
@@ -241,6 +219,30 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
             turnProgress={app.feed.turnProgress}
             agents={agentSummary.agents}
             onOpenAgentPanel={openAgentPanel}
+            summary={
+              <SessionSummaryCard
+                diff={app.review.data}
+                agents={agentSummary.agents}
+                agentError={agentSummary.error}
+                sources={sources}
+                pullRequests={pullRequests}
+                expanded={summarySection}
+                onExpandedChange={setSummarySection}
+                onOpenReview={onOpenReview}
+                onOpenUrl={onOpenUrl}
+                agentPanel={
+                  <AgentPanel
+                    client={app.client}
+                    sessionId={app.catalog.currentSessionId!}
+                    busy={!!app.busy}
+                    agents={agentSummary.agents}
+                    agentError={agentSummary.error}
+                    onRefreshAgents={agentSummary.refresh}
+                    focusRequest={agentFocus}
+                  />
+                }
+              />
+            }
             latestTurnTiming={app.feed.latestTurnTiming}
             busy={!!app.busy}
             onResolveApproval={app.actions.resolveApproval}

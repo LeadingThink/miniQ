@@ -19,6 +19,8 @@ export function TimelineToolbar(props: {
   onExport: (format: "md" | "json") => void;
   /** Result counter and stepping controls, shown while searching. */
   navigator?: ReactNode;
+  /** Session context summary, placed before the more-actions menu. */
+  summary?: ReactNode;
   /** Enter steps to an older match; Shift+Enter steps to a newer one. */
   onStep?: (direction: -1 | 1) => void;
 }) {
@@ -68,6 +70,7 @@ export function TimelineToolbar(props: {
         {props.query && <button type="button" className="icon-button" title="清空会话搜索" aria-label="清空会话搜索" onClick={() => props.onQuery("")}><X size={14} /></button>}
       </label>
       {props.navigator}
+      {props.summary}
       <div className="timeline-actions">
         <button ref={menu} type="button" className="timeline-actions-trigger" title="更多会话操作" aria-label="更多会话操作" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
           {props.exporting ? <LoaderCircle size={18} className="activity-spinner" /> : <MoreHorizontal size={18} />}

@@ -82,9 +82,11 @@ it("lists sources and pull requests and opens them in the embedded browser", () 
 
 it("remembers the collapsed state", () => {
   render(<Harness diff={{ files: [{}], additions: 1, deletions: 0 }} />);
-  fireEvent.click(screen.getByRole("button", { name: "收起会话摘要" }));
-  expect(window.localStorage.getItem("miniq.sessionSummary.collapsed")).toBe("1");
+  const trigger = screen.getByRole("button", { name: "会话摘要" });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(trigger);
+  expect(window.localStorage.getItem("miniq.sessionSummary.collapsed")).toBe("0");
   cleanup();
   render(<Harness diff={{ files: [{}], additions: 1, deletions: 0 }} />);
-  expect(screen.getByRole("button", { name: "展开会话摘要" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "会话摘要" }).getAttribute("aria-expanded")).toBe("true");
 });

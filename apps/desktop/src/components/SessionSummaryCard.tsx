@@ -26,9 +26,10 @@ export interface SessionSummaryCardProps {
 
 function readCollapsed(): boolean {
   try {
-    return window.localStorage.getItem(COLLAPSED_KEY) === "1";
+    const stored = window.localStorage.getItem(COLLAPSED_KEY);
+    return stored === null || stored === "1";
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -39,9 +40,8 @@ export function agentProgress(agents: readonly AgentSummary[]) {
   };
 }
 
-/** Session-level context: changes, child agents, web sources and pull
- * requests. A floating card on wide layouts and one chip row on narrow ones;
- * empty sections are omitted and the card disappears when all are empty. */
+/** Session-level context shown from the conversation toolbar. Empty sections
+ * are omitted and the control disappears when all sections are empty. */
 export function SessionSummaryCard(props: SessionSummaryCardProps) {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const hasChanges = props.diff.files.length > 0;
@@ -79,20 +79,19 @@ export function SessionSummaryCard(props: SessionSummaryCardProps) {
 
   return (
     <aside className={`session-summary${collapsed ? " is-collapsed" : ""}`} aria-label="会话摘要">
-      <div className="session-summary-head">
+      <button
+        type="button"
+        className="session-summary-trigger"
+        aria-expanded={!collapsed}
+        aria-controls="session-summary-popover"
+        title={collapsed ? "展开会话摘要" : "收起会话摘要"}
+        onClick={toggleCollapsed}
+      >
         <span>会话摘要</span>
-        <button
-          type="button"
-          className="icon-button"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? "展开会话摘要" : "收起会话摘要"}
-          title={collapsed ? "展开会话摘要" : "收起会话摘要"}
-          onClick={toggleCollapsed}
-        >
-          {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-        </button>
-      </div>
-      <div className="session-summary-items">
+        {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+      </button>
+      <div id="session-summary-popover" className="session-summary-popover">
+        <div className="session-summary-items">
         {hasChanges && (
           <button
             type="button"
@@ -128,36 +127,37 @@ export function SessionSummaryCard(props: SessionSummaryCardProps) {
           <GitPullRequest size={14} aria-hidden="true" />,
           props.pullRequests.length,
         )}
-      </div>
-      {props.expanded === "agents" && hasAgents && (
-        <div id="session-summary-agents" className="session-summary-detail">
-          {props.agentPanel}
         </div>
-      )}
-      {props.expanded === "sources" && hasSources && (
-        <ul id="session-summary-sources" className="session-summary-detail session-summary-links" aria-label="来源">
-          {props.sources.map((source) => (
-            <li key={source.url}>
-              <button type="button" title={source.url} onClick={() => props.onOpenUrl(source.url)}>
-                <strong>{source.title ?? source.domain}</strong>
-                <small>{source.domain}{source.via === "search" ? " · 搜索结果" : ""}</small>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {props.expanded === "pulls" && hasPulls && (
-        <ul id="session-summary-pulls" className="session-summary-detail session-summary-links" aria-label="拉取请求">
-          {props.pullRequests.map((pull) => (
-            <li key={pull.url}>
-              <button type="button" title={pull.url} onClick={() => props.onOpenUrl(pull.url)}>
-                <strong>#{pull.number}</strong>
-                <small>{pull.owner}/{pull.repo}</small>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+        {props.expanded === "agents" && hasAgents && (
+          <div id="session-summary-agents" className="session-summary-detail">
+            {props.agentPanel}
+          </div>
+        )}
+        {props.expanded === "sources" && hasSources && (
+          <ul id="session-summary-sources" className="session-summary-detail session-summary-links" aria-label="来源">
+            {props.sources.map((source) => (
+              <li key={source.url}>
+                <button type="button" title={source.url} onClick={() => props.onOpenUrl(source.url)}>
+                  <strong>{source.title ?? source.domain}</strong>
+                  <small>{source.domain}{source.via === "search" ? " · 搜索结果" : ""}</small>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {props.expanded === "pulls" && hasPulls && (
+          <ul id="session-summary-pulls" className="session-summary-detail session-summary-links" aria-label="拉取请求">
+            {props.pullRequests.map((pull) => (
+              <li key={pull.url}>
+                <button type="button" title={pull.url} onClick={() => props.onOpenUrl(pull.url)}>
+                  <strong>#{pull.number}</strong>
+                  <small>{pull.owner}/{pull.repo}</small>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </aside>
   );
 }

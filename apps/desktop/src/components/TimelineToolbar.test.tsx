@@ -85,3 +85,23 @@ it("renders all actions outside the clipped wallpaper header and dispatches each
   expect(onDiagnostics).toHaveBeenCalledOnce();
   expect(onExport.mock.calls).toEqual([["md"], ["json"]]);
 });
+
+it("places the session summary between search and the more-actions menu", () => {
+  render(
+    <TimelineToolbar
+      filter="all"
+      query=""
+      exporting={false}
+      onFilter={vi.fn()}
+      onQuery={vi.fn()}
+      onExport={vi.fn()}
+      summary={<button type="button">会话摘要</button>}
+    />,
+  );
+
+  const search = screen.getByRole("searchbox").closest("label")!;
+  const summary = screen.getByRole("button", { name: "会话摘要" });
+  const actions = screen.getByRole("button", { name: "更多会话操作" }).parentElement!;
+  expect(search.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(summary.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
