@@ -67,19 +67,7 @@ public class MiniqIapPlugin: CAPPlugin, CAPBridgedPlugin {
                     call.reject("Apple 商店在加载期间发生变化，请重新加载购买项目。", "iap_storefront_changed")
                     return
                 }
-                var result: [String: Any] = ["products": products.map(productPayload)]
-                if let storefront {
-                    result["storefront"] = [
-                        "id": storefront.id,
-                        "countryCode": storefront.countryCode,
-                        "countryName": Locale(identifier: "zh-Hans").localizedString(
-                            forRegionCode: storefront.countryCode
-                        ) ?? storefront.countryCode,
-                    ]
-                } else {
-                    result["storefront"] = NSNull()
-                }
-                call.resolve(result)
+                call.resolve(["products": products.map(productPayload)])
             } catch {
                 call.reject("无法加载 App 内购买项目", "iap_products_failed", error)
             }
@@ -97,8 +85,8 @@ public class MiniqIapPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         guard let price = call.getString("expectedPrice"),
               let expectedPrice = Decimal(string: price, locale: Locale(identifier: "en_US_POSIX")),
-              let currency = call.getString("expectedCurrency"), currency == "CNY" else {
-            call.reject("缺少有效的人民币商品价格")
+              let currency = call.getString("expectedCurrency"), !currency.isEmpty else {
+            call.reject("缺少有效的商品价格")
             return
         }
         Task {

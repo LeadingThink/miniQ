@@ -10,7 +10,7 @@
 
 在 App Store Connect → miniQ → 营利 → App 内购买项目，创建「消耗型」商品，不需要订阅组。
 
-| Product ID | 中国区售价及到账金额 |
+| Product ID | 固定人民币到账额度 |
 |---|---:|
 | com.leadingthink.miniq.credits.5 | ¥5 |
 | com.leadingthink.miniq.credits.10 | ¥10 |
@@ -21,7 +21,7 @@
 | com.leadingthink.miniq.credits.500 | ¥500 |
 | com.leadingthink.miniq.credits.1000 | ¥1000 |
 
-Product ID 逐字一致，价格与服务端白名单一致。充多少到账多少，不赠送。Apple 平台费用由业务承担。客户端暂时禁用非 CNY 和价格不符的商品，发布前核对销售地区，不要开启外币商品却没有兑换规则。
+Product ID 逐字一致，服务端按白名单发放上述固定人民币额度，不赠送、不换汇。各地区支付价格在 App Store Connect 设置，客户端直接显示 Apple 本地化价格并允许购买。例如 5 元额度包显示 USD 0.99 时，支付 USD 0.99、到账人民币 5 元。Apple 平台费用由业务承担，发布前核对各销售地区价格与成本。后端须删除旧的 CNY 和支付金额等于到账额度的限制，保留验签、商品白名单、账户绑定及幂等结算。
 
 完成付费 App 协议、税务及银行信息，配置商品本地化、价格及可售状态。商品审核截图使用实际 App 购买页面；首次 IAP 按 App Store Connect 要求随 App 版本一并送审。
 

@@ -29,23 +29,25 @@ it("binds a purchase to the logged-in account and finishes only after server ack
   expect(mocks.request.mock.invocationCallOrder[0]).toBeLessThan(mocks.finishTransaction.mock.invocationCallOrder[0]);
 });
 it.each([
-  { price: "14.99", currencyCode: "USD", reason: "币种不支持：Apple 返回 USD，目前仅支持人民币（CNY）。" },
-  { price: "98", currencyCode: "CNY", reason: "售价不匹配：Apple 返回 CNY 98，此额度包要求 CNY 100.00。" },
-])("explains why $currencyCode $price is blocked before payment", async ({ reason, ...product }) => {
+  { price: "14.99", currencyCode: "USD" },
+  { price: "98", currencyCode: "CNY" },
+  { price: "2200", currencyCode: "JPY" },
+])("accepts Apple's $currencyCode $price and credits the fixed pack value", async (product) => {
   mocks.getProducts.mockResolvedValue({ products: [{ ...product, productId: transaction.productId }] });
-  await expect(purchaseIosCredits(transaction.productId, context)).rejects.toThrow(reason);
-  expect(mocks.purchase).not.toHaveBeenCalled();
+  expect(await purchaseIosCredits(transaction.productId, context)).toEqual(receipt);
+  expect(mocks.purchase).toHaveBeenCalledWith({ productId: transaction.productId,
+    appAccountToken: context.appAccountToken, expectedPrice: product.price, expectedCurrency: product.currencyCode });
+  expect(mocks.finishTransaction).toHaveBeenCalledWith({ transactionId: "123" });
 });
-it("distinguishes a missing product from currency and price restrictions", async () => {
-  mocks.getProducts.mockResolvedValue({ products: [], storefront: null });
+it("rejects a missing product before payment", async () => {
+  mocks.getProducts.mockResolvedValue({ products: [] });
   await expect(purchaseIosCredits(transaction.productId, context)).rejects.toThrow("Apple 未返回此额度包");
   expect(mocks.purchase).not.toHaveBeenCalled();
 });
-it("preserves Apple's storefront independently of the product currency", async () => {
-  const storefront = { id: "143465", countryCode: "CHN", countryName: "中国大陆" };
+it("filters out unconfigured products regardless of currency", async () => {
   const product = { productId: transaction.productId, price: "14.99", currencyCode: "USD" };
-  mocks.getProducts.mockResolvedValue({ storefront, products: [product, { ...product, productId: "unconfigured" }] });
-  expect(await loadIosIapCatalog()).toEqual({ storefront, products: [product] });
+  mocks.getProducts.mockResolvedValue({ products: [product, { ...product, productId: "unconfigured" }] });
+  expect(await loadIosIapCatalog()).toEqual({ products: [product] });
 });
 it("blocks account switching before payment and mismatched ownership before submission", async () => {
   mocks.context.mockResolvedValue({ ...context, accountId: "u2" });
