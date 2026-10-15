@@ -265,15 +265,16 @@ it.each(["pagehide", "visibilitychange"])("checkpoints on %s without stopping or
   expect(JSON.parse(localStorage.getItem(MOBILE_CHAT_STORAGE_KEY) ?? "[]").at(-1)).not.toHaveProperty("status");
 });
 
-it("loads older history on demand without dropping any messages from storage", async () => {
+it("reveals older history with upward wheel gestures in a short viewport without dropping stored messages", async () => {
   const history = Array.from({ length: 80 }, (_, index) => ({ role: index % 2 ? "assistant" : "user", content: `消息 ${index}` }));
   localStorage.setItem(MOBILE_CHAT_STORAGE_KEY, JSON.stringify(history));
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ data: catalog })));
   render(<MobileChat apiKey="test-key" onBack={() => {}} />);
   expect(screen.queryByText("消息 0")).toBeNull();
   expect(screen.getByText("消息 79")).toBeTruthy();
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: /加载更早的消息/ })); });
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: /加载更早的消息/ })); });
+  expect(screen.queryByRole("button", { name: /加载更早的消息/ })).toBeNull();
+  await act(async () => { fireEvent.wheel(screen.getByRole("region", { name: "问答记录" }), { deltaY: -100 }); });
+  await act(async () => { fireEvent.wheel(screen.getByRole("region", { name: "问答记录" }), { deltaY: -100 }); });
   expect(screen.getByText("消息 0")).toBeTruthy();
   expect(JSON.parse(localStorage.getItem(MOBILE_CHAT_STORAGE_KEY) ?? "[]")).toHaveLength(80);
   await screen.findByText("custom-chat");
@@ -323,7 +324,7 @@ it("keeps expanded rows when sending new messages and deleting the first visible
   localStorage.setItem(MOBILE_CHAT_STORAGE_KEY, JSON.stringify(history));
   vi.stubGlobal("fetch", vi.fn((url: unknown) => Promise.resolve(modelRequest(url) ? json({ data: catalog }) : doneResponse("新回答"))));
   render(<MobileChat apiKey="test-key" onBack={() => {}} />);
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: /加载更早的消息/ })); });
+  await act(async () => { fireEvent.wheel(screen.getByRole("region", { name: "问答记录" }), { deltaY: -100 }); });
   await enterQuestion("新问题");
   await screen.findByText("新回答");
   expect(screen.getByText("旧消息 20")).toBeTruthy();

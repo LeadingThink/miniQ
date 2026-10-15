@@ -1,0 +1,14 @@
+.desktop-account-login {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.desktop-account-login p { margin: 0; color: var(--text-mid); line-height: 1.6; }
+.desktop-account-login .mobile-account-login { display: grid; gap: 12px; }
+.desktop-account-login h2 { margin: 0; font-size: var(--font-title3); }
+.desktop-account-login .mobile-entry-remember { display: flex; flex-direction: row; align-items: center; gap: 6px; flex-wrap: wrap; }
+.desktop-account-login .mobile-entry-remember input { width: auto; }
+.desktop-account-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.desktop-account-login [role="alert"] { color: var(--danger, #c33); }

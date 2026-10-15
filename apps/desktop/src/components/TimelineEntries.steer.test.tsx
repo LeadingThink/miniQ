@@ -68,12 +68,16 @@ it("keeps a steered message inside the turn it interrupted", () => {
   expect(turns[0].userMessageId).toBe("u1");
 });
 
-it("renders a steered message as an inline steer note in the process flow", () => {
+it("renders a steered message as an inline steer note in the process flow", async () => {
   const { container } = render(view({ busy: false, messages: steeredMessages, toolCalls: steeredTools }));
   expect(container.querySelectorAll(".timeline-turn")).toHaveLength(1);
   expect(container.querySelector("[data-execution-fold]")).toBeNull();
   const note = container.querySelector(".steer-note");
-  expect(note?.textContent).toBe("引导：改用 pnpm");
+  // Steer notes are process content and stay unmounted with the closed
+  // CompletedProcess disclosure, just like tool details.
+  expect(note).toBeNull();
+  fireEvent.click(container.querySelector(".completed-process summary")!);
+  await waitFor(() => expect(container.querySelector(".steer-note")?.textContent).toBe("引导：改用 pnpm"));
   expect(container.querySelector('[data-user-message-id="u2"]')).toBeNull();
 });
 

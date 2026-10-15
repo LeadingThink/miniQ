@@ -1,0 +1,64 @@
+// @vitest-environment jsdom
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import type { RpcClient } from "../rpc";
+import type { ToolCall } from "../types";
+import { useToolDetail } from "./useToolDetail";
+afterEach(cleanup);
+const summary: ToolCall = { id: "t", sessionId: "s", toolName: "file_read", input: {}, status: "succeeded", createdAt: "", payloadDeferred: true };
+it("defers folded RPC and caches across remounts with session/client/status isolation", async () => {
+  const rpc = vi.fn(async () => ({ ...summary, input: { path: "loaded" }, payloadDeferred: false }));
+  const client = { call: rpc } as unknown as RpcClient;
+  const hook = renderHook(({ open, call, client }) => useToolDetail(client, call, open), { initialProps: { open: false, call: summary, client } });
+  expect(rpc).not.toHaveBeenCalled();
+  hook.rerender({ open: true, call: summary, client });
+  await waitFor(() => expect(hook.result.current.loading).toBe(false));
+  hook.rerender({ open: false, call: { ...summary }, client });
+  hook.rerender({ open: true, call: { ...summary }, client });
+  expect(rpc).toHaveBeenCalledTimes(1);
+  hook.unmount();
+  const next = renderHook(({ call, client }) => useToolDetail(client, call, true), { initialProps: { call: summary, client } });
+  expect(rpc).toHaveBeenCalledTimes(1);
+  next.rerender({ call: { ...summary, sessionId: "other" }, client });
+  expect(next.result.current.call.input).toEqual({});
+  await waitFor(() => expect(next.result.current.loading).toBe(false));
+  next.rerender({ call: { ...summary, status: "failed" }, client });
+  await waitFor(() => expect(next.result.current.loading).toBe(false));
+  next.rerender({ call: summary, client: { call: rpc } as unknown as RpcClient });
+  await waitFor(() => expect(next.result.current.loading).toBe(false));
+  expect(rpc).toHaveBeenCalledTimes(4);
+});
+it("aborts on collapse, session/client changes and ignores late results", async () => {
+  const requests: { signal: AbortSignal; resolve: (call: ToolCall) => void }[] = [];
+  const rpc = vi.fn((_method, _params, options) => new Promise<ToolCall>((resolve) => requests.push({ signal: options.signal, resolve })));
+  const client = { call: rpc } as unknown as RpcClient;
+  const hook = renderHook(({ open, call, client }) => useToolDetail(client, call, open), { initialProps: { open: true, call: summary, client } });
+  hook.rerender({ open: false, call: summary, client });
+  expect(requests[0].signal.aborted).toBe(true);
+  await act(async () => requests[0].resolve({ ...summary, input: { path: "stale" }, payloadDeferred: false }));
+  expect(hook.result.current.call.input).toEqual({});
+  hook.rerender({ open: true, call: summary, client });
+  hook.rerender({ open: true, call: { ...summary, sessionId: "other" }, client });
+  expect(requests[1].signal.aborted).toBe(true);
+  hook.rerender({ open: true, call: summary, client: { call: rpc } as unknown as RpcClient });
+  expect(requests[2].signal.aborted).toBe(true);
+  hook.unmount();
+  expect(requests[3].signal.aborted).toBe(true);
+});
+
+it("isolates an in-place sshHost switch and does not retain oversized payloads across unmount", async () => {
+  const rpc = vi.fn(async () => ({ ...summary, output: "x".repeat(1024 * 1024), payloadDeferred: false }));
+  const mutable = { call: rpc, sshHost: "host-a" };
+  const client = mutable as unknown as RpcClient;
+  const hook = renderHook(() => useToolDetail(client, summary, true));
+  await waitFor(() => expect(hook.result.current.loading).toBe(false));
+  mutable.sshHost = "host-b";
+  hook.rerender();
+  expect(hook.result.current.call.payloadDeferred).toBe(true);
+  await waitFor(() => expect(hook.result.current.loading).toBe(false));
+  expect(rpc).toHaveBeenCalledTimes(2);
+  hook.unmount();
+  const next = renderHook(() => useToolDetail(client, summary, true));
+  await waitFor(() => expect(next.result.current.loading).toBe(false));
+  expect(rpc).toHaveBeenCalledTimes(3);
+});

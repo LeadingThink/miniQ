@@ -68,7 +68,7 @@ describe("TurnChangesCard", () => {
   it("summarizes the turn and lists the first three files", async () => {
     const { call, value } = setup(diffOnly);
     expect(await screen.findByText("已编辑 5 个文件")).toBeTruthy();
-    expect(call).toHaveBeenCalledWith("session.diff", { sessionId: "s1", scope: "turn", turnId: "m1" });
+    expect(call).toHaveBeenCalledWith("session.diff", { sessionId: "s1", scope: "turn", turnId: "m1" }, { signal: expect.any(AbortSignal) });
     const card = screen.getByRole("region", { name: "本轮文件改动" });
     expect(within(card).getByText("+10")).toBeTruthy();
     expect(within(card).getByText("-9")).toBeTruthy();
@@ -197,4 +197,29 @@ describe("turnHasFileWrites", () => {
     expect(turnHasFileWrites(turn("shell_exec"))).toBe(false);
     expect(turnHasFileWrites(turn("shell_exec", 2))).toBe(true);
   });
+});
+
+it("keeps folded diffs idle, cancels on collapse and reuses completed details", async () => {
+  const { ExecutionFold } = await import("./ExecutionFold");
+  let resolve!: (value: SessionDiff) => void;
+  const call = vi.fn((_method, _params, _options) => new Promise<SessionDiff>((done) => { resolve = done; }));
+  const value: TurnChangesContextValue = { client: { call } as unknown as RpcClient, sessionId: "s", busy: false, epoch: 0, openReview: vi.fn(), onReverted: vi.fn() };
+  render(<ToastProvider><TurnChangesContext.Provider value={value}>
+    <ExecutionFold calls={[]} active={false}><TurnChangesCard turnId="t" /></ExecutionFold>
+  </TurnChangesContext.Provider></ToastProvider>);
+  const toggle = screen.getByRole("button", { expanded: false });
+  expect(call).not.toHaveBeenCalled();
+  fireEvent.click(toggle);
+  expect(call).toHaveBeenCalledTimes(1);
+  fireEvent.click(toggle);
+  expect(call.mock.calls[0][2].signal.aborted).toBe(true);
+  await act(async () => resolve(FIVE_FILES));
+  fireEvent.click(toggle);
+  expect(call).toHaveBeenCalledTimes(2);
+  await act(async () => resolve(FIVE_FILES));
+  expect(screen.getByText("已编辑 5 个文件")).toBeTruthy();
+  fireEvent.click(toggle);
+  fireEvent.click(toggle);
+  expect(call).toHaveBeenCalledTimes(2);
+  expect(screen.getByText("已编辑 5 个文件")).toBeTruthy();
 });

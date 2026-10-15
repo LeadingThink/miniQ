@@ -6,6 +6,19 @@ use serde_json::{json, Value};
 use super::common::params;
 use crate::state::{AppState, ApprovalMode};
 
+/// Explicit secret read for authenticated local clients. HostOnly rejects relay
+/// callers, including host.call forwarding. A trusted desktop SSH connection
+/// has no remote origin and reads the target daemon's key.
+pub(super) fn provider_key(state: &AppState) -> Result<Value, RpcError> {
+    let settings = state.settings.lock().unwrap();
+    let api_key = settings
+        .provider
+        .as_ref()
+        .map(|provider| provider.api_key.as_str())
+        .filter(|key| !key.is_empty());
+    Ok(json!({ "apiKey": api_key }))
+}
+
 /// Return UI-safe settings without exposing an API key.
 pub(super) fn get(state: &AppState) -> Result<Value, RpcError> {
     let settings = state.settings.lock().unwrap().clone();
@@ -242,6 +255,66 @@ fn merged_key(new_key: Option<String>, existing: Option<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn provider_key_is_explicit_local_only_and_absent_from_public_settings() {
+        use miniq_protocol::RpcRequest;
+
+        let state = AppState::new(
+            miniq_memory::Store::open_in_memory().unwrap(),
+            "fixture".into(),
+            std::sync::Arc::new(miniq_models::mock::MockProvider::new(Vec::new())),
+        );
+        let read = || RpcRequest::new("key", "settings.providerKey", None);
+        let response = crate::gateway::dispatch(&state, read()).await;
+        assert_eq!(response.result, Some(json!({"apiKey": null})));
+        for key in ["", "fixture-provider-secret"] {
+            state.settings.lock().unwrap().provider = Some(miniq_models::ProviderConfig {
+                base_url: "https://fixture.test/v1".into(),
+                api_key: key.into(),
+                model: "fixture".into(),
+                api_protocol: ApiProtocol::Auto,
+                reasoning_effort: None,
+            });
+            // Trusted desktop SSH bridge requests also arrive without a remote origin.
+            let response = crate::gateway::dispatch(&state, read()).await;
+            assert_eq!(
+                response.result,
+                Some(json!({"apiKey": (!key.is_empty()).then_some(key)}))
+            );
+            for origin in ["remote", "remote:phone"] {
+                for request in [
+                    read(),
+                    RpcRequest::new(
+                        "key",
+                        "host.call",
+                        Some(json!({
+                            "hostId": "unconnected-fixture", "method": "settings.providerKey"
+                        })),
+                    ),
+                ] {
+                    let response =
+                        crate::gateway::dispatch(&state, request.with_origin(Some(origin.into())))
+                            .await;
+                    assert!(response.result.is_none());
+                    let error = response.error.unwrap();
+                    assert_eq!(error.code, ErrorCode::Unauthorized as i64);
+                    assert_eq!(error.data.as_ref().unwrap()["code"], "REMOTE_FORBIDDEN");
+                    assert_eq!(error.data.as_ref().unwrap()["reason"], "host_only");
+                    assert!(!serde_json::to_string(&error)
+                        .unwrap()
+                        .contains("fixture-provider-secret"));
+                }
+            }
+            for method in ["settings.get", "settings.schema"] {
+                let response =
+                    crate::gateway::dispatch(&state, RpcRequest::new("public", method, None)).await;
+                let value = response.result.unwrap();
+                assert!(!value.to_string().contains("fixture-provider-secret"));
+                assert!(!value.to_string().contains("\"apiKey\""));
+            }
+        }
+    }
 
     #[test]
     fn endpoint_changes_never_reuse_another_endpoints_key_and_logout_clears_it() {

@@ -113,6 +113,7 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "daemon.shutdownIfIdle"
         | "computer.requestPermission"
         | "settings.update"
+        | "settings.providerKey"
         | "workspace.open"
         | "workspace.updateRoots"
         | "externalSession.import"
@@ -320,6 +321,15 @@ mod tests {
     #[test]
     fn undeclared_methods_are_denied_by_default() {
         assert_eq!(reason(check("plugin.brandNew", None)), "undeclared");
+    }
+
+    #[test]
+    fn provider_key_is_host_only_even_through_ssh_forwarding() {
+        assert_eq!(level("settings.providerKey"), Some(RemoteLevel::HostOnly));
+        assert_eq!(reason(check("settings.providerKey", None)), "host_only");
+        let forwarded = json!({"hostId":"h", "method":"settings.providerKey"});
+        assert_eq!(reason(check("host.call", Some(&forwarded))), "host_only");
+        assert!(!audited("settings.providerKey"));
     }
 
     #[test]

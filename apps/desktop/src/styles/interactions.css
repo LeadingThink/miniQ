@@ -411,6 +411,49 @@
   gap: 11px;
 }
 
+.provider-key-field {
+  gap: 6px;
+}
+
+.provider-key-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.provider-key-input-wrap {
+  position: relative;
+  display: block;
+}
+
+.settings-panel .provider-key-input-wrap input {
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 78px;
+}
+
+.provider-key-actions {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+  transform: translateY(-50%);
+}
+
+.provider-key-action {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+}
+
+.provider-key-badge {
+  align-self: flex-start;
+  margin-top: -5px;
+}
+
 .settings-toggle-row {
   display: flex;
   align-items: center;

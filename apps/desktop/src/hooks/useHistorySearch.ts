@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { RpcClient } from "../rpc";
 import type { HistoryPage } from "../types";
 import type { TimelineFilter } from "../timelineModel";
@@ -11,40 +11,65 @@ export function useHistorySearch(client: RpcClient | undefined, sessionId: strin
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
-  const [before, setBefore] = useState<HistoryPage["nextCursor"]>(null);
-  useEffect(() => { setBefore(null); setError(null); }, [key]);
+  const pending = useRef<AbortController | null>(null);
+  const latest = useRef({ key, client, enabled });
+  latest.current = { key, client, enabled };
+
+  const fetchPage = useCallback(async (before: HistoryPage["nextCursor"], request: AbortController) => {
+    if (!client || !sessionId) return;
+    const current = () => !request.signal.aborted && latest.current.key === key && latest.current.client === client && latest.current.enabled;
+    try {
+      const page = await client.call<HistoryPage>("session.history", {
+        sessionId, filter, query: query.trim(), before,
+      }, { signal: request.signal });
+      if (!current()) return;
+      setResult((previous) => ({ key, page: before && previous?.key === key ? {
+        messages: [...page.messages, ...previous.page.messages],
+        toolCalls: [...page.toolCalls, ...previous.page.toolCalls],
+        nextCursor: page.nextCursor,
+      } : page }));
+      setError(null);
+    } catch (cause) {
+      if (current()) {
+        // Pagination errors belong to the scroll hook's bounded retry cycle.
+        if (!before) setError(errorMessage(cause));
+        return { error: cause };
+      }
+    } finally {
+      if (pending.current === request) pending.current = null;
+      if (current()) setLoading(false);
+    }
+  }, [client, sessionId, key, filter, query]);
+
   useEffect(() => {
-    if (!enabled || !client || !sessionId) return;
+    setError(null);
+    if (!enabled) { setLoading(false); return; }
     const request = new AbortController();
+    pending.current = request;
     setLoading(true);
-    const timer = window.setTimeout(() => {
-      void client.call<HistoryPage>("session.history", { sessionId, filter, query: query.trim(), before }, { signal: request.signal })
-        .then((page) => {
-          if (request.signal.aborted) return;
-          setResult((current) => ({ key, page: before && current?.key === key ? {
-            messages: [...page.messages, ...current.page.messages],
-            toolCalls: [...page.toolCalls, ...current.page.toolCalls],
-            nextCursor: page.nextCursor,
-          } : page }));
-          setError(null);
-        })
-        .catch((cause) => { if (!request.signal.aborted) setError(errorMessage(cause)); })
-        .finally(() => { if (!request.signal.aborted) setLoading(false); });
-    }, query ? 250 : 0);
-    return () => { window.clearTimeout(timer); request.abort(); };
-  }, [enabled, client, sessionId, key, filter, query, before, revision]);
+    const timer = window.setTimeout(() => { void fetchPage(null, request); }, query ? 250 : 0);
+    return () => {
+      window.clearTimeout(timer);
+      request.abort();
+      pending.current?.abort();
+      pending.current = null;
+    };
+  }, [enabled, fetchPage, revision]);
+
+  const loadOlder = useCallback(() => {
+    if (pending.current || result?.key !== key || !result.page.nextCursor) return;
+    const request = new AbortController();
+    pending.current = request;
+    setLoading(true);
+    return fetchPage(result.page.nextCursor, request);
+  }, [result, key, fetchPage]);
+
   return {
     enabled,
     page: result?.key === key ? result.page : null,
     loading: enabled && (loading || (!error && result?.key !== key)),
     error: enabled ? error : null,
-    loadOlder: () => {
-      if (loading || result?.key !== key || !result.page.nextCursor) return;
-      // A failed page keeps its cursor. Retrying that same cursor must issue a
-      // new request rather than setting React state to the unchanged value.
-      if (error) setRevision((value) => value + 1);
-      else setBefore(result.page.nextCursor);
-    },
+    loadOlder,
     retry: useCallback(() => setRevision((value) => value + 1), []),
   };
 }

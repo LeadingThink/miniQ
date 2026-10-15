@@ -4,7 +4,7 @@ import { loginIapAccount, requestIapLoginCode, type OneApiAccount } from "../mob
 
 export type AccountAction = (action: () => Promise<void>) => void;
 
-export function MobileAccountLogin(props: { busy: boolean; run: AccountAction; onLogin: (account: OneApiAccount) => void }) {
+export function MobileAccountLogin(props: { busy: boolean; run: AccountAction; onLogin: (account: OneApiAccount) => void | Promise<void>; embedded?: boolean; submitLabel?: string }) {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [consent, setConsent] = useState(hasMobilePrivacyConsent);
@@ -18,10 +18,17 @@ export function MobileAccountLogin(props: { busy: boolean; run: AccountAction; o
     if (!consent) throw new Error("请先阅读并同意隐私政策。");
     recordMobilePrivacyConsent();
   };
-  return <form className="mobile-account-login" onSubmit={(event) => {
+  const login = () => props.run(async () => { accept(); await props.onLogin(await loginIapAccount(phone, code)); setCode(""); });
+  const Container = props.embedded ? "div" : "form";
+  return <Container className="mobile-account-login" onSubmit={props.embedded ? undefined : (event) => {
     event.preventDefault();
-    props.run(async () => { accept(); props.onLogin(await loginIapAccount(phone, code)); setCode(""); });
-  }}>
+    login();
+  }} onKeyDown={props.embedded ? (event) => {
+    if (event.key === "Enter" && event.target instanceof HTMLInputElement && event.target.type !== "checkbox") {
+      event.preventDefault();
+      if (!props.busy && consent) login();
+    }
+  } : undefined}>
     <h2>手机号登录</h2>
     <p>使用在问平台的手机号。未注册的手机号登录后会创建账户。</p>
     <label className="mobile-entry-field">手机号（中国大陆）<input type="tel" autoComplete="tel-national" value={phone} disabled={props.busy}
@@ -33,6 +40,6 @@ export function MobileAccountLogin(props: { busy: boolean; run: AccountAction; o
       onChange={(event) => setCode(event.target.value)} /></label>
     <label className="mobile-entry-remember"><input type="checkbox" checked={consent} disabled={props.busy}
       onChange={(event) => setConsent(event.target.checked)} />我已阅读并同意 <a href={MINIQ_PRIVACY_URL} target="_blank" rel="noreferrer">《miniQ 隐私政策》</a></label>
-    <button type="submit" disabled={props.busy || !consent}>登录</button>
-  </form>;
+    <button type={props.embedded ? "button" : "submit"} onClick={props.embedded ? login : undefined} disabled={props.busy || !consent}>{props.submitLabel ?? "登录"}</button>
+  </Container>;
 }

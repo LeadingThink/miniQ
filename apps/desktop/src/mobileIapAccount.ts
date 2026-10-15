@@ -1,5 +1,7 @@
 import { Capacitor, CapacitorCookies, CapacitorHttp } from "@capacitor/core";
+import { invoke } from "@tauri-apps/api/core";
 import { MOBILE_API_BASE_URL } from "./mobileApiConfig";
+import { isTauriRuntime } from "./runtime";
 
 export type IapEnvironment = "Sandbox" | "Production";
 export interface IapPurchaseContext {
@@ -31,6 +33,12 @@ export class IapApiError extends Error {
  * Login JWTs are never copied into JS storage or used as model API Keys.
  */
 export async function oneApiRequest(path: string, body?: unknown): Promise<unknown> {
+  if (isTauriRuntime()) {
+    const response = await invoke<{ status: number; data: unknown }>("desktop_account_request", {
+      request: { baseUrl: MOBILE_API_BASE_URL, path, method: body === undefined ? "GET" : "POST", body: body ?? null },
+    }).catch(() => { throw new Error("无法连接账户服务，请检查网络后重试。"); });
+    return handleAccountResponse(response.status, response.data);
+  }
   if (!Capacitor.isNativePlatform()) throw new Error("请在手机 App 中使用账户服务。");
   let response;
   try {
@@ -42,13 +50,16 @@ export async function oneApiRequest(path: string, body?: unknown): Promise<unkno
       responseType: "json", connectTimeout: 30_000, readTimeout: 30_000, disableRedirects: true,
     });
   } catch { throw new Error("无法连接账户服务，请检查网络后重试。"); }
-  const value: unknown = response.data;
-  if (response.status === 401 || (isRecord(value) && value.code === "-2")) {
+  return handleAccountResponse(response.status, response.data);
+}
+
+function handleAccountResponse(status: number, value: unknown): unknown {
+  if (status === 401 || (isRecord(value) && value.code === "-2")) {
     throw new IapApiError("请重新登录账户。", "-2");
   }
-  if (response.status === 429) throw new IapApiError("操作过于频繁，请稍后重试。", "429");
-  if (response.status < 200 || response.status >= 300) {
-    throw new IapApiError(`账户服务暂时不可用（${response.status}），请稍后重试。`, String(response.status));
+  if (status === 429) throw new IapApiError("操作过于频繁，请稍后重试。", "429");
+  if (status < 200 || status >= 300) {
+    throw new IapApiError(`账户服务暂时不可用（${status}），请稍后重试。`, String(status));
   }
   // Existing OneAPI business failures may be returned with HTTP 200.
   if (!isRecord(value) || value.code !== "0") {
@@ -91,12 +102,12 @@ export async function loginIapAccount(phone: string, code: string): Promise<OneA
 
 export async function logoutIapAccount(): Promise<void> {
   await oneApiRequest("/user/logout", {});
-  await CapacitorCookies.deleteCookie({ url: MOBILE_API_BASE_URL, key: "token" });
+  if (Capacitor.isNativePlatform()) await CapacitorCookies.deleteCookie({ url: MOBILE_API_BASE_URL, key: "token" });
 }
 
 export async function deleteIapAccount(): Promise<void> {
   await oneApiRequest("/user/delete", {});
-  await CapacitorCookies.deleteCookie({ url: MOBILE_API_BASE_URL, key: "token" });
+  if (Capacitor.isNativePlatform()) await CapacitorCookies.deleteCookie({ url: MOBILE_API_BASE_URL, key: "token" });
 }
 
 export async function loadIapPurchaseContext(): Promise<IapPurchaseContext> {

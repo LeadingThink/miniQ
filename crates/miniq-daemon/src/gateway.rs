@@ -216,6 +216,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "tool.list" => system::list_tools(state),
         "observation.read" => observation::read(state, req.params).await,
         "settings.get" => settings::get(state),
+        "settings.providerKey" => settings::provider_key(state),
         "settings.models" => settings::models(state, req.params).await,
         "settings.schema" => settings_schema::schema(),
         "settings.update" => settings::update(state, req.params),

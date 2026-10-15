@@ -56,7 +56,7 @@ export interface TimelineProps {
   loading?: boolean;
   historyCursor?: HistoryCursor | null;
   loadingOlder?: boolean;
-  onLoadOlder?: () => Promise<void>;
+  onLoadOlder?: () => Promise<void | { error: unknown }>;
   title?: string;
   messages: Message[];
   goal?: SessionGoal | null;
@@ -203,7 +203,7 @@ export function Timeline(props: TimelineProps) {
     props.turnProgress, props.busy, props.queue,
   ], [items, props.approvals, props.questions, props.plan, props.turnPlans, props.streamingText,
     props.turnProgress, props.busy, props.queue]);
-  const { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump, reveal } = useConversationScroll({
+  const { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump, reveal, historyError, retryingOlder } = useConversationScroll({
     viewKey: JSON.stringify([props.sessionId, filter, query.trim()]),
     cursorKey: historyCursor ? JSON.stringify(historyCursor) : null,
     autoLoadOlder: true,
@@ -250,6 +250,14 @@ export function Timeline(props: TimelineProps) {
       }
       const element = findHitElement(root, locating);
       if (element) {
+        // Lazy disclosures expose search keys before mounting their records.
+        // Wait for the native toggle and React commit before positioning.
+        if (element instanceof HTMLDetailsElement &&
+          (!element.open || !element.querySelector(".completed-process-body"))) {
+          element.open = true;
+          setMountedForLocate((value) => value + 1);
+          return;
+        }
         reveal(element);
         element.setAttribute("data-search-located", "true");
         window.setTimeout(() => element.removeAttribute("data-search-located"), 1600);
@@ -318,7 +326,7 @@ export function Timeline(props: TimelineProps) {
       <div className="timeline-shell">
         <ConversationNavigationRail messages={navigationMessages} scrollRef={scrollRef} />
         <TimelineQuote scrollRef={scrollRef} />
-        <div className="timeline" ref={scrollRef} onScroll={onScroll}>
+        <div className="timeline" ref={scrollRef} tabIndex={0} onScroll={onScroll}>
           <div ref={historyTopRef} className="history-top-sentinel" aria-hidden="true" />
         {(props.loading || (historySearch.loading && !historySearch.page)) && (
           <div className="history-loading" role="status">
@@ -332,7 +340,7 @@ export function Timeline(props: TimelineProps) {
             正在定位记录
           </div>
         )}
-        {historySearch.error && (
+        {historySearch.error && !historySearch.page && (
           <div className="history-loading" role="alert">
             {historySearch.error}
             <button
@@ -346,12 +354,33 @@ export function Timeline(props: TimelineProps) {
             </button>
           </div>
         )}
-        {hasOlder && (
+        {(loadingOlder || retryingOlder) && !(historySearch.loading && !historySearch.page) && (
+          <div className="history-loading" role="status">
+            <Spinner size={14} />
+            正在加载更早的记录
+          </div>
+        )}
+        {historyError && !retryingOlder && (
+          <div className="history-loading" role="alert">
+            {historyError}
+            <button
+              type="button"
+              className="icon-button"
+              title="重试加载历史记录"
+              aria-label="重试加载历史记录"
+              disabled={Boolean(loadingOlder) || retryingOlder}
+              onClick={loadOlder}
+            >
+              <RefreshCw size={16} />
+            </button>
+          </div>
+        )}
+        {searching && hasOlder && (
           <div className="history-pages">
             <button
               type="button"
               className="ghost"
-              disabled={loadingOlder}
+              disabled={Boolean(loadingOlder) || retryingOlder}
               onClick={loadOlder}
             >
               {loadingOlder ? (

@@ -58,7 +58,7 @@ describe("appearance settings integration", () => {
     expect(document.activeElement).toBe(dark);
     fireEvent.click(screen.getByRole("radio", { name: "夜墨" }));
     fireEvent.submit(screen.getByRole("dialog"));
-    expect(call.mock.calls.every(([method]) => ["settings.get", "model.list", "settings.schema"].includes(method))).toBe(true);
+    expect(call.mock.calls.every(([method]) => ["settings.get", "settings.providerKey", "model.list", "settings.schema"].includes(method))).toBe(true);
     expect(getAppearance().theme).toBe("night");
   });
 
@@ -86,6 +86,24 @@ describe("appearance settings integration", () => {
       })
     );
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads the saved provider key into the masked editable field and preserves it when blank", async () => {
+    call.mockImplementation((method: string) => {
+      if (method === "settings.providerKey") return Promise.resolve({ apiKey: "sk-test-saved" });
+      return Promise.resolve(method === "model.list" ? { models: ["test"] } : settings);
+    });
+    render(<Fixture />);
+    const key = await screen.findByLabelText("在问 API Key") as HTMLInputElement;
+    await waitFor(() => expect(key.value).toBe("sk-test-saved"));
+    expect(key.type).toBe("password");
+    fireEvent.click(screen.getByRole("button", { name: "显示 API Key" }));
+    expect(key.type).toBe("text");
+    fireEvent.change(key, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("settings.update", expect.objectContaining({
+      provider: expect.not.objectContaining({ apiKey: expect.anything() }),
+    })));
   });
 
   it("falls back to manual model ID only when the model catalog fails", async () => {
@@ -152,6 +170,21 @@ describe("appearance settings integration", () => {
       provider: { baseUrl: ZAIWEN_API_BASE_URL, model: DEFAULT_PROVIDER_MODEL, apiProtocol: "auto", apiKey: "sk-first-run" },
       remoteAccess: { enabled: false, relayUrl: DEFAULT_RELAY_URL, deviceName: "desktop" },
     }));
+  });
+
+  it("does not resend the loaded key when only the endpoint changes", async () => {
+    call.mockImplementation((method: string) => {
+      if (method === "settings.providerKey") return Promise.resolve({ apiKey: "sk-test-saved" });
+      return Promise.resolve(method === "model.list" ? { models: ["test"] } : settings);
+    });
+    render(<Fixture />);
+    await waitFor(() => expect((screen.getByLabelText("在问 API Key") as HTMLInputElement).value).toBe("sk-test-saved"));
+    fireEvent.change(screen.getByLabelText(/服务地址/), { target: { value: "https://changed.example/v1" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("settings.update", expect.anything()));
+    const update = call.mock.calls.find(([method]) => method === "settings.update")?.[1] as { provider?: Record<string, unknown> };
+    expect(update.provider).not.toHaveProperty("apiKey");
+    expect(update.provider?.baseUrl).toBe("https://changed.example/v1");
   });
 
   it("supports tab keyboard navigation and restores focus on close", async () => {

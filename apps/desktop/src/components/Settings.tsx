@@ -25,6 +25,8 @@ import { McpPanel } from "./Mcp";
 import { PluginsPanel } from "./Plugins";
 import { isTauriRuntime } from "../runtime";
 import { TerminalSettings } from "./TerminalSettings";
+import { ProviderKeyField } from "./ProviderKeyField";
+import { DesktopAccountLogin } from "./DesktopAccountLogin";
 
 export const ZAIWEN_API_PORTAL_URL = "https://platform.zaiwenai.com/";
 export const ZAIWEN_API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
@@ -90,6 +92,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelCatalogError, setModelCatalogError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
+  const [providerKeyChanged, setProviderKeyChanged] = useState(false);
+  const [accountLoginOpen, setAccountLoginOpen] = useState(false);
+  const [accountBusy, setAccountBusy] = useState(false);
+  const [providerKeyLoading, setProviderKeyLoading] = useState(false);
+  const [providerKeyError, setProviderKeyError] = useState<string | null>(null);
   const [hasKey, setHasKey] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -141,6 +148,27 @@ export function SettingsPanel(props: SettingsPanelProps) {
       .catch((error) => setStatus(`读取设置失败：${errorMessage(error)}`))
       .finally(() => setLoading(false));
   }, [props.client]);
+
+  useEffect(() => {
+    if (!canConfigureProvider) return;
+    let cancelled = false;
+    setProviderKeyLoading(true);
+    setProviderKeyError(null);
+    void props.client.call<{ apiKey: string | null }>("settings.providerKey")
+      .then((result) => {
+        if (!cancelled) {
+          setApiKey(typeof result.apiKey === "string" ? result.apiKey : "");
+          setProviderKeyChanged(false);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) setProviderKeyError(`API Key 读取失败：${errorMessage(error)}`);
+      })
+      .finally(() => {
+        if (!cancelled) setProviderKeyLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [canConfigureProvider, props.client]);
 
   useEffect(() => {
     if (loading || props.client.mode !== "local" || !remoteEnabled) return;
@@ -196,7 +224,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
   }, []);
 
   const save = async () => {
-    if (saving) return;
+    if (saving || loading || providerKeyLoading || accountBusy) return;
     setStatus(null);
     setSaving(true);
     try {
@@ -207,7 +235,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
           model: defaultModel.trim() || DEFAULT_PROVIDER_MODEL,
           apiProtocol: "auto",
         };
-        if (apiKey.trim()) provider.apiKey = apiKey.trim();
+        if (providerKeyChanged && apiKey.trim()) provider.apiKey = apiKey.trim();
         params.provider = provider;
       }
       params.remoteAccess = {
@@ -402,24 +430,39 @@ export function SettingsPanel(props: SettingsPanelProps) {
                     <KeyRound size={15} />
                     <span>连接在问</span>
                   </div>
-                  <p className="settings-section-description">填写 API Key 后保存并返回对话，原有草稿会保留。模型与推理强度可使用默认值。</p>
+                  <p className="settings-section-description">登录在问账户获取 API Key，或直接填写已有 Key。保存后返回对话，原有草稿会保留。</p>
                 </div>
-                <label htmlFor="provider-api-key">
-                  在问 API Key {hasKey && <span className="badge">已保存</span>}
-                  <input
-                    id="provider-api-key"
-                    type="password"
-                    autoComplete="off"
-                    spellCheck={false}
-                    value={apiKey}
-                    disabled={loading || saving}
-                    placeholder={hasKey ? "已保存；留空可保留当前 Key" : "sk-..."}
-                    onChange={(event) => {
-                      setApiKey(event.target.value);
+                {typeof window !== "undefined" && isTauriRuntime() && <>
+                  <button type="button" className="secondary" disabled={loading || providerKeyLoading || saving || accountBusy}
+                    aria-expanded={accountLoginOpen} onClick={() => setAccountLoginOpen((value) => !value)}>
+                    {accountLoginOpen ? "收起账户登录" : "使用在问账户登录"}
+                  </button>
+                  {accountLoginOpen && <DesktopAccountLogin disabled={loading || providerKeyLoading || saving}
+                    onBusyChange={setAccountBusy} onKey={(key) => {
+                      setApiKey(key);
+                      setProviderKeyChanged(true);
+                      setProviderKeyError(null);
+                      if (baseUrl !== ZAIWEN_API_BASE_URL || !defaultModel) {
+                        setDefaultModel(DEFAULT_PROVIDER_MODEL);
+                        setModelOptions([DEFAULT_PROVIDER_MODEL]);
+                        setModelCatalogError(null);
+                      }
+                      setBaseUrl(ZAIWEN_API_BASE_URL);
                       setStatus(null);
-                    }}
-                  />
-                </label>
+                    }} />}
+                </>}
+                <ProviderKeyField
+                  value={apiKey}
+                  loading={providerKeyLoading}
+                  disabled={loading || saving || accountBusy}
+                  onChange={(value) => {
+                    setApiKey(value);
+                    setProviderKeyChanged(true);
+                    setStatus(null);
+                  }}
+                />
+                {hasKey && <span className="badge provider-key-badge">已保存</span>}
+                {providerKeyError && <small role="status">{providerKeyError}，可手动输入新的 Key。</small>}
                 <div className="provider-purchase">
                   <div className="provider-purchase-copy">
                     <span className="provider-purchase-icon" aria-hidden="true">
@@ -592,7 +635,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
           {tab === "services" && canConfigureProvider && (
             <button
               type="submit"
-              disabled={loading || saving || !baseUrl.trim() || !defaultModel.trim() || (!hasKey && !apiKey.trim()) || !deviceName.trim()}
+              disabled={loading || providerKeyLoading || saving || accountBusy || !baseUrl.trim() || !defaultModel.trim() || (!hasKey && !apiKey.trim()) || !deviceName.trim()}
             >
               {saving ? "正在保存..." : "保存并返回"}
             </button>

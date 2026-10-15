@@ -9,7 +9,7 @@ interface ConversationScrollOptions {
   hasOlder?: boolean;
   loadingOlder?: boolean;
   loading?: boolean;
-  loadOlder?: () => void | Promise<void>;
+  loadOlder?: () => void | { error: unknown } | Promise<void | { error: unknown }>;
   /** Change identity whenever rendered timeline content changes. */
   contentVersion: unknown;
 }
@@ -23,6 +23,27 @@ interface HistoryRequest {
   viewKey: string;
   cursorKey: string | null;
   anchor: ViewportAnchor | null;
+}
+
+function historyErrorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "message" in error) return String(error.message);
+  return String(error ?? "Unable to load older history");
+}
+
+/** Retry transport failures and temporary server errors, never invalid requests. */
+export function isRetryableHistoryError(error: unknown): boolean {
+  const details = error && typeof error === "object"
+    ? error as { name?: string; status?: number; statusCode?: number; code?: string | number }
+    : {};
+  const code = Number(details.code ?? (typeof error === "number" ? error : NaN));
+  // JSON-RPC parse, request, method and parameter errors cannot recover by retrying.
+  if ([-32700, -32600, -32601, -32602].includes(code)) return false;
+  const message = `${details.code ?? ""} ${historyErrorMessage(error)}`;
+  if (details.name === "AbortError" || /abort|unauthori[sz]ed|forbidden|auth|invalid|bad request|not found|permission|access denied|\b(?:400|401|403|404|422)\b/i.test(message)) return false;
+  const status = Number(details.status ?? details.statusCode ?? code);
+  if (status >= 400 && status < 500 && status !== 408 && status !== 429) return false;
+  return status === 408 || status === 429 || (status >= 500 && status < 600) ||
+    /network|fetch failed|failed to fetch|timeout|timed out|temporar|unavailable|disconnect|connection|offline|econn|enet|ehost|rate.?limit|\b(?:408|429|5\d\d)\b/i.test(message);
 }
 
 function viewportAnchor(root: HTMLDivElement): ViewportAnchor | null {
@@ -65,6 +86,28 @@ export function useConversationScroll(options: ConversationScrollOptions) {
   const inFlight = useRef<HistoryRequest | null>(null);
   const attemptedCursors = useRef(new Set<string | null>());
   const [showJump, setShowJump] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [retryingOlder, setRetryingOlder] = useState(false);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryTask = useRef<{ run: () => void; remaining: number; due: number } | null>(null);
+  const offline = useRef(typeof navigator !== "undefined" && !navigator.onLine);
+  const exhausted = useRef<HistoryRequest | null>(null);
+  const shortPage = useRef(false);
+  const cancelRetry = useCallback(() => {
+    if (retryTimer.current !== null) clearTimeout(retryTimer.current);
+    retryTimer.current = null;
+    retryTask.current = null;
+  }, []);
+  const resumeRetry = useCallback(() => {
+    const task = retryTask.current;
+    if (!task || offline.current || retryTimer.current !== null) return;
+    task.due = Date.now() + task.remaining;
+    retryTimer.current = setTimeout(() => {
+      retryTimer.current = null;
+      retryTask.current = null;
+      task.run();
+    }, task.remaining);
+  }, []);
   // null until the first layout, which always lands at the bottom.
   const loadingState = useRef<boolean | undefined | null>(null);
   // Following new output scrolls at most once per frame, however many
@@ -84,15 +127,19 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     });
   }, []);
 
-  const requestOlder = useCallback((automatic: boolean) => {
+  const requestOlder = useCallback((automatic: boolean, intentional = false) => {
     const current = latest.current;
     // Check the current policy here as well as when attaching observers: a
     // queued scroll/intersection callback may outlive a connection-mode change.
-    if (automatic && (!current.autoLoadOlder || pinned.current)) return;
+    if (automatic && (!current.autoLoadOlder || (!intentional && (pinned.current || shortPage.current)))) return;
     if (
-      !current.hasOlder || current.loading ||
+      offline.current || !current.hasOlder || current.loading ||
       current.loadingOlder || !current.loadOlder
     ) return;
+    if (!automatic && retryTimer.current !== null) {
+      cancelRetry();
+      inFlight.current = null;
+    }
     if (inFlight.current) return;
     if (automatic && attemptedCursors.current.has(current.cursorKey)) return;
     attemptedCursors.current.add(current.cursorKey);
@@ -103,19 +150,55 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     };
     request.current = pending;
     inFlight.current = pending;
+    exhausted.current = null;
+    shortPage.current = !!scrollRef.current && nearBottom(scrollRef.current);
     pinned.current = false;
     setShowJump(true);
-    const settle = () => {
-      if (inFlight.current === pending) inFlight.current = null;
+    setHistoryError(null);
+    setRetryingOlder(false);
+    let retries = 0;
+    const active = () => inFlight.current === pending && latest.current.viewKey === pending.viewKey;
+    const finish = () => {
+      inFlight.current = null;
+      setRetryingOlder(false);
     };
-    // Keep the anchor after settlement: the page can commit on the next render.
-    // The caller owns error reporting; failed cursors only retry manually.
-    try {
-      void Promise.resolve(current.loadOlder()).then(settle, settle);
-    } catch {
-      settle();
-    }
-  }, []);
+    const fail = (error: unknown) => {
+      if (!active()) return;
+      if (latest.current.cursorKey !== pending.cursorKey || !latest.current.hasOlder) {
+        finish();
+        return;
+      }
+      setHistoryError(historyErrorMessage(error));
+      if (!isRetryableHistoryError(error) || retries === 3) {
+        exhausted.current = isRetryableHistoryError(error) ? pending : null;
+        finish();
+        return;
+      }
+      setRetryingOlder(true);
+      retryTask.current = { remaining: 1000 * 2 ** retries, due: 0, run: () => {
+        if (!active()) return;
+        if (latest.current.cursorKey !== pending.cursorKey || !latest.current.hasOlder) {
+          finish();
+          return;
+        }
+        retries++;
+        run();
+      } };
+      resumeRetry();
+    };
+    const run = () => {
+      try {
+        void Promise.resolve(latest.current.loadOlder?.()).then((result) => {
+          if (!active()) return;
+          if (result && "error" in result) { fail(result.error); return; }
+          setHistoryError(null);
+          // Keep the anchor: the successful page can commit on the next render.
+          finish();
+        }, fail);
+      } catch (error) { fail(error); }
+    };
+    run();
+  }, [cancelRetry, resumeRetry]);
 
   const onScroll = useCallback(() => {
     const root = scrollRef.current;
@@ -136,16 +219,28 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     if (view.current !== options.viewKey) {
       immediate = true;
       cancelFollow();
+      cancelRetry();
+      exhausted.current = null;
       view.current = options.viewKey;
       request.current = null;
       inFlight.current = null;
       attemptedCursors.current.clear();
+      shortPage.current = false;
+      setHistoryError(null);
+      setRetryingOlder(false);
       pinned.current = true;
       setShowJump(false);
     }
     if (!root) return;
     const pending = request.current;
     if (pending && (pending.cursorKey !== options.cursorKey || !options.hasOlder)) {
+      if (retryTask.current !== null) {
+        cancelRetry();
+        inFlight.current = null;
+        setRetryingOlder(false);
+      }
+      setHistoryError(null);
+      exhausted.current = null;
       if (pinned.current) root.scrollTop = root.scrollHeight;
       else restoreAnchor(root, pending.anchor);
       request.current = null;
@@ -198,6 +293,77 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     options.loading, options.loadingOlder, requestOlder,
   ]);
 
+  useEffect(() => () => {
+    cancelRetry();
+    cancelFollow();
+    inFlight.current = null;
+    request.current = null;
+    exhausted.current = null;
+  }, [cancelRetry, cancelFollow]);
+
+  useEffect(() => {
+    const pause = () => {
+      offline.current = true;
+      if (retryTimer.current !== null) {
+        clearTimeout(retryTimer.current);
+        retryTimer.current = null;
+        if (retryTask.current) retryTask.current.remaining = Math.max(0, retryTask.current.due - Date.now());
+      }
+    };
+    const reconnect = () => {
+      offline.current = false;
+      resumeRetry();
+      const failed = exhausted.current;
+      const current = latest.current;
+      const root = scrollRef.current;
+      if (!failed || failed.viewKey !== current.viewKey || failed.cursorKey !== current.cursorKey ||
+        !root || root.scrollTop > 320 || !current.autoLoadOlder || !current.hasOlder ||
+        current.loading || current.loadingOlder || !current.loadOlder || inFlight.current) return;
+      attemptedCursors.current.delete(current.cursorKey);
+      requestOlder(true, true);
+    };
+    window.addEventListener("offline", pause);
+    window.addEventListener("online", reconnect);
+    return () => {
+      window.removeEventListener("offline", pause);
+      window.removeEventListener("online", reconnect);
+    };
+  }, [requestOlder, resumeRetry]);
+
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const navigateUp = () => {
+      if (root.scrollTop > 320) return;
+      requestOlder(true, true);
+    };
+    const wheel = (event: WheelEvent) => { if (event.deltaY < 0) navigateUp(); };
+    let touchY: number | null = null;
+    const touchStart = (event: TouchEvent) => { touchY = event.touches[0]?.clientY ?? null; };
+    const touchMove = (event: TouchEvent) => {
+      const y = event.touches[0]?.clientY;
+      if (touchY !== null && y !== undefined && y > touchY) {
+        touchY = null;
+        navigateUp();
+      }
+    };
+    const key = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (["ArrowUp", "PageUp", "Home"].includes(event.key) || (event.key === " " && event.shiftKey)) navigateUp();
+    };
+    root.addEventListener("wheel", wheel, { passive: true });
+    root.addEventListener("touchstart", touchStart, { passive: true });
+    root.addEventListener("touchmove", touchMove, { passive: true });
+    root.addEventListener("keydown", key);
+    return () => {
+      root.removeEventListener("wheel", wheel);
+      root.removeEventListener("touchstart", touchStart);
+      root.removeEventListener("touchmove", touchMove);
+      root.removeEventListener("keydown", key);
+    };
+  }, [options.viewKey, requestOlder]);
+
   const jumpToBottom = useCallback(() => {
     const root = scrollRef.current;
     if (!root) return;
@@ -226,5 +392,5 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     setShowJump(true);
   }, [cancelFollow]);
 
-  return { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump, reveal };
+  return { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump, reveal, historyError, retryingOlder };
 }

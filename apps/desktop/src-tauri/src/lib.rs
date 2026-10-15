@@ -2,6 +2,7 @@
 //! All agent logic lives in the separate `miniq-daemon` process; the UI talks
 //! to it over WebSocket. The shell only hands the connection info to the UI.
 
+mod account_transport;
 mod app_menu;
 mod apple_speech;
 mod browser;
@@ -368,7 +369,8 @@ pub fn run() {
                 apple_speech::apple_speech_cancel,
                 browser_evaluate,
                 browser_screenshot,
-                browser_capabilities
+                browser_capabilities,
+                account_transport::desktop_account_request
             ];
             handler(invoke)
         })

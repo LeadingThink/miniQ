@@ -40,7 +40,7 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
   const startIndex = firstIndex < 0 ? Math.min(windowStart.index, chat.messages.length) : firstIndex;
   const contentVersion = useMemo(() => [chat.messages, chat.error, catalog.error, imageError],
     [chat.messages, chat.error, catalog.error, imageError]);
-  const { scrollRef: feedRef, historyTopRef, onScroll, loadOlder: loadEarlier,
+  const { scrollRef: feedRef, historyTopRef, onScroll,
     jumpToBottom: jumpToLatest, showJump: showLatest } = useConversationScroll({
     viewKey: "mobile-chat",
     cursorKey: startIndex > 0 ? chat.messages[startIndex]?.id ?? null : null,
@@ -91,10 +91,9 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
         <MobileModelPicker catalog={catalog} disabled={chat.busy} />
         {props.onSettings && <button type="button" onClick={props.onSettings}>设置</button>}
       </header>
-      <section className="mobile-chat-feed" ref={feedRef} aria-label="问答记录" onScroll={onScroll}>
+      <section className="mobile-chat-feed" ref={feedRef} tabIndex={0} aria-label="问答记录" onScroll={onScroll}>
         <div ref={historyTopRef} aria-hidden="true" />
         {chat.messages.length === 0 && <div className="mobile-chat-empty"><Bot size={28} /><strong>有什么需要一起完成？</strong><span>这里适合随手问答；涉及本地项目时切换到远程桌面。</span></div>}
-        {startIndex > 0 && <button type="button" className="mobile-chat-history" onClick={loadEarlier}>加载更早的消息（还有 {startIndex} 条）</button>}
         {chat.messages.slice(startIndex).map((message) => (
           <MobileChatRow key={message.id} message={message} active={chat.busy && message.id === chat.activeMessageId} onDelete={chat.deleteMessage} />
         ))}

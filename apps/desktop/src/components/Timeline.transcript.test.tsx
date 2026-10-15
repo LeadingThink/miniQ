@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Timeline } from "./Timeline";
+import { TurnChangesContext } from "../turnChanges";
+import { ToastProvider } from "./ui";
+import type { RpcClient } from "../rpc";
 import type { Message, ToolCall } from "../types";
 
 vi.mock("./Md", () => ({ Md: ({ children }: { children: string }) => <p>{children}</p> }));
@@ -23,7 +26,7 @@ const props = { messages, toolCalls: calls, busy: true, approvals: [], questions
   onResolveApproval: noop, onResolveQuestion: noop, onRollback: noop, onOpenFile: noop, onOpenUrl: noop,
   onSteerQueued: asyncNoop, onRemoveQueued: asyncNoop, onUpdateQueued: asyncNoop, onRewrite: async () => true, onError: noop };
 
-it("keeps status, commentary and each tool in order and shows actions only after final settlement", () => {
+it("keeps status, commentary and each tool in order and shows actions only after final settlement", async () => {
   const view = render(<Timeline {...props} />);
   const order = () => [...view.container.querySelectorAll(".timeline-turn *")]
     .filter(node => node.hasAttribute("data-history-anchor") || node.getAttribute("aria-label") === "当前任务状态")
@@ -43,15 +46,18 @@ it("keeps status, commentary and each tool in order and shows actions only after
   const process = view.container.querySelector<HTMLDetailsElement>(".completed-process")!;
   expect(process.open).toBe(false);
   expect(process.querySelector("summary")?.textContent).toBe("已工作 1分38秒");
-  expect(view.container.querySelector('[data-history-anchor="message:c1"]')?.closest("details")).toBe(process);
+  expect(view.container.querySelector('[data-history-anchor="message:c1"]')).toBeNull();
   expect(view.container.querySelector('[data-history-anchor="message:f"]')?.closest(".completed-process")).toBeNull();
-  process.open = true;
+  fireEvent.click(process.querySelector("summary")!);
+  await waitFor(() => expect(view.container.querySelector('[data-history-anchor="message:c1"]')?.closest("details")).toBe(process));
   expect(screen.getByText("先读取配置")).toBeTruthy();
-  process.open = false;
+  expect(order()).toEqual(["message:u", "message:c1", "tool:t1", "message:c2", "tool:t2", "message:f"]);
+  fireEvent.click(process.querySelector("summary")!);
+  await waitFor(() => expect(view.container.querySelector('[data-history-anchor="message:c1"]')).toBeNull());
   expect(view.container.querySelectorAll(".assistant .message-footer")).toHaveLength(1);
   expect(view.container.querySelector('[data-history-anchor="message:c1"] .message-footer')).toBeNull();
   expect(view.container.querySelector('[data-history-anchor="message:f"] .message-footer')).toBeTruthy();
-  expect(order()).toEqual(["message:u", "message:c1", "tool:t1", "message:c2", "tool:t2", "message:f"]);
+  expect(order()).toEqual(["message:u", "message:f"]);
 });
 
 it("keeps a distinct animated tail after content until settlement", () => {
@@ -140,4 +146,43 @@ it("does not invent durations for old turns, and leaves interrupted output visib
   expect(container.querySelectorAll(".assistant .message-footer")).toHaveLength(0);
   expect(container.querySelector(".completed-process > summary")?.textContent).toBe("工作过程");
   expect(screen.getByText("先读取配置").closest(".completed-process")).toBeNull();
+});
+
+
+it("keeps transcript output visible while loading turn diffs only on explicit expansion", async () => {
+  const call = vi.fn(async () => ({ files: [], additions: 0, deletions: 0 }));
+  const context = { client: { call } as unknown as RpcClient, sessionId: "s", busy: false,
+    epoch: 0, openReview: noop, onReverted: noop };
+  const final: Message = { id: "f", sessionId: "s", role: "assistant", assistantKind: "final",
+    content: "修改完成", createdAt: at(5) };
+  const write: ToolCall = { ...calls[0], toolName: "file_write", input: { path: "a.txt" } };
+  const tree = (busy: boolean) => <ToastProvider><TurnChangesContext.Provider value={context}>
+    <Timeline {...props} busy={busy} messages={[...messages, final]} toolCalls={[write]} />
+  </TurnChangesContext.Provider></ToastProvider>;
+  const view = render(tree(true));
+  expect(view.container.querySelector("[data-execution-fold]")).toBeNull();
+  expect(call).not.toHaveBeenCalled();
+  view.rerender(tree(false));
+  expect(screen.getByText("修改完成").closest("details, [data-execution-fold]")).toBeNull();
+  expect(view.container.querySelector(".completed-process")).toBeTruthy();
+  expect(call).not.toHaveBeenCalled();
+  const toggle = screen.getByText("工作过程").closest("details")!.querySelector("summary")!;
+  fireEvent.click(toggle);
+  await waitFor(() => expect(call).toHaveBeenCalledTimes(1));
+  expect(call).toHaveBeenCalledWith("session.diff", { sessionId: "s", scope: "turn", turnId: "u" },
+    { signal: expect.any(AbortSignal) });
+  fireEvent.click(toggle);
+  fireEvent.click(toggle);
+  expect(call).toHaveBeenCalledTimes(1);
+});
+
+it("opens lazy process content when locating a search result in its context", async () => {
+  const final: Message = { id: "f", sessionId: "s", role: "assistant", assistantKind: "final", content: "检查完成", createdAt: at(5) };
+  const view = render(<Timeline {...props} busy={false} messages={[...messages, final]} />);
+  expect(view.container.querySelector('[data-history-anchor="message:c1"]')).toBeNull();
+  fireEvent.change(screen.getByRole("searchbox", { name: "搜索当前会话" }), { target: { value: "先读取配置" } });
+  fireEvent.click(screen.getByRole("button", { name: "查看上下文" }));
+  await waitFor(() => expect(view.container.querySelector('[data-history-anchor="message:c1"][data-search-located="true"]')).toBeTruthy());
+  expect(view.container.querySelector<HTMLDetailsElement>(".completed-process")?.open).toBe(true);
+  expect(screen.getByText("检查完成").closest("details")).toBeNull();
 });

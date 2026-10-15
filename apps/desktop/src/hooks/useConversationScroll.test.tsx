@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useConversationScroll } from "./useConversationScroll";
+import { isRetryableHistoryError, useConversationScroll } from "./useConversationScroll";
 
 const observers: IntersectionObserverCallback[] = [];
 const resizeObservers: {
@@ -31,7 +31,7 @@ function Harness({
   loading?: boolean;
   prepend?: number;
   tail?: number;
-  loadOlder?: () => void | Promise<void>;
+  loadOlder?: () => void | { error: unknown } | Promise<void | { error: unknown }>;
 }) {
   const scroll = useConversationScroll({
     viewKey, cursorKey, autoLoadOlder, hasOlder, loadingOlder, loading, loadOlder,
@@ -47,6 +47,8 @@ function Harness({
       </div>
     </div>
     <button onClick={scroll.loadOlder}>Load manually</button>
+    <output data-testid="history-error">{scroll.historyError}</output>
+    <output data-testid="retrying">{String(scroll.retryingOlder)}</output>
     {scroll.showJump && <button onClick={scroll.jumpToBottom}>Jump</button>}
   </>;
 }
@@ -110,7 +112,7 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("useConversationScroll", () => {
   it("respects disabled automatic loading and anchors each requested page without fetching the next one", async () => {
@@ -220,7 +222,7 @@ describe("useConversationScroll", () => {
     expect(screen.getByRole("button", { name: "Jump" })).toBeTruthy();
   });
 
-  it("serializes intersect/scroll bursts and does not retry an unchanged failed cursor", async () => {
+  it("serializes intersect/scroll bursts and allows a manual retry to replace pending backoff", async () => {
     let reject!: (cause: Error) => void;
     const loadOlder = vi.fn().mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail; }))
       .mockResolvedValue(undefined);
@@ -330,4 +332,201 @@ it("keeps following latest when a pending history page commits after an explicit
   await act(async () => { resolve(); });
   await act(async () => { scrollTo(250); });
   expect(loadOlder).toHaveBeenCalledTimes(2);
+});
+
+it("retries transient failures after exactly 1, 2 and 4 seconds, then exposes a terminal error", async () => {
+  vi.useFakeTimers();
+  const loadOlder = vi.fn().mockResolvedValue({ error: new Error("network unavailable") });
+  render(<Harness loadOlder={loadOlder} />);
+  await act(async () => { scrollTo(40); });
+  expect(screen.getByTestId("retrying").textContent).toBe("true");
+  for (const [index, delay] of [1000, 2000, 4000].entries()) {
+    await act(async () => { await vi.advanceTimersByTimeAsync(delay - 1); });
+    expect(loadOlder).toHaveBeenCalledTimes(index + 1);
+    intersect();
+    scrollTo(30);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(loadOlder).toHaveBeenCalledTimes(index + 2);
+  }
+  expect(screen.getByTestId("retrying").textContent).toBe("false");
+  expect(screen.getByTestId("history-error").textContent).toBe("network unavailable");
+  await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+  intersect();
+  expect(loadOlder).toHaveBeenCalledTimes(4);
+});
+
+it("preserves the reader's anchor across a thrown failure and successful retry", async () => {
+  vi.useFakeTimers();
+  const loadOlder = vi.fn().mockImplementationOnce(() => { throw new TypeError("Failed to fetch"); })
+    .mockResolvedValue(undefined);
+  const { rerender } = render(<Harness loadOlder={loadOlder} />);
+  await act(async () => { scrollTo(40); });
+  scrollTo(70);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(loadOlder).toHaveBeenCalledTimes(2);
+  expect(screen.getByTestId("history-error").textContent).toBe("");
+  expect(screen.getByTestId("retrying").textContent).toBe("false");
+  rerender(<Harness loadOlder={loadOlder} cursorKey="cursor-2" prepend={600} tail={800} />);
+  expect(screen.getByTestId("viewport").scrollTop).toBe(670);
+});
+
+it.each([
+  { status: 401, message: "network authentication failed" },
+  { status: 403, message: "temporarily forbidden" },
+  new Error("invalid cursor"),
+  new DOMException("network request aborted", "AbortError"),
+  new Error("unknown failure"),
+  { code: -32700, message: "network parse failure" },
+  { code: -32600, message: "network request failure" },
+  { code: -32601, message: "service unavailable" },
+  { code: -32602, message: "temporary parameter failure" },
+  { code: "-32602", message: "timeout" },
+  { code: 401, message: "network failure" },
+  { message: "auth required, temporarily unavailable" },
+  { message: "unauthorized: network unavailable" },
+  { message: "forbidden: connection failed" },
+])("does not retry permanent or aborted failures: %s", async (error) => {
+  vi.useFakeTimers();
+  const loadOlder = vi.fn(() => ({ error }));
+  render(<Harness loadOlder={loadOlder} />);
+  await act(async () => { scrollTo(40); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+  expect(loadOlder).toHaveBeenCalledTimes(1);
+  expect(screen.getByTestId("retrying").textContent).toBe("false");
+  expect(screen.getByTestId("history-error").textContent).not.toBe("");
+});
+
+it("cancels backoff on view changes and unmount", async () => {
+  vi.useFakeTimers();
+  const loadOlder = vi.fn().mockRejectedValue(new Error("network offline"));
+  const { rerender, unmount } = render(<Harness loadOlder={loadOlder} />);
+  await act(async () => { scrollTo(40); });
+  expect(vi.getTimerCount()).toBe(1);
+  rerender(<Harness viewKey="session-b" loadOlder={loadOlder} />);
+  expect(vi.getTimerCount()).toBe(0);
+  expect(screen.getByTestId("history-error").textContent).toBe("");
+  expect(screen.getByTestId("retrying").textContent).toBe("false");
+  await act(async () => { scrollTo(40); });
+  expect(vi.getTimerCount()).toBe(1);
+  unmount();
+  expect(vi.getTimerCount()).toBe(0);
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(loadOlder).toHaveBeenCalledTimes(2);
+});
+
+it.each(["view", "unmount"])("ignores late rejected requests after %s cleanup", async (cleanupKind) => {
+  vi.useFakeTimers();
+  let reject!: (error: Error) => void;
+  const loadOlder = vi.fn(() => new Promise<void>((_, fail) => { reject = fail; }));
+  const { rerender, unmount } = render(<Harness loadOlder={loadOlder} />);
+  scrollTo(40);
+  if (cleanupKind === "view") rerender(<Harness viewKey="session-b" loadOlder={loadOlder} />);
+  else unmount();
+  await act(async () => { reject(new Error("network unavailable")); });
+  expect(vi.getTimerCount()).toBe(0);
+  expect(loadOlder).toHaveBeenCalledTimes(1);
+  if (cleanupKind === "view") expect(screen.getByTestId("history-error").textContent).toBe("");
+});
+
+it.each(["wheel", "touch", "key"])("loads one short-viewport page on intentional %s navigation without observer chaining", async (kind) => {
+  const loadOlder = vi.fn().mockResolvedValue(undefined);
+  const { rerender } = render(<Harness loadOlder={loadOlder} tail={-1000} />);
+  const viewport = screen.getByTestId("viewport");
+  scrollTo(0);
+  intersect();
+  fireEvent.wheel(viewport, { deltaY: 50 });
+  fireEvent.keyDown(viewport, { key: "ArrowDown" });
+  expect(loadOlder).not.toHaveBeenCalled();
+  const navigate = () => {
+    if (kind === "wheel") fireEvent.wheel(viewport, { deltaY: -50 });
+    if (kind === "key") fireEvent.keyDown(viewport, { key: "PageUp" });
+    if (kind === "touch") {
+      fireEvent.touchStart(viewport, { touches: [{ clientY: 100 }] });
+      fireEvent.touchMove(viewport, { touches: [{ clientY: 150 }] });
+    }
+  };
+  await act(async () => { navigate(); });
+  expect(loadOlder).toHaveBeenCalledTimes(1);
+  rerender(<Harness loadOlder={loadOlder} cursorKey="cursor-2" prepend={100} tail={-1000} />);
+  intersect();
+  scrollTo(0);
+  intersect();
+  expect(loadOlder).toHaveBeenCalledTimes(1);
+  await act(async () => { navigate(); });
+  expect(loadOlder).toHaveBeenCalledTimes(2);
+});
+
+it.each([408, 429, 500, 502, 503, 504])("classifies temporary HTTP %s as retryable", (status) => {
+  expect(isRetryableHistoryError({ status, message: "request failed" })).toBe(true);
+});
+
+it("pauses remaining backoff while offline without spending retry attempts", async () => {
+  vi.useFakeTimers();
+  const loadOlder = vi.fn().mockResolvedValue({ error: new Error("network unavailable") });
+  render(<Harness loadOlder={loadOlder} />);
+  await act(async () => { scrollTo(40); await vi.advanceTimersByTimeAsync(400); });
+  fireEvent(window, new Event("offline"));
+  expect(vi.getTimerCount()).toBe(0);
+  await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+  expect(loadOlder).toHaveBeenCalledTimes(1);
+  fireEvent(window, new Event("online"));
+  await act(async () => { await vi.advanceTimersByTimeAsync(599); });
+  expect(loadOlder).toHaveBeenCalledTimes(1);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(loadOlder).toHaveBeenCalledTimes(2);
+  await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+  expect(loadOlder).toHaveBeenCalledTimes(4);
+  expect(screen.getByTestId("retrying").textContent).toBe("false");
+});
+
+it("rearms exhausted transient history near the top on online, with another bounded cycle", async () => {
+  vi.useFakeTimers();
+  const loadOlder = vi.fn().mockResolvedValue({ error: new Error("network unavailable") });
+  render(<Harness loadOlder={loadOlder} />);
+  await act(async () => { scrollTo(40); await vi.advanceTimersByTimeAsync(7000); });
+  expect(loadOlder).toHaveBeenCalledTimes(4);
+  scrollTo(450);
+  fireEvent(window, new Event("online"));
+  expect(loadOlder).toHaveBeenCalledTimes(4);
+  scrollTo(40);
+  expect(loadOlder).toHaveBeenCalledTimes(4);
+  await act(async () => { fireEvent(window, new Event("online")); });
+  expect(loadOlder).toHaveBeenCalledTimes(5);
+  fireEvent(window, new Event("online"));
+  expect(loadOlder).toHaveBeenCalledTimes(5);
+  await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+  expect(loadOlder).toHaveBeenCalledTimes(8);
+  expect(screen.getByTestId("retrying").textContent).toBe("false");
+});
+
+it("never rearms permanent failures on online", async () => {
+  vi.useFakeTimers();
+  const loadOlder = vi.fn().mockResolvedValue({ error: { code: -32602, message: "invalid cursor" } });
+  render(<Harness loadOlder={loadOlder} />);
+  await act(async () => { scrollTo(40); });
+  fireEvent(window, new Event("offline"));
+  fireEvent(window, new Event("online"));
+  await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+  expect(loadOlder).toHaveBeenCalledTimes(1);
+});
+
+it.each(["paused", "exhausted"])("discards %s recovery on view change and unmount", async (state) => {
+  vi.useFakeTimers();
+  const loadOlder = vi.fn().mockResolvedValue({ error: new Error("network unavailable") });
+  const { rerender, unmount } = render(<Harness loadOlder={loadOlder} />);
+  await act(async () => { scrollTo(40); await vi.advanceTimersByTimeAsync(state === "exhausted" ? 7000 : 400); });
+  const count = loadOlder.mock.calls.length;
+  fireEvent(window, new Event("offline"));
+  rerender(<Harness viewKey="session-b" loadOlder={loadOlder} />);
+  scrollTo(40);
+  fireEvent(window, new Event("online"));
+  await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+  expect(loadOlder).toHaveBeenCalledTimes(count);
+  await act(async () => { scrollTo(40); });
+  fireEvent(window, new Event("offline"));
+  unmount();
+  fireEvent(window, new Event("online"));
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(loadOlder).toHaveBeenCalledTimes(count + 1);
+  expect(vi.getTimerCount()).toBe(0);
 });

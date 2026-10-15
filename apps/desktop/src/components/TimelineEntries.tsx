@@ -486,24 +486,30 @@ export function TimelineEntries(props: {
       const isLast = turn === lastTurn;
       const settled = !(isLast && props.busy) && turn.timing?.status !== "running";
       const { process, output } = completedTurnContent(turn);
-      const collapse = settled && !props.expandGroups && (process.length > 0 || planNode !== null);
+      const changes = turn.userMessageId && !(isLast && props.busy) && turnHasFileWrites(turn)
+        ? <TurnChangesCard turnId={turn.userMessageId} /> : null;
+      const collapse = settled && !props.expandGroups
+        && (process.length > 0 || planNode !== null || changes !== null);
       const separatorAt = props.expandGroups ? undefined : separators.get(turn.key);
       return { header: <Fragment key={`${turn.key}:header`}>
         {separatorAt && <ConversationTimeSeparator at={separatorAt} />}
         {turn.userMessageId && renderGroup(turn.groups[0])}
       </Fragment>, body: <Fragment key={`${turn.key}:body`}>
         {collapse ? <>
-          <CompletedProcess timing={turn.timing} recordKeys={searchRecordKeys(process)}>
-            {process.map(renderGroup)}
-            {planNode}
+          <CompletedProcess timing={turn.timing}
+            recordKeys={searchRecordKeys(process)}>
+            {() => <>
+              {process.map(renderGroup)}
+              {planNode}
+              {changes}
+            </>}
           </CompletedProcess>
           {output.map(renderGroup)}
         </> : <>
           {turn.groups.slice(turn.userMessageId ? 1 : 0).map(renderGroup)}
           {planNode}
+          {changes}
         </>}
-        {turn.userMessageId && !(isLast && props.busy) && turnHasFileWrites(turn)
-          && <TurnChangesCard turnId={turn.userMessageId} />}
       </Fragment> };
     });
   }, [

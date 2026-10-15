@@ -402,8 +402,11 @@ describe("Timeline execution flow", () => {
       turnPlans: [{ anchorMessageId: "user-1", tasks: [{ content: "验证结果", status: "completed" }] }],
     });
 
-    expect(html.indexOf("检查这个项目")).toBeLessThan(html.indexOf("npm test"));
-    expect(html.indexOf("npm test")).toBeLessThan(html.indexOf("检查完成"));
+    // Completed work is a native disclosure: its body is mounted only after
+    // the user opens it. The final answer remains in the static transcript.
+    expect(html).toContain("检查这个项目");
+    expect(html).toContain("检查完成");
+    expect(html).not.toContain("npm test");
     expect(html).not.toContain("已执行 1 项操作");
     expect(html).not.toContain("task_update");
   });

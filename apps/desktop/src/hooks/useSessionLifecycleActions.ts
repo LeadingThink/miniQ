@@ -34,7 +34,7 @@ interface HistoryRequest {
   sessionId: string;
   epoch: number;
   wanted: boolean;
-  promise: Promise<void>;
+  promise: Promise<void | { error: unknown }>;
 }
 
 function cursorKey(cursor: HistoryCursor) {
@@ -128,8 +128,9 @@ export function useSessionLifecycleActions(
           prepend(sessionId, page);
         }
       } catch (cause) {
-        if (current() && !background) setSessionError(sessionId, errorMessage(cause));
-        // A prefetch failure is silent and leaves the cursor retryable.
+        // The requesting view owns retry/error presentation. Resolve failures
+        // so fire-and-forget prefetch callers remain safe.
+        if (current()) return { error: cause };
       } finally {
         if (paging.current === pending) {
           paging.current = null;
@@ -292,7 +293,7 @@ export function useSessionLifecycleActions(
       if (paging.current.sessionId === sessionId && paging.current.epoch === catalog.navigationEpoch.current) {
         paging.current.wanted = true;
         setLoadingOlder(true);
-        await paging.current.promise;
+        return await paging.current.promise;
       }
       return;
     }
@@ -307,7 +308,7 @@ export function useSessionLifecycleActions(
       prepend(sessionId, ready.page);
       return;
     }
-    await fetchHistory(sessionId, cursor);
+    return await fetchHistory(sessionId, cursor);
   }, [catalog.currentSessionId, catalog.navigationEpoch, feed.loading, feed.nextCursor, fetchHistory, prepend]);
 
   const deleteSession = useCallback(

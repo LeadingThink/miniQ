@@ -1,9 +1,9 @@
 import { FileDiff as FileDiffIcon, Undo2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useDeferredDetail } from "../hooks/useDeferredDetail";
 import { errorMessage } from "../errorMessage";
 import type { FileDiff, SessionDiff } from "../types";
 import {
-  fetchTurnDiff,
   revertTurn,
   useTurnChanges,
   type TurnChangesContextValue,
@@ -24,21 +24,9 @@ function fileBadge(file: FileDiff): string | null {
 }
 
 function useTurnDiff(context: TurnChangesContextValue | null, turnId: string) {
-  const [diff, setDiff] = useState<SessionDiff | null>(null);
-  const client = context?.client;
-  const sessionId = context?.sessionId;
-  const epoch = context?.epoch;
-  useEffect(() => {
-    if (!client || !sessionId) return;
-    let cancelled = false;
-    fetchTurnDiff(client, sessionId, turnId).then(
-      (result) => { if (!cancelled) setDiff(result); },
-      // The card is supplementary; the review panel reports load errors.
-      () => { if (!cancelled) setDiff(null); },
-    );
-    return () => { cancelled = true; };
-  }, [client, sessionId, turnId, epoch]);
-  return diff;
+  return useDeferredDetail<SessionDiff>(context?.client, "session.diff", {
+    sessionId: context?.sessionId, scope: "turn", turnId,
+  }, context?.epoch, !!context).value ?? null;
 }
 
 function useTurnRevert(context: TurnChangesContextValue | null, turnId: string) {

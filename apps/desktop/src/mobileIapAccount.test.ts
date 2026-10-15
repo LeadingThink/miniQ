@@ -1,14 +1,36 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ request: vi.fn(), deleteCookie: vi.fn() }));
+const mocks = vi.hoisted(() => ({ request: vi.fn(), deleteCookie: vi.fn(), invoke: vi.fn(), tauri: false }));
 vi.mock("@capacitor/core", () => ({
-  Capacitor: { isNativePlatform: () => true },
+  Capacitor: { isNativePlatform: () => !mocks.tauri },
   CapacitorHttp: { request: mocks.request }, CapacitorCookies: { deleteCookie: mocks.deleteCookie },
 }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("./runtime", () => ({ isTauriRuntime: () => mocks.tauri }));
 import { createOneApiKey, loadIapPurchaseContext, loadOneApiAccount, loadOneApiKeys, loginIapAccount, logoutIapAccount, oneApiRequest, requestIapLoginCode } from "./mobileIapAccount";
 const success = (data?: unknown) => ({ status: 200, data: { code: "0", data } });
 const account = { phone: "13800000000", nick: "Test", balance: 100.0001 };
 const key = { key_id: "key-1", sk: "sk-test", remark: "miniQ", is_active: true, expire_time: 2000000000 };
-beforeEach(() => { vi.resetAllMocks(); mocks.deleteCookie.mockResolvedValue(undefined); });
+beforeEach(() => { vi.resetAllMocks(); mocks.tauri = false; mocks.deleteCookie.mockResolvedValue(undefined); });
+
+it("uses the Tauri account transport without putting cookies or JWTs in JS", async () => {
+  mocks.tauri = true;
+  mocks.invoke.mockResolvedValue({ status: 200, data: { code: "0", data: account } });
+  expect(await loadOneApiAccount()).toEqual(account);
+  expect(mocks.invoke).toHaveBeenCalledWith("desktop_account_request", {
+    request: { baseUrl: "https://oneapi.zaiwenai.com/v1", path: "/user", method: "GET", body: null },
+  });
+  expect(mocks.request).not.toHaveBeenCalled();
+});
+
+it("logs out on desktop without calling the mobile cookie plugin", async () => {
+  mocks.tauri = true;
+  mocks.invoke.mockResolvedValue(success());
+  await logoutIapAccount();
+  expect(mocks.invoke).toHaveBeenCalledWith("desktop_account_request", expect.objectContaining({
+    request: expect.objectContaining({ path: "/user/logout", method: "POST" }),
+  }));
+  expect(mocks.deleteCookie).not.toHaveBeenCalled();
+});
 
 it("uses native cookie requests and the real phone login schema, then validates the saved cookie via /user", async () => {
   mocks.request.mockResolvedValueOnce(success({ token: "secret-jwt" })).mockResolvedValueOnce(success(account));

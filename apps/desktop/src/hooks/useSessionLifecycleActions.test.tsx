@@ -190,7 +190,7 @@ it("serializes simultaneous top-of-history requests and accepts the next cursor"
   const test = setup();
   const request = deferred<HistoryPage>();
   test.call.mockReturnValueOnce(request.promise);
-  let loading!: Promise<void>;
+  let loading!: Promise<void | { error: unknown }>;
 
   act(() => {
     loading = test.result.current.loadOlder();
@@ -238,7 +238,7 @@ it("cancels old history on session switch without mixing pages or clearing a new
   test.call
     .mockReturnValueOnce(oldRequest.promise)
     .mockReturnValueOnce(newRequest.promise);
-  let oldLoading!: Promise<void>;
+  let oldLoading!: Promise<void | { error: unknown }>;
   act(() => {
     oldLoading = test.result.current.loadOlder();
   });
@@ -253,7 +253,7 @@ it("cancels old history on session switch without mixing pages or clearing a new
   expect(test.result.current.loadingOlder).toBe(false);
   expect(test.selectSession).toHaveBeenLastCalledWith("b");
 
-  let newLoading!: Promise<void>;
+  let newLoading!: Promise<void | { error: unknown }>;
   act(() => {
     newLoading = test.result.current.loadOlder();
   });
@@ -276,7 +276,7 @@ it("aborts paging on unmount without surfacing a cancelled request as an error",
   const test = setup();
   const request = deferred<HistoryPage>();
   test.call.mockReturnValueOnce(request.promise);
-  let loading!: Promise<void>;
+  let loading!: Promise<void | { error: unknown }>;
   act(() => {
     loading = test.result.current.loadOlder();
   });
@@ -296,7 +296,7 @@ it("finishes an opening load when the view is deactivated after cancellation", a
   const test = setup();
   const request = deferred<unknown>();
   test.call.mockReturnValueOnce(request.promise);
-  let loading!: Promise<void>;
+  let loading!: Promise<void | { error: unknown }>;
   act(() => {
     loading = test.result.current.openSession("a");
   });
@@ -391,7 +391,7 @@ it("joins an in-flight prefetch when the reader requests older history", async (
   const prefetch = deferred<HistoryPage>();
   test.call.mockResolvedValueOnce(openResult()).mockReturnValueOnce(prefetch.promise);
   await act(async () => test.result.current.openSession("a"));
-  let loading!: Promise<void>;
+  let loading!: Promise<void | { error: unknown }>;
   act(() => {
     test.result.current.setHistoryPrefetchPinned(false);
     loading = test.result.current.loadOlder();
@@ -419,7 +419,7 @@ it("rejects history after navigation changes before React runs cancellation effe
   const test = setup();
   const page = deferred<HistoryPage>();
   test.call.mockReturnValueOnce(page.promise);
-  let loading!: Promise<void>;
+  let loading!: Promise<void | { error: unknown }>;
   act(() => { loading = test.result.current.loadOlder(); });
   test.catalog.navigationEpoch.current++;
   await act(async () => { page.resolve(emptyPage); await loading; });
@@ -443,4 +443,16 @@ it("isolates prefetch and consumed cursors for two hosts with identical session 
   await act(async () => page.resolve(emptyPage));
   expect(first.feed.prepend).not.toHaveBeenCalled();
   expect(second.feed.prepend).toHaveBeenCalledTimes(1);
+});
+
+it("returns history failures safely and leaves the cursor retryable", async () => {
+  const test = setup();
+  const error = new Error("network unavailable");
+  test.call.mockRejectedValueOnce(error).mockResolvedValueOnce(emptyPage);
+  await act(async () => {
+    expect(await test.result.current.loadOlder()).toEqual({ error });
+  });
+  expect(test.result.current.loadingOlder).toBe(false);
+  await act(async () => { await test.result.current.loadOlder(); });
+  expect(test.feed.prepend).toHaveBeenCalledExactlyOnceWith("a", emptyPage);
 });

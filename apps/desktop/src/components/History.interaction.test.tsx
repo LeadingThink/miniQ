@@ -51,11 +51,14 @@ it("searches on the server and resets pagination when the query changes", async 
   const client = {call} as unknown as RpcClient;
   const hook = renderHook(({query}) => useHistorySearch(client, "session", "all", query), {initialProps:{query:"first"}});
   await waitFor(() => expect(hook.result.current.page?.toolCalls).toHaveLength(1));
-  act(() => hook.result.current.loadOlder());
+  await act(async () => { await hook.result.current.loadOlder(); });
   await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
+  expect(call.mock.calls[1][1]).toMatchObject({query:"first", before:{at:"older",id:"next"}});
   hook.rerender({query:"second"});
+  expect(hook.result.current.page).toBeNull();
   await waitFor(() => expect(call).toHaveBeenCalledTimes(3));
   expect(call.mock.calls[2][1]).toMatchObject({query:"second", before:null});
+  await waitFor(() => expect(hook.result.current.page?.toolCalls).toEqual([tool]));
 });
 
 it("keeps server matches with deferred tool payloads and searches older artifacts separately", async () => {
@@ -104,18 +107,25 @@ it("keeps server matches with deferred tool payloads and searches older artifact
 
 it("retries a failed search page with the same cursor without losing loaded matches", async () => {
   const cursor = { at: "2026-09-07", id: "tool" };
+  const failure = new Error("connection interrupted");
   const call = vi.fn()
     .mockResolvedValueOnce({ messages: [], toolCalls: [tool], nextCursor: cursor })
-    .mockRejectedValueOnce(new Error("connection interrupted"))
+    .mockRejectedValueOnce(failure)
     .mockResolvedValueOnce({ messages: [], toolCalls: [{ ...tool, id: "older" }], nextCursor: null });
   const client = { call } as unknown as RpcClient;
   const hook = renderHook(() => useHistorySearch(client, "session", "errors", ""));
   await waitFor(() => expect(hook.result.current.page?.toolCalls).toHaveLength(1));
-  act(() => hook.result.current.loadOlder());
-  await waitFor(() => expect(hook.result.current.error).toContain("connection interrupted"));
-  expect(hook.result.current.page?.toolCalls).toHaveLength(1);
-  act(() => hook.result.current.loadOlder());
-  await waitFor(() => expect(hook.result.current.page?.toolCalls).toHaveLength(2));
+  await act(async () => {
+    // Pagination errors are returned to the scroll layer's retry cycle.
+    expect(await hook.result.current.loadOlder()).toEqual({ error: failure });
+  });
+  expect(hook.result.current.error).toBeNull();
+  expect(hook.result.current.loading).toBe(false);
+  expect(hook.result.current.page).toEqual({ messages: [], toolCalls: [tool], nextCursor: cursor });
+  await act(async () => { await hook.result.current.loadOlder(); });
+  expect(hook.result.current.page).toEqual({
+    messages: [], toolCalls: [{ ...tool, id: "older" }, tool], nextCursor: null,
+  });
   expect(call).toHaveBeenCalledTimes(3);
   expect(call.mock.calls[1][1]).toMatchObject({ before: cursor });
   expect(call.mock.calls[2][1]).toMatchObject({ before: cursor });
