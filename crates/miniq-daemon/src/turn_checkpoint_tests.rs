@@ -34,8 +34,14 @@ async fn image_archive_survives_session_checkpoint_and_next_turn_restore() {
     let checkpoint = crate::turn_checkpoint::SessionCheckpoint {
         store: store.clone(),
         session_id: session.id.clone(),
-        anchor_id: user.id,
-        message_id: "partial-result".into(),
+        anchor_id: Mutex::new(user.id),
+        message_id: Mutex::new("partial-result".into()),
+        state: AppState::new(
+            miniq_memory::Store::open_in_memory().unwrap(),
+            "test".into(),
+            Arc::new(miniq_models::mock::MockProvider::text("unused")),
+        ),
+        events: tokio::sync::mpsc::channel(1).0.downgrade(),
         model_identity: None,
         partial_message: Default::default(),
     };
@@ -156,6 +162,19 @@ async fn cancelled_turn_keeps_tools_partial_output_plan_and_latest_request() {
         .unwrap()
         .iter()
         .any(|message| message.content.contains("I checked the file")));
+    let commentary = state
+        .store
+        .list_messages(&session.id)
+        .unwrap()
+        .into_iter()
+        .find(|message| message.content == "I checked the file")
+        .unwrap();
+    assert_eq!(
+        commentary.assistant_kind,
+        Some(miniq_protocol::AssistantMessageKind::Commentary)
+    );
+    let tool = state.store.list_tool_calls(&session.id).unwrap().remove(0);
+    assert!(commentary.created_at <= tool.created_at);
     assert!(state.store.get_model_context(&other.id).unwrap().is_none());
     state
         .store
@@ -179,5 +198,18 @@ async fn cancelled_turn_keeps_tools_partial_output_plan_and_latest_request() {
         .messages
         .iter()
         .any(|message| message.tool_call_id.as_deref() == Some("read-1")));
+    let visible = state.store.list_messages(&session.id).unwrap();
+    assert_eq!(
+        visible.last().unwrap().assistant_kind,
+        Some(miniq_protocol::AssistantMessageKind::Final)
+    );
+    assert_eq!(
+        request
+            .messages
+            .iter()
+            .filter(|message| message.content == "I checked the file")
+            .count(),
+        1
+    );
     assert_eq!(state.store.list_tool_calls(&session.id).unwrap().len(), 1);
 }

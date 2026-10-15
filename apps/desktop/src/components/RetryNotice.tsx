@@ -17,7 +17,7 @@ export function RetryNotice({ progress }: { progress: TurnProgress }) {
   );
   return (
     <span className="retry-notice">
-      自动重试 {retry.attempt}/{retry.maxAttempts} ·{" "}
+      {retry.reason && `${retry.reason} · `}自动重试 {retry.attempt}/{retry.maxAttempts} ·{" "}
       {progress.phase === "waiting_retry" && remaining > 0
         ? `${remaining} 秒后重试`
         : progress.phase === "receiving_model"

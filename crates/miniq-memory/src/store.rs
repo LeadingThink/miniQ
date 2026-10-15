@@ -143,7 +143,14 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0024_history_order_indexes",
         include_str!("../../../migrations/0024_history_order_indexes.sql"),
     ),
+    (
+        "0025_assistant_message_kinds",
+        include_str!("../../../migrations/0025_assistant_message_kinds.sql"),
+    ),
 ];
+
+#[cfg(test)]
+mod message_kind_tests;
 
 #[derive(Debug, Error)]
 pub enum MemoryError {

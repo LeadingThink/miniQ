@@ -21,13 +21,15 @@ pub fn native_aliases(canonical: &str) -> &'static [&'static str] {
         "task_get" => &["TaskGet"],
         "task_list" => &["TaskList"],
         "task_item_update" => &["TaskUpdate"],
-        "agent_run" => &["Task", "Agent"],
-        "agent_message" => &["SendMessage"],
+        "agent_run" => &["Task", "Agent", "spawn_agent"],
+        "agent_message" => &["SendMessage", "send_input"],
         "plan_mode" => &["EnterPlanMode", "ExitPlanMode"],
         "skill_read" => &["Skill"],
         "mcp_call" => &["mcp__<server>__<tool>"],
+        "agent_wait" => &["wait_agent"],
         "process_output" => &["TaskOutput"],
-        "process_kill" => &["KillShell", "TaskStop"],
+        "process_input" => &["write_stdin"],
+        "process_kill" => &["KillShell", "TaskStop", "close_agent"],
         _ => &[],
     }
 }

@@ -61,10 +61,9 @@ function forkButtons() {
 it("forks a completed reply while the session is running", () => {
   const onFork = vi.fn(async () => true);
   render(view(true, onFork));
-  const [completed, running] = forkButtons();
+  const [completed] = forkButtons();
+  expect(forkButtons()).toHaveLength(1);
   expect(completed.disabled).toBe(false);
-  expect(running.disabled).toBe(true);
-  expect(running.title).toBe("本轮完成后可分支");
   fireEvent.click(completed);
   expect(onFork).toHaveBeenCalledWith("a1");
 });

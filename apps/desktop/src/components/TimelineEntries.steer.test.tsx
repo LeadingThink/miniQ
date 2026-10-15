@@ -71,7 +71,7 @@ it("keeps a steered message inside the turn it interrupted", () => {
 it("renders a steered message as an inline steer note in the process flow", () => {
   const { container } = render(view({ busy: false, messages: steeredMessages, toolCalls: steeredTools }));
   expect(container.querySelectorAll(".timeline-turn")).toHaveLength(1);
-  fireEvent.click(screen.getByRole("button", { name: /已执行/ }));
+  expect(container.querySelector("[data-execution-fold]")).toBeNull();
   const note = container.querySelector(".steer-note");
   expect(note?.textContent).toBe("引导：改用 pnpm");
   expect(container.querySelector('[data-user-message-id="u2"]')).toBeNull();
@@ -100,23 +100,19 @@ it("cancelling the confirmation neither stops nor rewrites", () => {
   const onStopTurn = vi.fn(asyncNoop);
   const onRewrite = vi.fn(async () => true);
   render(view({ busy: true, messages: plainMessages, onRewrite, onStopTurn }));
-  fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
+  fireEvent.click(screen.getByRole("button", { name: "修改消息" }));
+  fireEvent.change(screen.getByLabelText("修改消息内容"), { target: { value: "new question" } });
+  fireEvent.click(screen.getByRole("button", { name: "发送修改" }));
   fireEvent.click(screen.getByRole("button", { name: "取消" }));
   expect(onStopTurn).not.toHaveBeenCalled();
   expect(onRewrite).not.toHaveBeenCalled();
 });
 
-it("regenerates the latest reply while running after stopping the turn", async () => {
-  const order: string[] = [];
-  render(view({
-    busy: true,
-    messages: plainMessages,
-    onStopTurn: async () => { order.push("stop"); },
-    onRewrite: async () => { order.push("rewrite"); return true; },
-  }));
-  fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
-  fireEvent.click(screen.getByRole("button", { name: "停止并继续" }));
-  await waitFor(() => expect(order).toEqual(["stop", "rewrite"]));
+it("hides actions on the in-progress reply, even if it is persisted", () => {
+  render(view({ busy: true, messages: plainMessages }));
+  const reply = screen.getByText("assistant a1").closest(".message-entry")!;
+  expect(reply.querySelector(".message-footer")).toBeNull();
+  expect(screen.queryByRole("button", { name: "重新生成" })).toBeNull();
 });
 
 it("rewrites immediately without confirmation when idle", async () => {

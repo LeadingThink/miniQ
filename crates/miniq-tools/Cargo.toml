@@ -33,6 +33,7 @@ uuid = { workspace = true }
 tokio-util = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 tempfile = "3"
+portable-pty = "0.9"
 enigo = { version = "0.6.1", optional = true }
 xcap = { version = "0.8.2", optional = true }
 

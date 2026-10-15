@@ -26,6 +26,7 @@ pub(crate) fn from_event(event: AgentEvent) -> Option<TurnProgress> {
             attempt,
             max_attempts,
             delay_ms,
+            reason,
         } => (
             TurnPhase::WaitingRetry,
             step,
@@ -33,6 +34,7 @@ pub(crate) fn from_event(event: AgentEvent) -> Option<TurnProgress> {
                 attempt,
                 max_attempts,
                 delay_ms,
+                reason: Some(reason),
             }),
         ),
         _ => return None,
@@ -71,6 +73,7 @@ fn in_flight_retry(retry: miniq_agent::RetryAttempt) -> ModelRetryProgress {
         attempt: retry.attempt,
         max_attempts: retry.max_attempts,
         delay_ms: 0,
+        reason: retry.reason,
     }
 }
 
@@ -118,6 +121,7 @@ mod tests {
                     retry: Some(RetryAttempt {
                         attempt: 3,
                         max_attempts: 10,
+                        reason: Some("模型服务暂时异常".into()),
                     }),
                 },
                 AgentEvent::ModelResponseStarted {
@@ -125,6 +129,7 @@ mod tests {
                     retry: Some(RetryAttempt {
                         attempt: 3,
                         max_attempts: 10,
+                        reason: Some("模型服务暂时异常".into()),
                     }),
                 },
             ] {
@@ -134,6 +139,7 @@ mod tests {
                     (retry.attempt, retry.max_attempts, retry.delay_ms),
                     (3, 10, 0)
                 );
+                assert_eq!(retry.reason.as_deref(), Some("模型服务暂时异常"));
                 if step == 0 {
                     assert_eq!(progress.phase, TurnPhase::CompactingContext);
                 }
@@ -161,6 +167,7 @@ mod tests {
             attempt: 1,
             max_attempts: 10,
             delay_ms: 1000,
+            reason: "模型服务暂时异常".into(),
         })
         .unwrap();
         record_retry(&state, "one", None, &progress);
@@ -170,6 +177,7 @@ mod tests {
             retry: Some(RetryAttempt {
                 attempt: 1,
                 max_attempts: 10,
+                reason: Some("模型服务暂时异常".into()),
             }),
         })
         .unwrap();

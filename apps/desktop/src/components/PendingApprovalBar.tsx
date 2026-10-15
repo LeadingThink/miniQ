@@ -1,36 +1,50 @@
-import { ChevronRight, ShieldQuestion } from "lucide-react";
+import { useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { PendingApproval } from "../hooks/useSessionFeed";
+import { errorMessage } from "../errorMessage";
+import { ApprovalCard } from "./TimelineInteractions";
 import "./PendingApprovalBar.css";
 
-/** Pinned above the composer so a pending approval stays visible however long
- * the transcript is. The full card with parameters remains in the timeline. */
-export function PendingApprovalBar({ approvals, onResolve, onShowDetails }: {
+/** The session's only approval action surface. Parameters and decisions share
+ * one pinned panel; queued requests stay addressable without duplicating cards. */
+export function PendingApprovalBar({ approvals, onResolve }: {
   approvals: PendingApproval[];
-  onResolve: (approvalId: string, decision: string) => void;
-  onShowDetails: (approvalId: string) => void;
+  onResolve: (approvalId: string, decision: string) => void | Promise<void>;
 }) {
-  const item = approvals[0];
+  const [selected, setSelected] = useState<string | null>(null);
+  const index = Math.max(0, approvals.findIndex(item => item.approval.id === selected));
+  const item = approvals[index];
   if (!item) return null;
-  const id = item.approval.id;
-  const more = approvals.length - 1;
-  return (
-    <section className="pending-approval-bar" role="region" aria-label="待审批操作">
-      <div className="pending-approval-summary">
-        <ShieldQuestion size={15} aria-hidden="true" />
-        <strong>需要审批</strong>
-        <span className="pending-approval-tool">{item.toolName}</span>
-        <span className={`badge ${item.approval.riskLevel}`}>{item.approval.riskLevel}</span>
-        {more > 0 && <span className="pending-approval-more">还有 {more} 项</span>}
-      </div>
-      {item.approval.reason && <p className="pending-approval-reason">{item.approval.reason}</p>}
-      <div className="pending-approval-actions">
-        <button type="button" onClick={() => onResolve(id, "approve")}>允许一次</button>
-        <button type="button" className="secondary" onClick={() => onResolve(id, "approve_for_session")}>本会话允许</button>
-        <button type="button" className="danger" onClick={() => onResolve(id, "reject")}>拒绝</button>
-        <button type="button" className="ghost pending-approval-details" onClick={() => onShowDetails(id)}>
-          查看参数<ChevronRight size={14} aria-hidden="true" />
-        </button>
-      </div>
-    </section>
-  );
+  return <section className="pending-approval-bar" aria-label="待审批操作">
+    {approvals.length > 1 && <nav className="pending-approval-queue" aria-label="待审批队列">
+      <span>第 {index + 1} / {approvals.length} 项</span>
+      <button type="button" className="icon-button" aria-label="上一项审批" disabled={index === 0}
+        onClick={() => setSelected(approvals[index - 1].approval.id)}><ChevronLeft size={16} /></button>
+      <button type="button" className="icon-button" aria-label="下一项审批" disabled={index === approvals.length - 1}
+        onClick={() => setSelected(approvals[index + 1].approval.id)}><ChevronRight size={16} /></button>
+    </nav>}
+    <ApprovalDecision key={item.approval.id} item={item} onResolve={onResolve} />
+  </section>;
+}
+
+function ApprovalDecision({ item, onResolve }: {
+  item: PendingApproval;
+  onResolve: (approvalId: string, decision: string) => void | Promise<void>;
+}) {
+  const sending = useRef(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const resolve = async (id: string, decision: string) => {
+    if (sending.current) return;
+    sending.current = true;
+    setPending(true);
+    setError(null);
+    try { await onResolve(id, decision); }
+    catch (cause) { setError(errorMessage(cause)); }
+    finally { sending.current = false; setPending(false); }
+  };
+  return <>
+    <ApprovalCard item={item} pending={pending} onResolve={(id, decision) => void resolve(id, decision)} />
+    {error && <p role="alert">{error}</p>}
+  </>;
 }

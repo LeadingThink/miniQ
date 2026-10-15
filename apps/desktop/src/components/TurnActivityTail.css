@@ -1,0 +1,18 @@
+.turn-activity-tail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 3px 0;
+  color: var(--text-dim);
+  font-size: var(--font-footnote);
+  animation: turn-tail-breathe 1.8s ease-in-out infinite;
+}
+.turn-activity-dot { font-size: 8px; }
+@keyframes turn-tail-breathe {
+  0%, 100% { opacity: .45; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .turn-activity-tail { animation: none; opacity: 1; }
+}

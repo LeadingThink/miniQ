@@ -213,6 +213,11 @@ export function useConversationScroll(options: ConversationScrollOptions) {
   const reveal = useCallback((element: HTMLElement) => {
     const root = scrollRef.current;
     if (!root) return;
+    // A settled turn retains its records inside a native disclosure. Reveal
+    // ancestors before measuring, otherwise search scrolls to a hidden zero rect.
+    for (let parent = element.parentElement; parent && parent !== root; parent = parent.parentElement) {
+      if (parent instanceof HTMLDetailsElement) parent.open = true;
+    }
     pinned.current = false;
     cancelFollow();
     if (request.current) request.current.anchor = null;

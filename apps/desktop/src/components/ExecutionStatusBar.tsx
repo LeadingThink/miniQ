@@ -29,8 +29,7 @@ function activityLabel(props: ExecutionStatusBarProps, active?: ToolCall): strin
     : turnProgressLabel(props.progress);
 }
 
-/** The live task indicator, outside the scrollable transcript. Once the
- * running turn has an execution fold, its header owns the live "用时". */
+/** Current turn header, distinct from the lightweight activity marker at its tail. */
 export function ExecutionStatusBar(props: ExecutionStatusBarProps) {
   const turnCalls = useMemo(() => currentTurnCalls(props.messages, props.calls), [props.messages, props.calls]);
   const active = turnCalls.filter((call) => call.status === "running" || call.status === "pending").at(-1);
@@ -64,22 +63,18 @@ export function ExecutionStatusBar(props: ExecutionStatusBarProps) {
   const task = props.plan.find((item) => item.status === "in_progress");
   const detail = waiting ? "" : task?.content || (active ? toolInputSummary(active) : "");
   const timing = (props.timing ?? latestMessageTiming(props.messages))?.timing;
-  // The step clock restarts with each tool call or model phase, so a stalled
-  // step is visible even when the whole turn has been running for a long time.
-  const stepStartedAt = retry ? props.progress?.startedAt : active?.createdAt ?? props.progress?.startedAt;
-  const totalStartedAt = timing?.status === "running" && turnCalls.length === 0 ? timing.startedAt : undefined;
+  const totalStartedAt = timing?.status === "running" ? timing.startedAt
+    : [...props.messages].reverse().find(message => message.role === "user")?.createdAt;
   const Icon = props.approvals ? ShieldQuestion : props.questions ? MessageCircleQuestion : LoaderCircle;
   const { done, total } = planCounts(props.plan);
   return (
     <section ref={bar} className="execution-status-bar" aria-label="当前任务状态">
       <div className="execution-status-row">
         <Icon size={15} aria-hidden="true" className={waiting ? "" : "activity-spinner"} />
-        <strong role="status" aria-live="polite">{activityLabel(props, active)}</strong>
-        {!waiting && stepStartedAt && (
-          <LiveElapsed key={stepStartedAt} startedAt={stepStartedAt} className="execution-status-time execution-status-step"
-            prefix={active && !retry ? "当前操作" : "当前步骤"} />
-        )}
-        {totalStartedAt && totalStartedAt !== stepStartedAt && (
+        <strong role="status" aria-live="polite">{retry && props.progress
+          ? <RetryNotice progress={props.progress} />
+          : <>{!waiting && "Working · "}{activityLabel(props, active)}</>}</strong>
+        {totalStartedAt && (
           <LiveElapsed startedAt={totalStartedAt} className="execution-status-time" prefix="用时" format={compactDuration} />
         )}
         {total > 0 && (
@@ -91,7 +86,6 @@ export function ExecutionStatusBar(props: ExecutionStatusBarProps) {
           </button>
         )}
       </div>
-      {retry && props.progress && <RetryNotice progress={props.progress} />}
       {detail && <p className="execution-status-detail">{detail}</p>}
       {open && total > 0 && (
         <div id={planId} className="execution-status-plan execution-plan" role="region" aria-label="任务步骤详情">

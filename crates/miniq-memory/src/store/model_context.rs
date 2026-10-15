@@ -113,6 +113,7 @@ mod tests {
             id: "partial".into(),
             session_id: other.id.clone(),
             role: Role::Assistant,
+            assistant_kind: Some(miniq_protocol::AssistantMessageKind::Interrupted),
             content: "interrupted output".into(),
             attachments: Vec::new(),
             created_at: now_iso(),

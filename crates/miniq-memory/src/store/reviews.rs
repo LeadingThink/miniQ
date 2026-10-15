@@ -239,7 +239,7 @@ fn exit_codes(value: &Value) -> Vec<Value> {
 impl Store {
     pub fn last_user_message(&self, session_id: &str) -> Result<Option<miniq_protocol::Message>> {
         let conn = self.conn.lock().unwrap();
-        conn.query_row("SELECT id,session_id,role,content,attachments_json,created_at,steered FROM messages WHERE session_id=?1 AND role='user' ORDER BY rowid DESC LIMIT 1",params![session_id],super::row_mappers::row_to_message).optional().map_err(Into::into)
+        conn.query_row("SELECT id,session_id,role,content,attachments_json,created_at,steered,assistant_kind FROM messages WHERE session_id=?1 AND role='user' ORDER BY rowid DESC LIMIT 1",params![session_id],super::row_mappers::row_to_message).optional().map_err(Into::into)
     }
     pub fn validate_review_message_filter(&self, session_id: &str, id: &str) -> Result<()> {
         let exists:bool=self.conn.lock().unwrap().query_row("SELECT EXISTS(SELECT 1 FROM messages WHERE id=?1 AND session_id=?2) OR EXISTS(SELECT 1 FROM review_runs WHERE primary_message_id=?1 AND session_id=?2)",params![id,session_id],|r|r.get(0))?;

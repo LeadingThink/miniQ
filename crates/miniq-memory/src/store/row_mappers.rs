@@ -218,6 +218,15 @@ pub(super) fn row_to_message(row: &Row<'_>) -> rusqlite::Result<Message> {
         created_at: row.get(5)?,
         turn_timing: None,
         steered: row.get(6)?,
+        assistant_kind: row
+            .get::<_, Option<String>>(7)?
+            .map(|value| match value.as_str() {
+                "commentary" => Ok(miniq_protocol::AssistantMessageKind::Commentary),
+                "final" => Ok(miniq_protocol::AssistantMessageKind::Final),
+                "interrupted" => Ok(miniq_protocol::AssistantMessageKind::Interrupted),
+                other => Err(invalid_text(format!("assistant message kind {other}"))),
+            })
+            .transpose()?,
     })
 }
 

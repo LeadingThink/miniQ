@@ -33,6 +33,7 @@ use miniq_models::{
     ToolCallRequest, ToolSpec,
 };
 use serde_json::Value;
+use std::time::Instant;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -61,15 +62,21 @@ pub enum AgentError {
 pub struct RetryAttempt {
     pub attempt: usize,
     pub max_attempts: usize,
+    /// Safe category text, never a raw provider body or URL.
+    pub reason: Option<String>,
 }
 
 /// Events surfaced to the caller while a turn runs.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum AgentEvent {
     /// Incremental assistant text.
     TextDelta(String),
     /// Replace uncommitted output when retrying an interrupted model response.
     TextReplaced(String),
+    /// Drain preceding deltas before the host commits a visible segment.
+    Flush(tokio::sync::oneshot::Sender<()>),
+    /// The current segment is committed; subsequent deltas start a new segment.
+    TextCommitted,
     ModelRequestStarted {
         step: usize,
         retry: Option<RetryAttempt>,
@@ -83,6 +90,7 @@ pub enum AgentEvent {
         attempt: usize,
         max_attempts: usize,
         delay_ms: u64,
+        reason: String,
     },
     ContextCompacted {
         estimated_tokens_before: usize,
@@ -115,24 +123,7 @@ async fn append_text_delta(
     if delta.is_empty() {
         return;
     }
-    if !*started_text_segment {
-        if !state.streamed_text.is_empty() {
-            let separator = if state.streamed_text.ends_with("\n\n") {
-                ""
-            } else if state.streamed_text.ends_with('\n') {
-                "\n"
-            } else {
-                "\n\n"
-            };
-            if !separator.is_empty() {
-                state.streamed_text.push_str(separator);
-                let _ = events
-                    .send(AgentEvent::TextDelta(separator.to_string()))
-                    .await;
-            }
-        }
-        *started_text_segment = true;
-    }
+    *started_text_segment = true;
     text.push_str(&delta);
     state.partial_text.push_str(&delta);
     state.streamed_text.push_str(&delta);
@@ -337,6 +328,7 @@ pub async fn run_turn(
     .await
 }
 
+#[tracing::instrument(name = "agent_run", skip_all, fields(purpose = ?limits.purpose))]
 pub async fn run_turn_with_limits(
     provider: &dyn ModelProvider,
     executor: &dyn ToolExecutor,
@@ -346,7 +338,14 @@ pub async fn run_turn_with_limits(
     limits: RunLimits,
 ) -> Result<TurnOutcome, AgentError> {
     let mut state = checkpoint::RunState::new(history);
+    let turn_started = Instant::now();
+    tracing::info!("agent turn started");
     let result = run_turn_inner(provider, executor, &mut state, events, cancel, &limits).await;
+    tracing::info!(
+        elapsed_ms = turn_started.elapsed().as_millis() as u64,
+        success = result.is_ok(),
+        "agent turn finished"
+    );
     if result.is_err() {
         state.save(&limits, true).await?;
     }
@@ -379,6 +378,7 @@ async fn run_turn_inner(
             return Err(AgentError::StepLimitExceeded { steps });
         }
         steps += 1;
+        let step_started = Instant::now();
         image_executor.sync(&mut state.history);
         // Recomputed per request: the effective set may change mid-turn.
         let tools = executor.specs_for(&TurnToolCtx { step: steps });
@@ -390,6 +390,12 @@ async fn run_turn_inner(
                     &state.history,
                     limits.purpose,
                 ));
+        tracing::info!(
+            step = steps,
+            elapsed_ms = step_started.elapsed().as_millis() as u64,
+            "agent tool specs and visual context prepared"
+        );
+        let context_started = Instant::now();
         let context = compact_history(
             provider,
             state.history.clone(),
@@ -400,6 +406,16 @@ async fn run_turn_inner(
             &cancel,
         )
         .await?;
+        tracing::info!(
+            step = steps,
+            elapsed_ms = context_started.elapsed().as_millis() as u64,
+            history_messages = state.history.len(),
+            request_tokens_before = context.estimated_tokens_before,
+            request_tokens_after = context.estimated_tokens_after,
+            compacted = context.compacted,
+            tools = tools.len(),
+            "agent context prepared"
+        );
         state.history = context.messages;
         history_executor.sync(&state.history);
 
@@ -442,6 +458,14 @@ async fn run_turn_inner(
                 .await;
             // Race the provider call against cancellation so an interrupt
             // takes effect while connecting or waiting for the first byte.
+            tracing::info!(
+                step = steps,
+                attempt = retries.attempts + 1,
+                messages = request.messages.len(),
+                tools = request.tools.len(),
+                "model request dispatching"
+            );
+            let request_started = Instant::now();
             let stream = tokio::select! {
                 _ = cancel.cancelled() => return Err(AgentError::Cancelled),
                 stream = provider.stream_complete(request) => stream,
@@ -466,6 +490,13 @@ async fn run_turn_inner(
                     continue;
                 }
                 Err(error) => {
+                    tracing::warn!(
+                        step = steps,
+                        retry = retries.attempts,
+                        elapsed_ms = request_started.elapsed().as_millis() as u64,
+                        retryable = error.is_retryable(),
+                        "model request failed before stream"
+                    );
                     if retries.wait(&error, steps, &events, &cancel).await? {
                         continue;
                     }
@@ -502,6 +533,17 @@ async fn run_turn_inner(
                     }
                 };
                 match delta {
+                    ChatDelta::FirstEvent(observed) => {
+                        tracing::info!(
+                            step = steps,
+                            attempt = retries.attempts + 1,
+                            elapsed_ms = observed
+                                .saturating_duration_since(request_started)
+                                .as_millis() as u64,
+                            first_event_queue_delay_ms = observed.elapsed().as_millis() as u64,
+                            "model first event received"
+                        );
+                    }
                     ChatDelta::Text(t) => {
                         if t.is_empty() {
                             continue;
@@ -532,11 +574,20 @@ async fn run_turn_inner(
                         tool_calls.push(call);
                     }
                     ChatDelta::Context(context) => provider_context = Some(context),
-                    ChatDelta::FirstEvent(_) | ChatDelta::ResponseInfo(_) => {}
+                    ChatDelta::ResponseInfo(_) => {}
                     ChatDelta::Finished => break,
                 }
             }
 
+            tracing::info!(
+                step = steps,
+                elapsed_ms = request_started.elapsed().as_millis() as u64,
+                attempt = retries.attempts + 1,
+                stream_failed = stream_error.is_some(),
+                response_text_bytes = text.len(),
+                tool_calls = tool_calls.len(),
+                "model response stream finished"
+            );
             if let Some(error) = stream_error {
                 if text.is_empty()
                     && tool_calls.is_empty()
@@ -647,6 +698,7 @@ async fn run_turn_inner(
                 let instruction = ChatMessage::user(instruction);
                 state.history.push(instruction.clone());
                 state.appended.push(instruction);
+                state.commit_interim(limits, &events).await?;
                 state.save(limits, false).await?;
                 continue;
             }
@@ -697,11 +749,35 @@ async fn run_turn_inner(
                 .collect();
             state.history.extend(warnings.iter().cloned());
             state.appended.extend(warnings);
+            state.commit_interim(limits, &events).await?;
             state.save(limits, false).await?;
             continue;
         }
 
+        let tool_started = Instant::now();
+        tracing::info!(
+            step = steps,
+            tool_calls = tool_calls.len(),
+            "tool batch started"
+        );
+        // Record unstarted result placeholders before committing the commentary.
+        // This keeps replay valid even if the daemon exits before dispatch.
+        let base = state.history.len();
+        state.history.extend(
+            tool_calls
+                .iter()
+                .map(|call| tool_batch::unfinished(call, false)),
+        );
+        state.commit_interim(limits, &events).await?;
+        state.history.truncate(base);
         tool_batch::execute(executor, &tool_calls, state, limits, &cancel).await?;
+        tracing::info!(
+            step = steps,
+            elapsed_ms = tool_started.elapsed().as_millis() as u64,
+            tool_calls = tool_calls.len(),
+            total_step_ms = step_started.elapsed().as_millis() as u64,
+            "tool batch finished"
+        );
         let results = &state.history[state.history.len() - tool_calls.len()..];
         loop_guard.record(batch_fingerprint, loop_guard::result_fingerprint(results));
     }
@@ -961,22 +1037,26 @@ mod tests {
         .unwrap();
 
         let mut deltas = Vec::new();
+        let mut segments = Vec::new();
+        let mut current = String::new();
         while let Ok(event) = receiver.try_recv() {
-            if let AgentEvent::TextDelta(delta) = event {
-                deltas.push(delta);
+            match event {
+                AgentEvent::TextDelta(delta) => {
+                    current.push_str(&delta);
+                    deltas.push(delta);
+                }
+                AgentEvent::TextCommitted => segments.push(std::mem::take(&mut current)),
+                _ => {}
             }
         }
+        segments.push(current);
+        assert_eq!(
+            segments,
+            ["检查文件", "分析完成\n", "修改完成\n\n", "全部完成"]
+        );
         assert_eq!(
             deltas,
-            vec![
-                "检查",
-                "文件",
-                "\n\n",
-                "分析完成\n",
-                "\n",
-                "修改完成\n\n",
-                "全部完成",
-            ]
+            ["检查", "文件", "分析完成\n", "修改完成\n\n", "全部完成"]
         );
     }
 

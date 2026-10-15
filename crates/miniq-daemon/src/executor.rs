@@ -53,7 +53,10 @@ pub struct SessionToolExecutor {
 
 impl SessionToolExecutor {
     fn tool_result_status(call: &ToolCallRequest, output: &Value) -> ToolCallStatus {
-        let shell_tool = matches!(call.name.as_str(), "shell_run" | "shell_batch");
+        let shell_tool = matches!(
+            call.name.as_str(),
+            "shell_run" | "shell_batch" | "process_output" | "process_input"
+        );
         if shell_tool && output.get("ok") == Some(&Value::Bool(false)) {
             ToolCallStatus::Failed
         } else {
@@ -489,7 +492,9 @@ impl ToolExecutor for SessionToolExecutor {
         let name = miniq_tools::canonical_native_tool_name(&call.name).unwrap_or(&call.name);
         match name {
             "file_read" | "file_list" | "file_glob" | "file_grep" | "git_status" | "git_diff"
-            | "doc_read" | "skill_read" | "memory_search" => ToolExecutionMode::Parallel,
+            | "doc_read" | "skill_read" | "memory_search" | "agent_result" => {
+                ToolExecutionMode::Parallel
+            }
             _ => ToolExecutionMode::Sequential,
         }
     }

@@ -31,7 +31,10 @@ impl Output {
             println!("{}", event);
         }
         let kind = event["type"].as_str().unwrap_or("");
-        if kind == "message_created" && event["message"]["role"] == "assistant" {
+        if kind == "message_created"
+            && event["message"]["role"] == "assistant"
+            && event["message"]["assistantKind"] != "commentary"
+        {
             self.final_text = event["message"]["content"]
                 .as_str()
                 .unwrap_or("")

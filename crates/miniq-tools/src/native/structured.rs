@@ -187,6 +187,61 @@ pub(super) fn adapt_agent(call: &ToolCallRequest) -> Result<Value, NativeToolErr
     Ok(Value::Object(output))
 }
 
+pub(super) fn adapt_spawn(call: &ToolCallRequest) -> Result<Value, NativeToolError> {
+    let input = object(call)?;
+    if input.get("fork_context").and_then(Value::as_bool) == Some(true) {
+        return Err(NativeToolError::unsupported(
+            call,
+            "fork_context is not supported; pass the complete task explicitly",
+        ));
+    }
+    let mut output = super::basic::remap(
+        call,
+        &[
+            ("message", "prompt"),
+            ("agent_type", "subagentType"),
+            ("model", "model"),
+        ],
+        &["fork_context"],
+    )?;
+    if input
+        .get("fork_context")
+        .is_some_and(|value| !value.is_boolean())
+    {
+        return Err(NativeToolError::invalid(
+            call,
+            "fork_context must be boolean",
+        ));
+    }
+    output["runInBackground"] = json!(true);
+    Ok(output)
+}
+
+pub(super) fn adapt_send(call: &ToolCallRequest) -> Result<Value, NativeToolError> {
+    let input = object(call)?;
+    if input
+        .get("interrupt")
+        .is_some_and(|value| !value.is_boolean())
+    {
+        return Err(NativeToolError::invalid(call, "interrupt must be boolean"));
+    }
+    if input.get("interrupt").and_then(Value::as_bool) == Some(true) {
+        return Err(NativeToolError::unsupported(
+            call,
+            "send_input interrupt=true is not supported; explicitly stop then send a follow-up",
+        ));
+    }
+    super::basic::remap(
+        call,
+        &[
+            ("id", "recipient"),
+            ("target", "recipient"),
+            ("message", "message"),
+        ],
+        &["interrupt"],
+    )
+}
+
 fn copy_field(input: &Map<String, Value>, output: &mut Map<String, Value>, from: &str, to: &str) {
     if let Some(value) = input.get(from) {
         output.insert(to.into(), value.clone());

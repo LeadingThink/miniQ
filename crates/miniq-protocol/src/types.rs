@@ -67,6 +67,9 @@ pub struct ModelRetryProgress {
     pub attempt: usize,
     pub max_attempts: usize,
     pub delay_ms: u64,
+    /// Credential-free error category for the last failed attempt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 impl SessionStatus {
@@ -285,6 +288,24 @@ impl Role {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AssistantMessageKind {
+    Commentary,
+    Final,
+    Interrupted,
+}
+
+impl AssistantMessageKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Commentary => "commentary",
+            Self::Final => "final",
+            Self::Interrupted => "interrupted",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
@@ -297,6 +318,8 @@ pub struct Message {
     pub created_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_timing: Option<crate::TurnTiming>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_kind: Option<AssistantMessageKind>,
     /// A user message steered into a running turn: it interrupted that turn
     /// and continues it, so clients render it inline in the turn's process.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

@@ -534,6 +534,14 @@
         ],
         "type": "object"
       },
+      "AssistantMessageKind": {
+        "enum": [
+          "commentary",
+          "final",
+          "interrupted"
+        ],
+        "type": "string"
+      },
       "BrowserDriverRequest": {
         "properties": {
           "arguments": true,
@@ -561,6 +569,16 @@
       },
       "Message": {
         "properties": {
+          "assistantKind": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/AssistantMessageKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "attachments": {
             "items": {
               "$ref": "#/definitions/MessageAttachment"
@@ -581,6 +599,10 @@
           },
           "sessionId": {
             "type": "string"
+          },
+          "steered": {
+            "description": "A user message steered into a running turn: it interrupted that turn and continues it, so clients render it inline in the turn's process.",
+            "type": "boolean"
           },
           "turnTiming": {
             "anyOf": [
@@ -640,6 +662,13 @@
             "format": "uint",
             "minimum": 0.0,
             "type": "integer"
+          },
+          "reason": {
+            "description": "Credential-free error category for the last failed attempt.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -945,6 +974,10 @@
           },
           "sessionId": {
             "type": "string"
+          },
+          "steered": {
+            "description": "The user steered this message into the running turn; it starts as soon as that turn stops.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2384,6 +2417,13 @@
             "format": "uint",
             "minimum": 0.0,
             "type": "integer"
+          },
+          "reason": {
+            "description": "Credential-free error category for the last failed attempt.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3154,6 +3194,14 @@
   "historyPage": {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "definitions": {
+      "AssistantMessageKind": {
+        "enum": [
+          "commentary",
+          "final",
+          "interrupted"
+        ],
+        "type": "string"
+      },
       "HistoryCursor": {
         "additionalProperties": false,
         "properties": {
@@ -3218,6 +3266,16 @@
       },
       "Message": {
         "properties": {
+          "assistantKind": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/AssistantMessageKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "attachments": {
             "items": {
               "$ref": "#/definitions/MessageAttachment"
@@ -3238,6 +3296,10 @@
           },
           "sessionId": {
             "type": "string"
+          },
+          "steered": {
+            "description": "A user message steered into a running turn: it interrupted that turn and continues it, so clients render it inline in the turn's process.",
+            "type": "boolean"
           },
           "turnTiming": {
             "anyOf": [

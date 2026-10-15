@@ -40,7 +40,11 @@ pub(super) fn shutdown_if_idle(state: &AppState) -> Result<Value, RpcError> {
 
 fn signal_shutdown(state: &AppState) {
     let shutdown = state.shutdown.clone();
+    let processes = state.processes.clone();
     tokio::spawn(async move {
+        if let Err(error) = processes.shutdown().await {
+            tracing::error!(%error, "could not stop all managed processes during shutdown");
+        }
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
         shutdown.cancel();
     });

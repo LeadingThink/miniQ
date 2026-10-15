@@ -151,6 +151,7 @@ impl Store {
             attachments: queued.attachments,
             created_at: now_iso(),
             turn_timing: None,
+            assistant_kind: None,
             steered: queued.steered,
         };
         super::conversation::insert_message(&transaction, &message)?;

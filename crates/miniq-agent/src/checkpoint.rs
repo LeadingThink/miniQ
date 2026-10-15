@@ -14,6 +14,12 @@ pub struct TurnCheckpoint {
 #[async_trait]
 pub trait CheckpointStore: Send + Sync + std::fmt::Debug {
     async fn save(&self, checkpoint: TurnCheckpoint) -> Result<(), AgentError>;
+
+    /// Persist a completed commentary segment before subsequent tools can run.
+    /// Hosts with no separate visible transcript retain it in provider history.
+    async fn commit_interim(&self, _checkpoint: TurnCheckpoint) -> Result<(), AgentError> {
+        Ok(())
+    }
 }
 
 pub(crate) struct RunState {
@@ -33,21 +39,53 @@ impl RunState {
         }
     }
 
+    pub async fn commit_interim(
+        &mut self,
+        limits: &RunLimits,
+        events: &tokio::sync::mpsc::Sender<crate::AgentEvent>,
+    ) -> Result<(), AgentError> {
+        if let Some(store) = &limits.checkpoint {
+            store
+                .commit_interim(TurnCheckpoint {
+                    history: self.history.clone(),
+                    display_text: self.streamed_text.clone(),
+                    stopped: false,
+                })
+                .await?;
+        }
+        let has_text = !self.streamed_text.is_empty();
+        self.partial_text.clear();
+        self.streamed_text.clear();
+        if has_text {
+            let _ = events.send(crate::AgentEvent::TextCommitted).await;
+        }
+        Ok(())
+    }
+
     pub async fn save(&self, limits: &RunLimits, stopped: bool) -> Result<(), AgentError> {
         let Some(store) = &limits.checkpoint else {
             return Ok(());
         };
+        let started = std::time::Instant::now();
         let mut history = self.history.clone();
         if stopped && !self.partial_text.is_empty() {
             // Incomplete provider-native blocks are not valid replay inputs.
             history.push(ChatMessage::assistant(self.partial_text.clone()));
         }
-        store
+        let result = store
             .save(TurnCheckpoint {
                 history,
                 display_text: self.streamed_text.clone(),
                 stopped,
             })
-            .await
+            .await;
+        tracing::info!(
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            history_messages = self.history.len(),
+            stopped,
+            success = result.is_ok(),
+            "agent checkpoint finished"
+        );
+        result
     }
 }

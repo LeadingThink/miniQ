@@ -2,7 +2,7 @@ import type { ToolCall } from "../types";
 import { isAutomationCall } from "./automationActivity";
 
 /** Tool families whose adjacent calls collapse into one summary line. */
-export type ToolKind = "read" | "edit" | "shell" | "webSearch" | "webFetch" | "codeSearch" | "list";
+export type ToolKind = "read" | "edit" | "shell" | "webSearch" | "webFetch" | "codeSearch" | "list" | "exploration";
 
 const KIND_OF: Record<string, ToolKind> = {
   file_read: "read",
@@ -22,6 +22,7 @@ const KIND_OF: Record<string, ToolKind> = {
 };
 
 const KIND_TEXT: Record<ToolKind, (count: number) => string> = {
+  exploration: (count) => `已探索 ${count} 项`,
   read: (count) => `读取了 ${count} 个文件`,
   edit: (count) => `编辑了 ${count} 个文件`,
   shell: (count) => `运行了 ${count} 条命令`,
@@ -103,14 +104,19 @@ export interface ToolRun {
   calls: ToolCall[];
 }
 
-/** Split calls into runs of adjacent same-kind calls; other calls stand alone. */
+/** Read/list/search calls share an exploration row. Other families merge only
+ * with their own kind. Callers pass a contiguous timeline group, never messages. */
 export function toolRuns(calls: ToolCall[]): ToolRun[] {
   const runs: ToolRun[] = [];
+  const exploration = (value: ToolKind | null | undefined) =>
+    value === "read" || value === "list" || value === "codeSearch" || value === "exploration";
   for (const call of calls) {
     const kind = toolKind(call);
     const previous = runs.at(-1);
-    if (kind && previous?.kind === kind) previous.calls.push(call);
-    else runs.push({ kind, calls: [call] });
+    if (kind && previous && (previous.kind === kind || (exploration(kind) && exploration(previous.kind)))) {
+      if (previous.kind !== kind) previous.kind = "exploration";
+      previous.calls.push(call);
+    } else runs.push({ kind, calls: [call] });
   }
   return runs;
 }
@@ -135,6 +141,15 @@ function runCount(run: ToolRun): number {
 /** One natural-language line for a merged run, e.g. "读取了 5 个文件". */
 export function toolRunSummary(run: ToolRun): string {
   if (!run.kind) return "";
+  if (run.kind === "exploration") {
+    const counts = { read: 0, list: 0, codeSearch: 0 };
+    for (const call of run.calls) {
+      const kind = toolKind(call);
+      if (kind === "read" || kind === "list" || kind === "codeSearch") counts[kind]++;
+    }
+    return [counts.read && `读取 ${counts.read} 次`, counts.list && `查看目录 ${counts.list} 次`,
+      counts.codeSearch && `搜索 ${counts.codeSearch} 次`].filter(Boolean).join(" · ");
+  }
   return KIND_TEXT[run.kind](runCount(run));
 }
 

@@ -499,7 +499,9 @@ impl Repl {
                 self.emit(&lines);
                 self.flush_markdown();
                 self.streamed.clear();
-                self.last_answer = content;
+                if event["message"]["assistantKind"] != "commentary" {
+                    self.last_answer = content;
+                }
             }
             "tool_call_started" => {
                 self.mark_running();

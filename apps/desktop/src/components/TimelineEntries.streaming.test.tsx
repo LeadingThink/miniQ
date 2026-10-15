@@ -95,6 +95,7 @@ it("streams inside the current turn, above approval cards, where the reply lands
   const reply = screen.getByText("正在回答").closest(".message-entry")!;
   expect(reply.parentElement).toBe(current);
   expect(reply.previousElementSibling).toBe(question);
+  expect(screen.queryByLabelText("当前任务状态")).toBeNull();
   expect(screen.getByText("正在回答").hasAttribute("data-streaming")).toBe(false);
 });
 

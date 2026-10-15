@@ -6,6 +6,8 @@
 //! daemon) around `dispatch`.
 
 mod agent;
+mod agent_result;
+mod agent_wait;
 mod app;
 mod apply_patch;
 mod apply_patch_diff;
@@ -49,6 +51,8 @@ mod workspace_roots_tests;
 pub use agent::{
     AgentBridge, AgentMessageRequest, AgentMessageTool, AgentRunRequest, AgentRunTool,
 };
+pub use agent_result::AgentResultTool;
+pub use agent_wait::AgentWaitTool;
 pub use app::AppAutomationTool;
 pub use apply_patch::{affected_paths as apply_patch_affected_paths, ApplyPatchTool};
 pub use browser::{
@@ -82,7 +86,9 @@ pub use observation::{observation_path, MAX_OBSERVATION_BYTES};
 pub use patch::FilePatchTool;
 pub use pdf_visual::ViewPdfTool;
 pub use plan_mode::PlanModeTool;
-pub use process::{ProcessKillTool, ProcessManager, ProcessOutputTool};
+pub use process::{
+    ProcessInputTool, ProcessKillTool, ProcessManager, ProcessOutputTool, ProcessResizeTool,
+};
 pub use router::{
     MediaConfig, ProviderMediaReference, ProviderMediaUploader, RegistrationError,
     RegistrationHandle, ScheduledTaskMemoryContext, Tool, ToolCatalog, ToolContext, ToolError,
@@ -135,6 +141,10 @@ pub fn default_router() -> ToolRouter {
         std::sync::Arc::new(TaskListTool),
         std::sync::Arc::new(TaskItemUpdateTool),
         std::sync::Arc::new(ProcessOutputTool),
+        std::sync::Arc::new(ProcessInputTool),
+        std::sync::Arc::new(ProcessResizeTool),
+        std::sync::Arc::new(AgentWaitTool),
+        std::sync::Arc::new(AgentResultTool),
         std::sync::Arc::new(ProcessKillTool),
         std::sync::Arc::new(MemorySearchTool),
         std::sync::Arc::new(MemoryWriteTool),

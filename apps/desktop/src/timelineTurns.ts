@@ -12,10 +12,6 @@ export interface TimelineTurn {
   timing?: TurnTiming;
 }
 
-export type TurnSegment =
-  | { kind: "group"; group: TimelineGroup }
-  | { kind: "execution"; key: string; groups: TimelineGroup[]; calls: ToolCall[] };
-
 /** A user message that opens a turn. A steered message continues the turn it
  * interrupted, so it stays inline in that turn's process. */
 const isUser = (group: TimelineGroup) =>
@@ -47,28 +43,24 @@ export function groupTimelineTurns(groups: TimelineGroup[], latest?: AnchoredTur
   return turns;
 }
 
-/** Collapse the span from a turn's first to last tool group into one execution
- * segment. Intermediate notes stay inside it; artifacts and the final answer
- * stay visible after it. */
-export function turnSegments(turn: TimelineTurn): TurnSegment[] {
-  const first = turn.groups.findIndex((group) => group.kind === "tools");
-  if (first < 0) return turn.groups.map((group) => ({ kind: "group", group }));
-  let last = first;
-  turn.groups.forEach((group, index) => { if (group.kind === "tools") last = index; });
-  const span = turn.groups.slice(first, last + 1);
-  const hidden = span.filter((group) => group.kind !== "artifact" && !isUser(group));
-  const lifted = span.filter((group) => group.kind === "artifact");
-  return [
-    ...turn.groups.slice(0, first).map((group): TurnSegment => ({ kind: "group", group })),
-    {
-      kind: "execution",
-      key: `execution:${timelineGroupKey(span[0])}`,
-      groups: hidden,
-      calls: hidden.flatMap((group) => group.kind === "tools" ? group.calls : []),
-    },
-    ...lifted.map((group): TurnSegment => ({ kind: "group", group })),
-    ...turn.groups.slice(last + 1).map((group): TurnSegment => ({ kind: "group", group })),
-  ];
+/** Partition settled output without moving the final answer into the process.
+ * Legacy messages lack a phase: only a trailing assistant is treated as final. */
+export function completedTurnContent(turn: TimelineTurn): { process: TimelineGroup[]; output: TimelineGroup[] } {
+  const body = turn.groups.slice(turn.userMessageId ? 1 : 0);
+  let legacyFinal: TimelineGroup | undefined;
+  for (const group of body) {
+    if (group.kind === "artifact") continue;
+    legacyFinal = group.kind === "message" && group.message.role === "assistant"
+      && group.message.assistantKind === undefined ? group : undefined;
+  }
+  const process: TimelineGroup[] = [];
+  const output: TimelineGroup[] = [];
+  for (const group of body) {
+    const visible = group.kind === "artifact" || group === legacyFinal || (group.kind === "message"
+      && (group.message.assistantKind === "final" || group.message.assistantKind === "interrupted"));
+    (visible ? output : process).push(group);
+  }
+  return { process, output };
 }
 
 /** Search keys of every record the groups show, including each tool call

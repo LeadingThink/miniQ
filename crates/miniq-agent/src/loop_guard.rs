@@ -109,7 +109,8 @@ pub(crate) fn warning_result(call: &ToolCallRequest, repetitions: usize) -> Chat
             "message": format!(
                 "Not executed: this exact tool batch already ran {} times in a row with identical results. \
                  Repeating it unchanged will end the turn. Change approach: when waiting for a long task, \
-                 use process_output with block=true and a larger timeoutSecs (up to 600) or a longer sleep; \
+                 use agent_wait with all outstanding agent IDs for child agents, or process_output with block=true \
+                 and a larger timeoutSecs (up to 600) for shell processes; \
                  otherwise inspect the actual state, try a different action, or report what is blocking.",
                 repetitions - 1
             ),

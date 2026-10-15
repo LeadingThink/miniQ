@@ -135,7 +135,7 @@ impl Tool for AgentRunTool {
     }
 
     fn description(&self) -> &str {
-        "Delegate a substantial, independent task to a child agent using the current OneAPI provider. Use runInBackground=true to overlap independent branches, start the cohort before collecting process_output (id=agentId), and give each child distinct inputs, common criteria, and separate outputs. Keep dependent or shared-resource operations sequential; avoid delegation for tiny tasks. Child tool calls keep the same workspace, approval, audit, and sandbox controls."
+        "Delegate a substantial, independent task to a child agent using the current OneAPI provider. Use runInBackground=true to overlap independent branches, start the cohort before waiting with agent_wait (ids=all outstanding agentIds); each wait returns on any completion. Read individual results with agent_result, remove collected IDs from subsequent waits, and give each child distinct inputs, common criteria, and separate outputs. Keep dependent or shared-resource operations sequential; avoid delegation for tiny tasks. Child tool calls keep the same workspace, approval, audit, and sandbox controls."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -147,7 +147,7 @@ impl Tool for AgentRunTool {
                 "subagentType": {"type": "string"},
                 "model": {"type": "string", "description": "Model for this sub-agent. Use the exact catalog ID when known; a spoken name such as \"gpt 6.1 sol\" is resolved against the provider catalog before start, and an unknown or ambiguous name fails with the closest IDs."},
                 "resume": {"type": "string"},
-                "runInBackground": {"type": "boolean", "default": false, "description": "Return the agent ID immediately so independent tasks can overlap; collect the result with process_output (id=agentId) before reporting completion"},
+                "runInBackground": {"type": "boolean", "default": false, "description": "Return the agent ID immediately so independent tasks can overlap. Nesting is limited to 3. Wait for any cohort with agent_wait, then read results with agent_result. Do not spawn another agent unless the task is substantial and independent."},
                 "maxTurns": {"type": "integer", "minimum": 1, "maximum": 96},
                 "name": {"type": "string"},
                 "mode": {"type": "string", "enum": ["default", "acceptEdits", "dontAsk", "bypassPermissions", "plan", "auto"]},
@@ -172,11 +172,16 @@ impl Tool for AgentRunTool {
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let request: AgentRunRequest = parse_input(input)?;
         request.validate()?;
-        ctx.agents
+        let mut result = ctx
+            .agents
             .as_ref()
             .ok_or_else(|| ToolError::ExecutionFailed("agent runtime is unavailable".into()))?
             .run(request)
-            .await
+            .await?;
+        if let Some(id) = result.get("agentId").cloned() {
+            result["agent_id"] = id;
+        }
+        Ok(result)
     }
 }
 

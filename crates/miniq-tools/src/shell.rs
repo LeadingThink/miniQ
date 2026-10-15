@@ -29,25 +29,49 @@ fn command_error_code(stderr: &str) -> Option<&'static str> {
 #[cfg(windows)]
 const SHELL_DESCRIPTION: &str =
     "Run a Windows PowerShell command with the workspace root as working directory. \
-     PowerShell runs without profiles and without interactive input. Returns ok, exit code, stdout and stderr; \
+     PowerShell runs without profiles. interactive=true keeps pipe stdin; tty=true creates a PTY/ConPTY. \
+     yieldTimeMs returns a running handle after a bounded wait; timeoutSecs is the one-shot deadline. \
+     Output is paginated and retained for process_output replay while the daemon lives. Returns ok, exit code, stdout and stderr; \
      a non-zero exit is a failed observation.";
 #[cfg(not(windows))]
 const SHELL_DESCRIPTION: &str =
     "Run a POSIX shell command with the workspace root as working directory. \
+     interactive=true keeps pipe stdin; tty=true creates a PTY. yieldTimeMs returns a running \
+     handle after a bounded wait; timeoutSecs is the one-shot deadline. Output is paginated \
+     and retained for process_output replay while the daemon lives. \
      Returns ok, exit code, stdout and stderr; a non-zero exit is a failed observation.";
 
 pub struct ShellRunTool;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ShellRunInput {
     command: String,
     #[serde(default)]
+    #[schemars(range(min = 1, max = 600))]
     timeout_secs: Option<u64>,
     #[serde(default)]
     cwd: Option<String>,
     #[serde(default)]
     run_in_background: bool,
+    /// Return a running handle instead of killing the process when this wait expires.
+    #[serde(default)]
+    #[schemars(range(min = 0, max = 600000))]
+    yield_time_ms: Option<u64>,
+    #[serde(default)]
+    interactive: bool,
+    #[serde(default)]
+    tty: bool,
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 1000))]
+    rows: Option<u16>,
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 1000))]
+    cols: Option<u16>,
+    /// Estimated output budget (4 bytes per token per stream); remainder is paginated.
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 65536))]
+    max_output_tokens: Option<usize>,
     #[serde(default)]
     env: BTreeMap<String, String>,
 }
@@ -61,18 +85,7 @@ impl Tool for ShellRunTool {
         SHELL_DESCRIPTION
     }
     fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "command": {"type": "string", "description": "Command line to execute"},
-                "timeoutSecs": {"type": "integer", "minimum": 1, "maximum": 600, "description": "Timeout in seconds (default 60, max 600)"},
-                "cwd": {"type": "string", "description": "Working directory relative to the workspace root"}
-                ,"runInBackground": {"type": "boolean", "description": "Start a managed process and return a shellId immediately"},
-                "env": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Environment variables added to the child process"}
-            },
-            "required": ["command"],
-            "additionalProperties": false
-        })
+        serde_json::to_value(schemars::schema_for!(ShellRunInput)).unwrap()
     }
     fn evaluate_risk(&self, ctx: &ToolContext, input: &Value) -> Risk {
         let Some(command) = input.get("command").and_then(|c| c.as_str()) else {
@@ -89,7 +102,34 @@ impl Tool for ShellRunTool {
                 };
             }
         }
+        if input.get("interactive") == Some(&json!(true)) || input.get("tty") == Some(&json!(true))
+        {
+            let risk = classify_command(command);
+            return if risk.level == RiskLevel::Blocked {
+                risk
+            } else {
+                Risk {
+                    level: RiskLevel::High,
+                    reason: "starts an interactive process; later input can execute commands"
+                        .into(),
+                }
+            };
+        }
         classify_command(command)
+    }
+    fn approval_scope(&self, _ctx: &ToolContext, input: &Value) -> Option<String> {
+        // A previous read-only program grant must not authorize a writable
+        // shell/PTY. Bind interactive launch approval to the exact command.
+        if input.get("interactive") == Some(&json!(true)) || input.get("tty") == Some(&json!(true))
+        {
+            Some(format!(
+                "interactive:{}:{}",
+                input["tty"] == true,
+                input["command"].as_str().unwrap_or("")
+            ))
+        } else {
+            None
+        }
     }
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
         let p: ShellRunInput = parse_input(input)?;
@@ -113,74 +153,78 @@ impl Tool for ShellRunTool {
             )));
         }
 
-        if p.run_in_background {
-            return ctx.processes.start(p.command, cwd, p.env).await;
+        if p.command.trim().is_empty()
+            || p.yield_time_ms.is_some_and(|v| v > 600000)
+            || p.max_output_tokens
+                .is_some_and(|v| !(1..=65536).contains(&v))
+            || p.rows.is_some_and(|v| !(1..=1000).contains(&v))
+            || p.cols.is_some_and(|v| !(1..=1000).contains(&v))
+            || (p.timeout_secs.is_some()
+                && (p.yield_time_ms.is_some() || p.run_in_background || p.interactive || p.tty))
+            || (!p.tty && (p.rows.is_some() || p.cols.is_some()))
+        {
+            return Err(ToolError::InvalidInput(
+                "invalid command, wait, output budget or terminal size".into(),
+            ));
         }
-
-        let mut cmd = shell_command(&p.command);
-        cmd.current_dir(&cwd)
-            .envs(&p.env)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true);
-        // Own process group so a timeout also stops programs the shell launched.
-        #[cfg(unix)]
-        cmd.process_group(0);
-
-        let started = std::time::Instant::now();
-        let child = cmd
-            .spawn()
-            .map_err(|e| ToolError::ExecutionFailed(format!("spawn: {e}")))?;
-        let pgid = child.id();
-
-        let output = tokio::time::timeout(
-            std::time::Duration::from_secs(timeout),
-            child.wait_with_output(),
-        )
-        .await;
-        if output.is_err() {
-            crate::process::force_kill_group(pgid);
-        }
-
-        let duration_ms = started.elapsed().as_millis() as u64;
-        match output {
-            Ok(Ok(output)) => {
-                let exit_code = output.status.code();
-                let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-                let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-                let mut result = json!({
-                    "command": p.command,
-                    "cwd": cwd,
-                    "exitCode": exit_code,
-                    "stdout": stdout,
-                    "stderr": stderr,
-                    "durationMs": duration_ms,
-                    "timedOut": false,
-                    "ok": exit_code == Some(0),
-                });
-                if exit_code != Some(0) {
-                    if let Some(code) =
-                        command_error_code(result["stderr"].as_str().unwrap_or_default())
-                    {
-                        result["errorCode"] = json!(code);
-                    }
+        let resumable = p.run_in_background || p.yield_time_ms.is_some() || p.interactive || p.tty;
+        let wait = if p.run_in_background {
+            0
+        } else {
+            p.yield_time_ms
+                .unwrap_or(if resumable { 1000 } else { timeout * 1000 })
+        };
+        let page = crate::process::PageRequest {
+            max_bytes: p.max_output_tokens.unwrap_or(4096) * 4,
+            ..Default::default()
+        };
+        let id = ctx
+            .processes
+            .start(
+                ctx,
+                crate::process::Launch {
+                    command: p.command,
+                    cwd,
+                    env: p.env,
+                    interactive: p.interactive,
+                    tty: p.tty,
+                    rows: p.rows.unwrap_or(24),
+                    cols: p.cols.unwrap_or(80),
+                },
+            )
+            .await?;
+        let mut result = ctx
+            .processes
+            .output(ctx, &id, std::time::Duration::from_millis(wait), page)
+            .await?;
+        if !resumable && result["status"] == "running" {
+            // Preserve timeout output in the spool and return its first page.
+            result = ctx
+                .processes
+                .kill(
+                    ctx,
+                    &id,
+                    crate::process::PageRequest {
+                        stdout_offset: Some(0),
+                        stderr_offset: Some(0),
+                        ..page
+                    },
+                )
+                .await?;
+            result["timedOut"] = json!(true);
+            result["ok"] = json!(false);
+            result["errorCode"] = json!("TIMEOUT");
+        } else {
+            result["timedOut"] = json!(false);
+            if result["ok"] == false {
+                if let Some(code) =
+                    command_error_code(result["stderr"].as_str().unwrap_or_default())
+                {
+                    result["errorCode"] = json!(code);
                 }
-                Ok(result)
             }
-            Ok(Err(e)) => Err(ToolError::ExecutionFailed(format!("wait: {e}"))),
-            Err(_elapsed) => Ok(json!({
-                "command": p.command,
-                "cwd": cwd,
-                "exitCode": null,
-                "stdout": "",
-                "stderr": format!("command timed out after {timeout}s"),
-                "durationMs": duration_ms,
-                "timedOut": true,
-                "ok": false,
-                "errorCode": "TIMEOUT",
-            })),
         }
+        Ok(result)
     }
 }
 
@@ -217,7 +261,7 @@ impl Tool for ShellBatchTool {
             "properties": {
                 "commands": {"type": "array", "minItems": 1, "items": {"type": "string"}},
                 "timeoutMs": {"type": "integer", "minimum": 1, "maximum": 600000},
-                "maxOutputLength": {"type": "integer", "minimum": 1},
+                "maxOutputLength": {"type": "integer", "minimum": 1, "maximum": 262144, "description": "Approximate output page size in bytes per stream (rounded up to a 4-byte budget); remainder stays available through archiveRef"},
                 "workingDirectory": {"type": "string"},
                 "env": {"type": "object", "additionalProperties": {"type": "string"}}
             },
@@ -265,6 +309,14 @@ impl Tool for ShellBatchTool {
                 "commands must contain at least one non-empty command".into(),
             ));
         }
+        if input
+            .max_output_length
+            .is_some_and(|n| n == 0 || n > 262144)
+        {
+            return Err(ToolError::InvalidInput(
+                "maxOutputLength must be 1..262144 bytes per stream".into(),
+            ));
+        }
         let timeout_ms = input.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_SECS * 1000);
         if !(1..=MAX_TIMEOUT_SECS * 1000).contains(&timeout_ms) {
             return Err(ToolError::InvalidInput(
@@ -279,7 +331,8 @@ impl Tool for ShellBatchTool {
                     json!({
                         "command": command,
                         "timeoutSecs": timeout_ms.div_ceil(1000),
-                        "cwd": input.working_directory,
+                    "maxOutputTokens": input.max_output_length.map(|bytes| bytes.div_ceil(4)),
+                    "cwd": input.working_directory,
                         "env": input.env,
                     }),
                 )
@@ -290,15 +343,9 @@ impl Tool for ShellBatchTool {
             } else {
                 json!({"type":"exit", "exit_code": result["exitCode"]})
             };
-            let mut entry = json!({
-                "stdout": result["stdout"],
-                "stderr": result["stderr"],
-                "outcome": outcome,
-                "ok": ok,
-            });
-            if let Some(error_code) = result.get("errorCode") {
-                entry["errorCode"] = error_code.clone();
-            }
+            let mut entry = result;
+            entry["outcome"] = outcome;
+            entry["ok"] = json!(ok);
             output.push(entry);
         }
         let ok = output.iter().all(|entry| entry["ok"] == true);
@@ -327,7 +374,7 @@ fn blocked(reason: &str) -> Risk {
 }
 
 #[cfg(windows)]
-pub(crate) fn shell_command(command: &str) -> tokio::process::Command {
+pub(crate) fn shell_command(command: &str, interactive: bool) -> tokio::process::Command {
     // Flush PowerShell's deferred object formatting before exiting, retaining command status.
     let utf8_command = format!(
         "$OutputEncoding = [Console]::OutputEncoding = \
@@ -341,18 +388,16 @@ pub(crate) fn shell_command(command: &str) -> tokio::process::Command {
          }}; exit 0"
     );
     let mut cmd = tokio::process::Command::new("powershell.exe");
-    cmd.args([
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        &utf8_command,
-    ]);
+    cmd.args(["-NoLogo", "-NoProfile"]);
+    if !interactive {
+        cmd.arg("-NonInteractive");
+    }
+    cmd.args(["-Command", &utf8_command]);
     cmd
 }
 
 #[cfg(not(windows))]
-pub(crate) fn shell_command(command: &str) -> tokio::process::Command {
+pub(crate) fn shell_command(command: &str, _interactive: bool) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new("sh");
     cmd.arg("-c").arg(command);
     cmd

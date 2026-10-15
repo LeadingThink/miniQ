@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ToolCall } from "../types";
 import { ToolStep } from "./ExecutionActivity";
 import { ToolGroup } from "./ToolGroup";
+import { ExecutionFold } from "./ExecutionFold";
 import { readRangeLabel } from "./ToolSemanticView";
 
 afterEach(cleanup);
@@ -28,6 +29,15 @@ function expand(name: RegExp | string) {
 }
 
 describe("semantic step views", () => {
+  it("shows paginated managed output without claiming all output was fetched", () => {
+    render(<ToolStep defaultExpanded call={call("process_output", { id: "shell_test" }, {
+      command: "npm test", stdout: "first page", stderr: "", status: "running", shellId: "shell_test",
+      hasMore: true, archiveRef: { processId: "shell_test" },
+    })} />);
+    expect(screen.getByRole("region", { name: "命令输出" }).textContent).toContain("first page");
+    expect(screen.getByText(/其余内容可通过 process_output/)).toBeTruthy();
+    expect(screen.getByText(/进程仍在运行/)).toBeTruthy();
+  });
   it("shows shell output as a terminal block with the first 20 lines", () => {
     const stdout = Array.from({ length: 25 }, (_, index) => `line ${index + 1}`).join("\n");
     render(<ToolStep call={call("shell_run", { command: "npm test" }, { stdout, stderr: "warn", exitCode: 1 })} />);
@@ -41,6 +51,14 @@ describe("semantic step views", () => {
     expect(terminal.textContent).toContain("line 25");
     expect(terminal.querySelector(".is-stderr")?.textContent).toBe("warn");
     expect(screen.queryByRole("region", { name: "输入" })).toBeNull();
+  });
+
+  it("shows the unread-page warning on each shell batch result", () => {
+    render(<ToolStep defaultExpanded call={call("shell_batch", { commands: ["rg config"] }, {
+      output: [{ stdout: "first page", stderr: "", outcome: { type: "exit", exit_code: 0 }, hasMore: true,
+        archiveRef: { processId: "shell_batch_page" } }],
+    })} />);
+    expect(screen.getByText(/其余内容可通过 process_output.*shell_batch_page/)).toBeTruthy();
   });
 
   it("keeps raw input and output behind 查看详情", () => {
@@ -77,11 +95,57 @@ describe("semantic step views", () => {
     expect(screen.getByText("1 条结果")).toBeTruthy();
   });
 
-  it("shows a failed tool's error only after opening its details", () => {
+  it("keeps a failed tool collapsed until explicitly opened", () => {
     render(<ToolStep call={call("web_fetch", { url: "https://example.com" }, { error: "timeout" }, "failed")} />);
+    const toggle = screen.getByRole("button", { expanded: false });
+    expect(toggle.textContent).toContain("失败");
     expect(screen.queryByRole("alert")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /读取了.*https:\/\/example.com/ }));
+    fireEvent.click(toggle);
     expect(screen.getByRole("alert").textContent).toBe("timeout");
+    expect(screen.queryByRole("region", { name: "结果" })).toBeNull();
+    fireEvent.click(toggle);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("does not expand a running step when it fails, but preserves manual expansion", () => {
+    const running = call("shell_run", { command: "rg --version" }, undefined, "running");
+    const failed = { ...running, status: "failed" as const, live: true, output: { stderr: "command not found", exitCode: 127 } };
+    const view = render(<ToolStep call={running} />);
+    view.rerender(<ToolStep call={failed} />);
+    expect(screen.getByRole("button", { expanded: false })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "命令输出" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
+    view.rerender(<ToolStep call={{ ...failed, completedAt: "2026-10-10T00:00:02Z" }} />);
+    expect(screen.getByRole("region", { name: "命令输出" }).textContent).toContain("command not found");
+  });
+
+  it("keeps failed automation details collapsed even when they are the latest observation", () => {
+    render(<ToolGroup onRollback={vi.fn()} calls={[
+      call("browser_automation", { action: "snapshot" }, { error: "unavailable" }, "failed"),
+    ]} />);
+    expect(screen.getByRole("button", { expanded: false })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("does not reopen shell errors when the execution record is closed and reopened", () => {
+    const calls = [call("shell_batch", { commands: ["rg --version"] }, {
+      output: [{ ok: false, stdout: "", stderr: "command not found", outcome: { exit_code: 127, type: "exit" } }],
+    }, "failed")];
+    render(<ExecutionFold calls={calls} active={false}>
+      <ToolGroup calls={calls} onRollback={vi.fn()} />
+    </ExecutionFold>);
+    const fold = screen.getByRole("button", { name: /1 项操作失败/ });
+    const stepExists = () => screen.queryByRole("button", { name: /运行了\s*rg --version/ }) !== null;
+    const step = () => screen.getByRole("button", { name: /运行了\s*rg --version/ });
+    expect(stepExists()).toBe(false);
+    fireEvent.click(fold);
+    expect(step().getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(step());
+    expect(screen.getByRole("region", { name: "命令输出" }).textContent).toContain("command not found");
+    fireEvent.click(fold);
+    fireEvent.click(fold);
+    expect(step().getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("region", { name: "命令输出" })).toBeNull();
   });
 });
 

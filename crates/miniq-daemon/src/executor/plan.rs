@@ -8,7 +8,10 @@ pub(super) fn plan_mode_allows(call: &ToolCallRequest, risk: RiskLevel) -> bool 
         | "doc_read" | "view_image" | "view_pdf" | "skill_read" | "memory_search"
         | "tool_search" | "web_fetch" | "web_search" | "ask_user" | "task_update"
         | "task_create" | "task_get" | "task_list" | "task_item_update" | "plan_mode"
-        | "process_output" | "process_kill" | "agent_message" => true,
+        | "process_output" | "agent_wait" | "agent_result" | "process_kill" | "agent_message" => {
+            true
+        }
+        "process_input" => risk == RiskLevel::Low,
         "shell_run" | "shell_batch" => risk == RiskLevel::Low,
         "browser_automation" => matches!(
             call.arguments.get("action").and_then(Value::as_str),
@@ -50,6 +53,22 @@ pub(super) fn task_graph_plan(output: &Value) -> Option<Vec<PlanTask>> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn process_input_is_not_a_plan_mode_write_bypass() {
+        let call = ToolCallRequest {
+            id: "input".into(),
+            name: "process_input".into(),
+            arguments: json!({"id":"shell_test","chars":"echo mutate\n"}),
+        };
+        assert!(!plan_mode_allows(&call, RiskLevel::High));
+        assert!(plan_mode_allows(&call, RiskLevel::Low));
+        let interactive = ToolCallRequest {
+            name: "shell_run".into(),
+            ..call
+        };
+        assert!(!plan_mode_allows(&interactive, RiskLevel::High));
+    }
 
     #[test]
     fn plan_mode_allows_observation_but_never_desktop_input() {

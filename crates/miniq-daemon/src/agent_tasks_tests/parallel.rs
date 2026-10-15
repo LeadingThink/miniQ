@@ -1,12 +1,13 @@
 use super::*;
 
 #[tokio::test]
-async fn background_cohort_starts_before_any_child_finishes_and_preserves_each_result() {
+async fn background_cohort_exceeds_old_count_limits_and_preserves_each_result() {
     let directory = tempfile::tempdir().unwrap();
     let provider = Arc::new(GatedProvider::new());
     let bridge = bridge_with_provider(&directory, provider.clone());
     let mut ids = Vec::new();
-    for index in 0..3 {
+    const COUNT: usize = 10;
+    for index in 0..COUNT {
         let mut input = request(&format!(
             "Review resume-{index} with the same rubric; return its ID and all evidence"
         ));
@@ -18,7 +19,7 @@ async fn background_cohort_starts_before_any_child_finishes_and_preserves_each_r
     }
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            if provider.requests.lock().await.len() == 3 {
+            if provider.requests.lock().await.len() == COUNT {
                 break;
             }
             tokio::task::yield_now().await;
@@ -33,7 +34,7 @@ async fn background_cohort_starts_before_any_child_finishes_and_preserves_each_r
                 .starts_with(crate::parallel_policy::PARALLEL_POLICY)
         })
     }));
-    provider.gate.add_permits(3);
+    provider.gate.add_permits(COUNT);
     let mut results = Vec::new();
     for id in &ids {
         let output = bridge
@@ -45,5 +46,9 @@ async fn background_cohort_starts_before_any_child_finishes_and_preserves_each_r
         results.push(output["result"].as_str().unwrap().to_owned());
     }
     results.sort();
-    assert_eq!(results, ["result 1", "result 2", "result 3"]);
+    let mut expected = (1..=COUNT)
+        .map(|n| format!("result {n}"))
+        .collect::<Vec<_>>();
+    expected.sort();
+    assert_eq!(results, expected);
 }

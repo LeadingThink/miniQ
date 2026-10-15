@@ -59,6 +59,16 @@ describe("tool run summaries", () => {
     expect(toolStepTitle(call("git_status", {}), false)).toBeNull();
   });
 
+  it("combines adjacent read/list/search without crossing edits or commands", () => {
+    const calls = [call("file_read", { path: "a" }), call("file_list", { path: "." }),
+      call("file_grep", { pattern: "x" }), call("file_edit", { path: "a" }),
+      call("shell_run", { command: "npm test" }), call("file_read", { path: "b" })];
+    const runs = toolRuns(calls);
+    expect(runs.map(run => run.calls.length)).toEqual([3, 1, 1, 1]);
+    expect(toolRunSummary(runs[0])).toBe("读取 1 次 · 查看目录 1 次 · 搜索 1 次");
+    expect(runs.flatMap(run => run.calls)).toEqual(calls);
+  });
+
   it("reads apply_patch targets from both input shapes", () => {
     expect(patchPaths({ operation: { type: "update_file", path: "x.rs", diff: "" } })).toEqual(["x.rs"]);
     expect(patchPaths({ patch: "*** Begin Patch\n*** Delete File: y.rs\n*** End Patch" })).toEqual(["y.rs"]);

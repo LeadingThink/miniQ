@@ -70,12 +70,13 @@ impl Store {
             anchor_message_id,
         )?;
         let mut message_ids = HashMap::with_capacity(source_messages.len());
-        for (id, role, content, attachments, created_at, steered) in source_messages {
+        for (id, role, content, attachments, created_at, steered, assistant_kind) in source_messages
+        {
             let copied_id = new_id("msg");
             transaction.execute(
-                "INSERT INTO messages (id, session_id, role, content, attachments_json, created_at, steered)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![copied_id, target_id, role, content, attachments, created_at, steered],
+                "INSERT INTO messages (id, session_id, role, content, attachments_json, created_at, steered, assistant_kind)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![copied_id, target_id, role, content, attachments, created_at, steered, assistant_kind],
             )?;
             message_ids.insert(id, copied_id);
         }
@@ -232,9 +233,9 @@ fn load_messages(
     session_id: &str,
     anchor_at: &str,
     anchor_id: &str,
-) -> Result<Vec<(String, String, String, String, String, bool)>> {
+) -> Result<Vec<(String, String, String, String, String, bool, Option<String>)>> {
     let mut statement = transaction.prepare(
-        "SELECT id, role, content, attachments_json, created_at, steered FROM messages
+        "SELECT id, role, content, attachments_json, created_at, steered, assistant_kind FROM messages
          WHERE session_id = ?1 AND (created_at < ?2 OR (created_at = ?2 AND id <= ?3))
          ORDER BY created_at ASC, id ASC",
     )?;
@@ -246,6 +247,7 @@ fn load_messages(
             row.get(3)?,
             row.get(4)?,
             row.get(5)?,
+            row.get(6)?,
         ))
     })?;
     Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)

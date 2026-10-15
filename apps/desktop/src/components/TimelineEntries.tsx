@@ -1,26 +1,27 @@
 import { Check, GitBranch, LoaderCircle, Pencil, RefreshCw, ScanSearch, Target, X } from "lucide-react";
-import { Fragment, useImperativeHandle, useMemo, useRef, useState, type RefObject } from "react";
-import type { AnchoredTurnTiming, Message, Question, SessionGoal, TurnPlan } from "../types";
-import type { PendingApproval } from "../App";
+import { Fragment, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import type { AnchoredTurnTiming, Message, Question, SessionGoal, TurnPlan, TurnProgress } from "../types";
 import type { RpcClient } from "../rpc";
 import type { TimelineGroup } from "../timelineModel";
 import type { TimelineProps } from "./Timeline";
-import { ApprovalCard, ArtifactCard } from "./TimelineInteractions";
+import { ArtifactCard } from "./TimelineInteractions";
 import { QuestionCard } from "./QuestionCard";
 import { Md } from "./Md";
-import { TurnPlanSummary } from "./ExecutionActivity";
+import { TurnPlanSummary, ToolStep } from "./ExecutionActivity";
+import { TurnActivityTail } from "./TurnActivityTail";
+import { CompletedProcess } from "./CompletedProcess";
+import { ToolRunRow } from "./ToolRunRow";
+import { toolRuns } from "./toolSummary";
 import { CopyButton } from "./CopyButton";
 import { SpeakButton } from "./SpeakButton";
 import { useVoiceCapabilities } from "../voiceCapabilities";
-import { ToolGroup } from "./ToolGroup";
 import { MessageTime, ConversationTimeSeparator } from "./MessageTime";
 import { timelineGroupKey, timelineTurnPlanEnds } from "../timelineTiming";
 import {
-  groupTimelineTurns, searchRecordKeys, turnSeparators, turnSegments, type TurnSegment,
+  completedTurnContent, groupTimelineTurns, searchRecordKeys, turnSeparators,
 } from "../timelineTurns";
 import { WINDOW_MIN_TURNS } from "../timelineWindow";
 import { useTurnWindow } from "../hooks/useTurnWindow";
-import { ExecutionFold } from "./ExecutionFold";
 import { MessageAttachmentPreview } from "./MessageAttachmentPreview";
 import { TimelineTurnFrame } from "./TimelineTurnFrame";
 import { TurnChangesCard } from "./TurnChangesCard";
@@ -61,13 +62,14 @@ export function TimelineEntries(props: {
   goal?: SessionGoal | null;
   expandGroups: boolean;
   onError: TimelineProps["onError"];
-  approvals: PendingApproval[];
   questions: Question[];
   turnPlans?: TurnPlan[];
   streamingText: string;
   latestTurnTiming?: AnchoredTurnTiming | null;
+  status?: ReactNode;
+  showActivity?: boolean;
+  progress?: TurnProgress | null;
   busy: boolean;
-  onResolveApproval: TimelineProps["onResolveApproval"];
   onResolveQuestion: TimelineProps["onResolveQuestion"];
   onRollback: TimelineProps["onRollback"];
   onOpenFile: TimelineProps["onOpenFile"];
@@ -210,9 +212,6 @@ export function TimelineEntries(props: {
       return true;
     },
   }), []);
-  // Approvals and questions always render below history; open the latest turn's
-  // execution so the step that asked is visible next to them.
-  const pendingAttention = props.approvals.length > 0 || props.questions.length > 0;
   const turnContents = useMemo(() => {
     // The newest reply keeps its actions visible; older ones reveal on hover.
     let latestAssistantId: string | undefined;
@@ -231,6 +230,9 @@ export function TimelineEntries(props: {
       if (path) artifactPaths.add(path);
     }
     const renderGroup = (item: TimelineGroup) => {
+      const finalReply = item.kind === "message" && item.message.role === "assistant"
+        && (item.message.assistantKind === "final" || item.message.assistantKind === undefined)
+        && !runningTurnMessageIds?.has(item.message.id);
       return <Fragment key={timelineGroupKey(item)}>
         {
         item.kind === "message" ? (
@@ -358,7 +360,7 @@ export function TimelineEntries(props: {
           ) : (
             <div
               key={item.message.id}
-              className={`message-entry assistant${item.message.id === latestAssistantId ? " is-latest" : ""}`}
+              className={`message-entry assistant${finalReply ? " is-final" : " is-commentary"}${item.message.id === latestAssistantId ? " is-latest" : ""}`}
               data-history-anchor={`message:${item.message.id}`}
             >
               <div className="bubble assistant">
@@ -380,7 +382,7 @@ export function TimelineEntries(props: {
                   onError={bridge.reportError}
                 />
               ))}
-              <div className="message-footer">
+              {finalReply && <div className="message-footer">
                 <MessageTime at={item.message.createdAt} />
                 <div className="message-actions">
                   <CopyButton
@@ -435,8 +437,8 @@ export function TimelineEntries(props: {
                     </button>
                   )}
                 </div>
-              </div>
-              {props.client && reviewTarget && reviewTarget.messageId === item.message.id
+              </div>}
+              {finalReply && props.client && reviewTarget && reviewTarget.messageId === item.message.id
                 && reviewTarget.sessionId === item.message.sessionId && reviewTarget.sessionId === sessionId && (
                 <SessionReviewPanel
                   client={props.client}
@@ -462,18 +464,16 @@ export function TimelineEntries(props: {
             />
           </div>
         ) : (
-          <div
-            key={item.calls[0].id}
-            data-history-anchor={`tool:${item.calls[0].id}`}
-            data-search-records={item.calls.map((call) => `tool:${call.id}`).join(" ")}
-          >
-            <ToolGroup
-              calls={item.calls}
-              onRollback={bridge.rollback}
-              expanded={props.expandGroups}
-              client={props.client}
-            />
-          </div>
+          <>
+            {toolRuns(item.calls).map((run) => <div key={run.calls[0].id}
+              data-history-anchor={`tool:${run.calls[0].id}`}
+              data-search-records={run.calls.map(call => `tool:${call.id}`).join(" ")}>
+              {run.calls.length === 1
+                ? <ToolStep call={run.calls[0]} onRollback={bridge.rollback} defaultExpanded={props.expandGroups} client={props.client} />
+                : <ToolRunRow run={run} onRollback={bridge.rollback} client={props.client}
+                    expanded={props.expandGroups} focusId={null} stepExpanded={() => props.expandGroups} />}
+            </div>)}
+          </>
         )}
       </Fragment>;
     };
@@ -483,38 +483,34 @@ export function TimelineEntries(props: {
       const turnPlan = turnPlanEnds.get(endKey);
       const planNode = turnPlan && turnPlan.anchorMessageId !== runningAnchor
         ? <TurnPlanSummary plan={turnPlan.tasks} /> : null;
-      const segments: TurnSegment[] = props.expandGroups
-        ? turn.groups.map((group) => ({ kind: "group", group }))
-        : turnSegments(turn);
-      const hasFold = segments.some((segment) => segment.kind === "execution");
       const isLast = turn === lastTurn;
+      const settled = !(isLast && props.busy) && turn.timing?.status !== "running";
+      const { process, output } = completedTurnContent(turn);
+      const collapse = settled && !props.expandGroups && (process.length > 0 || planNode !== null);
       const separatorAt = props.expandGroups ? undefined : separators.get(turn.key);
-      return <Fragment key={turn.key}>
+      return { header: <Fragment key={`${turn.key}:header`}>
         {separatorAt && <ConversationTimeSeparator at={separatorAt} />}
-        {segments.map((segment) => segment.kind === "group" ? renderGroup(segment.group) : (
-          <div key={segment.key} data-history-anchor={segment.key} data-search-records={searchRecordKeys(segment.groups)}>
-            <ExecutionFold
-              calls={segment.calls}
-              timing={turn.timing}
-              active={isLast && props.busy}
-              attention={isLast && pendingAttention}
-            >
-              {segment.groups.map(renderGroup)}
-              {planNode}
-            </ExecutionFold>
-          </div>
-        ))}
-        {/* Turn end: cards summarising the finished turn. */}
-        {!hasFold && planNode}
+        {turn.userMessageId && renderGroup(turn.groups[0])}
+      </Fragment>, body: <Fragment key={`${turn.key}:body`}>
+        {collapse ? <>
+          <CompletedProcess timing={turn.timing} recordKeys={searchRecordKeys(process)}>
+            {process.map(renderGroup)}
+            {planNode}
+          </CompletedProcess>
+          {output.map(renderGroup)}
+        </> : <>
+          {turn.groups.slice(turn.userMessageId ? 1 : 0).map(renderGroup)}
+          {planNode}
+        </>}
         {turn.userMessageId && !(isLast && props.busy) && turnHasFileWrites(turn)
           && <TurnChangesCard turnId={turn.userMessageId} />}
-      </Fragment>;
+      </Fragment> };
     });
   }, [
     props.items, props.busy, props.workspacePath, props.workspacePaths,
     props.expandGroups, props.client, editingMessageId, draft, saving,
     forkingMessageId, runningTurnMessageIds, goalMessageId, turnPlanEnds, runningAnchor,
-    hasFork, canSpeak, bridge, turns, separators, pendingAttention, reviewTarget, sessionId,
+    hasFork, canSpeak, bridge, turns, separators, reviewTarget, sessionId,
   ]);
 
   // The live reply streams at the end of the current turn, where its message
@@ -533,6 +529,8 @@ export function TimelineEntries(props: {
       </div>
     </div>
   ) : null;
+  const activity = props.showActivity
+    ? <TurnActivityTail progress={props.progress} /> : null;
   return (
     <div className="timeline-inner" ref={listRef}>
       {turns.map((turn, index) => (
@@ -542,11 +540,14 @@ export function TimelineEntries(props: {
           mounted={turnWindow.isMounted(index)}
           placeholderHeight={turnWindow.placeholderHeight}
         >
-          {turnContents[index]}
+          {turnContents[index].header}
+          {index === turns.length - 1 && props.status}
+          {turnContents[index].body}
           {index === turns.length - 1 && streaming}
+          {index === turns.length - 1 && activity}
         </TimelineTurnFrame>
       ))}
-      {turns.length === 0 && streaming}
+      {turns.length === 0 && <>{props.status}{streaming}{activity}</>}
       <ConfirmDialog
         open={pendingRewrite !== null}
         tone="danger"
@@ -560,13 +561,6 @@ export function TimelineEntries(props: {
           if (request) void rewrite(request, true);
         }}
       />
-      {props.approvals.map((approval) => (
-        <ApprovalCard
-          key={approval.approval.id}
-          item={approval}
-          onResolve={props.onResolveApproval}
-        />
-      ))}
       {props.questions.map((question) => (
         <QuestionCard
           key={question.id}

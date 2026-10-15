@@ -206,11 +206,13 @@ async fn overloaded_partial_output_restores_previous_steps_and_retries_only_the_
     );
     let mut displayed = String::new();
     let mut replaced = false;
+    let mut committed = Vec::new();
     while let Ok(event) = rx.try_recv() {
         match event {
             AgentEvent::TextDelta(text) => displayed.push_str(&text),
+            AgentEvent::TextCommitted => committed.push(std::mem::take(&mut displayed)),
             AgentEvent::TextReplaced(text) => {
-                assert_eq!(text, "Verified work");
+                assert_eq!(text, "");
                 replaced = true;
                 displayed = text;
             }
@@ -218,7 +220,8 @@ async fn overloaded_partial_output_restores_previous_steps_and_retries_only_the_
         }
     }
     assert!(replaced);
-    assert_eq!(displayed, "Verified work\n\ndone");
+    assert_eq!(committed, ["Verified work"]);
+    assert_eq!(displayed, "done");
 }
 
 #[tokio::test]

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import type { ToolCall } from "../types";
 import { openExternalUrl, parseExternalUrl } from "../externalLinks";
 import { additionLines, lineDiff, operationDiffLines, parseCodexPatch, type InlineDiffLine } from "./lineDiff";
@@ -112,28 +112,42 @@ function ShellView({ call }: { call: ToolCall }) {
           const result = results[index] ?? {};
           const outcome = record(result.outcome);
           return (
+            <Fragment key={index}>
             <TerminalOutput
-              key={index}
               command={command}
               stdout={text(result.stdout)}
               stderr={text(result.stderr)}
               exitCode={outcome.exit_code}
               timedOut={outcome.type === "timeout"}
             />
+            <ProcessPageNotice output={result} />
+            </Fragment>
           );
         })}
       </>
     );
   }
   return (
+    <>
     <TerminalOutput
-      command={text(input.command)}
+      command={text(input.command) || text(output.command)}
       stdout={text(output.stdout)}
       stderr={text(output.stderr)}
       exitCode={output.exitCode}
       timedOut={output.timedOut === true}
     />
+      <ProcessPageNotice output={output} />
+    </>
   );
+}
+
+function ProcessPageNotice({ output }: { output: Record<string, unknown> }) {
+  const archive = record(output.archiveRef);
+  return <>
+    {output.status === "running" && <p>进程仍在运行 · {text(output.shellId)}</p>}
+    {output.hasMore === true && <p>当前显示一页输出，其余内容可通过 process_output 继续读取（{text(archive.processId)}）。</p>}
+    {output.outputPending === true && output.status !== "running" && <p>主进程已退出，输出管道仍未关闭。</p>}
+  </>;
 }
 
 /** "第 a-b 行，共 n 行" for a file_read call, from its input and result. */
@@ -268,9 +282,18 @@ function WebFetchView({ call }: { call: ToolCall }) {
   );
 }
 
+function ProcessView({ call }: { call: ToolCall }) {
+  const output = record(call.output);
+  if (typeof output.stdout === "string" || typeof output.stderr === "string") return <ShellView call={call} />;
+  return <div className="tool-semantic-row"><span>{text(output.status)}</span><span>{text(output.result)}</span></div>;
+}
+
 const VIEWS: Record<string, (props: { call: ToolCall }) => ReactNode> = {
   shell_run: ShellView,
   shell_batch: ShellView,
+  agent_result: ProcessView,
+  process_output: ProcessView,
+  process_input: ProcessView,
   file_read: FileReadView,
   file_edit: EditView,
   file_patch: EditView,

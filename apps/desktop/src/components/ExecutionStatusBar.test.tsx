@@ -19,7 +19,7 @@ it("excludes historical actions and finished calls from the current status", () 
   render(<ExecutionStatusBar messages={messages}
     calls={[call(0, "running"), call(1, "running"), call(2, "running"), call(3, "cancelled"), call(4, "failed")]}
     progress={null} plan={[]} busy approvals={0} questions={0} />);
-  expect(screen.getByRole("status").textContent).toBe("正在执行 tool_2");
+  expect(screen.getByRole("status").textContent).toBe("Working · 正在执行 tool_2");
 });
 it("shows approvals ahead of model activity", () => {
   render(
@@ -56,7 +56,7 @@ it("hides the live status after the turn ends", () => {
 it("does not expose internal plan updates as the current action", () => {
   render(<ExecutionStatusBar messages={[]} calls={[call(1, "running"), { ...call(2, "running"), toolName: "task_update" }]}
     progress={null} plan={[]} busy approvals={0} questions={0} />);
-  expect(screen.getByRole("status").textContent).toBe("正在执行 tool_1");
+  expect(screen.getByRole("status").textContent).toBe("Working · 正在执行 tool_1");
 });
 
 it("does not move away from a historical page when new tools arrive", () => {
@@ -128,7 +128,7 @@ it("shows the model phase and full task text without truncating the plan", () =>
   render(<ExecutionStatusBar messages={[]} calls={[]} busy approvals={0} questions={0}
     progress={{ phase: "compacting_context", startedAt: new Date().toISOString() }}
     plan={[{ content, status: "in_progress" }]} />);
-  expect(screen.getByRole("status").textContent).toBe("正在整理较长的会话上下文");
+  expect(screen.getByRole("status").textContent).toBe("Working · 正在整理较长的会话上下文");
   expect(screen.getByText(content)).toBeTruthy();
   expect(screen.queryByText(/阶段 /)).toBeNull();
 });
@@ -137,7 +137,7 @@ it("shows an action-specific tool label and gives questions priority", () => {
   const calls = [{ ...call(1, "running"), toolName: "computer_use", input: { action: "click", x: 10, y: 20 } }];
   const props = { messages: [], calls, plan: [], progress: null, busy: true, approvals: 0, questions: 0 };
   const view = render(<ExecutionStatusBar {...props} />);
-  expect(screen.getByRole("status").textContent).toBe("正在点击桌面");
+  expect(screen.getByRole("status").textContent).toBe("Working · 正在点击桌面");
   view.rerender(<ExecutionStatusBar {...props} questions={1} />);
   expect(screen.getByRole("status").textContent).toBe("等待你的回答");
   expect(document.querySelector(".activity-spinner")).toBeNull();
@@ -158,27 +158,24 @@ it("keeps total timing stable across phases and clears clocks when work ends", (
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("shows a live step clock and leaves the turn total to the execution fold header", () => {
+it("keeps a single total clock across tool and model phases", () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-09-08T00:10:00Z"));
   const timing = { messageId: "user", timing: { status: "running" as const, startedAt: "2026-09-08T00:00:00Z" } };
   const running = { ...call(1, "running"), createdAt: "2026-09-08T00:09:50Z" };
   const props = { messages: [], plan: [], progress: null, busy: true, approvals: 0, questions: 0, timing };
   const view = render(<ExecutionStatusBar {...props} calls={[running]} />);
-  expect(screen.getByText("当前操作 10 秒")).toBeTruthy();
-  // The running turn has tool calls, so its fold header shows the live total.
-  expect(screen.queryByText(/^用时/)).toBeNull();
+  expect(screen.getByText("用时 10分")).toBeTruthy();
+  expect(screen.queryByText(/^当前操作/)).toBeNull();
 
   act(() => vi.advanceTimersByTime(5_000));
-  expect(screen.getByText("当前操作 15 秒")).toBeTruthy();
+  expect(screen.getByText("用时 10分5秒")).toBeTruthy();
 
-  // A new model phase restarts the step clock.
+  // A new phase must not reset the turn clock.
   view.rerender(<ExecutionStatusBar {...props} calls={[]}
     progress={{ phase: "requesting_model", startedAt: new Date().toISOString() }} />);
-  const restarted = document.querySelector(".execution-status-step");
-  expect(restarted?.textContent).toMatch(/^当前步骤/);
-  expect(restarted?.textContent).not.toMatch(/分/);
-  // Without a fold for this turn, the bar is the only place for the total.
+  expect(document.querySelectorAll(".execution-status-time")).toHaveLength(1);
+  expect(screen.queryByText(/^当前步骤/)).toBeNull();
   expect(screen.getByText("用时 10分5秒")).toBeTruthy();
   vi.useRealTimers();
 });

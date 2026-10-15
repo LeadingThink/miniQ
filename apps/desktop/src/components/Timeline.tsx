@@ -379,13 +379,18 @@ export function Timeline(props: TimelineProps) {
           goal={props.goal}
           expandGroups={filter !== "all" || !!query}
           onError={props.onError}
-          approvals={props.approvals}
           questions={props.questions}
           turnPlans={props.turnPlans}
           streamingText={props.streamingText}
           latestTurnTiming={props.latestTurnTiming}
+          status={!props.loading && props.approvals.length === 0 && <ExecutionStatusBar
+            key={props.sessionId} messages={props.messages} calls={props.toolCalls}
+            progress={props.turnProgress} plan={props.plan} busy={props.busy}
+            approvals={0} questions={props.questions.length} timing={props.latestTurnTiming}
+          />}
+          showActivity={props.busy && !props.loading && props.approvals.length === 0 && props.questions.length === 0}
+          progress={props.turnProgress}
           busy={props.busy}
-          onResolveApproval={props.onResolveApproval}
           onResolveQuestion={props.onResolveQuestion}
           onRollback={props.onRollback}
           onOpenFile={props.onOpenFile}
@@ -418,27 +423,8 @@ export function Timeline(props: TimelineProps) {
           </button>
         )}
       </div>
-      <PendingApprovalBar
-        approvals={props.approvals}
-        onResolve={props.onResolveApproval}
-        onShowDetails={(approvalId) => {
-          const card = scrollRef.current?.querySelector<HTMLElement>(
-            `[data-approval-id="${CSS.escape(approvalId)}"]`,
-          );
-          if (card) reveal(card);
-        }}
-      />
-      {!props.loading && <ExecutionStatusBar
-        key={props.sessionId}
-        messages={props.messages}
-        calls={props.toolCalls}
-        progress={props.turnProgress}
-        plan={props.plan}
-        busy={props.busy}
-        approvals={props.approvals.length}
-        questions={props.questions.length}
-        timing={props.latestTurnTiming}
-      />}
+      <PendingApprovalBar approvals={props.approvals} onResolve={props.onResolveApproval} />
+
     </div>
   );
 }

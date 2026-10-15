@@ -40,6 +40,11 @@ const TOOL_ACTIONS: Record<string, ToolAction> = {
   file_write: { running: "正在创建文件", finished: "创建了文件" },
   file_edit: { running: "正在修改文件", finished: "修改了文件" },
   file_patch: { running: "正在应用代码补丁", finished: "应用了代码补丁" },
+  process_input: { running: "正在向终端输入", finished: "已向终端输入" },
+  process_output: { running: "正在读取进程输出", finished: "读取了进程输出" },
+  process_resize: { running: "正在调整终端尺寸", finished: "调整了终端尺寸" },
+  agent_result: { running: "正在读取子任务结果", finished: "读取了子任务结果" },
+  agent_wait: { running: "正在等待子任务", finished: "已检查子任务状态" },
   shell_run: { running: "正在运行命令", finished: "运行了命令" },
   shell_batch: { running: "正在运行命令", finished: "运行了命令" },
   apply_patch: { running: "正在应用代码补丁", finished: "应用了代码补丁" },
@@ -363,6 +368,12 @@ export function PlanProgress({
 
 export function turnProgressLabel(progress: TurnProgress | null): string {
   if (!progress) return "正在分析并准备下一步";
+  if (progress.retry) {
+    const prefix = `${progress.retry.reason ?? "模型请求暂时失败"}，`;
+    return progress.phase === "waiting_retry"
+      ? `${prefix}等待自动重试（第 ${progress.retry.attempt} 次）`
+      : `${prefix}正在第 ${progress.retry.attempt} 次重试`;
+  }
   switch (progress.phase) {
     case "preparing_context":
       return "正在读取会话和工作区";

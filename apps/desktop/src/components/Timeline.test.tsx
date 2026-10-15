@@ -281,10 +281,11 @@ describe("Timeline execution flow", () => {
     );
 
     const editButton = screen.getByRole("button", { name: "修改消息" });
-    const regenerateButton = screen.getByRole("button", { name: "重新生成" });
+    expect(screen.queryByRole("button", { name: "重新生成" })).toBeNull();
     expect((editButton as HTMLButtonElement).disabled).toBe(false);
-    expect((regenerateButton as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(regenerateButton);
+    fireEvent.click(editButton);
+    fireEvent.change(screen.getByLabelText("修改消息内容"), { target: { value: "新问题" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送修改" }));
     expect(screen.getByRole("alertdialog")).toBeTruthy();
     expect(onRewrite).not.toHaveBeenCalled();
   });
@@ -401,15 +402,13 @@ describe("Timeline execution flow", () => {
       turnPlans: [{ anchorMessageId: "user-1", tasks: [{ content: "验证结果", status: "completed" }] }],
     });
 
-    // Execution details collapse into a single per-turn summary row between
-    // the request and the reply; step and plan details live inside the fold.
-    expect(html.indexOf("检查这个项目")).toBeLessThan(html.indexOf("已执行 1 项操作"));
-    expect(html.indexOf("已执行 1 项操作")).toBeLessThan(html.indexOf("检查完成"));
-    expect(html).not.toContain("运行了命令");
+    expect(html.indexOf("检查这个项目")).toBeLessThan(html.indexOf("npm test"));
+    expect(html.indexOf("npm test")).toBeLessThan(html.indexOf("检查完成"));
+    expect(html).not.toContain("已执行 1 项操作");
     expect(html).not.toContain("task_update");
   });
 
-  it("keeps one live status below the scrollable transcript", () => {
+  it("keeps one live status pinned below the transcript even before the first message arrives", () => {
     const html = renderTimeline({ busy: true });
     expect(html).toContain("正在分析并准备下一步");
     expect(html.indexOf('aria-label="当前任务状态"')).toBeGreaterThan(html.indexOf('class="timeline-shell"'));
@@ -434,9 +433,9 @@ describe("Timeline execution flow", () => {
     ];
     const html = renderTimeline({ messages, turnPlans });
     const first = html.indexOf("共 2 个任务，已完成 1 个");
-    expect(html.indexOf("第一答")).toBeLessThan(first);
+    expect(first).toBeLessThan(html.indexOf("第一答"));
     expect(first).toBeLessThan(html.indexOf("第二问"));
-    expect(html.indexOf("第二答")).toBeLessThan(html.indexOf("共 1 个任务，已完成 1 个"));
+    expect(html.indexOf("共 1 个任务，已完成 1 个")).toBeLessThan(html.indexOf("第二答"));
     // Collapsed by default, never spinning for an ended turn.
     expect(html).not.toContain("旧步骤一");
     expect(html).not.toContain("activity-spinner");

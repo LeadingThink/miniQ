@@ -62,12 +62,12 @@ fn instruction(children: &[Value]) -> String {
     let next = if still_running > 0 {
         format!(
             "{still_running} of them are still running. Do not report the task as complete. \
-             Collect each result with process_output (id=agentId, block=true, timeoutSecs up to 600) \
+             Wait with agent_wait (ids=all outstanding agentIds) for any completion; collect results with agent_result and remove collected IDs from later waits. Continue \
              until every child has finished, or stop a child with process_kill only if it is \
              clearly stuck or no longer needed."
         )
     } else {
-        "All of them have now finished. Collect each result with process_output (id=agentId) \
+        "All of them have now finished. Collect each result with agent_result (id=agentId) \
          before answering."
             .to_string()
     };
@@ -100,7 +100,8 @@ mod tests {
         assert!(text.contains("agentId=agent_a name=batch-1 status=completed"));
         assert!(text.contains("agentId=agent_b name=batch-2 status=running"));
         assert!(text.contains("1 of them are still running"));
-        assert!(text.contains("process_output"));
+        assert!(text.contains("agent_wait"));
+        assert!(text.contains("agent_result"));
     }
 
     #[test]

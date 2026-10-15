@@ -71,6 +71,9 @@ pub(super) fn adapt_shell(call: &ToolCallRequest) -> Result<Value, NativeToolErr
     let mut output = remap(
         call,
         &[
+            ("yield_time_ms", "yieldTimeMs"),
+            ("max_output_tokens", "maxOutputTokens"),
+            ("tty", "tty"),
             ("command", "command"),
             ("cmd", "command"),
             ("cwd", "cwd"),
@@ -85,8 +88,6 @@ pub(super) fn adapt_shell(call: &ToolCallRequest) -> Result<Value, NativeToolErr
             "description",
             "run_in_background",
             "dangerouslyDisableSandbox",
-            "yield_time_ms",
-            "max_output_tokens",
             "justification",
             "prefix_rule",
             "sandbox_permissions",
@@ -97,7 +98,7 @@ pub(super) fn adapt_shell(call: &ToolCallRequest) -> Result<Value, NativeToolErr
             "timeoutMs",
         ],
     )?;
-    for key in ["tty", "login"] {
+    for key in ["login"] {
         if input.get(key).and_then(Value::as_bool) == Some(true) {
             return Err(NativeToolError::unsupported(
                 call,
@@ -143,7 +144,27 @@ pub(super) fn adapt_shell(call: &ToolCallRequest) -> Result<Value, NativeToolErr
             .ok_or_else(|| NativeToolError::invalid(call, "shell timeout must be milliseconds"))?;
         output["timeoutSecs"] = json!(millis.div_ceil(1000).max(1));
     }
+    if call.name == "exec_command" {
+        if output.get("yieldTimeMs").is_none() {
+            output["yieldTimeMs"] = json!(1000);
+        }
+        output["interactive"] = json!(true);
+    }
     Ok(output)
+}
+
+pub(super) fn adapt_stdin(call: &ToolCallRequest) -> Result<Value, NativeToolError> {
+    remap(
+        call,
+        &[
+            ("session_id", "id"),
+            ("chars", "chars"),
+            ("yield_time_ms", "yieldTimeMs"),
+            ("max_output_tokens", "maxOutputTokens"),
+            ("eof", "eof"),
+        ],
+        &[],
+    )
 }
 
 pub(super) fn adapt_process_output(call: &ToolCallRequest) -> Result<Value, NativeToolError> {

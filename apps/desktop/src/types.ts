@@ -16,7 +16,7 @@ export interface TurnProgress {
   phase: TurnPhase;
   modelStep?: number;
   startedAt: string;
-  retry?: { attempt: number; maxAttempts: number; delayMs: number };
+  retry?: { attempt: number; maxAttempts: number; delayMs: number; reason?: string };
 }
 
 export type Role = "user" | "assistant" | "system" | "tool";
@@ -202,6 +202,8 @@ export interface Message {
   attachments?: MessageAttachment[];
   createdAt: string;
   turnTiming?: TurnTiming;
+  /** Explicit lifecycle for assistant output; absent on legacy/imported messages. */
+  assistantKind?: "commentary" | "final" | "interrupted";
   /** A user message steered into a running turn; rendered inline in it. */
   steered?: boolean;
 }

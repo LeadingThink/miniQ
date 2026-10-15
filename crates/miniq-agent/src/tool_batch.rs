@@ -9,7 +9,7 @@ use crate::{checkpoint::RunState, AgentError, RunLimits, ToolExecutionMode, Tool
 // model emits a very large batch. Serial calls remain ordering barriers.
 const MAX_PARALLEL_CALLS: usize = 4;
 
-fn unfinished(call: &ToolCallRequest, dispatched: bool) -> ChatMessage {
+pub(crate) fn unfinished(call: &ToolCallRequest, dispatched: bool) -> ChatMessage {
     ChatMessage::tool_result(call.id.clone(), json!({
         "interrupted": true,
         "execution": if dispatched { "unknown" } else { "not_started" },

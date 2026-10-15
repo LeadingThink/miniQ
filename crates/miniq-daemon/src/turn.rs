@@ -5,6 +5,7 @@ use miniq_agent::{run_turn_with_limits, AgentError, AgentEvent, ContextPolicy, R
 use miniq_models::{ChatImage, ChatMessage, ChatRole};
 use miniq_protocol::{Event, Message, Role, SessionStatus, TurnPhase, TurnTimingStatus};
 use std::path::Path;
+use std::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::state::AppState;
@@ -377,11 +378,14 @@ enum TurnError {
 #[path = "turn_checkpoint_tests.rs"]
 mod checkpoint_tests;
 
+#[tracing::instrument(name = "turn", skip_all, fields(session_id))]
 async fn execute_turn(
     state: &AppState,
     session_id: &str,
     cancel: CancellationToken,
 ) -> Result<(), TurnError> {
+    let turn_started = Instant::now();
+    tracing::info!(session_id, "turn execution started");
     state.clear_streaming_text(session_id);
     state.set_turn_progress(session_id, TurnPhase::PreparingContext, None);
     // Resolve the workspace first: it scopes both skills and tools.
@@ -410,6 +414,13 @@ async fn execute_turn(
         .store
         .get_model_context(session_id)
         .map_err(|e| TurnError::Fatal(e.to_string()))?;
+    tracing::info!(
+        session_id,
+        elapsed_ms = turn_started.elapsed().as_millis() as u64,
+        messages = messages.len(),
+        has_context_snapshot = snapshot.is_some(),
+        "turn input loaded"
+    );
     let config = state
         .provider_config_for_session(session_id, None)
         .map_err(|error| TurnError::Fatal(error.to_string()))?;
@@ -422,6 +433,14 @@ async fn execute_turn(
         .as_ref()
         .and_then(|snapshot| snapshot.model_identity.clone());
     let mut history = history_for_turn(&messages, snapshot, &skills_block, &workspace_path);
+    tracing::info!(
+        session_id,
+        elapsed_ms = turn_started.elapsed().as_millis() as u64,
+        history_messages = history.len(),
+        skills = skills.len(),
+        skills_block_bytes = skills_block.len(),
+        "turn context assembled"
+    );
     if let Some(goal) = state
         .store
         .session_goal(session_id)
@@ -464,38 +483,46 @@ async fn execute_turn(
     // Allocate the assistant message id upfront so streaming deltas can
     // reference it before the row is written.
     let message_id = miniq_memory::new_id("msg");
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<AgentEvent>(64);
     let checkpoint = std::sync::Arc::new(crate::turn_checkpoint::SessionCheckpoint {
         store: state.store.clone(),
         session_id: session_id.to_string(),
-        anchor_id: messages
-            .last()
-            .ok_or_else(|| TurnError::Fatal("missing turn message".into()))?
-            .id
-            .clone(),
-        message_id: message_id.clone(),
+        anchor_id: std::sync::Mutex::new(
+            messages
+                .last()
+                .ok_or_else(|| TurnError::Fatal("missing turn message".into()))?
+                .id
+                .clone(),
+        ),
+        message_id: std::sync::Mutex::new(message_id.clone()),
+        state: state.clone(),
+        events: event_tx.downgrade(),
         model_identity: model_identity.clone(),
         partial_message: Default::default(),
     });
-    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<AgentEvent>(64);
-
     // Forward agent text deltas as protocol events while the turn runs.
     let forward_state = state.clone();
     let forward_session = session_id.to_string();
     let forward_message_id = message_id.clone();
+    let forward_checkpoint = checkpoint.clone();
     let forwarder = tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
             match event {
+                AgentEvent::Flush(ack) => {
+                    let _ = ack.send(());
+                }
+                AgentEvent::TextCommitted => forward_state.clear_streaming_text(&forward_session),
                 AgentEvent::TextDelta(delta) => {
                     forward_state.emit(Event::AssistantDelta {
                         session_id: forward_session.clone(),
-                        message_id: forward_message_id.clone(),
+                        message_id: forward_checkpoint.message_id.lock().unwrap().clone(),
                         delta,
                     });
                 }
                 AgentEvent::TextReplaced(text) => {
                     forward_state.emit(Event::AssistantReplaced {
                         session_id: forward_session.clone(),
-                        message_id: forward_message_id.clone(),
+                        message_id: forward_checkpoint.message_id.lock().unwrap().clone(),
                         text,
                     });
                 }
@@ -608,6 +635,12 @@ async fn execute_turn(
             .map(|message| message.id.clone()),
     );
     let max_steps = state.take_turn_step_limit(session_id);
+    tracing::info!(
+        session_id,
+        elapsed_ms = turn_started.elapsed().as_millis() as u64,
+        history_messages = history.len(),
+        "turn model execution starting"
+    );
     let outcome = run_turn_with_limits(
         &provider,
         &executor,
@@ -632,6 +665,11 @@ async fn execute_turn(
 
     let mut outcome = match outcome {
         Ok(outcome) => {
+            tracing::info!(
+                session_id,
+                elapsed_ms = turn_started.elapsed().as_millis() as u64,
+                "turn model execution finished"
+            );
             state.set_turn_progress(session_id, TurnPhase::Finalizing, None);
             outcome
         }
@@ -639,14 +677,21 @@ async fn execute_turn(
         Err(e) => return Err(TurnError::Fatal(e.to_string())),
     };
 
+    let reconcile_started = Instant::now();
     executor
         .reconcile_plan(&provider, &mut outcome, context_policy())
         .await;
+    tracing::info!(
+        elapsed_ms = reconcile_started.elapsed().as_millis() as u64,
+        "turn plan reconciliation finished"
+    );
+    let persistence_started = Instant::now();
 
     let message = Message {
-        id: message_id,
+        id: checkpoint.message_id.lock().unwrap().clone(),
         session_id: session_id.to_string(),
         role: Role::Assistant,
+        assistant_kind: Some(miniq_protocol::AssistantMessageKind::Final),
         content: outcome.final_text.clone(),
         attachments: Vec::new(),
         created_at: miniq_memory::now_iso(),
@@ -674,6 +719,14 @@ async fn execute_turn(
             Some(&message),
         )
         .map_err(|e| TurnError::Fatal(e.to_string()))?;
+    tracing::info!(
+        session_id,
+        elapsed_ms = persistence_started.elapsed().as_millis() as u64,
+        total_turn_ms = turn_started.elapsed().as_millis() as u64,
+        final_text_bytes = message.content.len(),
+        persisted_history_messages = persisted_history.as_array().map_or(0, Vec::len),
+        "turn persistence finished"
+    );
     state.emit(Event::MessageCreated {
         session_id: session_id.to_string(),
         message,
@@ -691,6 +744,7 @@ mod tests {
             id: id.to_string(),
             session_id: "session".to_string(),
             role,
+            assistant_kind: None,
             content: content.to_string(),
             attachments: Vec::new(),
             created_at: "2026-08-30T00:00:00Z".to_string(),

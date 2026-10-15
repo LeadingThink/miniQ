@@ -1,0 +1,29 @@
+.tool-run-summary { color: var(--text-dim); font-size: var(--font-caption); }
+
+/* Quiet activity highlight, not a flashing alert. Never changes layout. */
+.tool-run-shimmer {
+  animation: tool-run-breathe 1.8s ease-in-out infinite;
+}
+@keyframes tool-run-breathe {
+  0%, 100% { opacity: .6; }
+  50% { opacity: 1; }
+}
+@supports (background-clip: text) {
+  .tool-run-shimmer {
+    background: linear-gradient(100deg, var(--text-dim) 20%, var(--text) 45%, var(--text-dim) 70%);
+    background-size: 250% 100%;
+    background-clip: text;
+    color: transparent;
+    animation: tool-run-sweep 2s linear infinite;
+  }
+}
+@keyframes tool-run-sweep {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool-run-shimmer { animation: none; background: none; color: var(--text-mid); opacity: 1; }
+}
+@media (forced-colors: active) {
+  .tool-run-shimmer { animation: none; background: none; color: ButtonText; opacity: 1; }
+}

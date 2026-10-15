@@ -25,7 +25,7 @@ pub(crate) const PARALLEL_POLICY: &str = concat!(
     "cohort (usually 2-4 workers), give each a distinct scope, exact input paths or record IDs, ",
     "the same evaluation criteria, an output format, and separate output files. Launch the cohort ",
     "before waiting for one result; do other independent work locally, then collect every required ",
-    "result with process_output (id=agentId, block=true when waiting). Avoid rapid polling, duplicate work, ",
+    "result with agent_result (id=agentId), or wait once with agent_wait (ids=all outstanding agentIds) for any completion. Remove collected IDs before waiting again. Avoid rapid polling, duplicate work, ",
     "and recursive delegation of tiny tasks. Use direct tools when delegation overhead would dominate.\n",
     "Keep dependent steps, approvals, writes to shared files, shared browser tabs, and actions in ",
     "the same app or desktop control session sequential. For independent code edits, use separate ",

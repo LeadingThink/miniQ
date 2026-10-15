@@ -4,6 +4,10 @@
 //! therefore still validated, approved, dispatched and audited exactly like a
 //! tool call that used miniQ's public schema directly.
 
+#[cfg(test)]
+#[path = "native/codex_tests.rs"]
+mod codex_tests;
+
 mod basic;
 mod names;
 mod structured;
@@ -73,10 +77,12 @@ pub fn canonical_name(name: &str) -> Option<&'static str> {
         "AskUserQuestion" | "ask_user_question" | "request_user_input" => Some("ask_user"),
         "TodoWrite" | "update_plan" => Some("task_update"),
         "Skill" => Some("skill_read"),
-        "Task" | "Agent" => Some("agent_run"),
+        "Task" | "Agent" | "spawn_agent" => Some("agent_run"),
         "TaskOutput" => Some("process_output"),
-        "KillShell" | "TaskStop" => Some("process_kill"),
-        "SendMessage" => Some("agent_message"),
+        "wait_agent" => Some("agent_wait"),
+        "write_stdin" => Some("process_input"),
+        "KillShell" | "TaskStop" | "close_agent" => Some("process_kill"),
+        "SendMessage" | "send_input" => Some("agent_message"),
         "TaskCreate" => Some("task_create"),
         "TaskGet" => Some("task_get"),
         "TaskList" => Some("task_list"),
@@ -122,7 +128,26 @@ pub fn adapt_native_tool_call(
         "ask_user" if call.name == "AskUserQuestion" => adapt_questions(call)?,
         "task_update" => adapt_tasks(call)?,
         "mcp_call" => adapt_mcp(call)?,
-        "process_output" => adapt_process_output(call)?,
+        "process_output" => {
+            let arguments = adapt_process_output(call)?;
+            if arguments["id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("agent_"))
+            {
+                if arguments["block"] == true {
+                    canonical = "agent_wait";
+                    json!({"ids":[arguments["id"]], "timeoutMs": arguments["timeoutSecs"].as_u64().unwrap_or(30).checked_mul(1000)
+                        .ok_or_else(|| NativeToolError::invalid(call, "timeout overflow"))?})
+                } else {
+                    canonical = "agent_result";
+                    json!({"id":arguments["id"]})
+                }
+            } else {
+                arguments
+            }
+        }
+        "process_input" => basic::adapt_stdin(call)?,
+        "agent_wait" => remap(call, &[("ids", "ids"), ("timeout_ms", "timeoutMs")], &[])?,
         "process_kill" => remap(
             call,
             &[("shell_id", "id"), ("task_id", "id"), ("id", "id")],
@@ -211,7 +236,9 @@ pub fn adapt_native_tool_call(
             &[("skill", "name"), ("name", "name"), ("args", "args")],
             &[],
         )?,
+        "agent_run" if call.name == "spawn_agent" => structured::adapt_spawn(call)?,
         "agent_run" => adapt_agent(call)?,
+        "agent_message" if call.name == "send_input" => structured::adapt_send(call)?,
         "agent_message" => remap(
             call,
             &[
