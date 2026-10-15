@@ -170,10 +170,9 @@ export async function verifyBuild({ list, marketingVersion, buildNumber, wait = 
     if (builds.length && !candidates.length) {
       log(`ASC unmatched builds: ${JSON.stringify(builds.map((item) => ({ id: item.id, processingState: item.attributes?.processingState, preReleaseVersion: item.relationships?.preReleaseVersion?.data ?? null })))}`);
       log(`ASC version metadata: ${JSON.stringify(result.included.filter((item) => item.type === "preReleaseVersions").map((item) => ({ id: item.id, version: item.attributes?.version, platform: item.attributes?.platform })))}`);
-      if (builds.some((item) => item.attributes?.processingState === "PROCESSING")) {
-        if (poll < maxPolls) { await wait(pollMs); continue; }
-      }
-      throw new Error("ASC marketing version/platform mismatch or missing preReleaseVersion; verification failed");
+      // Build numbers can be reused under a new marketing version. Older
+      // matches do not prove the new upload failed; keep waiting for the
+      // exact version/platform within the existing polling bound.
     }
     if (candidates.length > 1) throw new Error("ASC returned multiple matching iOS builds; verification failed");
     const build = candidates[0];

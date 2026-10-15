@@ -24,7 +24,7 @@ function scenario(states, { version = "1.0", groups = [], buildAttributes = {}, 
       const state = states[Math.min(polls++, states.length - 1)];
       body = state === null ? { data: [] } : {
         data: [{ id: "build-1", attributes: { version: "42", processingState: state, ...buildAttributes }, relationships: { preReleaseVersion: { data: { id: "version-1" } }, buildBetaDetail: { data: { id: "details-1" } } } }],
-        included: [{ id: "version-1", type: "preReleaseVersions", attributes: { version, platform: "IOS" } },
+        included: [{ id: "version-1", type: "preReleaseVersions", attributes: { version: Array.isArray(version) ? version[Math.min(polls - 1, version.length - 1)] : version, platform: "IOS" } },
           { id: "other-details", type: "buildBetaDetails", attributes: { internalBuildState: "WRONG_BUILD" } },
           ...(betaDetails ? [{ id: "details-1", type: "buildBetaDetails", attributes: betaDetails }] : [])],
       };
@@ -74,10 +74,20 @@ for (const state of ["FAILED", "INVALID"]) {
   });
 }
 
-test("marketing version mismatch fails without accepting a different release", async () => {
-  const s = scenario(["VALID"], { version: "2.0" });
-  await assert.rejects(s.run(), /marketing version\/platform mismatch/);
-  assert.equal(s.calls.length, 2);
+test("an older marketing version never passes verification and stops at the polling bound", async () => {
+  const s = scenario(["VALID"], { version: "0.9" });
+  await assert.rejects(s.run(), /timed out/);
+  assert.equal(s.calls.filter((url) => url.pathname === "/v1/builds").length, 3);
+  assert.ok(s.calls.every((url) => !url.pathname.includes("betaGroups")));
+});
+
+test("waits for the requested marketing version when an older release shares its build number", async () => {
+  const s = scenario(["VALID", "PROCESSING", "VALID"], { version: ["0.9", "1.0", "1.0"] });
+  const result = await s.run();
+  assert.equal(result.processingState, "VALID");
+  assert.equal(s.calls.filter((url) => url.pathname === "/v1/builds").length, 3);
+  assert.ok(s.logs.some((line) => line.includes("NOT_VISIBLE")));
+  assert.ok(s.logs.some((line) => line.includes('processingState="PROCESSING"')));
 });
 
 test("pending processing stops at the polling bound", async () => {
