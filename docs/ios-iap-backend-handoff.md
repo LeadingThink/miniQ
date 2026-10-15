@@ -1,6 +1,6 @@
 # miniQ × OneAPI：Apple 消耗型内购后端交接文档
 
-更新日期：2026-10-13。本文对应 miniQ 的 `codex/ios-iap-storekit` 分支，是当前客户端接口契约。交接对象：`zaiwenai-openapi` 后端同学。
+更新日期：2026-10-15。实现已合入 miniQ 的 `main` 分支，本文是当前客户端接口契约。交接对象：`zaiwenai-openapi` 后端同学。切正式站的部署步骤见 [正式后端部署交接](ios-iap-production-rollout.md)。
 
 ## 1. 这次做什么
 
