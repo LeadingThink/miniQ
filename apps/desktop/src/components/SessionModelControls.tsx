@@ -139,14 +139,14 @@ export function SessionModelControls({
     }
   }, [modelListOpen, models, query]);
 
-  const saveModel = async (id: string | null) => {
+  const saveModel = async (id: string | null, closeAfterSave = mobile) => {
     if (disabled || (id !== null && (loading || catalogError || !models.includes(id)))) return;
     try {
       await model.update({ model: id, apiProtocol: "auto", reasoningEffort: null });
       setSelectedModel(id ?? "");
       setQuery("");
       setModelListOpen(false);
-      if (mobile) setOpen(false);
+      if (closeAfterSave) setOpen(false);
     } catch { /* The model hook exposes the save error. */ }
   };
   const reopenList = () => {
@@ -223,9 +223,10 @@ export function SessionModelControls({
               : { maxHeight: `${popoverMaxHeight}px` }
           }
           aria-label="会话模型配置"
+          aria-busy={model.pending}
           onSubmit={(event) => {
             event.preventDefault();
-            void saveModel(selectedModel || null);
+            void saveModel(selectedModel || null, true);
           }}
           onKeyDown={(event) => {
             if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
@@ -358,7 +359,7 @@ export function SessionModelControls({
             </button>
             <button type="submit" disabled={disabled || loading || Boolean(catalogError) || !models.includes(selectedModel)}>
               <Check size={14} />
-              应用
+              {model.pending ? "正在应用…" : "应用"}
             </button>
           </footer>
         </form>

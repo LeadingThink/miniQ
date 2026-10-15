@@ -144,6 +144,8 @@ it("never turns search text into a selectable model or submits it", async () => 
   await waitFor(() => expect(model.update).toHaveBeenCalledExactlyOnceWith({
     model: "gpt-5.6-sol", apiProtocol: "auto", reasoningEffort: null,
   }));
+  await waitFor(() => expect(screen.queryByRole("form", { name: "会话模型配置" })).toBeNull());
+  expect(screen.getByRole("button", { name: "选择会话模型" }).getAttribute("aria-expanded")).toBe("false");
 });
 
 it("marks the hero model picker to open below its trigger", () => {
