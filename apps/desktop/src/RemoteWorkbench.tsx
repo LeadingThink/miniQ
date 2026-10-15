@@ -94,7 +94,6 @@ export function RemoteWorkbench({ credentials, theme, onThemeChange, onExit, onA
       {current && <button type="button" onClick={() => setChoosing(false)}>返回当前电脑</button>}
     </div>}
     {current && directory.scope && <div className="remote-workbench-content" hidden={choosing}>
-      {!current.online && !directory.loading && !directory.error && <div className="remote-offline-notice" role="status">{current.name} 当前离线，正在等待这台电脑恢复。你也可以点击顶部或 ⋯ 菜单手动切换电脑。</div>}
       <DeviceWorkbench key={`${directory.scope}:${current.id}`} credentials={credentials} device={current} scope={directory.scope} theme={theme} onThemeChange={onThemeChange} notification={notification} bar={bar} />
     </div>}
   </div>;

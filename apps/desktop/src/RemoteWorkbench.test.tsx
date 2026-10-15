@@ -87,7 +87,8 @@ it("恢复离线A不切到在线B；显式切换销毁A，新建B，目录更新
   const view = render(<RemoteWorkbench credentials={credentials} theme="night" onThemeChange={() => {}} />);
   await waitFor(() => expect(state.roots).toHaveLength(1));
   expect(state.roots[0].targetDeviceId).toBe("a");
-  expect(screen.getByText(/电脑A 当前离线/)).toBeTruthy();
+  expect(screen.queryByText(/当前离线，正在等待这台电脑恢复/)).toBeNull();
+  expect(screen.getByRole("button", { name: /电脑A.*离线.*切换电脑/ })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: /电脑A.*切换电脑/ }));
   fireEvent.click(screen.getByRole("button", { name: /电脑B/ }));
   await waitFor(() => expect(state.roots).toHaveLength(2));
@@ -96,7 +97,8 @@ it("恢复离线A不切到在线B；显式切换销毁A，新建B，目录更新
   state.directory.devices = [a];
   view.rerender(<RemoteWorkbench credentials={credentials} theme="night" onThemeChange={() => {}} />);
   expect(state.roots).toHaveLength(2);
-  expect(screen.getByText(/电脑B 当前离线/)).toBeTruthy();
+  expect(screen.queryByText(/当前离线，正在等待这台电脑恢复/)).toBeNull();
+  expect(screen.getByRole("button", { name: /电脑B.*离线.*切换电脑/ })).toBeTruthy();
 });
 
 it("clears a missing-target notification and aborts an older asynchronous destination", async () => {

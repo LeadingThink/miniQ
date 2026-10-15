@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { RemoteDeviceBarContext } from "../remoteDeviceBar";
-import { AppStatusBar } from "./AppStatus";
+import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 
 afterEach(() => {
   cleanup();
@@ -32,6 +32,36 @@ function appFixture(collapsed = true, mode: "local" | "remote" = "local") {
     setError: vi.fn(),
   } as unknown as MiniqAppController;
 }
+
+describe("AppErrorBanner", () => {
+  it("guides a disconnected remote user to the computer dropdown and removes the guidance after reconnect", () => {
+    const app = {
+      ...appFixture(true, "remote"),
+      error: "所选桌面设备不存在，miniQ 正在自动重连",
+      dismissError: vi.fn(),
+    };
+    const bar = { name: "电脑A", online: false, devices: [], selected: null, loading: false, error: null, onSelect: vi.fn(), onRefresh: vi.fn(), onSwitch: vi.fn() };
+    const banner = (connected: boolean) => <RemoteDeviceBarContext.Provider value={bar}>
+      <AppErrorBanner app={{ ...app, connection: { ...app.connection, connected } }} />
+    </RemoteDeviceBarContext.Provider>;
+    const view = render(banner(false));
+    expect(screen.getByRole("alert").textContent).toContain(app.error);
+    expect(screen.getByRole("alert").textContent).toContain("可点击顶部电脑名称旁的下拉箭头，手动切换电脑。");
+    fireEvent.click(screen.getByRole("button", { name: "连接设置" }));
+    expect(app.navigation.setShowSettings).toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByRole("button", { name: "关闭错误提示" }));
+    expect(app.dismissError).toHaveBeenCalledOnce();
+    view.rerender(banner(true));
+    expect(screen.queryByText(/手动切换电脑/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "连接设置" })).toBeNull();
+  });
+
+  it("does not suggest a computer dropdown when none is available", () => {
+    const app = appFixture(true, "remote");
+    render(<AppErrorBanner app={{ ...app, error: "连接已断开", connection: { ...app.connection, connected: false } }} />);
+    expect(screen.queryByText(/手动切换电脑/)).toBeNull();
+  });
+});
 
 describe("AppStatusBar", () => {
   it("keeps four remote home actions including a working inspector entry", () => {

@@ -315,13 +315,17 @@ function OverflowMenu({ items, status, connected }: { items: OverflowItem[]; sta
 }
 
 export function AppErrorBanner({ app }: { app: MiniqAppController }) {
+  const deviceBar = useContext(RemoteDeviceBarContext);
   if (!app.error) return null;
   const billing = isBillingError(app.error);
+  const disconnected = app.client.mode === "remote" && !app.connection.connected;
   return (
     <div className="error-banner" role="alert">
-      <span style={{ flex: 1 }}>{app.error}</span>
+      <span style={{ flex: 1 }}>{app.error}
+        {disconnected && deviceBar && !billing && <span style={{ display: "block" }}>可点击顶部电脑名称旁的下拉箭头，手动切换电脑。</span>}
+      </span>
       {billing && <button type="button" className="ghost" onClick={() => app.navigation.openSettings("services")}>更换 API Key</button>}
-      {app.client.mode === "remote" && !app.connection.connected && <button type="button" className="ghost" onClick={() => app.navigation.setShowSettings(true)}>连接设置</button>}
+      {disconnected && <button type="button" className="ghost" onClick={() => app.navigation.setShowSettings(true)}>连接设置</button>}
       <button
         type="button"
         className="banner-close"
