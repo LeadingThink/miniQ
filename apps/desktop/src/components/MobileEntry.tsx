@@ -111,7 +111,10 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
     }
   };
   const configured = Boolean(activeKey) && hasMobilePrivacyConsent();
-  const showKeyFields = section === "settings" || (section === "home" && !configured && isIosIapAvailable());
+  // Keep the key entry visible on iOS home so users can find or replace it
+  // without first opening the account flow. Other entry points keep their
+  // existing onboarding behavior.
+  const showKeyFields = section === "settings" || (section === "home" && isIosIapAvailable());
 
   return (
     <>
@@ -141,6 +144,7 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
             {showKeyFields && <>
             <MobileKeyField inputRef={keyInput} value={apiKey} disabled={loadingCredentials || pending} native={isNativeMobileApp()}
               onGetKey={isIosIapAvailable() ? () => setAccountOpen(true) : undefined}
+              hideGetKey={configured && section === "home"}
               onChange={(value) => { setApiKey(value); setError(null); }} />
             {loadingCredentials && <p className="mobile-entry-progress" role="status">正在读取这台设备保存的 Key…</p>}
             {pending && <p className="mobile-entry-progress" role="status">正在安全保存连接设置…</p>}
@@ -189,7 +193,7 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
 
             {section === "home" ? (
               <>
-              {showKeyFields && <button type="submit" disabled={pending || loadingCredentials || !privacyAccepted}>{pending ? "正在保存…" : "保存 Key 并继续"}</button>}
+              {showKeyFields && <button type="submit" disabled={pending || loadingCredentials || !privacyAccepted}>{pending ? "正在保存…" : configured ? "保存 Key" : "保存 Key 并继续"}</button>}
               {configured && isIosIapAvailable() && <button type="button" className="secondary" onClick={() => setAccountOpen(true)}>账户、购买额度与 API Key</button>}
               <div className="mobile-entry-actions">
                 <button type="button" className="mobile-mode-card primary" disabled={loadingCredentials} onClick={() => chooseMode("chat")}>
