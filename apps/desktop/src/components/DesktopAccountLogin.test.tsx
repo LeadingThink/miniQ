@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ account: vi.fn(), login: vi.fn(), keys: vi.fn(), create: vi.fn(), logout: vi.fn() }));
+const mocks = vi.hoisted(() => ({ account: vi.fn(), login: vi.fn(), keys: vi.fn(), create: vi.fn(), logout: vi.fn(), sms: vi.fn() }));
 vi.mock("../mobileIapAccount", async (original) => ({ ...(await original<typeof import("../mobileIapAccount")>()),
   loadOneApiAccount: mocks.account, loginIapAccount: mocks.login, loadOneApiKeys: mocks.keys,
-  createOneApiKey: mocks.create, logoutIapAccount: mocks.logout,
+  createOneApiKey: mocks.create, logoutIapAccount: mocks.logout, requestIapLoginCode: mocks.sms,
 }));
 import { DesktopAccountLogin, acquireDesktopAccountKey } from "./DesktopAccountLogin";
 import { recordMobilePrivacyConsent } from "../mobilePrivacy";
@@ -91,4 +91,19 @@ it("reports acquisition failures while retaining the authenticated account for r
   expect(screen.getByText("Key 服务不可用")).toBeTruthy();
   expect(screen.getByRole("button", { name: "获取账户 API Key" })).toBeTruthy();
   expect(onKey).not.toHaveBeenCalled();
+});
+it("explains missing consent on SMS click and only sends after explicit consent", async () => {
+  render(<DesktopAccountLogin disabled={false} onKey={vi.fn()} onBusyChange={() => {}} />);
+  const send = screen.getByRole("button", { name: "发送验证码" });
+  await waitFor(() => expect(send.hasAttribute("disabled")).toBe(false));
+  fireEvent.change(screen.getByLabelText("手机号（中国大陆）"), { target: { value: "13800000000" } });
+  fireEvent.click(send);
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "请先阅读并同意隐私政策。");
+  expect(mocks.sms).not.toHaveBeenCalled();
+  const consent = screen.getByRole("checkbox");
+  expect((consent as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(consent);
+  fireEvent.click(send);
+  await waitFor(() => expect(mocks.sms).toHaveBeenCalledWith("13800000000"));
+  expect(await screen.findByRole("button", { name: "60 秒后重新发送" })).toBeTruthy();
 });

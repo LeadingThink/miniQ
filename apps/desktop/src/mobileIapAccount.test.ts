@@ -36,7 +36,7 @@ it("uses native cookie requests and the real phone login schema, then validates 
   mocks.request.mockResolvedValueOnce(success({ token: "secret-jwt" })).mockResolvedValueOnce(success(account));
   expect(await loginIapAccount(" 13800000000 ", " 123456 ")).toEqual(account);
   expect(mocks.request.mock.calls[0][0]).toMatchObject({
-    url: "https://oneapi.zaiwenai.com/v1/user/login", method: "POST", data: { phone: "13800000000", code: "123456", inviteCode: "" }, disableRedirects: true,
+    url: "https://oneapi.zaiwenai.com/v1/user/login", method: "POST", data: { phone: "13800000000", sms_code: "123456" }, disableRedirects: true,
   });
   expect(mocks.request.mock.calls[1][0]).toMatchObject({ url: "https://oneapi.zaiwenai.com/v1/user", method: "GET" });
   for (const [options] of mocks.request.mock.calls) {
@@ -53,7 +53,7 @@ it("uses the channel's actual SMS endpoint and request field", async () => {
   mocks.request.mockResolvedValue(success());
   await requestIapLoginCode("13800000000");
   expect(mocks.request).toHaveBeenCalledWith(expect.objectContaining({
-    url: "https://oneapi.zaiwenai.com/v1/user/sms",
+    url: "https://oneapi.zaiwenai.com/v1/user/send_sms_code",
     method: "POST",
     data: { phone: "13800000000" },
   }));
@@ -89,4 +89,17 @@ it("logs out server-side before clearing the native login cookie", async () => {
 it("rejects malformed account binding before any StoreKit purchase", async () => {
   mocks.request.mockResolvedValue(success({ accountId: "u1", appAccountToken: "invalid", environment: "Production" }));
   await expect(loadIapPurchaseContext()).rejects.toThrow("购买账户信息无效");
+});
+
+it("keeps desktop SMS and login requests identical to the working iOS contract", async () => {
+  mocks.tauri = true;
+  mocks.invoke.mockResolvedValueOnce(success()).mockResolvedValueOnce(success()).mockResolvedValueOnce(success(account));
+  await requestIapLoginCode(" 13800000000 ");
+  await loginIapAccount("13800000000", "123456");
+  expect(mocks.invoke.mock.calls.map(([, args]) => args.request)).toEqual([
+    { baseUrl: "https://oneapi.zaiwenai.com/v1", path: "/user/send_sms_code", method: "POST", body: { phone: "13800000000" } },
+    { baseUrl: "https://oneapi.zaiwenai.com/v1", path: "/user/login", method: "POST", body: { phone: "13800000000", sms_code: "123456" } },
+    { baseUrl: "https://oneapi.zaiwenai.com/v1", path: "/user", method: "GET", body: null },
+  ]);
+  expect(mocks.request).not.toHaveBeenCalled();
 });
