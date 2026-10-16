@@ -146,4 +146,5 @@ mod tests {
     }
 }
 pub mod files;
+pub mod runtime_path;
 pub mod subprocess_env;

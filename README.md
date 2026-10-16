@@ -4,6 +4,7 @@ miniQ 是一款面向通用办公场景的桌面端 AI Coworker:用户给出目�
 
 完整设计见 [docs/desktop-cowork-implementation.md](docs/desktop-cowork-implementation.md)。
 Agent 长会话、压缩与工具执行保护见 [docs/harness-runtime.md](docs/harness-runtime.md)。
+桌面启动时的 PATH 来源与故障回退见 [docs/desktop-path.md](docs/desktop-path.md)。
 
 ## 架构
 

@@ -84,7 +84,7 @@ it("keeps the workbench module out of the entry screen and preserves context whe
   expect(state.useHarness).not.toHaveBeenCalled();
   state.loadCredentials.mockResolvedValue({ apiKey: "test-key" });
   fireEvent.click(screen.getByRole("button", { name: "连接远程" }));
-  fireEvent.click(await screen.findByRole("button", { name: /测试电脑/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /测试电脑/ }, { timeout: 10_000 }));
   await screen.findByText("正在加载远程工作台…");
   await act(async () => state.releaseHarness());
   const workbench = await screen.findByRole("region", { name: "工作台" }, { timeout: 10_000 });
@@ -106,7 +106,7 @@ it("restores remembered remote mode only after privacy consent", async () => {
   state.releaseHarness();
   state.consent = true;
   render(<App />);
-  fireEvent.click(await screen.findByRole("button", { name: /测试电脑/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /测试电脑/ }, { timeout: 10_000 }));
   await screen.findByRole("region", { name: "工作台" }, { timeout: 10_000 });
   expect(state.useHarness).toHaveBeenCalled();
 }, 20_000);

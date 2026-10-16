@@ -28,6 +28,7 @@ fn read_connection_info() -> Option<ConnectionInfo> {
 pub struct DaemonLifecycle {
     update: Mutex<Option<DaemonProcess>>,
     exiting: AtomicBool,
+    runtime_path: std::sync::OnceLock<miniq_local::runtime_path::PathResolution>,
 }
 
 impl DaemonLifecycle {
@@ -43,7 +44,8 @@ impl DaemonLifecycle {
         if update.is_some() {
             return Err("daemon startup is paused while installing an update".into());
         }
-        ensure_daemon()
+        let runtime_path = self.runtime_path.get_or_init(resolve_runtime_path);
+        ensure_daemon(runtime_path)
     }
 
     pub fn prepare_update(&self) -> Result<(), String> {
@@ -174,7 +176,23 @@ fn daemon_binary_candidates() -> Vec<PathBuf> {
     candidates
 }
 
-fn spawn_daemon() -> Result<(), String> {
+fn resolve_runtime_path() -> miniq_local::runtime_path::PathResolution {
+    let result = miniq_local::runtime_path::resolve();
+    let status = match &result.diagnostic {
+        Some(error) => format!("PATH initialization fell back to the process environment: {error}"),
+        None => "PATH initialization completed".to_owned(),
+    };
+    eprintln!("[miniq] {status}");
+    let directory = data_dir().join("logs");
+    if let Err(error) = std::fs::create_dir_all(&directory)
+        .and_then(|()| std::fs::write(directory.join("desktop-path.log"), status))
+    {
+        eprintln!("[miniq] could not save PATH diagnostic: {error}");
+    }
+    result
+}
+
+fn spawn_daemon(path: &miniq_local::runtime_path::PathResolution) -> Result<(), String> {
     let binary = daemon_binary_candidates()
         .into_iter()
         .find(|p| p.is_file())
@@ -184,6 +202,9 @@ fn spawn_daemon() -> Result<(), String> {
                 .to_string()
         })?;
     let mut cmd = std::process::Command::new(&binary);
+    if let Some(path) = &path.path {
+        cmd.env("PATH", path);
+    }
     // Release builds hide the daemon's console window; debug builds keep it
     // attached so `tauri dev` still shows daemon logs in the terminal.
     #[cfg(all(windows, not(debug_assertions)))]
@@ -198,7 +219,9 @@ fn spawn_daemon() -> Result<(), String> {
 }
 
 /// Return connection info for a healthy daemon, starting one if needed.
-fn ensure_daemon() -> Result<ConnectionInfo, String> {
+fn ensure_daemon(
+    path: &miniq_local::runtime_path::PathResolution,
+) -> Result<ConnectionInfo, String> {
     if let Some(info) = read_connection_info() {
         if health_ok(info.port) {
             return Ok(info);
@@ -212,7 +235,7 @@ fn ensure_daemon() -> Result<ConnectionInfo, String> {
             return wait_for_healthy(DAEMON_STARTUP_TIMEOUT);
         }
     }
-    spawn_daemon()?;
+    spawn_daemon(path)?;
     wait_for_healthy(DAEMON_STARTUP_TIMEOUT)
 }
 
@@ -250,6 +273,7 @@ mod tests {
         let lifecycle = DaemonLifecycle {
             update: Mutex::new(Some(DaemonProcess::open(std::process::id()).unwrap())),
             exiting: AtomicBool::new(false),
+            runtime_path: std::sync::OnceLock::new(),
         };
         assert!(lifecycle.ensure().unwrap_err().contains("paused"));
         assert!(lifecycle

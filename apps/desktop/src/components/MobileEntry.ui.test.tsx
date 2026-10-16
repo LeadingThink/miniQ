@@ -19,7 +19,9 @@ it("lets users draft before configuration, opens daily settings and returns with
   expect(screen.getByRole("link", { name: "技术支持" }).getAttribute("href")).toBe("https://chat.zaiwenai.com/miniq/support");
   expect(screen.queryByPlaceholderText("sk-...")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /移动问答/ }));
-  const draft = await screen.findByRole("textbox", { name: "输入问题或任务" });
+  // The first navigation imports the real chat module, which can take longer
+  // than Testing Library's default timeout on a cold build.
+  const draft = await screen.findByRole("textbox", { name: "输入问题或任务" }, { timeout: 10_000 });
   fireEvent.change(draft, { target: { value: "未发送的草稿" } });
   expect(fetch).not.toHaveBeenCalled();
   expect((screen.getByRole("button", { name: "发送" }) as HTMLButtonElement).disabled).toBe(true);
