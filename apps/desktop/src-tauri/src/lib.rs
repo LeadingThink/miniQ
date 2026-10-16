@@ -9,6 +9,7 @@ mod browser;
 mod companion;
 mod daemon;
 mod daemon_process;
+mod dragged_image;
 mod export_file;
 mod html_preview;
 mod keep_awake;
@@ -207,6 +208,11 @@ fn save_pasted_image(
 }
 
 #[tauri::command]
+fn save_dragged_image(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    dragged_image::save(&app)
+}
+
+#[tauri::command]
 async fn browser_open(
     app: tauri::AppHandle,
     view_id: String,
@@ -352,6 +358,7 @@ pub fn run() {
                 close_html_preview,
                 read_image_preview,
                 save_pasted_image,
+                save_dragged_image,
                 save_export_file,
                 reveal_exported_file,
                 browser_open,

@@ -33,6 +33,7 @@ import { useSpeechInput } from "../useSpeechInput";
 import { VoiceTranscript } from "./VoiceTranscript";
 import type { VoicePreview } from "../voiceTranscription";
 import { savePastedImage } from "../localFiles";
+import { clipboardImages } from "../clipboardImages";
 import { readDraft, storeDraft, readAttachments, storeAttachments } from "../composerDraft";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { RemotePathDialog } from "./RemotePathDialog";
@@ -238,7 +239,7 @@ export function ComposerCard(props: {
       props.onError?.("当前连接远程电脑，请先将文件传到该电脑，再通过附件按钮填写文件路径。");
     } else addAttachments(paths);
   }, [addAttachments, remoteHost, props.onError]);
-  useDroppedFiles(receiveDroppedFiles, props.onError);
+  useDroppedFiles(textareaRef, receiveDroppedFiles, props.onError);
 
   const pickFiles = async () => {
     if (remoteHost) { setShowRemoteAttachment(true); return; }
@@ -259,17 +260,13 @@ export function ComposerCard(props: {
   const pasteImages = async (
     event: React.ClipboardEvent<HTMLTextAreaElement>,
   ) => {
-    if (sendingRef.current) return;
-    const imageFiles = Array.from(event.clipboardData.items)
-      .filter(
-        (item) =>
-          item.kind === "file" && item.type.toLowerCase().startsWith("image/"),
-      )
-      .map((item) => item.getAsFile())
-      .filter((file): file is File => file !== null);
+    const imageFiles = clipboardImages(event.clipboardData);
     if (imageFiles.length === 0) return;
 
+    // Always claim an image paste: otherwise the WebView inserts the file
+    // name or nothing, which looks like the paste silently failed.
     event.preventDefault();
+    if (sendingRef.current) return;
     if (remoteHost) {
       props.onError?.("当前连接远程电脑，剪贴板图片需先传到该电脑，再附加远程文件路径。");
       return;

@@ -127,3 +127,24 @@ it.each(["switch", "unmount"])("keeps a late pasted image with its original draf
   expect(JSON.parse(localStorage.getItem("miniq.draft.paste-A.attachments")!)).toEqual(["/work/pasted-a.png"]);
   expect(localStorage.getItem("miniq.draft.paste-B.attachments")).toBeNull();
 });
+
+it("claims an image paste while sending instead of letting the WebView insert it", async () => {
+  const onSend = vi.fn(() => new Promise<boolean>(() => {}));
+  render(<ComposerCard {...props} draftKey="paste-sending" onSend={onSend} />);
+  const input = screen.getByRole("textbox");
+  fireEvent.change(input, { target: { value: "发送中" } });
+  await act(async () => fireEvent.keyDown(input, { key: "Enter" }));
+  expect(onSend).toHaveBeenCalledOnce();
+  const image = new File(["image"], "late.png", { type: "image/png" });
+  expect(fireEvent.paste(input, { clipboardData: { items: [], files: [image] } })).toBe(false);
+  expect(fake.save).not.toHaveBeenCalled();
+});
+
+it("saves an image pasted with an empty MIME type as its inferred format", async () => {
+  fake.save.mockResolvedValueOnce("/work/untyped.png");
+  render(<ComposerCard {...props} draftKey="paste-untyped" />);
+  const file = new File(["image"], "untyped.png");
+  fireEvent.paste(screen.getByRole("textbox"), { clipboardData: { items: [{ kind: "file", type: "", getAsFile: () => file }] } });
+  expect(await screen.findByText("untyped.png")).toBeTruthy();
+  expect(fake.save.mock.calls[0][0].type).toBe("image/png");
+});

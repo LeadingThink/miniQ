@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { COMPOSER_INSERT_EVENT } from "../composerMention";
+import { pickComposerTarget } from "../composerTarget";
 
 type Target = {
   input: RefObject<HTMLTextAreaElement | null>;
@@ -11,18 +12,10 @@ type Target = {
 // (e.g. fixtures, background views) never receive the same text twice.
 const targets: Target[] = [];
 
-function usable(input: HTMLTextAreaElement | null): input is HTMLTextAreaElement {
-  return !!input && input.isConnected && !input.closest("[hidden], [inert], [aria-hidden='true']");
-}
-
 function receive(event: Event) {
   const text = (event as CustomEvent<{ text?: unknown }>).detail?.text;
   if (typeof text !== "string" || !text) return;
-  const candidates = targets.filter((target) => usable(target.input.current));
-  const focused = candidates.find((target) => target.input.current === document.activeElement);
-  // Otherwise the most recently mounted composer is the one on screen.
-  const target = focused ?? candidates[candidates.length - 1];
-  target?.insert.current?.(text);
+  pickComposerTarget(targets)?.insert.current?.(text);
 }
 
 /** Subscribes a composer to the cross-component text insertion bus. */

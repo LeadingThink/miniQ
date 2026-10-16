@@ -17,7 +17,7 @@ export default function ConnectedApp(props: {
   if (!desktop) return <HostContent {...props} />;
   return <div className={`app ${desktop.sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
     {controller && <UnifiedSidebar app={controller} />}
-    <div style={{ display: desktop.host === null ? "contents" : "none" }}>
+    <div style={{ display: desktop.host === null ? "contents" : "none" }} inert={desktop.host !== null}>
       <HostContent {...props} active={desktop.host === null} publish={setController} />
     </div>
     {desktop.host !== null && <HostContent key={hostKey(desktop.host)} {...props} publish={setController} />}

@@ -1,11 +1,11 @@
+pub(crate) use miniq_local::files::validated_file;
 #[cfg(test)]
 use miniq_local::files::{preview_format, read_preview, read_text};
-pub(crate) use miniq_local::files::validated_file;
-pub use miniq_local::files::{LocalFilePreview, LocalTextFile};
 use miniq_local::files::{
     read_preview_with_authorization, read_text_with_authorization,
     validated_file_with_authorization,
 };
+pub use miniq_local::files::{LocalFilePreview, LocalTextFile};
 use std::path::Path;
 
 use base64::Engine;
@@ -51,8 +51,13 @@ pub fn save_pasted_image(
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data_base64)
         .map_err(|error| format!("无法解码剪贴板图片: {error}"))?;
+    save_image(app, extension, &bytes)
+}
+
+/// Stores pasted or dropped image bytes in the app cache and returns the path.
+pub fn save_image(app: &AppHandle, extension: &str, bytes: &[u8]) -> Result<String, String> {
     if bytes.is_empty() {
-        return Err("剪贴板图片内容为空".to_string());
+        return Err("图片内容为空".to_string());
     }
     if bytes.len() > MAX_PASTED_IMAGE_BYTES {
         return Err("图片不能超过 20 MB".to_string());
@@ -108,12 +113,8 @@ pub fn open(
     workspace_paths: &[String],
     authorized_files: &[String],
 ) -> Result<(), String> {
-    let file = validated_file_with_authorization(
-        path,
-        workspace_path,
-        workspace_paths,
-        authorized_files,
-    )?;
+    let file =
+        validated_file_with_authorization(path, workspace_path, workspace_paths, authorized_files)?;
     app.opener()
         .open_path(file.to_string_lossy(), None::<&str>)
         .map_err(|error| error.to_string())
@@ -126,12 +127,8 @@ pub fn reveal(
     workspace_paths: &[String],
     authorized_files: &[String],
 ) -> Result<(), String> {
-    let file = validated_file_with_authorization(
-        path,
-        workspace_path,
-        workspace_paths,
-        authorized_files,
-    )?;
+    let file =
+        validated_file_with_authorization(path, workspace_path, workspace_paths, authorized_files)?;
     app.opener()
         .reveal_item_in_dir(file)
         .map_err(|error| error.to_string())
