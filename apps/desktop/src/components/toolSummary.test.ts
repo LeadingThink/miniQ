@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ToolCall } from "../types";
-import { patchPaths, toolRunSummary, toolRuns, toolStepTitle } from "./toolSummary";
+import { patchPaths, toolRunSummary, toolRuns, toolSegmentSummary, toolStepTitle } from "./toolSummary";
 import { additionLines, lineDiff, operationDiffLines, parseCodexPatch } from "./lineDiff";
 
 let nextId = 0;
@@ -49,6 +49,18 @@ describe("tool run summaries", () => {
   it("counts historical calls without payloads as one target each", () => {
     const runs = toolRuns([call("file_read", null), call("file_read", null), call("shell_run", null)]);
     expect(runs.map(toolRunSummary)).toEqual(["读取了 2 个文件", "运行了 1 条命令"]);
+  });
+
+  it("summarizes a whole tool segment in one line", () => {
+    expect(toolSegmentSummary([
+      call("file_read", { path: "a.ts" }),
+      call("shell_run", { command: "npm test" }),
+      call("file_grep", { pattern: "x" }),
+      call("shell_batch", { commands: ["a", "b"] }),
+      call("agent_run", {}),
+      call("computer_use", {}),
+      call("computer_use", {}),
+    ])).toBe("已探索 2 项，运行了 3 条命令，调用了 agent_run，调用了 computer_use 2 次");
   });
 
   it("names running and finished steps with their target", () => {

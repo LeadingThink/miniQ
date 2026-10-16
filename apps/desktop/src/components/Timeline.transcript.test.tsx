@@ -109,13 +109,19 @@ it("uses the daemon turn clock at the tail even when history is paged out", () =
   expect(screen.queryByLabelText("本轮尚未结束")).toBeNull();
 });
 
-it("collapses only contiguous activity, keeping commentary outside and searchable call keys intact", () => {
+it("collapses each contiguous tool run into one closed segment, keeping commentary outside and call keys searchable", async () => {
   const extra: ToolCall = { ...calls[0], id: "t-extra", toolName: "file_grep", input: { pattern: "config" }, createdAt: "2026-10-14T00:00:02.500Z" };
   const view = render(<Timeline {...props} toolCalls={[calls[0], extra, calls[1]]} />);
-  expect(view.container.querySelectorAll(".tool-run")).toHaveLength(1);
-  expect(screen.getByText("配置已确认，接着测试").closest(".tool-run")).toBeNull();
-  const group = view.container.querySelector('[data-search-records="tool:t1 tool:t-extra"]');
-  expect(group).toBeTruthy();
+  const segments = view.container.querySelectorAll<HTMLDetailsElement>(".tool-segment");
+  expect(segments).toHaveLength(2);
+  expect([...segments].map(segment => segment.open)).toEqual([false, false]);
+  expect(segments[0].querySelector("summary")?.textContent).toBe("已探索 2 项");
+  expect(segments[1].querySelector("summary")?.textContent).toContain("npm test");
+  expect(view.container.querySelector(".tool-run")).toBeNull();
+  expect(screen.getByText("配置已确认，接着测试").closest(".tool-segment")).toBeNull();
+  expect(segments[0].getAttribute("data-search-records")).toBe("tool:t1 tool:t-extra");
+  fireEvent.click(segments[0].querySelector("summary")!);
+  await waitFor(() => expect(segments[0].querySelectorAll(".tool-run")).toHaveLength(1));
   expect(view.container.querySelector('[data-history-anchor="tool:t-extra"]')).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /已探索/ }));
   expect(view.container.querySelector('[data-history-anchor="tool:t-extra"]')).toBeTruthy();
@@ -174,6 +180,27 @@ it("keeps transcript output visible while loading turn diffs only on explicit ex
   fireEvent.click(toggle);
   fireEvent.click(toggle);
   expect(call).toHaveBeenCalledTimes(1);
+});
+
+it("folds earlier activity of a long running turn behind 上 N 条消息 and keeps the latest steps visible", async () => {
+  const stamp = (n: number) => `2026-10-14T00:01:${String(n).padStart(2, "0")}Z`;
+  const notes: Message[] = [0, 1, 2, 3].map(n => ({ id: `n${n}`, sessionId: "s", role: "assistant", assistantKind: "commentary", content: `第${n}步说明`, createdAt: stamp(n * 2) }));
+  const steps: ToolCall[] = [0, 1, 2, 3].map(n => ({ id: `s${n}`, sessionId: "s", toolName: "shell_run", input: { command: `step ${n}` },
+    status: n === 3 ? "running" : "succeeded", createdAt: stamp(n * 2 + 1) }));
+  const view = render(<Timeline {...props} messages={[messages[0], ...notes]} toolCalls={steps} />);
+  const fold = view.container.querySelector<HTMLDetailsElement>(".completed-process")!;
+  expect(fold.open).toBe(false);
+  expect(fold.querySelector("summary")?.textContent).toBe("上 4 条消息");
+  expect(fold.getAttribute("data-search-records")).toBe("message:n0 tool:s0 message:n1 tool:s1");
+  expect(view.container.querySelector('[data-history-anchor="message:n0"]')).toBeNull();
+  expect(view.container.querySelector('[data-history-anchor="tool:s3"]')?.closest(".completed-process")).toBeNull();
+  expect(view.container.querySelector('[data-history-anchor="message:n2"]')).toBeTruthy();
+  fireEvent.click(fold.querySelector("summary")!);
+  await waitFor(() => expect(view.container.querySelector('[data-history-anchor="message:n0"]')?.closest("details")).toBe(fold));
+  view.rerender(<Timeline {...props} messages={[messages[0], ...notes]} toolCalls={steps} busy={false}
+    latestTurnTiming={{ messageId: "u", timing: { startedAt: at(0), status: "completed", elapsedMs: 98000 } }} />);
+  expect(view.container.querySelectorAll(".completed-process")).toHaveLength(1);
+  expect(view.container.querySelector(".completed-process > summary")?.textContent).toBe("已工作 1分38秒");
 });
 
 it("opens lazy process content when locating a search result in its context", async () => {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { CompletedProcess } from "./CompletedProcess";
 
@@ -15,4 +15,14 @@ it("uses persisted duration and distinguishes failure and cancellation", () => {
 it("derives duration only from recorded endpoints, not current wall time", () => {
   const { container } = render(<CompletedProcess recordKeys="" timing={{ status: "completed", startedAt: "2026-10-14T00:00:00Z", completedAt: "2026-10-14T00:00:15Z" }}>过程</CompletedProcess>);
   expect(container.querySelector("summary")?.textContent).toBe("已工作 15秒");
+});
+it("shows a given summary for running folds and renders their lazy children only when opened", async () => {
+  let renders = 0;
+  const { container } = render(<CompletedProcess recordKeys="message:a" summary="上 3 条消息">{() => { renders += 1; return "早期过程"; }}</CompletedProcess>);
+  const details = container.querySelector("details")!;
+  expect(details.querySelector("summary")?.textContent).toBe("上 3 条消息");
+  expect(details.getAttribute("data-search-records")).toBe("message:a");
+  expect(renders).toBe(0);
+  fireEvent.click(details.querySelector("summary")!);
+  expect(await screen.findByText("早期过程")).toBeTruthy();
 });

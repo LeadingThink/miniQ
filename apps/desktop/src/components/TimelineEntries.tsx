@@ -7,18 +7,17 @@ import type { TimelineProps } from "./Timeline";
 import { ArtifactCard } from "./TimelineInteractions";
 import { QuestionCard } from "./QuestionCard";
 import { Md } from "./Md";
-import { TurnPlanSummary, ToolStep } from "./ExecutionActivity";
+import { TurnPlanSummary } from "./ExecutionActivity";
 import { TurnActivityTail } from "./TurnActivityTail";
 import { CompletedProcess } from "./CompletedProcess";
-import { ToolRunRow } from "./ToolRunRow";
-import { toolRuns } from "./toolSummary";
+import { ToolSegment } from "./ToolSegment";
 import { CopyButton } from "./CopyButton";
 import { SpeakButton } from "./SpeakButton";
 import { useVoiceCapabilities } from "../voiceCapabilities";
 import { MessageTime, ConversationTimeSeparator } from "./MessageTime";
 import { timelineGroupKey, timelineTurnPlanEnds } from "../timelineTiming";
 import {
-  completedTurnContent, groupTimelineTurns, searchRecordKeys, turnSeparators,
+  completedTurnContent, groupTimelineTurns, liveTurnContent, recordCount, searchRecordKeys, turnSeparators,
 } from "../timelineTurns";
 import { WINDOW_MIN_TURNS } from "../timelineWindow";
 import { useTurnWindow } from "../hooks/useTurnWindow";
@@ -464,16 +463,8 @@ export function TimelineEntries(props: {
             />
           </div>
         ) : (
-          <>
-            {toolRuns(item.calls).map((run) => <div key={run.calls[0].id}
-              data-history-anchor={`tool:${run.calls[0].id}`}
-              data-search-records={run.calls.map(call => `tool:${call.id}`).join(" ")}>
-              {run.calls.length === 1
-                ? <ToolStep call={run.calls[0]} onRollback={bridge.rollback} defaultExpanded={props.expandGroups} client={props.client} />
-                : <ToolRunRow run={run} onRollback={bridge.rollback} client={props.client}
-                    expanded={props.expandGroups} focusId={null} stepExpanded={() => props.expandGroups} />}
-            </div>)}
-          </>
+          <ToolSegment calls={item.calls} expanded={props.expandGroups}
+            client={props.client} onRollback={bridge.rollback} />
         )}
       </Fragment>;
     };
@@ -490,6 +481,7 @@ export function TimelineEntries(props: {
         ? <TurnChangesCard turnId={turn.userMessageId} /> : null;
       const collapse = settled && !props.expandGroups
         && (process.length > 0 || planNode !== null || changes !== null);
+      const live = settled || props.expandGroups ? undefined : liveTurnContent(turn);
       const separatorAt = props.expandGroups ? undefined : separators.get(turn.key);
       return { header: <Fragment key={`${turn.key}:header`}>
         {separatorAt && <ConversationTimeSeparator at={separatorAt} />}
@@ -506,7 +498,12 @@ export function TimelineEntries(props: {
           </CompletedProcess>
           {output.map(renderGroup)}
         </> : <>
-          {turn.groups.slice(turn.userMessageId ? 1 : 0).map(renderGroup)}
+          {live && live.earlier.length > 0 && <CompletedProcess
+            summary={`上 ${recordCount(live.earlier)} 条消息`}
+            recordKeys={searchRecordKeys(live.earlier)}>
+            {() => live.earlier.map(renderGroup)}
+          </CompletedProcess>}
+          {(live?.recent ?? turn.groups.slice(turn.userMessageId ? 1 : 0)).map(renderGroup)}
           {planNode}
           {changes}
         </>}

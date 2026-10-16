@@ -63,6 +63,21 @@ export function completedTurnContent(turn: TimelineTurn): { process: TimelineGro
   return { process, output };
 }
 
+/** Segments a running turn keeps in view; older ones fold behind "上 N 条消息". */
+export const LIVE_VISIBLE_GROUPS = 4;
+
+/** Split a running turn so only its latest activity stays expanded. */
+export function liveTurnContent(turn: TimelineTurn): { earlier: TimelineGroup[]; recent: TimelineGroup[] } {
+  const body = turn.groups.slice(turn.userMessageId ? 1 : 0);
+  const split = Math.max(0, body.length - LIVE_VISIBLE_GROUPS);
+  return { earlier: body.slice(0, split), recent: body.slice(split) };
+}
+
+/** Number of individual records in the groups: messages, artifacts and tool calls. */
+export function recordCount(groups: TimelineGroup[]): number {
+  return groups.reduce((total, group) => total + (group.kind === "tools" ? group.calls.length : 1), 0);
+}
+
 /** Search keys of every record the groups show, including each tool call
  * inside a grouped run. Folded and windowed content lists them so search and
  * "查看上下文" can find records that are not rendered individually. */

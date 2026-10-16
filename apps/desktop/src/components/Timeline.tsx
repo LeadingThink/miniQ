@@ -253,7 +253,7 @@ export function Timeline(props: TimelineProps) {
         // Lazy disclosures expose search keys before mounting their records.
         // Wait for the native toggle and React commit before positioning.
         if (element instanceof HTMLDetailsElement &&
-          (!element.open || !element.querySelector(".completed-process-body"))) {
+          (!element.open || !element.querySelector(":scope > [data-lazy-body]"))) {
           element.open = true;
           setMountedForLocate((value) => value + 1);
           return;

@@ -1,6 +1,9 @@
-.completed-process { min-width: 0; color: var(--text-mid); font-size: var(--font-footnote); }
-.completed-process > summary { width: fit-content; cursor: pointer; padding: 6px 0; }
-.completed-process > summary:hover { color: var(--text); }
+.completed-process { min-width: 0; color: var(--text-dim); font-size: var(--font-footnote); }
+.completed-process > summary { display: flex; align-items: center; gap: 4px; width: fit-content; cursor: pointer; padding: 4px 0; list-style: none; }
+.completed-process > summary::-webkit-details-marker { display: none; }
+.completed-process > summary:hover { color: var(--text-mid); }
+.completed-process-chevron { flex: none; transition: transform 0.15s ease; }
+.completed-process[open] > summary .completed-process-chevron { transform: rotate(180deg); }
 .completed-process > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .completed-process-body { display: flex; flex-direction: column; gap: 12px; margin: 8px 0 12px; padding-left: 16px; border-left: 1px solid var(--border); }
 .completed-process-body .message-entry { font-size: var(--font-body); }

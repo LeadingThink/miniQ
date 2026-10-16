@@ -153,6 +153,22 @@ export function toolRunSummary(run: ToolRun): string {
   return KIND_TEXT[run.kind](runCount(run));
 }
 
+/** One line for a whole contiguous tool segment, e.g. "已探索 10 项，运行了 2 条命令". */
+export function toolSegmentSummary(calls: ToolCall[]): string {
+  const byKind = new Map<ToolKind, ToolCall[]>();
+  const other = new Map<string, number>();
+  for (const call of calls) {
+    const kind = toolKind(call);
+    const key = kind === "read" || kind === "list" || kind === "codeSearch" ? "exploration" : kind;
+    if (key) byKind.set(key, [...(byKind.get(key) ?? []), call]);
+    else other.set(call.toolName, (other.get(call.toolName) ?? 0) + 1);
+  }
+  const parts = [...byKind].map(([kind, group]) =>
+    KIND_TEXT[kind](kind === "exploration" ? group.length : runCount({ kind, calls: group })));
+  for (const [name, count] of other) parts.push(count > 1 ? `调用了 ${name} ${count} 次` : `调用了 ${name}`);
+  return parts.join("，");
+}
+
 export function isActiveCall(call: ToolCall): boolean {
   return call.status === "running" || call.status === "waiting_approval" || call.status === "pending";
 }

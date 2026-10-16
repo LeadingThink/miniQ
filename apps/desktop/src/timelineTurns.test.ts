@@ -1,7 +1,9 @@
 import { expect, it } from "vitest";
 import type { TimelineGroup } from "./timelineModel";
 import type { ToolCall, TurnTiming } from "./types";
-import { groupTimelineTurns, searchRecordKeys, turnSeparators } from "./timelineTurns";
+import {
+  LIVE_VISIBLE_GROUPS, groupTimelineTurns, liveTurnContent, recordCount, searchRecordKeys, turnSeparators,
+} from "./timelineTurns";
 
 const timing: TurnTiming = { startedAt: "2026-09-20T10:00:00Z", completedAt: "2026-09-20T10:01:00Z", elapsedMs: 60_000, status: "completed" };
 const message = (id: string, role: "user" | "assistant", at: string, turnTiming?: TurnTiming): TimelineGroup => ({
@@ -30,6 +32,21 @@ it("gives a page that begins mid-turn the latest timing only when it belongs to 
 it("lists every record a set of groups shows, including grouped tool calls", () => {
   expect(searchRecordKeys([message("u1", "user", timing.startedAt), tools(timing.startedAt, "t1", "t2")]))
     .toBe("message:u1 tool:t1 tool:t2");
+});
+
+it("keeps only the latest segments of a running turn in view and counts every folded record", () => {
+  const groups = [message("u1", "user", timing.startedAt)];
+  for (let n = 0; n < LIVE_VISIBLE_GROUPS + 1; n += 1) {
+    groups.push(n % 2 ? tools(`2026-09-20T10:00:0${n}Z`, `t${n}a`, `t${n}b`) : message(`c${n}`, "assistant", `2026-09-20T10:00:0${n}Z`));
+  }
+  const [turn] = groupTimelineTurns(groups);
+  const { earlier, recent } = liveTurnContent(turn);
+  expect(earlier.map(group => group.kind === "message" ? group.message.id : "tools")).toEqual(["c0"]);
+  expect(recent).toHaveLength(LIVE_VISIBLE_GROUPS);
+  expect(recent.at(-1)).toBe(groups.at(-1));
+  expect(recordCount(recent.slice(0, 2))).toBe(3);
+  const [short] = groupTimelineTurns(groups.slice(0, 3));
+  expect(liveTurnContent(short)).toEqual({ earlier: [], recent: groups.slice(1, 3) });
 });
 
 it("separates turns after long breaks and new days, never inside a turn", () => {
