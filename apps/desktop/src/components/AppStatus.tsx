@@ -28,6 +28,7 @@ import "./AppStatus.css";
 import { REMOTE_CONNECTION_DETAILS_EVENT, RemoteConnectionStatus } from "./RemoteConnectionStatus";
 import { RemoteDeviceBarContext } from "../remoteDeviceBar";
 import { isBillingError } from "../errorMessage";
+import { BillingDialog } from "./BillingDialog";
 
 export function AppStatusBar(props: {
   app: MiniqAppController;
@@ -320,6 +321,8 @@ export function AppErrorBanner({ app }: { app: MiniqAppController }) {
   const billing = isBillingError(app.error);
   const disconnected = app.client.mode === "remote" && !app.connection.connected;
   return (
+    <>
+    {billing && <BillingDialog error={app.error} onChangeKey={() => app.navigation.openSettings("services")} />}
     <div className="error-banner" role="alert">
       <span style={{ flex: 1 }}>{app.error}
         {disconnected && deviceBar && !billing && <span style={{ display: "block" }}>可点击顶部电脑名称旁的下拉箭头，手动切换电脑。</span>}
@@ -335,5 +338,6 @@ export function AppErrorBanner({ app }: { app: MiniqAppController }) {
         ✕
       </button>
     </div>
+    </>
   );
 }

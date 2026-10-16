@@ -9,6 +9,7 @@ import { storeMobileEntryMode, type MobileEntryMode } from "../mobileEntryMode";
 import { MobileKeyField } from "./MobileKeyField";
 import { MobileAccountPanel } from "./MobileAccountPanel";
 import { isIosIapAvailable } from "../iosIap";
+import { isMobileAccountAvailable } from "../mobileAccountPlatform";
 import { IS_MOBILE_TEST_API } from "../mobileApiConfig";
 import "./MobileEntry.css";
 
@@ -111,10 +112,10 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
     }
   };
   const configured = Boolean(activeKey) && hasMobilePrivacyConsent();
-  // Keep the key entry visible on iOS home so users can find or replace it
-  // without first opening the account flow. Other entry points keep their
-  // existing onboarding behavior.
-  const showKeyFields = section === "settings" || (section === "home" && isIosIapAvailable());
+  // Keep the key entry visible on the native-app home so users can find or replace it
+  // without first opening the account flow. iOS and Android share this entry page.
+  const accountAvailable = isMobileAccountAvailable();
+  const showKeyFields = section === "settings" || (section === "home" && accountAvailable);
 
   return (
     <>
@@ -125,7 +126,7 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
           <p role="status">正在加载移动问答…</p>
           <button type="button" onClick={openSettings}>设置</button>
           <button type="button" onClick={() => setSection("home")}><ArrowLeft size={15} />返回</button>
-        </main>}><MobileChat apiKey={configured ? activeKey : ""} onBack={() => setSection("home")} onSettings={openSettings} /></Suspense>
+        </main>}><MobileChat apiKey={configured ? activeKey : ""} onBack={() => setSection("home")} onSettings={openSettings} onAccount={isIosIapAvailable() ? () => setAccountOpen(true) : undefined} /></Suspense>
       </div>}
       {section !== "chat" && !accountOpen && (
         <main className="mobile-entry">
@@ -143,7 +144,8 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
 
             {showKeyFields && <>
             <MobileKeyField inputRef={keyInput} value={apiKey} disabled={loadingCredentials || pending} native={isNativeMobileApp()}
-              onGetKey={isIosIapAvailable() ? () => setAccountOpen(true) : undefined}
+              onGetKey={accountAvailable ? () => setAccountOpen(true) : undefined}
+              getKeyLabel={isIosIapAvailable() ? undefined : "没有 API Key？登录充值 / 创建 Key"}
               hideGetKey={configured && section === "home"}
               onChange={(value) => { setApiKey(value); setError(null); }} />
             {loadingCredentials && <p className="mobile-entry-progress" role="status">正在读取这台设备保存的 Key…</p>}
@@ -194,7 +196,7 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
             {section === "home" ? (
               <>
               {showKeyFields && <button type="submit" disabled={pending || loadingCredentials || !privacyAccepted}>{pending ? "正在保存…" : configured ? "保存 Key" : "保存 Key 并继续"}</button>}
-              {configured && isIosIapAvailable() && <button type="button" className="secondary" onClick={() => setAccountOpen(true)}>账户、购买额度与 API Key</button>}
+              {configured && accountAvailable && <button type="button" className="secondary" onClick={() => setAccountOpen(true)}>{isIosIapAvailable() ? "账户、购买额度与 API Key" : "账户、充值与 API Key"}</button>}
               <div className="mobile-entry-actions">
                 <button type="button" className="mobile-mode-card primary" disabled={loadingCredentials} onClick={() => chooseMode("chat")}>
                   <span className="mobile-mode-icon"><Bot size={21} /></span>

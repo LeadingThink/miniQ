@@ -15,8 +15,9 @@ import { insertTranscript } from "../voiceAudio";
 import type { VoicePreview } from "../voiceTranscription";
 import { MobileChatRow } from "./MobileChatRow";
 import { MobileModelPicker } from "./MobileModelPicker";
+import { BillingDialog } from "./BillingDialog";
 
-export function MobileChat(props: { apiKey: string; onBack: () => void; onSettings?: () => void }) {
+export function MobileChat(props: { apiKey: string; onBack: () => void; onSettings?: () => void; onAccount?: () => void }) {
   const catalog = useMobileChatModels(props.apiKey);
   const transcriber = useMemo(() => createMobileVoiceTranscriber(props.apiKey, catalog.transcribeModel ?? "grok-transcribe"), [props.apiKey, catalog.transcribeModel]);
   const [voicePreview, setVoicePreview] = useState<VoicePreview | null>(null);
@@ -100,6 +101,7 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
         {!props.apiKey && <div role="status">发送前请在设置中保存 Key 并同意隐私政策。{props.onSettings && <button type="button" onClick={props.onSettings}>前往设置</button>}</div>}
         {catalog.error && <div className="mobile-entry-error" role="alert">{catalog.error}<button type="button" className="mobile-chat-retry" onClick={catalog.reload}>重新加载模型</button></div>}
         {(chat.error || imageError) && <div className="mobile-entry-error" role="alert">{imageError || chat.error}</div>}
+        <BillingDialog error={imageError || chat.error} onChangeKey={props.onSettings} onPurchase={props.onAccount} />
         {chat.storageWarning && <div className="mobile-entry-error" role="status">设备存储空间不足，本次内容暂时仅保留在当前页面；离开前请复制重要内容。</div>}
         {!chat.busy && chat.canRetry && <button type="button" className="mobile-chat-retry" disabled={!ready} onClick={() => { if (chat.retry()) jumpToLatest(); }}><RefreshCw size={14} />重新回答</button>}
         {showLatest && <button type="button" className="mobile-chat-jump" onClick={jumpToLatest}><ArrowDown size={14} />查看最新内容</button>}

@@ -3,6 +3,8 @@ import { IapApiError, deleteIapAccount, loadOneApiAccount, logoutIapAccount, typ
 import { MobileAccountLogin } from "./MobileAccountLogin";
 import { MobileAccountKeys } from "./MobileAccountKeys";
 import { MobilePurchasePanel } from "./MobilePurchasePanel";
+import { MobileWebTopUp } from "./MobileWebTopUp";
+import { isIosIapAvailable } from "../iosIap";
 import { hasMobilePrivacyConsent } from "../mobilePrivacy";
 import "./MobileAccountPanel.css";
 
@@ -36,13 +38,15 @@ export function MobileAccountPanel(props: { onBack: () => void; onBusyChange: (b
       {pending && <p role="status">正在处理…</p>}
       {!account ? <MobileAccountLogin busy={busy} run={run} onLogin={setAccount} /> : <>
         <p>当前账户：{account.phone}<br />账户余额：¥{account.balance.toFixed(4)}</p>
-        <p>购买额度充值到此手机号账户。填写其他账户的 Key 时，不会使用这里的余额。连接桌面时，手机和电脑需填写同一个 Key。</p>
+        <p>{isIosIapAvailable() ? "购买额度充值到此手机号账户。" : "网页充值的额度会进入此手机号账户。"}填写其他账户的 Key 时，不会使用这里的余额。连接桌面时，手机和电脑需填写同一个 Key。</p>
         <div className="mobile-account-actions">
           <button type="button" className="secondary" disabled={busy} onClick={() => run(async () => setAccount(await loadOneApiAccount()))}>刷新余额</button>
           <button type="button" className="secondary" disabled={busy} onClick={() => run(async () => { await logoutIapAccount(); setAccount(null); setConfirmDelete(false); })}>退出账户登录</button>
         </div>
-        <MobilePurchasePanel disabled={pending} onBusyChange={setPurchaseBusy}
-          onSettled={async () => { setAccount(await loadOneApiAccount()); }} />
+        {isIosIapAvailable()
+          ? <MobilePurchasePanel disabled={pending} onBusyChange={setPurchaseBusy}
+              onSettled={async () => { setAccount(await loadOneApiAccount()); }} />
+          : <MobileWebTopUp disabled={busy} onReturned={() => run(async () => setAccount(await loadOneApiAccount()))} />}
         <MobileAccountKeys busy={busy} run={run} />
         <details><summary>注销在问账户</summary>
           <p>注销的是与网页共用的在问账户，不只是退出 miniQ；账户及其 Key 将无法继续使用。请先确认余额、未完成购买及退款已处理。</p>
