@@ -36,7 +36,7 @@ it("uses native cookie requests and the real phone login schema, then validates 
   mocks.request.mockResolvedValueOnce(success({ token: "secret-jwt" })).mockResolvedValueOnce(success(account));
   expect(await loginIapAccount(" 13800000000 ", " 123456 ")).toEqual(account);
   expect(mocks.request.mock.calls[0][0]).toMatchObject({
-    url: "https://oneapi.zaiwenai.com/v1/user/login", method: "POST", data: { phone: "13800000000", sms_code: "123456" }, disableRedirects: true,
+    url: "https://oneapi.zaiwenai.com/v1/user/login", method: "POST", data: { phone: "13800000000", code: "123456", inviteCode: "" }, disableRedirects: true,
   });
   expect(mocks.request.mock.calls[1][0]).toMatchObject({ url: "https://oneapi.zaiwenai.com/v1/user", method: "GET" });
   for (const [options] of mocks.request.mock.calls) {
@@ -48,6 +48,15 @@ it("validates phone and code before sending SMS or login requests", async () => 
   await expect(requestIapLoginCode("+8613800000000")).rejects.toThrow("11 位");
   await expect(loginIapAccount("13800000000", "123")).rejects.toThrow("6 位");
   expect(mocks.request).not.toHaveBeenCalled();
+});
+it("uses the channel's actual SMS endpoint and request field", async () => {
+  mocks.request.mockResolvedValue(success());
+  await requestIapLoginCode("13800000000");
+  expect(mocks.request).toHaveBeenCalledWith(expect.objectContaining({
+    url: "https://oneapi.zaiwenai.com/v1/user/sms",
+    method: "POST",
+    data: { phone: "13800000000" },
+  }));
 });
 it("recognizes HTTP 200 login expiry and never presents server bodies containing secrets", async () => {
   mocks.request.mockResolvedValue({ status: 200, data: { code: "-2", msg: "secret" } });

@@ -4,7 +4,7 @@ import { loginIapAccount, requestIapLoginCode, type OneApiAccount } from "../mob
 
 export type AccountAction = (action: () => Promise<void>) => void;
 
-export function MobileAccountLogin(props: { busy: boolean; run: AccountAction; onLogin: (account: OneApiAccount) => void | Promise<void>; embedded?: boolean; submitLabel?: string }) {
+export function MobileAccountLogin(props: { busy: boolean; run: AccountAction; onLogin: (account: OneApiAccount) => void | Promise<void>; embedded?: boolean; submitLabel?: string; sendBusy?: boolean }) {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [consent, setConsent] = useState(hasMobilePrivacyConsent);
@@ -33,7 +33,7 @@ export function MobileAccountLogin(props: { busy: boolean; run: AccountAction; o
     <p>使用在问平台的手机号。未注册的手机号登录后会创建账户。</p>
     <label className="mobile-entry-field">手机号（中国大陆）<input type="tel" autoComplete="tel-national" value={phone} disabled={props.busy}
       placeholder="11 位手机号，不含 +86" onChange={(event) => setPhone(event.target.value)} /></label>
-    <button type="button" className="secondary" disabled={props.busy || !consent || cooldown > 0} onClick={() => props.run(async () => {
+    <button type="button" className="secondary" disabled={props.busy || props.sendBusy || !consent || cooldown > 0} onClick={() => props.run(async () => {
       accept(); await requestIapLoginCode(phone); setCooldown(60);
     })}>{cooldown ? `${cooldown} 秒后重新发送` : "发送验证码"}</button>
     <label className="mobile-entry-field">短信验证码<input inputMode="numeric" autoComplete="one-time-code" value={code} disabled={props.busy}

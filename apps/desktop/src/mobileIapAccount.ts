@@ -89,12 +89,12 @@ function validatePhone(phone: string): string {
 }
 
 export async function requestIapLoginCode(phone: string): Promise<void> {
-  await oneApiRequest("/user/send_sms_code", { phone: validatePhone(phone) });
+  await oneApiRequest("/user/sms", { phone: validatePhone(phone) });
 }
 
 export async function loginIapAccount(phone: string, code: string): Promise<OneApiAccount> {
   if (!/^\d{6}$/.test(code.trim())) throw new Error("请输入 6 位短信验证码。");
-  await oneApiRequest("/user/login", { phone: validatePhone(phone), sms_code: code.trim() });
+  await oneApiRequest("/user/login", { phone: validatePhone(phone), code: code.trim(), inviteCode: "" });
   const account = await loadOneApiAccount();
   if (!account) throw new Error("登录状态未保存，请重新登录。");
   return account;

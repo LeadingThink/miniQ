@@ -58,7 +58,7 @@ export function DesktopAccountLogin(props: { disabled: boolean; onKey: (key: str
     {pending && <p role="status">正在处理账户请求…</p>}
     {error && <p role="alert">{error}</p>}
     {message && <p role="status">{message}</p>}
-    {!account ? <MobileAccountLogin embedded busy={busy} run={run} submitLabel="登录并获取 API Key"
+    {!account ? <MobileAccountLogin embedded busy={busy} sendBusy={props.disabled || (pending && working.current)} run={run} submitLabel="登录并获取 API Key"
       onLogin={async (value) => { if (mounted.current) setAccount(value); await fillKey(); }} /> : <>
       <p>当前账户：{account.phone} · 余额 ¥{account.balance.toFixed(4)}</p>
       <div className="desktop-account-actions">
