@@ -183,7 +183,7 @@ impl ToolContext {
         self.resolve_path(requested).or_else(|error| {
             let path = std::path::Path::new(requested);
             if path.is_absolute() {
-                if let Ok(canonical) = path.canonicalize() {
+                if let Ok(canonical) = dunce::canonicalize(path) {
                     if canonical.is_file() && self.readable_files.contains(&canonical) {
                         return Ok(canonical);
                     }

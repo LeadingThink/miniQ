@@ -87,9 +87,10 @@ fn canonical_target(path: &Path) -> Result<PathBuf, PathError> {
             Err(error) => return Err(PathError::Invalid(error.to_string())),
         }
     }
-    let mut resolved = ancestor
-        .canonicalize()
-        .map_err(|error| PathError::Invalid(error.to_string()))?;
+    // `dunce` keeps ordinary Windows drive paths as `D:\...` instead of the
+    // verbatim `\\?\D:\...` form returned by `std::fs::canonicalize`.
+    let mut resolved =
+        dunce::canonicalize(ancestor).map_err(|error| PathError::Invalid(error.to_string()))?;
     for part in suffix.into_iter().rev() {
         resolved.push(part);
     }
@@ -173,7 +174,7 @@ mod tests {
         assert!(resolve_in_workspace(&ws(), file.to_str().unwrap()).is_err());
         assert_eq!(
             resolve_external(file.to_str().unwrap()).unwrap(),
-            file.canonicalize().unwrap()
+            dunce::canonicalize(&file).unwrap()
         );
         assert!(resolve_external("relative/file").is_err());
     }
@@ -190,7 +191,9 @@ mod tests {
         let roots = vec![primary.path().to_path_buf(), extra.path().to_path_buf()];
         assert_eq!(
             resolve_in_roots(primary.path(), &roots, "new/file").unwrap(),
-            primary.path().canonicalize().unwrap().join("new/file")
+            dunce::canonicalize(primary.path())
+                .unwrap()
+                .join("new/file")
         );
         assert_eq!(
             resolve_in_roots(
@@ -199,7 +202,7 @@ mod tests {
                 extra.path().join("new/file").to_str().unwrap()
             )
             .unwrap(),
-            extra.path().canonicalize().unwrap().join("new/file")
+            dunce::canonicalize(extra.path()).unwrap().join("new/file")
         );
         assert!(
             resolve_in_roots(primary.path(), &roots[..1], extra.path().to_str().unwrap()).is_err()
@@ -223,7 +226,7 @@ mod tests {
         let roots = vec![primary.path().to_path_buf(), outside.path().to_path_buf()];
         assert_eq!(
             resolve_in_roots(primary.path(), &roots, "link/new").unwrap(),
-            outside.path().canonicalize().unwrap().join("new")
+            dunce::canonicalize(outside.path()).unwrap().join("new")
         );
     }
 }

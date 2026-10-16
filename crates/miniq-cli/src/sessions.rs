@@ -7,8 +7,7 @@ use crate::args::ChatOptions;
 use crate::client::Client;
 
 pub fn absolute(path: &Path) -> Result<String> {
-    Ok(path
-        .canonicalize()
+    Ok(dunce::canonicalize(path)
         .with_context(|| format!("cannot resolve {}", path.display()))?
         .to_string_lossy()
         .into_owned())
@@ -45,8 +44,8 @@ pub async fn list(client: &mut Client, options: &ChatOptions, all: bool) -> Resu
 
 fn same_path(left: &str, right: &str) -> bool {
     let normalize = |path: &str| {
-        path.strip_prefix(r"\\?\")
-            .unwrap_or(path)
+        dunce::simplified(Path::new(path))
+            .to_string_lossy()
             .replace('\\', "/")
     };
     if cfg!(windows) {

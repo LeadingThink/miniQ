@@ -535,9 +535,10 @@ fn prepare_directories(
 ) -> Result<(PathBuf, PathBuf), PluginError> {
     let process_error =
         |error: std::io::Error| PluginError::new(PluginFailureKind::Process, error.to_string());
-    let plugin_dir = strip_verbatim(plugin_dir.canonicalize().map_err(process_error)?);
+    // Node rejects Windows verbatim (`\\?\C:\...`) paths in permission flags.
+    let plugin_dir = dunce::canonicalize(plugin_dir).map_err(process_error)?;
     std::fs::create_dir_all(data_dir).map_err(process_error)?;
-    let data_dir = strip_verbatim(data_dir.canonicalize().map_err(process_error)?);
+    let data_dir = dunce::canonicalize(data_dir).map_err(process_error)?;
     if data_dir.starts_with(&plugin_dir) || plugin_dir.starts_with(&data_dir) {
         return Err(PluginError::new(
             PluginFailureKind::Process,
@@ -545,16 +546,6 @@ fn prepare_directories(
         ));
     }
     Ok((plugin_dir, data_dir))
-}
-
-/// Node does not accept Windows verbatim (`\\?\C:\...`) paths in its
-/// permission flags; drop the prefix for ordinary drive paths.
-fn strip_verbatim(path: PathBuf) -> PathBuf {
-    let text = path.to_string_lossy();
-    match text.strip_prefix(r"\\?\") {
-        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
-        _ => path,
-    }
 }
 
 /// Node permission-model flags: read the plugin and its data directory, write
@@ -650,7 +641,7 @@ fn install_host(plugin_dir: &Path) -> Result<PathBuf, PluginError> {
     let path = directory.join("host.mjs");
     std::fs::write(&path, HOST_SOURCE)
         .map_err(|error| PluginError::new(PluginFailureKind::Process, error.to_string()))?;
-    path.canonicalize()
+    dunce::canonicalize(&path)
         .map_err(|error| PluginError::new(PluginFailureKind::Process, error.to_string()))
 }
 

@@ -110,7 +110,11 @@ pub fn setup_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
         .accelerator("CmdOrCtrl+Q")
         .build(app)?;
     let app_menu = SubmenuBuilder::new(app, "miniQ")
-        .item(&PredefinedMenuItem::about(app, Some("关于 miniQ"), Some(about))?)
+        .item(&PredefinedMenuItem::about(
+            app,
+            Some("关于 miniQ"),
+            Some(about),
+        )?)
         .item(&command("settings")?)
         .separator()
         .item(&PredefinedMenuItem::services(app, Some("服务"))?)
@@ -169,7 +173,10 @@ pub fn setup_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
         .item(&PredefinedMenuItem::minimize(app, Some("最小化"))?)
         .item(&PredefinedMenuItem::maximize(app, Some("缩放"))?)
         .separator()
-        .item(&PredefinedMenuItem::bring_all_to_front(app, Some("全部置于顶层"))?)
+        .item(&PredefinedMenuItem::bring_all_to_front(
+            app,
+            Some("全部置于顶层"),
+        )?)
         .build()?;
 
     let help_menu = SubmenuBuilder::new(app, "帮助")
@@ -247,9 +254,20 @@ mod tests {
         for id in COMMAND_IDS {
             if let Some(accelerator) = command_spec(id).and_then(|(_, a)| a) {
                 assert!(accelerator.starts_with("CmdOrCtrl+"), "{accelerator}");
-                assert!(seen.insert(accelerator), "duplicate accelerator {accelerator}");
+                assert!(
+                    seen.insert(accelerator),
+                    "duplicate accelerator {accelerator}"
+                );
                 // Predefined edit items own these; stealing them breaks inputs.
-                for reserved in ["CmdOrCtrl+C", "CmdOrCtrl+V", "CmdOrCtrl+X", "CmdOrCtrl+Z", "CmdOrCtrl+A", "CmdOrCtrl+Q", "CmdOrCtrl+W"] {
+                for reserved in [
+                    "CmdOrCtrl+C",
+                    "CmdOrCtrl+V",
+                    "CmdOrCtrl+X",
+                    "CmdOrCtrl+Z",
+                    "CmdOrCtrl+A",
+                    "CmdOrCtrl+Q",
+                    "CmdOrCtrl+W",
+                ] {
                     assert_ne!(accelerator, reserved);
                 }
             }

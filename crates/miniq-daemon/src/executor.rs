@@ -638,7 +638,7 @@ impl ToolExecutor for SessionToolExecutor {
                 .arguments
                 .get("path")
                 .and_then(Value::as_str)
-                .and_then(|path| std::path::Path::new(path).canonicalize().ok())
+                .and_then(|path| dunce::canonicalize(path).ok())
                 .filter(|file| file.is_file());
             let Some(file) = file else {
                 let output = json!({

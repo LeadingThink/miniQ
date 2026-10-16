@@ -6,7 +6,7 @@ use tower::ServiceExt;
 fn grant(root: &Path) -> Grant {
     Grant {
         id: "test-capability".into(),
-        root: root.canonicalize().unwrap(),
+        root: dunce::canonicalize(root).unwrap(),
         origin: "http://127.0.0.1:19999".into(),
         network: false,
         cancelled: CancellationToken::new(),

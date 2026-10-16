@@ -17,7 +17,7 @@ fn resolve_with_home(
     provider: ExternalProvider,
     home: Option<&Path>,
 ) -> Result<PathBuf, String> {
-    let canonical = cwd.canonicalize().map_err(|error| {
+    let canonical = dunce::canonicalize(cwd).map_err(|error| {
         selection_error(&format!(
             "failed to resolve external session project directory: {error}"
         ))
@@ -57,13 +57,11 @@ fn workspace_from_git_marker(root: &Path, marker: &Path) -> Result<PathBuf, Stri
 
 fn linked_main_checkout(worktree_root: &Path, git_file: &Path) -> Result<PathBuf, String> {
     let gitdir_value = metadata_value(git_file, Some("gitdir:"))?;
-    let gitdir = metadata_path(worktree_root, &gitdir_value)
-        .canonicalize()
+    let gitdir = dunce::canonicalize(metadata_path(worktree_root, &gitdir_value))
         .map_err(|error| metadata_error("gitdir", error))?;
     let commondir_file = gitdir.join("commondir");
     let commondir_value = metadata_value(&commondir_file, None)?;
-    let common_git_dir = metadata_path(&gitdir, &commondir_value)
-        .canonicalize()
+    let common_git_dir = dunce::canonicalize(metadata_path(&gitdir, &commondir_value))
         .map_err(|error| metadata_error("commondir", error))?;
     if !common_git_dir.is_dir() || common_git_dir.file_name() != Some(OsStr::new(".git")) {
         return Err(selection_error(
@@ -101,7 +99,7 @@ fn metadata_path(base: &Path, value: &str) -> PathBuf {
 }
 
 fn is_restricted_directory(path: &Path, provider: ExternalProvider, home: Option<&Path>) -> bool {
-    let Some(canonical_home) = home.and_then(|path| path.canonicalize().ok()) else {
+    let Some(canonical_home) = home.and_then(|path| dunce::canonicalize(path).ok()) else {
         return false;
     };
     if path == canonical_home {
@@ -110,10 +108,7 @@ fn is_restricted_directory(path: &Path, provider: ExternalProvider, home: Option
     if provider != ExternalProvider::Codex {
         return false;
     }
-    canonical_home
-        .join("Documents")
-        .join("Codex")
-        .canonicalize()
+    dunce::canonicalize(canonical_home.join("Documents").join("Codex"))
         .is_ok_and(|scratch| path.starts_with(scratch))
 }
 
@@ -155,7 +150,7 @@ mod tests {
 
         let resolved = resolve_with_home(&nested, ExternalProvider::Codex, None).unwrap();
 
-        assert_eq!(resolved, repo.canonicalize().unwrap());
+        assert_eq!(resolved, dunce::canonicalize(&repo).unwrap());
     }
 
     #[test]
@@ -176,7 +171,7 @@ mod tests {
 
         let resolved = resolve_with_home(&nested, ExternalProvider::Codex, None).unwrap();
 
-        assert_eq!(resolved, main.canonicalize().unwrap());
+        assert_eq!(resolved, dunce::canonicalize(&main).unwrap());
     }
 
     #[test]
@@ -201,7 +196,7 @@ mod tests {
         let home = temp.path().join("home");
         let directory = home.join("Documents").join("Codex").join("real-project");
         std::fs::create_dir_all(&directory).unwrap();
-        let expected = directory.canonicalize().unwrap();
+        let expected = dunce::canonicalize(&directory).unwrap();
 
         for provider in [ExternalProvider::ClaudeCode, ExternalProvider::OpenCode] {
             let resolved = resolve_with_home(&directory, provider, Some(&home)).unwrap();

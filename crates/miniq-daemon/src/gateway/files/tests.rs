@@ -189,9 +189,7 @@ async fn persisted_attachment_preview_is_exact_session_scoped_and_does_not_grant
 {
     let project = tempfile::tempdir().unwrap();
     let data = tempfile::tempdir().unwrap();
-    let storage = data
-        .path()
-        .canonicalize()
+    let storage = dunce::canonicalize(data.path())
         .unwrap()
         .join("observations/attachments");
     std::fs::create_dir_all(&storage).unwrap();
@@ -245,7 +243,7 @@ async fn persisted_attachment_preview_is_exact_session_scoped_and_does_not_grant
 async fn queued_attachment_preview_survives_promotion_and_loses_access_after_removal() {
     let project = tempfile::tempdir().unwrap();
     let data = tempfile::tempdir().unwrap();
-    let path = data.path().canonicalize().unwrap().join("queued.png");
+    let path = dunce::canonicalize(data.path()).unwrap().join("queued.png");
     std::fs::write(&path, "queued image bytes").unwrap();
     let (state, owner, other) = attachment_state(project.path());
     let queued = state
@@ -274,7 +272,9 @@ async fn replacing_a_persisted_attachment_with_a_symlink_cannot_authorize_its_ta
     let project = tempfile::tempdir().unwrap();
     let data = tempfile::tempdir().unwrap();
     let private = tempfile::tempdir().unwrap();
-    let path = data.path().canonicalize().unwrap().join("attached.png");
+    let path = dunce::canonicalize(data.path())
+        .unwrap()
+        .join("attached.png");
     let secret = private.path().join("private.png");
     std::fs::write(&path, "attachment bytes").unwrap();
     std::fs::write(&secret, "not attached bytes").unwrap();

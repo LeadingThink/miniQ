@@ -384,12 +384,9 @@ fn validate_download_path(download_dir: &Path, path: &Path) -> Result<PathBuf, S
     if !path.is_absolute() {
         return Err("下载文件路径无效".into());
     }
-    let directory = download_dir
-        .canonicalize()
-        .map_err(|_| "找不到下载文件夹".to_string())?;
-    let file = path
-        .canonicalize()
-        .map_err(|_| "文件不存在或已被移动".to_string())?;
+    let directory =
+        dunce::canonicalize(download_dir).map_err(|_| "找不到下载文件夹".to_string())?;
+    let file = dunce::canonicalize(path).map_err(|_| "文件不存在或已被移动".to_string())?;
     if file == directory || !file.starts_with(&directory) {
         return Err("只能定位下载文件夹中的文件".into());
     }

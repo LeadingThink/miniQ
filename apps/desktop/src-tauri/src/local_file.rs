@@ -85,9 +85,8 @@ pub fn save_image(app: &AppHandle, extension: &str, bytes: &[u8]) -> Result<Stri
 }
 
 pub fn read_image_preview(path: &str) -> Result<LocalImagePreview, String> {
-    let file = Path::new(path)
-        .canonicalize()
-        .map_err(|error| format!("无法访问图片 {path}: {error}"))?;
+    let file =
+        dunce::canonicalize(path).map_err(|error| format!("无法访问图片 {path}: {error}"))?;
     let mime_type = image_format(&file).ok_or_else(|| "附件不是支持的图片格式".to_string())?;
     let metadata = file
         .metadata()
@@ -218,7 +217,7 @@ mod tests {
                 &[]
             )
             .unwrap(),
-            inside_file.canonicalize().unwrap()
+            dunce::canonicalize(&inside_file).unwrap()
         );
         assert!(validated_file(
             outside_file.to_str().unwrap(),

@@ -78,9 +78,7 @@ impl Parser<'_> {
         if depth > 16 {
             return Err("SSH Include 层级超过 16 层，请检查配置".into());
         }
-        let path = path
-            .canonicalize()
-            .map_err(|e| format!("无法读取 SSH 配置：{e}"))?;
+        let path = dunce::canonicalize(path).map_err(|e| format!("无法读取 SSH 配置：{e}"))?;
         if !self.visiting.insert(path.clone()) {
             return Err("SSH Include 存在循环引用，请检查配置".into());
         }

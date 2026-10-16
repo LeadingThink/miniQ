@@ -8,8 +8,7 @@ fn workspace_directory(directory: &str) -> Result<PathBuf, String> {
     if directory.trim().is_empty() {
         return Err("当前会话没有工作区目录".into());
     }
-    let path = Path::new(directory)
-        .canonicalize()
+    let path = dunce::canonicalize(directory)
         .map_err(|error| format!("无法访问工作区目录 {directory}: {error}"))?;
     if !path.is_dir() {
         return Err(format!("{directory} 不是目录"));

@@ -11,6 +11,7 @@ miniq-skills = { path = "../miniq-skills" }
 miniq-sandbox = { path = "../miniq-sandbox" }
 miniq-local = { path = "../miniq-local" }
 async-trait = { workspace = true }
+dunce = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

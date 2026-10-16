@@ -42,9 +42,7 @@ impl Fixture {
         .unwrap();
         let requests = Arc::new(Mutex::new(Vec::new()));
         let recorded = requests.clone();
-        let root = dir
-            .path()
-            .canonicalize()
+        let root = dunce::canonicalize(dir.path())
             .unwrap()
             .to_string_lossy()
             .into_owned();

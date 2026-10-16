@@ -35,7 +35,7 @@ pub(super) fn prepare(paths: &[String], storage: &Path) -> Result<PreparedAttach
         snapshots: Vec::new(),
     };
     for source in paths {
-        let canonical = std::fs::canonicalize(source).map_err(|error| {
+        let canonical = dunce::canonicalize(source).map_err(|error| {
             RpcError::new(
                 ErrorCode::InvalidParams,
                 format!("无法读取附件 {source}: {error}"),
@@ -93,7 +93,7 @@ fn is_managed_snapshot(path: &Path, storage: &Path) -> bool {
     let Some(parent) = path.parent() else {
         return false;
     };
-    let Ok(storage) = storage.canonicalize() else {
+    let Ok(storage) = dunce::canonicalize(storage) else {
         return false;
     };
     parent.parent() == Some(storage.as_path())
@@ -130,8 +130,7 @@ fn save_snapshot(
         directory.mode(0o700);
     }
     directory.create(storage).map_err(failed)?;
-    let snapshot_dir = storage
-        .canonicalize()
+    let snapshot_dir = dunce::canonicalize(storage)
         .map_err(failed)?
         .join(uuid::Uuid::new_v4().to_string());
     directory

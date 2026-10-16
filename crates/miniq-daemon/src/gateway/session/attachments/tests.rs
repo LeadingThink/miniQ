@@ -59,7 +59,7 @@ fn durable_copy_preserves_name_mime_original_bytes_and_private_permissions() {
         assert_eq!(item.mime_type.as_deref(), Some(mime));
         assert_ne!(Path::new(&item.path), source);
         assert_eq!(Path::new(&item.path).file_name().unwrap(), name);
-        assert!(Path::new(&item.path).starts_with(storage.canonicalize().unwrap()));
+        assert!(Path::new(&item.path).starts_with(dunce::canonicalize(&storage).unwrap()));
         prepared.commit();
         std::fs::write(&source, "changed").unwrap();
         std::fs::remove_file(&source).unwrap();
@@ -179,7 +179,7 @@ fn oversized_images_are_rejected_and_regular_file_paths_remain_unchanged() {
     let prepared = prepare(&[document.to_string_lossy().into_owned()], &storage).unwrap();
     assert_eq!(
         Path::new(&prepared.items()[0].path),
-        document.canonicalize().unwrap()
+        dunce::canonicalize(&document).unwrap()
     );
     assert_eq!(prepared.items()[0].mime_type, None);
     drop(prepared);

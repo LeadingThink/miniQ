@@ -1329,6 +1329,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dunce"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2712,6 +2718,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "crossterm",
+ "dunce",
  "futures-util",
  "ignore",
  "miniq-local",
@@ -2738,6 +2745,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.22.1",
+ "dunce",
  "flate2",
  "futures-util",
  "glob",
@@ -2794,6 +2802,7 @@ name = "miniq-local"
 version = "0.1.145"
 dependencies = [
  "base64 0.22.1",
+ "dunce",
  "fs2",
  "serde",
  "serde_json",
@@ -2841,6 +2850,7 @@ name = "miniq-plugins"
 version = "0.1.145"
 dependencies = [
  "async-trait",
+ "dunce",
  "miniq-local",
  "miniq-protocol",
  "miniq-sandbox",
@@ -2875,6 +2885,7 @@ dependencies = [
 name = "miniq-sandbox"
 version = "0.1.145"
 dependencies = [
+ "dunce",
  "miniq-protocol",
  "tempfile",
  "thiserror 2.0.18",
@@ -2917,6 +2928,7 @@ dependencies = [
  "base64 0.22.1",
  "core-foundation",
  "core-graphics",
+ "dunce",
  "enigo",
  "futures-util",
  "globset",

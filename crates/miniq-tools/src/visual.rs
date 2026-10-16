@@ -198,7 +198,7 @@ mod tests {
         let sibling = outside.path().join("private.png");
         image::RgbImage::new(4, 6).save(&sibling).unwrap();
         let ctx = ToolContext::new(workspace.path().into())
-            .with_readable_files(vec![path.canonicalize().unwrap()])
+            .with_readable_files(vec![dunce::canonicalize(&path).unwrap()])
             .with_observations(workspace.path().join("observations"));
         assert!(ViewImageTool
             .execute(&ctx, json!({"path":path}))

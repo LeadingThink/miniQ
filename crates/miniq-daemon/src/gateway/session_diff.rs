@@ -160,12 +160,15 @@ pub(super) fn current_contents(path: &str) -> Result<Option<Vec<u8>>, RpcError> 
     }
 }
 
+/// Checkpoints keep canonical Windows paths (`\\?\D:\...`) while workspaces
+/// are stored in display form, so both sides are compared in display form.
 pub(super) fn workspace_relative_path(workspace_path: &str, absolute_path: &Path) -> String {
-    absolute_path
-        .strip_prefix(Path::new(workspace_path))
-        .unwrap_or(absolute_path)
-        .to_string_lossy()
-        .replace('\\', "/")
+    let workspace = super::workspace_path_display(Path::new(workspace_path));
+    let absolute = super::workspace_path_display(absolute_path);
+    match Path::new(&absolute).strip_prefix(&workspace) {
+        Ok(relative) => relative.to_string_lossy().into_owned(),
+        Err(_) => absolute,
+    }
 }
 
 fn build_text_diff(old: &str, new: &str) -> (usize, usize, Vec<DiffHunk>) {
@@ -283,5 +286,27 @@ mod tests {
         assert!(diff.old_exists);
         assert!(diff.new_exists);
         assert!(!diff.binary);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn relativizes_canonical_windows_paths_against_display_workspace() {
+        let file = Path::new(r"\\?\D:\study\zaiwenai\.gitignore");
+
+        assert_eq!(
+            workspace_relative_path("D:/study/zaiwenai", file),
+            ".gitignore"
+        );
+        assert_eq!(
+            workspace_relative_path(
+                r"\\?\D:\study\zaiwenai",
+                Path::new(r"\\?\D:\study\zaiwenai\app\src\a.ts")
+            ),
+            "app/src/a.ts"
+        );
+        assert_eq!(
+            workspace_relative_path("D:/other", file),
+            "D:/study/zaiwenai/.gitignore"
+        );
     }
 }

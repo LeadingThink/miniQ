@@ -80,10 +80,7 @@ impl Tool for FileReadTool {
                 reason: "read-only file access".into(),
             },
             Err(error) if std::path::Path::new(path).is_absolute() => {
-                let external = std::path::Path::new(path)
-                    .canonicalize()
-                    .ok()
-                    .filter(|file| file.is_file());
+                let external = dunce::canonicalize(path).ok().filter(|file| file.is_file());
                 match external {
                     Some(file) => Risk {
                         level: RiskLevel::High,
@@ -104,8 +101,7 @@ impl Tool for FileReadTool {
 
     fn approval_scope(&self, _ctx: &ToolContext, input: &Value) -> Option<String> {
         let path = input.get("path").and_then(Value::as_str)?;
-        let file = std::path::Path::new(path)
-            .canonicalize()
+        let file = dunce::canonicalize(path)
             .ok()?
             .to_string_lossy()
             .into_owned();
@@ -377,7 +373,7 @@ mod tests {
             .await
             .is_err());
 
-        let allowed = restricted.with_readable_file(file.canonicalize().unwrap());
+        let allowed = restricted.with_readable_file(dunce::canonicalize(&file).unwrap());
         assert_eq!(
             FileReadTool.execute(&allowed, input).await.unwrap()["content"],
             "outside"

@@ -31,7 +31,7 @@ pub(crate) async fn validate(
             &["rev-parse", "--path-format=absolute", "--git-common-dir"],
         )
         .await?;
-        std::fs::canonicalize(directory)
+        dunce::canonicalize(directory)
             .map_err(|error| ToolError::ExecutionFailed(error.to_string()))
     };
     let same_repo =

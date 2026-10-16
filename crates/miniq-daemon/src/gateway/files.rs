@@ -148,10 +148,8 @@ pub(super) async fn list(state: &AppState, raw: Option<Value>) -> Result<Value, 
 }
 
 fn list_directory(scope: &Scope, input: &ListInput) -> Result<Value, String> {
-    let path = Path::new(&scope.cwd)
-        .join(&input.path)
-        .canonicalize()
-        .map_err(|e| e.to_string())?;
+    let path =
+        dunce::canonicalize(Path::new(&scope.cwd).join(&input.path)).map_err(|e| e.to_string())?;
     let roots = canonical_roots(scope);
     if !path.is_dir() || !roots.iter().any(|root| path.starts_with(root)) {
         return Err("只能浏览当前会话的项目目录".into());
@@ -168,7 +166,7 @@ fn list_directory(scope: &Scope, input: &ListInput) -> Result<Value, String> {
         if input.after.as_ref().is_some_and(|after| &name <= after) {
             continue;
         }
-        let metadata = match entry.path().canonicalize() {
+        let metadata = match dunce::canonicalize(entry.path()) {
             Ok(canonical) => {
                 if !roots.iter().any(|root| canonical.starts_with(root)) {
                     continue;
@@ -209,7 +207,7 @@ fn list_directory(scope: &Scope, input: &ListInput) -> Result<Value, String> {
 fn canonical_roots(scope: &Scope) -> Vec<PathBuf> {
     let mut roots = Vec::new();
     for root in std::iter::once(&scope.cwd).chain(scope.roots.iter()) {
-        if let Ok(root) = Path::new(root).canonicalize() {
+        if let Ok(root) = dunce::canonicalize(root) {
             if root.is_dir() && !roots.contains(&root) {
                 roots.push(root);
             }
@@ -224,9 +222,7 @@ fn validated_session_file(
     session_id: &str,
     requested: &str,
 ) -> Result<PathBuf, String> {
-    let path = Path::new(&scope.cwd)
-        .join(requested)
-        .canonicalize()
+    let path = dunce::canonicalize(Path::new(&scope.cwd).join(requested))
         .map_err(|error| format!("无法访问文件 {requested}: {error}"))?;
     if !path.is_file() {
         return Err(format!("目标不是文件: {}", path.display()));

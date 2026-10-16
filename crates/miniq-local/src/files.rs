@@ -22,11 +22,6 @@ pub struct LocalFilePreview {
     pub size: u64,
 }
 
-fn display_path(path: &Path) -> String {
-    let value = path.to_string_lossy();
-    value.strip_prefix(r"\\?\").unwrap_or(&value).to_string()
-}
-
 pub fn preview_format(path: &Path) -> (&'static str, &'static str) {
     let name = path
         .file_name()
@@ -122,28 +117,22 @@ pub fn validated_file_with_authorization(
     workspace_paths: &[String],
     authorized_files: &[String],
 ) -> Result<PathBuf, String> {
-    let workspace = Path::new(workspace_path)
-        .canonicalize()
+    let workspace = dunce::canonicalize(workspace_path)
         .map_err(|error| format!("无法访问工作区 {workspace_path}: {error}"))?;
     if !workspace.is_dir() {
         return Err(format!("工作区不是目录: {}", workspace.display()));
     }
 
-    let file = workspace
-        .join(path)
-        .canonicalize()
+    let file = dunce::canonicalize(workspace.join(path))
         .map_err(|error| format!("无法访问文件 {path}: {error}"))?;
     if !file.is_file() {
         return Err(format!("目标不是文件: {}", file.display()));
     }
     let attached = workspace_paths.iter().any(|root| {
-        Path::new(root)
-            .canonicalize()
-            .is_ok_and(|root| root.is_dir() && file.starts_with(root))
+        dunce::canonicalize(root).is_ok_and(|root| root.is_dir() && file.starts_with(root))
     });
     let authorized = authorized_files.iter().any(|authorized| {
-        Path::new(authorized)
-            .canonicalize()
+        dunce::canonicalize(authorized)
             .is_ok_and(|authorized| authorized.is_file() && file == authorized)
     });
     if !file.starts_with(&workspace) && !attached && !authorized {
@@ -171,7 +160,7 @@ pub fn read_text_with_authorization(
     let content = std::fs::read_to_string(&file)
         .map_err(|error| format!("无法读取 UTF-8 文本文件 {}: {error}", file.display()))?;
     Ok(LocalTextFile {
-        path: display_path(&file),
+        path: file.to_string_lossy().into_owned(),
         content,
     })
 }
@@ -237,7 +226,7 @@ pub fn read_preview_with_authorization(
     };
 
     Ok(LocalFilePreview {
-        path: display_path(&file),
+        path: file.to_string_lossy().into_owned(),
         kind,
         mime_type,
         content,

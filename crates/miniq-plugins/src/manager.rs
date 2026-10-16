@@ -1061,12 +1061,9 @@ fn content_hash(directory: &Path) -> Result<[u8; 32], PluginError> {
 }
 
 fn secure_entry(directory: &Path, entry: &Path) -> Result<PathBuf, PluginError> {
-    let root = directory
-        .canonicalize()
+    let root = dunce::canonicalize(directory)
         .map_err(|error| PluginError::new(PluginFailureKind::InvalidEntry, error.to_string()))?;
-    let candidate = directory
-        .join(entry)
-        .canonicalize()
+    let candidate = dunce::canonicalize(directory.join(entry))
         .map_err(|error| PluginError::new(PluginFailureKind::InvalidEntry, error.to_string()))?;
     if !candidate.starts_with(&root) || !candidate.is_file() {
         return Err(PluginError::new(
@@ -1078,12 +1075,9 @@ fn secure_entry(directory: &Path, entry: &Path) -> Result<PathBuf, PluginError> 
 }
 
 fn secure_directory(directory: &Path, relative: &Path) -> Result<PathBuf, PluginError> {
-    let root = directory
-        .canonicalize()
+    let root = dunce::canonicalize(directory)
         .map_err(|error| PluginError::new(PluginFailureKind::InvalidEntry, error.to_string()))?;
-    let candidate = directory
-        .join(relative)
-        .canonicalize()
+    let candidate = dunce::canonicalize(directory.join(relative))
         .map_err(|error| PluginError::new(PluginFailureKind::InvalidEntry, error.to_string()))?;
     if !candidate.starts_with(&root) || !candidate.is_dir() {
         return Err(PluginError::new(

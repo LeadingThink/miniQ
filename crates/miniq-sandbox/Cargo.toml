@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 miniq-protocol = { path = "../miniq-protocol" }
+dunce = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

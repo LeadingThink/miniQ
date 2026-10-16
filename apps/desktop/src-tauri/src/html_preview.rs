@@ -135,11 +135,7 @@ fn resource_path(grant: &Grant, id: &str, path: &str) -> Result<PathBuf, StatusC
     {
         return Err(StatusCode::FORBIDDEN);
     }
-    let file = grant
-        .root
-        .join(relative)
-        .canonicalize()
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let file = dunce::canonicalize(grant.root.join(relative)).map_err(|_| StatusCode::NOT_FOUND)?;
     if !file.starts_with(&grant.root) || !file.is_file() {
         return Err(StatusCode::FORBIDDEN);
     }

@@ -57,17 +57,15 @@ pub fn emit_session_queue_changed(state: &AppState, session_id: &str) {
 }
 
 fn canonical_workspace_path(path: &Path) -> Option<String> {
-    path.canonicalize()
+    dunce::canonicalize(path)
         .ok()
         .map(|canonical| workspace_path_display(&canonical))
 }
 
+/// Rows persisted before canonical paths were simplified may still carry the
+/// Windows verbatim prefix, so display paths always pass through `dunce`.
 fn workspace_path_display(path: &Path) -> String {
-    let display = path.to_string_lossy();
-    display
-        .strip_prefix(r"\\?\")
-        .unwrap_or(&display)
-        .replace('\\', "/")
+    dunce::simplified(path).to_string_lossy().replace('\\', "/")
 }
 
 /// Dispatch one JSON-RPC request while preserving its request identifier.
