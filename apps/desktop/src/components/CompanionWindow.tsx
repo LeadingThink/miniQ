@@ -150,6 +150,30 @@ export default function CompanionWindow(props: CompanionWindowProps) {
   const selectProject = (workspaceId: string) => { setDraft((current) => ({ ...current, workspaceId, sessionId: null })); setSent(false); setError(null); };
   const selectSession = (sessionId: string | null) => { setDraft((current) => ({ ...current, sessionId })); setSent(false); setError(null); };
 
+  const contextAction = useRef<(action: string) => void>(() => {});
+  contextAction.current = (action) => {
+    if (action === "companion:session" && relevant) void openMain({ action: "session", sessionId: relevant.id, workspaceId: relevant.workspaceId });
+    else if (action === "companion:new") { selectSession(null); void changeExpanded(true); }
+    else if (action === "companion:settings") void openMain({ action: "settings" });
+    else if (action === "companion:hide") void hide();
+  };
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    let disposed = false;
+    let off: (() => void) | undefined;
+    void import("@tauri-apps/api/event").then(({ listen }) => listen<string>("companion:context-action", (event) => contextAction.current(event.payload)))
+      .then((dispose) => { if (disposed) dispose(); else off = dispose; })
+      .catch((cause) => { if (!disposed) setError(errorMessage(cause)); });
+    return () => { disposed = true; off?.(); };
+  }, []);
+  const contextMenu = async () => {
+    if (!isTauriRuntime()) { void changeExpanded(true); setMenu("main"); return; }
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("companion_context_menu", { hasSession: Boolean(relevant) });
+    } catch (cause) { setError(errorMessage(cause)); }
+  };
+
   // Whole avatar is the drag handle: move past the threshold → native drag; plain click → expand.
   const onAvatarPointerDown = (event: ReactPointerEvent) => {
     if (event.button !== 0) return;
@@ -174,6 +198,10 @@ export default function CompanionWindow(props: CompanionWindowProps) {
   const stateText = `${COMPANION_STATE_LABELS[state]}${connection.connected ? "" : " · 服务未连接"}`;
   const canSend = connection.connected && !!project && !!draft.content.trim() && !sending;
   return <main className={`companion-window ${expanded ? "expanded" : "collapsed"}`} data-state={state} data-mode={prefs.mode}
+    onContextMenu={(event) => {
+      if ((event.target as HTMLElement).closest("textarea,input")) return;
+      event.preventDefault(); endPress(); void contextMenu();
+    }}
     data-align-x={layout.alignRight ? "end" : "start"} data-align-y={layout.alignBottom ? "end" : "start"}>
     {!expanded && <div className="companion-dock">
       <button className="companion-avatar-button" type="button" aria-label={`${COMPANION_STATE_LABELS[state]}，展开任务输入`} aria-expanded={false}

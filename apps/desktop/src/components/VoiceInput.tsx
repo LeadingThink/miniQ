@@ -52,8 +52,10 @@ export function VoiceInput(props: Props) {
     if (!transcript || transcript.duration < 0.5) {
       cancel(); callbacks.current.onError?.("没有录到足够的声音，请再试一次"); return;
     }
-    setState("transcribing");
-    callbacks.current.onPreview({ phase: "transcribing", text: transcript.text });
+    if (transcript.needsFinalCorrection) {
+      setState("transcribing");
+      callbacks.current.onPreview({ phase: "transcribing", text: transcript.text });
+    }
     try {
       const text = await transcript.finish();
       if (current.current !== recording) return;

@@ -14,8 +14,9 @@ private final class Recognition {
     let callback: Callback
     let format: AVAudioFormat
     let recognizer: SFSpeechRecognizer
-    let request = SFSpeechAudioBufferRecognitionRequest()
+    var request = Recognition.makeRequest()
     var task: SFSpeechRecognitionTask?
+    var generation = 0
     var ending = false
     var transcript = SpeechTranscript()
 
@@ -25,9 +26,18 @@ private final class Recognition {
               let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate,
                                          channels: 1, interleaved: false) else { return nil }
         self.id = id; self.callback = callback; self.format = format; self.recognizer = recognizer
+    }
+
+    /// One place configures every request, including the follow-up request created
+    /// when Apple ends a task early, so punctuation never differs between them.
+    static func makeRequest() -> SFSpeechAudioBufferRecognitionRequest {
+        let request = SFSpeechAudioBufferRecognitionRequest()
         request.requiresOnDeviceRecognition = true
         request.shouldReportPartialResults = true
         request.taskHint = .dictation
+        // Without this the on-device recognizer returns text with no punctuation.
+        if #available(macOS 13.0, *) { request.addsPunctuation = true }
+        return request
     }
 
     func send(_ kind: String, text: String = "") {
@@ -37,18 +47,35 @@ private final class Recognition {
     }
 
     func start() {
+        generation += 1
+        let generation = generation
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
             speechQueue.async { [weak self] in
-                guard let self = self, active === self else { return }
+                guard let self = self, active === self, self.generation == generation else { return }
                 if let result = result {
+                    if ProcessInfo.processInfo.environment["MINIQ_VOICE_DIAGNOSTICS"] == "1" {
+                        let segments = result.bestTranscription.segments
+                        NSLog("[miniq-voice] final=%@ segments=%d start=%.3f end=%.3f chars=%d",
+                              result.isFinal ? "yes" : "no", segments.count,
+                              segments.first?.timestamp ?? 0,
+                              segments.last.map { $0.timestamp + $0.duration } ?? 0,
+                              result.bestTranscription.formattedString.count)
+                    }
                     let text = self.transcript.update(result.bestTranscription.segments.map {
                         SpeechTranscript.Segment(text: $0.substring, start: $0.timestamp, end: $0.timestamp + $0.duration)
                     })
-                    // A spontaneous final may be the recognizer's time limit. Fall back with
-                    // all captured audio instead of silently losing the remainder of dictation.
                     if result.isFinal {
-                        self.send(self.ending ? "final" : "error", text: self.ending ? text : "local-ended-early")
-                        self.stop()
+                        if self.ending {
+                            self.send("final", text: text)
+                            self.stop()
+                        } else {
+                            // An Apple task can finalize at a phrase boundary or time limit.
+                            // Continue locally with a fresh task and retain confirmed text.
+                            self.transcript.commit()
+                            self.send("partial", text: text)
+                            self.request = Recognition.makeRequest()
+                            self.start()
+                        }
                         return
                     }
                     self.send("partial", text: text)

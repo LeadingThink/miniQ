@@ -16,7 +16,7 @@ export class AutomaticVoice {
   private lastText = "";
 
   constructor(client: RpcClient | VoiceTranscriber, rate: number,
-    update: (text: string, delayed: boolean) => void,
+    private readonly update: (text: string, delayed: boolean) => void,
     model?: string, preferLocal = false) {
     this.mode = preferLocal ? "local" : "api";
     this.api = new VoiceTranscription(client, rate, (text, delayed) => {
@@ -36,6 +36,7 @@ export class AutomaticVoice {
   }
   get duration() { return this.api.duration; }
   get text() { return this.lastText; }
+  get needsFinalCorrection() { return this.mode === "api"; }
   append(samples: Float32Array) {
     if (this.finishing || this.abort.signal.aborted) return;
     this.api.append(samples);
@@ -75,6 +76,7 @@ export class AutomaticVoice {
     this.local?.cancel();
     // No audio, keys or transcript is recorded in diagnostics.
     console.info("[voice] local recognition unavailable; using API");
+    if (this.finishing) this.update(this.lastText, true);
     if (!this.finishing) void this.api.preview();
   }
   private pump(): Promise<void> {

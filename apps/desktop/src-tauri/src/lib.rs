@@ -340,6 +340,7 @@ pub fn run() {
                 companion::companion_set_mode,
                 companion::companion_expand,
                 companion::companion_open_main,
+                companion::companion_context_menu,
                 daemon_connection,
                 terminal_install::terminal_install_status,
                 terminal_install::install_terminal_command,
@@ -383,6 +384,7 @@ pub fn run() {
         })
         .setup(|app| {
             setup_tray(app.handle())?;
+            companion::install_context_actions(app.handle());
             if let Err(error) = companion::initialize(app.handle()) {
                 eprintln!("[miniq] companion unavailable: {error}");
             }

@@ -1,6 +1,7 @@
 //! Optional desktop companion. All window labels and destinations are fixed here.
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
+use tauri::menu::ContextMenu;
 use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow};
 
 const LABEL: &str = "companion";
@@ -66,6 +67,7 @@ pub(crate) fn allowed_command(command: &str) -> bool {
             | "companion_set_mode"
             | "companion_expand"
             | "companion_open_main"
+            | "companion_context_menu"
     )
 }
 
@@ -556,4 +558,50 @@ mod tests {
         assert!(!allowed_command("browser_evaluate"));
         assert!(allowed_command("companion_open_main"));
     }
+}
+
+/// Native popup escapes the 96px companion window instead of clipping an HTML menu.
+#[tauri::command]
+pub fn companion_context_menu(
+    app: tauri::AppHandle,
+    webview: tauri::Webview,
+    has_session: bool,
+) -> Result<(), String> {
+    authorized(webview.label())?;
+    let window = app
+        .get_webview_window(LABEL)
+        .ok_or("companion unavailable")?;
+    let menu = tauri::menu::MenuBuilder::new(&app)
+        .text("companion:open", "打开主窗口")
+        .item(
+            &tauri::menu::MenuItem::with_id(
+                &app,
+                "companion:session",
+                "打开当前会话",
+                has_session,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?,
+        )
+        .text("companion:new", "新建任务")
+        .separator()
+        .text("companion:settings", "伙伴设置")
+        .text("companion:hide", "隐藏伙伴")
+        .build()
+        .map_err(|e| e.to_string())?;
+    menu.popup(window.as_ref().window().clone()).map_err(|e| e.to_string())
+}
+
+pub fn install_context_actions(app: &tauri::AppHandle) {
+    app.on_menu_event(|app, event| {
+        let action = event.id().as_ref();
+        if action == "companion:open" {
+            crate::show_main_window(app);
+        } else if matches!(
+            action,
+            "companion:session" | "companion:new" | "companion:settings" | "companion:hide"
+        ) {
+            let _ = app.emit_to(LABEL, "companion:context-action", action);
+        }
+    });
 }

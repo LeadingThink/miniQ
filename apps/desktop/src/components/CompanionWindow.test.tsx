@@ -195,3 +195,16 @@ it("moves the expanded panel by its header but not from header buttons", async (
   await waitFor(() => expect(startDragging).toHaveBeenCalledTimes(1));
   vi.unstubAllGlobals();
 });
+
+it("suppresses the browser menu on the avatar but preserves the textarea context menu", async () => {
+  const f = fixture();
+  render(<CompanionWindow client={f.client} initialPrefs={{ mode: "pet" }} />);
+  const avatar = screen.getByRole("button", { name: /展开任务输入/ });
+  const context = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
+  fireEvent(avatar, context);
+  expect(context.defaultPrevented).toBe(true);
+  const input = await screen.findByLabelText("任务内容");
+  const editContext = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
+  fireEvent(input, editContext);
+  expect(editContext.defaultPrevented).toBe(false);
+});
