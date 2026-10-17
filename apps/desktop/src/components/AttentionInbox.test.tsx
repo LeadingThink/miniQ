@@ -33,7 +33,7 @@ function statusApp() {
   } as unknown as MiniqAppController;
 }
 
-it("renders the bell inside the toolbar actions next to the approval inbox", () => {
+it("renders the bell inside the toolbar actions without a duplicate approval button", () => {
   recordAttentionItem({ host: "h", sessionId: "s1", kind: "completed", eventKey: "turn:t0", title: "完成", detail: "" });
   const { container } = render(
     <AppStatusBar app={statusApp()} showAttentionInbox onOpenBrowser={() => {}} onToggleReview={() => {}} onOpenFile={() => {}} />,
@@ -42,7 +42,7 @@ it("renders the bell inside the toolbar actions next to the approval inbox", () 
   const bell = within(actions as HTMLElement).getByRole("button", { name: "提醒，1 条未读" });
   expect(bell.className).toContain("statusbar-icon-button");
   expect(bell.getAttribute("data-tooltip")).toBe("提醒");
-  expect(bell.previousElementSibling?.getAttribute("aria-label")).toBe("待审批总览");
+  expect(within(actions as HTMLElement).queryByRole("button", { name: "待审批总览" })).toBeNull();
   expect(document.querySelector(".attention-inbox-anchor")).toBeNull();
 });
 

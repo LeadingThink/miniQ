@@ -7,7 +7,26 @@ import "./TimelineToolbar.css";
 
 const filters = [["all", "全部"], ["answers", "回答"], ["activity", "执行"], ["errors", "异常"]] as const;
 
+export const SESSION_TOOLBAR_ACTION_EVENT = "miniq:session-toolbar-action";
+export type SessionToolbarAction = "search" | "share" | "diagnostics";
+export interface SessionToolbarActionDetail {
+  sessionId?: string;
+  action: SessionToolbarAction;
+}
+
+export function dispatchSessionToolbarAction(
+  sessionId: string | undefined,
+  action: SessionToolbarAction,
+) {
+  window.dispatchEvent(
+    new CustomEvent<SessionToolbarActionDetail>(SESSION_TOOLBAR_ACTION_EVENT, {
+      detail: { sessionId, action },
+    }),
+  );
+}
+
 export function TimelineToolbar(props: {
+  sessionId?: string;
   filter: TimelineFilter;
   query: string;
   exporting: boolean;
@@ -34,6 +53,20 @@ export function TimelineToolbar(props: {
   useEffect(() => {
     if (searching) search.current?.focus();
   }, [searching]);
+  useEffect(() => {
+    const onAction = (event: Event) => {
+      const detail = (event as CustomEvent<SessionToolbarActionDetail>).detail;
+      if (!detail || detail.action !== "search") return;
+      if (props.sessionId && detail.sessionId && detail.sessionId !== props.sessionId) return;
+      setSearching((current) => {
+        const next = !current;
+        if (next) window.requestAnimationFrame(() => search.current?.focus());
+        return next;
+      });
+    };
+    window.addEventListener(SESSION_TOOLBAR_ACTION_EVENT, onAction);
+    return () => window.removeEventListener(SESSION_TOOLBAR_ACTION_EVENT, onAction);
+  }, [props.sessionId]);
   const [filterOpen, setFilterOpen] = useState(false);
   const closeMenu = useCallback(() => setOpen(false), []);
   return (
@@ -67,7 +100,14 @@ export function TimelineToolbar(props: {
             props.onQuery("");
           }
         }} />
-        {props.query && <button type="button" className="icon-button" title="清空会话搜索" aria-label="清空会话搜索" onClick={() => props.onQuery("")}><X size={14} /></button>}
+        {props.query ? (
+          <button type="button" className="icon-button" title="清空会话搜索" aria-label="清空会话搜索" onClick={() => props.onQuery("")}><X size={14} /></button>
+        ) : (searching || props.filter !== "all") ? (
+          <button type="button" className="icon-button timeline-search-close" title="收起搜索和筛选" aria-label="收起搜索和筛选" onClick={() => {
+            props.onFilter("all");
+            setSearching(false);
+          }}><X size={14} /></button>
+        ) : null}
       </label>
       {props.navigator}
       {props.summary}

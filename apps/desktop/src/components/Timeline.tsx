@@ -44,7 +44,11 @@ import { SessionShareDialog } from "./SessionShareDialog";
 import { ConversationNavigationRail } from "./ConversationNavigationRail";
 import { useConversationScroll } from "../hooks/useConversationScroll";
 import { TimelineEntries, type TimelineWindowHandle } from "./TimelineEntries";
-import { TimelineToolbar } from "./TimelineToolbar";
+import {
+  SESSION_TOOLBAR_ACTION_EVENT,
+  TimelineToolbar,
+  type SessionToolbarActionDetail,
+} from "./TimelineToolbar";
 import { PendingApprovalBar } from "./PendingApprovalBar";
 import { TimelineQuote } from "./TimelineQuote";
 import { AgentStatusIndicator, type AgentSummary } from "./AgentSummary";
@@ -99,6 +103,17 @@ export function Timeline(props: TimelineProps) {
   const [showShare, setShowShare] = useState(false);
   useEffect(() => setShowShare(false), [props.sessionId]);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  useEffect(() => {
+    const onAction = (event: Event) => {
+      const detail = (event as CustomEvent<SessionToolbarActionDetail>).detail;
+      if (!detail || !props.client || !props.sessionId) return;
+      if (detail.sessionId && detail.sessionId !== props.sessionId) return;
+      if (detail.action === "share") setShowShare(true);
+      else if (detail.action === "diagnostics") setShowDiagnostics(true);
+    };
+    window.addEventListener(SESSION_TOOLBAR_ACTION_EVENT, onAction);
+    return () => window.removeEventListener(SESSION_TOOLBAR_ACTION_EVENT, onAction);
+  }, [props.client, props.sessionId]);
   const [filter, setFilter] = useState<TimelineFilter>("all");
   const [query, setQuery] = useState("");
   const historySearch = useHistorySearch(
@@ -293,6 +308,7 @@ export function Timeline(props: TimelineProps) {
         )}
         <TimelineToolbar
           key={props.sessionId}
+          sessionId={props.sessionId}
           filter={filter}
           query={query}
           exporting={exporting}

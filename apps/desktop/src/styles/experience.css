@@ -419,6 +419,12 @@
     margin-left: auto;
     padding: 0;
   }
+  .native-mobile .conversation-context > .timeline-toolbar[data-search-open="false"]:not(:has(.session-summary)) {
+    display: none;
+  }
+  .native-mobile .conversation-context:has(> .timeline-toolbar[data-search-open="false"]):not(:has(> .agent-status-indicator)):not(:has(.session-summary)) {
+    display: none;
+  }
   .native-mobile .conversation-context > .timeline-toolbar[data-search-open="true"] {
     flex: 1 1 100%;
     order: 10;

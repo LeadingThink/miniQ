@@ -82,23 +82,15 @@
   .native-mobile .conversation-tools { gap: 4px; padding: 0 10px; min-height: 44px; }
   .native-mobile .conversation-tools .timeline-mobile-filter { max-width: 112px; }
   .native-mobile .conversation-tools .timeline-search input { min-height: 44px; }
-  /* Collapsed: only the search icon and the ⋯ menu stay, on the status row. */
-  .native-mobile .conversation-tools .timeline-search-toggle {
-    display: grid;
-    place-items: center;
-    flex: none;
-    width: 36px;
-    height: 40px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--text-mid);
+  /* On mobile, search and session actions live in the top AppStatusBar, so hide
+   * the duplicate toggle and the second ⋯ menu inside conversation-tools. */
+  .native-mobile .conversation-tools .timeline-search-toggle,
+  .native-mobile .conversation-tools .timeline-actions {
+    display: none;
   }
   .native-mobile .conversation-tools[data-search-open="false"] .timeline-mobile-filter,
   .native-mobile .conversation-tools[data-search-open="false"] .timeline-search { display: none; }
-  .native-mobile .conversation-tools[data-search-open="true"] .timeline-search-toggle { display: none; }
-  .native-mobile .conversation-tools[data-search-open="false"] { padding: 0; min-height: 40px; gap: 0; }
-  .native-mobile .conversation-tools[data-search-open="false"] .timeline-actions-trigger { min-width: 36px; height: 40px; }
+  .native-mobile .conversation-tools[data-search-open="false"] { padding: 0; min-height: 0; gap: 0; }
 }
 
 /* Find-in-conversation: counter, stepping and jump to full context. */

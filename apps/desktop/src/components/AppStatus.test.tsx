@@ -84,7 +84,6 @@ describe("AppStatusBar", () => {
     expect(
       actions.getAllByRole("button").map((button) => button.getAttribute("aria-label")),
     ).toEqual([
-      "待审批总览",
       "提醒",
       "显示检查器",
       "更多操作",
@@ -111,7 +110,6 @@ describe("AppStatusBar", () => {
     const buttons = screen.getAllByRole("button");
     expect(buttons.map((button) => button.getAttribute("data-tooltip"))).toEqual([
       "显示侧栏（⌘/Ctrl+B）",
-      "待审批总览",
       "检查器：概览、审阅、预览和浏览器",
       "更多操作",
     ]);
@@ -181,5 +179,46 @@ describe("AppStatusBar", () => {
     expect(onAppearance).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "miniq:remote-connection-details" }));
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("places session search on the remote top bar and merges share and diagnostics into the single overflow menu", () => {
+    const app = {
+      ...appFixture(true, "remote"),
+      catalog: {
+        currentSession: { id: "s1", title: "测试会话", status: "idle", workspaceId: "w1", createdAt: "", updatedAt: "" },
+        currentWorkspace: { id: "w1", name: "项目", path: "/w1", additionalPaths: [], createdAt: "", updatedAt: "" },
+      },
+    } as unknown as MiniqAppController;
+    const received: Array<{ sessionId?: string; action: string }> = [];
+    const onAction = (event: Event) => {
+      received.push((event as CustomEvent<{ sessionId?: string; action: string }>).detail);
+    };
+    window.addEventListener("miniq:session-toolbar-action", onAction);
+    const { container } = render(
+      <AppStatusBar
+        app={app}
+        onOpenBrowser={() => {}}
+        onToggleReview={() => {}}
+        onOpenFile={() => {}}
+        onToggleWorkbench={() => {}}
+        showAttentionInbox
+      />,
+    );
+    const actions = within(container.querySelector<HTMLElement>(".app-toolbar-actions")!);
+    fireEvent.click(actions.getByRole("button", { name: "搜索和筛选会话" }));
+    const more = actions.getByRole("button", { name: "更多操作" });
+    fireEvent.click(more);
+    const menu = screen.getByRole("menu", { name: "更多操作" });
+    expect(menu.textContent).not.toContain("导出 Markdown");
+    expect(menu.textContent).not.toContain("导出 JSON");
+    fireEvent.click(screen.getByRole("menuitem", { name: "分享会话" }));
+    fireEvent.click(more);
+    fireEvent.click(screen.getByRole("menuitem", { name: "模型调用记录" }));
+    window.removeEventListener("miniq:session-toolbar-action", onAction);
+    expect(received).toEqual([
+      { sessionId: "s1", action: "search" },
+      { sessionId: "s1", action: "share" },
+      { sessionId: "s1", action: "diagnostics" },
+    ]);
   });
 });

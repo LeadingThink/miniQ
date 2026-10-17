@@ -1,6 +1,7 @@
 import { useContext, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import {
+  Activity,
   FileDiff,
   Globe2,
   Laptop,
@@ -10,15 +11,17 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelRight,
+  Search,
   Server,
   Settings,
+  Share2,
   Sparkles,
   Wifi,
 } from "lucide-react";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { sessionStatusLabel } from "../sessionStatus";
-import { ApprovalInboxButton } from "./ApprovalInbox";
 import { AttentionInbox } from "./AttentionInbox";
+import { dispatchSessionToolbarAction } from "./TimelineToolbar";
 import type { AttentionItem } from "../companionInbox";
 import { OpenPreviewButton } from "./OpenPreviewButton";
 import type { LocalFileTarget } from "../localFiles";
@@ -81,6 +84,10 @@ export function AppStatusBar(props: {
     ] : []),
     { id: "browser", label: browserLabel, icon: <Globe2 size={15} />, disabled: remote && !currentSession, run: props.onOpenBrowser },
     ...(reviewFiles > 0 ? [{ id: "review", label: `审阅代码修改（${reviewFiles} 个文件）`, icon: <FileDiff size={15} />, run: props.onToggleReview }] : []),
+    ...(remote && currentSession ? [
+      { id: "share-session", label: "分享会话", icon: <Share2 size={15} />, run: () => dispatchSessionToolbarAction(currentSession.id, "share") },
+      { id: "model-diagnostics", label: "模型调用记录", icon: <Activity size={15} />, run: () => dispatchSessionToolbarAction(currentSession.id, "diagnostics") },
+    ] : []),
     ...(canDistill ? [{ id: "distill", label: "保存为技能", icon: <Sparkles size={15} />, run: () => app.navigation.setShowDistill(true) }] : []),
     ...(app.client.sshHost && !remote ? [{ id: "ssh", label: `切换执行主机（SSH · ${app.client.sshHost}）`, icon: <Server size={15} />, run: () => app.navigation.setShowSettings(true) }] : []),
     { id: "settings", label: "设置", icon: <Settings size={15} />, shortcut: "⌘,", run: () => app.navigation.setShowSettings(true) },
@@ -134,10 +141,18 @@ export function AppStatusBar(props: {
         )}
       </div>
       <div className="app-toolbar-actions">
-        <ApprovalInboxButton
-          client={app.client}
-          onOpenSession={app.actions.openSession}
-        />
+        {remote && currentSession && (
+          <button
+            type="button"
+            className="statusbar-icon-button"
+            data-tooltip="搜索和筛选会话"
+            title="搜索和筛选会话"
+            aria-label="搜索和筛选会话"
+            onClick={() => dispatchSessionToolbarAction(currentSession.id, "search")}
+          >
+            <Search size={16} />
+          </button>
+        )}
         {props.showAttentionInbox && (
           <AttentionInbox app={app} onOpenLocalItem={props.onOpenAttentionLocalItem} />
         )}

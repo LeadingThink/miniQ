@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, act } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { TimelineToolbar } from "./TimelineToolbar";
+import { dispatchSessionToolbarAction, TimelineToolbar } from "./TimelineToolbar";
 
 afterEach(cleanup);
 
@@ -68,6 +68,22 @@ it("collapses search behind an icon until opened, and stays open while a query i
   expect(toolbar.getAttribute("data-search-open")).toBe("true");
   rerender(<TimelineToolbar filter="errors" query="" exporting={false} onFilter={vi.fn()} onQuery={vi.fn()} onExport={vi.fn()} />);
   expect(toolbar.getAttribute("data-search-open")).toBe("true");
+});
+
+it("toggles search from the top-bar event and collapses when the close button is clicked", () => {
+  const onFilter = vi.fn();
+  const { container } = render(
+    <TimelineToolbar sessionId="s1" filter="all" query="" exporting={false} onFilter={onFilter} onQuery={vi.fn()} onExport={vi.fn()} />,
+  );
+  const toolbar = container.querySelector(".conversation-tools")!;
+  expect(toolbar.getAttribute("data-search-open")).toBe("false");
+  act(() => {
+    dispatchSessionToolbarAction("s1", "search");
+  });
+  expect(toolbar.getAttribute("data-search-open")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "收起搜索和筛选" }));
+  expect(onFilter).toHaveBeenCalledWith("all");
+  expect(toolbar.getAttribute("data-search-open")).toBe("false");
 });
 
 it("renders all actions outside the clipped wallpaper header and dispatches each once", () => {
