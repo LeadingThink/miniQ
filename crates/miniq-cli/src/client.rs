@@ -10,6 +10,9 @@ use serde_json::{json, Value};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{tungstenite::Message, MaybeTlsStream, WebSocketStream};
 
+const DAEMON_READY_TIMEOUT: Duration = Duration::from_secs(90);
+const DAEMON_SLOW_START_HINT_AFTER: Duration = Duration::from_secs(3);
+
 pub struct Client {
     socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
     events: VecDeque<Value>,
@@ -215,9 +218,20 @@ pub async fn ensure(directory: &Path, explicit: Option<&Path>, no_start: bool) -
     std::thread::spawn(move || {
         let _ = child.wait();
     });
-    for _ in 0..80 {
+    // The first start after an upgrade may build the active-work indexes over
+    // a large history (about 20 s on a 5 GB database), so allow for that and
+    // tell the user why it is slow instead of failing at 20 s.
+    let started = std::time::Instant::now();
+    let mut hinted = false;
+    while started.elapsed() < DAEMON_READY_TIMEOUT {
         if let Ok(client) = Client::connect(directory).await {
             return Ok(client);
+        }
+        if !hinted && started.elapsed() >= DAEMON_SLOW_START_HINT_AFTER {
+            hinted = true;
+            eprintln!(
+                "miniQ: preparing the local database. The first start after an update can take up to a minute."
+            );
         }
         tokio::time::sleep(Duration::from_millis(250)).await;
     }

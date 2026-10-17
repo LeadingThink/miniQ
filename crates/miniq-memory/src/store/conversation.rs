@@ -351,7 +351,16 @@ impl Store {
         output: Option<&Value>,
     ) -> Result<String> {
         let conn = self.conn.lock().unwrap();
-        let output_json = output.map(serde_json::to_string).transpose()?;
+        let mut output_json = output.map(serde_json::to_string).transpose()?;
+        if output_json
+            .as_ref()
+            .is_some_and(|json| json.len() > super::output_cap::CHEAP_SKIP_BYTES)
+        {
+            let mut capped = output.cloned().unwrap_or(Value::Null);
+            if super::output_cap::cap_stored_output(&mut capped) > 0 {
+                output_json = Some(serde_json::to_string(&capped)?);
+            }
+        }
         let completed_at = now_iso();
         let updated = conn.execute(
             "UPDATE tool_calls SET status = ?2, output_json = ?3, completed_at = ?4 WHERE id = ?1",

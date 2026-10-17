@@ -14,10 +14,12 @@ mod history;
 mod memories;
 mod model_calls;
 mod model_context;
+mod output_cap;
 mod queue;
 mod records;
 mod reviews;
 mod row_mappers;
+pub use output_cap::cap_stored_output;
 pub use reviews::ReviewSnapshot;
 mod scheduled_tasks;
 mod session_fork;
@@ -147,10 +149,16 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0025_assistant_message_kinds",
         include_str!("../../../migrations/0025_assistant_message_kinds.sql"),
     ),
+    (
+        "0026_active_work_indexes",
+        include_str!("../../../migrations/0026_active_work_indexes.sql"),
+    ),
 ];
 
 #[cfg(test)]
 mod message_kind_tests;
+#[cfg(test)]
+mod startup_recovery_tests;
 
 #[derive(Debug, Error)]
 pub enum MemoryError {

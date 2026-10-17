@@ -430,7 +430,9 @@ impl SessionToolExecutor {
     }
 
     fn finish(&self, tool_call_id: &str, status: ToolCallStatus, output: &Value) {
-        let redacted_output = crate::security::redacted(output.clone());
+        let mut redacted_output = crate::security::redacted(output.clone());
+        // Keep the display copy bounded for both the database and the UI event.
+        miniq_memory::cap_stored_output(&mut redacted_output);
         let completed_at =
             match self
                 .state

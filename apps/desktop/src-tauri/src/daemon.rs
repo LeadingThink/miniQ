@@ -17,7 +17,9 @@ use super::daemon_process::DaemonProcess;
 pub use miniq_local::ConnectionInfo;
 use miniq_local::{data_dir, health_ok};
 
-const DAEMON_STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
+// First start after an upgrade may build the active-work indexes over a very
+// large history (about 20 s measured on a 5 GB database), so leave headroom.
+const DAEMON_STARTUP_TIMEOUT: Duration = Duration::from_secs(90);
 const DAEMON_HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 fn read_connection_info() -> Option<ConnectionInfo> {
