@@ -409,6 +409,7 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
           }}
           onOpenFile={workbench.openFile}
           onOpenBrowser={() => workbench.select("browser")}
+          onOpenGit={() => workbench.select("git")}
           onToggleWorkbench={() => workbench.active ? workbench.close() : workbench.select("overview")}
           workbenchOpen={!!workbench.active}
           onToggleReview={() => {

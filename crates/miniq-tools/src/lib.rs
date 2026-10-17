@@ -88,6 +88,7 @@ pub use pdf_visual::ViewPdfTool;
 pub use plan_mode::PlanModeTool;
 pub use process::{
     ProcessInputTool, ProcessKillTool, ProcessManager, ProcessOutputTool, ProcessResizeTool,
+    TerminalLaunch, TerminalOutputRequest,
 };
 pub use router::{
     MediaConfig, ProviderMediaReference, ProviderMediaUploader, RegistrationError,

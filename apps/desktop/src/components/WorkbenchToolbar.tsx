@@ -2,12 +2,14 @@ import {
   ArrowLeft,
   FileDiff,
   Files,
+  GitBranch,
   Globe2,
   LayoutList,
   Maximize2,
   Minimize2,
   PanelRightClose,
   PanelRightOpen,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import { useId } from "react";
@@ -58,6 +60,20 @@ export function WorkbenchToolbar(props: {
       icon: Globe2,
       count: props.browsers,
       disabled: props.remote && !props.hasSession,
+    },
+    ...(props.active === "git" ? [{
+      key: "git" as const,
+      label: "Git",
+      icon: GitBranch,
+      count: 0,
+      disabled: false,
+    }] : []),
+    {
+      key: "terminal",
+      label: "终端",
+      icon: SquareTerminal,
+      count: 0,
+      disabled: props.remote || !props.hasSession,
     },
   ] as const;
   return (

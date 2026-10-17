@@ -1,0 +1,30 @@
+.terminal-panel {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-top: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: #111315;
+}
+.terminal-stage { flex: 1; min-width: 0; min-height: 0; }
+.terminal-stage .xterm { height: 100%; }
+.terminal-status {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 1px solid #ffffff24;
+  border-radius: var(--radius-sm);
+  color: #e7e4dc;
+  background: #1d2023e8;
+  font-size: var(--font-footnote);
+}
+.terminal-status .ghost { display: inline-flex; align-items: center; gap: 5px; color: inherit; }

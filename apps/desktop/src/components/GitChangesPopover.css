@@ -1,0 +1,51 @@
+.git-changes-trigger { position: relative; }
+.git-changes-count {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border: 1px solid var(--bg);
+  border-radius: 7px;
+  color: var(--bg);
+  background: var(--text);
+  font-size: 9px;
+  line-height: 12px;
+  text-align: center;
+}
+.ui-popover.git-changes-popover {
+  width: min(300px, calc(100vw - 20px));
+  padding: 0;
+  overflow: hidden;
+}
+.git-changes-popover header,
+.git-changes-popover footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 5px 8px 5px 12px;
+}
+.git-changes-popover header { border-bottom: 1px solid var(--hairline); }
+.git-changes-popover header > span { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.git-changes-popover header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-changes-popover .icon-button { display: grid; width: 32px; height: 32px; padding: 0; place-items: center; }
+.git-changes-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: calc(100% - 12px);
+  min-height: 38px;
+  margin: 6px;
+  padding: 7px 8px;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+}
+.git-changes-summary:hover { background: var(--bg-hover); }
+.git-changes-stats { display: inline-flex; gap: 7px; font-variant-numeric: tabular-nums; }
+.git-changes-popover footer { border-top: 1px solid var(--hairline); color: var(--text-dim); font-size: var(--font-caption); }
+.git-changes-popover footer button { padding: 5px 7px; border: 0; color: var(--text); background: transparent; font-size: var(--font-footnote); }
+.git-changes-popover footer button:hover { background: var(--bg-hover); }

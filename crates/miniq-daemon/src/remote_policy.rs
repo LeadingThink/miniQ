@@ -119,7 +119,14 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "externalSession.import"
         | "skill.delete"
         | "host.save"
-        | "host.remove" => HostOnly,
+        | "host.remove"
+        | "git.status"
+        | "git.diff"
+        | "terminal.create"
+        | "terminal.read"
+        | "terminal.input"
+        | "terminal.resize"
+        | "terminal.close" => HostOnly,
         "daemon.health"
         | "host.list"
         | "file.describe"
@@ -378,6 +385,21 @@ mod tests {
             "plugin.uninstall",
             "automation.grant",
             "connector.confirmReadonlySet",
+        ] {
+            assert_eq!(reason(check(method, None)), "host_only", "{method}");
+        }
+    }
+
+    #[test]
+    fn embedded_development_tools_are_host_only() {
+        for method in [
+            "git.status",
+            "git.diff",
+            "terminal.create",
+            "terminal.read",
+            "terminal.input",
+            "terminal.resize",
+            "terminal.close",
         ] {
             assert_eq!(reason(check(method, None)), "host_only", "{method}");
         }

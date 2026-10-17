@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type { MiniqAppController } from "./useMiniqApp";
 import { useBrowserDriverEvents } from "./useBrowserDriverEvents";
 import { openExternalUrl } from "../externalLinks";
 import type { LocalFileTarget } from "../localFiles";
+import type { ToolCall } from "../types";
+import { toolKind } from "../components/toolSummary";
 import {
   adoptDraftBrowserTabs,
   BROWSER_DRAFT_CREATED_EVENT,
@@ -18,7 +20,18 @@ import {
   type BrowserTabsState,
 } from "../browserTabs";
 
-export type WorkbenchView = "overview" | "files" | "browser" | "review";
+export type WorkbenchView =
+  | "overview"
+  | "files"
+  | "browser"
+  | "review"
+  | "git"
+  | "terminal";
+
+export function shouldAutoOpenTerminal(call: ToolCall): boolean {
+  const kind = toolKind(call);
+  return call.live === true && (kind === "edit" || kind === "shell");
+}
 
 /** One controller for panel navigation; browser instances retain their stable IDs. */
 export function useAppWorkbench(app: MiniqAppController) {
@@ -34,6 +47,7 @@ export function useAppWorkbench(app: MiniqAppController) {
   const [sections, setSections] = useState<
     Record<string, WorkbenchView | null>
   >({});
+  const handledCodeCalls = useRef<Record<string, Set<string>>>({});
   const browserState = browserSessions[scope] ?? EMPTY_BROWSER_TABS;
   const activeBrowserTab =
     browserState.tabs.find((tab) => tab.id === browserState.activeId) ?? null;
@@ -107,6 +121,22 @@ export function useAppWorkbench(app: MiniqAppController) {
     } else newBrowserTab(url);
   };
   useBrowserDriverEvents(app.client, browserSessions, setBrowserSessions);
+  useEffect(() => {
+    const sessionId = app.catalog.currentSessionId;
+    if (app.client.mode === "remote" || !sessionId) return;
+    const handled = handledCodeCalls.current[scope] ?? new Set<string>();
+    handledCodeCalls.current[scope] = handled;
+    const sessionCalls = app.feed.toolCalls.filter(
+      (call) => call.sessionId === sessionId,
+    );
+    const next = sessionCalls.find(
+      (call) => !handled.has(call.id) && shouldAutoOpenTerminal(call),
+    );
+    for (const call of sessionCalls) {
+      if (call.live) handled.add(call.id);
+    }
+    if (next) select("terminal");
+  }, [app.client.mode, app.catalog.currentSessionId, app.feed.toolCalls, scope]);
   useEffect(() => {
     const adoptDraft = (event: Event) => {
       const detail = (event as CustomEvent<BrowserDraftCreatedDetail>).detail;

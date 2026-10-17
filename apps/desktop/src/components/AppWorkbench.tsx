@@ -8,8 +8,6 @@ import { WorkbenchPanel } from "./WorkbenchPanel";
 import { WorkbenchToolbar } from "./WorkbenchToolbar";
 import { WorkbenchOverview } from "./WorkbenchOverview";
 import { PreviewViewStore } from "../previewViewState";
-import { openTerminalAt } from "../localFiles";
-import { isTauriRuntime } from "../runtime";
 import type { WorkbenchLauncherActions } from "./WorkbenchLauncher";
 
 const FilePreviewPanel = lazy(() =>
@@ -24,6 +22,12 @@ const RemoteBrowserPanel = lazy(() =>
   import("./RemoteBrowserPanel").then((module) => ({
     default: module.RemoteBrowserPanel,
   })),
+);
+const GitPanel = lazy(() =>
+  import("./GitPanel").then((module) => ({ default: module.GitPanel })),
+);
+const TerminalPanel = lazy(() =>
+  import("./TerminalPanel").then((module) => ({ default: module.TerminalPanel })),
 );
 
 export function AppWorkbench({
@@ -93,8 +97,6 @@ export function AppWorkbench({
   });
   if (!active && !workbench.hasBrowsers) return null;
   const remote = app.client.mode === "remote";
-  const workspaceDirectory =
-    app.catalog.currentSession?.workingDirectory ?? app.catalog.currentWorkspace?.path;
   const launcher: WorkbenchLauncherActions = {
     onOpenFiles: sessionId ? () => quickOpen.current() : undefined,
     onOpenBrowser: remote
@@ -113,13 +115,9 @@ export function AppWorkbench({
         }
       : undefined,
     changes: app.review.data.files.length,
+    onOpenGit: !remote && sessionId ? () => workbench.select("git") : undefined,
     onOpenTerminal:
-      !remote && isTauriRuntime() && workspaceDirectory
-        ? () =>
-            void openTerminalAt(workspaceDirectory).catch((error: unknown) =>
-              app.setError(error instanceof Error ? error.message : String(error)),
-            )
-        : undefined,
+      !remote && sessionId ? () => workbench.select("terminal") : undefined,
   };
   const revealInTree = (path: string) => {
     focusTree.current = false;
@@ -179,6 +177,10 @@ export function AppWorkbench({
               ? "文件工作区"
               : active === "review"
                 ? "审阅工作区"
+                : active === "git"
+                  ? "Git 工作区"
+                  : active === "terminal"
+                    ? "终端工作区"
                 : "任务概览工作区"
         }
       >
@@ -269,6 +271,16 @@ export function AppWorkbench({
             onOpenFile={workbench.openFile}
             launcher={launcher}
           />
+        )}
+        {active === "git" && sessionId && (
+          <Suspense fallback={<div role="status">正在加载 Git 工作区…</div>}>
+            <GitPanel client={app.client} sessionId={sessionId} />
+          </Suspense>
+        )}
+        {active === "terminal" && sessionId && (
+          <Suspense fallback={<div role="status">正在启动终端…</div>}>
+            <TerminalPanel client={app.client} sessionId={sessionId} />
+          </Suspense>
         )}
         {active === "files" && (
           <div className={`workbench-files${showTree ? " with-tree" : ""}`}>

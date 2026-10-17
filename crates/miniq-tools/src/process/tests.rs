@@ -106,6 +106,96 @@ async fn pty_accepts_input_resizes_and_finishes() {
     assert_eq!(result["status"], "completed");
     assert!(result["stdout"].as_str().unwrap().contains("got:hello"));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn detached_terminal_is_interactive_resizable_and_owner_scoped() {
+    let manager = ProcessManager::default();
+    let dir = tempfile::tempdir().unwrap();
+    let launch = TerminalLaunch {
+        command: "printf ready; read value; echo got:$value".into(),
+        cwd: dir.path().into(),
+        rows: 24,
+        cols: 80,
+    };
+    let id = manager.terminal_start("session-a", launch).await.unwrap();
+    manager
+        .terminal_resize("session-a", dir.path().into(), &id, 40, 120)
+        .await
+        .unwrap();
+    assert!(manager
+        .terminal_input("session-b", dir.path().into(), &id, "blocked\n".into(),)
+        .await
+        .is_err());
+    manager
+        .terminal_input("session-a", dir.path().into(), &id, "hello\n".into())
+        .await
+        .unwrap();
+    let mut offset = 0;
+    let mut transcript = String::new();
+    loop {
+        let output = manager
+            .terminal_output(
+                "session-a",
+                dir.path().into(),
+                &id,
+                TerminalOutputRequest {
+                    stdout_offset: Some(offset),
+                    max_bytes: 4096,
+                    wait: Duration::from_secs(1),
+                },
+            )
+            .await
+            .unwrap();
+        transcript.push_str(output["stdout"].as_str().unwrap());
+        offset = output["stdoutPage"]["nextOffset"].as_u64().unwrap();
+        if output["status"] != "running" {
+            assert_eq!(output["status"], "completed");
+            break;
+        }
+    }
+    assert!(transcript.contains("got:hello"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn detached_terminal_output_returns_without_waiting_when_data_is_ready() {
+    let manager = ProcessManager::default();
+    let dir = tempfile::tempdir().unwrap();
+    let id = manager
+        .terminal_start(
+            "session-a",
+            TerminalLaunch {
+                command: "printf ready; sleep 2".into(),
+                cwd: dir.path().into(),
+                rows: 24,
+                cols: 80,
+            },
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let started = Instant::now();
+    let output = manager
+        .terminal_output(
+            "session-a",
+            dir.path().into(),
+            &id,
+            TerminalOutputRequest {
+                stdout_offset: Some(0),
+                max_bytes: 4096,
+                wait: Duration::from_secs(1),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(output["stdout"].as_str().unwrap().contains("ready"));
+    assert!(started.elapsed() < Duration::from_millis(250));
+    manager
+        .terminal_close("session-a", dir.path().into(), &id)
+        .await
+        .unwrap();
+}
 #[tokio::test]
 async fn validation_and_input_risk_are_not_silent_fallbacks() {
     let dir = tempfile::tempdir().unwrap();

@@ -24,6 +24,21 @@ use tokio::{
 pub struct ProcessManager {
     processes: Mutex<HashMap<String, Arc<ManagedProcess>>>,
 }
+
+#[derive(Debug, Clone)]
+pub struct TerminalLaunch {
+    pub command: String,
+    pub cwd: PathBuf,
+    pub rows: u16,
+    pub cols: u16,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TerminalOutputRequest {
+    pub stdout_offset: Option<u64>,
+    pub max_bytes: usize,
+    pub wait: Duration,
+}
 struct ManagedProcess {
     owner: String,
     command: String,
@@ -98,11 +113,94 @@ fn scope(ctx: &ToolContext) -> String {
             .unwrap_or("root")
     )
 }
+
+fn terminal_context(owner: &str, cwd: PathBuf) -> ToolContext {
+    let mut context = ToolContext::new(cwd);
+    context.task_scope = format!("terminal:{owner}");
+    context
+}
 fn failure(error: impl std::fmt::Display) -> ToolError {
     ToolError::ExecutionFailed(format!("process: {error}"))
 }
 
 impl ProcessManager {
+    pub async fn terminal_start(
+        &self,
+        owner: &str,
+        launch: TerminalLaunch,
+    ) -> Result<String, ToolError> {
+        let context = terminal_context(owner, launch.cwd.clone());
+        self.start(
+            &context,
+            Launch {
+                command: launch.command,
+                cwd: launch.cwd,
+                env: BTreeMap::new(),
+                interactive: true,
+                tty: true,
+                rows: launch.rows,
+                cols: launch.cols,
+            },
+        )
+        .await
+    }
+
+    pub async fn terminal_output(
+        &self,
+        owner: &str,
+        cwd: PathBuf,
+        id: &str,
+        request: TerminalOutputRequest,
+    ) -> Result<Value, ToolError> {
+        let context = terminal_context(owner, cwd);
+        self.output_wait(
+            &context,
+            id,
+            request.wait,
+            PageRequest {
+                stdout_offset: request.stdout_offset,
+                stderr_offset: Some(0),
+                max_bytes: request.max_bytes,
+                raw: false,
+            },
+            true,
+        )
+        .await
+    }
+
+    pub async fn terminal_input(
+        &self,
+        owner: &str,
+        cwd: PathBuf,
+        id: &str,
+        chars: String,
+    ) -> Result<(), ToolError> {
+        self.input(&terminal_context(owner, cwd), id, chars, false)
+            .await
+    }
+
+    pub async fn terminal_resize(
+        &self,
+        owner: &str,
+        cwd: PathBuf,
+        id: &str,
+        rows: u16,
+        cols: u16,
+    ) -> Result<Value, ToolError> {
+        self.resize(&terminal_context(owner, cwd), id, rows, cols)
+            .await
+    }
+
+    pub async fn terminal_close(
+        &self,
+        owner: &str,
+        cwd: PathBuf,
+        id: &str,
+    ) -> Result<Value, ToolError> {
+        self.kill(&terminal_context(owner, cwd), id, PageRequest::default())
+            .await
+    }
+
     /// Stop every remaining job before the daemon runtime is torn down.
     pub async fn shutdown(&self) -> Result<(), ToolError> {
         let jobs = self
@@ -247,6 +345,16 @@ impl ProcessManager {
         wait: Duration,
         page: PageRequest,
     ) -> Result<Value, ToolError> {
+        self.output_wait(ctx, id, wait, page, false).await
+    }
+    async fn output_wait(
+        &self,
+        ctx: &ToolContext,
+        id: &str,
+        wait: Duration,
+        page: PageRequest,
+        return_on_output: bool,
+    ) -> Result<Value, ToolError> {
         let process = self.owned(ctx, id).await?;
         // Waiting callers serialize only delivery, not the whole wait interval.
         let start = {
@@ -259,7 +367,12 @@ impl ProcessManager {
         let deadline = tokio::time::Instant::now() + wait;
         loop {
             let running = refresh(&process).await?;
-            if !running || tokio::time::Instant::now() >= deadline {
+            let stdout_ready = process.stdout.lock().unwrap().len > start.0;
+            let stderr_ready = process.stderr.lock().unwrap().len > start.1;
+            if !running
+                || (return_on_output && (stdout_ready || stderr_ready))
+                || tokio::time::Instant::now() >= deadline
+            {
                 break;
             }
             tokio::select! {

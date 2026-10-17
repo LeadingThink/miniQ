@@ -6,6 +6,7 @@ import { useAppWorkbench } from "./useAppWorkbench";
 import { useFilePreview } from "./useFilePreview";
 import type { MiniqAppController } from "./useMiniqApp";
 import type { RpcClient } from "../rpc";
+import type { ToolCall } from "../types";
 import { readLocalFilePreview } from "../localFiles";
 import { openExternalUrl } from "../externalLinks";
 import { BROWSER_DRAFT_CREATED_EVENT, browserDraftScope, type BrowserDraftCreatedDetail } from "../browserTabs";
@@ -32,7 +33,7 @@ const paths = ["/project"];
 const client = { mode: "local", sshHost: null } as RpcClient;
 const target = { path: "/project/report.md", line: null, column: null };
 
-function useHarness(session: string | null, remote = false) {
+function useHarness(session: string | null, remote = false, toolCalls: ToolCall[] = []) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const preview = useFilePreview("/project", session, paths, client);
   const app = {
@@ -42,10 +43,23 @@ function useHarness(session: string | null, remote = false) {
     },
     preview,
     review: { open: reviewOpen, setOpen: setReviewOpen },
+    feed: { toolCalls },
     client: remote ? { ...client, mode: "remote" } : client,
     setError: vi.fn(),
   } as unknown as MiniqAppController;
   return { workbench: useAppWorkbench(app), preview };
+}
+
+function toolCall(id: string, live = true): ToolCall {
+  return {
+    id,
+    sessionId: "a",
+    toolName: "apply_patch",
+    input: {},
+    status: "running",
+    createdAt: "2026-01-01T00:00:00Z",
+    live,
+  };
 }
 
 it("keeps native browser identities through file, review and overview navigation", async () => {
@@ -125,4 +139,32 @@ it("does not adopt a local browser draft when another host creates the same work
   expect(result.current.workbench.browserSessions["remote-session"]).toBeUndefined();
   act(() => window.dispatchEvent(new CustomEvent<BrowserDraftCreatedDetail>(BROWSER_DRAFT_CREATED_EVENT, { detail: { hostId: null, workspaceId: "project", sessionId: "local-session" } })));
   expect(result.current.workbench.browserSessions["local-session"].tabs).toEqual([draft]);
+});
+
+it("opens the terminal once for a new live code call, but not historical calls", () => {
+  const historical = toolCall("historical", false);
+  const live = toolCall("live");
+  const { result, rerender } = renderHook(
+    ({ calls }) => useHarness("a", false, calls),
+    { initialProps: { calls: [historical] } },
+  );
+  expect(result.current.workbench.active).toBeNull();
+
+  rerender({ calls: [historical, live] });
+  expect(result.current.workbench.active).toBe("terminal");
+
+  act(() => result.current.workbench.select("overview"));
+  rerender({ calls: [historical, { ...live, status: "succeeded" }] });
+  expect(result.current.workbench.active).toBe("overview");
+});
+
+it("does not open the terminal from the previous session feed while switching sessions", () => {
+  const previousSessionCall = toolCall("previous-session");
+  const { result, rerender } = renderHook(
+    ({ session, calls }) => useHarness(session, false, calls),
+    { initialProps: { session: "a", calls: [] as ToolCall[] } },
+  );
+
+  rerender({ session: "b", calls: [previousSessionCall] });
+  expect(result.current.workbench.active).toBeNull();
 });

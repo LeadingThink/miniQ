@@ -12,7 +12,8 @@ export interface WorkbenchLauncherActions {
   browserLabel?: string;
   onOpenReview?: () => void;
   changes?: number;
-  /** Opens the system terminal in the workspace directory. */
+  onOpenGit?: () => void;
+  /** Opens the embedded terminal for the current session. */
   onOpenTerminal?: () => void;
 }
 
@@ -55,6 +56,13 @@ export function WorkbenchLauncher({
       hint: actions.changes ? `${actions.changes} 个文件` : undefined,
       Icon: GitCompare,
       run: actions.onOpenReview,
+    });
+  if (actions.onOpenGit)
+    entries.push({
+      key: "git",
+      label: "Git",
+      Icon: GitCompare,
+      run: actions.onOpenGit,
     });
   if (actions.onOpenTerminal)
     entries.push({

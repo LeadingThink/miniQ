@@ -29,11 +29,13 @@ import { REMOTE_CONNECTION_DETAILS_EVENT, RemoteConnectionStatus } from "./Remot
 import { RemoteDeviceBarContext } from "../remoteDeviceBar";
 import { isBillingError } from "../errorMessage";
 import { BillingDialog } from "./BillingDialog";
+import { GitChangesPopover } from "./GitChangesPopover";
 
 export function AppStatusBar(props: {
   app: MiniqAppController;
   onOpenBrowser: () => void;
   onToggleReview: () => void;
+  onOpenGit?: () => void;
   onOpenFile: (target: LocalFileTarget) => void;
   onToggleWorkbench?: () => void;
   workbenchOpen?: boolean;
@@ -55,6 +57,11 @@ export function AppStatusBar(props: {
   const sidebarLabel = `${app.navigation.sidebarCollapsed ? "显示" : "隐藏"}侧栏`;
   const browserLabel = remote ? "查看桌面网页记录" : "打开内置浏览器";
   const reviewFiles = app.review.data.files.length;
+  const toolCalls = app.feed.toolCalls ?? [];
+  const latestToolCall = toolCalls.at(-1);
+  const gitRefreshKey = latestToolCall
+    ? `${toolCalls.length}:${latestToolCall.id}:${latestToolCall.status}`
+    : "empty";
   const connectionLabel = connected
     ? `daemon v${health?.daemonVersion ?? "?"}`
     : app.connection.phase === "connecting"
@@ -134,18 +141,13 @@ export function AppStatusBar(props: {
         {props.showAttentionInbox && (
           <AttentionInbox app={app} onOpenLocalItem={props.onOpenAttentionLocalItem} />
         )}
-        {reviewFiles > 0 && (
-          <button
-            type="button"
-            className="ghost review-toggle"
-            title="查看本会话的代码修改"
-            aria-label="查看本会话的代码修改"
-            onClick={props.onToggleReview}
-          >
-            <FileDiff size={15} />
-            <span className="diff-add">+{app.review.data.additions}</span>
-            <span className="diff-delete">-{app.review.data.deletions}</span>
-          </button>
+        {app.client.mode === "local" && currentSession && props.onOpenGit && (
+          <GitChangesPopover
+            client={app.client}
+            sessionId={currentSession.id}
+            refreshKey={gitRefreshKey}
+            onOpenAll={props.onOpenGit}
+          />
         )}
         {app.client.mode === "local" && (
           <OpenPreviewButton

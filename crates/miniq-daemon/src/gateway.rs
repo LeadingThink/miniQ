@@ -12,6 +12,7 @@ mod computer;
 mod external_session;
 mod external_workspace;
 mod files;
+mod git;
 mod interaction;
 mod mcp;
 mod memory;
@@ -42,6 +43,7 @@ mod settings_schema;
 mod share;
 mod skill;
 mod system;
+mod terminal;
 mod voice;
 mod workspace;
 mod workspace_roots;
@@ -125,6 +127,13 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "file.describe" => files::describe(state, req.params).await,
         "file.read" => files::read(state, req.params).await,
         "file.list" => files::list(state, req.params).await,
+        "git.status" => git::status(state, req.params).await,
+        "git.diff" => git::diff(state, req.params).await,
+        "terminal.create" => terminal::create(state, req.params).await,
+        "terminal.read" => terminal::read(state, req.params).await,
+        "terminal.input" => terminal::input(state, req.params).await,
+        "terminal.resize" => terminal::resize(state, req.params).await,
+        "terminal.close" => terminal::close(state, req.params).await,
         "computer.permissions" => computer::permissions().await,
         "computer.requestPermission" => computer::request(req.params).await,
         "daemon.shutdown" => system::shutdown(state).await,
