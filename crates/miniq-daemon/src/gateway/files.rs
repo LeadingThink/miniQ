@@ -2,7 +2,7 @@
 use super::common::{params, store_err};
 use crate::state::AppState;
 use base64::Engine;
-use miniq_local::files::{preview_format, MAX_PREVIEW_BYTES};
+use miniq_local::files::preview_format;
 use miniq_memory::Store;
 use miniq_protocol::{ErrorCode, RpcError};
 use serde::Deserialize;
@@ -16,6 +16,9 @@ use std::{
 // Each chunk can use the existing encrypted object-storage data plane. Requests
 // remain cancellable between chunks and never require one giant RPC response.
 const CHUNK_BYTES: u64 = 3 * 1024 * 1024;
+// Mobile previews and downloads travel through the relay, whose object store
+// accepts 64 MiB per object. This is independent of the desktop panel limit.
+const REMOTE_MAX_PREVIEW_BYTES: u64 = 64 * 1024 * 1024;
 const PAGE_SIZE: usize = 100;
 
 #[derive(Deserialize)]
@@ -78,7 +81,7 @@ pub(super) async fn describe(state: &AppState, raw: Option<Value>) -> Result<Val
         let (kind, mime_type) = preview_format(&path);
         Ok::<_, String>(json!({"path":path, "kind":kind, "mimeType":mime_type,
             "size":metadata.len(), "revision":revision(&metadata)?,
-            "chunkBytes":CHUNK_BYTES, "maxPreviewBytes":MAX_PREVIEW_BYTES}))
+            "chunkBytes":CHUNK_BYTES, "maxPreviewBytes":REMOTE_MAX_PREVIEW_BYTES}))
     })
     .await
     .map_err(invalid)?

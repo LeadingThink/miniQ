@@ -2,7 +2,34 @@
 use base64::Engine;
 use std::path::{Path, PathBuf};
 
-pub const MAX_PREVIEW_BYTES: u64 = 64 * 1024 * 1024;
+/// Largest file the desktop side panel previews (PDF, images, Office, tables).
+/// The file is read into memory and base64-encoded, so peak memory is several
+/// times this size.
+pub const MAX_PREVIEW_BYTES: u64 = 128 * 1024 * 1024;
+/// Text and Markdown are rendered in one pass, so they get a lower limit.
+pub const MAX_TEXT_PREVIEW_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Preview size limit for one preview kind.
+pub fn preview_limit(kind: &str) -> u64 {
+    if matches!(kind, "text" | "markdown") {
+        MAX_TEXT_PREVIEW_BYTES
+    } else {
+        MAX_PREVIEW_BYTES
+    }
+}
+
+fn megabytes(bytes: u64) -> u64 {
+    bytes / 1024 / 1024
+}
+
+/// User-facing text for a file that is over its preview limit.
+pub fn preview_limit_message(kind: &str, size: u64) -> String {
+    format!(
+        "文件过大，内置预览上限为 {} MB（当前 {:.1} MB），请用外部程序打开",
+        megabytes(preview_limit(kind)),
+        size as f64 / 1024.0 / 1024.0
+    )
+}
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -184,14 +211,11 @@ pub fn read_preview_with_authorization(
     let metadata = file
         .metadata()
         .map_err(|error| format!("无法读取文件信息 {}: {error}", file.display()))?;
-    if metadata.len() > MAX_PREVIEW_BYTES {
-        return Err(format!(
-            "文件过大，内置预览上限为 64 MB（当前 {:.1} MB）",
-            metadata.len() as f64 / 1024.0 / 1024.0
-        ));
+    let (mut kind, mut mime_type) = preview_format(&file);
+    if metadata.len() > preview_limit(kind) {
+        return Err(preview_limit_message(kind, metadata.len()));
     }
 
-    let (mut kind, mut mime_type) = preview_format(&file);
     let bytes = if matches!(kind, "text" | "markdown" | "officeLegacy" | "unsupported") {
         None
     } else {
@@ -269,6 +293,59 @@ mod tests {
         .err()
         .expect("neighboring file must remain unauthorized");
         assert!(error.contains("工作区外"));
+    }
+
+    #[test]
+    fn preview_limits_depend_on_the_kind() {
+        assert_eq!(preview_limit("pdf"), 128 * 1024 * 1024);
+        assert_eq!(preview_limit("image"), 128 * 1024 * 1024);
+        assert_eq!(preview_limit("text"), 16 * 1024 * 1024);
+        assert_eq!(preview_limit("markdown"), 16 * 1024 * 1024);
+        let message = preview_limit_message("pdf", 200 * 1024 * 1024);
+        assert!(message.contains("128 MB") && message.contains("200.0 MB"));
+        assert!(preview_limit_message("text", 20 * 1024 * 1024).contains("16 MB"));
+    }
+
+    #[test]
+    fn rejects_files_over_their_kind_limit_without_reading_them() {
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path().to_str().unwrap();
+        // Sparse files: set_len allocates no real disk space and nothing is read.
+        let big_pdf = workspace.path().join("big.pdf");
+        std::fs::File::create(&big_pdf)
+            .unwrap()
+            .set_len(MAX_PREVIEW_BYTES + 1)
+            .unwrap();
+        let error = read_preview(big_pdf.to_str().unwrap(), root, &[])
+            .err()
+            .unwrap();
+        assert!(error.contains("128 MB"), "{error}");
+
+        let big_text = workspace.path().join("big.txt");
+        std::fs::File::create(&big_text)
+            .unwrap()
+            .set_len(MAX_TEXT_PREVIEW_BYTES + 1)
+            .unwrap();
+        let error = read_preview(big_text.to_str().unwrap(), root, &[])
+            .err()
+            .unwrap();
+        assert!(error.contains("16 MB"), "{error}");
+    }
+
+    #[test]
+    fn a_file_between_the_old_and_new_limit_still_previews() {
+        let workspace = tempfile::tempdir().unwrap();
+        let path = workspace.path().join("mid.pdf");
+        // 70 MB: over the old 64 MB limit, under the new 128 MB limit.
+        std::fs::write(&path, vec![0u8; 70 * 1024 * 1024]).unwrap();
+        let preview = read_preview(
+            path.to_str().unwrap(),
+            workspace.path().to_str().unwrap(),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(preview.kind, "pdf");
+        assert!(preview.data_base64.is_some());
     }
 
     #[test]

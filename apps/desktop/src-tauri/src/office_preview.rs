@@ -186,7 +186,10 @@ pub fn convert(
         let bytes =
             std::fs::read(&output).map_err(|error| format!("无法读取转换后的 PDF: {error}"))?;
         if bytes.len() as u64 > miniq_local::files::MAX_PREVIEW_BYTES {
-            return Err("转换后的 PDF 超过 64 MB 预览上限".into());
+            return Err(format!(
+                "转换后的 PDF 超过 {} MB 预览上限",
+                miniq_local::files::MAX_PREVIEW_BYTES / 1024 / 1024
+            ));
         }
         Ok(OfficePdfPreview {
             mime_type: "application/pdf",
