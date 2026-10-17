@@ -23,6 +23,7 @@ import {
 import { normalizeMathDelimiters } from "../markdownMath";
 import { remarkHeadingIds } from "../markdownOutline";
 import { splitMarkdownBlocks } from "../markdownBlocks";
+import { remarkQuotedFileLinks } from "../markdownFileLinks";
 
 function FileReference(props: {
   children: ReactNode;
@@ -321,8 +322,8 @@ interface MarkdownOptions {
   remarkPlugins: PluggableList;
 }
 
-const REMARK_PLUGINS: PluggableList = [remarkGfm, remarkMath];
-const HEADING_REMARK_PLUGINS: PluggableList = [remarkGfm, remarkMath, remarkHeadingIds];
+const REMARK_PLUGINS: PluggableList = [remarkGfm, remarkMath, remarkQuotedFileLinks];
+const HEADING_REMARK_PLUGINS: PluggableList = [...REMARK_PLUGINS, remarkHeadingIds];
 const REHYPE_PLUGINS: PluggableList = [[rehypeKatex, { strict: false, throwOnError: false }]];
 
 /** Completed messages and completed streaming blocks keep their parsed

@@ -158,3 +158,16 @@ describe("Md tables", () => {
     expect(plain).not.toContain("md-table-indexed");
   });
 });
+
+describe("quoted file links", () => {
+  it("renders a complete local Markdown link wrapped in backticks", () => {
+    const html = renderToStaticMarkup(<Md workspacePath="/w">{'- `[商业计划书.pptx](/w/资料库/商业计划书.pptx)`'}</Md>);
+    expect(html).toContain('class="file-reference-link"');
+    expect(html).toContain('title="/w/资料库/商业计划书.pptx"');
+    expect(html).not.toContain('<code>');
+  });
+  it("keeps fenced examples, commands and quoted external links as code", () => {
+    const html = render('`echo [报告](/w/a.pdf)`\n\n`[网页](https://example.com/a.pdf)`\n\n~~~text\n[报告](/w/a.pdf)\n~~~');
+    expect(html).not.toContain('file-reference-link');
+  });
+});

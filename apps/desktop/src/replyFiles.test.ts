@@ -42,7 +42,7 @@ describe("replyFileArtifacts", () => {
         [
           "[脚本](/w/run.py) [网页](https://example.com/a.pdf)",
           "```\n[代码里](/w/inside.pdf)\n```",
-          "`[行内](/w/inline.pdf)`",
+          "`echo [行内](/w/inline.pdf)`",
           "[一](/w/a.pdf) [二](/w/a.pdf)",
         ].join("\n"),
       ),
@@ -60,4 +60,9 @@ describe("replyFileArtifacts", () => {
     const links = Array.from({ length: 10 }, (_, index) => `[f${index}](/w/f${index}.pdf)`).join(" ");
     expect(replyFileArtifacts(message(links), "/w")).toHaveLength(MAX_REPLY_FILES);
   });
+});
+
+it("recognizes Chinese deliverable links inside inline code", () => {
+  const files = replyFileArtifacts(message('- `[BP.pptx](/w/资料库/BP.pptx)`\n- ``[预览](</w/计划 书.pdf>)``'), '/w');
+  expect(files.map((file) => file.path)).toEqual(['/w/资料库/BP.pptx', '/w/计划 书.pdf']);
 });
