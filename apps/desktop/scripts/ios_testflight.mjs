@@ -8,7 +8,11 @@ export const APP_BUNDLE_ID = "com.leadingthink.miniq";
 export const NSE_BUNDLE_ID = `${APP_BUNDLE_ID}.MiniqNotificationService`;
 export const BUNDLE_IDS = [APP_BUNDLE_ID, NSE_BUNDLE_ID];
 
-const REQUIRED_PRIVACY_DESCRIPTIONS = ["NSCameraUsageDescription", "NSMicrophoneUsageDescription"];
+const REQUIRED_PRIVACY_DESCRIPTIONS = [
+  "NSCameraUsageDescription",
+  "NSMicrophoneUsageDescription",
+  "NSSpeechRecognitionUsageDescription",
+];
 
 const REQUIRED_SECRETS = [
   "IOS_CERTIFICATE_BASE64",

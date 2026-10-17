@@ -8,6 +8,7 @@ import { readMobileImage, type PendingMobileImage } from "../mobileChatData";
 import { useConversationScroll } from "../hooks/useConversationScroll";
 import { useMobileChat } from "../hooks/useMobileChat";
 import { useMobileChatModels } from "../hooks/useMobileChatModels";
+import { appleSpeechAvailable } from "../appleSpeech";
 import { createMobileVoiceTranscriber } from "../mobileVoice";
 import { VoiceInput } from "./VoiceInput";
 import { VoiceTranscript } from "./VoiceTranscript";
@@ -19,7 +20,16 @@ import { BillingDialog } from "./BillingDialog";
 
 export function MobileChat(props: { apiKey: string; onBack: () => void; onSettings?: () => void; onAccount?: () => void }) {
   const catalog = useMobileChatModels(props.apiKey);
-  const transcriber = useMemo(() => createMobileVoiceTranscriber(props.apiKey, catalog.transcribeModel ?? "grok-transcribe"), [props.apiKey, catalog.transcribeModel]);
+  const [localSpeech, setLocalSpeech] = useState(false);
+  useEffect(() => {
+    let disposed = false;
+    void appleSpeechAvailable().then((available) => { if (!disposed) setLocalSpeech(available); }).catch(() => {});
+    return () => { disposed = true; };
+  }, []);
+  const transcriber = useMemo(() => catalog.transcribeModel
+    ? createMobileVoiceTranscriber(props.apiKey, catalog.transcribeModel)
+    : undefined, [props.apiKey, catalog.transcribeModel]);
+  const canTranscribe = localSpeech || Boolean(catalog.transcribeModel);
   const [voicePreview, setVoicePreview] = useState<VoicePreview | null>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const voiceDraft = useRef({ text: "", start: 0, end: 0 });
@@ -106,7 +116,7 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
         {!chat.busy && chat.canRetry && <button type="button" className="mobile-chat-retry" disabled={!ready} onClick={() => { if (chat.retry()) jumpToLatest(); }}><RefreshCw size={14} />重新回答</button>}
         {showLatest && <button type="button" className="mobile-chat-jump" onClick={jumpToLatest}><ArrowDown size={14} />查看最新内容</button>}
       </section>
-      <form className={`mobile-chat-composer${catalog.transcribeModel ? " with-voice" : ""}`} onSubmit={(event) => { event.preventDefault(); send(); }}>
+      <form className={`mobile-chat-composer${canTranscribe ? " with-voice" : ""}`} onSubmit={(event) => { event.preventDefault(); send(); }}>
         {pendingImage && <div className="mobile-chat-image-chip"><ImagePlus size={14} /><span title={pendingImage.name}>{pendingImage.name}</span><button type="button" aria-label="移除图片" title="移除图片" onClick={() => setPendingImage(null)}><X size={13} /></button></div>}
         {voicePreview && <VoiceTranscript preview={voicePreview} />}
         <textarea ref={textarea} value={draft} rows={2} aria-label="输入问题或任务" aria-describedby={keyboardHintId} enterKeyHint={inputMode.enterSends ? "send" : "enter"} placeholder="输入问题或任务" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => handleComposerKeyDown(event, setDraft, send, inputMode)} />
@@ -115,7 +125,7 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
           event.currentTarget.value = "";
           if (file) void attachImage(file);
         }} /></label>
-        {catalog.transcribeModel && <VoiceInput key={props.apiKey} transcriber={transcriber} disabled={readingImage}
+        {canTranscribe && <VoiceInput key={props.apiKey} transcriber={transcriber} preferLocal={localSpeech} disabled={readingImage}
           onStart={() => { voiceDraft.current = { text: draft, start: textarea.current?.selectionStart ?? draft.length, end: textarea.current?.selectionEnd ?? draft.length }; }}
           onPreview={setVoicePreview} onError={setImageError} onTranscribed={(text) => {
             const input = textarea.current;

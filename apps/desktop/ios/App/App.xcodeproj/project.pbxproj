@@ -19,6 +19,7 @@
 		65E31E648943DC80BAD28B8E /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAD28B8E564FC66C69BDB59E /* MainViewController.swift */; };
 		32328320794D8E37B66F5E9F /* MiniqPushPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66F5E9F67AE10C08668FEAE /* MiniqPushPlugin.swift */; };
 		6D1A00012F00000000000001 /* MiniqIapPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1A00012F00000000000002 /* MiniqIapPlugin.swift */; };
+		6D1A00012F00000000000003 /* MiniqSpeechPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1A00012F00000000000004 /* MiniqSpeechPlugin.swift */; };
 		432FE95B949619FB45211D0A /* MiniqPushContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45211D0AFDE03E00B9C1ABE0 /* MiniqPushContent.swift */; };
 		7A1E00012F00000000000011 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1E00012F00000000000002 /* NotificationService.swift */; };
 		7A1E00012F00000000000012 /* MiniqPushContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45211D0AFDE03E00B9C1ABE0 /* MiniqPushContent.swift */; };
@@ -65,6 +66,7 @@
 		B66F5E9F67AE10C08668FEAE /* MiniqPushPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniqPushPlugin.swift; sourceTree = "<group>"; };
 		45211D0AFDE03E00B9C1ABE0 /* MiniqPushContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniqPushContent.swift; sourceTree = "<group>"; };
 		6D1A00012F00000000000002 /* MiniqIapPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniqIapPlugin.swift; sourceTree = "<group>"; };
+		6D1A00012F00000000000004 /* MiniqSpeechPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniqSpeechPlugin.swift; sourceTree = "<group>"; };
 		7A1E00012F00000000000001 /* MiniqNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MiniqNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A1E00012F00000000000002 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		7A1E00012F00000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -122,6 +124,7 @@
 				45211D0AFDE03E00B9C1ABE0 /* MiniqPushContent.swift */,
 				B66F5E9F67AE10C08668FEAE /* MiniqPushPlugin.swift */,
 				6D1A00012F00000000000002 /* MiniqIapPlugin.swift */,
+				6D1A00012F00000000000004 /* MiniqSpeechPlugin.swift */,
 				BAD28B8E564FC66C69BDB59E /* MainViewController.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
@@ -260,6 +263,7 @@
 				432FE95B949619FB45211D0A /* MiniqPushContent.swift in Sources */,
 				32328320794D8E37B66F5E9F /* MiniqPushPlugin.swift in Sources */,
 				6D1A00012F00000000000001 /* MiniqIapPlugin.swift in Sources */,
+				6D1A00012F00000000000003 /* MiniqSpeechPlugin.swift in Sources */,
 				65E31E648943DC80BAD28B8E /* MainViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -27,7 +27,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>当你在移动问答中选择“拍照”添加附件时，miniQ 使用相机拍摄你要提问的内容；确认拍摄后，照片会作为待发送附件加入输入框。</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>在你使用远程桌面的语音输入时，miniQ 会采集你主动录制的声音，将其加密传送到你的桌面端，并交由已配置的语音识别服务转写为输入文字。</string>
+	<string>当你使用语音输入时，miniQ 会采集你主动录制的声音，优先通过本机系统语音识别转写为输入文字；本机识别不可用时交由已配置的语音识别服务转写。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>miniQ 使用 iOS 系统语音识别将你主动录制的语音在本机转为输入文字；本机识别不可用时使用已配置的语音服务。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

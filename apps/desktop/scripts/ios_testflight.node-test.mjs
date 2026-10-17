@@ -118,6 +118,7 @@ test("export options use manual App Store Connect signing", () => {
 const privacyDescriptions = {
   NSCameraUsageDescription: "用于拍摄你主动添加到对话中的照片。",
   NSMicrophoneUsageDescription: "用于将你主动录制的声音转成输入文字。",
+  NSSpeechRecognitionUsageDescription: "用于在本机将你主动录制的语音转为输入文字。",
 };
 
 function privacySource(descriptions = privacyDescriptions) {
@@ -159,7 +160,10 @@ test("requires camera and microphone descriptions without requiring full photo l
 
 test("source validation rejects missing, commented, non-string, and duplicate privacy declarations", () => {
   const camera = "<key>NSCameraUsageDescription</key><string>允许添加照片。</string>";
-  const noCamera = privacySource({ NSMicrophoneUsageDescription: privacyDescriptions.NSMicrophoneUsageDescription });
+  const noCamera = privacySource({
+    NSMicrophoneUsageDescription: privacyDescriptions.NSMicrophoneUsageDescription,
+    NSSpeechRecognitionUsageDescription: privacyDescriptions.NSSpeechRecognitionUsageDescription,
+  });
   for (const invalidSource of [
     noCamera,
     noCamera.replace("</dict>", `<!--${camera}--></dict>`),
