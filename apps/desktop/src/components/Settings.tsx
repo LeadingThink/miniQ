@@ -1,4 +1,4 @@
-import { ModelRankingLink } from "./ModelRankingLink";
+import { ProviderModelField } from "./ProviderModelField";
 import { ExternalLink, KeyRound, MonitorSmartphone, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
@@ -89,8 +89,6 @@ export function SettingsPanel(props: SettingsPanelProps) {
   }, [props.client]);
   const [baseUrl, setBaseUrl] = useState(ZAIWEN_API_BASE_URL);
   const [defaultModel, setDefaultModel] = useState(DEFAULT_PROVIDER_MODEL);
-  const [modelOptions, setModelOptions] = useState<string[]>([]);
-  const [modelCatalogError, setModelCatalogError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [providerKeyChanged, setProviderKeyChanged] = useState(false);
   const [accountLoginOpen, setAccountLoginOpen] = useState(false);
@@ -117,23 +115,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
   useEffect(() => {
     void props.client
       .call<SettingsView>("settings.get")
-      .then(async (res) => {
+      .then((res) => {
         if (res.provider) {
           setBaseUrl(res.provider.baseUrl);
           setDefaultModel(res.provider.model || DEFAULT_PROVIDER_MODEL);
           setHasKey(res.provider.hasApiKey);
-          try {
-            const catalog = await props.client.call<{ models?: unknown }>("model.list");
-            const models = Array.isArray(catalog?.models)
-              ? catalog.models.filter((model): model is string => typeof model === "string")
-              : [];
-            setModelOptions(models);
-            setDefaultModel((current) => models.includes(current) ? current : "");
-            setModelCatalogError(null);
-          } catch (error) {
-            setModelOptions([]);
-            setModelCatalogError(`模型列表读取失败：${errorMessage(error)}`);
-          }
         }
         if (res.remoteAccess) {
           setRemoteEnabled(res.remoteAccess.enabled);
@@ -444,8 +430,6 @@ export function SettingsPanel(props: SettingsPanelProps) {
                       setProviderKeyError(null);
                       if (baseUrl !== ZAIWEN_API_BASE_URL || !defaultModel) {
                         setDefaultModel(DEFAULT_PROVIDER_MODEL);
-                        setModelOptions([DEFAULT_PROVIDER_MODEL]);
-                        setModelCatalogError(null);
                       }
                       setBaseUrl(ZAIWEN_API_BASE_URL);
                       setStatus(null);
@@ -488,40 +472,18 @@ export function SettingsPanel(props: SettingsPanelProps) {
                     </a>
                   </div>
                 </div>
-                <label htmlFor="provider-default-model">
-                  默认 Chat 模型
-                  {hasKey && !modelCatalogError ? (
-                    <select
-                      id="provider-default-model"
-                      value={defaultModel}
-                      disabled={loading || saving || modelOptions.length === 0}
-                      onChange={(event) => {
-                        setDefaultModel(event.target.value);
-                        setStatus(null);
-                      }}
-                    >
-                      <option value="" disabled>请选择模型</option>
-                      {modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}
-                    </select>
-                  ) : (
-                    <input
-                      id="provider-default-model"
-                      value={defaultModel}
-                      disabled={loading || saving}
-                      spellCheck={false}
-                      autoComplete="off"
-                      placeholder={DEFAULT_PROVIDER_MODEL}
-                      onChange={(event) => {
-                        setDefaultModel(event.target.value);
-                        setStatus(null);
-                      }}
-                    />
-                  )}
-                  <small>作为所有项目和新会话的全局默认模型；项目或会话可单独覆盖。</small>
-                  <ModelRankingLink />
-                  {hasKey && modelCatalogError && <small role="status">{modelCatalogError}，当前可手动输入模型 ID。</small>}
-                  {!hasKey && <small>首次连接会先使用默认模型；保存 API Key 后即可从服务返回的 Chat 模型列表中选择。</small>}
-                </label>
+                <ProviderModelField
+                  client={props.client}
+                  baseUrl={baseUrl.trim()}
+                  apiKey={providerKeyChanged ? apiKey.trim() : undefined}
+                  ready={!loading && !providerKeyLoading}
+                  disabled={loading || saving || accountBusy}
+                  value={defaultModel}
+                  onChange={(value) => {
+                    setDefaultModel(value);
+                    setStatus(null);
+                  }}
+                />
                 <label htmlFor="provider-base-url">
                   服务地址
                   <input
@@ -536,7 +498,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                       setStatus(null);
                     }}
                   />
-                  <small>默认使用在问服务，一般无需修改。</small>
+                  <small>默认使用在问服务；使用第三方服务时，请填写对应的 API 地址、API Key 和模型 ID。</small>
                 </label>
               </section>
               <section className="settings-section provider-settings">

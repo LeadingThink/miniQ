@@ -237,7 +237,13 @@ pub(super) async fn catalog_for(config: &miniq_models::ProviderConfig) -> Result
         })?;
     let mut models = rows
         .iter()
-        .filter(|row| row.get("model_type").and_then(Value::as_str) == Some("chat"))
+        // OpenAI-compatible catalogs need not include OneAPI's model_type extension.
+        .filter(|row| {
+            matches!(
+                row.get("model_type").and_then(Value::as_str),
+                None | Some("chat")
+            )
+        })
         .filter_map(|row| row.get("id").and_then(Value::as_str))
         .map(str::to_owned)
         .collect::<Vec<_>>();

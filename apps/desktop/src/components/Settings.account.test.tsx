@@ -15,7 +15,7 @@ it("fills the account key, switches to the account service and submits it only o
   };
   const call = vi.fn(async (method: string) => {
     if (method === "settings.providerKey") return { apiKey: "sk-saved-fixture" };
-    if (method === "model.list") return { models: ["other-model"] };
+    if (method === "settings.models") return { models: ["other-model"] };
     return settings;
   });
   const client = { mode: "local", call } as unknown as RpcClient;

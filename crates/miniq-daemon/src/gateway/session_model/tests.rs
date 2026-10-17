@@ -318,6 +318,38 @@ async fn authenticated_metadata_controls_custom_model_effort_choices() {
 }
 
 #[tokio::test]
+async fn openai_catalog_without_model_type_preserves_model_ids() {
+    use axum::{routing::get as route, Json, Router};
+    let (state, _, _) = state();
+    let app = Router::new().route(
+        "/v1/models",
+        route(|| async {
+            Json(json!({"data": [
+                {"id": "custom/model", "object": "model", "owned_by": "provider"},
+                {"id": "alpha", "model_type": "chat"},
+                {"id": "custom/model"},
+                {"id": "image-model", "model_type": "image"},
+                {"id": "embedding-model", "model_type": "embedding"}
+            ]}))
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    state
+        .settings
+        .lock()
+        .unwrap()
+        .provider
+        .as_mut()
+        .unwrap()
+        .base_url = format!("http://{address}/v1");
+    let result = catalog(&state).await.unwrap();
+    assert_eq!(result["models"], json!(["alpha", "custom/model"]));
+    server.abort();
+}
+
+#[tokio::test]
 async fn a_declared_partial_catalog_is_not_presented_as_complete() {
     use axum::{routing::get as route, Json, Router};
     let (state, _, _) = state();
