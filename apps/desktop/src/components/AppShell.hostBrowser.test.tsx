@@ -67,7 +67,7 @@ function fixture() {
     preview: { state: { open: false }, tabs: [], close: vi.fn() },
     review: { open: false, data: { files: [] }, setOpen: vi.fn() },
     actions: { newChat, cancelTurn: vi.fn() },
-    feed: {}, busy: true, setError: vi.fn(),
+    feed: { messages: [], toolCalls: [] }, busy: true, setError: vi.fn(),
   } as unknown as MiniqAppController;
   const emit = (operation: "tabs" | "snapshot", id: string) => {
     for (const listener of events) listener({

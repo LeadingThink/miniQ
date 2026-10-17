@@ -25,6 +25,7 @@ function statusApp() {
     navigation: { sidebarCollapsed: false, setSidebarCollapsed: vi.fn(), openSettings: vi.fn(), setShowSettings: vi.fn() },
     catalog: { currentSession: null, currentWorkspace: null, currentSessionId: null, workspaces: [], sessions: [] },
     review: { data: { files: [], additions: 0, deletions: 0 } },
+    feed: { messages: [], toolCalls: [] },
     preview: { viewScope: "workspace" },
     actions: { openSession: vi.fn() },
     setError: vi.fn(),
