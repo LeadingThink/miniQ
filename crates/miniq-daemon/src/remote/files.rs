@@ -329,7 +329,9 @@ impl Transfers {
         }
         if input.force_refresh {
             if let Some((mut result, Some(object_id))) = cached {
-                let size = result["size"].as_u64().ok_or("Cached file transfer is invalid")?;
+                let size = result["size"]
+                    .as_u64()
+                    .ok_or("Cached file transfer is invalid")?;
                 let ticket = self
                     .inner
                     .tickets
@@ -603,7 +605,7 @@ mod tests {
                 state: Phase::Running,
                 upload: None,
                 cache_key: None,
-            object_id: None,
+                object_id: None,
                 result: Value::Null,
                 created_at: now(),
             })
@@ -645,7 +647,14 @@ mod tests {
             })
             .unwrap();
         let result = transfers
-            .status("p", TransferInput { session_id: "s".into(), transfer_id: id }, true)
+            .status(
+                "p",
+                TransferInput {
+                    session_id: "s".into(),
+                    transfer_id: id,
+                },
+                true,
+            )
             .unwrap();
         assert_eq!(result["status"], "publishing");
         assert!(!token.is_cancelled());
@@ -695,7 +704,7 @@ mod tests {
                     hash: "0".repeat(64),
                 }),
                 cache_key: None,
-            object_id: None,
+                object_id: None,
                 result: Value::Null,
                 created_at: now(),
             })
@@ -734,7 +743,7 @@ mod tests {
                     hash: "0".repeat(64),
                 }),
                 cache_key: None,
-            object_id: None,
+                object_id: None,
                 result: json!({"putUrl":"https://x.qiniucs.com/secret-put"}),
                 created_at: now() - 10,
             })

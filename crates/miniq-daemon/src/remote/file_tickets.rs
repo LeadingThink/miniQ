@@ -50,7 +50,12 @@ impl Tickets {
             let _ = tx.send(ticket);
         }
     }
-    pub async fn request(&self, session: &str, size: u64, object_id: Option<&str>) -> Result<Ticket, String> {
+    pub async fn request(
+        &self,
+        session: &str,
+        size: u64,
+        object_id: Option<&str>,
+    ) -> Result<Ticket, String> {
         let id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = oneshot::channel();
         self.pending.lock().unwrap().insert(id.clone(), tx);
@@ -59,8 +64,8 @@ impl Tickets {
             .send(Message::Text(
                 json!({"type":"file_ticket","requestId":id,"sessionId":session,"bytes":size,
                     "objectId":object_id})
-                    .to_string()
-                    .into(),
+                .to_string()
+                .into(),
             ))
             .map_err(|_| "File connection closed")?;
         let ticket = tokio::time::timeout(Duration::from_secs(15), rx)
