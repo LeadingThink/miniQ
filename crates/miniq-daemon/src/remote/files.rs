@@ -32,7 +32,7 @@ struct Inner {
 }
 struct Entry {
     peer: String,
-    session: String,
+    scope: disk::TransferScope,
     cancel: CancellationToken,
     expires: u64,
     state: Phase,
@@ -70,16 +70,28 @@ struct DownloadInput {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct UploadInput {
-    session_id: String,
+    session_id: Option<String>,
+    workspace_id: Option<String>,
     name: String,
     size: u64,
     sha256: String,
 }
+impl UploadInput {
+    fn scope(&self) -> Result<disk::TransferScope, String> {
+        disk::TransferScope::from_ids(self.session_id.as_deref(), self.workspace_id.as_deref())
+    }
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TransferInput {
-    session_id: String,
+    session_id: Option<String>,
+    workspace_id: Option<String>,
     transfer_id: String,
+}
+impl TransferInput {
+    fn scope(&self) -> Result<disk::TransferScope, String> {
+        disk::TransferScope::from_ids(self.session_id.as_deref(), self.workspace_id.as_deref())
+    }
 }
 fn parse<T: serde::de::DeserializeOwned>(raw: Option<Value>) -> Result<T, String> {
     serde_json::from_value(raw.unwrap_or(Value::Null))
@@ -238,10 +250,11 @@ impl Transfers {
         }
     }
     fn status(&self, peer: &str, input: TransferInput, cancel: bool) -> Result<Value, String> {
+        let scope = input.scope()?;
         let mut entries = self.inner.entries.lock().unwrap();
         let e = entries
             .get_mut(&input.transfer_id)
-            .filter(|e| e.peer == peer && e.session == input.session_id)
+            .filter(|e| e.peer == peer && e.scope == scope)
             .ok_or("Unknown file transfer")?;
         if cancel && matches!(e.state, Phase::Ready | Phase::Running) {
             e.cancel.cancel();
@@ -259,8 +272,9 @@ impl Transfers {
         input: UploadInput,
     ) -> Result<Value, String> {
         validate_upload(&input)?;
+        let scope = input.scope()?;
         // Resolve authorization and validate the destination before minting a ticket.
-        let destination = disk::transfer_destination(state, &input.session_id, &input.name).await?;
+        let destination = disk::transfer_destination(state, &scope, &input.name).await?;
         drop(destination);
         let _slot = self
             .inner
@@ -270,12 +284,12 @@ impl Transfers {
         let ticket = self
             .inner
             .tickets
-            .request(&input.session_id, input.size, None)
+            .request(&scope.storage_key(), input.size, None)
             .await?;
         let result = json!({"putUrl":ticket.put_url,"expiresAt":ticket.expires_at});
         let id = self.insert(Entry {
             peer: peer.into(),
-            session: input.session_id,
+            scope,
             cancel: CancellationToken::new(),
             expires: ticket.expires_at,
             state: Phase::Ready,
@@ -305,6 +319,7 @@ impl Transfers {
             .slots
             .try_acquire()
             .map_err(|_| "File transfers busy")?;
+        let scope = disk::TransferScope::Session(input.session_id.clone());
         let (file, size) =
             disk::transfer_source(state, &input.session_id, &input.path, &input.revision).await?;
         let source = file.try_clone().await.map_err(|_| "Cannot open source")?;
@@ -314,7 +329,7 @@ impl Transfers {
                 .values()
                 .find(|e| {
                     e.peer == peer
-                        && e.session == input.session_id
+                        && e.scope == scope
                         && e.cache_key.as_ref()
                             == Some(&(input.path.clone(), input.revision.clone()))
                         && e.state == Phase::Completed
@@ -335,7 +350,7 @@ impl Transfers {
                 let ticket = self
                     .inner
                     .tickets
-                    .request(&input.session_id, size, Some(&object_id))
+                    .request(&scope.storage_key(), size, Some(&object_id))
                     .await?;
                 result["getUrl"] = json!(ticket.get_url);
                 result["expiresAt"] = json!(ticket.expires_at);
@@ -345,7 +360,7 @@ impl Transfers {
         let ticket = self
             .inner
             .tickets
-            .request(&input.session_id, size, None)
+            .request(&scope.storage_key(), size, None)
             .await?;
         let hash = Arc::new(Mutex::new((Sha256::new(), 0u64)));
         let hashing = hash.clone();
@@ -396,7 +411,7 @@ impl Transfers {
         let mut result = json!({"getUrl":ticket.get_url,"expiresAt":ticket.expires_at,"size":size,"sha256":digest,"revision":input.revision});
         let id = self.insert(Entry {
             peer: peer.into(),
-            session: input.session_id,
+            scope,
             cancel: CancellationToken::new(),
             expires: ticket.expires_at,
             state: Phase::Completed,
@@ -423,6 +438,7 @@ impl Transfers {
         input: TransferInput,
         request_cancel: &CancellationToken,
     ) -> Result<Value, String> {
+        let scope = input.scope()?;
         let _slot = self
             .inner
             .slots
@@ -432,7 +448,7 @@ impl Transfers {
             let mut entries = self.inner.entries.lock().unwrap();
             let e = entries
                 .get_mut(&input.transfer_id)
-                .filter(|e| e.peer == peer && e.session == input.session_id)
+                .filter(|e| e.peer == peer && e.scope == scope)
                 .ok_or("Unknown file transfer")?;
             if e.state == Phase::Completed && e.upload.is_some() {
                 return Ok(e.result.clone());
@@ -444,7 +460,7 @@ impl Transfers {
             e.state = Phase::Running;
             (upload, e.cancel.clone())
         };
-        let result = tokio::select! {biased; _=cancel.cancelled()=>Err("File transfer cancelled".into()),_=request_cancel.cancelled()=>Err("File transfer cancelled".into()),result=self.fetch_upload(state,&input,&upload)=>result};
+        let result = tokio::select! {biased; _=cancel.cancelled()=>Err("File transfer cancelled".into()),_=request_cancel.cancelled()=>Err("File transfer cancelled".into()),result=self.fetch_upload(state,&scope,&upload)=>result};
         match result {
             Ok(destination) if !cancel.is_cancelled() && !request_cancel.is_cancelled() => {
                 // Reserve the publication state while holding the transfer
@@ -527,11 +543,10 @@ impl Transfers {
     async fn fetch_upload(
         &self,
         state: &AppState,
-        input: &TransferInput,
+        scope: &disk::TransferScope,
         upload: &Upload,
     ) -> Result<disk::Destination, String> {
-        let mut destination =
-            disk::transfer_destination(state, &input.session_id, &upload.name).await?;
+        let mut destination = disk::transfer_destination(state, scope, &upload.name).await?;
         let response = self
             .inner
             .http
@@ -584,13 +599,110 @@ mod tests {
         value["putUrl"] = json!("https://127.0.0.1");
         assert!(parse::<UploadInput>(Some(value)).is_err());
         assert!(validate_upload(&UploadInput {
-            session_id: "s".into(),
+            session_id: Some("s".into()),
+            workspace_id: None,
             name: "a".into(),
             size: MAX_BYTES + 1,
             sha256: "a".repeat(64)
         })
         .is_err());
     }
+    #[test]
+    fn upload_and_transfer_inputs_require_exactly_one_scope() {
+        let upload = |extra: Value| {
+            let mut value = json!({"name":"a","size":1,"sha256":"a".repeat(64)});
+            value
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            parse::<UploadInput>(Some(value)).unwrap()
+        };
+        assert_eq!(
+            upload(json!({"sessionId":"s"})).scope().unwrap(),
+            disk::TransferScope::Session("s".into())
+        );
+        assert_eq!(
+            upload(json!({"workspaceId":"w"})).scope().unwrap(),
+            disk::TransferScope::Workspace("w".into())
+        );
+        let both = upload(json!({"sessionId":"s","workspaceId":"w"}));
+        assert!(both.scope().unwrap_err().contains("not both"));
+        assert!(upload(json!({}))
+            .scope()
+            .unwrap_err()
+            .contains("exactly one"));
+        let transfer = |value: Value| parse::<TransferInput>(Some(value)).unwrap();
+        assert!(transfer(json!({"transferId":"t"})).scope().is_err());
+        assert!(
+            transfer(json!({"transferId":"t","sessionId":"s","workspaceId":"w"}))
+                .scope()
+                .is_err()
+        );
+        assert!(
+            parse::<TransferInput>(Some(json!({"transferId":"t","workspaceId":"w","x":1})))
+                .is_err()
+        );
+        assert_eq!(disk::TransferScope::Session("s".into()).storage_key(), "s");
+        assert_eq!(
+            disk::TransferScope::Workspace("w".into()).storage_key(),
+            "workspace:w"
+        );
+    }
+
+    #[tokio::test]
+    async fn transfer_is_bound_to_its_peer_and_workspace_scope() {
+        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let transfers = Transfers::new(Tickets::new(tx, "room", "desktop"), true);
+        let state = AppState::new(
+            miniq_memory::Store::open_in_memory().unwrap(),
+            "test".into(),
+            Arc::new(miniq_models::mock::MockProvider::new(vec![])),
+        );
+        let token = CancellationToken::new();
+        let id = transfers
+            .insert(Entry {
+                peer: "p".into(),
+                scope: disk::TransferScope::Workspace("w".into()),
+                cancel: token.clone(),
+                expires: now() + 900_000,
+                state: Phase::Ready,
+                upload: None,
+                cache_key: None,
+                object_id: None,
+                result: Value::Null,
+                created_at: now(),
+            })
+            .unwrap();
+        let input = |session: Option<&str>, workspace: Option<&str>| TransferInput {
+            session_id: session.map(Into::into),
+            workspace_id: workspace.map(Into::into),
+            transfer_id: id.clone(),
+        };
+        for wrong in [
+            input(Some("w"), None),
+            input(None, Some("other")),
+            input(Some("w"), Some("w")),
+            input(None, None),
+        ] {
+            assert!(transfers.status("p", wrong, true).is_err());
+        }
+        assert!(transfers
+            .status("other-peer", input(None, Some("w")), true)
+            .is_err());
+        for wrong in [input(Some("w"), None), input(None, Some("other"))] {
+            let result = transfers
+                .commit(&state, "p", wrong, &CancellationToken::new())
+                .await;
+            assert_eq!(result.unwrap_err(), "Unknown file transfer");
+        }
+        assert!(!token.is_cancelled());
+        assert_eq!(
+            transfers.status("p", input(None, Some("w")), true).unwrap()["status"],
+            "cancelled"
+        );
+        assert!(token.is_cancelled());
+    }
+
     #[test]
     fn cancellation_is_peer_session_scoped_and_terminal() {
         let (tx, _) = tokio::sync::mpsc::unbounded_channel();
@@ -599,7 +711,7 @@ mod tests {
         let id = transfers
             .insert(Entry {
                 peer: "p".into(),
-                session: "s".into(),
+                scope: disk::TransferScope::Session("s".into()),
                 cancel: token.clone(),
                 expires: now() + 900_000,
                 state: Phase::Running,
@@ -611,7 +723,8 @@ mod tests {
             })
             .unwrap();
         let input = || TransferInput {
-            session_id: "s".into(),
+            session_id: Some("s".into()),
+            workspace_id: None,
             transfer_id: id.clone(),
         };
         assert!(transfers.status("other", input(), true).is_err());
@@ -635,7 +748,7 @@ mod tests {
         let id = transfers
             .insert(Entry {
                 peer: "p".into(),
-                session: "s".into(),
+                scope: disk::TransferScope::Session("s".into()),
                 cancel: token.clone(),
                 expires: now() + 900_000,
                 state: Phase::Publishing,
@@ -650,7 +763,8 @@ mod tests {
             .status(
                 "p",
                 TransferInput {
-                    session_id: "s".into(),
+                    session_id: Some("s".into()),
+                    workspace_id: None,
                     transfer_id: id,
                 },
                 true,
@@ -667,7 +781,7 @@ mod tests {
         let future = now() + 900_000;
         let cache_entry = |created_at, path: &str| Entry {
             peer: "p".into(),
-            session: "s".into(),
+            scope: disk::TransferScope::Session("s".into()),
             cancel: CancellationToken::new(),
             expires: future,
             state: Phase::Completed,
@@ -688,7 +802,7 @@ mod tests {
         let upload_id = transfers
             .insert(Entry {
                 peer: "p".into(),
-                session: "s".into(),
+                scope: disk::TransferScope::Session("s".into()),
                 cancel: CancellationToken::new(),
                 expires: future,
                 state: Phase::Ready,
@@ -727,7 +841,7 @@ mod tests {
         let id = transfers
             .insert(Entry {
                 peer: "p".into(),
-                session: "s".into(),
+                scope: disk::TransferScope::Session("s".into()),
                 cancel: token.clone(),
                 expires: now() - 1,
                 state: Phase::Ready,

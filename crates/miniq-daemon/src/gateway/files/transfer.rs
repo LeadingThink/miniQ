@@ -1,5 +1,5 @@
 //! Streaming transfer endpoints. The protocol validates size/hash before finish.
-use super::{revision, scope, validated_session_file, AppState};
+use super::{revision, scope, store_err, validated_session_file, AppState};
 use std::{
     fs::File,
     path::{Path, PathBuf},
@@ -53,15 +53,60 @@ pub(crate) async fn check_transfer_revision(
     Ok(())
 }
 
+/// Authority under which an upload is stored: an existing session or, before a
+/// session exists, a workspace. Exactly one is always present.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum TransferScope {
+    Session(String),
+    Workspace(String),
+}
+
+impl TransferScope {
+    /// Build a scope from optional wire fields, requiring exactly one.
+    pub(crate) fn from_ids(
+        session_id: Option<&str>,
+        workspace_id: Option<&str>,
+    ) -> Result<Self, String> {
+        match (session_id, workspace_id) {
+            (Some(id), None) => Ok(Self::Session(id.into())),
+            (None, Some(id)) => Ok(Self::Workspace(id.into())),
+            (Some(_), Some(_)) => Err("Specify either sessionId or workspaceId, not both".into()),
+            (None, None) => Err("Specify exactly one of sessionId or workspaceId".into()),
+        }
+    }
+
+    /// Opaque namespace for remote object storage. Session scopes keep the
+    /// bare session id; workspace ids are prefixed so the two never collide.
+    pub(crate) fn storage_key(&self) -> String {
+        match self {
+            Self::Session(id) => id.clone(),
+            Self::Workspace(id) => format!("workspace:{id}"),
+        }
+    }
+
+    /// Directory whose `inbox/` receives uploads.
+    fn working_directory(&self, state: &AppState) -> Result<String, String> {
+        match self {
+            Self::Session(id) => scope(state, id).map(|scope| scope.cwd),
+            Self::Workspace(id) => state
+                .store
+                .get_workspace(id)
+                .map(|workspace| workspace.path)
+                .map_err(store_err),
+        }
+        .map_err(|e| e.message)
+    }
+}
+
 pub(crate) async fn transfer_destination(
     state: &AppState,
-    session_id: &str,
+    scope: &TransferScope,
     name: &str,
 ) -> Result<Destination, String> {
-    let scope = scope(state, session_id).map_err(|e| e.message)?;
+    let cwd = scope.working_directory(state)?;
     validate_name(name)?;
     let name = name.to_owned();
-    tokio::task::spawn_blocking(move || Destination::create(Path::new(&scope.cwd), &name))
+    tokio::task::spawn_blocking(move || Destination::create(Path::new(&cwd), &name))
         .await
         .map_err(|e| e.to_string())?
 }

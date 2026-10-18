@@ -153,14 +153,22 @@ export async function downloadRemoteFile(client: Pick<RpcClient, "call">, sessio
     }
     throw new Error("下载链接已过期，请重试");
 }
-export async function uploadRemoteFile(client: Pick<RpcClient, "call">, sessionId: string, file: File, signal?: AbortSignal, onProgress?: (sent: number, total: number) => void) {
+/** Exactly one authority: an existing session, or a workspace before a session exists. */
+export type RemoteUploadScope = {
+    sessionId: string;
+    workspaceId?: never;
+} | {
+    workspaceId: string;
+    sessionId?: never;
+};
+export async function uploadRemoteFile(client: Pick<RpcClient, "call">, scope: RemoteUploadScope, file: File, signal?: AbortSignal, onProgress?: (sent: number, total: number) => void) {
     if (!Number.isSafeInteger(file.size) || file.size > MAX_REMOTE_FILE_BYTES)
         throw new Error("单个文件不能超过 200 MB");
     throwIfAborted(signal);
     const sha256 = await sha256File(file, signal);
     for (let attempt = 0; attempt < 2; attempt++) {
         throwIfAborted(signal);
-        const prepared = await client.call<SignedUpload>("file.upload.prepare", { sessionId, name: file.name, size: file.size, sha256 }, { timeoutMs: 600000 });
+        const prepared = await client.call<SignedUpload>("file.upload.prepare", { ...scope, name: file.name, size: file.size, sha256 }, { timeoutMs: 600000 });
         type Terminal = {
             status: string;
             path?: string;
@@ -168,7 +176,7 @@ export async function uploadRemoteFile(client: Pick<RpcClient, "call">, sessionI
             sha256?: string;
         };
         let cancellation: Promise<Terminal> | undefined;
-        const cancel = () => cancellation ??= client.call<Terminal>("file.transfer.cancel", { sessionId, transferId: prepared.transferId });
+        const cancel = () => cancellation ??= client.call<Terminal>("file.transfer.cancel", { ...scope, transferId: prepared.transferId });
         let rejectAbort: (cause: unknown) => void = () => { };
         const aborted = new Promise<never>((_, reject) => { rejectAbort = reject; });
         // The commit may be copying on the desktop when the user presses cancel.
@@ -187,7 +195,7 @@ export async function uploadRemoteFile(client: Pick<RpcClient, "call">, sessionI
                     path: string;
                     size: number;
                     sha256: string;
-                }>("file.upload.commit", { sessionId, transferId: prepared.transferId }, { timeoutMs: 600000 }), aborted]);
+                }>("file.upload.commit", { ...scope, transferId: prepared.transferId }, { timeoutMs: 600000 }), aborted]);
             if (result.status !== "completed" || result.size !== file.size || result.sha256 !== sha256 || !result.path)
                 throw new Error("桌面收件回执校验失败");
             return result;

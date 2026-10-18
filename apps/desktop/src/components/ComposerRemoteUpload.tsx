@@ -1,7 +1,7 @@
 import { Check, Clock, FileText, ImagePlus, Loader2, Minus, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { RpcClient } from "../rpc";
-import { uploadRemoteFile } from "../remoteTransfer";
+import { uploadRemoteFile, type RemoteUploadScope } from "../remoteTransfer";
 import { errorMessage } from "../errorMessage";
 import { formatFileSize } from "../localFiles";
 import { isRemoteAbsolutePath } from "./RemotePathDialog";
@@ -22,10 +22,10 @@ function ItemIcon({ state }: { state: ItemState }) {
   return <Clock size={16} aria-hidden="true" />;
 }
 
-/** Keep each upload bound to the client, session and draft which selected it. */
+/** Keep each upload bound to the client, session or workspace, and draft which selected it. */
 export function ComposerRemoteUpload(props: {
   client: RpcClient;
-  sessionId: string;
+  scope: RemoteUploadScope;
   count: number;
   onAttach: (paths: string[]) => void;
   run: (operation: () => Promise<void>) => Promise<void>;
@@ -76,7 +76,7 @@ export function ComposerRemoteUpload(props: {
           active = queue[index].id;
           mark(active, "uploading");
           if (mounted.current) setProgress(0);
-          const receipt = await uploadRemoteFile(props.client, props.sessionId, file, controller.signal, (sent, total) => {
+          const receipt = await uploadRemoteFile(props.client, props.scope, file, controller.signal, (sent, total) => {
             if (!mounted.current || controller.signal.aborted) return;
             setStatus(sent === total ? "正在等待桌面收件回执…" : "");
             setProgress(total ? Math.round(sent / total * 100) : 0);
