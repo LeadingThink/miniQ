@@ -1,0 +1,137 @@
+.remote-upload {
+  box-sizing: border-box;
+  width: min(460px, calc(100% - 24px));
+  max-width: none;
+  max-height: min(640px, calc(var(--app-height, 100dvh) - 24px));
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: var(--shadow-lg);
+}
+.remote-upload[open] { display: flex; flex-direction: column; }
+.remote-upload::backdrop { background: var(--scrim); }
+.remote-upload-grab { display: none; }
+.remote-upload-head {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 8px;
+}
+.remote-upload-head h2 { margin: 0; font-size: var(--font-headline); }
+.remote-upload-head p { margin: 4px 0 0; color: var(--text-mid); font-size: var(--font-footnote); overflow-wrap: anywhere; }
+.remote-upload-head .icon-button { flex: none; width: 40px; height: 40px; }
+.remote-upload-body {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 12px;
+  min-height: 0;
+  padding: 8px 16px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.remote-upload-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.remote-upload-tile {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  align-content: center;
+  gap: 2px;
+  min-height: 88px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text);
+  background: var(--bg-subtle);
+  text-align: left;
+}
+.remote-upload-tile svg { margin-bottom: 4px; color: var(--accent); }
+.remote-upload-tile small { color: var(--text-mid); font-size: var(--font-footnote); overflow-wrap: anywhere; }
+.remote-upload-tile:hover:not(:disabled) { background: var(--bg-hover); opacity: 1; }
+.remote-upload-tile:disabled { opacity: .5; }
+.remote-upload-queue { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.remote-upload-queue li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-areas: "icon name meta" "bar bar bar";
+  align-items: center;
+  gap: 2px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+.remote-upload-state { grid-area: icon; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: var(--text-mid); }
+.remote-upload-queue li[data-state="done"] .remote-upload-state { color: var(--accent); }
+.remote-upload-queue li[data-state="failed"] .remote-upload-state { color: var(--danger); }
+.remote-upload-name { grid-area: name; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remote-upload-queue li > small { grid-area: meta; color: var(--text-mid); font-size: var(--font-footnote); white-space: nowrap; }
+.remote-upload-queue progress { grid-area: bar; width: 100%; height: 5px; accent-color: var(--accent); }
+.remote-upload-note, .remote-upload-error, .remote-upload-hint { margin: 0; overflow-wrap: anywhere; font-size: var(--font-footnote); }
+.remote-upload-note { color: var(--text-mid); }
+.remote-upload-error { padding: 8px 10px; border-radius: var(--radius); color: var(--danger); background: var(--danger-bg); }
+.remote-upload-hint { color: var(--text-muted); }
+.remote-upload-existing { border-top: 1px solid var(--border); padding-top: 10px; }
+.remote-upload-existing summary { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; color: var(--text-mid); list-style: none; }
+.remote-upload-existing summary::-webkit-details-marker { display: none; }
+.remote-upload-existing summary::after { content: "›"; font-size: 20px; line-height: 1; transition: transform .15s; }
+.remote-upload-existing[open] summary::after { transform: rotate(90deg); }
+.remote-upload-existing form { display: grid; gap: 10px; padding-bottom: 4px; }
+.remote-upload-existing label { display: grid; gap: 6px; font-size: var(--font-footnote); color: var(--text-mid); }
+.remote-upload-existing input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text);
+  background: var(--bg-subtle);
+  font-size: max(16px, var(--font-callout));
+}
+.remote-upload-existing button[type="submit"] { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; }
+.remote-upload-foot { flex: none; display: flex; gap: 10px; padding: 8px 16px 14px; border-top: 1px solid var(--border); }
+.remote-upload-foot button {
+  flex: 1;
+  min-height: 44px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text);
+  background: var(--bg);
+}
+.remote-upload-foot button:hover { background: var(--bg-hover); opacity: 1; }
+.remote-upload-foot .remote-upload-primary { color: var(--accent-fg); background: var(--accent); border-color: var(--accent); }
+.remote-upload-foot .remote-upload-primary:hover { background: var(--accent); opacity: .88; }
+.remote-upload-foot .remote-upload-danger { color: var(--danger); background: var(--danger-bg); border-color: var(--danger); }
+.remote-upload-existing button[type="submit"] { border: 1px solid var(--border-strong); color: var(--text); background: var(--bg); }
+.remote-upload-head .icon-button { display: grid; place-items: center; padding: 0; border: 0; color: var(--text-mid); background: transparent; }
+.remote-upload-head .icon-button:hover { background: var(--bg-hover); color: var(--text); opacity: 1; }
+.remote-upload-spin { animation: remote-upload-rotate 1s linear infinite; }
+@keyframes remote-upload-rotate { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .remote-upload-spin { animation: none; } }
+@media (max-width: 720px), (pointer: coarse) {
+  .remote-upload {
+    position: fixed;
+    inset: auto 0 calc(100dvh - var(--app-height, 100dvh) - var(--app-offset-top, 0px)) 0;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(var(--app-height, 100dvh) - max(12px, var(--safe-top)));
+    margin: 0;
+    border-width: 1px 0 0;
+    border-radius: 18px 18px 0 0;
+  }
+  .remote-upload-grab { display: block; flex: none; width: 36px; height: 4px; margin: 8px auto 0; border-radius: 2px; background: var(--border-strong); }
+  .remote-upload-head { padding-top: 8px; }
+  .remote-upload-foot { padding-bottom: max(14px, var(--safe-bottom)); }
+}
+@media (max-width: 340px) { .remote-upload-actions { grid-template-columns: minmax(0, 1fr); } }
+.remote-upload-body > *, .remote-upload-head > div { min-width: 0; }
+.remote-upload-queue li { box-sizing: border-box; }

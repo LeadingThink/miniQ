@@ -133,7 +133,7 @@ export function RemoteFileDownload(props: DownloadProps) {
     const { progress, receipt, prepared, download, cancel, disabled } = useRemoteDownload(props);
     if (prepared && progress === null)
         return <PreparedFileActions prepared={prepared} onError={props.onError}/>;
-    return progress === null ? (<><span role="status">{receipt}</span><button type="button" className="icon-button" aria-label="下载到当前设备" title="下载到当前设备" disabled={disabled} onClick={() => void download()}>
+    return progress === null ? (<>{receipt && <span role="status" className="remote-download-receipt">{receipt}</span>}<button type="button" className="icon-button" aria-label="下载到当前设备" title="下载到当前设备" disabled={disabled} onClick={() => void download()}>
       <Download size={16}/>
     </button></>) : (<button type="button" className="icon-button" aria-label="取消文件下载" title={`下载 ${progress}% · 点击取消`} onClick={cancel}>
       <Square size={14}/>

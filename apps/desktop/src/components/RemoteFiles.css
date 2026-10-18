@@ -69,7 +69,21 @@
   }
 }
 
-.remote-file-upload { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block: 8px 12px; }
-.remote-file-upload > small, .remote-file-upload > p, .remote-file-upload > [role="status"] { flex-basis: 100%; overflow-wrap: anywhere; }
+.remote-file-upload { display: grid; gap: 8px; margin-block: 8px 12px; min-width: 0; }
+.remote-file-upload-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.remote-file-upload-actions button, .remote-file-upload-progress button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; }
+.remote-file-upload-progress { display: grid; gap: 8px; }
+.remote-file-upload-progress span { overflow-wrap: anywhere; font-size: var(--font-footnote); color: var(--text-mid); }
+.remote-file-upload > small, .remote-file-upload > p { overflow-wrap: anywhere; }
 .remote-file-upload progress { width: 100%; height: 6px; accent-color: var(--accent); }
 .remote-file-upload > small { color: var(--text-muted); }
+.remote-file-receipt { margin: 0; padding: 6px 10px; border-radius: var(--radius); font-size: var(--font-footnote); background: var(--bg-subtle); }
+.remote-file-receipt.failed { color: var(--danger); background: var(--danger-bg); }
+@media (max-width: 340px) { .remote-file-upload-actions { grid-template-columns: minmax(0, 1fr); } }
+
+/* Preview status and chunk controls must wrap inside narrow panels. */
+.file-preview-loading { text-align: center; overflow-wrap: anywhere; }
+.file-preview-loading > span { max-width: 100%; font-size: var(--font-footnote); color: var(--text-mid); }
+.file-preview-loading > button { min-height: 44px; padding-inline: 16px; }
+.file-preview-tools [role="status"] { max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-footnote); color: var(--text-mid); }
+.remote-download-receipt { flex: none; padding: 2px 8px; border-radius: 999px; font-size: var(--font-footnote); color: var(--accent); background: var(--bg-subtle); white-space: nowrap; }

@@ -95,3 +95,14 @@ it("shows failure without attaching a guessed path", async () => {
   expect(readAttachments("upload-A")).toEqual([]);
   expect(base.onSend).not.toHaveBeenCalled();
 });
+it("lists every selected file with its own state and marks untouched files as not uploaded after a failure", async () => {
+  vi.mocked(uploadRemoteFile).mockRejectedValueOnce(new Error("桌面离线"));
+  render(<ComposerCard {...base} />);
+  open(); choose("选择本机文件", 3);
+  await screen.findByText("桌面离线");
+  const rows = screen.getByRole("list", { name: "上传队列" }).querySelectorAll("li");
+  expect([...rows].map((row) => row.getAttribute("data-state"))).toEqual(["failed", "skipped", "skipped"]);
+  expect(screen.getByText(/失败 · /)).toBeTruthy();
+  expect(screen.getAllByText(/未上传 · /)).toHaveLength(2);
+  expect(screen.getAllByRole("button", { name: "关闭" })).toHaveLength(2);
+});
