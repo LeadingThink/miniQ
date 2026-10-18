@@ -23,7 +23,7 @@ export function isRemoteFileSessionId(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= 256 && !/[\x00-\x1f\x7f]/.test(value);
 }
 
-export interface BlobTicket { putUrl: string; getUrl: string; expiresAt: number }
+export interface BlobTicket { putUrl: string; getUrl: string; expiresAt: number; objectId?: string }
 export interface TicketIssuer {
   enabledFor(roomId: string): boolean;
   ticket(roomId: string, bytes: number, desktopDeviceId?: string): Promise<BlobTicket>;
@@ -32,7 +32,7 @@ export interface TicketIssuer {
   fileStorageEnabledFor?(roomId: string): boolean;
   providerMediaTicket?(roomId: string, bytes: number, contentType: string, desktopDeviceId: string): Promise<BlobTicket>;
   authenticatedMediaTicket?(owner: string, bytes: number, contentType: string): Promise<BlobTicket>;
-  remoteFileTicket?(roomId: string, bytes: number, desktopDeviceId: string, sessionId: string): Promise<BlobTicket>;
+  remoteFileTicket?(roomId: string, bytes: number, desktopDeviceId: string, sessionId: string, objectId?: string): Promise<BlobTicket>;
 }
 
 export class BlobStore implements TicketIssuer {
@@ -104,14 +104,16 @@ export class BlobStore implements TicketIssuer {
   }
 
   /** Session authorization belongs to the daemon; the relay isolates its object keys. */
-  async remoteFileTicket(roomId: string, bytes: number, desktopDeviceId: string, sessionId: string): Promise<BlobTicket> {
+  async remoteFileTicket(roomId: string, bytes: number, desktopDeviceId: string, sessionId: string, objectId?: string): Promise<BlobTicket> {
     if (typeof roomId !== "string" || !this.fileStorageEnabledFor(roomId)
       || !Number.isSafeInteger(bytes) || bytes < 0 || bytes > MAX_REMOTE_FILE_BYTES
       || typeof desktopDeviceId !== "string" || !/^[A-Za-z0-9_-]{8,80}$/.test(desktopDeviceId)
-      || !isRemoteFileSessionId(sessionId)) throw new Error("Invalid remote file request");
+      || !isRemoteFileSessionId(sessionId)
+      || (objectId !== undefined && !/^[0-9a-f-]{36}$/i.test(objectId))) throw new Error("Invalid remote file request");
     await this.filesVerified;
     const sessionHash = createHash("sha256").update(sessionId).digest("hex");
-    return this.signObject(`remote-files/${roomId}/${desktopDeviceId}/${sessionHash}/${randomUUID()}`, bytes, "application/octet-stream");
+    const id = objectId ?? randomUUID();
+    return this.signObject(`remote-files/${roomId}/${desktopDeviceId}/${sessionHash}/${id}`, bytes, "application/octet-stream", id);
   }
 
   /** Called only after the HTTP handler validates the account key. */
@@ -126,13 +128,13 @@ export class BlobStore implements TicketIssuer {
     return this.signObject(key, bytes, contentType);
   }
 
-  private async signObject(key: string, bytes: number, contentType: string): Promise<BlobTicket> {
+  private async signObject(key: string, bytes: number, contentType: string, objectId?: string): Promise<BlobTicket> {
     const options = { expiresIn: PROVIDER_MEDIA_TICKET_SECONDS };
     const putUrl = await getSignedUrl(this.client, new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentLength: bytes, ContentType: contentType }), {
       ...options, signableHeaders: new Set(["content-type", "content-length"]),
     });
     const getUrl = await getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), options);
-    return { putUrl, getUrl, expiresAt: Date.now() + PROVIDER_MEDIA_TICKET_SECONDS * 1000 };
+    return { putUrl, getUrl, expiresAt: Date.now() + PROVIDER_MEDIA_TICKET_SECONDS * 1000, ...(objectId ? { objectId } : {}) };
   }
 }
 

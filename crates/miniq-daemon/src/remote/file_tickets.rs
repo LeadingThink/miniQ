@@ -15,6 +15,8 @@ pub(super) struct Ticket {
     pub put_url: String,
     pub get_url: String,
     pub expires_at: u64,
+    #[serde(default)]
+    pub object_id: Option<String>,
 }
 type Pending = Arc<Mutex<HashMap<String, oneshot::Sender<Option<Ticket>>>>>;
 #[derive(Clone)]
@@ -48,14 +50,15 @@ impl Tickets {
             let _ = tx.send(ticket);
         }
     }
-    pub async fn request(&self, session: &str, size: u64) -> Result<Ticket, String> {
+    pub async fn request(&self, session: &str, size: u64, object_id: Option<&str>) -> Result<Ticket, String> {
         let id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = oneshot::channel();
         self.pending.lock().unwrap().insert(id.clone(), tx);
         let _guard = Guard(id.clone(), self.pending.clone());
         self.controls
             .send(Message::Text(
-                json!({"type":"file_ticket","requestId":id,"sessionId":session,"bytes":size})
+                json!({"type":"file_ticket","requestId":id,"sessionId":session,"bytes":size,
+                    "objectId":object_id})
                     .to_string()
                     .into(),
             ))
@@ -67,6 +70,11 @@ impl Tickets {
             .ok_or("File storage unavailable")?;
         validate(&ticket)?;
         validate_scope(&ticket, &self.namespace, session)?;
+        if let Some(object_id) = object_id {
+            if ticket.object_id.as_deref() != Some(object_id) {
+                return Err("Invalid file ticket object scope".into());
+            }
+        }
         Ok(ticket)
     }
 }
@@ -127,7 +135,7 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let tickets = Tickets::new(tx, "room", "desktop");
         let client = tickets.clone();
-        let task = tokio::spawn(async move { client.request("session", 123).await });
+        let task = tokio::spawn(async move { client.request("session", 123, None).await });
         let message = rx.recv().await.unwrap();
         let value: serde_json::Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
         assert_eq!(value["type"], "file_ticket");
@@ -141,6 +149,7 @@ mod tests {
         let ticket = Ticket {
             put_url: url.clone(),
             get_url: url.clone(),
+            object_id: None,
             expires_at: now() + 900_000,
         };
         assert!(validate_scope(&ticket, "/remote-files/room/desktop/", "other").is_err());
@@ -148,12 +157,14 @@ mod tests {
         let lookalike = Ticket {
             put_url: url.replace("/remote-files/", "/not-remote-files/"),
             get_url: url.replace("/remote-files/", "/not-remote-files/"),
+            object_id: None,
             expires_at: now() + 900_000,
         };
         assert!(validate_scope(&lookalike, "/remote-files/room/desktop/", "session").is_err());
         let trailing = Ticket {
             put_url: format!("{url}/extra"),
             get_url: format!("{url}/extra"),
+            object_id: None,
             expires_at: now() + 900_000,
         };
         assert!(validate_scope(&trailing, "/remote-files/room/desktop/", "session").is_err());
@@ -173,6 +184,7 @@ mod tests {
             assert!(validate(&Ticket {
                 put_url: raw.into(),
                 get_url: raw.into(),
+                object_id: None,
                 expires_at: now() + 900_000
             })
             .is_err());
@@ -180,6 +192,7 @@ mod tests {
         let mut ticket = Ticket {
             put_url: "https://x.qiniucs.com/a".into(),
             get_url: "https://x.qiniucs.com/a".into(),
+            object_id: None,
             expires_at: now() + 900_000,
         };
         assert!(validate(&ticket).is_ok());

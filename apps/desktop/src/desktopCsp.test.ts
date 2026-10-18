@@ -27,5 +27,5 @@ it("allows renderer-generated CSS in packaged apps without relaxing scripts", ()
   expect(directives.get("worker-src")).toEqual(["'self'", "blob:"]);
   // Wallpaper loops are fetched from the CDN and played back as blob URLs.
   expect(directives.get("connect-src")).toContain("https://oss.zaiwen.top");
-  expect(directives.get("media-src")).toEqual(["blob:"]);
+  expect(directives.get("media-src")).toEqual(["blob:", "https://*.qiniucs.com"]);
 });

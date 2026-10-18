@@ -36,7 +36,7 @@ it("signs files for authenticated rooms outside the provider-media rollout list"
   expect(get.pathname).toBe(put.pathname);
   expect(ticket.expiresAt).toBeGreaterThanOrEqual(start + 900000);
   expect(ticket.expiresAt).toBeLessThanOrEqual(Date.now() + 900000);
-  expect(Object.keys(ticket).sort()).toEqual(["expiresAt", "getUrl", "putUrl"]);
+  expect(Object.keys(ticket).sort()).toEqual(["expiresAt", "getUrl", "objectId", "putUrl"]);
   expect(JSON.stringify(ticket)).not.toContain("private/session");
   expect(JSON.stringify(ticket)).not.toContain("test-secret");
   const next = await store.remoteFileTicket(room, bytes, "desktop-aaaa", "private/session");

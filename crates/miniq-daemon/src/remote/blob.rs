@@ -24,6 +24,8 @@ pub(super) struct Ticket {
     pub put_url: String,
     pub get_url: String,
     pub expires_at: u64,
+    #[serde(default)]
+    pub object_id: Option<String>,
 }
 
 type Tickets = Arc<Mutex<HashMap<String, oneshot::Sender<Option<Ticket>>>>>;

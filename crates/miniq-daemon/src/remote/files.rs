@@ -38,6 +38,7 @@ struct Entry {
     state: Phase,
     upload: Option<Upload>,
     cache_key: Option<(String, String)>,
+    object_id: Option<String>,
     result: Value,
     created_at: u64,
 }
@@ -45,6 +46,7 @@ struct Entry {
 enum Phase {
     Ready,
     Running,
+    Publishing,
     Completed,
     Cancelled,
     Failed,
@@ -62,6 +64,8 @@ struct DownloadInput {
     session_id: String,
     path: String,
     revision: String,
+    #[serde(default)]
+    force_refresh: bool,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -85,6 +89,7 @@ fn phase(phase: Phase) -> &'static str {
     match phase {
         Phase::Ready => "ready",
         Phase::Running => "running",
+        Phase::Publishing => "publishing",
         Phase::Completed => "completed",
         Phase::Cancelled => "cancelled",
         Phase::Failed => "failed",
@@ -265,7 +270,7 @@ impl Transfers {
         let ticket = self
             .inner
             .tickets
-            .request(&input.session_id, input.size)
+            .request(&input.session_id, input.size, None)
             .await?;
         let result = json!({"putUrl":ticket.put_url,"expiresAt":ticket.expires_at});
         let id = self.insert(Entry {
@@ -281,6 +286,7 @@ impl Transfers {
                 hash: input.sha256.to_ascii_lowercase(),
             }),
             cache_key: None,
+            object_id: None,
             result: Value::Null,
             created_at: now(),
         })?;
@@ -302,19 +308,43 @@ impl Transfers {
         let (file, size) =
             disk::transfer_source(state, &input.session_id, &input.path, &input.revision).await?;
         let source = file.try_clone().await.map_err(|_| "Cannot open source")?;
-        {
+        let cached = {
             let entries = self.inner.entries.lock().unwrap();
-            if let Some(e) = entries.values().find(|e| {
-                e.peer == peer
-                    && e.session == input.session_id
-                    && e.cache_key.as_ref() == Some(&(input.path.clone(), input.revision.clone()))
-                    && e.state == Phase::Completed
-                    && e.expires > now() + 5000
-            }) {
-                return Ok(e.result.clone());
+            entries
+                .values()
+                .find(|e| {
+                    e.peer == peer
+                        && e.session == input.session_id
+                        && e.cache_key.as_ref()
+                            == Some(&(input.path.clone(), input.revision.clone()))
+                        && e.state == Phase::Completed
+                        && e.expires > now() + 5000
+                })
+                .map(|e| (e.result.clone(), e.object_id.clone()))
+        };
+        if !input.force_refresh {
+            if let Some((result, _)) = cached {
+                return Ok(result);
             }
         }
-        let ticket = self.inner.tickets.request(&input.session_id, size).await?;
+        if input.force_refresh {
+            if let Some((mut result, Some(object_id))) = cached {
+                let size = result["size"].as_u64().ok_or("Cached file transfer is invalid")?;
+                let ticket = self
+                    .inner
+                    .tickets
+                    .request(&input.session_id, size, Some(&object_id))
+                    .await?;
+                result["getUrl"] = json!(ticket.get_url);
+                result["expiresAt"] = json!(ticket.expires_at);
+                return Ok(result);
+            }
+        }
+        let ticket = self
+            .inner
+            .tickets
+            .request(&input.session_id, size, None)
+            .await?;
         let hash = Arc::new(Mutex::new((Sha256::new(), 0u64)));
         let hashing = hash.clone();
         let stream = futures_util::stream::try_unfold(file, move |mut file| {
@@ -370,6 +400,7 @@ impl Transfers {
             state: Phase::Completed,
             upload: None,
             cache_key: Some((input.path, input.revision)),
+            object_id: ticket.object_id.clone(),
             result: Value::Null,
             created_at: now(),
         })?;
@@ -414,9 +445,29 @@ impl Transfers {
         let result = tokio::select! {biased; _=cancel.cancelled()=>Err("File transfer cancelled".into()),_=request_cancel.cancelled()=>Err("File transfer cancelled".into()),result=self.fetch_upload(state,&input,&upload)=>result};
         match result {
             Ok(destination) if !cancel.is_cancelled() && !request_cancel.is_cancelled() => {
-                // Do not hold the transfer map lock across the filesystem
-                // publication await. Cancellation remains observable while
-                // the final atomic link is prepared.
+                // Reserve the publication state while holding the transfer
+                // lock. Once this point is reached cancellation reports the
+                // in-flight terminal state and cannot publish then report a
+                // false cancellation.
+                let publish = {
+                    let mut entries = self.inner.entries.lock().unwrap();
+                    let e = entries
+                        .get_mut(&input.transfer_id)
+                        .ok_or("File transfer disconnected")?;
+                    if e.state != Phase::Running
+                        || cancel.is_cancelled()
+                        || request_cancel.is_cancelled()
+                    {
+                        e.state = Phase::Cancelled;
+                        false
+                    } else {
+                        e.state = Phase::Publishing;
+                        true
+                    }
+                };
+                if !publish {
+                    return Err("File transfer cancelled".into());
+                }
                 let path = match destination.finish().await {
                     Ok(path) => path,
                     Err(error) => {
@@ -436,13 +487,6 @@ impl Transfers {
                 let e = entries
                     .get_mut(&input.transfer_id)
                     .ok_or("File transfer disconnected")?;
-                if cancel.is_cancelled()
-                    || request_cancel.is_cancelled()
-                    || e.state != Phase::Running
-                {
-                    e.state = Phase::Cancelled;
-                    return Err("File transfer cancelled".into());
-                }
                 let result = json!({"status":"completed","path":path,"size":upload.size,"sha256":upload.hash});
                 e.state = Phase::Completed;
                 e.result = result.clone();
@@ -559,6 +603,7 @@ mod tests {
                 state: Phase::Running,
                 upload: None,
                 cache_key: None,
+            object_id: None,
                 result: Value::Null,
                 created_at: now(),
             })
@@ -581,6 +626,32 @@ mod tests {
     }
 
     #[test]
+    fn publishing_state_cannot_be_cancelled_after_publication_reservation() {
+        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let transfers = Transfers::new(Tickets::new(tx, "room", "desktop"), true);
+        let token = CancellationToken::new();
+        let id = transfers
+            .insert(Entry {
+                peer: "p".into(),
+                session: "s".into(),
+                cancel: token.clone(),
+                expires: now() + 900_000,
+                state: Phase::Publishing,
+                upload: None,
+                cache_key: None,
+                object_id: None,
+                result: Value::Null,
+                created_at: now(),
+            })
+            .unwrap();
+        let result = transfers
+            .status("p", TransferInput { session_id: "s".into(), transfer_id: id }, true)
+            .unwrap();
+        assert_eq!(result["status"], "publishing");
+        assert!(!token.is_cancelled());
+    }
+
+    #[test]
     fn full_map_evicts_only_the_oldest_completed_download_cache() {
         let (tx, _) = tokio::sync::mpsc::unbounded_channel();
         let transfers = Transfers::new(Tickets::new(tx, "room", "desktop"), true);
@@ -593,6 +664,7 @@ mod tests {
             state: Phase::Completed,
             upload: None,
             cache_key: Some((path.into(), "revision".into())),
+            object_id: None,
             result: json!({"getUrl":"https://signed.example/object"}),
             created_at,
         };
@@ -616,12 +688,14 @@ mod tests {
                         put_url: "https://x.qiniucs.com/put".into(),
                         get_url: "https://x.qiniucs.com/get".into(),
                         expires_at: future,
+                        object_id: None,
                     },
                     name: "upload.bin".into(),
                     size: 1,
                     hash: "0".repeat(64),
                 }),
                 cache_key: None,
+            object_id: None,
                 result: Value::Null,
                 created_at: now(),
             })
@@ -653,12 +727,14 @@ mod tests {
                         put_url: "https://x.qiniucs.com/secret-put".into(),
                         get_url: "https://x.qiniucs.com/secret-get".into(),
                         expires_at: now() - 1,
+                        object_id: None,
                     },
                     name: "secret.bin".into(),
                     size: 1,
                     hash: "0".repeat(64),
                 }),
                 cache_key: None,
+            object_id: None,
                 result: json!({"putUrl":"https://x.qiniucs.com/secret-put"}),
                 created_at: now() - 10,
             })

@@ -37,6 +37,7 @@ import { clipboardImages } from "../clipboardImages";
 import { readDraft, storeDraft, readAttachments, storeAttachments } from "../composerDraft";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { RemotePathDialog } from "./RemotePathDialog";
+import { ComposerRemoteUpload } from "./ComposerRemoteUpload";
 import { useTouchComposerInput } from "../hooks/useTouchComposerInput";
 import { useDroppedFiles } from "../hooks/useDroppedFiles";
 import { useAttachmentReads } from "../hooks/useAttachmentReads";
@@ -98,6 +99,8 @@ export function ComposerCard(props: {
   const inputMode = useTouchComposerInput();
   const attachmentReads = useAttachmentReads(props.draftKey);
   const remoteHost = props.client?.sshHost || (props.client?.mode === "remote" ? "远程电脑" : null);
+  const uploadScope = useRef({ client: props.client, sessionId: props.sessionId, draftKey: props.draftKey });
+  uploadScope.current = { client: props.client, sessionId: props.sessionId, draftKey: props.draftKey };
   const canAttach = isTauriRuntime() || !!remoteHost;
   const [showRemoteAttachment, setShowRemoteAttachment] = useState(false);
   const [draft, setDraftState] = useState(() => readDraft(props.draftKey));
@@ -171,6 +174,8 @@ export function ComposerCard(props: {
     setVoicePreview(null);
     setShowRemoteAttachment(false);
   }, [props.draftKey]);
+
+  useEffect(() => { setShowRemoteAttachment(false); }, [props.client, props.sessionId]);
 
   const setDraft = (value: string) => {
     draftValueRef.current = value;
@@ -473,8 +478,22 @@ export function ComposerCard(props: {
   return (
     <div ref={card} className="composer-card">
       {props.chipSlot && <div className="composer-context">{contextControls}</div>}
-      {showRemoteAttachment && remoteHost && <RemotePathDialog host={remoteHost} purpose="attachment"
-        onSubmit={async (path) => { addAttachments([path]); }} onClose={() => setShowRemoteAttachment(false)} />}
+      {showRemoteAttachment && remoteHost && (props.client?.mode === "remote" && props.sessionId ?
+        <ComposerRemoteUpload client={props.client} sessionId={props.sessionId} count={attachments.length}
+          run={attachmentReads.run} onClose={() => setShowRemoteAttachment(false)}
+          onAttach={(paths) => {
+            const active = uploadScope.current;
+            if (!mountedRef.current || active.client !== props.client || active.sessionId !== props.sessionId || active.draftKey !== props.draftKey) {
+              const next = [...new Set([...readAttachments(props.draftKey), ...paths])];
+              if (next.length <= 10) storeAttachments(props.draftKey, next);
+              return;
+            }
+            addAttachments(paths);
+          }} /> : <RemotePathDialog host={remoteHost} purpose="attachment"
+          onSubmit={async (path) => {
+            if (attachments.length >= 10) throw new Error("每条消息最多附加 10 个文件");
+            addAttachments([path]);
+          }} onClose={() => setShowRemoteAttachment(false)} />)}
       {voicePreview && <VoiceTranscript preview={voicePreview} />}
       {slash.menu}
       {!slash.menu && mention.menu}

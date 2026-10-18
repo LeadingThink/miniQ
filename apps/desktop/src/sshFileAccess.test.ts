@@ -22,7 +22,10 @@ it.each(["text", "image"])(
             revision: "remote-rev",
             chunkBytes: 3,
             maxPreviewBytes: 100,
+            ...(kind === "image" ? { getUrl: "https://s3.example.qiniucs.com/remote-files/a/x", transferId: "t", expiresAt: Date.now() + 60000, size: 3, sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" } : {}),
           }
+        : method === "file.download.prepare"
+          ? { transferId: "t", getUrl: "https://s3.example.qiniucs.com/remote-files/a/x", expiresAt: Date.now() + 60000, size: 3, sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", revision: "remote-rev" }
         : {
             offset: 0,
             nextOffset: 3,
@@ -39,7 +42,7 @@ it.each(["text", "image"])(
         ? await readLocalFilePreview(path, "/same/path", [], access)
         : await readImagePreview(path, access);
     expect(file).toMatchObject(
-      kind === "text" ? { content: "abc" } : { mimeType, dataBase64: "YWJj" },
+      kind === "text" ? { content: "abc" } : { mimeType, remoteSource: expect.objectContaining({ getUrl: expect.stringContaining("qiniucs.com") }) },
     );
     expect(call).toHaveBeenCalledWith(
       "file.describe",

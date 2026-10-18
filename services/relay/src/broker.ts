@@ -373,7 +373,7 @@ export class RelayBroker {
   }
 
   private async remoteFileTicket(peer: Peer, device: Device, raw: Record<string, unknown>): Promise<void> {
-    const { requestId, bytes, sessionId } = raw;
+    const { requestId, bytes, sessionId, objectId } = raw;
     if (typeof requestId !== "string" || !requestId.length || requestId.length > 80) return;
     const response = { type: "file_ticket_result", requestId };
     const unavailable = () => send(peer.socket, { ...response, error: "File transfer unavailable" });
@@ -383,13 +383,16 @@ export class RelayBroker {
       || !(blobs.fileStorageEnabledFor?.(peer.roomId)
         ?? Boolean(blobs.remoteFileTicket))
       || !blobs.remoteFileTicket || !Number.isSafeInteger(bytes) || (bytes as number) < 0
-      || (bytes as number) > MAX_REMOTE_FILE_BYTES || !isRemoteFileSessionId(sessionId)) {
-      unavailable(); return;
+      || !isRemoteFileSessionId(sessionId)
+      || (objectId !== undefined && (typeof objectId !== "string" || !/^[0-9a-f-]{36}$/i.test(objectId)))
+    ) { unavailable(); return;
     }
     const reservation = this.storageBudget(peer, "files", MAX_REMOTE_FILE_BYTES).reservation(bytes as number);
     if (!reservation) { unavailable(); return; }
     try {
-      const ticket = await blobs.remoteFileTicket(peer.roomId, bytes as number, device.deviceId, sessionId);
+      const ticket = objectId === undefined
+        ? await blobs.remoteFileTicket(peer.roomId, bytes as number, device.deviceId, sessionId)
+        : await blobs.remoteFileTicket(peer.roomId, bytes as number, device.deviceId, sessionId, objectId as string);
       if (device.desktop === peer) send(peer.socket, { ...response, ticket });
     } catch {
       reservation.release();

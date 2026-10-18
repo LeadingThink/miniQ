@@ -47,6 +47,7 @@ impl Session<'_> {
                         put_url: ticket.put_url,
                         get_url: ticket.get_url,
                         expires_at: ticket.expires_at,
+                        object_id: ticket.object_id,
                     }),
             ),
             "presence" => {
