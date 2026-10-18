@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BlobPreview } from "./MediaPreview";
 import { Capacitor } from "@capacitor/core";
@@ -235,4 +235,28 @@ it("uses original remote Blobs directly and revokes their URL without base64 con
   fireEvent.error(screen.getByRole("img"));
   expect(error).toHaveBeenCalledWith("图片解码失败");
   view.unmount(); expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:media-1");
+});
+
+
+it("renews a direct signed media URL once and preserves playback position", async () => {
+  const refresh = vi.fn().mockResolvedValue({ getUrl: "https://bucket.qiniucs.com/remote-files/r/new", expiresAt: Date.now() + 60000, revision: "v1" });
+  const source = { getUrl: "https://bucket.qiniucs.com/remote-files/r/old", expiresAt: Date.now() + 60000, revision: "v1", refresh };
+  const onError = vi.fn();
+  render(<BlobPreview remoteSource={source as never} kind="video" mimeType="video/mp4" label="signed clip" onError={onError} />);
+  const video = screen.getByLabelText("signed clip") as HTMLVideoElement;
+  expect(video.getAttribute("src")).toBe(source.getUrl);
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+  Object.defineProperty(video, "duration", { value: 100, configurable: true });
+  fireEvent.loadedMetadata(video);
+  video.currentTime = 37;
+  fireEvent.timeUpdate(video);
+  fireEvent.error(video);
+  await waitFor(() => expect(video.getAttribute("src")).toContain("/new"));
+  video.currentTime = 0;
+  fireEvent.timeUpdate(video);
+  fireEvent.loadedMetadata(video);
+  expect(video.currentTime).toBe(37);
+  fireEvent.error(video);
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(onError).toHaveBeenCalledOnce();
 });

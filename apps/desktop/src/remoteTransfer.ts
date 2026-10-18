@@ -27,7 +27,7 @@ export function validateSignedStorageUrl(value: unknown): string {
     catch {
         throw new Error("远程对象地址无效");
     }
-    if (url.protocol !== "https:" || url.username || url.password ||
+    if (url.protocol !== "https:" || url.username || url.password || url.hash || (url.port && url.port !== "443") ||
         !url.hostname.endsWith(".qiniucs.com") || !/^\/(?:[^/]+\/)?remote-files\/[^/]+\//.test(url.pathname))
         throw new Error("远程对象地址无效");
     return url.toString();
@@ -39,6 +39,57 @@ export function validateDescriptor(value: SignedDownload): SignedDownload {
         !/^[a-f0-9]{64}$/i.test(value.sha256) || typeof value.revision !== "string")
         throw new Error("远程文件传输信息无效");
     return { ...value, getUrl: url };
+}
+/** Validates metadata and revision, not the bytes of a partial preview. */
+export async function prepareRemoteFile(client: Pick<RpcClient, "call">, sessionId: string, path: string, revision: string, signal?: AbortSignal, forceRefresh = false): Promise<SignedDownload> {
+    throwIfAborted(signal);
+    const ticket = await client.call<SignedDownload>("file.download.prepare", { sessionId, path, revision, ...(forceRefresh ? { forceRefresh: true } : {}) }, { signal, timeoutMs: 600000 });
+    throwIfAborted(signal);
+    if (ticket.expiresAt <= Date.now()) throw new Error("下载链接已过期");
+    const prepared = validateDescriptor(ticket);
+    if (prepared.revision !== revision) throw new Error("文件版本已变化，请重新加载");
+    return prepared;
+}
+export interface RemotePreviewSource extends SignedDownload {
+    refresh: () => Promise<RemotePreviewSource>;
+}
+export async function prepareRemotePreview(client: Pick<RpcClient, "call">, sessionId: string, path: string, revision: string, size: number, signal?: AbortSignal): Promise<RemotePreviewSource> {
+    let refreshed = false;
+    const prepare = async (forceRefresh: boolean): Promise<RemotePreviewSource> => {
+        const ticket = await prepareRemoteFile(client, sessionId, path, revision, signal, forceRefresh);
+        if (ticket.size !== size) throw new Error("文件大小已变化，请重新加载");
+        return { ...ticket, refresh: async () => {
+            if (refreshed) throw new Error("预览链接刷新失败，请重新加载文件");
+            refreshed = true;
+            return prepare(true);
+        } };
+    };
+    try { return await prepare(false); }
+    catch (cause) {
+        if (!(cause instanceof Error) || cause.message !== "下载链接已过期") throw cause;
+        refreshed = true;
+        return prepare(true);
+    }
+}
+/** Range previews intentionally cannot verify the full-file SHA-256. */
+export async function readRemoteRange(source: RemotePreviewSource, offset: number, length: number, signal?: AbortSignal): Promise<{ bytes: Uint8Array; source: RemotePreviewSource }> {
+    throwIfAborted(signal);
+    if (source.expiresAt <= Date.now()) source = await source.refresh();
+    const end = Math.min(source.size, offset + length) - 1;
+    if (offset < 0 || length < 1 || end < offset) throw new Error("文件读取位置无效");
+    const request = (url: string) => fetch(url, { headers: { Range: `bytes=${offset}-${end}` }, signal, credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", cache: "no-store" });
+    let response = await request(source.getUrl);
+    if (response.status === 401 || response.status === 403) {
+        await response.body?.cancel();
+        source = await source.refresh();
+        response = await request(source.getUrl);
+    }
+    if (response.status !== 206 || response.headers.get("content-range") !== `bytes ${offset}-${end}/${source.size}`) {
+        await response.body?.cancel();
+        throw new Error("存储服务未返回有效分段，请下载原文件查看");
+    }
+    const blob = await readResponse(response, end - offset + 1, signal);
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), source };
 }
 async function readResponse(response: Response, expected: number, signal: AbortSignal | undefined, onProgress?: (received: number, total: number) => void, sha256?: string): Promise<Blob> {
     if (!response.ok || !response.body)
@@ -80,12 +131,12 @@ export async function downloadRemoteFile(client: Pick<RpcClient, "call">, sessio
 }> {
     throwIfAborted(signal);
     for (let attempt = 0; attempt < 2; attempt++) {
-        const ticket = await client.call<SignedDownload>("file.download.prepare", { sessionId, path, revision }, { signal, timeoutMs: 600000 });
-        if (ticket.expiresAt <= Date.now() && attempt === 0)
-            continue;
-        const prepared = validateDescriptor(ticket);
-        if (prepared.revision !== revision)
-            throw new Error("文件版本已变化，请重新加载");
+        let prepared: SignedDownload;
+        try { prepared = await prepareRemoteFile(client, sessionId, path, revision, signal, attempt > 0); }
+        catch (cause) {
+            if (attempt === 0 && cause instanceof Error && cause.message === "下载链接已过期") continue;
+            throw cause;
+        }
         try {
             const response = await fetch(prepared.getUrl, { signal, credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", cache: "no-store" });
             if ((response.status === 401 || response.status === 403) && attempt === 0) {

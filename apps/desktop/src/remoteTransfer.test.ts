@@ -103,3 +103,35 @@ it("cancels during desktop commit and preserves a completed race receipt", async
   expect(result.status).toBe("completed");
   expect(f.call.mock.calls.filter(([m]) => m === "file.transfer.cancel")).toHaveLength(1);
 });
+
+it("accepts forcePathStyle bucket URLs on HTTPS 443", () => {
+  expect(validateSignedStorageUrl("https://s3.qiniucs.com:443/BUCKET/remote-files/room/object?signature=private")).toBe("https://s3.qiniucs.com/BUCKET/remote-files/room/object?signature=private");
+});
+it.each(["https://s3.qiniucs.com:8443/BUCKET/remote-files/room/object", "https://s3.qiniucs.com/BUCKET/remote-files/room/object#fragment"])("rejects unsafe port or fragment %s", value => {
+  expect(() => validateSignedStorageUrl(value)).toThrow("地址无效");
+});
+
+import { prepareRemotePreview, readRemoteRange } from "./remoteTransfer";
+it("refuses a renewed preview whose revision changed", async () => {
+  const ticket = { transferId: "t", getUrl: url, size: 3, sha256: "0".repeat(64), revision: "v1", expiresAt: Date.now() + 60000 };
+  const call = vi.fn().mockResolvedValueOnce(ticket).mockResolvedValue({ ...ticket, revision: "v2" });
+  const source = await prepareRemotePreview({ call }, "s", "x", "v1", 3);
+  await expect(source.refresh()).rejects.toThrow("版本已变化");
+});
+it("does not silently download a whole file when the storage ignores Range", async () => {
+  const call = vi.fn().mockResolvedValue({ transferId: "t", getUrl: url, size: 1000000, sha256: "0".repeat(64), revision: "v1", expiresAt: Date.now() + 60000 });
+  const source = await prepareRemotePreview({ call }, "s", "x", "v1", 1000000);
+  const response = new Response("ignored"); const cancel = vi.spyOn(response.body!, "cancel");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+  await expect(readRemoteRange(source, 0, 256 * 1024)).rejects.toThrow("有效分段");
+  expect(cancel).toHaveBeenCalled();
+});
+it("renews a forbidden range once and returns only the requested bytes", async () => {
+  const call = vi.fn().mockResolvedValue({ transferId: "t", getUrl: url, size: 10, sha256: "0".repeat(64), revision: "v1", expiresAt: Date.now() + 60000 });
+  const source = await prepareRemotePreview({ call }, "s", "x", "v1", 10);
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response("expired", { status: 403 })).mockResolvedValueOnce(new Response("123", { status: 206, headers: { "Content-Range": "bytes 2-4/10" } })));
+  const result = await readRemoteRange(source, 2, 3);
+  expect(new TextDecoder().decode(result.bytes)).toBe("123");
+  expect(call).toHaveBeenLastCalledWith("file.download.prepare", expect.objectContaining({ forceRefresh: true }), expect.anything());
+  await expect(result.source.refresh()).rejects.toThrow("刷新失败");
+});

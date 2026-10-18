@@ -2,7 +2,7 @@ import type { RpcClient } from "./rpc";
 import { throwIfAborted } from "./abortSignal";
 import type { LocalFilePreview, LocalPreviewKind } from "./localFiles";
 import { decodeBase64 } from "./previewBinary";
-import { downloadRemoteFile, SMALL_RPC_FILE_BYTES } from "./remoteTransfer";
+import { downloadRemoteFile, prepareRemotePreview, readRemoteRange, SMALL_RPC_FILE_BYTES } from "./remoteTransfer";
 
 export interface FileReadOptions {
   client?: Pick<RpcClient, "call" | "mode">;
@@ -73,8 +73,30 @@ export async function readRemoteFile(
     );
   options.reserveBytes?.(size);
   const text = (kind === "text" || kind === "markdown") && !options.download;
-  // Only small text travels through JSON RPC. All original binary bytes use
-  // the private signed object transport.
+  if (!options.download && !options.reserveBytes && ["pdf", "image", "audio", "video"].includes(kind)) {
+    file.remoteSource = await prepareRemotePreview(client, sessionId, description.path, revision, size, signal);
+    return file;
+  }
+  if (text && size > SMALL_RPC_FILE_BYTES && !options.reserveBytes) {
+    let source = await prepareRemotePreview(client, sessionId, description.path, revision, size, signal);
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    let offset = 0;
+    let busy = false;
+    const next = async (): Promise<LocalFilePreview> => {
+      if (busy) throw new Error("正在读取下一段");
+      busy = true;
+      try {
+        const result = await readRemoteRange(source, offset, SMALL_RPC_FILE_BYTES, signal);
+        source = result.source;
+        offset += result.bytes.length;
+        // Carry incomplete UTF-8 characters across page boundaries without loss.
+        file.content = decoder.decode(result.bytes, { stream: offset < size });
+        file.textPage = { end: offset, total: size, next: offset < size ? next : undefined };
+        return { ...file };
+      } finally { busy = false; }
+    };
+    return next();
+  }
   if (!text || size > SMALL_RPC_FILE_BYTES) {
     const prepared = await downloadRemoteFile(client, sessionId, description.path, revision, signal, onProgress);
     if (prepared.size !== size) throw new Error("文件大小已变化，请重新加载");

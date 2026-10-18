@@ -233,3 +233,12 @@ it("shows a file-type icon and clickable breadcrumb folders", () => {
   expect(reveal).toHaveBeenLastCalledWith("/w/proj");
   expect(container.querySelector(".file-preview-header .file-kind-icon")).not.toBeNull();
 });
+
+it("offers explicit continuation and shows partial HTML as source", async () => {
+  const loadNextPage = vi.fn();
+  render(<FilePreviewPanel preview={{ target: { path: "/workspace/large.html", line: null, column: null }, resolvedPath: "/workspace/large.html", content: "<h1>partial</h1>", kind: "text", mimeType: "text/html", dataBase64: null, size: 500000, loading: false, error: null, open: true, textPage: { end: 262144, total: 500000, next: vi.fn() }, loadNextPage }} workspacePath="/workspace" workspacePaths={[]} onClose={vi.fn()} onOpenFile={vi.fn()} onRetry={vi.fn()} />);
+  expect(await screen.findByLabelText("代码视图")).toBeTruthy();
+  expect(document.querySelector("iframe")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "继续读取下一段" }));
+  expect(loadNextPage).toHaveBeenCalledOnce();
+});

@@ -46,6 +46,7 @@ describe("remote artifact reads", () => {
       client,
       sessionId: "s1",
       onProgress: progress,
+      download: true,
     });
     expect(new Uint8Array(await result.blob!.arrayBuffer())).toEqual(bytes);
     expect(result.dataBase64).toBeNull();
@@ -157,3 +158,36 @@ describe("remote artifact reads", () => {
     expect(client.call).not.toHaveBeenCalled();
   });
 });
+
+ it.each(["pdf", "image", "audio", "video"])("prepares %s without fetching original bytes", async kind => {
+   const client = source(new Uint8Array(19), kind);
+   const result = await readRemoteFile("media", { client, sessionId: "s1" });
+   expect(result.blob).toBeNull();
+   expect(result.remoteSource?.revision).toBe("v1");
+   expect(fetch).not.toHaveBeenCalled();
+   await result.remoteSource!.refresh();
+   expect(client.call).toHaveBeenLastCalledWith("file.download.prepare", expect.objectContaining({ forceRefresh: true }), expect.anything());
+   await expect(result.remoteSource!.refresh()).rejects.toThrow("刷新失败");
+ });
+ it("pages large UTF-8 text with bounded ranges and no lost characters", async () => {
+   const text = "a".repeat(256 * 1024 - 1) + "中文末尾";
+   const bytes = new TextEncoder().encode(text);
+   const client = source(bytes, "text");
+   const original = client.call.getMockImplementation()! as (...args: unknown[]) => Promise<unknown>;
+   const ranges: string[] = [];
+   client.call.mockImplementation(async (...args) => {
+     const result = await original(...args);
+     if (args[0] === "file.download.prepare") vi.stubGlobal("fetch", vi.fn(async (_url, options) => {
+       const range = options.headers.Range; ranges.push(range);
+       const [, start, end] = /bytes=(\d+)-(\d+)/.exec(range)!;
+       return new Response(bytes.slice(Number(start), Number(end) + 1), { status: 206, headers: { "Content-Range": `bytes ${start}-${end}/${bytes.length}` } });
+     }));
+     return result;
+   });
+   const first = await readRemoteFile("large.txt", { client, sessionId: "s1" });
+   expect(ranges).toEqual(["bytes=0-262143"]);
+   const next = await first.textPage!.next!();
+   expect(first.content! + next.content!).toBe(text);
+   expect(next.textPage?.next).toBeUndefined();
+   expect(client.call.mock.calls.some(([method]) => method === "file.read")).toBe(false);
+ });

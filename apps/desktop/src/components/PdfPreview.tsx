@@ -1,3 +1,4 @@
+import type { RemotePreviewSource } from "../remoteTransfer";
 import { RotateCw, Unlock } from "lucide-react";
 import {
   memo,
@@ -35,12 +36,17 @@ type Anchor = { page: number; fraction: number; left: number };
 export function PdfPreview(props: {
   dataBase64?: string;
   blob?: Blob | null;
+  remoteSource?: RemotePreviewSource;
   onError: (message: string) => void;
 }) {
-  const { pdf, password, failed } = usePdfDocument(
+  const { pdf, password, failed, renew } = usePdfDocument(
     props.blob ?? props.dataBase64 ?? "",
     props.onError,
+    props.remoteSource,
   );
+  const handlePdfError = useCallback(async (message: string) => {
+    if (!await renew()) props.onError(message);
+  }, [renew, props.onError]);
   const cache = usePreviewCache();
   const [savedPage, setPage] = usePreviewValue("pdfPage", 1);
   const [zoom, setZoom] = usePreviewValue("pdfZoom", 1);
@@ -53,7 +59,7 @@ export function PdfPreview(props: {
   const pagesRef = useRef<HTMLDivElement>(null);
   const width = usePreviewWidth(stageRef);
   const fitWidth = fit ? width : 0;
-  const sizes = usePageSizes(pdf, rotation, props.onError);
+  const sizes = usePageSizes(pdf, rotation, handlePdfError);
   const scaleOf = useCallback(
     (natural: PdfPageSize) =>
       fitWidth > 0 ? fitWidth / natural.width : zoom,
@@ -213,7 +219,7 @@ export function PdfPreview(props: {
           height={layout.sizes[index - 1].height}
           onMeasure={sizes.measure}
           onText={onText}
-          onError={props.onError}
+          onError={handlePdfError}
         />,
       );
   return (

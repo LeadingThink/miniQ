@@ -300,3 +300,26 @@ it("scrolls continuously through a virtualized page stack", async () => {
     frame.mockRestore();
   }
 });
+
+
+it("uses signed range loading, renews a page failure once, and preserves the page", async () => {
+  let fail = false;
+  const renderPage = vi.fn(() => {
+    const rejected = fail; fail = false;
+    return { promise: rejected ? Promise.reject(new Error("expired")) : Promise.resolve(), cancel: vi.fn() };
+  });
+  documentFixture(renderPage);
+  const refresh = vi.fn().mockResolvedValue({ getUrl: "https://bucket.qiniucs.com/remote-files/r/new", expiresAt: Date.now() + 60000, revision: "v1" });
+  const source = { getUrl: "https://bucket.qiniucs.com/remote-files/r/old", expiresAt: Date.now() + 60000, revision: "v1", refresh };
+  const onError = vi.fn();
+  render(<PdfPreview remoteSource={source as never} onError={onError} />);
+  await waitFor(() => expect(renderPage).toHaveBeenCalled());
+  expect(mocks.getDocument.mock.calls[0][0]).toMatchObject({ url: source.getUrl, disableAutoFetch: true, disableStream: true, rangeChunkSize: 262144, withCredentials: false });
+  expect(mocks.getDocument.mock.calls[0][0].data).toBeUndefined();
+  fail = true;
+  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
+  await waitFor(() => expect(mocks.getDocument.mock.calls.at(-1)?.[0].url).toContain("/new"));
+  await waitFor(() => expect((screen.getByLabelText("PDF 页码") as HTMLInputElement).value).toBe("2"));
+  expect(onError).not.toHaveBeenCalled();
+});

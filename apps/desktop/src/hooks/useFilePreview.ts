@@ -3,6 +3,7 @@ import { errorMessage } from "../errorMessage";
 import {
   readLocalFilePreview,
   type LocalPreviewKind,
+  type LocalFilePreview,
   type LocalFileTarget,
 } from "../localFiles";
 import {
@@ -25,6 +26,9 @@ export interface FilePreviewState {
   mimeType: string | null;
   dataBase64: string | null;
   blob?: Blob | null;
+  remoteSource?: LocalFilePreview["remoteSource"];
+  textPage?: LocalFilePreview["textPage"];
+  loadNextPage?: () => Promise<void>;
   size: number | null;
   loading: boolean;
   error: string | null;
@@ -143,6 +147,8 @@ export function useFilePreview(
           mimeType: file.mimeType,
           dataBase64: file.dataBase64,
           blob: file.blob ?? null,
+          remoteSource: file.remoteSource,
+          textPage: file.textPage,
           size: file.size,
           loading: false,
           error: null,
@@ -196,6 +202,8 @@ export function useFilePreview(
           mimeType: file.mimeType,
           dataBase64: file.dataBase64,
           blob: file.blob ?? null,
+          remoteSource: file.remoteSource,
+          textPage: file.textPage,
           size: file.size,
           loading: false,
           error: null,
@@ -299,7 +307,16 @@ export function useFilePreview(
   return {
     views,
     viewScope: scope,
-    state: stateScope === scope ? state : EMPTY_PREVIEW,
+    state: stateScope === scope ? { ...state, loadNextPage: async () => {
+      const requestId = requestSequence.current;
+      if (!state.textPage?.next) return;
+      try {
+        const file = await state.textPage.next();
+        if (requestId === requestSequence.current) setState(current => ({ ...current, content: file.content, textPage: file.textPage, error: null }));
+      } catch (cause) {
+        if (requestId === requestSequence.current) setState(current => ({ ...current, error: errorMessage(cause) }));
+      }
+    } } : EMPTY_PREVIEW,
     tabs: tabs.targets,
     closeTab,
     closeOtherTabs,

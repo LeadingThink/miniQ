@@ -207,3 +207,20 @@ it("keeps batched closes coherent and cancels a late payload when closing all ta
   expect(hook.result.current.state.content).toBeNull();
   expect(hook.result.current.canReopenClosedTab).toBe(true);
 });
+
+it("loads the next bounded text page only on request and ignores it after close", async () => {
+  let finish: (file: LocalFilePreview) => void = () => {};
+  const next = vi.fn(() => new Promise<LocalFilePreview>(resolve => { finish = resolve; }));
+  const file: LocalFilePreview = { path: "/work/large.txt", kind: "text", mimeType: "text/plain", content: "first", dataBase64: null, size: 500000, textPage: { end: 262144, total: 500000, next } };
+  vi.mocked(readLocalFilePreview).mockResolvedValueOnce(file);
+  const hook = renderHook(() => useFilePreview("/work", "paging-session"));
+  await act(async () => hook.result.current.openFile({ path: file.path, line: null, column: null }));
+  expect(next).not.toHaveBeenCalled();
+  let pending: Promise<void> | undefined;
+  act(() => { pending = hook.result.current.state.loadNextPage?.(); });
+  expect(next).toHaveBeenCalledOnce();
+  act(() => hook.result.current.close());
+  await act(async () => { finish({ ...file, content: "late", textPage: undefined }); await pending; });
+  expect(hook.result.current.state.open).toBe(false);
+  expect(hook.result.current.state.content).toBeNull();
+});

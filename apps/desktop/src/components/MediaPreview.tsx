@@ -1,3 +1,4 @@
+import type { RemotePreviewSource } from "../remoteTransfer";
 import { Maximize, Scan, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { decodeBase64 } from "../previewBinary";
@@ -11,13 +12,46 @@ import {
 type Props = {
   dataBase64?: string;
   blob?: Blob | null;
+  remoteSource?: RemotePreviewSource;
   mimeType: string;
   kind: "image" | "audio" | "video";
   label: string;
   onError: (message: string) => void;
 };
 
-export function BlobPreview({ dataBase64, blob, mimeType, ...props }: Props) {
+export function BlobPreview(props: Props) {
+  return props.remoteSource ? <RemoteMediaPreview {...props} remoteSource={props.remoteSource} /> : <LocalBlobPreview {...props} />;
+}
+function RemoteMediaPreview({ remoteSource, ...props }: Props & { remoteSource: RemotePreviewSource }) {
+  const [active, setActive] = useState<{ original: RemotePreviewSource; source: RemotePreviewSource }>();
+  const source = active?.original === remoteSource ? active.source : remoteSource;
+  const renew = useRef<() => void>(() => {});
+  const report = useRef(props.onError);
+  report.current = props.onError;
+  const cache = usePreviewCache();
+  useEffect(() => {
+    let cancelled = false;
+    let attempted = false;
+    let pending = false;
+    renew.current = () => {
+      if (pending || cancelled) return;
+      if (attempted) { report.current("媒体预览失败，请重新加载文件"); return; }
+      attempted = true;
+      pending = true;
+      void remoteSource.refresh().then(next => {
+        if (!cancelled) setActive({ original: remoteSource, source: next });
+      }).catch(cause => { if (!cancelled) report.current(cause instanceof Error ? cause.message : String(cause)); }).finally(() => { pending = false; });
+    };
+    if (remoteSource.expiresAt <= Date.now()) renew.current();
+    else setActive({ original: remoteSource, source: remoteSource });
+    return () => { cancelled = true; };
+  }, [remoteSource]);
+  if (active?.original !== remoteSource && remoteSource.expiresAt <= Date.now()) return <div className="diff-empty">正在刷新预览链接…</div>;
+  return props.kind === "image" ? <ImageInspector url={source.getUrl} label={props.label} onError={() => renew.current()} />
+    : <TimeMediaInspector url={source.getUrl} {...props} savedCache={cache} onError={() => renew.current()} />;
+}
+
+function LocalBlobPreview({ dataBase64, blob, mimeType, ...props }: Props) {
   const onError = useRef(props.onError);
   onError.current = props.onError;
   const [source, setSource] = useState<{
@@ -168,6 +202,7 @@ export function ImageInspector({
       >
         <img
           src={url}
+          referrerPolicy="no-referrer"
           alt={label || "图片预览"}
           style={
             mode === "zoom" && dimensions
@@ -193,18 +228,22 @@ export function ImageInspector({
 }
 
 function TimeMediaInspector({
+  savedCache,
   url,
   kind,
   label,
   onError,
 }: {
+  savedCache?: ReturnType<typeof usePreviewCache>;
   url: string;
   kind: Props["kind"];
   label: string;
   onError: Props["onError"];
 }) {
   const [metadata, setMetadata] = useState("");
-  const viewCache = usePreviewCache();
+  const localCache = usePreviewCache();
+  const viewCache = savedCache ?? localCache;
+  const restoredSource = useRef("");
   const elementProps = {
     src: url,
     controls: true,
@@ -215,6 +254,7 @@ function TimeMediaInspector({
       const savedTime = viewCache.get("mediaTime");
       if (typeof savedTime === "number" && Number.isFinite(media.duration))
         media.currentTime = Math.min(savedTime, media.duration);
+      restoredSource.current = url;
       const duration = Number.isFinite(media.duration)
         ? `${media.duration.toFixed(1)} 秒`
         : "";
@@ -224,8 +264,9 @@ function TimeMediaInspector({
           : duration,
       );
     },
-    onTimeUpdate: (event: React.SyntheticEvent<HTMLMediaElement>) =>
-      viewCache.set("mediaTime", event.currentTarget.currentTime),
+    onTimeUpdate: (event: React.SyntheticEvent<HTMLMediaElement>) => {
+      if (restoredSource.current === url) viewCache.set("mediaTime", event.currentTarget.currentTime);
+    },
     onError: () => onError(kind === "video" ? "视频解码失败" : "音频解码失败"),
   };
   return (

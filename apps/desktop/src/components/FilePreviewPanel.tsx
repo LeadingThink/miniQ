@@ -195,14 +195,14 @@ function PreviewPanelContent({
     (message: string) => setRenderError(message),
     [],
   );
-  const renderable =
+  const renderable = !preview.textPage && (
     preview.kind === "markdown" ||
     (preview.kind === "text" &&
-      (isHtmlFile(path) || /\.(svg|csv|tsv)$/i.test(path)));
+      (isHtmlFile(path) || /\.(svg|csv|tsv)$/i.test(path))));
   const roots = workspacePaths.length ? workspacePaths : [workspacePath];
   const segments = breadcrumbSegments(path, roots);
   const sourceVisible =
-    (preview.kind === "text" && !renderable) || (renderable && markdownSource);
+    ((preview.kind === "text" || preview.kind === "markdown") && !renderable) || (renderable && markdownSource);
 
   useEffect(() => {
     if (!sourceVisible) editorRef.current = null;
@@ -534,6 +534,10 @@ function PreviewPanelContent({
       )}
       {onDiscuss && <PreviewSelection text={selection.text} onClear={selection.clear}
         onDiscuss={() => { onDiscuss(path, selection.text); selection.clear(); }} />}
+      {preview.textPage && <div role="status" className="file-preview-loading">
+        <span>分段预览：已读取 {formatFileSize(preview.textPage.end)} / {formatFileSize(preview.textPage.total)}；下载可获取完整原文件</span>
+        {preview.textPage.next && <button type="button" onClick={() => void preview.loadNextPage?.()}>继续读取下一段</button>}
+      </div>}
       <div
         ref={selection.ref}
         className="file-preview-content"
@@ -547,7 +551,7 @@ function PreviewPanelContent({
             {preview.progress && <progress aria-label="文件加载进度" value={preview.progress.received} max={preview.progress.total || 1} />}
             <button type="button" className="ghost" onClick={onClose}>取消加载</button>
           </div>
-        ) : preview.kind === "markdown" &&
+        ) : !preview.textPage && preview.kind === "markdown" &&
           preview.content !== null &&
           !markdownSource ? (
           <MarkdownPreview
@@ -596,7 +600,7 @@ function PreviewPanelContent({
               onGoToLine={openGoToLine}
             />
           </Suspense>
-        ) : (preview.dataBase64 || preview.blob) &&
+        ) : (preview.dataBase64 || preview.blob || preview.remoteSource) &&
           preview.mimeType &&
           (preview.kind === "image" ||
             preview.kind === "audio" ||
@@ -604,30 +608,32 @@ function PreviewPanelContent({
           <BlobPreview
             key={`${path}:${renderAttempt}`}
             dataBase64={preview.dataBase64 ?? undefined} blob={preview.blob}
+            remoteSource={preview.remoteSource}
             mimeType={preview.mimeType}
             kind={preview.kind}
             label={fileName(path)}
             onError={reportRenderError}
           />
-        ) : preview.kind === "pdf" && (preview.dataBase64 || preview.blob) ? (
+        ) : preview.kind === "pdf" && (preview.dataBase64 || preview.blob || preview.remoteSource) ? (
           <PdfPreview
+            remoteSource={preview.remoteSource}
             key={renderAttempt}
             dataBase64={preview.dataBase64 ?? undefined} blob={preview.blob}
             onError={reportRenderError}
           />
-        ) : preview.kind === "docx" && (preview.dataBase64 || preview.blob) ? (
+        ) : preview.kind === "docx" && (preview.dataBase64 || preview.blob || preview.remoteSource) ? (
           <DocxPreview
             key={renderAttempt}
             dataBase64={preview.dataBase64 ?? undefined} blob={preview.blob}
             onError={reportRenderError}
           />
-        ) : preview.kind === "xlsx" && (preview.dataBase64 || preview.blob) ? (
+        ) : preview.kind === "xlsx" && (preview.dataBase64 || preview.blob || preview.remoteSource) ? (
           <SpreadsheetPreview
             key={renderAttempt}
             dataBase64={preview.dataBase64 ?? undefined} blob={preview.blob}
             onError={reportRenderError}
           />
-        ) : preview.kind === "pptx" && (preview.dataBase64 || preview.blob) ? (
+        ) : preview.kind === "pptx" && (preview.dataBase64 || preview.blob || preview.remoteSource) ? (
           <PptxPreview
             key={renderAttempt}
             dataBase64={preview.dataBase64 ?? undefined} blob={preview.blob}
