@@ -111,8 +111,14 @@ describe("Android update transport", () => {
 });
 
 describe("Android release selection", () => {
-  it.each(["0.1.23", "0.1.24"])("does not offer a downgrade to installed version %s", async (currentVersion) => {
-    await expect(checkAndroidUpdate({ currentVersion })).resolves.toEqual({ phase: "unavailable", version: currentVersion });
+  it("does not offer a downgrade to a newer installed version", async () => {
+    await expect(checkAndroidUpdate({ currentVersion: "0.1.24" })).resolves.toEqual({ phase: "unavailable", version: "0.1.24" });
+  });
+
+  it("returns the matching release when the installed build is the published one", async () => {
+    await expect(checkAndroidUpdate({ currentVersion: "0.1.23" })).resolves.toMatchObject({
+      phase: "unavailable", version: "0.1.23", release: { version: "0.1.23" },
+    });
   });
 
   it("does not claim the client is current when its installed version cannot be read", async () => {

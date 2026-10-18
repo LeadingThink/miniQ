@@ -4,10 +4,9 @@ import type { DownloadEvent, Update } from "@tauri-apps/plugin-updater";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
+import { UPDATE_PERIODIC_CHECK_MS, UPDATE_RECHECK_INTERVAL_MS } from "../updatePolicy";
 
 const STARTUP_CHECK_DELAY_MS = 10_000;
-const UPDATE_CHECK_INTERVAL_MS = 10 * 60 * 1_000;
-const FOCUS_CHECK_INTERVAL_MS = 60_000;
 
 export type UpdatePhase =
   | "idle"
@@ -25,6 +24,15 @@ export interface AppUpdaterState {
   downloadedBytes: number;
   totalBytes: number | null;
   error: string | null;
+  /** Release notes of the available version, one entry per line of `Update.body`. */
+  releaseNotes: string[];
+}
+
+/** Turn the updater's free-text body into display lines without list markers. */
+export function parseReleaseNotes(body: string | null | undefined): string[] {
+  return (body ?? "").split(/\r?\n/)
+    .map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, "").trim())
+    .filter(Boolean);
 }
 
 const INITIAL_STATE: AppUpdaterState = {
@@ -33,10 +41,11 @@ const INITIAL_STATE: AppUpdaterState = {
   downloadedBytes: 0,
   totalBytes: null,
   error: null,
+  releaseNotes: [],
 };
 
 export function shouldCheckForUpdate(lastCheckedAt: number, now: number): boolean {
-  return now - lastCheckedAt >= FOCUS_CHECK_INTERVAL_MS;
+  return now - lastCheckedAt >= UPDATE_RECHECK_INTERVAL_MS;
 }
 
 export function isUnsupportedPlatformUpdateError(message: string): boolean {
@@ -114,6 +123,7 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
             downloadedBytes: 0,
             totalBytes: null,
             error: null,
+            releaseNotes: parseReleaseNotes(update.body),
           });
         } catch (error) {
           const message = errorMessage(error);
@@ -144,7 +154,7 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
     );
     const interval = window.setInterval(
       () => void runCheck(true),
-      UPDATE_CHECK_INTERVAL_MS,
+      UPDATE_PERIODIC_CHECK_MS,
     );
     const checkWhenVisible = () => {
       if (document.visibilityState !== "visible") return;

@@ -26,7 +26,8 @@ export interface AndroidRelease {
 export type MobileUpdateState =
   | { phase: "idle" }
   | { phase: "checking" }
-  | { phase: "unavailable"; version: string }
+  /** `release` is set when the installed build IS the published one, so its notes can be announced after an upgrade. */
+  | { phase: "unavailable"; version: string; release?: AndroidRelease }
   | { phase: "available"; release: AndroidRelease }
   | { phase: "error"; error: string };
 
@@ -155,9 +156,8 @@ export async function checkAndroidUpdate(options: {
   const current = options.currentVersion ?? (await readInstalledVersion());
   if (!current || !isReleaseVersion(current)) return { phase: "error", error: "无法读取当前版本号" };
   const release = await fetchAndroidRelease(options.fetchImpl ?? fetch, options.manifestUrl ?? RELEASE_MANIFEST_URL);
-  if (compareVersions(release.version, current) <= 0) {
-    return { phase: "unavailable", version: current };
-  }
+  const order = compareVersions(release.version, current);
+  if (order <= 0) return { phase: "unavailable", version: current, ...(order === 0 ? { release } : {}) };
   return { phase: "available", release };
 }
 

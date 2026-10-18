@@ -10,6 +10,7 @@ const IDLE: AppUpdaterState = {
   version: null,
   downloadedBytes: 0,
   totalBytes: null,
+  releaseNotes: [],
   error: null,
 };
 

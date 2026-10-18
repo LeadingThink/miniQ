@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import { iosInstalledReleaseNotices } from "../iosInstalledReleaseNotice";
+import { installedNoticesFor } from "../installedReleaseNotice";
 import { mobileUpdateScheduler } from "../mobileUpdateScheduler";
 import { Download, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -41,7 +41,7 @@ export function MobileUpdateCheck() {
     setState({ phase: "checking" });
     try {
       const result = await mobileUpdateScheduler.run(true);
-      if (result.phase === "available") iosInstalledReleaseNotices.cache(result.release);
+      if (result.phase === "available") installedNoticesFor(Capacitor.getPlatform()).cache(result.release);
       setState(result);
     } catch (error) {
       setState({ phase: "error", error: errorMessage(error) });

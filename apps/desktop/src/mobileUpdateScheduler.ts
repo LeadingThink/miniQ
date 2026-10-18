@@ -1,33 +1,24 @@
 import { checkMobileUpdate, isMobileUpdateSupported, type MobileUpdateState } from "./mobileUpdate";
+import { UPDATE_FAILURE_COOLDOWN_MS, UPDATE_RECHECK_INTERVAL_MS, UPDATE_REMINDER_COOLDOWN_MS, UpdateStamps } from "./updatePolicy";
 
-export const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
-export const UPDATE_REMINDER_COOLDOWN = 24 * 60 * 60 * 1000;
-export const UPDATE_FAILURE_COOLDOWN = 5 * 60 * 1000;
-const KEY = "miniq:android-update:";
+export const UPDATE_CHECK_INTERVAL = UPDATE_RECHECK_INTERVAL_MS;
+export const UPDATE_REMINDER_COOLDOWN = UPDATE_REMINDER_COOLDOWN_MS;
+export const UPDATE_FAILURE_COOLDOWN = UPDATE_FAILURE_COOLDOWN_MS;
 
 /** One coordinator for startup, resume and settings, including StrictMode remounts. */
 export class MobileUpdateScheduler {
   private flight: Promise<MobileUpdateState> | null = null;
   private manual = false;
-  private memory = new Map<string, number>();
+  private stamps: UpdateStamps;
   constructor(
     private check = checkMobileUpdate,
     private supported = isMobileUpdateSupported,
-    private now = Date.now,
-  ) {}
+    now = Date.now,
+  ) { this.stamps = new UpdateStamps("miniq:android-update:", now); }
 
-  private recent(key: string, interval: number): boolean {
-    let timestamp = this.memory.get(key) ?? 0;
-    try { timestamp = Number(localStorage.getItem(KEY + key)) || timestamp; } catch { /* Storage is optional. */ }
-    const elapsed = this.now() - timestamp;
-    return timestamp > 0 && elapsed >= 0 && elapsed < interval;
-  }
+  private recent(key: string, interval: number): boolean { return this.stamps.recent(key, interval); }
 
-  private stamp(key: string) {
-    const timestamp = this.now();
-    this.memory.set(key, timestamp);
-    try { localStorage.setItem(KEY + key, String(timestamp)); } catch { /* Keep in-memory cooldown. */ }
-  }
+  private stamp(key: string) { this.stamps.stamp(key); }
 
   canPrompt(version: string) { return !this.recent(`reminder:${version}`, UPDATE_REMINDER_COOLDOWN); }
 

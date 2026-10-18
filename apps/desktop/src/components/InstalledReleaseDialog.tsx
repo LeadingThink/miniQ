@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
-import { iosInstalledReleaseNotices, type InstalledReleaseNotice } from "../iosInstalledReleaseNotice";
+import type { InstalledReleaseNotice, InstalledReleaseNotices } from "../installedReleaseNotice";
 
-export function IosInstalledReleaseDialog({ notice, onClose }: { notice: InstalledReleaseNotice; onClose: () => void }) {
+/** "已更新至 …" announcement shared by iOS, Android and desktop. */
+export function InstalledReleaseDialog({ notice, notices, onClose }: { notice: InstalledReleaseNotice; notices: InstalledReleaseNotices; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const title = useId();
@@ -12,7 +13,7 @@ export function IosInstalledReleaseDialog({ notice, onClose }: { notice: Install
     // Another modal may have opened between queue selection and React commit.
     if (document.querySelector("dialog[open]")) { onClose(); return; }
     element.showModal();
-    iosInstalledReleaseNotices.markShown(notice.version);
+    notices.markShown(notice.version);
     button.current?.focus();
     return () => {
       element.close();

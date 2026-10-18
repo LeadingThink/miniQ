@@ -108,3 +108,19 @@ it("offers App Store navigation for iOS and never describes APK installation", a
   expect(open).toHaveBeenCalledWith(IOS_APP_STORE_URL);
   expect(close).toHaveBeenCalledOnce();
 });
+
+it("announces what changed after an Android upgrade, once, using the published notes of the installed build", async () => {
+  const { androidInstalledReleaseNotices } = await import("../installedReleaseNotice");
+  vi.mock("@capacitor/core", async (original) => ({ ...await original<typeof import("@capacitor/core")>(), Capacitor: { isNativePlatform: () => true, getPlatform: () => "android" } }));
+  localStorage.clear();
+  androidInstalledReleaseNotices.pending("0.1.79");
+  const installed = { ...release, version: "0.1.80", releaseNotes: ["新增手机上传入口"] };
+  run.mockResolvedValue({ phase: "unavailable", version: "0.1.80", release: installed });
+  vi.spyOn(await import("../mobileUpdate"), "readInstalledVersion").mockResolvedValue("0.1.80");
+  const view = render(<MobileUpdatePrompt />); await start();
+  expect(screen.getByRole("dialog", { name: /已更新至 0\.1\.80/ })).toBeTruthy();
+  expect(screen.getByText("新增手机上传入口")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "开始使用" })); view.unmount();
+  render(<MobileUpdatePrompt />); await start();
+  expect(screen.queryByRole("dialog")).toBeNull();
+});

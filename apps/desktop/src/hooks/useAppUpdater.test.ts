@@ -11,6 +11,7 @@ const DOWNLOADING: AppUpdaterState = {
   version: "0.2.0",
   downloadedBytes: 0,
   totalBytes: null,
+  releaseNotes: [],
   error: null,
 };
 
@@ -57,5 +58,17 @@ describe("isUnsupportedPlatformUpdateError", () => {
 
   it("does not hide network and signature failures", () => {
     expect(isUnsupportedPlatformUpdateError("request timed out")).toBe(false);
+  });
+});
+
+import { parseReleaseNotes } from "./useAppUpdater";
+describe("parseReleaseNotes", () => {
+  it("returns clean display lines without list markers or blanks", () => {
+    expect(parseReleaseNotes("- 新增上传\r\n* 修复加载\n\n1. 更快启动\n  2) 其他")).toEqual(["新增上传", "修复加载", "更快启动", "其他"]);
+  });
+  it("tolerates missing bodies", () => {
+    expect(parseReleaseNotes(undefined)).toEqual([]);
+    expect(parseReleaseNotes(null)).toEqual([]);
+    expect(parseReleaseNotes("   ")).toEqual([]);
   });
 });

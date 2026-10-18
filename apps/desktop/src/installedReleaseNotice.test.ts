@@ -1,10 +1,10 @@
 import { beforeEach, expect, it } from "vitest";
-import { IosInstalledReleaseNotices } from "./iosInstalledReleaseNotice";
+import { InstalledReleaseNotices } from "./installedReleaseNotice";
 let data: Map<string, string>;
-let notices: IosInstalledReleaseNotices;
+let notices: InstalledReleaseNotices;
 beforeEach(() => {
   data = new Map();
-  notices = new IosInstalledReleaseNotices({ getItem: (key) => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value); } });
+  notices = new InstalledReleaseNotices("ios", { getItem: (key) => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value); } });
 });
 it("records first-install baseline silently and shows an upgrade only once", () => {
   expect(notices.pending("1.0")).toBeNull();
@@ -28,7 +28,7 @@ it("normalizes equivalent version numbers and ignores Android notes", () => {
   expect(notices.pending("1.1")?.releaseNotes).toEqual([]);
 });
 it("retains once-only behavior in memory when storage fails", () => {
-  const broken = new IosInstalledReleaseNotices({ getItem: () => { throw Error(); }, setItem: () => { throw Error(); } });
+  const broken = new InstalledReleaseNotices("ios", { getItem: () => { throw Error(); }, setItem: () => { throw Error(); } });
   expect(broken.pending("1.0")).toBeNull();
   expect(broken.pending("1.1")).not.toBeNull();
   broken.markShown("1.1");
@@ -37,14 +37,14 @@ it("retains once-only behavior in memory when storage fails", () => {
 it("persists baseline, notes and consumption across launches", () => {
   notices.pending("1.0");
   notices.cache({ platform: "ios", version: "1.1", releaseNotes: ["说明"] });
-  const next = new IosInstalledReleaseNotices({ getItem: (key) => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value); } });
+  const next = new InstalledReleaseNotices("ios", { getItem: (key) => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value); } });
   expect(next.pending("1.1")?.releaseNotes).toEqual(["说明"]);
   next.markShown("1.1");
   expect(notices.pending("1.1")).toBeNull();
 });
 it("does not repeat when writes fail but reads still return an old baseline", () => {
   let fail = false;
-  const store = new IosInstalledReleaseNotices({ getItem: (key) => data.get(key) ?? null, setItem: (key, value) => { if (fail) throw Error(); data.set(key, value); } });
+  const store = new InstalledReleaseNotices("ios", { getItem: (key) => data.get(key) ?? null, setItem: (key, value) => { if (fail) throw Error(); data.set(key, value); } });
   store.pending("1.0"); fail = true;
   expect(store.pending("1.1")).not.toBeNull(); store.markShown("1.1");
   expect(store.pending("1.1")).toBeNull();

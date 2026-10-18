@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
-import { iosInstalledReleaseNotices, type InstalledReleaseNotice } from "../iosInstalledReleaseNotice";
-import { IosInstalledReleaseDialog } from "./IosInstalledReleaseDialog";
+import { installedNoticesFor, type InstalledReleaseNotice } from "../installedReleaseNotice";
+import { InstalledReleaseDialog } from "./InstalledReleaseDialog";
+import { UPDATE_STARTUP_DELAY_MS } from "../updatePolicy";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { App } from "@capacitor/app";
@@ -25,11 +26,15 @@ export function MobileUpdatePrompt() {
     let pending: AndroidRelease | null = null;
     let installed: string | null = null;
     const ios = Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios";
+    const notices = installedNoticesFor(Capacitor.getPlatform());
+    // iOS learns its notes from earlier App Store checks. Android reads the
+    // published manifest, so its "已更新至" notice waits for the first check.
+    let checked = ios;
     let ready = !ios;
     let active = document.visibilityState !== "hidden";
     const show = () => {
       if (disposed || !ready || !active || showing.current || promptOwner || document.querySelector("dialog[open]")) return;
-      const installedNotice = installed ? iosInstalledReleaseNotices.pending(installed) : null;
+      const installedNotice = installed && checked ? notices.pending(installed) : null;
       if (installedNotice) {
         promptOwner = owner.current;
         showing.current = true;
@@ -51,21 +56,26 @@ export function MobileUpdatePrompt() {
       const result = await mobileUpdateScheduler.run().catch(() => ({ phase: "idle" as const }));
       if (disposed) return;
       if (result.phase === "available") {
-        iosInstalledReleaseNotices.cache(result.release);
+        notices.cache(result.release);
         pending = result.release;
+      } else if (result.phase === "unavailable" && result.release) {
+        // The installed build is the published one: keep its notes for "已更新至".
+        notices.cache(result.release);
       }
+      checked = true;
       show();
     };
     wake.current = show;
     document.addEventListener(PROMPT_RELEASED, show);
-    if (ios) void readInstalledVersion().then((version) => {
+    void readInstalledVersion().then((version) => {
       if (disposed) return;
       installed = version;
-      if (version) iosInstalledReleaseNotices.pending(version);
+      // First launch records the baseline; only a later upgrade is announced.
+      if (version) notices.pending(version);
       ready = true;
       show();
     });
-    const timer = setTimeout(() => void check(), 2_000);
+    const timer = setTimeout(() => void check(), UPDATE_STARTUP_DELAY_MS);
     const listener = App.addListener("appStateChange", (state) => {
       active = state.isActive;
       if (active) { show(); void check(); }
@@ -98,7 +108,7 @@ export function MobileUpdatePrompt() {
     // The closing dialog leaves the DOM before queued prompts are considered.
     queueMicrotask(() => { wake.current(); document.dispatchEvent(new Event(PROMPT_RELEASED)); });
   };
-  if (notice) return <IosInstalledReleaseDialog notice={notice} onClose={close} />;
+  if (notice) return <InstalledReleaseDialog notice={notice} notices={installedNoticesFor(Capacitor.getPlatform())} onClose={close} />;
   return release ? <MobileUpdateDialog release={release} onClose={close} /> : null;
 }
 

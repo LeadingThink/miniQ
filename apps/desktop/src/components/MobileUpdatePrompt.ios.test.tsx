@@ -3,7 +3,7 @@ import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MobileUpdatePrompt } from "./MobileUpdatePrompt";
-import { iosInstalledReleaseNotices } from "../iosInstalledReleaseNotice";
+import { iosInstalledReleaseNotices } from "../installedReleaseNotice";
 import { IOS_APP_STORE_URL } from "../mobileUpdate";
 const mocks = vi.hoisted(() => ({ version: "1.0", platform: "ios", run: vi.fn(), canPrompt: vi.fn() }));
 vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => true, getPlatform: () => mocks.platform } }));

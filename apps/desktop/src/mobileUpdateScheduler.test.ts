@@ -26,6 +26,18 @@ it("shares concurrent requests and gives manual checks ownership", async () => {
   expect(await auto).toEqual({ phase: "idle" }); expect(await duplicate).toEqual({ phase: "idle" }); expect(await manual).toEqual(available);
   expect(check).toHaveBeenCalledTimes(1);
 });
+it("notices a release published shortly after the last check instead of staying blind for hours", async () => {
+  // Regression: a 6 hour re-check window hid a build published one hour after an up-to-date check.
+  let now = 1_000_000;
+  const current: MobileUpdateState = { phase: "unavailable", version: "0.1.80" };
+  const check = vi.fn().mockResolvedValue(current);
+  const scheduler = new MobileUpdateScheduler(check, () => true, () => now);
+  expect(await scheduler.run()).toEqual(current);
+  check.mockResolvedValue(available);
+  now += 30_000; expect(await scheduler.run()).toEqual({ phase: "idle" }); // still throttled: no hammering
+  now += UPDATE_CHECK_INTERVAL; expect(await scheduler.run()).toEqual(available);
+  expect(UPDATE_CHECK_INTERVAL).toBeLessThanOrEqual(5 * 60 * 1000);
+});
 it("defers same version for 24 hours but permits newer versions and manual checks", async () => {
   let now = 1_000_000; const check = vi.fn().mockResolvedValue(available);
   const scheduler = new MobileUpdateScheduler(check, () => true, () => now);

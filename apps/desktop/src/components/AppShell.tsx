@@ -18,6 +18,7 @@ import { SchedulePanel } from "./Schedule";
 import { SearchOverlay } from "./Search";
 import { SettingsPanel } from "./Settings";
 import { AppSidebar } from "./AppSidebar";
+import { DesktopUpdatePrompt } from "./DesktopUpdatePrompt";
 import { HeroPage } from "./HeroPage";
 import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 import { SessionModelControls } from "./SessionModelControls";
@@ -397,6 +398,7 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
   return (
     <Container {...(contentOnly ? {} : { className: `app ${app.navigation.sidebarCollapsed ? "sidebar-collapsed" : ""}` })}>
       {!contentOnly && <AppSidebar app={app} />}
+      {!contentOnly && <DesktopUpdatePrompt updater={app.updater} />}
       <div className="main" data-app-active={String(active)}>
         <AppStatusBar
           app={app}

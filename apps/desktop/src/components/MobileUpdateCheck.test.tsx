@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mobileUpdateScheduler } from "../mobileUpdateScheduler";
 import { MobileUpdateCheck } from "./MobileUpdateCheck";
-import { iosInstalledReleaseNotices } from "../iosInstalledReleaseNotice";
+import { iosInstalledReleaseNotices } from "../installedReleaseNotice";
 import { Capacitor } from "@capacitor/core";
 import { IOS_APP_STORE_URL, MOBILE_DOWNLOAD_PAGE_URL } from "../mobileUpdate";
 
