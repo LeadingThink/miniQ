@@ -225,3 +225,14 @@ it("falls back from blob media to a data URL on Android", async () => {
   expect(onError).not.toHaveBeenCalled();
   platform.mockRestore();
 });
+
+it("uses original remote Blobs directly and revokes their URL without base64 conversion", () => {
+  const blob = new Blob([new Uint8Array([0, 1, 255])], { type: "image/heic" });
+  const error = vi.fn();
+  const view = render(<BlobPreview blob={blob} mimeType="image/heic" kind="image" label="original" onError={error} />);
+  expect(URL.createObjectURL).toHaveBeenCalledWith(blob);
+  expect(screen.getByRole("img").getAttribute("src")).toBe("blob:media-1");
+  fireEvent.error(screen.getByRole("img"));
+  expect(error).toHaveBeenCalledWith("图片解码失败");
+  view.unmount(); expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:media-1");
+});

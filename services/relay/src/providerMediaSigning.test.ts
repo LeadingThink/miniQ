@@ -4,6 +4,7 @@ import { BlobStore } from "./blobStore.js";
 vi.mock("qiniu", () => ({ default: {
   rs: { BucketManager: class { async getBucketInfo() { return { data: { private: 1, bucket_rules: [
     { prefix: "remote/", delete_after_days: 1 }, { prefix: "provider-media/", delete_after_days: 1 },
+    { prefix: "remote-files/", delete_after_days: 1 },
   ] }, resp: { statusCode: 200 } }; } } },
   auth: { digest: { Mac: class {} } }, conf: { Config: class {} },
 } }));

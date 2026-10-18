@@ -89,6 +89,8 @@ pub(super) async fn run(
         messages,
         control_messages,
     )));
+    let file_tickets =
+        super::file_tickets::Tickets::new(controls.clone(), &identity.room_id, &config.device_id);
     let session = Session {
         state,
         config,
@@ -96,6 +98,8 @@ pub(super) async fn run(
         blob_storage: ready.blob_storage,
         outbound,
         blobs: super::blob::BlobClient::new(controls.clone()),
+        files: super::files::Transfers::new(file_tickets.clone(), ready.file_storage),
+        file_tickets,
         controls,
         requests: Requests::default(),
         uploads: super::upload::Uploads::default(),
@@ -135,6 +139,7 @@ async fn serve(
             _ = ping.tick() => { session.controls.send(Message::Ping(Vec::new().into()))?; },
             _ = config_check.tick() => {
                 session.uploads.expire();
+                session.files.expire();
                 if current_fingerprint(state) != Some(session.config.fingerprint) {
                     say_goodbye(&session.controls).await;
                     return Ok(());

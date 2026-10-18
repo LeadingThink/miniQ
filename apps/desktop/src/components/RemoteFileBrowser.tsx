@@ -1,5 +1,6 @@
 import { FileText, Folder, ArrowUp, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { RemoteFileUpload } from "./RemoteFileUpload";
 import { errorMessage } from "../errorMessage";
 import { formatFileSize } from "../localFiles";
 import type { FileReadOptions, RemoteDirectory } from "../remoteFiles";
@@ -94,6 +95,7 @@ export function RemoteFileBrowser({
       aria-label={label}
       aria-busy={loading}
     >
+      {client?.mode === "remote" && <RemoteFileUpload access={access} />}
       {page && (
         <>
           <select

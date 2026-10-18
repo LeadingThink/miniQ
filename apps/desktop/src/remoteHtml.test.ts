@@ -35,9 +35,9 @@ it("bundles relative images, CSS resources and scripts without giving the iframe
     "/work/index.html",
     { sessionId: "s1" },
   );
-  expect(html).toContain(`data:application/javascript;base64,${btoa('document.title="interactive"')}`);
+  expect(html).toContain('src="blob:');
   expect(html).not.toContain('src="app.js"');
-  expect(html).toContain("data:image/png;base64,");
+  expect(html).toContain("blob:");
   expect(html).not.toContain("isolated-preview");
   expect(
     vi
@@ -70,9 +70,7 @@ it("bundles responsive images, imported styles, and script MIME types without du
   expect(doc.querySelector("style")?.media).toBe("print");
   expect(doc.querySelector("style")?.textContent).toContain("@media screen");
   expect(doc.querySelector("style")?.textContent).toContain("color:blue");
-  expect(doc.querySelector("script")?.getAttribute("src")).toBe(
-    `data:application/javascript;base64,${btoa('document.title="ready"')}`,
-  );
+  expect(doc.querySelector("script")?.getAttribute("src")).toMatch(/^blob:/);
   expect(doc.querySelector("img")?.getAttribute("srcset")).not.toContain(
     "large.png",
   );
@@ -167,7 +165,7 @@ it("retains script loading semantics and literal closing tags inside script sour
   expect(scripts[1].hasAttribute("async")).toBe(true);
   expect(scripts[2].type).toBe("module");
   for (const script of scripts) {
-    expect(script.getAttribute("src")).toBe(`data:application/javascript;base64,${btoa(source)}`);
+    expect(script.getAttribute("src")).toMatch(/^blob:/);
     expect(script.textContent).toBe("");
   }
   expect(doc.querySelector("p")).toBeNull();

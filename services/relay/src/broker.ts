@@ -1,6 +1,6 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import type WebSocket from "ws";
-import { isProviderMediaContentType, MAX_BLOB_BYTES, MAX_PROVIDER_MEDIA_BYTES, type TicketIssuer } from "./blobStore.js";
+import { isProviderMediaContentType, isRemoteFileSessionId, MAX_BLOB_BYTES, MAX_PROVIDER_MEDIA_BYTES, MAX_REMOTE_FILE_BYTES, type TicketIssuer } from "./blobStore.js";
 import { send, sendRaw } from "./outbound.js";
 import { parsePush, parseRegistration, type PushService } from "./push.js";
 import { DESKTOP_RATE, DropCounter, MOBILE_RATE, ObjectByteBudget, TokenBucket } from "./rateLimit.js";
@@ -56,7 +56,7 @@ interface Room {
 export class RelayBroker {
   private readonly rooms = new Map<string, Room>();
   private readonly peers = new WeakMap<WebSocket, Peer>();
-  private readonly providerMediaBudgets = new Map<string, { budget: ObjectByteBudget; lastUsedAt: number }>();
+  private readonly storageBudgets = new Map<string, { budget: ObjectByteBudget; lastUsedAt: number }>();
   constructor(
     private readonly blobs?: TicketIssuer,
     private readonly desktopReconnectGraceMs = 15_000,
@@ -108,6 +108,8 @@ export class RelayBroker {
         previous.socket.close(4001, "desktop reconnected");
       }
       send(socket, { ...this.ready(peer, device), blobStorage: this.blobs?.enabledFor(peer.roomId) ?? false,
+        fileStorage: Boolean((this.blobs?.fileStorageEnabledFor?.(peer.roomId)
+          ?? Boolean(this.blobs?.remoteFileTicket)) && this.blobs?.remoteFileTicket),
         providerMediaStorage: Boolean(this.blobs?.enabledFor(peer.roomId) && this.blobs.providerMediaTicket) });
       this.broadcastPresence(device);
       this.broadcastDevices(room);
@@ -161,6 +163,10 @@ export class RelayBroker {
     }
     if (isObject(raw) && raw.type === "provider_media_ticket") {
       void this.providerMediaTicket(peer, device, raw);
+      return;
+    }
+    if (isObject(raw) && raw.type === "file_ticket") {
+      void this.remoteFileTicket(peer, device, raw);
       return;
     }
     if (isObject(raw) && this.control(peer, room, device, raw)) return;
@@ -352,7 +358,7 @@ export class RelayBroker {
       unavailable();
       return;
     }
-    const reservation = this.providerMediaBudget(peer).reservation(bytes as number);
+    const reservation = this.storageBudget(peer).reservation(bytes as number);
     if (!reservation) {
       unavailable();
       return;
@@ -366,17 +372,42 @@ export class RelayBroker {
     }
   }
 
-  /** Room/device budgets survive socket replacement; idle entries expire after a minute. */
-  private providerMediaBudget(peer: Peer): ObjectByteBudget {
-    const now = Date.now();
-    for (const [key, entry] of this.providerMediaBudgets) {
-      if (now - entry.lastUsedAt >= 60_000) this.providerMediaBudgets.delete(key);
+  private async remoteFileTicket(peer: Peer, device: Device, raw: Record<string, unknown>): Promise<void> {
+    const { requestId, bytes, sessionId } = raw;
+    if (typeof requestId !== "string" || !requestId.length || requestId.length > 80) return;
+    const response = { type: "file_ticket_result", requestId };
+    const unavailable = () => send(peer.socket, { ...response, error: "File transfer unavailable" });
+    const blobs = this.blobs;
+    if (peer.role !== "desktop" || device.desktop !== peer
+      || !blobs
+      || !(blobs.fileStorageEnabledFor?.(peer.roomId)
+        ?? Boolean(blobs.remoteFileTicket))
+      || !blobs.remoteFileTicket || !Number.isSafeInteger(bytes) || (bytes as number) < 0
+      || (bytes as number) > MAX_REMOTE_FILE_BYTES || !isRemoteFileSessionId(sessionId)) {
+      unavailable(); return;
     }
-    const scope = `${peer.roomId}:${peer.deviceId}`;
-    let entry = this.providerMediaBudgets.get(scope);
+    const reservation = this.storageBudget(peer, "files", MAX_REMOTE_FILE_BYTES).reservation(bytes as number);
+    if (!reservation) { unavailable(); return; }
+    try {
+      const ticket = await blobs.remoteFileTicket(peer.roomId, bytes as number, device.deviceId, sessionId);
+      if (device.desktop === peer) send(peer.socket, { ...response, ticket });
+    } catch {
+      reservation.release();
+      if (device.desktop === peer) unavailable();
+    }
+  }
+
+  /** Purpose/room/device budgets survive socket replacement; idle entries expire after a minute. */
+  private storageBudget(peer: Peer, purpose = "media", limit = MAX_PROVIDER_MEDIA_BYTES): ObjectByteBudget {
+    const now = Date.now();
+    for (const [key, entry] of this.storageBudgets) {
+      if (now - entry.lastUsedAt >= 60_000) this.storageBudgets.delete(key);
+    }
+    const scope = `${purpose}:${peer.roomId}:${peer.deviceId}`;
+    let entry = this.storageBudgets.get(scope);
     if (!entry) {
-      entry = { budget: new ObjectByteBudget(now, MAX_PROVIDER_MEDIA_BYTES), lastUsedAt: now };
-      this.providerMediaBudgets.set(scope, entry);
+      entry = { budget: new ObjectByteBudget(now, limit), lastUsedAt: now };
+      this.storageBudgets.set(scope, entry);
     }
     entry.lastUsedAt = now;
     return entry.budget;

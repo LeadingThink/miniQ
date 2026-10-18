@@ -24,6 +24,7 @@ const config = {
 const rules = [
   { prefix: "remote/", delete_after_days: 1 },
   { prefix: "provider-media/", delete_after_days: 1 },
+  { prefix: "remote-files/", delete_after_days: 1 },
 ];
 const contentTypes = [
   "image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm", "video/mov",
@@ -40,6 +41,18 @@ beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
+
+describe("remote file signing commands", () => {
+  it.each([0, 200 * 1024 * 1024])("binds exact octet-stream content and length %s", async (bytes) => {
+    const ticket = await new BlobStore(config).remoteFileTicket(roomId, bytes, deviceId, "session");
+    expect(ticket.expiresAt).toBe(now + 900000);
+    const [put, get] = vi.mocked(getSignedUrl).mock.calls;
+    expect(put[1].input).toMatchObject({ ContentLength: bytes, ContentType: "application/octet-stream" });
+    expect(put[2]).toEqual({ expiresIn: 900, signableHeaders: new Set(["content-type", "content-length"]) });
+    expect(get[1].input).toEqual({ Bucket: config.bucket, Key: (put[1] as PutObjectCommand).input.Key });
+    expect(get[2]).toEqual({ expiresIn: 900 });
+  });
+});
 
 describe("provider media tickets", () => {
   it("signs PUT and GET for a unique room/device key with a 15-minute expiry", async () => {

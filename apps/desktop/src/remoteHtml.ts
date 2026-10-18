@@ -6,13 +6,12 @@ import { decodeBase64 } from "./previewBinary";
 const MAX_BUNDLE_BYTES = 64 * 1024 * 1024;
 const PARALLEL_READS = 3;
 const CSS_LITERALS = /\/\*[\s\S]*?\*\/|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'/g;
-type Resource = { data: string; url: string };
+type Resource = { blob: Blob; url: string };
 type ResourceReader = (
   reference: string,
   base: string,
 ) => Promise<Resource> | null;
-const resourceText = (resource: Resource) =>
-  new TextDecoder().decode(decodeBase64(resource.data));
+const resourceText = (resource: Resource) => resource.blob.text();
 
 function browserReference(reference: string, base: string): string {
   if (!/^https?:/i.test(base)) return reference;
@@ -55,10 +54,12 @@ export async function prepareRemoteHtml(
       ...access,
       signal: controller.signal,
     });
-  } finally {
+  } catch (cause) {
     controller.abort();
     access.signal?.removeEventListener("abort", abort);
+    throw cause;
   }
+  // Keep the parent abort listener until the iframe closes: it owns Blob URLs.
 }
 
 function createResourceReader(
@@ -88,8 +89,11 @@ function createResourceReader(
         reserveBytes,
       });
       throwIfAborted(access.signal);
-      const data = file.dataBase64 ?? "";
-      return { data, url: `data:${file.mimeType};base64,${data}` };
+      const blob = file.blob ?? new Blob([file.content ?? decodeBase64(file.dataBase64 ?? "")], { type: file.mimeType });
+      const url = URL.createObjectURL(blob);
+      if (access.signal?.aborted) URL.revokeObjectURL(url);
+      else access.signal?.addEventListener("abort", () => URL.revokeObjectURL(url), { once: true });
+      return { blob, url };
     } finally {
       const next = waiting.shift();
       if (next) next();
@@ -131,7 +135,7 @@ async function bundleCss(
       if (ancestors.has(resolved)) return "";
       const file = read(reference, base)!;
       const nested = await bundleCss(
-        resourceText(await file),
+        await resourceText(await file),
         resolved,
         read,
         new Set([...ancestors, resolved]),
@@ -267,7 +271,7 @@ async function bundleHtml(
       if (!file) { link.setAttribute("href", browserReference(href, path)); return; }
       const style = doc.createElement("style");
       style.textContent = await bundleCss(
-        resourceText(await file),
+        await resourceText(await file),
         localPath(href, path)!,
         read,
       );
@@ -296,7 +300,10 @@ async function bundleHtml(
           if (element.tagName === "SCRIPT") {
             // Keeping src preserves defer/async/module execution semantics and
             // avoids reparsing literal </script> strings as HTML markup.
-            element.setAttribute("src", `data:application/javascript;base64,${resource.data}`);
+            const scriptUrl = URL.createObjectURL(resource.blob.slice(0, resource.blob.size, "application/javascript"));
+            if (access.signal?.aborted) URL.revokeObjectURL(scriptUrl);
+            else access.signal?.addEventListener("abort", () => URL.revokeObjectURL(scriptUrl), { once: true });
+            element.setAttribute("src", scriptUrl);
           } else element.setAttribute(attribute, resource.url);
         }),
       );

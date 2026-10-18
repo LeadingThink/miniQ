@@ -58,9 +58,9 @@ export function MarkdownImage(props: {
         if (cancelled) return;
         if (file.kind !== "image" && file.mimeType !== "image/svg+xml")
           throw new Error("不是支持的图片格式");
-        const data = file.dataBase64
+        const data = file.blob ?? (file.dataBase64
           ? decodeBase64(file.dataBase64)
-          : file.content;
+          : file.content);
         if (data === null) throw new Error("图片内容为空");
         url = URL.createObjectURL(new Blob([data], { type: file.mimeType }));
         setSource(url);

@@ -4,7 +4,7 @@ import { loadPdfRuntime } from "../pdfRuntime";
 import { decodeBase64 } from "../previewBinary";
 
 export function usePdfDocument(
-  dataBase64: string,
+  dataBase64: string | Blob,
   onError: (message: string) => void,
 ) {
   const report = useRef(onError);
@@ -29,7 +29,7 @@ export function usePdfDocument(
           document.baseURI,
         );
         task = pdfjs.getDocument({
-          data: new Uint8Array(decodeBase64(dataBase64)),
+          data: typeof dataBase64 === "string" ? decodeBase64(dataBase64) : new Uint8Array(await dataBase64.arrayBuffer()),
           cMapUrl: new URL("cmaps/", resources).href,
           cMapPacked: true,
           standardFontDataUrl: new URL("standard_fonts/", resources).href,

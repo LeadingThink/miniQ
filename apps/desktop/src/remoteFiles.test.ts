@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { readRemoteFile } from "./remoteFiles";
 
 function source(bytes: Uint8Array, kind = "pdf", chunkBytes = 6) {
@@ -14,6 +15,10 @@ function source(bytes: Uint8Array, kind = "pdf", chunkBytes = 6) {
         chunkBytes,
         maxPreviewBytes: 64 * 1024 * 1024,
       };
+    if (method === "file.download.prepare") {
+      vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => new Response(new Uint8Array(bytes))));
+      return { transferId: "t", getUrl: "https://s3.qiniucs.com/bucket/remote-files/room/x", expiresAt: Date.now() + 60000, size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"), revision: "v1" };
+    }
     const part = bytes.subarray(input.offset, input.offset + chunkBytes);
     return {
       offset: input.offset,
@@ -42,11 +47,12 @@ describe("remote artifact reads", () => {
       sessionId: "s1",
       onProgress: progress,
     });
-    expect(atob(result.dataBase64!)).toBe(String.fromCharCode(...bytes));
+    expect(new Uint8Array(await result.blob!.arrayBuffer())).toEqual(bytes);
+    expect(result.dataBase64).toBeNull();
     expect(progress).toHaveBeenLastCalledWith(19, 19);
     expect(
       client.call.mock.calls.filter((call) => call[0] === "file.read"),
-    ).toHaveLength(4);
+    ).toHaveLength(0);
     expect(
       client.call.mock.calls.every(
         (call) => (call[1] as { sessionId: string }).sessionId === "s1",
@@ -62,7 +68,7 @@ describe("remote artifact reads", () => {
   });
   it("stops requesting chunks when the preview is closed", async () => {
     const controller = new AbortController();
-    const client = source(new Uint8Array(19));
+    const client = source(new Uint8Array(19), "text");
     await expect(
       readRemoteFile("file.pdf", {
         client,
@@ -78,7 +84,7 @@ describe("remote artifact reads", () => {
     ).toHaveLength(1);
   });
   it("rejects a changed file or malformed offset without returning partial data", async () => {
-    const client = source(new Uint8Array(19));
+    const client = source(new Uint8Array(19), "text");
     const original = client.call.getMockImplementation()! as (
       method: string,
       raw: unknown,
@@ -107,25 +113,25 @@ describe("remote artifact reads", () => {
           sessionId: "s1",
           download: true,
         })
-      ).dataBase64,
-    ).toBe("AQID");
+      ).blob?.size,
+    ).toBe(3);
   });
   it("rejects oversized files before downloading any content", async () => {
     const client = source(new Uint8Array());
     client.call.mockResolvedValue({
       path: "/work/large.mp4",
       kind: "video",
-      size: 65 * 1024 * 1024,
+      size: 201 * 1024 * 1024,
       revision: "v1",
       chunkBytes: 3 * 1024 * 1024,
     });
     await expect(
       readRemoteFile("large.mp4", { client, sessionId: "s1" }),
-    ).rejects.toThrow("64 MB");
+    ).rejects.toThrow("200 MB");
     expect(client.call).toHaveBeenCalledTimes(1);
   });
   it("reserves bundle capacity before requesting file data", async () => {
-    const client = source(new Uint8Array(19));
+    const client = source(new Uint8Array(19), "text");
     await expect(
       readRemoteFile("file.pdf", {
         client,

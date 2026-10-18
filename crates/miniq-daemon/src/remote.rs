@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 mod backoff;
 mod blob;
 pub(crate) mod connection;
+mod file_tickets;
+mod files;
 mod keep_awake;
 mod push;
 mod subscriptions;
@@ -194,6 +196,8 @@ struct RelayFrame {
     mobile_ids: Option<Vec<String>>,
     #[serde(default)]
     blob_storage: bool,
+    #[serde(default)]
+    file_storage: bool,
     #[serde(default)]
     request_id: String,
     #[serde(default)]

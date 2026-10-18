@@ -21,9 +21,9 @@ use tokio_util::sync::CancellationToken;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Ticket {
-    put_url: String,
-    get_url: String,
-    expires_at: u64,
+    pub put_url: String,
+    pub get_url: String,
+    pub expires_at: u64,
 }
 
 type Tickets = Arc<Mutex<HashMap<String, oneshot::Sender<Option<Ticket>>>>>;

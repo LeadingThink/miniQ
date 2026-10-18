@@ -9,14 +9,15 @@ import {
 } from "../previewViewState";
 
 type Props = {
-  dataBase64: string;
+  dataBase64?: string;
+  blob?: Blob | null;
   mimeType: string;
   kind: "image" | "audio" | "video";
   label: string;
   onError: (message: string) => void;
 };
 
-export function BlobPreview({ dataBase64, mimeType, ...props }: Props) {
+export function BlobPreview({ dataBase64, blob, mimeType, ...props }: Props) {
   const onError = useRef(props.onError);
   onError.current = props.onError;
   const [source, setSource] = useState<{
@@ -29,17 +30,17 @@ export function BlobPreview({ dataBase64, mimeType, ...props }: Props) {
   useEffect(() => {
     let url: string | undefined;
     try {
-      const bytes = decodeBase64(dataBase64);
-      url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+      const sourceBlob = blob ?? new Blob([decodeBase64(dataBase64 ?? "")], { type: mimeType });
+      url = URL.createObjectURL(sourceBlob);
       // Some embedded WebViews (including iOS WKWebView) occasionally fail
       // to hand a blob: URL to the media decoder for remote files. Keep a
       // data URL fallback ready for medium-sized assets on every platform;
       // larger files still use the memory-efficient blob URL only.
-      const fallbackUrl = bytes.byteLength <= 16 * 1024 * 1024
+      const fallbackUrl = dataBase64 && sourceBlob.size <= 16 * 1024 * 1024
         ? `data:${mimeType};base64,${dataBase64}`
         : undefined;
       setUseFallback(false);
-      setSource({ data: dataBase64, mime: mimeType, url, fallbackUrl });
+      setSource({ data: blob ? `${sourceBlob.size}:blob` : (dataBase64 ?? ""), mime: mimeType, url, fallbackUrl });
     } catch (error) {
       setSource(null);
       onError.current(error instanceof Error ? error.message : String(error));
@@ -47,8 +48,9 @@ export function BlobPreview({ dataBase64, mimeType, ...props }: Props) {
     return () => {
       if (url) URL.revokeObjectURL(url);
     };
-  }, [dataBase64, mimeType]);
-  if (!source || source.data !== dataBase64 || source.mime !== mimeType) {
+  }, [blob, dataBase64, mimeType]);
+  const sourceKey = blob ? `${blob.size}:blob` : `${dataBase64 ?? ""}`;
+  if (!source || source.data !== sourceKey || source.mime !== mimeType) {
     return <div className="diff-empty">正在读取媒体...</div>;
   }
   const sourceUrl = useFallback && source.fallbackUrl ? source.fallbackUrl : source.url;

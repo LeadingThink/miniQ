@@ -11,7 +11,7 @@ mod common;
 mod computer;
 mod external_session;
 mod external_workspace;
-mod files;
+pub(crate) mod files;
 mod git;
 mod interaction;
 mod mcp;
@@ -125,7 +125,7 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         }
         "daemon.health" => system::health(state),
         "file.describe" => files::describe(state, req.params).await,
-        "file.read" => files::read(state, req.params).await,
+        "file.read" => files::read(state, req.params, remote_actor.is_some()).await,
         "file.list" => files::list(state, req.params).await,
         "git.status" => git::status(state, req.params).await,
         "git.diff" => git::diff(state, req.params).await,

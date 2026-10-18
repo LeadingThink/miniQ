@@ -24,6 +24,7 @@ export interface FilePreviewState {
   kind: LocalPreviewKind | null;
   mimeType: string | null;
   dataBase64: string | null;
+  blob?: Blob | null;
   size: number | null;
   loading: boolean;
   error: string | null;
@@ -141,6 +142,7 @@ export function useFilePreview(
           kind: file.kind,
           mimeType: file.mimeType,
           dataBase64: file.dataBase64,
+          blob: file.blob ?? null,
           size: file.size,
           loading: false,
           error: null,
@@ -193,6 +195,7 @@ export function useFilePreview(
           kind: file.kind,
           mimeType: file.mimeType,
           dataBase64: file.dataBase64,
+          blob: file.blob ?? null,
           size: file.size,
           loading: false,
           error: null,

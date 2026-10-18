@@ -11,14 +11,6 @@ const Spreadsheet = lazy(() => import("./SpreadsheetPreview").then((module) => (
 function extension(name: string) { return name.split(".").pop()!.toLowerCase(); }
 const TEXT = new Set(["txt", "md", "markdown", "csv", "tsv", "json", "js", "ts", "py", "rs", "css", "html", "htm", "svg", "yaml", "yml", "xml"]);
 const BINARY = new Set(["pdf", "xlsx", "xlsm"]);
-function asBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("无法读取分享文件"));
-    reader.onload = () => resolve(String(reader.result).split(",")[1]);
-    reader.readAsDataURL(blob);
-  });
-}
 
 function SharedSvg({ source, name }: { source: string; name: string }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -40,6 +32,7 @@ function FilePreview({ shareId, file, onClose }: { shareId: string; file: Shared
   const ext = extension(file.name);
   const url = sharedFileUrl(shareId, file);
   const [body, setBody] = useState<string | null>(null);
+  const [binary, setBinary] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const limited = file.size > 64 * 1024 * 1024;
   const image = ["png", "jpg", "jpeg", "webp", "gif"].includes(ext);
@@ -53,8 +46,8 @@ function FilePreview({ shareId, file, onClose }: { shareId: string; file: Shared
       if (!response.ok) throw new Error("文件不可用或分享已撤销");
       const blob = await response.blob();
       if (blob.size !== file.size) throw new Error("文件传输不完整，请重新打开");
-      const content = BINARY.has(ext) ? await asBase64(blob) : await blob.text();
-      if (!controller.signal.aborted) setBody(content);
+      if (BINARY.has(ext)) { if (!controller.signal.aborted) setBinary(blob); }
+      else { const content = await blob.text(); if (!controller.signal.aborted) setBody(content); }
     })().catch((cause) => { if (!controller.signal.aborted) setError(errorMessage(cause)); });
     return () => controller.abort();
   }, [ext, file.size, limited, url]);
@@ -68,11 +61,11 @@ function FilePreview({ shareId, file, onClose }: { shareId: string; file: Shared
         : video ? <video src={url} controls playsInline preload="metadata" onError={() => setError("视频不可用或当前浏览器不支持，请下载查看")} />
         : audio ? <audio src={url} controls preload="metadata" onError={() => setError("音频不可用或当前浏览器不支持，请下载查看")} />
         : limited ? <p>此文件超过 64 MB 在线解析上限，可下载完整文件。</p>
-        : body !== null ? <Suspense fallback={<p role="status">正在加载预览…</p>}>
-          {ext === "pdf" ? <Pdf dataBase64={body} onError={setError} />
-            : ["xlsx", "xlsm"].includes(ext) ? <Spreadsheet dataBase64={body} onError={setError} />
-            : ["md", "markdown"].includes(ext) ? <SharedMarkdown>{body}</SharedMarkdown>
-            : ext === "svg" ? <SharedSvg source={body} name={file.name} />
+        : (body !== null || binary) ? <Suspense fallback={<p role="status">正在加载预览…</p>}>
+          {ext === "pdf" ? <Pdf blob={binary} onError={setError} />
+            : ["xlsx", "xlsm"].includes(ext) ? <Spreadsheet blob={binary} onError={setError} />
+            : ["md", "markdown"].includes(ext) ? <SharedMarkdown>{body ?? ""}</SharedMarkdown>
+            : ext === "svg" ? <SharedSvg source={body ?? ""} name={file.name} />
             : ["html", "htm"].includes(ext) ? <iframe title={file.name} sandbox="" referrerPolicy="no-referrer" srcDoc={`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'; base-uri 'none'">${body}`} />
             : <pre className="shared-text">{body}</pre>}
         </Suspense>

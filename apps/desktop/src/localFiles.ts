@@ -7,7 +7,7 @@ const WINDOWS_DRIVE = /^[A-Za-z]:[\\/]/;
 const FILE_EXTENSIONS = new Set([
   "7z", "aab", "apk", "bash", "bat", "bmp", "c", "cc", "cjs", "conf",
   "cpp", "cs", "css", "csv", "doc", "docx", "dps", "env", "et", "fish", "gif", "go",
-  "gz", "h", "hpp", "htm", "html", "ico", "ini", "ipa", "jar", "java",
+  "gz", "h", "heic", "heif", "hpp", "htm", "html", "ico", "ini", "ipa", "jar", "java",
   "jpeg", "jpg", "jks", "js", "json", "jsonl", "jsx", "keystore", "kt",
   "kts", "less", "lock", "log", "m4a", "markdown", "md", "mjs", "mov", "mp3",
   "mp4", "pdf", "php", "png", "ppt", "pptx", "ps1", "py", "pyi", "rar",
@@ -69,6 +69,8 @@ export interface LocalFilePreview {
   mimeType: string;
   content: string | null;
   dataBase64: string | null;
+  /** Binary remote previews stay as a Blob; callers must revoke object URLs. */
+  blob?: Blob | null;
   size: number;
 }
 
@@ -269,14 +271,15 @@ export async function savePastedImage(file: File): Promise<string> {
 
 export interface LocalImagePreview {
   mimeType: string;
-  dataBase64: string;
+  blob?: Blob | null;
+  dataBase64: string | null;
 }
 
 export async function readImagePreview(path: string, options: FileReadOptions = {}): Promise<LocalImagePreview> {
   if (options.client?.mode === "remote") {
     const file = await readRemoteFile(path, options);
-    if (!file.mimeType.startsWith("image/") || !file.dataBase64) throw new Error("远程文件不是可预览的图片");
-    return { mimeType: file.mimeType, dataBase64: file.dataBase64 };
+    if (!file.mimeType.startsWith("image/") || (!file.dataBase64 && !file.blob)) throw new Error("远程文件不是可预览的图片");
+    return { mimeType: file.mimeType, dataBase64: file.dataBase64, blob: file.blob };
   }
   if (!isTauriRuntime()) throw new Error("图片预览仅在 miniQ 桌面应用中可用");
   const { invoke } = await import("@tauri-apps/api/core");

@@ -66,14 +66,12 @@ Keep credentials in the service's secret environment. The endpoint must use
 HTTPS and a hostname ending in `.qiniucs.com`. Without `MINIQ_BLOB_BUCKET`,
 object storage is disabled; when it is set, every variable above is required.
 
-Before starting the relay, make the bucket private and configure **two** Qiniu
-lifecycle rules, each with `delete_after_days: 1`: one with the exact prefix
-`remote/`, the other with the exact prefix `provider-media/`. Startup verification
-requires both rules, including when only encrypted blob transfers are used.
-A public bucket, a failed bucket-info request, or a missing one-day rule blocks
-all ticket issuance. Existing deployments must add the `provider-media/`
-one-day rule before starting the updated relay: until it is added and startup
-verification succeeds, encrypted `blob_ticket` issuance is also disabled.
+Before starting the relay, make the bucket private and configure **three** Qiniu
+lifecycle rules, each with `delete_after_days: 1`, for the exact prefixes
+`remote/`, `provider-media/`, and `remote-files/`. A public bucket or failed
+bucket-info request blocks all issuance. Each namespace verifies its own rule:
+a missing rule disables that namespace without disabling the others. Existing
+deployments must add `remote-files/` before file transfers can issue tickets.
 Verification logs a generic failure without SDK URLs.
 URL expiry limits access; the lifecycle rules delete the stored objects after
 one day independently of URL expiry.
@@ -87,6 +85,35 @@ issuer also supports the legacy key without a device component), accept
 16 bytes through 64 MiB, and sign PUT with `application/octet-stream`. Both
 PUT and GET URLs expire after 300 seconds; `expiresAt` is Unix time in
 milliseconds.
+
+### Remote file tickets
+
+Desktop `ready` messages advertise `fileStorage: true` when the room is allowed
+and the issuer supports files. Issuance still awaits bucket/lifecycle verification.
+The current authenticated desktop sends
+`{"type":"file_ticket","requestId":"file-1","bytes":1024,"sessionId":"session-1"}`.
+The reply is `{"type":"file_ticket_result","requestId":"file-1","ticket":{"putUrl":"...","getUrl":"...","expiresAt":0}}`
+or the same response with `error: "File transfer unavailable"` instead of `ticket`.
+`requestId` must contain 1–80 characters; invalid IDs receive no response.
+`sessionId` must be nonblank, at most 256 characters, and contain no ASCII control
+characters. `bytes` must be an integer from zero through 209715200 (200 MiB).
+
+Objects use `remote-files/<room>/<desktop>/<sha256(sessionId)>/<uuid>`.
+Room and desktop come from the authenticated connection; callers cannot choose
+an object key or a URL to sign. PUT is signed for the exact byte length and
+`Content-Type: application/octet-stream`; clients must supply matching headers.
+PUT and GET expire after 900 seconds; `expiresAt` is Unix milliseconds.
+The file byte budget is 200 MiB per minute per room/desktop, independent of media
+and RPC blobs, and persists across reconnects. Failed signing refunds the bytes.
+Zero-byte requests remain subject to the connection message-rate quota.
+
+The daemon must authorize session access and local paths before requesting a
+ticket. The relay does not validate session membership, and phones cannot request
+tickets directly. Never accept an arbitrary mobile-provided download/upload URL.
+File contents travel directly through private object storage; the relay does not
+log session IDs, signed URLs, credentials, paths, or file contents. Configure
+bucket CORS for deployed mobile origins, GET/PUT and the required content headers.
+The one-day lifecycle deletion is independent of the 15-minute URL expiry.
 
 The private bucket must have a one-day deletion rule for `provider-media/`.
 The existing `remote/` rule remains independent. Media objects contain raw

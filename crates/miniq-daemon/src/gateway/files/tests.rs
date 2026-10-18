@@ -25,7 +25,7 @@ fn chunked_files_preserve_bytes_and_detect_updates() {
     };
     let mut restored = Vec::new();
     loop {
-        let chunk = read_chunk(&path, &input).unwrap();
+        let chunk = read_chunk(&path, &input, false).unwrap();
         restored.extend(
             base64::engine::general_purpose::STANDARD
                 .decode(chunk["dataBase64"].as_str().unwrap())
@@ -38,10 +38,12 @@ fn chunked_files_preserve_bytes_and_detect_updates() {
     }
     assert_eq!(restored, bytes);
     input.offset += 1;
-    assert!(read_chunk(&path, &input).is_err());
+    assert!(read_chunk(&path, &input, false).is_err());
     input.offset = 0;
     std::fs::write(&path, "new file").unwrap();
-    assert!(read_chunk(&path, &input).unwrap_err().contains("已更新"));
+    assert!(read_chunk(&path, &input, false)
+        .unwrap_err()
+        .contains("已更新"));
 }
 
 #[test]
@@ -138,7 +140,7 @@ async fn rpc_uses_persisted_session_roots_and_rejects_injected_authority() {
     }
 }
 
-fn attachment_state(project: &Path) -> (AppState, String, String) {
+pub(super) fn attachment_state(project: &Path) -> (AppState, String, String) {
     let store = miniq_memory::Store::open_in_memory().unwrap();
     let workspace = store
         .create_workspace(project.to_str().unwrap(), "same project")
@@ -173,7 +175,7 @@ async fn preview_attachment(
     assert_eq!(info["kind"], "image");
     assert_eq!(info["mimeType"], "image/png");
     let input = json!({"sessionId":session,"path":path,"revision":info["revision"],"offset":0});
-    let bytes = read(state, Some(input.clone())).await.unwrap();
+    let bytes = read(state, Some(input.clone()), false).await.unwrap();
     assert_eq!(
         base64::engine::general_purpose::STANDARD
             .decode(bytes["dataBase64"].as_str().unwrap())
@@ -218,7 +220,7 @@ async fn persisted_attachment_preview_is_exact_session_scoped_and_does_not_grant
     );
     let mut cross_session = input.clone();
     cross_session["sessionId"] = json!(other);
-    assert!(read(&state, Some(cross_session)).await.is_err());
+    assert!(read(&state, Some(cross_session), false).await.is_err());
     assert!(
         describe(&state, Some(json!({"sessionId":owner,"path":neighbor})))
             .await
@@ -226,7 +228,7 @@ async fn persisted_attachment_preview_is_exact_session_scoped_and_does_not_grant
     );
     let mut adjacent = input;
     adjacent["path"] = json!(neighbor);
-    assert!(read(&state, Some(adjacent)).await.is_err());
+    assert!(read(&state, Some(adjacent), false).await.is_err());
     assert!(
         list(&state, Some(json!({"sessionId":owner,"path":storage})))
             .await
@@ -257,7 +259,7 @@ async fn queued_attachment_preview_survives_promotion_and_loses_access_after_rem
             .is_err()
     );
     state.store.remove_queued_message(&queued.id).unwrap();
-    assert!(read(&state, Some(input)).await.is_err());
+    assert!(read(&state, Some(input), false).await.is_err());
     state
         .store
         .enqueue_message_with_attachments(&owner, "later", &[saved_attachment(&path)])
@@ -296,10 +298,33 @@ async fn replacing_a_persisted_attachment_with_a_symlink_cannot_authorize_its_ta
             .await
             .is_err()
     );
-    assert!(read(&state, Some(input)).await.is_err());
+    assert!(read(&state, Some(input), false).await.is_err());
     assert!(
         describe(&state, Some(json!({"sessionId":owner,"path":secret})))
             .await
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn remote_read_requires_small_text_and_local_reads_keep_binary_support() {
+    let project = tempfile::tempdir().unwrap();
+    let (state, session, _) = attachment_state(project.path());
+    for (name, size, allowed) in [
+        ("small.txt", 256 * 1024, true),
+        ("large.md", 256 * 1024 + 1, false),
+        ("small.png", 10, false),
+    ] {
+        let path = project.path().join(name);
+        std::fs::write(&path, vec![b'x'; size]).unwrap();
+        let info = describe(&state, Some(json!({"sessionId":session,"path":name})))
+            .await
+            .unwrap();
+        let input = json!({"sessionId":session,"path":name,"revision":info["revision"],"offset":0});
+        assert_eq!(
+            read(&state, Some(input.clone()), true).await.is_ok(),
+            allowed
+        );
+        assert!(read(&state, Some(input), false).await.is_ok());
+    }
 }

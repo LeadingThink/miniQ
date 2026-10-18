@@ -1,4 +1,5 @@
-//! Read-only, session-scoped artifact access for browser and mobile clients.
+//! Session-scoped artifact access and streaming transfers for browser and mobile clients.
+mod transfer;
 use super::common::{params, store_err};
 use crate::state::AppState;
 use base64::Engine;
@@ -11,6 +12,9 @@ use std::{
     fs::File,
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
+};
+pub(crate) use transfer::{
+    check_transfer_revision, transfer_destination, transfer_source, Destination,
 };
 
 // Each chunk can use the existing encrypted object-storage data plane. Requests
@@ -88,13 +92,17 @@ pub(super) async fn describe(state: &AppState, raw: Option<Value>) -> Result<Val
     .map_err(invalid)
 }
 
-pub(super) async fn read(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+pub(super) async fn read(
+    state: &AppState,
+    raw: Option<Value>,
+    remote: bool,
+) -> Result<Value, RpcError> {
     let input: ReadInput = params(raw)?;
     let scope = scope(state, &input.session_id)?;
     let store = state.store.clone();
     tokio::task::spawn_blocking(move || {
         let path = validated_session_file(&store, &scope, &input.session_id, &input.path)?;
-        read_chunk(&path, &input)
+        read_chunk(&path, &input, remote)
     })
     .await
     .map_err(invalid)?
@@ -111,9 +119,23 @@ fn revision(metadata: &std::fs::Metadata) -> Result<String, String> {
     Ok(format!("{}:{modified}", metadata.len()))
 }
 
-fn read_chunk(path: &Path, input: &ReadInput) -> Result<Value, String> {
-    let mut file = File::open(path).map_err(|e| e.to_string())?;
+fn read_chunk(path: &Path, input: &ReadInput, remote: bool) -> Result<Value, String> {
+    let mut file = if remote {
+        transfer::open_source_file(path)
+    } else {
+        File::open(path)
+    }
+    .map_err(|e| e.to_string())?;
     let metadata = file.metadata().map_err(|e| e.to_string())?;
+    if remote
+        && (!metadata.is_file()
+            || metadata.len() > 256 * 1024
+            || !matches!(preview_format(path).0, "text" | "markdown"))
+    {
+        return Err(
+            "remote file.read only supports text files up to 256 KiB; use a file transfer".into(),
+        );
+    }
     if revision(&metadata)? != input.revision {
         return Err("文件已更新，请重新加载预览".into());
     }
@@ -166,6 +188,9 @@ fn list_directory(scope: &Scope, input: &ListInput) -> Result<Value, String> {
     let mut next_cursor = None;
     for entry in entries {
         let name = entry.file_name().to_string_lossy().into_owned();
+        if is_staging_file(&entry.path()) {
+            continue;
+        }
         if input.after.as_ref().is_some_and(|after| &name <= after) {
             continue;
         }
@@ -227,6 +252,9 @@ fn validated_session_file(
 ) -> Result<PathBuf, String> {
     let path = dunce::canonicalize(Path::new(&scope.cwd).join(requested))
         .map_err(|error| format!("无法访问文件 {requested}: {error}"))?;
+    if is_staging_file(&path) {
+        return Err("incomplete transfers are not available".into());
+    }
     if !path.is_file() {
         return Err(format!("目标不是文件: {}", path.display()));
     }
@@ -246,6 +274,20 @@ fn validated_session_file(
         return Ok(path);
     }
     Err(format!("拒绝打开当前会话未授权的文件: {}", path.display()))
+}
+
+fn is_staging_file(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == ".partial")
+        && path
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| uuid::Uuid::parse_str(name).is_ok())
+        && path
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::file_name)
+            .is_some_and(|name| name == "inbox")
 }
 
 #[cfg(test)]

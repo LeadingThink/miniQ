@@ -7,7 +7,7 @@ import { useOfficeLayout } from "../hooks/useOfficeLayout";
 import { convertOfficePreview } from "../localFiles";
 import { PdfPreview } from "./PdfPreview";
 
-type Props = { dataBase64: string; onError: (message: string) => void };
+type Props = { dataBase64?: string; blob?: Blob | null; onError: (message: string) => void };
 
 type LegacyProps = {
   path: string;
@@ -56,6 +56,7 @@ export function PptxPreview(props: Props) {
 
 function OfficePreview({
   dataBase64,
+  blob,
   onError,
   kind,
 }: Props & { kind: "docx" | "pptx" }) {
@@ -97,7 +98,7 @@ function OfficePreview({
 
     // Each parser owns its staging node, so late completions cannot replace a new file.
     const render = async () => {
-      const bytes = decodeBase64(dataBase64);
+      const bytes = blob ? await blob.arrayBuffer() : decodeBase64(dataBase64 ?? "");
       if (kind === "docx") {
         const { renderAsync } = await import("docx-preview");
         if (cancelled) return;
@@ -168,7 +169,7 @@ function OfficePreview({
       container.replaceChildren();
       if (settled) release();
     };
-  }, [dataBase64, kind, scroll.ref]);
+  }, [blob, dataBase64, kind, scroll.ref]);
 
   return (
     <div className="office-viewer">

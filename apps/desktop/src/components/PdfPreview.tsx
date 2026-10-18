@@ -33,11 +33,12 @@ const MAX_MOUNTED_PAGES = 10;
 type Anchor = { page: number; fraction: number; left: number };
 
 export function PdfPreview(props: {
-  dataBase64: string;
+  dataBase64?: string;
+  blob?: Blob | null;
   onError: (message: string) => void;
 }) {
   const { pdf, password, failed } = usePdfDocument(
-    props.dataBase64,
+    props.blob ?? props.dataBase64 ?? "",
     props.onError,
   );
   const cache = usePreviewCache();

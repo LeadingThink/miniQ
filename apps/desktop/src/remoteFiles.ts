@@ -2,6 +2,7 @@ import type { RpcClient } from "./rpc";
 import { throwIfAborted } from "./abortSignal";
 import type { LocalFilePreview, LocalPreviewKind } from "./localFiles";
 import { decodeBase64 } from "./previewBinary";
+import { downloadRemoteFile, SMALL_RPC_FILE_BYTES } from "./remoteTransfer";
 
 export interface FileReadOptions {
   client?: Pick<RpcClient, "call" | "mode">;
@@ -33,7 +34,7 @@ interface FileChunk {
 
 // Bounded independently of the server so a malformed response cannot exhaust
 // mobile memory. No file content is requested before the user opens a file.
-const MAX_FILE_BYTES = 64 * 1024 * 1024;
+const MAX_FILE_BYTES = 200 * 1024 * 1024;
 
 export async function readRemoteFile(
   path: string,
@@ -63,14 +64,24 @@ export async function readRemoteFile(
     ...description,
     content: null,
     dataBase64: null,
+    blob: null,
   };
   if (kind === "unsupported" && !options.download) return file;
   if (size > MAX_FILE_BYTES)
     throw new Error(
-      "当前手机单文件预览与下载上限为 64 MB，请让 AI 生成较小的预览版或拆分文件",
+      "当前手机单文件预览与下载上限为 200 MB，请让 AI 生成较小的预览版或拆分文件",
     );
   options.reserveBytes?.(size);
   const text = (kind === "text" || kind === "markdown") && !options.download;
+  // Only small text travels through JSON RPC. All original binary bytes use
+  // the private signed object transport.
+  if (!text || size > SMALL_RPC_FILE_BYTES) {
+    const prepared = await downloadRemoteFile(client, sessionId, description.path, revision, signal, onProgress);
+    if (prepared.size !== size) throw new Error("文件大小已变化，请重新加载");
+    if (text) file.content = await prepared.blob.text();
+    else file.blob = prepared.blob.slice(0, prepared.blob.size, description.mimeType);
+    return file;
+  }
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const parts: string[] = [];
   let offset = 0;
@@ -92,21 +103,16 @@ export async function readRemoteFile(
       bytes.byteLength < 1 ||
       bytes.byteLength > description.chunkBytes ||
       chunk.nextOffset > size ||
-      chunk.done !== (chunk.nextOffset === size) ||
-      (!text && !chunk.done && bytes.byteLength % 3 !== 0)
+      chunk.done !== (chunk.nextOffset === size)
     )
       throw new Error("文件传输不完整，请重新加载");
-    parts.push(
-      text ? decoder.decode(bytes, { stream: true }) : chunk.dataBase64,
-    );
+    parts.push(decoder.decode(bytes, { stream: true }));
     offset = chunk.nextOffset;
     onProgress?.(offset, size);
   }
   throwIfAborted(signal);
-  if (text) {
-    parts.push(decoder.decode());
-    file.content = parts.join("");
-  } else file.dataBase64 = parts.join("");
+  parts.push(decoder.decode());
+  file.content = parts.join("");
   return file;
 }
 

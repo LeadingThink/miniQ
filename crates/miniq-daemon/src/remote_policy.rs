@@ -131,6 +131,8 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "host.list"
         | "file.describe"
         | "file.read"
+        | "file.download.prepare"
+        | "file.transfer.status"
         | "file.list"
         | "computer.permissions"
         | "workspace.list"
@@ -163,6 +165,9 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "skill.distill.list"
         | "skill.refine.list" => ReadOnly,
         "host.connect"
+        | "file.upload.prepare"
+        | "file.upload.commit"
+        | "file.transfer.cancel"
         | "host.disconnect"
         | "workspace.create"
         | "workspace.rename"

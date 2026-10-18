@@ -22,6 +22,8 @@ pub(super) struct Session<'a> {
     pub outbound: mpsc::Sender<Outbound>,
     pub controls: mpsc::UnboundedSender<Message>,
     pub blobs: super::super::blob::BlobClient,
+    pub file_tickets: super::super::file_tickets::Tickets,
+    pub files: super::super::files::Transfers,
     pub requests: Requests,
     pub uploads: super::super::upload::Uploads,
     pub subscriptions: super::super::subscriptions::Subscriptions,
@@ -37,11 +39,22 @@ impl Session<'_> {
         let frame = parse_relay_text(message)?;
         match frame.kind.as_str() {
             "blob_ticket" => self.blobs.receive(&frame.request_id, frame.ticket),
+            "file_ticket_result" => self.file_tickets.receive(
+                &frame.request_id,
+                frame
+                    .ticket
+                    .map(|ticket| super::super::file_tickets::Ticket {
+                        put_url: ticket.put_url,
+                        get_url: ticket.get_url,
+                        expires_at: ticket.expires_at,
+                    }),
+            ),
             "presence" => {
                 self.mobile_clients = frame.mobile_clients;
                 if let Some(ids) = &frame.mobile_ids {
                     self.subscriptions.retain(ids);
                     self.uploads.retain_sources(ids);
+                    self.files.retain(ids);
                 }
                 set_status(
                     self.state,
@@ -126,10 +139,16 @@ impl Session<'_> {
         let state = self.state.clone();
         let outbound = self.outbound.clone();
         let blobs = self.blobs.clone();
+        let files = self.files.clone();
         let cipher = self.cipher.clone();
         let token = cancel.clone();
         self.requests.spawn(key, cancel, async move {
-            let response = super::dispatch(&state, &source, request).await;
+            let response = match request {
+                Ok(request) if super::super::files::Transfers::handles(&request.method) => {
+                    files.dispatch(&state, &source, request, &token).await
+                }
+                request => super::dispatch(&state, &source, request).await,
+            };
             let mut payload = serde_json::to_value(response)?;
             let prepared =
                 match super::super::transport::prepare(payload.clone(), compress, &token).await? {

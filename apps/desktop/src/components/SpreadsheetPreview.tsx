@@ -36,7 +36,8 @@ export type PreviewSheet = { sheet: string; data: SheetCell[][] };
 const ROWS_PER_PAGE = 200;
 
 export function SpreadsheetPreview(props: {
-  dataBase64: string;
+  dataBase64?: string;
+  blob?: Blob | null;
   onError: (message: string) => void;
 }) {
   const [sheets, setSheets] = useState<PreviewSheet[]>([]);
@@ -47,7 +48,7 @@ export function SpreadsheetPreview(props: {
     setSheets([]);
     void import("read-excel-file/browser")
       .then(({ default: readXlsxFile }) =>
-        readXlsxFile(new Blob([decodeBase64(props.dataBase64)])),
+        readXlsxFile(props.blob ?? new Blob([decodeBase64(props.dataBase64 ?? "")])),
       )
       .then((result) => {
         if (!cancelled) {
@@ -64,7 +65,7 @@ export function SpreadsheetPreview(props: {
     return () => {
       cancelled = true;
     };
-  }, [props.dataBase64, props.onError]);
+  }, [props.blob, props.dataBase64, props.onError]);
   return loading ? (
     <div className="diff-empty">正在解析工作簿...</div>
   ) : (

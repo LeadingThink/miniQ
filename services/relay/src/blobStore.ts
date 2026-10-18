@@ -1,10 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import qiniu from "qiniu";
 
 export const MAX_BLOB_BYTES = 64 * 1024 * 1024;
 export const MAX_PROVIDER_MEDIA_BYTES = 256 * 1024 * 1024;
+export const MAX_REMOTE_FILE_BYTES = 200 * 1024 * 1024;
 const TICKET_SECONDS = 300;
 const PROVIDER_MEDIA_TICKET_SECONDS = 900;
 const ROOM_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -18,19 +19,27 @@ export function isProviderMediaContentType(value: unknown): value is string {
   return typeof value === "string" && PROVIDER_MEDIA_CONTENT_TYPES.has(value);
 }
 
+export function isRemoteFileSessionId(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= 256 && !/[\x00-\x1f\x7f]/.test(value);
+}
+
 export interface BlobTicket { putUrl: string; getUrl: string; expiresAt: number }
 export interface TicketIssuer {
   enabledFor(roomId: string): boolean;
   ticket(roomId: string, bytes: number, desktopDeviceId?: string): Promise<BlobTicket>;
   providerMediaEnabledFor?(roomId: string): boolean;
+  /** File storage has its own rollout gate; provider-media room allowlists must not gate it. */
+  fileStorageEnabledFor?(roomId: string): boolean;
   providerMediaTicket?(roomId: string, bytes: number, contentType: string, desktopDeviceId: string): Promise<BlobTicket>;
   authenticatedMediaTicket?(owner: string, bytes: number, contentType: string): Promise<BlobTicket>;
+  remoteFileTicket?(roomId: string, bytes: number, desktopDeviceId: string, sessionId: string): Promise<BlobTicket>;
 }
 
 export class BlobStore implements TicketIssuer {
   private readonly client: S3Client;
   private readonly remoteVerified: Promise<void>;
   private readonly providerVerified: Promise<void>;
+  private readonly filesVerified: Promise<void>;
   private providerReady = false;
   private readonly rooms: Set<string>;
   private readonly bucket: string;
@@ -55,8 +64,9 @@ export class BlobStore implements TicketIssuer {
     });
     this.remoteVerified = verifyLifecycle("remote/");
     this.providerVerified = verifyLifecycle("provider-media/").then(() => { this.providerReady = true; });
+    this.filesVerified = verifyLifecycle("remote-files/");
     // Tickets remain disabled on verification failure; never expose SDK errors containing URLs.
-    void Promise.allSettled([this.remoteVerified, this.providerVerified]).then((results) => {
+    void Promise.allSettled([this.remoteVerified, this.providerVerified, this.filesVerified]).then((results) => {
       if (results.some((result) => result.status === "rejected")) console.error("Private object storage verification failed");
     });
   }
@@ -65,6 +75,13 @@ export class BlobStore implements TicketIssuer {
 
   providerMediaEnabledFor(roomId: string): boolean {
     return this.providerReady && typeof roomId === "string" && ROOM_PATTERN.test(roomId) && this.enabledFor(roomId);
+  }
+
+  fileStorageEnabledFor(roomId: string): boolean {
+    // Verification is awaited by remoteFileTicket; this synchronous capability
+    // predicate only answers whether the rollout applies to this authenticated
+    // room, without inheriting the provider-media allowlist.
+    return typeof roomId === "string" && ROOM_PATTERN.test(roomId);
   }
 
   async ticket(roomId: string, bytes: number, desktopDeviceId?: string): Promise<BlobTicket> {
@@ -86,6 +103,17 @@ export class BlobStore implements TicketIssuer {
     return this.signProviderMedia(`provider-media/${roomId}/${desktopDeviceId}/${randomUUID()}`, bytes, contentType);
   }
 
+  /** Session authorization belongs to the daemon; the relay isolates its object keys. */
+  async remoteFileTicket(roomId: string, bytes: number, desktopDeviceId: string, sessionId: string): Promise<BlobTicket> {
+    if (typeof roomId !== "string" || !this.fileStorageEnabledFor(roomId)
+      || !Number.isSafeInteger(bytes) || bytes < 0 || bytes > MAX_REMOTE_FILE_BYTES
+      || typeof desktopDeviceId !== "string" || !/^[A-Za-z0-9_-]{8,80}$/.test(desktopDeviceId)
+      || !isRemoteFileSessionId(sessionId)) throw new Error("Invalid remote file request");
+    await this.filesVerified;
+    const sessionHash = createHash("sha256").update(sessionId).digest("hex");
+    return this.signObject(`remote-files/${roomId}/${desktopDeviceId}/${sessionHash}/${randomUUID()}`, bytes, "application/octet-stream");
+  }
+
   /** Called only after the HTTP handler validates the account key. */
   async authenticatedMediaTicket(owner: string, bytes: number, contentType: string): Promise<BlobTicket> {
     if (!/^[a-f0-9]{64}$/.test(owner) || !Number.isSafeInteger(bytes) || bytes < 1
@@ -95,6 +123,10 @@ export class BlobStore implements TicketIssuer {
 
   private async signProviderMedia(key: string, bytes: number, contentType: string): Promise<BlobTicket> {
     await this.providerVerified;
+    return this.signObject(key, bytes, contentType);
+  }
+
+  private async signObject(key: string, bytes: number, contentType: string): Promise<BlobTicket> {
     const options = { expiresIn: PROVIDER_MEDIA_TICKET_SECONDS };
     const putUrl = await getSignedUrl(this.client, new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentLength: bytes, ContentType: contentType }), {
       ...options, signableHeaders: new Set(["content-type", "content-length"]),

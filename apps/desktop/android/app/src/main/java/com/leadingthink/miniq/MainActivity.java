@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(MiniqPushPlugin.class);
         registerPlugin(MiniqBackgroundPlugin.class);
         registerPlugin(MiniqPowerPlugin.class);
+        registerPlugin(MiniqFilesPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

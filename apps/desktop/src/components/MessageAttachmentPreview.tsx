@@ -15,11 +15,14 @@ export function MessageAttachmentPreview({
   useEffect(() => {
     if (!isImage) return;
     let disposed = false;
+    let objectUrl: string | undefined;
     const controller = new AbortController();
     void readImagePreview(attachment.path, { ...access, signal: controller.signal })
       .then((preview) => {
-        if (!disposed)
-          setImageUrl(`data:${preview.mimeType};base64,${preview.dataBase64}`);
+        if (!disposed) {
+          if (preview.blob) objectUrl = URL.createObjectURL(preview.blob);
+          setImageUrl(objectUrl ?? `data:${preview.mimeType};base64,${preview.dataBase64}`);
+        }
       })
       .catch(() => {
         if (!disposed) setImageUrl(null);
@@ -27,6 +30,7 @@ export function MessageAttachmentPreview({
     return () => {
       disposed = true;
       controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [attachment.path, isImage, access]);
 

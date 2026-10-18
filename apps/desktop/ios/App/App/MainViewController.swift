@@ -8,6 +8,7 @@ class MainViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(MiniqPowerPlugin())
         bridge?.registerPluginInstance(MiniqIapPlugin())
         bridge?.registerPluginInstance(MiniqSpeechPlugin())
+        bridge?.registerPluginInstance(MiniqFilesPlugin())
     }
 }
 

@@ -432,7 +432,7 @@ function PreviewPanelContent({
             <RotateCcw size={15} />
           </button>
           {remote ? <RemoteFileDownload path={path} onError={setActionError}
-            preview={preview.mimeType ? { path, mimeType: preview.mimeType, content: preview.content, dataBase64: preview.dataBase64 } : undefined} /> : <button
+            preview={preview.mimeType ? { path, mimeType: preview.mimeType, content: preview.content, dataBase64: preview.dataBase64, blob: preview.blob } : undefined} /> : <button
             className="icon-button"
             title="使用系统默认应用打开"
             aria-label="使用系统默认应用打开"
@@ -596,41 +596,41 @@ function PreviewPanelContent({
               onGoToLine={openGoToLine}
             />
           </Suspense>
-        ) : preview.dataBase64 &&
+        ) : (preview.dataBase64 || preview.blob) &&
           preview.mimeType &&
           (preview.kind === "image" ||
             preview.kind === "audio" ||
             preview.kind === "video") ? (
           <BlobPreview
             key={`${path}:${renderAttempt}`}
-            dataBase64={preview.dataBase64}
+            dataBase64={preview.dataBase64 ?? undefined} blob={preview.blob}
             mimeType={preview.mimeType}
             kind={preview.kind}
             label={fileName(path)}
             onError={reportRenderError}
           />
-        ) : preview.kind === "pdf" && preview.dataBase64 ? (
+        ) : preview.kind === "pdf" && (preview.dataBase64 || preview.blob) ? (
           <PdfPreview
             key={renderAttempt}
-            dataBase64={preview.dataBase64}
+            dataBase64={preview.dataBase64 ?? undefined} blob={preview.blob}
             onError={reportRenderError}
           />
-        ) : preview.kind === "docx" && preview.dataBase64 ? (
+        ) : preview.kind === "docx" && (preview.dataBase64 || preview.blob) ? (
           <DocxPreview
             key={renderAttempt}
-            dataBase64={preview.dataBase64}
+            dataBase64={preview.dataBase64 ?? undefined} blob={preview.blob}
             onError={reportRenderError}
           />
-        ) : preview.kind === "xlsx" && preview.dataBase64 ? (
+        ) : preview.kind === "xlsx" && (preview.dataBase64 || preview.blob) ? (
           <SpreadsheetPreview
             key={renderAttempt}
-            dataBase64={preview.dataBase64}
+            dataBase64={preview.dataBase64 ?? undefined} blob={preview.blob}
             onError={reportRenderError}
           />
-        ) : preview.kind === "pptx" && preview.dataBase64 ? (
+        ) : preview.kind === "pptx" && (preview.dataBase64 || preview.blob) ? (
           <PptxPreview
             key={renderAttempt}
-            dataBase64={preview.dataBase64}
+            dataBase64={preview.dataBase64 ?? undefined} blob={preview.blob}
             onError={reportRenderError}
           />
           ) : preview.kind === "officeLegacy" && !remote ? (

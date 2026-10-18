@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		6D1A00012F00000000000005 /* MiniqFilesPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1A00012F00000000000006 /* MiniqFilesPlugin.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
@@ -51,6 +52,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		6D1A00012F00000000000006 /* MiniqFilesPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniqFilesPlugin.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -125,6 +127,7 @@
 				B66F5E9F67AE10C08668FEAE /* MiniqPushPlugin.swift */,
 				6D1A00012F00000000000002 /* MiniqIapPlugin.swift */,
 				6D1A00012F00000000000004 /* MiniqSpeechPlugin.swift */,
+				6D1A00012F00000000000006 /* MiniqFilesPlugin.swift */,
 				BAD28B8E564FC66C69BDB59E /* MainViewController.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
@@ -264,6 +267,7 @@
 				32328320794D8E37B66F5E9F /* MiniqPushPlugin.swift in Sources */,
 				6D1A00012F00000000000001 /* MiniqIapPlugin.swift in Sources */,
 				6D1A00012F00000000000003 /* MiniqSpeechPlugin.swift in Sources */,
+				6D1A00012F00000000000005 /* MiniqFilesPlugin.swift in Sources */,
 				65E31E648943DC80BAD28B8E /* MainViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
