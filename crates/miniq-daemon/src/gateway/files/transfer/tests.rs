@@ -5,12 +5,20 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 async fn destination_is_staged_unique_and_abandoned_bytes_are_removed() {
     let project = tempfile::tempdir().unwrap();
     let (state, session, _) = super::super::tests::attachment_state(project.path());
-    let mut first = transfer_destination(&state, &session, "report.txt")
-        .await
-        .unwrap();
-    let second = transfer_destination(&state, &session, "report.txt")
-        .await
-        .unwrap();
+    let mut first = transfer_destination(
+        &state,
+        &TransferScope::Session(session.clone()),
+        "report.txt",
+    )
+    .await
+    .unwrap();
+    let second = transfer_destination(
+        &state,
+        &TransferScope::Session(session.clone()),
+        "report.txt",
+    )
+    .await
+    .unwrap();
     assert_ne!(first.path, second.path);
     let abandoned = second.path.parent().unwrap().to_path_buf();
     drop(second);
@@ -55,24 +63,40 @@ async fn destination_never_overwrites_and_rejects_unsafe_names() {
         "x\0y",
     ] {
         assert!(
-            transfer_destination(&state, &session, name).await.is_err(),
+            transfer_destination(&state, &TransferScope::Session(session.clone()), name)
+                .await
+                .is_err(),
             "{name:?}"
         );
     }
-    assert!(transfer_destination(&state, &session, ".env").await.is_ok());
-    assert!(transfer_destination(&state, &session, "..config")
-        .await
-        .is_ok());
-    let destination = transfer_destination(&state, &session, "report.txt")
-        .await
-        .unwrap();
+    assert!(
+        transfer_destination(&state, &TransferScope::Session(session.clone()), ".env")
+            .await
+            .is_ok()
+    );
+    assert!(
+        transfer_destination(&state, &TransferScope::Session(session.clone()), "..config")
+            .await
+            .is_ok()
+    );
+    let destination = transfer_destination(
+        &state,
+        &TransferScope::Session(session.clone()),
+        "report.txt",
+    )
+    .await
+    .unwrap();
     let path = destination.path.clone();
     std::fs::write(&path, b"existing").unwrap();
     assert!(destination.finish().await.is_err());
     assert_eq!(std::fs::read(path).unwrap(), b"existing");
-    assert!(transfer_destination(&state, "missing", "file.txt")
-        .await
-        .is_err());
+    assert!(transfer_destination(
+        &state,
+        &TransferScope::Session("missing".into()),
+        "file.txt"
+    )
+    .await
+    .is_err());
 }
 
 #[tokio::test]
@@ -120,13 +144,16 @@ async fn symlinked_inbox_and_replaced_directory_cannot_escape_or_redirect_cleanu
     let (state, session, _) = super::super::tests::attachment_state(project.path());
     let inbox = project.path().join("inbox");
     symlink(outside.path(), &inbox).unwrap();
-    assert!(transfer_destination(&state, &session, "file.txt")
-        .await
-        .is_err());
+    assert!(
+        transfer_destination(&state, &TransferScope::Session(session.clone()), "file.txt")
+            .await
+            .is_err()
+    );
     std::fs::remove_file(&inbox).unwrap();
-    let mut destination = transfer_destination(&state, &session, "file.txt")
-        .await
-        .unwrap();
+    let mut destination =
+        transfer_destination(&state, &TransferScope::Session(session.clone()), "file.txt")
+            .await
+            .unwrap();
     let original = destination.path.parent().unwrap().to_path_buf();
     let moved = inbox.join("moved");
     std::fs::rename(&original, &moved).unwrap();
@@ -146,9 +173,13 @@ async fn symlinked_inbox_and_replaced_directory_cannot_escape_or_redirect_cleanu
 async fn oversized_upload_is_not_published() {
     let project = tempfile::tempdir().unwrap();
     let (state, session, _) = super::super::tests::attachment_state(project.path());
-    let destination = transfer_destination(&state, &session, "large.bin")
-        .await
-        .unwrap();
+    let destination = transfer_destination(
+        &state,
+        &TransferScope::Session(session.clone()),
+        "large.bin",
+    )
+    .await
+    .unwrap();
     let path = destination.path.clone();
     destination
         .file
@@ -172,4 +203,89 @@ fn source_open_does_not_follow_replaced_path_components() {
     assert!(anchored::open_file(&root.join("replaced/secret")).is_err());
     symlink(outside.path().join("secret"), root.join("leaf")).unwrap();
     assert!(anchored::open_file(&root.join("leaf")).is_err());
+}
+
+fn workspace_scope(state: &AppState, session: &str) -> TransferScope {
+    TransferScope::Workspace(state.store.get_session(session).unwrap().workspace_id)
+}
+
+#[tokio::test]
+async fn workspace_scope_stores_in_the_workspace_inbox_before_any_session_exists() {
+    let project = tempfile::tempdir().unwrap();
+    let (state, session, _) = super::super::tests::attachment_state(project.path());
+    let scope = workspace_scope(&state, &session);
+    let mut destination = transfer_destination(&state, &scope, "photo.heic")
+        .await
+        .unwrap();
+    destination.file.write_all(b"phone bytes").await.unwrap();
+    let path = destination.finish().await.unwrap();
+    let root = dunce::canonicalize(project.path()).unwrap();
+    assert!(path.starts_with(root.join("inbox")));
+    assert_eq!(path.file_name().unwrap(), "photo.heic");
+    assert_eq!(std::fs::read(&path).unwrap(), b"phone bytes");
+    assert!(!path.parent().unwrap().join(".partial").exists());
+}
+
+#[tokio::test]
+async fn workspace_scope_rejects_unknown_workspace_and_unsafe_names() {
+    let project = tempfile::tempdir().unwrap();
+    let (state, session, _) = super::super::tests::attachment_state(project.path());
+    let missing = TransferScope::Workspace("missing".into());
+    assert!(transfer_destination(&state, &missing, "file.txt")
+        .await
+        .is_err());
+    // A session id is not a workspace id, and vice versa.
+    let confused = TransferScope::Workspace(session.clone());
+    assert!(transfer_destination(&state, &confused, "file.txt")
+        .await
+        .is_err());
+    let workspace_id = state.store.get_session(&session).unwrap().workspace_id;
+    let confused = TransferScope::Session(workspace_id);
+    assert!(transfer_destination(&state, &confused, "file.txt")
+        .await
+        .is_err());
+    let scope = workspace_scope(&state, &session);
+    for name in [
+        "",
+        "..",
+        "../secret",
+        "a/b",
+        "a\\b",
+        ".partial",
+        "nul.txt",
+        "x.",
+    ] {
+        assert!(
+            transfer_destination(&state, &scope, name).await.is_err(),
+            "{name:?}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn workspace_scope_rejects_symlinked_inbox() {
+    let project = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let (state, session, _) = super::super::tests::attachment_state(project.path());
+    std::os::unix::fs::symlink(outside.path(), project.path().join("inbox")).unwrap();
+    let scope = workspace_scope(&state, &session);
+    assert!(transfer_destination(&state, &scope, "file.txt")
+        .await
+        .is_err());
+    assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn scope_requires_exactly_one_identifier() {
+    assert_eq!(
+        TransferScope::from_ids(Some("s"), None).unwrap(),
+        TransferScope::Session("s".into())
+    );
+    assert_eq!(
+        TransferScope::from_ids(None, Some("w")).unwrap(),
+        TransferScope::Workspace("w".into())
+    );
+    assert!(TransferScope::from_ids(Some("s"), Some("w")).is_err());
+    assert!(TransferScope::from_ids(None, None).is_err());
 }

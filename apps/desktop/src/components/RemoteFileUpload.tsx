@@ -33,7 +33,7 @@ export function RemoteFileUpload({ access, onError }: {
                 break;
             setPhase(`正在校验所选文件：${file.name}`);
             try {
-                const result = await uploadRemoteFile(access.client, access.sessionId, file, controller.signal, (sent, total) => { if (scope === generation.current) {
+                const result = await uploadRemoteFile(access.client, { sessionId: access.sessionId }, file, controller.signal, (sent, total) => { if (scope === generation.current) {
                     setPhase(sent === total ? "正在等待桌面收件回执…" : `正在上传：${file.name}`);
                     setProgress(total ? Math.round(sent / total * 100) : 0);
                 } });

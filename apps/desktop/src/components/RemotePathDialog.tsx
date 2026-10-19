@@ -6,6 +6,8 @@ import "./RemotePathDialog.css";
 export function RemotePathDialog(props: {
   host: string;
   purpose: "project" | "attachment" | "plugin" | "skill";
+  /** Remote attachment dialog without a project: phone uploads need one first. */
+  uploadNeedsProject?: boolean;
   onSubmit: (path: string) => Promise<void>;
   onClose: () => void;
 }) {
@@ -79,6 +81,9 @@ export function RemotePathDialog(props: {
         </label>
         {props.purpose === "attachment" && (
           <p>填写已在这台远程电脑上的文件路径。此入口不会上传手机或当前设备的文件。</p>
+        )}
+        {props.purpose === "attachment" && props.uploadNeedsProject && (
+          <p role="note">要从手机上传照片或文件，请先选择一个项目；上传的文件会保存到该项目的收件箱。</p>
         )}
         {props.purpose === "skill" && (
           <p>填写远程电脑上包含 SKILL.md 的技能包目录。此入口不会上传当前设备的文件。</p>

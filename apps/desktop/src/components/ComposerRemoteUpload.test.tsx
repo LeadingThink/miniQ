@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ComposerCard } from "./Composer";
 import { uploadRemoteFile } from "../remoteTransfer";
@@ -33,7 +33,7 @@ it("offers original photos and files, waits for actual receipt, preserves text a
   open();
   expect(screen.getByRole("button", { name: "上传本机文件" })).toBeTruthy();
   const files = choose("选择照片原件");
-  expect(vi.mocked(uploadRemoteFile).mock.calls[0].slice(0, 3)).toEqual([client, "session-A", files[0]]);
+  expect(vi.mocked(uploadRemoteFile).mock.calls[0].slice(0, 3)).toEqual([client, { sessionId: "session-A" }, files[0]]);
   expect(readAttachments("upload-A")).toEqual([]);
   act(() => vi.mocked(uploadRemoteFile).mock.calls[0][4]?.(1, 2));
   expect(screen.getByRole("progressbar").getAttribute("value")).toBe("50");
@@ -105,4 +105,52 @@ it("lists every selected file with its own state and marks untouched files as no
   expect(screen.getByText(/失败 · /)).toBeTruthy();
   expect(screen.getAllByText(/未上传 · /)).toHaveLength(2);
   expect(screen.getAllByRole("button", { name: "关闭" })).toHaveLength(2);
+});
+
+const projectBase = { ...base, sessionId: undefined, workspaceId: "project-A", draftKey: "hero-A" };
+it("uploads by workspace before a session exists and attaches the receipt to the hero draft without sending", async () => {
+  vi.mocked(uploadRemoteFile).mockResolvedValueOnce(receipt("/project/inbox/u/photo.heic"));
+  render(<ComposerCard {...projectBase} />);
+  open();
+  expect(screen.getByRole("button", { name: "上传照片原件" })).toBeTruthy();
+  const files = choose("选择照片原件");
+  expect(vi.mocked(uploadRemoteFile).mock.calls[0].slice(0, 3)).toEqual([client, { workspaceId: "project-A" }, files[0]]);
+  await waitFor(() => expect(readAttachments("hero-A")).toEqual(["/project/inbox/u/photo.heic"]));
+  expect(base.onSend).not.toHaveBeenCalled();
+});
+it.each(["workspace", "client", "unmount"])("keeps a late workspace receipt in the initiating hero draft after %s change", async (change) => {
+  let finish!: (result: ReturnType<typeof receipt>) => void;
+  vi.mocked(uploadRemoteFile).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const view = render(<ComposerCard {...projectBase} />);
+  open(); choose();
+  const signal = vi.mocked(uploadRemoteFile).mock.calls[0][3]!;
+  if (change === "unmount") view.unmount();
+  else view.rerender(<ComposerCard {...projectBase} draftKey="hero-B" workspaceId={change === "workspace" ? "project-B" : "project-A"} client={change === "client" ? { ...client } as RpcClient : client} />);
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish(receipt("/old/late.heic")));
+  expect(readAttachments("hero-A")).toEqual(["/old/late.heic"]);
+  expect(readAttachments("hero-B")).toEqual([]);
+  expect(base.onSend).not.toHaveBeenCalled();
+});
+it("enforces the ten attachment limit for the workspace scope", () => {
+  storeAttachments("hero-A", Array.from({ length: 9 }, (_, i) => `/existing/${i}.txt`));
+  render(<ComposerCard {...projectBase} />);
+  open(); choose("选择本机文件", 2);
+  expect(screen.getByRole("alert").textContent).toContain("最多附加 10");
+  expect(uploadRemoteFile).not.toHaveBeenCalled();
+});
+it("closes the upload sheet when the project changes", () => {
+  const view = render(<ComposerCard {...projectBase} />);
+  open();
+  expect(screen.getByRole("dialog", { name: "附加远程文件" })).toBeTruthy();
+  view.rerender(<ComposerCard {...projectBase} workspaceId="project-B" />);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+it("falls back to the path dialog and explains that a project is required when neither id exists", () => {
+  render(<ComposerCard {...projectBase} workspaceId={undefined} />);
+  open();
+  const dialog = screen.getByRole("dialog", { name: "附加远程文件" });
+  expect(within(dialog).getByRole("note").textContent).toContain("请先选择一个项目");
+  expect(within(dialog).queryByRole("button", { name: "上传照片原件" })).toBeNull();
+  expect(uploadRemoteFile).not.toHaveBeenCalled();
 });

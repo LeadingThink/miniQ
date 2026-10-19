@@ -7,10 +7,12 @@
 此通道针对当前连接桌面的本地会话项目；它不是任意 SSH 主机的通用文件上传接口。每个文件最大 200 MiB。SHA-256 使用 64 位小写十六进制。上传保持所选 File 的原始字节，包含 HEIC；预览转换不能替换上传原件。系统照片选择器可能返回兼容格式，若必须保留相机原始 HEIC，应从系统文件选择器选取原件；此通道本身不做 JPEG 重编码。HEIC 能否直接预览取决于平台解码支持，不能预览仍可保存原文件。
 
 - `file.download.prepare {sessionId,path,revision}`：验证会话文件权限与版本，流式上传到私有对象，返回 `{transferId,getUrl,expiresAt,size,sha256,revision}`。
-- `file.upload.prepare {sessionId,name,size,sha256}`：为当前连接、调用手机和会话建立上传票据，返回 `{transferId,putUrl,expiresAt}`。
+- 上传范围（scope）：`file.upload.prepare`、`file.upload.commit`、`file.transfer.cancel` 与 `file.transfer.status` 必须**恰好提供** `sessionId` 或 `workspaceId` 之一；两者同时出现或都缺失返回 `InvalidParams`（“Specify either sessionId or workspaceId, not both” / “Specify exactly one of sessionId or workspaceId”），未知字段同样被拒绝。`sessionId` 保存到该会话工作目录的 `inbox/`；`workspaceId` 用于新会话尚未创建时，保存到该项目根目录的 `inbox/`，不会创建隐藏会话或伪造会话 ID。两种范围共用同一套目的地校验（规范化路径、符号链接与 `inbox` 逃逸拒绝、`.partial` 暂存、文件名规则、禁止覆盖）。传输记录按“调用手机 + 范围”隔离：用某一范围准备的传输，不能以另一个会话或项目提交、取消或查询。`file.download.prepare` 与 `file.transfer.status` 对下载仍只使用 `sessionId`。
+- `file.upload.prepare {sessionId|workspaceId,name,size,sha256}`：为当前连接、调用手机和范围建立上传票据，返回 `{transferId,putUrl,expiresAt}`。对象存储命名空间对会话范围使用原 `sessionId`，对项目范围使用 `workspace:<workspaceId>`（只作为不透明的存储键，relay 无需变更）。
 - 手机直接 PUT 原始文件，`Content-Type: application/octet-stream`。
-- `file.upload.commit {sessionId,transferId}`：桌面从服务端保存的票据下载并校验大小与 SHA-256，完成收件后返回 `{status:"completed",path,size,sha256}`。PUT 成功不是桌面收件成功。
-- `file.transfer.cancel {sessionId,transferId}`：请求停止未完成传输。客户端必须按终态显示完成或取消，不能把网络断开当作成功。
+- `file.upload.commit {sessionId|workspaceId,transferId}`：桌面从服务端保存的票据下载并校验大小与 SHA-256，完成收件后返回 `{status:"completed",path,size,sha256}`。PUT 成功不是桌面收件成功。
+- `file.transfer.cancel {sessionId|workspaceId,transferId}`：请求停止未完成传输。客户端必须按终态显示完成或取消，不能把网络断开当作成功。
+- 新会话页：手机端在已选择项目时用 `workspaceId` 上传，回执中的绝对路径作为附件路径随 `startTask` 发送（附件准备只要求可读的绝对路径，不要求属于某会话）。未选择项目时不提供上传，只保留“附加电脑上已有文件”的路径输入并提示先选择项目。上传永不自动发送消息。
 - 小于等于 256 KiB 的文本预览仍使用 `file.read`；远程大文件和二进制文件使用对象传输。
 
 签名地址过期时重新请求准备操作。不能向 daemon 传入通用 HTTP URL，也不能自行构造其他对象的访问票据。签名地址及 OSS 凭据不得记录到日志。

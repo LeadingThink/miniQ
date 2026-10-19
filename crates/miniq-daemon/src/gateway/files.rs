@@ -14,7 +14,7 @@ use std::{
     path::{Path, PathBuf},
 };
 pub(crate) use transfer::{
-    check_transfer_revision, transfer_destination, transfer_source, Destination,
+    check_transfer_revision, transfer_destination, transfer_source, Destination, TransferScope,
 };
 
 // Each chunk can use the existing encrypted object-storage data plane. Requests

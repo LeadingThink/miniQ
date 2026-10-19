@@ -64,7 +64,7 @@ function uploadFixture(statuses = [200], abort?: AbortController) {
 }
 it("uploads original HEIC bytes with octet-stream and waits for a validated receipt", async () => {
     const f = uploadFixture();
-    const result = await uploadRemoteFile({ call: f.call as RpcClient["call"] }, "s", f.file);
+    const result = await uploadRemoteFile({ call: f.call as RpcClient["call"] }, { sessionId: "s" }, f.file);
     expect(result.status).toBe("completed");
     expect(f.bodies).toEqual([f.file]);
     expect(f.headers).toContainEqual(["Content-Type", "application/octet-stream"]);
@@ -73,21 +73,21 @@ it("uploads original HEIC bytes with octet-stream and waits for a validated rece
 });
 it("renews a rejected PUT ticket once", async () => {
     const f = uploadFixture([403, 200]);
-    await uploadRemoteFile({ call: f.call as RpcClient["call"] }, "s", f.file);
+    await uploadRemoteFile({ call: f.call as RpcClient["call"] }, { sessionId: "s" }, f.file);
     expect(f.call.mock.calls.filter(([m]) => m === "file.upload.prepare")).toHaveLength(2);
     expect(f.bodies).toEqual([f.file, f.file]);
 });
 it("cancels upload and confirms daemon terminal status without commit", async () => {
     const controller = new AbortController();
     const f = uploadFixture([200], controller);
-    await expect(uploadRemoteFile({ call: f.call as RpcClient["call"] }, "s", f.file, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    await expect(uploadRemoteFile({ call: f.call as RpcClient["call"] }, { sessionId: "s" }, f.file, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
     expect(f.call).toHaveBeenLastCalledWith("file.transfer.cancel", { sessionId: "s", transferId: "t" });
     expect(f.call.mock.calls.some(([m]) => m === "file.upload.commit")).toBe(false);
 });
 it("rejects files larger than 200 MiB before preparing any ticket", async () => {
     const f = uploadFixture();
     Object.defineProperty(f.file, "size", { value: 200 * 1024 * 1024 + 1 });
-    await expect(uploadRemoteFile({ call: f.call as RpcClient["call"] }, "s", f.file)).rejects.toThrow("200");
+    await expect(uploadRemoteFile({ call: f.call as RpcClient["call"] }, { sessionId: "s" }, f.file)).rejects.toThrow("200");
     expect(f.call).not.toHaveBeenCalled();
 });
 
@@ -99,7 +99,7 @@ it("cancels during desktop commit and preserves a completed race receipt", async
     if (method === "file.transfer.cancel") return { status: "completed", path: "/project/inbox/照片.heic", size: f.file.size, sha256: f.sha256 };
     return original(method);
   });
-  const result = await uploadRemoteFile({ call: f.call as RpcClient["call"] }, "s", f.file, controller.signal);
+  const result = await uploadRemoteFile({ call: f.call as RpcClient["call"] }, { sessionId: "s" }, f.file, controller.signal);
   expect(result.status).toBe("completed");
   expect(f.call.mock.calls.filter(([m]) => m === "file.transfer.cancel")).toHaveLength(1);
 });
@@ -134,4 +134,16 @@ it("renews a forbidden range once and returns only the requested bytes", async (
   expect(new TextDecoder().decode(result.bytes)).toBe("123");
   expect(call).toHaveBeenLastCalledWith("file.download.prepare", expect.objectContaining({ forceRefresh: true }), expect.anything());
   await expect(result.source.refresh()).rejects.toThrow("刷新失败");
+});
+
+it("scopes prepare, commit and cancel by workspace when no session exists", async () => {
+  const f = uploadFixture();
+  await uploadRemoteFile({ call: f.call as RpcClient["call"] }, { workspaceId: "w" }, f.file);
+  expect(f.call).toHaveBeenCalledWith("file.upload.prepare", { workspaceId: "w", name: "照片.heic", size: 4, sha256: f.sha256 }, { timeoutMs: 600000 });
+  expect(f.call).toHaveBeenLastCalledWith("file.upload.commit", { workspaceId: "w", transferId: "t" }, { timeoutMs: 600000 });
+  const controller = new AbortController();
+  const aborted = uploadFixture([200], controller);
+  await expect(uploadRemoteFile({ call: aborted.call as RpcClient["call"] }, { workspaceId: "w" }, aborted.file, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+  expect(aborted.call).toHaveBeenLastCalledWith("file.transfer.cancel", { workspaceId: "w", transferId: "t" });
+  expect(JSON.stringify(aborted.call.mock.calls)).not.toContain("sessionId");
 });
