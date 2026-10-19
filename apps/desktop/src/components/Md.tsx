@@ -273,7 +273,6 @@ export function Md(props: {
   }, [roots, workspacePath, referenceBasePath]);
   // Stable event bridges still dispatch to the latest session's callbacks, so
   // the renderer configuration only changes with real rendering options.
-  const diagrams = Boolean(props.previewAssets);
   const options = useMemo((): MarkdownOptions => ({
     components: {
       a: (linkProps) => (
@@ -294,12 +293,12 @@ export function Md(props: {
         />
       ),
       table: MarkdownTable,
-      pre: diagrams ? DiagramMarkdownPre : MarkdownCodeBlock,
+      pre: DiagramMarkdownPre,
       ...(ImageRenderer ? { img: ImageRenderer } : {}),
     },
     remarkPlugins: props.headingAnchors ? HEADING_REMARK_PLUGINS : REMARK_PLUGINS,
   }), [
-    workspacePath, referenceBasePath, props.headingAnchors, diagrams,
+    workspacePath, referenceBasePath, props.headingAnchors,
     ImageRenderer, handlers, hasFileHandler, hasUrlHandler,
   ]);
   const source = normalizeMathDelimiters(props.children);

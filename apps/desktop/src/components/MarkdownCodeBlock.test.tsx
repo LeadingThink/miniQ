@@ -8,7 +8,26 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Md } from "./Md";
+
+const mermaid = vi.hoisted(() => ({ initialize: vi.fn(), render: vi.fn() }));
+vi.mock("mermaid", () => ({ default: mermaid }));
+
 afterEach(cleanup);
+
+it("renders Mermaid blocks in ordinary assistant Markdown", async () => {
+  mermaid.render.mockResolvedValueOnce({
+    svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>流程图</text></svg>',
+  });
+
+  render(<Md>{"```mermaid\nflowchart LR\nA --> B\n```"}</Md>);
+
+  const image = await screen.findByRole("img", { name: "Mermaid 图表" });
+  expect(image.getAttribute("src")).toMatch(
+    /^data:image\/svg\+xml;charset=utf-8,/,
+  );
+  expect(screen.queryByRole("button", { name: "代码自动换行" })).toBeNull();
+});
+
 it("copies only complete code and keeps wrapping during content updates", async () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", {

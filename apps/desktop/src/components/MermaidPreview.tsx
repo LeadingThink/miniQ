@@ -21,6 +21,10 @@ function loadRenderer() {
   return renderer;
 }
 
+export function svgDataUrl(svg: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 export function MermaidPreview({ source }: { source: string }) {
   const id = `diagram${useId().replace(/[^a-z\d]/gi, "")}`;
   const [url, setUrl] = useState<string | null>(null);
@@ -28,7 +32,6 @@ export function MermaidPreview({ source }: { source: string }) {
   const [zoom, setZoom] = useState(1);
   useEffect(() => {
     let cancelled = false;
-    let objectUrl: string | undefined;
     setUrl(null);
     setError(null);
     void loadRenderer()
@@ -36,10 +39,7 @@ export function MermaidPreview({ source }: { source: string }) {
         if (cancelled) return;
         const { svg } = await mermaid.render(id, source);
         if (cancelled) return;
-        objectUrl = URL.createObjectURL(
-          new Blob([svg], { type: "image/svg+xml" }),
-        );
-        setUrl(objectUrl);
+        setUrl(svgDataUrl(svg));
       })
       .catch((cause) => {
         if (!cancelled)
@@ -47,7 +47,6 @@ export function MermaidPreview({ source }: { source: string }) {
       });
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [id, source]);
   return (

@@ -25,6 +25,9 @@ it("allows renderer-generated CSS in packaged apps without relaxing scripts", ()
     "'wasm-unsafe-eval'",
   ]);
   expect(directives.get("worker-src")).toEqual(["'self'", "blob:"]);
+  expect(directives.get("img-src")).toEqual(
+    expect.arrayContaining(["'self'", "data:"]),
+  );
   // Wallpaper loops are fetched from the CDN and played back as blob URLs.
   expect(directives.get("connect-src")).toContain("https://oss.zaiwen.top");
   expect(directives.get("media-src")).toEqual(["blob:", "https://*.qiniucs.com"]);
