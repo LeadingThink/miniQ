@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import type { RpcClient } from "./rpc";
-import type { SessionDiff } from "./types";
+import type { ProcessSummary, SessionDiff } from "./types";
 import type { TimelineTurn } from "./timelineTurns";
 
 /** Tools that checkpoint files before writing (mirrors the daemon executor). */
@@ -38,8 +38,8 @@ export function revertTurn(client: RpcClient, sessionId: string, turnId: string,
 }
 
 /** Whether a turn may have changed files and deserves a change card. */
-export function turnHasFileWrites(turn: TimelineTurn): boolean {
-  if ((turn.timing?.summary?.filesChanged ?? 0) > 0) return true;
+export function turnHasFileWrites(turn: TimelineTurn, stats?: ProcessSummary): boolean {
+  if ((turn.timing?.summary?.filesChanged ?? 0) > 0 || (stats?.fileWriteCount ?? 0) > 0) return true;
   return turn.groups.some((group) => group.kind === "tools"
     && group.calls.some((call) => FILE_WRITE_TOOLS.has(call.toolName)));
 }

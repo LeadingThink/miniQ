@@ -18,6 +18,7 @@ import { useAppUpdater } from "./useAppUpdater";
 import { useFilePreview } from "./useFilePreview";
 import { useCompanionNavigation } from "./useCompanionNavigation";
 import { useSessionLifecycleActions } from "./useSessionLifecycleActions";
+import { useProcessLoader } from "./useProcessLoader";
 import { useSessionFeed } from "./useSessionFeed";
 import { useSessionModel } from "./useSessionModel";
 import { useSessionDiff } from "./useSessionDiff";
@@ -703,6 +704,7 @@ export function useMiniqApp(active = true) {
     setSessionError,
     active,
   );
+  const loadProcess = useProcessLoader(client, catalog.currentSessionId, catalog.navigationEpoch, feed);
   const destinationRevision = useRef(-1);
   useEffect(() => {
     if (!active || !desktop || desktop.host !== client.sshHost || !connection.connected || destinationRevision.current === desktop.destination.revision) return;
@@ -769,6 +771,7 @@ export function useMiniqApp(active = true) {
       ...navigationActions,
       ...workspaceActions,
       ...lifecycle,
+      loadProcess,
       ...turnActions,
       ...interactionActions,
     },

@@ -1,4 +1,6 @@
-use miniq_protocol::{HistoryCursor, HistoryPage, HistoryParams, HistoryToolCall};
+use miniq_protocol::{
+    HistoryCursor, HistoryPage, HistoryParams, HistoryToolCall, HistoryView, ProcessRecordsParams,
+};
 use rusqlite::{params, params_from_iter};
 use std::collections::HashMap;
 
@@ -12,16 +14,20 @@ impl Store {
             return Err(MemoryError::InvalidData("invalid history page size".into()));
         }
         let conn = self.conn.lock().unwrap();
+        if input.view == HistoryView::Visible {
+            return super::history_visible::visible_page(&conn, input);
+        }
         let mut statement = conn.prepare(
             "WITH timeline AS (
                 SELECT id, created_at, 'message' AS kind FROM messages
-                WHERE session_id = ?1 AND ?8 IS NULL AND (?5 OR role != 'system')
+                WHERE session_id = ?1 AND ?8 IS NULL AND ?9 IS NULL AND (?5 OR role != 'system')
                   AND (?6 = 'all' OR (?6 = 'answers' AND role IN ('user', 'assistant'))
                        OR (?6 = 'activity' AND role = 'tool'))
                   AND (?7 = '' OR instr(lower(content), lower(?7)) > 0)
                 UNION ALL
                 SELECT id, created_at, 'tool' AS kind FROM tool_calls
-                WHERE session_id = ?1 AND (?8 IS NULL OR agent_id = ?8) AND (?5 OR tool_name != 'task_update')
+                WHERE session_id = ?1 AND (?8 IS NULL OR agent_id = ?8) AND (?9 IS NULL OR tool_name = ?9)
+                  AND (?5 OR tool_name != 'task_update')
                   AND (?6 IN ('all', 'activity') OR (?6 = 'errors' AND status IN ('failed', 'rejected', 'cancelled')))
                   AND (?7 = '' OR instr(lower(tool_name || char(10) || input_json || char(10) || coalesce(output_json, '')), lower(?7)) > 0)
              ) SELECT id, created_at, kind FROM timeline
@@ -38,6 +44,7 @@ impl Store {
                 input.filter.as_str(),
                 input.query.trim(),
                 input.agent_id,
+                input.tool_name,
             ],
             |row| {
                 Ok((
@@ -64,6 +71,7 @@ impl Store {
             messages: Vec::new(),
             tool_calls: Vec::new(),
             next_cursor,
+            process_summaries: Vec::new(),
         };
         // Fetch details in two bounded queries instead of one query per
         // timeline position. Remote session.open commonly requests 40 rows;
@@ -93,6 +101,15 @@ impl Store {
         super::turn_timing::attach(&conn, &mut page.messages)?;
         Ok(page)
     }
+
+    /// The folded records of one turn, a bounded page at a time.
+    pub fn process_records_page(&self, input: &ProcessRecordsParams) -> Result<HistoryPage> {
+        if !(1..=100).contains(&input.limit) {
+            return Err(MemoryError::InvalidData("invalid history page size".into()));
+        }
+        let conn = self.conn.lock().unwrap();
+        super::history_visible::process_records_page(&conn, input)
+    }
 }
 
 fn placeholders(count: usize) -> String {
@@ -101,7 +118,7 @@ fn placeholders(count: usize) -> String {
         .join(",")
 }
 
-fn load_messages(
+pub(super) fn load_messages(
     conn: &rusqlite::Connection,
     session_id: &str,
     ids: &[String],
@@ -128,7 +145,7 @@ fn load_messages(
     Ok(output)
 }
 
-fn load_tools(
+pub(super) fn load_tools(
     conn: &rusqlite::Connection,
     session_id: &str,
     ids: &[String],

@@ -156,6 +156,8 @@ fn answer_messages(
                 query: String::new(),
                 include_payloads: false,
                 include_internal: false,
+                view: miniq_protocol::HistoryView::Raw,
+                tool_name: None,
             })
             .map_err(store_err)?;
         for message in page.messages.into_iter().rev() {

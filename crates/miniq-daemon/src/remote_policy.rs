@@ -41,6 +41,7 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "session.open"
         | "session.sync"
         | "session.history"
+        | "session.processRecords"
         | "session.search"
         | "session.modelCalls"
         | "session.contextUsage"

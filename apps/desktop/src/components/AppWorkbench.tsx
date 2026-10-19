@@ -9,6 +9,7 @@ import { WorkbenchToolbar } from "./WorkbenchToolbar";
 import { WorkbenchOverview } from "./WorkbenchOverview";
 import { PreviewViewStore } from "../previewViewState";
 import type { WorkbenchLauncherActions } from "./WorkbenchLauncher";
+import { useBrowserHistory } from "../hooks/useBrowserHistory";
 
 const FilePreviewPanel = lazy(() =>
   import("./FilePreviewPanel").then((module) => ({
@@ -95,6 +96,9 @@ export function AppWorkbench({
       requestAnimationFrame(() => treeFilter.current?.focus());
     }
   });
+  const browserRecords = useBrowserHistory(
+    app.client, sessionId ?? null, workbench.remoteBrowserOpen, app.setError, app.feed.toolCalls,
+  );
   if (!active && !workbench.hasBrowsers) return null;
   const remote = app.client.mode === "remote";
   const launcher: WorkbenchLauncherActions = {
@@ -190,10 +194,10 @@ export function AppWorkbench({
               key={app.catalog.currentSessionId}
               client={app.client}
               sessionId={app.catalog.currentSessionId}
-              calls={app.feed.toolCalls}
-              hasOlder={Boolean(app.feed.nextCursor)}
-              loadingOlder={app.actions.loadingOlder}
-              onLoadOlder={() => void app.actions.loadOlder()}
+              calls={browserRecords.calls}
+              hasOlder={browserRecords.hasOlder}
+              loadingOlder={browserRecords.loadingOlder}
+              onLoadOlder={browserRecords.loadOlder}
               onClose={workbench.hideBrowser}
               onDiscuss={discuss}
             />

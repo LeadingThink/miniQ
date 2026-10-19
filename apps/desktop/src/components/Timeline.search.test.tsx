@@ -66,15 +66,15 @@ describe("session search helpers", () => {
   it("finds anchored records and records hidden inside folds", () => {
     const root = document.createElement("div");
     root.innerHTML = `<div data-history-anchor="message:a"></div><div data-search-records="tool:t1 tool:t2 message:b"></div>`;
-    expect(findHitElement(root, { key: "message:a", kind: "message", id: "a" })).toBe(root.firstChild);
-    expect(findHitElement(root, { key: "tool:t2", kind: "tool", id: "t2" })).toBe(root.lastChild);
-    expect(findHitElement(root, { key: "message:b", kind: "message", id: "b" })).toBe(root.lastChild);
-    expect(findHitElement(root, { key: "tool:t3", kind: "tool", id: "t3" })).toBeNull();
+    expect(findHitElement(root, { key: "message:a", kind: "message", id: "a", at: "" })).toBe(root.firstChild);
+    expect(findHitElement(root, { key: "tool:t2", kind: "tool", id: "t2", at: "" })).toBe(root.lastChild);
+    expect(findHitElement(root, { key: "message:b", kind: "message", id: "b", at: "" })).toBe(root.lastChild);
+    expect(findHitElement(root, { key: "tool:t3", kind: "tool", id: "t3", at: "" })).toBeNull();
   });
 
   it("maps groups to stable hit keys", () => {
     expect(searchHits([{ kind: "message", at: "", message: messages[0] }]))
-      .toEqual([{ key: "message:m1", kind: "message", id: "m1" }]);
+      .toEqual([{ key: "message:m1", kind: "message", id: "m1", at: "" }]);
   });
 });
 

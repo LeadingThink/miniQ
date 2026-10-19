@@ -9,6 +9,7 @@ import { type LocalFileTarget } from "../localFiles";
 import { Spinner } from "./ui/Spinner";
 import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { TurnChangesContext, type TurnChangesContextValue } from "../turnChanges";
+import { ProcessRecordsContext, type ProcessRecordsContextValue } from "../processRecords";
 import { Composer } from "./Composer";
 import type { ComposerSlashCommand } from "../composerSlash";
 import { useAppSlashCommands } from "../hooks/useAppSlashCommands";
@@ -174,6 +175,11 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
     openReview: onOpenTurnReview,
     onReverted: app.review.filesRestored,
   }), [app.client, app.catalog.currentSessionId, app.busy, app.review.epoch, app.review.filesRestored, onOpenTurnReview]);
+  const processRecords = useMemo<ProcessRecordsContextValue>(() => ({
+    summaries: app.feed.processSummaries,
+    loads: app.feed.processLoads,
+    load: app.actions.loadProcess,
+  }), [app.feed.processSummaries, app.feed.processLoads, app.actions.loadProcess]);
   const sources = useMemo(() => collectWebSources(app.feed.toolCalls), [app.feed.toolCalls]);
   const pullRequests = useMemo(
     () => detectPullRequests(app.feed.messages, app.feed.toolCalls),
@@ -196,6 +202,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
           }
         >
           <TurnChangesContext.Provider value={turnChanges}>
+          <ProcessRecordsContext.Provider value={processRecords}>
           <Timeline
             client={app.client}
             sessionId={app.catalog.currentSessionId!}
@@ -259,6 +266,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
             onStopTurn={app.actions.cancelTurn}
             onError={app.setError}
           />
+          </ProcessRecordsContext.Provider>
           </TurnChangesContext.Provider>
         </Suspense>
       </div>

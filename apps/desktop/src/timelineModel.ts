@@ -12,7 +12,7 @@ export type TimelineGroup =
   | { kind: "tools"; at: string; calls: ToolCall[] };
 export type TimelineFilter = "all" | "answers" | "activity" | "errors";
 
-function compareTimestamps(a: string, b: string): number {
+export function compareTimestamps(a: string, b: string): number {
   const difference = Date.parse(a) - Date.parse(b);
   if (!Number.isFinite(difference)) return a.localeCompare(b);
   if (difference !== 0) return difference;

@@ -21,6 +21,17 @@ pub(super) fn store_err(error: miniq_memory::MemoryError) -> RpcError {
     }
 }
 
+/// History requests the store rejects as malformed are the caller's invalid
+/// parameters, not internal faults.
+pub(super) fn history_err(error: miniq_memory::MemoryError) -> RpcError {
+    match error {
+        miniq_memory::MemoryError::InvalidData(message) => {
+            RpcError::new(ErrorCode::InvalidParams, message)
+        }
+        other => store_err(other),
+    }
+}
+
 pub(super) fn to_value<T: serde::Serialize>(value: T) -> Result<Value, RpcError> {
     serde_json::to_value(value)
         .map_err(|error| RpcError::new(ErrorCode::InternalError, error.to_string()))

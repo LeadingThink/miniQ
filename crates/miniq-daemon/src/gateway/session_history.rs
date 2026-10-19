@@ -1,7 +1,7 @@
-use miniq_protocol::{ErrorCode, HistoryParams, RpcError, ToolDetailParams};
+use miniq_protocol::{ErrorCode, HistoryParams, ProcessRecordsParams, RpcError, ToolDetailParams};
 use serde_json::Value;
 
-use super::common::{params, store_err, to_value};
+use super::common::{history_err, params, store_err, to_value};
 use crate::state::AppState;
 
 #[derive(serde::Deserialize)]
@@ -30,7 +30,7 @@ pub(super) fn page(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         .store
         .get_session(&input.session_id)
         .map_err(store_err)?;
-    let page = state.store.history_page(&input).map_err(store_err)?;
+    let page = state.store.history_page(&input).map_err(history_err)?;
     tracing::info!(
         target: "miniq.perf",
         operation = "session.history",
@@ -38,8 +38,34 @@ pub(super) fn page(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         history_limit = input.limit,
         message_count = page.messages.len(),
         tool_call_count = page.tool_calls.len(),
+        process_summary_count = page.process_summaries.len(),
         elapsed_ms = started.elapsed().as_millis() as u64,
         "session history completed"
+    );
+    to_value(page)
+}
+
+/// One page of a folded turn's records; payloads stay on `tool.detail`.
+pub(super) fn process_records(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    let started = std::time::Instant::now();
+    let input: ProcessRecordsParams = params(raw)?;
+    state
+        .store
+        .get_session(&input.session_id)
+        .map_err(store_err)?;
+    let page = state
+        .store
+        .process_records_page(&input)
+        .map_err(history_err)?;
+    tracing::info!(
+        target: "miniq.perf",
+        operation = "session.processRecords",
+        session_id = %input.session_id,
+        history_limit = input.limit,
+        message_count = page.messages.len(),
+        tool_call_count = page.tool_calls.len(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "process records completed"
     );
     to_value(page)
 }
@@ -134,5 +160,68 @@ mod tests {
             model_calls(&state, Some(json!({"sessionId":session.id}))).unwrap()["calls"],
             json!([])
         );
+    }
+
+    #[test]
+    fn visible_history_and_process_records_are_session_scoped_and_validated() {
+        let store = Store::open_in_memory().unwrap();
+        let workspace = store
+            .create_workspace("/tmp/visible-rpc", "visible")
+            .unwrap();
+        let session = store.create_session(&workspace.id, "one").unwrap();
+        let other = store.create_session(&workspace.id, "two").unwrap();
+        let user = store
+            .append_message(&session.id, miniq_protocol::Role::User, "task")
+            .unwrap();
+        let call = store
+            .create_tool_call(
+                &session.id,
+                "shell_run",
+                &json!({}),
+                None,
+                ToolCallStatus::Succeeded,
+            )
+            .unwrap();
+        let state = AppState::new(
+            store,
+            "test-only".into(),
+            Arc::new(MockProvider::text("unused")),
+        );
+
+        let page = page(
+            &state,
+            Some(json!({"sessionId":session.id,"view":"visible"})),
+        )
+        .unwrap();
+        assert_eq!(page["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(page["toolCalls"], json!([]));
+        assert_eq!(page["processSummaries"][0]["turnId"], user.id);
+        assert_eq!(page["processSummaries"][0]["toolCallCount"], 1);
+        let error = page_error(
+            &state,
+            json!({"sessionId":session.id,"view":"visible","query":"x"}),
+        );
+        assert_eq!(error.code, ErrorCode::InvalidParams as i64);
+
+        let records = process_records(
+            &state,
+            Some(json!({"sessionId":session.id,"turnId":user.id,"limit":1})),
+        )
+        .unwrap();
+        assert_eq!(records["toolCalls"][0]["id"], call.id);
+        assert_eq!(records["toolCalls"][0]["payloadDeferred"], true);
+        assert_eq!(records["nextCursor"], Value::Null);
+        for bad in [
+            json!({"sessionId":other.id,"turnId":user.id}),
+            json!({"sessionId":"missing","turnId":user.id}),
+            json!({"sessionId":session.id,"turnId":user.id,"limit":0}),
+            json!({"sessionId":session.id,"turnId":user.id,"limit":101}),
+        ] {
+            assert!(process_records(&state, Some(bad)).is_err());
+        }
+    }
+
+    fn page_error(state: &AppState, params: Value) -> RpcError {
+        page(state, Some(params)).unwrap_err()
     }
 }

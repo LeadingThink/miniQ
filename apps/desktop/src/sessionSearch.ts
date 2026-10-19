@@ -5,15 +5,17 @@ export interface SearchHit {
   key: string;
   kind: "message" | "artifact" | "tool";
   id: string;
+  /** When the record happened, to find the turn that folds it. */
+  at: string;
 }
 
 export function searchHits(groups: TimelineGroup[]): SearchHit[] {
   return groups.map((group): SearchHit => {
     if (group.kind === "message")
-      return { key: `message:${group.message.id}`, kind: "message", id: group.message.id };
+      return { key: `message:${group.message.id}`, kind: "message", id: group.message.id, at: group.at };
     if (group.kind === "artifact")
-      return { key: `artifact:${group.artifact.id}`, kind: "artifact", id: group.artifact.id };
-    return { key: `tool:${group.calls[0].id}`, kind: "tool", id: group.calls[0].id };
+      return { key: `artifact:${group.artifact.id}`, kind: "artifact", id: group.artifact.id, at: group.at };
+    return { key: `tool:${group.calls[0].id}`, kind: "tool", id: group.calls[0].id, at: group.at };
   });
 }
 

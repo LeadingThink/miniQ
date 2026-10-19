@@ -11,6 +11,7 @@ mod execution_events;
 mod external_sessions;
 mod goals;
 mod history;
+mod history_visible;
 mod memories;
 mod model_calls;
 mod model_context;
@@ -152,6 +153,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0026_active_work_indexes",
         include_str!("../../../migrations/0026_active_work_indexes.sql"),
+    ),
+    (
+        "0027_tool_call_timeline_index",
+        include_str!("../../../migrations/0027_tool_call_timeline_index.sql"),
     ),
 ];
 

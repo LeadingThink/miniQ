@@ -1,4 +1,5 @@
 import type { AnchoredTurnTiming, ToolCall, TurnSummary, TurnTiming } from "./types";
+import { processKey } from "./processRecords";
 import type { TimelineGroup } from "./timelineModel";
 import { timelineGroupKey } from "./timelineTiming";
 import { showTurnSeparator } from "./time";
@@ -41,6 +42,18 @@ export function groupTimelineTurns(groups: TimelineGroup[], latest?: AnchoredTur
   if (first && !first.userMessageId && latest && turns.length === 1
     && Date.parse(first.groups[0].at) >= Date.parse(latest.timing.startedAt)) first.timing = latest.timing;
   return turns;
+}
+
+/** Whether the turn has finished; a running one keeps showing its latest activity. */
+export function turnSettled(turn: TimelineTurn, isLast: boolean, busy: boolean): boolean {
+  return !(isLast && busy) && turn.timing?.status !== "running";
+}
+
+/** Key of the turn's folded work in the session's process summaries. The first
+ * turn without a user message holds the rows before the first one; other
+ * turns without one cannot occur in the visible view. */
+export function turnProcessKey(turn: TimelineTurn, index: number): string | undefined {
+  return turn.userMessageId ? processKey(turn.userMessageId) : index === 0 ? processKey() : undefined;
 }
 
 /** Partition settled output without moving the final answer into the process.

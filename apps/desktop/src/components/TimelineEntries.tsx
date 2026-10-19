@@ -1,6 +1,6 @@
 import { Check, GitBranch, LoaderCircle, Pencil, RefreshCw, ScanSearch, Target, X } from "lucide-react";
-import { Fragment, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { AnchoredTurnTiming, Message, Question, SessionGoal, TurnPlan, TurnProgress } from "../types";
+import { Fragment, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import type { AnchoredTurnTiming, Message, ProcessSummary, Question, SessionGoal, TurnPlan, TurnProgress } from "../types";
 import type { RpcClient } from "../rpc";
 import type { TimelineGroup } from "../timelineModel";
 import type { TimelineProps } from "./Timeline";
@@ -16,8 +16,12 @@ import { SpeakButton } from "./SpeakButton";
 import { useVoiceCapabilities } from "../voiceCapabilities";
 import { MessageTime, ConversationTimeSeparator } from "./MessageTime";
 import { timelineGroupKey, timelineTurnPlanEnds } from "../timelineTiming";
+import { compareTimestamps } from "../timelineModel";
+import { foldRecords, useProcessRecords } from "../processRecords";
+import { errorMessage } from "../errorMessage";
 import {
-  completedTurnContent, groupTimelineTurns, liveTurnContent, recordCount, searchRecordKeys, turnSeparators,
+  completedTurnContent, groupTimelineTurns, liveTurnContent, recordCount, searchRecordKeys, turnProcessKey,
+  turnSeparators, turnSettled,
 } from "../timelineTurns";
 import { WINDOW_MIN_TURNS } from "../timelineWindow";
 import { useTurnWindow } from "../hooks/useTurnWindow";
@@ -41,6 +45,9 @@ interface PendingRewrite {
 export interface TimelineWindowHandle {
   /** Returns true when the record's turn was not mounted; it is after the next commit. */
   mountRecord: (recordKey: string) => boolean;
+  /** Open the fold of the turn that held this record at `at` and load its
+   * records until the record appears. False when no unloaded fold can hold it. */
+  locateRecord: (recordKey: string, at: string) => boolean;
 }
 
 export function findGoalMessageId(
@@ -52,6 +59,13 @@ export function findGoalMessageId(
     (message) =>
       message.role === "user" && message.content.trim() === goal.goal.trim(),
   )?.id ?? null;
+}
+
+/** Records a running turn folds behind "上 N 条消息": all it holds except the latest activity. */
+function earlierCount(live: { earlier: TimelineGroup[]; recent: TimelineGroup[] }, stats?: ProcessSummary): number {
+  if (!stats) return recordCount(live.earlier);
+  const loaded = recordCount(live.earlier) + recordCount(live.recent);
+  return Math.max(0, Math.max(stats.recordCount, loaded) - recordCount(live.recent));
 }
 
 export function TimelineEntries(props: {
@@ -81,12 +95,16 @@ export function TimelineEntries(props: {
   /** The scrolling transcript; enables windowing of long conversations. */
   scrollRef?: RefObject<HTMLDivElement | null>;
   windowHandle?: RefObject<TimelineWindowHandle | null>;
+  /** A fold finished loading for `locateRecord`, whether or not the record was found. */
+  onLocated?: () => void;
 }) {
   const [pendingRewrite, setPendingRewrite] = useState<PendingRewrite | null>(null);
   const [reviewTarget, setReviewTarget] = useState<{ sessionId: string; messageId: string } | null>(null);
   const sessionId = props.messages[0]?.sessionId;
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const voiceCapabilities = useVoiceCapabilities(props.client);
+  const processes = useProcessRecords();
+  const [locateFold, setLocateFold] = useState<{ key: string; recordKey: string } | null>(null);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [forkingMessageId, setForkingMessageId] = useState<string | null>(null);
@@ -200,8 +218,13 @@ export function TimelineEntries(props: {
     // Search and filter results are short and stepped through element by element.
     enabled: !props.expandGroups && turns.length >= WINDOW_MIN_TURNS,
   });
-  const windowState = useRef({ turns, turnWindow });
-  windowState.current = { turns, turnWindow };
+  const windowState = useRef({ turns, turnWindow, processes });
+  windowState.current = { turns, turnWindow, processes };
+  const onLocated = props.onLocated;
+  const finishLocate = useCallback(() => {
+    setLocateFold(null);
+    onLocated?.();
+  }, [onLocated]);
   useImperativeHandle(props.windowHandle, () => ({
     mountRecord: (recordKey: string) => {
       const { turns, turnWindow } = windowState.current;
@@ -210,7 +233,38 @@ export function TimelineEntries(props: {
       turnWindow.mount(turns[index].key);
       return true;
     },
+    locateRecord: (recordKey: string, at: string) => {
+      const { turns, turnWindow, processes } = windowState.current;
+      let index = -1;
+      turns.forEach((turn, position) => {
+        if (compareTimestamps(turn.groups[0].at, at) <= 0) index = position;
+      });
+      const key = index < 0 ? undefined : turnProcessKey(turns[index], index);
+      if (key === undefined || !processes?.summaries[key] || processes.loads[key]?.complete) return false;
+      if (!turnWindow.isMounted(index)) turnWindow.mount(turns[index].key);
+      setLocateFold((current) => current?.key === key && current.recordKey === recordKey
+        ? current : { key, recordKey });
+      return true;
+    },
   }), []);
+  // A running turn shows its latest activity, so its newest records load without
+  // waiting for the fold to open. Each summary is tried once; reopening the
+  // fold retries a failure.
+  const autoLoaded = useRef(new WeakSet<object>());
+  useEffect(() => {
+    if (!processes || props.expandGroups) return;
+    turns.forEach((turn, index) => {
+      const key = turnProcessKey(turn, index);
+      const stats = key === undefined ? undefined : processes.summaries[key];
+      if (!stats || processes.loads[key!] || autoLoaded.current.has(stats)) return;
+      if (turnSettled(turn, turn === turns.at(-1), props.busy)) return;
+      autoLoaded.current.add(stats);
+      void processes.load(turn.userMessageId ?? null).then((result) => {
+        if (result && "error" in result) props.onError(`加载工作过程失败: ${errorMessage(result.error)}`);
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turns, processes, props.busy, props.expandGroups]);
   const turnContents = useMemo(() => {
     // The newest reply keeps its actions visible; older ones reveal on hover.
     let latestAssistantId: string | undefined;
@@ -469,18 +523,24 @@ export function TimelineEntries(props: {
       </Fragment>;
     };
     const lastTurn = turns.at(-1);
-    return turns.map((turn) => {
+    return turns.map((turn, turnIndex) => {
       const endKey = timelineGroupKey(turn.groups[turn.groups.length - 1]);
       const turnPlan = turnPlanEnds.get(endKey);
       const planNode = turnPlan && turnPlan.anchorMessageId !== runningAnchor
         ? <TurnPlanSummary plan={turnPlan.tasks} /> : null;
       const isLast = turn === lastTurn;
-      const settled = !(isLast && props.busy) && turn.timing?.status !== "running";
+      const settled = turnSettled(turn, isLast, props.busy);
       const { process, output } = completedTurnContent(turn);
-      const changes = turn.userMessageId && !(isLast && props.busy) && turnHasFileWrites(turn)
+      // Folded work whose records stay on the daemon until the fold opens.
+      const processKey = props.expandGroups ? undefined : turnProcessKey(turn, turnIndex);
+      const stats = processKey === undefined ? undefined : processes?.summaries[processKey];
+      const records = stats && processes
+        ? foldRecords(stats, processes.loads[processKey!], () => processes.load(turn.userMessageId ?? null))
+        : undefined;
+      const changes = turn.userMessageId && !(isLast && props.busy) && turnHasFileWrites(turn, stats)
         ? <TurnChangesCard turnId={turn.userMessageId} /> : null;
       const collapse = settled && !props.expandGroups
-        && (process.length > 0 || planNode !== null || changes !== null);
+        && (process.length > 0 || stats !== undefined || planNode !== null || changes !== null);
       const live = settled || props.expandGroups ? undefined : liveTurnContent(turn);
       const separatorAt = props.expandGroups ? undefined : separators.get(turn.key);
       return { header: <Fragment key={`${turn.key}:header`}>
@@ -488,8 +548,9 @@ export function TimelineEntries(props: {
         {turn.userMessageId && renderGroup(turn.groups[0])}
       </Fragment>, body: <Fragment key={`${turn.key}:body`}>
         {collapse ? <>
-          <CompletedProcess timing={turn.timing}
-            recordKeys={searchRecordKeys(process)}>
+          <CompletedProcess timing={turn.timing} stats={stats} records={records}
+            locateKey={locateFold && locateFold.key === processKey ? locateFold.recordKey : undefined}
+            onLocated={finishLocate} recordKeys={searchRecordKeys(process)}>
             {() => <>
               {process.map(renderGroup)}
               {planNode}
@@ -498,9 +559,10 @@ export function TimelineEntries(props: {
           </CompletedProcess>
           {output.map(renderGroup)}
         </> : <>
-          {live && live.earlier.length > 0 && <CompletedProcess
-            summary={`上 ${recordCount(live.earlier)} 条消息`}
-            recordKeys={searchRecordKeys(live.earlier)}>
+          {live && (live.earlier.length > 0 || (records && !records.complete)) && <CompletedProcess
+            summary={`上 ${earlierCount(live, stats)} 条消息`} records={records}
+            locateKey={locateFold && locateFold.key === processKey ? locateFold.recordKey : undefined}
+            onLocated={finishLocate} recordKeys={searchRecordKeys(live.earlier)}>
             {() => live.earlier.map(renderGroup)}
           </CompletedProcess>}
           {(live?.recent ?? turn.groups.slice(turn.userMessageId ? 1 : 0)).map(renderGroup)}
@@ -513,7 +575,8 @@ export function TimelineEntries(props: {
     props.items, props.busy, props.workspacePath, props.workspacePaths,
     props.expandGroups, props.client, editingMessageId, draft, saving,
     forkingMessageId, runningTurnMessageIds, goalMessageId, turnPlanEnds, runningAnchor,
-    hasFork, canSpeak, bridge, turns, separators, reviewTarget, sessionId,
+    hasFork, canSpeak, bridge, turns, separators, reviewTarget, sessionId, processes, locateFold,
+    finishLocate,
   ]);
 
   // The live reply streams at the end of the current turn, where its message
