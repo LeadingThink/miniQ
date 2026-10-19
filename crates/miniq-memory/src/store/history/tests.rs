@@ -185,7 +185,7 @@ fn history_order_indexes_include_the_stable_id_tie_breaker() {
     let indexes = conn
         .prepare(
             "SELECT name FROM sqlite_master WHERE type = 'index'
-             AND name IN ('idx_messages_session_created_id', 'idx_tool_calls_session_created_id')
+             AND name IN ('idx_messages_session_created_id', 'idx_tool_calls_session_timeline')
              ORDER BY name",
         )
         .unwrap()
@@ -197,7 +197,7 @@ fn history_order_indexes_include_the_stable_id_tie_breaker() {
         indexes,
         vec![
             "idx_messages_session_created_id".to_string(),
-            "idx_tool_calls_session_created_id".to_string(),
+            "idx_tool_calls_session_timeline".to_string(),
         ]
     );
 }

@@ -14,10 +14,14 @@ import type {
   TurnProgress,
   HistoryPage,
   HistoryCursor,
+  ProcessSummary,
   EventCursor,
   AnchoredTurnTiming,
   SessionGoal,
 } from "../types";
+import {
+  mergeByTime, summariesByKey, withProcessPage, withoutKeys, type ProcessLoad,
+} from "../processRecords";
 
 export interface PendingApproval {
   approval: Approval;
@@ -32,6 +36,9 @@ interface SessionFeedState {
   loading: boolean;
   syncing: boolean;
   nextCursor: HistoryCursor | null;
+  /** Folded work of each loaded turn, by `processKey`; its records load on demand. */
+  processSummaries: Record<string, ProcessSummary>;
+  processLoads: Record<string, ProcessLoad>;
   messages: Message[];
   toolCalls: ToolCall[];
   approvals: PendingApproval[];
@@ -49,6 +56,7 @@ export interface LoadedSessionFeed {
   latestTurnTiming?: AnchoredTurnTiming | null;
   eventCursor?: EventCursor | null;
   nextCursor?: HistoryCursor | null;
+  processSummaries?: ProcessSummary[];
   messages: Message[];
   toolCalls: ToolCall[];
   artifacts: Artifact[];
@@ -67,6 +75,7 @@ type SessionFeedAction =
   | { kind: "load_failed" }
   | { kind: "begin_sync" }
   | { kind: "prepend"; page: HistoryPage }
+  | { kind: "process_records"; key: string; page: HistoryPage }
   | { kind: "replay"; events: DaemonEvent[]; cursor: EventCursor }
   | { kind: "load"; feed: LoadedSessionFeed }
   | { kind: "daemon"; events: ReceivedEvent[] };
@@ -88,6 +97,8 @@ const EMPTY_FEED: SessionFeedState = {
   loading: false,
   syncing: false,
   nextCursor: null,
+  processSummaries: {},
+  processLoads: {},
   messages: [],
   toolCalls: [],
   approvals: [],
@@ -171,6 +182,9 @@ function reduceDaemonEvent(
         turnPlans: state.turnPlans.filter(
           (turn) => !removedMessages.has(turn.anchorMessageId) && turn.anchorMessageId !== event.message.id,
         ),
+        // The rewritten turn's folded work is gone with its records.
+        processSummaries: withoutKeys(state.processSummaries, [...removedMessages, event.message.id]),
+        processLoads: withoutKeys(state.processLoads, [...removedMessages, event.message.id]),
         streamingText: "",
         turnProgress: null,
         latestTurnTiming: null,
@@ -323,12 +337,21 @@ function sessionFeedReducer(
       messages: mergeHistory(action.page.messages, state.messages),
       toolCalls: mergeHistory(action.page.toolCalls, state.toolCalls),
       nextCursor: action.page.nextCursor,
+      processSummaries: { ...state.processSummaries, ...summariesByKey(action.page.processSummaries) },
+    };
+  if (action.kind === "process_records")
+    return {
+      ...state,
+      messages: mergeByTime(state.messages, action.page.messages),
+      toolCalls: mergeByTime(state.toolCalls, action.page.toolCalls),
+      processLoads: withProcessPage(state.processLoads, action.key, action.page),
     };
   if (action.kind === "load") {
     let loaded: SessionFeedState = {
       ...EMPTY_FEED,
       eventCursor: action.feed.eventCursor ?? null,
       nextCursor: action.feed.nextCursor ?? null,
+      processSummaries: summariesByKey(action.feed.processSummaries),
       messages: action.feed.messages,
       toolCalls: action.feed.toolCalls,
       artifacts: action.feed.artifacts,
@@ -569,6 +592,11 @@ export function useSessionFeed(options: SessionFeedOptions) {
     flushDeltas();
     dispatch({ kind: "prepend", sessionId, page });
   }, [flushDeltas]);
+  const mergeProcess = useCallback((sessionId: string, key: string, page: HistoryPage) => {
+    if (sessionId !== activeSession.current) return;
+    flushDeltas();
+    dispatch({ kind: "process_records", sessionId, key, page });
+  }, [flushDeltas]);
   const failLoad = useCallback((sessionId: string) => {
     if (sessionId !== activeSession.current) return;
     flushDeltas();
@@ -588,6 +616,7 @@ export function useSessionFeed(options: SessionFeedOptions) {
     reset,
     load,
     prepend,
+    mergeProcess,
     failLoad,
     applyReplay,
   };

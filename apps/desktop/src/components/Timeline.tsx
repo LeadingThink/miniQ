@@ -4,7 +4,7 @@ import {
   ChevronUp,
   RefreshCw,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchNavigation } from "../hooks/useSearchNavigation";
 import { findHitElement, type SearchHit } from "../sessionSearch";
 import { SessionSearchNavigator } from "./SessionSearchNavigator";
@@ -247,6 +247,7 @@ export function Timeline(props: TimelineProps) {
   const windowHandle = useRef<TimelineWindowHandle>(null);
   const [mountedForLocate, setMountedForLocate] = useState(0);
   useEffect(() => setLocating(null), [props.sessionId]);
+  const onLocated = useCallback(() => setMountedForLocate((value) => value + 1), []);
   const locate = () => {
     if (!navigation.current) return;
     setLocating(navigation.current);
@@ -277,6 +278,9 @@ export function Timeline(props: TimelineProps) {
         element.setAttribute("data-search-located", "true");
         window.setTimeout(() => element.removeAttribute("data-search-located"), 1600);
         setLocating(null);
+      } else if (windowHandle.current?.locateRecord(locating.key, locating.at)) {
+        // The record is in a folded turn whose records load on demand; the
+        // fold reports back through onLocated once they are in.
       } else if (props.historyCursor && props.onLoadOlder) {
         if (!props.loadingOlder) loadOlder();
       } else {
@@ -447,6 +451,7 @@ export function Timeline(props: TimelineProps) {
           workspacePaths={props.workspacePaths}
           scrollRef={scrollRef}
           windowHandle={windowHandle}
+          onLocated={onLocated}
         />
           <QueueBar
             queue={props.queue}

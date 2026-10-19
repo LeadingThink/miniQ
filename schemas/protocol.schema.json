@@ -3343,6 +3343,68 @@
         ],
         "type": "object"
       },
+      "ProcessSummary": {
+        "description": "The folded work of one turn, without any of its records. A turn is the non-steered user message that opened it and everything up to the next one; `turnId` is that message's id, or absent for rows before the first user message.",
+        "properties": {
+          "fileWriteCount": {
+            "description": "Tool calls that checkpoint files before writing.",
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "firstAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messageCount": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "recordCount": {
+            "description": "Tool calls plus folded messages (commentary, steering, tool transcripts).",
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "statusCounts": {
+            "additionalProperties": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "description": "Tool calls per status, e.g. `{\"succeeded\": 40, \"failed\": 2}`.",
+            "type": "object"
+          },
+          "toolCallCount": {
+            "format": "uint32",
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "turnId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "fileWriteCount",
+          "messageCount",
+          "recordCount",
+          "statusCounts",
+          "toolCallCount"
+        ],
+        "type": "object"
+      },
       "Role": {
         "description": "Message author role.",
         "enum": [
@@ -3424,6 +3486,13 @@
           }
         ]
       },
+      "processSummaries": {
+        "description": "Visible view only: one summary per turn on the page, newest last.",
+        "items": {
+          "$ref": "#/definitions/ProcessSummary"
+        },
+        "type": "array"
+      },
       "toolCalls": {
         "items": {
           "$ref": "#/definitions/HistoryToolCall"
@@ -3466,6 +3535,25 @@
           "errors"
         ],
         "type": "string"
+      },
+      "HistoryView": {
+        "description": "How `session.history` / `session.open` count and group a page.",
+        "oneOf": [
+          {
+            "description": "Raw timeline rows: messages and tool calls, filtered by `filter`/`query`.",
+            "enum": [
+              "raw"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "What the conversation shows outside folded work: `limit` counts visible messages, pages end on a turn boundary, and the folded process of each returned turn is summarised in `processSummaries` instead of returned. Requires the default filter, an empty query and no agent/tool filter.",
+            "enum": [
+              "visible"
+            ],
+            "type": "string"
+          }
+        ]
       }
     },
     "properties": {
@@ -3517,6 +3605,22 @@
       },
       "sessionId": {
         "type": "string"
+      },
+      "toolName": {
+        "default": null,
+        "description": "Raw view only: keep tool calls with exactly this tool name and no messages.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "view": {
+        "allOf": [
+          {
+            "$ref": "#/definitions/HistoryView"
+          }
+        ],
+        "default": "raw"
       }
     },
     "required": [
@@ -4723,6 +4827,69 @@
       "id"
     ],
     "title": "PluginSetEnabledParams",
+    "type": "object"
+  },
+  "processRecordsParams": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false,
+    "definitions": {
+      "HistoryCursor": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "description": "Folded records of one turn, newest first, in pages. Payloads stay on `tool.detail`.",
+    "properties": {
+      "before": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/HistoryCursor"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "includeInternal": {
+        "default": false,
+        "type": "boolean"
+      },
+      "limit": {
+        "default": 100,
+        "format": "uint32",
+        "maximum": 100.0,
+        "minimum": 1.0,
+        "type": "integer"
+      },
+      "sessionId": {
+        "type": "string"
+      },
+      "turnId": {
+        "default": null,
+        "description": "Opening user message of the turn; absent for rows before the first one.",
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "sessionId"
+    ],
+    "title": "ProcessRecordsParams",
     "type": "object"
   },
   "protocolVersion": 2,

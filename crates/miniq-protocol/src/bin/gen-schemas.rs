@@ -38,6 +38,10 @@ fn main() {
         ("historyParams", schema_for!(miniq_protocol::HistoryParams)),
         ("historyPage", schema_for!(miniq_protocol::HistoryPage)),
         (
+            "processRecordsParams",
+            schema_for!(miniq_protocol::ProcessRecordsParams),
+        ),
+        (
             "modelCallsParams",
             schema_for!(miniq_protocol::ModelCallsParams),
         ),

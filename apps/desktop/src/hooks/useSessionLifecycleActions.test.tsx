@@ -77,6 +77,8 @@ function setup(mode: "local" | "remote" = "local", initialActive = true, statefu
     loading: false,
     syncing: false,
     nextCursor: { at: "2026-09-20T00:00:00Z", id: "a-first" },
+    processSummaries: {},
+    processLoads: {},
     messages: [],
     toolCalls: [],
     approvals: [],
@@ -91,6 +93,7 @@ function setup(mode: "local" | "remote" = "local", initialActive = true, statefu
     reset: vi.fn(),
     load: vi.fn(),
     prepend: vi.fn(),
+    mergeProcess: vi.fn(),
     failLoad: vi.fn(),
     applyReplay: vi.fn(),
   };
@@ -141,7 +144,7 @@ it.each([
 
   expect(test.call).toHaveBeenCalledWith(
     "session.open",
-    { sessionId: "a", limit },
+    { sessionId: "a", limit, view: "visible" },
     { signal: expect.any(AbortSignal) },
   );
   expect(test.feed.load).toHaveBeenCalledWith(
@@ -151,7 +154,7 @@ it.each([
   if (mode === "remote") {
     expect(test.call).toHaveBeenCalledWith(
       "session.history",
-      { sessionId: "a", before: test.feed.nextCursor, limit: 24 },
+      { sessionId: "a", before: test.feed.nextCursor, view: "visible", limit: 24 },
       { signal: expect.any(AbortSignal) },
     );
   }
@@ -201,7 +204,7 @@ it("serializes simultaneous top-of-history requests and accepts the next cursor"
   expect(test.call).toHaveBeenCalledTimes(1);
   expect(test.call).toHaveBeenLastCalledWith(
     "session.history",
-    { sessionId: "a", before: test.feed.nextCursor },
+    { sessionId: "a", before: test.feed.nextCursor, view: "visible" },
     { signal: expect.any(AbortSignal) },
   );
 
@@ -226,7 +229,7 @@ it("serializes simultaneous top-of-history requests and accepts the next cursor"
   await act(async () => test.result.current.loadOlder());
   expect(test.call).toHaveBeenLastCalledWith(
     "session.history",
-    { sessionId: "a", before: nextPage.nextCursor },
+    { sessionId: "a", before: nextPage.nextCursor, view: "visible" },
     { signal: expect.any(AbortSignal) },
   );
 });
@@ -368,7 +371,7 @@ it("keeps failed prefetch silent and allows a manual retry of its cursor", async
   test.call.mockResolvedValueOnce(emptyPage);
   await act(async () => test.result.current.loadOlder());
   expect(test.call).toHaveBeenLastCalledWith("session.history", {
-    sessionId: "a", before: test.feed.nextCursor,
+    sessionId: "a", before: test.feed.nextCursor, view: "visible",
   }, { signal: expect.any(AbortSignal) });
   expect(test.feed.prepend).toHaveBeenCalledExactlyOnceWith("a", emptyPage);
 });

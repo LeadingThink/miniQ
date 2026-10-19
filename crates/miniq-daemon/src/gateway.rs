@@ -158,6 +158,9 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "session.goal.get" => session_goal::get(state, req.params),
         "session.goal.update" => session_goal::update(state, req.params),
         "session.history" => common::blocking_read(state, req.params, session_history::page).await,
+        "session.processRecords" => {
+            common::blocking_read(state, req.params, session_history::process_records).await
+        }
         "session.modelCalls" => session_history::model_calls(state, req.params),
         "session.approval.get" => session_approval::get(state, req.params),
         "session.approval.update" => {

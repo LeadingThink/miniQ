@@ -7,3 +7,6 @@
 .completed-process > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .completed-process-body { display: flex; flex-direction: column; gap: 12px; margin: 8px 0 12px; padding-left: 16px; border-left: 1px solid var(--border); }
 .completed-process-body .message-entry { font-size: var(--font-body); }
+.completed-process-meta { color: var(--text-dim); }
+.completed-process-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: var(--font-footnote); color: var(--text-mid); }
+.completed-process-status button { padding: 2px 8px; }

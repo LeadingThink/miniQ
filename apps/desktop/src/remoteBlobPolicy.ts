@@ -3,7 +3,7 @@
 const replayableReads = new Set([
   "file.describe", "file.read", "file.list", "observation.read",
   "workspace.list", "session.list", "session.open", "session.history",
-  "session.sync", "session.modelCalls", "session.executionEvents",
+  "session.sync", "session.processRecords", "session.modelCalls", "session.executionEvents",
   "session.diff", "session.search", "session.queueList", "tool.detail",
   "agent.list", "agent.history", "agent.message", "agent.output",
 ]);

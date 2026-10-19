@@ -4,7 +4,7 @@ use miniq_protocol::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::common::{params, store_err, to_value};
+use super::common::{history_err, params, store_err, to_value};
 use crate::state::AppState;
 
 mod attachments;
@@ -103,7 +103,7 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         .store
         .get_session(&input.session_id)
         .map_err(store_err)?;
-    let history = state.store.history_page(&input).map_err(store_err)?;
+    let history = state.store.history_page(&input).map_err(history_err)?;
     let artifacts = state
         .store
         .list_artifacts(&input.session_id)
@@ -163,6 +163,7 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         "messages": history.messages,
         "toolCalls": history.tool_calls,
         "nextCursor": history.next_cursor,
+        "processSummaries": history.process_summaries,
         "historyVersion": 1,
         "artifacts": artifacts,
         "plan": plan,

@@ -259,6 +259,21 @@ export interface HistoryPage {
   messages: Message[];
   toolCalls: ToolCall[];
   nextCursor: HistoryCursor | null;
+  /** Visible view only: the folded work of each turn on the page. */
+  processSummaries?: ProcessSummary[];
+}
+
+/** The folded work of one turn, without its records (`session.processRecords` loads them). */
+export interface ProcessSummary {
+  /** The user message that opened the turn; absent for rows before the first one. */
+  turnId?: string;
+  recordCount: number;
+  toolCallCount: number;
+  messageCount: number;
+  statusCounts: Record<string, number>;
+  fileWriteCount: number;
+  firstAt?: string | null;
+  lastAt?: string | null;
 }
 
 export interface Approval {

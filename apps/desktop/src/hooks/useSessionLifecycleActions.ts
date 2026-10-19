@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
-import type { Artifact, Message, PlanTask, QueuedMessage, Session, ToolCall, TurnProgress, HistoryPage, HistoryCursor, EventCursor, DaemonEvent } from "../types";
+import type { Artifact, Message, PlanTask, ProcessSummary, QueuedMessage, Session, ToolCall, TurnProgress, HistoryPage, HistoryCursor, EventCursor, DaemonEvent } from "../types";
 import type { Catalog, NavigationState, SessionFeed } from "./useMiniqApp";
 
 interface OpenSessionResult {
   latestTurnTiming?: import("../types").AnchoredTurnTiming | null;
   eventCursor?: EventCursor | null;
   nextCursor?: HistoryCursor | null;
+  processSummaries?: ProcessSummary[];
   session: Session;
   canAcknowledgeFailure?: boolean;
   messages: Message[];
@@ -113,8 +114,10 @@ export function useSessionLifecycleActions(
     const current = () => !controller.signal.aborted && activeRef.current && epoch === catalog.navigationEpoch.current;
     pending.promise = (async () => {
       try {
+        // The visible view counts only what the conversation shows outside
+        // folded work, so each page adds readable content rather than tool rows.
         const page = await client.call<HistoryPage>("session.history", {
-          sessionId, before: cursor,
+          sessionId, before: cursor, view: "visible",
           ...(background ? { limit: REMOTE_PREFETCH_HISTORY_LIMIT } : {}),
         }, { signal: controller.signal });
         if (!current()) return;
@@ -185,7 +188,7 @@ export function useSessionLifecycleActions(
       try {
         result = await client.call<OpenSessionResult>(
           "session.open",
-          { sessionId, limit: initialHistoryLimit },
+          { sessionId, limit: initialHistoryLimit, view: "visible" },
           { signal: request.signal },
         );
       }
@@ -203,6 +206,7 @@ export function useSessionLifecycleActions(
       load(sessionId, {
         eventCursor: result.eventCursor,
         nextCursor: result.nextCursor,
+        processSummaries: result.processSummaries ?? [],
         messages: result.messages,
         toolCalls: result.toolCalls,
         plan: result.plan ?? [],
