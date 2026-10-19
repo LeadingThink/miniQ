@@ -7,12 +7,11 @@
   flex-direction: column;
   min-width: 0;
   position: relative;
-  /* Floating white sheet on the canvas — the primary surface. */
+  /* Seamless split pane: the main column runs flush against the sidebar and
+     the window edges. One hairline is the only thing separating the two
+     surfaces — no inset, radius or shadow, which read as a floating card. */
   background: var(--bg);
-  margin: 10px 10px 10px 0;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sheet);
+  border-left: 1px solid var(--hairline);
   overflow: hidden;
 }
 

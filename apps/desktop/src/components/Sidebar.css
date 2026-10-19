@@ -131,11 +131,11 @@
     padding-inline: 6px;
   }
 }
-.sidebar-host { margin-top: 14px; }
+.sidebar-host { margin-top: 14px; margin-bottom: 8px; }
 .sidebar-host-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--radius); color: var(--text-dim); background: transparent; text-align: left; font-size: var(--font-footnote); cursor: pointer; }
 .sidebar-host-heading[aria-current] { color: var(--text); background: var(--bg-hover); }
 .sidebar-host-heading span { overflow-wrap: anywhere; }
-.sidebar-host-heading small { white-space: nowrap; font-size: var(--font-caption); }
+.sidebar-host-heading small { white-space: nowrap; font-size: var(--font-caption); font-weight: 400; color: var(--text-dim); }
 .sidebar-host-error { padding: 0 10px; color: var(--danger); font-size: var(--font-caption); overflow-wrap: anywhere; }
 
 .sidebar-brand-row {
@@ -151,7 +151,7 @@
 /* One stable row: title gets remaining space; time shares the action slot. */
 .sidebar .session-item { position: relative; min-height: 36px; padding-block: 0; }
 .sidebar .session-preview-anchor { flex: 1; min-width: 0; }
-.sidebar .session-select { width: 100%; min-width: 0; min-height: 36px; align-items: center; }
+.sidebar .session-select { width: 100%; min-width: 0; min-height: 36px; align-items: center; font-weight: 400; }
 .sidebar .session-copy { display: flex; flex-direction: row; flex: 1; min-width: 0; align-items: center; gap: 6px; }
 .sidebar .session-select .session-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar .session-meta { display: flex; flex: none; align-items: center; }

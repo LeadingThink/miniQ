@@ -1,10 +1,13 @@
 /* Task home shares the app theme and native safe areas. */
+/* Soft accent wash behind the task home. Derived from the active theme's
+   accent so it stays coherent in every palette and in dark mode, instead of
+   the fixed lavender/peach pair that turned muddy on dark surfaces. */
 .main:has(.hero) {
   background: radial-gradient(
-    ellipse 110% 420px at 50% -80px,
-    color-mix(in srgb, #c4b5fd 38%, var(--bg)) 0%,
-    color-mix(in srgb, #fdba74 18%, var(--bg)) 48%,
-    var(--bg-subtle) 100%
+    ellipse 88% 360px at 50% -120px,
+    color-mix(in srgb, var(--accent) 14%, var(--bg)) 0%,
+    color-mix(in srgb, var(--accent) 5%, var(--bg)) 52%,
+    var(--bg) 100%
   );
 }
 :root[data-background] .main:has(.hero) {

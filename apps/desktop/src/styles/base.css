@@ -162,8 +162,10 @@ body {
   display: none;
 }
 
+/* With the sidebar hidden the main column reaches the window edge, so the
+   sidebar divider would sit on the frame itself. */
 .app.sidebar-collapsed .main {
-  margin-left: 10px;
+  border-left: 0;
 }
 
 .sidebar .brand {

@@ -136,7 +136,6 @@
 }
 :root[data-background] .main {
   background: var(--wallpaper-sheet);
-  box-shadow: none;
 }
 /* Navigation labels keep a soft halo; messages use local reading surfaces. */
 :root[data-background] .main,

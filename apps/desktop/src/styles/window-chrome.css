@@ -25,7 +25,3 @@
 .platform-macos .app.sidebar-collapsed .statusbar.app-toolbar {
   padding-left: 80px;
 }
-
-.platform-macos .app.sidebar-collapsed .main {
-  margin-left: 0;
-}

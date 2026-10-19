@@ -10,6 +10,34 @@
   flex-direction: column;
   margin: 10px 10px 10px 0;
 }
+/* Split (docked) mode is a third seamless column: flush to the window edge,
+   separated from the conversation by one hairline. Inner panels drop their
+   card chrome so the toolbar and content read as one surface. */
+.workbench-panel[data-layout="split"] {
+  margin: 0;
+  border-left: 1px solid var(--hairline);
+}
+.workbench-panel[data-layout="split"] .workbench-toolbar {
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+}
+.workbench-panel[data-layout="split"]
+  :is(.file-preview-panel, .review-panel, .browser-panel, .remote-browser-panel) {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.workbench-panel[data-layout="split"] :is(.workbench-overview, .workbench-file-index) {
+  border: 0;
+}
+.workbench-panel[data-layout="split"] .workbench-file-tree-pane {
+  border: 0;
+  border-radius: 0;
+}
+.workbench-panel[data-layout="split"] .workbench-files.with-tree .workbench-files-main > * {
+  border-radius: 0;
+}
 .workbench-panel[data-expanded="true"] {
   position: fixed;
   inset: 10px;
