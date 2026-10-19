@@ -64,6 +64,25 @@ describe("AppErrorBanner", () => {
 });
 
 describe("AppStatusBar", () => {
+  it("shows a labeled temporary chat entry and invokes its toggle", () => {
+    const onToggleSideConversation = vi.fn();
+    render(
+      <AppStatusBar
+        app={appFixture()}
+        sideConversationOpen={false}
+        onToggleSideConversation={onToggleSideConversation}
+        onOpenBrowser={() => {}}
+        onToggleReview={() => {}}
+        onOpenFile={() => {}}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "打开临时侧聊" });
+    expect(trigger.textContent).toContain("临时聊天");
+    fireEvent.click(trigger);
+    expect(onToggleSideConversation).toHaveBeenCalledOnce();
+  });
+
   it("keeps four remote home actions including a working inspector entry", () => {
     const onToggleWorkbench = vi.fn();
     const onToggleReview = vi.fn();

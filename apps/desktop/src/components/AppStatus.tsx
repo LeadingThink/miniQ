@@ -6,6 +6,7 @@ import {
   Globe2,
   Laptop,
   LoaderCircle,
+  MessageSquareText,
   MoreHorizontal,
   Palette,
   PanelLeftClose,
@@ -36,6 +37,8 @@ import { GitChangesPopover } from "./GitChangesPopover";
 
 export function AppStatusBar(props: {
   app: MiniqAppController;
+  sideConversationOpen?: boolean;
+  onToggleSideConversation?: () => void;
   onOpenBrowser: () => void;
   onToggleReview: () => void;
   onOpenGit?: () => void;
@@ -141,6 +144,13 @@ export function AppStatusBar(props: {
         )}
       </div>
       <div className="app-toolbar-actions">
+        {props.onToggleSideConversation && (
+          <button type="button" className={`statusbar-icon-button side-conversation-trigger${props.sideConversationOpen ? " active" : ""}`}
+            data-tooltip="临时侧聊" title="临时侧聊" aria-label={props.sideConversationOpen ? "关闭临时侧聊" : "打开临时侧聊"}
+            aria-pressed={props.sideConversationOpen ?? false} onClick={props.onToggleSideConversation}>
+            <MessageSquareText size={16} /><span>临时聊天</span>
+          </button>
+        )}
         {remote && currentSession && (
           <button
             type="button"

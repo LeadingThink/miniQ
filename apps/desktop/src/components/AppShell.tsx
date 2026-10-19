@@ -43,6 +43,7 @@ import { resolveAttention } from "../companionInbox";
 
 import { useAppWorkbench } from "../hooks/useAppWorkbench";
 import { AppWorkbench } from "./AppWorkbench";
+import { SideConversationPanel } from "./SideConversationPanel";
 
 interface AppOnlyProps {
   app: MiniqAppController;
@@ -361,6 +362,9 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
   const desktop = useDesktopHost();
   const workbench = useAppWorkbench(app);
   const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
+  const [sideConversationOpen, setSideConversationOpen] = useState(false);
+  const [sideConversationSourceId, setSideConversationSourceId] = useState<string | null>(null);
+  const [sideConversationSessionId, setSideConversationSessionId] = useState<string | null>(null);
   const openSessionReview = () => {
     app.review.showSession();
     workbench.select("review");
@@ -377,6 +381,15 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
   const viewedSessionId = app.catalog.currentSessionId;
   const viewedHost = app.client.sshHost ?? null;
   useEffect(() => {
+    if (!sideConversationOpen || !viewedSessionId) return;
+    if (sideConversationSessionId && viewedSessionId === sideConversationSessionId && sideConversationSourceId) {
+      void app.actions.openSession(sideConversationSourceId);
+      return;
+    }
+    if (viewedSessionId !== sideConversationSessionId && viewedSessionId !== sideConversationSourceId)
+      setSideConversationSourceId(viewedSessionId);
+  }, [app.actions.openSession, sideConversationOpen, sideConversationSessionId, sideConversationSourceId, viewedSessionId]);
+  useEffect(() => {
     if (!active || !viewedSessionId) return;
     // Opening a finished conversation in the main window settles its reminders everywhere.
     const settle = () => {
@@ -390,6 +403,15 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
   }, [active, viewedSessionId, viewedHost]);
 
   const commands = useAppCommands(app, active);
+  const toggleSideConversation = () => {
+    setSideConversationOpen((open) => {
+      if (!open) {
+        setSideConversationSourceId(app.catalog.currentSessionId);
+        workbench.close();
+      }
+      return !open;
+    });
+  };
   useGlobalShortcuts({
     // Keydown and the native-menu `miniq:command` bus share one runner.
     onPalette: () => void commands.runCommand("palette"),
@@ -410,6 +432,8 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
       <div className="main" data-app-active={String(active)}>
         <AppStatusBar
           app={app}
+          sideConversationOpen={sideConversationOpen}
+          onToggleSideConversation={toggleSideConversation}
           showAttentionInbox={active}
           onOpenAttentionLocalItem={(item) => {
             const local = desktop?.catalogs[hostKey(null)] ?? (!app.client.sshHost && app.client.mode === "local" ? app.catalog : null);
@@ -420,7 +444,13 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
           onOpenFile={workbench.openFile}
           onOpenBrowser={() => workbench.select("browser")}
           onOpenGit={() => workbench.select("git")}
-          onToggleWorkbench={() => workbench.active ? workbench.close() : workbench.select("overview")}
+          onToggleWorkbench={() => {
+            if (workbench.active) workbench.close();
+            else {
+              setSideConversationOpen(false);
+              workbench.select("overview");
+            }
+          }}
           workbenchOpen={!!workbench.active}
           onToggleReview={() => {
             if (workbench.active === "review") workbench.close();
@@ -444,6 +474,14 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
           onDraftRequestApplied={() => setFileQuestion(undefined)}
         />}
       </div>
+      {active && <SideConversationPanel client={app.client} open={sideConversationOpen}
+        workspace={app.catalog.currentWorkspace ?? app.catalog.selectedWorkspace}
+        sourceSessionId={sideConversationSourceId} onClose={() => setSideConversationOpen(false)}
+        onTemporarySessionChange={async (temporarySessionId) => {
+          setSideConversationSessionId(temporarySessionId);
+          if (app.catalog.currentSessionId === temporarySessionId && sideConversationSourceId)
+            await app.actions.openSession(sideConversationSourceId);
+        }} />}
       <AppWorkbench suspended={!active} app={app} workbench={workbench} onDiscuss={(content) => {
         if (app.catalog.currentSessionId) setFileQuestion({ sessionId: app.catalog.currentSessionId, id: Date.now(), content, append: true });
       }} />
