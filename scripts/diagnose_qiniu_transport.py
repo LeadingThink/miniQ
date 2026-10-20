@@ -120,7 +120,7 @@ try:
                 result, response = put_file_v2(
                     auth.upload_token(bucket_name, key, 900), key, str(fixture),
                     check_crc=True, mime_type="application/octet-stream",
-                    regions=regions,
+                    regions=regions, part_size=1024 * 1024,
                 )
                 results[scheme] = response.status_code == 200 and bool(result)
                 output(event="upload-result", scheme=scheme,
@@ -139,7 +139,7 @@ try:
                     results[scheme] = bool(verified)
                     output(event="verify", scheme=scheme, success=bool(verified),
                            status=stat_response.status_code, size=fixture.stat().st_size,
-                           part_mib=4, timeout_seconds=120)
+                           part_mib=1, timeout_seconds=120)
             except Exception as exc:
                 results[scheme] = False
                 output(event="upload-exception", scheme=scheme,
