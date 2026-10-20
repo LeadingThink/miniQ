@@ -279,6 +279,22 @@ fn surfaces_anthropic_errors_and_output_limits() {
         matches!(&error.items[0], Err(ProviderError::Transient(detail)) if detail.contains("busy"))
     );
 
+    let file_timeout = decode(
+        &mut AnthropicDecoder::default(),
+        json!({
+            "type":"error",
+            "error": {
+                "type":"invalid_request_error",
+                "message":"The request timed out while trying to download the file."
+            }
+        }),
+    );
+    assert!(matches!(
+        &file_timeout.items[0],
+        Err(ProviderError::Transient(detail))
+            if detail.contains("timed out while trying to download the file")
+    ));
+
     let limit = decode(
         &mut AnthropicDecoder::default(),
         json!({"type":"message_delta","delta":{"stop_reason":"max_tokens"}}),

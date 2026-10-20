@@ -65,7 +65,9 @@ impl ProviderError {
         let message = format!("{prefix}: {detail}");
         if indicates_context_window_overflow(&error.to_string()) {
             Self::ContextWindowExceeded
-        } else if !requires_user_action(error) && is_transient_error(error) {
+        } else if is_transient_error(error)
+            && (!requires_user_action(error) || is_transient_file_download_timeout(prefix, error))
+        {
             Self::Transient(message)
         } else {
             Self::InvalidResponse(message)
@@ -214,6 +216,7 @@ fn is_transient_error(error: &Value) -> bool {
             "upstream http/2 stream failed",
             "stream was closed",
             "stream closed unexpectedly",
+            "timed out while trying to download the file",
             "connection reset",
             "connection was reset",
             "connection closed",
@@ -224,6 +227,23 @@ fn is_transient_error(error: &Value) -> bool {
         ]
         .iter()
         .any(|pattern| detail.contains(pattern))
+}
+
+/// Anthropic can report a remote attachment download timeout as an
+/// `invalid_request_error`. The request is valid and succeeds when the
+/// provider retries the file fetch, so keep this narrow case in the retry
+/// budget without making ordinary invalid requests retryable.
+fn is_transient_file_download_timeout(prefix: &str, error: &Value) -> bool {
+    if prefix != "Anthropic Messages API error" {
+        return false;
+    }
+    let detail = error
+        .get("message")
+        .and_then(Value::as_str)
+        .or_else(|| error.as_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    detail.contains("timed out while trying to download the file")
 }
 
 #[cfg(test)]

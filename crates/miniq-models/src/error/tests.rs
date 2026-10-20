@@ -139,6 +139,31 @@ fn stream_read_failures_are_retryable() {
 }
 
 #[test]
+fn anthropic_file_download_timeouts_are_retryable_even_when_marked_invalid_request() {
+    let error = json!({
+        "type": "invalid_request_error",
+        "message": "The request timed out while trying to download the file."
+    });
+    let classified = ProviderError::from_stream_error("Anthropic Messages API error", &error);
+    assert!(
+        classified.is_retryable(),
+        "Anthropic's file download timeout should recover on a later request: {classified:?}"
+    );
+    assert!(matches!(classified, ProviderError::Transient(_)));
+
+    let other_provider = ProviderError::from_stream_error("Responses API error", &error);
+    assert!(!other_provider.is_retryable());
+
+    // Other invalid-request errors still require user action and must not enter
+    // the automatic model retry loop.
+    let invalid = json!({
+        "type": "invalid_request_error",
+        "message": "The requested model does not support this input"
+    });
+    assert!(!ProviderError::from_stream_error("test", &invalid).is_retryable());
+}
+
+#[test]
 fn interrupted_upstream_streams_are_retryable() {
     for error in [
         json!({"message":"Upstream response stream was interrupted"}),
