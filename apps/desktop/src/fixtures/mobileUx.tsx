@@ -69,7 +69,7 @@ function Fixture() {
         hostGroups={workspaces.map((workspace, index) => ({ key: workspace.id, label: index ? "SSH · 数据分析服务器" : "办公室 Mac", state: "connected", workspaceIds: [workspace.id], selected: workspaceId === workspace.id, onSelect: () => setWorkspaceId(workspace.id) }))}
         onClose={() => setCollapsed(true)} onNewChat={() => setNotice("新对话入口（本地模拟）")} onShowSearch={() => setNotice("请用侧栏的标题搜索或会话内全文搜索验收")} onShowSchedule={noop} onImportSessions={noop}
         onSelectWorkspace={setWorkspaceId} onCreateSession={noop} onDeleteWorkspace={noop} onRenameWorkspace={noop} onEditWorkspace={noop} onSelectSession={selectSession} onSessionSeen={noop} onDeleteSession={noop} onRenameSession={noop} onSetSessionPinned={noop} onSetSessionArchived={noop}
-        onShowSkills={noop} onShowMcp={noop} onShowSettings={noop} updateSupported={false} updateState={{ phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null, releaseNotes: [] }} onCheckForUpdates={noop} onInstallUpdate={noop} onError={setNotice} />
+        onShowSkills={noop} onShowMcp={noop} onShowSettings={noop} updateSupported={false} updateState={{ phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null, busyReason: null, releaseNotes: [] }} onCheckForUpdates={noop} onInstallUpdate={noop} onError={setNotice} />
       <main className="main" data-app-active="true">
         <AppStatusBar app={app} onOpenBrowser={() => { setView("browser"); setOpen(true); }} onToggleReview={noop} onOpenFile={showFile} onToggleWorkbench={() => setOpen(!open)} workbenchOpen={open} />
         <div style={{ fontSize: 11, display: "flex", gap: 8, padding: "2px 12px", alignItems: "center", flexWrap: "wrap", color: "var(--text-dim)" }}>

@@ -14,9 +14,12 @@ export type UpdatePhase =
   | "checking"
   | "unavailable"
   | "available"
+  | "stopping"
   | "downloading"
   | "installing"
   | "error";
+
+export type UpdateBusyReason = "active-task" | "queued-messages";
 
 export interface AppUpdaterState {
   phase: UpdatePhase;
@@ -24,6 +27,8 @@ export interface AppUpdaterState {
   downloadedBytes: number;
   totalBytes: number | null;
   error: string | null;
+  /** Set when installation was deferred because the daemon is still doing work. */
+  busyReason: UpdateBusyReason | null;
   /** Release notes of the available version, one entry per line of `Update.body`. */
   releaseNotes: string[];
 }
@@ -41,6 +46,7 @@ const INITIAL_STATE: AppUpdaterState = {
   downloadedBytes: 0,
   totalBytes: null,
   error: null,
+  busyReason: null,
   releaseNotes: [],
 };
 
@@ -53,6 +59,13 @@ export function isUnsupportedPlatformUpdateError(message: string): boolean {
     message.includes("fallback platforms") &&
     message.includes("were found in the response")
   );
+}
+
+/** Convert the daemon's intentional busy response into a user decision. */
+export function updateBusyReason(message: string): UpdateBusyReason | null {
+  if (message.includes("queued messages") || message.includes("排队消息")) return "queued-messages";
+  if (message.includes("active tasks or requests") || message.includes("任务执行中")) return "active-task";
+  return null;
 }
 
 export function applyDownloadEvent(
@@ -80,12 +93,22 @@ export function applyDownloadEvent(
   }
 }
 
-export function useAppUpdater(client: RpcClient, onError: (message: string) => void, pauseTransport?: (paused: boolean) => void) {
+export function useAppUpdater(
+  client: RpcClient,
+  onError: (message: string) => void,
+  pauseTransport?: (paused: boolean) => void,
+  stopActiveTask?: (expectedSessionId?: string | null) => Promise<void>,
+  isTaskActive?: () => boolean,
+  getCurrentSessionId?: () => string | null,
+) {
   const [state, setState] = useState<AppUpdaterState>(INITIAL_STATE);
   const updateRef = useRef<Update | null>(null);
   const checkRef = useRef<Promise<void> | null>(null);
   const explicitCheckRef = useRef(false);
   const installRef = useRef(false);
+  const stoppingRef = useRef(false);
+  const stopConfirmedRef = useRef(false);
+  const busySessionIdRef = useRef<string | null>(null);
   const lastCheckedAtRef = useRef(Date.now());
   const supported = isTauriRuntime() && !client.sshHost && !import.meta.env.DEV;
 
@@ -117,12 +140,15 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
           }
           if (updateRef.current) await updateRef.current.close();
           updateRef.current = update;
+          const busyReason = isTaskActive?.() ? "active-task" : null;
+          busySessionIdRef.current = busyReason ? (getCurrentSessionId?.() ?? null) : null;
           setState({
             phase: "available",
             version: update.version,
             downloadedBytes: 0,
             totalBytes: null,
             error: null,
+            busyReason,
             releaseNotes: parseReleaseNotes(update.body),
           });
         } catch (error) {
@@ -143,7 +169,7 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
         explicitCheckRef.current = false;
       }
     },
-    [onError, supported],
+    [getCurrentSessionId, isTaskActive, onError, supported],
   );
 
   useEffect(() => {
@@ -180,7 +206,11 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
 
   const install = useCallback(async () => {
     const update = updateRef.current;
-    if (!update || state.phase !== "available" || installRef.current) return;
+    if (!update || !["available", "stopping"].includes(state.phase) || installRef.current) return;
+    if (!stopConfirmedRef.current && isTaskActive?.()) {
+      setState((current) => ({ ...current, phase: "available", busyReason: "active-task", error: null }));
+      return;
+    }
     if (client.sshHost) {
       onError("请先在设置中切换到本机，再安装桌面更新。远端任务会继续运行。");
       return;
@@ -189,7 +219,7 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
     let installerStarted = false;
     installRef.current = true;
     try {
-      setState((current) => ({ ...current, phase: "downloading", error: null }));
+      setState((current) => ({ ...current, phase: "downloading", error: null, busyReason: null }));
       await update.download((event) => setState((current) => applyDownloadEvent(current, event)));
       // Dispose reconnect effects before the native shutdown request can close the socket.
       flushSync(() => {
@@ -229,18 +259,49 @@ export function useAppUpdater(client: RpcClient, onError: (message: string) => v
           return;
         }
       }
-      setState((current) => ({ ...current, phase: "error", error: message }));
+      const busyReason = updateBusyReason(message);
+      if (busyReason) {
+        busySessionIdRef.current = getCurrentSessionId?.() ?? null;
+        setState((current) => ({ ...current, phase: "available", busyReason, error: null }));
+        pauseTransport?.(false);
+        return;
+      }
+      setState((current) => ({ ...current, phase: "error", error: message, busyReason: null }));
       pauseTransport?.(false);
       onError(`更新失败：${message}`);
     } finally {
       installRef.current = false;
     }
-  }, [client, onError, state.phase, pauseTransport]);
+  }, [client, isTaskActive, onError, state.phase, pauseTransport]);
+
+  const deferTaskPrompt = useCallback(() => {
+    setState((current) => ({ ...current, phase: "available", busyReason: null, error: null }));
+  }, []);
+
+  const stopTaskAndInstall = useCallback(async () => {
+    if (!stopActiveTask || !updateRef.current || !state.busyReason || stoppingRef.current || installRef.current) return;
+    stoppingRef.current = true;
+    stopConfirmedRef.current = true;
+    setState((current) => ({ ...current, phase: "stopping", error: null }));
+    try {
+      await stopActiveTask(busySessionIdRef.current);
+      await install();
+    } catch (error) {
+      const message = errorMessage(error);
+      setState((current) => ({ ...current, phase: "error", busyReason: null, error: message }));
+      onError(`停止任务失败：${message}`);
+    } finally {
+      stopConfirmedRef.current = false;
+      stoppingRef.current = false;
+    }
+  }, [getCurrentSessionId, install, onError, state.busyReason, stopActiveTask]);
 
   return {
     state,
     supported,
     checkNow: () => runCheck(false),
     install,
+    deferTaskPrompt,
+    stopTaskAndInstall,
   };
 }

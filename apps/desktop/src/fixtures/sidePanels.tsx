@@ -111,7 +111,7 @@ function Fixture() {
       onRenameSession={(id, title) => updateSession(id, { title })}
       onSetSessionPinned={(id, pinned) => updateSession(id, { pinned })} onSetSessionArchived={(id, archived) => updateSession(id, { archived })}
       onShowSkills={noop} onShowMcp={noop} onShowSettings={noop} updateSupported={false}
-      updateState={{ phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null, releaseNotes: [] }}
+      updateState={{ phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null, busyReason: null, releaseNotes: [] }}
       onCheckForUpdates={noop} onInstallUpdate={noop} onError={setNotice} />
     {!collapsed && <button type="button" className="mobile-sidebar-scrim" aria-label="关闭侧栏" onClick={() => setCollapsed(true)} />}
     <main className="main" style={{ padding: 20, gap: 20, overflow: "auto" }}>

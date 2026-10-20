@@ -39,7 +39,7 @@ export function UpdateNotice({ supported, state, onCheck, onInstall }: UpdateNot
     return (
       <button type="button" className="nav-item sidebar-nav-button update-notice" onClick={onInstall}>
         <Download className="nav-icon" size={16} />
-        <span>更新至 v{state.version}</span>
+        <span>{state.busyReason ? "任务运行中，更新待处理" : `更新至 v${state.version}`}</span>
       </button>
     );
   }
@@ -77,6 +77,8 @@ export function UpdateNotice({ supported, state, onCheck, onInstall }: UpdateNot
   const label =
     state.phase === "checking"
       ? "正在检查更新"
+      : state.phase === "stopping"
+        ? "正在停止任务"
       : state.phase === "installing"
         ? "正在安装更新"
         : progressLabel(state);

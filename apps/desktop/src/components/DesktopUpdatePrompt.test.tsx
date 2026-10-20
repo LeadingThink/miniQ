@@ -9,7 +9,7 @@ import type { AppUpdaterState } from "../hooks/useAppUpdater";
 const version = vi.hoisted(() => ({ current: "0.1.159" }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: async () => version.current }));
 
-const IDLE: AppUpdaterState = { phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null, releaseNotes: [] };
+const IDLE: AppUpdaterState = { phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null, busyReason: null, releaseNotes: [] };
 const available: AppUpdaterState = { ...IDLE, phase: "available", version: "0.1.160", releaseNotes: ["新增手机上传", "修复折叠记录加载"] };
 const updater = (state: AppUpdaterState, extra: Partial<DesktopUpdater> = {}): DesktopUpdater => ({
   supported: true, state, checkNow: vi.fn().mockResolvedValue(undefined), install: vi.fn().mockResolvedValue(undefined), ...extra,
@@ -35,6 +35,27 @@ it("installs only after the explicit action and does not install on dismiss", as
   render(<DesktopUpdatePrompt updater={value} />); await flush();
   fireEvent.click(screen.getByRole("button", { name: "立即更新" }));
   expect(value.install).toHaveBeenCalledOnce();
+});
+
+it("asks before stopping a running task instead of reporting an update error", async () => {
+  const stopTaskAndInstall = vi.fn().mockResolvedValue(undefined);
+  const deferTaskPrompt = vi.fn();
+  const value = updater({ ...available, busyReason: "active-task" }, { stopTaskAndInstall, deferTaskPrompt });
+  render(<DesktopUpdatePrompt updater={value} />); await flush();
+  expect(screen.getByRole("status").textContent).toContain("当前有任务正在执行");
+  expect(screen.getByRole("button", { name: "停止任务并更新" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "继续当前任务" }));
+  await flush();
+  expect(deferTaskPrompt).toHaveBeenCalledOnce();
+  expect(stopTaskAndInstall).not.toHaveBeenCalled();
+});
+
+it("calls the explicit stop-and-update action for a busy session", async () => {
+  const stopTaskAndInstall = vi.fn().mockResolvedValue(undefined);
+  const value = updater({ ...available, busyReason: "active-task" }, { stopTaskAndInstall });
+  render(<DesktopUpdatePrompt updater={value} />); await flush();
+  fireEvent.click(screen.getByRole("button", { name: "停止任务并更新" }));
+  expect(stopTaskAndInstall).toHaveBeenCalledOnce();
 });
 
 it("snoozes the same version for a day but announces a newer one", async () => {

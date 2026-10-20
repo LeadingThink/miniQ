@@ -25,7 +25,10 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
 
-function setup(sshHost: string | null = null) {
+function setup(sshHost: string | null = null, taskActive = false) {
+  let active = taskActive;
+  let currentSessionId: string | null = taskActive ? "session-one" : null;
+  const stopActiveTask = vi.fn().mockImplementation(async () => { active = false; });
   const listeners = new Set<(connected: boolean) => void>();
   const client = {
     sshHost,
@@ -46,14 +49,21 @@ function setup(sshHost: string | null = null) {
   const onError = vi.fn();
   const hook = renderHook(() => {
     const [rootPaused, pauseRoot] = useState(false);
-    const updater = useAppUpdater(client as unknown as RpcClient, onError, pauseRoot);
+    const updater = useAppUpdater(
+      client as unknown as RpcClient,
+      onError,
+      pauseRoot,
+      taskActive ? stopActiveTask : undefined,
+      taskActive ? () => active : undefined,
+      taskActive ? () => currentSessionId : undefined,
+    );
     const connection = useDaemonConnection({
       client: client as unknown as RpcClient, refreshWorkspaces: refresh,
       refreshSessions: refresh, onError, paused: rootPaused,
     });
     return { ...updater, connection, rootPaused };
   });
-  return { ...hook, client, onError };
+  return { ...hook, client, onError, stopActiveTask, setCurrentSessionId: (id: string | null) => { currentSessionId = id; } };
 }
 
 async function available(hook: ReturnType<typeof setup>) {
@@ -164,6 +174,40 @@ it("does not fall back to cancelling tasks when idle shutdown is busy or unsuppo
   expect(fake.invoke).toHaveBeenCalledWith("cancel_daemon_update");
 });
 
+it("asks before downloading when the current task is active, then stops and installs after confirmation", async () => {
+  const hook = setup(null, true);
+  await available(hook);
+  expect(hook.result.current.state).toMatchObject({ phase: "available", busyReason: "active-task" });
+  expect(fake.download).not.toHaveBeenCalled();
+  await act(async () => { await hook.result.current.stopTaskAndInstall?.(); });
+  expect(hook.stopActiveTask).toHaveBeenCalledOnce();
+  expect(fake.download).toHaveBeenCalledOnce();
+  expect(fake.install).toHaveBeenCalledOnce();
+  expect(hook.onError).not.toHaveBeenCalledWith(expect.stringContaining("更新失败"));
+});
+
+it("binds the stop choice to the session that was active when the update was offered", async () => {
+  const hook = setup(null, true);
+  await available(hook);
+  hook.setCurrentSessionId("session-two");
+  await act(async () => { await hook.result.current.stopTaskAndInstall?.(); });
+  expect(hook.stopActiveTask).toHaveBeenCalledWith("session-one");
+});
+
+it("shows a recoverable error when stopping the selected task fails", async () => {
+  const hook = setup(null, true);
+  await available(hook);
+  hook.stopActiveTask.mockRejectedValueOnce(new Error("当前会话已切换，请先打开正在执行的会话。"));
+  await act(async () => { await hook.result.current.stopTaskAndInstall?.(); });
+  expect(hook.result.current.state).toMatchObject({
+    phase: "error",
+    error: "当前会话已切换，请先打开正在执行的会话。",
+    busyReason: null,
+  });
+  expect(fake.download).not.toHaveBeenCalled();
+  expect(hook.onError).toHaveBeenCalledWith(expect.stringContaining("停止任务失败"));
+});
+
 it.each([
   ["miniQ still has active tasks or requests; retry the update when idle", "任务执行中，请等待任务完成后更新。"],
   ["miniQ has queued messages; wait for them or explicitly remove them before updating", "还有排队消息，请等待任务完成后更新。"],
@@ -175,8 +219,12 @@ it.each([
     return {};
   });
   await act(async () => { await hook.result.current.install(); });
-  expect(hook.result.current.state).toMatchObject({ phase: "error", error: reason });
-  expect(hook.onError).toHaveBeenCalledWith(`更新失败：${reason}`);
+  expect(hook.result.current.state).toMatchObject({
+    phase: "available",
+    busyReason: reason.includes("排队") ? "queued-messages" : "active-task",
+    error: null,
+  });
+  expect(hook.onError).not.toHaveBeenCalledWith(expect.stringContaining("更新失败"));
   expect(hook.client.call).toHaveBeenCalledWith("daemon.shutdownIfIdle");
   expect(hook.client.call.mock.calls.every(([method]) =>
     ["daemon.health", "settings.get", "daemon.shutdownIfIdle"].includes(method))).toBe(true);

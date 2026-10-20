@@ -3,6 +3,7 @@ import {
   applyDownloadEvent,
   isUnsupportedPlatformUpdateError,
   shouldCheckForUpdate,
+  updateBusyReason,
   type AppUpdaterState,
 } from "./useAppUpdater";
 
@@ -13,6 +14,7 @@ const DOWNLOADING: AppUpdaterState = {
   totalBytes: null,
   releaseNotes: [],
   error: null,
+  busyReason: null,
 };
 
 describe("applyDownloadEvent", () => {
@@ -58,6 +60,15 @@ describe("isUnsupportedPlatformUpdateError", () => {
 
   it("does not hide network and signature failures", () => {
     expect(isUnsupportedPlatformUpdateError("request timed out")).toBe(false);
+  });
+});
+
+describe("updateBusyReason", () => {
+  it("classifies daemon busy responses without treating them as failures", () => {
+    expect(updateBusyReason("miniQ still has active tasks or requests; retry the update when idle")).toBe("active-task");
+    expect(updateBusyReason("miniQ has queued messages; wait for them or explicitly remove them before updating")).toBe("queued-messages");
+    expect(updateBusyReason("任务执行中，请等待任务完成后更新。")).toBe("active-task");
+    expect(updateBusyReason("signature invalid")).toBeNull();
   });
 });
 

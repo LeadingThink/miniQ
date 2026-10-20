@@ -60,7 +60,7 @@ describe("Sidebar", () => {
         onShowMcp={noop}
         onShowSettings={noop}
         updateSupported={false}
-        updateState={{ phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null, releaseNotes: [] }}
+        updateState={{ phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null, busyReason: null, releaseNotes: [] }}
         onCheckForUpdates={noop}
         onInstallUpdate={noop}
         onError={noop}
@@ -108,7 +108,7 @@ describe("Sidebar", () => {
         onShowMcp={noop}
         onShowSettings={noop}
         updateSupported={false}
-        updateState={{ phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null, releaseNotes: [] }}
+        updateState={{ phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null, busyReason: null, releaseNotes: [] }}
         onCheckForUpdates={noop}
         onInstallUpdate={noop}
         onError={noop}
@@ -147,7 +147,7 @@ describe("Sidebar", () => {
         onShowMcp={noop}
         onShowSettings={noop}
         updateSupported={false}
-        updateState={{ phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null, releaseNotes: [] }}
+        updateState={{ phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null, busyReason: null, releaseNotes: [] }}
         onCheckForUpdates={noop}
         onInstallUpdate={noop}
         onError={noop}
@@ -167,7 +167,7 @@ function sidebarProps(overrides: Partial<ComponentProps<typeof Sidebar>> = {}): 
     onRenameWorkspace: noop, onEditWorkspace: noop, onSelectSession: noop, onSessionSeen: noop,
     onDeleteSession: noop, onRenameSession: noop, onSetSessionPinned: noop, onSetSessionArchived: noop,
     onShowSkills: noop, onShowMcp: noop, onShowSettings: noop, updateSupported: false,
-    updateState: { phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null, releaseNotes: [] },
+    updateState: { phase: "idle", version: null, downloadedBytes: 0, totalBytes: null, error: null, busyReason: null, releaseNotes: [] },
     onCheckForUpdates: noop, onInstallUpdate: noop, onError: noop, ...overrides,
   };
 }
@@ -186,7 +186,7 @@ describe("desktop Sidebar footer", () => {
     fireEvent.click(screen.getByRole("button", { name: "更多" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "检查更新" }));
     expect(onCheckForUpdates).toHaveBeenCalledOnce();
-    rendered.rerender(<Sidebar {...props} updateState={{ phase: "available", version: "9.9.9", downloadedBytes: 0, totalBytes: null, error: null, releaseNotes: [] }} />);
+    rendered.rerender(<Sidebar {...props} updateState={{ phase: "available", version: "9.9.9", downloadedBytes: 0, totalBytes: null, error: null, busyReason: null, releaseNotes: [] }} />);
     expect(screen.getByRole("button", { name: "更新至 v9.9.9" })).not.toBeNull();
   });
 });

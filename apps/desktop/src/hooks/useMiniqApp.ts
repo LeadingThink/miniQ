@@ -201,6 +201,23 @@ export type NavigationState = ReturnType<typeof useNavigationState>;
 export type SessionFeed = ReturnType<typeof useSessionFeed>;
 type ErrorSetter = (message: string | null) => void;
 
+async function cancelSessionTurn(client: RpcClient, sessionId: string | null): Promise<void> {
+  if (!sessionId) return;
+  await client.call("session.cancel", { sessionId });
+}
+
+async function cancelSessionTurnAndWait(client: RpcClient, sessionId: string | null): Promise<void> {
+  await cancelSessionTurn(client, sessionId);
+  if (!sessionId) return;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const result = await client.call<{ sessions: Array<{ id: string; status: SessionStatus }> }>("session.list", {});
+    const session = result.sessions.find((item) => item.id === sessionId);
+    if (!session || isSessionTerminal(session.status)) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("任务仍在停止，请稍后再更新。");
+}
+
 function useNavigationActions(
   catalog: Catalog,
   navigation: NavigationState,
@@ -447,8 +464,7 @@ function useTurnActions(
   );
 
   const cancelTurn = useCallback(async () => {
-    if (!catalog.currentSessionId) return;
-    await client.call("session.cancel", { sessionId: catalog.currentSessionId });
+    await cancelSessionTurn(client, catalog.currentSessionId);
   }, [catalog.currentSessionId, client]);
 
   const pauseTurn = useCallback(async () => {
@@ -632,7 +648,32 @@ export function useMiniqApp(active = true) {
   );
   const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls, latestTurnId, active && !feed.loading);
   const preview = useFilePreview(catalog.currentSession?.workingDirectory, catalog.currentSessionId, catalog.currentWorkspacePaths, client, desktop?.getFilePreviewCache(client.sshHost));
-  const updater = useAppUpdater(client, setConnectionError, desktop?.setTransportPaused);
+  const stopCurrentTurnForUpdate = useCallback(
+    async (expectedSessionId?: string | null) => {
+      const currentSessionId = catalog.currentSessionId;
+      if (!currentSessionId || (expectedSessionId !== undefined && currentSessionId !== expectedSessionId)) {
+        throw new Error("当前会话已切换，请先打开正在执行的会话。");
+      }
+      await cancelSessionTurnAndWait(client, currentSessionId);
+    },
+    [catalog.currentSessionId, client],
+  );
+  const isCurrentTaskActive = useCallback(
+    () => (catalog.currentSession ? isSessionRunning(catalog.currentSession.status) : false),
+    [catalog.currentSession?.status],
+  );
+  const getCurrentSessionId = useCallback(
+    () => catalog.currentSessionId,
+    [catalog.currentSessionId],
+  );
+  const updater = useAppUpdater(
+    client,
+    setConnectionError,
+    desktop?.setTransportPaused,
+    stopCurrentTurnForUpdate,
+    isCurrentTaskActive,
+    getCurrentSessionId,
+  );
   const scopedConnection = useDaemonConnection({
     client,
     refreshWorkspaces: catalog.refreshWorkspaces,

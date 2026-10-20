@@ -12,6 +12,7 @@ const IDLE: AppUpdaterState = {
   totalBytes: null,
   releaseNotes: [],
   error: null,
+  busyReason: null,
 };
 
 afterEach(cleanup);
@@ -78,6 +79,19 @@ describe("UpdateNotice", () => {
     );
 
     expect(html).toContain("当前平台暂无更新");
+    expect(html).not.toContain("更新失败");
+  });
+
+  it("shows a pending decision while a task is running", () => {
+    const html = renderToStaticMarkup(
+      <UpdateNotice
+        supported
+        state={{ ...IDLE, phase: "available", version: "0.1.160", busyReason: "active-task" }}
+        onCheck={() => undefined}
+        onInstall={() => undefined}
+      />,
+    );
+    expect(html).toContain("任务运行中，更新待处理");
     expect(html).not.toContain("更新失败");
   });
 });
