@@ -201,13 +201,20 @@ async fn persisted_attachment_preview_is_exact_session_scoped_and_does_not_grant
     let data = tempfile::tempdir().unwrap();
     let storage = dunce::canonicalize(data.path())
         .unwrap()
-        .join("observations/attachments");
+        .join("observations")
+        .join("attachments");
     std::fs::create_dir_all(&storage).unwrap();
     let path = storage.join("persistent-copy.png");
     let neighbor = storage.join("other-private-file.png");
     let bytes = base64::engine::general_purpose::STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=").unwrap();
     std::fs::write(&path, &bytes).unwrap();
     std::fs::write(&neighbor, "private neighbor").unwrap();
+    // Accepted attachments persist canonical native paths. A compound path
+    // component would introduce mixed Windows separators absent from ingestion.
+    assert_eq!(
+        path.as_os_str(),
+        dunce::canonicalize(&path).unwrap().as_os_str()
+    );
     let (mut state, owner, other) = attachment_state(project.path());
     state.observations_dir = storage.parent().unwrap().into();
     state
@@ -220,6 +227,13 @@ async fn persisted_attachment_preview_is_exact_session_scoped_and_does_not_grant
         )
         .unwrap();
     let input = preview_attachment(&state, &owner, &path, &bytes).await;
+    #[cfg(windows)]
+    {
+        // Callers may use forward slashes; canonicalize the requested path
+        // before matching its exact persisted attachment ownership.
+        let slash_path = path.to_string_lossy().replace('\\', "/");
+        preview_attachment(&state, &owner, Path::new(&slash_path), &bytes).await;
+    }
 
     assert!(
         describe(&state, Some(json!({"sessionId":other,"path":path})))
