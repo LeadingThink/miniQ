@@ -364,8 +364,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn recovered_missing_screenshot_does_not_authorize_next_native_action() {
+    #[tokio::test]
+    async fn recovered_missing_screenshot_does_not_authorize_next_native_action() {
         let directory = tempfile::tempdir().unwrap();
         let mut messages = observed("screenshot", "missing");
         messages[0].provider_context = Some(crate::ProviderContext {
@@ -386,9 +386,10 @@ mod tests {
             max_output_tokens: None,
         };
         let input =
-            crate::request_attachments::build_with_attachment_recovery(&request, |request| {
+            crate::request_attachments::build_with_attachment_recovery(&request, None, |request| {
                 crate::responses_request::build_input(&request.messages).map(Value::Array)
             })
+            .await
             .unwrap();
         let input = input.as_array().unwrap();
         assert_eq!(input[2]["type"], "function_call_output");

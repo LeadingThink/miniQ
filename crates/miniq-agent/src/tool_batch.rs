@@ -27,6 +27,18 @@ fn complete(executor: &dyn ToolExecutor, call: &ToolCallRequest, result: Value) 
     message
 }
 
+fn failed(call: &ToolCallRequest, error: AgentError) -> ChatMessage {
+    ChatMessage::tool_result(
+        call.id.clone(),
+        json!({
+            "error": error.to_string(),
+            "execution": "failed",
+            "message": "The tool failed. Keep the completed results from other calls, adjust the approach, and continue the task from the current state.",
+        })
+        .to_string(),
+    )
+}
+
 pub(crate) async fn execute(
     executor: &dyn ToolExecutor,
     calls: &[ToolCallRequest],
@@ -51,8 +63,11 @@ pub(crate) async fn execute(
         if executor.execution_mode(call) == ToolExecutionMode::Sequential {
             state.history[base + index] = unfinished(call, true);
             state.save(limits, false).await?;
-            let result = executor.execute(call).await?;
-            state.history[base + index] = complete(executor, call, result);
+            state.history[base + index] = match executor.execute(call).await {
+                Ok(result) => complete(executor, call, result),
+                Err(AgentError::Cancelled) => return Err(AgentError::Cancelled),
+                Err(error) => failed(call, error),
+            };
             state.save(limits, false).await?;
             index += 1;
         } else {
@@ -112,8 +127,8 @@ async fn execute_parallel(
         };
         match result {
             Ok(value) => state.history[base + index] = complete(executor, call, value),
-            Err(cause) if error.is_none() => error = Some(cause),
-            Err(_) => {}
+            Err(AgentError::Cancelled) if error.is_none() => error = Some(AgentError::Cancelled),
+            Err(cause) => state.history[base + index] = failed(call, cause),
         }
         // Drain already dispatched siblings after failure/cancellation and
         // checkpoint every success. Undispatched calls keep "not_started".

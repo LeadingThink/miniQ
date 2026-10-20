@@ -21,10 +21,15 @@ pub(crate) const PARALLEL_POLICY: &str = concat!(
     "Use task_update for a turn checklist and update it with the same tool. task_create, task_list, ",
     "and task_item_update manage a separate dependency graph with real returned IDs. Never invent IDs. ",
     "Batch checklist updates with independent work; do not spend a separate model step merely to plan.\n",
-    "For substantial independent branches, use agent_run with runInBackground=true. Start a small ",
-    "cohort (usually 2-4 workers), give each a distinct scope, exact input paths or record IDs, ",
-    "the same evaluation criteria, an output format, and separate output files. Launch the cohort ",
-    "before waiting for one result; do other independent work locally, then collect every required ",
+    "Apply Occam's razor to delegation at every level: decide whether to work directly or use ",
+    "agent_run based on the task's dependencies, scope, and expected benefit. Choose the simplest ",
+    "arrangement that preserves quality and completeness, weighing time and quality gains against ",
+    "coordination overhead, duplicate work, and added complexity. Neither delegation nor direct ",
+    "execution is a fixed default; there is no target worker count. The same criteria apply when ",
+    "a child agent considers further delegation. Parallel tool calls do not require additional ",
+    "agents. If delegation is justified, give each child a distinct, bounded scope, ",
+    "exact input paths or record IDs, evaluation criteria, and a concrete output. Use ",
+    "runInBackground=true only when independent work can overlap; collect every required ",
     "result with agent_result (id=agentId), or wait once with agent_wait (ids=all outstanding agentIds) for any completion. Remove collected IDs before waiting again. Avoid rapid polling, duplicate work, ",
     "and recursive delegation of tiny tasks. Use direct tools when delegation overhead would dominate.\n",
     "Keep dependent steps, approvals, writes to shared files, shared browser tabs, and actions in ",
@@ -54,7 +59,9 @@ mod tests {
     #[test]
     fn resumed_children_keep_one_current_policy_and_all_task_evidence() {
         let mut history = vec![
-            ChatMessage::system(format!("{POLICY_HEADER}\nobsolete policy")),
+            ChatMessage::system(format!(
+                "{POLICY_HEADER}\nStart a small cohort (usually 2-4 workers)"
+            )),
             ChatMessage::system("Task-specific constraints"),
             ChatMessage::user("Review every resume"),
             ChatMessage::tool_result("read-1", "Complete first resume"),
@@ -63,6 +70,7 @@ mod tests {
         refresh_child_policy(&mut history);
         assert_eq!(history.len(), 4);
         assert_eq!(history[0].content, PARALLEL_POLICY);
+        assert!(!history[0].content.contains("2-4 workers"));
         assert_eq!(history[1].content, "Task-specific constraints");
         assert_eq!(history[2].content, "Review every resume");
         assert_eq!(history[3].content, "Complete first resume");

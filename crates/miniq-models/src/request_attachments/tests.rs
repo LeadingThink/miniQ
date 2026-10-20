@@ -1,6 +1,16 @@
 use super::*;
 use crate::{ArchivedImage, ChatImage, ImageDetail, ToolCallRequest, ToolSpec};
 
+fn build_with_attachment_recovery(
+    request: &CompletionRequest,
+    build: impl FnMut(&CompletionRequest) -> Result<Value, ProviderError>,
+) -> Result<Value, ProviderError> {
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap()
+        .block_on(super::build_with_attachment_recovery(request, None, build))
+}
+
 fn image(path: &std::path::Path) -> ChatImage {
     ChatImage {
         path: path.to_string_lossy().into_owned(),

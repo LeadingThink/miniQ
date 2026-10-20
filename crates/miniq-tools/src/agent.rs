@@ -135,7 +135,7 @@ impl Tool for AgentRunTool {
     }
 
     fn description(&self) -> &str {
-        "Delegate a substantial, independent task to a child agent using the current OneAPI provider. Use runInBackground=true to overlap independent branches, start the cohort before waiting with agent_wait (ids=all outstanding agentIds); each wait returns on any completion. Read individual results with agent_result, remove collected IDs from subsequent waits, and give each child distinct inputs, common criteria, and separate outputs. Keep dependent or shared-resource operations sequential; avoid delegation for tiny tasks. Child tool calls keep the same workspace, approval, audit, and sandbox controls."
+        "Delegate a clearly bounded task to a child agent using the current OneAPI provider. Apply Occam's razor when choosing between direct execution and delegation: weigh time and quality gains against coordination overhead, duplicate work, and added complexity; choose the simplest arrangement that preserves quality and completeness. Neither choice is a fixed default, and there is no target worker count. Child agents use the same judgment for further delegation. Give each child distinct inputs and outputs. Use runInBackground=true only to overlap independent work. Wait with agent_wait (ids=all outstanding agentIds), collect results with agent_result, and remove collected IDs before waiting again. Keep shared-resource operations sequential. Child tool calls retain workspace, approval, audit, and sandbox controls."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -147,7 +147,7 @@ impl Tool for AgentRunTool {
                 "subagentType": {"type": "string"},
                 "model": {"type": "string", "description": "Model for this sub-agent. Use the exact catalog ID when known; a spoken name such as \"gpt 6.1 sol\" is resolved against the provider catalog before start, and an unknown or ambiguous name fails with the closest IDs."},
                 "resume": {"type": "string"},
-                "runInBackground": {"type": "boolean", "default": false, "description": "Return the agent ID immediately so independent tasks can overlap. Nesting is limited to 3. Wait for any cohort with agent_wait, then read results with agent_result. Do not spawn another agent unless the task is substantial and independent."},
+                "runInBackground": {"type": "boolean", "default": false, "description": "Return the agent ID immediately so independent work can overlap. Decide whether to delegate using the same Occam's razor criteria at every level. Nesting is limited to 3. Wait with agent_wait, then read results with agent_result."},
                 "maxTurns": {"type": "integer", "minimum": 1, "maximum": 96},
                 "name": {"type": "string"},
                 "mode": {"type": "string", "enum": ["default", "acceptEdits", "dontAsk", "bypassPermissions", "plan", "auto"]},

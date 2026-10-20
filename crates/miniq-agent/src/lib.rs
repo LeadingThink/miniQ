@@ -192,9 +192,10 @@ pub trait ToolExecutor: Send + Sync {
         None
     }
 
-    /// Execute one call and return a structured result. Errors and
-    /// rejections must be encoded in the returned JSON so the model can
-    /// react to them; `Err` is reserved for turn-fatal failures.
+    /// Execute one call and return a structured result. Tool errors may be
+    /// returned as `Err`; the runner records them as a failed tool result so
+    /// the model can react without discarding earlier successful calls.
+    /// `Cancelled` remains turn-fatal.
     async fn execute(&self, call: &ToolCallRequest) -> Result<Value, AgentError>;
 }
 

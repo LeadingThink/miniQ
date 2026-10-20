@@ -29,9 +29,11 @@ async fn background_cohort_exceeds_old_count_limits_and_preserves_each_result() 
     .expect("every child must start while the others are still blocked");
     assert!(provider.requests.lock().await.iter().all(|request| {
         request.messages.iter().any(|message| {
-            message
-                .content
-                .starts_with(crate::parallel_policy::PARALLEL_POLICY)
+            message.role == miniq_models::ChatRole::System
+                && message
+                    .content
+                    .starts_with(crate::parallel_policy::PARALLEL_POLICY)
+                && message.content.contains("there is no target worker count")
         })
     }));
     provider.gate.add_permits(COUNT);

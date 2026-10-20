@@ -130,7 +130,7 @@ async fn bounded_parallelism_refills_slots_and_keeps_every_result_in_input_order
 }
 
 #[tokio::test(start_paused = true)]
-async fn failure_drains_dispatched_siblings_and_leaves_later_calls_unstarted() {
+async fn failure_becomes_a_tool_result_and_later_calls_continue() {
     let executor = Fixture::default();
     let calls = [
         call("fail", "read", 5),
@@ -141,14 +141,12 @@ async fn failure_drains_dispatched_siblings_and_leaves_later_calls_unstarted() {
         call("write", "write", 10),
     ];
     let (state, saved, result) = run_batch(&executor, &calls).await;
-    assert!(result.is_err());
-    assert_eq!(executor.started.lock().unwrap().len(), 4);
-    assert!(state.history[0].content.contains("unknown"));
-    for message in &state.history[1..4] {
+    result.unwrap();
+    assert_eq!(executor.started.lock().unwrap().len(), calls.len());
+    assert!(state.history[0].content.contains("execution\":\"failed"));
+    assert!(state.history[0].content.contains("fixture failure"));
+    for message in &state.history[1..] {
         assert!(message.content.contains("version"));
-    }
-    for message in &state.history[4..] {
-        assert!(message.content.contains("not_started"));
     }
     assert_eq!(
         saved.0.lock().unwrap().last().unwrap().history[1].content,
