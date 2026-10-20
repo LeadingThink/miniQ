@@ -2,21 +2,15 @@ name: Build Desktop Apps
 on:
   workflow_dispatch:
 jobs:
-  diagnose-conpty:
-    runs-on: windows-latest
-    timeout-minutes: 20
+  diagnose-qiniu:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: release-x86_64-pc-windows-msvc
-      - name: Diagnose managed pipe and ConPTY completion
-        shell: bash
-        run: cargo test --release --locked -p miniq-tools --lib windows_completed_jobs_close_transports_and_drain_output_without_polling --target x86_64-pc-windows-msvc -- --nocapture
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: conpty-diagnostics
-          path: artifacts/conpty-diagnostics
-          if-no-files-found: ignore
+      - uses: astral-sh/setup-uv@v6
+      - name: Compare Qiniu default and HTTPS multipart transport
+        env:
+          QINIU_ACCESS_KEY: ${{ secrets.QINIU_ACCESS_KEY }}
+          QINIU_SECRET_KEY: ${{ secrets.QINIU_SECRET_KEY }}
+          QINIU_BUCKET: ${{ secrets.QINIU_BUCKET }}
+        run: uv run --no-project --python 3.10 --with 'qiniu==7.18.0' --with 'requests==2.25.1' scripts/diagnose_qiniu_transport.py
