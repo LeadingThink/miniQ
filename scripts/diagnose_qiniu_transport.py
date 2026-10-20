@@ -11,6 +11,8 @@ import requests
 from qiniu import Auth, BucketManager, put_file_v2
 from qiniu import config
 from qiniu.http.default_client import qn_http_client
+from qiniu.http.endpoint import Endpoint
+from qiniu.http.regions_provider import get_default_regions_provider
 from qiniu.region import LegacyRegion
 
 
@@ -79,6 +81,7 @@ attempt = os.environ["GITHUB_RUN_ATTEMPT"]
 prefix = f"diagnostics/qiniu-{run_id}-{attempt}"
 keys = []
 results = {}
+regions = []
 
 for scheme in ("http", "https"):
     started = time.monotonic()
@@ -92,6 +95,16 @@ for scheme in ("http", "https"):
 
 cleanup_failed = False
 try:
+    try:
+        regions = list(get_default_regions_provider(
+            query_endpoints_provider=[Endpoint.from_host(config.get_default("default_query_region_host"))],
+            access_key=auth.get_access_key(), bucket_name=bucket_name,
+            preferred_scheme="https",
+        ))
+        output(event="discovery", region_count=len(regions))
+    except Exception as exc:
+        output(event="discovery-exception", error=safe_error(exc))
+        raise SystemExit(1)
     with tempfile.TemporaryDirectory() as directory:
         fixture = Path(directory) / "transport.bin"
         with fixture.open("wb") as file:
@@ -107,6 +120,7 @@ try:
                 result, response = put_file_v2(
                     auth.upload_token(bucket_name, key, 900), key, str(fixture),
                     check_crc=True, mime_type="application/octet-stream",
+                    regions=regions,
                 )
                 results[scheme] = response.status_code == 200 and bool(result)
                 output(event="upload-result", scheme=scheme,
@@ -119,7 +133,7 @@ try:
                        elapsed=round(time.monotonic() - started, 2), error=safe_error(exc))
 finally:
     config.set_default(default_zone=LegacyRegion(scheme="https"))
-    manager = BucketManager(auth)
+    manager = BucketManager(auth, regions=regions, preferred_scheme="https")
     for index, key in enumerate(keys):
         try:
             _, response = manager.delete(bucket_name, key)
@@ -132,5 +146,5 @@ finally:
             output(event="cleanup-exception", object_index=index, error=safe_error(exc))
 
 output(event="summary", results=results, cleanup_success=not cleanup_failed)
-if cleanup_failed:
+if cleanup_failed or not results.get("https"):
     raise SystemExit(2)
