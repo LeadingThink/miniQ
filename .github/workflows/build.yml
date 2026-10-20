@@ -5,6 +5,10 @@ jobs:
   diagnose-qiniu:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        transport: [form, multipart-v2]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -13,4 +17,5 @@ jobs:
           QINIU_ACCESS_KEY: ${{ secrets.QINIU_ACCESS_KEY }}
           QINIU_SECRET_KEY: ${{ secrets.QINIU_SECRET_KEY }}
           QINIU_BUCKET: ${{ secrets.QINIU_BUCKET }}
+          DIAGNOSTIC_TRANSPORT: ${{ matrix.transport }}
         run: uv run --no-project --python 3.10 --with 'qiniu==7.18.0' --with 'requests==2.25.1' scripts/diagnose_qiniu_transport.py

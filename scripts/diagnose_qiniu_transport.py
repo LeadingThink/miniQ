@@ -1,6 +1,7 @@
 """Temporary diagnostic: unique objects and mandatory cleanup, no publication."""
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import tempfile
@@ -14,7 +15,6 @@ from qiniu.http.default_client import qn_http_client
 from qiniu.http.endpoint import Endpoint
 from qiniu.http.regions_provider import get_default_regions_provider
 from qiniu.region import LegacyRegion
-from qiniu.utils import etag
 
 
 def output(**fields):
@@ -80,6 +80,7 @@ bucket_name = os.environ["QINIU_BUCKET"]
 run_id = os.environ["GITHUB_RUN_ID"]
 attempt = os.environ["GITHUB_RUN_ATTEMPT"]
 prefix = f"diagnostics/qiniu-{run_id}-{attempt}"
+transport = os.environ["DIAGNOSTIC_TRANSPORT"]
 keys = []
 results = {}
 regions = []
@@ -113,7 +114,9 @@ try:
                 file.write(bytes(1024 * 1024))
         for scheme in ("https",):
             config.set_default(default_zone=LegacyRegion(scheme=scheme))
-            key = f"{prefix}/{scheme}.bin"
+            if transport == "form":
+                config.set_default(default_upload_threshold=fixture.stat().st_size + 1)
+            key = f"{prefix}/{transport}.bin"
             keys.append(key)
             started = time.monotonic()
             try:
@@ -130,16 +133,25 @@ try:
                 if results[scheme]:
                     manager = BucketManager(auth, regions=regions, preferred_scheme="https")
                     metadata, stat_response = manager.stat(bucket_name, key)
-                    verified = (
-                        stat_response.status_code == 200 and metadata
-                        and metadata.get("fsize") == fixture.stat().st_size
-                        and metadata.get("hash") == etag(str(fixture))
-                        and result.get("hash") == metadata.get("hash")
-                    )
+                    size_match = bool(metadata and metadata.get("fsize") == fixture.stat().st_size)
+                    hash_match = bool(metadata and result.get("hash") == metadata.get("hash"))
+                    digest = hashlib.sha256()
+                    downloaded_size = 0
+                    download = requests.get(f"https://oss.zaiwen.top/{key}", stream=True, timeout=120)
+                    download.raise_for_status()
+                    with download:
+                        for chunk in download.iter_content(64 * 1024):
+                            downloaded_size += len(chunk)
+                            digest.update(chunk)
+                    expected_sha = hashlib.sha256(fixture.read_bytes()).hexdigest()
+                    sha_match = digest.hexdigest() == expected_sha
+                    verified = stat_response.status_code == 200 and size_match and hash_match and sha_match
                     results[scheme] = bool(verified)
                     output(event="verify", scheme=scheme, success=bool(verified),
                            status=stat_response.status_code, size=fixture.stat().st_size,
-                           part_mib=1, timeout_seconds=120)
+                           transport=transport, size_match=size_match, hash_match=hash_match,
+                           downloaded_size=downloaded_size, sha256_match=sha_match,
+                           timeout_seconds=120)
             except Exception as exc:
                 results[scheme] = False
                 output(event="upload-exception", scheme=scheme,
