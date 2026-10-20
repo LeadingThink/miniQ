@@ -1,10 +1,11 @@
-from pathlib import Path
 import json
 import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
-from upload_qiniu_release import main, release_upload_plan
+from upload_qiniu_release import UploadItem, main, publish, release_upload_plan
 
 
 class UploadPlanTest(unittest.TestCase):
@@ -63,9 +64,8 @@ class UploadPlanTest(unittest.TestCase):
             ])
 
     def test_latest_manifest_is_required(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(ValueError, "latest.json"):
-                release_upload_plan(Path(directory), "v1.2.3")
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(ValueError, "latest.json"):
+            release_upload_plan(Path(directory), "v1.2.3")
 
     def test_semantic_version_tag_is_required(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -147,6 +147,118 @@ class PublicationTest(unittest.TestCase):
                 self.assertEqual(writes, [["releases/miniq/v0.1.17/latest.json"]])
                 mocks["read_manifest"].assert_not_called()
                 mocks["refresh_manifests"].assert_not_called()
+
+
+class UploadTransportTest(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.source = Path(directory.name) / "installer.bin"
+        self.source.write_bytes(b"release artifact")
+        self.item = UploadItem(self.source, "releases/miniq/v1.2.3/installer.bin")
+        self.response = SimpleNamespace(status_code=200, exception=None)
+        self.stat = mock.Mock(return_value=(
+            {"fsize": self.source.stat().st_size, "hash": "uploaded-hash"}, self.response,
+        ))
+        self.regions = [object()]
+        self.provider = mock.Mock(return_value=self.regions)
+        self.config = SimpleNamespace(
+            set_default=mock.Mock(),
+            get_default=mock.Mock(side_effect={
+                "default_query_region_host": "https://uc.example.test",
+                "default_query_region_backup_hosts": ["backup.example.test"],
+            }.__getitem__),
+        )
+        self.sdk = SimpleNamespace(
+            Auth=mock.Mock(return_value=SimpleNamespace(upload_token=mock.Mock(return_value="private-token"))),
+            BucketManager=mock.Mock(return_value=SimpleNamespace(stat=self.stat)),
+            Region=mock.Mock(), config=self.config,
+            put_file_v2=mock.Mock(return_value=({"hash": "uploaded-hash"}, self.response)),
+        )
+        modules = {
+            "qiniu": self.sdk,
+            "qiniu.http": SimpleNamespace(),
+            "qiniu.http.endpoint": SimpleNamespace(Endpoint=SimpleNamespace(from_host=lambda host: host)),
+            "qiniu.http.regions_provider": SimpleNamespace(get_default_regions_provider=self.provider),
+        }
+        patcher = mock.patch.dict("sys.modules", modules)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        printer = mock.patch("builtins.print")
+        self.print = printer.start()
+        self.addCleanup(printer.stop)
+
+    def test_region_discovery_stays_isolated_for_each_bucket(self):
+        other_regions = [object()]
+        self.provider.side_effect = [self.regions, other_regions]
+        publish([self.item], "primary", "access", "secret")
+        publish([self.item], "legacy", "access", "secret")
+
+        self.assertEqual([call.kwargs["bucket_name"] for call in self.provider.call_args_list],
+                         ["primary", "legacy"])
+        self.assertEqual([call.kwargs["regions"] for call in self.sdk.put_file_v2.call_args_list],
+                         [self.regions, other_regions])
+        self.assertEqual([call.kwargs["regions"] for call in self.sdk.BucketManager.call_args_list],
+                         [self.regions, other_regions])
+        self.assertEqual(self.provider.call_args.kwargs["query_endpoints_provider"],
+                         ["https://uc.example.test", "backup.example.test"])
+        self.assertEqual(self.config.set_default.call_args.kwargs["connection_timeout"], 120)
+        self.assertEqual(self.sdk.Region.call_args.kwargs["scheme"], "https")
+        self.assertEqual(self.sdk.put_file_v2.call_args.kwargs["part_size"], 1024 * 1024)
+        self.assertEqual(self.sdk.BucketManager.call_args.kwargs["preferred_scheme"], "https")
+
+    def test_timeout_reports_exception_types_without_credentials(self):
+        error = ConnectionError("private-token access secret bucket")
+        error.__cause__ = TimeoutError("private-token access secret bucket")
+        self.sdk.put_file_v2.return_value = (None, SimpleNamespace(status_code=-1, exception=error))
+
+        with self.assertRaisesRegex(RuntimeError, "ConnectionError -> TimeoutError") as raised:
+            publish([self.item], "bucket", "access", "secret")
+
+        self.assertNotIn("private-token", str(raised.exception))
+        self.assertNotIn("secret", str(raised.exception))
+        self.assertNotIn("access", str(raised.exception))
+        self.stat.assert_not_called()
+
+    def test_region_discovery_exception_hides_credential_bearing_context(self):
+        self.provider.side_effect = ValueError("private-token access secret bucket")
+
+        with self.assertRaisesRegex(RuntimeError, "region discovery failed.*ValueError") as raised:
+            publish([self.item], "bucket", "access", "secret")
+
+        self.assertNotIn("private-token", str(raised.exception))
+        self.assertNotIn("secret", str(raised.exception))
+        self.assertNotIn("access", str(raised.exception))
+        self.assertTrue(raised.exception.__suppress_context__)
+        self.sdk.put_file_v2.assert_not_called()
+
+    def test_wrong_remote_size_or_hash_stops_before_the_next_object(self):
+        for field, invalid in (("fsize", 0), ("hash", "corrupted-hash")):
+            with self.subTest(field=field):
+                metadata = {"fsize": self.source.stat().st_size, "hash": "uploaded-hash", field: invalid}
+                self.stat.return_value = (metadata, self.response)
+                self.sdk.put_file_v2.reset_mock()
+                with self.assertRaisesRegex(RuntimeError, "verification failed"):
+                    publish([self.item, self.item], "bucket", "access", "secret")
+                self.sdk.put_file_v2.assert_called_once()
+
+    def test_progress_reports_each_sixteen_mib_and_completion(self):
+        mib = 1024 * 1024
+
+        def upload(*args, **kwargs):
+            for uploaded in range(mib, 34 * mib + 1, mib):
+                kwargs["progress_handler"](uploaded, 34 * mib)
+            return {"hash": "uploaded-hash"}, self.response
+
+        self.sdk.put_file_v2.side_effect = upload
+        publish([self.item], "bucket", "access", "secret")
+
+        progress = [call for call in self.print.call_args_list if ": " in call.args[0]]
+        self.assertEqual([call.args[0].split(": ")[-1] for call in progress], [
+            f"{16 * mib}/{34 * mib} bytes", f"{32 * mib}/{34 * mib} bytes",
+            f"{34 * mib}/{34 * mib} bytes",
+        ])
+        self.assertTrue(all(call.kwargs["flush"] for call in self.print.call_args_list))
 
 
 if __name__ == "__main__":

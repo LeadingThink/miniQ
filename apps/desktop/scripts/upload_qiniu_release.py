@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
-import mimetypes
 import json
+import mimetypes
 import os
-from pathlib import Path
 import re
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
 
 from desktop_download_manifest import MANIFEST_KEY, merge_manifest, read_manifest
 
@@ -65,31 +67,83 @@ def required_env(name: str) -> str:
     return value
 
 
-def publish(items: list[UploadItem], bucket_name: str, access_key: str, secret_key: str) -> None:
-    from qiniu import Auth, BucketManager, put_file_v2
+def failure_details(status_code: int, exception: BaseException | None) -> str:
+    error_types = []
+    seen = set()
+    while exception is not None and id(exception) not in seen:
+        seen.add(id(exception))
+        error_types.append(type(exception).__name__)
+        exception = exception.__cause__ or exception.__context__
+    detail = f"status={status_code}"
+    if error_types:
+        detail += f", error={' -> '.join(error_types)}"
+    return detail
 
+
+@contextmanager
+def qiniu_operation(operation: str) -> Iterator[None]:
+    try:
+        yield
+    except Exception as error:  # noqa: BLE001 - SDK errors may contain credentials.
+        detail = failure_details(-1, error)
+        raise RuntimeError(f"Qiniu {operation} failed ({detail})") from None
+
+
+def publish(items: list[UploadItem], bucket_name: str, access_key: str, secret_key: str) -> None:
+    from qiniu import Auth, BucketManager, Region, config, put_file_v2
+    from qiniu.http.endpoint import Endpoint
+    from qiniu.http.regions_provider import get_default_regions_provider
+
+    # Requests uses this timeout while sending the request body as well as reading it.
+    config.set_default(default_zone=Region(scheme="https"), connection_timeout=120)
     auth = Auth(access_key, secret_key)
-    bucket = BucketManager(auth)
+    query_hosts = [config.get_default("default_query_region_host")]
+    query_hosts.extend(config.get_default("default_query_region_backup_hosts"))
+    with qiniu_operation("region discovery"):
+        regions = list(get_default_regions_provider(
+            query_endpoints_provider=[Endpoint.from_host(host) for host in query_hosts],
+            access_key=access_key,
+            bucket_name=bucket_name,
+            preferred_scheme="https",
+        ))
+    # Explicit regions preserve discovery when the default zone only sets the scheme.
+    bucket = BucketManager(auth, regions=regions, preferred_scheme="https")
     for item in items:
+        size = item.source.stat().st_size
+        reported_bytes = 0
+
+        def report_progress(uploaded: int, total: int, object_key: str = item.object_key) -> None:
+            nonlocal reported_bytes
+            if uploaded == total or uploaded - reported_bytes >= 16 * 1024 * 1024:
+                print(f"uploading {object_key}: {uploaded}/{total} bytes", flush=True)
+                reported_bytes = uploaded
+
+        print(f"uploading {item.object_key} ({size} bytes)", flush=True)
         token = auth.upload_token(bucket_name, item.object_key, 3600)
         mime_type = mimetypes.guess_type(item.source.name)[0] or "application/octet-stream"
-        result, response = put_file_v2(
-            token,
-            item.object_key,
-            str(item.source),
-            check_crc=True,
-            mime_type=mime_type,
-        )
-        if response.status_code != 200 or not result:
-            raise RuntimeError(f"Qiniu upload failed: {item.object_key} ({response.status_code})")
-        stat, stat_response = bucket.stat(bucket_name, item.object_key)
-        if (
-            stat_response.status_code != 200
-            or not stat
-            or stat.get("fsize") != item.source.stat().st_size
-        ):
-            raise RuntimeError(f"Qiniu verification failed: {item.object_key}")
-        print(f"published {item.object_key} ({item.source.stat().st_size} bytes)")
+        with qiniu_operation(f"upload {item.object_key}"):
+            result, response = put_file_v2(
+                token,
+                item.object_key,
+                str(item.source),
+                check_crc=True,
+                mime_type=mime_type,
+                regions=regions,
+                part_size=1024 * 1024,
+                progress_handler=report_progress,
+            )
+        if response.status_code != 200 or not result or not result.get("hash"):
+            detail = failure_details(response.status_code, response.exception)
+            raise RuntimeError(f"Qiniu upload failed: {item.object_key} ({detail})")
+        with qiniu_operation(f"verification {item.object_key}"):
+            stat, stat_response = bucket.stat(bucket_name, item.object_key)
+        size_matches = bool(stat and stat.get("fsize") == size)
+        hash_matches = bool(stat and stat.get("hash") == result["hash"])
+        if stat_response.status_code != 200 or not size_matches or not hash_matches:
+            detail = failure_details(stat_response.status_code, stat_response.exception)
+            detail += f", size_match={size_matches}, hash_match={hash_matches}"
+            raise RuntimeError(f"Qiniu verification failed: {item.object_key} ({detail})")
+        print(f"published {item.object_key} ({size} bytes)", flush=True)
 
 
 def refresh_manifests(
