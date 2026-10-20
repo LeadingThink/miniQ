@@ -73,7 +73,7 @@ def inspect_send(request, **kwargs):
 
 
 qn_http_client._wrap_send = inspect_send
-config.set_default(connection_timeout=5, connection_retries=1)
+config.set_default(connection_timeout=120, connection_retries=1)
 auth = Auth(os.environ["QINIU_ACCESS_KEY"], os.environ["QINIU_SECRET_KEY"])
 bucket_name = os.environ["QINIU_BUCKET"]
 run_id = os.environ["GITHUB_RUN_ID"]
@@ -110,9 +110,8 @@ try:
         with fixture.open("wb") as file:
             for _ in range(9):
                 file.write(bytes(1024 * 1024))
-        for scheme in ("https", "http"):
+        for scheme in ("https",):
             config.set_default(default_zone=LegacyRegion(scheme=scheme))
-            config.set_default(connection_timeout=(5, 30) if scheme == "https" else (5, 5))
             key = f"{prefix}/{scheme}.bin"
             keys.append(key)
             started = time.monotonic()
@@ -120,7 +119,7 @@ try:
                 result, response = put_file_v2(
                     auth.upload_token(bucket_name, key, 900), key, str(fixture),
                     check_crc=True, mime_type="application/octet-stream",
-                    regions=regions,
+                    regions=regions, part_size=1024 * 1024,
                 )
                 results[scheme] = response.status_code == 200 and bool(result)
                 output(event="upload-result", scheme=scheme,
