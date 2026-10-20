@@ -14,7 +14,9 @@ jobs:
           cache-on-failure: true
       - name: Verify native Windows process cleanup and startup cursor handling
         shell: bash
-        run: cargo test --release --locked -p miniq-tools --lib process:: --target x86_64-pc-windows-msvc -- --nocapture
+        run: |
+          cargo test --release --locked -p miniq-tools --lib process:: --target x86_64-pc-windows-msvc -- --nocapture
       - name: Verify model stream cancellation
         shell: bash
-        run: cargo test --release --locked -p miniq-models --lib sse:: --target x86_64-pc-windows-msvc -- --nocapture
+        run: |
+          cargo test --release --locked -p miniq-models --lib sse:: --target x86_64-pc-windows-msvc -- --nocapture
