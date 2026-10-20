@@ -6,15 +6,22 @@ use crate::{ChatMessage, ChatRole, CompletionRequest, ProviderError};
 
 /// Only a failed local image field is omitted. Stored history, original request
 /// text, tool results and archived references remain available without changes.
-pub(crate) fn build_with_attachment_recovery(
+pub(crate) async fn build_with_attachment_recovery(
     request: &CompletionRequest,
+    uploader: Option<&dyn crate::ProviderMediaUploader>,
     mut build: impl FnMut(&CompletionRequest) -> Result<Value, ProviderError>,
 ) -> Result<Value, ProviderError> {
     let mut outgoing = crate::request_budget::deduplicate(request);
-    crate::request_budget::trim_images(&mut outgoing)?;
+    if uploader.is_none() {
+        crate::request_budget::trim_images(&mut outgoing)?;
+    }
+    let mut uploads = crate::image_upload::ImageUploads::default();
     loop {
         let error = match build(outgoing.as_ref()) {
-            Ok(body) => {
+            Ok(mut body) => {
+                if let Some(uploader) = uploader {
+                    uploads.replace(&mut body, uploader).await?;
+                }
                 let bytes = crate::request_budget::wire_size(&body)?;
                 let image_bytes = crate::request_budget::image_wire_size(&body);
                 if bytes <= crate::request_budget::MAX_REQUEST_BYTES

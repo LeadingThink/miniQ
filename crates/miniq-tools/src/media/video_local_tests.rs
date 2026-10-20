@@ -14,6 +14,7 @@ impl ProviderMediaUploader for Uploader {
             url: "https://storage.test/reference?signature=fixture".into(),
             bytes: bytes.len(),
             content_type: mime.into(),
+            expires_at: u64::MAX,
         })
     }
 }

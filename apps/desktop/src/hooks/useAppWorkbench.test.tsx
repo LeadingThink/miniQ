@@ -50,11 +50,15 @@ function useHarness(session: string | null, remote = false, toolCalls: ToolCall[
   return { workbench: useAppWorkbench(app), preview };
 }
 
-function toolCall(id: string, live = true): ToolCall {
+function toolCall(
+  id: string,
+  live = true,
+  toolName = "apply_patch",
+): ToolCall {
   return {
     id,
     sessionId: "a",
-    toolName: "apply_patch",
+    toolName,
     input: {},
     status: "running",
     createdAt: "2026-01-01T00:00:00Z",
@@ -141,20 +145,30 @@ it("does not adopt a local browser draft when another host creates the same work
   expect(result.current.workbench.browserSessions["local-session"].tabs).toEqual([draft]);
 });
 
-it("opens the terminal once for a new live code call, but not historical calls", () => {
+it("does not open the terminal when a live code call starts", () => {
   const historical = toolCall("historical", false);
   const live = toolCall("live");
+  const liveShell = toolCall("live-shell", true, "shell_run");
   const { result, rerender } = renderHook(
     ({ calls }) => useHarness("a", false, calls),
     { initialProps: { calls: [historical] } },
   );
   expect(result.current.workbench.active).toBeNull();
 
-  rerender({ calls: [historical, live] });
+  rerender({ calls: [historical, live, liveShell] });
+  expect(result.current.workbench.active).toBeNull();
+
+  act(() => result.current.workbench.select("terminal"));
   expect(result.current.workbench.active).toBe("terminal");
 
   act(() => result.current.workbench.select("overview"));
-  rerender({ calls: [historical, { ...live, status: "succeeded" }] });
+  rerender({
+    calls: [
+      historical,
+      { ...live, status: "succeeded" },
+      { ...liveShell, status: "succeeded" },
+    ],
+  });
   expect(result.current.workbench.active).toBe("overview");
 });
 

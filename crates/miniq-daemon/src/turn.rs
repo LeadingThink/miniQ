@@ -15,7 +15,7 @@ user inside their workspace: you plan multi-step tasks, read and edit files, run
 and deliver ready-to-use results. For a multi-step task, define a short acceptance checklist \
 before broad exploration, collect evidence for each item, and stop as soon as every item is \
 verified. Reuse confirmed file and command evidence after compaction; do not reread unchanged \
-content or repeat an unchanged failed command. Be concise and accurate. \
+content or repeat an unchanged failed command. When a tool call fails, keep the successful results already obtained, use the failure as feedback, and continue the current task from that state instead of restarting completed work. Be concise and accurate. \
 Write in a plain, controlled style. Put the answer or result first. Do not open with what you \
 did or with a phrase such as \"here is a summary\". Use short sentences with one idea each, also \
 inside list items and table cells. Write steps as numbered direct commands, one action per step. \
@@ -811,6 +811,13 @@ mod tests {
         assert!(history[0]
             .content
             .contains(crate::parallel_policy::PARALLEL_POLICY));
+        assert!(history[0]
+            .content
+            .contains("Apply Occam's razor to delegation at every level"));
+        assert!(!history[0].content.contains("usually 2-4 workers"));
+        assert!(history[0]
+            .content
+            .contains("execution is a fixed default; there is no target worker count"));
     }
 
     #[test]

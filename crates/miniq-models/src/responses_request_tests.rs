@@ -132,8 +132,8 @@ fn successful_native_screenshot_preserves_error_text_and_additional_images() {
     assert_eq!(input[2]["content"][2]["detail"], "high");
 }
 
-#[test]
-fn unreadable_screenshots_become_visible_errors_instead_of_poisoning_history() {
+#[tokio::test]
+async fn unreadable_screenshots_become_visible_errors_instead_of_poisoning_history() {
     let directory = tempfile::tempdir().unwrap();
     let mut result = ChatMessage::tool_result("lost", "The click completed.");
     result.images.push(ChatImage {
@@ -157,10 +157,12 @@ fn unreadable_screenshots_become_visible_errors_instead_of_poisoning_history() {
         temperature: None,
         max_output_tokens: None,
     };
-    let input = crate::request_attachments::build_with_attachment_recovery(&request, |request| {
-        build_input(&request.messages).map(Value::Array)
-    })
-    .unwrap();
+    let input =
+        crate::request_attachments::build_with_attachment_recovery(&request, None, |request| {
+            build_input(&request.messages).map(Value::Array)
+        })
+        .await
+        .unwrap();
     let notice: Value =
         serde_json::from_str(input[0]["content"][0]["text"].as_str().unwrap()).unwrap();
     assert_eq!(notice["status"], "unavailable_attachment");

@@ -8,6 +8,8 @@ mod compat_schema;
 mod configured;
 mod error;
 mod image;
+mod image_upload;
+mod media_upload;
 mod openai;
 mod provider;
 mod reasoning;
@@ -24,6 +26,7 @@ mod sse;
 pub use anthropic::AnthropicProvider;
 pub use configured::{infer_protocol, ConfiguredProvider};
 pub use image::{decode_static_image, load_static_image, read_image_bytes, validate_image_path};
+pub use media_upload::{provider_media_uploader, ProviderMediaReference, ProviderMediaUploader};
 pub use openai::OpenAiCompatProvider;
 pub use provider::{
     ApiProtocol, ArchivedImage, ArchivedImageSource, ArchivedToolResult, ChatDelta, ChatImage,

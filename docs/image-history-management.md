@@ -78,9 +78,19 @@ flowchart LR
 
 本次验证通过：agent 70 项、models 95 项、visual 7 项、daemon 图片相关 8 项，另单独执行上述私有记录离线计量。`cargo check --workspace`、桌面 Tauri `cargo check`、`cargo fmt --all -- --check` 和 `git diff --check` 通过。桌面检查使用本次生成的调试 daemon 作为本地 sidecar，仅检查编译，没有安装、启动或打包发布应用。
 
-本次不引入提供商专用 `file_id`、公开图片 URL 或上传一次即永久免传的承诺。OneAPI 背后存在不同协议与渠道，当前仍发送所需图片的 base64；节省来自不再重复携带不需要的历史像素。两张特别大的原图、很大的用户附件批次或比较批次仍可能产生大请求。
+上述 2026-09-20 版本仍发送所需图片的 base64，节省来自不再重复携带不需要的历史像素；当时较大的附件或比较批次仍可能产生大请求。2026-10-20 的七牛云传输改动见下文。
 
 此前定位的 OneAPI 大请求 `model` 头部解析缺陷属于独立网关问题。图片历史优化降低碰到它的概率，但不能替代网关修复，也不能保证所有请求小于某个固定字节阈值。
+
+## 2026-10-20：先上传七牛云，再向模型发送图片链接
+
+默认 OneAPI 通道中的粘贴图片、图片附件和工具视觉结果，在发送模型请求前复用视频参考文件的私有七牛云上传接口。Chat Completions 和 Responses 使用图片 URL；Anthropic 使用 `source.type: url`。短期签名 URL 只存在于本次请求中，不写入会话历史。本地原图、预览和图片档案仍保留。
+
+继续使用现有预览及单图压缩规则：大于 7 MiB 的模型副本会压缩，原文件不变。静态 GIF 无损转换为上传接口支持的 PNG，动画不会静默丢帧。上传失败中止本次模型请求并提示重试，不回退为内嵌 Base64。自定义服务仍使用内嵌图片，其凭据不会发送到默认 OneAPI 上传接口。
+
+请求体预算在图片转为链接后计算，避免因 Base64 总体积而丢掉原本可发送的图片。同一次请求重建复用已完成的上传；后续模型请求在相同凭据范围内复用仍有效的内存缓存链接，临近过期时重新上传，不依赖历史签名 URL 长期有效。图片历史的批次选择、去重和缺失本地文件的恢复规则保持独立。
+
+自动化测试覆盖三种协议、工具图片和电脑截图、上传失败、静态 GIF、完整图片批次、原始历史保留及视频上传回归。测试使用模拟上传器，不代表真实七牛服务与模型渠道已完成线上联调。
 
 ## 代码位置
 
@@ -88,5 +98,7 @@ flowchart LR
 - `crates/miniq-agent/src/image_history_tool.rs`：分页/回读工具、视觉提示、host 审计接口。
 - `crates/miniq-agent/src/context.rs`：压缩前归档与压缩后恢复。
 - `crates/miniq-models/src/image.rs`：预览编码、安全文件访问和静态图片解码。
+- `crates/miniq-models/src/image_upload.rs`：模型图片链接替换和单次请求上传复用。
+- `crates/miniq-models/src/media_upload.rs`：图片和视频共用的七牛私有对象上传通道。
 - `crates/miniq-tools/src/visual.rs`：`view_image` 的默认预览与显式原图语义。
 - `crates/miniq-daemon/src/executor/image_history.rs`：回读审计和界面事件。

@@ -26,24 +26,7 @@ pub struct MediaConfig {
     pub capabilities: Option<Arc<crate::MediaCapabilityRegistry>>,
 }
 
-/// A provider-readable reference returned by the host media uploader.
-/// Signed URLs are kept in memory and are never persisted by the tools layer.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProviderMediaReference {
-    pub url: String,
-    pub content_type: String,
-    pub bytes: usize,
-}
-
-/// Uploads local media to a provider-readable short-lived URL.
-#[async_trait]
-pub trait ProviderMediaUploader: Send + Sync {
-    async fn upload(
-        &self,
-        bytes: Vec<u8>,
-        content_type: &str,
-    ) -> Result<ProviderMediaReference, String>;
-}
+pub use miniq_models::{ProviderMediaReference, ProviderMediaUploader};
 
 #[derive(Debug, Error)]
 pub enum ToolError {
