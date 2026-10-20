@@ -24,6 +24,7 @@ async fn wait_for_released_handles(process: &ManagedProcess) {
 #[tokio::test]
 async fn windows_completed_jobs_close_transports_and_drain_output_without_polling() {
     for tty in [false, true] {
+        eprintln!("starting tty={tty}");
         let ctx = ToolContext::new(std::env::temp_dir());
         let id = ctx
             .processes
@@ -43,7 +44,36 @@ async fn windows_completed_jobs_close_transports_and_drain_output_without_pollin
             .await
             .unwrap();
         let process = ctx.processes.owned(&ctx, &id).await.unwrap();
-        wait_for_released_handles(&process).await;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let runtime = process.runtime.lock().await;
+            let child = match runtime.child {
+                ProcessChild::Pipe(_) => "pipe",
+                ProcessChild::Terminal(_) => "terminal",
+                ProcessChild::Exited => "exited",
+            };
+            let mut stdout = process.stdout.lock().unwrap();
+            let mut stderr = process.stderr.lock().unwrap();
+            eprintln!("tty={tty} child={child} exit={:?} stdout_len={} stdout_closed={} stdout_error={:?} stderr_len={} stderr_closed={} stderr_error={:?}", runtime.exit_code, stdout.len, stdout.closed, stdout.error, stderr.len, stderr.closed, stderr.error);
+            if child == "exited" && stdout.closed && stderr.closed {
+                break;
+            }
+            if Instant::now() >= deadline {
+                use base64::Engine;
+                std::fs::create_dir_all("artifacts/conpty-diagnostics").unwrap();
+                for (name, stream) in [("stdout", &mut stdout), ("stderr", &mut stderr)] {
+                    let len = stream.len as usize;
+                    let page = stream.page(0, len, true).unwrap();
+                    let bytes = base64::engine::general_purpose::STANDARD.decode(page["base64"].as_str().unwrap()).unwrap();
+                    std::fs::write(format!("artifacts/conpty-diagnostics/tty-{tty}-{name}.bin"), bytes).unwrap();
+                }
+                panic!("tty={tty}: managed process did not finish without terminal responses");
+            }
+            drop(stdout);
+            drop(stderr);
+            drop(runtime);
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
         let replay = ctx
             .processes
             .output(
