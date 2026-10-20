@@ -107,17 +107,18 @@ fn collect(
                 let bytes = bytes.as_slice();
                 #[cfg(not(windows))]
                 let bytes = &buffer[..n];
-                let error = output.lock().unwrap().append(bytes).err();
+                #[cfg(windows)]
+                let reply_error = reply
+                    .then(|| reply_to_startup_cursor(&input))
+                    .and_then(Result::err);
+                let append_error = output.lock().unwrap().append(bytes).err();
+                #[cfg(windows)]
+                let error = reply_error.or(append_error);
+                #[cfg(not(windows))]
+                let error = append_error;
                 if let Some(error) = error {
                     output.lock().unwrap().error = Some(error.to_string());
                     break;
-                }
-                #[cfg(windows)]
-                if reply {
-                    if let Err(error) = reply_to_startup_cursor(&input) {
-                        output.lock().unwrap().error = Some(error.to_string());
-                        break;
-                    }
                 }
             }
             // Unix PTYs may signal EOF with EIO after the slave closes.
