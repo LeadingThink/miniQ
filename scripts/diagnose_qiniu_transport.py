@@ -14,6 +14,7 @@ from qiniu.http.default_client import qn_http_client
 from qiniu.http.endpoint import Endpoint
 from qiniu.http.regions_provider import get_default_regions_provider
 from qiniu.region import LegacyRegion
+from qiniu.utils import etag
 
 
 def output(**fields):
@@ -119,13 +120,26 @@ try:
                 result, response = put_file_v2(
                     auth.upload_token(bucket_name, key, 900), key, str(fixture),
                     check_crc=True, mime_type="application/octet-stream",
-                    regions=regions, part_size=1024 * 1024,
+                    regions=regions,
                 )
                 results[scheme] = response.status_code == 200 and bool(result)
                 output(event="upload-result", scheme=scheme,
                        status=response.status_code, success=results[scheme],
                        elapsed=round(time.monotonic() - started, 2),
                        error=safe_error(response.exception))
+                if results[scheme]:
+                    manager = BucketManager(auth, regions=regions, preferred_scheme="https")
+                    metadata, stat_response = manager.stat(bucket_name, key)
+                    verified = (
+                        stat_response.status_code == 200 and metadata
+                        and metadata.get("fsize") == fixture.stat().st_size
+                        and metadata.get("hash") == etag(str(fixture))
+                        and result.get("hash") == metadata.get("hash")
+                    )
+                    results[scheme] = bool(verified)
+                    output(event="verify", scheme=scheme, success=bool(verified),
+                           status=stat_response.status_code, size=fixture.stat().st_size,
+                           part_mib=4, timeout_seconds=120)
             except Exception as exc:
                 results[scheme] = False
                 output(event="upload-exception", scheme=scheme,
