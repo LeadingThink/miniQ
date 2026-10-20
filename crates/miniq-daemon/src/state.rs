@@ -211,6 +211,8 @@ pub struct AppState {
     pub pending_approvals: Arc<Mutex<HashMap<String, oneshot::Sender<ApprovalDecision>>>>,
     /// Per-session allowlist of approved tool patterns ("approve for session").
     pub session_allowlist: Arc<Mutex<HashMap<String, HashSet<String>>>>,
+    /// Pending mobile confirmations and pinned identities for exact file grants.
+    pub(crate) file_access: Arc<Mutex<crate::gateway::files::access::FileAccess>>,
     /// Pending ask_user questions (question id -> answer waker).
     pub pending_questions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
     /// Browser requests waiting for the active miniQ client WebView driver.
@@ -327,6 +329,7 @@ impl AppState {
             skill_jobs: Arc::new(crate::skill_jobs::SkillJobs::load(&data_dir)),
             pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             session_allowlist: Arc::new(Mutex::new(HashMap::new())),
+            file_access: Arc::default(),
             pending_questions: Arc::new(Mutex::new(HashMap::new())),
             pending_browser_requests: Arc::new(Mutex::new(HashMap::new())),
             pending_question_details: Arc::new(Mutex::new(HashMap::new())),
@@ -713,6 +716,11 @@ impl AppState {
             }
             Event::TurnCompleted { session_id, .. } | Event::TurnFailed { session_id, .. } => {
                 self.clear_streaming_text(session_id)
+            }
+            Event::SessionDeleted { session_id }
+            | Event::SessionApprovalChanged { session_id, .. } => {
+                self.file_access.lock().unwrap().clear_session(session_id);
+                self.session_allowlist.lock().unwrap().remove(session_id);
             }
             _ => {}
         }

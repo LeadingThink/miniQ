@@ -1,5 +1,5 @@
 //! Streaming transfer endpoints. The protocol validates size/hash before finish.
-use super::{revision, scope, store_err, validated_session_file, AppState};
+use super::{opened_session_file, revision, scope, store_err, AppState};
 use std::{
     fs::File,
     path::{Path, PathBuf},
@@ -21,13 +21,12 @@ pub(crate) async fn transfer_source(
     expected_revision: &str,
 ) -> Result<(tokio::fs::File, u64), String> {
     let scope = scope(state, session_id).map_err(|e| e.message)?;
-    let store = state.store.clone();
+    let state = state.clone();
     let session_id = session_id.to_owned();
     let path = path.to_owned();
     let expected_revision = expected_revision.to_owned();
     let (file, size) = tokio::task::spawn_blocking(move || {
-        let path = validated_session_file(&store, &scope, &session_id, &path)?;
-        let file = anchored::open_file(&path).map_err(|e| e.to_string())?;
+        let (_, file) = opened_session_file(&state, &scope, &session_id, &path, true)?;
         let metadata = file.metadata().map_err(|e| e.to_string())?;
         if !metadata.is_file() || metadata.len() > MAX_TRANSFER_BYTES {
             return Err("transfer requires a regular file no larger than 200 MiB".into());

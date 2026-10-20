@@ -129,7 +129,13 @@ async fn run_response_stream<D>(
     let mut buffer = Vec::new();
     let mut first_event_sent = false;
     let mut byte_stream = response.bytes_stream();
-    while let Some(chunk) = byte_stream.next().await {
+    loop {
+        let chunk = tokio::select! {
+            biased;
+            _ = tx.closed() => return,
+            chunk = byte_stream.next() => chunk,
+        };
+        let Some(chunk) = chunk else { break };
         match chunk {
             Ok(chunk) => buffer.extend_from_slice(&chunk),
             Err(error) => {
@@ -167,6 +173,95 @@ mod tests {
         }
         fn finish(&mut self) -> Vec<Result<ChatDelta, ProviderError>> {
             vec![]
+        }
+    }
+
+    struct TrackedDecoder(std::sync::Arc<tokio::sync::Notify>);
+
+    impl Drop for TrackedDecoder {
+        fn drop(&mut self) {
+            self.0.notify_one();
+        }
+    }
+
+    impl EventDecoder for TrackedDecoder {
+        fn decode(&mut self, _: &str) -> DecodedEvent {
+            DecodedEvent::continue_with(vec![])
+        }
+        fn finish(&mut self) -> Vec<Result<ChatDelta, ProviderError>> {
+            vec![]
+        }
+    }
+
+    #[tokio::test]
+    async fn dropping_consumer_closes_silent_and_heartbeat_response_streams() {
+        use std::time::Duration;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        for heartbeat in [false, true] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                while !request.windows(4).any(|part| part == b"\r\n\r\n") {
+                    assert_ne!(socket.read_buf(&mut request).await.unwrap(), 0);
+                }
+                socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n").await.unwrap();
+                let mut buffer = [0; 1];
+                loop {
+                    tokio::select! {
+                        result = socket.read(&mut buffer) => {
+                            match result {
+                                Ok(0) => {}
+                                Err(error) if matches!(error.kind(),
+                                    std::io::ErrorKind::ConnectionReset
+                                    | std::io::ErrorKind::ConnectionAborted
+                                    | std::io::ErrorKind::BrokenPipe) => {}
+                                other => panic!("response connection must close: {other:?}"),
+                            }
+                            break;
+                        }
+                        _ = tokio::time::sleep(Duration::from_millis(10)), if heartbeat => {
+                            if socket.write_all(b"E\r\n: keep-alive\n\n\r\n").await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .pool_max_idle_per_host(0)
+                .build()
+                .unwrap();
+            let response = client
+                .get(format!("http://{address}/"))
+                .send()
+                .await
+                .unwrap();
+            let released = std::sync::Arc::new(tokio::sync::Notify::new());
+            let stream = response_stream(response, TrackedDecoder(released.clone()));
+            // Let the worker enter its pending read, including ignored heartbeats.
+            assert!(
+                tokio::time::timeout(Duration::from_millis(40), released.notified())
+                    .await
+                    .is_err(),
+                "reader must remain active while the consumer exists; heartbeat={heartbeat}"
+            );
+            drop(stream);
+            let stopped = tokio::time::timeout(Duration::from_secs(1), released.notified()).await;
+            if stopped.is_err() {
+                server.abort();
+            }
+            assert!(
+                stopped.is_ok(),
+                "consumer drop must stop SSE reader; heartbeat={heartbeat}"
+            );
+            tokio::time::timeout(Duration::from_secs(1), server)
+                .await
+                .expect("upstream connection must be released")
+                .unwrap();
         }
     }
 

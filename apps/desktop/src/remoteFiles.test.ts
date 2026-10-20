@@ -16,6 +16,7 @@ function source(bytes: Uint8Array, kind = "pdf", chunkBytes = 6) {
         maxPreviewBytes: 64 * 1024 * 1024,
       };
     if (method === "file.download.prepare") {
+      if (kind === "text" || kind === "markdown") throw new Error("File storage unavailable");
       vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => new Response(new Uint8Array(bytes))));
       return { transferId: "t", getUrl: "https://s3.qiniucs.com/bucket/remote-files/room/x", expiresAt: Date.now() + 60000, size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"), revision: "v1" };
     }
@@ -176,7 +177,9 @@ describe("remote artifact reads", () => {
    const original = client.call.getMockImplementation()! as (...args: unknown[]) => Promise<unknown>;
    const ranges: string[] = [];
    client.call.mockImplementation(async (...args) => {
-     const result = await original(...args);
+     const result = args[0] === "file.download.prepare"
+       ? { transferId: "t", getUrl: "https://s3.qiniucs.com/bucket/remote-files/room/x", expiresAt: Date.now() + 60000, size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"), revision: "v1" }
+       : await original(...args);
      if (args[0] === "file.download.prepare") vi.stubGlobal("fetch", vi.fn(async (_url, options) => {
        const range = options.headers.Range; ranges.push(range);
        const [, start, end] = /bytes=(\d+)-(\d+)/.exec(range)!;

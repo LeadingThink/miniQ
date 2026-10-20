@@ -1,153 +1,103 @@
 import type { RpcClient } from "./rpc";
 import { throwIfAborted } from "./abortSignal";
 import type { LocalFilePreview, LocalPreviewKind } from "./localFiles";
-import { decodeBase64 } from "./previewBinary";
-import { downloadRemoteFile, prepareRemotePreview, readRemoteRange, SMALL_RPC_FILE_BYTES } from "./remoteTransfer";
+import { downloadRemoteFile, prepareRemotePreview, readRemoteRange, SMALL_RPC_FILE_BYTES, type RemotePreviewSource } from "./remoteTransfer";
+import { canFallbackRemoteFile } from "./remoteFileErrors";
+import { CONNECTION_FILE_LIMIT, readConnectionFile, type ConnectionFileDescription } from "./remoteConnectionFile";
 
 export interface FileReadOptions {
   client?: Pick<RpcClient, "call" | "mode">;
   sessionId?: string | null;
   signal?: AbortSignal;
   onProgress?: (received: number, total: number) => void;
+  onTransport?: (transport: "storage" | "connection") => void;
   /** Reserve aggregate memory before downloading a resource in a bundle. */
   reserveBytes?: (size: number) => void;
   download?: boolean;
 }
-
-interface FileDescription {
-  path: string;
+interface FileDescription extends ConnectionFileDescription {
   kind: LocalPreviewKind;
-  mimeType: string;
-  size: number;
-  revision: string;
-  chunkBytes: number;
   maxPreviewBytes: number;
 }
-interface FileChunk {
-  offset: number;
-  nextOffset: number;
-  totalBytes: number;
-  revision: string;
-  done: boolean;
-  dataBase64: string;
-}
-
-// Bounded independently of the server so a malformed response cannot exhaust
-// mobile memory. No file content is requested before the user opens a file.
 const MAX_FILE_BYTES = 200 * 1024 * 1024;
 
-export async function readRemoteFile(
-  path: string,
-  options: FileReadOptions,
-): Promise<LocalFilePreview> {
+export async function readRemoteFile(path: string, options: FileReadOptions): Promise<LocalFilePreview> {
   const { client, sessionId, signal, onProgress } = options;
   if (!client || !sessionId) throw new Error("请先连接桌面并打开一个会话");
   throwIfAborted(signal);
-  const description = await client.call<FileDescription>(
-    "file.describe",
-    { sessionId, path },
-    { signal },
-  );
+  const description = await client.call<FileDescription>("file.describe", { sessionId, path }, { signal });
   const { size, revision, kind } = description;
   throwIfAborted(signal);
-  if (
-    !Number.isSafeInteger(size) ||
-    size < 0 ||
-    typeof revision !== "string" ||
-    !Number.isSafeInteger(description.chunkBytes) ||
-    description.chunkBytes < 1 ||
-    description.chunkBytes > 3 * 1024 * 1024
-  ) {
+  if (!Number.isSafeInteger(size) || size < 0 || typeof revision !== "string" ||
+      !Number.isSafeInteger(description.chunkBytes) || description.chunkBytes < 1 || description.chunkBytes > 3 * 1024 * 1024) {
     throw new Error("远程文件信息无效");
   }
-  const file: LocalFilePreview = {
-    ...description,
-    content: null,
-    dataBase64: null,
-    blob: null,
-  };
+  const file: LocalFilePreview = { ...description, content: null, dataBase64: null, blob: null };
   if (kind === "unsupported" && !options.download) return file;
-  if (size > MAX_FILE_BYTES)
-    throw new Error(
-      "当前手机单文件预览与下载上限为 200 MB，请让 AI 生成较小的预览版或拆分文件",
-    );
+  if (size > MAX_FILE_BYTES) throw new Error("当前手机单文件预览与下载上限为 200 MB，请让 AI 生成较小的预览版或拆分文件");
   options.reserveBytes?.(size);
   const text = (kind === "text" || kind === "markdown") && !options.download;
-  if (!options.download && !options.reserveBytes && ["pdf", "image", "audio", "video"].includes(kind)) {
-    file.remoteSource = await prepareRemotePreview(client, sessionId, description.path, revision, size, signal);
-    return file;
-  }
-  if (text && size > SMALL_RPC_FILE_BYTES && !options.reserveBytes) {
-    let source = await prepareRemotePreview(client, sessionId, description.path, revision, size, signal);
-    const decoder = new TextDecoder("utf-8", { fatal: true });
-    let offset = 0;
-    let busy = false;
-    const next = async (): Promise<LocalFilePreview> => {
-      if (busy) throw new Error("正在读取下一段");
-      busy = true;
-      try {
-        const result = await readRemoteRange(source, offset, SMALL_RPC_FILE_BYTES, signal);
-        source = result.source;
-        offset += result.bytes.length;
-        // Carry incomplete UTF-8 characters across page boundaries without loss.
-        file.content = decoder.decode(result.bytes, { stream: offset < size });
-        file.textPage = { end: offset, total: size, next: offset < size ? next : undefined };
-        return { ...file };
-      } finally { busy = false; }
-    };
-    return next();
-  }
-  if (!text || size > SMALL_RPC_FILE_BYTES) {
+  const transport = (value: "storage" | "connection") => { file.transport = value; options.onTransport?.(value); };
+  const connection = async (cause: unknown): Promise<Blob> => {
+    throwIfAborted(signal);
+    if (!canFallbackRemoteFile(cause) || !text || size > CONNECTION_FILE_LIMIT) throw cause;
+    const blob = await readConnectionFile(description, { ...options, onTransport: transport });
+    return blob;
+  };
+  const finish = async (blob: Blob): Promise<LocalFilePreview> => {
+    if (text) file.content = new TextDecoder("utf-8", { fatal: true }).decode(await blob.arrayBuffer());
+    else file.blob = blob;
+    file.remoteSource = undefined;
+    file.textPage = undefined;
+    throwIfAborted(signal);
+    return { ...file };
+  };
+  const preview = async (): Promise<RemotePreviewSource> => {
+    transport("storage");
+    const source = await prepareRemotePreview(client, sessionId, description.path, revision, size, signal);
+    return source;
+  };
+  try {
+    if (!options.download && !options.reserveBytes && ["pdf", "image", "audio", "video"].includes(kind)) {
+      file.remoteSource = await preview();
+      return file;
+    }
+    if (text && size > SMALL_RPC_FILE_BYTES && !options.reserveBytes) {
+      let source = await preview();
+      const decoder = new TextDecoder("utf-8", { fatal: true });
+      let offset = 0;
+      let busy = false;
+      const next = async (): Promise<LocalFilePreview> => {
+        if (busy) throw new Error("正在读取下一段");
+        busy = true;
+        try {
+          throwIfAborted(signal);
+          const result = await readRemoteRange(source, offset, SMALL_RPC_FILE_BYTES, signal);
+          source = result.source;
+          const bytes = result.bytes;
+          throwIfAborted(signal);
+          offset += bytes.length;
+          file.content = decoder.decode(bytes, { stream: offset < size });
+          file.textPage = { end: offset, total: size, next: offset < size ? next : undefined };
+          return { ...file };
+        } finally { busy = false; }
+      };
+      // Storage failures propagate: large text is outside file.read's contract.
+      return next();
+    }
+    transport("storage");
     const prepared = await downloadRemoteFile(client, sessionId, description.path, revision, signal, onProgress);
     if (prepared.size !== size) throw new Error("文件大小已变化，请重新加载");
-    if (text) file.content = await prepared.blob.text();
-    else file.blob = prepared.blob.slice(0, prepared.blob.size, description.mimeType);
-    return file;
+    return finish(prepared.blob.slice(0, size, description.mimeType));
+  } catch (cause) {
+    return finish(await connection(cause));
   }
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  const parts: string[] = [];
-  let offset = 0;
-  onProgress?.(0, size);
-  while (offset < size) {
-    throwIfAborted(signal);
-    const chunk = await client.call<FileChunk>(
-      "file.read",
-      { sessionId, path: description.path, revision, offset },
-      { signal },
-    );
-    throwIfAborted(signal);
-    const bytes = decodeBase64(chunk.dataBase64);
-    if (
-      chunk.revision !== revision ||
-      chunk.totalBytes !== size ||
-      chunk.offset !== offset ||
-      chunk.nextOffset !== offset + bytes.byteLength ||
-      bytes.byteLength < 1 ||
-      bytes.byteLength > description.chunkBytes ||
-      chunk.nextOffset > size ||
-      chunk.done !== (chunk.nextOffset === size)
-    )
-      throw new Error("文件传输不完整，请重新加载");
-    parts.push(decoder.decode(bytes, { stream: true }));
-    offset = chunk.nextOffset;
-    onProgress?.(offset, size);
-  }
-  throwIfAborted(signal);
-  parts.push(decoder.decode());
-  file.content = parts.join("");
-  return file;
 }
 
 export interface RemoteDirectory {
   path: string;
   parent: string | null;
   roots: string[];
-  entries: {
-    name: string;
-    path: string;
-    directory: boolean;
-    size: number;
-    unavailable?: boolean;
-  }[];
+  entries: { name: string; path: string; directory: boolean; size: number; unavailable?: boolean }[];
   nextCursor: string | null;
 }

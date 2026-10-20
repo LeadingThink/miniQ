@@ -56,6 +56,8 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "schedule.list"
         | "schedule.runs" => ReadOnly,
         "session.approval.update"
+        | "file.access.request"
+        | "file.access.resolve"
         | "review.cancel"
         | "approval.resolve"
         | "schedule.create"
@@ -200,6 +202,7 @@ pub fn audited(method: &str) -> bool {
     matches!(
         method,
         "session.approval.update"
+            | "file.access.resolve"
             | "session.delete"
             | "session.shareCreate"
             | "session.shareRevoke"
@@ -261,6 +264,9 @@ fn policy(method: &str, params: Option<&Value>, depth: usize) -> Result<(), RpcE
         // D16: remote may raise or lower the per-session mode; the handler
         // validates `mode`, audits and notifies the host.
         "session.approval.update" => Ok(()),
+        // The handlers require authenticated transport and a peer/session-bound
+        // confirmation. This never grants a tool or a workspace directory.
+        "file.access.request" | "file.access.resolve" => Ok(()),
         "approval.resolve" => {
             let decision = params.and_then(|p| p["decision"].as_str()).unwrap_or("");
             if matches!(decision, "always_allow_tool" | "alwaysAllowTool") {
@@ -289,6 +295,13 @@ fn policy(method: &str, params: Option<&Value>, depth: usize) -> Result<(), RpcE
                 return Err(forbidden(method, "nested_host_call", "不允许嵌套转发"));
             }
             let inner = params.and_then(|p| p["method"].as_str()).unwrap_or("");
+            if inner.starts_with("file.access.") {
+                return Err(forbidden(
+                    inner,
+                    "direct_remote_only",
+                    "请直接连接文件所在桌面确认授权",
+                ));
+            }
             if inner.is_empty() || inner.starts_with("host.") {
                 return Err(forbidden(
                     inner,
@@ -446,5 +459,18 @@ mod tests {
         assert!(is_remote_origin(Some("remote:phone")));
         assert!(!is_remote_origin(Some("remotely")));
         assert!(!is_remote_origin(None));
+    }
+
+    #[test]
+    fn file_confirmation_requires_direct_authenticated_transport_in_its_handler() {
+        for method in ["file.access.request", "file.access.resolve"] {
+            assert_eq!(level(method), Some(RemoteLevel::Policy));
+            assert!(check(method, None).is_ok());
+            let forwarded = json!({"hostId":"h", "method":method, "params":{"sessionId":"s"}});
+            assert_eq!(
+                reason(check("host.call", Some(&forwarded))),
+                "direct_remote_only"
+            );
+        }
     }
 }

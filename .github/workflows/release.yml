@@ -165,6 +165,7 @@ jobs:
         run: cargo build --release --locked -p miniq-daemon -p miniq-cli --bin miniq-daemon --bin miniq --target ${{ matrix.target }}
       - name: Test daemon and check workspace on Windows
         if: runner.os == 'Windows'
+        shell: bash
         run: |
           cargo test --release --locked -p miniq-daemon --target ${{ matrix.target }}
           cargo check --release --locked --workspace --target ${{ matrix.target }}
@@ -182,6 +183,21 @@ jobs:
       - name: Test terminal on native platforms
         if: matrix.target != 'x86_64-apple-darwin'
         run: cargo test --locked -p miniq-cli -p miniq-local --target ${{ matrix.target }}
+      - name: Test process resource cleanup and model stream cancellation
+        if: matrix.target != 'x86_64-apple-darwin'
+        shell: bash
+        run: |
+          cargo test --release --locked -p miniq-tools --lib process:: --target ${{ matrix.target }}
+          cargo test --release --locked -p miniq-models --lib sse:: --target ${{ matrix.target }}
+      - name: Test native iOS upload storage and HTTP outcomes
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: |
+          xcrun swiftc -D MINIQ_UPLOAD_CHECKS \
+            apps/desktop/ios/App/App/MiniqUploadCache.swift \
+            apps/desktop/ios/App/App/MiniqFileUpload.swift \
+            apps/desktop/ios/App/App/MiniqUploadChecks.swift \
+            -o "$RUNNER_TEMP/miniq-upload-checks"
+          "$RUNNER_TEMP/miniq-upload-checks"
       - name: Package terminal client and daemon
         if: runner.os != 'Linux'
         shell: bash
@@ -387,6 +403,14 @@ jobs:
           npm run test:mobile
           npm run build
           npx cap sync android
+      - name: Test native Android upload storage and HTTP outcomes
+        run: |
+          mkdir -p "$RUNNER_TEMP/miniq-upload-checks"
+          javac -d "$RUNNER_TEMP/miniq-upload-checks" \
+            android/app/src/main/java/com/leadingthink/miniq/MiniqUploadFiles.java \
+            android/app/src/test/java/com/leadingthink/miniq/MiniqUploadFilesTest.java
+          java -Xmx32m -cp "$RUNNER_TEMP/miniq-upload-checks" \
+            com.leadingthink.miniq.MiniqUploadFilesTest "$RUNNER_TEMP/miniq-upload-fixtures"
       - name: Prepare dedicated release signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

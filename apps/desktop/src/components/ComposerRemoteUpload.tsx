@@ -2,6 +2,8 @@ import { Check, Clock, FileText, ImagePlus, Loader2, Minus, Upload, X } from "lu
 import { useEffect, useRef, useState } from "react";
 import type { RpcClient } from "../rpc";
 import { uploadRemoteFile, type RemoteUploadScope } from "../remoteTransfer";
+import { pickUploadSources, releaseUploadSources, stageBrowserUploadSources, usesNativeUploadPicker, type RemoteUploadSource } from "../remoteUploadSource";
+import { throwIfAborted } from "../abortSignal";
 import { errorMessage } from "../errorMessage";
 import { formatFileSize } from "../localFiles";
 import { isRemoteAbsolutePath } from "./RemotePathDialog";
@@ -55,22 +57,30 @@ export function ComposerRemoteUpload(props: {
   const mark = (id: number, state: ItemState) => {
     if (mounted.current) setItems((current) => current.map((item) => (item.id === id ? { ...item, state } : item)));
   };
-  const select = async (selected: File[]) => {
-    if (!selected.length || request.current) return;
-    if (selected.length + props.count > MAX_ATTACHMENTS) {
+  const select = async (selection: File[] | "files" | "photos") => {
+    if (request.current || (Array.isArray(selection) && !selection.length)) return;
+    if (Array.isArray(selection) && selection.length + props.count > MAX_ATTACHMENTS) {
       setError("每条消息最多附加 10 个文件，请减少选择后重试");
       return;
     }
     const controller = new AbortController();
     request.current = controller;
-    const queue = selected.map((file): QueueItem => ({ id: ++sequence.current, name: file.name, size: file.size, state: "waiting" }));
+    const makeQueue = (selected: readonly { name: string; size: number }[]) => selected.map((file): QueueItem => ({ id: ++sequence.current, name: file.name, size: file.size, state: "waiting" }));
+    let queue = makeQueue(Array.isArray(selection) ? selection : []);
     setItems(queue);
     setPending(true);
     setError("");
-    setStatus("");
+    setStatus("正在准备所选原件…");
     let active = 0;
+    let selected: RemoteUploadSource[] = [];
     try {
       await props.run(async () => {
+        selected = Array.isArray(selection)
+          ? await stageBrowserUploadSources(selection, controller.signal)
+          : await pickUploadSources(selection, MAX_ATTACHMENTS - props.count, controller.signal);
+        throwIfAborted(controller.signal);
+        if (!Array.isArray(selection)) queue = makeQueue(selected);
+        if (mounted.current) { setItems(queue); setStatus(""); }
         for (const [index, file] of selected.entries()) {
           if (controller.signal.aborted) break;
           active = queue[index].id;
@@ -89,7 +99,7 @@ export function ComposerRemoteUpload(props: {
         }
       });
       if (mounted.current) {
-        setStatus(controller.signal.aborted ? "已取消后续上传；已收件文件已附加" : "已收件并附加，可继续编写消息");
+        setStatus(!selected.length ? "" : controller.signal.aborted ? "已取消后续上传；已收件文件已附加" : "已收件并附加，可继续编写消息");
         setItems((current) => current.map((item) => (item.state === "waiting" ? { ...item, state: "skipped" } : item)));
       }
     } catch (cause) {
@@ -100,14 +110,19 @@ export function ComposerRemoteUpload(props: {
         else setError(errorMessage(cause));
       }
     } finally {
+      await releaseUploadSources(selected);
       request.current = null;
       if (mounted.current) setPending(false);
     }
   };
   const change = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(event.currentTarget.files ?? []);
-    event.currentTarget.value = "";
-    void select(selected);
+    const input = event.currentTarget;
+    // Keep the browser's selection alive until its bytes have been snapshotted.
+    void select(Array.from(input.files ?? [])).finally(() => { input.value = ""; });
+  };
+  const choose = (kind: "files" | "photos") => {
+    if (usesNativeUploadPicker()) void select(kind);
+    else (kind === "files" ? files : photos).current?.click();
   };
   const full = props.count >= MAX_ATTACHMENTS;
   const anyDone = items.some((item) => item.state === "done");
@@ -126,10 +141,10 @@ export function ComposerRemoteUpload(props: {
       <input ref={files} type="file" multiple hidden aria-label="选择本机文件" disabled={pending} onChange={change} />
       <input ref={photos} type="file" multiple hidden aria-label="选择照片原件" accept="image/*,.heic,.heif" disabled={pending} onChange={change} />
       <div className="remote-upload-actions">
-        <button type="button" className="remote-upload-tile" aria-label="上传照片原件" disabled={pending || full} onClick={() => photos.current?.click()}>
+        <button type="button" className="remote-upload-tile" aria-label="上传照片原件" disabled={pending || full} onClick={() => choose("photos")}>
           <ImagePlus size={22} aria-hidden="true" /><strong>照片</strong><small>从相册选择</small>
         </button>
-        <button type="button" className="remote-upload-tile" aria-label="上传本机文件" disabled={pending || full} onClick={() => files.current?.click()}>
+        <button type="button" className="remote-upload-tile" aria-label="上传本机文件" disabled={pending || full} onClick={() => choose("files")}>
           <Upload size={22} aria-hidden="true" /><strong>文件</strong><small>任意类型，保留原件</small>
         </button>
       </div>

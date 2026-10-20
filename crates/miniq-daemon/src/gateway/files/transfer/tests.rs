@@ -28,7 +28,8 @@ async fn destination_is_staged_unique_and_abandoned_bytes_are_removed() {
     let staging = first.path.parent().unwrap().join(".partial");
     assert!(super::super::describe(
         &state,
-        Some(serde_json::json!({"sessionId":session,"path":staging}))
+        Some(serde_json::json!({"sessionId":session,"path":staging})),
+        false,
     )
     .await
     .is_err());

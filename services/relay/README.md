@@ -94,6 +94,12 @@ The current authenticated desktop sends
 `{"type":"file_ticket","requestId":"file-1","bytes":1024,"sessionId":"session-1"}`.
 The reply is `{"type":"file_ticket_result","requestId":"file-1","ticket":{"putUrl":"...","getUrl":"...","expiresAt":0}}`
 or the same response with `error: "File transfer unavailable"` instead of `ticket`.
+Failures also carry a fixed `code`: `file_ticket_forbidden`,
+`file_ticket_invalid`, `file_storage_unavailable`, `file_budget_exceeded`, or
+`file_storage_failed`. A budget failure includes `retryAfterMs: 60000`.
+An initial request omits `objectId`; existing installed clients sending
+`objectId: null` receive the same behavior. Renewals require an existing object ID
+within the authenticated room, desktop and session namespace.
 `requestId` must contain 1–80 characters; invalid IDs receive no response.
 `sessionId` must be nonblank, at most 256 characters, and contain no ASCII control
 characters. `bytes` must be an integer from zero through 209715200 (200 MiB).

@@ -17,6 +17,18 @@
 
 签名地址过期时重新请求准备操作。不能向 daemon 传入通用 HTTP URL，也不能自行构造其他对象的访问票据。签名地址及 OSS 凭据不得记录到日志。
 
+## 会话外单个文件确认
+
+手机预览项目范围外、尚未作为会话附件保存的文件时，可通过当前已认证的加密连接请求一次明确确认：
+
+- `file.access.request {sessionId,path}` 返回 `{requestId,path,expiresInSeconds:300}`。界面必须展示返回的规范化完整路径，再让用户确认或拒绝。
+- `file.access.resolve {sessionId,requestId,allow}` 仅接受原手机、原会话和未过期的请求。确认期间文件内容、身份或符号链接目标变化，需要重新请求。
+- 允许后，仅当前会话的远程 `file.describe`、`file.read` 和 `file.download.prepare` 可读取该文件；不授权父目录、相邻文件、Agent 工具、本地或 SSH 转发的 RPC。不能伪造 `origin` 获得此能力。
+- 拒绝目录、路径跳转、网络共享、备用数据流、硬链接和敏感凭据/数据库/系统路径。此接口不会扩展项目根目录、写入永久权限或持久化附件。
+- 每个 daemon 最多保留 8 个待确认请求和 32 个文件授权，超额明确失败。待确认请求在连接存续时由现有清理周期自动过期；授权持续至会话权限变更、会话删除或 daemon 退出。权限变更及会话删除会立即释放固定文件身份所占的句柄。同一文件可重新确认，不增加授权数量。
+
+文件票据失败会提供稳定的 `error.data.reason`：存储未启用为 `file_storage_unavailable`，签名失败为 `file_storage_failed`，配额耗尽为 `file_budget_exceeded`（`retryAfterMs:60000`），连接中断或超时为 `file_connection_unavailable`，权限拒绝为 `file_ticket_forbidden`。这些运维失败不会再全部显示为用户参数错误。
+
 ## 原生保存
 
 `MiniqFiles` 是应用内 Capacitor 插件。JavaScript 仅传入签名下载票据、大小、SHA-256 和显示文件名；不传文件内容或 Base64。

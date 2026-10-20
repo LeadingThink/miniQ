@@ -7,6 +7,11 @@ import { readAttachments, storeAttachments } from "../composerDraft";
 import type { RpcClient } from "../rpc";
 vi.mock("../runtime", () => ({ isTauriRuntime: () => false }));
 vi.mock("../remoteTransfer", () => ({ uploadRemoteFile: vi.fn() }));
+vi.mock("../remoteUploadSource", () => ({
+  usesNativeUploadPicker: () => false,
+  stageBrowserUploadSources: vi.fn(async (files) => files),
+  releaseUploadSources: vi.fn(async () => {}),
+}));
 vi.mock("./VoiceInput", () => ({ VoiceInput: () => null }));
 beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function () { this.open = true; };
@@ -20,9 +25,9 @@ function open() {
   fireEvent.click(screen.getByRole("button", { name: "更多输入方式" }));
   fireEvent.click(screen.getByRole("button", { name: "附加远程文件" }));
 }
-function choose(name = "选择本机文件", count = 1) {
+async function choose(name = "选择本机文件", count = 1) {
   const files = Array.from({ length: count }, (_, index) => new File(["x"], `${index}.heic`, { type: "image/heic" }));
-  fireEvent.change(screen.getByLabelText(name), { target: { files } });
+  await act(async () => { fireEvent.change(screen.getByLabelText(name), { target: { files } }); });
   return files;
 }
 it("offers original photos and files, waits for actual receipt, preserves text and never sends", async () => {
@@ -32,7 +37,7 @@ it("offers original photos and files, waits for actual receipt, preserves text a
   fireEvent.change(screen.getByRole("textbox", { name: "消息" }), { target: { value: "我的草稿" } });
   open();
   expect(screen.getByRole("button", { name: "上传本机文件" })).toBeTruthy();
-  const files = choose("选择照片原件");
+  const files = await choose("选择照片原件");
   expect(vi.mocked(uploadRemoteFile).mock.calls[0].slice(0, 3)).toEqual([client, { sessionId: "session-A" }, files[0]]);
   expect(readAttachments("upload-A")).toEqual([]);
   act(() => vi.mocked(uploadRemoteFile).mock.calls[0][4]?.(1, 2));
@@ -47,7 +52,7 @@ it.each(["session", "client", "unmount"])("keeps late committed receipt in origi
   let finish!: (result: ReturnType<typeof receipt>) => void;
   vi.mocked(uploadRemoteFile).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   const view = render(<ComposerCard {...base} />);
-  open(); choose();
+  open(); await choose();
   const signal = vi.mocked(uploadRemoteFile).mock.calls[0][3]!;
   if (change === "unmount") view.unmount();
   else view.rerender(<ComposerCard {...base} draftKey="upload-B" sessionId={change === "session" ? "session-B" : base.sessionId} client={change === "client" ? { ...client } as RpcClient : client} />);
@@ -63,16 +68,16 @@ it("cancels current transfer and does not upload remaining selection", async () 
     signal?.addEventListener("abort", () => reject(new DOMException("cancelled", "AbortError")));
   }));
   render(<ComposerCard {...base} />);
-  open(); choose("选择本机文件", 2);
+  open(); await choose("选择本机文件", 2);
   fireEvent.click(screen.getByRole("button", { name: "取消上传" }));
   await screen.findByText("已取消上传");
   expect(uploadRemoteFile).toHaveBeenCalledTimes(1);
   expect(readAttachments("upload-A")).toEqual([]);
 });
-it("rejects above ten including existing attachments without uploading a subset", () => {
+it("rejects above ten including existing attachments without uploading a subset", async () => {
   storeAttachments("upload-A", Array.from({ length: 9 }, (_, i) => `/existing/${i}.txt`));
   render(<ComposerCard {...base} />);
-  open(); choose("选择本机文件", 2);
+  open(); await choose("选择本机文件", 2);
   expect(screen.getByRole("alert").textContent).toContain("最多附加 10");
   expect(uploadRemoteFile).not.toHaveBeenCalled();
   expect(readAttachments("upload-A")).toHaveLength(9);
@@ -90,7 +95,7 @@ it("attaches existing desktop paths without an upload or send", () => {
 it("shows failure without attaching a guessed path", async () => {
   vi.mocked(uploadRemoteFile).mockRejectedValueOnce(new Error("桌面离线"));
   render(<ComposerCard {...base} />);
-  open(); choose();
+  open(); await choose();
   await screen.findByText("桌面离线");
   expect(readAttachments("upload-A")).toEqual([]);
   expect(base.onSend).not.toHaveBeenCalled();
@@ -98,7 +103,7 @@ it("shows failure without attaching a guessed path", async () => {
 it("lists every selected file with its own state and marks untouched files as not uploaded after a failure", async () => {
   vi.mocked(uploadRemoteFile).mockRejectedValueOnce(new Error("桌面离线"));
   render(<ComposerCard {...base} />);
-  open(); choose("选择本机文件", 3);
+  open(); await choose("选择本机文件", 3);
   await screen.findByText("桌面离线");
   const rows = screen.getByRole("list", { name: "上传队列" }).querySelectorAll("li");
   expect([...rows].map((row) => row.getAttribute("data-state"))).toEqual(["failed", "skipped", "skipped"]);
@@ -113,7 +118,7 @@ it("uploads by workspace before a session exists and attaches the receipt to the
   render(<ComposerCard {...projectBase} />);
   open();
   expect(screen.getByRole("button", { name: "上传照片原件" })).toBeTruthy();
-  const files = choose("选择照片原件");
+  const files = await choose("选择照片原件");
   expect(vi.mocked(uploadRemoteFile).mock.calls[0].slice(0, 3)).toEqual([client, { workspaceId: "project-A" }, files[0]]);
   await waitFor(() => expect(readAttachments("hero-A")).toEqual(["/project/inbox/u/photo.heic"]));
   expect(base.onSend).not.toHaveBeenCalled();
@@ -122,7 +127,7 @@ it.each(["workspace", "client", "unmount"])("keeps a late workspace receipt in t
   let finish!: (result: ReturnType<typeof receipt>) => void;
   vi.mocked(uploadRemoteFile).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   const view = render(<ComposerCard {...projectBase} />);
-  open(); choose();
+  open(); await choose();
   const signal = vi.mocked(uploadRemoteFile).mock.calls[0][3]!;
   if (change === "unmount") view.unmount();
   else view.rerender(<ComposerCard {...projectBase} draftKey="hero-B" workspaceId={change === "workspace" ? "project-B" : "project-A"} client={change === "client" ? { ...client } as RpcClient : client} />);
@@ -132,10 +137,10 @@ it.each(["workspace", "client", "unmount"])("keeps a late workspace receipt in t
   expect(readAttachments("hero-B")).toEqual([]);
   expect(base.onSend).not.toHaveBeenCalled();
 });
-it("enforces the ten attachment limit for the workspace scope", () => {
+it("enforces the ten attachment limit for the workspace scope", async () => {
   storeAttachments("hero-A", Array.from({ length: 9 }, (_, i) => `/existing/${i}.txt`));
   render(<ComposerCard {...projectBase} />);
-  open(); choose("选择本机文件", 2);
+  open(); await choose("选择本机文件", 2);
   expect(screen.getByRole("alert").textContent).toContain("最多附加 10");
   expect(uploadRemoteFile).not.toHaveBeenCalled();
 });

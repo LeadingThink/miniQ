@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		6D1A00012F00000000000007 /* MiniqUploadCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1A00012F00000000000008 /* MiniqUploadCache.swift */; };
+		6D1A00012F00000000000009 /* MiniqUploadPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1A00012F0000000000000A /* MiniqUploadPicker.swift */; };
+		6D1A00012F0000000000000B /* MiniqFileUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1A00012F0000000000000C /* MiniqFileUpload.swift */; };
 		6D1A00012F00000000000005 /* MiniqFilesPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D1A00012F00000000000006 /* MiniqFilesPlugin.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
@@ -52,6 +55,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		6D1A00012F00000000000008 /* MiniqUploadCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniqUploadCache.swift; sourceTree = "<group>"; };
+		6D1A00012F0000000000000A /* MiniqUploadPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniqUploadPicker.swift; sourceTree = "<group>"; };
+		6D1A00012F0000000000000C /* MiniqFileUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniqFileUpload.swift; sourceTree = "<group>"; };
 		6D1A00012F00000000000006 /* MiniqFilesPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniqFilesPlugin.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
@@ -128,6 +134,9 @@
 				6D1A00012F00000000000002 /* MiniqIapPlugin.swift */,
 				6D1A00012F00000000000004 /* MiniqSpeechPlugin.swift */,
 				6D1A00012F00000000000006 /* MiniqFilesPlugin.swift */,
+				6D1A00012F00000000000008 /* MiniqUploadCache.swift */,
+				6D1A00012F0000000000000A /* MiniqUploadPicker.swift */,
+				6D1A00012F0000000000000C /* MiniqFileUpload.swift */,
 				BAD28B8E564FC66C69BDB59E /* MainViewController.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
@@ -268,6 +277,9 @@
 				6D1A00012F00000000000001 /* MiniqIapPlugin.swift in Sources */,
 				6D1A00012F00000000000003 /* MiniqSpeechPlugin.swift in Sources */,
 				6D1A00012F00000000000005 /* MiniqFilesPlugin.swift in Sources */,
+				6D1A00012F00000000000007 /* MiniqUploadCache.swift in Sources */,
+				6D1A00012F00000000000009 /* MiniqUploadPicker.swift in Sources */,
+				6D1A00012F0000000000000B /* MiniqFileUpload.swift in Sources */,
 				65E31E648943DC80BAD28B8E /* MainViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

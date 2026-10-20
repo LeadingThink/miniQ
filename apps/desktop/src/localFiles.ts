@@ -1,6 +1,8 @@
 import type { RemotePreviewSource } from "./remoteTransfer";
 import { isTauriRuntime } from "./runtime";
 import { readRemoteFile, type FileReadOptions } from "./remoteFiles";
+import { errorMessage } from "./errorMessage";
+import { throwIfAborted } from "./abortSignal";
 
 const NAMED_FILES = /^(?:Dockerfile|Makefile|README|LICENSE|CHANGELOG)(?:\.[A-Za-z0-9]+)?$/i;
 const URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
@@ -65,6 +67,7 @@ export type LocalPreviewKind =
   | "unsupported";
 
 export interface LocalFilePreview {
+  transport?: "storage" | "connection";
   path: string;
   kind: LocalPreviewKind;
   mimeType: string;
@@ -224,6 +227,44 @@ export async function readLocalFilePreview(
   if (!isTauriRuntime() || options.client?.mode === "remote") return readRemoteFile(path, options);
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<LocalFilePreview>("read_local_file_preview", { path, workspacePath, workspacePaths, authorizedFiles });
+}
+
+/** Only a session-file refusal is grantable; storage/network 403s are not. */
+export function canRequestFileAccess(cause: unknown): boolean {
+  return errorMessage(cause).startsWith("拒绝打开当前会话未授权的文件:");
+}
+
+export interface RemoteFileAccessRequest {
+  requestId: string;
+  path: string;
+}
+
+function remoteFileAccess(options: FileReadOptions) {
+  if (options.client?.mode !== "remote" || !options.sessionId) {
+    throw new Error("文件授权需要连接桌面并打开当前会话");
+  }
+  throwIfAborted(options.signal);
+  return { client: options.client, sessionId: options.sessionId };
+}
+
+export async function requestRemoteFileAccess(path: string, options: FileReadOptions): Promise<RemoteFileAccessRequest> {
+  const { client, sessionId } = remoteFileAccess(options);
+  const pending = await client.call<RemoteFileAccessRequest>("file.access.request", { sessionId, path }, { signal: options.signal });
+  throwIfAborted(options.signal);
+  if (typeof pending?.requestId !== "string" || !pending.requestId || typeof pending.path !== "string" || !pending.path) {
+    throw new Error("文件授权信息无效，请重新请求");
+  }
+  return pending;
+}
+
+export async function resolveRemoteFileAccess(requestId: string, allow: boolean, options: FileReadOptions): Promise<string | null> {
+  const { client, sessionId } = remoteFileAccess(options);
+  const result = await client.call<{ allowed: boolean; path?: string }>("file.access.resolve", { sessionId, requestId, allow }, { signal: options.signal });
+  throwIfAborted(options.signal);
+  if (result?.allowed !== allow || (allow && (typeof result.path !== "string" || !result.path))) {
+    throw new Error("文件授权未完成，请重新请求");
+  }
+  return allow ? result.path! : null;
 }
 
 export async function convertOfficePreview(

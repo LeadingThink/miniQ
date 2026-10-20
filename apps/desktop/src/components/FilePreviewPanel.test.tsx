@@ -16,6 +16,21 @@ afterEach(() => {
   delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
 });
 
+it("retries reading after a read failure and shows the connection transport", () => {
+  const retry = vi.fn();
+  render(<FilePreviewPanel
+    preview={{ target: { path: "/project/file.pdf", line: null, column: null },
+      resolvedPath: "/project/file.pdf", content: null, kind: null, mimeType: null,
+      dataBase64: null, size: null, loading: false, open: true,
+      error: "文件存储暂不可用", transport: "connection" }}
+    workspacePath="/project" workspacePaths={[]} onClose={vi.fn()}
+    onOpenFile={vi.fn()} onRetry={retry}
+  />);
+  fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
+  expect(retry).toHaveBeenCalledOnce();
+  expect(screen.getByText("传输方式：加密连接分块读取")).toBeTruthy();
+});
+
 it("offers explicit authorization for a file outside the workspace", () => {
   Object.defineProperty(window, "__TAURI_INTERNALS__", {
     configurable: true,
@@ -48,6 +63,39 @@ it("offers explicit authorization for a file outside the workspace", () => {
 
   fireEvent.click(screen.getByRole("button", { name: "允许并打开" }));
   expect(authorize).toHaveBeenCalledWith(target, false);
+});
+
+it("offers mobile authorization only for a session permission refusal", () => {
+  const target = { path: "/outside/report.txt", line: null, column: null };
+  const authorize = vi.fn();
+  render(<FilePreviewPanel
+    preview={{ target, resolvedPath: target.path, content: null, kind: null, mimeType: null,
+      dataBase64: null, size: null, loading: false, open: true,
+      error: "没有权限读取此文件，请检查当前会话的文件授权", canAuthorize: true }}
+    workspacePath="/project" workspacePaths={[]} onClose={vi.fn()}
+    onOpenFile={vi.fn()} onRetry={vi.fn()} onAuthorizeFile={authorize}
+  />);
+  fireEvent.click(screen.getByRole("button", { name: "允许并打开" }));
+  expect(authorize).toHaveBeenCalledWith(target, false);
+});
+
+it("shows the canonical file and session scope before mobile confirmation, and can refuse", () => {
+  const target = { path: "/outside/link.txt", line: null, column: null };
+  const confirm = vi.fn();
+  const cancel = vi.fn();
+  render(<FilePreviewPanel
+    preview={{ target, resolvedPath: target.path, content: null, kind: null, mimeType: null,
+      dataBase64: null, size: null, loading: false, open: true, error: "需要文件授权",
+      authorization: { path: "/outside/canonical.txt", confirm, cancel } }}
+    workspacePath="/project" workspacePaths={[]} onClose={vi.fn()}
+    onOpenFile={vi.fn()} onRetry={vi.fn()} onAuthorizeFile={vi.fn()}
+  />);
+  expect(screen.getByText("/outside/canonical.txt")).toBeTruthy();
+  expect(screen.getByText(/仅允许当前会话读取此文件/)).toBeTruthy();
+  expect(confirm).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "取消授权" }));
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(confirm).not.toHaveBeenCalled();
 });
 
 it("offers file selection when a resolved reference does not exist", () => {

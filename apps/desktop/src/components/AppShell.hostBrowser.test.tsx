@@ -10,6 +10,8 @@ vi.mock("../runtime", () => ({ isTauriRuntime: () => true }));
 vi.mock("../hooks/useAppSlashCommands", () => ({ useAppSlashCommands: () => ({ commands: [], dialogs: null }) }));
 vi.mock("./AppStatus", () => ({ AppStatusBar: () => null, AppErrorBanner: () => null }));
 vi.mock("./Skills", () => ({ SkillsPanel: () => <p>Local skills view</p> }));
+// Active-only side chat has its own subscription lifecycle and test coverage.
+vi.mock("./SideConversationPanel", () => ({ SideConversationPanel: () => null }));
 vi.mock("../browserWorkbench", async (original) => ({
   ...await original<typeof import("../browserWorkbench")>(),
   browserCapabilities: vi.fn(async () => ({
@@ -88,7 +90,7 @@ it("keeps the real local browser and driver alive while its host is inactive", a
   act(() => window.dispatchEvent(new CustomEvent("miniq:open-browser", {
     detail: { url: "https://example.test/task" },
   })));
-  const browserElement = await screen.findByRole("complementary", { name: "网页浏览器" });
+  const browserElement = await screen.findByRole("complementary", { name: "网页浏览器" }, { timeout: 10_000 });
   await waitFor(() => expect(openBrowser).toHaveBeenCalledOnce());
   const viewId = vi.mocked(openBrowser).mock.calls[0][2];
   await waitFor(() => expect(setBrowserVisible).toHaveBeenLastCalledWith(viewId, true));

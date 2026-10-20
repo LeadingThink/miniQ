@@ -1,15 +1,21 @@
 import type { RpcClient } from "./rpc";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
-import { downloadRemoteFile, sha256File, validateSignedStorageUrl } from "./remoteTransfer";
+import { installUploadFileSystem } from "./testHelpers/uploadFileSystem";
+import { downloadRemoteFile, validateSignedStorageUrl } from "./remoteTransfer";
+import { releaseUploadSources, stageBrowserUploadSources } from "./remoteUploadSource";
 const url = "https://bucket.s3.cn-south-1.qiniucs.com/remote-files/room/file?signature=private";
-afterEach(() => vi.unstubAllGlobals());
+let uploadDisk: Awaited<ReturnType<typeof installUploadFileSystem>>;
+beforeEach(async () => { uploadDisk = await installUploadFileSystem(); });
+afterEach(async () => { await uploadDisk.cleanup(); vi.unstubAllGlobals(); });
 it.each([0, 1, 55, 64, 65, 1024 * 1024 + 17])("hashes %i original bytes incrementally", async (size) => {
     const bytes = new Uint8Array(size).map((_, i) => i % 251);
-    const blob = new Blob([bytes]);
+    const blob = new File([bytes], "original.bin");
     const read = vi.spyOn(blob, "arrayBuffer").mockRejectedValue(new Error("whole file read forbidden"));
-    expect(await sha256File(blob)).toBe(createHash("sha256").update(bytes).digest("hex"));
+    const sources = await stageBrowserUploadSources([blob]);
+    expect(sources[0].sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
     expect(read).not.toHaveBeenCalled();
+    await releaseUploadSources(sources);
 });
 it.each(["http://bucket.qiniucs.com/remote-files/r/x", "https://bucket.qiniucs.com.evil.test/remote-files/r/x", "https://u:p@bucket.qiniucs.com/remote-files/r/x", "https://bucket.qiniucs.com/provider-media/r/x"])("rejects unsafe storage URL %s", (value) => expect(() => validateSignedStorageUrl(value)).toThrow());
 it("renews expired signed downloads and validates bytes", async () => {
@@ -25,7 +31,7 @@ it("rejects a corrupt download", async () => {
     const call = vi.fn().mockResolvedValue({ transferId: "t", getUrl: url, size: 3, sha256: "0".repeat(64), revision: "v1", expiresAt: Date.now() + 100000 });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("bad")));
     await expect(downloadRemoteFile({ call }, "s", "x", "v1")).rejects.toThrow("完整性");
-    expect(call).toHaveBeenLastCalledWith("file.transfer.cancel", { sessionId: "s", transferId: "t" });
+    expect(call.mock.calls.some(([method]) => method === "file.transfer.cancel")).toBe(false);
 });
 import { uploadRemoteFile } from "./remoteTransfer";
 import { Sha256 } from "./incrementalSha256";
@@ -47,10 +53,12 @@ function uploadFixture(statuses = [200], abort?: AbortController) {
         onloadend?: () => void;
         open = vi.fn();
         setRequestHeader = (...args: unknown[]) => headers.push(args);
-        send = (body: unknown) => { bodies.push(body); queueMicrotask(() => { if (abort)
-            abort.abort();
-        else
-            this.onload?.(); this.onloadend?.(); }); };
+        send = (body: Blob) => { void body.arrayBuffer().then((bytes) => {
+            bodies.push(new Uint8Array(bytes));
+            if (abort) abort.abort();
+            else this.onload?.();
+            this.onloadend?.();
+        }); };
         abort = () => { this.onabort?.(); this.onloadend?.(); };
     }
     vi.stubGlobal("XMLHttpRequest", Request);
@@ -60,13 +68,13 @@ function uploadFixture(statuses = [200], abort?: AbortController) {
         ? { transferId: "t", putUrl: url, expiresAt: Date.now() + 60000 }
         : method === "file.upload.commit" ? { status: "completed", path: "/project/inbox/照片.heic", size: file.size, sha256 }
             : { status: "cancelled" });
-    return { file, call, bodies, headers, sha256 };
+    return { file, bytes: new Uint8Array([1, 2, 3, 255]), call, bodies, headers, sha256 };
 }
 it("uploads original HEIC bytes with octet-stream and waits for a validated receipt", async () => {
     const f = uploadFixture();
     const result = await uploadRemoteFile({ call: f.call as RpcClient["call"] }, { sessionId: "s" }, f.file);
     expect(result.status).toBe("completed");
-    expect(f.bodies).toEqual([f.file]);
+    expect(f.bodies).toEqual([f.bytes]);
     expect(f.headers).toContainEqual(["Content-Type", "application/octet-stream"]);
     expect(f.call).toHaveBeenCalledWith("file.upload.prepare", { sessionId: "s", name: "照片.heic", size: 4, sha256: f.sha256 }, { timeoutMs: 600000 });
     expect(f.call).toHaveBeenLastCalledWith("file.upload.commit", { sessionId: "s", transferId: "t" }, { timeoutMs: 600000 });
@@ -75,7 +83,7 @@ it("renews a rejected PUT ticket once", async () => {
     const f = uploadFixture([403, 200]);
     await uploadRemoteFile({ call: f.call as RpcClient["call"] }, { sessionId: "s" }, f.file);
     expect(f.call.mock.calls.filter(([m]) => m === "file.upload.prepare")).toHaveLength(2);
-    expect(f.bodies).toEqual([f.file, f.file]);
+    expect(f.bodies).toEqual([f.bytes, f.bytes]);
 });
 it("cancels upload and confirms daemon terminal status without commit", async () => {
     const controller = new AbortController();

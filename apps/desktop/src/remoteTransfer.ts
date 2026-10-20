@@ -1,9 +1,10 @@
 import { Sha256 } from "./incrementalSha256";
 import { throwIfAborted } from "./abortSignal";
 import type { RpcClient } from "./rpc";
-export const MAX_REMOTE_FILE_BYTES = 200 * 1024 * 1024;
+import { cachedDownloadTicket, invalidateDownloadTicket } from "./remoteDownloadTickets";
+import { MAX_REMOTE_FILE_BYTES, releaseUploadSources, stageBrowserUploadSources, validateUploadSize, type RemoteUploadSource } from "./remoteUploadSource";
+export { MAX_REMOTE_FILE_BYTES } from "./remoteUploadSource";
 export const SMALL_RPC_FILE_BYTES = 256 * 1024;
-const CHUNK_BYTES = 1024 * 1024;
 export interface SignedDownload {
     transferId: string;
     getUrl: string;
@@ -43,12 +44,14 @@ export function validateDescriptor(value: SignedDownload): SignedDownload {
 /** Validates metadata and revision, not the bytes of a partial preview. */
 export async function prepareRemoteFile(client: Pick<RpcClient, "call">, sessionId: string, path: string, revision: string, signal?: AbortSignal, forceRefresh = false): Promise<SignedDownload> {
     throwIfAborted(signal);
-    const ticket = await client.call<SignedDownload>("file.download.prepare", { sessionId, path, revision, ...(forceRefresh ? { forceRefresh: true } : {}) }, { signal, timeoutMs: 600000 });
-    throwIfAborted(signal);
-    if (ticket.expiresAt <= Date.now()) throw new Error("下载链接已过期");
-    const prepared = validateDescriptor(ticket);
-    if (prepared.revision !== revision) throw new Error("文件版本已变化，请重新加载");
-    return prepared;
+    return cachedDownloadTicket(client, sessionId, path, revision, forceRefresh, async () => {
+        // A caller may stop waiting without cancelling another preview's ticket.
+        const ticket = await client.call<SignedDownload>("file.download.prepare", { sessionId, path, revision, ...(forceRefresh ? { forceRefresh: true } : {}) }, { timeoutMs: 600000 });
+        if (ticket.expiresAt <= Date.now()) throw new Error("下载链接已过期");
+        const prepared = validateDescriptor(ticket);
+        if (prepared.revision !== revision) throw new Error("文件版本已变化，请重新加载");
+        return prepared;
+    }, signal);
 }
 export interface RemotePreviewSource extends SignedDownload {
     refresh: () => Promise<RemotePreviewSource>;
@@ -84,9 +87,17 @@ export async function readRemoteRange(source: RemotePreviewSource, offset: numbe
         source = await source.refresh();
         response = await request(source.getUrl);
     }
-    if (response.status !== 206 || response.headers.get("content-range") !== `bytes ${offset}-${end}/${source.size}`) {
+    if (!response.ok) {
+        await response.body?.cancel();
+        throw new Error(`文件传输失败 (${response.status})`);
+    }
+    if (response.status !== 206) {
         await response.body?.cancel();
         throw new Error("存储服务未返回有效分段，请下载原文件查看");
+    }
+    if (response.headers.get("content-range") !== `bytes ${offset}-${end}/${source.size}`) {
+        await response.body?.cancel();
+        throw new Error("远程文件分段完整性校验失败");
     }
     const blob = await readResponse(response, end - offset + 1, signal);
     return { bytes: new Uint8Array(await blob.arrayBuffer()), source };
@@ -147,7 +158,10 @@ export async function downloadRemoteFile(client: Pick<RpcClient, "call">, sessio
             return { ...prepared, blob };
         }
         catch (cause) {
-            await client.call("file.transfer.cancel", { sessionId, transferId: prepared.transferId }).catch(() => { });
+            // Signed downloads are shared; cancelling a server transfer here
+            // would invalidate another consumer's download or media URL.
+            invalidateDownloadTicket(client, sessionId, path, revision, prepared);
+            throwIfAborted(signal);
             throw cause;
         }
     }
@@ -161,11 +175,21 @@ export type RemoteUploadScope = {
     workspaceId: string;
     sessionId?: never;
 };
-export async function uploadRemoteFile(client: Pick<RpcClient, "call">, scope: RemoteUploadScope, file: File, signal?: AbortSignal, onProgress?: (sent: number, total: number) => void) {
-    if (!Number.isSafeInteger(file.size) || file.size > MAX_REMOTE_FILE_BYTES)
-        throw new Error("单个文件不能超过 200 MB");
+export async function uploadRemoteFile(client: Pick<RpcClient, "call">, scope: RemoteUploadScope, file: File | RemoteUploadSource, signal?: AbortSignal, onProgress?: (sent: number, total: number) => void) {
+    validateUploadSize(file.size);
     throwIfAborted(signal);
-    const sha256 = await sha256File(file, signal);
+    const target = { ...scope };
+    const owned = !("kind" in file);
+    const source = owned ? (await stageBrowserUploadSources([file as File], signal))[0] : file as RemoteUploadSource;
+    try {
+        return await uploadPreparedFile(client, target, source, signal, onProgress);
+    } finally {
+        if (owned) await releaseUploadSources([source]);
+    }
+}
+async function uploadPreparedFile(client: Pick<RpcClient, "call">, scope: RemoteUploadScope, file: RemoteUploadSource, signal?: AbortSignal, onProgress?: (sent: number, total: number) => void) {
+    const sha256 = file.sha256;
+    if (!/^[a-f0-9]{64}$/.test(sha256)) throw new Error("本机文件校验信息无效，请重新选择");
     for (let attempt = 0; attempt < 2; attempt++) {
         throwIfAborted(signal);
         const prepared = await client.call<SignedUpload>("file.upload.prepare", { ...scope, name: file.name, size: file.size, sha256 }, { timeoutMs: 600000 });
@@ -188,7 +212,12 @@ export async function uploadRemoteFile(client: Pick<RpcClient, "call">, scope: R
             throwIfAborted(signal);
             if (prepared.expiresAt <= Date.now())
                 throw new Error("上传链接已过期 (403)");
-            await putFile(validateSignedStorageUrl(prepared.putUrl), file, signal, onProgress);
+            const url = validateSignedStorageUrl(prepared.putUrl);
+            if (file.kind === "native") {
+                const { putNativeUploadFile } = await import("./nativeFileTransfer");
+                await putNativeUploadFile(file.id, url, signal, onProgress);
+            }
+            else await putFile(url, file.file, signal, onProgress);
             throwIfAborted(signal);
             const result = await Promise.race([client.call<{
                     status: "completed";
@@ -220,30 +249,22 @@ function putFile(url: string, file: File, signal?: AbortSignal, onProgress?: (se
     return new Promise((resolve, reject) => {
         const request = new XMLHttpRequest();
         const abort = () => request.abort();
+        const finish = (cause?: unknown) => {
+            signal?.removeEventListener("abort", abort);
+            if (cause) reject(cause); else resolve();
+        };
         request.open("PUT", url);
         request.responseType = "text";
         request.setRequestHeader("Content-Type", "application/octet-stream");
         request.upload.onprogress = (event) => onProgress?.(event.loaded, event.lengthComputable ? event.total : file.size);
-        request.onerror = () => reject(new Error("上传失败"));
-        request.onabort = () => reject(new DOMException("Request cancelled", "AbortError"));
-        request.onload = () => request.status >= 200 && request.status < 300 ? resolve() : reject(new Error(`上传失败 (${request.status})`));
+        request.onerror = () => finish(new Error("上传失败"));
+        request.onabort = () => finish(new DOMException("Request cancelled", "AbortError"));
+        request.onload = () => finish(request.status >= 200 && request.status < 300 ? undefined : new Error(`上传失败 (${request.status})`));
         signal?.addEventListener("abort", abort, { once: true });
-        request.onloadend = () => signal?.removeEventListener("abort", abort);
         if (signal?.aborted) {
-            reject(new DOMException("Request cancelled", "AbortError"));
+            finish(new DOMException("Request cancelled", "AbortError"));
             return;
         }
-        request.send(file);
+        try { request.send(file); } catch (cause) { finish(cause); }
     });
-}
-// WebCrypto digest requires one giant ArrayBuffer. This incremental SHA-256
-// implementation keeps the upload bounded to one 1 MiB slice.
-export async function sha256File(file: Blob, signal?: AbortSignal, onProgress?: (sent: number, total: number) => void) {
-    const hash = new Sha256();
-    for (let offset = 0; offset < file.size; offset += CHUNK_BYTES) {
-        throwIfAborted(signal);
-        hash.update(new Uint8Array(await file.slice(offset, offset + CHUNK_BYTES).arrayBuffer()));
-        onProgress?.(Math.min(offset + CHUNK_BYTES, file.size), file.size);
-    }
-    return hash.hex();
 }

@@ -1,6 +1,7 @@
 import type { OnMount } from "@monaco-editor/react";
 import { breadcrumb, breadcrumbSegments } from "../fileTreeModel";
 import { FileKindIcon } from "./FileKindIcon";
+import { FilePreviewAuthorization } from "./FilePreviewAuthorization";
 import {
   Code2,
   Eye,
@@ -158,11 +159,9 @@ function PreviewPanelContent({
   const path = preview.resolvedPath ?? target?.path ?? "";
   const deniedExternalFile = preview.error?.includes("拒绝打开工作区外的文件") ?? false;
   const missingLocalFile = preview.error?.includes("无法访问文件") ?? false;
-  const canChooseLocalFile = Boolean(
-    (deniedExternalFile || missingLocalFile) &&
-    target &&
-    onAuthorizeFile &&
-    !remote,
+  const canAuthorizeTarget = Boolean(
+    target && onAuthorizeFile && !preview.loading && !preview.authorization &&
+    (remote ? preview.canAuthorize : deniedExternalFile || missingLocalFile),
   );
   const selection = usePreviewSelection(path, preview.content ?? preview.dataBase64);
   const line = target?.line ?? 1;
@@ -504,14 +503,14 @@ function PreviewPanelContent({
       {(preview.error || actionError || renderError) && (
         <div className="review-error preview-error" role="alert">
           <span>无法打开：{preview.error ?? actionError ?? renderError}</span>
-          {canChooseLocalFile && target && onAuthorizeFile && (
+          {canAuthorizeTarget && target && onAuthorizeFile && (
             <button
               type="button"
               className="ghost"
-              onClick={() => onAuthorizeFile(target, missingLocalFile)}
+              onClick={() => onAuthorizeFile(target, !remote && missingLocalFile)}
             >
               <FolderOpen size={14} />
-              {deniedExternalFile ? "允许并打开" : "选择并打开"}
+              {remote || deniedExternalFile ? "允许并打开" : "选择并打开"}
             </button>
           )}
           {(renderError || preview.error) && (
@@ -527,13 +526,19 @@ function PreviewPanelContent({
               }}
             >
               <RotateCcw size={13} />
-              重试渲染
+              {preview.error ? "重新读取" : "重试渲染"}
             </button>
           )}
         </div>
       )}
+      {preview.authorization && <FilePreviewAuthorization authorization={preview.authorization} />}
       {onDiscuss && <PreviewSelection text={selection.text} onClear={selection.clear}
         onDiscuss={() => { onDiscuss(path, selection.text); selection.clear(); }} />}
+      {preview.transport && <div role="status" className="file-preview-loading">
+        <span>{preview.transport === "storage"
+          ? "传输方式：私有存储直连"
+          : "传输方式：加密连接分块读取"}</span>
+      </div>}
       {preview.textPage && <div role="status" className="file-preview-loading">
         <span>分段预览：已读取 {formatFileSize(preview.textPage.end)} / {formatFileSize(preview.textPage.total)}；下载可获取完整原文件</span>
         {preview.textPage.next && <button type="button" onClick={() => void preview.loadNextPage?.()}>继续读取下一段</button>}
@@ -547,7 +552,13 @@ function PreviewPanelContent({
       >
         {preview.loading ? (
           <div className="file-preview-loading" role="status">
-            <span>正在读取文件…{preview.progress && ` ${formatFileSize(preview.progress.received)} / ${formatFileSize(preview.progress.total)}`}</span>
+            <span>{preview.progress
+              ? `正在接收文件… ${formatFileSize(preview.progress.received)} / ${formatFileSize(preview.progress.total)}`
+              : preview.transport === "storage"
+                ? "正在准备存储链接并等待文件响应…"
+                : preview.transport === "connection"
+                  ? "正在等待桌面通过加密连接返回文件…"
+                  : "正在获取文件信息…"}</span>
             {preview.progress && <progress aria-label="文件加载进度" value={preview.progress.received} max={preview.progress.total || 1} />}
             <button type="button" className="ghost" onClick={onClose}>取消加载</button>
           </div>

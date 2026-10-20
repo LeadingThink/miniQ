@@ -62,6 +62,7 @@ struct Runtime {
 enum ProcessChild {
     Pipe(Child),
     Terminal(pty::Terminal),
+    Exited,
 }
 
 pub(crate) struct Launch {
@@ -314,16 +315,27 @@ impl ProcessManager {
         let cancel = ctx.cancellation.clone();
         let weak = Arc::downgrade(&process);
         tokio::spawn(async move {
+            let mut cancellation_handled = false;
             loop {
                 let Some(process) = weak.upgrade() else {
                     break;
                 };
                 tokio::select! {
-                    _ = cancel.cancelled() => { let _ = terminate(&process).await; break; }
-                    _ = tokio::time::sleep(Duration::from_millis(50)) => {
-                        let running = refresh(&process).await.unwrap_or(false);
-                        if !running && process.stdout.lock().unwrap().closed && process.stderr.lock().unwrap().closed { break; }
+                    _ = cancel.cancelled(), if !cancellation_handled => {
+                        let _ = terminate(&process).await;
+                        cancellation_handled = true;
                     }
+                    _ = tokio::time::sleep(Duration::from_millis(50)) => {
+                        let _ = refresh(&process).await;
+                    }
+                }
+                // Cancellation and reader EOF can precede the final refresh.
+                // Only stop once that refresh has actually released the handles.
+                if matches!(process.runtime.lock().await.child, ProcessChild::Exited)
+                    && process.stdout.lock().unwrap().closed
+                    && process.stderr.lock().unwrap().closed
+                {
+                    break;
                 }
             }
         });
@@ -388,6 +400,7 @@ impl ProcessManager {
             {
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }
+            refresh(&process).await?;
         }
         let mut cursor = process.cursor.lock().await;
         let start = (
@@ -459,24 +472,46 @@ impl ProcessManager {
 }
 async fn refresh(process: &ManagedProcess) -> Result<bool, ToolError> {
     let mut runtime = process.runtime.lock().await;
-    if runtime.exit_code.is_some() {
+    if runtime.exit_code.is_none() {
+        runtime.exit_code = match &mut runtime.child {
+            ProcessChild::Pipe(child) => child
+                .try_wait()
+                .map_err(failure)?
+                .map(|s| s.code().unwrap_or(-1)),
+            ProcessChild::Terminal(child) => child
+                .child
+                .try_wait()
+                .map_err(failure)?
+                .map(|s| s.exit_code() as i32),
+            ProcessChild::Exited => return Ok(false),
+        };
+        if runtime.exit_code.is_some() {
+            runtime.elapsed_ms = Some(process.started.elapsed().as_millis() as u64);
+        }
+    }
+    if runtime.exit_code.is_none() {
+        return Ok(true);
+    }
+    // A pending stdin write must not hold up status queries or group termination.
+    // The monitor retries cleanup once the writer has released its input lock.
+    let Ok(mut input) = process.input.try_lock() else {
         return Ok(false);
-    }
-    runtime.exit_code = match &mut runtime.child {
-        ProcessChild::Pipe(child) => child
-            .try_wait()
-            .map_err(failure)?
-            .map(|s| s.code().unwrap_or(-1)),
-        ProcessChild::Terminal(child) => child
-            .child
-            .try_wait()
-            .map_err(failure)?
-            .map(|s| s.exit_code() as i32),
     };
-    if runtime.exit_code.is_some() {
-        runtime.elapsed_ms = Some(process.started.elapsed().as_millis() as u64);
+    input.take();
+    drop(input);
+    // ConPTY produces EOF only when its console is closed. Its reader keeps a
+    // separate pipe handle and must continue draining during ClosePseudoConsole,
+    // which can block until the console has flushed its output.
+    #[cfg(windows)]
+    if matches!(runtime.child, ProcessChild::Terminal(_)) {
+        let child = std::mem::replace(&mut runtime.child, ProcessChild::Exited);
+        tokio::task::spawn_blocking(move || drop(child));
     }
-    Ok(runtime.exit_code.is_none())
+    // Unix PTYs can still have descendants using the slave after the leader exits.
+    if process.stdout.lock().unwrap().closed && process.stderr.lock().unwrap().closed {
+        runtime.child = ProcessChild::Exited;
+    }
+    Ok(false)
 }
 async fn terminate(process: &ManagedProcess) -> Result<(), ToolError> {
     let running = refresh(process).await?;
@@ -517,6 +552,7 @@ async fn terminate(process: &ManagedProcess) -> Result<(), ToolError> {
         ProcessChild::Terminal(child) => {
             let _ = child.child.kill();
         }
+        ProcessChild::Exited => {}
     }
     drop(runtime);
     refresh(process).await?;
@@ -554,7 +590,7 @@ fn collect<R: tokio::io::AsyncRead + Unpin + Send + 'static>(
                 }
             }
         }
-        output.lock().unwrap().closed = true;
+        output.lock().unwrap().finish();
     })
 }
 #[cfg(test)]

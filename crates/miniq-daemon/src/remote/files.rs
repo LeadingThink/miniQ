@@ -1,7 +1,7 @@
 //! Bounded file data plane, owned by exactly one desktop relay connection.
 use super::file_tickets::{now, Ticket, Tickets};
 use crate::{gateway::files as disk, state::AppState};
-use miniq_protocol::{ErrorCode, RpcError, RpcRequest, RpcResponse};
+use miniq_protocol::{RpcRequest, RpcResponse};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -216,9 +216,7 @@ impl Transfers {
         };
         match result {
             Ok(value) => RpcResponse::ok(request.id, value),
-            Err(message) => {
-                RpcResponse::err(request.id, RpcError::new(ErrorCode::InvalidParams, message))
-            }
+            Err(message) => RpcResponse::err(request.id, super::file_errors::rpc_error(message)),
         }
     }
     async fn call(
@@ -591,6 +589,31 @@ fn validate_upload(input: &UploadInput) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use miniq_protocol::ErrorCode;
+    #[tokio::test]
+    async fn unavailable_storage_is_not_reported_as_invalid_user_parameters() {
+        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let transfers = Transfers::new(Tickets::new(tx, "room", "desktop"), false);
+        let state = AppState::new(
+            miniq_memory::Store::open_in_memory().unwrap(),
+            "test".into(),
+            Arc::new(miniq_models::mock::MockProvider::new(vec![])),
+        );
+        for method in ["file.download.prepare", "file.upload.prepare"] {
+            let request: RpcRequest = serde_json::from_value(json!({
+                "jsonrpc":"2.0", "id":"t", "method":method,
+                "params":{"sessionId":"s","path":"x"}
+            }))
+            .unwrap();
+            let result = transfers
+                .dispatch(&state, "p", request, &CancellationToken::new())
+                .await;
+            let error = result.error.unwrap();
+            assert_eq!(error.code, ErrorCode::InternalError as i64);
+            assert_eq!(error.data.unwrap()["reason"], "file_storage_unavailable");
+        }
+    }
+
     #[test]
     fn rejects_size_hash_and_extra_url_parameters() {
         let mut value =

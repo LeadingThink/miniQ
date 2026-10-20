@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 mod backoff;
 mod blob;
 pub(crate) mod connection;
+mod file_errors;
 mod file_tickets;
 mod files;
 mod keep_awake;

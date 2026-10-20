@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
+import { remoteFileErrorMessage } from "../remoteFileErrors";
 import {
+  canRequestFileAccess,
   readLocalFilePreview,
+  requestRemoteFileAccess,
+  resolveRemoteFileAccess,
   type LocalPreviewKind,
   type LocalFilePreview,
   type LocalFileTarget,
@@ -34,6 +38,9 @@ export interface FilePreviewState {
   error: string | null;
   open: boolean;
   progress?: { received: number; total: number };
+  transport?: LocalFilePreview["transport"];
+  canAuthorize?: boolean;
+  authorization?: { path: string; confirm: () => Promise<void>; cancel: () => Promise<void> };
 }
 
 const EMPTY_PREVIEW: FilePreviewState = {
@@ -121,6 +128,10 @@ export function useFilePreview(
             client,
             sessionId,
             signal: controller.signal,
+            onTransport: (transport) => {
+              if (requestId === requestSequence.current)
+                setState((current) => ({ ...current, transport }));
+            },
             onProgress: (received, total) => {
               if (requestId === requestSequence.current)
                 setState((current) => ({
@@ -147,6 +158,7 @@ export function useFilePreview(
           mimeType: file.mimeType,
           dataBase64: file.dataBase64,
           blob: file.blob ?? null,
+          transport: file.transport,
           remoteSource: file.remoteSource,
           textPage: file.textPage,
           size: file.size,
@@ -159,7 +171,8 @@ export function useFilePreview(
         setState((current) => ({
           ...current,
           loading: false,
-          error: errorMessage(cause),
+          error: client?.mode === "remote" ? remoteFileErrorMessage(cause) : errorMessage(cause),
+          canAuthorize: client?.mode === "remote" && canRequestFileAccess(cause),
         }));
       }
     },
@@ -168,6 +181,40 @@ export function useFilePreview(
 
   const authorizeFile = useCallback(
     async (target: LocalFileTarget, chooseReplacement = false) => {
+      if (client?.mode === "remote") {
+        if (chooseReplacement || !sessionId) return;
+        const requestId = ++requestSequence.current;
+        requestController.current?.abort();
+        const controller = new AbortController();
+        requestController.current = controller;
+        const options = { client, sessionId, signal: controller.signal };
+        const failed = (cause: unknown, canAuthorize = false) => {
+          if (requestId === requestSequence.current) setState((current) => ({
+            ...current, loading: false, authorization: undefined, canAuthorize,
+            error: errorMessage(cause),
+          }));
+        };
+        setState((current) => ({ ...current, loading: true, canAuthorize: false, authorization: undefined }));
+        try {
+          const pending = await requestRemoteFileAccess(target.path, options);
+          if (requestId !== requestSequence.current) return;
+          let decided = false;
+          const decide = async (allow: boolean) => {
+            if (decided || requestId !== requestSequence.current) return;
+            decided = true;
+            setState((current) => ({ ...current, loading: allow, canAuthorize: !allow, authorization: undefined }));
+            try {
+              const path = await resolveRemoteFileAccess(pending.requestId, allow, options);
+              if (path && requestId === requestSequence.current) await openFile({ ...target, path });
+            } catch (cause) { failed(cause, true); }
+          };
+          setState((current) => ({
+            ...current, loading: false,
+            authorization: { path: pending.path, confirm: () => decide(true), cancel: () => decide(false) },
+          }));
+        } catch (cause) { failed(cause); }
+        return;
+      }
       if (!isTauriRuntime()) return;
       try {
         let selected = target.path;
@@ -202,6 +249,7 @@ export function useFilePreview(
           mimeType: file.mimeType,
           dataBase64: file.dataBase64,
           blob: file.blob ?? null,
+          transport: file.transport,
           remoteSource: file.remoteSource,
           textPage: file.textPage,
           size: file.size,
@@ -217,7 +265,7 @@ export function useFilePreview(
         }));
       }
     },
-    [scope, workspacePath, workspacePaths, client, sessionId, updateTabs],
+    [scope, workspacePath, workspacePaths, client, sessionId, updateTabs, openFile],
   );
 
   const close = useCallback(() => {
@@ -314,7 +362,7 @@ export function useFilePreview(
         const file = await state.textPage.next();
         if (requestId === requestSequence.current) setState(current => ({ ...current, content: file.content, textPage: file.textPage, error: null }));
       } catch (cause) {
-        if (requestId === requestSequence.current) setState(current => ({ ...current, error: errorMessage(cause) }));
+        if (requestId === requestSequence.current) setState(current => ({ ...current, error: client?.mode === "remote" ? remoteFileErrorMessage(cause) : errorMessage(cause) }));
       }
     } } : EMPTY_PREVIEW,
     tabs: tabs.targets,

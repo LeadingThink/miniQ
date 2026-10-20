@@ -140,6 +140,7 @@ async fn serve(
             _ = config_check.tick() => {
                 session.uploads.expire();
                 session.files.expire();
+                state.file_access.lock().unwrap().expire_pending();
                 if current_fingerprint(state) != Some(session.config.fingerprint) {
                     say_goodbye(&session.controls).await;
                     return Ok(());
@@ -190,7 +191,7 @@ async fn dispatch(
         Ok(request) => {
             let device = if source.is_empty() { "unknown" } else { source };
             let request = request.with_origin(Some(format!("remote:{device}")));
-            crate::gateway::dispatch(state, request).await
+            crate::gateway::dispatch_authenticated_remote(state, request).await
         }
         Err(error) => RpcResponse::err(
             RequestId::Number(0),

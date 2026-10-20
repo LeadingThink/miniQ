@@ -40,12 +40,39 @@ it("does not inherit the provider-media room allowlist", async () => {
   mobile.messages.length = 0; other.messages.length = 0; desktop.messages.length = 0;
   for (const peer of [mobile, unknown, unauthorized]) broker.route(peer.ws, request);
   expect(remoteFileTicket).not.toHaveBeenCalled();
-  expect(mobile.messages).toEqual([{ type: "file_ticket_result", requestId: "file-1", error: "File transfer unavailable" }]);
+  expect(mobile.messages).toEqual([{ type: "file_ticket_result", requestId: "file-1", error: "File transfer unavailable", code: "file_ticket_forbidden" }]);
   broker.route(desktop.ws, { ...request, roomId: "evil", desktopDeviceId: "desktop-bbbb", getUrl: "https://evil.test", key: "evil" });
   await Promise.resolve();
   expect(remoteFileTicket).toHaveBeenCalledExactlyOnceWith(roomId, 1024, "desktop-aaaa", "session-1");
   expect(desktop.messages).toEqual([{ type: "file_ticket_result", requestId: "file-1", ticket: issued }]);
   expect(other.messages).toEqual([]); expect(unknown.messages).toEqual([]);
+});
+
+it("accepts a first-file request from installed daemons that serialize no object as null", async () => {
+  const { broker, desktop, remoteFileTicket } = setup();
+  broker.route(desktop.ws, { ...request, objectId: null });
+  await Promise.resolve();
+  expect(remoteFileTicket).toHaveBeenCalledExactlyOnceWith(roomId, 1024, "desktop-aaaa", "session-1");
+  expect(desktop.messages).toEqual([{ type: "file_ticket_result", requestId: "file-1", ticket: issued }]);
+});
+
+it("distinguishes an invalid request, disabled storage, a full budget, and signer failure", async () => {
+  vi.useFakeTimers();
+  const normal = setup();
+  normal.broker.route(normal.desktop.ws, { ...request, objectId: "invalid" });
+  expect(normal.desktop.messages[0]).toMatchObject({ code: "file_ticket_invalid" });
+  const disabled = setup({ fileStorageEnabledFor: () => false });
+  disabled.broker.route(disabled.desktop.ws, request);
+  expect(disabled.desktop.messages[0]).toMatchObject({ code: "file_storage_unavailable" });
+  normal.broker.route(normal.desktop.ws, { ...request, bytes: MAX_REMOTE_FILE_BYTES });
+  await Promise.resolve();
+  normal.broker.route(normal.desktop.ws, request);
+  expect(normal.desktop.messages.at(-1)).toMatchObject({ code: "file_budget_exceeded", retryAfterMs: 60000 });
+  const failed = setup({ remoteFileTicket: async () => { throw new Error("private signed URL"); } });
+  failed.broker.route(failed.desktop.ws, request);
+  await Promise.resolve();
+  expect(failed.desktop.messages[0]).toMatchObject({ code: "file_storage_failed" });
+  expect(JSON.stringify(failed.desktop.messages)).not.toContain("private signed URL");
 });
 
 it.each([{ bytes: -1 }, { bytes: 1.5 }, { bytes: "1" }, { bytes: MAX_REMOTE_FILE_BYTES + 1 }, { bytes: Infinity },

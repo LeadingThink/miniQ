@@ -18,7 +18,7 @@ pub(super) struct Ticket {
     #[serde(default)]
     pub object_id: Option<String>,
 }
-type Pending = Arc<Mutex<HashMap<String, oneshot::Sender<Option<Ticket>>>>>;
+type Pending = Arc<Mutex<HashMap<String, oneshot::Sender<Result<Ticket, String>>>>>;
 #[derive(Clone)]
 pub(super) struct Tickets {
     pending: Pending,
@@ -45,9 +45,18 @@ impl Tickets {
             namespace: format!("/remote-files/{room}/{desktop}/"),
         }
     }
-    pub fn receive(&self, id: &str, ticket: Option<Ticket>) {
+    pub fn receive(&self, id: &str, ticket: Option<Ticket>, code: &str) {
         if let Some(tx) = self.pending.lock().unwrap().remove(id) {
-            let _ = tx.send(ticket);
+            let error = match code {
+                "file_ticket_forbidden" => "File ticket permission denied",
+                "file_ticket_invalid" => "Invalid file ticket request",
+                "file_budget_exceeded" => "File transfer budget exceeded; retry after 60 seconds",
+                "file_storage_failed" => "File storage signing failed",
+                // Old relays omit a reason; do not echo arbitrary relay text
+                // that could contain signed URLs or infrastructure secrets.
+                _ => "File storage unavailable",
+            };
+            let _ = tx.send(ticket.ok_or_else(|| error.to_string()));
         }
     }
     pub async fn request(
@@ -60,19 +69,18 @@ impl Tickets {
         let (tx, rx) = oneshot::channel();
         self.pending.lock().unwrap().insert(id.clone(), tx);
         let _guard = Guard(id.clone(), self.pending.clone());
+        let mut request =
+            json!({"type":"file_ticket","requestId":id,"sessionId":session,"bytes":size});
+        if let Some(object_id) = object_id {
+            request["objectId"] = json!(object_id);
+        }
         self.controls
-            .send(Message::Text(
-                json!({"type":"file_ticket","requestId":id,"sessionId":session,"bytes":size,
-                    "objectId":object_id})
-                .to_string()
-                .into(),
-            ))
+            .send(Message::Text(request.to_string().into()))
             .map_err(|_| "File connection closed")?;
         let ticket = tokio::time::timeout(Duration::from_secs(15), rx)
             .await
             .map_err(|_| "File ticket timed out")?
-            .map_err(|_| "File connection closed")?
-            .ok_or("File storage unavailable")?;
+            .map_err(|_| "File connection closed")??;
         validate(&ticket)?;
         validate_scope(&ticket, &self.namespace, session)?;
         if let Some(object_id) = object_id {
@@ -146,6 +154,10 @@ mod tests {
         assert_eq!(value["type"], "file_ticket");
         assert_eq!(value["sessionId"], "session");
         assert_eq!(value["bytes"], 123);
+        assert!(
+            value.get("objectId").is_none(),
+            "initial tickets must omit objectId"
+        );
         let url = format!(
             "https://x.qiniucs.com/bucket/remote-files/room/desktop/{:x}/{}",
             Sha256::digest(b"session"),
@@ -173,7 +185,7 @@ mod tests {
             expires_at: now() + 900_000,
         };
         assert!(validate_scope(&trailing, "/remote-files/room/desktop/", "session").is_err());
-        tickets.receive(value["requestId"].as_str().unwrap(), Some(ticket));
+        tickets.receive(value["requestId"].as_str().unwrap(), Some(ticket), "");
         assert!(task.await.unwrap().is_ok());
         assert!(tickets.pending.lock().unwrap().is_empty());
     }
@@ -203,5 +215,31 @@ mod tests {
         assert!(validate(&ticket).is_ok());
         ticket.expires_at = now();
         assert!(validate(&ticket).is_err());
+    }
+
+    #[tokio::test]
+    async fn relay_failure_reasons_survive_the_control_channel_without_secret_details() {
+        for (code, expected) in [
+            ("file_ticket_invalid", "Invalid file ticket request"),
+            ("file_ticket_forbidden", "File ticket permission denied"),
+            (
+                "file_budget_exceeded",
+                "File transfer budget exceeded; retry after 60 seconds",
+            ),
+            ("file_storage_failed", "File storage signing failed"),
+            ("file_storage_unavailable", "File storage unavailable"),
+            ("https://signed-secret.example", "File storage unavailable"),
+        ] {
+            let (tx, mut rx) = mpsc::unbounded_channel();
+            let tickets = Tickets::new(tx, "room", "desktop");
+            let client = tickets.clone();
+            let task = tokio::spawn(async move { client.request("session", 1, None).await });
+            let message = rx.recv().await.unwrap();
+            let value: serde_json::Value =
+                serde_json::from_str(message.to_text().unwrap()).unwrap();
+            tickets.receive(value["requestId"].as_str().unwrap(), None, code);
+            assert_eq!(task.await.unwrap().err().as_deref(), Some(expected));
+            assert!(tickets.pending.lock().unwrap().is_empty());
+        }
     }
 }

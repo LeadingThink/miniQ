@@ -103,9 +103,96 @@ public class MiniqFilesPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "save", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancel", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pickUpload", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "upload", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "releaseUpload", returnType: CAPPluginReturnPromise),
     ]
     private var active: FileDownload?
     private var sheet: UIActivityViewController?
+    private var uploadCache: MiniqUploadCache?
+    private var uploadPicker: MiniqUploadPicker?
+    private var uploads: [String: MiniqFileUpload] = [:]
+
+    @objc func pickUpload(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { self.beginUploadPick(call) }
+    }
+
+    private func beginUploadPick(_ call: CAPPluginCall) {
+        guard let id = MiniqUploadValidation.identifier(call.getString("id")),
+            let kind = call.getString("kind"), kind == "files" || kind == "photos",
+            let limitValue = call.options["limit"] as? NSNumber,
+            CFGetTypeID(limitValue) != CFBooleanGetTypeID(),
+            let limit = call.getInt("limit"), (1...10).contains(limit),
+            call.getDouble("limit") == Double(limit)
+        else { call.reject("文件选择参数无效"); return }
+        guard uploadPicker == nil, !operationInUse(id),
+            let presenter = bridge?.viewController, presenter.presentedViewController == nil
+        else { call.reject("已有系统文件窗口或相同操作正在处理"); return }
+        let cache: MiniqUploadCache
+        do {
+            if let existing = uploadCache { cache = existing }
+            else { cache = try MiniqUploadCache(); uploadCache = cache }
+        } catch { call.reject("无法创建文件上传缓存"); return }
+        let picker = MiniqUploadPicker(id: id, limit: limit, cache: cache) { [weak self] result in
+            self?.uploadPicker = nil
+            switch result {
+            case .success(let files): call.resolve(["files": files.map(\.metadata)])
+            case .failure(let error):
+                if let error = error as? MiniqUploadError { call.reject(error.localizedDescription) }
+                else if (error as NSError).domain == "MiniqUpload" { call.reject(error.localizedDescription) }
+                else { call.reject("无法读取所选文件的原始内容，请重试") }
+            }
+        }
+        uploadPicker = picker
+        picker.present(kind: kind, from: presenter)
+    }
+
+    @objc func upload(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { self.beginUpload(call) }
+    }
+
+    private func beginUpload(_ call: CAPPluginCall) {
+        guard let rawID = call.getString("id"), let id = MiniqUploadValidation.identifier(rawID),
+            let fileID = MiniqUploadValidation.identifier(call.getString("fileId")),
+            let url = MiniqUploadValidation.endpoint(call.getString("url"))
+        else { call.reject("文件上传信息无效"); return }
+        guard !operationInUse(id) else { call.reject("相同文件操作正在处理"); return }
+        guard let cache = uploadCache else { call.reject("上传缓存不可用，请重新选择文件"); return }
+        let file: MiniqCachedUpload
+        do { file = try cache.acquire(fileID) }
+        catch { call.reject("上传缓存已释放或不可用，请重新选择文件"); return }
+        let upload = MiniqFileUpload(id: id, file: file, progress: { [weak self] received in
+            self?.notifyListeners("progress", data: ["id": rawID, "received": received, "total": file.size])
+        }, completion: { [weak self] result in
+            DispatchQueue.main.async {
+                let cancelled = self?.uploads[id]?.cancelled == true
+                cache.endRead(fileID)
+                self?.uploads.removeValue(forKey: id)
+                if cancelled { call.resolve(["status": "cancelled"]); return }
+                switch result {
+                case .success(let status): call.resolve(["status": status])
+                case .failure(let error): call.reject(error.localizedDescription)
+                }
+            }
+        })
+        uploads[id] = upload
+        upload.start(url: url)
+    }
+
+    @objc func releaseUpload(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let ids = call.getArray("ids", String.self),
+                ids.allSatisfy({ MiniqUploadValidation.identifier($0) != nil })
+            else { call.reject("上传缓存标识无效"); return }
+            self.uploadCache?.release(ids.compactMap { MiniqUploadValidation.identifier($0) })
+            call.resolve()
+        }
+    }
+
+    private func operationInUse(_ id: String) -> Bool {
+        let key = id.lowercased()
+        return uploadPicker?.id == key || uploads[key] != nil || active?.id.lowercased() == key
+    }
 
     @objc func save(_ call: CAPPluginCall) {
         DispatchQueue.main.async { self.begin(call) }
@@ -123,6 +210,7 @@ public class MiniqFilesPlugin: CAPPlugin, CAPBridgedPlugin {
               url.host?.hasSuffix(".qiniucs.com") == true, url.user == nil, url.password == nil,
               url.port == nil || url.port == 443, url.fragment == nil, url.path.contains("/remote-files/")
         else { call.reject("文件下载信息无效"); return }
+        guard !operationInUse(id) else { call.reject("相同文件操作正在处理"); return }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("remote-files", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -175,6 +263,10 @@ public class MiniqFilesPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func cancel(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
+            if let id = MiniqUploadValidation.identifier(call.getString("id")) {
+                if self.uploadPicker?.id == id { self.uploadPicker?.cancel() }
+                self.uploads[id]?.cancel()
+            }
             if let active = self.active, active.id == call.getString("id") {
                 active.cancel()
                 if let sheet = self.sheet {

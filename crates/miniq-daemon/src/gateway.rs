@@ -72,6 +72,33 @@ fn workspace_path_display(path: &Path) -> String {
 
 /// Dispatch one JSON-RPC request while preserving its request identifier.
 pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
+    dispatch_from(state, req, false).await
+}
+
+/// Called only after the remote transport authenticates and decrypts a frame.
+/// An `origin` string supplied over the local/SSH socket is not this authority.
+pub async fn dispatch_authenticated_remote(state: &AppState, req: RpcRequest) -> RpcResponse {
+    if !req.origin.as_deref().is_some_and(|origin| {
+        origin
+            .strip_prefix("remote:")
+            .is_some_and(|peer| !peer.is_empty())
+    }) {
+        return RpcResponse::err(
+            req.id,
+            RpcError::new(
+                ErrorCode::Unauthorized,
+                "missing authenticated remote actor",
+            ),
+        );
+    }
+    dispatch_from(state, req, true).await
+}
+
+async fn dispatch_from(
+    state: &AppState,
+    req: RpcRequest,
+    authenticated_remote: bool,
+) -> RpcResponse {
     let id = req.id.clone();
     let remote_actor = req
         .origin
@@ -124,9 +151,27 @@ pub async fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
                 .await
         }
         "daemon.health" => system::health(state),
-        "file.describe" => files::describe(state, req.params).await,
-        "file.read" => files::read(state, req.params, remote_actor.is_some()).await,
+        "file.describe" => files::describe(state, req.params, authenticated_remote).await,
+        "file.read" => {
+            files::read(
+                state,
+                req.params,
+                remote_actor.is_some(),
+                authenticated_remote,
+            )
+            .await
+        }
         "file.list" => files::list(state, req.params).await,
+        "file.access.request" | "file.access.resolve" => {
+            files::access::dispatch(
+                state,
+                &req.method,
+                req.params,
+                remote_actor.as_deref(),
+                authenticated_remote,
+            )
+            .await
+        }
         "git.status" => git::status(state, req.params).await,
         "git.diff" => git::diff(state, req.params).await,
         "terminal.create" => terminal::create(state, req.params).await,

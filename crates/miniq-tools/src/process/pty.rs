@@ -56,7 +56,7 @@ pub(super) fn start(
     }
     let stdout = Spool::new()?;
     let stderr = Spool::new()?;
-    stderr.lock().unwrap().closed = true; // PTYs combine stdout/stderr.
+    stderr.lock().unwrap().finish(); // PTYs combine stdout/stderr.
     let reader = pair.master.try_clone_reader().map_err(failure)?;
     let writer = pair.master.take_writer().map_err(failure)?;
     let child = pair.slave.spawn_command(cmd).map_err(failure)?;
@@ -98,7 +98,7 @@ fn collect(mut reader: Box<dyn Read + Send>, output: Output) {
             }
         }
     }
-    output.lock().unwrap().closed = true;
+    output.lock().unwrap().finish();
 }
 fn failure(error: impl std::fmt::Display) -> ToolError {
     ToolError::ExecutionFailed(format!("PTY: {error}"))

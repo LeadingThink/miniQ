@@ -49,6 +49,7 @@ impl Session<'_> {
                         expires_at: ticket.expires_at,
                         object_id: ticket.object_id,
                     }),
+                &frame.code,
             ),
             "presence" => {
                 self.mobile_clients = frame.mobile_clients;

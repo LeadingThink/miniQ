@@ -1,5 +1,13 @@
 use super::*;
 
+async fn describe(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+    super::describe(state, raw, false).await
+}
+
+async fn read(state: &AppState, raw: Option<Value>, remote: bool) -> Result<Value, RpcError> {
+    super::read(state, raw, remote, false).await
+}
+
 fn fixture() -> (tempfile::TempDir, Scope) {
     let directory = tempfile::tempdir().unwrap();
     let scope = Scope {
@@ -25,7 +33,7 @@ fn chunked_files_preserve_bytes_and_detect_updates() {
     };
     let mut restored = Vec::new();
     loop {
-        let chunk = read_chunk(&path, &input, false).unwrap();
+        let chunk = read_chunk(&path, File::open(&path).unwrap(), &input, false).unwrap();
         restored.extend(
             base64::engine::general_purpose::STANDARD
                 .decode(chunk["dataBase64"].as_str().unwrap())
@@ -38,10 +46,10 @@ fn chunked_files_preserve_bytes_and_detect_updates() {
     }
     assert_eq!(restored, bytes);
     input.offset += 1;
-    assert!(read_chunk(&path, &input, false).is_err());
+    assert!(read_chunk(&path, File::open(&path).unwrap(), &input, false).is_err());
     input.offset = 0;
     std::fs::write(&path, "new file").unwrap();
-    assert!(read_chunk(&path, &input, false)
+    assert!(read_chunk(&path, File::open(&path).unwrap(), &input, false)
         .unwrap_err()
         .contains("已更新"));
 }

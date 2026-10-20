@@ -7,6 +7,11 @@ import { HeroPage } from "./HeroPage";
 
 vi.mock("../runtime", () => ({ isTauriRuntime: () => false }));
 vi.mock("../remoteTransfer", () => ({ uploadRemoteFile: vi.fn() }));
+vi.mock("../remoteUploadSource", () => ({
+  usesNativeUploadPicker: () => false,
+  stageBrowserUploadSources: vi.fn(async (files) => files),
+  releaseUploadSources: vi.fn(async () => {}),
+}));
 vi.mock("./SessionModelControls", () => ({ SessionModelControls: () => null }));
 vi.mock("./VoiceInput", () => ({ VoiceInput: () => null }));
 beforeEach(() => {
@@ -39,8 +44,9 @@ it("new-session screen uploads from the phone into the selected project's inbox"
   openAttachment();
   const file = new File(["x"], "a.jpg", { type: "image/jpeg" });
   fireEvent.change(screen.getByLabelText("选择本机文件"), { target: { files: [file] } });
+  await waitFor(() => expect(uploadRemoteFile).toHaveBeenCalledOnce());
   expect(vi.mocked(uploadRemoteFile).mock.calls[0].slice(0, 3)).toEqual([controller.client, { workspaceId: "workspace-1" }, file]);
-  await waitFor(() => expect(screen.getByText("a.jpg", { selector: "span" })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole("button", { name: "移除附件 a.jpg" })).toBeTruthy());
   expect(controller.actions.startTask).not.toHaveBeenCalled();
   expect(Object.keys(localStorage).some((key) => key.includes("attachments") && localStorage.getItem(key)?.includes("/stock_news/inbox/u/a.jpg"))).toBe(true);
 });

@@ -373,22 +373,32 @@ export class RelayBroker {
   }
 
   private async remoteFileTicket(peer: Peer, device: Device, raw: Record<string, unknown>): Promise<void> {
-    const { requestId, bytes, sessionId, objectId } = raw;
+    const { requestId, bytes, sessionId } = raw;
+    // Installed Rust clients serialized an absent Option as null. Treat both
+    // forms as a new object; renewal still requires a valid scoped object ID.
+    const objectId = raw.objectId ?? undefined;
     if (typeof requestId !== "string" || !requestId.length || requestId.length > 80) return;
     const response = { type: "file_ticket_result", requestId };
-    const unavailable = () => send(peer.socket, { ...response, error: "File transfer unavailable" });
+    const unavailable = (code: string, retryAfterMs?: number) => {
+      // Log only fixed reason codes, never file paths, signed URLs or keys.
+      console.warn(`[relay-files] ticket rejected code=${code}`);
+      send(peer.socket, { ...response, error: "File transfer unavailable", code,
+        ...(retryAfterMs === undefined ? {} : { retryAfterMs }) });
+    };
     const blobs = this.blobs;
-    if (peer.role !== "desktop" || device.desktop !== peer
-      || !blobs
-      || !(blobs.fileStorageEnabledFor?.(peer.roomId)
-        ?? Boolean(blobs.remoteFileTicket))
-      || !blobs.remoteFileTicket || !Number.isSafeInteger(bytes) || (bytes as number) < 0
+    if (peer.role !== "desktop" || device.desktop !== peer) {
+      unavailable("file_ticket_forbidden"); return;
+    }
+    if (!blobs?.remoteFileTicket || !(blobs.fileStorageEnabledFor?.(peer.roomId) ?? true)) {
+      unavailable("file_storage_unavailable"); return;
+    }
+    if (!Number.isSafeInteger(bytes) || (bytes as number) < 0 || (bytes as number) > MAX_REMOTE_FILE_BYTES
       || !isRemoteFileSessionId(sessionId)
       || (objectId !== undefined && (typeof objectId !== "string" || !/^[0-9a-f-]{36}$/i.test(objectId)))
-    ) { unavailable(); return;
+    ) { unavailable("file_ticket_invalid"); return;
     }
     const reservation = this.storageBudget(peer, "files", MAX_REMOTE_FILE_BYTES).reservation(bytes as number);
-    if (!reservation) { unavailable(); return; }
+    if (!reservation) { unavailable("file_budget_exceeded", 60000); return; }
     try {
       const ticket = objectId === undefined
         ? await blobs.remoteFileTicket(peer.roomId, bytes as number, device.deviceId, sessionId)
@@ -396,7 +406,7 @@ export class RelayBroker {
       if (device.desktop === peer) send(peer.socket, { ...response, ticket });
     } catch {
       reservation.release();
-      if (device.desktop === peer) unavailable();
+      if (device.desktop === peer) unavailable("file_storage_failed");
     }
   }
 

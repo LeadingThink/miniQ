@@ -1,10 +1,10 @@
 //! Session-scoped artifact access and streaming transfers for browser and mobile clients.
+pub(crate) mod access;
 mod transfer;
 use super::common::{params, store_err};
 use crate::state::AppState;
 use base64::Engine;
 use miniq_local::files::preview_format;
-use miniq_memory::Store;
 use miniq_protocol::{ErrorCode, RpcError};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -74,13 +74,17 @@ fn invalid(error: impl std::fmt::Display) -> RpcError {
     RpcError::new(ErrorCode::InvalidParams, error.to_string())
 }
 
-pub(super) async fn describe(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
+pub(super) async fn describe(
+    state: &AppState,
+    raw: Option<Value>,
+    remote: bool,
+) -> Result<Value, RpcError> {
     let input: FileInput = params(raw)?;
     let scope = scope(state, &input.session_id)?;
-    let store = state.store.clone();
+    let state = state.clone();
     tokio::task::spawn_blocking(move || {
-        let path = validated_session_file(&store, &scope, &input.session_id, &input.path)?;
-        let file = File::open(&path).map_err(|e| e.to_string())?;
+        let (path, file) =
+            opened_session_file(&state, &scope, &input.session_id, &input.path, remote)?;
         let metadata = file.metadata().map_err(|e| e.to_string())?;
         let (kind, mime_type) = preview_format(&path);
         Ok::<_, String>(json!({"path":path, "kind":kind, "mimeType":mime_type,
@@ -96,13 +100,15 @@ pub(super) async fn read(
     state: &AppState,
     raw: Option<Value>,
     remote: bool,
+    allow_grant: bool,
 ) -> Result<Value, RpcError> {
     let input: ReadInput = params(raw)?;
     let scope = scope(state, &input.session_id)?;
-    let store = state.store.clone();
+    let state = state.clone();
     tokio::task::spawn_blocking(move || {
-        let path = validated_session_file(&store, &scope, &input.session_id, &input.path)?;
-        read_chunk(&path, &input, remote)
+        let (path, file) =
+            opened_session_file(&state, &scope, &input.session_id, &input.path, allow_grant)?;
+        read_chunk(&path, file, &input, remote)
     })
     .await
     .map_err(invalid)?
@@ -119,13 +125,12 @@ fn revision(metadata: &std::fs::Metadata) -> Result<String, String> {
     Ok(format!("{}:{modified}", metadata.len()))
 }
 
-fn read_chunk(path: &Path, input: &ReadInput, remote: bool) -> Result<Value, String> {
-    let mut file = if remote {
-        transfer::open_source_file(path)
-    } else {
-        File::open(path)
-    }
-    .map_err(|e| e.to_string())?;
+fn read_chunk(
+    path: &Path,
+    mut file: File,
+    input: &ReadInput,
+    remote: bool,
+) -> Result<Value, String> {
     let metadata = file.metadata().map_err(|e| e.to_string())?;
     if remote
         && (!metadata.is_file()
@@ -244,34 +249,46 @@ fn canonical_roots(scope: &Scope) -> Vec<PathBuf> {
     roots
 }
 
-fn validated_session_file(
-    store: &Store,
+fn opened_session_file(
+    state: &AppState,
     scope: &Scope,
     session_id: &str,
     requested: &str,
-) -> Result<PathBuf, String> {
+    allow_grant: bool,
+) -> Result<(PathBuf, File), String> {
     let path = dunce::canonicalize(Path::new(&scope.cwd).join(requested))
         .map_err(|error| format!("无法访问文件 {requested}: {error}"))?;
     if is_staging_file(&path) {
         return Err("incomplete transfers are not available".into());
     }
-    if !path.is_file() {
+    // Validate and consume the same opened file. Every path component is opened
+    // without following symlinks after canonicalization.
+    let file = transfer::open_source_file(&path).map_err(|error| error.to_string())?;
+    if !file
+        .metadata()
+        .map_err(|error| error.to_string())?
+        .is_file()
+    {
         return Err(format!("目标不是文件: {}", path.display()));
     }
     if canonical_roots(scope)
         .iter()
         .any(|root| path.starts_with(root))
     {
-        return Ok(path);
+        return Ok((path, file));
     }
     // Persisted attachments authorize only their canonical file. Never grant
     // access to their parent directory, or follow a replaced attachment symlink
     // to a path which was not explicitly attached to this session.
-    if store
+    if state
+        .store
         .session_has_attachment(session_id, &path.to_string_lossy())
         .map_err(|error| error.to_string())?
     {
-        return Ok(path);
+        return Ok((path, file));
+    }
+    if allow_grant && access::allowed(state, session_id, &path, &file)? {
+        return Ok((path, file));
     }
     Err(format!("拒绝打开当前会话未授权的文件: {}", path.display()))
 }
