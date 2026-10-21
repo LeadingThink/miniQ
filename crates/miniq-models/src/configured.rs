@@ -136,8 +136,25 @@ impl ConfiguredProvider {
             Ok(payload) => payload,
             Err(_) => return ModelCapabilities::default(),
         };
-        extract_capabilities(&payload)
+        cap_model_context(&self.config.model, extract_capabilities(&payload))
     }
+}
+
+/// Keep the local compaction policy below the effective OneAPI Grok boundary.
+/// The gateway advertises 500k tokens, but logs show the upstream rejecting
+/// Responses requests at roughly 220k input tokens. A 320k reported window,
+/// after reserving output and safety margin, gives local compaction an input
+/// budget below the provider's 200k long-context routing threshold.
+fn cap_model_context(model: &str, mut capabilities: ModelCapabilities) -> ModelCapabilities {
+    if model.to_ascii_lowercase().starts_with("grok-") {
+        capabilities.max_context_tokens = Some(
+            capabilities
+                .max_context_tokens
+                .unwrap_or(320_000)
+                .min(320_000),
+        );
+    }
+    capabilities
 }
 
 pub fn infer_protocol(model: &str) -> ApiProtocol {
@@ -297,6 +314,13 @@ mod tests {
             infer_protocol("gemini-3.1-pro"),
             ApiProtocol::ChatCompletions
         );
+    }
+
+    #[test]
+    fn grok_context_window_is_capped_to_the_observed_gateway_input_limit() {
+        let payload = json!({"data": {"max_tokens": 500_000}});
+        let capabilities = cap_model_context("grok-4.7", extract_capabilities(&payload));
+        assert_eq!(capabilities.max_context_tokens, Some(320_000));
     }
 
     #[test]

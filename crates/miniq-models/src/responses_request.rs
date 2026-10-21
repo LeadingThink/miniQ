@@ -90,6 +90,26 @@ pub(crate) fn build_input(messages: &[ChatMessage]) -> Result<Vec<Value>, Provid
     Ok(input)
 }
 
+/// Grok's OneAPI Responses route accepts the function-call transcript but
+/// rejects replayed native reasoning/compaction items. Those items are an
+/// optimization for providers that support encrypted reasoning replay; Grok
+/// does not need them to continue a tool turn.
+pub(crate) fn build_input_for_model(
+    messages: &[ChatMessage],
+    model: &str,
+) -> Result<Vec<Value>, ProviderError> {
+    let mut input = build_input(messages)?;
+    if model.to_ascii_lowercase().starts_with("grok-") {
+        input.retain(|item| {
+            !matches!(
+                item.get("type").and_then(Value::as_str),
+                Some("reasoning" | "compaction")
+            )
+        });
+    }
+    Ok(input)
+}
+
 struct ReplayedCall {
     kind: String,
     input_index: usize,
