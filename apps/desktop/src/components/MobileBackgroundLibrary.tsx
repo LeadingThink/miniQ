@@ -19,7 +19,7 @@ function useSnapshot() {
 }
 
 function Preview({ item }: { item: BackgroundDefinition }) {
-  if (item.thumb) return <img src={item.thumb} alt="" loading="lazy" draggable={false} />;
+  if (item.thumb) return <img src={item.thumb} alt="" loading="lazy" draggable={false} style={{ objectPosition: item.position }} />;
   if (item.kind === "ambient" && item.palette) return <span style={ambientThumbStyle(item.palette)} />;
   if (item.kind === "glyph") return <span className={`mobile-background-library-glyph${item.light ? " is-light" : ""}`} style={{ color: item.accent }}>{item.name.slice(0, 2)}</span>;
   return <span className="mobile-background-library-none">无</span>;

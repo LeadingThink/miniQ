@@ -39,12 +39,12 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 it("keeps desktop background subscriptions live", async () => {
   storeBackground("none");
   const { container } = render(<LivingBackground />);
-  const video = BACKGROUNDS.find(x => x.kind === "video")!;
+  const video = BACKGROUNDS.find(x => x.kind === "video" && !x.bundled)!;
   await act(async () => storeBackground(video.id));
   expect(container.querySelector('[data-kind="video"]')).not.toBeNull();
 });
 it("uses one native player and releases it when motion is suspended", async () => {
-  state.native = true; state.id = BACKGROUNDS.find(x => x.kind === "video")!.id;
+  state.native = true; state.id = BACKGROUNDS.find(x => x.kind === "video" && !x.bundled)!.id;
   const { container } = render(<LivingBackground />);
   await act(async () => {});
   expect(container.querySelectorAll("video")).toHaveLength(1);
@@ -55,7 +55,7 @@ it("uses one native player and releases it when motion is suspended", async () =
 
 it("loads cached native video offline and keeps it mounted when network permission changes", async () => {
   state.native = true; state.networkAllowed = false;
-  state.id = BACKGROUNDS.find(x => x.kind === "video")!.id;
+  state.id = BACKGROUNDS.find(x => x.kind === "video" && !x.bundled)!.id;
   const { container } = render(<LivingBackground />);
   await act(async () => {});
   const video = container.querySelector("video");
@@ -80,7 +80,7 @@ it("keeps the selected native video playing when system reduced motion changes",
     removeEventListener: (_event: string, listener: () => void) => listeners.delete(listener),
   }));
   state.native = true;
-  state.id = BACKGROUNDS.find(x => x.kind === "video")!.id;
+  state.id = BACKGROUNDS.find(x => x.kind === "video" && !x.bundled)!.id;
   const { container } = render(<LivingBackground />);
   await act(async () => {});
   expect(container.querySelectorAll("video")).toHaveLength(1);
@@ -95,7 +95,7 @@ it("does not mount a late video after motion permission is revoked", async () =>
   let resolve!: (blob: Blob) => void;
   state.download.mockReturnValue(new Promise<Blob>(done => { resolve = done; }));
   state.native = true;
-  state.id = BACKGROUNDS.find(x => x.kind === "video")!.id;
+  state.id = BACKGROUNDS.find(x => x.kind === "video" && !x.bundled)!.id;
   const { container } = render(<LivingBackground />);
   await act(async () => { state.allowed = false; state.listeners.forEach(listener => listener()); });
   await act(async () => resolve(new Blob(["late video"])));
@@ -105,7 +105,7 @@ it("does not mount a late video after motion permission is revoked", async () =>
 
 async function mountNativeVideo() {
   state.native = true;
-  state.id = BACKGROUNDS.find(x => x.kind === "video")!.id;
+  state.id = BACKGROUNDS.find(x => x.kind === "video" && !x.bundled)!.id;
   const result = render(<LivingBackground />);
   await act(async () => {});
   return result;
@@ -206,4 +206,24 @@ it("keeps a cover while play is pending and falls back on unsupported media", as
   await act(async () => reject(new DOMException("unsupported", "NotSupportedError")));
   expect(container.querySelector("video")).toBeNull();
   expect(container.querySelector(".living-background-poster")).not.toBeNull();
+});
+
+
+it("plays bundled native wallpaper offline without downloading or creating blob URLs", async () => {
+  state.native = true;
+  state.networkAllowed = false;
+  const background = BACKGROUNDS.find(item => item.bundled)!;
+  state.id = background.id;
+  const { container } = render(<LivingBackground />);
+  await act(async () => {});
+  const video = container.querySelector("video");
+  expect(video?.getAttribute("src")).toBe(background.video);
+  expect(state.download).not.toHaveBeenCalled();
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+  const layer = container.querySelector<HTMLElement>(".living-background-layer")!;
+  expect(layer.style.getPropertyValue("--wallpaper-position")).toBe(background.position);
+  await act(async () => { state.allowed = false; state.listeners.forEach(fn => fn()); });
+  expect(container.querySelector("video")).toBeNull();
+  expect(container.querySelector(".living-background-poster")).not.toBeNull();
+  expect(URL.revokeObjectURL).not.toHaveBeenCalled();
 });

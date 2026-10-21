@@ -37,9 +37,9 @@ describe("rotation helpers", () => {
       for (const id of slot.items) expect(isBackgroundId(id), `${slot.id}:${id}`).toBe(true);
     }
     expect(resolvePlaylistItems("all")).toHaveLength(BACKGROUNDS.length - 1);
-    expect(resolvePlaylistItems("ambient")).toHaveLength(110);
-    expect(resolvePlaylistItems("starlight").length).toBeGreaterThan(20);
-    expect(resolvePlaylistItems("calm")).toHaveLength(44);
+    expect(resolvePlaylistItems("ambient")).toHaveLength(97);
+    expect(resolvePlaylistItems("starlight").length).toBe(36);
+    expect(resolvePlaylistItems("calm")).toHaveLength(33);
   });
 
   it("maps hours to time slots and folds small hours into night", () => {
@@ -59,7 +59,7 @@ describe("rotation helpers", () => {
       playlistId: "hack",
       interval: 7,
       order: "reverse",
-      custom: ["none", "01-spacecat", "01-spacecat", "bogus", ...many, ...many],
+      custom: ["none", "quiet-whale", "quiet-whale", "bogus", ...many, ...many],
       lastSwitchAt: -5,
     });
     expect(state.enabled).toBe(false);
@@ -70,7 +70,7 @@ describe("rotation helpers", () => {
     expect(state.custom).not.toContain("bogus");
     expect(new Set(state.custom).size).toBe(state.custom.length);
     expect(state.custom).toHaveLength(24);
-    expect(state.custom[0]).toBe("01-spacecat");
+    expect(state.custom[0]).toBe("quiet-whale");
     expect(state.lastSwitchAt).toBe(0);
   });
 
@@ -81,14 +81,14 @@ describe("rotation helpers", () => {
   });
 
   it("picks the next background in order or at random without repeats", () => {
-    const items = ["01-spacecat", "02-spirits", "03-deskcat"];
+    const items = ["quiet-whale", "quiet-fox", "quiet-clay"];
     expect(pickNextBackground([], "none", "sequence")).toBeNull();
-    expect(pickNextBackground(["01-spacecat"], "01-spacecat", "shuffle")).toBe("01-spacecat");
-    expect(pickNextBackground(items, "01-spacecat", "sequence")).toBe("02-spirits");
-    expect(pickNextBackground(items, "03-deskcat", "sequence")).toBe("01-spacecat");
-    expect(pickNextBackground(items, "none", "sequence")).toBe("01-spacecat");
+    expect(pickNextBackground(["quiet-whale"], "quiet-whale", "shuffle")).toBe("quiet-whale");
+    expect(pickNextBackground(items, "quiet-whale", "sequence")).toBe("quiet-fox");
+    expect(pickNextBackground(items, "quiet-clay", "sequence")).toBe("quiet-whale");
+    expect(pickNextBackground(items, "none", "sequence")).toBe("quiet-whale");
     for (const value of [0, 0.5, 0.9999]) {
-      expect(pickNextBackground(items, "02-spirits", "shuffle", () => value)).not.toBe("02-spirits");
+      expect(pickNextBackground(items, "quiet-fox", "shuffle", () => value)).not.toBe("quiet-fox");
     }
   });
 });
@@ -110,48 +110,48 @@ describe("rotation runtime", () => {
     updateRotation({ playlistId: "cozy", interval: 1 });
     expect(activeId()).toBe("none");
     updateRotation({ enabled: true });
-    expect(activeId()).toBe("01-spacecat");
+    expect(activeId()).toBe("quiet-fox");
     vi.advanceTimersByTime(60_000);
-    expect(activeId()).toBe("02-spirits");
+    expect(activeId()).toBe("quiet-whale");
     expect(readRotation().lastSwitchAt).toBe(Date.now());
   });
 
   it("restarts the countdown after a manual pick and stops when disabled", () => {
     updateRotation({ playlistId: "cozy", interval: 1, enabled: true });
     vi.advanceTimersByTime(40_000);
-    storeBackground("03-deskcat");
+    storeBackground("quiet-clay");
     restartRotationTimer();
     vi.advanceTimersByTime(40_000);
-    expect(activeId()).toBe("03-deskcat");
+    expect(activeId()).toBe("quiet-clay");
     vi.advanceTimersByTime(21_000);
-    expect(activeId()).toBe("06-summer");
+    expect(activeId()).toBe("quiet-fox");
     updateRotation({ enabled: false });
     vi.advanceTimersByTime(5 * 60_000);
-    expect(activeId()).toBe("06-summer");
+    expect(activeId()).toBe("quiet-fox");
   });
 
   it("builds a custom playlist and resumes an overdue rotation at startup", () => {
-    toggleCustomBackground("10-space");
-    toggleCustomBackground("glyph-tokens");
+    toggleCustomBackground("quiet-whale");
+    toggleCustomBackground("quiet-clay");
     toggleCustomBackground("none");
-    expect(getRotation().custom).toEqual(["10-space", "glyph-tokens"]);
-    toggleCustomBackground("10-space");
-    expect(getRotation().custom).toEqual(["glyph-tokens"]);
-    toggleCustomBackground("10-space");
+    expect(getRotation().custom).toEqual(["quiet-whale", "quiet-clay"]);
+    toggleCustomBackground("quiet-whale");
+    expect(getRotation().custom).toEqual(["quiet-clay"]);
+    toggleCustomBackground("quiet-whale");
 
     localStorage.setItem(
       ROTATION_STORAGE_KEY,
       JSON.stringify({ ...getRotation(), enabled: true, playlistId: "custom", lastSwitchAt: Date.now() - 3_600_000 }),
     );
-    storeBackground("glyph-tokens");
+    storeBackground("quiet-clay");
     initializeRotation();
-    expect(resolvePlaylistItems("custom", getRotation().custom)).toEqual(["glyph-tokens", "10-space"]);
-    expect(activeId()).toBe("10-space");
+    expect(resolvePlaylistItems("custom", getRotation().custom)).toEqual(["quiet-clay", "quiet-whale"]);
+    expect(activeId()).toBe("quiet-whale");
   });
 
   it("advances manually even when rotation is off", () => {
-    updateRotation({ playlistId: "glyph" });
-    expect(advanceRotation()).toMatch(/^glyph-/);
-    expect(activeId()).toMatch(/^glyph-/);
+    updateRotation({ playlistId: "ambient" });
+    expect(advanceRotation()).toMatch(/^ambient-/);
+    expect(activeId()).toMatch(/^ambient-/);
   });
 });

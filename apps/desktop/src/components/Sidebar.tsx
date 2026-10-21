@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type TouchEvent } from "react";
 import {
   FolderPlus,
   Archive,
@@ -98,32 +98,70 @@ interface SidebarProps {
 
 export function Sidebar(props: SidebarProps) {
   const mobile = useMobileSidebarLayout();
-  const swipe = useRef<{ pointerId: number; startX: number; startY: number; horizontal: boolean; cancelled: boolean } | null>(null);
-  const onPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (!mobile || !props.onClose || !event.isPrimary || (event.pointerType !== "touch" && event.pointerType !== "pen")) return;
-    swipe.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, horizontal: false, cancelled: false };
-    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Pointer capture is unavailable in some webviews. */ }
-  }, [mobile, props.onClose]);
-  const onPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    const gesture = swipe.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
-    const deltaX = event.clientX - gesture.startX;
-    const deltaY = event.clientY - gesture.startY;
+  type SwipeSource = "pointer" | "touch";
+  type Swipe = { source: SwipeSource; id: number; startX: number; startY: number; horizontal: boolean; cancelled: boolean };
+  const swipe = useRef<Swipe | null>(null);
+  const updateSwipe = useCallback((gesture: Swipe, x: number, y: number) => {
+    const deltaX = x - gesture.startX;
+    const deltaY = y - gesture.startY;
     if (!gesture.horizontal && !gesture.cancelled && Math.max(Math.abs(deltaX), Math.abs(deltaY)) >= 10) {
       if (Math.abs(deltaY) > Math.abs(deltaX) + 8 || deltaX >= 0) gesture.cancelled = true;
       else gesture.horizontal = true;
     }
-    if (gesture.horizontal && deltaX < 0) event.preventDefault();
+    return { deltaX, deltaY };
   }, []);
+  const closeSwipe = useCallback((gesture: Swipe, x: number, y: number) => {
+    const { deltaX, deltaY } = updateSwipe(gesture, x, y);
+    if (gesture.horizontal && !gesture.cancelled && deltaX <= -56 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) props.onClose?.();
+  }, [props.onClose, updateSwipe]);
+  const onPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (!mobile || !props.onClose || !event.isPrimary || (event.pointerType !== "touch" && event.pointerType !== "pen")) return;
+    swipe.current = { source: "pointer", id: event.pointerId, startX: event.clientX, startY: event.clientY, horizontal: false, cancelled: false };
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Pointer capture is unavailable in some webviews. */ }
+  }, [mobile, props.onClose]);
+  const onPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const gesture = swipe.current;
+    if (!gesture || gesture.source !== "pointer" || gesture.id !== event.pointerId) return;
+    const { deltaX } = updateSwipe(gesture, event.clientX, event.clientY);
+    if (gesture.horizontal && deltaX < 0) event.preventDefault();
+  }, [updateSwipe]);
   const finishPointer = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const gesture = swipe.current;
-    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (!gesture || gesture.source !== "pointer" || gesture.id !== event.pointerId) return;
     swipe.current = null;
     try { event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* Pointer capture is unavailable in some webviews. */ }
-    const deltaX = event.clientX - gesture.startX;
-    const deltaY = event.clientY - gesture.startY;
-    if (gesture.horizontal && !gesture.cancelled && deltaX <= -56 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) props.onClose?.();
-  }, [props.onClose]);
+    closeSwipe(gesture, event.clientX, event.clientY);
+  }, [closeSwipe]);
+  const onTouchStart = useCallback((event: TouchEvent<HTMLDivElement>) => {
+    if (!mobile || !props.onClose || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    // Capacitor WebViews can expose touch events without PointerEvents. If
+    // both APIs fire, the touch sequence owns the gesture and pointer events
+    // are ignored until it finishes.
+    swipe.current = { source: "touch", id: touch.identifier, startX: touch.clientX, startY: touch.clientY, horizontal: false, cancelled: false };
+  }, [mobile, props.onClose]);
+  const onTouchMove = useCallback((event: TouchEvent<HTMLDivElement>) => {
+    const gesture = swipe.current;
+    if (!gesture || gesture.source !== "touch") return;
+    const touch = event.touches[0] ?? event.changedTouches[0];
+    if (!touch || touch.identifier !== gesture.id) return;
+    const { deltaX } = updateSwipe(gesture, touch.clientX, touch.clientY);
+    if (gesture.horizontal && deltaX < 0 && event.cancelable) event.preventDefault();
+  }, [updateSwipe]);
+  const finishTouch = useCallback((event: TouchEvent<HTMLDivElement>) => {
+    const gesture = swipe.current;
+    if (!gesture || gesture.source !== "touch") return;
+    const touch = event.changedTouches[0];
+    if (!touch || touch.identifier !== gesture.id) return;
+    swipe.current = null;
+    closeSwipe(gesture, touch.clientX, touch.clientY);
+  }, [closeSwipe]);
+  const cancelTouch = useCallback((event: TouchEvent<HTMLDivElement>) => {
+    const gesture = swipe.current;
+    const touch = event.changedTouches[0];
+    if (gesture?.source === "touch" && (!touch || touch.identifier === gesture.id)) swipe.current = null;
+  }, []);
   const [moreOpen, setMoreOpen] = useState(false);
   const showSecondary = mobile && moreOpen;
   const [footerMenuOpen, setFooterMenuOpen] = useState(false);
@@ -153,7 +191,16 @@ export function Sidebar(props: SidebarProps) {
   const archivedSessions = navigation.archived;
   const archiveOpen = showArchived || navigation.filtering;
   return (
-    <SidebarPanel onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={finishPointer} onPointerCancel={finishPointer}>
+    <SidebarPanel
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={finishPointer}
+      onPointerCancel={finishPointer}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={finishTouch}
+      onTouchCancel={cancelTouch}
+    >
       <div className="sidebar-brand-row" data-tauri-drag-region>
         <div className="brand" data-tauri-drag-region>miniQ</div>
         {mobile && props.onClose && <button type="button" className="sidebar-close" aria-label="关闭项目与会话侧栏" onClick={props.onClose}><X size={19} /></button>}

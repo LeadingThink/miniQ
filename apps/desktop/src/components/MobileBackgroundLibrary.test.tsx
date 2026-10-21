@@ -14,7 +14,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); mobileBackgroundPolicy.stop(); });
 
 describe("MobileBackgroundLibrary", () => {
-  it("exposes all 227 catalog entries across mobile pages without duplicates", () => {
+  it("exposes all catalog entries across mobile pages without duplicates", () => {
     render(<MobileBackgroundLibrary />);
     const names: string[] = [];
     for (;;) {
@@ -26,44 +26,44 @@ describe("MobileBackgroundLibrary", () => {
       fireEvent.click(next);
     }
     expect(names).toEqual(BACKGROUNDS.map((item) => item.id));
-    expect(new Set(names).size).toBe(227);
-    fireEvent.click(screen.getByRole("tab", { name: "字符效果" }));
-    expect(screen.getByText("第 1 / 2 页")).toBeTruthy();
-    expect(screen.getAllByRole("radio").length).toBe(12);
+    expect(new Set(names).size).toBe(BACKGROUNDS.length);
+    fireEvent.click(screen.getByRole("tab", { name: "动物伙伴" }));
+    expect(screen.getByText("第 1 / 1 页")).toBeTruthy();
+    expect(screen.getAllByRole("radio").length).toBe(2);
   });
 
   it("searches, pages, and selects through the mobile policy", () => {
     const select = vi.spyOn(mobileBackgroundPolicy, "selectBackground");
     render(<MobileBackgroundLibrary pageSize={2} />);
-    fireEvent.change(screen.getByRole("searchbox", { name: "搜索背景" }), { target: { value: "太空猫" } });
-    fireEvent.click(screen.getByRole("radio", { name: "太空猫打盹" }));
-    expect(select).toHaveBeenCalledWith("01-spacecat");
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索背景" }), { target: { value: "深海慢游" } });
+    fireEvent.click(screen.getByRole("radio", { name: "深海慢游" }));
+    expect(select).toHaveBeenCalledWith("quiet-whale");
     expect(screen.getByText("第 1 / 1 页")).toBeTruthy();
   });
 
   it("adds and removes a background from the mobile custom collection", () => {
     render(<MobileBackgroundLibrary />);
-    const add = screen.getByRole("button", { name: "加入我的合集太空猫打盹" });
+    const add = screen.getByRole("button", { name: "加入我的合集深海慢游" });
     fireEvent.click(add);
-    expect(mobileBackgroundPolicy.getSnapshot().preferences.rotation.custom).toEqual(["01-spacecat"]);
-    fireEvent.click(screen.getByRole("button", { name: "从我的合集移除太空猫打盹" }));
+    expect(mobileBackgroundPolicy.getSnapshot().preferences.rotation.custom).toEqual(["quiet-whale"]);
+    fireEvent.click(screen.getByRole("button", { name: "从我的合集移除深海慢游" }));
     expect(mobileBackgroundPolicy.getSnapshot().preferences.rotation.custom).toEqual([]);
   });
 
   it("keeps favorites independent from the collection and combines filtering with search", () => {
     render(<MobileBackgroundLibrary />);
-    fireEvent.click(screen.getByRole("button", { name: "收藏太空猫打盹" }));
-    expect(mobileBackgroundPolicy.getSnapshot().preferences.favorites).toEqual(["01-spacecat"]);
+    fireEvent.click(screen.getByRole("button", { name: "收藏深海慢游" }));
+    expect(mobileBackgroundPolicy.getSnapshot().preferences.favorites).toEqual(["quiet-whale"]);
     expect(mobileBackgroundPolicy.getSnapshot().preferences.rotation.custom).toEqual([]);
     fireEvent.click(screen.getByRole("button", { name: /仅看收藏/ }));
     expect(screen.getAllByRole("radio")).toHaveLength(1);
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "不存在的背景" } });
     expect(screen.queryAllByRole("radio")).toHaveLength(0);
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "加入我的合集太空猫打盹" }));
-    fireEvent.click(screen.getByRole("button", { name: "取消收藏太空猫打盹" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入我的合集深海慢游" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消收藏深海慢游" }));
     expect(mobileBackgroundPolicy.getSnapshot().preferences.favorites).toEqual([]);
-    expect(mobileBackgroundPolicy.getSnapshot().preferences.rotation.custom).toEqual(["01-spacecat"]);
+    expect(mobileBackgroundPolicy.getSnapshot().preferences.rotation.custom).toEqual(["quiet-whale"]);
     expect(screen.queryAllByRole("radio")).toHaveLength(0);
   });
 

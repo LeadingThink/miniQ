@@ -41,9 +41,9 @@ function sizedCanvas(ctx: unknown) {
 }
 
 describe("ambient backgrounds", () => {
-  it("ships 110 unique, valid presets wired into the background catalog", () => {
-    expect(ambientBackgrounds).toHaveLength(ambientStyles.length * ambientPalettes.length);
-    expect(ambientBackgrounds).toHaveLength(110);
+  it("ships curated unique, valid presets wired into the background catalog", () => {
+    expect(ambientBackgrounds).toHaveLength(ambientStyles.length * ambientPalettes.length - 2);
+    expect(ambientBackgrounds).toHaveLength(97);
     const ids = ambientBackgrounds.map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);
     const names = ambientBackgrounds.map((item) => item.name);
@@ -58,7 +58,6 @@ describe("ambient backgrounds", () => {
     expect(new Set(allIds).size).toBe(allIds.length);
     const allNames = BACKGROUNDS.map((item) => item.name);
     expect(new Set(allNames).size).toBe(allNames.length);
-    expect(BACKGROUNDS.length).toBe(227);
   });
 
   it("builds gradient thumbnails without image requests", () => {
@@ -86,10 +85,10 @@ describe("ambient backgrounds", () => {
   });
 
   it("renders every style in dark and light palettes", () => {
-    const light = ambientPalettes.find((item) => "light" in item && item.light)!;
     const dark = ambientPalettes[0];
+    const accent = ambientPalettes.find(item => "light" in item && item.light)!;
     for (const style of ambientStyles) {
-      for (const palette of [dark, light]) {
+      for (const palette of [dark, accent]) {
         const { ctx, calls } = stubContext();
         const engine = createAmbientEngine(sizedCanvas(ctx), { style: style.id, palette, seed: 7 });
         engine.resize();
@@ -108,7 +107,7 @@ describe("ambient backgrounds", () => {
     const engine = createAmbientEngine(canvas, { style: "stars", palette: ambientPalettes[0], seed: 3 });
     engine.start();
     expect(raf).toHaveBeenCalled();
-    expect(() => engine.setPreset({ style: "rain", palette: ambientPalettes[5], seed: 9 })).not.toThrow();
+    expect(() => engine.setPreset({ style: "snow", palette: ambientPalettes[5], seed: 9 })).not.toThrow();
     engine.destroy();
     expect(caf).toHaveBeenCalledWith(42);
     expect(canvas.width).toBe(1);

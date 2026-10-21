@@ -299,23 +299,6 @@ export function createAmbientEngine(canvas: HTMLCanvasElement, initial: AmbientP
           },
         };
       }
-      case "rain": {
-        let list: Dot[] = [];
-        return {
-          init() { list = dots(Math.round(140 * Math.min(2, area()) + 20), { r: [8, 22], v: 0 }); for (const d of list) d.vy = H * (0.6 + rand() * 0.5); },
-          frame(_t, dt) {
-            paintBackdrop();
-            ctx.globalCompositeOperation = additive();
-            ctx.lineWidth = 1;
-            for (const d of list) {
-              d.y += d.vy * dt; d.x -= d.vy * 0.12 * dt;
-              if (d.y > H + d.r) { d.y = -d.r; d.x = rand() * W * 1.1; }
-              ctx.strokeStyle = rgba(d.c, (light ? 0.45 : 0.28) * d.s);
-              ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x + d.r * 0.12, d.y - d.r); ctx.stroke();
-            }
-          },
-        };
-      }
       case "snow": {
         let list: Dot[] = [];
         return {

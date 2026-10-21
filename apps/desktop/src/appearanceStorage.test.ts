@@ -40,6 +40,17 @@ describe("shared wallpaper migration", () => {
     localStorage.setItem(MOBILE_BACKGROUND_KEYS.rotation, "{");
     expect(readMobilePreferences(localStorage, true)).toMatchObject({ background: "none", rotation: { enabled: false } });
   });
+  it("drops retired wallpapers from stored selections, favorites, and rotation", () => {
+    localStorage.setItem(APPEARANCE_MIGRATION_KEY, "1");
+    localStorage.setItem(BACKGROUND_STORAGE_KEY, "01-spacecat");
+    localStorage.setItem(MOBILE_BACKGROUND_KEYS.favorites, JSON.stringify(["01-spacecat", "glyph-decode", first.id]));
+    localStorage.setItem(ROTATION_STORAGE_KEY, JSON.stringify({ playlistId: "custom", custom: ["01-spacecat", first.id] }));
+    expect(readMobilePreferences(localStorage, true)).toMatchObject({
+      background: "none", favorites: [first.id], rotation: { custom: [first.id] },
+    });
+    initializeBackground();
+    expect(getActiveBackground().id).toBe("none");
+  });
 });
 
 it("updates live background and rotation consumers in both directions without reload", async () => {
