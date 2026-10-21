@@ -34,14 +34,24 @@ fn command_patterns() -> &'static [Regex] {
     PATTERNS.get_or_init(|| {
         [
             r#"(?i)(authorization\s*:\s*bearer\s+)[^\s'"]+"#,
-            r#"(?i)((?:--?password|--?passwd|--?token|--?api[-_]?key)\s*(?:=|\s)\s*)[^\s'"]+"#,
-            r#"(?i)((?:password|passwd|token|api[-_]?key|secret)=)[^\s'"]+"#,
-            r#"(?i)(sshpass\s+-p\s+)[^\s'"]+"#,
+            r#"(?i)((?:--?password|--?passwd|--?token|--?api[-_]?key)\s*(?:=|\s)\s*)(?:'[^']*'|"(?:\\.|[^"\\])*"|[^\s'"]+)"#,
+            r#"(?i)((?:password|passwd|token|api[-_]?key|secret)=)(?:'[^']*'|"(?:\\.|[^"\\])*"|[^\s'"]+)"#,
+            r#"(?i)(sshpass\s+-p\s+)(?:'[^']*'|"(?:\\.|[^"\\])*"|[^\s'"]+)"#,
         ]
         .into_iter()
         .map(|pattern| Regex::new(pattern).expect("valid redaction pattern"))
         .collect()
     })
+}
+
+fn redact_command_text(value: &str) -> String {
+    command_patterns()
+        .iter()
+        .fold(value.to_string(), |text, pattern| {
+            pattern
+                .replace_all(&text, format!("${{1}}{REDACTED}"))
+                .into_owned()
+        })
 }
 
 fn redact_string(value: &str) -> String {
@@ -50,32 +60,42 @@ fn redact_string(value: &str) -> String {
     }
     let mut text = String::with_capacity(value.len());
     let mut cursor = 0;
+    let mut search = 0;
     // Provider errors wrap JSON bodies in diagnostic text. Parse complete
     // fragments while retaining surrounding text and unchanged JSON verbatim.
-    while let Some(relative_start) = value[cursor..].find(['{', '[']) {
-        let start = cursor + relative_start;
+    while let Some(relative_start) = value[search..].find(['{', '[']) {
+        let start = search + relative_start;
         let mut fragments =
             serde_json::Deserializer::from_str(&value[start..]).into_iter::<Value>();
         if let Some(Ok(mut parsed)) = fragments.next() {
             let end = start + fragments.byte_offset();
-            text.push_str(&value[cursor..start]);
-            if redact_sensitive(&mut parsed) {
-                text.push_str(&parsed.to_string());
+            let segment = &value[cursor..end];
+            let json_start = start - cursor;
+            // A credential such as `--password [123]` remains a command
+            // argument even though its value can also be parsed as JSON.
+            let command_argument = command_patterns().iter().any(|pattern| {
+                pattern
+                    .find_iter(segment)
+                    .any(|matched| matched.start() < json_start && matched.end() > json_start)
+            });
+            if command_argument {
+                text.push_str(&redact_command_text(segment));
             } else {
-                text.push_str(&value[start..end]);
+                text.push_str(&redact_command_text(&value[cursor..start]));
+                if redact_sensitive(&mut parsed) {
+                    text.push_str(&parsed.to_string());
+                } else {
+                    text.push_str(&value[start..end]);
+                }
             }
             cursor = end;
+            search = end;
         } else {
-            text.push_str(&value[cursor..start + 1]);
-            cursor = start + 1;
+            search = start + 1;
         }
     }
-    text.push_str(&value[cursor..]);
-    command_patterns().iter().fold(text, |text, pattern| {
-        pattern
-            .replace_all(&text, format!("${{1}}{REDACTED}"))
-            .into_owned()
-    })
+    text.push_str(&redact_command_text(&value[cursor..]));
+    text
 }
 
 pub(crate) fn redact_sensitive(value: &mut Value) -> bool {
@@ -248,6 +268,34 @@ mod tests {
             reason,
             r#"[attempt 1] {"api_key":"[REDACTED]"} details [{"token":"[REDACTED]"}] retry later"#
         );
+    }
+
+    #[test]
+    fn quoted_command_credentials_keep_embedded_json_valid() {
+        let body = serde_json::json!({
+            "message": r#"--password "fixture-secret" --token='fixture-token'"#,
+            "request_id": "fixture-id"
+        });
+        for prefix in ["", "provider returned 401: "] {
+            let reason = redact_string(&format!("{prefix}{body}"));
+            let parsed: Value = serde_json::from_str(reason.strip_prefix(prefix).unwrap()).unwrap();
+            assert_eq!(
+                parsed["message"],
+                "--password [REDACTED] --token=[REDACTED]"
+            );
+            assert_eq!(parsed["request_id"], "fixture-id");
+            assert!(!reason.contains("fixture-secret"));
+            assert!(!reason.contains("fixture-token"));
+            assert_eq!(redact_string(&reason), reason);
+        }
+    }
+
+    #[test]
+    fn redacts_command_credentials_that_look_like_json() {
+        for reason in ["--password [123]", "--token {}", "--api-key [fixture]"] {
+            let flag = reason.split_whitespace().next().unwrap();
+            assert_eq!(redact_string(reason), format!("{flag} {REDACTED}"));
+        }
     }
 
     #[test]
