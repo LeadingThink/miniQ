@@ -351,6 +351,24 @@ describe("mobile Sidebar", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("closes on native touch events when a mobile WebView does not expose PointerEvents", () => {
+    mobileViewport();
+    const onClose = vi.fn();
+    render(<Sidebar {...sidebarProps({ onClose })} />);
+    const sidebar = document.querySelector(".sidebar")!;
+
+    fireEvent.touchStart(sidebar, { touches: [{ identifier: 11, clientX: 260, clientY: 220 }] });
+    fireEvent.touchMove(sidebar, { touches: [{ identifier: 11, clientX: 180, clientY: 222 }] });
+    fireEvent.touchEnd(sidebar, { changedTouches: [{ identifier: 11, clientX: 165, clientY: 224 }] });
+    expect(onClose).toHaveBeenCalledOnce();
+
+    onClose.mockClear();
+    fireEvent.touchStart(sidebar, { touches: [{ identifier: 12, clientX: 260, clientY: 220 }] });
+    fireEvent.touchMove(sidebar, { touches: [{ identifier: 12, clientX: 252, clientY: 300 }] });
+    fireEvent.touchEnd(sidebar, { changedTouches: [{ identifier: 12, clientX: 248, clientY: 360 }] });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   function mobileViewport() {
     const media = Object.assign(new EventTarget(), { matches: true });
     vi.stubGlobal("matchMedia", () => media);

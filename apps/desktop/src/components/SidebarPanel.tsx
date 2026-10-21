@@ -1,4 +1,4 @@
-import { useState, type PointerEvent, type ReactNode } from "react";
+import { useState, type PointerEvent, type ReactNode, type TouchEvent } from "react";
 import { WorkbenchResizer } from "./WorkbenchResizer";
 import "./WorkbenchPanel.css";
 
@@ -11,10 +11,24 @@ type SidebarPanelProps = {
   onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void;
   onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void;
   onPointerCancel?: (event: PointerEvent<HTMLDivElement>) => void;
+  onTouchStart?: (event: TouchEvent<HTMLDivElement>) => void;
+  onTouchMove?: (event: TouchEvent<HTMLDivElement>) => void;
+  onTouchEnd?: (event: TouchEvent<HTMLDivElement>) => void;
+  onTouchCancel?: (event: TouchEvent<HTMLDivElement>) => void;
 };
 
 /** Keep pointer updates local so the conversation does not rerender on drag. */
-export function SidebarPanel({ children, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: SidebarPanelProps) {
+export function SidebarPanel({
+  children,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+  onTouchStart,
+  onTouchMove,
+  onTouchEnd,
+  onTouchCancel,
+}: SidebarPanelProps) {
   const [preferred, setPreferred] = useState(() => {
     if (typeof window === "undefined") return DEFAULT_WIDTH;
     try {
@@ -38,6 +52,10 @@ export function SidebarPanel({ children, onPointerDown, onPointerMove, onPointer
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchCancel}
     >
       <WorkbenchResizer
         edge="right"
