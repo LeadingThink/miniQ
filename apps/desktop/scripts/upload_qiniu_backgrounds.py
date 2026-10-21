@@ -1,4 +1,4 @@
-"""Mirror the pinned living-background assets to the Qiniu primary origin.
+"""Mirror the pinned remote wallpaper asset to the Qiniu primary origin.
 
 Each asset is downloaded from the source origin, verified against the pinned
 size and sha256, uploaded, then read back from the public domain and verified
