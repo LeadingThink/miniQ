@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import {
   FolderPlus,
   Archive,
@@ -98,6 +98,32 @@ interface SidebarProps {
 
 export function Sidebar(props: SidebarProps) {
   const mobile = useMobileSidebarLayout();
+  const swipe = useRef<{ pointerId: number; startX: number; startY: number; horizontal: boolean; cancelled: boolean } | null>(null);
+  const onPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (!mobile || !props.onClose || !event.isPrimary || (event.pointerType !== "touch" && event.pointerType !== "pen")) return;
+    swipe.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, horizontal: false, cancelled: false };
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Pointer capture is unavailable in some webviews. */ }
+  }, [mobile, props.onClose]);
+  const onPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const gesture = swipe.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - gesture.startX;
+    const deltaY = event.clientY - gesture.startY;
+    if (!gesture.horizontal && !gesture.cancelled && Math.max(Math.abs(deltaX), Math.abs(deltaY)) >= 10) {
+      if (Math.abs(deltaY) > Math.abs(deltaX) + 8 || deltaX >= 0) gesture.cancelled = true;
+      else gesture.horizontal = true;
+    }
+    if (gesture.horizontal && deltaX < 0) event.preventDefault();
+  }, []);
+  const finishPointer = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const gesture = swipe.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    swipe.current = null;
+    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* Pointer capture is unavailable in some webviews. */ }
+    const deltaX = event.clientX - gesture.startX;
+    const deltaY = event.clientY - gesture.startY;
+    if (gesture.horizontal && !gesture.cancelled && deltaX <= -56 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) props.onClose?.();
+  }, [props.onClose]);
   const [moreOpen, setMoreOpen] = useState(false);
   const showSecondary = mobile && moreOpen;
   const [footerMenuOpen, setFooterMenuOpen] = useState(false);
@@ -127,7 +153,7 @@ export function Sidebar(props: SidebarProps) {
   const archivedSessions = navigation.archived;
   const archiveOpen = showArchived || navigation.filtering;
   return (
-    <SidebarPanel>
+    <SidebarPanel onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={finishPointer} onPointerCancel={finishPointer}>
       <div className="sidebar-brand-row" data-tauri-drag-region>
         <div className="brand" data-tauri-drag-region>miniQ</div>
         {mobile && props.onClose && <button type="button" className="sidebar-close" aria-label="关闭项目与会话侧栏" onClick={props.onClose}><X size={19} /></button>}

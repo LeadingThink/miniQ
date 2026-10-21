@@ -333,6 +333,24 @@ describe("mobile Sidebar", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
+  it("closes on a left swipe and leaves vertical list scrolling alone", () => {
+    mobileViewport();
+    const onClose = vi.fn();
+    render(<Sidebar {...sidebarProps({ onClose })} />);
+    const sidebar = document.querySelector(".sidebar")!;
+
+    fireEvent.pointerDown(sidebar, { pointerId: 1, pointerType: "touch", isPrimary: true, clientX: 260, clientY: 220 });
+    fireEvent.pointerMove(sidebar, { pointerId: 1, pointerType: "touch", clientX: 185, clientY: 222 });
+    fireEvent.pointerUp(sidebar, { pointerId: 1, pointerType: "touch", clientX: 170, clientY: 224 });
+    expect(onClose).toHaveBeenCalledOnce();
+
+    onClose.mockClear();
+    fireEvent.pointerDown(sidebar, { pointerId: 2, pointerType: "touch", isPrimary: true, clientX: 260, clientY: 220 });
+    fireEvent.pointerMove(sidebar, { pointerId: 2, pointerType: "touch", clientX: 252, clientY: 300 });
+    fireEvent.pointerUp(sidebar, { pointerId: 2, pointerType: "touch", clientX: 248, clientY: 360 });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   function mobileViewport() {
     const media = Object.assign(new EventTarget(), { matches: true });
     vi.stubGlobal("matchMedia", () => media);

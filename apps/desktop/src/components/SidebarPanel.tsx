@@ -1,12 +1,20 @@
-import { useState, type ReactNode } from "react";
+import { useState, type PointerEvent, type ReactNode } from "react";
 import { WorkbenchResizer } from "./WorkbenchResizer";
 import "./WorkbenchPanel.css";
 
 const STORAGE_KEY = "miniq.sidebar.width";
 const DEFAULT_WIDTH = 264;
 
+type SidebarPanelProps = {
+  children: ReactNode;
+  onPointerDown?: (event: PointerEvent<HTMLDivElement>) => void;
+  onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void;
+  onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void;
+  onPointerCancel?: (event: PointerEvent<HTMLDivElement>) => void;
+};
+
 /** Keep pointer updates local so the conversation does not rerender on drag. */
-export function SidebarPanel({ children }: { children: ReactNode }) {
+export function SidebarPanel({ children, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: SidebarPanelProps) {
   const [preferred, setPreferred] = useState(() => {
     if (typeof window === "undefined") return DEFAULT_WIDTH;
     try {
@@ -23,7 +31,14 @@ export function SidebarPanel({ children }: { children: ReactNode }) {
   };
   const width = dragWidth ?? preferred;
   return (
-    <div className="sidebar" style={{ width }}>
+    <div
+      className="sidebar"
+      style={{ width }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+    >
       <WorkbenchResizer
         edge="right"
         label="调整左侧栏宽度"
