@@ -67,3 +67,76 @@ fn startup_recovery_still_closes_in_flight_work() {
     assert_eq!(status("model_calls", "m1"), "interrupted");
     assert_eq!(status("model_calls", "m2"), "completed");
 }
+
+#[test]
+fn recovery_retains_explicit_failure_reasons_and_only_changes_active_turns() {
+    let store = Store::open_in_memory().unwrap();
+    let workspace = store.create_workspace("/fixture", "fixture").unwrap();
+    let one = store.create_session(&workspace.id, "one").unwrap();
+    let two = store.create_session(&workspace.id, "two").unwrap();
+    let done = store.create_session(&workspace.id, "done").unwrap();
+    for session in [&one, &two, &done] {
+        store
+            .append_message(&session.id, miniq_protocol::Role::User, "task")
+            .unwrap();
+    }
+    store
+        .update_session_status(&one.id, miniq_protocol::SessionStatus::Running)
+        .unwrap();
+    store
+        .update_session_status(&two.id, miniq_protocol::SessionStatus::WaitingApproval)
+        .unwrap();
+    store
+        .record_turn_outcome(&done.id, "completed", None)
+        .unwrap();
+    store.recover_interrupted_session(&one.id).unwrap();
+    let one_outcome = store.last_turn_outcome(&one.id).unwrap().unwrap();
+    assert_eq!(one_outcome["status"], "failed");
+    assert_eq!(
+        one_outcome["error"],
+        "turn was interrupted before completion; no active execution remains"
+    );
+    assert!(store.last_turn_outcome(&two.id).unwrap().is_none());
+
+    store.recover_interrupted_work().unwrap();
+    assert_eq!(
+        store.last_turn_outcome(&one.id).unwrap().unwrap(),
+        one_outcome
+    );
+    assert_eq!(
+        store.last_turn_outcome(&two.id).unwrap().unwrap()["error"],
+        "daemon restarted before the turn completed"
+    );
+    assert_eq!(
+        store.last_turn_outcome(&done.id).unwrap().unwrap()["status"],
+        "completed"
+    );
+}
+
+#[test]
+fn recovery_does_not_replace_a_terminal_outcome_written_before_a_crash() {
+    let store = Store::open_in_memory().unwrap();
+    let workspace = store.create_workspace("/fixture", "fixture").unwrap();
+    for recovery in ["session", "startup"] {
+        let session = store.create_session(&workspace.id, recovery).unwrap();
+        store
+            .append_message(&session.id, miniq_protocol::Role::User, "task")
+            .unwrap();
+        store
+            .update_session_status(&session.id, miniq_protocol::SessionStatus::Running)
+            .unwrap();
+        store
+            .record_turn_outcome(&session.id, "failed", Some("original provider failure"))
+            .unwrap();
+        if recovery == "session" {
+            store.recover_interrupted_session(&session.id).unwrap();
+        } else {
+            store.recover_interrupted_work().unwrap();
+        }
+        assert_eq!(
+            store.last_turn_outcome(&session.id).unwrap().unwrap()["error"],
+            "original provider failure"
+        );
+        assert_eq!(store.count_audit_events(&session.id).unwrap(), 1);
+    }
+}

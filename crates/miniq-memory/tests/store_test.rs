@@ -105,7 +105,9 @@ fn rewrites_a_user_message_and_removes_the_old_branch() {
         .append_message(&session.id, Role::Assistant, "replace me")
         .unwrap();
     store.enqueue_message(&session.id, "old queued").unwrap();
-    store.record_turn_outcome(&session.id, "completed").unwrap();
+    store
+        .record_turn_outcome(&session.id, "completed", None)
+        .unwrap();
 
     let rewrite = store
         .rewrite_session_from_user_message(&session.id, &edited.id, "after", &[])
@@ -127,7 +129,9 @@ fn rewrites_a_user_message_and_removes_the_old_branch() {
         "superseded"
     );
     assert_eq!(store.count_audit_events(&session.id).unwrap(), 2);
-    store.record_turn_outcome(&session.id, "completed").unwrap();
+    store
+        .record_turn_outcome(&session.id, "completed", None)
+        .unwrap();
     assert_eq!(
         store.last_turn_outcome(&session.id).unwrap().unwrap()["status"],
         "completed"

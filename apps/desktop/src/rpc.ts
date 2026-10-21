@@ -8,6 +8,7 @@ import { loadRemoteCredentials, type RemoteCredentials } from "./remoteAccess";
 import { RemotePayloadReader } from "./remotePayload";
 import { remoteUploadFrames } from "./remoteUpload";
 import { canReplayRemoteRead } from "./remoteBlobPolicy";
+import { RpcResponseError, type RpcErrorPayload } from "./rpcError";
 
 export interface LocalConnectionInfo {
   kind: "local";
@@ -24,11 +25,6 @@ export type ConnectionInfo = LocalConnectionInfo | RemoteConnectionInfo;
 export type HostEvent =
   | { type: "host_event"; hostId: string; event: DaemonEvent | { type: "remote_resync" } }
   | { type: "host_changed"; hostId: string };
-
-interface RpcError {
-  code: number;
-  message: string;
-}
 
 type Pending = {
   resolve: (value: unknown) => void;
@@ -375,8 +371,7 @@ export class RpcClient {
     window.clearTimeout(pending.timer);
     pending.cleanup();
     if (data.error) {
-      const err = data.error as RpcError;
-      pending.reject(new Error(`${err.message} (code ${err.code})`));
+      pending.reject(new RpcResponseError(pending.method, data.error as RpcErrorPayload));
     } else {
       pending.resolve(data.result);
     }

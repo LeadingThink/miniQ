@@ -231,6 +231,13 @@ export interface AnchoredTurnTiming {
   timing: TurnTiming;
 }
 
+/** Durable outcome of the latest user turn, independent of its unread badge. */
+export interface SessionTurnOutcome {
+  anchorMessageId: string;
+  status: string;
+  error?: string;
+}
+
 export interface MessageAttachment {
   path: string;
   name: string;

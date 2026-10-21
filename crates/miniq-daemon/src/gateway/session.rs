@@ -660,6 +660,51 @@ mod tests {
         )
     }
 
+    #[test]
+    fn open_restores_failure_reason_after_database_reopen_and_acknowledgement() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("session.db");
+        let store = Store::open(&path).unwrap();
+        let workspace = store.create_workspace("/tmp", "test").unwrap();
+        let session = store.create_session(&workspace.id, "failed").unwrap();
+        let user = store
+            .append_message(&session.id, Role::User, "task")
+            .unwrap();
+        let reason = "provider error: The request timed out while trying to download the file";
+        store
+            .record_turn_outcome(&session.id, "failed", Some(reason))
+            .unwrap();
+        store
+            .update_session_status(&session.id, SessionStatus::Failed)
+            .unwrap();
+        drop(store);
+
+        let state = AppState::new(
+            Store::open(&path).unwrap(),
+            "test-only".into(),
+            Arc::new(MockProvider::text("unused")),
+        );
+        let params = || Some(json!({"sessionId":session.id,"view":"visible","limit":1}));
+        let opened = open(&state, params()).unwrap();
+        assert_eq!(
+            opened["lastTurn"],
+            json!({
+                "anchorMessageId":user.id,"status":"failed","error":reason
+            })
+        );
+        assert_eq!(opened["session"]["status"], "failed");
+        state
+            .store
+            .acknowledge_session_failure(
+                &session.id,
+                opened["session"]["updatedAt"].as_str().unwrap(),
+            )
+            .unwrap();
+        let acknowledged = open(&state, params()).unwrap();
+        assert_eq!(acknowledged["session"]["status"], "idle");
+        assert_eq!(acknowledged["lastTurn"], opened["lastTurn"]);
+    }
+
     fn rewrite_params(session_id: &str, message_id: &str, content: &str) -> Option<Value> {
         Some(json!({
             "sessionId": session_id,

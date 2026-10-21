@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RpcClient } from "./rpc";
+import { RpcResponseError } from "./rpcError";
 import { decryptRemotePayload, deriveRemoteIdentity } from "./remoteCrypto";
 import { RemotePayloadReader } from "./remotePayload";
 import * as remoteCrypto from "./remoteCrypto";
@@ -96,6 +97,24 @@ describe("RpcClient timeouts", () => {
 
     await expect(response).resolves.toEqual({ ok: true });
     await vi.advanceTimersByTimeAsync(60_000);
+    expect(client.connected).toBe(true);
+  });
+
+  it("retains structured RPC errors and the requested method without changing display text", async () => {
+    const client = new RpcClient();
+    const connected = client.connect({ kind: "local", port: 9000, token: "fixture" });
+    const socket = FakeWebSocket.instances[0]; socket.open(); await connected;
+    const response = client.call("file.upload.prepare", { workspaceId: "ubuntu" });
+    const request = JSON.parse(socket.sent.at(-1)!);
+    const data = { code: "REMOTE_FORBIDDEN", reason: "undeclared", host_command: "file.upload.prepare" };
+    socket.receive({ jsonrpc: "2.0", id: request.id, error: {
+      code: -32000, message: "该操作未开放远程访问，请在桌面端执行", data,
+    } });
+    await expect(response).rejects.toBeInstanceOf(RpcResponseError);
+    await expect(response).rejects.toMatchObject({
+      method: "file.upload.prepare", code: -32000, data,
+      message: "该操作未开放远程访问，请在桌面端执行 (code -32000)",
+    });
     expect(client.connected).toBe(true);
   });
 

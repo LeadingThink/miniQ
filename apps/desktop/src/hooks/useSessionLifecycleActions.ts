@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
-import type { Artifact, Message, PlanTask, ProcessSummary, QueuedMessage, Session, ToolCall, TurnProgress, HistoryPage, HistoryCursor, EventCursor, DaemonEvent } from "../types";
+import type { Artifact, Message, PlanTask, ProcessSummary, QueuedMessage, Session, SessionTurnOutcome, ToolCall, TurnProgress, HistoryPage, HistoryCursor, EventCursor, DaemonEvent } from "../types";
 import type { Catalog, NavigationState, SessionFeed } from "./useMiniqApp";
 
 interface OpenSessionResult {
+  lastTurn?: SessionTurnOutcome | null;
   latestTurnTiming?: import("../types").AnchoredTurnTiming | null;
   eventCursor?: EventCursor | null;
   nextCursor?: HistoryCursor | null;
@@ -204,6 +205,7 @@ export function useSessionLifecycleActions(
       setSelectedWorkspaceId(result.session.workspaceId);
       setPage(null);
       load(sessionId, {
+        lastTurn: result.lastTurn ?? null,
         eventCursor: result.eventCursor,
         nextCursor: result.nextCursor,
         processSummaries: result.processSummaries ?? [],

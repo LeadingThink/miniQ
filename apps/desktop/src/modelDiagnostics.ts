@@ -27,7 +27,7 @@ export type ExecutionEventRecord = {
         queuedAt: string;
       };
     }
-  | { type: "turn_outcome"; data: { anchorMessageId: string; status: string } }
+  | { type: "turn_outcome"; data: { anchorMessageId: string; status: string; error?: string } }
 );
 
 export interface ExecutionEventsPage {

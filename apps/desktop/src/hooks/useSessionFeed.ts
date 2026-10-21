@@ -18,6 +18,7 @@ import type {
   EventCursor,
   AnchoredTurnTiming,
   SessionGoal,
+  SessionTurnOutcome,
 } from "../types";
 import {
   mergeByTime, summariesByKey, withProcessPage, withoutKeys, type ProcessLoad,
@@ -30,6 +31,7 @@ export interface PendingApproval {
 }
 
 interface SessionFeedState {
+  lastTurn: SessionTurnOutcome | null;
   latestTurnTiming: AnchoredTurnTiming | null;
   eventCursor: EventCursor | null;
   buffered: ReceivedEvent[];
@@ -53,6 +55,7 @@ interface SessionFeedState {
 }
 
 export interface LoadedSessionFeed {
+  lastTurn?: SessionTurnOutcome | null;
   latestTurnTiming?: AnchoredTurnTiming | null;
   eventCursor?: EventCursor | null;
   nextCursor?: HistoryCursor | null;
@@ -91,6 +94,7 @@ interface ScopedFeed {
 }
 
 const EMPTY_FEED: SessionFeedState = {
+  lastTurn: null,
   latestTurnTiming: null,
   eventCursor: null,
   buffered: [],
@@ -158,6 +162,7 @@ function reduceDaemonEvent(
         plan: event.message.role === "user" ? [] : state.plan,
         turnProgress: event.message.role === "user" ? null : state.turnProgress,
         latestTurnTiming: event.message.role === "user" ? null : state.latestTurnTiming,
+        lastTurn: event.message.role === "user" ? null : state.lastTurn,
       };
     case "session_rewritten": {
       const removedMessages = new Set(event.removedMessageIds);
@@ -188,6 +193,7 @@ function reduceDaemonEvent(
         streamingText: "",
         turnProgress: null,
         latestTurnTiming: null,
+        lastTurn: null,
       };
     }
     case "turn_progress_changed":
@@ -195,6 +201,7 @@ function reduceDaemonEvent(
     case "turn_timing_changed":
       return {
         ...state,
+        lastTurn: event.timing.status === "running" ? null : state.lastTurn,
         latestTurnTiming: { messageId: event.messageId, timing: event.timing },
         messages: state.messages.map((message) => message.id === event.messageId
           ? { ...message, turnTiming: event.timing } : message),
@@ -284,10 +291,20 @@ function reduceDaemonEvent(
     case "turn_completed":
     case "turn_failed": {
       const latest = state.latestTurnTiming;
-      if (!event.summary || !latest) return { ...state, streamingText: "", turnProgress: null };
+      const anchorMessageId = latest?.messageId
+        ?? [...state.messages].reverse().find((message) => message.role === "user")?.id;
+      const cancelled = event.type === "turn_failed"
+        && (event.error === "cancelled" || event.summary?.status === "cancelled");
+      const lastTurn = anchorMessageId ? {
+        anchorMessageId,
+        status: event.type === "turn_completed" ? "completed" : cancelled ? "cancelled" : "failed",
+        ...(event.type === "turn_failed" ? { error: event.error } : {}),
+      } : null;
+      if (!event.summary || !latest) return { ...state, lastTurn, streamingText: "", turnProgress: null };
       const timing = { ...latest.timing, summary: event.summary };
       return {
         ...state,
+        lastTurn,
         streamingText: "",
         turnProgress: null,
         latestTurnTiming: { messageId: latest.messageId, timing },
@@ -364,6 +381,7 @@ function sessionFeedReducer(
       turnProgress: action.feed.turnProgress,
       goal: action.feed.goal ?? null,
       latestTurnTiming: action.feed.latestTurnTiming ?? null,
+      lastTurn: action.feed.lastTurn ?? null,
     };
     for (const item of state.buffered)
       loaded = applySequencedEvent(loaded, item.event, item.receivedAt);

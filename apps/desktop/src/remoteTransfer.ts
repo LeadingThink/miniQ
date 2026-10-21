@@ -1,6 +1,7 @@
 import { Sha256 } from "./incrementalSha256";
 import { throwIfAborted } from "./abortSignal";
 import type { RpcClient } from "./rpc";
+import { RpcResponseError } from "./rpcError";
 import { cachedDownloadTicket, invalidateDownloadTicket } from "./remoteDownloadTickets";
 import { MAX_REMOTE_FILE_BYTES, releaseUploadSources, stageBrowserUploadSources, validateUploadSize, type RemoteUploadSource } from "./remoteUploadSource";
 export { MAX_REMOTE_FILE_BYTES } from "./remoteUploadSource";
@@ -187,12 +188,29 @@ export async function uploadRemoteFile(client: Pick<RpcClient, "call">, scope: R
         if (owned) await releaseUploadSources([source]);
     }
 }
+function uploadPrepareError(cause: unknown): unknown {
+    if (!(cause instanceof RpcResponseError)) return cause;
+    const data = cause.data;
+    const undeclaredUpload = data !== null && typeof data === "object" &&
+        "code" in data && data.code === "REMOTE_FORBIDDEN" &&
+        "reason" in data && data.reason === "undeclared" &&
+        "host_command" in data && data.host_command === "file.upload.prepare";
+    if (undeclaredUpload || (cause.code === -32601 && cause.method === "file.upload.prepare")) {
+        return new Error("当前连接的 miniQ 后台暂不支持手机文件上传。请在该电脑或服务器运行 miniq doctor 检查 daemon 版本，完成更新后重试；如有任务正在运行，请先等待任务结束。", { cause });
+    }
+    return cause;
+}
 async function uploadPreparedFile(client: Pick<RpcClient, "call">, scope: RemoteUploadScope, file: RemoteUploadSource, signal?: AbortSignal, onProgress?: (sent: number, total: number) => void) {
     const sha256 = file.sha256;
     if (!/^[a-f0-9]{64}$/.test(sha256)) throw new Error("本机文件校验信息无效，请重新选择");
     for (let attempt = 0; attempt < 2; attempt++) {
         throwIfAborted(signal);
-        const prepared = await client.call<SignedUpload>("file.upload.prepare", { ...scope, name: file.name, size: file.size, sha256 }, { timeoutMs: 600000 });
+        let prepared: SignedUpload;
+        try {
+            prepared = await client.call<SignedUpload>("file.upload.prepare", { ...scope, name: file.name, size: file.size, sha256 }, { timeoutMs: 600000 });
+        } catch (cause) {
+            throw uploadPrepareError(cause);
+        }
         type Terminal = {
             status: string;
             path?: string;

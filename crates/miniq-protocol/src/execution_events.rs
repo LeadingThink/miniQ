@@ -31,6 +31,8 @@ pub enum ExecutionEventData {
     TurnOutcome {
         anchor_message_id: String,
         status: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
 }
 

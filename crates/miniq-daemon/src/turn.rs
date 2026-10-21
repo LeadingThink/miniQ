@@ -219,7 +219,17 @@ fn runtime_context(workspace_path: &Path) -> String {
 pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken) {
     tokio::spawn(async move {
         let clock = crate::turn_clock::TurnClock::start(&state, &session_id);
-        let result = execute_turn(&state, &session_id, cancel).await;
+        let result = execute_turn(&state, &session_id, cancel)
+            .await
+            .map_err(|error| match error {
+                TurnError::Fatal(error) => TurnError::Fatal(
+                    crate::security::redacted(serde_json::Value::String(error))
+                        .as_str()
+                        .expect("redacting a string retains its type")
+                        .to_string(),
+                ),
+                error => error,
+            });
         // A budget is one-shot even when the turn failed before using it.
         state.take_turn_step_limit(&session_id);
         let paused =
@@ -233,7 +243,15 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
         let summary = clock
             .map(|clock| clock.finish(&state, &session_id, timing_status))
             .and_then(|timing| crate::turn_summary::build(&state, &session_id, &timing));
-        if let Err(error) = state.store.record_turn_outcome(&session_id, outcome) {
+        let reason = match &result {
+            Err(TurnError::Cancelled) if !paused => Some("cancelled"),
+            Err(TurnError::Fatal(error)) => Some(error.as_str()),
+            _ => None,
+        };
+        if let Err(error) = state
+            .store
+            .record_turn_outcome(&session_id, outcome, reason)
+        {
             tracing::error!(%error, %session_id, "failed to persist turn outcome");
         }
         let scheduled_status = match outcome {
@@ -241,16 +259,11 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
             "cancelled" => miniq_protocol::ScheduledTaskRunStatus::Cancelled,
             _ => miniq_protocol::ScheduledTaskRunStatus::Failed,
         };
-        let scheduled_reason = match &result {
-            Err(TurnError::Cancelled) => Some("cancelled"),
-            Err(TurnError::Fatal(error)) => Some(error.as_str()),
-            Ok(()) => None,
-        };
         if !paused {
             if let Err(error) = state.store.complete_scheduled_task_run_for_session(
                 &session_id,
                 scheduled_status,
-                scheduled_reason,
+                reason,
             ) {
                 tracing::warn!(%error, %session_id, "failed to persist scheduled task outcome");
             }

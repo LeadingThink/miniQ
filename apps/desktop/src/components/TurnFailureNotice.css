@@ -1,0 +1,48 @@
+.turn-failure-notice {
+  max-width: var(--conversation-content-width);
+  width: 100%;
+  margin: 0 auto;
+  padding: 12px 14px;
+  color: var(--text);
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+  background: var(--danger-bg);
+}
+
+.turn-failure-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--danger);
+}
+
+.turn-failure-heading .copy-control {
+  margin-left: auto;
+}
+
+.turn-failure-heading button {
+  gap: 5px;
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.turn-failure-notice .turn-failure-reason,
+.turn-failure-notice pre {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.turn-failure-notice details {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+@media (pointer: coarse) {
+  .turn-failure-heading button {
+    min-height: 44px;
+  }
+}

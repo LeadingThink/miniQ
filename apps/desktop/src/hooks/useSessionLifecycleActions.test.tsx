@@ -71,6 +71,7 @@ function setup(mode: "local" | "remote" = "local", initialActive = true, statefu
     openSettings: vi.fn(),
   };
   const feed: SessionFeed = {
+    lastTurn: null,
     latestTurnTiming: null,
     eventCursor: null,
     buffered: [],

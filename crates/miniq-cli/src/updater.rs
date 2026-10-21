@@ -27,9 +27,10 @@ pub async fn run(check: bool) -> Result<u8> {
         .context("invalid terminal release manifest")?;
     let current = Version::parse(env!("CARGO_PKG_VERSION"))?;
     let latest = release_version(&manifest)?;
-    println!("miniQ CLI {current} · Latest {latest}");
+    println!("Installed miniQ CLI {current} · Latest {latest}");
+    println!("Check the running backend version with `miniq rpc daemon.health` or `miniq doctor`. Installing updates leaves a running daemon on its current version until its next normal restart.");
     if latest <= current {
-        println!("Already up to date.");
+        println!("Installed miniQ CLI is already up to date.");
         return Ok(0);
     }
     if check {
@@ -39,8 +40,10 @@ pub async fn run(check: bool) -> Result<u8> {
     let executable = std::env::current_exe()?.canonicalize()?;
     let directory = install_directory(&executable)?;
     install(&directory, &latest.to_string()).await?;
-    println!("Updated miniQ CLI to {latest}. Start `miniq` again to use it.");
-    println!("Running tasks continue unchanged. A running older daemon adopts the new version after its next normal restart.");
+    println!(
+        "Installed miniQ CLI and daemon {latest}. Start `miniq` again to use the updated CLI."
+    );
+    println!("Running tasks continue unchanged.");
     Ok(0)
 }
 

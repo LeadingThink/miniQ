@@ -48,41 +48,64 @@ fn redact_string(value: &str) -> String {
     if value.contains("PRIVATE KEY-----") {
         return REDACTED.to_string();
     }
-    let trimmed = value.trim_start();
-    if trimmed.starts_with('{') || trimmed.starts_with('[') {
-        if let Ok(mut parsed) = serde_json::from_str::<Value>(value) {
-            redact_sensitive(&mut parsed);
-            return parsed.to_string();
+    let mut text = String::with_capacity(value.len());
+    let mut cursor = 0;
+    // Provider errors wrap JSON bodies in diagnostic text. Parse complete
+    // fragments while retaining surrounding text and unchanged JSON verbatim.
+    while let Some(relative_start) = value[cursor..].find(['{', '[']) {
+        let start = cursor + relative_start;
+        let mut fragments =
+            serde_json::Deserializer::from_str(&value[start..]).into_iter::<Value>();
+        if let Some(Ok(mut parsed)) = fragments.next() {
+            let end = start + fragments.byte_offset();
+            text.push_str(&value[cursor..start]);
+            if redact_sensitive(&mut parsed) {
+                text.push_str(&parsed.to_string());
+            } else {
+                text.push_str(&value[start..end]);
+            }
+            cursor = end;
+        } else {
+            text.push_str(&value[cursor..start + 1]);
+            cursor = start + 1;
         }
     }
-    command_patterns()
-        .iter()
-        .fold(value.to_string(), |text, pattern| {
-            pattern
-                .replace_all(&text, format!("${{1}}{REDACTED}"))
-                .into_owned()
-        })
+    text.push_str(&value[cursor..]);
+    command_patterns().iter().fold(text, |text, pattern| {
+        pattern
+            .replace_all(&text, format!("${{1}}{REDACTED}"))
+            .into_owned()
+    })
 }
 
-pub(crate) fn redact_sensitive(value: &mut Value) {
+pub(crate) fn redact_sensitive(value: &mut Value) -> bool {
+    let mut changed = false;
     match value {
         Value::Object(entries) => {
             for (key, entry) in entries {
                 if sensitive_key(key) {
-                    *entry = Value::String(REDACTED.to_string());
+                    if entry.as_str() != Some(REDACTED) {
+                        *entry = Value::String(REDACTED.to_string());
+                        changed = true;
+                    }
                 } else {
-                    redact_sensitive(entry);
+                    changed |= redact_sensitive(entry);
                 }
             }
         }
         Value::Array(entries) => {
             for entry in entries {
-                redact_sensitive(entry);
+                changed |= redact_sensitive(entry);
             }
         }
-        Value::String(text) => *text = redact_string(text),
+        Value::String(text) => {
+            let redacted = redact_string(text);
+            changed = *text != redacted;
+            *text = redacted;
+        }
         Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
+    changed
 }
 
 pub(crate) fn redacted(mut value: Value) -> Value {
@@ -181,6 +204,61 @@ mod tests {
 
         assert!(!redacted.as_str().unwrap().contains("secret"));
         assert!(redacted.as_str().unwrap().contains(REDACTED));
+    }
+
+    #[test]
+    fn redacts_json_credentials_inside_provider_error_text() {
+        let diagnostic = "下载详情：网络超时；".repeat(1024);
+        let body = serde_json::json!({
+            "error": {
+                "message": "download failed",
+                "diagnostic": diagnostic,
+                "api_key": "fixture-secret",
+                "details": [{"authorization": "Bearer fixture-token", "attempt": 3}]
+            },
+            "request_id": "fixture-id"
+        });
+        let prefix = "provider returned 401: ";
+        let suffix = " (request id: fixture-id)";
+        let reason = redact_string(&format!("{prefix}{body}{suffix}"));
+        let body: Value = serde_json::from_str(
+            reason
+                .strip_prefix(prefix)
+                .unwrap()
+                .strip_suffix(suffix)
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body["error"]["api_key"], REDACTED);
+        assert_eq!(body["error"]["details"][0]["authorization"], REDACTED);
+        assert_eq!(body["error"]["details"][0]["attempt"], 3);
+        assert_eq!(body["error"]["message"], "download failed");
+        assert_eq!(body["error"]["diagnostic"], diagnostic);
+        assert_eq!(body["request_id"], "fixture-id");
+        assert!(!reason.contains("fixture-secret"));
+        assert!(!reason.contains("fixture-token"));
+    }
+
+    #[test]
+    fn redacts_multiple_json_fragments_after_ordinary_brackets() {
+        let reason = redact_string(
+            r#"[attempt 1] {"api_key":"first-secret"} details [{"token":"second-secret"}] retry later"#,
+        );
+        assert_eq!(
+            reason,
+            r#"[attempt 1] {"api_key":"[REDACTED]"} details [{"token":"[REDACTED]"}] retry later"#
+        );
+    }
+
+    #[test]
+    fn retains_ordinary_error_reasons_and_non_sensitive_json_verbatim() {
+        for reason in [
+            "provider error: The request timed out while trying to download the file. (request id: fixture)",
+            "download failed [attempt 2] {status unavailable}: please retry later",
+            r#"provider returned 429: { "message": "retry later", "request_id": "fixture" } (request id: fixture)"#,
+        ] {
+            assert_eq!(redact_string(reason), reason);
+        }
     }
 
     #[test]

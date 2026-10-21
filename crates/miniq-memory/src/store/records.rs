@@ -1,5 +1,5 @@
 use miniq_protocol::Artifact;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
 use super::{new_id, now_iso, Result, Store};
@@ -88,15 +88,20 @@ impl Store {
 
     /// Record before admitting the next turn. Clearing a failure badge must
     /// never change the durable outcome used by reconnecting clients.
-    pub fn record_turn_outcome(&self, session_id: &str, status: &str) -> Result<()> {
+    pub fn record_turn_outcome(
+        &self,
+        session_id: &str,
+        status: &str,
+        error: Option<&str>,
+    ) -> Result<()> {
         let anchor: String = self.conn.lock().unwrap().query_row(
             "SELECT id FROM messages WHERE session_id = ?1 AND role = 'user' ORDER BY created_at DESC, rowid DESC LIMIT 1",
             [session_id], |row| row.get(0))?;
-        self.append_audit_event(
-            Some(session_id),
-            "turn_outcome",
-            &serde_json::json!({"anchorMessageId":anchor,"status":status}),
-        )
+        let mut outcome = serde_json::json!({"anchorMessageId":anchor,"status":status});
+        if let Some(error) = error {
+            outcome["error"] = serde_json::Value::String(error.to_string());
+        }
+        self.append_audit_event(Some(session_id), "turn_outcome", &outcome)
     }
 
     pub fn last_turn_outcome(&self, session_id: &str) -> Result<Option<Value>> {
@@ -108,6 +113,32 @@ impl Store {
         raw.map(|raw| serde_json::from_str(&raw).map_err(Into::into))
             .transpose()
     }
+}
+
+/// Capture an interrupted process's reason before recovery clears active status.
+/// Sessions with no user request have no turn to attach an outcome to.
+pub(super) fn record_interrupted_turn_outcomes(
+    conn: &Connection,
+    session_id: Option<&str>,
+    error: &str,
+) -> Result<()> {
+    conn.execute(
+        "WITH active AS (
+             SELECT s.id AS session_id, (SELECT id FROM messages WHERE session_id = s.id
+                 AND role = 'user' ORDER BY created_at DESC, rowid DESC LIMIT 1) AS anchor
+             FROM sessions s WHERE status IN ('running', 'waiting_approval', 'cancelling')
+                 AND (?1 IS NULL OR s.id = ?1)
+         ) INSERT INTO audit_events (id, session_id, event_type, payload_json, created_at)
+         SELECT 'audit_' || lower(hex(randomblob(16))), session_id, 'turn_outcome',
+             json_object('anchorMessageId', anchor, 'status', 'failed', 'error', ?2), ?3
+         FROM active WHERE anchor IS NOT NULL AND NOT coalesce((
+             SELECT json_extract(payload_json, '$.status') IN ('completed', 'failed', 'cancelled')
+             FROM audit_events WHERE session_id = active.session_id AND event_type = 'turn_outcome'
+                 AND json_extract(payload_json, '$.anchorMessageId') = active.anchor
+             ORDER BY rowid DESC LIMIT 1), 0)",
+        params![session_id, error, now_iso()],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -127,7 +158,9 @@ mod turn_outcome_tests {
         store
             .append_message(&session.id, Role::Assistant, "partial")
             .unwrap();
-        store.record_turn_outcome(&session.id, "failed").unwrap();
+        store
+            .record_turn_outcome(&session.id, "failed", Some("provider timed out"))
+            .unwrap();
         store
             .update_session_status(&session.id, SessionStatus::Idle)
             .unwrap();
@@ -135,14 +168,55 @@ mod turn_outcome_tests {
             store.last_turn_outcome(&session.id).unwrap().unwrap()["status"],
             "failed"
         );
+        assert_eq!(
+            store.last_turn_outcome(&session.id).unwrap().unwrap()["error"],
+            "provider timed out"
+        );
         store
             .append_message(&session.id, Role::User, "second")
             .unwrap();
         assert!(store.last_turn_outcome(&session.id).unwrap().is_none());
-        store.record_turn_outcome(&session.id, "completed").unwrap();
+        store
+            .record_turn_outcome(&session.id, "completed", None)
+            .unwrap();
         assert_eq!(
             store.last_turn_outcome(&session.id).unwrap().unwrap()["status"],
             "completed"
+        );
+        assert!(store.last_turn_outcome(&session.id).unwrap().unwrap()["error"].is_null());
+    }
+
+    #[test]
+    fn failure_reason_survives_reopening_and_remains_session_scoped() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("history.db");
+        let store = Store::open(&path).unwrap();
+        let workspace = store.create_workspace("/fixture", "fixture").unwrap();
+        let session = store.create_session(&workspace.id, "failed").unwrap();
+        let other = store.create_session(&workspace.id, "other").unwrap();
+        let user = store
+            .append_message(&session.id, Role::User, "task")
+            .unwrap();
+        let reason = "provider error: invalid response: Anthropic Messages API error: The request timed out while trying to download the file. Please try again later. (request id: fixture)";
+        store
+            .record_turn_outcome(&session.id, "failed", Some(reason))
+            .unwrap();
+        drop(store);
+
+        let reopened = Store::open(&path).unwrap();
+        assert_eq!(
+            reopened.last_turn_outcome(&session.id).unwrap().unwrap(),
+            serde_json::json!({"anchorMessageId":user.id,"status":"failed","error":reason})
+        );
+        assert!(reopened.last_turn_outcome(&other.id).unwrap().is_none());
+        let events = reopened
+            .execution_events_page(
+                &serde_json::from_value(serde_json::json!({"sessionId":session.id})).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(events).unwrap()["events"][0]["data"]["error"],
+            reason
         );
     }
 }

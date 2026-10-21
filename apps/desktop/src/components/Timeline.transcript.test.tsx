@@ -109,6 +109,20 @@ it("uses the daemon turn clock at the tail even when history is paged out", () =
   expect(screen.queryByLabelText("本轮尚未结束")).toBeNull();
 });
 
+it("keeps a restored failure reason visible outside folded work and hides it during a new execution", () => {
+  const lastTurn = { anchorMessageId: "u", status: "failed", error: "provider error: file download timed out (request id: retained)" };
+  const view = render(<Timeline {...props} busy={false} lastTurn={lastTurn}
+    latestTurnTiming={{ messageId: "u", timing: { startedAt: at(0), status: "failed" } }} />);
+  const notice = screen.getByRole("alert", { name: "本轮执行失败" });
+  expect(notice.textContent).toContain(lastTurn.error);
+  expect(notice.closest(".completed-process")).toBeNull();
+  expect(view.container.querySelector<HTMLDetailsElement>(".completed-process")?.open).toBe(false);
+  view.rerender(<Timeline {...props} lastTurn={lastTurn} />);
+  expect(screen.queryByRole("alert", { name: "本轮执行失败" })).toBeNull();
+  view.rerender(<Timeline {...props} busy={false} lastTurn={null} />);
+  expect(screen.queryByRole("alert", { name: "本轮执行失败" })).toBeNull();
+});
+
 it("collapses each contiguous tool run into one closed segment, keeping commentary outside and call keys searchable", async () => {
   const extra: ToolCall = { ...calls[0], id: "t-extra", toolName: "file_grep", input: { pattern: "config" }, createdAt: "2026-10-14T00:00:02.500Z" };
   const view = render(<Timeline {...props} toolCalls={[calls[0], extra, calls[1]]} />);

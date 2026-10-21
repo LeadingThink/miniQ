@@ -13,6 +13,63 @@ struct ScriptedProvider {
     cancel: CancellationToken,
 }
 
+struct FailedProvider;
+
+#[async_trait]
+impl ModelProvider for FailedProvider {
+    async fn stream_complete(&self, _: CompletionRequest) -> Result<DeltaStream, ProviderError> {
+        Err(ProviderError::Api {
+            status: 401,
+            body: json!({
+                "error": {
+                    "message": "download failed: --api-key fixture-secret-command",
+                    "api_key": "fixture-secret-json"
+                },
+                "request_id": "fixture-request"
+            })
+            .to_string(),
+            retry_after: None,
+        })
+    }
+
+    fn describe(&self) -> String {
+        "failed-provider".into()
+    }
+}
+
+#[tokio::test]
+async fn failed_turn_persists_the_same_redacted_reason_as_the_live_event() {
+    let store = miniq_memory::Store::open_in_memory().unwrap();
+    let workspace = store.create_workspace("/tmp", "failure").unwrap();
+    let session = store.create_session(&workspace.id, "failure").unwrap();
+    let user = store
+        .append_message(&session.id, Role::User, "task")
+        .unwrap();
+    let state = AppState::new(store, "test".into(), Arc::new(FailedProvider));
+    let mut events = state.events.subscribe();
+    let cancel = state.begin_turn(&session.id).unwrap();
+    spawn_turn(state.clone(), session.id.clone(), cancel);
+    let error = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            if let Event::TurnFailed { error, .. } = events.recv().await.unwrap() {
+                break error;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert!(error.contains("download failed"), "{error}");
+    assert!(error.contains("fixture-request"), "{error}");
+    assert!(error.contains("[REDACTED]"), "{error}");
+    assert!(!error.contains("fixture-secret"), "{error}");
+    assert_eq!(
+        state.store.last_turn_outcome(&session.id).unwrap().unwrap(),
+        json!({
+            "anchorMessageId":user.id,"status":"failed","error":error
+        })
+    );
+}
+
 #[tokio::test]
 async fn image_archive_survives_session_checkpoint_and_next_turn_restore() {
     use miniq_agent::{CheckpointStore, TurnCheckpoint};

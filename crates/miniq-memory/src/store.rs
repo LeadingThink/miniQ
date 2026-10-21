@@ -321,6 +321,11 @@ impl Store {
         self.mark_reviews_interrupted()?;
         let mut conn = self.conn.lock().unwrap();
         let transaction = conn.transaction()?;
+        records::record_interrupted_turn_outcomes(
+            &transaction,
+            None,
+            "daemon restarted before the turn completed",
+        )?;
         turn_timing::interrupt(&transaction, None)?;
         let now = now_iso();
         transaction.execute(
@@ -378,6 +383,11 @@ impl Store {
     pub fn recover_interrupted_session(&self, session_id: &str) -> Result<SessionRecovery> {
         let mut conn = self.conn.lock().unwrap();
         let transaction = conn.transaction()?;
+        records::record_interrupted_turn_outcomes(
+            &transaction,
+            Some(session_id),
+            "turn was interrupted before completion; no active execution remains",
+        )?;
         turn_timing::interrupt(&transaction, Some(session_id))?;
         let now = now_iso();
         let session_failed = transaction.execute(

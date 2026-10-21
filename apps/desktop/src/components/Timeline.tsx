@@ -18,6 +18,7 @@ import type {
   Question,
   QueuedMessage,
   SessionGoal,
+  SessionTurnOutcome,
   ToolCall,
   TurnProgress,
 } from "../types";
@@ -52,6 +53,7 @@ import {
 import { PendingApprovalBar } from "./PendingApprovalBar";
 import { TimelineQuote } from "./TimelineQuote";
 import { AgentStatusIndicator, type AgentSummary } from "./AgentSummary";
+import { TurnFailureNotice } from "./TurnFailureNotice";
 
 export interface TimelineProps {
   workspacePaths?: readonly string[];
@@ -75,6 +77,7 @@ export interface TimelineProps {
   streamingText: string;
   turnProgress: TurnProgress | null;
   latestTurnTiming?: AnchoredTurnTiming | null;
+  lastTurn?: SessionTurnOutcome | null;
   busy: boolean;
   agents?: AgentSummary[];
   onOpenAgentPanel?: (agentId?: string) => void;
@@ -215,9 +218,9 @@ export function Timeline(props: TimelineProps) {
     : props.loadingOlder;
   const contentVersion = useMemo(() => [
     items, props.approvals, props.questions, props.plan, props.turnPlans, props.streamingText,
-    props.turnProgress, props.busy, props.queue,
+    props.turnProgress, props.busy, props.queue, props.lastTurn,
   ], [items, props.approvals, props.questions, props.plan, props.turnPlans, props.streamingText,
-    props.turnProgress, props.busy, props.queue]);
+    props.turnProgress, props.busy, props.queue, props.lastTurn]);
   const { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump, reveal, historyError, retryingOlder } = useConversationScroll({
     viewKey: JSON.stringify([props.sessionId, filter, query.trim()]),
     cursorKey: historyCursor ? JSON.stringify(historyCursor) : null,
@@ -453,6 +456,7 @@ export function Timeline(props: TimelineProps) {
           windowHandle={windowHandle}
           onLocated={onLocated}
         />
+        {!props.loading && !props.busy && props.lastTurn && <TurnFailureNotice outcome={props.lastTurn} onError={props.onError} />}
           <QueueBar
             queue={props.queue}
             onSteer={props.onSteerQueued}

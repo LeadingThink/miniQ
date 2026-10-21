@@ -47,6 +47,9 @@ export function ExecutionEvent({ event }: { event: ExecutionEventRecord }) {
         <span>{agentId ? `子任务 ${agentId}` : "主任务"}</span>
       </div>
       <p>{description}</p>
+      {event.type === "turn_outcome" && event.data.error && (
+        <pre className="model-call-error">{event.data.error}</pre>
+      )}
       <details>
         <summary>事件详情</summary>
         <pre>{JSON.stringify(event, null, 2)}</pre>

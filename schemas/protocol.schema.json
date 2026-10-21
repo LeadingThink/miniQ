@@ -2343,6 +2343,12 @@
                   "anchor_message_id": {
                     "type": "string"
                   },
+                  "error": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
                   "status": {
                     "type": "string"
                   }

@@ -253,6 +253,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
               />
             }
             latestTurnTiming={app.feed.latestTurnTiming}
+            lastTurn={app.feed.lastTurn}
             busy={!!app.busy}
             onResolveApproval={app.actions.resolveApproval}
             onResolveQuestion={app.actions.resolveQuestion}
