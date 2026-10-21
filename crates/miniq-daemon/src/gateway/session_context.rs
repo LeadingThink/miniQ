@@ -164,7 +164,13 @@ async fn compact_locked(
         .as_ref()
         .and_then(|snapshot| snapshot.model_identity.clone());
     let workspace_path = std::path::PathBuf::from(&session.working_directory);
-    let mut history = crate::turn::history_for_turn(&messages, snapshot, "", &workspace_path);
+    let mut history = crate::turn::history_for_turn(
+        &messages,
+        snapshot,
+        "",
+        &workspace_path,
+        crate::side_conversation::is_side(&state.store, session_id),
+    );
     crate::session_models::isolate_native_context(
         &mut history,
         previous_identity.as_deref(),
@@ -243,7 +249,13 @@ pub(super) async fn context_usage(state: &AppState, raw: Option<Value>) -> Resul
         .get_model_context(&input.session_id)
         .map_err(store_err)?;
     let workspace_path = std::path::PathBuf::from(&session.working_directory);
-    let history = crate::turn::history_for_turn(&messages, snapshot, "", &workspace_path);
+    let history = crate::turn::history_for_turn(
+        &messages,
+        snapshot,
+        "",
+        &workspace_path,
+        crate::side_conversation::is_side(&state.store, &input.session_id),
+    );
     let estimated = miniq_agent::estimate_request_tokens(&history, &[]);
     let last_call = state
         .store

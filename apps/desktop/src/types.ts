@@ -68,6 +68,18 @@ export interface Session {
 }
 
 export type SessionGoalStatus = "active" | "completed" | "paused" | "cancelled";
+
+export type SessionForkMode = "branch" | "side";
+
+/** Lineage returned by `session.open` for a forked conversation. */
+export interface SessionForkInfo {
+  sessionId: string;
+  parentSessionId: string;
+  parentTitle?: string;
+  anchorMessageId: string;
+  mode: SessionForkMode;
+  inheritedMessageCount: number;
+}
 export interface SessionGoal {
   sessionId: string;
   goal: string;

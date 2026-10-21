@@ -68,7 +68,15 @@ fn phases_survive_reopen_pagination_search_and_fork() {
         store.search_messages("phase-note", 10).unwrap()[0].assistant_kind,
         Some(AssistantMessageKind::Commentary)
     );
-    let fork = store.fork_session(&session.id, "final", None).unwrap();
+    let fork = store
+        .fork_session(
+            &session.id,
+            Some("final"),
+            None,
+            miniq_protocol::SessionForkMode::Branch,
+            None,
+        )
+        .unwrap();
     assert_eq!(
         store
             .list_messages(&fork.id)

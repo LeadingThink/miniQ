@@ -3,6 +3,7 @@ import { act, cleanup, render } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { useDroppedFiles } from "./useDroppedFiles";
+import { imageTooLarge } from "../imageLimits";
 
 const fake = vi.hoisted(() => ({
   subscribe: vi.fn(),
@@ -72,8 +73,8 @@ it("ignores a path-less drop without an image and reports save failures", async 
   fake.invoke.mockResolvedValueOnce(null);
   drop([]);
   await vi.waitFor(() => expect(fake.invoke).toHaveBeenCalledTimes(1));
-  fake.invoke.mockRejectedValueOnce(new Error("图片不能超过 20 MB"));
+  fake.invoke.mockRejectedValueOnce(imageTooLarge());
   drop([]);
-  await vi.waitFor(() => expect(onError).toHaveBeenCalledWith("无法接收拖入图片: 图片不能超过 20 MB"));
+  await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(`无法接收拖入图片: ${imageTooLarge().message}`));
   expect(onFiles).not.toHaveBeenCalled();
 });

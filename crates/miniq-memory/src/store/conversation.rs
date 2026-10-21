@@ -286,6 +286,7 @@ impl Store {
             "SELECT id, session_id, role, content, attachments_json, MAX(created_at) AS created_at, steered, assistant_kind
              FROM messages
              WHERE content LIKE ?1 ESCAPE '\\' AND role IN ('user', 'assistant')
+               AND inherited = 0
              GROUP BY session_id
              ORDER BY created_at DESC
              LIMIT ?2",

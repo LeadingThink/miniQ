@@ -1,9 +1,10 @@
 pub(crate) use miniq_local::files::validated_file;
+pub use miniq_local::files::LocalTargetKind;
 #[cfg(test)]
-use miniq_local::files::{preview_format, read_preview, read_text};
+use miniq_local::files::{preview_format, read_preview, read_text, validated_target};
 use miniq_local::files::{
     read_preview_with_authorization, read_text_with_authorization,
-    validated_file_with_authorization,
+    validated_target_with_authorization,
 };
 pub use miniq_local::files::{LocalFilePreview, LocalTextFile};
 use std::path::Path;
@@ -12,7 +13,33 @@ use base64::Engine;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
-const MAX_PASTED_IMAGE_BYTES: usize = 20 * 1024 * 1024;
+/// Upper bound for one pasted or dropped image. Mirrors `imageLimits.ts`.
+const MAX_PASTED_IMAGE_BYTES: usize = 64 * 1024 * 1024;
+/// Upper bound for one pasted file. Mirrors `MAX_PASTED_FILE_BYTES` in `localFiles.ts`.
+const MAX_PASTED_FILE_BYTES: usize = 200 * 1024 * 1024;
+/// Longest stem kept for a pasted file so the stored path stays short.
+const MAX_PASTED_FILE_STEM_CHARS: usize = 60;
+
+fn too_large() -> String {
+    format!("图片不能超过 {} MB", MAX_PASTED_IMAGE_BYTES / (1024 * 1024))
+}
+
+fn pasted_file_too_large() -> String {
+    format!("文件不能超过 {} MB", MAX_PASTED_FILE_BYTES / (1024 * 1024))
+}
+
+/// Pasted and dragged files live beside the user's data, never in the cache:
+/// sent messages keep referring to their absolute paths, so a cache cleanup
+/// must not be able to break the conversation.
+fn attachments_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let directory = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("无法访问应用数据目录: {error}"))?
+        .join("attachments");
+    std::fs::create_dir_all(&directory).map_err(|error| format!("无法创建附件目录: {error}"))?;
+    Ok(directory)
+}
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,13 +48,48 @@ pub struct LocalImagePreview {
     data_base64: String,
 }
 
-fn pasted_image_format(mime_type: &str) -> Option<&'static str> {
+/// Extension for a clipboard MIME type, used when the pasted file carries no name.
+fn extension_for_mime(mime_type: &str) -> Option<&'static str> {
     match mime_type {
         "image/png" => Some("png"),
         "image/jpeg" => Some("jpg"),
         "image/webp" => Some("webp"),
         "image/gif" => Some("gif"),
+        "application/pdf" => Some("pdf"),
         _ => None,
+    }
+}
+
+/// A pasted file's display name: base name only, safe on Windows, with the
+/// extension preserved so the daemon can classify the attachment.
+fn pasted_file_name(name: &str, mime_type: &str) -> String {
+    let base = name.rsplit(['\\', '/']).next().unwrap_or_default();
+    let base: String = base
+        .chars()
+        .filter(|character| !character.is_control())
+        .map(|character| match character {
+            ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            other => other,
+        })
+        .collect();
+    let path = Path::new(base.trim().trim_matches('.'));
+    let mut stem: String = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .chars()
+        .take(MAX_PASTED_FILE_STEM_CHARS)
+        .collect();
+    if stem.is_empty() {
+        stem = "pasted-file".to_string();
+    }
+    match path
+        .extension()
+        .and_then(|value| value.to_str())
+        .or_else(|| extension_for_mime(mime_type))
+    {
+        Some(extension) => format!("{stem}.{extension}"),
+        None => stem,
     }
 }
 
@@ -41,46 +103,62 @@ fn image_format(path: &Path) -> Option<&'static str> {
     }
 }
 
-pub fn save_pasted_image(
+/// Stores a pasted clipboard file in the app's attachment directory and returns its path.
+pub fn save_pasted_file(
     app: &AppHandle,
+    name: &str,
     mime_type: &str,
     data_base64: &str,
 ) -> Result<String, String> {
-    let extension = pasted_image_format(mime_type)
-        .ok_or_else(|| "仅支持 PNG、JPEG、WebP 或 GIF 图片".to_string())?;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data_base64)
-        .map_err(|error| format!("无法解码剪贴板图片: {error}"))?;
-    save_image(app, extension, &bytes)
+        .map_err(|error| format!("无法解码剪贴板文件: {error}"))?;
+    if bytes.is_empty() {
+        return Err("剪贴板文件内容为空".to_string());
+    }
+    if bytes.len() > MAX_PASTED_FILE_BYTES {
+        return Err(pasted_file_too_large());
+    }
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| format!("无法生成目录名: {error}"))?
+        .as_nanos();
+    // One directory per paste keeps the original name in the attachment chip.
+    let directory = attachments_dir(app)?.join(format!("{timestamp}-{}", std::process::id()));
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| format!("无法创建剪贴板文件目录: {error}"))?;
+    let path = directory.join(pasted_file_name(name, mime_type));
+    std::fs::write(&path, bytes).map_err(|error| format!("无法保存剪贴板文件: {error}"))?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
-/// Stores pasted or dropped image bytes in the app cache and returns the path.
+/// Stores image bytes read from a macOS drag pasteboard.
+// Only the macOS drag pasteboard reader saves raw image bytes; other platforms
+// receive image files and their paths instead.
+#[allow(dead_code)]
 pub fn save_image(app: &AppHandle, extension: &str, bytes: &[u8]) -> Result<String, String> {
     if bytes.is_empty() {
         return Err("图片内容为空".to_string());
     }
     if bytes.len() > MAX_PASTED_IMAGE_BYTES {
-        return Err("图片不能超过 20 MB".to_string());
+        return Err(too_large());
     }
 
-    let directory = app
-        .path()
-        .app_cache_dir()
-        .map_err(|error| format!("无法访问应用缓存目录: {error}"))?
-        .join("pasted-images");
+    let directory = attachments_dir(app)?.join("dragged-images");
     std::fs::create_dir_all(&directory)
-        .map_err(|error| format!("无法创建剪贴板图片目录: {error}"))?;
+        .map_err(|error| format!("无法创建拖入图片目录: {error}"))?;
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|error| format!("无法生成图片文件名: {error}"))?
         .as_nanos();
     let path = directory.join(format!(
-        "pasted-{}-{}.{}",
+        "dragged-{}-{}.{}",
         timestamp,
         std::process::id(),
         extension
     ));
-    std::fs::write(&path, bytes).map_err(|error| format!("无法保存剪贴板图片: {error}"))?;
+    std::fs::write(&path, bytes).map_err(|error| format!("无法保存拖入图片: {error}"))?;
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -95,7 +173,7 @@ pub fn read_image_preview(path: &str) -> Result<LocalImagePreview, String> {
         return Err(format!("附件不是文件: {}", file.display()));
     }
     if metadata.len() > MAX_PASTED_IMAGE_BYTES as u64 {
-        return Err("图片不能超过 20 MB".to_string());
+        return Err(too_large());
     }
     let bytes = std::fs::read(&file)
         .map_err(|error| format!("无法读取图片 {}: {error}", file.display()))?;
@@ -105,6 +183,8 @@ pub fn read_image_preview(path: &str) -> Result<LocalImagePreview, String> {
     })
 }
 
+/// Hands the target to the OS: a file opens in its default application and a
+/// folder opens in the system file manager.
 pub fn open(
     app: &AppHandle,
     path: &str,
@@ -112,10 +192,14 @@ pub fn open(
     workspace_paths: &[String],
     authorized_files: &[String],
 ) -> Result<(), String> {
-    let file =
-        validated_file_with_authorization(path, workspace_path, workspace_paths, authorized_files)?;
+    let target = validated_target_with_authorization(
+        path,
+        workspace_path,
+        workspace_paths,
+        authorized_files,
+    )?;
     app.opener()
-        .open_path(file.to_string_lossy(), None::<&str>)
+        .open_path(target.into_path().to_string_lossy(), None::<&str>)
         .map_err(|error| error.to_string())
 }
 
@@ -126,11 +210,31 @@ pub fn reveal(
     workspace_paths: &[String],
     authorized_files: &[String],
 ) -> Result<(), String> {
-    let file =
-        validated_file_with_authorization(path, workspace_path, workspace_paths, authorized_files)?;
+    let target = validated_target_with_authorization(
+        path,
+        workspace_path,
+        workspace_paths,
+        authorized_files,
+    )?;
     app.opener()
-        .reveal_item_in_dir(file)
+        .reveal_item_in_dir(target.into_path())
         .map_err(|error| error.to_string())
+}
+
+/// Reports what a path is so the UI can pick preview or the system opener.
+pub fn target_kind(
+    path: &str,
+    workspace_path: &str,
+    workspace_paths: &[String],
+    authorized_files: &[String],
+) -> Result<LocalTargetKind, String> {
+    Ok(validated_target_with_authorization(
+        path,
+        workspace_path,
+        workspace_paths,
+        authorized_files,
+    )?
+    .kind())
 }
 
 pub fn read_text_authorized(
@@ -186,18 +290,25 @@ mod tests {
     }
 
     #[test]
-    fn accepts_image_formats_supported_by_the_daemon() {
-        assert_eq!(pasted_image_format("image/png"), Some("png"));
-        assert_eq!(pasted_image_format("image/jpeg"), Some("jpg"));
-        assert_eq!(pasted_image_format("image/webp"), Some("webp"));
-        assert_eq!(pasted_image_format("image/gif"), Some("gif"));
+    fn keeps_the_pasted_file_name_and_extension() {
+        assert_eq!(pasted_file_name("报告.pdf", "application/pdf"), "报告.pdf");
+        assert_eq!(pasted_file_name("/tmp/quarterly.PDF", ""), "quarterly.PDF");
+        assert_eq!(
+            pasted_file_name(r"C:\Users\me\My Files\plan.docx", ""),
+            "plan.docx"
+        );
     }
 
     #[test]
-    fn rejects_unsupported_image_formats() {
-        assert_eq!(pasted_image_format("image/bmp"), None);
-        assert_eq!(pasted_image_format("image/svg+xml"), None);
-        assert_eq!(pasted_image_format("IMAGE/PNG"), None);
+    fn repairs_unsafe_or_missing_pasted_file_names() {
+        assert_eq!(pasted_file_name("", "application/pdf"), "pasted-file.pdf");
+        assert_eq!(pasted_file_name("...", "image/png"), "pasted-file.png");
+        assert_eq!(pasted_file_name("a:b*c?.txt", ""), "a_b_c_.txt");
+        assert_eq!(pasted_file_name("shot", "image/png"), "shot.png");
+        assert_eq!(
+            pasted_file_name(&format!("{}.md", "长".repeat(120)), ""),
+            format!("{}.md", "长".repeat(MAX_PASTED_FILE_STEM_CHARS))
+        );
     }
 
     #[test]
@@ -243,6 +354,29 @@ mod tests {
         .unwrap();
         assert_eq!(preview.kind, "text");
         assert_eq!(preview.content.as_deref(), Some("fn main() {}\n"));
+    }
+
+    #[test]
+    fn hands_folders_to_the_system_opener_but_never_previews_them() {
+        let workspace = tempfile::tempdir().unwrap();
+        let folder = workspace.path().join("outputs").join("配图");
+        std::fs::create_dir_all(&folder).unwrap();
+        let workspace_path = workspace.path().to_str().unwrap();
+        let folder_path = folder.to_str().unwrap();
+
+        assert_eq!(
+            target_kind(folder_path, workspace_path, &[], &[]).unwrap(),
+            LocalTargetKind::Directory
+        );
+        assert_eq!(
+            validated_target(folder_path, workspace_path, &[])
+                .unwrap()
+                .kind(),
+            LocalTargetKind::Directory
+        );
+        assert!(validated_file(folder_path, workspace_path, &[])
+            .unwrap_err()
+            .contains("目标不是文件"));
     }
 
     #[test]

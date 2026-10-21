@@ -93,6 +93,41 @@ fn single_current_user_batch_cannot_be_silently_evicted() {
     assert!(!error.is_retryable());
     assert_eq!(r.messages[0].images.len(), 14);
 }
+
+#[test]
+fn oversized_current_user_batch_uses_provider_previews_without_mutating_sources() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut user = ChatMessage::user("send these pictures");
+    let mut originals = Vec::new();
+    for i in 0..4 {
+        let path = dir.path().join(format!("preview-{i}.png"));
+        let mut bytes = Vec::new();
+        image::RgbImage::from_pixel(3000, 2000, image::Rgb([15, 100, 210]))
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        bytes.resize(5 * 1024 * 1024 + i, 7);
+        std::fs::write(&path, &bytes).unwrap();
+        originals.push((path.clone(), bytes));
+        user.images.push(image(&path));
+    }
+    let r = request(vec![user]);
+    let mut outgoing = deduplicate(&r);
+    trim_images(&mut outgoing).unwrap();
+    assert!(outgoing.messages[0]
+        .images
+        .iter()
+        .all(|image| image.detail == ImageDetail::Preview));
+    assert!(r.messages[0]
+        .images
+        .iter()
+        .all(|image| image.detail == ImageDetail::High));
+    for (path, bytes) in originals {
+        assert_eq!(std::fs::read(path).unwrap(), bytes);
+    }
+}
 #[test]
 fn latest_comparison_batch_and_tool_pairs_are_protected() {
     let dir = tempfile::tempdir().unwrap();
@@ -188,4 +223,42 @@ async fn all_protocols_block_oversized_current_images_before_http() {
     }
     assert_eq!(count.load(Ordering::SeqCst), 0);
     handle.abort();
+}
+
+#[test]
+fn resize_notice_names_only_images_that_lost_their_original_pixels() {
+    let dir = tempfile::tempdir().unwrap();
+    let big = dir.path().join("big.png");
+    image::RgbImage::from_pixel(3200, 2400, image::Rgb([15, 100, 210]))
+        .save(&big)
+        .unwrap();
+    let small = dir.path().join("small.png");
+    image::RgbImage::from_pixel(120, 80, image::Rgb([15, 100, 210]))
+        .save(&small)
+        .unwrap();
+    let preview = |path: &std::path::Path| ChatImage {
+        path: path.to_string_lossy().into(),
+        mime_type: "image/png".into(),
+        detail: ImageDetail::Preview,
+    };
+    let mut user = ChatMessage::user("read this");
+    user.images.push(preview(&big));
+    user.images.push(preview(&small));
+
+    let note = resize_notice(&request(vec![user])).expect("one image was reduced");
+    assert!(note.starts_with("<image_resize_notice>"));
+    assert!(note.contains("Image 1 of 2 was resized from 3200x2400 to"));
+    assert!(!note.contains("Image 2 of 2"));
+}
+
+#[test]
+fn untransformed_images_produce_no_resize_notice() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("screen.png");
+    image::RgbImage::from_pixel(3200, 2400, image::Rgb([12, 18, 37]))
+        .save(&path)
+        .unwrap();
+    let mut user = ChatMessage::user("read this");
+    user.images.push(image(&path));
+    assert!(resize_notice(&request(vec![user])).is_none());
 }

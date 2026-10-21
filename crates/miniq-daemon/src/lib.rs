@@ -32,6 +32,7 @@ mod security;
 pub mod server;
 mod session_models;
 mod session_titles;
+mod side_conversation;
 mod skill_jobs;
 pub mod ssh;
 pub mod state;

@@ -15,6 +15,9 @@ pub fn provider_media_uploader(
     api_key: &str,
     cancel: CancellationToken,
 ) -> Option<Arc<dyn ProviderMediaUploader>> {
+    if api_key.trim().is_empty() {
+        return None;
+    }
     // Custom provider credentials must never be sent to the default OneAPI service.
     let url = reqwest::Url::parse(base_url).ok()?;
     if url.scheme() != "https"
@@ -70,7 +73,9 @@ impl ProviderMediaUploader for HttpUploader {
         content_type: &str,
     ) -> Result<ProviderMediaReference, String> {
         static UPLOADS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
-        let limits = UPLOADS.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(2)));
+        // Process-wide cap across every session. Matches the per-request upload
+        // concurrency so one request can use the full budget.
+        let limits = UPLOADS.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(4)));
         let size = bytes.len();
         let http = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -98,7 +103,11 @@ impl ProviderMediaUploader for HttpUploader {
                 }
             }
         }
-        Err(last_error.unwrap_or_else(|| "Media upload failed".into()))
+        Err(format!(
+            "media upload exhausted {} attempts: {}",
+            MAX_UPLOAD_ATTEMPTS,
+            last_error.unwrap_or_else(|| "unknown transient error".into())
+        ))
     }
 
     fn cache_namespace(&self) -> Option<String> {
@@ -111,7 +120,7 @@ impl ProviderMediaUploader for HttpUploader {
 }
 
 const MAX_UPLOAD_ATTEMPTS: usize = 3;
-const RETRY_DELAYS: [Duration; 2] = [Duration::from_millis(100), Duration::from_millis(250)];
+const RETRY_DELAYS: [Duration; 2] = [Duration::from_millis(200), Duration::from_millis(400)];
 
 enum UploadFailure {
     Retryable(String),

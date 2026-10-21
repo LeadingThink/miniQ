@@ -17,7 +17,7 @@ pub const HELP_ID: &str = "app-menu.help";
 pub const HELP_URL: &str = "https://chat.zaiwenai.com";
 
 /// Every command id the frontend understands. Menu item ids are these strings.
-pub const COMMAND_IDS: [&str; 16] = [
+pub const COMMAND_IDS: [&str; 18] = [
     "newChat",
     "settings",
     "toggleSidebar",
@@ -29,6 +29,8 @@ pub const COMMAND_IDS: [&str; 16] = [
     "nextAttention",
     "archiveSession",
     "togglePin",
+    "renameSession",
+    "newSideChat",
     "markUnread",
     "markAllRead",
     "back",
@@ -76,6 +78,8 @@ pub fn command_spec(id: &str) -> Option<(&'static str, Option<&'static str>)> {
         "nextAttention" => ("下一个需关注的会话", Some("CmdOrCtrl+Alt+A")),
         "archiveSession" => ("归档", Some("CmdOrCtrl+Shift+A")),
         "togglePin" => ("置顶/取消置顶", Some("CmdOrCtrl+Alt+P")),
+        "renameSession" => ("重命名当前会话", Some("CmdOrCtrl+Shift+R")),
+        "newSideChat" => ("新建侧边聊天", Some("CmdOrCtrl+Shift+S")),
         "markUnread" => ("标为未读", Some("CmdOrCtrl+Shift+U")),
         "markAllRead" => ("全部标为已读", None),
         "copyMarkdown" => ("复制为 Markdown", None),
@@ -163,6 +167,8 @@ pub fn setup_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
     let session_menu = SubmenuBuilder::new(app, "会话")
         .item(&command("archiveSession")?)
         .item(&command("togglePin")?)
+        .item(&command("renameSession")?)
+        .item(&command("newSideChat")?)
         .item(&command("markUnread")?)
         .item(&command("markAllRead")?)
         .separator()

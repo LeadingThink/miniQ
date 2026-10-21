@@ -2,9 +2,17 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { useFilePreview } from "./useFilePreview";
-import { readLocalFilePreview, type LocalFilePreview } from "../localFiles";
+import { localPathKind, openLocalFile, readLocalFilePreview, type LocalFilePreview } from "../localFiles";
 const dialog = vi.hoisted(() => ({ open: vi.fn() }));
-vi.mock("../localFiles", () => ({ readLocalFilePreview: vi.fn() }));
+const local = vi.hoisted(() => ({
+  pathKind: vi.fn(async (_path: string) => "file" as "file" | "directory"),
+  open: vi.fn(async (_path: string) => {}),
+}));
+vi.mock("../localFiles", () => ({
+  readLocalFilePreview: vi.fn(),
+  localPathKind: local.pathKind,
+  openLocalFile: local.open,
+}));
 vi.mock("../runtime", () => ({ isTauriRuntime: () => true }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: dialog.open }));
 afterEach(cleanup);
@@ -120,6 +128,8 @@ it("clears previews between sessions in the same workspace and ignores a late fi
       column: null,
     });
   });
+  // The target kind is resolved before the reader starts, so the panel opens a tick later.
+  await act(async () => {});
   expect(hook.result.current.state.open).toBe(true);
   hook.rerender({ id: "b" });
   expect(hook.result.current.state.open).toBe(false);
@@ -189,6 +199,20 @@ it("restores closed files and view state only in their original session", async 
   expect(hook.result.current.views.forFile(hook.result.current.viewScope, targets[1].path).get("page")).toBe(8);
 });
 
+it("opens a folder in the system file manager instead of reading it", async () => {
+  vi.clearAllMocks();
+  vi.mocked(localPathKind).mockResolvedValueOnce("directory");
+  const hook = renderHook(() => useFilePreview("/workspace", "session"));
+  const target = { path: "/workspace/outputs/配图", line: null, column: null };
+
+  await act(async () => hook.result.current.openFile(target));
+
+  expect(readLocalFilePreview).not.toHaveBeenCalled();
+  expect(openLocalFile).toHaveBeenCalledWith(target.path, "/workspace", [], []);
+  expect(hook.result.current.state.open).toBe(false);
+  expect(hook.result.current.tabs).toEqual([]);
+});
+
 it("keeps batched closes coherent and cancels a late payload when closing all tabs", async () => {
   let resolve!: (value: LocalFilePreview) => void;
   vi.mocked(readLocalFilePreview).mockImplementation(() => new Promise((done) => { resolve = done; }));
@@ -196,8 +220,10 @@ it("keeps batched closes coherent and cancels a late payload when closing all ta
   let pending!: Promise<void>;
   act(() => {
     pending = hook.result.current.openFile({ path: "/workspace/late.md", line: null, column: null });
-    hook.result.current.closeAllTabs();
   });
+  // The target kind resolves before the reader starts.
+  await act(async () => {});
+  act(() => hook.result.current.closeAllTabs());
   await act(async () => {
     resolve({ path: "/workspace/late.md", kind: "markdown", mimeType: "text/markdown", size: 3, content: "late", dataBase64: null });
     await pending;

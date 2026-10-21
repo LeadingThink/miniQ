@@ -99,7 +99,7 @@ fn original_and_auto_preserve_large_coordinate_sensitive_screenshots_byte_for_by
 }
 
 #[test]
-fn oversized_high_image_is_compressed_for_provider_without_mutating_source() {
+fn oversized_high_image_is_reencoded_within_the_provider_limit_without_downscaling() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("large.jpg");
     let mut source = image::RgbImage::new(2200, 1600);
@@ -122,10 +122,62 @@ fn oversized_high_image_is_compressed_for_provider_without_mutating_source() {
     let sent = decoded_bytes(&encoded);
     assert_eq!(encoded.mime_type, "image/jpeg");
     assert!(sent.len() <= MAX_PROVIDER_IMAGE_BYTES);
+    // 2200x1600 already fits the original-detail geometry, so only the encoder
+    // changes: full-detail pixels are never silently downscaled by byte size.
     let dimensions = image::load_from_memory(&sent).unwrap();
-    assert!(dimensions.width() <= MAX_PROVIDER_IMAGE_DIMENSION);
-    assert!(dimensions.height() <= MAX_PROVIDER_IMAGE_DIMENSION);
+    assert_eq!((dimensions.width(), dimensions.height()), (2200, 1600));
     assert_eq!(std::fs::read(&path).unwrap(), original_bytes);
+}
+
+#[test]
+fn original_geometry_matches_the_patch_budget() {
+    for (width, height) in [(9000, 4000), (12000, 12000), (6000, 1)] {
+        let (w, h) =
+            prompt_image_dimensions(width, height, ORIGINAL_MAX_DIMENSION, ORIGINAL_MAX_PATCHES);
+        assert!(w <= ORIGINAL_MAX_DIMENSION && h <= ORIGINAL_MAX_DIMENSION);
+        let patches = u64::from(w.div_ceil(PROMPT_IMAGE_PATCH_SIZE))
+            * u64::from(h.div_ceil(PROMPT_IMAGE_PATCH_SIZE));
+        assert!(patches <= u64::from(ORIGINAL_MAX_PATCHES));
+        assert!(w <= width && h <= height);
+    }
+    assert_eq!(
+        prompt_image_dimensions(2000, 1000, ORIGINAL_MAX_DIMENSION, ORIGINAL_MAX_PATCHES),
+        (2000, 1000)
+    );
+}
+
+#[test]
+fn preview_keeps_jpeg_sources_out_of_png() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("photo.jpg");
+    let mut source = image::RgbImage::new(3200, 2400);
+    for (index, pixel) in source.pixels_mut().enumerate() {
+        let value = index as u32;
+        *pixel = image::Rgb([
+            (value.wrapping_mul(17) & 0xff) as u8,
+            (value.wrapping_mul(31) & 0xff) as u8,
+            (value.wrapping_mul(47) & 0xff) as u8,
+        ]);
+    }
+    let mut original = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut original, 95)
+        .encode_image(&source)
+        .unwrap();
+    std::fs::write(&path, &original).unwrap();
+
+    let mut attached = attachment(&path, ImageDetail::Preview);
+    attached.mime_type = "image/jpeg".into();
+    let encoded = encode_image(&attached).unwrap();
+    assert_eq!(encoded.mime_type, "image/jpeg");
+    let sent = decoded_bytes(&encoded);
+    let preview = image::load_from_memory(&sent).unwrap();
+    assert!(preview.width() <= 2048 && preview.height() <= 2048);
+    // A photographic preview must not be expanded into a lossless PNG, which
+    // used to blow the per-request image budget on its own.
+    let mut png = std::io::Cursor::new(Vec::new());
+    preview.write_to(&mut png, ImageFormat::Png).unwrap();
+    assert!(sent.len() * 2 < png.into_inner().len());
+    assert_eq!(std::fs::read(&path).unwrap(), original);
 }
 
 #[test]
@@ -222,4 +274,27 @@ fn preview_is_persisted_as_a_local_policy_and_never_sent_as_a_wire_detail() {
     assert_eq!(ImageDetail::Preview.wire_detail(), "high");
     assert_eq!(ImageDetail::High.wire_detail(), "high");
     assert_eq!(ImageDetail::Auto.wire_detail(), "auto");
+}
+
+#[test]
+fn preview_reports_the_dimensions_it_reduced() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("scan.png");
+    image::RgbImage::from_pixel(3200, 2400, image::Rgb([15, 100, 210]))
+        .save(&path)
+        .unwrap();
+
+    let encoded = encode_image(&attachment(&path, ImageDetail::Preview)).unwrap();
+    let resize = encoded.resize.expect("a downscaled preview is reported");
+    assert_eq!(resize.source, (3200, 2400));
+    assert_eq!(
+        resize.prepared,
+        ImageDetail::Preview.target_dimensions(3200, 2400)
+    );
+
+    let exact = encode_image(&attachment(&path, ImageDetail::High)).unwrap();
+    assert!(
+        exact.resize.is_none(),
+        "byte-exact full detail must not claim a resize"
+    );
 }

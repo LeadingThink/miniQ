@@ -151,9 +151,37 @@ pub struct SessionGoalUpdate {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SessionForkParams {
     pub session_id: String,
-    pub anchor_message_id: String,
+    /// Omit to fork through the newest durable `final` or `interrupted` reply.
+    #[serde(default)]
+    pub anchor_message_id: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
+    #[serde(default)]
+    pub mode: SessionForkMode,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionForkMode {
+    /// Durable branch: copied history stays visible and the session persists.
+    #[default]
+    Branch,
+    /// Ephemeral side conversation: inherited history is model-only and the
+    /// session is discarded when the panel closes or the daemon restarts.
+    Side,
+}
+
+/// Lineage returned with `session.open` for forked conversations.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionForkInfo {
+    pub session_id: String,
+    pub parent_session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_title: Option<String>,
+    pub anchor_message_id: String,
+    pub mode: SessionForkMode,
+    pub inherited_message_count: u32,
 }
 
 /// A user message sent while the session had an active turn. Drained in

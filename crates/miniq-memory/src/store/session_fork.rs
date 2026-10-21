@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use miniq_protocol::{Session, SessionStatus};
+use miniq_protocol::{Session, SessionForkInfo, SessionForkMode, SessionStatus};
 use rusqlite::{params, OptionalExtension, Transaction};
 
 use super::{new_id, now_iso, MemoryError, Result, Store};
@@ -16,14 +16,25 @@ impl Store {
     ///
     /// Runtime state is intentionally not copied: queued messages, approvals,
     /// active session status, and in-flight tool calls stay in the source.
-    /// Completed history, attachments, artifacts, agent checkpoints, plans,
-    /// model settings, and a valid compacted context snapshot are copied.
+    /// A branch copies completed history, attachments, artifacts, agent
+    /// checkpoints, plans, model settings, and a valid compacted context
+    /// snapshot. A side conversation copies only messages and settings, marks
+    /// the copied rows `inherited = 1`, and appends a boundary prompt that is
+    /// model-visible but never shown by client history views.
     pub fn fork_session(
         &self,
         source_session_id: &str,
-        anchor_message_id: &str,
+        anchor_message_id: Option<&str>,
         title: Option<&str>,
+        mode: SessionForkMode,
+        side_boundary: Option<&str>,
     ) -> Result<Session> {
+        let side = mode == SessionForkMode::Side;
+        if side && side_boundary.is_none() {
+            return Err(MemoryError::InvalidData(
+                "a side conversation requires a boundary prompt".into(),
+            ));
+        }
         let mut conn = self.conn.lock().unwrap();
         let transaction = conn.transaction()?;
         let (workspace_id, source_title, working_directory): (String, String, String) = transaction
@@ -34,15 +45,46 @@ impl Store {
             )
             .optional()?
             .ok_or_else(|| MemoryError::NotFound(format!("session {source_session_id}")))?;
+        let source_mode: Option<String> = transaction
+            .query_row(
+                "SELECT mode FROM session_forks WHERE session_id = ?1",
+                params![source_session_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if source_mode.as_deref() == Some("side") {
+            return Err(MemoryError::InvalidData(
+                "a side conversation cannot be forked".into(),
+            ));
+        }
+        let anchor = match anchor_message_id {
+            Some(id) => id.to_owned(),
+            None => transaction
+                .query_row(
+                    "SELECT id FROM messages
+                     WHERE session_id = ?1 AND role = 'assistant'
+                       AND assistant_kind IN ('final', 'interrupted')
+                       AND inherited = 0
+                     ORDER BY created_at DESC, id DESC LIMIT 1",
+                    params![source_session_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?
+                .ok_or_else(|| {
+                    MemoryError::InvalidData(
+                        "the source conversation has no durable reply to fork".into(),
+                    )
+                })?,
+        };
         let (anchor_created_at, anchor_role): (String, String) = transaction
             .query_row(
                 "SELECT created_at, role FROM messages
                  WHERE id = ?1 AND session_id = ?2",
-                params![anchor_message_id, source_session_id],
+                params![anchor, source_session_id],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?
-            .ok_or_else(|| MemoryError::NotFound(format!("message {anchor_message_id}")))?;
+            .ok_or_else(|| MemoryError::NotFound(format!("message {anchor}")))?;
         if anchor_role != "assistant" {
             return Err(MemoryError::InvalidData(
                 "a conversation can only fork from an assistant reply".into(),
@@ -55,7 +97,13 @@ impl Store {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_owned)
-            .unwrap_or_else(|| format!("{source_title} · 分支"));
+            .unwrap_or_else(|| {
+                if side {
+                    format!("侧边聊天 · {source_title}")
+                } else {
+                    format!("{source_title} · 分支")
+                }
+            });
         transaction.execute(
             "INSERT INTO sessions
                (id, workspace_id, title, status, pinned, archived, created_at, updated_at, working_directory)
@@ -63,85 +111,89 @@ impl Store {
             params![target_id, workspace_id, target_title, now, working_directory],
         )?;
 
-        let source_messages = load_messages(
-            &transaction,
-            source_session_id,
-            &anchor_created_at,
-            anchor_message_id,
-        )?;
+        let source_messages =
+            load_messages(&transaction, source_session_id, &anchor_created_at, &anchor)?;
+        let inherited_message_count = if side {
+            i64::try_from(source_messages.len()).unwrap_or(i64::MAX)
+        } else {
+            0
+        };
         let mut message_ids = HashMap::with_capacity(source_messages.len());
         for (id, role, content, attachments, created_at, steered, assistant_kind) in source_messages
         {
             let copied_id = new_id("msg");
             transaction.execute(
-                "INSERT INTO messages (id, session_id, role, content, attachments_json, created_at, steered, assistant_kind)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                params![copied_id, target_id, role, content, attachments, created_at, steered, assistant_kind],
+                "INSERT INTO messages (id, session_id, role, content, attachments_json, created_at, steered, assistant_kind, inherited)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![copied_id, target_id, role, content, attachments, created_at, steered, assistant_kind, if side { 1 } else { 0 }],
             )?;
             message_ids.insert(id, copied_id);
         }
-
-        let source_agents = load_agent_tasks(
-            &transaction,
-            source_session_id,
-            &anchor_created_at,
-            anchor_message_id,
-        )?;
-        let mut agent_ids = HashMap::with_capacity(source_agents.len());
-        for (id, name, parent_id, created_at, state, history, revision, result) in source_agents {
-            let copied_id = new_id("agent");
-            let copied_parent = parent_id
-                .as_deref()
-                .and_then(|parent| agent_ids.get(parent))
-                .cloned();
+        if side {
             transaction.execute(
-                "INSERT INTO agent_tasks
-                   (id, session_id, name, parent_id, created_at, state_json, history_json, history_revision, result)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                params![copied_id, target_id, name, copied_parent, created_at, state, history, revision, result],
-            )?;
-            agent_ids.insert(id, copied_id);
-        }
-
-        for (_id, tool_name, input, output, status, created_at, completed_at, agent_id) in
-            load_tool_calls(
-                &transaction,
-                source_session_id,
-                &anchor_created_at,
-                anchor_message_id,
-            )?
-        {
-            let copied_agent = agent_id
-                .as_deref()
-                .and_then(|agent| agent_ids.get(agent))
-                .cloned();
-            transaction.execute(
-                "INSERT INTO tool_calls
-                   (id, session_id, tool_name, input_json, output_json, status, created_at, completed_at, agent_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                params![new_id("tool"), target_id, tool_name, input, output, status, created_at, completed_at, copied_agent],
-            )?;
-        }
-
-        let artifacts = load_artifacts(
-            &transaction,
-            source_session_id,
-            &anchor_created_at,
-            anchor_message_id,
-        )?;
-        for (_id, path, kind, artifact_title, created_at) in artifacts {
-            transaction.execute(
-                "INSERT INTO artifacts (id, session_id, path, kind, title, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO messages
+                   (id, session_id, role, content, attachments_json, created_at, steered, assistant_kind, inherited)
+                 VALUES (?1, ?2, 'user', ?3, '[]', ?4, 0, NULL, 1)",
                 params![
-                    new_id("art"),
+                    new_id("msg"),
                     target_id,
-                    path,
-                    kind,
-                    artifact_title,
-                    created_at
+                    side_boundary.unwrap_or_default(),
+                    now
                 ],
             )?;
+        }
+
+        if !side {
+            let source_agents =
+                load_agent_tasks(&transaction, source_session_id, &anchor_created_at, &anchor)?;
+            let mut agent_ids = HashMap::with_capacity(source_agents.len());
+            for (id, name, parent_id, created_at, state, history, revision, result) in source_agents
+            {
+                let copied_id = new_id("agent");
+                let copied_parent = parent_id
+                    .as_deref()
+                    .and_then(|parent| agent_ids.get(parent))
+                    .cloned();
+                transaction.execute(
+                    "INSERT INTO agent_tasks
+                       (id, session_id, name, parent_id, created_at, state_json, history_json, history_revision, result)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    params![copied_id, target_id, name, copied_parent, created_at, state, history, revision, result],
+                )?;
+                agent_ids.insert(id, copied_id);
+            }
+
+            for (_id, tool_name, input, output, status, created_at, completed_at, agent_id) in
+                load_tool_calls(&transaction, source_session_id, &anchor_created_at, &anchor)?
+            {
+                let copied_agent = agent_id
+                    .as_deref()
+                    .and_then(|agent| agent_ids.get(agent))
+                    .cloned();
+                transaction.execute(
+                    "INSERT INTO tool_calls
+                       (id, session_id, tool_name, input_json, output_json, status, created_at, completed_at, agent_id)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    params![new_id("tool"), target_id, tool_name, input, output, status, created_at, completed_at, copied_agent],
+                )?;
+            }
+
+            let artifacts =
+                load_artifacts(&transaction, source_session_id, &anchor_created_at, &anchor)?;
+            for (_id, path, kind, artifact_title, created_at) in artifacts {
+                transaction.execute(
+                    "INSERT INTO artifacts (id, session_id, path, kind, title, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        new_id("art"),
+                        target_id,
+                        path,
+                        kind,
+                        artifact_title,
+                        created_at
+                    ],
+                )?;
+            }
         }
 
         transaction.execute(
@@ -154,25 +206,27 @@ impl Store {
              SELECT ?1, mode FROM session_approval_settings WHERE session_id = ?2",
             params![target_id, source_session_id],
         )?;
-        transaction.execute(
-            "INSERT INTO session_plans (session_id, tasks_json)
-             SELECT ?1, tasks_json FROM session_plans WHERE session_id = ?2",
-            params![target_id, source_session_id],
-        )?;
-        for (source_message, copied_message) in &message_ids {
+        if !side {
             transaction.execute(
-                "INSERT INTO turn_plans (session_id, anchor_message_id, tasks_json, updated_at)
-                 SELECT ?1, ?2, tasks_json, updated_at FROM turn_plans
-                 WHERE session_id = ?3 AND anchor_message_id = ?4",
-                params![target_id, copied_message, source_session_id, source_message],
+                "INSERT INTO session_plans (session_id, tasks_json)
+                 SELECT ?1, tasks_json FROM session_plans WHERE session_id = ?2",
+                params![target_id, source_session_id],
+            )?;
+            for (source_message, copied_message) in &message_ids {
+                transaction.execute(
+                    "INSERT INTO turn_plans (session_id, anchor_message_id, tasks_json, updated_at)
+                     SELECT ?1, ?2, tasks_json, updated_at FROM turn_plans
+                     WHERE session_id = ?3 AND anchor_message_id = ?4",
+                    params![target_id, copied_message, source_session_id, source_message],
+                )?;
+            }
+            transaction.execute(
+                "INSERT INTO session_goals (session_id, goal, status, token_budget, used_tokens, used_time_ms, created_at, updated_at)
+                 SELECT ?1, goal, status, token_budget, 0, 0, ?3, ?3
+                 FROM session_goals WHERE session_id = ?2",
+                params![target_id, source_session_id, now],
             )?;
         }
-        transaction.execute(
-            "INSERT INTO session_goals (session_id, goal, status, token_budget, used_tokens, used_time_ms, created_at, updated_at)
-             SELECT ?1, goal, status, token_budget, 0, 0, ?3, ?3
-             FROM session_goals WHERE session_id = ?2",
-            params![target_id, source_session_id, now],
-        )?;
 
         // A compacted snapshot is safe only when its anchor was copied. This
         // avoids importing future context from a source turn still in flight.
@@ -208,6 +262,20 @@ impl Store {
             }
         }
 
+        transaction.execute(
+            "INSERT INTO session_forks
+               (session_id, parent_session_id, anchor_message_id, mode, inherited_message_count, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                target_id,
+                source_session_id,
+                anchor,
+                if side { "side" } else { "branch" },
+                inherited_message_count,
+                now
+            ],
+        )?;
+
         let session = Session {
             id: target_id,
             workspace_id,
@@ -225,6 +293,56 @@ impl Store {
         };
         transaction.commit()?;
         Ok(session)
+    }
+
+    /// Lineage for a forked session, used by `session.open` to describe what a
+    /// side conversation inherited.
+    pub fn session_fork_info(&self, session_id: &str) -> Result<Option<SessionForkInfo>> {
+        let conn = self.conn.lock().unwrap();
+        Ok(conn
+            .query_row(
+                "SELECT f.session_id, f.parent_session_id, p.title, f.anchor_message_id,
+                    f.mode, f.inherited_message_count
+             FROM session_forks f
+             LEFT JOIN sessions p ON p.id = f.parent_session_id
+             WHERE f.session_id = ?1",
+                params![session_id],
+                |row| {
+                    let mode: String = row.get(4)?;
+                    let count: i64 = row.get(5)?;
+                    Ok(SessionForkInfo {
+                        session_id: row.get(0)?,
+                        parent_session_id: row.get(1)?,
+                        parent_title: row.get(2)?,
+                        anchor_message_id: row.get(3)?,
+                        mode: if mode == "side" {
+                            SessionForkMode::Side
+                        } else {
+                            SessionForkMode::Branch
+                        },
+                        inherited_message_count: u32::try_from(count).unwrap_or(u32::MAX),
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    /// Remove every ephemeral side conversation. Called once per daemon start.
+    pub fn purge_side_sessions(&self) -> Result<usize> {
+        let ids: Vec<String> = {
+            let conn = self.conn.lock().unwrap();
+            let mut statement =
+                conn.prepare("SELECT session_id FROM session_forks WHERE mode = 'side'")?;
+            let rows = statement.query_map([], |row| row.get(0))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        let mut removed = 0;
+        for id in ids {
+            if self.delete_session(&id).is_ok() {
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 }
 
@@ -443,7 +561,15 @@ mod tests {
             )
             .unwrap();
 
-        let fork = store.fork_session(&source.id, &assistant.id, None).unwrap();
+        let fork = store
+            .fork_session(
+                &source.id,
+                Some(&assistant.id),
+                None,
+                SessionForkMode::Branch,
+                None,
+            )
+            .unwrap();
         assert_eq!(fork.workspace_id, workspace.id);
         assert_eq!(
             store
@@ -476,7 +602,15 @@ mod tests {
             .unwrap()
             .iter()
             .any(|m| m.id == future.id));
-        assert!(store.fork_session(&source.id, &user.id, None).is_err());
+        assert!(store
+            .fork_session(
+                &source.id,
+                Some(&user.id),
+                None,
+                SessionForkMode::Branch,
+                None
+            )
+            .is_err());
     }
 
     #[test]
@@ -497,7 +631,13 @@ mod tests {
             )
             .unwrap();
         let fork = store
-            .fork_session(&source.id, &assistant.id, Some("My branch"))
+            .fork_session(
+                &source.id,
+                Some(&assistant.id),
+                Some("My branch"),
+                SessionForkMode::Branch,
+                None,
+            )
             .unwrap();
         assert_eq!(fork.title, "My branch");
         assert!(store.list_tool_calls(&fork.id).unwrap().is_empty());
@@ -506,5 +646,257 @@ mod tests {
             SessionStatus::Idle
         );
         assert!(store.get_tool_call(&running.id).is_ok());
+    }
+
+    fn history(
+        session_id: &str,
+        view: miniq_protocol::HistoryView,
+    ) -> miniq_protocol::HistoryParams {
+        miniq_protocol::HistoryParams {
+            session_id: session_id.into(),
+            agent_id: None,
+            before: None,
+            limit: 20,
+            filter: Default::default(),
+            query: String::new(),
+            include_payloads: false,
+            include_internal: true,
+            view,
+            tool_name: None,
+        }
+    }
+
+    #[test]
+    fn side_fork_keeps_history_model_only_and_appends_boundary() {
+        let store = Store::open_in_memory().unwrap();
+        let workspace = store.create_workspace("/work", "project").unwrap();
+        let source = store.create_session(&workspace.id, "Main").unwrap();
+        store
+            .update_session_goal(&SessionGoalUpdate {
+                session_id: source.id.clone(),
+                goal: "ship the feature".into(),
+                status: SessionGoalStatus::Active,
+                token_budget: Some(1000),
+            })
+            .unwrap();
+        store
+            .set_session_plan(
+                &source.id,
+                &[miniq_protocol::PlanTask {
+                    content: "plan".into(),
+                    status: miniq_protocol::PlanTaskStatus::Pending,
+                }],
+            )
+            .unwrap();
+        store
+            .append_message(&source.id, Role::User, "question one")
+            .unwrap();
+        store
+            .append_message(&source.id, Role::Assistant, "answer one")
+            .unwrap();
+        store
+            .append_message(&source.id, Role::User, "question two")
+            .unwrap();
+        let assistant = store
+            .append_message(&source.id, Role::Assistant, "answer two")
+            .unwrap();
+        store
+            .create_tool_call(
+                &source.id,
+                "shell_run",
+                &json!({}),
+                None,
+                ToolCallStatus::Succeeded,
+            )
+            .unwrap();
+        store
+            .create_artifact(&source.id, "/work/out.txt", "text", "out.txt")
+            .unwrap();
+
+        let side = store
+            .fork_session(
+                &source.id,
+                Some(&assistant.id),
+                None,
+                SessionForkMode::Side,
+                Some("BOUNDARY"),
+            )
+            .unwrap();
+        let info = store.session_fork_info(&side.id).unwrap().unwrap();
+        assert_eq!(info.mode, SessionForkMode::Side);
+        assert_eq!(info.inherited_message_count, 4);
+        assert_eq!(info.parent_session_id, source.id);
+
+        let messages = store.list_messages(&side.id).unwrap();
+        assert_eq!(
+            messages
+                .iter()
+                .map(|message| message.content.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "question one",
+                "answer one",
+                "question two",
+                "answer two",
+                "BOUNDARY"
+            ]
+        );
+        assert!(store
+            .history_page(&history(&side.id, miniq_protocol::HistoryView::Raw))
+            .unwrap()
+            .messages
+            .is_empty());
+        assert!(store
+            .history_page(&history(&side.id, miniq_protocol::HistoryView::Visible))
+            .unwrap()
+            .messages
+            .is_empty());
+        assert!(store.list_tool_calls(&side.id).unwrap().is_empty());
+        assert!(store.list_artifacts(&side.id).unwrap().is_empty());
+        assert!(store.session_goal(&side.id).unwrap().is_none());
+        assert!(store.session_plan(&side.id).unwrap().is_empty());
+        assert!(!store
+            .list_sessions(Some(&workspace.id))
+            .unwrap()
+            .iter()
+            .any(|session| session.id == side.id));
+        assert!(store
+            .list_sessions(Some(&workspace.id))
+            .unwrap()
+            .iter()
+            .any(|session| session.id == source.id));
+    }
+
+    #[test]
+    fn side_fork_requires_a_durable_reply_and_rejects_side_sources() {
+        let store = Store::open_in_memory().unwrap();
+        let workspace = store.create_workspace("/work", "project").unwrap();
+        let source = store.create_session(&workspace.id, "Main").unwrap();
+        assert!(store
+            .fork_session(
+                &source.id,
+                None,
+                None,
+                SessionForkMode::Side,
+                Some("BOUNDARY")
+            )
+            .is_err());
+
+        let assistant = store
+            .append_message(&source.id, Role::Assistant, "answer")
+            .unwrap();
+        let side = store
+            .fork_session(
+                &source.id,
+                Some(&assistant.id),
+                None,
+                SessionForkMode::Side,
+                Some("BOUNDARY"),
+            )
+            .unwrap();
+        assert!(store
+            .fork_session(&side.id, None, None, SessionForkMode::Branch, None)
+            .is_err());
+    }
+
+    #[test]
+    fn fork_without_anchor_uses_the_latest_durable_reply() {
+        let store = Store::open_in_memory().unwrap();
+        let workspace = store.create_workspace("/work", "project").unwrap();
+        let source = store.create_session(&workspace.id, "Main").unwrap();
+        store
+            .append_message(&source.id, Role::User, "question")
+            .unwrap();
+        let commentary = miniq_protocol::Message {
+            id: "commentary".into(),
+            session_id: source.id.clone(),
+            role: Role::Assistant,
+            assistant_kind: Some(miniq_protocol::AssistantMessageKind::Commentary),
+            content: "working".into(),
+            created_at: now_iso(),
+            attachments: Vec::new(),
+            turn_timing: None,
+            steered: false,
+        };
+        store
+            .save_context_with_message(
+                &source.id,
+                &commentary.id,
+                &json!([]),
+                None,
+                Some(&commentary),
+            )
+            .unwrap();
+        let final_reply = miniq_protocol::Message {
+            id: "final".into(),
+            session_id: source.id.clone(),
+            role: Role::Assistant,
+            assistant_kind: Some(miniq_protocol::AssistantMessageKind::Final),
+            content: "final".into(),
+            created_at: now_iso(),
+            attachments: Vec::new(),
+            turn_timing: None,
+            steered: false,
+        };
+        store
+            .save_context_with_message(
+                &source.id,
+                &final_reply.id,
+                &json!([]),
+                None,
+                Some(&final_reply),
+            )
+            .unwrap();
+
+        let side = store
+            .fork_session(
+                &source.id,
+                None,
+                None,
+                SessionForkMode::Side,
+                Some("BOUNDARY"),
+            )
+            .unwrap();
+        assert_eq!(
+            store
+                .session_fork_info(&side.id)
+                .unwrap()
+                .unwrap()
+                .anchor_message_id,
+            final_reply.id
+        );
+    }
+
+    #[test]
+    fn purging_side_sessions_keeps_branches() {
+        let store = Store::open_in_memory().unwrap();
+        let workspace = store.create_workspace("/work", "project").unwrap();
+        let source = store.create_session(&workspace.id, "Main").unwrap();
+        let assistant = store
+            .append_message(&source.id, Role::Assistant, "answer")
+            .unwrap();
+        let branch = store
+            .fork_session(
+                &source.id,
+                Some(&assistant.id),
+                None,
+                SessionForkMode::Branch,
+                None,
+            )
+            .unwrap();
+        let side = store
+            .fork_session(
+                &source.id,
+                Some(&assistant.id),
+                None,
+                SessionForkMode::Side,
+                Some("BOUNDARY"),
+            )
+            .unwrap();
+
+        assert_eq!(store.purge_side_sessions().unwrap(), 1);
+        assert!(store.get_session(&side.id).is_err());
+        assert!(store.get_session(&branch.id).is_ok());
+        assert!(store.session_fork_info(&side.id).unwrap().is_none());
     }
 }

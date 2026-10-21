@@ -128,6 +128,7 @@ async fn image_archive_survives_session_checkpoint_and_next_turn_restore() {
         Some(snapshot),
         "",
         directory.path(),
+        false,
     );
     assert_eq!(restored[0].role, ChatRole::System);
     assert_eq!(restored[1].image_archive, carrier.image_archive);

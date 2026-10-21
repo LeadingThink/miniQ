@@ -70,6 +70,37 @@ async fn transient_ticket_failures_are_retried_three_times() {
 }
 
 #[tokio::test]
+async fn retry_error_identifies_the_failed_stage_and_status() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = Router::new()
+        .route(
+            "/ticket",
+            post(|State(calls): State<Arc<AtomicUsize>>| async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                StatusCode::BAD_GATEWAY
+            }),
+        )
+        .with_state(calls.clone());
+    let handle = tokio::spawn(axum::serve(listener, server).into_future());
+    let uploader = HttpUploader {
+        key: "fixture-key".into(),
+        cancel: CancellationToken::new(),
+        endpoint: format!("http://{address}/ticket"),
+    };
+
+    let error = uploader
+        .upload(vec![1, 2, 3], "image/png")
+        .await
+        .unwrap_err();
+    assert!(error.contains("Reference upload unavailable (HTTP 502)"));
+    assert!(error.contains("exhausted 3 attempts"));
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    handle.abort();
+}
+
+#[tokio::test]
 async fn permanent_ticket_failures_are_not_retried() {
     let calls = Arc::new(AtomicUsize::new(0));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

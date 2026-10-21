@@ -21,6 +21,7 @@ import {
 import { readExportHistory } from "../historyExport";
 import { exportMarkdown } from "../sessionExport";
 import { errorMessage } from "../errorMessage";
+import { SESSION_RENAME_EVENT, SIDE_CHAT_OPEN_EVENT } from "../sessionMenuEvents";
 
 /** Focus the visible in-session search box (⌘F). Returns false when absent. */
 export function focusSessionSearch(): boolean {
@@ -102,6 +103,14 @@ export function useAppCommands(app: MiniqAppController, active: boolean) {
       case "togglePin":
         if (!currentSession) return false;
         void actions.setSessionPinned(currentSession.id, !currentSession.pinned);
+        return true;
+      case "renameSession":
+        if (!current) return false;
+        window.dispatchEvent(new CustomEvent(SESSION_RENAME_EVENT));
+        return true;
+      case "newSideChat":
+        if (!current) return false;
+        window.dispatchEvent(new CustomEvent(SIDE_CHAT_OPEN_EVENT));
         return true;
       case "markUnread":
         if (!current) return false;

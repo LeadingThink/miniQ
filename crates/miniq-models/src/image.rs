@@ -1,22 +1,120 @@
+use std::collections::HashMap;
 use std::io::{Cursor, Read};
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 use base64::Engine;
 use image::{AnimationDecoder, ImageDecoder, ImageFormat};
+use sha2::{Digest, Sha256};
 
 use crate::{ChatImage, ImageDetail, ProviderError};
 
-const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
-const MAX_DECODED_BYTES: u64 = 128 * 1024 * 1024;
+// Sanity guards for pathological inputs, not target sizes. What actually
+// reaches the model is bounded by the geometry applied before encoding.
+const MAX_IMAGE_BYTES: u64 = 256 * 1024 * 1024;
+// A 100 MP photo needs roughly 400 MB as RGBA8.
+const MAX_DECODED_BYTES: u64 = 512 * 1024 * 1024;
 // Anthropic limits the decoded image in a base64 source block to 10 MB. Keep
 // a margin because the surrounding JSON and base64 representation add bytes
 // to the HTTP request.
 const MAX_PROVIDER_IMAGE_BYTES: usize = 7 * 1024 * 1024;
-const MAX_PROVIDER_IMAGE_DIMENSION: u32 = 4096;
+// Geometry is decided once, before encoding. Retrying on encoded size instead
+// re-encodes the same pixels up to dozens of times and produces unpredictable
+// downscale steps; a fixed budget keeps coordinates and cost reproducible.
+const PROMPT_IMAGE_PATCH_SIZE: u32 = 32;
+const ORIGINAL_MAX_DIMENSION: u32 = 6000;
+const ORIGINAL_MAX_PATCHES: u32 = 10_000;
+const JPEG_QUALITY: u8 = 85;
+// Decoding and re-encoding dominate every turn of a long conversation, so the
+// finished payload is cached by content rather than by path. Sized like Codex's
+// prompt image cache: 32 entries, 64 MB of encoded payloads.
+const MAX_CACHE_ENTRIES: usize = 32;
+const MAX_CACHE_BYTES: usize = 64 * 1024 * 1024;
 
+/// Recorded whenever the payload that reaches the provider no longer has the
+/// source image's pixels, so the model can be told it is not looking at exact
+/// evidence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ResizeInfo {
+    pub source: (u32, u32),
+    pub prepared: (u32, u32),
+}
+
+#[derive(Clone)]
 pub(crate) struct EncodedImage {
     pub mime_type: String,
     pub base64: String,
+    /// `None` when the original bytes were forwarded unchanged.
+    pub resize: Option<ResizeInfo>,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct CacheKey {
+    digest: [u8; 32],
+    detail: ImageDetail,
+    mime_type: String,
+}
+
+struct CacheEntry {
+    encoded: EncodedImage,
+    tick: u64,
+}
+
+#[derive(Default)]
+struct ImageCache {
+    entries: HashMap<CacheKey, CacheEntry>,
+    bytes: usize,
+    tick: u64,
+}
+
+static ENCODED_IMAGES: OnceLock<Mutex<ImageCache>> = OnceLock::new();
+
+fn cache() -> &'static Mutex<ImageCache> {
+    ENCODED_IMAGES.get_or_init(|| Mutex::new(ImageCache::default()))
+}
+
+fn cached(key: &CacheKey) -> Option<EncodedImage> {
+    let mut cache = cache().lock().ok()?;
+    cache.tick += 1;
+    let tick = cache.tick;
+    let entry = cache.entries.get_mut(key)?;
+    entry.tick = tick;
+    Some(entry.encoded.clone())
+}
+
+fn remember(key: CacheKey, encoded: &EncodedImage) {
+    let bytes = encoded.base64.len();
+    if bytes > MAX_CACHE_BYTES {
+        return;
+    }
+    let Ok(mut cache) = cache().lock() else {
+        return;
+    };
+    cache.tick += 1;
+    let tick = cache.tick;
+    if let Some(replaced) = cache.entries.insert(
+        key,
+        CacheEntry {
+            encoded: encoded.clone(),
+            tick,
+        },
+    ) {
+        cache.bytes -= replaced.encoded.base64.len();
+    }
+    cache.bytes += bytes;
+    while cache.bytes > MAX_CACHE_BYTES || cache.entries.len() > MAX_CACHE_ENTRIES {
+        let Some(oldest) = cache
+            .entries
+            .iter()
+            .min_by_key(|(_, entry)| entry.tick)
+            .map(|(key, _)| key.clone())
+        else {
+            break;
+        };
+        if let Some(evicted) = cache.entries.remove(&oldest) {
+            cache.bytes -= evicted.encoded.base64.len();
+        }
+    }
 }
 
 pub(crate) fn encode_image(image: &ChatImage) -> Result<EncodedImage, ProviderError> {
@@ -27,69 +125,165 @@ pub(crate) fn encode_image(image: &ChatImage) -> Result<EncodedImage, ProviderEr
 }
 
 fn encode_image_payload(image: &ChatImage) -> Result<EncodedImage, ProviderError> {
-    let mut bytes = read_image_bytes(Path::new(&image.path))?;
-    let mut mime_type = image.mime_type.clone();
-    if image.detail == ImageDetail::Preview {
-        let pixels = decode_static_image(&bytes)?;
-        let target = image
-            .detail
-            .target_dimensions(pixels.width(), pixels.height());
-        if target != (pixels.width(), pixels.height()) {
-            let preview =
-                pixels.resize_exact(target.0, target.1, image::imageops::FilterType::Triangle);
-            let mut png = Cursor::new(Vec::new());
-            preview
-                .write_to(&mut png, ImageFormat::Png)
-                .map_err(invalid)?;
-            bytes = png.into_inner();
-            mime_type = "image/png".into();
-        }
+    let bytes = read_image_bytes(Path::new(&image.path))?;
+    // Content addressing keeps the cache correct when a file is rewritten in
+    // place, and lets identical attachments share one payload.
+    let key = CacheKey {
+        digest: Sha256::digest(&bytes).into(),
+        detail: image.detail,
+        mime_type: image.mime_type.clone(),
+    };
+    if let Some(encoded) = cached(&key) {
+        return Ok(encoded);
     }
-    if bytes.len() > MAX_PROVIDER_IMAGE_BYTES {
-        bytes = compress_for_provider(&bytes)?;
-        mime_type = "image/jpeg".into();
-    }
-    Ok(EncodedImage {
-        mime_type,
-        base64: base64::engine::general_purpose::STANDARD.encode(bytes),
-    })
+    let encoded = build_encoded(image, &bytes)?;
+    remember(key, &encoded);
+    Ok(encoded)
 }
 
-/// Prepare a provider-only copy below Anthropic's per-image limit.
-/// The source file is never modified.
-fn compress_for_provider(bytes: &[u8]) -> Result<Vec<u8>, ProviderError> {
+fn build_encoded(image: &ChatImage, bytes: &[u8]) -> Result<EncodedImage, ProviderError> {
+    let fits = bytes.len() <= MAX_PROVIDER_IMAGE_BYTES;
+    if image.detail != ImageDetail::Preview && fits {
+        // Full detail is forwarded byte-for-byte: screenshot coordinates and
+        // exact-scale inspection must not drift through a re-encode.
+        return Ok(passthrough(bytes, &image.mime_type));
+    }
     let pixels = decode_static_image(bytes)?;
-    let max_dimension = pixels.width().max(pixels.height());
-    let initial_scale =
-        (f64::from(MAX_PROVIDER_IMAGE_DIMENSION) / f64::from(max_dimension.max(1))).min(1.0);
+    let source_format = image::guess_format(bytes).map_err(invalid)?;
+    let target = if image.detail == ImageDetail::Preview {
+        image
+            .detail
+            .target_dimensions(pixels.width(), pixels.height())
+    } else {
+        prompt_image_dimensions(
+            pixels.width(),
+            pixels.height(),
+            ORIGINAL_MAX_DIMENSION,
+            ORIGINAL_MAX_PATCHES,
+        )
+    };
+    let source = (pixels.width(), pixels.height());
+    let resized = target != source;
+    if !resized && fits {
+        return Ok(passthrough(bytes, &image.mime_type));
+    }
+    let reduced = if resized {
+        pixels.resize_exact(target.0, target.1, image::imageops::FilterType::Triangle)
+    } else {
+        pixels
+    };
+    encode_within_provider_limit(
+        &reduced,
+        source_format,
+        resized.then_some(ResizeInfo {
+            source,
+            prepared: target,
+        }),
+    )
+}
 
-    // Try progressively smaller dimensions and JPEG qualities. The first
-    // result under the budget keeps the most detail possible.
-    for scale in [1.0_f64, 0.88, 0.75, 0.62, 0.5, 0.4, 0.3, 0.22] {
-        let scale = (initial_scale * scale).min(1.0);
-        let width = ((f64::from(pixels.width()) * scale).round() as u32).max(1);
-        let height = ((f64::from(pixels.height()) * scale).round() as u32).max(1);
-        let candidate = if width == pixels.width() && height == pixels.height() {
-            pixels.clone()
-        } else {
-            pixels.resize(width, height, image::imageops::FilterType::Triangle)
+fn passthrough(bytes: &[u8], mime_type: &str) -> EncodedImage {
+    EncodedImage {
+        mime_type: mime_type.to_owned(),
+        base64: base64::engine::general_purpose::STANDARD.encode(bytes),
+        resize: None,
+    }
+}
+
+/// Shrink by longest edge, then by patch budget. Mirrors the geometry Codex
+/// applies to prompt images so the same source yields the same pixels.
+fn prompt_image_dimensions(
+    width: u32,
+    height: u32,
+    max_dimension: u32,
+    max_patches: u32,
+) -> (u32, u32) {
+    let width = width.max(1);
+    let height = height.max(1);
+    if dimensions_fit(width, height, max_dimension, max_patches) {
+        return (width, height);
+    }
+    let edge_scale = (f64::from(max_dimension) / f64::from(width.max(height))).min(1.0);
+    let shaped = (
+        ((f64::from(width) * edge_scale).round() as u32).max(1),
+        ((f64::from(height) * edge_scale).round() as u32).max(1),
+    );
+    if dimensions_fit(shaped.0, shaped.1, max_dimension, max_patches) {
+        return shaped;
+    }
+    let patch = f64::from(PROMPT_IMAGE_PATCH_SIZE);
+    let mut scale =
+        (patch * patch * f64::from(max_patches) / f64::from(shaped.0) / f64::from(shaped.1)).sqrt();
+    // Shrink by area, then round the scaled patch grid down so integer output
+    // dimensions stay within the budget.
+    let wide = f64::from(shaped.0) * scale / patch;
+    let high = f64::from(shaped.1) * scale / patch;
+    scale *= (wide.floor() / wide).min(high.floor() / high);
+    (
+        ((f64::from(shaped.0) * scale).floor() as u32).max(1),
+        ((f64::from(shaped.1) * scale).floor() as u32).max(1),
+    )
+}
+
+fn dimensions_fit(width: u32, height: u32, max_dimension: u32, max_patches: u32) -> bool {
+    let patches = u64::from(width.div_ceil(PROMPT_IMAGE_PATCH_SIZE))
+        * u64::from(height.div_ceil(PROMPT_IMAGE_PATCH_SIZE));
+    width <= max_dimension && height <= max_dimension && patches <= u64::from(max_patches)
+}
+
+/// Encode once in the source format, then degrade to JPEG only if the result
+/// still exceeds the provider's per-image block limit. Lossless is preferred
+/// so text and flat UI colours survive; JPEG avoids a huge PNG of a photo.
+fn encode_within_provider_limit(
+    pixels: &image::DynamicImage,
+    source_format: ImageFormat,
+    resize: Option<ResizeInfo>,
+) -> Result<EncodedImage, ProviderError> {
+    let mut attempts = Vec::with_capacity(5);
+    if source_format != ImageFormat::Jpeg {
+        attempts.push(None);
+    }
+    attempts.extend([Some(JPEG_QUALITY), Some(72), Some(62), Some(52)]);
+    for quality in attempts {
+        let (bytes, mime_type) = match quality {
+            None => encode_png(pixels)?,
+            Some(quality) => encode_jpeg(pixels, quality)?,
         };
-        for quality in [82_u8, 72, 62, 52] {
-            let mut output = Cursor::new(Vec::new());
-            let mut encoder =
-                image::codecs::jpeg::JpegEncoder::new_with_quality(&mut output, quality);
-            encoder.encode_image(&candidate).map_err(invalid)?;
-            let encoded = output.into_inner();
-            if encoded.len() <= MAX_PROVIDER_IMAGE_BYTES {
-                return Ok(encoded);
-            }
+        if bytes.len() <= MAX_PROVIDER_IMAGE_BYTES {
+            let mut encoded = passthrough(&bytes, &mime_type);
+            encoded.resize = resize;
+            return Ok(encoded);
         }
     }
-
     Err(ProviderError::Config(format!(
         "image remains larger than {} MB after safe compression",
         MAX_PROVIDER_IMAGE_BYTES / (1024 * 1024)
     )))
+}
+
+fn encode_png(pixels: &image::DynamicImage) -> Result<(Vec<u8>, String), ProviderError> {
+    let mut output = Cursor::new(Vec::new());
+    pixels
+        .write_to(&mut output, ImageFormat::Png)
+        .map_err(invalid)?;
+    Ok((output.into_inner(), "image/png".into()))
+}
+
+fn encode_jpeg(
+    pixels: &image::DynamicImage,
+    quality: u8,
+) -> Result<(Vec<u8>, String), ProviderError> {
+    let rgb = pixels.to_rgb8();
+    let mut output = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut output, quality)
+        .encode(
+            rgb.as_raw(),
+            rgb.width(),
+            rgb.height(),
+            image::ExtendedColorType::Rgb8,
+        )
+        .map_err(invalid)?;
+    Ok((output, "image/jpeg".into()))
 }
 
 fn open_image_file(path: &Path) -> Result<std::fs::File, ProviderError> {
@@ -127,7 +321,7 @@ fn open_image_file(path: &Path) -> Result<std::fs::File, ProviderError> {
         ));
     }
     if metadata.len() > MAX_IMAGE_BYTES {
-        return Err(ProviderError::Config("attached image exceeds 20 MB".into()));
+        return Err(ProviderError::Config(oversized_message()));
     }
     Ok(file)
 }
@@ -151,7 +345,7 @@ pub fn read_image_bytes(path: &Path) -> Result<Vec<u8>, ProviderError> {
             ))
         })?;
     if bytes.len() as u64 > MAX_IMAGE_BYTES {
-        return Err(ProviderError::Config("attached image exceeds 20 MB".into()));
+        return Err(ProviderError::Config(oversized_message()));
     }
     Ok(bytes)
 }
@@ -165,7 +359,7 @@ pub fn load_static_image(path: &Path) -> Result<image::DynamicImage, ProviderErr
 /// Shared by local image snapshots and model preview preparation.
 pub fn decode_static_image(bytes: &[u8]) -> Result<image::DynamicImage, ProviderError> {
     if bytes.len() as u64 > MAX_IMAGE_BYTES {
-        return Err(ProviderError::Config("image exceeds 20 MB".into()));
+        return Err(ProviderError::Config(oversized_message()));
     }
     let format = image::guess_format(bytes).map_err(invalid)?;
     if !matches!(
@@ -224,6 +418,13 @@ fn reject_animation(bytes: &[u8], format: ImageFormat) -> Result<(), ProviderErr
 
 fn invalid(error: impl std::fmt::Display) -> ProviderError {
     ProviderError::Config(format!("cannot decode attached image: {error}"))
+}
+
+fn oversized_message() -> String {
+    format!(
+        "attached image exceeds {} MB",
+        MAX_IMAGE_BYTES / (1024 * 1024)
+    )
 }
 
 #[cfg(test)]

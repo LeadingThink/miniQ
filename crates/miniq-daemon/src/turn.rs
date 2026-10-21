@@ -90,12 +90,16 @@ including with `...`. Do not use relative targets, `file://`, `vscode://`, or ba
 the link. When a source line matters, put it in the label, for example \
 `[main.rs (line 42)](/absolute/path/main.rs)`, while keeping the target as the file path only.";
 
-fn system_message(skills_block: &str, workspace_path: &Path) -> ChatMessage {
+fn system_message(skills_block: &str, workspace_path: &Path, side: bool) -> ChatMessage {
     let mut system = format!(
         "{SYSTEM_PROMPT}\n\n{}\n\n{}\n\n{HOST_APP_CONTEXT}",
         crate::parallel_policy::PARALLEL_POLICY,
         runtime_context(workspace_path)
     );
+    if side {
+        system.push_str("\n\n");
+        system.push_str(crate::side_conversation::POLICY);
+    }
     if !skills_block.is_empty() {
         system.push_str("\n\n");
         system.push_str(skills_block);
@@ -182,8 +186,9 @@ pub(crate) fn history_for_turn(
     snapshot: Option<miniq_memory::ModelContextSnapshot>,
     skills_block: &str,
     workspace_path: &Path,
+    side: bool,
 ) -> Vec<ChatMessage> {
-    let mut history = vec![system_message(skills_block, workspace_path)];
+    let mut history = vec![system_message(skills_block, workspace_path, side)];
     history.extend(restore_conversation(messages, snapshot));
     history
 }
@@ -452,7 +457,13 @@ async fn execute_turn(
     let previous_identity = snapshot
         .as_ref()
         .and_then(|snapshot| snapshot.model_identity.clone());
-    let mut history = history_for_turn(&messages, snapshot, &skills_block, &workspace_path);
+    let mut history = history_for_turn(
+        &messages,
+        snapshot,
+        &skills_block,
+        &workspace_path,
+        crate::side_conversation::is_side(&state.store, session_id),
+    );
     tracing::info!(
         session_id,
         elapsed_ms = turn_started.elapsed().as_millis() as u64,
@@ -776,7 +787,7 @@ mod tests {
     #[test]
     fn system_prompt_includes_runtime_and_workspace() {
         let workspace = Path::new("test-workspace");
-        let history = history_for_turn(&[], None, "", workspace);
+        let history = history_for_turn(&[], None, "", workspace, false);
         let system = &history[0].content;
 
         assert!(system.contains("Runtime environment:"));
@@ -791,7 +802,7 @@ mod tests {
 
     #[test]
     fn system_prompt_requires_complete_absolute_file_links() {
-        let history = history_for_turn(&[], None, "", Path::new("workspace"));
+        let history = history_for_turn(&[], None, "", Path::new("workspace"), false);
         let system = &history[0].content;
 
         assert!(system.contains("[filename](D:/absolute/path)"));
@@ -803,7 +814,7 @@ mod tests {
 
     #[test]
     fn system_prompt_keeps_file_operations_out_of_computer_use() {
-        let history = history_for_turn(&[], None, "", Path::new("workspace"));
+        let history = history_for_turn(&[], None, "", Path::new("workspace"), false);
         let system = &history[0].content;
 
         assert!(system.contains("Never use computer_use"));
@@ -813,8 +824,20 @@ mod tests {
     }
 
     #[test]
+    fn side_prompt_only_applies_to_side_conversations() {
+        let parent = history_for_turn(&[], None, "", Path::new("workspace"), false);
+        assert!(!parent[0].content.contains("You are in a side conversation"));
+
+        let side = history_for_turn(&[], None, "", Path::new("workspace"), true);
+        assert!(side[0].content.contains("You are in a side conversation"));
+        assert!(side[0].content.contains("Do not spawn sub-agents"));
+        assert!(!side[0].content.contains("Side conversation boundary."));
+    }
+
+    #[test]
     fn system_prompt_appends_skills_after_runtime_context() {
-        let history = history_for_turn(&[], None, "AVAILABLE SKILLS", Path::new("workspace"));
+        let history =
+            history_for_turn(&[], None, "AVAILABLE SKILLS", Path::new("workspace"), false);
         let system = &history[0].content;
 
         let runtime_index = system.find("Runtime environment:").unwrap();
@@ -827,7 +850,7 @@ mod tests {
 
     #[test]
     fn every_parent_turn_includes_shared_parallel_policy() {
-        let history = history_for_turn(&[], None, "", Path::new("workspace"));
+        let history = history_for_turn(&[], None, "", Path::new("workspace"), false);
         assert!(history[0]
             .content
             .contains(crate::parallel_policy::PARALLEL_POLICY));

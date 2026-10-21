@@ -706,6 +706,15 @@
   opacity: 0.45;
   cursor: default;
 }
+.msg-action.msg-branch-action {
+  width: auto;
+  gap: 5px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  font-size: var(--font-footnote);
+}
 .message-edit-input {
   width: min(520px, 60vw);
   min-width: 0;

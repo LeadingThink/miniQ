@@ -45,6 +45,14 @@ async fn main() -> anyhow::Result<()> {
             "recovered interrupted work from the previous daemon process"
         );
     }
+    // Side conversations are ephemeral: a daemon restart starts without them.
+    let side_sessions = store.purge_side_sessions()?;
+    if side_sessions > 0 {
+        tracing::info!(
+            side_sessions,
+            "discarded side conversations from the previous process"
+        );
+    }
 
     let token = std::env::var("MINIQ_TOKEN").unwrap_or_else(|_| generate_token());
     let port: u16 = std::env::var("MINIQ_PORT")

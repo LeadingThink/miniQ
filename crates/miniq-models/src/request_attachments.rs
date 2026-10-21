@@ -15,6 +15,11 @@ pub(crate) async fn build_with_attachment_recovery(
     if uploader.is_none() {
         crate::request_budget::trim_images(&mut outgoing)?;
     }
+    // Tell the model which images no longer carry their original pixels. This
+    // runs after the budget pass so it observes the detail that actually ships.
+    if let Some(text) = crate::request_budget::resize_notice(&outgoing) {
+        crate::request_budget::push_system_notice(outgoing.to_mut(), text);
+    }
     let mut uploads = crate::image_upload::ImageUploads::default();
     loop {
         let error = match build(outgoing.as_ref()) {

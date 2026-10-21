@@ -55,7 +55,7 @@ function view(busy: boolean, onFork: (id: string) => Promise<boolean>) {
 }
 
 function forkButtons() {
-  return screen.getAllByRole("button", { name: "分支到新聊天" }) as HTMLButtonElement[];
+  return screen.getAllByRole("button", { name: "创建聊天分支" }) as HTMLButtonElement[];
 }
 
 it("forks a completed reply while the session is running", () => {

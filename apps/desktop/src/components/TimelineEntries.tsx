@@ -478,15 +478,16 @@ export function TimelineEntries(props: {
                   {hasFork && (
                     <button
                       type="button"
-                      className="msg-action"
-                      title={runningTurnMessageIds?.has(item.message.id) ? "本轮完成后可分支" : "分支到新聊天"}
-                      aria-label="分支到新聊天"
+                      className={`msg-action${finalReply && item.message.id === latestAssistantId ? " msg-branch-action" : ""}`}
+                      title={runningTurnMessageIds?.has(item.message.id) ? "本轮完成后可分支" : "创建聊天分支"}
+                      aria-label="创建聊天分支"
                       disabled={Boolean(runningTurnMessageIds?.has(item.message.id)) || forkingMessageId !== null}
                       onClick={() => {
                         void bridge.fork(item.message.id).finally(() => setForkingMessageId(null));
                       }}
                     >
                       {forkingMessageId === item.message.id ? <LoaderCircle className="spin" size={15} /> : <GitBranch size={15} />}
+                      {finalReply && item.message.id === latestAssistantId && <span>创建聊天分支</span>}
                     </button>
                   )}
                 </div>

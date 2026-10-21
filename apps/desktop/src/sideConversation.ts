@@ -21,16 +21,21 @@ export function isSideConversationExpired(state: SideConversationState, now: num
   return Boolean(state.sessionId) && now - state.lastActivityAt >= idleMs;
 }
 
-export function sideConversationContext(state: SideConversationState, workspaceId: string, sourceSessionId: string | null) {
-  return {
-    workspaceId,
-    sourceSessionId,
-    sideConversationId: state.sessionId,
-  };
-}
-
-export async function releaseSideConversation(client: Pick<RpcClient, "call">, state: SideConversationState): Promise<SideConversationState> {
-  if (state.sessionId) await client.call("session.delete", { sessionId: state.sessionId });
+export async function releaseSideConversation(
+  client: Pick<RpcClient, "call">,
+  state: SideConversationState,
+  options: { cancel?: boolean } = {},
+): Promise<SideConversationState> {
+  if (state.sessionId) {
+    if (options.cancel) {
+      try {
+        await client.call("session.cancel", { sessionId: state.sessionId });
+      } catch {
+        // The turn may have completed between the click and the cancel.
+      }
+    }
+    await client.call("session.delete", { sessionId: state.sessionId });
+  }
   return EMPTY_SIDE_CONVERSATION;
 }
 

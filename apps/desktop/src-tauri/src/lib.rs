@@ -106,6 +106,16 @@ fn reveal_local_file(
 }
 
 #[tauri::command]
+fn local_path_kind(
+    path: String,
+    workspace_path: String,
+    workspace_paths: Vec<String>,
+    authorized_files: Vec<String>,
+) -> Result<local_file::LocalTargetKind, String> {
+    local_file::target_kind(&path, &workspace_path, &workspace_paths, &authorized_files)
+}
+
+#[tauri::command]
 fn read_local_text_file(
     path: String,
     workspace_path: String,
@@ -199,12 +209,13 @@ fn reveal_exported_file(
 }
 
 #[tauri::command]
-fn save_pasted_image(
+fn save_pasted_file(
     app: tauri::AppHandle,
+    name: String,
     mime_type: String,
     data_base64: String,
 ) -> Result<String, String> {
-    local_file::save_pasted_image(&app, &mime_type, &data_base64)
+    local_file::save_pasted_file(&app, &name, &mime_type, &data_base64)
 }
 
 #[tauri::command]
@@ -351,6 +362,7 @@ pub fn run() {
                 wait_for_daemon_exit,
                 open_local_file,
                 reveal_local_file,
+                local_path_kind,
                 read_local_text_file,
                 read_local_file_preview,
                 convert_office_preview,
@@ -358,7 +370,7 @@ pub fn run() {
                 open_html_preview,
                 close_html_preview,
                 read_image_preview,
-                save_pasted_image,
+                save_pasted_file,
                 save_dragged_image,
                 save_export_file,
                 reveal_exported_file,

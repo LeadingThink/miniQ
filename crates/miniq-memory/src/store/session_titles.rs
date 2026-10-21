@@ -21,7 +21,7 @@ impl Store {
             .query_row(
                 "SELECT m.id, m.session_id, m.role, m.content, m.attachments_json, m.created_at, m.steered, m.assistant_kind
              FROM messages m JOIN sessions s ON s.id = m.session_id
-             WHERE s.id = ?1 AND s.title_auto_pending = 1 AND m.role = 'user'
+             WHERE s.id = ?1 AND s.title_auto_pending = 1 AND m.role = 'user' AND m.inherited = 0
              ORDER BY m.rowid LIMIT 1",
                 [session_id],
                 row_to_message,
@@ -50,7 +50,7 @@ impl Store {
              WHERE id = ?1 AND title_auto_pending = 1 AND (title <> ?2 OR ?6 = 0) AND EXISTS (
                SELECT 1 FROM messages WHERE session_id = ?1 AND id = ?3
                AND content = ?4 AND attachments_json = ?5 AND role = 'user'
-               AND rowid = (SELECT MIN(rowid) FROM messages WHERE session_id = ?1 AND role = 'user')
+               AND rowid = (SELECT MIN(rowid) FROM messages WHERE session_id = ?1 AND role = 'user' AND inherited = 0)
              )",
             params![
                 source.session_id,

@@ -344,3 +344,26 @@ fn oversized_non_image_request_is_rejected_without_truncating_text() {
     assert!(result.is_err(), "oversized body was allowed onto the wire");
     assert_eq!(original.messages[0].content.len(), 25 * 1024 * 1024);
 }
+
+#[test]
+fn reduced_images_reach_the_model_with_a_system_notice_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("scan.png");
+    image::RgbImage::from_pixel(3200, 2400, image::Rgb([15, 100, 210]))
+        .save(&path)
+        .unwrap();
+    let mut user = ChatMessage::user("what does this say");
+    user.images.push(ChatImage {
+        path: path.to_string_lossy().into_owned(),
+        mime_type: "image/png".into(),
+        detail: ImageDetail::Preview,
+    });
+
+    let body = build_with_attachment_recovery(&request(vec![user]), encode).unwrap();
+    let notice = &body["messages"][0];
+    assert_eq!(notice["role"], "system");
+    let text = notice["content"].as_str().unwrap();
+    assert!(text.contains("<image_resize_notice>"));
+    assert!(text.contains("was resized from 3200x2400 to"));
+    assert_eq!(body["messages"][1]["role"], "user");
+}

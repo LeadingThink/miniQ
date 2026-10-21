@@ -9,7 +9,7 @@ const attachmentStyles = readFileSync(resolve(process.cwd(), "src/styles/convers
 
 const fake = vi.hoisted(() => ({ open: vi.fn(), save: vi.fn(), preview: vi.fn().mockRejectedValue(new Error("preview unavailable")) }));
 vi.mock("../runtime", () => ({ isTauriRuntime: () => true }));
-vi.mock("../localFiles", () => ({ savePastedImage: fake.save, readImagePreview: fake.preview }));
+vi.mock("../localFiles", () => ({ savePastedFile: fake.save, readImagePreview: fake.preview }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: fake.open }));
 vi.mock("@tauri-apps/api/webviewWindow", () => ({ getCurrentWebviewWindow: () => ({ onDragDropEvent: async () => () => {} }) }));
 afterEach(() => { cleanup(); localStorage.clear(); vi.clearAllMocks(); });
@@ -138,6 +138,15 @@ it("claims an image paste while sending instead of letting the WebView insert it
   const image = new File(["image"], "late.png", { type: "image/png" });
   expect(fireEvent.paste(input, { clipboardData: { items: [], files: [image] } })).toBe(false);
   expect(fake.save).not.toHaveBeenCalled();
+});
+
+it("attaches a document copied from the file manager", async () => {
+  fake.save.mockResolvedValueOnce("/cache/pasted-files/1700000000-42/报告.pdf");
+  render(<ComposerCard {...props} draftKey="paste-pdf" />);
+  const pdf = new File(["pdf"], "报告.pdf", { type: "application/pdf" });
+  expect(fireEvent.paste(screen.getByRole("textbox"), { clipboardData: { items: [], files: [pdf] } })).toBe(false);
+  expect(await screen.findByText("报告.pdf")).toBeTruthy();
+  expect(fake.save).toHaveBeenCalledExactlyOnceWith(pdf);
 });
 
 it("saves an image pasted with an empty MIME type as its inferred format", async () => {

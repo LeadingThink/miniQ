@@ -73,12 +73,16 @@ pub(super) async fn create(state: &AppState, raw: Option<Value>) -> Result<Value
 
 pub(super) fn fork(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: miniq_protocol::SessionForkParams = params(raw)?;
+    let boundary = (input.mode == miniq_protocol::SessionForkMode::Side)
+        .then_some(crate::side_conversation::BOUNDARY_PROMPT);
     let session = state
         .store
         .fork_session(
             &input.session_id,
-            &input.anchor_message_id,
+            input.anchor_message_id.as_deref(),
             input.title.as_deref(),
+            input.mode,
+            boundary,
         )
         .map_err(store_err)?;
     state.emit(Event::SessionStatusChanged {
@@ -149,6 +153,10 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         .store
         .session_goal(&input.session_id)
         .map_err(store_err)?;
+    let fork = state
+        .store
+        .session_fork_info(&input.session_id)
+        .map_err(store_err)?;
     let last_turn = state
         .store
         .last_turn_outcome(&input.session_id)
@@ -183,6 +191,7 @@ pub(super) fn open(state: &AppState, raw: Option<Value>) -> Result<Value, RpcErr
         "streamingText": streaming_text,
         "turnProgress": turn_progress,
         "goal": goal,
+        "fork": fork,
     });
     tracing::info!(
         target: "miniq.perf",
@@ -232,7 +241,7 @@ pub(super) async fn send_message(state: &AppState, raw: Option<Value>) -> Result
             format!("maxTurns must be between 1 and {MAX_TURN_STEPS}"),
         ));
     }
-    let attachments = validate_message(state, &input.message)?;
+    let attachments = validate_message(state, &input.session_id, &input.message)?;
     let content = input.message.content.trim().to_string();
     state
         .store
@@ -362,7 +371,7 @@ pub(super) async fn rewrite_message(
     raw: Option<Value>,
 ) -> Result<Value, RpcError> {
     let input: RewriteMessageParams = params(raw)?;
-    let attachments = validate_message(state, &input.message)?;
+    let attachments = validate_message(state, &input.session_id, &input.message)?;
     let content = input.message.content.trim().to_string();
     state
         .store
@@ -439,6 +448,7 @@ const MAX_ATTACHMENTS: usize = 10;
 
 fn validate_message(
     state: &AppState,
+    session_id: &str,
     message: &IncomingMessage,
 ) -> Result<attachments::PreparedAttachments, RpcError> {
     if message.role != "user" {
@@ -462,7 +472,25 @@ fn validate_message(
     attachments::prepare(
         &message.attachments,
         &state.observations_dir.join("attachments"),
+        &workspace_roots(state, session_id)?,
     )
+}
+
+/// Roots whose files the session can already open by path, so their attachments
+/// never need a durable copy of their own.
+fn workspace_roots(
+    state: &AppState,
+    session_id: &str,
+) -> Result<Vec<std::path::PathBuf>, RpcError> {
+    let session = state.store.get_session(session_id).map_err(store_err)?;
+    let workspace = state
+        .store
+        .get_workspace(&session.workspace_id)
+        .map_err(store_err)?;
+    Ok(std::iter::once(workspace.path)
+        .chain(workspace.additional_paths)
+        .map(std::path::PathBuf::from)
+        .collect())
 }
 
 fn append_user_message(

@@ -4,6 +4,7 @@ import { isTauriRuntime } from "./runtime";
 export const MENU_COMMAND_IDS = [
   "newChat", "settings", "toggleSidebar", "palette", "find", "showShortcuts",
   "prevSession", "nextSession", "nextAttention", "archiveSession", "togglePin",
+  "renameSession", "newSideChat",
   "markUnread", "markAllRead", "back", "forward", "copyMarkdown",
 ] as const;
 export type MenuCommandId = typeof MENU_COMMAND_IDS[number];

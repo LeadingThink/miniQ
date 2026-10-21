@@ -7,6 +7,9 @@ export function canSendComposer(draft: string, attachments: string[]): boolean {
   return draft.trim().length > 0 || attachments.length > 0;
 }
 
+/** Mirrors `MAX_ATTACHMENTS` in the daemon gateway so an oversized list fails before sending. */
+export const MAX_COMPOSER_ATTACHMENTS = 10;
+
 export function shouldShowComposerSend(
   busy: boolean,
   draft: string,

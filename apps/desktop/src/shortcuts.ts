@@ -21,6 +21,8 @@ export const COMMAND_IDS = [
   "nextAttention",
   "archiveSession",
   "togglePin",
+  "renameSession",
+  "newSideChat",
   "markUnread",
   "markAllRead",
   "back",
@@ -85,6 +87,8 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
 
   { id: "archiveSession", title: "归档当前会话", section: "会话", mac: ["⌘", "⇧", "A"], other: ["Ctrl", "Shift", "A"] },
   { id: "togglePin", title: "置顶/取消置顶当前会话", section: "会话", mac: ["⌘", "⌥", "P"], other: ["Ctrl", "Alt", "P"] },
+  { id: "renameSession", title: "重命名当前会话", section: "会话", mac: ["⌘", "⇧", "R"], other: ["Ctrl", "Alt", "R"] },
+  { id: "newSideChat", title: "新建侧边聊天", section: "会话", mac: ["⌘", "⇧", "S"], other: ["Ctrl", "Alt", "S"] },
   { id: "markUnread", title: "将当前会话标为未读", section: "会话", mac: ["⌘", "⇧", "U"], other: ["Ctrl", "Shift", "U"] },
   { id: "markAllRead", title: "全部标为已读", section: "会话", mac: ["⇧", "Esc"], other: ["Shift", "Esc"] },
   { id: "stop", title: "停止当前回复", section: "会话", mac: ["⌘", "."], other: ["Ctrl", "."] },
@@ -176,8 +180,13 @@ export function matchShortcut(event: KeyLike, mac = isApplePlatform()): Shortcut
 
   if (shift && !alt && code === "KeyA") return { id: "archiveSession" };
   if (shift && !alt && code === "KeyU") return { id: "markUnread" };
+  if (mac && shift && !alt && code === "KeyR") return { id: "renameSession" };
+  if (mac && shift && !alt && code === "KeyS") return { id: "newSideChat" };
 
   if (alt && !shift) {
+    // Explicit session commands win even while an input has focus.
+    if (code === "KeyR") return { id: "renameSession" };
+    if (code === "KeyS") return { id: "newSideChat" };
     // Ctrl+Alt is AltGr on many non-Mac layouts; let it type characters.
     if (!mac && editable) return null;
     if (code === "KeyA") return { id: "nextAttention" };

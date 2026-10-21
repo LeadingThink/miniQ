@@ -284,7 +284,15 @@ mod tests {
         assert_eq!(turns.len(), 1);
         assert_eq!(turns[0].anchor_message_id, first.id);
 
-        let fork = store.fork_session(&session.id, &answer.id, None).unwrap();
+        let fork = store
+            .fork_session(
+                &session.id,
+                Some(&answer.id),
+                None,
+                miniq_protocol::SessionForkMode::Branch,
+                None,
+            )
+            .unwrap();
         let forked = store.session_turn_plans(&fork.id).unwrap();
         assert_eq!(forked.len(), 1);
         assert_ne!(forked[0].anchor_message_id, first.id);

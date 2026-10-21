@@ -34,11 +34,13 @@ import { RemoteDeviceBarContext } from "../remoteDeviceBar";
 import { isBillingError } from "../errorMessage";
 import { BillingDialog } from "./BillingDialog";
 import { GitChangesPopover } from "./GitChangesPopover";
+import { SessionMenu } from "./SessionMenu";
 
 export function AppStatusBar(props: {
   app: MiniqAppController;
   sideConversationOpen?: boolean;
   onToggleSideConversation?: () => void;
+  onNewSideChat?: () => void;
   onOpenBrowser: () => void;
   onToggleReview: () => void;
   onOpenGit?: () => void;
@@ -142,13 +144,24 @@ export function AppStatusBar(props: {
             )}
           </>
         )}
+        {currentSession && (
+          <SessionMenu
+            session={currentSession}
+            messages={app.feed.messages}
+            onRename={(title) => app.actions.renameSession(currentSession.id, title)}
+            onTogglePin={() => void app.actions.setSessionPinned(currentSession.id, !currentSession.pinned)}
+            onNewSideChat={() => props.onNewSideChat?.()}
+            onFork={(anchorMessageId) => app.actions.forkSession(anchorMessageId)}
+            onArchive={() => void app.actions.setSessionArchived(currentSession.id, true)}
+          />
+        )}
       </div>
       <div className="app-toolbar-actions">
         {props.onToggleSideConversation && (
           <button type="button" className={`statusbar-icon-button side-conversation-trigger${props.sideConversationOpen ? " active" : ""}`}
-            data-tooltip="临时侧聊" title="临时侧聊" aria-label={props.sideConversationOpen ? "关闭临时侧聊" : "打开临时侧聊"}
+            data-tooltip="侧边聊天" title="侧边聊天" aria-label={props.sideConversationOpen ? "关闭侧边聊天" : "打开侧边聊天"}
             aria-pressed={props.sideConversationOpen ?? false} onClick={props.onToggleSideConversation}>
-            <MessageSquareText size={16} /><span>临时聊天</span>
+            <MessageSquareText size={16} /><span>侧边聊天</span>
           </button>
         )}
         {remote && currentSession && (

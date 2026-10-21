@@ -53,7 +53,7 @@ fn durable_copy_preserves_name_mime_original_bytes_and_private_permissions() {
         // image interpretation belongs to the vision provider, not the copy step.
         let bytes = [name.as_bytes(), b"\0original\xffbytes"].concat();
         std::fs::write(&source, &bytes).unwrap();
-        let prepared = prepare(&[source.to_string_lossy().into_owned()], &storage).unwrap();
+        let prepared = prepare(&[source.to_string_lossy().into_owned()], &storage, &[]).unwrap();
         let item = prepared.items()[0].clone();
         assert_eq!(item.name, name);
         assert_eq!(item.mime_type.as_deref(), Some(mime));
@@ -88,11 +88,11 @@ fn reusing_a_snapshot_preserves_its_name_without_copying_or_owning_existing_byte
     let source = directory.path().join("参考图.jpeg");
     let storage = directory.path().join("attachments");
     std::fs::write(&source, "original image").unwrap();
-    let prepared = prepare(&[source.to_string_lossy().into_owned()], &storage).unwrap();
+    let prepared = prepare(&[source.to_string_lossy().into_owned()], &storage, &[]).unwrap();
     let item = prepared.items()[0].clone();
     prepared.commit();
     std::fs::remove_file(source).unwrap();
-    let reused = prepare(std::slice::from_ref(&item.path), &storage).unwrap();
+    let reused = prepare(std::slice::from_ref(&item.path), &storage, &[]).unwrap();
     assert_eq!(reused.items()[0], item);
     assert_eq!(files(&storage), 1);
     drop(reused);
@@ -106,6 +106,7 @@ fn reusing_a_snapshot_preserves_its_name_without_copying_or_owning_existing_byte
                 .into_owned(),
         ],
         &storage,
+        &[],
     );
     assert!(failed.is_err());
     assert_eq!(std::fs::read(item.path).unwrap(), b"original image");
@@ -128,6 +129,7 @@ fn invalid_later_attachment_rolls_back_snapshots_and_does_not_touch_source_files
                 .into_owned(),
         ],
         &storage,
+        &[],
     );
     assert!(result.is_err());
     assert_eq!(files(&storage), 0);
@@ -164,26 +166,73 @@ async fn missing_new_attachment_rejects_the_message_without_partial_history_or_s
 }
 
 #[test]
-fn oversized_images_are_rejected_and_regular_file_paths_remain_unchanged() {
+fn documents_outside_the_workspace_get_a_durable_copy() {
     let directory = tempfile::tempdir().unwrap();
-    let image = directory.path().join("large.png");
-    std::fs::File::create(&image)
-        .unwrap()
-        .set_len(20 * 1024 * 1024 + 1)
-        .unwrap();
+    let workspace = directory.path().join("project");
+    std::fs::create_dir_all(&workspace).unwrap();
     let storage = directory.path().join("attachments");
-    assert!(prepare(&[image.to_string_lossy().into_owned()], &storage).is_err());
-    assert!(!storage.exists());
-    let document = directory.path().join("report.pdf");
-    std::fs::write(&document, "document").unwrap();
-    let prepared = prepare(&[document.to_string_lossy().into_owned()], &storage).unwrap();
+    let source = directory.path().join("季度报告.pdf");
+    std::fs::write(&source, "document").unwrap();
+    let roots = vec![workspace];
+    let prepared = prepare(&[source.to_string_lossy().into_owned()], &storage, &roots).unwrap();
+    let item = prepared.items()[0].clone();
+    assert_ne!(Path::new(&item.path), dunce::canonicalize(&source).unwrap());
+    assert!(Path::new(&item.path).starts_with(dunce::canonicalize(&storage).unwrap()));
+    assert_eq!(item.name, "季度报告.pdf");
+    assert_eq!(item.mime_type, None);
+    prepared.commit();
+    // The model is told to open this exact path, so it must outlive the source.
+    std::fs::remove_file(&source).unwrap();
+    assert_eq!(std::fs::read(&item.path).unwrap(), b"document");
+}
+
+#[test]
+fn workspace_files_keep_their_path_while_workspace_images_are_still_copied() {
+    let directory = tempfile::tempdir().unwrap();
+    let workspace = directory.path().join("project");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let storage = directory.path().join("attachments");
+    let roots = vec![workspace.clone()];
+    let document = workspace.join("data.csv");
+    std::fs::write(&document, "a,b\n").unwrap();
+    let image = workspace.join("chart.png");
+    std::fs::write(&image, "image bytes").unwrap();
+    let prepared = prepare(
+        &[
+            document.to_string_lossy().into_owned(),
+            image.to_string_lossy().into_owned(),
+        ],
+        &storage,
+        &roots,
+    )
+    .unwrap();
+    let items = prepared.items();
     assert_eq!(
-        Path::new(&prepared.items()[0].path),
+        Path::new(&items[0].path),
         dunce::canonicalize(&document).unwrap()
     );
-    assert_eq!(prepared.items()[0].mime_type, None);
-    drop(prepared);
-    assert!(document.is_file());
+    assert_eq!(items[1].mime_type.as_deref(), Some("image/png"));
+    assert_ne!(
+        Path::new(&items[1].path),
+        dunce::canonicalize(&image).unwrap()
+    );
+}
+
+#[test]
+fn documents_too_large_to_copy_keep_their_given_path() {
+    let directory = tempfile::tempdir().unwrap();
+    let storage = directory.path().join("attachments");
+    let source = directory.path().join("bundle.zip");
+    std::fs::File::create(&source)
+        .unwrap()
+        .set_len(MAX_SNAPSHOT_BYTES + 1)
+        .unwrap();
+    let prepared = prepare(&[source.to_string_lossy().into_owned()], &storage, &[]).unwrap();
+    assert_eq!(
+        Path::new(&prepared.items()[0].path),
+        dunce::canonicalize(&source).unwrap()
+    );
+    assert!(!storage.exists());
 }
 
 #[tokio::test]

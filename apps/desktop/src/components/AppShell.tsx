@@ -7,7 +7,7 @@ import type { CommandId } from "../shortcuts";
 import type { ThemeId } from "../theme";
 import { type LocalFileTarget } from "../localFiles";
 import { Spinner } from "./ui/Spinner";
-import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { TurnChangesContext, type TurnChangesContextValue } from "../turnChanges";
 import { ProcessRecordsContext, type ProcessRecordsContextValue } from "../processRecords";
 import { Composer } from "./Composer";
@@ -40,6 +40,7 @@ import { dispatchCompanionNavigation } from "../companionBridge";
 import { localCompanionNotices } from "../companionInboxAdapter";
 import { hostKey } from "../hostWorkspace";
 import { resolveAttention } from "../companionInbox";
+import { SIDE_CHAT_OPEN_EVENT } from "../sessionMenuEvents";
 
 import { useAppWorkbench } from "../hooks/useAppWorkbench";
 import { AppWorkbench } from "./AppWorkbench";
@@ -404,15 +405,28 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
   }, [active, viewedSessionId, viewedHost]);
 
   const commands = useAppCommands(app, active);
-  const toggleSideConversation = () => {
-    setSideConversationOpen((open) => {
-      if (!open) {
-        setSideConversationSourceId(app.catalog.currentSessionId);
-        workbench.close();
-      }
-      return !open;
-    });
+  const openSideConversation = () => {
+    const source = app.catalog.currentSessionId;
+    if (!source) {
+      app.setError("先打开一个对话，再开始侧边聊天");
+      return;
+    }
+    setSideConversationSourceId(source);
+    workbench.close();
+    setSideConversationOpen(true);
   };
+  const toggleSideConversation = () => {
+    if (sideConversationOpen) setSideConversationOpen(false);
+    else openSideConversation();
+  };
+  const openSideConversationRef = useRef(openSideConversation);
+  openSideConversationRef.current = openSideConversation;
+  useEffect(() => {
+    if (!active) return;
+    const open = () => openSideConversationRef.current();
+    window.addEventListener(SIDE_CHAT_OPEN_EVENT, open);
+    return () => window.removeEventListener(SIDE_CHAT_OPEN_EVENT, open);
+  }, [active]);
   useGlobalShortcuts({
     // Keydown and the native-menu `miniq:command` bus share one runner.
     onPalette: () => void commands.runCommand("palette"),
@@ -435,6 +449,7 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
           app={app}
           sideConversationOpen={sideConversationOpen}
           onToggleSideConversation={toggleSideConversation}
+          onNewSideChat={openSideConversation}
           showAttentionInbox={active}
           onOpenAttentionLocalItem={(item) => {
             const local = desktop?.catalogs[hostKey(null)] ?? (!app.client.sshHost && app.client.mode === "local" ? app.catalog : null);
@@ -478,9 +493,9 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
       {active && <SideConversationPanel client={app.client} open={sideConversationOpen}
         workspace={app.catalog.currentWorkspace ?? app.catalog.selectedWorkspace}
         sourceSessionId={sideConversationSourceId} onClose={() => setSideConversationOpen(false)}
-        onTemporarySessionChange={async (temporarySessionId) => {
-          setSideConversationSessionId(temporarySessionId);
-          if (app.catalog.currentSessionId === temporarySessionId && sideConversationSourceId)
+        onSideSessionChange={async (sessionId) => {
+          setSideConversationSessionId(sessionId);
+          if (sessionId && app.catalog.currentSessionId === sessionId && sideConversationSourceId)
             await app.actions.openSession(sideConversationSourceId);
         }} />}
       <AppWorkbench suspended={!active} app={app} workbench={workbench} onDiscuss={(content) => {

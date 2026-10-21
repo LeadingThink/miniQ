@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DaemonEvent, Message, Session, Workspace } from "../types";
+import type { DaemonEvent, Message, Session, SessionForkInfo, Workspace } from "../types";
 import { SideConversationPanel } from "./SideConversationPanel";
 
 afterEach(cleanup);
@@ -15,16 +15,28 @@ const workspace = {
 function fixture() {
   const listeners = new Set<(event: DaemonEvent) => void>();
   const session = { id: "side-session", workspaceId: workspace.id } as Session;
+  const fork: SessionForkInfo = {
+    sessionId: session.id,
+    parentSessionId: "main-session",
+    parentTitle: "主对话",
+    anchorMessageId: "anchor-1",
+    mode: "side",
+    inheritedMessageCount: 12,
+  };
   const messages: Message[] = [{
     id: "assistant-1",
     sessionId: session.id,
     role: "assistant",
-    content: "这是临时聊天回复",
+    content: "这是侧边聊天回复",
     createdAt: new Date().toISOString(),
   }];
+  let opens = 0;
   const call = vi.fn(async (method: string) => {
-    if (method === "session.create") return session;
-    if (method === "session.open") return { messages };
+    if (method === "session.fork") return session;
+    if (method === "session.open") {
+      opens += 1;
+      return opens === 1 ? { messages: [], fork } : { messages, fork };
+    }
     return {};
   });
   return {
@@ -41,46 +53,53 @@ function fixture() {
 }
 
 describe("SideConversationPanel", () => {
-  it("creates a temporary session in the current workspace and renders its reply", async () => {
+  it("forks the current conversation and renders its reply", async () => {
     const { client, call } = fixture();
     render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-session" onClose={() => {}} />);
 
-    fireEvent.change(screen.getByRole("textbox", { name: "临时侧聊内容" }), { target: { value: "解释当前代码" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送临时侧聊" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "侧边聊天内容" }), { target: { value: "解释当前代码" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送侧边聊天" }));
 
-    await waitFor(() => expect(call).toHaveBeenCalledWith("session.create", {
-      workspaceId: workspace.id,
-      title: "临时侧聊",
+    await waitFor(() => expect(call).toHaveBeenCalledWith("session.fork", {
+      sessionId: "main-session",
+      mode: "side",
     }));
-    expect(call).not.toHaveBeenCalledWith("session.create", expect.objectContaining({ sourceSessionId: expect.anything() }));
+    expect(call).not.toHaveBeenCalledWith("session.create", expect.anything());
     await waitFor(() => expect(call).toHaveBeenCalledWith("session.sendMessage", {
       sessionId: "side-session",
       message: { role: "user", content: "解释当前代码", attachments: [] },
       rejectIfBusy: true,
     }));
-    expect(await screen.findByText("这是临时聊天回复")).toBeTruthy();
+    expect(await screen.findByText("这是侧边聊天回复")).toBeTruthy();
+    expect(await screen.findByText(/继承「主对话」/)).toBeTruthy();
   });
 
-  it("deletes the temporary session when the user releases it", async () => {
+  it("deletes the side session when the user releases it", async () => {
     const { client, call } = fixture();
-    render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId={null} onClose={() => {}} />);
-    fireEvent.change(screen.getByRole("textbox", { name: "临时侧聊内容" }), { target: { value: "临时问题" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送临时侧聊" }));
-    await waitFor(() => expect((screen.getByRole("button", { name: "释放临时侧聊" }) as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(screen.getByRole("button", { name: "释放临时侧聊" }));
+    render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-session" onClose={() => {}} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "侧边聊天内容" }), { target: { value: "临时问题" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送侧边聊天" }));
+    await waitFor(() => expect((screen.getByRole("button", { name: "删除侧边聊天" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "删除侧边聊天" }));
     await waitFor(() => expect(call).toHaveBeenCalledWith("session.delete", { sessionId: "side-session" }));
   });
 
-  it("keeps the temporary session when the main conversation changes", async () => {
+  it("releases the side conversation when the main conversation changes", async () => {
     const { client, call } = fixture();
     const view = render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-a" onClose={() => {}} />);
-    fireEvent.change(screen.getByRole("textbox", { name: "临时侧聊内容" }), { target: { value: "保留这个侧聊" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送临时侧聊" }));
-    await waitFor(() => expect(call).toHaveBeenCalledWith("session.create", expect.anything()));
+    fireEvent.change(screen.getByRole("textbox", { name: "侧边聊天内容" }), { target: { value: "这个侧聊会跟随主对话" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送侧边聊天" }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("session.fork", expect.anything()));
 
     view.rerender(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-b" onClose={() => {}} />);
 
-    expect(call).not.toHaveBeenCalledWith("session.delete", { sessionId: "side-session" });
+    await waitFor(() => expect(call).toHaveBeenCalledWith("session.delete", { sessionId: "side-session" }));
   });
 
+  it("keeps the input disabled until a main conversation is selected", () => {
+    const { client } = fixture();
+    render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId={null} onClose={() => {}} />);
+    expect((screen.getByRole("textbox", { name: "侧边聊天内容" }) as HTMLTextAreaElement).disabled).toBe(true);
+    expect(screen.getByText("先在主对话里打开一个会话。")).toBeTruthy();
+  });
 });

@@ -158,6 +158,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0027_tool_call_timeline_index",
         include_str!("../../../migrations/0027_tool_call_timeline_index.sql"),
     ),
+    (
+        "0028_session_forks",
+        include_str!("../../../migrations/0028_session_forks.sql"),
+    ),
 ];
 
 #[cfg(test)]

@@ -234,6 +234,10 @@ impl Store {
             "DELETE FROM audit_events WHERE session_id = ?1",
             params![id],
         )?;
+        conn.execute(
+            "DELETE FROM session_forks WHERE session_id = ?1",
+            params![id],
+        )?;
         // Finally delete the session itself (cascades to external_session_*).
         conn.execute("DELETE FROM sessions WHERE id = ?1", params![id])?;
         Ok(())
@@ -298,6 +302,10 @@ impl Store {
             )?;
             conn.execute(
                 "DELETE FROM audit_events WHERE session_id = ?1",
+                params![sid],
+            )?;
+            conn.execute(
+                "DELETE FROM session_forks WHERE session_id = ?1",
                 params![sid],
             )?;
         }

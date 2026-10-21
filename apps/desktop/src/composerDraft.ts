@@ -1,3 +1,5 @@
+import type { PendingPaste } from "./largePaste";
+
 const DRAFT_PREFIX = "miniq.draft.";
 
 export function readDraft(key: string | undefined): string {
@@ -43,6 +45,40 @@ export function storeAttachments(key: string | undefined, paths: string[]) {
         JSON.stringify(paths),
       );
     else window.localStorage.removeItem(`${DRAFT_PREFIX}${key}.attachments`);
+  } catch {
+    /* Draft remains in memory when browser storage is unavailable. */
+  }
+}
+
+/** Collapsed pastes of a draft, so a placeholder never outlives its text. */
+export function readPastes(key: string | undefined): PendingPaste[] {
+  if (!key) return [];
+  try {
+    const value: unknown = JSON.parse(
+      window.localStorage.getItem(`${DRAFT_PREFIX}${key}.pastes`) ?? "[]",
+    );
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((entry: unknown) => {
+      const paste = entry as Partial<PendingPaste> | null;
+      return typeof paste?.placeholder === "string" && paste.placeholder &&
+        typeof paste.text === "string"
+        ? [{ placeholder: paste.placeholder, text: paste.text }]
+        : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
+export function storePastes(key: string | undefined, pastes: readonly PendingPaste[]) {
+  if (!key) return;
+  try {
+    if (pastes.length)
+      window.localStorage.setItem(
+        `${DRAFT_PREFIX}${key}.pastes`,
+        JSON.stringify(pastes),
+      );
+    else window.localStorage.removeItem(`${DRAFT_PREFIX}${key}.pastes`);
   } catch {
     /* Draft remains in memory when browser storage is unavailable. */
   }

@@ -91,7 +91,12 @@ mod tests {
             .collect::<rusqlite::Result<Vec<_>>>()
             .unwrap()
             .join("\n");
-        assert!(plan.contains("idx_messages_session"), "{plan}");
+        // Either session-scoped index is acceptable; the inherited-aware one is
+        // preferred when the planner sees a plain session_id lookup.
+        assert!(
+            plan.contains("idx_messages_session") || plan.contains("idx_messages_inherited"),
+            "{plan}"
+        );
         assert!(plan.contains("idx_queued_messages_session"), "{plan}");
     }
 }

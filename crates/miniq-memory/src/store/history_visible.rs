@@ -104,7 +104,7 @@ fn opener_after(
         params.push((":after_id", text(&after.id)));
     }
     let sql = format!(
-        "SELECT created_at, id FROM messages WHERE session_id = :sid \
+        "SELECT created_at, id FROM messages WHERE session_id = :sid AND inherited = 0 \
          AND role = 'user' AND steered = 0{filter} ORDER BY created_at, id LIMIT 1"
     );
     Ok(query(conn, &sql, &params, cursor)?.pop())
@@ -121,7 +121,7 @@ fn openers_before(
     params.extend(session_params(session_id, false));
     params.push((":limit", Value::Integer(limit as i64)));
     let sql = format!(
-        "SELECT created_at, id FROM messages WHERE session_id = :sid \
+        "SELECT created_at, id FROM messages WHERE session_id = :sid AND inherited = 0 \
          AND role = 'user' AND steered = 0{filter} ORDER BY created_at DESC, id DESC LIMIT :limit"
     );
     query(conn, &sql, &params, cursor)
@@ -139,7 +139,8 @@ fn legacy_final(
     let message = query(
         conn,
         &format!(
-            "SELECT id, created_at, role, assistant_kind FROM messages WHERE session_id = :sid{filter} \
+            "SELECT id, created_at, role, assistant_kind FROM messages WHERE session_id = :sid \
+             AND inherited = 0{filter} \
              AND (:internal OR role != 'system') ORDER BY created_at DESC, id DESC LIMIT 1"
         ),
         &params,
@@ -208,7 +209,7 @@ fn turn_content(
     let visible_ids = query(
         conn,
         &format!(
-            "SELECT id FROM messages WHERE session_id = :sid{filter} AND {VISIBLE_MESSAGE} \
+            "SELECT id FROM messages WHERE session_id = :sid AND inherited = 0{filter} AND {VISIBLE_MESSAGE} \
              ORDER BY created_at, id"
         ),
         &params,
@@ -218,7 +219,7 @@ fn turn_content(
         conn,
         &format!(
             "SELECT count(*), min(created_at), max(created_at) FROM messages \
-             WHERE session_id = :sid{filter} AND (:internal OR role != 'system') \
+             WHERE session_id = :sid AND inherited = 0{filter} AND (:internal OR role != 'system') \
              AND NOT {VISIBLE_MESSAGE}"
         ),
         &params,
@@ -421,7 +422,7 @@ pub(super) fn process_records_page(
         &format!(
             "WITH timeline AS (\
                 SELECT id, created_at, 'message' AS kind FROM messages \
-                WHERE session_id = :sid{filter} AND (:internal OR role != 'system') \
+                WHERE session_id = :sid AND inherited = 0{filter} AND (:internal OR role != 'system') \
                 AND NOT {VISIBLE_MESSAGE} \
                 UNION ALL \
                 SELECT id, created_at, 'tool' AS kind FROM tool_calls \

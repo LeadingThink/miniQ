@@ -25,7 +25,7 @@ impl ProviderMediaUploader for Uploader {
 
     async fn upload(&self, bytes: Vec<u8>, mime: &str) -> Result<ProviderMediaReference, String> {
         if self.fail {
-            return Err("sensitive upstream error".into());
+            return Err("ticket unavailable (HTTP 503)".into());
         }
         let size = bytes.len();
         self.uploaded.lock().unwrap().push((bytes, mime.into()));
@@ -193,7 +193,7 @@ async fn upload_failure_aborts_request_without_inline_fallback_or_secret_leak() 
     .await
     .unwrap_err();
     assert!(error.to_string().contains("图片上传七牛云失败"));
-    assert!(!error.to_string().contains("sensitive"));
+    assert!(error.to_string().contains("HTTP 503"));
 }
 
 #[test]

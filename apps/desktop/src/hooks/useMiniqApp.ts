@@ -647,7 +647,7 @@ export function useMiniqApp(active = true) {
     [feed.messages],
   );
   const review = useSessionDiff(client, catalog.currentSessionId, feed.toolCalls, latestTurnId, active && !feed.loading);
-  const preview = useFilePreview(catalog.currentSession?.workingDirectory, catalog.currentSessionId, catalog.currentWorkspacePaths, client, desktop?.getFilePreviewCache(client.sshHost));
+  const preview = useFilePreview(catalog.currentSession?.workingDirectory, catalog.currentSessionId, catalog.currentWorkspacePaths, client, desktop?.getFilePreviewCache(client.sshHost), setError);
   const stopCurrentTurnForUpdate = useCallback(
     async (expectedSessionId?: string | null) => {
       const currentSessionId = catalog.currentSessionId;

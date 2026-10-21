@@ -130,6 +130,89 @@ pub fn preview_format(path: &Path) -> (&'static str, &'static str) {
     }
 }
 
+/// A canonical path inside the session's authorized roots. Callers pick the
+/// operation from the kind: previews read [`LocalTarget::File`], while the
+/// system opener also accepts [`LocalTarget::Directory`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum LocalTarget {
+    File(PathBuf),
+    Directory(PathBuf),
+}
+
+/// Serialized kind for the shell, which must know a target before choosing an
+/// operation for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LocalTargetKind {
+    File,
+    Directory,
+}
+
+impl LocalTarget {
+    pub fn path(&self) -> &Path {
+        match self {
+            Self::File(path) | Self::Directory(path) => path,
+        }
+    }
+
+    pub fn kind(&self) -> LocalTargetKind {
+        match self {
+            Self::File(_) => LocalTargetKind::File,
+            Self::Directory(_) => LocalTargetKind::Directory,
+        }
+    }
+
+    pub fn into_path(self) -> PathBuf {
+        match self {
+            Self::File(path) | Self::Directory(path) => path,
+        }
+    }
+}
+
+pub fn validated_target(
+    path: &str,
+    workspace_path: &str,
+    workspace_paths: &[String],
+) -> Result<LocalTarget, String> {
+    validated_target_with_authorization(path, workspace_path, workspace_paths, &[])
+}
+
+pub fn validated_target_with_authorization(
+    path: &str,
+    workspace_path: &str,
+    workspace_paths: &[String],
+    authorized_files: &[String],
+) -> Result<LocalTarget, String> {
+    let workspace = dunce::canonicalize(workspace_path)
+        .map_err(|error| format!("无法访问工作区 {workspace_path}: {error}"))?;
+    if !workspace.is_dir() {
+        return Err(format!("工作区不是目录: {}", workspace.display()));
+    }
+
+    let resolved = dunce::canonicalize(workspace.join(path))
+        .map_err(|error| format!("无法访问文件 {path}: {error}"))?;
+    let target = if resolved.is_file() {
+        LocalTarget::File(resolved)
+    } else if resolved.is_dir() {
+        LocalTarget::Directory(resolved)
+    } else {
+        return Err(format!("目标不是文件或目录: {}", resolved.display()));
+    };
+    let target_path = target.path();
+    let attached = workspace_paths.iter().any(|root| {
+        dunce::canonicalize(root).is_ok_and(|root| root.is_dir() && target_path.starts_with(root))
+    });
+    let authorized = authorized_files.iter().any(|authorized| {
+        dunce::canonicalize(authorized)
+            .is_ok_and(|authorized| authorized.is_file() && target_path == authorized)
+    });
+    if !target_path.starts_with(&workspace) && !attached && !authorized {
+        return Err(format!("拒绝打开工作区外的文件: {}", target_path.display()));
+    }
+    Ok(target)
+}
+
+/// File-only assertion for previews and text reads.
 pub fn validated_file(
     path: &str,
     workspace_path: &str,
@@ -144,28 +227,15 @@ pub fn validated_file_with_authorization(
     workspace_paths: &[String],
     authorized_files: &[String],
 ) -> Result<PathBuf, String> {
-    let workspace = dunce::canonicalize(workspace_path)
-        .map_err(|error| format!("无法访问工作区 {workspace_path}: {error}"))?;
-    if !workspace.is_dir() {
-        return Err(format!("工作区不是目录: {}", workspace.display()));
+    match validated_target_with_authorization(
+        path,
+        workspace_path,
+        workspace_paths,
+        authorized_files,
+    )? {
+        LocalTarget::File(file) => Ok(file),
+        LocalTarget::Directory(directory) => Err(format!("目标不是文件: {}", directory.display())),
     }
-
-    let file = dunce::canonicalize(workspace.join(path))
-        .map_err(|error| format!("无法访问文件 {path}: {error}"))?;
-    if !file.is_file() {
-        return Err(format!("目标不是文件: {}", file.display()));
-    }
-    let attached = workspace_paths.iter().any(|root| {
-        dunce::canonicalize(root).is_ok_and(|root| root.is_dir() && file.starts_with(root))
-    });
-    let authorized = authorized_files.iter().any(|authorized| {
-        dunce::canonicalize(authorized)
-            .is_ok_and(|authorized| authorized.is_file() && file == authorized)
-    });
-    if !file.starts_with(&workspace) && !attached && !authorized {
-        return Err(format!("拒绝打开工作区外的文件: {}", file.display()));
-    }
-    Ok(file)
 }
 
 pub fn read_text(

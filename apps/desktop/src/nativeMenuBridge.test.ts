@@ -4,8 +4,8 @@ import { COMMAND_BUS_EVENT, MENU_COMMAND_IDS, dispatchMenuCommand, initializeNat
 
 describe("nativeMenuBridge", () => {
   it("covers the command bus contract without duplicates", () => {
-    expect(new Set(MENU_COMMAND_IDS).size).toBe(16);
-    for (const id of ["newChat", "settings", "toggleSidebar", "palette", "find", "showShortcuts", "prevSession", "nextSession", "nextAttention", "archiveSession", "togglePin", "markUnread", "markAllRead", "back", "forward", "copyMarkdown"]) {
+    expect(new Set(MENU_COMMAND_IDS).size).toBe(18);
+    for (const id of ["newChat", "settings", "toggleSidebar", "palette", "find", "showShortcuts", "prevSession", "nextSession", "nextAttention", "archiveSession", "togglePin", "renameSession", "newSideChat", "markUnread", "markAllRead", "back", "forward", "copyMarkdown"]) {
       expect(isMenuCommandId(id)).toBe(true);
     }
   });

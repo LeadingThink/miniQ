@@ -83,6 +83,19 @@ export function removePreviewTab(
   return closePreviewTabs(state, new Set([path]));
 }
 
+/** Drops a target that can never be previewed, keeping it out of reopen history. */
+export function dropPreviewTab(
+  state: PreviewTabsState,
+  path: string,
+): PreviewTabsState {
+  if (!state.targets.some((item) => item.path === path)) return state;
+  const next = closePreviewTabs(state, new Set([path]));
+  return {
+    ...next,
+    closed: state.closed.filter(({ target }) => target.path !== path),
+  };
+}
+
 /** Retain identities and lightweight view state, never file payloads. */
 export function closePreviewTabs(
   state: PreviewTabsState,

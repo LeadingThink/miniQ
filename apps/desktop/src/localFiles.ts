@@ -284,31 +284,32 @@ export async function convertOfficePreview(
   });
 }
 
-const PASTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-const MAX_PASTED_IMAGE_BYTES = 20 * 1024 * 1024;
+/** Upper bound for one pasted file. Mirrors `MAX_PASTED_FILE_BYTES` in `src-tauri/src/local_file.rs`. */
+export const MAX_PASTED_FILE_BYTES = 200 * 1024 * 1024;
 
-export async function savePastedImage(file: File): Promise<string> {
-  if (!isTauriRuntime()) throw new Error("粘贴图片仅在 miniQ 桌面应用中可用");
-  if (!PASTED_IMAGE_TYPES.has(file.type.toLowerCase())) {
-    throw new Error("仅支持 PNG、JPEG、WebP 或 GIF 图片");
+/** Persists a pasted clipboard file in the app cache and returns its path. */
+export async function savePastedFile(file: File): Promise<string> {
+  if (!isTauriRuntime()) throw new Error("粘贴文件仅在 miniQ 桌面应用中可用");
+  if (file.size === 0) throw new Error("剪贴板文件内容为空");
+  if (file.size > MAX_PASTED_FILE_BYTES) {
+    throw new Error(`文件不能超过 ${MAX_PASTED_FILE_BYTES / (1024 * 1024)} MB`);
   }
-  if (file.size === 0) throw new Error("剪贴板图片内容为空");
-  if (file.size > MAX_PASTED_IMAGE_BYTES) throw new Error("图片不能超过 20 MB");
 
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === "string") resolve(reader.result);
-      else reject(new Error("图片读取失败"));
+      else reject(new Error("文件读取失败"));
     };
-    reader.onerror = () => reject(reader.error ?? new Error("图片读取失败"));
+    reader.onerror = () => reject(reader.error ?? new Error("文件读取失败"));
     reader.readAsDataURL(file);
   });
   const separator = dataUrl.indexOf(",");
-  if (separator < 0) throw new Error("图片编码失败");
+  if (separator < 0) throw new Error("文件编码失败");
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("save_pasted_image", {
-    mimeType: file.type.toLowerCase(),
+  return invoke<string>("save_pasted_file", {
+    name: file.name || "pasted-file",
+    mimeType: file.type,
     dataBase64: dataUrl.slice(separator + 1),
   });
 }
@@ -334,6 +335,21 @@ export async function readImagePreview(path: string, options: FileReadOptions = 
 function browserFileUrl(path: string) {
   const normalized = path.replaceAll("\\", "/");
   return encodeURI(WINDOWS_DRIVE.test(normalized) ? `file:///${normalized}` : `file://${normalized}`);
+}
+
+export type LocalPathKind = "file" | "directory";
+
+/** What a path is, so callers can pick preview or the system opener. */
+export async function localPathKind(
+  path: string,
+  workspacePath?: string | null,
+  workspacePaths: readonly string[] = [],
+  authorizedFiles: readonly string[] = [],
+): Promise<LocalPathKind> {
+  if (!workspacePath) throw new Error("无法识别路径：当前会话没有工作区");
+  if (!isTauriRuntime()) throw new Error("路径识别仅在 miniQ 桌面应用中可用");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<LocalPathKind>("local_path_kind", { path, workspacePath, workspacePaths, authorizedFiles });
 }
 
 export async function openLocalFile(

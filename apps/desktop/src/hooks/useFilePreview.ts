@@ -3,9 +3,12 @@ import { errorMessage } from "../errorMessage";
 import { remoteFileErrorMessage } from "../remoteFileErrors";
 import {
   canRequestFileAccess,
+  localPathKind,
+  openLocalFile,
   readLocalFilePreview,
   requestRemoteFileAccess,
   resolveRemoteFileAccess,
+  type LocalPathKind,
   type LocalPreviewKind,
   type LocalFilePreview,
   type LocalFileTarget,
@@ -13,6 +16,7 @@ import {
 import {
   EMPTY_PREVIEW_TABS,
   closePreviewTabs,
+  dropPreviewTab,
   removePreviewTab,
   reopenPreviewTab,
   selectPreviewTab,
@@ -68,6 +72,7 @@ export function useFilePreview(
   workspacePaths: readonly string[] = NO_PATHS,
   client?: RpcClient,
   cache?: FilePreviewCache,
+  onError?: (message: string) => void,
 ) {
   const [state, setState] = useState<FilePreviewState>(EMPTY_PREVIEW);
   const [views] = useState(() => cache?.views ?? new PreviewViewStore());
@@ -99,7 +104,7 @@ export function useFilePreview(
     [scope, cache],
   );
 
-  const openFile = useCallback(
+  const loadFile = useCallback(
     async (target: LocalFileTarget) => {
       const requestId = ++requestSequence.current;
       requestController.current?.abort();
@@ -177,6 +182,42 @@ export function useFilePreview(
       }
     },
     [workspacePath, workspacePaths, scope, client, sessionId, updateTabs],
+  );
+
+  /**
+   * Previews are for files. A folder has nothing to read, so the shell is asked
+   * what the target is first and folders go to the system file manager instead
+   * of turning into a reader error.
+   */
+  const openFile = useCallback(
+    async (target: LocalFileTarget) => {
+      if (isTauriRuntime() && client?.mode !== "remote" && workspacePath) {
+        const requestId = ++requestSequence.current;
+        requestController.current?.abort();
+        const authorized = authorizedFilesRef.current[scope] ?? [];
+        let kind: LocalPathKind | null = null;
+        try {
+          kind = await localPathKind(target.path, workspacePath, workspacePaths, authorized);
+        } catch {
+          // Missing and unauthorized targets are reported by the reader instead.
+        }
+        if (requestId !== requestSequence.current) return;
+        if (kind === "directory") {
+          const remaining = updateTabs((current) => dropPreviewTab(current, target.path));
+          setState(EMPTY_PREVIEW);
+          if (remaining.active)
+            void loadFile({ path: remaining.active, line: null, column: null });
+          try {
+            await openLocalFile(target.path, workspacePath, workspacePaths, authorized);
+          } catch (cause) {
+            onError?.(`无法打开文件夹：${errorMessage(cause)}`);
+          }
+          return;
+        }
+      }
+      await loadFile(target);
+    },
+    [client, loadFile, onError, scope, updateTabs, workspacePath, workspacePaths],
   );
 
   const authorizeFile = useCallback(

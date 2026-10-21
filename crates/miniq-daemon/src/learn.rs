@@ -23,6 +23,9 @@ fn clip(text: &str) -> String {
 /// Assemble a readable transcript of one session: messages and tool calls
 /// interleaved chronologically.
 pub fn build_transcript(state: &AppState, session_id: &str) -> Result<String, String> {
+    if crate::side_conversation::is_side(&state.store, session_id) {
+        return Err("side conversations are not used for skill distillation".into());
+    }
     let messages = state
         .store
         .list_messages(session_id)

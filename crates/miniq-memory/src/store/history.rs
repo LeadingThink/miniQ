@@ -20,7 +20,8 @@ impl Store {
         let mut statement = conn.prepare(
             "WITH timeline AS (
                 SELECT id, created_at, 'message' AS kind FROM messages
-                WHERE session_id = ?1 AND ?8 IS NULL AND ?9 IS NULL AND (?5 OR role != 'system')
+                WHERE session_id = ?1 AND inherited = 0
+                  AND ?8 IS NULL AND ?9 IS NULL AND (?5 OR role != 'system')
                   AND (?6 = 'all' OR (?6 = 'answers' AND role IN ('user', 'assistant'))
                        OR (?6 = 'activity' AND role = 'tool'))
                   AND (?7 = '' OR instr(lower(content), lower(?7)) > 0)

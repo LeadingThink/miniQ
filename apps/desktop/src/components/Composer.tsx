@@ -1,5 +1,4 @@
 import {
-  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -11,6 +10,7 @@ import { ArrowUp, Folder, LoaderCircle, Paperclip, Plus, Slash, Square, Target }
 import { ApprovalModeSelect } from "./ApprovalModeSelect";
 import {
   COMPOSER_PLACEHOLDER,
+  MAX_COMPOSER_ATTACHMENTS,
   canSendComposer,
   handleComposerKeyDown,
   shouldShowComposerSend,
@@ -32,15 +32,17 @@ import { VoiceInput } from "./VoiceInput";
 import { useSpeechInput } from "../useSpeechInput";
 import { VoiceTranscript } from "./VoiceTranscript";
 import type { VoicePreview } from "../voiceTranscription";
-import { savePastedImage } from "../localFiles";
-import { clipboardImages } from "../clipboardImages";
-import { readDraft, storeDraft, readAttachments, storeAttachments } from "../composerDraft";
+import { savePastedFile } from "../localFiles";
+import { clipboardFiles } from "../clipboardFiles";
+import { readDraft, storeDraft, readAttachments, storeAttachments, readPastes, storePastes } from "../composerDraft";
+import { expandPastes, isLargePaste, nextPlaceholder, type PendingPaste } from "../largePaste";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { RemotePathDialog } from "./RemotePathDialog";
 import { ComposerRemoteUpload } from "./ComposerRemoteUpload";
 import type { RemoteUploadScope } from "../remoteTransfer";
 import { useTouchComposerInput } from "../hooks/useTouchComposerInput";
 import { useDroppedFiles } from "../hooks/useDroppedFiles";
+import { usePastedInput } from "../hooks/usePastedInput";
 import { useAttachmentReads } from "../hooks/useAttachmentReads";
 import "./Composer.css";
 
@@ -56,6 +58,22 @@ function resizeComposer(textarea: HTMLTextAreaElement | null) {
   if (!textarea) return;
   textarea.style.height = "auto";
   textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+}
+
+/** Unique attachment paths in order, capped at the limit the daemon enforces. */
+function mergeAttachments(
+  current: readonly string[],
+  incoming: readonly string[],
+): { paths: string[]; dropped: number } {
+  const unique = [...new Set([...current, ...incoming])];
+  return {
+    paths: unique.slice(0, MAX_COMPOSER_ATTACHMENTS),
+    dropped: Math.max(0, unique.length - MAX_COMPOSER_ATTACHMENTS),
+  };
+}
+
+function attachmentLimitMessage(dropped: number): string {
+  return `每条消息最多附加 ${MAX_COMPOSER_ATTACHMENTS} 个文件，${dropped} 个未添加`;
 }
 
 /** Rounded composer card: textarea + context chip row + circular send. */
@@ -130,6 +148,11 @@ export function ComposerCard(props: {
   const [attachments, setAttachments] = useState<string[]>(() =>
     readAttachments(props.draftKey),
   );
+  const attachmentsRef = useRef(attachments);
+  // Collapsed pastes never render on their own, but they must survive
+  // re-renders and follow the draft whose placeholder shows them.
+  const [initialPastes] = useState(() => readPastes(props.draftKey));
+  const pastesRef = useRef(initialPastes);
   const [sending, setSending] = useState(false);
   const [goalMode, setGoalMode] = useState(false);
   const sendingRef = useRef(false);
@@ -174,7 +197,9 @@ export function ComposerCard(props: {
     if (draftKeyRef.current === props.draftKey) return;
     draftKeyRef.current = props.draftKey;
     setDraftState(readDraft(props.draftKey));
-    setAttachments(readAttachments(props.draftKey));
+    attachmentsRef.current = readAttachments(props.draftKey);
+    setAttachments(attachmentsRef.current);
+    pastesRef.current = readPastes(props.draftKey);
     setGoalMode(false);
     setVoicePreview(null);
     setShowRemoteAttachment(false);
@@ -182,10 +207,27 @@ export function ComposerCard(props: {
 
   useEffect(() => { setShowRemoteAttachment(false); }, [props.client, remoteUploadKey]);
 
+  /** One writer for the attachment list so the ref never drifts from the draft. */
+  const applyAttachments = (next: string[]) => {
+    attachmentsRef.current = next;
+    setAttachments(next);
+    storeAttachments(props.draftKey, next);
+  };
+
+  /** A collapsed paste is stored with the draft that shows its placeholder. */
+  const applyPastes = (next: PendingPaste[]) => {
+    pastesRef.current = next;
+    storePastes(props.draftKey, next);
+  };
+
   const setDraft = (value: string) => {
     draftValueRef.current = value;
     setDraftState(value);
     storeDraft(props.draftKey, value);
+    // Deleting a placeholder deletes the text it hides; nothing is orphaned.
+    if (pastesRef.current.length === 0) return;
+    const kept = pastesRef.current.filter((paste) => value.includes(paste.placeholder));
+    if (kept.length !== pastesRef.current.length) applyPastes(kept);
   };
 
   useEffect(() => {
@@ -226,29 +268,24 @@ export function ComposerCard(props: {
     return () => observer.disconnect();
   }, [props.draftKey]);
 
-  const addAttachments = useCallback(
-    (paths: string[]) => {
-      // Native pickers and clipboard saves may finish after switching sessions.
-      // Keep the result with the draft which initiated that operation.
-      if (!mountedRef.current || draftKeyRef.current !== props.draftKey) {
-        storeAttachments(props.draftKey, [...new Set([...readAttachments(props.draftKey), ...paths])]);
-        return;
-      }
-      if (sendingRef.current) return;
-      setAttachments((current) => {
-        const next = [...new Set([...current, ...paths])];
-        storeAttachments(props.draftKey, next);
-        return next;
-      });
-    },
-    [props.draftKey],
-  );
+  const addAttachments = (paths: string[]) => {
+    // Native pickers and clipboard saves may finish after switching sessions.
+    // Keep the result with the draft which initiated that operation.
+    if (!mountedRef.current || draftKeyRef.current !== props.draftKey) {
+      storeAttachments(props.draftKey, mergeAttachments(readAttachments(props.draftKey), paths).paths);
+      return;
+    }
+    if (sendingRef.current) return;
+    const merged = mergeAttachments(attachmentsRef.current, paths);
+    applyAttachments(merged.paths);
+    if (merged.dropped > 0) props.onError?.(attachmentLimitMessage(merged.dropped));
+  };
 
-  const receiveDroppedFiles = useCallback((paths: string[]) => {
+  const receiveDroppedFiles = (paths: string[]) => {
     if (remoteHost) {
       props.onError?.("当前连接远程电脑，请先将文件传到该电脑，再通过附件按钮填写文件路径。");
     } else addAttachments(paths);
-  }, [addAttachments, remoteHost, props.onError]);
+  };
   useDroppedFiles(textareaRef, receiveDroppedFiles, props.onError);
 
   const pickFiles = async () => {
@@ -267,28 +304,77 @@ export function ComposerCard(props: {
     }
   };
 
-  const pasteImages = async (
-    event: React.ClipboardEvent<HTMLTextAreaElement>,
-  ) => {
-    const imageFiles = clipboardImages(event.clipboardData);
-    if (imageFiles.length === 0) return;
-
-    // Always claim an image paste: otherwise the WebView inserts the file
-    // name or nothing, which looks like the paste silently failed.
-    event.preventDefault();
-    if (sendingRef.current) return;
+  /** Saves clipboard files in the app cache and attaches them to this draft. */
+  const attachPastedFiles = async (files: File[]) => {
+    if (sendingRef.current || files.length === 0) return;
     if (remoteHost) {
-      props.onError?.("当前连接远程电脑，剪贴板图片需先传到该电脑，再附加远程文件路径。");
+      props.onError?.("当前连接远程电脑，剪贴板文件需先传到该电脑，再附加远程文件路径。");
+      return;
+    }
+    if (!isTauriRuntime()) {
+      props.onError?.("粘贴文件仅在 miniQ 桌面应用中可用");
       return;
     }
     try {
-      const paths = await attachmentReads.run(() => Promise.all(imageFiles.map((file) => savePastedImage(file))));
+      const paths = await attachmentReads.run(() => Promise.all(files.map((file) => savePastedFile(file))));
       addAttachments(paths);
     } catch (error) {
       props.onError?.(
-        `无法粘贴图片: ${error instanceof Error ? error.message : String(error)}`,
+        `无法粘贴文件: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  };
+
+  /** Inserts text at the caret, or at the end when the input was idle. */
+  const insertDraftText = (text: string) => {
+    // Windows clipboards hand text over with CRLF; the draft keeps plain LF.
+    const inserted = sanitizeTextInput(text.replace(/\r\n?/g, "\n")).value;
+    if (!inserted) return;
+    const value = draftValueRef.current;
+    const textarea = textareaRef.current;
+    const focused = textarea !== null && document.activeElement === textarea;
+    const start = focused ? textarea.selectionStart : value.length;
+    const end = focused ? textarea.selectionEnd : value.length;
+    setDraft(`${value.slice(0, start)}${inserted}${value.slice(end)}`);
+    placeCaret(start + inserted.length);
+  };
+
+  /** Collapses a long paste into a token; the full text returns on send. */
+  const insertLargePaste = (text: string) => {
+    const placeholder = nextPlaceholder(
+      text,
+      pastesRef.current.map((paste) => paste.placeholder),
+    );
+    applyPastes([...pastesRef.current, { placeholder, text }]);
+    insertDraftText(placeholder);
+  };
+
+  const receivePastedText = (text: string) => {
+    // Windows clipboards hand text over with CRLF; the stored text keeps plain LF.
+    const normalized = text.replace(/\r\n?/g, "\n");
+    if (isLargePaste(normalized)) insertLargePaste(normalized);
+    else insertDraftText(normalized);
+  };
+
+  // A paste made while the transcript owns the focus has no editor to land in.
+  usePastedInput(textareaRef, (paste) => {
+    if (paste.files.length > 0) void attachPastedFiles(paste.files);
+    if (paste.text) receivePastedText(paste.text);
+  });
+
+  /** Claims clipboard files so the WebView cannot insert a file name instead. */
+  const pasteClipboard = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = clipboardFiles(event.clipboardData);
+    if (files.length > 0) {
+      event.preventDefault();
+      void attachPastedFiles(files);
+      return;
+    }
+    const text = event.clipboardData.getData("text/plain");
+    // Short text keeps native editing (undo, autocorrect); long text collapses.
+    if (!text || !isLargePaste(text)) return;
+    event.preventDefault();
+    insertLargePaste(text.replace(/\r\n?/g, "\n"));
   };
 
   const send = async () => {
@@ -304,16 +390,22 @@ export function ComposerCard(props: {
     sendingRef.current = true;
     setSending(true);
     const key = props.draftKey;
+    // Collapsed pastes only exist while editing; the message carries their text.
+    const content = expandPastes(draft, pastesRef.current).trim();
     try {
       const accepted = goalMode
-        ? await props.onSend(draft.trim(), attachments, true)
-        : await props.onSend(draft.trim(), attachments);
+        ? await props.onSend(content, attachments, true)
+        : await props.onSend(content, attachments);
       if (accepted === false) return;
       storeDraft(key, "");
       storeAttachments(key, []);
+      storePastes(key, []);
       if (draftKeyRef.current === key) {
+        draftValueRef.current = "";
         setDraftState("");
+        attachmentsRef.current = [];
         setAttachments([]);
+        pastesRef.current = [];
         setGoalMode(false);
       }
     } catch (cause) {
@@ -489,14 +581,15 @@ export function ComposerCard(props: {
           onAttach={(paths) => {
             const active = uploadScope.current;
             if (!mountedRef.current || active.client !== props.client || active.scopeKey !== remoteUploadKey || active.draftKey !== props.draftKey) {
-              const next = [...new Set([...readAttachments(props.draftKey), ...paths])];
-              if (next.length <= 10) storeAttachments(props.draftKey, next);
+              storeAttachments(props.draftKey, mergeAttachments(readAttachments(props.draftKey), paths).paths);
               return;
             }
             addAttachments(paths);
           }} /> : <RemotePathDialog host={remoteHost} purpose="attachment" uploadNeedsProject={props.client?.mode === "remote"}
           onSubmit={async (path) => {
-            if (attachments.length >= 10) throw new Error("每条消息最多附加 10 个文件");
+            if (attachments.length >= MAX_COMPOSER_ATTACHMENTS) {
+              throw new Error(`每条消息最多附加 ${MAX_COMPOSER_ATTACHMENTS} 个文件`);
+            }
             addAttachments([path]);
           }} onClose={() => setShowRemoteAttachment(false)} />)}
       {voicePreview && <VoiceTranscript preview={voicePreview} />}
@@ -510,13 +603,7 @@ export function ComposerCard(props: {
               path={path}
               remote={!!remoteHost}
               sending={sending}
-              onRemove={() =>
-                setAttachments((current) => {
-                  const next = current.filter((p) => p !== path);
-                  storeAttachments(props.draftKey, next);
-                  return next;
-                })
-              }
+              onRemove={() => applyAttachments(attachmentsRef.current.filter((item) => item !== path))}
             />
           ))}
         </div>
@@ -543,7 +630,7 @@ export function ComposerCard(props: {
             const data = (e.nativeEvent as InputEvent).data;
             if (data && containsUnsupportedInput(data)) e.preventDefault();
           }}
-          onPaste={pasteImages}
+          onPaste={pasteClipboard}
           onChange={(e) => {
             const textarea = e.currentTarget;
             const sanitized = sanitizeTextInput(

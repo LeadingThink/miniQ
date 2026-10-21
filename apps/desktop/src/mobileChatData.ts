@@ -1,3 +1,5 @@
+import { imageTooLarge, MAX_IMAGE_BYTES } from "./imageLimits";
+
 export const MOBILE_CHAT_STORAGE_KEY = "miniq.mobile.chat.v1";
 export const MOBILE_MODEL_STORAGE_KEY = "miniq.mobile.chat.model.v1";
 
@@ -100,7 +102,7 @@ export async function mobileResponseError(response: Response): Promise<string> {
 }
 
 export async function readMobileImage(file: File): Promise<PendingMobileImage> {
-  if (file.size > 20 * 1024 * 1024) throw new Error("图片不能超过 20 MB");
+  if (file.size > MAX_IMAGE_BYTES) throw imageTooLarge();
   if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) throw new Error("仅支持 PNG、JPEG、WebP 或 GIF 图片");
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();

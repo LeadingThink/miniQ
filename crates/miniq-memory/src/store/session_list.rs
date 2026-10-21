@@ -20,14 +20,16 @@ SELECT s.id, s.workspace_id, s.title, s.status, s.created_at, s.updated_at,
        (SELECT substr(ltrim(m.content, ' ' || char(9, 10, 13)), 1, 1000)
           FROM messages m
          WHERE m.session_id = s.id
+           AND m.inherited = 0
            AND m.role IN ('user', 'assistant')
            AND trim(m.content, ' ' || char(9, 10, 13)) <> ''
          ORDER BY m.created_at DESC, m.rowid DESC
          LIMIT 1),
-       (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND m.role = 'user')
+       (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND m.role = 'user' AND m.inherited = 0)
 FROM sessions s
 LEFT JOIN external_session_links e ON e.session_id = s.id
-WHERE ?1 IS NULL OR s.workspace_id = ?1
+WHERE (?1 IS NULL OR s.workspace_id = ?1)
+  AND s.id NOT IN (SELECT session_id FROM session_forks WHERE mode = 'side')
 ORDER BY s.pinned DESC, s.updated_at DESC";
 
 impl Store {

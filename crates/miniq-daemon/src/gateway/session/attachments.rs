@@ -1,9 +1,13 @@
-//! Accepted image attachments own durable bytes, independent of source cleanup.
+//! Accepted attachments own durable bytes, independent of source cleanup.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use miniq_protocol::{ErrorCode, MessageAttachment, RpcError};
+
+/// Upper bound for copying one non-image attachment. Larger files keep their
+/// original path instead of being duplicated into the attachment store.
+const MAX_SNAPSHOT_BYTES: u64 = 256 * 1024 * 1024;
 
 /// Roll back new snapshots unless their message or queue record was persisted.
 pub(super) struct PreparedAttachments {
@@ -29,7 +33,15 @@ impl Drop for PreparedAttachments {
     }
 }
 
-pub(super) fn prepare(paths: &[String], storage: &Path) -> Result<PreparedAttachments, RpcError> {
+/// Stores every attachment the user handed over. Images always own durable
+/// bytes because they are read as prompt input; any other file does too when
+/// it comes from outside the workspace, where nothing guarantees it survives
+/// until the model opens it.
+pub(super) fn prepare(
+    paths: &[String],
+    storage: &Path,
+    workspace_roots: &[PathBuf],
+) -> Result<PreparedAttachments, RpcError> {
     let mut prepared = PreparedAttachments {
         items: Vec::with_capacity(paths.len()),
         snapshots: Vec::new(),
@@ -53,22 +65,19 @@ pub(super) fn prepare(paths: &[String], storage: &Path) -> Result<PreparedAttach
         let filename = canonical.file_name().unwrap_or_default();
         let name = filename.to_string_lossy().into_owned();
         let mime_type = image_mime_type(&canonical);
-        let path = if mime_type.is_some() {
-            let bytes = miniq_models::read_image_bytes(&canonical).map_err(|error| {
-                RpcError::new(
-                    ErrorCode::InvalidParams,
-                    format!("无法保存图片附件 {source}: {error}"),
-                )
-            })?;
-            if is_managed_snapshot(&canonical, storage) {
-                canonical
-            } else {
-                let snapshot = save_snapshot(storage, filename, &bytes)?;
-                prepared.snapshots.push(snapshot.clone());
-                snapshot
-            }
-        } else {
+        let keeps_original = mime_type.is_none() && inside_workspace(&canonical, workspace_roots);
+        let path = if keeps_original || is_managed_snapshot(&canonical, storage) {
             canonical
+        } else {
+            match read_snapshot_bytes(&canonical, mime_type.is_some(), source)? {
+                Some(bytes) => {
+                    let snapshot = save_snapshot(storage, filename, &bytes)?;
+                    prepared.snapshots.push(snapshot.clone());
+                    snapshot
+                }
+                // Too large to duplicate: the recorded path is all we have.
+                None => canonical,
+            }
         };
         prepared.items.push(MessageAttachment {
             path: path.to_string_lossy().into_owned(),
@@ -77,6 +86,45 @@ pub(super) fn prepare(paths: &[String], storage: &Path) -> Result<PreparedAttach
         });
     }
     Ok(prepared)
+}
+
+/// Bytes for a durable copy, or `None` when a non-image file is too large.
+fn read_snapshot_bytes(
+    path: &Path,
+    is_image: bool,
+    source: &str,
+) -> Result<Option<Vec<u8>>, RpcError> {
+    if is_image {
+        return miniq_models::read_image_bytes(path)
+            .map(Some)
+            .map_err(|error| {
+                RpcError::new(
+                    ErrorCode::InvalidParams,
+                    format!("无法保存图片附件 {source}: {error}"),
+                )
+            });
+    }
+    let metadata = path.metadata().map_err(|error| {
+        RpcError::new(
+            ErrorCode::InvalidParams,
+            format!("无法保存附件 {source}: {error}"),
+        )
+    })?;
+    if metadata.len() > MAX_SNAPSHOT_BYTES {
+        return Ok(None);
+    }
+    std::fs::read(path).map(Some).map_err(|error| {
+        RpcError::new(
+            ErrorCode::InvalidParams,
+            format!("无法保存附件 {source}: {error}"),
+        )
+    })
+}
+
+fn inside_workspace(path: &Path, roots: &[PathBuf]) -> bool {
+    roots
+        .iter()
+        .any(|root| dunce::canonicalize(root).is_ok_and(|root| path.starts_with(&root)))
 }
 
 fn image_mime_type(path: &Path) -> Option<&'static str> {
