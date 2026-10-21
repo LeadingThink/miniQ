@@ -78,10 +78,6 @@ impl StatusLine {
         }
     }
 
-    pub fn config(&self) -> Option<&StatusLineConfig> {
-        self.config.as_ref()
-    }
-
     /// Text to show, if the command is configured and its last run succeeded
     /// with non-empty output. `true` in the pair means "replace the built-in line".
     pub fn text(&self) -> Option<(&str, bool)> {

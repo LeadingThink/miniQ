@@ -7,7 +7,16 @@ use serde_json::{json, Value};
 use super::common::{history_err, params, store_err, to_value};
 use crate::state::AppState;
 
+mod admission;
 mod attachments;
+
+#[cfg(test)]
+#[path = "session/admission_tests.rs"]
+mod admission_tests;
+
+#[cfg(test)]
+#[path = "session/pause_tests.rs"]
+mod pause_tests;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -229,49 +238,86 @@ pub(super) async fn send_message(state: &AppState, raw: Option<Value>) -> Result
         .store
         .get_session(&input.session_id)
         .map_err(store_err)?;
-    // userPromptSubmit runs before anything is persisted, queued or started,
-    // so a blocking hook leaves no trace besides its audit row.
-    user_prompt_submit_hooks(state, &input.session_id, &content).await?;
-
-    let Some(cancel) = state.begin_turn(&input.session_id) else {
-        if input.reject_if_busy {
-            return Err(RpcError::new(
-                ErrorCode::SessionBusy,
-                "session is already running; watch it or wait before sending",
-            ));
-        }
-        // The session already has an active turn: queue the message instead of
-        // rejecting it. It will run automatically when the current turn ends.
-        let queued = state
-            .store
-            .enqueue_message_with_attachments(&input.session_id, &content, attachments.items())
-            .map_err(store_err)?;
-        attachments.commit();
-        emit_queue_changed(state, &input.session_id);
-        return to_value(json!({ "queued": queued }));
-    };
-
-    let message = match append_user_message(state, &input.session_id, &content, attachments.items())
-    {
-        Ok(message) => message,
-        Err(error) => {
-            state.end_turn(&input.session_id);
-            return Err(error);
-        }
-    };
-    attachments.commit();
-    state.emit(Event::MessageCreated {
-        session_id: input.session_id.clone(),
-        message: message.clone(),
-    });
-    if let Err(error) = set_running(state, &input.session_id) {
-        state.end_turn(&input.session_id);
-        return Err(error);
+    let submission = state.prompt_submissions.register(&input.session_id);
+    let mut admission = submission.commit(|| {
+        Ok(admission::PromptAdmission::reserve(
+            state,
+            &input.session_id,
+        ))
+    })?;
+    if admission.is_none() && input.reject_if_busy {
+        return Err(RpcError::new(
+            ErrorCode::SessionBusy,
+            "session is already running; watch it or wait before sending",
+        ));
     }
-    crate::session_titles::spawn(state, &input.session_id);
-    state.set_turn_step_limit(&input.session_id, input.max_turns);
-    crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
-    to_value(json!({ "message": message }))
+    // A guarded rejection runs no hook. An admitted prompt reserves the slot
+    // while hooks run, so a concurrent stop also cancels this preparation.
+    if let Some(turn) = &admission {
+        tokio::select! {
+            biased;
+            _ = submission.token().cancelled() => return Err(prompt_cancelled()),
+            _ = turn.token().cancelled() => return Err(prompt_cancelled()),
+            result = user_prompt_submit_hooks(state, &input.session_id, &content) => result?,
+        }
+    } else {
+        tokio::select! {
+            biased;
+            _ = submission.token().cancelled() => return Err(prompt_cancelled()),
+            result = user_prompt_submit_hooks(state, &input.session_id, &content) => result?,
+        }
+    }
+    submission.commit(|| {
+        // A request that began before daemon shutdown must not admit fresh work.
+        let _activity = state.activity.enter()?;
+        if admission.is_none() {
+            admission = admission::PromptAdmission::reserve(state, &input.session_id);
+        }
+        if admission.is_none() {
+            if input.max_turns.is_some() {
+                return Err(RpcError::new(ErrorCode::InvalidParams,
+                    "maxTurns cannot be retained for queued messages; wait for this session to finish or remove maxTurns before queueing"));
+            }
+            let queued = state
+                .store
+                .enqueue_message_with_attachments(&input.session_id, &content, attachments.items())
+                .map_err(store_err)?;
+            attachments.commit();
+            emit_queue_changed(state, &input.session_id);
+            // The old turn may have released its slot between our busy check
+            // and persistence. Whichever side wins admission drains the queue.
+            crate::turn::start_next_queued(state, &input.session_id);
+            return to_value(json!({ "queued": queued }));
+        }
+        if admission
+            .as_ref()
+            .expect("reserved prompt")
+            .token()
+            .is_cancelled()
+        {
+            return Err(prompt_cancelled());
+        }
+        let message = append_user_message(state, &input.session_id, &content, attachments.items())?;
+        attachments.commit();
+        state.emit(Event::MessageCreated {
+            session_id: input.session_id.clone(),
+            message: message.clone(),
+        });
+        set_running(state, &input.session_id)?;
+        state.clear_paused_turn(&input.session_id);
+        crate::session_titles::spawn(state, &input.session_id);
+        state.set_turn_step_limit(&input.session_id, input.max_turns);
+        let turn = admission.take().expect("reserved prompt");
+        crate::turn::spawn_turn(state.clone(), input.session_id.clone(), turn.start());
+        to_value(json!({ "message": message }))
+    })
+}
+
+fn prompt_cancelled() -> RpcError {
+    RpcError::new(
+        ErrorCode::Cancelled,
+        "prompt cancelled before its task started",
+    )
 }
 
 async fn user_prompt_submit_hooks(
@@ -324,49 +370,67 @@ pub(super) async fn rewrite_message(
         .map_err(store_err)?;
     // Editing while a task runs is "stop, then rewrite": a turn that was
     // already cancelled is awaited instead of rejected as busy.
-    let mut cancel = state.begin_turn(&input.session_id);
-    if cancel.is_none()
+    let submission = state.prompt_submissions.register(&input.session_id);
+    let mut admission = submission.commit(|| {
+        Ok(admission::PromptAdmission::reserve(
+            state,
+            &input.session_id,
+        ))
+    })?;
+    if admission.is_none()
         && state
             .wait_for_cancelled_turn(&input.session_id, STOPPING_TURN_WAIT)
             .await
     {
-        cancel = state.begin_turn(&input.session_id);
+        admission = submission.commit(|| {
+            Ok(admission::PromptAdmission::reserve(
+                state,
+                &input.session_id,
+            ))
+        })?;
     }
-    let Some(cancel) = cancel else {
+    if admission.is_none() {
         return Err(RpcError::new(
             ErrorCode::SessionBusy,
             "session already has an active turn",
         ));
-    };
-
-    let rewrite = match state.store.rewrite_session_from_user_message(
-        &input.session_id,
-        &input.message_id,
-        &content,
-        attachments.items(),
-    ) {
-        Ok(rewrite) => rewrite,
-        Err(error) => {
-            state.end_turn(&input.session_id);
-            return Err(store_err(error));
-        }
-    };
-    attachments.commit();
-    state.emit(Event::SessionRewritten {
-        session_id: input.session_id.clone(),
-        message: rewrite.message.clone(),
-        removed_message_ids: rewrite.removed_message_ids,
-        removed_tool_call_ids: rewrite.removed_tool_call_ids,
-        removed_artifact_ids: rewrite.removed_artifact_ids,
-    });
-    emit_queue_changed(state, &input.session_id);
-    if let Err(error) = set_running(state, &input.session_id) {
-        state.end_turn(&input.session_id);
-        return Err(error);
     }
-    crate::session_titles::spawn(state, &input.session_id);
-    crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
-    to_value(json!({ "message": rewrite.message }))
+
+    submission.commit(|| {
+        let _activity = state.activity.enter()?;
+        if admission
+            .as_ref()
+            .expect("reserved rewrite")
+            .token()
+            .is_cancelled()
+        {
+            return Err(prompt_cancelled());
+        }
+        let rewrite = state
+            .store
+            .rewrite_session_from_user_message(
+                &input.session_id,
+                &input.message_id,
+                &content,
+                attachments.items(),
+            )
+            .map_err(store_err)?;
+        attachments.commit();
+        state.emit(Event::SessionRewritten {
+            session_id: input.session_id.clone(),
+            message: rewrite.message.clone(),
+            removed_message_ids: rewrite.removed_message_ids,
+            removed_tool_call_ids: rewrite.removed_tool_call_ids,
+            removed_artifact_ids: rewrite.removed_artifact_ids,
+        });
+        emit_queue_changed(state, &input.session_id);
+        set_running(state, &input.session_id)?;
+        state.clear_paused_turn(&input.session_id);
+        crate::session_titles::spawn(state, &input.session_id);
+        let turn = admission.take().expect("rewrite owns its turn slot");
+        crate::turn::spawn_turn(state.clone(), input.session_id.clone(), turn.start());
+        to_value(json!({ "message": rewrite.message }))
+    })
 }
 
 use super::session_queue::emit_queue_changed;
@@ -410,10 +474,7 @@ fn append_user_message(
     let message = state
         .store
         .append_message_with_attachments(session_id, Role::User, content, attachments)
-        .map_err(|error| {
-            state.end_turn(session_id);
-            store_err(error)
-        })?;
+        .map_err(store_err)?;
 
     Ok(message)
 }
@@ -422,10 +483,7 @@ fn set_running(state: &AppState, session_id: &str) -> Result<(), RpcError> {
     state
         .store
         .update_session_status(session_id, SessionStatus::Running)
-        .map_err(|error| {
-            state.end_turn(session_id);
-            store_err(error)
-        })?;
+        .map_err(store_err)?;
     state.emit(Event::SessionStatusChanged {
         session_id: session_id.to_string(),
         status: SessionStatus::Running,
@@ -441,81 +499,174 @@ struct CancelParams {
 
 pub(super) fn pause(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: CancelParams = params(raw)?;
-    let paused = state.pause_turn(&input.session_id);
-    if !paused {
-        return Err(RpcError::new(
-            ErrorCode::InvalidParams,
-            "session does not have an active turn",
-        ));
-    }
-    Ok(json!({ "paused": true }))
+    state.prompt_submissions.synchronize(|| {
+        let session = state
+            .store
+            .get_session(&input.session_id)
+            .map_err(store_err)?;
+        if !matches!(
+            session.status,
+            SessionStatus::Running | SessionStatus::WaitingApproval
+        ) {
+            return Err(RpcError::new(
+                ErrorCode::InvalidParams,
+                "session does not have a running task to pause; a pending prompt can be cancelled",
+            ));
+        }
+        if !state.pause_turn(&input.session_id) {
+            return Err(RpcError::new(
+                ErrorCode::InvalidParams,
+                "session does not have an active turn",
+            ));
+        }
+        Ok(json!({ "paused": true }))
+    })
 }
 
 pub(super) fn resume(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: CancelParams = params(raw)?;
-    let persisted_pause = state
-        .store
-        .session_goal(&input.session_id)
-        .map_err(store_err)?
-        .is_some_and(|goal| goal.status == SessionGoalStatus::Paused);
-    if !state.is_turn_paused(&input.session_id) && !persisted_pause {
-        return Err(RpcError::new(
-            ErrorCode::InvalidParams,
-            "session does not have a paused turn",
-        ));
-    }
-    let Some(cancel) = state.begin_turn(&input.session_id) else {
-        state.request_turn_resume(&input.session_id);
-        return Ok(json!({ "resumed": true, "pending": true }));
+    state.prompt_submissions.synchronize(|| {
+        let runtime_paused = state.is_turn_paused(&input.session_id);
+        if state.has_active_turn(&input.session_id) {
+            if !runtime_paused {
+                return Err(RpcError::new(ErrorCode::InvalidParams,
+                    "the active task is not paused"));
+            }
+            transition_paused_goal(state, &input.session_id, SessionGoalStatus::Active)?;
+            state.request_turn_resume(&input.session_id);
+            return Ok(json!({ "resumed": true, "pending": true }));
+        }
+        let paused_goal = state
+            .store
+            .session_goal(&input.session_id)
+            .map_err(store_err)?
+            .is_some_and(|goal| goal.status == SessionGoalStatus::Paused);
+        let paused_outcome = state
+            .store
+            .last_turn_outcome(&input.session_id)
+            .map_err(store_err)?
+            .is_some_and(|outcome| outcome["status"] == "paused");
+        if !runtime_paused && !paused_goal && !paused_outcome {
+            return Err(RpcError::new(
+                ErrorCode::InvalidParams,
+                "session does not have a paused turn",
+            ));
+        }
+        let Some(cancel) = state.begin_turn(&input.session_id) else {
+            return Err(RpcError::new(ErrorCode::SessionBusy,
+                "session cannot resume while another prompt is preparing or the daemon is shutting down"));
+        };
+        if let Err(error) = transition_paused_goal(state, &input.session_id, SessionGoalStatus::Active) {
+            state.end_turn(&input.session_id);
+            return Err(error);
+        }
+        state.resume_turn(&input.session_id);
+        state.take_turn_resume_request(&input.session_id);
+        if let Err(error) = set_running(state, &input.session_id) {
+            state.end_turn(&input.session_id);
+            return Err(error);
+        }
+        crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
+        Ok(json!({ "resumed": true }))
+    })
+}
+
+fn transition_paused_goal(
+    state: &AppState,
+    session_id: &str,
+    status: SessionGoalStatus,
+) -> Result<bool, RpcError> {
+    let Some(goal) = state.store.session_goal(session_id).map_err(store_err)? else {
+        return Ok(false);
     };
-    state.resume_turn(&input.session_id);
-    if let Err(error) = set_running(state, &input.session_id) {
-        state.end_turn(&input.session_id);
-        return Err(error);
+    if goal.status != SessionGoalStatus::Paused {
+        return Ok(false);
     }
-    crate::turn::spawn_turn(state.clone(), input.session_id, cancel);
-    Ok(json!({ "resumed": true }))
+    let goal = state
+        .store
+        .update_session_goal(&miniq_protocol::SessionGoalUpdate {
+            session_id: session_id.to_owned(),
+            goal: goal.goal,
+            status,
+            token_budget: goal.token_budget,
+        })
+        .map_err(store_err)?;
+    state.emit(Event::SessionGoalChanged {
+        session_id: session_id.to_owned(),
+        goal: Some(goal),
+    });
+    Ok(true)
+}
+
+fn cancel_paused_turn(state: &AppState, session_id: &str) -> Result<bool, RpcError> {
+    let paused_outcome = state
+        .store
+        .last_turn_outcome(session_id)
+        .map_err(store_err)?
+        .is_some_and(|outcome| outcome["status"] == "paused");
+    let paused_goal = transition_paused_goal(state, session_id, SessionGoalStatus::Cancelled)?;
+    if paused_outcome {
+        state
+            .store
+            .record_turn_outcome(session_id, "cancelled", Some("cancelled"))
+            .map_err(store_err)?;
+    }
+    Ok(state.clear_paused_turn(session_id) || paused_outcome || paused_goal)
 }
 
 pub(super) async fn cancel(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: CancelParams = params(raw)?;
-    // An explicit stop discards queued follow-ups too: the user wants the
-    // session to come to rest, not to start the next queued message.
-    let cleared = state
-        .store
-        .clear_queued_messages(&input.session_id)
-        .unwrap_or(0);
-    if cleared > 0 {
-        emit_queue_changed(state, &input.session_id);
-    }
-    let was_paused = state.clear_paused_turn(&input.session_id);
-    let cancelled = state.cancel_turn(&input.session_id);
-    let recovered = if cancelled {
-        let _ = state
+    let (cancelled_prompts, stopped) = state.prompt_submissions.cancel(&input.session_id, || {
+        // An explicit stop discards queued follow-ups too: the user wants the
+        // session to come to rest, not to start the next queued message.
+        let cleared = state
             .store
-            .update_session_status(&input.session_id, SessionStatus::Cancelling);
-        state.emit(Event::SessionStatusChanged {
-            session_id: input.session_id.clone(),
-            status: SessionStatus::Cancelling,
-        });
-        false
-    } else if was_paused {
-        false
-    } else {
-        let recovery = state
-            .store
-            .recover_interrupted_session(&input.session_id)
+            .clear_queued_messages(&input.session_id)
             .map_err(store_err)?;
-        if recovery.session_failed {
+        if cleared > 0 {
+            emit_queue_changed(state, &input.session_id);
+        }
+        let was_paused = cancel_paused_turn(state, &input.session_id)?;
+        let cancelled = state.cancel_turn(&input.session_id);
+        let recovered = if cancelled {
+            let _ = state
+                .store
+                .update_session_status(&input.session_id, SessionStatus::Cancelling);
             state.emit(Event::SessionStatusChanged {
                 session_id: input.session_id.clone(),
-                status: SessionStatus::Failed,
+                status: SessionStatus::Cancelling,
             });
-        }
-        recovery.session_failed
-    };
+            false
+        } else if was_paused {
+            false
+        } else {
+            let recovery = state
+                .store
+                .recover_interrupted_session(&input.session_id)
+                .map_err(store_err)?;
+            if recovery.session_failed {
+                state.emit(Event::SessionStatusChanged {
+                    session_id: input.session_id.clone(),
+                    status: SessionStatus::Failed,
+                });
+            }
+            recovery.session_failed
+        };
+        Ok::<_, RpcError>((was_paused, cancelled, recovered))
+    });
+    let (was_paused, cancelled, recovered) = stopped?;
     let cancelled_agents = state.agent_tasks.cancel_session(&input.session_id).await;
-    Ok(json!({ "cancelled": was_paused || cancelled || recovered || cancelled_agents > 0 }))
+    if cancelled
+        && !state
+            .wait_for_cancelled_turn(&input.session_id, STOPPING_TURN_WAIT)
+            .await
+    {
+        return Err(RpcError::new(ErrorCode::SessionBusy,
+            "cancellation was requested but the task has not confirmed it stopped; watch the session before sending again"));
+    }
+    Ok(
+        json!({ "cancelled": cancelled_prompts || was_paused || cancelled || recovered || cancelled_agents > 0 }),
+    )
 }
 
 #[derive(Deserialize)]
@@ -831,8 +982,8 @@ mod tests {
         state.end_turn(&session_id);
     }
 
-    #[test]
-    fn resume_accepts_persisted_pause_after_runtime_state_is_lost() {
+    #[tokio::test]
+    async fn resume_accepts_persisted_pause_after_runtime_state_is_lost() {
         let (state, session_id) = setup();
         state
             .store
@@ -843,12 +994,18 @@ mod tests {
                 token_budget: None,
             })
             .unwrap();
-        let _active_turn = state.begin_turn(&session_id).unwrap();
-
         let response = resume(&state, Some(json!({ "sessionId": session_id }))).unwrap();
 
-        assert_eq!(response, json!({ "resumed": true, "pending": true }));
-        assert!(state.take_turn_resume_request(&session_id));
-        state.end_turn(&session_id);
+        assert_eq!(response, json!({ "resumed": true }));
+        assert!(!state.take_turn_resume_request(&session_id));
+        assert_eq!(
+            state
+                .store
+                .session_goal(&session_id)
+                .unwrap()
+                .unwrap()
+                .status,
+            SessionGoalStatus::Active
+        );
     }
 }

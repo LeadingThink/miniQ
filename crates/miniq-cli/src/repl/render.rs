@@ -307,17 +307,6 @@ fn tool_detail(input: &Value) -> String {
     truncate(&terminal_text(&detail).replace('\n', " ⏎ "), 100)
 }
 
-/// Tool name plus argument summary, without a past-tense verb (for approvals).
-pub fn tool_request(name: &str, input: &Value) -> String {
-    let detail = tool_detail(input);
-    let name = terminal_text(name);
-    if detail.is_empty() {
-        name
-    } else {
-        format!("{name}: {detail}")
-    }
-}
-
 pub fn tool_summary(name: &str, input: &Value) -> String {
     let detail = tool_detail(input);
     let lower = name.to_ascii_lowercase();
@@ -523,10 +512,6 @@ mod tests {
         assert_eq!(
             tool_summary("file_read", &json!({"path": "a"})),
             "Read file_read: a"
-        );
-        assert_eq!(
-            tool_request("file_write", &json!({"path": "a.txt", "content": "ok"})),
-            "file_write: a.txt"
         );
         let out = tool_finished("completed", Some(&json!("1\n2\n3\n4\n5\n6\n7")), 5, PLAIN);
         assert!(out.starts_with("  ✓\n"));

@@ -16,27 +16,42 @@ Windows 10/11 x64, in PowerShell:
 irm https://oss.zaiwen.top/releases/miniq/install.ps1 | iex
 ```
 
-Linux / WSL (x86_64, glibc 2.31+), using the currently available terminal release 0.1.54:
+Linux / WSL (x86_64, glibc 2.31+):
 
 ```sh
-curl -fsSL https://oss.zaiwen.top/releases/miniq/install.sh | MINIQ_VERSION=0.1.54 sh
+curl -fsSL https://oss.zaiwen.top/releases/miniq/install.sh | sh
 ```
 
-Version 0.1.55 did not publish a Linux terminal package. The current default terminal manifest only lists macOS and Windows, so Linux / WSL must use the version-pinned command above; plain installation and `miniq update` cannot currently select a Linux release.
+The installer uses the published terminal manifest for the current platform. A release may include only selected platforms; if its manifest has no matching archive, installation/update fails explicitly. To select another published version, set `MINIQ_VERSION=x.y.z` and verify that version includes the target platform on the public release page.
 
 Open a new terminal, enter your project directory and run `miniq`. No Rust, Node.js, administrator access or desktop window is required. The installer selects the correct architecture, downloads the official release over HTTPS and verifies its SHA-256 checksum before changing anything. Desktop **Settings → Services & remote → Terminal** offers the same installation action. There is no npm package, Homebrew formula or WinGet package; do not run guessed package names.
 
-Default installation: `~/.local/bin` on Unix; `%LOCALAPPDATA%\miniQ\bin` on Windows. The installer adds that directory to the current user's shell profile/User PATH. Set `MINIQ_INSTALL_DIR` to an absolute custom directory, `MINIQ_NO_MODIFY_PATH=1` to manage PATH yourself, or `MINIQ_VERSION=x.y.z` to install a specific published version from v0.1.54 onward, provided it includes your platform. The Unix script chooses zsh, bash, fish or POSIX profile syntax. A GUI-launched macOS install without `SHELL` defaults to zsh. Re-running the installer is safe. On macOS / Windows, `miniq update` uses the same installation mechanism and `miniq update --check` only checks availability. For Linux / WSL, use the pinned command above until a newer release includes that platform.
+Default installation: `~/.local/bin` on Unix; `%LOCALAPPDATA%\miniQ\bin` on Windows. The installer adds that directory to the current user's shell profile/User PATH. Set `MINIQ_INSTALL_DIR` to an absolute custom directory or `MINIQ_NO_MODIFY_PATH=1` to manage PATH yourself. The Unix script chooses zsh, bash, fish or POSIX profile syntax. A GUI-launched macOS install without `SHELL` defaults to zsh. Re-running the installer is safe. `miniq update` uses the same installation mechanism; `miniq update --check` only checks availability.
 
-CLI and daemon are an immutable pair under `bin/.miniq/versions/VERSION`. A single atomic version pointer activates the pair; old payloads remain available to already running processes. Unix exposes two stable symlinks; Windows uses native launchers, preserving arguments, standard streams and the child exit code. Concurrent installers are rejected. No installer stops a task, restarts the shared daemon or edits provider keys/conversations. An old daemon keeps its loaded code until it exits safely. Migrating an older Windows installation whose binary is in use fails before replacing either executable; retry after that process exits. Upgrading an already managed Windows installation does not overwrite its busy launchers.
+CLI and daemon are an immutable pair under `bin/.miniq/versions/VERSION`. A single atomic version pointer selects the installed pair; old payloads remain available to already running processes. Unix exposes two stable symlinks; Windows uses native launchers, preserving arguments, standard streams and the child exit code. Concurrent installers are rejected. The installer preserves running tasks and shared provider/conversation data. An old daemon keeps its loaded code until it exits safely. Migrating an older Windows installation whose binary is in use fails before replacing either executable; retry after that process exits. Upgrading an already managed Windows installation does not overwrite its busy launchers.
 
-`miniq update` and `miniq update --check` report the installed CLI version, so “Installed miniQ CLI is already up to date” can appear while an older daemon is still running. Use `miniq rpc daemon.health` or `miniq doctor` to inspect the running backend version. Installing an update leaves that daemon on its current version until its next normal restart.
+`miniq update` and `miniq update --check` report both the installed CLI version and the running backend version. These can differ while tasks continue on an older daemon. Use `miniq rpc daemon.health` or `miniq doctor` to inspect the backend independently.
 
 Linux prebuilt terminals require x86-64, **glibc 2.31+** and `libgcc_s`; Alpine/musl and Linux ARM are not supported. They need no X11, Wayland or PipeWire libraries, and include agent, shell, file, browser and plugin tools. Native desktop mouse/screenshot tools require the separate graphical desktop edition. Browser automation still requires a compatible browser runtime. PDF vision requires Poppler (`brew install poppler` or `apt install poppler-utils`; on Windows put trusted `pdfinfo.exe`/`pdftoppm.exe` on PATH). The installer does not download third-party tool dependencies. WSL has a separate data directory; never share a live SQLite database across the Windows/WSL boundary.
 
 Manual archives and SHA-256 sidecars remain available on the [public release page](https://github.com/LeadingThink/miniQ-releases/releases). Keep `miniq` and `miniq-daemon` together. Source builds require stable Rust and a C/C++ toolchain: `cargo build --release --locked --no-default-features -p miniq-daemon -p miniq-cli --bin miniq --bin miniq-daemon` builds the server edition; omit `--no-default-features` for native desktop control. The release pipeline verifies Linux ELF dependencies and glibc symbols and boots its daemon/SSH bridge in a clean Debian 11 image.
 
 To uninstall, remove only the exact installed `miniq`/`miniq-daemon` links or launchers and their `.miniq` binary store, then remove the installer-marked PATH line (Windows: the user PATH entry). Keep the separate daemon data directory unless you explicitly want to delete conversations/configuration. No login service is installed.
+
+## Updating Safely
+
+```sh
+miniq update --check                 # versions and availability; no installation
+miniq update                         # install the published pair
+miniq update --activate              # activate the installed backend when idle
+miniq update --activate --stop-running
+```
+
+Installation and backend activation are separate. A script running `miniq update` installs without stopping work. In a terminal, when the backend needs activation, miniQ offers activation or **Later**; Later is the default. Activation first asks the daemon to shut down through an atomic idle check. Running turns, agents, requests or queued messages defer activation. Interactive activation then offers to stop **all** backend work, or leave everything running; leaving it running is the default. `--activate --stop-running` explicitly selects stopping all work. Queued messages are retained by this update shutdown. An older backend without safe idle-shutdown support requires a normal restart after its tasks finish.
+
+Explicit `--activate` returns exit code `3` when deferred. A newly launched CLI uses the installed executable; an already open terminal client keeps its current executable. After activation, miniQ verifies the running backend version. This affects every client using that shared daemon, including desktop and mobile.
+
+Rich interactive chats check for updates asynchronously after startup and periodically while open. The same version is reminded at most once per day; a newer version can produce a new reminder. Check failures stay quiet and back off. Reminders only offer an update command; installing and stopping tasks still require the choices above. Inside a chat, `/update --check` and `/update --activate` use the same workflow.
 
 ## First Use
 
@@ -66,9 +81,30 @@ miniq sessions
 miniq sessions --all
 ```
 
-Interactive commands: `/model` opens searchable text-model selection; `/model ID` switches directly for this session. `/effort` lists the selected model's supported reasoning choices; `/effort LEVEL` and `/effort default` remain available. `miniq resume` opens a project-scoped session picker; `resume --last` resumes immediately. Other commands: `/attach PATH`, `/clear-attachments`, `/status`, `/history`, `/help`, `/exit`. Paths after `/attach` may contain spaces and are not shell-evaluated. The editor supports arrow-key prompt recall in memory; prompts are not copied to a separate plaintext history file.
+`miniq resume` opens a project-scoped session picker; `resume --last` or `miniq -c` resumes immediately. Resume reuses saved context without resending the earlier task. The rich terminal provides streaming Markdown, tool/plan progress, pending input cards, a queue and a status bar. Its main commands are:
 
-Approvals show the tool and full input; `y` approves once, anything else rejects. Questions accept free text and show supplied choices. Responses from desktop/mobile remain authoritative. Ctrl+C during a task started by this client requests cancellation of that session and its children. Ctrl+C while merely watching detaches without cancelling. `/exit` between turns leaves the daemon running. Resume reuses persisted context; it does not resend the earlier task.
+| Commands | Purpose |
+| --- | --- |
+| `/model [ID]`, `/effort [LEVEL]` | Select a session model and supported reasoning effort; `default` clears the effort override. |
+| `/permissions [alwaysAsk\|auto\|fullAccess]` | Inspect/change this session's permission mode; `/approvals` is an alias. |
+| `/new`, `/resume`, `/fork`, `/rename TITLE` | Create, switch, branch or rename sessions. |
+| `/undo`, `/diff`, `/compact`, `/context` | Undo the latest turn, inspect changes, compact context or inspect estimated usage. |
+| `/pause`, `/resume-turn`, `/stop`, `/steer MESSAGE` | Pause/resume or interrupt/steer the active turn. |
+| `/goal [TEXT\|pause\|resume\|cancel\|done]` | Read/set a goal or explicitly control its state. |
+| `/queue [ACTION …]`, `/agents [ACTION …]` | Manage queued follow-ups and inspect/stop child agents. |
+| `/attach PATH`, `/clear-attachments`, `/history [OPTIONS]` | Attach files or read saved conversation history. |
+| `/status`, `/usage`, `/remote`, `/update`, `/help`, `/exit` | Inspect session/usage, control remote access, update or leave. |
+| `/mcp`, `/skills`, `/plugins`, `/hooks` | Inspect extensions; skills/plugins also accept their management subcommands. |
+| `/keybindings`, `/vim`, `/statusline` | Inspect/customize keys, editing mode and status line in the data directory's `cli.json`. |
+| `/manage COMMAND …` | Use the shell's session, queue, agent or domain command parser. |
+
+`/pause`, `/resume-turn`, `/goal`, `/queue`, `/agents` and `/history` automatically target the current session. Domain shortcuts such as `/file`, `/git`, `/review`, `/schedule`, `/approval` and `/workspace` accept the same explicit arguments as their shell commands. For example, `/queue move QUEUED_ID up`, `/agents output AGENT_ID` and `/manage session events SESSION_ID --limit 20`.
+
+Enter sends; while a turn is running it queues a follow-up. Tab with a prompt during a running turn steers it; otherwise Tab completes. Shift+Enter, Alt+Enter or backslash followed by Enter inserts a newline. Esc interrupts, Ctrl+C clears/interrupts and a second Ctrl+C exits; Ctrl+D exits on an empty line. Shift+Tab cycles permission modes. Up/Down recalls prompts, Ctrl+R searches history, Ctrl+G opens `$EDITOR`, and Ctrl+L clears the screen. The rich editor saves prompt recall in the data directory's private `cli_history` file; set `MINIQ_NO_HISTORY=1` to disable disk history. Keep sensitive content out of prompts/history when possible. `@path` attaches existing files; `!command` runs a local shell command whose output stays on screen. Paths after `/attach` may contain spaces and are not shell-evaluated.
+
+Approvals display the tool, risk and complete input. Choose `1`/`y` to approve once, `2` for the session, `3` to always allow that tool or `4`/`n` to reject. `/approval inbox` and `/approval rules` manage the shared inbox and saved rules; `/permissions` changes the session mode. Questions display option descriptions, support numbered choices or a custom answer, and show a countdown/default answer when the daemon supplies an automatic continuation deadline. Answers and approval decisions from desktop/mobile remove the matching pending card.
+
+The rich editor is used when stdin/stdout are terminals and `TERM` supports it. `MINIQ_REPL=line` selects the simpler line terminal with in-memory prompt recall; it shares the management parser and `/manage` commands, while advanced keys and cards belong to the rich editor. `miniq watch` detaches on Ctrl+C without cancelling. `/exit` leaves the shared daemon running.
 
 `--add-dir` updates the shared project, preserving existing roots; the backend refuses while that project has active tasks. `-C` cannot move a resumed session. `resume --last` is scoped to the current project's most recently updated, non-archived local session, not a globally pinned session.
 
@@ -94,7 +130,8 @@ miniq sessions --all | jq '.sessions[] | {id, title, status, updatedAt}'
 With a session ID:
 
 ```sh
-miniq history SESSION_ID --limit 40   # read history (JSON; use nextCursor with --before)
+miniq history SESSION_ID --limit 40   # readable history in a terminal
+miniq history SESSION_ID --json       # complete page including nextCursor
 miniq watch SESSION_ID                # follow a running session without sending anything
 miniq resume SESSION_ID               # continue it
 miniq resume                          # pick a session of the current project
@@ -102,6 +139,8 @@ miniq resume --last                   # continue the current project's most rece
 ```
 
 Inside a chat, `/help` prints the current session ID with the matching `resume`, `watch` and `history` commands.
+
+History prints a readable transcript in a terminal and complete JSON when piped or given `--json`. It retains message metadata, attachments and tool records. Pass the exact returned `nextCursor` JSON as `--before` to read older pages. `miniq session events`, `model-calls`, `process` and `tool-detail` expose execution details separately.
 
 Notes:
 
@@ -121,15 +160,203 @@ miniq exec --session SESSION_ID "Check the previous result" --use-configured-per
 miniq exec "Write a summary" -o summary.txt --use-configured-permissions
 ```
 
-Scripts require either the target session's effective `approvalMode=alwaysAsk`, or explicit `--use-configured-permissions`. The latter inherits that session's current permissions, including full access if enabled: it is **not** a sandbox flag. New sessions inherit the global default; existing sessions may override it. The CLI checks before preparing the session and again before sending, and never changes permissions to make an unattended command run. `alwaysAsk` can be set deliberately for one session in desktop controls or `miniq rpc session.approval.update '{"sessionId":"SESSION_ID","mode":"alwaysAsk"}'`.
+Without an explicit permission option, scripts require the target session's effective `approvalMode=alwaysAsk`. `--use-configured-permissions` explicitly accepts the session's saved permissions, including full access if enabled: it is **not** a sandbox flag. New sessions inherit the global default; existing sessions may override it. Without an override, the CLI checks before preparing the session and again before sending. `alwaysAsk` can be set deliberately for one session in desktop controls or `miniq rpc session.approval.update '{"sessionId":"SESSION_ID","mode":"alwaysAsk"}'`.
+
+Alternatively, explicitly set the opened session's permission mode with `--approval always-ask|auto|full-access` (alias `--permission-mode`). `--full-auto` and `--dangerously-bypass-approvals` select full access, including editing/deleting files and executing commands unattended. `--max-turns N` limits a submitted turn to 1–1000 model requests. `miniq -p "task"` is print mode; `--output-format json` returns one result object, while `--output-format stream-json` or `exec --json` emits JSONL. `--output-schema FILE_OR_JSON` validates the final JSON answer; a validation failure exits `1`.
 
 Without `--json`, progress is on stderr and only the final persisted answer is on stdout. `--json` emits session-scoped JSONL daemon events plus `cli_result`; reconnects add `cli_snapshot` with a paginated history snapshot. Consumers must honor `assistant_replaced`, use `message_created` as committed text and deduplicate by IDs/cursors. No base64 image is embedded in regular event output. `-o` creates a new file only on success; an existing file is never overwritten.
 
 Preflight/startup errors in JSON mode use `cli_error`. Argument syntax errors remain the parser's stderr output with exit code 2. Relative attachment paths resolve from the invoking terminal directory; use absolute paths when resuming a session in a different directory.
 
-Exit codes: `0` completed; `1` task/connection/configuration failure; `2` invalid command-line syntax; `3` waiting for approval/answer (task remains available for desktop/mobile/resume); `130` interrupted. A process exit is not always a task cancellation. Provider failures are retried by the existing agent runtime; CLI reconnects only restore observation, never replay a mutating request. Unknown send outcomes are reported for manual inspection. A task already running is rejected atomically, not silently queued behind another user's turn. Old daemons without this guarantee can still be inspected but must be updated before CLI task submission.
+Exit codes: `0` completed or explicitly queued; `1` task/connection/configuration failure; `2` invalid command-line syntax; `3` waiting for approval/answer or a paused turn (the task remains available for desktop/mobile/resume); `130` interrupted or a busy-session prompt left unsent. A process exit is not always a task cancellation. Provider failures are retried by the existing agent runtime; CLI reconnects only restore observation, never replay a mutating request. Unknown send outcomes are reported for manual inspection. Old daemons without atomic CLI turn admission can still be inspected but must be updated before CLI task submission.
 
-New turns persist their outcome separately from the sidebar badge. A cleared failure badge or an interrupted partial answer is not success. Older sessions without a recorded outcome are reported as unknown/incomplete when watched, not retroactively certified as successful.
+New turns persist their outcome and redacted failure reason separately from the sidebar badge. Reopening a session or reconnecting later shows the saved reason even after its failure badge has been acknowledged on another client. `miniq watch SESSION_ID`, `miniq resume SESSION_ID` and `miniq session events SESSION_ID` expose this saved failure. A cleared badge or partial answer is not success. Older records without a reason say that no specific reason was saved; older turns without a recorded outcome remain unknown/incomplete.
+
+## Busy Sessions and Queued Follow-Ups
+
+When an `exec` or line-terminal submission encounters a busy session, a terminal offers three choices: queue the new prompt, stop this session's task and queued follow-ups before sending, or return without sending. Returning is the default. Scripts reject busy sessions unless given an explicit policy:
+
+```sh
+miniq exec --session SESSION_ID --on-busy reject "Follow up" --use-configured-permissions
+miniq exec --session SESSION_ID --on-busy queue "After this, run the checks" --use-configured-permissions
+miniq exec --session SESSION_ID --on-busy stop "Replace the current work" --use-configured-permissions
+miniq queue list SESSION_ID --json
+```
+
+`--on-busy stop` cancels that session's active task, children and queued follow-ups, waits for it to stop, then submits once. It does not stop unrelated sessions. The rich chat queues submissions while a turn is running, including an initial prompt supplied with `resume`; Enter queues and Tab steers the running turn. `/queue` lets you inspect, edit, reorder, remove or steer a retained message.
+
+Queued `exec` returns immediately with exit code `0`, confirming acceptance into the queue. Text mode prints the queued ID on stderr and no final answer. JSON/JSONL mode prints a `cli_queued` object with `sessionId`, `queuedMessageId` and `status: "queued"`; it does not emit `cli_result` or create `-o` output. Follow the later execution using `watch`, history or queue state. This is distinct from a completed answer.
+
+The queue currently does not store per-message `--max-turns` limits. A busy submission with this limit fails explicitly before enqueueing; wait for the task to finish, choose `stop`, or omit the limit when queueing. Limits remain enforced on turns that start immediately.
+
+## Session, Queue and Agent Controls
+
+These shell commands operate on the same saved state as desktop/mobile. History/process pages have readable transcripts; other management commands display structured data. Piping output or adding `--json` preserves the original response JSON.
+
+```sh
+miniq session pause SESSION_ID
+miniq session resume SESSION_ID
+miniq session goal get SESSION_ID
+miniq session goal set SESSION_ID "Finish and verify the migration" --token-budget 100000
+miniq session goal status SESSION_ID paused
+miniq session goal status SESSION_ID active
+miniq session search "download timeout" --limit 20
+miniq session events SESSION_ID --limit 20 --json
+miniq session model-calls SESSION_ID --limit 20 --json
+miniq session process SESSION_ID --turn USER_MESSAGE_ID --json
+miniq session tool-detail SESSION_ID TOOL_CALL_ID --json
+miniq queue update SESSION_ID QUEUED_ID "Updated follow-up"
+miniq queue move SESSION_ID QUEUED_ID up
+miniq queue remove SESSION_ID QUEUED_ID
+miniq queue steer SESSION_ID QUEUED_ID
+miniq agent list SESSION_ID
+miniq agent output SESSION_ID AGENT_ID
+miniq agent history SESSION_ID AGENT_ID --limit 20 --json
+miniq agent message SESSION_ID AGENT_ID --revision REVISION --index INDEX --json
+miniq agent stop SESSION_ID AGENT_ID
+```
+
+Pause retains queued messages; resume also supports a pause saved before a daemon restart. Goal `set` changes saved goal text/budget without submitting a prompt or silently changing goal state. Goal `status active|paused|cancelled|completed` explicitly controls the goal and its turn. `--clear-token-budget` removes a saved budget. Queue updates retain attachments and use an atomic content check; moves use the observed position. `steer` promotes the selected message and interrupts the active turn. Agent `message` **reads** one historical message using the revision/index returned by history; there is no `agent send` command.
+
+Session lifecycle and recovery commands include:
+
+```sh
+miniq session pin SESSION_ID               # --off to unpin
+miniq session archive SESSION_ID           # --off to restore
+miniq session rewrite SESSION_ID USER_MESSAGE_ID "Corrected prompt"
+miniq session revert-turn SESSION_ID USER_MESSAGE_ID
+miniq session acknowledge-failure SESSION_ID --updated-at EXACT_UPDATED_AT
+miniq session delete SESSION_ID --yes
+```
+
+`rewrite` replaces a user message and reruns from it, preserving its attachments unless `--attach` or `--clear-attachments` is supplied. `revert-turn` restores the files changed by that turn; `--force` also allows overwriting later edits. `acknowledge-failure` (alias `ack`) clears only a badge matching the observed `updatedAt`; the saved reason remains. `delete --yes` removes the session and retained history.
+
+Sharing requires an explicit selection of messages/files and creates a public link:
+
+```sh
+miniq session share create SESSION_ID --id 0123456789abcdef0123456789abcdef \
+  --title "Selected result" --message MESSAGE_ID --days 7
+miniq session share list SESSION_ID --json
+miniq session share revoke SESSION_ID SHARE_ID
+```
+
+Use a unique 32-character lowercase hexadecimal ID for each new share; reuse it after an unknown request outcome. Repeat `--message`/`--artifact` for selected content. Unselected files stay private. Events, model calls and process pages accept `--before`; agent history uses `--cursor`; share listing uses `--after`. Keep and pass each response's exact cursor.
+
+## Domain Commands
+
+Domain commands print the complete daemon response as JSON, including continuation metadata. `skills list` and `plugins list` display tables in a terminal; use `--json` or pipe them to retain every response field. Complex operations accept an inline JSON object, `-` for stdin or `@FILE`; the CLI validates its shape and forwards the original JSON without dropping fields or shortening content. `@FILE` is read on the CLI computer; paths *inside* the JSON refer to the daemon computer. Avoid secrets in command arguments; prefer stdin or a private request file.
+
+### Files, Git and PTYs
+
+```sh
+miniq git status SESSION_ID
+miniq git diff SESSION_ID src/main.rs --staged
+miniq file list SESSION_ID src
+miniq file list SESSION_ID src --after "RETURNED_NEXT_CURSOR"
+miniq file describe SESSION_ID README.md
+miniq file read SESSION_ID README.md --revision RETURNED_REVISION --offset 0
+miniq tool list
+miniq tool detail SESSION_ID TOOL_CALL_ID
+miniq terminal create SESSION_ID --rows 24 --cols 100
+printf 'pwd\n' | miniq terminal input SESSION_ID TERMINAL_ID -
+miniq terminal read SESSION_ID TERMINAL_ID --offset 0 --wait-ms 1000
+miniq terminal resize SESSION_ID TERMINAL_ID 30 120
+miniq terminal close SESSION_ID TERMINAL_ID
+```
+
+File list returns a `nextCursor` string for `--after`. File read returns `dataBase64`, `nextOffset`, `done` and a revision; continue with `nextOffset` and the same revision until done. If the file changes, describe it again and restart the read. PTY read retains output page metadata; pass `stdoutPage.nextOffset` as the next explicit `--offset`. PTY input sends exact text, with a newline only if supplied. Creating a PTY launches a shell on the daemon computer; input executes there directly, and close terminates that PTY. These commands do not start an agent turn.
+
+### Approvals, Reviews and Schedules
+
+```sh
+miniq approval inbox
+miniq approval rules
+miniq approval resolve APPROVAL_ID approve_for_session
+miniq approval revoke RULE_ID
+miniq review start SESSION_ID ASSISTANT_MESSAGE_ID REVIEWER_MODEL
+miniq review list SESSION_ID --limit 20
+miniq review get SESSION_ID REVIEW_ID
+miniq review cancel SESSION_ID REVIEW_ID
+miniq schedule create '{"workspaceId":"WORKSPACE_ID","name":"Daily check","prompt":"Check the build","schedule":{"type":"daily","time":"09:00"}}'
+miniq schedule list
+miniq schedule runs TASK_ID --limit 20
+miniq schedule disable TASK_ID
+miniq schedule enable TASK_ID
+miniq schedule run TASK_ID
+miniq schedule update @reviewed-task-settings.json
+miniq schedule delete TASK_ID
+```
+
+Approval decisions are `approve`, `approve_for_session`, `always_allow_tool` or `reject`. Always-allow saves a tool rule; revoke removes that rule. Reviews request a separate model opinion on a completed assistant message and are read by polling `get`. Review listing and schedule runs return string cursors for `--cursor`; the approval inbox returns cursor JSON for `--before`.
+
+Schedule create/update JSON contains `name`, `prompt` and `schedule`; create also requires `workspaceId`, while update requires `id`. A heartbeat additionally needs `mode: "heartbeat"` and `targetSessionId` for an active local session in that project. **Update replaces task settings**: include mode/target for an existing heartbeat and retain its memory explicitly; omitted mode becomes `newSession` and omitted memory becomes empty. Omitted `workspaceId` preserves the project. Enable/disable sends an explicit boolean; run starts an execution immediately. Delete removes the saved schedule, and is distinct from cancelling a running session.
+
+### Memory, External Conversations, Projects and SSH
+
+```sh
+miniq memory list '{"target":{"scope":"global"},"limit":20}'
+miniq memory list '{"target":{"scope":"workspace","workspaceId":"WORKSPACE_ID"},"limit":20}'
+miniq memory delete @reviewed-memory-delete.json
+miniq external scan
+miniq external scan-status JOB_ID
+miniq external import @selected-conversations.json
+miniq external import-status JOB_ID
+miniq workspace list
+miniq workspace open /srv/project --name Project
+miniq workspace create Scratch
+miniq workspace rename WORKSPACE_ID "New name"
+miniq workspace roots '{"workspaceId":"WORKSPACE_ID","paths":["/srv/project","/srv/reference"]}'
+miniq workspace model-get WORKSPACE_ID
+miniq workspace model-set '{"workspaceId":"WORKSPACE_ID","settings":{"model":"MODEL_ID","apiProtocol":"auto"}}'
+miniq host list
+miniq host save my-server
+miniq host connect my-server
+miniq host disconnect my-server
+miniq host remove my-server
+```
+
+Memory addresses one exact global/project scope. Pass returned `nextCursor` as JSON `before` in the next request. Delete requires `target`, `id`, `expectedUpdatedAt` and `expectedContent` from the displayed record, protecting against deleting a changed record. External import accepts `{"sessions":[{"provider":"codex","externalId":"…","sourcePath":"…","workspaceId":"…"}]}`; supported provider IDs are `codex`, `claude_code` and `opencode`. Discovery/import return jobs to inspect with their status commands.
+
+Workspace roots replace the **complete** root list: the first path is the primary directory and the remaining paths are additional directories. Existing sessions keep their working directory; new sessions use the new primary directory. Roots changes require idle project tasks; `--add-dir` is the additive chat alternative. Model-set replaces the project's model settings: omitted/null model inherits the global model, omitted/null effort uses the provider default, and omitted protocol becomes `auto`. `miniq workspace delete WORKSPACE_ID` deletes the project registration, its sessions/history, schedules and project memories according to daemon rules; project files remain on disk.
+
+`host` (alias `ssh`) manages the daemon's saved aliases. **`host save` only registers an existing SSH configuration alias** in miniQ; SSH configuration stays authoritative and is edited separately. Remove deletes the saved registration and disconnects it. Disconnect closes the transport while remote tasks continue on their daemon. These commands do not edit `~/.ssh/config` or delete remote files.
+
+### Skills, Plugins, Voice and Computer Permissions
+
+```sh
+miniq skills list --workspace WORKSPACE_ID --json
+miniq skills read SKILL_NAME --workspace WORKSPACE_ID
+miniq skills disable SKILL_NAME
+miniq skills enable SKILL_NAME
+miniq skills import /srv/skill-package
+miniq skills create '{"goal":"Summarize this project consistently"}'
+miniq skills distill '{"sessionId":"SESSION_ID"}'
+miniq skills refine '{"sessionId":"SESSION_ID","name":"SKILL_NAME"}'
+miniq skills job list
+miniq skills job get JOB_ID
+miniq skills job cancel JOB_ID
+miniq skills validate @draft.json
+miniq skills save @reviewed-draft.json
+miniq skills delete SKILL_NAME
+miniq plugins list --json
+miniq plugins install /srv/plugin-package --update
+miniq plugins diagnostics PLUGIN_ID
+miniq plugins enable PLUGIN_ID --trust-code
+miniq plugins reload PLUGIN_ID
+miniq plugins disable PLUGIN_ID
+miniq plugins uninstall PLUGIN_ID
+miniq voice capabilities
+miniq voice transcribe @audio-request.json
+miniq voice speak '{"text":"The task completed","voice":"eve","responseFormat":"mp3"}'
+miniq computer permissions
+miniq computer request accessibility
+```
+
+Skill create/distill/refine return generation jobs. `skills job start` is the equivalent asynchronous entry with `kind: "create"|"distill"|"refine"`. Inspect the job result, then validate/save reviewed `{"content":"…"}` explicitly. `force: true` on save overrides sensitive-content warnings. Import can replace same-name user skills. Delete removes only user skills; project/bundled skills are protected. Enable/disable is a shared name-based setting.
+
+Plugin install accepts a daemon-local package/directory; `--update` explicitly replaces an installed plugin. Enabling executable plugin code may require `--trust-code`. Uninstall removes the plugin; bundled plugins can only be disabled. Voice transcription takes `audioBase64`, optional `filename`, `preview` and `transcribeModel`; speech returns encoded audio with its metadata. `computer request accessibility|screenRecording` requests OS permission on the daemon computer. Native control still requires that computer's graphical session and permissions.
+
+These commands expose shared daemon capabilities through terminal workflows. Desktop/mobile visual editors, previews and platform-specific interactions can still differ; use each command's `--help` for the supported parameters.
 
 ## Other Controls
 
@@ -141,13 +368,13 @@ miniq history SESSION_ID --before '{"at":"TIMESTAMP","id":"ID"}'
 miniq models
 miniq models MODEL_ID
 miniq status
-miniq rpc tool.list
-miniq rpc agent.list '{"sessionId":"SESSION_ID"}'
+miniq tool list
+miniq agent list SESSION_ID
 miniq rpc remote.status
 miniq completions zsh
 ```
 
-History is paged; use the returned `nextCursor` in `--before` until null. Large tool payloads remain accessible through the backend's `session.toolDetail`/history APIs. `rpc METHOD -` reads JSON parameters from stdin for advanced MCP, skill, agent, checkpoint and remote configuration without shell-escaping large objects. Avoid putting secrets in its argv.
+History is paged; use the returned `nextCursor` in `--before` until null. Large tool payloads remain accessible with `session tool-detail`/`tool detail`. `rpc METHOD -` reads JSON parameters from stdin for advanced capabilities without shell-escaping large objects. Avoid putting secrets in its argv. Domain and management commands keep response cursors and full payloads; use each endpoint's pages/chunks to retrieve large data.
 
 The daemon is loopback-only and authenticated. Discovery uses `MINIQ_DATA_DIR` (Unix default `~/.local/share/miniq`; Windows `%LOCALAPPDATA%/miniq`), `MINIQ_DAEMON_PATH`, the binary next to the CLI, then installed locations/PATH. `--no-start` makes diagnostics connect-only. An OS lock prevents concurrent daemons from recovering/overwriting the same active database. To test independently, use a new `--data-dir` and a mock provider, not a copy of a live database.
 
@@ -235,8 +462,6 @@ The adopted patterns are a real terminal entry point, project-scoped resume, mod
 
 ## Verification
 
-The macOS source installation was exercised in an isolated installation/data directory with the real daemon and a local fixture provider, without production keys or documents. Checks covered headless startup, configuration, stdin/final stdout, shared project/session discovery, durable outcomes, watch without replay, continued conversation context, native `Read` image pixels reaching the provider request, and logout. Provider encoding tests separately cover Responses, Chat Completions and Anthropic image content; these are protocol tests, not live-provider availability claims.
+CLI tests cover command parsing, domain RPC mapping, typed JSON validation and preservation of long content/cursors. Mock-daemon tests cover busy policies, queued responses, uncertain send outcomes, safe update activation and retained failures. Management tests cover queue concurrency checks, goal state, sharing and complete history/tool output. Run the relevant CLI/daemon tests and formatting checks after behavior changes; the release workflow provides the platform build/runtime validation.
 
-Targeted Rust, daemon RPC/queue, memory, frontend and provider tests passed, including an explicitly enabled five-page Poppler rendering test with nonblank-pixel and pagination assertions. CLI/local Clippy, workspace/Tauri compilation, Rust formatting, TypeScript checking, frontend build and shell syntax checks passed. PDF preview paging was inspected at desktop and 360px mobile widths using the isolated `visual-preview.html` fixture, including lazy image requests and object-URL cleanup.
-
-The terminal starts its daemon in a separate process group so terminal interrupts do not signal the shared backend. A Unix regression test checks the spawned process group; an actual PTY check also verified `/help`, `/status`, `/exit` and continued daemon connectivity after terminal exit. Image decoding limits also cover GIF animation detection, including oversized logical canvases. Windows/Linux native execution remains to be verified by the supplied build matrix; macOS results do not substitute for those runs.
+For end-to-end checks, use an isolated installation/data directory and a local fixture provider. Verify headless startup, configuration, final stdout/JSONL, shared project/session discovery, reconnect without replay, retained failures, queue/approval handling and update activation before applying the build to shared work. The terminal starts its daemon in a separate process group so terminal interrupts do not signal the shared backend. The SSH smoke described above also uses isolated keys and data; it can verify transport reconnects without restarting tasks. Platform-specific results should identify the platform actually exercised.

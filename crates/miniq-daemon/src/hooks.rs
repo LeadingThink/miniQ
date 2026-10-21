@@ -327,8 +327,12 @@ pub fn spawn_event(state: &AppState, session_id: &str, event: HookEvent, payload
     let Some(context) = HookContext::for_session(state, session_id) else {
         return;
     };
+    let Ok(activity) = state.activity.enter() else {
+        return;
+    };
     let state = state.clone();
     tokio::spawn(async move {
+        let _activity = activity;
         run_event(&state, &context, event, payload).await;
     });
 }
@@ -468,6 +472,9 @@ pub async fn run_command(
         }
     };
     let pid = child.id();
+    // Dropping an in-flight hook (for example a cancelled submit request) must
+    // stop its process group as well as the shell owned by kill_on_drop.
+    let mut process = HookProcessGuard::new(pid);
     let mut child_stdin = child.stdin.take();
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -492,15 +499,40 @@ pub async fn run_command(
     let completed = tokio::time::timeout(timeout, work).await;
     match completed {
         Ok((out, err, status)) => match status {
-            Ok(status) => finish(status.code(), out, err, false, None),
+            Ok(status) => {
+                process.disarm();
+                finish(status.code(), out, err, false, None)
+            }
             Err(error) => finish(None, out, err, false, Some(error.to_string())),
         },
         Err(_) => {
-            kill_tree(pid);
+            process.kill();
             let _ = child.start_kill();
             let _ = child.wait().await;
             finish(None, String::new(), String::new(), true, None)
         }
+    }
+}
+
+pub(crate) struct HookProcessGuard(Option<u32>);
+
+impl HookProcessGuard {
+    pub(crate) fn new(pid: Option<u32>) -> Self {
+        Self(pid)
+    }
+
+    pub(crate) fn disarm(&mut self) {
+        self.0 = None;
+    }
+
+    fn kill(&mut self) {
+        kill_tree(self.0.take());
+    }
+}
+
+impl Drop for HookProcessGuard {
+    fn drop(&mut self) {
+        self.kill();
     }
 }
 

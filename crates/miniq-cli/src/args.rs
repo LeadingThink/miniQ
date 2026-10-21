@@ -22,7 +22,7 @@ Find sessions:
   miniq sessions --all | jq '.sessions[] | {id, title, status, updatedAt}'
 
 Work with a session (use an ID from `miniq sessions`):
-  miniq history SESSION_ID --limit 40   Read recent messages (JSON; page with --before)
+  miniq history SESSION_ID --limit 40   Read messages; JSON with --json or when piped
   miniq watch SESSION_ID                Follow a running session without sending anything
   miniq resume SESSION_ID               Continue a session
   miniq resume                          Pick a session in this project interactively
@@ -32,6 +32,11 @@ Work with a session (use an ID from `miniq sessions`):
   miniq fork SESSION_ID [--at MSG_ID]   Branch a session from an assistant message
   miniq rename SESSION_ID \"New title\"
   miniq cancel SESSION_ID               Stop a session's running task
+  miniq session pause SESSION_ID        Pause and retain queued follow-ups
+  miniq session resume SESSION_ID       Continue a paused turn
+  miniq queue list SESSION_ID           Inspect/edit/reorder queued messages
+  miniq agent list SESSION_ID           Inspect child agents and retained output
+  miniq session --help                  Search, pin, archive, rewrite, revert and diagnostics
 
 Scripting:
   miniq exec \"Summarize CHANGELOG.md\"   Final answer on stdout, progress on stderr
@@ -42,6 +47,9 @@ Scripting:
   miniq exec --output-schema schema.json \"task\"   Validated JSON answer (exit 1 if invalid)
   miniq exec --resume-last \"follow up\"  · miniq exec resume --last \"follow up\"
   miniq exec --approval auto \"task\"     Set this session's approval mode explicitly
+  miniq exec --session ID --on-busy queue \"follow up\"   Queue and return its message ID
+  Busy sessions offer queue / stop and send / leave in a terminal. Scripts reject by default.
+  Queued submission exits 0 with status queued; it does not wait for completion or write -o.
 
 Permissions (--approval / --permission-mode):
   always-ask   Every tool approval stops the run (exec exits 3 when input is needed)
@@ -53,10 +61,15 @@ Extensions and settings:
   miniq mcp list · miniq mcp get NAME · miniq mcp add NAME CMD [ARGS...] · miniq mcp remove NAME
   miniq skills list · miniq plugins list
   miniq config get [KEY] · miniq config set KEY VALUE   (keys are masked)
-  Every listing prints a table; add --json for scripts.
+  miniq git · terminal · file · tool · approval · review · schedule · memory
+  miniq external · workspace · host · voice · computer   (--help for each command)
+  Structured management responses retain complete data and pagination cursors.
 
 Maintenance:
   miniq update [--check] · miniq status · miniq models · miniq logout
+  miniq update --activate         Activate when idle; choose whether to stop busy tasks
+  miniq update --activate --stop-running   Explicitly stop all backend tasks to activate
+  Installing and activating are separate; installed CLI and running daemon may differ.
   miniq completions zsh > ~/.zfunc/_miniq
 
 Good to know:
@@ -219,7 +232,7 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// Page through session history as JSON. Use nextCursor as --before for older records.
+    /// Read session history (JSON with --json or when piped). Page using --before.
     #[command(
         after_help = "Examples:\n  miniq history SESSION_ID\n  miniq history SESSION_ID --limit 100\n  miniq history SESSION_ID --before '<nextCursor from the previous page>'"
     )]
@@ -233,7 +246,27 @@ pub enum Commands {
         /// Cursor (the previous page's nextCursor JSON) to read older records.
         #[arg(long, value_name = "CURSOR")]
         before: Option<String>,
+        /// Print the complete structured page instead of the readable transcript.
+        #[arg(long)]
+        json: bool,
     },
+    /// Control, search and inspect shared sessions.
+    Session {
+        #[command(subcommand)]
+        command: crate::manage_args::SessionCommand,
+    },
+    /// Inspect, edit, reorder and steer queued follow-ups.
+    Queue {
+        #[command(subcommand)]
+        command: crate::manage_args::QueueCommand,
+    },
+    /// Inspect and stop sub-agents.
+    Agent {
+        #[command(subcommand)]
+        command: crate::manage_args::AgentCommand,
+    },
+    #[command(flatten)]
+    Domain(crate::domain_args::DomainCommand),
     /// Observe a running session without sending or restarting any task.
     #[command(
         after_help = "Examples:\n  miniq watch SESSION_ID\n  miniq watch SESSION_ID --json\n\nCtrl+C detaches without cancelling. To stop the task: miniq cancel SESSION_ID"
@@ -289,7 +322,7 @@ pub enum Commands {
     /// List installed skills.
     Skills {
         #[command(subcommand)]
-        command: ListCommand,
+        command: crate::domain_args::SkillCommand,
     },
     /// List configured lifecycle hooks (see `miniq config set hooks`).
     Hooks {
@@ -299,7 +332,7 @@ pub enum Commands {
     /// List installed plugins.
     Plugins {
         #[command(subcommand)]
-        command: ListCommand,
+        command: crate::domain_args::PluginCommand,
     },
     /// Read or change shared settings. Secrets are never printed.
     #[command(
@@ -367,6 +400,12 @@ pub enum Commands {
         /// Check for a new version without installing it.
         #[arg(long)]
         check: bool,
+        /// Activate the installed backend using its atomic idle check.
+        #[arg(long, conflicts_with = "check")]
+        activate: bool,
+        /// Stop all backend work before activation. Requires an explicit choice.
+        #[arg(long, requires = "activate", conflicts_with = "check")]
+        stop_running: bool,
     },
 }
 
@@ -432,6 +471,9 @@ pub struct ExecArgs {
     /// Continue this project's most recent session.
     #[arg(long)]
     pub resume_last: bool,
+    /// Busy session: reject, queue, or stop then send. TTY default asks; scripts reject.
+    #[arg(long, global = true, value_enum)]
+    pub on_busy: Option<crate::busy_policy::BusyPolicy>,
     /// JSONL: scoped daemon events followed by a terminal CLI result event.
     #[arg(long, global = true)]
     pub json: bool,

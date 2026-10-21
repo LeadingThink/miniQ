@@ -2,9 +2,11 @@ use anyhow::{bail, Context, Result};
 use miniq_protocol::SessionModelSettings;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::args::ChatOptions;
-use crate::client::Client;
+use crate::busy_policy::{self, BusyPolicy};
+use crate::client::{is_busy, Client};
 
 pub fn absolute(path: &Path) -> Result<String> {
     Ok(dunce::canonicalize(path)
@@ -192,12 +194,20 @@ pub fn attachments(paths: &[PathBuf]) -> Result<Vec<String>> {
         .collect()
 }
 
-pub async fn send(
+#[derive(Debug, PartialEq)]
+pub enum SendOutcome {
+    Started,
+    Queued { id: String },
+    Cancelled,
+}
+
+pub async fn send_with_policy(
     client: &mut Client,
     session: &str,
     content: &str,
     paths: &[PathBuf],
-) -> Result<()> {
+    policy: Option<BusyPolicy>,
+) -> Result<SendOutcome> {
     if !client.reject_busy {
         bail!("running daemon lacks atomic CLI turn admission. Update it when tasks are idle; status/history/watch remain available. Nothing was sent");
     }
@@ -206,11 +216,70 @@ pub async fn send(
     if let Some(limit) = client.max_turns {
         params["maxTurns"] = json!(limit);
     }
-    let result = client.call("session.sendMessage", params).await?;
-    if result.get("queued").is_some() {
-        bail!("daemon queued this message behind an active task; inspect the session before continuing");
+    if policy == Some(BusyPolicy::Queue) {
+        params["rejectIfBusy"] = json!(false);
+        return send_once(client, params).await;
     }
-    Ok(())
+    match send_once(client, params.clone()).await {
+        Ok(outcome) => return Ok(outcome),
+        Err(error) if is_busy(&error, "session.sendMessage") => {
+            let selected = match policy {
+                Some(policy) => Some(policy),
+                None => busy_policy::choose()?,
+            };
+            match selected {
+                None => return Ok(SendOutcome::Cancelled),
+                Some(BusyPolicy::Reject) => return Err(error.context(
+                    "task kept running; choose --on-busy queue or --on-busy stop to send explicitly",
+                )),
+                Some(BusyPolicy::Queue) => params["rejectIfBusy"] = json!(false),
+                Some(BusyPolicy::Stop) => stop_before_send(client, session).await?,
+            }
+        }
+        Err(error) => return Err(error),
+    }
+    // The prior request was rejected, so it is safe to submit once. Transport
+    // failures and timeouts never reach this branch and are never replayed.
+    send_once(client, params).await
+}
+
+async fn send_once(client: &mut Client, params: Value) -> Result<SendOutcome> {
+    let guarded = params["rejectIfBusy"] == true;
+    let result = client.call("session.sendMessage", params).await?;
+    if let Some(queued) = result.get("queued") {
+        if guarded {
+            bail!("daemon queued a guarded prompt unexpectedly; inspect the session before continuing");
+        }
+        let id = queued["id"]
+            .as_str()
+            .context("queued prompt ID missing; inspect the session before retrying")?;
+        return Ok(SendOutcome::Queued { id: id.to_owned() });
+    }
+    if result["message"]["id"].as_str().is_none() {
+        bail!("daemon did not confirm the sent prompt; inspect the session before retrying");
+    }
+    Ok(SendOutcome::Started)
+}
+
+async fn stop_before_send(client: &mut Client, session: &str) -> Result<()> {
+    client
+        .call("session.cancel", json!({"sessionId":session}))
+        .await?;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let snapshot = client
+            .call("session.open", json!({"sessionId":session}))
+            .await?;
+        match snapshot["session"]["status"].as_str() {
+            Some("idle" | "failed") => return Ok(()),
+            Some("running" | "cancelling" | "waiting_approval") => {}
+            _ => bail!("cannot confirm the previous task stopped; the new prompt was not sent"),
+        }
+        if tokio::time::Instant::now() >= deadline {
+            bail!("previous task is still stopping; the new prompt was not sent. Watch the session before retrying");
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 pub async fn require_unattended_approval(client: &mut Client, session: Option<&str>) -> Result<()> {
@@ -228,6 +297,10 @@ pub async fn require_unattended_approval(client: &mut Client, session: Option<&s
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "sessions_tests.rs"]
+mod rpc_tests;
 
 #[cfg(test)]
 mod tests {

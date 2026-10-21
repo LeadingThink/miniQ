@@ -204,29 +204,6 @@ async fn user_servers(client: &mut Client) -> Result<Vec<Value>> {
 
 // ---------------------------------------------------------------- skills / plugins
 
-pub async fn skills(client: &mut Client, json: bool) -> Result<u8> {
-    let result = client.call("skill.list", json!({})).await?;
-    if json {
-        return Ok(print_json(&result));
-    }
-    let rows = list_rows(
-        &result["skills"],
-        &["name", "version", "source", "enabled", "description"],
-    );
-    if rows.is_empty() {
-        println!("No skills installed.");
-    } else {
-        println!(
-            "{}",
-            table(
-                &["NAME", "VERSION", "SOURCE", "ENABLED", "DESCRIPTION"],
-                &rows
-            )
-        );
-    }
-    Ok(0)
-}
-
 pub async fn hooks(client: &mut Client, json: bool) -> Result<u8> {
     let result = client.call("hooks.list", json!({})).await?;
     if json {
@@ -271,47 +248,13 @@ pub async fn hooks(client: &mut Client, json: bool) -> Result<u8> {
     Ok(0)
 }
 
-pub async fn plugins(client: &mut Client, json: bool) -> Result<u8> {
-    let result = client.call("plugin.list", json!({})).await?;
-    if json {
-        return Ok(print_json(&result));
-    }
-    let rows = list_rows(
-        &result["plugins"],
-        &["id", "version", "status", "enabled", "description"],
-    );
-    if rows.is_empty() {
-        println!("No plugins installed.");
-    } else {
-        println!(
-            "{}",
-            table(
-                &["ID", "VERSION", "STATUS", "ENABLED", "DESCRIPTION"],
-                &rows
-            )
-        );
-    }
-    Ok(0)
-}
-
 fn list_rows(items: &Value, keys: &[&str]) -> Vec<Vec<String>> {
     items
         .as_array()
         .map(|items| {
             items
                 .iter()
-                .map(|item| {
-                    keys.iter()
-                        .map(|key| {
-                            let cell = text(&item[*key]);
-                            if *key == "description" && cell.chars().count() > 60 {
-                                format!("{}…", cell.chars().take(59).collect::<String>())
-                            } else {
-                                cell
-                            }
-                        })
-                        .collect()
-                })
+                .map(|item| keys.iter().map(|key| text(&item[*key])).collect())
                 .collect()
         })
         .unwrap_or_default()

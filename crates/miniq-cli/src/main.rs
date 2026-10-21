@@ -1,7 +1,12 @@
 mod args;
 mod bridge;
+mod busy_policy;
 mod client;
+mod domain_args;
+mod domains;
 mod listing;
+mod manage;
+mod manage_args;
 mod monitor;
 mod onboarding;
 mod output;
@@ -9,8 +14,10 @@ mod remote_settings;
 mod repl;
 mod schema;
 mod selection;
+mod session_outcome;
 mod sessions;
 mod subcommands;
+mod update_notice;
 mod updater;
 
 use anyhow::{bail, Context, Result};
@@ -64,8 +71,14 @@ async fn run(cli: Cli) -> Result<u8> {
         clap_complete::generate(shell, &mut Cli::command(), "miniq", &mut io::stdout());
         return Ok(0);
     }
-    if let Some(Commands::Update { check }) = cli.command {
-        return updater::run(check).await;
+    let directory = cli.data_dir.clone().unwrap_or_else(miniq_local::data_dir);
+    if let Some(Commands::Update {
+        check,
+        activate,
+        stop_running,
+    }) = cli.command
+    {
+        return updater::run(check, activate, stop_running, &directory).await;
     }
     if cli.continue_last && cli.command.is_some() {
         bail!("--continue resumes interactively; use `miniq exec --resume-last` for scripts");
@@ -73,7 +86,6 @@ async fn run(cli: Cli) -> Result<u8> {
     if cli.command.is_none() || matches!(&cli.command, Some(Commands::Resume { .. })) {
         require_terminal()?;
     }
-    let directory = cli.data_dir.clone().unwrap_or_else(miniq_local::data_dir);
     let mut client = client::ensure(&directory, cli.daemon_path.as_deref(), cli.no_start).await?;
     client.max_turns = cli.chat.max_turns;
     let result = match cli.command {
@@ -104,8 +116,15 @@ async fn run(cli: Cli) -> Result<u8> {
                 return Ok(0);
             }
         }
-        Some(Commands::History { session, limit, before }) => client.call("session.history",
-            json!({"sessionId":session,"limit":limit,"before":before.map(|value| serde_json::from_str::<Value>(&value)).transpose()?,"includePayloads":true})).await?,
+        Some(Commands::History { session, limit, before, json }) => {
+            let page = client.call("session.history", json!({"sessionId":session,"limit":limit,
+                "before":before.map(|value| serde_json::from_str::<Value>(&value)).transpose()?,"includePayloads":true})).await?;
+            return manage::print_history(&page, json).map(|_| 0);
+        }
+        Some(Commands::Session { command }) => return manage::dispatch(&mut client, manage::ManageCommand::Session(command)).await,
+        Some(Commands::Queue { command }) => return manage::dispatch(&mut client, manage::ManageCommand::Queue(command)).await,
+        Some(Commands::Agent { command }) => return manage::dispatch(&mut client, manage::ManageCommand::Agent(command)).await,
+        Some(Commands::Domain(command)) => domains::run(&mut client, command).await?,
         Some(Commands::Watch { session, json }) => {
             client.scope(&session);
             let snapshot = client.call("session.open", json!({"sessionId":session})).await?;
@@ -131,9 +150,13 @@ async fn run(cli: Cli) -> Result<u8> {
             }
         }
         Some(Commands::Mcp { command }) => return subcommands::mcp(&mut client, command).await,
-        Some(Commands::Skills { command: args::ListCommand::List { json } }) => return subcommands::skills(&mut client, json).await,
+        Some(Commands::Skills { command }) => match domains::skills(&mut client, command).await? {
+            Some(value) => value, None => return Ok(0),
+        },
         Some(Commands::Hooks { command: args::ListCommand::List { json } }) => return subcommands::hooks(&mut client, json).await,
-        Some(Commands::Plugins { command: args::ListCommand::List { json } }) => return subcommands::plugins(&mut client, json).await,
+        Some(Commands::Plugins { command }) => match domains::plugins(&mut client, command).await? {
+            Some(value) => value, None => return Ok(0),
+        },
         Some(Commands::Config { command }) => return subcommands::config(&mut client, command).await,
         Some(Commands::Diff { session, json }) => {
             let session = match session { Some(id) => id, None => sessions::last(&mut client, &cli.chat).await? };
@@ -269,10 +292,36 @@ async fn execute(
     }
     progress(&format!("Session: {id}"));
     let mut output = Output::new(format == OutputFormat::StreamJson);
-    if let Err(error) = sessions::send(client, &id, &prompt, &options.attachments).await {
-        finish(&output, format, &id, 1, Some(&error.to_string()), None);
-        progress(&error.to_string());
-        return Ok(1);
+    match sessions::send_with_policy(client, &id, &prompt, &options.attachments, exec.on_busy).await
+    {
+        Ok(sessions::SendOutcome::Started) => {}
+        Ok(sessions::SendOutcome::Queued { id: queued }) => {
+            if format == OutputFormat::Text {
+                progress(&format!("Queued message {queued} in session {id}. Inspect with `miniq queue list {id}`."));
+            } else {
+                println!(
+                    "{}",
+                    json!({"type":"cli_queued","sessionId":id,"queuedMessageId":queued,"status":"queued","exitCode":0})
+                );
+            }
+            return Ok(0);
+        }
+        Ok(sessions::SendOutcome::Cancelled) => {
+            finish(
+                &output,
+                format,
+                &id,
+                130,
+                Some("New prompt left unsent."),
+                None,
+            );
+            return Ok(130);
+        }
+        Err(error) => {
+            finish(&output, format, &id, 1, Some(&error.to_string()), None);
+            progress(&error.to_string());
+            return Ok(1);
+        }
     }
     let result = monitor::wait(client, &id, false, true, &mut output, None).await;
     let (mut code, mut error) = match result {
@@ -324,6 +373,7 @@ fn finish(
     error: Option<&str>,
     structured: Option<&Value>,
 ) {
+    let error = error.or(output.error.as_deref());
     if format == OutputFormat::Json {
         println!(
             "{}",

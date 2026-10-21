@@ -5,16 +5,104 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+use crate::busy_policy;
+use crate::client::{self, is_busy, Client};
+
 const MANIFEST_URL: &str = "https://oss.zaiwen.top/releases/miniq/terminal.json";
 const MANAGED_MARKER: &str = "miniq-terminal-v1";
 
-/// Updating only changes the installed executables. It never connects to, starts,
-/// stops, or migrates a live daemon or its database.
-pub async fn run(check: bool) -> Result<u8> {
+/// Installing an immutable pair leaves existing work running. Backend activation
+/// is a separate choice protected by the daemon's atomic idle admission gate.
+pub async fn run(check: bool, activate: bool, stop_running: bool, directory: &Path) -> Result<u8> {
+    if check && (activate || stop_running) {
+        bail!("--check cannot activate an update");
+    }
+    if stop_running && !activate {
+        bail!("--stop-running requires --activate");
+    }
+    let latest = latest_version(Duration::from_secs(45)).await?;
+    let current = Version::parse(env!("CARGO_PKG_VERSION"))?;
+    let mut daemon = Client::connect(directory).await.ok();
+    let health = match &mut daemon {
+        Some(client) => Some(client.call("daemon.health", serde_json::json!({})).await?),
+        None => None,
+    };
+    println!("Installed miniQ CLI {current} · Latest {latest}");
+    println!(
+        "Running backend: {}",
+        health
+            .as_ref()
+            .and_then(|health| health["daemonVersion"].as_str())
+            .unwrap_or("not connected; use `miniq doctor` to inspect")
+    );
+    if check {
+        if latest > current {
+            println!("Run `miniq update` to install {latest}.");
+        } else {
+            println!("Installed miniQ CLI is already up to date.");
+        }
+        println!("Installing leaves running tasks on their current backend. Use `miniq update --activate` to activate when idle.");
+        return Ok(0);
+    }
+    let wanted = latest.max(current.clone());
+    let needs_install = wanted > current;
+    let backend_current = health
+        .as_ref()
+        .and_then(|health| health["daemonVersion"].as_str())
+        == Some(wanted.to_string().as_str());
+    let interactive = busy_policy::interactive();
+    if !needs_install && !activate && backend_current {
+        println!("CLI and running backend are already up to date.");
+        return Ok(0);
+    }
+    if !needs_install && !activate && (!interactive || daemon.is_none()) {
+        println!("Installed miniQ CLI is already up to date. Use `miniq update --activate` to activate its backend when idle.");
+        return Ok(0);
+    }
+    let executable = std::env::current_exe()?.canonicalize()?;
+    let install_root = install_directory(&executable)?;
+    if needs_install {
+        install(&install_root, &wanted.to_string()).await?;
+        println!(
+            "Installed miniQ CLI and daemon {wanted}. Start `miniq` again to use the updated CLI."
+        );
+    }
+    let should_activate = activate || (!backend_current && interactive && choose_activation()?);
+    if !should_activate {
+        println!("Running tasks continue. Run `miniq update --activate` later to use the installed backend.");
+        return Ok(0);
+    }
+    if backend_current {
+        println!("Running backend is already {wanted}.");
+        return Ok(0);
+    }
+    let binary = install_root.join(if cfg!(windows) {
+        "miniq-daemon.exe"
+    } else {
+        "miniq-daemon"
+    });
+    if !activate_backend(
+        daemon,
+        health.as_ref(),
+        directory,
+        &binary,
+        &wanted,
+        stop_running,
+        interactive,
+    )
+    .await?
+    {
+        return Ok(if activate { 3 } else { 0 });
+    }
+    println!("Running backend is now {wanted}. Sessions and history remain available.");
+    Ok(0)
+}
+
+pub(crate) async fn latest_version(timeout: Duration) -> Result<Version> {
     let http = reqwest::Client::builder()
         .https_only(true)
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(45))
+        .connect_timeout(timeout.min(Duration::from_secs(15)))
+        .timeout(timeout)
         .build()?;
     let manifest: Value = http
         .get(MANIFEST_URL)
@@ -25,26 +113,107 @@ pub async fn run(check: bool) -> Result<u8> {
         .json()
         .await
         .context("invalid terminal release manifest")?;
-    let current = Version::parse(env!("CARGO_PKG_VERSION"))?;
-    let latest = release_version(&manifest)?;
-    println!("Installed miniQ CLI {current} · Latest {latest}");
-    println!("Check the running backend version with `miniq rpc daemon.health` or `miniq doctor`. Installing updates leaves a running daemon on its current version until its next normal restart.");
-    if latest <= current {
-        println!("Installed miniQ CLI is already up to date.");
-        return Ok(0);
-    }
-    if check {
-        println!("Run `miniq update` to install {latest}.");
-        return Ok(0);
-    }
-    let executable = std::env::current_exe()?.canonicalize()?;
-    let directory = install_directory(&executable)?;
-    install(&directory, &latest.to_string()).await?;
-    println!(
-        "Installed miniQ CLI and daemon {latest}. Start `miniq` again to use the updated CLI."
+    release_version(&manifest)
+}
+
+fn choose_activation() -> Result<bool> {
+    eprintln!(
+        "  1. Activate the installed backend when idle\n  2. Later; keep tasks running (default)"
     );
-    println!("Running tasks continue unchanged.");
-    Ok(0)
+    Ok(crate::monitor::line("Activate [1/2]: ")?
+        .as_deref()
+        .is_some_and(|line| line.trim() == "1"))
+}
+
+fn choose_stop() -> Result<bool> {
+    eprintln!("miniQ has running tasks, requests or queued messages.\n  1. Stop ALL running backend tasks, then activate (queued messages are kept)\n  2. Later; keep every task running (default)");
+    Ok(crate::monitor::line("Stop all and activate [1/2]: ")?
+        .as_deref()
+        .is_some_and(|line| line.trim() == "1"))
+}
+
+async fn activate_backend(
+    daemon: Option<Client>,
+    health: Option<&Value>,
+    directory: &Path,
+    binary: &Path,
+    version: &Version,
+    stop_running: bool,
+    interactive: bool,
+) -> Result<bool> {
+    if let Some(mut daemon) = daemon {
+        if health.is_none_or(|health| health["capabilities"]["idleShutdown"] != true) {
+            bail!("this running backend cannot activate updates safely. The installed update is ready; wait for all tasks to finish and restart the backend normally");
+        }
+        let port = miniq_local::read_connection_info(directory)
+            .context("backend discovery file disappeared; activation was not started")?
+            .port;
+        match request_shutdown(&mut daemon, stop_running, interactive).await? {
+            true => {}
+            false => return Ok(false),
+        }
+        drop(daemon);
+        wait_until_stopped(port).await?;
+    }
+    let mut daemon = client::ensure(directory, Some(binary), false).await?;
+    let health = daemon.call("daemon.health", serde_json::json!({})).await?;
+    if health["daemonVersion"].as_str() != Some(version.to_string().as_str()) {
+        bail!("connected backend version {} differs from installed {version}; run `miniq doctor` before trying activation again", health["daemonVersion"]);
+    }
+    Ok(true)
+}
+
+async fn request_shutdown(
+    daemon: &mut Client,
+    stop_running: bool,
+    interactive: bool,
+) -> Result<bool> {
+    match daemon
+        .call("daemon.shutdownIfIdle", serde_json::json!({}))
+        .await
+    {
+        Ok(result) => {
+            if result["accepted"] != true {
+                bail!("backend did not accept activation; inspect it with `miniq doctor`");
+            }
+            return Ok(true);
+        }
+        Err(error) if is_busy(&error, "daemon.shutdownIfIdle") => {}
+        Err(error) => return Err(error),
+    }
+    if !stop_running && !(interactive && choose_stop()?) {
+        println!("Update installed; backend activation deferred while tasks continue. Retry `miniq update --activate` when idle.");
+        return Ok(false);
+    }
+    let result = daemon
+        .call("daemon.shutdown", serde_json::json!({}))
+        .await?;
+    if result["accepted"] != true {
+        bail!("backend did not confirm shutdown; inspect it before retrying");
+    }
+    println!(
+        "Stopped {} turn(s) and {} agent(s) for the explicitly requested activation.",
+        result["cancelledTurns"], result["cancelledAgents"]
+    );
+    Ok(true)
+}
+
+async fn wait_until_stopped(port: u16) -> Result<()> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let connected = tokio::time::timeout(
+            Duration::from_secs(1),
+            tokio::net::TcpStream::connect(("127.0.0.1", port)),
+        )
+        .await;
+        if matches!(connected, Ok(Err(_))) {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            bail!("backend is still shutting down; the installed update is ready. Run `miniq doctor` before retrying");
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 fn release_version(manifest: &Value) -> Result<Version> {
@@ -165,6 +334,10 @@ async fn install(directory: &Path, version: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "updater_tests.rs"]
+mod rpc_tests;
 
 #[cfg(test)]
 mod tests {

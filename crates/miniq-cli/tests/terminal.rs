@@ -15,6 +15,9 @@ mod pty;
 #[path = "support/onboarding.rs"]
 mod onboarding;
 
+#[path = "support/task_outcomes.rs"]
+mod task_outcomes;
+
 struct Fixture {
     dir: tempfile::TempDir,
     requests: Arc<Mutex<Vec<Value>>>,
@@ -94,13 +97,28 @@ impl Fixture {
                         }
                         "session.modelUpdate" => json!({}),
                         "session.open" => {
-                            json!({"session":{"id":"session-1","status":"idle","workingDirectory":root},"lastTurn":{"status":"completed"},
-                            "messages":[{"id":"answer-1","role":"assistant","content":"fixture answer"}],"nextCursor":null})
+                            let outcome = match mode {
+                                "paused" => json!({"status":"paused"}),
+                                "reconnect-failure" => {
+                                    json!({"status":"failed","error":task_outcomes::saved_failure_reason()})
+                                }
+                                _ => json!({"status":"completed"}),
+                            };
+                            let mut snapshot = json!({"session":{"id":"session-1","status":"idle","workingDirectory":root},"lastTurn":outcome,
+                            "messages":[{"id":"answer-1","role":"assistant","content":"fixture answer"}],"nextCursor":null});
+                            if mode == "idle-delayed-completed" {
+                                snapshot["eventCursor"] = json!({"epoch":"fixture","sequence":3});
+                            }
+                            snapshot
                         }
-                        "session.sendMessage" if mode == "busy" => {
+                        "session.sendMessage"
+                            if mode == "busy"
+                                || (mode == "busy-queue"
+                                    && request["params"]["rejectIfBusy"] == true) =>
+                        {
                             socket
                                 .send(Message::text(
-                                    json!({"id":request["id"],"error":{"message":"session busy"}})
+                                    json!({"id":request["id"],"error":{"code":miniq_protocol::ErrorCode::SessionBusy as i64,"message":"session busy"}})
                                         .to_string(),
                                 ))
                                 .await
@@ -110,6 +128,9 @@ impl Fixture {
                         "session.sendMessage" if mode == "disconnect" => {
                             socket.close(None).await.unwrap();
                             break;
+                        }
+                        "session.sendMessage" if mode == "busy-queue" => {
+                            json!({"queued":{"id":"queued-1"}})
                         }
                         "session.sendMessage" => {
                             // Real daemons can deliver events before the RPC response.
@@ -164,7 +185,7 @@ impl Fixture {
                         .await
                         .unwrap();
                     if method == "session.sendMessage" {
-                        if mode == "reconnect" {
+                        if matches!(mode, "reconnect" | "reconnect-failure") {
                             socket.close(None).await.unwrap();
                             break;
                         }
@@ -178,6 +199,14 @@ impl Fixture {
                             "failure" => vec![
                                 json!({"type":"turn_failed","error":"fixture provider failure"}),
                             ],
+                            "paused" => {
+                                vec![json!({"type":"session_status_changed","status":"idle"})]
+                            }
+                            "idle-completed" | "idle-delayed-completed" => vec![
+                                json!({"type":"session_status_changed","status":"idle"}),
+                                json!({"type":"message_created","message":{"role":"assistant","content":"original completed answer"}}),
+                                json!({"type":"turn_completed"}),
+                            ],
                             "schema" => vec![
                                 json!({"type":"assistant_replaced","text":""}),
                                 json!({"type":"message_created","message":{"id":"answer-1","role":"assistant","content":"```json\n{\"ok\":true}\n```"}}),
@@ -189,7 +218,14 @@ impl Fixture {
                                 json!({"type":"turn_completed"}),
                             ],
                         };
-                        for mut event in events {
+                        for (index, mut event) in events.into_iter().enumerate() {
+                            if mode == "idle-delayed-completed" {
+                                if index == 1 {
+                                    tokio::time::sleep(Duration::from_millis(400)).await;
+                                }
+                                event["eventCursor"] =
+                                    json!({"epoch":"fixture","sequence":index + 1});
+                            }
                             event["sessionId"] = json!("session-1");
                             socket.send(Message::text(event.to_string())).await.unwrap();
                         }

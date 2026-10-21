@@ -22,6 +22,7 @@ pub mod media_capabilities;
 mod model_resolution;
 mod observed_provider;
 mod parallel_policy;
+mod prompt_submissions;
 mod provider_media;
 pub mod remote;
 pub mod remote_policy;

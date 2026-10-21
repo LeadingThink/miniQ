@@ -554,6 +554,7 @@ async fn cancel_discards_queued_messages() {
     )
     .await;
 
+    let mut observer = connect(port, &token).await;
     let resp = call(
         &mut ws,
         "r3",
@@ -563,7 +564,11 @@ async fn cancel_discards_queued_messages() {
     .await;
     assert_eq!(resp["result"]["cancelled"], true);
 
-    next_event_of(&mut ws, "turn_failed").await; // "cancelled"
+    // Cancellation now confirms that the old turn released its slot before
+    // replying. Observe the terminal event on another connection so the RPC
+    // helper cannot consume and discard it while waiting for the reply.
+    let failed = next_event_of(&mut observer, "turn_failed").await;
+    assert_eq!(failed["error"], "cancelled");
 
     // No queued turn may start: the queue was discarded by the stop.
     let resp = call(

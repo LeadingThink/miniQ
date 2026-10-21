@@ -230,128 +230,135 @@ pub fn spawn_turn(state: AppState, session_id: String, cancel: CancellationToken
                 ),
                 error => error,
             });
-        // A budget is one-shot even when the turn failed before using it.
-        state.take_turn_step_limit(&session_id);
-        let paused =
-            matches!(result, Err(TurnError::Cancelled)) && state.is_turn_paused(&session_id);
-        let (outcome, timing_status) = match &result {
-            Ok(()) => ("completed", TurnTimingStatus::Completed),
-            Err(TurnError::Cancelled) if paused => ("paused", TurnTimingStatus::Cancelled),
-            Err(TurnError::Cancelled) => ("cancelled", TurnTimingStatus::Cancelled),
-            Err(TurnError::Fatal(_)) => ("failed", TurnTimingStatus::Failed),
-        };
-        let summary = clock
-            .map(|clock| clock.finish(&state, &session_id, timing_status))
-            .and_then(|timing| crate::turn_summary::build(&state, &session_id, &timing));
-        let reason = match &result {
-            Err(TurnError::Cancelled) if !paused => Some("cancelled"),
-            Err(TurnError::Fatal(error)) => Some(error.as_str()),
-            _ => None,
-        };
-        if let Err(error) = state
-            .store
-            .record_turn_outcome(&session_id, outcome, reason)
-        {
-            tracing::error!(%error, %session_id, "failed to persist turn outcome");
-        }
-        let scheduled_status = match outcome {
-            "completed" => miniq_protocol::ScheduledTaskRunStatus::Succeeded,
-            "cancelled" => miniq_protocol::ScheduledTaskRunStatus::Cancelled,
-            _ => miniq_protocol::ScheduledTaskRunStatus::Failed,
-        };
-        if !paused {
-            if let Err(error) = state.store.complete_scheduled_task_run_for_session(
-                &session_id,
-                scheduled_status,
-                reason,
-            ) {
-                tracing::warn!(%error, %session_id, "failed to persist scheduled task outcome");
+        state.prompt_submissions.synchronize(|| {
+            // A budget is one-shot even when the turn failed before using it.
+            state.take_turn_step_limit(&session_id);
+            let paused =
+                matches!(result, Err(TurnError::Cancelled)) && state.is_turn_paused(&session_id);
+            let (outcome, timing_status) = match &result {
+                Ok(()) => ("completed", TurnTimingStatus::Completed),
+                Err(TurnError::Cancelled) if paused => ("paused", TurnTimingStatus::Cancelled),
+                Err(TurnError::Cancelled) => ("cancelled", TurnTimingStatus::Cancelled),
+                Err(TurnError::Fatal(_)) => ("failed", TurnTimingStatus::Failed),
+            };
+            let summary = clock
+                .map(|clock| clock.finish(&state, &session_id, timing_status))
+                .and_then(|timing| crate::turn_summary::build(&state, &session_id, &timing));
+            let reason = match &result {
+                Err(TurnError::Cancelled) if !paused => Some("cancelled"),
+                Err(TurnError::Fatal(error)) => Some(error.as_str()),
+                _ => None,
+            };
+            if let Err(error) = state
+                .store
+                .record_turn_outcome(&session_id, outcome, reason)
+            {
+                tracing::error!(%error, %session_id, "failed to persist turn outcome");
             }
-        }
-        state.clear_streaming_text(&session_id);
-        state.clear_turn_progress(&session_id);
-        match result {
-            Ok(()) => {
-                let _ = state
-                    .store
-                    .update_session_status(&session_id, SessionStatus::Idle);
-                state.emit(Event::SessionStatusChanged {
-                    session_id: session_id.clone(),
-                    status: SessionStatus::Idle,
-                });
-                state.emit(Event::TurnCompleted {
-                    session_id: session_id.clone(),
-                    summary,
-                });
+            let scheduled_status = match outcome {
+                "completed" => miniq_protocol::ScheduledTaskRunStatus::Succeeded,
+                "cancelled" => miniq_protocol::ScheduledTaskRunStatus::Cancelled,
+                _ => miniq_protocol::ScheduledTaskRunStatus::Failed,
+            };
+            if !paused {
+                if let Err(error) = state.store.complete_scheduled_task_run_for_session(
+                    &session_id,
+                    scheduled_status,
+                    reason,
+                ) {
+                    tracing::warn!(%error, %session_id, "failed to persist scheduled task outcome");
+                }
             }
-            Err(TurnError::Cancelled) => {
-                let _ = state
-                    .store
-                    .update_session_status(&session_id, SessionStatus::Idle);
-                state.emit(Event::SessionStatusChanged {
-                    session_id: session_id.clone(),
-                    status: SessionStatus::Idle,
-                });
-                if !paused {
+            state.clear_streaming_text(&session_id);
+            state.clear_turn_progress(&session_id);
+            match result {
+                Ok(()) => {
+                    let _ = state
+                        .store
+                        .update_session_status(&session_id, SessionStatus::Idle);
+                    state.emit(Event::SessionStatusChanged {
+                        session_id: session_id.clone(),
+                        status: SessionStatus::Idle,
+                    });
+                    state.emit(Event::TurnCompleted {
+                        session_id: session_id.clone(),
+                        summary,
+                    });
+                }
+                Err(TurnError::Cancelled) => {
+                    let _ = state
+                        .store
+                        .update_session_status(&session_id, SessionStatus::Idle);
+                    state.emit(Event::SessionStatusChanged {
+                        session_id: session_id.clone(),
+                        status: SessionStatus::Idle,
+                    });
+                    if !paused {
+                        state.emit(Event::TurnFailed {
+                            session_id: session_id.clone(),
+                            error: "cancelled".to_string(),
+                            summary,
+                        });
+                    }
+                }
+                Err(TurnError::Fatal(err)) => {
+                    tracing::error!(session_id, %err, "turn failed");
+                    let _ = state
+                        .store
+                        .update_session_status(&session_id, SessionStatus::Failed);
+                    state.emit(Event::SessionStatusChanged {
+                        session_id: session_id.clone(),
+                        status: SessionStatus::Failed,
+                    });
                     state.emit(Event::TurnFailed {
                         session_id: session_id.clone(),
-                        error: "cancelled".to_string(),
+                        error: err,
                         summary,
                     });
                 }
             }
-            Err(TurnError::Fatal(err)) => {
-                tracing::error!(session_id, %err, "turn failed");
-                let _ = state
-                    .store
-                    .update_session_status(&session_id, SessionStatus::Failed);
-                state.emit(Event::SessionStatusChanged {
-                    session_id: session_id.clone(),
-                    status: SessionStatus::Failed,
-                });
-                state.emit(Event::TurnFailed {
-                    session_id: session_id.clone(),
-                    error: err,
-                    summary,
-                });
+            state.run_turn_ended_hook(&session_id, outcome);
+            crate::hooks::spawn_event(
+                &state,
+                &session_id,
+                crate::hooks::HookEvent::Stop,
+                crate::hooks::HookPayload {
+                    turn_status: Some(outcome.to_string()),
+                    ..Default::default()
+                },
+            );
+            // Hook activity is registered synchronously before releasing this turn,
+            // so idle update activation cannot interrupt a completion hook.
+            state.end_turn(&session_id);
+            if paused && state.take_turn_resume_request(&session_id) {
+                state.resume_turn(&session_id);
+                if let Some(cancel) = state.begin_turn(&session_id) {
+                    let _ = state
+                        .store
+                        .update_session_status(&session_id, SessionStatus::Running);
+                    state.emit(Event::SessionStatusChanged {
+                        session_id: session_id.clone(),
+                        status: SessionStatus::Running,
+                    });
+                    spawn_turn(state.clone(), session_id.clone(), cancel);
+                }
+                return;
             }
-        }
-        state.end_turn(&session_id);
-        state.run_turn_ended_hook(&session_id, outcome);
-        crate::hooks::spawn_event(
-            &state,
-            &session_id,
-            crate::hooks::HookEvent::Stop,
-            crate::hooks::HookPayload {
-                turn_status: Some(outcome.to_string()),
-                ..Default::default()
-            },
-        );
-        if paused && state.take_turn_resume_request(&session_id) {
-            state.resume_turn(&session_id);
-            if let Some(cancel) = state.begin_turn(&session_id) {
-                let _ = state
-                    .store
-                    .update_session_status(&session_id, SessionStatus::Running);
-                state.emit(Event::SessionStatusChanged {
-                    session_id: session_id.clone(),
-                    status: SessionStatus::Running,
-                });
-                spawn_turn(state.clone(), session_id.clone(), cancel);
+            // Queued follow-ups start automatically once the session rests.
+            if !paused {
+                start_next_queued(&state, &session_id);
             }
-            return;
-        }
-        // Queued follow-ups (sent while this turn ran, or steered to the
-        // front to interrupt it) start automatically once the session rests.
-        if !paused {
-            start_next_queued(&state, &session_id);
-        }
+        });
     });
 }
 
 /// If the session has queued messages, dequeue the head and start its turn.
 /// No-op when another turn already claimed the session.
-fn start_next_queued(state: &AppState, session_id: &str) {
+/// The caller must hold the prompt_submissions gate, shared with explicit stop.
+pub(crate) fn start_next_queued(state: &AppState, session_id: &str) {
+    if state.is_turn_paused(session_id) {
+        return;
+    }
     let Some(cancel) = state.begin_turn(session_id) else {
         return;
     };

@@ -192,6 +192,7 @@ pub struct AppState {
     pub ssh_hosts: Arc<crate::ssh::SshHostManager>,
     /// Cancellation token per session with an active turn.
     pub(crate) active_turns: Arc<Mutex<HashMap<String, ActiveTurn>>>,
+    pub(crate) prompt_submissions: Arc<crate::prompt_submissions::PromptSubmissions>,
     pub(crate) review_jobs: Arc<Mutex<HashMap<String, CancellationToken>>>,
     /// Sessions whose active turn was interrupted for a user-requested pause.
     pub(crate) paused_turns: Arc<Mutex<HashSet<String>>>,
@@ -315,6 +316,7 @@ impl AppState {
             shutdown,
             ssh_hosts,
             active_turns: Arc::new(Mutex::new(HashMap::new())),
+            prompt_submissions: Arc::new(crate::prompt_submissions::PromptSubmissions::default()),
             review_jobs: Arc::new(Mutex::new(HashMap::new())),
             paused_turns: Arc::new(Mutex::new(HashSet::new())),
             turn_step_limits: Arc::new(Mutex::new(HashMap::new())),
@@ -616,7 +618,11 @@ impl AppState {
         let workspace_path = workspace.path;
         let title = session.title;
         let status = status.to_string();
+        let Ok(activity) = self.activity.enter() else {
+            return;
+        };
         tokio::spawn(async move {
+            let _activity = activity;
             #[cfg(windows)]
             let mut child = tokio::process::Command::new("powershell.exe");
             #[cfg(not(windows))]
@@ -625,13 +631,28 @@ impl AppState {
             child.args(["-NoProfile", "-NonInteractive", "-Command", &command]);
             #[cfg(not(windows))]
             child.args(["-lc", &command]);
-            let result = child
+            #[cfg(not(windows))]
+            child.process_group(0);
+            child
                 .env("MINIQ_SESSION_ID", &session_id)
                 .env("MINIQ_TURN_STATUS", &status)
                 .env("MINIQ_WORKSPACE", &workspace_path)
                 .env("MINIQ_TITLE", &title)
-                .output()
-                .await;
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .kill_on_drop(true);
+            let result = match child.spawn() {
+                Ok(process) => {
+                    let mut guard = crate::hooks::HookProcessGuard::new(process.id());
+                    let result = process.wait_with_output().await;
+                    if result.is_ok() {
+                        guard.disarm();
+                    }
+                    result
+                }
+                Err(error) => Err(error),
+            };
             match result {
                 Ok(output) if !output.status.success() => tracing::warn!(
                     session_id = %session_id,

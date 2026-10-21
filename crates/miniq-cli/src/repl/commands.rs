@@ -41,16 +41,38 @@ const COMMANDS: &[(&str, &str)] = &[
     ("/goal", "show or set the session goal"),
     ("/usage", "token usage of recent model calls"),
     ("/cost", "alias of /usage"),
-    ("/queue", "list queued messages; /queue rm ID removes one"),
+    (
+        "/queue",
+        "list, update, move, remove or steer queued messages",
+    ),
     ("/steer", "steer the running turn with a message"),
     ("/stop", "interrupt the running turn"),
+    (
+        "/pause",
+        "pause the current turn and retain queued follow-ups",
+    ),
+    ("/resume-turn", "continue a paused turn"),
+    (
+        "/update",
+        "check/install/activate updates; --help lists options",
+    ),
+    (
+        "/manage",
+        "run any session, queue, agent or domain management command",
+    ),
     ("/attach", "attach a file to the next message"),
     ("/clear-attachments", "drop pending attachments"),
-    ("/history", "print the session transcript as JSON"),
+    (
+        "/history",
+        "readable history; --json preserves the structured page",
+    ),
     ("/mcp", "list MCP servers"),
     ("/skills", "list skills"),
     ("/hooks", "list lifecycle hooks"),
-    ("/agents", "list sub-agents of this session"),
+    (
+        "/agents",
+        "list, output, history, message or stop sub-agents",
+    ),
     ("/clear", "clear the screen"),
     ("/keybindings", "show the effective key bindings"),
     ("/vim", "toggle vim / emacs editing (saved to cli.json)"),
@@ -86,6 +108,9 @@ pub async fn run(
     let (command, arg) = line
         .split_once(char::is_whitespace)
         .map_or((line, ""), |(c, a)| (c, a.trim()));
+    if super::management::run(repl, client, line).await? {
+        return Ok(None);
+    }
     let session = repl.session.clone();
     match command {
         "/exit" | "/quit" => return Ok(Some(0)),
@@ -280,39 +305,6 @@ pub async fn run(
             };
             repl.send(client, prompt, false).await?;
         }
-        "/goal" => {
-            let current = client
-                .call("session.goal.get", json!({"sessionId":session}))
-                .await?;
-            let current = &current["goal"];
-            if arg.is_empty() {
-                repl.emit(&terminal_text(&goal_text(current)));
-            } else {
-                let (goal, status) = match arg {
-                    "clear" | "cancel" => (None, "cancelled"),
-                    "pause" => (None, "paused"),
-                    "resume" => (None, "active"),
-                    "done" | "complete" => (None, "completed"),
-                    text => (Some(text.to_owned()), "active"),
-                };
-                let goal = match goal {
-                    Some(goal) => goal,
-                    None => current["goal"]
-                        .as_str()
-                        .map(str::to_owned)
-                        .context("no goal set; use /goal TEXT")?,
-                };
-                // Keep an existing token budget; `/goal TEXT` never drops it.
-                let params = json!({
-                    "sessionId": session,
-                    "goal": goal,
-                    "status": status,
-                    "tokenBudget": current["tokenBudget"],
-                });
-                client.call("session.goal.update", params).await?;
-                repl.info(&format!("Goal {status}."));
-            }
-        }
         "/usage" | "/cost" => {
             let result = client
                 .call(
@@ -321,39 +313,6 @@ pub async fn run(
                 )
                 .await?;
             repl.emit(&usage(&result));
-        }
-        "/queue" => {
-            if let Some(id) = arg.strip_prefix("rm ").or(arg.strip_prefix("remove ")) {
-                client
-                    .call("session.queueRemove", json!({"queuedMessageId":id.trim()}))
-                    .await?;
-                repl.info("Removed from queue.");
-                return Ok(None);
-            }
-            let result = client
-                .call("session.queueList", json!({"sessionId":session}))
-                .await?;
-            let queue = result["queue"]
-                .as_array()
-                .or(result.as_array())
-                .cloned()
-                .unwrap_or_default();
-            repl.queue = queue.clone();
-            if queue.is_empty() {
-                repl.info("Queue is empty.");
-            }
-            for item in queue {
-                let content = item["content"]
-                    .as_str()
-                    .or(item["message"]["content"].as_str())
-                    .unwrap_or("");
-                let line = format!(
-                    "{}  {}",
-                    item["id"].as_str().unwrap_or("?"),
-                    render::truncate(&content.replace('\n', " "), 100)
-                );
-                repl.emit(&terminal_text(&line));
-            }
         }
         "/steer" => {
             if arg.is_empty() {
@@ -392,13 +351,6 @@ pub async fn run(
             repl.files.clear();
             repl.info("Attachments cleared.");
         }
-        "/history" => {
-            let result = client
-                .call("session.history", json!({"sessionId":session}))
-                .await?;
-            let text = serde_json::to_string_pretty(&result)?;
-            repl.emit(&terminal_text(&text));
-        }
         "/mcp" => {
             let result = client.call("mcp.list", json!({})).await?;
             list_names(repl, &result, &["servers", "mcpServers"], "MCP servers");
@@ -418,12 +370,6 @@ pub async fn run(
             };
             let result = client.call("skill.list", params).await?;
             list_names(repl, &result, &["skills"], "skills");
-        }
-        "/agents" => {
-            let result = client
-                .call("agent.list", json!({"sessionId":session}))
-                .await?;
-            list_names(repl, &result, &["agents"], "agents");
         }
         "/clear" => {
             editor.clear();
@@ -552,23 +498,6 @@ mod base64_lite {
     }
 }
 
-fn goal_text(goal: &Value) -> String {
-    let Some(text) = goal["goal"].as_str() else {
-        return "No goal. Set one with /goal TEXT (pause/resume/done/clear).".into();
-    };
-    let mut line = format!(
-        "Goal [{}]: {text}",
-        goal["status"].as_str().unwrap_or("active")
-    );
-    if let Some(used) = goal["usedTokens"].as_u64() {
-        match goal["tokenBudget"].as_u64() {
-            Some(budget) => line.push_str(&format!(" · {used}/{budget} tokens")),
-            None => line.push_str(&format!(" · {used} tokens")),
-        }
-    }
-    line
-}
-
 fn usage(result: &Value) -> String {
     let calls = result["calls"]
         .as_array()
@@ -627,7 +556,7 @@ fn list_hooks(repl: &mut Repl, result: &Value) {
         let command = hook["command"].as_str().unwrap_or("");
         text.push_str(&format!(
             "  {event} [{matcher}]{disabled}  {}\n",
-            render::truncate(command, 100)
+            command.to_owned()
         ));
     }
     repl.emit(&terminal_text(&text));
@@ -655,7 +584,7 @@ fn list_names(repl: &mut Repl, result: &Value, keys: &[&str], label: &str) {
             .as_str()
             .or(item["status"].as_str())
             .unwrap_or("");
-        text.push_str(&format!("  {name}  {}\n", render::truncate(detail, 100)));
+        text.push_str(&format!("  {name}  {}\n", detail.to_owned()));
     }
     repl.emit(&terminal_text(&text));
 }

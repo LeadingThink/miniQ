@@ -3,9 +3,11 @@
 //! Only used when stdin/stdout are terminals and `TERM` is not `dumb`; every other
 //! case keeps the line-mode loop in `monitor::interactive`.
 
+mod cards;
 pub mod commands;
 pub mod editor;
 pub mod keymap;
+pub(crate) mod management;
 pub mod prefs;
 pub mod render;
 pub mod statusline;
@@ -43,11 +45,8 @@ pub fn supported() -> bool {
         && !matches!(std::env::var("MINIQ_REPL").as_deref(), Ok("line"))
 }
 
-/// A pending approval or question that the user must answer.
-pub(crate) enum Card {
-    Approval { id: Value },
-    Question { id: Value, options: Vec<String> },
-}
+use cards::Card;
+pub(crate) use cards::{approval_text, question_answer, question_text};
 
 pub(crate) struct Repl {
     pub session: String,
@@ -206,6 +205,9 @@ impl Repl {
         }
         if let Some(indicator) = editor.mode_indicator() {
             parts.insert(0, indicator.to_owned());
+        }
+        if let Some(countdown) = self.cards.front().and_then(Card::countdown) {
+            parts.push(countdown);
         }
         parts.join(" · ")
     }
@@ -368,6 +370,13 @@ impl Repl {
             self.started = Some(Instant::now());
         }
         self.running = running;
+        if !running {
+            if let Some(reason) = crate::session_outcome::failure(snapshot) {
+                self.error(&format!("Execution failed: {reason}"));
+            } else if crate::session_outcome::paused(snapshot) {
+                self.info("Turn paused. /resume-turn continues it.");
+            }
+        }
         if let Some(queue) = snapshot["queue"].as_array() {
             self.queue = queue.clone();
         }
@@ -379,83 +388,6 @@ impl Repl {
         }
         for question in snapshot["questions"].as_array().into_iter().flatten() {
             self.card(&json!({"type":"question_requested","question":question}));
-        }
-    }
-
-    fn card(&mut self, event: &Value) {
-        let style = self.style;
-        if event["type"] == "approval_requested" {
-            let approval = &event["approval"];
-            let tool = event["toolName"]
-                .as_str()
-                .or(approval["toolName"].as_str())
-                .unwrap_or("tool");
-            let input = if event["input"].is_null() {
-                &approval["input"]
-            } else {
-                &event["input"]
-            };
-            let risk = event["riskLevel"]
-                .as_str()
-                .or(approval["riskLevel"].as_str())
-                .unwrap_or("unknown");
-            let mut text = format!(
-                "{} {}\n",
-                style.yellow("╭ Approval needed"),
-                style.dim(&format!("· risk {}", terminal_text(risk)))
-            );
-            text.push_str(&format!(
-                "{} {}\n",
-                style.yellow("│"),
-                style.bold(&terminal_text(&render::tool_request(tool, input)))
-            ));
-            let detail = serde_json::to_string_pretty(input).unwrap_or_default();
-            for line in detail.lines().take(8) {
-                text.push_str(&format!(
-                    "{} {}\n",
-                    style.yellow("│"),
-                    style.dim(&render::truncate(&terminal_text(line), 160))
-                ));
-            }
-            text.push_str(&format!(
-                "{} 1 approve once · 2 approve for session · 3 always allow {} · 4 reject (y/n)",
-                style.yellow("╰"),
-                terminal_text(tool)
-            ));
-            self.emit(&text);
-            self.cards.push_back(Card::Approval {
-                id: approval["id"].clone(),
-            });
-        } else {
-            let question = &event["question"];
-            let mut text = format!(
-                "{} {}\n",
-                style.magenta("? "),
-                style.bold(&terminal_text(
-                    question["prompt"].as_str().unwrap_or("Question")
-                ))
-            );
-            let options: Vec<String> = question["options"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(|option| {
-                    option
-                        .as_str()
-                        .or(option["label"].as_str())
-                        .unwrap_or("")
-                        .to_owned()
-                })
-                .collect();
-            for (index, option) in options.iter().enumerate() {
-                text.push_str(&format!("  {}. {}\n", index + 1, terminal_text(option)));
-            }
-            text.push_str(&style.dim("Type an answer (or an option number) and press Enter."));
-            self.emit(&text);
-            self.cards.push_back(Card::Question {
-                id: question["id"].clone(),
-                options,
-            });
         }
     }
 
@@ -530,6 +462,7 @@ impl Repl {
                 self.card(event);
                 let _ = io::stdout().write_all(b"\x07");
             }
+            "approval_resolved" | "question_resolved" => self.resolved_card(event),
             "plan_updated" => {
                 let text = render::plan(&event["tasks"], style);
                 self.emit(&text);
@@ -578,6 +511,9 @@ impl Repl {
                     .unwrap_or("");
                 if status == "running" {
                     self.mark_running();
+                } else if matches!(status, "idle" | "failed") {
+                    self.running = false;
+                    self.phase.clear();
                 }
             }
             "turn_completed" => {
@@ -626,7 +562,7 @@ impl Repl {
         }
     }
 
-    /// Send a user message; while a turn runs it is queued (and optionally steered).
+    /// Enter queues a follow-up; Tab explicitly steers the queued message.
     pub async fn send(&mut self, client: &mut Client, text: &str, steer: bool) -> Result<()> {
         let mut files = self.files.clone();
         for path in mentioned_files(text, &self.working_directory()) {
@@ -634,44 +570,36 @@ impl Repl {
                 files.push(path);
             }
         }
-        if !self.running {
-            crate::sessions::send(client, &self.session, text, &files).await?;
-            self.files.clear();
-            self.mark_running();
-            self.markdown = Markdown::default();
-            self.streamed.clear();
-            return Ok(());
-        }
-        let mut params = json!({"sessionId":self.session, "rejectIfBusy":false,
-            "message":{"role":"user","content":text,
-            "attachments":crate::sessions::attachments(&files)?}});
-        if let Some(limit) = client.max_turns {
-            params["maxTurns"] = json!(limit);
-        }
-        let result = client.call("session.sendMessage", params).await?;
-        self.files.clear();
-        let queued = [
-            &result["queued"]["id"],
-            &result["queuedMessage"]["id"],
-            &result["queued"],
-            &result["queuedMessageId"],
-        ]
-        .into_iter()
-        .find_map(|v| v.as_str().map(str::to_owned));
-        match (steer, queued) {
-            (true, Some(id)) => {
-                client
-                    .call("session.queueSteer", json!({"queuedMessageId":id}))
-                    .await?;
-                self.info("↳ Steering the running turn with this message.");
+        let outcome = crate::sessions::send_with_policy(
+            client,
+            &self.session,
+            text,
+            &files,
+            Some(crate::busy_policy::BusyPolicy::Queue),
+        )
+        .await?;
+        match outcome {
+            crate::sessions::SendOutcome::Started => {
+                self.files.clear();
+                self.mark_running();
+                self.markdown = Markdown::default();
+                self.streamed.clear();
             }
-            (true, None) => {
-                self.info("↳ Sent; the daemon did not report a queued message to steer.")
+            crate::sessions::SendOutcome::Queued { id } => {
+                self.files.clear();
+                self.mark_running();
+                if steer {
+                    client
+                        .call("session.queueSteer", json!({"queuedMessageId":id}))
+                        .await?;
+                    self.info("↳ Steering the running turn with this message.");
+                } else {
+                    self.info(&format!(
+                        "↳ Queued as {id}; it runs after the current turn. Tab steers instead."
+                    ));
+                }
             }
-            (false, _) => self.info(&format!(
-                "↳ Queued; it runs after the current turn ({} queued). Tab steers instead.",
-                self.queue.len() + 1
-            )),
+            crate::sessions::SendOutcome::Cancelled => {}
         }
         Ok(())
     }
@@ -705,42 +633,6 @@ impl Repl {
             }
             Err(error) => self.error(&format!("{error:#}")),
         }
-    }
-
-    async fn resolve(&mut self, client: &mut Client, answer: &str) -> Result<()> {
-        let Some(card) = self.cards.pop_front() else {
-            return Ok(());
-        };
-        match card {
-            Card::Approval { id } => {
-                let decision = match answer {
-                    "1" | "y" | "Y" => "approve",
-                    "2" => "approve_for_session",
-                    "3" => "always_allow_tool",
-                    _ => "reject",
-                };
-                client
-                    .call(
-                        "approval.resolve",
-                        json!({"approvalId":id,"decision":decision}),
-                    )
-                    .await?;
-                self.info(&format!("→ {}", decision.replace('_', " ")));
-            }
-            Card::Question { id, options } => {
-                let answer = answer
-                    .trim()
-                    .parse::<usize>()
-                    .ok()
-                    .and_then(|n| options.get(n.wrapping_sub(1)).cloned())
-                    .unwrap_or_else(|| answer.to_owned());
-                client
-                    .call("question.resolve", json!({"questionId":id,"answer":answer}))
-                    .await?;
-                self.info(&format!("→ {answer}"));
-            }
-        }
-        Ok(())
     }
 }
 
@@ -857,16 +749,22 @@ pub async fn run(
             return Ok(code);
         }
     }
+    let mut updates = crate::update_notice::UpdateNotice::new(&client.directory);
     let mut tick = tokio::time::interval(Duration::from_millis(500));
     let code = loop {
         repl.draw(&editor);
         let input = tokio::select! {
             key = next_key(&mut repl.keys) => Input::Terminal(key),
             event = client.next_event() => Input::Daemon(event),
-            _ = tick.tick(), if repl.running || repl.statusline.config().is_some() => Input::Tick,
+            _ = tick.tick() => Input::Tick,
         };
         let flow = match input {
-            Input::Tick => None,
+            Input::Tick => {
+                if let Some(notice) = updates.tick() {
+                    repl.info(&notice);
+                }
+                None
+            }
             Input::Terminal(None) | Input::Terminal(Some(Err(_))) => Some(0),
             Input::Terminal(Some(Ok(event))) => {
                 terminal_event(&mut repl, &mut editor, client, event).await?

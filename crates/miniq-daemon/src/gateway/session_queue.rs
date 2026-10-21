@@ -118,26 +118,28 @@ pub(super) fn remove(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
 /// clients render it inline in that turn rather than as a new turn.
 pub(super) fn steer(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: QueueItemParams = params(raw)?;
-    let mut promoted = state
-        .store
-        .promote_queued_message(&input.queued_message_id)
-        .map_err(store_err)?;
-    if state.has_active_turn(&promoted.session_id) {
-        promoted.steered = state
+    state.prompt_submissions.synchronize(|| {
+        let mut promoted = state
             .store
-            .mark_queued_message_steered(&promoted.id)
+            .promote_queued_message(&input.queued_message_id)
             .map_err(store_err)?;
-    }
-    emit_queue_changed(state, &promoted.session_id);
-    let interrupted = state.cancel_turn(&promoted.session_id);
-    if interrupted {
-        let _ = state
-            .store
-            .update_session_status(&promoted.session_id, SessionStatus::Cancelling);
-        state.emit(Event::SessionStatusChanged {
-            session_id: promoted.session_id.clone(),
-            status: SessionStatus::Cancelling,
-        });
-    }
-    to_value(json!({ "promoted": promoted, "interrupted": interrupted }))
+        if state.has_active_turn(&promoted.session_id) {
+            promoted.steered = state
+                .store
+                .mark_queued_message_steered(&promoted.id)
+                .map_err(store_err)?;
+        }
+        emit_queue_changed(state, &promoted.session_id);
+        let interrupted = state.cancel_turn(&promoted.session_id);
+        if interrupted {
+            let _ = state
+                .store
+                .update_session_status(&promoted.session_id, SessionStatus::Cancelling);
+            state.emit(Event::SessionStatusChanged {
+                session_id: promoted.session_id.clone(),
+                status: SessionStatus::Cancelling,
+            });
+        }
+        to_value(json!({ "promoted": promoted, "interrupted": interrupted }))
+    })
 }

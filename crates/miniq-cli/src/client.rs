@@ -13,6 +13,43 @@ use tokio_tungstenite::{tungstenite::Message, MaybeTlsStream, WebSocketStream};
 const DAEMON_READY_TIMEOUT: Duration = Duration::from_secs(90);
 const DAEMON_SLOW_START_HINT_AFTER: Duration = Duration::from_secs(3);
 
+#[cfg(test)]
+#[path = "client_test_fixture.rs"]
+pub(crate) mod test_fixture;
+
+/// Keep structured RPC failures so mutation policies never depend on wording.
+#[derive(Debug)]
+pub struct RpcCallError {
+    pub method: String,
+    pub code: i64,
+    pub message: String,
+    pub data: Option<Value>,
+}
+
+impl std::fmt::Display for RpcCallError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{}: {} (code {})",
+            self.method, self.message, self.code
+        )?;
+        if let Some(data) = &self.data {
+            if !data.is_null() {
+                write!(formatter, "; data: {data}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for RpcCallError {}
+
+pub fn is_busy(error: &anyhow::Error, method: &str) -> bool {
+    error.downcast_ref::<RpcCallError>().is_some_and(|error| {
+        error.method == method && error.code == miniq_protocol::ErrorCode::SessionBusy as i64
+    })
+}
+
 pub struct Client {
     socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
     events: VecDeque<Value>,
@@ -76,6 +113,37 @@ impl Client {
     }
 
     pub async fn call(&mut self, method: &str, params: Value) -> Result<Value> {
+        self.call_with_timeout(method, params, Duration::from_secs(60))
+            .await
+    }
+
+    pub async fn call_with_timeout(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Value> {
+        self.call_inner(method, params, timeout, true).await
+    }
+
+    /// Observe pause state without consuming any event from the running turn.
+    pub async fn inspect_session(&mut self, session: &str) -> Result<Value> {
+        self.call_inner(
+            "session.open",
+            json!({"sessionId":session}),
+            Duration::from_secs(60),
+            false,
+        )
+        .await
+    }
+
+    async fn call_inner(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+        apply_snapshot: bool,
+    ) -> Result<Value> {
         self.next_id += 1;
         let id = self.next_id;
         self.socket
@@ -84,19 +152,21 @@ impl Client {
             ))
             .await
             .context("daemon request could not be sent; it will not be automatically replayed")?;
-        tokio::time::timeout(Duration::from_secs(60), async {
+        tokio::time::timeout(timeout, async {
             loop {
                 let value = self.read().await?;
                 if value["id"] == id {
                     if let Some(error) = value.get("error") {
-                        bail!(
-                            "{}: {}",
-                            method,
-                            error["message"].as_str().unwrap_or("RPC error")
-                        );
+                        return Err(RpcCallError {
+                            method: method.to_owned(),
+                            code: error["code"].as_i64().unwrap_or(0),
+                            message: error["message"].as_str().unwrap_or("RPC error").to_owned(),
+                            data: error.get("data").cloned(),
+                        }
+                        .into());
                     }
                     let result = value["result"].clone();
-                    if method == "session.open" {
+                    if apply_snapshot && method == "session.open" {
                         self.snapshot_cursor = result.get("eventCursor").cloned();
                         let cursor = self.snapshot_cursor.clone();
                         self.events
@@ -164,6 +234,7 @@ impl Client {
         for _ in 0..5 {
             match Self::connect(&self.directory).await {
                 Ok(mut new) => {
+                    new.max_turns = self.max_turns;
                     new.scope(session);
                     let snapshot = new
                         .call("session.open", json!({"sessionId":session}))

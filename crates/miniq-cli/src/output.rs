@@ -5,6 +5,7 @@ use std::io::{self, IsTerminal, Write};
 pub struct Output {
     pub json: bool,
     pub final_text: String,
+    pub error: Option<String>,
 }
 
 /// Untrusted model/file text must not inject terminal escape sequences.
@@ -23,6 +24,7 @@ impl Output {
         Self {
             json,
             final_text: String::new(),
+            error: None,
         }
     }
 
@@ -31,6 +33,9 @@ impl Output {
             println!("{}", event);
         }
         let kind = event["type"].as_str().unwrap_or("");
+        if kind == "turn_failed" {
+            self.error = Some(event["error"].as_str().unwrap_or("task failed").to_owned());
+        }
         if kind == "message_created"
             && event["message"]["role"] == "assistant"
             && event["message"]["assistantKind"] != "commentary"
@@ -75,6 +80,7 @@ impl Output {
     }
 
     pub fn finish(&self, session: &str, code: u8, error: Option<&str>) {
+        let error = error.or(self.error.as_deref());
         if self.json {
             println!(
                 "{}",

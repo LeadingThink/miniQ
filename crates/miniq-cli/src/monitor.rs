@@ -32,6 +32,7 @@ pub async fn wait(
             return Ok(code);
         }
     }
+    let mut check_idle = false;
     loop {
         let event = tokio::select! {
             _ = tokio::signal::ctrl_c() => {
@@ -42,6 +43,17 @@ pub async fn wait(
                 return Ok(130);
             }
             event = client.next_event() => event,
+            _ = tokio::time::sleep(std::time::Duration::from_millis(250)), if check_idle => {
+                // Pausing emits idle without a terminal turn event. This read
+                // keeps the event cursor and any concurrent completion intact.
+                let snapshot = client.inspect_session(session).await?;
+                check_idle = false;
+                if crate::session_outcome::paused(&snapshot) {
+                    progress(&format!("Turn paused. Continue with `miniq session resume {session}`."));
+                    return Ok(3);
+                }
+                continue;
+            }
         };
         let event = match event {
             Ok(event) if event["type"] != "remote_resync" => event,
@@ -75,6 +87,9 @@ pub async fn wait(
                 }
                 resolve(client, &event).await?;
             }
+            "session_status_changed" if event["status"] == "idle" => {
+                check_idle = true;
+            }
             _ => {}
         }
     }
@@ -104,11 +119,16 @@ async fn restore(
     let status = snapshot["session"]["status"]
         .as_str()
         .context("session status missing")?;
-    if status == "failed" {
-        progress(&format!(
-            "Session failed. Inspect `miniq history {session}` for its retained evidence."
-        ));
+    if let Some(reason) = crate::session_outcome::failure(&snapshot) {
+        output.error = Some(reason.to_owned());
+        progress(&format!("Execution failed: {reason}"));
         return Ok(Some(1));
+    }
+    if crate::session_outcome::paused(&snapshot) {
+        progress(&format!(
+            "Turn paused. Continue with `miniq session resume {session}`."
+        ));
+        return Ok(Some(3));
     }
     if status == "idle" {
         return Ok(Some(match snapshot["lastTurn"]["status"].as_str() {
@@ -145,30 +165,36 @@ async fn restore(
 
 async fn resolve(client: &mut Client, event: &Value) -> Result<()> {
     if event["type"] == "approval_requested" {
-        progress(&format!(
-            "\nApproval: {}\n{}",
-            event["toolName"].as_str().unwrap_or("tool"),
-            event["input"]
-        ));
-        let answer = line("Approve once? [y/N] ")?.unwrap_or_default();
+        progress(&crate::repl::approval_text(event));
+        let answer =
+            line("1 once · 2 for session · 3 always allow · 4 reject [4]: ")?.unwrap_or_default();
+        let decision = match answer.trim() {
+            "1" | "y" | "Y" => "approve",
+            "2" => "approve_for_session",
+            "3" => "always_allow_tool",
+            _ => "reject",
+        };
         client
             .call(
                 "approval.resolve",
                 json!({"approvalId":event["approval"]["id"],
-            "decision":if answer.eq_ignore_ascii_case("y") {"approve"} else {"reject"}}),
+            "decision":decision}),
             )
             .await?;
     } else {
         let question = &event["question"];
-        progress(&format!(
-            "\n{}",
-            question["prompt"].as_str().unwrap_or("Question")
-        ));
-        for option in question["options"].as_array().into_iter().flatten() {
-            progress(&format!("  {}", option.as_str().unwrap_or("")));
-        }
+        progress(&crate::repl::question_text(question));
         let answer = line("Answer: ")?
             .context("question left unanswered; resume the session to continue")?;
+        let options = question["options"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let answer =
+            crate::repl::question_answer(&answer, &options, question["multiSelect"] == true)?;
         client
             .call(
                 "question.resolve",
@@ -208,6 +234,13 @@ pub async fn interactive(
     let snapshot = client
         .call("session.open", json!({"sessionId":session}))
         .await?;
+    if let Some(reason) = crate::session_outcome::failure(&snapshot) {
+        progress(&format!("Execution failed: {reason}"));
+    } else if crate::session_outcome::paused(&snapshot) {
+        progress(&format!(
+            "Turn paused. Continue with `/resume-turn` or `miniq session resume {session}`."
+        ));
+    }
     if snapshot["session"]["status"] != "idle" && snapshot["session"]["status"] != "failed" {
         let mut output = Output::new(false);
         let code = wait(client, session, true, false, &mut output, Some(snapshot)).await?;
@@ -235,9 +268,18 @@ pub async fn interactive(
             }
             continue;
         }
-        if let Err(error) = crate::sessions::send(client, session, &prompt, &files).await {
-            progress(&format!("{error:#}"));
-            continue;
+        match crate::sessions::send_with_policy(client, session, &prompt, &files, None).await {
+            Ok(crate::sessions::SendOutcome::Started) => {}
+            Ok(crate::sessions::SendOutcome::Queued { id }) => {
+                files.clear();
+                progress(&format!("Queued as {id}. The running task continues."));
+                continue;
+            }
+            Ok(crate::sessions::SendOutcome::Cancelled) => continue,
+            Err(error) => {
+                progress(&format!("{error:#}"));
+                continue;
+            }
         }
         files.clear();
         let mut output = Output::new(false);
@@ -252,12 +294,21 @@ async fn command(
     text: &str,
     files: &mut Vec<std::path::PathBuf>,
 ) -> Result<bool> {
+    match crate::repl::management::run_line(client, session, text).await {
+        Ok(true) => return Ok(false),
+        Err(error) => {
+            progress(&format!("{error:#}"));
+            return Ok(false);
+        }
+        Ok(false) => {}
+    }
     let (command, arg) = text.split_once(' ').unwrap_or((text, ""));
     let arg = arg.trim();
     let result = match command {
         "/exit" | "/quit" => return Ok(true),
         "/remote" => crate::remote_settings::run(client, arg).await,
         "/help" => {
+            progress("/pause · /resume-turn · /goal [TEXT|pause|resume|complete|cancel]\n/queue [list|update|move|remove|steer] · /agents [list|output|history|message|stop]\n/history [--limit N|--before CURSOR|--json] · /update [--check|--activate]\n/manage COMMAND   Run a shell management command (session, approval, git, file, …).\nUse `/manage COMMAND --help` for the exact options.");
             progress("/remote             远程连接设置（这台电脑共用）：开启、关闭、设备名称和状态\n/remote on|off      开启或关闭远程连接\n/remote name NAME   修改设备名称\n/remote status      查看连接状态");
             progress(&format!("/model              Search/select a text model for this session\n/model MODEL        Switch this session to an exact model ID\n/effort             Select a supported reasoning effort\n/effort LEVEL       Set effort, or default to clear the override\n/attach PATH        Add a file to the next message\n/clear-attachments  Remove pending attachments\n/status             Show this session's effective model\n/history            Show recent messages and the next history cursor\n/exit               Leave the terminal without deleting the session\n\nThis session: {session}\n\nFrom the shell:\n  miniq resume {session}   Continue this session later\n  miniq resume --last        Continue this project's most recent session\n  miniq sessions [--all]     List sessions (title, status, updated, ID)\n  miniq watch {session}    Follow it from another terminal without sending\n  miniq history {session} --limit 40\n  miniq exec - < task.md     Multiline or scripted tasks\nminiq --help shows the full quick reference."));
             Ok(())
@@ -280,13 +331,10 @@ async fn command(
             Ok(())
         }
         "/model" | "/effort" => change_model(client, session, command, arg).await,
-        "/status" | "/history" => {
-            let method = if command == "/status" {
-                "session.modelGet"
-            } else {
-                "session.history"
-            };
-            let result = client.call(method, json!({"sessionId":session})).await?;
+        "/status" => {
+            let result = client
+                .call("session.modelGet", json!({"sessionId":session}))
+                .await?;
             println!("{}", terminal_text(&serde_json::to_string_pretty(&result)?));
             Ok(())
         }
