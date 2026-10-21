@@ -4,13 +4,36 @@ use crate::ChatMessage;
 use crate::{ChatImage, ToolSpec};
 
 fn provider() -> ResponsesProvider {
+    provider_for("gpt-test")
+}
+
+fn provider_for(model: &str) -> ResponsesProvider {
     ResponsesProvider::new(ProviderConfig {
         base_url: "https://example.test/v1".into(),
         api_key: String::new(),
-        model: "gpt-test".into(),
+        model: model.into(),
         api_protocol: ApiProtocol::Responses,
         reasoning_effort: None,
     })
+}
+
+#[test]
+fn grok_requests_omit_encrypted_reasoning_and_replayed_reasoning_items() {
+    let mut assistant = ChatMessage::assistant("");
+    assistant.provider_context = Some(ProviderContext {
+        protocol: ApiProtocol::Responses,
+        data: json!([
+            {"type":"reasoning","encrypted_content":"opaque"},
+            {"type":"function_call","call_id":"call-1","name":"file_read","arguments":"{}"}
+        ]),
+    });
+    let body = provider_for("grok-4.7").build_body(&request(vec![
+        assistant,
+        ChatMessage::tool_result("call-1", r#"{"ok":true}"#),
+    ]));
+    assert!(body.get("include").is_none());
+    assert_eq!(body["input"][0]["type"], "function_call");
+    assert_eq!(body["input"][1]["type"], "function_call_output");
 }
 
 fn request(messages: Vec<ChatMessage>) -> CompletionRequest {

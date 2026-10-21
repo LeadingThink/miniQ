@@ -9,7 +9,7 @@ use crate::provider::{
     ApiProtocol, ChatDelta, CompletionRequest, DeltaStream, ModelProvider, ProviderConfig,
     ProviderContext, ProviderError, ToolCallRequest,
 };
-use crate::responses_request::{build_input, response_tool};
+use crate::responses_request::{build_input_for_model, response_tool};
 use crate::sse::{self, DecodedEvent, EventDecoder};
 
 pub struct ResponsesProvider {
@@ -28,11 +28,13 @@ impl ResponsesProvider {
     fn try_build_body(&self, request: &CompletionRequest) -> Result<Value, ProviderError> {
         let mut body = json!({
             "model": self.config.model,
-            "input": build_input(&request.messages)?,
+            "input": build_input_for_model(&request.messages, &self.config.model)?,
             "stream": true,
             "store": false,
-            "include": ["reasoning.encrypted_content"],
         });
+        if !self.config.model.to_ascii_lowercase().starts_with("grok-") {
+            body["include"] = json!(["reasoning.encrypted_content"]);
+        }
         if let Some(threshold) = request.context_compact_threshold {
             let threshold = std::env::var("MINIQ_RESPONSES_COMPACT_THRESHOLD")
                 .ok()

@@ -21,9 +21,9 @@ import { isTauriRuntime } from "../runtime";
 import { useSessionFileAccess } from "../sessionFileAccess";
 import {
   resolveWorkspacePath,
-  revealLocalFile,
   type LocalFileTarget,
 } from "../localFiles";
+import { revealInFinder } from "../fileActions";
 
 export function ApprovalCard({
   item,
@@ -144,11 +144,11 @@ export function ArtifactCard(props: {
           disabled={!path}
           onClick={() => {
             if (path)
-              void revealLocalFile(
-                path,
+              void revealInFinder(path, {
+                directory: artifact.kind === "directory",
                 workspacePath,
-                props.workspacePaths,
-              ).catch((cause) => {
+                workspacePaths: props.workspacePaths,
+              }).catch((cause) => {
                 onError(
                   `无法在文件夹中显示：${cause instanceof Error ? cause.message : String(cause)}`,
                 );
