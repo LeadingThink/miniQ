@@ -204,6 +204,8 @@
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
   .app .sidebar.sidebar {
     width: min(calc(100vw - 40px), 400px) !important;
+    touch-action: pan-y;
+    overscroll-behavior-x: contain;
   }
   .sidebar .brand {
     padding: 4px 10px;
