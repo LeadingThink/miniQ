@@ -25,7 +25,7 @@ function BackgroundPreview({ background }: { background: BackgroundDefinition })
   if (background.thumb) {
     return (
       <span className="background-preview" aria-hidden="true">
-        <img src={background.thumb} alt="" loading="lazy" draggable={false} />
+        <img src={background.thumb} alt="" loading="lazy" draggable={false} style={{ objectPosition: background.position }} />
       </span>
     );
   }
@@ -258,7 +258,7 @@ export function BackgroundPicker() {
         </button>
       )}
       <p className="settings-section-description">
-        视频壁纸首次选择时下载（约 3–8 MB）并缓存在本机；离线时显示静态封面。光影氛围和字符效果由程序绘制，不下载素材。
+        新增精选壁纸随应用内置，可离线播放。其余视频首次选择时下载并缓存，加载失败时显示封面。光影氛围和字符效果由程序绘制。
       </p>
     </section>
   );

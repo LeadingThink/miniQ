@@ -75,7 +75,7 @@ describe("MobileAppearanceSheet", () => {
     const clearVideoCache = vi.spyOn(mobileBackgroundPolicy, "clearVideoCache").mockRejectedValue(new Error("unavailable"));
     vi.spyOn(mobileBackgroundPolicy, "getVideoStatus").mockReturnValue({ status: "cached", bytes: 2 * 1024 * 1024 });
     render(<MobileAppearanceSheet />);
-    await screen.findByText(new RegExp(`${BACKGROUNDS.filter((item) => item.kind === "video").length} 个视频`));
+    await screen.findByText(new RegExp(`${BACKGROUNDS.filter((item) => item.kind === "video" && !item.bundled).length} 个视频`));
     fireEvent.click(screen.getByRole("button", { name: "清理缓存" }));
     expect(clearVideoCache).toHaveBeenCalledOnce();
     expect((await screen.findByRole("alert")).textContent).toContain("清理缓存失败");
@@ -84,7 +84,7 @@ describe("MobileAppearanceSheet", () => {
   it("surfaces a real mobile policy download failure", async () => {
     vi.spyOn(mobileBackgroundPolicy, "retryVideo").mockRejectedValue(new Error("offline"));
     render(<MobileAppearanceSheet />);
-    const item = BACKGROUNDS.find((item) => item.kind === "video")!;
+    const item = BACKGROUNDS.find((item) => item.kind === "video" && !item.bundled)!;
     fireEvent.change(screen.getByRole("searchbox", { name: "搜索背景" }), { target: { value: item.name } });
     fireEvent.click(screen.getByRole("radio", { name: item.name }));
     fireEvent.click(screen.getAllByRole("button", { name: /下载「/ })[0]);
@@ -95,7 +95,7 @@ describe("MobileAppearanceSheet", () => {
     const downloadVideo = vi.spyOn(mobileBackgroundPolicy, "downloadVideo");
     vi.spyOn(mobileBackgroundPolicy, "getVideoStatus").mockReturnValue({ status: "cached", bytes: 5 });
     render(<MobileAppearanceSheet />);
-    const videoIndex = BACKGROUNDS.findIndex((item) => item.kind === "video");
+    const videoIndex = BACKGROUNDS.findIndex((item) => item.kind === "video" && !item.bundled);
     const item = BACKGROUNDS[videoIndex];
     fireEvent.change(screen.getByRole("searchbox", { name: "搜索背景" }), { target: { value: item.name } });
     fireEvent.click(screen.getByRole("radio", { name: item.name }));
@@ -106,4 +106,15 @@ describe("MobileAppearanceSheet", () => {
     expect(downloadVideo).not.toHaveBeenCalled();
   });
 
+});
+
+
+it("shows bundled wallpaper as available offline without a download action", () => {
+  const item = BACKGROUNDS.find(item => item.bundled)!;
+  mobileBackgroundPolicy.selectBackground(item.id);
+  const retry = vi.spyOn(mobileBackgroundPolicy, "retryVideo");
+  render(<MobileAppearanceSheet />);
+  expect(screen.getByText(`「${item.name}」已内置，可离线播放。`)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /下载「/ })).toBeNull();
+  expect(retry).not.toHaveBeenCalled();
 });

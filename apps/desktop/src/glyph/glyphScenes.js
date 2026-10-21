@@ -307,73 +307,6 @@ const S_morph = {
   },
 };
 
-// ================= 5. 解码矩阵 =================
-const S_decode = {
-  id: 'decode', name: '解码矩阵', light: false,
-  desc: '满屏是暗淡的乱码，一圈圈“解码波”扫过时字符先乱跳、再显出底下真正的代码。整屏乱码中隐约拼出巨大的 ZAIWEN。鼠标划过也会触发解码。',
-  init() {
-    this.fs = 13; this.cw = 10 * spacing; this.chh = 20 * spacing;
-    this.cols = Math.ceil(W / this.cw); this.rows = Math.ceil(H / this.chh);
-    let A = ''; for (let i = 33; i < 127; i++) A += String.fromCharCode(i);
-    const pal = [...ramp([[18, 24, 34], [62, 76, 98]], 5), ...ramp([[20, 90, 110], [60, 200, 230], [170, 250, 255]], 6), ...ramp([[210, 245, 255], [255, 255, 255]], 3)];
-    this.at = makeAtlas(A, this.fs, pal, { weight: 500, glowIf: j => j >= 11 });
-    const SRC = '/* zaiwen.ai - ask anything */ const ctx = await retrieve(query, { topK: 8, rerank: true }); for await (const token of model.stream(ctx)) { ui.render(token); } if (answer.confidence < 0.6) search.deep(query); ';
-    const N = this.cols * this.rows;
-    this.tgt = new Int16Array(N); this.cur = new Int16Array(N); this.E = new Float32Array(N); this.mask = new Uint8Array(N); this.hs = new Float32Array(N);
-    for (let i = 0; i < N; i++) {
-      const ch = SRC[i % SRC.length]; this.tgt[i] = ch === ' ' ? -1 : A.indexOf(ch);
-      this.cur[i] = Math.random() * A.length | 0; this.hs[i] = Math.random();
-    }
-    const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d', { willReadFrequently: true });
-    let fs = H * .42; g.font = `900 ${fs}px "Helvetica Neue",Arial,sans-serif`; const w = g.measureText('ZAIWEN').width; if (w > W * .82) fs *= W * .82 / w;
-    g.font = `900 ${fs}px "Helvetica Neue",Arial,sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.fillText('ZAIWEN', W / 2, H * .5);
-    const d = g.getImageData(0, 0, W, H).data;
-    for (let r = 0; r < this.rows; r++) for (let cc = 0; cc < this.cols; cc++) {
-      const x = Math.min(W - 1, (cc + .5) * this.cw | 0), y = Math.min(H - 1, (r + .5) * this.chh | 0);
-      this.mask[r * this.cols + cc] = d[(y * W + x) * 4 + 3] > 128 ? 1 : 0;
-    }
-    this.waves = [{ x: W * .3, y: H * .6, t0: -1.2, sp: 420, s: 1 }, { x: W * .75, y: H * .3, t0: -.4, sp: 480, s: 1 }];
-    this.next = 0;
-  },
-  frame(t, dt) {
-    ctx.fillStyle = '#05070b'; ctx.fillRect(0, 0, W, H);
-    const A = this.at, cols = this.cols, cw = this.cw, chh = this.chh, diag = Math.hypot(W, H);
-    if (t > this.next) { this.waves.push({ x: rnd(W), y: rnd(H), t0: t, sp: rnd(380, 560), s: 1 }); this.next = t + rnd(1.3, 2.2); }
-    if (mouse.x > -9000 && Math.hypot(mouse.x - mouse.wx, mouse.y - mouse.wy) > 70 && t - mouse.lastWave > .12) {
-      this.waves.push({ x: mouse.x, y: mouse.y, t0: t, sp: 320, s: .7, max: 220 }); mouse.wx = mouse.x; mouse.wy = mouse.y; mouse.lastWave = t;
-    }
-    this.waves = this.waves.filter(w => (t - w.t0) * w.sp < (w.max || diag) + 40);
-    const scanY = (t * 70) % (H + 300) - 150, decay = Math.pow(.06, dt);
-    ctx.globalCompositeOperation = 'lighter';
-    for (let r = 0; r < this.rows; r++) {
-      const y = (r + .5) * chh;
-      for (let c = 0; c < cols; c++) {
-        const i = r * cols + c, x = (c + .5) * cw;
-        let e = this.E[i] * decay;
-        for (const w of this.waves) {
-          const rr = (t - w.t0) * w.sp, lim = w.max || diag;
-          const dd = Math.abs(Math.hypot(x - w.x, y - w.y) - rr);
-          if (dd < 32) { const v = (1 - dd / 32) * w.s * (1 - rr / lim * .7); if (v > e) e = v; }
-        }
-        const sd = Math.abs(y - scanY); if (sd < 12) e = Math.max(e, .3 * (1 - sd / 12));
-        this.E[i] = e;
-        const tg = this.tgt[i], m = this.mask[i];
-        if (e > .55) {
-          if (Math.random() < .5) this.cur[i] = Math.random() * A.n | 0;
-          ctx.globalAlpha = 1; A.draw(this.cur[i], 11 + Math.min(2, (e - .55) * 6.6 | 0), x, y);
-        } else if (e > .08 && tg >= 0) {
-          ctx.globalAlpha = .35 + e; A.draw(tg, 5 + Math.min(5, (e / .55 * 5) | 0) + (m ? 1 : 0), x, y);
-        } else if (m) {
-          if (tg >= 0) { ctx.globalAlpha = .32 + .1 * Math.sin(t * 1.5 + this.hs[i] * 6); A.draw(tg, 5, x, y); }
-        } else if (this.hs[i] < .55) {
-          if (Math.random() < .003) this.cur[i] = Math.random() * A.n | 0;
-          ctx.globalAlpha = .55; A.draw(this.cur[i], 1 + (this.hs[i] * 7 | 0) % 3, x, y);
-        }
-      }
-    }
-  },
-};
-
 // ================= 6. 语义星云（浅色） =================
 const S_tokens = {
   id: 'tokens', name: '语义星云', light: true,
@@ -495,18 +428,7 @@ const S_fountain = {
   }
 };
 
-// ================= 8. 数据织物 =================
-const S_fabric = {
-  id:'fabric', name:'数据织物', light:false,
-  desc:'细密字符横纹像织物一样缓慢展开，明暗波纹和扫描线制造出克制、昂贵的科技质感。',
-  init(){ this.fs=Math.max(12,Math.round(Math.min(W,H)/70))*spacing; this.at=makeAtlas('01  ·:;+=<>/{}[]',this.fs,ramp([[24,38,80],[50,95,170],[130,220,255],[235,245,255]],12),{weight:500,glowIf:i=>i>10}); this.rows=Math.ceil(H/(this.fs*1.45))+2; this.str=Array.from({length:this.rows},(_,r)=>({y:r*this.fs*1.45,off:rnd(500),speed:rnd(5,18),amp:rnd(4,16),ph:rnd(6.28)})); },
-  frame(t){ ctx.fillStyle='#04050b';ctx.fillRect(0,0,W,H); const cw=this.fs*.63, ch=this.fs*1.45; ctx.globalCompositeOperation='lighter';
-    for(const r of this.str){ const y=r.y; const wave=Math.sin(t*.28+r.ph)*r.amp; for(let c=-2;c<W/cw+2;c++){ const x=c*cw+((r.off+t*r.speed)%cw)-wave*.12; const n=(Math.sin(c*12.9898+r.off)*43758.5453)%1; const a=.05+.22*(.5+.5*Math.sin(c*.09+t*.22+r.ph)); ctx.globalAlpha=Math.max(0,a*(.35+.65*clamp(y/H,0,1))); this.at.draw(Math.abs((n*this.at.n)|0),Math.round(3+10*(.5+.5*Math.sin(c*.14+t*.25+r.ph))),x+wave*Math.sin(c*.025),y); } }
-    const scan=(t*38)%(H+140)-70; const sg=ctx.createLinearGradient(0,scan-50,0,scan+50);sg.addColorStop(0,'rgba(80,210,255,0)');sg.addColorStop(.5,'rgba(90,215,255,.18)');sg.addColorStop(1,'rgba(80,210,255,0)');ctx.fillStyle=sg;ctx.fillRect(0,scan-50,W,100); ctx.globalAlpha=.14;ctx.fillStyle='#b4efff';ctx.fillRect(0,scan,W,1);
-  }
-};
-
-// ================= 9. 轨道协议 =================
+// ================= 轨道协议 =================
 const S_orbit = {
   id:'orbit', name:'轨道协议', light:false,
   desc:'字符沿着几何轨道运行，中心像一枚被唤醒的协议核心；环与环之间有微弱的数据包交换。',
@@ -725,7 +647,7 @@ const S_tide = {
 };
 
 // ================= 外壳 =================
-const scenes = [S_bytes, S_globe, S_sea, S_morph, S_decode, S_tokens, S_fountain, S_fabric, S_orbit, S_syntax, S_contour, S_lattice, S_tide];
+const scenes = [S_bytes, S_globe, S_sea, S_morph, S_tokens, S_fountain, S_orbit, S_syntax, S_contour, S_lattice, S_tide];
 
 const sceneMap = new Map(scenes.map(s => [s.id, s]));
 let cur = null;

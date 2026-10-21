@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { applyBackground, getActiveBackground, subscribeBackground } from "../background";
 import type { BackgroundDefinition } from "../backgroundCatalog";
 import { loadBackgroundVideo } from "../backgroundVideo";
@@ -95,6 +95,7 @@ export function LivingBackground() {
           key={item.id}
           className={`living-background-layer${leaving ? " is-leaving" : " is-entering"}`}
           data-kind={item.kind}
+          style={{ "--wallpaper-position": item.position ?? "50% 50%" } as CSSProperties}
         >
           {item.kind === "video" ? (
             <VideoWallpaper background={item} still={still} paused={hidden || leaving || (mobileSnapshot.isNative && !mobileSnapshot.canPlayVideo)} />
@@ -122,6 +123,10 @@ function VideoWallpaper({
 
   useEffect(() => {
     if (still || !background.video || !allowed) return;
+    if (background.bundled) {
+      setSource(background.video);
+      return () => setSource(undefined);
+    }
     let objectUrl: string | undefined;
     let cancelled = false;
     const load = isNativeMobileApp()
@@ -141,7 +146,7 @@ function VideoWallpaper({
       setSource(undefined);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [background.video, still, allowed]);
+  }, [background.video, background.bundled, still, allowed]);
 
   const drift = background.drift !== false && !still && !isNativeMobileApp();
   return (

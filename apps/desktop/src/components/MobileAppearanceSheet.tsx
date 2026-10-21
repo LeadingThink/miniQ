@@ -68,7 +68,7 @@ export function MobileAppearanceSheet({ onClose, embedded = false }: MobileAppea
   const cacheTitleId = useId();
   const dialog = useRef<HTMLElement>(null);
   const active = useMemo(() => BACKGROUNDS.find((item) => item.id === snapshot.preferences.background) ?? BACKGROUNDS[0], [snapshot.preferences.background]);
-  const videoStatuses = useMemo(() => new Map(BACKGROUNDS.filter((item) => item.kind === "video" && item.video).map((item) => [item.id, mobileBackgroundPolicy.getVideoStatus(item.video!)])), [snapshot]);
+  const videoStatuses = useMemo(() => new Map(BACKGROUNDS.filter((item) => item.kind === "video" && item.video && !item.bundled).map((item) => [item.id, mobileBackgroundPolicy.getVideoStatus(item.video!)])), [snapshot]);
   const cachedStatuses = [...videoStatuses.values()].filter((status) => status.status === "cached");
   const cacheBytes = cachedStatuses.reduce((sum, status) => sum + (status.bytes ?? 0), 0);
 
@@ -80,7 +80,7 @@ export function MobileAppearanceSheet({ onClose, embedded = false }: MobileAppea
   }, [embedded]);
 
   const download = async (item: BackgroundDefinition) => {
-    if (!item.video) return;
+    if (!item.video || item.bundled) return;
     setDownloadErrors((errors) => { const next = { ...errors }; delete next[item.id]; return next; });
     try { await mobileBackgroundPolicy.retryVideo(item.video); }
     catch {
@@ -119,7 +119,8 @@ export function MobileAppearanceSheet({ onClose, embedded = false }: MobileAppea
             <div className="mobile-appearance-cache"><span><strong>缓存</strong><small>{formatBytes(cacheBytes)}{cachedStatuses.length ? ` · ${cachedStatuses.length} 个视频` : ""}</small></span><button type="button" onClick={() => void clear()} disabled={clearing || cachedStatuses.length === 0}><Trash2 size={15} />{clearing ? "清理中…" : "清理缓存"}</button></div>
             {cacheError && <p className="mobile-appearance-error" role="alert">{cacheError}</p>}
             {Object.entries(downloadErrors).map(([id, error]) => <p className="mobile-appearance-error" role="alert" key={id}><Download size={15} />{error}</p>)}
-            {[active].filter((item) => item.kind === "video").map((item) => {
+            {active.bundled && <p>「{active.name}」已内置，可离线播放。</p>}
+            {[active].filter((item) => item.kind === "video" && !item.bundled).map((item) => {
               const status: VideoDownloadStatus = item.video ? mobileBackgroundPolicy.getVideoStatus(item.video).status : "idle";
               return <button className="mobile-appearance-download" type="button" key={item.id} disabled={!item.video || status === "downloading"} onClick={() => void download(item)}><Download size={15} />{status === "downloading" ? "下载中…" : status === "cached" ? `重试播放「${item.name}」` : status === "error" ? "重试下载" : `下载「${item.name}」`}</button>;
             })}

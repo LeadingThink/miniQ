@@ -1,5 +1,5 @@
 /**
- * Ambient catalog: 10 styles x 11 palettes = 110 procedural backgrounds.
+ * Ambient catalog: 9 styles x 11 palettes, minus 2 distracting bokeh combinations = 97 backgrounds.
  * Ported from Zaiwen Web (web/src/theme/ambient/ambient-presets.ts).
  * Holds only parameters (no images or videos); ambient-engine.ts loads on demand.
  */
@@ -11,7 +11,6 @@ export const ambientStyles = [
   { id: "fireflies", name: "萤火", story: "点点萤火随意游走，一闪一闪" },
   { id: "stars", name: "星空", story: "繁星闪烁，偶尔划过一道流星" },
   { id: "waves", name: "海浪", story: "层层波浪交错起伏，节奏舒缓" },
-  { id: "rain", name: "细雨", story: "细密雨丝斜斜落下，安静专注" },
   { id: "snow", name: "落雪", story: "雪花随风轻摆，慢慢飘落" },
   { id: "constellation", name: "星座", story: "光点缓慢漂移，靠近时连成星座" },
   { id: "ripples", name: "涟漪", story: "水面上一圈圈涟漪悄然荡开" },
@@ -71,7 +70,8 @@ export function hashSeed(value: string): number {
 }
 
 export const ambientBackgrounds: readonly AmbientBackgroundEntry[] = ambientStyles.flatMap(style =>
-  ambientPalettes.map(palette => ({
+  // Separate cyan/purple/pink blobs interrupt the reading area in these two combinations.
+  ambientPalettes.filter(palette => style.id !== "bokeh" || !["polar", "neon"].includes(palette.id)).map(palette => ({
     id: `ambient-${style.id}-${palette.id}` as AmbientBackgroundId,
     name: `${palette.name}${style.name}`,
     story: style.story,
