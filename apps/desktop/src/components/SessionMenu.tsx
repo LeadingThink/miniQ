@@ -5,7 +5,7 @@ import {
   ChevronRight,
   GitBranch,
   MessageSquarePlus,
-  MoreHorizontal,
+  SlidersHorizontal,
   PencilLine,
   Pin,
 } from "lucide-react";
@@ -203,7 +203,7 @@ export function SessionMenu({
           setOpen((value) => !value);
         }}
       >
-        <MoreHorizontal size={16} />
+        <SlidersHorizontal size={16} />
       </button>
       {open && position && createPortal(
         <div

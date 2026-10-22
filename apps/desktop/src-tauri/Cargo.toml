@@ -38,6 +38,8 @@ tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 # Enables Windows system proxy discovery for the updater's shared reqwest client.
 reqwest = { version = "0.13", default-features = false, features = ["system-proxy", "json", "cookies"] }
+# Match the updater's existing TLS provider for direct link downloads.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
@@ -45,7 +47,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38.2"
-windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage"] }
+windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Registry", "Win32_UI_Shell"] }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

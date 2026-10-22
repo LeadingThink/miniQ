@@ -44,7 +44,7 @@ const ICONS: Record<ComposerSlashIcon, LucideIcon> = {
 };
 
 export function SlashMenu(props: {
-  inputRef: RefObject<HTMLTextAreaElement | null>;
+  inputRef: RefObject<HTMLElement | null>;
   id: string;
   commands: ComposerSlashCommand[];
   activeIndex: number;

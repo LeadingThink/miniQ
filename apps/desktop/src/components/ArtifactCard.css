@@ -1,0 +1,274 @@
+/* Deliverable card. Visual reference is the embedded IDE file card;
+   colors stay on the app theme tokens. */
+
+.artifact-card {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: var(--font-body);
+}
+
+.artifact-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 2px 8px;
+}
+
+.artifact-card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--ok) 32%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  color: var(--ok);
+  font-size: var(--font-caption);
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.artifact-card-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.artifact-card-format {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--font-caption);
+}
+
+.artifact-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--text) 3%, var(--bg));
+  box-shadow: var(--shadow-sm);
+  transition: background var(--duration) var(--ease-standard),
+    border-color var(--duration) var(--ease-standard),
+    transform var(--duration) var(--ease-standard),
+    box-shadow var(--duration) var(--ease-standard);
+}
+
+.artifact-item:hover {
+  border-color: var(--border-strong);
+  background: color-mix(in srgb, var(--text) 5.5%, var(--bg));
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+
+.artifact-file {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.artifact-file-icon {
+  --file-tone: var(--text-dim);
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid color-mix(in srgb, var(--file-tone) 28%, var(--border));
+  border-radius: 8px;
+  color: var(--file-tone);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--file-tone) 16%, var(--bg)), color-mix(in srgb, var(--text) 7%, var(--bg)));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bg) 40%, transparent);
+}
+
+.artifact-file-icon.is-pdf { --file-tone: #e5484d; }
+.artifact-file-icon.is-word { --file-tone: #3e63dd; }
+.artifact-file-icon.is-excel { --file-tone: #30a46c; }
+.artifact-file-icon.is-ppt { --file-tone: #f76b15; }
+.artifact-file-icon.is-image { --file-tone: #8e4ec6; }
+.artifact-file-icon.is-audio { --file-tone: #d6409f; }
+.artifact-file-icon.is-video { --file-tone: #12a594; }
+.artifact-file-icon.is-archive { --file-tone: #a18072; }
+.artifact-file-icon.is-markdown,
+.artifact-file-icon.is-text { --file-tone: #3b82f6; }
+.artifact-file-icon.is-html { --file-tone: #0090ff; }
+.artifact-file-icon.is-ebook { --file-tone: #ad7f58; }
+
+.artifact-file-ext {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--file-tone) 36%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--file-tone) 16%, var(--bg));
+  color: var(--file-tone);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: 0;
+}
+
+.artifact-file-copy {
+  min-width: 0;
+}
+
+.artifact-file-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.artifact-open {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.artifact-open:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.artifact-open:disabled {
+  cursor: default;
+}
+
+.artifact-ready {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  color: var(--ok);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.artifact-crumbs {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--font-caption);
+  white-space: nowrap;
+}
+
+.artifact-crumb {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.artifact-crumb-sep {
+  margin: 0 4px;
+  color: color-mix(in srgb, var(--text-dim) 70%, transparent);
+}
+
+.artifact-crumbs .is-current {
+  overflow: hidden;
+  color: var(--text-mid);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.artifact-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.artifact-preview,
+.artifact-actions .icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 4%, var(--bg));
+  color: var(--text-mid);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.artifact-preview {
+  gap: 6px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: var(--font-footnote);
+  font-weight: 600;
+}
+
+.artifact-actions .icon-button {
+  width: 30px;
+  padding: 0;
+}
+
+.artifact-preview:hover:not(:disabled),
+.artifact-actions .icon-button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.artifact-preview:disabled,
+.artifact-actions .icon-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.artifact-preview svg {
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .artifact-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .artifact-actions {
+    align-self: flex-end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artifact-item,
+  .artifact-card-status-dot {
+    transition: none;
+  }
+
+  .artifact-item:hover {
+    transform: none;
+  }
+}

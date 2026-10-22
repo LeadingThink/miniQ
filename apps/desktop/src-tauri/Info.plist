@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>zh-Hans</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>zh-Hans</string>
+  </array>
   <key>NSSpeechRecognitionUsageDescription</key>
   <string>miniQ 使用系统语音识别将你主动录制的语音转为文字。本机识别不可用时使用已配置的语音服务。</string>
   <key>NSMicrophoneUsageDescription</key>

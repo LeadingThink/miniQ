@@ -13,17 +13,18 @@ import rehypeKatex from "rehype-katex";
 import ReactMarkdown, { type Components, type Options as MarkdownRendererOptions } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
-import { openExternalUrl, parseExternalUrl } from "../externalLinks";
+import { openExternalUrl } from "../externalLinks";
 import {
   openLocalFile,
   resolveLocalFileReference,
-  resolveWorkspacePath,
   type LocalFileTarget,
 } from "../localFiles";
 import { normalizeMathDelimiters } from "../markdownMath";
 import { remarkHeadingIds } from "../markdownOutline";
 import { splitMarkdownBlocks } from "../markdownBlocks";
 import { remarkQuotedFileLinks } from "../markdownFileLinks";
+import { fileReferenceAttributes, resolveMarkdownLinkTarget } from "../markdownLinkTarget";
+import { useLinkContextMenu } from "../hooks/useLinkContextMenu";
 
 function FileReference(props: {
   children: ReactNode;
@@ -37,6 +38,7 @@ function FileReference(props: {
       type="button"
       className="file-reference"
       title={`${props.target.path}${location}`}
+      {...fileReferenceAttributes(props.target)}
       onClick={() => props.onOpenFile?.(props.target)}
     >
       <FileText size={15} aria-hidden="true" />
@@ -74,13 +76,8 @@ function MarkdownLink(
     return <a {...anchorProps} />;
   }
   const resolutionBase = referenceBasePath ?? workspacePath;
-  const filePath = props.href
-    ? resolveLocalFileReference(
-        props.href,
-        resolutionBase,
-        nodeText(props.children),
-      )
-    : null;
+  const target = props.href ? resolveMarkdownLinkTarget(props.href, resolutionBase, nodeText(props.children)) : null;
+  const filePath = target?.kind === "file" ? target.target : null;
   if (filePath) {
     const handleFileClick = (event: MouseEvent<HTMLAnchorElement>) => {
       props.onClick?.(event);
@@ -95,12 +92,13 @@ function MarkdownLink(
         {...anchorProps}
         className="file-reference-link"
         title={`${filePath.path}${location}`}
+        {...fileReferenceAttributes(filePath)}
         onClick={handleFileClick}
       />
     );
   }
 
-  const url = props.href ? parseExternalUrl(props.href) : null;
+  const url = target?.kind === "url" ? target.url : null;
   const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
     props.onClick?.(event);
     if (event.defaultPrevented) return;
@@ -110,39 +108,11 @@ function MarkdownLink(
       event.preventDefault();
       if (
         onOpenUrl &&
-        (url.protocol === "http:" || url.protocol === "https:")
+        /^https?:/i.test(url)
       ) {
-        onOpenUrl(url.href);
+        onOpenUrl(url);
       } else {
         void openExternalUrl(url).catch(() => undefined);
-      }
-      return;
-    }
-
-    // For any non-external href, try to open it as a local file directly
-    // in the system default application (not the built-in preview panel).
-    if (props.href) {
-      event.preventDefault();
-      let candidatePath: string | null = null;
-      const href = props.href;
-
-      if (/^file:/i.test(href)) {
-        try {
-          const fileUrl = new URL(href);
-          let p = decodeURIComponent(fileUrl.pathname);
-          if (/^\/[A-Za-z]:\//.test(p)) p = p.slice(1);
-          candidatePath = p;
-        } catch {
-          /* ignore */
-        }
-      } else {
-        candidatePath = resolveWorkspacePath(href, resolutionBase) ?? href;
-      }
-
-      if (candidatePath) {
-        if (onOpenFile)
-          onOpenFile({ path: candidatePath, line: null, column: null });
-        else void openLocalFile(candidatePath, workspacePath);
       }
       return;
     }
@@ -207,7 +177,7 @@ function localFileUrlTransform(value: string): string {
   if (questionMark !== -1 && colon > questionMark) return value;
   const numberSign = value.indexOf("#");
   if (numberSign !== -1 && colon > numberSign) return value;
-  if (/^(https?|ircs?|mailto|xmpp)$/i.test(value.slice(0, colon))) return value;
+  if (/^(https?|file|ircs?|mailto|tel|xmpp)$/i.test(value.slice(0, colon))) return value;
   return "";
 }
 
@@ -230,6 +200,7 @@ export function Md(props: {
   onOpenUrl?: (url: string) => void;
 }) {
   const { workspacePath, referenceBasePath } = props;
+  const linkMenu = useLinkContextMenu(props);
   const callbacks = useRef({
     onOpenFile: props.onOpenFile,
     onOpenUrl: props.onOpenUrl,
@@ -305,13 +276,16 @@ export function Md(props: {
   if (props.streaming) {
     // Streaming output grows at the end: completed blocks keep their parsed
     // subtree and only the open last block is parsed again for each frame.
-    return <div className="md">
+    return <div className="md" onContextMenu={linkMenu.onContextMenu} onKeyDown={linkMenu.onKeyDown}>
       {splitMarkdownBlocks(source).map((block, index) => (
         <MarkdownBlock key={index} source={block} options={options} />
       ))}
+      {linkMenu.menu}
     </div>;
   }
-  return <div className="md"><MarkdownBlock source={source} options={options} /></div>;
+  return <div className="md" onContextMenu={linkMenu.onContextMenu} onKeyDown={linkMenu.onKeyDown}>
+    <MarkdownBlock source={source} options={options} />{linkMenu.menu}
+  </div>;
 }
 
 type PluggableList = NonNullable<MarkdownRendererOptions["remarkPlugins"]>;

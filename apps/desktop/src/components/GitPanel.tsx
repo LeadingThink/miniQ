@@ -1,6 +1,7 @@
 import { FileCode2, GitBranch, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { RpcClient } from "../rpc";
+import { UnifiedDiffView } from "./UnifiedDiffView";
 import "./GitPanel.css";
 
 interface GitEntry {
@@ -14,6 +15,13 @@ interface GitStatus {
   root: string;
   branch: string | null;
   entries: GitEntry[];
+}
+
+/** Keep the filename visible when a long path is truncated. */
+function fileLabel(path: string): { name: string; directory: string } {
+  const slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  if (slash < 0) return { name: path, directory: "" };
+  return { name: path.slice(slash + 1), directory: path.slice(0, slash + 1) };
 }
 
 export function GitPanel({ client, sessionId }: { client: RpcClient; sessionId: string }) {
@@ -106,13 +114,19 @@ export function GitPanel({ client, sessionId }: { client: RpcClient; sessionId: 
       {status && status.entries.length > 0 && (
         <div className="git-panel-body">
           <nav className="git-file-list" aria-label="Git 变更文件">
-            {status.entries.map((entry) => (
-              <button type="button" key={entry.path} className={entry.path === selectedPath ? "selected" : ""} aria-current={entry.path === selectedPath ? "true" : undefined} onClick={() => setSelectedPath(entry.path)} title={entry.originalPath ? `${entry.originalPath} → ${entry.path}` : entry.path}>
-                <FileCode2 size={15} />
-                <span>{entry.path}</span>
-                <code aria-label={`暂存区 ${entry.indexStatus}，工作区 ${entry.worktreeStatus}`}>{entry.indexStatus}{entry.worktreeStatus}</code>
-              </button>
-            ))}
+            {status.entries.map((entry) => {
+              const label = fileLabel(entry.path);
+              return (
+                <button type="button" key={entry.path} className={entry.path === selectedPath ? "selected" : ""} aria-current={entry.path === selectedPath ? "true" : undefined} onClick={() => setSelectedPath(entry.path)} title={entry.originalPath ? `${entry.originalPath} → ${entry.path}` : entry.path}>
+                  <FileCode2 size={15} />
+                  <span>
+                    {label.directory && <small>{label.directory}</small>}
+                    <b>{label.name}</b>
+                  </span>
+                  <code aria-label={`暂存区 ${entry.indexStatus}，工作区 ${entry.worktreeStatus}`}>{entry.indexStatus}{entry.worktreeStatus}</code>
+                </button>
+              );
+            })}
           </nav>
           <div className="git-diff-pane">
             <div className="git-diff-toolbar" role="group" aria-label="差异范围">
@@ -121,7 +135,15 @@ export function GitPanel({ client, sessionId }: { client: RpcClient; sessionId: 
             </div>
             {error && <div className="git-panel-message" role="alert">{error}</div>}
             {!error && loading && <div className="git-panel-message" role="status">正在加载差异…</div>}
-            {!error && !loading && <pre className="git-raw-diff">{diff || "没有文本差异。"}</pre>}
+            {!error && !loading && (diff ? (
+              <UnifiedDiffView
+                key={`${selected?.path ?? ""}:${staged}:${revision}`}
+                diff={diff}
+                path={selected?.path ?? ""}
+              />
+            ) : (
+              <div className="git-panel-message">没有文本差异。</div>
+            ))}
           </div>
         </div>
       )}

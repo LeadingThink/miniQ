@@ -1,7 +1,7 @@
 import { useLayoutEffect, useState, type CSSProperties, type RefObject } from "react";
 
 /** Positions a body portal relative to the input's `.composer-card`. */
-export function useComposerPopoverPosition(inputRef: RefObject<HTMLTextAreaElement | null>): CSSProperties {
+export function useComposerPopoverPosition(inputRef: RefObject<HTMLElement | null>): CSSProperties {
   const [position, setPosition] = useState<CSSProperties>({ visibility: "hidden" });
   useLayoutEffect(() => {
     const place = () => {

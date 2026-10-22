@@ -1,8 +1,8 @@
 import type { RefObject } from "react";
 
-export type ComposerTarget = { input: RefObject<HTMLTextAreaElement | null> };
+export type ComposerTarget = { input: RefObject<HTMLElement | null> };
 
-function usable(input: HTMLTextAreaElement | null): input is HTMLTextAreaElement {
+function usable(input: HTMLElement | null): input is HTMLElement {
   return !!input && input.isConnected && !input.closest("[hidden], [inert], [aria-hidden='true']");
 }
 

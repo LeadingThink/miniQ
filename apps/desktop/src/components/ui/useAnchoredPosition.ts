@@ -15,6 +15,7 @@ export function useAnchoredPosition(
   /** Viewport point (e.g. a context-menu click) used instead of the anchor's rect. */
   point?: { x: number; y: number } | null,
   viewportGap?: number,
+  placement?: "right",
 ): AnchoredPosition | null {
   const pointX = point?.x;
   const pointY = point?.y;
@@ -35,6 +36,20 @@ export function useAnchoredPosition(
       const viewport = window.visualViewport;
       const left = viewport?.offsetLeft ?? 0;
       const top = viewport?.offsetTop ?? 0;
+      if (placement === "right" && anchor) {
+        const rect = anchor.getBoundingClientRect();
+        const width = viewport?.width ?? window.innerWidth;
+        const height = viewport?.height ?? window.innerHeight;
+        const gap = viewportGap ?? 8;
+        const right = rect.right - left + 4;
+        setPosition({
+          left: left + Math.max(gap, right + floating.offsetWidth <= width - gap
+            ? right : rect.left - left - floating.offsetWidth - 4),
+          top: top + Math.max(gap, Math.min(rect.top - top - 6, height - floating.offsetHeight - gap)),
+          maxHeight: Math.max(0, height - gap * 2),
+        });
+        return;
+      }
       // Layout dimensions exclude the pop-in animation's scale/translation.
       const next = menuPosition(
         {
@@ -70,6 +85,6 @@ export function useAnchoredPosition(
       window.visualViewport?.removeEventListener("resize", update);
       window.visualViewport?.removeEventListener("scroll", update);
     };
-  }, [anchorRef, floatingRef, open, pointX, pointY, viewportGap]);
+  }, [anchorRef, floatingRef, open, pointX, pointY, viewportGap, placement]);
   return position;
 }

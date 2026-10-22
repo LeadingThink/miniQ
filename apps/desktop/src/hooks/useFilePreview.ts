@@ -415,7 +415,7 @@ export function useFilePreview(
     reopen,
     openFile,
     authorizeFile,
-    authorizedFiles: authorizedFiles[scope] ?? [],
+    authorizedFiles: authorizedFiles[scope] ?? NO_PATHS,
     close,
   };
 }

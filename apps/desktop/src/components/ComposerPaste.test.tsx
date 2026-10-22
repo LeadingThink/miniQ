@@ -81,10 +81,12 @@ it("collapses a long paste and restores it when the message is sent", async () =
   render(<ComposerCard busy={false} placeholder="消息" draftKey="paste-large" onSend={onSend} />);
   pasteOutside(document.body, { text: longText });
   const input = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "消息" });
-  expect(input.value).toBe("[粘贴内容 1500 字]");
+  expect(screen.getByText("粘贴内容 1500 字")).toBeTruthy();
+  expect(input.value).toBe("");
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "发送消息" })));
   expect(onSend).toHaveBeenCalledExactlyOnceWith(longText, []);
   expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "消息" }).value).toBe("");
+  expect(screen.queryByText("粘贴内容 1500 字")).toBeNull();
 });
 
 it("keeps two large pastes apart and expands each in order", async () => {
@@ -94,7 +96,9 @@ it("keeps two large pastes apart and expands each in order", async () => {
   pasteOutside(document.body, { text: longText });
   pasteOutside(document.body, { text: second });
   const input = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "消息" });
-  expect(input.value).toBe("[粘贴内容 1500 字][粘贴内容 1200 字]");
+  expect(screen.getByText("粘贴内容 1500 字")).toBeTruthy();
+  expect(screen.getByText("粘贴内容 1200 字")).toBeTruthy();
+  expect(input.value).toBe("");
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "发送消息" })));
   expect(onSend).toHaveBeenCalledExactlyOnceWith(`${longText}${second}`, []);
 });
@@ -105,8 +109,7 @@ it("keeps the collapsed text with its draft across a remount", async () => {
   pasteOutside(document.body, { text: longText });
   view.unmount();
   render(<ComposerCard busy={false} placeholder="消息" draftKey="paste-large-remount" onSend={onSend} />);
-  const input = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "消息" });
-  expect(input.value).toBe("[粘贴内容 1500 字]");
+  expect(screen.getByText("粘贴内容 1500 字")).toBeTruthy();
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "发送消息" })));
   expect(onSend).toHaveBeenCalledExactlyOnceWith(longText, []);
 });
@@ -114,10 +117,9 @@ it("keeps the collapsed text with its draft across a remount", async () => {
 it("forgets the hidden text once its placeholder is deleted", async () => {
   render(<ComposerCard {...props} draftKey="paste-large-deleted" />);
   pasteOutside(document.body, { text: longText });
-  const input = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "消息" });
-  fireEvent.change(input, { target: { value: "只保留这句" } });
+  fireEvent.click(screen.getByRole("button", { name: "移除粘贴内容 1500 字" }));
   await waitFor(() => expect(localStorage.getItem("miniq.draft.paste-large-deleted.pastes")).toBeNull());
-  expect(input.value).toBe("只保留这句");
+  expect(screen.queryByText("粘贴内容 1500 字")).toBeNull();
 });
 
 it("stops at ten attachments and reports how many were dropped", async () => {

@@ -29,7 +29,13 @@ const HostContent = memo(function HostContent(props: { theme: ThemeId; onThemeCh
   const app = useMiniqApp(active);
   useLayoutEffect(() => { if (active) props.publish?.(app); }, [props.publish, app, active]);
   return (
-    <SessionFileAccess client={app.client} sessionId={app.catalog.currentSessionId}>
+    <SessionFileAccess
+      client={app.client}
+      sessionId={app.catalog.currentSessionId}
+      workspacePath={app.catalog.currentSession?.workingDirectory ?? app.catalog.currentWorkspace?.path}
+      workspacePaths={app.catalog.currentWorkspacePaths}
+      authorizedFiles={app.preview.authorizedFiles}
+    >
       <AppShell active={active} contentOnly={!!props.publish} app={app} theme={props.theme} onThemeChange={props.onThemeChange} />
     </SessionFileAccess>
   );

@@ -9,7 +9,7 @@ export interface ComposerPaste {
 }
 
 type Target = {
-  input: RefObject<HTMLTextAreaElement | null>;
+  input: RefObject<HTMLElement | null>;
   receive: RefObject<(paste: ComposerPaste) => void>;
 };
 
@@ -57,7 +57,7 @@ function unsubscribe() {
 
 /** Receives clipboard pastes made while the composer does not hold focus. */
 export function usePastedInput(
-  input: RefObject<HTMLTextAreaElement | null>,
+  input: RefObject<HTMLElement | null>,
   onPaste: (paste: ComposerPaste) => void,
 ) {
   const receive = useRef(onPaste);

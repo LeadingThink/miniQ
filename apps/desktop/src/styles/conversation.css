@@ -131,7 +131,8 @@
   box-shadow: var(--shadow), 0 0 0 3px var(--focus-shadow);
 }
 
-.composer-card textarea {
+.composer-card textarea,
+.composer-field {
   border: none;
   outline: none;
   resize: none;
@@ -147,6 +148,89 @@
 
 .composer-card textarea::placeholder {
   color: var(--text-dim);
+}
+
+/* Text and paste chips share one wrapping line. */
+.composer-field {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: flex-start;
+  gap: 4px 2px;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.composer-field > textarea {
+  flex: 1 1 8em;
+  width: auto;
+  min-width: 4em;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  field-sizing: content;
+}
+
+.composer-field:not(.has-paste) > textarea {
+  flex-basis: 100%;
+}
+
+.paste-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  max-width: min(240px, 100%);
+  height: 24px;
+  margin: 1px 2px;
+  padding: 0 4px 0 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-mid);
+  font-size: var(--font-footnote);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.paste-chip > svg {
+  flex: none;
+}
+
+.paste-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.paste-chip-remove {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.paste-chip-remove:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.paste-chip-remove:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .composer-row {
@@ -193,7 +277,8 @@
   gap: 8px;
 }
 
-.composer-input-row > textarea {
+.composer-input-row > textarea,
+.composer-input-row > .composer-field {
   flex: 1;
   min-width: 0;
 }

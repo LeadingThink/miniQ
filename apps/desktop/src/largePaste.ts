@@ -37,3 +37,35 @@ export function expandPastes(draft: string, pastes: readonly PendingPaste[]): st
     draft,
   );
 }
+
+export type DraftSegment =
+  | { kind: "text"; text: string }
+  | { kind: "paste"; paste: PendingPaste };
+
+/**
+ * Splits a draft around its paste tokens. Text segments stay editable;
+ * each token renders as one inline chip. A trailing empty segment keeps a
+ * caret after the last chip.
+ */
+export function draftSegments(draft: string, pastes: readonly PendingPaste[]): DraftSegment[] {
+  const present = pastes.filter((paste) => paste.placeholder && draft.includes(paste.placeholder));
+  if (present.length === 0) return [{ kind: "text", text: draft }];
+  const pattern = new RegExp(present.map((paste) => escapeRegExp(paste.placeholder)).join("|"), "g");
+  const segments: DraftSegment[] = [];
+  let cursor = 0;
+  for (const match of draft.matchAll(pattern)) {
+    const token = match[0];
+    const start = match.index ?? 0;
+    if (start > cursor) segments.push({ kind: "text", text: draft.slice(cursor, start) });
+    const paste = present.find((item) => item.placeholder === token);
+    if (paste) segments.push({ kind: "paste", paste });
+    cursor = start + token.length;
+  }
+  if (cursor < draft.length || segments.at(-1)?.kind === "paste")
+    segments.push({ kind: "text", text: draft.slice(cursor) });
+  return segments.length > 0 ? segments : [{ kind: "text", text: draft }];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

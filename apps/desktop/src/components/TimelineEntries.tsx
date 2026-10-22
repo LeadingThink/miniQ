@@ -478,7 +478,7 @@ export function TimelineEntries(props: {
                   {hasFork && (
                     <button
                       type="button"
-                      className={`msg-action${finalReply && item.message.id === latestAssistantId ? " msg-branch-action" : ""}`}
+                      className="msg-action"
                       title={runningTurnMessageIds?.has(item.message.id) ? "本轮完成后可分支" : "创建聊天分支"}
                       aria-label="创建聊天分支"
                       disabled={Boolean(runningTurnMessageIds?.has(item.message.id)) || forkingMessageId !== null}
@@ -487,7 +487,6 @@ export function TimelineEntries(props: {
                       }}
                     >
                       {forkingMessageId === item.message.id ? <LoaderCircle className="spin" size={15} /> : <GitBranch size={15} />}
-                      {finalReply && item.message.id === latestAssistantId && <span>创建聊天分支</span>}
                     </button>
                   )}
                 </div>

@@ -17,7 +17,8 @@ const baseProps = {
   value: "saved-model",
   onChange: vi.fn(),
 };
-const options = () => Array.from(document.querySelectorAll("datalist option"), (option) => (option as HTMLOptionElement).value);
+const options = () => Array.from(document.querySelectorAll("[role='option']"), (option) => option.textContent);
+const openList = () => fireEvent.click(screen.getByRole("button", { name: "展开模型列表" }));
 const load = () => act(() => vi.advanceTimersByTimeAsync(300));
 
 it("reloads the draft endpoint and explicitly entered key without saving settings", async () => {
@@ -26,6 +27,7 @@ it("reloads the draft endpoint and explicitly entered key without saving setting
   const { rerender } = render(<ProviderModelField {...baseProps} client={client} />);
   await load();
   expect(call).toHaveBeenLastCalledWith("settings.models", { baseUrl: baseProps.baseUrl }, expect.anything());
+  openList();
   expect(options()).toEqual(["first"]);
 
   call.mockResolvedValue({ models: ["second"] });
@@ -33,6 +35,7 @@ it("reloads the draft endpoint and explicitly entered key without saving setting
   expect(options()).toEqual([]);
   await load();
   expect(call).toHaveBeenLastCalledWith("settings.models", { baseUrl: "https://two.example/v1", apiKey: "new-key" }, expect.anything());
+  openList();
   expect(options()).toEqual(["second"]);
   expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe("saved-model");
   expect(call.mock.calls.every(([method]) => method === "settings.models")).toBe(true);
@@ -54,6 +57,7 @@ it.each(["success", "failure"])("ignores stale catalog %s after the endpoint cha
     if (outcome === "success") resolve({ models: ["obsolete"] });
     else reject(new Error("obsolete error"));
   });
+  openList();
   expect(options()).toEqual(["current"]);
   expect(screen.queryByText(/obsolete error/)).toBeNull();
 });
@@ -66,9 +70,23 @@ it("can refresh after failure and still edit a model that is absent from the lis
   expect(screen.getByText(/模型列表读取失败：unavailable/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "刷新模型列表" }));
   await load();
+  openList();
   expect(options()).toEqual(["listed"]);
   fireEvent.change(screen.getByRole("combobox"), { target: { value: "unlisted-model" } });
   expect(onChange).toHaveBeenCalledWith("unlisted-model");
+});
+
+it("shows the full catalog on open and filters only after typing", async () => {
+  const onChange = vi.fn();
+  const call = vi.fn().mockResolvedValue({ models: ["grok-4.7", "gpt-5.4", "claude-sonnet"] });
+  render(<ProviderModelField {...baseProps} value="grok-4.7" client={{ call } as unknown as RpcClient} onChange={onChange} />);
+  await load();
+  openList();
+  expect(options()).toEqual(["grok-4.7", "gpt-5.4", "claude-sonnet"]);
+  fireEvent.change(screen.getByRole("combobox"), { target: { value: "gpt" } });
+  expect(options()).toEqual(["gpt-5.4"]);
+  fireEvent.click(screen.getByRole("option", { name: "gpt-5.4" }));
+  expect(onChange).toHaveBeenLastCalledWith("gpt-5.4");
 });
 
 it("debounces typing and cancels requests when unmounted", async () => {

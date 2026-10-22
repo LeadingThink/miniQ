@@ -12,9 +12,17 @@ import {
   COMPOSER_PLACEHOLDER,
   MAX_COMPOSER_ATTACHMENTS,
   canSendComposer,
-  handleComposerKeyDown,
   shouldShowComposerSend,
 } from "../composerInput";
+import {
+  activeTextarea,
+  fieldTextareas,
+  focusTextarea,
+  handleComposerFieldKey,
+  placeComposerCaret,
+  readComposerCaret,
+  readComposerValue,
+} from "../composerField";
 import { useComposerSlash } from "../hooks/useComposerSlash";
 import { useComposerMention } from "../hooks/useComposerMention";
 import { useComposerInsert } from "../hooks/useComposerInsert";
@@ -36,6 +44,7 @@ import { savePastedFile } from "../localFiles";
 import { clipboardFiles } from "../clipboardFiles";
 import { readDraft, storeDraft, readAttachments, storeAttachments, readPastes, storePastes } from "../composerDraft";
 import { expandPastes, isLargePaste, nextPlaceholder, type PendingPaste } from "../largePaste";
+import { ComposerField as ComposerFieldView } from "./ComposerField";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { RemotePathDialog } from "./RemotePathDialog";
 import { ComposerRemoteUpload } from "./ComposerRemoteUpload";
@@ -54,10 +63,29 @@ type SendMessage = (
   asGoal?: boolean,
 ) => void | boolean | Promise<void | boolean>;
 
-function resizeComposer(textarea: HTMLTextAreaElement | null) {
-  if (!textarea) return;
-  textarea.style.height = "auto";
-  textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+/** Writes one segment back into the combined draft without touching chips. */
+function replaceSegment(field: HTMLElement | null, area: HTMLTextAreaElement, next: string): string {
+  if (!field) return next;
+  let value = "";
+  for (const node of field.childNodes) {
+    if (node === area) value += next;
+    else if (node instanceof HTMLTextAreaElement) value += node.value;
+    else if (node instanceof HTMLElement && node.dataset.placeholder)
+      value += node.dataset.placeholder;
+  }
+  return value;
+}
+
+function resizeComposer(field: HTMLElement | null) {
+  const areas = fieldTextareas(field);
+  if (areas.length === 0) return;
+  if (areas.length === 1) {
+    const textarea = areas[0];
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+    return;
+  }
+  for (const textarea of areas) textarea.style.height = "auto";
 }
 
 /** Unique attachment paths in order, capped at the limit the daemon enforces. */
@@ -137,11 +165,9 @@ export function ComposerCard(props: {
   };
   useLayoutEffect(() => {
     const cursor = pendingCaretRef.current;
-    const textarea = textareaRef.current;
-    if (cursor === null || !textarea) return;
+    if (cursor === null) return;
     pendingCaretRef.current = null;
-    textarea.focus();
-    textarea.setSelectionRange(cursor, cursor);
+    placeComposerCaret(fieldRef.current, cursor);
   });
   const draftValueRef = useRef(draft);
   draftValueRef.current = draft;
@@ -149,16 +175,20 @@ export function ComposerCard(props: {
     readAttachments(props.draftKey),
   );
   const attachmentsRef = useRef(attachments);
-  // Collapsed pastes never render on their own, but they must survive
-  // re-renders and follow the draft whose placeholder shows them.
-  const [initialPastes] = useState(() => readPastes(props.draftKey));
-  const pastesRef = useRef(initialPastes);
+  // Collapsed pastes render as inline chips and follow the draft that owns them.
+  const [pastes, setPastes] = useState(() => readPastes(props.draftKey));
+  const pastesRef = useRef(pastes);
+  pastesRef.current = pastes;
   const [sending, setSending] = useState(false);
   const [goalMode, setGoalMode] = useState(false);
   const sendingRef = useRef(false);
   const mountedRef = useRef(true);
   const draftKeyRef = useRef(props.draftKey);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLElement | null>(null);
+  const syncTextarea = () => {
+    textareaRef.current = fieldRef.current;
+  };
   const voiceRangeRef = useRef<TextRange>({ start: 0, end: 0 });
   const voiceDraftRef = useRef("");
   const [voicePreview, setVoicePreview] = useState<VoicePreview | null>(null);
@@ -199,7 +229,7 @@ export function ComposerCard(props: {
     setDraftState(readDraft(props.draftKey));
     attachmentsRef.current = readAttachments(props.draftKey);
     setAttachments(attachmentsRef.current);
-    pastesRef.current = readPastes(props.draftKey);
+    setPastes(readPastes(props.draftKey));
     setGoalMode(false);
     setVoicePreview(null);
     setShowRemoteAttachment(false);
@@ -214,9 +244,10 @@ export function ComposerCard(props: {
     storeAttachments(props.draftKey, next);
   };
 
-  /** A collapsed paste is stored with the draft that shows its placeholder. */
+  /** A collapsed paste is stored with the draft that shows its chip. */
   const applyPastes = (next: PendingPaste[]) => {
     pastesRef.current = next;
+    setPastes(next);
     storePastes(props.draftKey, next);
   };
 
@@ -238,33 +269,30 @@ export function ComposerCard(props: {
         : props.draftRequest.content;
     setDraft(content);
     props.onDraftRequestApplied?.();
-    const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.focus();
-      textarea.setSelectionRange(content.length, content.length);
-    }
+    requestAnimationFrame(() => placeComposerCaret(fieldRef.current, content.length));
     // The request id intentionally allows selecting the same starter twice.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.draftRequest?.id]);
 
   useLayoutEffect(() => {
-    resizeComposer(textareaRef.current);
-  }, [draft]);
+    syncTextarea();
+    resizeComposer(fieldRef.current);
+  });
 
   // A sidebar drag changes the textarea's available width without changing
   // its value. Observe that width so wrapped lines immediately update the
   // composer height and never cover the last lines of the conversation.
   useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea || typeof ResizeObserver === "undefined") return;
-    let width = textarea.getBoundingClientRect().width;
+    const field = fieldRef.current;
+    if (!field || typeof ResizeObserver === "undefined") return;
+    let width = field.getBoundingClientRect().width;
     const observer = new ResizeObserver(() => {
-      const nextWidth = textarea.getBoundingClientRect().width;
+      const nextWidth = field.getBoundingClientRect().width;
       if (nextWidth === width) return;
       width = nextWidth;
-      resizeComposer(textarea);
+      resizeComposer(field);
     });
-    observer.observe(textarea);
+    observer.observe(field);
     return () => observer.disconnect();
   }, [props.draftKey]);
 
@@ -330,13 +358,22 @@ export function ComposerCard(props: {
     // Windows clipboards hand text over with CRLF; the draft keeps plain LF.
     const inserted = sanitizeTextInput(text.replace(/\r\n?/g, "\n")).value;
     if (!inserted) return;
-    const value = draftValueRef.current;
-    const textarea = textareaRef.current;
-    const focused = textarea !== null && document.activeElement === textarea;
-    const start = focused ? textarea.selectionStart : value.length;
-    const end = focused ? textarea.selectionEnd : value.length;
+    const field = fieldRef.current;
+    const value = readComposerValue(field) || draftValueRef.current;
+    const area = activeTextarea(field);
+    const focused = area !== null && document.activeElement === area;
+    const start = focused ? readComposerCaret(field) : value.length;
+    const end = focused ? start + area.selectionEnd - area.selectionStart : value.length;
     setDraft(`${value.slice(0, start)}${inserted}${value.slice(end)}`);
     placeCaret(start + inserted.length);
+  };
+
+  /** Drops one paste chip and the text it was hiding. */
+  const removePaste = (placeholder: string) => {
+    const value = draftValueRef.current;
+    const at = value.indexOf(placeholder);
+    setDraft(at < 0 ? value : `${value.slice(0, at)}${value.slice(at + placeholder.length)}`);
+    placeCaret(Math.max(0, at));
   };
 
   /** Collapses a long paste into a token; the full text returns on send. */
@@ -406,6 +443,7 @@ export function ComposerCard(props: {
         attachmentsRef.current = [];
         setAttachments([]);
         pastesRef.current = [];
+        setPastes([]);
         setGoalMode(false);
       }
     } catch (cause) {
@@ -456,7 +494,7 @@ export function ComposerCard(props: {
         props.onError?.(cause instanceof Error ? cause.message : String(cause));
       }
       if (command.insertText !== undefined)
-        requestAnimationFrame(() => textareaRef.current?.focus());
+        requestAnimationFrame(() => focusTextarea(activeTextarea(fieldRef.current), replacement.length));
     },
   });
 
@@ -474,18 +512,15 @@ export function ComposerCard(props: {
   // `miniq:composer-insert` (e.g. timeline quotes): insert at the caret when
   // the input is focused, otherwise append, then leave the caret after it.
   useComposerInsert(textareaRef, (text) => {
-    const textarea = textareaRef.current;
-    if (!textarea || textarea.readOnly || textarea.disabled) return;
+    const area = activeTextarea(fieldRef.current);
+    if (!area || area.readOnly || area.disabled) return;
     const current = draftValueRef.current;
-    const focused = document.activeElement === textarea;
-    const result = insertComposerText(
-      current,
-      text,
-      focused ? { start: textarea.selectionStart, end: textarea.selectionEnd } : null,
-    );
+    const focused = document.activeElement === area;
+    const start = focused ? readComposerCaret(fieldRef.current) : current.length;
+    const end = focused ? start + area.selectionEnd - area.selectionStart : current.length;
+    const result = insertComposerText(current, text, focused ? { start, end } : null);
     setDraft(result.value);
     placeCaret(result.cursor);
-    textarea.focus();
   });
 
   const recallLast = () => {
@@ -501,10 +536,11 @@ export function ComposerCard(props: {
 
   const rememberVoiceInsertion = () => {
     voiceDraftRef.current = draft;
-    const textarea = textareaRef.current;
+    const area = activeTextarea(fieldRef.current);
+    const start = area && document.activeElement === area ? readComposerCaret(fieldRef.current) : draft.length;
     voiceRangeRef.current = {
-      start: textarea?.selectionStart ?? draft.length,
-      end: textarea?.selectionEnd ?? draft.length,
+      start,
+      end: area && document.activeElement === area ? start + area.selectionEnd - area.selectionStart : draft.length,
     };
   };
 
@@ -513,7 +549,8 @@ export function ComposerCard(props: {
     setDraftState((current) => {
       // If the user edited the draft while dictating, insert at their current
       // cursor instead of replacing a selection from an older draft.
-      const position = textareaRef.current?.selectionStart ?? current.length;
+      const area = activeTextarea(fieldRef.current);
+      const position = area ? readComposerCaret(fieldRef.current) : current.length;
       const range =
         current === voiceDraftRef.current
           ? voiceRangeRef.current
@@ -523,10 +560,7 @@ export function ComposerCard(props: {
       storeDraft(props.draftKey, result.value);
       return result.value;
     });
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(cursor, cursor);
-    });
+    requestAnimationFrame(() => placeComposerCaret(fieldRef.current, cursor));
   };
 
   useEffect(() => {
@@ -537,7 +571,7 @@ export function ComposerCard(props: {
       const trigger = card.current?.querySelector<HTMLButtonElement>(".voice-btn:not(:disabled)");
       if (trigger) trigger.focus();
       else {
-        textareaRef.current?.focus();
+        focusTextarea(activeTextarea(fieldRef.current));
         props.onError?.("已打开本机会话输入框，当前语音输入不可用；请在设置中确认语音服务后点击语音输入。");
       }
       props.onVoiceFocusApplied?.(requestId);
@@ -610,58 +644,59 @@ export function ComposerCard(props: {
       )}
       <div className="composer-input-row">
         {goalMode && <span className="composer-goal-prefix">目标</span>}
-        <textarea
+        <ComposerFieldView
+          fieldRef={fieldRef}
+          draft={draft}
+          pastes={pastes}
           readOnly={sending || slash.pending}
-          aria-label="消息"
-          aria-describedby={keyboardHintId}
-          ref={textareaRef}
-          value={draft}
           autoFocus={props.autoFocus}
-          placeholder={
-            props.busy ? "任务执行中，发送的消息会加入队列..." : props.placeholder
-          }
-          rows={1}
+          placeholder={props.busy ? "任务执行中，发送的消息会加入队列..." : props.placeholder}
+          describedBy={keyboardHintId}
           enterKeyHint={inputMode.enterSends ? "send" : "enter"}
-          {...slash.inputAttributes}
-          {...mention.inputAttributes}
-          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+          inputAttributes={{ ...slash.inputAttributes, ...mention.inputAttributes }}
+          onSelect={(event) => setCaret(readComposerCaret(fieldRef.current) - event.currentTarget.value.length + event.currentTarget.selectionStart)}
           onBlur={() => setCaret(-1)}
-          onBeforeInput={(e) => {
-            const data = (e.nativeEvent as InputEvent).data;
-            if (data && containsUnsupportedInput(data)) e.preventDefault();
+          onBeforeInput={(event) => {
+            const data = (event.nativeEvent as InputEvent).data;
+            if (data && containsUnsupportedInput(data)) event.preventDefault();
           }}
           onPaste={pasteClipboard}
-          onChange={(e) => {
-            const textarea = e.currentTarget;
+          onChange={(event) => {
+            const textarea = event.currentTarget;
             const sanitized = sanitizeTextInput(
               textarea.value,
               textarea.selectionStart,
               textarea.selectionEnd,
             );
-            setDraft(sanitized.value);
-            setCaret(sanitized.changed ? sanitized.end : textarea.selectionStart);
+            const field = fieldRef.current;
+            const local = sanitized.changed ? sanitized.value : textarea.value;
+            const combined = replaceSegment(field, textarea, local);
+            setDraft(combined);
+            const caretBase = readComposerCaret(field) - textarea.value.length;
+            setCaret(caretBase + (sanitized.changed ? sanitized.end : textarea.selectionStart));
             if (sanitized.changed) {
               requestAnimationFrame(() => {
                 textarea.setSelectionRange(sanitized.start, sanitized.end);
               });
             }
           }}
-          onKeyDown={(e) => {
-            if (slash.onKeyDown(e)) return;
-            if (mention.onKeyDown(e)) return;
+          onKeyDown={(event) => {
+            if (slash.onKeyDown(event)) return;
+            if (mention.onKeyDown(event)) return;
             if (
-              (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey &&
-              e.key.toLowerCase() === "u" && !e.nativeEvent.isComposing
+              (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey &&
+              event.key.toLowerCase() === "u" && !event.nativeEvent.isComposing
             ) {
-              e.preventDefault();
+              event.preventDefault();
               if (canAttach && !sending) void pickFiles();
               return;
             }
-            handleComposerKeyDown(e, setDraft, () => void send(), {
+            handleComposerFieldKey(event, fieldRef, setDraft, () => void send(), {
               enterSends: inputMode.enterSends,
               recallLast: props.messages ? recallLast : undefined,
             });
           }}
+          onRemovePaste={removePaste}
         />
       </div>
       <div className="composer-row">
@@ -710,7 +745,7 @@ export function ComposerCard(props: {
                 onClick={() => {
                   setGoalMode((active) => !active);
                   setPlusOpen(false);
-                  requestAnimationFrame(() => textareaRef.current?.focus());
+                  requestAnimationFrame(() => focusTextarea(activeTextarea(fieldRef.current)));
                 }}
                 title={goalMode ? "取消设为目标" : "将下一条消息设为目标"}
               >
@@ -727,10 +762,7 @@ export function ComposerCard(props: {
                 setPlusOpen(false);
                 const next = draft.startsWith("/") ? draft : `/${draft}`;
                 setDraft(next);
-                requestAnimationFrame(() => {
-                  textareaRef.current?.focus();
-                  textareaRef.current?.setSelectionRange(1, 1);
-                });
+                requestAnimationFrame(() => focusTextarea(activeTextarea(fieldRef.current), 1));
               }}
             >
               <Slash size={15} aria-hidden="true" />

@@ -13,7 +13,7 @@ function split(path: string): { name: string; dir: string } {
 
 /** File candidates for `@` mentions; shares the slash menu's look and keys. */
 export function MentionMenu(props: {
-  inputRef: RefObject<HTMLTextAreaElement | null>;
+  inputRef: RefObject<HTMLElement | null>;
   id: string;
   files: MentionFile[];
   activeIndex: number;

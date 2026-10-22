@@ -610,26 +610,6 @@
   align-items: center;
   gap: 4px;
 }
-.artifact-open > .sub,
-.artifact-open > .artifact-title {
-  max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.artifact-item > svg,
-.artifact-item > .badge {
-  flex: none;
-}
-.artifact-item .icon-button {
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  background: transparent;
-  color: var(--text-mid);
-}
 .copy-control small {
   color: var(--danger);
   font-size: var(--font-caption);
@@ -705,15 +685,6 @@
 .msg-action:disabled {
   opacity: 0.45;
   cursor: default;
-}
-.msg-action.msg-branch-action {
-  width: auto;
-  gap: 5px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--bg);
-  font-size: var(--font-footnote);
 }
 .message-edit-input {
   width: min(520px, 60vw);

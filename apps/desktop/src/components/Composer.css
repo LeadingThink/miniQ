@@ -60,7 +60,8 @@
     border-radius: 50%;
   }
 
-  .composer-card textarea {
+  .composer-card textarea,
+  .composer-card .composer-field {
     max-height: min(200px, 28dvh, calc(var(--app-height, 100dvh) * 0.28));
     overflow-y: auto;
     overscroll-behavior: contain;

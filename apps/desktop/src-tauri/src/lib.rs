@@ -11,8 +11,11 @@ mod daemon;
 mod daemon_process;
 mod dragged_image;
 mod export_file;
+mod file_link_actions;
+mod file_link_apps;
 mod html_preview;
 mod keep_awake;
+mod link_download;
 mod local_file;
 mod office_preview;
 mod task_sound;
@@ -362,6 +365,10 @@ pub fn run() {
                 wait_for_daemon_exit,
                 open_local_file,
                 reveal_local_file,
+                file_link_actions::save_local_file_as,
+                file_link_actions::file_open_applications,
+                file_link_actions::open_local_file_with,
+                link_download::save_external_link_as,
                 local_path_kind,
                 read_local_text_file,
                 read_local_file_preview,

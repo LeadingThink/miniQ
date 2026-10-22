@@ -65,15 +65,7 @@
   background: var(--bg-active);
   color: var(--text);
 }
-.app-toolbar-actions .side-conversation-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: auto;
-  gap: var(--space-1);
-  padding: 0 var(--space-2);
-  white-space: nowrap;
-}
+
 .app-toolbar-menu {
   position: fixed;
   min-width: 240px;

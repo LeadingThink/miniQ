@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { copyText, relativePath } from "../fileActions";
+import { revealFileLabel } from "../linkActions";
 import { Menu, MenuItem, MenuSeparator } from "./ui/Menu";
 
 export interface PreviewOptionsMenuProps {
@@ -79,7 +80,7 @@ export function PreviewOptionsMenu(props: PreviewOptionsMenuProps) {
         </MenuItem>
         {props.onReveal && (
           <MenuItem icon={<FolderOpen size={14} />} onClick={() => run(props.onReveal!)}>
-            在 Finder 中显示
+            {revealFileLabel()}
           </MenuItem>
         )}
         <MenuSeparator />

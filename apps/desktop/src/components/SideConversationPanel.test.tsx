@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DaemonEvent, Message, Session, SessionForkInfo, Workspace } from "../types";
 import { SideConversationPanel } from "./SideConversationPanel";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.removeItem("miniq.sideConversationWidth");
+});
 
 const workspace = {
   id: "workspace-current",
@@ -72,6 +75,28 @@ describe("SideConversationPanel", () => {
     }));
     expect(await screen.findByText("这是侧边聊天回复")).toBeTruthy();
     expect(await screen.findByText(/继承「主对话」/)).toBeTruthy();
+  });
+
+  it("sends selected files with the side message", async () => {
+    const { client, call } = fixture();
+    render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-session" onClose={() => {}} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "侧边聊天内容" }), { target: { value: "看这个文件" } });
+    fireEvent.paste(screen.getByRole("textbox", { name: "侧边聊天内容" }), {
+      clipboardData: { files: [new File(["png"], "shot.png", { type: "image/png" })] },
+    });
+    expect(await screen.findByText("粘贴文件仅在 miniQ 桌面应用中可用")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "发送侧边聊天" }));
+    await waitFor(() => expect(call).toHaveBeenCalledWith("session.sendMessage", expect.objectContaining({
+      message: expect.objectContaining({ content: "看这个文件", attachments: [] }),
+    })));
+  });
+
+  it("exposes a width separator for the side panel", () => {
+    const { client } = fixture();
+    render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-session" onClose={() => {}} />);
+    const separator = screen.getByRole("separator", { name: "调整侧边聊天宽度" });
+    expect(separator.getAttribute("aria-valuemin")).toBe("300");
+    expect(separator.getAttribute("aria-valuemax")).toBe("760");
   });
 
   it("deletes the side session when the user releases it", async () => {

@@ -64,7 +64,7 @@ describe("AppErrorBanner", () => {
 });
 
 describe("AppStatusBar", () => {
-  it("shows a labeled side-conversation entry and invokes its toggle", () => {
+  it("shows an icon side-conversation entry and invokes its toggle", () => {
     const onToggleSideConversation = vi.fn();
     render(
       <AppStatusBar
@@ -78,7 +78,7 @@ describe("AppStatusBar", () => {
     );
 
     const trigger = screen.getByRole("button", { name: "打开侧边聊天" });
-    expect(trigger.textContent).toContain("侧边聊天");
+    expect(trigger.textContent?.trim()).toBe("");
     fireEvent.click(trigger);
     expect(onToggleSideConversation).toHaveBeenCalledOnce();
   });

@@ -3,7 +3,7 @@ import { pickComposerTarget } from "../composerTarget";
 import { isTauriRuntime } from "../runtime";
 
 type Target = {
-  input: RefObject<HTMLTextAreaElement | null>;
+  input: RefObject<HTMLElement | null>;
   receive: RefObject<(paths: string[]) => void>;
   fail: RefObject<((message: string) => void) | undefined>;
 };
@@ -49,7 +49,7 @@ function subscribe(onError: (message: string) => void) {
 
 /** Routes native file drops (Tauri window-level drag & drop) to this composer while it is the active one. */
 export function useDroppedFiles(
-  input: RefObject<HTMLTextAreaElement | null>,
+  input: RefObject<HTMLElement | null>,
   onFiles: (paths: string[]) => void,
   onError?: (message: string) => void,
 ) {

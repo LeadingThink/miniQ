@@ -32,7 +32,7 @@ describe("ArtifactCard file types", () => {
   ])("shows a typed icon and label for %s", (path, kind, iconClass, label) => {
     const container = renderCard(artifact(path, kind));
     expect(container.querySelector(".artifact-file-icon")?.classList.contains(iconClass)).toBe(true);
-    expect(screen.getByText(label).classList.contains("badge")).toBe(true);
+    expect(screen.getByText(label).classList.contains("artifact-card-format")).toBe(true);
   });
 
   it("falls back to a generic file icon", () => {

@@ -55,12 +55,7 @@ export interface RevealOptions {
 
 /** Show a local file or folder in Finder (desktop app only). */
 export async function revealInFinder(path: string, options: RevealOptions = {}): Promise<void> {
-  if (!isTauriRuntime()) throw new Error("仅桌面应用可以在 Finder 中显示");
-  if (options.directory) {
-    const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
-    await revealItemInDir(path);
-    return;
-  }
+  if (!isTauriRuntime()) throw new Error("仅桌面应用可以在文件夹中显示");
   await revealLocalFile(
     path,
     options.workspacePath,

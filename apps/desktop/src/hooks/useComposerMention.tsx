@@ -17,7 +17,7 @@ export function useComposerMention(props: {
   enabled: boolean;
   client?: RpcClient;
   sessionId?: string;
-  inputRef: RefObject<HTMLTextAreaElement | null>;
+  inputRef: RefObject<HTMLElement | null>;
   setDraft: (value: string) => void;
   /** Moves the caret after the new draft is committed. */
   placeCaret: (cursor: number) => void;

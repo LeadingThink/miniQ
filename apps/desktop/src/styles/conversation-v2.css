@@ -148,7 +148,9 @@ body .main {
 }
 
 .main .composer-card textarea,
-.hero .composer-card textarea {
+.hero .composer-card textarea,
+.main .composer-field,
+.hero .composer-field {
   padding: var(--space-3) var(--space-3) var(--space-2);
 }
 

@@ -44,7 +44,7 @@ it("opens a file context menu on right click with add-to-chat and open actions",
   const file = screen.getByRole("treeitem", { name: /my notes/ });
   fireEvent.contextMenu(file, { clientX: 20, clientY: 30 });
   // Browser (non-Tauri) runtime hides Finder and external editor items.
-  expect(itemNames()).toEqual(["打开", "添加到聊天", "复制路径", "复制相对路径"]);
+  expect(itemNames()).toEqual(["打开", "复制路径", "复制相对路径", "添加到聊天"]);
   const listener = vi.fn();
   window.addEventListener(COMPOSER_INSERT_EVENT, listener);
   fireEvent.click(screen.getByRole("menuitem", { name: "添加到聊天" }));
@@ -57,20 +57,23 @@ it("opens a file context menu on right click with add-to-chat and open actions",
   expect(onOpen).toHaveBeenCalledWith("/p/my notes.md");
 });
 
-it("shows Finder and editor items for local desktop sessions only", async () => {
+it("shows system actions for local desktop sessions only", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
   (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
   await renderTree("local");
   fireEvent.keyDown(screen.getByRole("treeitem", { name: /src/ }), { key: "ContextMenu" });
-  expect(itemNames()).toEqual(["添加到聊天", "在 Finder 中显示", "复制路径", "复制相对路径"]);
+  expect(itemNames()).toEqual(["用默认应用打开", "复制路径", "在 Finder 中显示", "复制相对路径", "添加到聊天"]);
   fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
   fireEvent.contextMenu(screen.getByRole("treeitem", { name: /my notes/ }));
-  expect(itemNames()).toContain("用 VS Code 打开");
+  expect(itemNames()).toContain("用默认应用打开");
+  expect(itemNames()).toContain("另存为…");
   expect(itemNames()).toContain("在 Finder 中显示");
   cleanup();
   await renderTree("remote");
   fireEvent.contextMenu(screen.getByRole("treeitem", { name: /my notes/ }));
   expect(itemNames()).not.toContain("在 Finder 中显示");
-  expect(itemNames()).not.toContain("用 VS Code 打开");
+  expect(itemNames()).not.toContain("用默认应用打开");
+  expect(itemNames()).not.toContain("另存为…");
 });
 
 it("preview options copy relative paths and gate editor actions", async () => {

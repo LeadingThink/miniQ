@@ -161,7 +161,7 @@ export function AppStatusBar(props: {
           <button type="button" className={`statusbar-icon-button side-conversation-trigger${props.sideConversationOpen ? " active" : ""}`}
             data-tooltip="侧边聊天" title="侧边聊天" aria-label={props.sideConversationOpen ? "关闭侧边聊天" : "打开侧边聊天"}
             aria-pressed={props.sideConversationOpen ?? false} onClick={props.onToggleSideConversation}>
-            <MessageSquareText size={16} /><span>侧边聊天</span>
+            <MessageSquareText size={16} />
           </button>
         )}
         {remote && currentSession && (

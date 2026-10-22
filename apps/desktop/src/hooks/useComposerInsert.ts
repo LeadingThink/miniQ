@@ -3,7 +3,7 @@ import { COMPOSER_INSERT_EVENT } from "../composerMention";
 import { pickComposerTarget } from "../composerTarget";
 
 type Target = {
-  input: RefObject<HTMLTextAreaElement | null>;
+  input: RefObject<HTMLElement | null>;
   insert: RefObject<(text: string) => void>;
 };
 
@@ -20,7 +20,7 @@ function receive(event: Event) {
 
 /** Subscribes a composer to the cross-component text insertion bus. */
 export function useComposerInsert(
-  input: RefObject<HTMLTextAreaElement | null>,
+  input: RefObject<HTMLElement | null>,
   insert: (text: string) => void,
 ) {
   const insertRef = useRef(insert);

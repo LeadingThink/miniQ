@@ -13,7 +13,7 @@ it("opens the ranking in the system browser without submitting or changing form 
   render(<form onSubmit={submit}><input aria-label="模型搜索" defaultValue="claude" /><ModelRankingLink /></form>);
   const link = screen.getByRole("link", { name: "查看模型热度榜" });
   expect(link.getAttribute("href")).toBe(MODEL_RANKING_URL);
-  expect(screen.getByText(MODEL_RANKING_NOTICE)).toBeTruthy();
+  expect(link.getAttribute("title")).toBe(MODEL_RANKING_NOTICE);
   fireEvent.click(link);
   expect(openExternalUrl).toHaveBeenCalledExactlyOnceWith(MODEL_RANKING_URL);
   expect(submit).not.toHaveBeenCalled();

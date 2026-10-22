@@ -69,7 +69,8 @@ describe("appearance settings integration", () => {
     expect((baseUrl as HTMLInputElement).value).toBe("https://example.test/v1");
     const defaultModel = await screen.findByRole("combobox", { name: /默认 Chat 模型/ });
     expect((defaultModel as HTMLInputElement).value).toBe("test");
-    await waitFor(() => expect(document.querySelector('#provider-model-options option[value="gpt-5.6-sol"]')).not.toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "展开模型列表" }));
+    await waitFor(() => expect(screen.getByRole("option", { name: "gpt-5.6-sol" })).toBeTruthy());
     fireEvent.change(defaultModel, { target: { value: "claude-sonnet" } });
     expect(screen.queryByText("API 协议")).toBeNull();
     expect(screen.queryByLabelText("Relay URL")).toBeNull();

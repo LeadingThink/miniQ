@@ -107,7 +107,8 @@
   border-color: color-mix(in srgb, var(--hero-green) 20%, var(--border));
   background: color-mix(in srgb, var(--hero-green) 7%, var(--bg));
 }
-.hero .composer-card textarea {
+.hero .composer-card textarea,
+.hero .composer-field {
   min-height: 100px;
   padding: 4px 0 12px;
   font-size: 16px;
