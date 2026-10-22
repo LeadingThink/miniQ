@@ -81,7 +81,7 @@ export function OpenPreviewButton(props: {
       <button
         ref={trigger}
         type="button"
-        className="statusbar-icon-button"
+        className="statusbar-icon-button open-preview-trigger"
         data-tooltip="打开项目文件预览"
         title="打开项目文件预览"
         aria-label="打开项目文件预览"

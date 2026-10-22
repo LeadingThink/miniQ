@@ -128,6 +128,7 @@ it("offers file selection when a resolved reference does not exist", () => {
     />,
   );
 
+  expect(screen.getByRole("alert").textContent).toContain("未找到文件：D:/study/readme");
   fireEvent.click(screen.getByRole("button", { name: "选择并打开" }));
   expect(authorize).toHaveBeenCalledWith(target, true);
 });

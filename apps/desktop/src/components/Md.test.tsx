@@ -44,6 +44,15 @@ describe("Md file references", () => {
     expect(html).toContain("D:/work/project/novel_8352189/download.py");
   });
 
+  it("keeps a bare file name as plain code", () => {
+    const html = renderToStaticMarkup(
+      <Md workspacePath="/work/project">{"See `lib.rs` for details."}</Md>,
+    );
+
+    expect(html).toContain("<code>lib.rs</code>");
+    expect(html).not.toContain('class="file-reference"');
+  });
+
   it("renders Markdown file links as file controls", () => {
     const html = renderToStaticMarkup(
       <Md workspacePath="/work/project">{"[README.md](docs/README.md)"}</Md>,

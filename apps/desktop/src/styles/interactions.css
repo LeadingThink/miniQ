@@ -80,53 +80,122 @@
 
 /* Delivery artifact styles live in ArtifactCard.css.
    ============ Queued messages ============ */
+/* Attached to the top edge of the composer card: shared corners, no outer gap. */
 .queue-bar {
-  max-width: var(--conversation-content-width);
-  width: 100%;
-  margin: 10px auto 0;
-  padding: 10px 12px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--bg-subtle);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
+  margin: -6px -8px 4px;
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 26%, transparent);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--warn-bg);
 }
 
-.queue-title {
-  font-size: var(--font-caption);
+.queue-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.queue-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+  font-size: var(--font-footnote);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+}
+
+.queue-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: session-status-pulse 1.6s ease-in-out infinite;
+}
+
+.queue-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-dim);
+  font-size: var(--font-footnote);
+}
+
+.queue-list {
+  max-height: min(30vh, 240px);
+  overflow: auto;
 }
 
 .queue-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
+  min-width: 0;
+  padding: 3px 0;
   font-size: var(--font-body);
-  padding: 6px 0;
+}
+
+.queue-position {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: var(--font-footnote);
+  font-variant-numeric: tabular-nums;
 }
 
 .queue-content {
   flex: 1;
   min-width: 0;
-  max-height: 8em;
-  overflow: auto;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text);
 }
 
-.queue-list {
-  max-height: min(40vh, 360px);
-  overflow: auto;
+.queue-content:focus-visible {
+  outline: 2px solid var(--warn);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
-.queue-position,
+
 .queue-attachments {
-  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
 }
+
+.queue-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  color: var(--text-mid);
+  font-size: var(--font-footnote);
+}
+
+.queue-attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .queue-actions,
 .queue-editor-actions {
   display: flex;
@@ -136,12 +205,17 @@
 }
 .queue-actions {
   flex-shrink: 0;
+  gap: 2px;
 }
 .queue-actions button {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  min-height: 32px;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 6px;
 }
 .queue-editor {
   display: grid;
@@ -191,16 +265,24 @@
 }
 
 @media (max-width: 600px) {
+  .queue-hint { display: none; }
   .queue-item {
-    flex-direction: column;
+    flex-wrap: wrap;
+    row-gap: 2px;
   }
   .queue-content {
-    width: 100%;
-    flex: auto;
+    flex: 1 1 100%;
+    order: 3;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .queue-attachments {
+    order: 4;
+    max-width: 100%;
+    flex-wrap: wrap;
   }
   .queue-actions {
-    width: 100%;
-    justify-content: flex-end;
+    margin-left: auto;
   }
   .queue-actions button,
   .queue-editor-actions button {
@@ -212,15 +294,16 @@
 }
 
 .queue-steer {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   color: var(--accent);
-  white-space: nowrap;
 }
 
 .queue-remove {
   color: var(--text-dim);
+}
+
+.queue-remove:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-bg);
 }
 
 /* ============ Overlays / panels ============ */

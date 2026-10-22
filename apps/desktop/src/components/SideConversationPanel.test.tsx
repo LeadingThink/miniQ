@@ -4,9 +4,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DaemonEvent, Message, Session, SessionForkInfo, Workspace } from "../types";
 import { SideConversationPanel } from "./SideConversationPanel";
 
+vi.mock("../runtime", () => ({ isTauriRuntime: () => true }));
+vi.mock("../localFiles", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  savePastedFile: async (file: File) => `/tmp/${file.name}`,
+}));
+
 afterEach(() => {
   cleanup();
   localStorage.removeItem("miniq.sideConversationWidth");
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith("miniq.sideConversation.")) localStorage.removeItem(key);
+  }
 });
 
 const workspace = {
@@ -77,17 +86,17 @@ describe("SideConversationPanel", () => {
     expect(await screen.findByText(/继承「主对话」/)).toBeTruthy();
   });
 
-  it("sends selected files with the side message", async () => {
+  it("sends attached images with the side message", async () => {
     const { client, call } = fixture();
     render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-session" onClose={() => {}} />);
-    fireEvent.change(screen.getByRole("textbox", { name: "侧边聊天内容" }), { target: { value: "看这个文件" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "侧边聊天内容" }), { target: { value: "看这个图" } });
     fireEvent.paste(screen.getByRole("textbox", { name: "侧边聊天内容" }), {
       clipboardData: { files: [new File(["png"], "shot.png", { type: "image/png" })] },
     });
-    expect(await screen.findByText("粘贴文件仅在 miniQ 桌面应用中可用")).toBeTruthy();
+    expect(await screen.findByText("shot.png")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "发送侧边聊天" }));
     await waitFor(() => expect(call).toHaveBeenCalledWith("session.sendMessage", expect.objectContaining({
-      message: expect.objectContaining({ content: "看这个文件", attachments: [] }),
+      message: expect.objectContaining({ content: "看这个图", attachments: ["/tmp/shot.png"] }),
     })));
   });
 
@@ -109,16 +118,49 @@ describe("SideConversationPanel", () => {
     await waitFor(() => expect(call).toHaveBeenCalledWith("session.delete", { sessionId: "side-session" }));
   });
 
-  it("releases the side conversation when the main conversation changes", async () => {
+  it("keeps the side conversation when the main conversation changes", async () => {
     const { client, call } = fixture();
     const view = render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-a" onClose={() => {}} />);
-    fireEvent.change(screen.getByRole("textbox", { name: "侧边聊天内容" }), { target: { value: "这个侧聊会跟随主对话" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "侧边聊天内容" }), { target: { value: "这个侧聊不会跟着消失" } });
     fireEvent.click(screen.getByRole("button", { name: "发送侧边聊天" }));
     await waitFor(() => expect(call).toHaveBeenCalledWith("session.fork", expect.anything()));
 
     view.rerender(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-b" onClose={() => {}} />);
 
+    expect(call).not.toHaveBeenCalledWith("session.delete", expect.anything());
+    expect(await screen.findByText("这是侧边聊天回复")).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem("miniq.sideConversation.local") ?? "{}").sessionId).toBe("side-session");
+  });
+
+  it("resumes the stored side conversation after the panel is reopened", async () => {
+    const { client, call } = fixture();
+    localStorage.setItem("miniq.sideConversation.local", JSON.stringify({
+      sessionId: "side-session",
+      workspaceId: workspace.id,
+      sourceSessionId: "main-session",
+      lastActivityAt: Date.now(),
+    }));
+
+    render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-session" onClose={() => {}} />);
+
+    await waitFor(() => expect(call).toHaveBeenCalledWith("session.open", expect.objectContaining({ sessionId: "side-session" })));
+    await waitFor(() => expect((screen.getByRole("button", { name: "删除侧边聊天" }) as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it("releases a side conversation after three idle hours", async () => {
+    const { client, call } = fixture();
+    localStorage.setItem("miniq.sideConversation.local", JSON.stringify({
+      sessionId: "side-session",
+      workspaceId: workspace.id,
+      sourceSessionId: "main-session",
+      lastActivityAt: Date.now() - 3 * 60 * 60 * 1000 - 1000,
+    }));
+
+    render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-session" onClose={() => {}} />);
+
     await waitFor(() => expect(call).toHaveBeenCalledWith("session.delete", { sessionId: "side-session" }));
+    expect((screen.getByRole("button", { name: "删除侧边聊天" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(localStorage.getItem("miniq.sideConversation.local")).toBeNull();
   });
 
   it("keeps the input disabled until a main conversation is selected", () => {

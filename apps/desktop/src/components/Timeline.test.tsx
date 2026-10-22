@@ -357,7 +357,9 @@ describe("Timeline execution flow", () => {
       />,
     );
 
-    expect(html).toContain("report.pdf、notes.txt");
+    expect(html).toContain('class="queue-attachment"');
+    expect(html).toContain("report.pdf");
+    expect(html).toContain("notes.txt");
   });
 
   it("keeps execution steps in chronological order below the request", () => {

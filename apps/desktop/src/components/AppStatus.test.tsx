@@ -83,6 +83,25 @@ describe("AppStatusBar", () => {
     expect(onToggleSideConversation).toHaveBeenCalledOnce();
   });
 
+  it("offers side chat from the overflow menu", () => {
+    const onToggleSideConversation = vi.fn();
+    render(
+      <AppStatusBar
+        app={appFixture()}
+        sideConversationOpen={false}
+        onToggleSideConversation={onToggleSideConversation}
+        onOpenBrowser={vi.fn()}
+        onToggleReview={vi.fn()}
+        onOpenFile={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    const menu = screen.getByRole("menu", { name: "更多操作" });
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "侧边聊天" }));
+    expect(onToggleSideConversation).toHaveBeenCalledOnce();
+  });
+
   it("keeps four remote home actions including a working inspector entry", () => {
     const onToggleWorkbench = vi.fn();
     const onToggleReview = vi.fn();

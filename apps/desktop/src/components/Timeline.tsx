@@ -8,6 +8,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useSearchNavigation } from "../hooks/useSearchNavigation";
 import { findHitElement, type SearchHit } from "../sessionSearch";
 import { SessionSearchNavigator } from "./SessionSearchNavigator";
+import { MobileSessionSearch } from "./MobileSessionSearch";
+import { isMobileLayout } from "../mobileViewport";
 import type {
   Artifact,
   AnchoredTurnTiming,
@@ -24,7 +26,7 @@ import type {
 } from "../types";
 import type { PendingApproval } from "../App";
 import type { LocalFileTarget } from "../localFiles";
-import { QueueBar, type QueueActions } from "./QueueBar";
+import type { QueueActions } from "./QueueBar";
 import type { QuestionCardProps } from "./QuestionCard";
 import {
   groupTimeline,
@@ -247,6 +249,8 @@ export function Timeline(props: TimelineProps) {
   // "查看上下文" leaves search and finds the record in the full conversation,
   // loading older pages until it appears or history runs out.
   const [locating, setLocating] = useState<SearchHit | null>(null);
+  const [searchSheetOpen, setSearchSheetOpen] = useState(false);
+  useEffect(() => setSearchSheetOpen(false), [props.sessionId]);
   const windowHandle = useRef<TimelineWindowHandle>(null);
   const [mountedForLocate, setMountedForLocate] = useState(0);
   useEffect(() => setLocating(null), [props.sessionId]);
@@ -256,6 +260,13 @@ export function Timeline(props: TimelineProps) {
     setLocating(navigation.current);
     setFilter("all");
     setQuery("");
+  };
+  /** Jump from a search result card to its record, leaving search mode first. */
+  const locateMessage = (message: { id: string; createdAt: string }) => {
+    setLocating({ key: `message:${message.id}`, kind: "message", id: message.id, at: message.createdAt });
+    setFilter("all");
+    setQuery("");
+    setSearchSheetOpen(false);
   };
   useEffect(() => {
     if (!locating || searching) return;
@@ -326,6 +337,7 @@ export function Timeline(props: TimelineProps) {
           onExport={(format) => void exportSession(format)}
           summary={props.summary}
           onStep={searching ? navigation.step : undefined}
+          onSearchOpen={isMobileLayout() ? () => setSearchSheetOpen(true) : undefined}
           navigator={searching && !historySearch.error ? (
             <SessionSearchNavigator
               count={navigation.count}
@@ -338,6 +350,16 @@ export function Timeline(props: TimelineProps) {
           ) : null}
         />
       </div>
+      {searchSheetOpen && props.client && props.sessionId && (
+        <MobileSessionSearch
+          client={props.client}
+          sessionId={props.sessionId}
+          query={query}
+          onQuery={setQuery}
+          onClose={() => setSearchSheetOpen(false)}
+          onLocate={locateMessage}
+        />
+      )}
       {showDiagnostics && props.client && props.sessionId && (
         <ModelDiagnostics
           client={props.client}
@@ -457,13 +479,6 @@ export function Timeline(props: TimelineProps) {
           onLocated={onLocated}
         />
         {!props.loading && !props.busy && props.lastTurn && <TurnFailureNotice outcome={props.lastTurn} onError={props.onError} />}
-          <QueueBar
-            queue={props.queue}
-            onSteer={props.onSteerQueued}
-            onRemove={props.onRemoveQueued}
-            onUpdate={props.onUpdateQueued}
-            onMove={props.onMoveQueued}
-          />
         </div>
         {showJump && (
           <button

@@ -42,6 +42,8 @@ export function TimelineToolbar(props: {
   summary?: ReactNode;
   /** Enter steps to an older match; Shift+Enter steps to a newer one. */
   onStep?: (direction: -1 | 1) => void;
+  /** Phones open the immersive search page instead of the inline field. */
+  onSearchOpen?: () => void;
 }) {
   const menu = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -58,6 +60,7 @@ export function TimelineToolbar(props: {
       const detail = (event as CustomEvent<SessionToolbarActionDetail>).detail;
       if (!detail || detail.action !== "search") return;
       if (props.sessionId && detail.sessionId && detail.sessionId !== props.sessionId) return;
+      if (props.onSearchOpen) { props.onSearchOpen(); return; }
       setSearching((current) => {
         const next = !current;
         if (next) window.requestAnimationFrame(() => search.current?.focus());
@@ -66,7 +69,7 @@ export function TimelineToolbar(props: {
     };
     window.addEventListener(SESSION_TOOLBAR_ACTION_EVENT, onAction);
     return () => window.removeEventListener(SESSION_TOOLBAR_ACTION_EVENT, onAction);
-  }, [props.sessionId]);
+  }, [props.onSearchOpen, props.sessionId]);
   const [filterOpen, setFilterOpen] = useState(false);
   const closeMenu = useCallback(() => setOpen(false), []);
   return (
@@ -78,7 +81,7 @@ export function TimelineToolbar(props: {
         if (!filterOpen && !event.currentTarget.contains(event.relatedTarget as Node | null)) setSearching(false);
       }}
     >
-      <button type="button" className="icon-button timeline-search-toggle" aria-label="搜索和筛选会话" title="搜索和筛选会话" aria-expanded={expanded} onClick={() => setSearching(true)}>
+      <button type="button" className="icon-button timeline-search-toggle" aria-label="搜索和筛选会话" title="搜索和筛选会话" aria-expanded={expanded} onClick={() => { if (props.onSearchOpen) props.onSearchOpen(); else setSearching(true); }}>
         <Search size={18} />
       </button>
       <div className="timeline-modes" role="group" aria-label="记录类型">

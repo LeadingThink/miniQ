@@ -1,0 +1,271 @@
+/* Immersive in-conversation search for phones. Tokens only, so light and dark
+   themes both keep working; the layout follows the same skeleton as the phone
+   composer sheets (status-bar inset, capsule field, chips, cards). */
+.mobile-session-search {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding:
+    calc(var(--app-offset-top, 0px) + max(6px, var(--safe-top)))
+    max(10px, var(--safe-right))
+    max(8px, var(--safe-bottom))
+    max(10px, var(--safe-left));
+  background: var(--bg);
+  animation: fade var(--duration-fast) var(--ease-standard);
+}
+
+.mobile-session-search-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.mobile-session-search-back,
+.mobile-session-search-cancel {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-mid);
+}
+
+.mobile-session-search-back {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.mobile-session-search-cancel {
+  padding: 0 2px;
+  font-size: var(--font-callout);
+  font-weight: 500;
+}
+
+.mobile-session-search-back:active,
+.mobile-session-search-cancel:active,
+.mobile-session-search-clear:active { transform: scale(0.95); }
+
+.mobile-session-search-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-dim);
+}
+
+.mobile-session-search-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-shadow);
+}
+
+.mobile-session-search-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-callout);
+}
+
+.mobile-session-search-field input::-webkit-search-cancel-button { display: none; }
+
+.mobile-session-search-clear {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg-active);
+  color: var(--text-mid);
+}
+
+.mobile-session-search-filters {
+  flex: none;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.mobile-session-search-filters::-webkit-scrollbar { display: none; }
+
+.mobile-session-search-filters button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-mid);
+  font-size: var(--font-footnote);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.mobile-session-search-filters button.active {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+.mobile-session-search-results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 12px;
+}
+
+.mobile-session-search-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+}
+
+.mobile-session-search-meta strong { color: var(--text); }
+
+.mobile-session-search-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mobile-session-search-empty,
+.mobile-session-search-error {
+  margin: 24px 8px;
+  color: var(--text-dim);
+  font-size: var(--font-body);
+  line-height: 1.6;
+  text-align: center;
+}
+
+.mobile-session-search-error { color: var(--danger); text-align: left; }
+
+.mobile-session-search-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-subtle);
+  cursor: pointer;
+}
+
+.mobile-session-search-card:active {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  transform: scale(0.995);
+}
+
+.mobile-session-search-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-caption);
+  color: var(--text-mid);
+}
+
+.mobile-session-search-card-head .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--accent);
+}
+
+.mobile-session-search-card-head .dot.user { background: var(--warn); }
+
+.mobile-session-search-card-head .role {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mobile-session-search-card-head time {
+  margin-left: auto;
+  flex: none;
+  font-size: var(--font-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.mobile-session-search-snippet {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-body);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mobile-session-search-hit {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.mobile-session-search-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mobile-session-search-attachments span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-mid);
+  font-size: var(--font-caption);
+  font-family: var(--font-mono, ui-monospace);
+  overflow-wrap: anywhere;
+}
+
+.mobile-session-search-open {
+  justify-self: end;
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+}
+
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  /* The immersive page replaces the compact inline field on phones. */
+  .timeline-toolbar .timeline-search { display: none; }
+}

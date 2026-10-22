@@ -11,6 +11,7 @@ import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from "
 import { TurnChangesContext, type TurnChangesContextValue } from "../turnChanges";
 import { ProcessRecordsContext, type ProcessRecordsContextValue } from "../processRecords";
 import { Composer } from "./Composer";
+import { QueueBar } from "./QueueBar";
 import type { ComposerSlashCommand } from "../composerSlash";
 import { useAppSlashCommands } from "../hooks/useAppSlashCommands";
 import { DistillModal } from "./Distill";
@@ -288,6 +289,15 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
         <ProviderOnboardingPrompt onOpenSettings={() => app.navigation.openSettings("services")} />
       )}
       <Composer
+        queueSlot={
+          <QueueBar
+            queue={app.feed.queue}
+            onSteer={app.actions.steerQueued}
+            onRemove={app.actions.removeQueued}
+            onUpdate={app.actions.updateQueued}
+            onMove={app.actions.moveQueued}
+          />
+        }
         onVoiceFocusApplied={app.actions.companionVoiceHandled}
         voiceFocusRequest={app.companionVoiceRequest?.sessionId === app.catalog.currentSessionId ? app.companionVoiceRequest.id : undefined}
         slashCommands={slashCommands}

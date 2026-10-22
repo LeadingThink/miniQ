@@ -6,9 +6,11 @@ import { useDroppedFiles } from "../hooks/useDroppedFiles";
 import { savePastedFile } from "../localFiles";
 import { isTauriRuntime } from "../runtime";
 import type { RpcClient } from "../rpc";
-import { createSideConversationState, EMPTY_SIDE_CONVERSATION, isSideConversationExpired, releaseSideConversation, SIDE_CONVERSATION_IDLE_MS, type SideConversationState } from "../sideConversation";
+import { createSideConversationState, clearStoredSideConversation, EMPTY_SIDE_CONVERSATION, isSideConversationExpired, readStoredSideConversation, releaseSideConversation, sideConversationStorageKey, SIDE_CONVERSATION_IDLE_MS, storeSideConversation, type SideConversationState } from "../sideConversation";
 import type { Message, Session, SessionForkInfo, Workspace } from "../types";
+import { uploadRemoteFile } from "../remoteTransfer";
 import { AttachmentPreview } from "./AttachmentPreview";
+import { MessageAttachmentPreview } from "./MessageAttachmentPreview";
 import { Md } from "./Md";
 import "./SideConversationPanel.css";
 
@@ -58,6 +60,8 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
   const busyRef = useRef(busy);
   busyRef.current = busy;
   const drag = useRef<(() => void) | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const storageKey = sideConversationStorageKey(client.sshHost ?? null);
 
   const refresh = async (sessionId: string) => {
     const snapshot = await client.call<SessionSnapshot>("session.open", { sessionId, limit: 50, view: "visible" });
@@ -78,11 +82,9 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
     } catch (cause) { setError(errorMessage(cause)); }
   };
 
-  useEffect(() => () => {
-    drag.current?.();
-    const current = conversationRef.current;
-    if (current.sessionId) void releaseSideConversation(client, current, { cancel: true }).catch(() => undefined);
-  }, [client]);
+  // Hiding the panel, switching main conversations or quitting must not delete the
+  // side chat: only the delete button or the idle deadline ends it.
+  useEffect(() => () => { drag.current?.(); }, []);
 
   useEffect(() => client.onEvent((event) => {
     const sessionId = conversationRef.current.sessionId;
@@ -98,17 +100,35 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
     }
   }), [client]);
 
+  // Expired records are cleaned even when the panel never reopens, so abandoned
+  // side sessions cannot pile up on the desktop.
   useEffect(() => {
-    const current = conversationRef.current;
-    if (!current.sessionId) return;
-    if (current.workspaceId === workspace?.id && current.sourceSessionId === sourceSessionId) return;
-    void release();
-  }, [workspace?.id, sourceSessionId]);
+    const stored = readStoredSideConversation(storageKey);
+    if (!stored?.sessionId || !isSideConversationExpired(stored, Date.now(), idleMs)) return;
+    clearStoredSideConversation(storageKey);
+    void releaseSideConversation(client, stored, { cancel: true }).catch(() => undefined);
+  }, [client, idleMs, storageKey]);
 
   useEffect(() => {
-    if (open) return;
-    void release();
-  }, [open]);
+    if (!open || conversationRef.current.sessionId) return;
+    const stored = readStoredSideConversation(storageKey);
+    if (!stored?.sessionId) return;
+    conversationRef.current = stored;
+    setConversation(stored);
+    onSideSessionChange?.(stored.sessionId);
+    void refresh(stored.sessionId).catch(() => {
+      // The stored side session is gone on this host; drop the local record.
+      clearStoredSideConversation(storageKey);
+      conversationRef.current = EMPTY_SIDE_CONVERSATION;
+      setConversation(EMPTY_SIDE_CONVERSATION);
+      onSideSessionChange?.(null);
+    });
+  }, [client, storageKey, open]);
+
+  useEffect(() => {
+    if (conversation.sessionId) storeSideConversation(storageKey, conversation);
+    else clearStoredSideConversation(storageKey);
+  }, [conversation, storageKey]);
 
   useEffect(() => {
     if (!conversation.sessionId || busy) return;
@@ -128,8 +148,10 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
   useDroppedFiles(textareaRef, addAttachments, setError);
 
   const pickFiles = async () => {
-    if (busy || !isTauriRuntime()) {
-      if (!isTauriRuntime()) setError("附加文件仅在 miniQ 桌面应用中可用");
+    if (busy) return;
+    if (!isTauriRuntime()) {
+      // Remote and mobile clients stage the file through the daemon instead.
+      fileInput.current?.click();
       return;
     }
     try {
@@ -142,10 +164,22 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
 
   const pasteFiles = async (files: File[]) => {
     if (busy || files.length === 0) return;
-    if (!isTauriRuntime()) { setError("粘贴文件仅在 miniQ 桌面应用中可用"); return; }
     try {
-      addAttachments(await Promise.all(files.map((file) => savePastedFile(file))));
-    } catch (cause) { setError(`无法粘贴文件: ${errorMessage(cause)}`); }
+      if (isTauriRuntime()) {
+        addAttachments(await Promise.all(files.map((file) => savePastedFile(file))));
+        return;
+      }
+      // Pasting a screenshot on a phone or remote client uploads it to the desktop first.
+      const target = conversationRef.current.sessionId ?? sourceSessionId;
+      if (!target) { setError("先打开一个对话，再附加文件"); return; }
+      const uploaded: string[] = [];
+      for (const file of files) {
+        const receipt = await uploadRemoteFile(client, { sessionId: target }, file);
+        if (!receipt?.path) throw new Error("上传未完成，请重试");
+        uploaded.push(receipt.path);
+      }
+      addAttachments(uploaded);
+    } catch (cause) { setError(`无法附加文件: ${errorMessage(cause)}`); }
   };
 
   const send = async () => {
@@ -247,6 +281,13 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
       </p>}
       {messages.filter((message) => message.role === "user" || message.role === "assistant").map((message) => <article key={message.id} data-role={message.role}>
         <span>{message.role === "user" ? "你" : "miniQ"}</span><Md workspacePath={workspace?.path}>{message.content}</Md>
+        {!!message.attachments?.length && (
+          <div className="message-attachments">
+            {message.attachments.map((attachment) => (
+              <MessageAttachmentPreview key={attachment.path} attachment={attachment} />
+            ))}
+          </div>
+        )}
       </article>)}
       {streamingText && <article data-role="assistant"><span>miniQ</span><Md workspacePath={workspace?.path} streaming>{streamingText}</Md></article>}
       {busy && <p className="side-conversation-running" role="status"><Loader2 size={14} /> 正在处理</p>}
@@ -260,6 +301,11 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
         onPaste={(event) => { const files = [...event.clipboardData.files]; if (files.length > 0) { event.preventDefault(); void pasteFiles(files); } }}
         onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
       <button type="button" className="side-conversation-attach" aria-label="附加文件" title="附加文件" disabled={!canCompose} onClick={() => void pickFiles()}><Paperclip size={15} /></button>
+      <input ref={fileInput} type="file" hidden multiple aria-label="选择要附加的文件或图片" onChange={(event) => {
+        const files = [...(event.currentTarget.files ?? [])];
+        event.currentTarget.value = "";
+        if (files.length > 0) void pasteFiles(files);
+      }} />
       <button type="submit" aria-label="发送侧边聊天" title="发送 (⌘/Ctrl+Enter)" disabled={!canCompose || !canSendComposer(draft, attachments)}>{busy ? <Loader2 size={16} /> : <ArrowUp size={16} />}</button>
     </form>
   </aside>;

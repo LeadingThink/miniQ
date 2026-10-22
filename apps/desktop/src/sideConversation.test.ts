@@ -1,13 +1,24 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { createSideConversationState, EMPTY_SIDE_CONVERSATION, isSideConversationExpired, releaseSideConversation } from "./sideConversation";
+import { createSideConversationState, EMPTY_SIDE_CONVERSATION, isSideConversationExpired, readStoredSideConversation, releaseSideConversation, sideConversationStorageKey, storeSideConversation } from "./sideConversation";
 
 const session = { id: "side-1", workspaceId: "workspace-1" } as never;
 
 describe("side conversation lifecycle", () => {
-  it("expires only after the idle window", () => {
+  it("keeps a side chat for three idle hours", () => {
     const state = createSideConversationState(session, "main-1", 1000);
-    expect(isSideConversationExpired(state, 1000 + 14 * 60 * 1000)).toBe(false);
-    expect(isSideConversationExpired(state, 1000 + 15 * 60 * 1000)).toBe(true);
+    expect(isSideConversationExpired(state, 1000 + 2 * 60 * 60 * 1000)).toBe(false);
+    expect(isSideConversationExpired(state, 1000 + 3 * 60 * 60 * 1000)).toBe(true);
+    expect(isSideConversationExpired(state, 1000 + 15 * 60 * 1000, 15 * 60 * 1000)).toBe(true);
+  });
+
+  it("round-trips the stored side conversation per host", () => {
+    const key = sideConversationStorageKey("build-host");
+    expect(key).toBe("miniq.sideConversation.build-host");
+    const state = createSideConversationState(session, "main-1", 1000);
+    storeSideConversation(key, state);
+    expect(readStoredSideConversation(key)).toEqual(state);
+    expect(readStoredSideConversation(sideConversationStorageKey(null))).toBeNull();
   });
 
   it("cancels a running turn and deletes the side session", async () => {

@@ -1,5 +1,6 @@
 use super::common::{params, store_err};
 use crate::state::AppState;
+use futures_util::{stream, StreamExt, TryStreamExt};
 use miniq_protocol::{ErrorCode, RpcError};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -7,6 +8,9 @@ use std::{collections::HashSet, path::PathBuf, process::Stdio};
 use tokio::process::Command;
 
 const MAX_DIFF_BYTES: usize = 2 * 1024 * 1024;
+/// Untracked files each need their own `git diff --no-index`; eight at a time keeps
+/// the change count off the critical path without flooding the machine.
+const UNTRACKED_STATS_CONCURRENCY: usize = 8;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -165,23 +169,37 @@ async fn diff_stats(cwd: &PathBuf, entries: &[GitEntry]) -> Result<DiffStats, Rp
         stats.add(parse_numstat(&ensure_success(output(worktree).await?)?)?);
         stats
     };
-    for entry in entries
+    // Untracked files have no diff against HEAD, so each one needs its own
+    // `git diff --no-index`. Spawning them one at a time cost ~1.5 s for 112 files and
+    // delayed the change badge, so fan out instead of serialising the spawns.
+    let untracked = entries
         .iter()
         .filter(|entry| entry.index_status == '?' && entry.worktree_status == '?')
-    {
-        let mut command = git(cwd);
-        command.args([
-            "diff",
-            "--no-index",
-            "--numstat",
-            "--no-ext-diff",
-            "--no-textconv",
-            null_device(),
-        ]);
-        command.arg(&entry.path);
-        stats.add(parse_numstat(&ensure_diff(output(command).await?)?)?);
+        .map(|entry| entry.path.clone())
+        .collect::<Vec<_>>();
+    let counted = stream::iter(untracked)
+        .map(|path| untracked_stats(cwd, path))
+        .buffer_unordered(UNTRACKED_STATS_CONCURRENCY)
+        .try_collect::<Vec<_>>()
+        .await?;
+    for extra in counted {
+        stats.add(extra);
     }
     Ok(stats)
+}
+
+async fn untracked_stats(cwd: &PathBuf, path: String) -> Result<DiffStats, RpcError> {
+    let mut command = git(cwd);
+    command.args([
+        "diff",
+        "--no-index",
+        "--numstat",
+        "--no-ext-diff",
+        "--no-textconv",
+        null_device(),
+    ]);
+    command.arg(&path);
+    parse_numstat(&ensure_diff(output(command).await?)?)
 }
 
 impl DiffStats {

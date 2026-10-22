@@ -32,6 +32,34 @@ function edit(content: string) {
 }
 
 describe("pending queue editing", () => {
+  it("renders nothing while the queue is empty", () => {
+    const props = callbacks();
+    const view = render(<QueueBar queue={[]} {...props} />);
+
+    expect(view.container.textContent).toBe("");
+    expect(screen.queryByLabelText("排队消息")).toBeNull();
+  });
+
+  it("hides again once the last queued message is gone", () => {
+    const props = callbacks();
+    const view = render(<QueueBar queue={[item]} {...props} />);
+    expect(screen.getByLabelText("排队消息")).toBeTruthy();
+
+    view.rerender(<QueueBar queue={[]} {...props} />);
+    expect(screen.queryByLabelText("排队消息")).toBeNull();
+  });
+
+  it("shows the queue count and hides reordering for a single message", () => {
+    const props = callbacks();
+    render(<QueueBar queue={[item]} {...props} />);
+
+    expect(screen.getByText("排队中 · 1")).toBeTruthy();
+    expect(screen.getByText("#1")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /上移/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /下移/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "调整方向" })).toBeTruthy();
+  });
+
   it("edits in place, preserves attachments, and saves only once while pending", async () => {
     let finish!: () => void;
     const props = callbacks();

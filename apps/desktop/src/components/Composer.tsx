@@ -111,6 +111,8 @@ export function ComposerCard(props: {
   chip?: string;
   /** Project context displayed above the input, alongside approval controls. */
   chipSlot?: ReactNode;
+  /** Queued messages docked onto the card's top edge, above the input. */
+  queueSlot?: ReactNode;
   modelSlot?: ReactNode;
   permissionSlot?: ReactNode;
   allowGoal?: boolean;
@@ -609,6 +611,7 @@ export function ComposerCard(props: {
 
   return (
     <div ref={card} className="composer-card">
+      {props.queueSlot}
       {props.chipSlot && <div className="composer-context">{contextControls}</div>}
       {showRemoteAttachment && remoteHost && (props.client?.mode === "remote" && remoteUploadScope ?
         <ComposerRemoteUpload client={props.client} scope={remoteUploadScope} count={attachments.length}

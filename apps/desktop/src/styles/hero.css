@@ -69,8 +69,12 @@
     0 10px 30px -5px rgb(0 0 0 / 6%),
     0 1px 3px rgb(0 0 0 / 3%);
 }
-.hero .composer-card:focus-within {
-  border-color: color-mix(in srgb, var(--hero-green) 60%, var(--border));
+/* The hero card uses a wider padding, so its queue bar needs the same inset. */
+.hero .composer-card .queue-bar {
+  margin: -16px -16px 10px;
+}
+
+.hero .composer-card:focus-within {  border-color: color-mix(in srgb, var(--hero-green) 60%, var(--border));
   box-shadow:
     0 0 0 3px color-mix(in srgb, var(--hero-green) 12%, transparent),
     var(--shadow);

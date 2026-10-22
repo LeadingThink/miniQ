@@ -65,3 +65,41 @@ it("supports a running daemon whose Git status does not include totals yet", asy
   expect(popover.textContent).toContain("+0");
   expect(popover.textContent).toContain("-0");
 });
+
+it("paints a conversation's own cached count when returning to it", async () => {
+  const call = vi.fn(async () => ({
+    root: "/project",
+    branch: "main",
+    entries: [{ path: "a" }, { path: "b" }, { path: "c" }],
+  }));
+  const client = { call } as unknown as RpcClient;
+  const view = render(
+    <GitChangesPopover client={client} sessionId="first" refreshKey="k" onOpenAll={vi.fn()} />,
+  );
+  expect((await screen.findByRole("button", { name: "查看 Git 变更" })).textContent).toContain("3");
+
+  view.rerender(
+    <GitChangesPopover client={client} sessionId="second" refreshKey="k" onOpenAll={vi.fn()} />,
+  );
+  view.rerender(
+    <GitChangesPopover client={client} sessionId="first" refreshKey="k" onOpenAll={vi.fn()} />,
+  );
+  expect(screen.getByRole("button", { name: "查看 Git 变更" }).textContent).toContain("3");
+});
+
+it("hides the count while another conversation has no snapshot yet", async () => {
+  const pending = new Promise(() => {});
+  const call = vi.fn()
+    .mockResolvedValueOnce({ root: "/project", branch: "main", entries: [{ path: "a" }, { path: "b" }] })
+    .mockReturnValueOnce(pending);
+  const client = { call } as unknown as RpcClient;
+  const view = render(
+    <GitChangesPopover client={client} sessionId="first" refreshKey="k" onOpenAll={vi.fn()} />,
+  );
+  expect((await screen.findByRole("button", { name: "查看 Git 变更" })).textContent).toContain("2");
+
+  view.rerender(
+    <GitChangesPopover client={client} sessionId="second" refreshKey="k" onOpenAll={vi.fn()} />,
+  );
+  expect(screen.queryByRole("button", { name: "查看 Git 变更" })).toBeNull();
+});

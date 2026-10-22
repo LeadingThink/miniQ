@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatFileSize,
+  hasPathSeparator,
   isMarkdownPreviewFile,
   isTextPreviewFile,
   looksLikeFileReference,
@@ -64,6 +65,26 @@ describe("local file preview types", () => {
 });
 
 describe("local file references", () => {
+  it.each([
+    "src/main.ts",
+    "docs/README.md",
+    "./lib.rs",
+    "../lib.rs",
+    "/work/app/lib.rs",
+    "D:\\work\\lib.rs",
+    "file:///work/app/lib.rs",
+  ])("treats %s as a path", (reference) => {
+    expect(hasPathSeparator(reference)).toBe(true);
+  });
+
+  it.each(["lib.rs", "README.md", "main.ts:12" ])(
+    "keeps the bare name %s out of file links",
+    (reference) => {
+      expect(hasPathSeparator(reference)).toBe(false);
+      expect(looksLikeFileReference(reference)).toBe(true);
+    },
+  );
+
   it("resolves Windows and POSIX relative paths", () => {
     expect(resolveLocalFileReference("src/main.ts:12:4", "D:\\work\\app")).toEqual({
       path: "D:\\work\\app\\src\\main.ts",

@@ -80,6 +80,21 @@ it("shows the installed version when a manual check finds no update", async () =
   expect(hook.onError).toHaveBeenLastCalledWith(null);
 });
 
+it("blames the primary source when every update feed fails", async () => {
+  fake.check.mockRejectedValue(
+    new Error("error sending request for url (https://github.com/LeadingThink/miniQ-releases/releases/latest/download/latest.json)"),
+  );
+  const hook = setup();
+  await act(async () => { await hook.result.current.checkNow(); });
+  expect(hook.result.current.state).toMatchObject({
+    phase: "error",
+    error: "无法连接更新主源 oss.zaiwen.top，请检查网络后重试。",
+  });
+  expect(hook.onError).toHaveBeenLastCalledWith(
+    "检查更新失败：无法连接更新主源 oss.zaiwen.top，请检查网络后重试。",
+  );
+});
+
 it("blocks restart before shutdown and waits for the captured process before installing", async () => {
   const hook = setup();
   await available(hook);

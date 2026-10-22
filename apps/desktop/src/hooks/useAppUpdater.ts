@@ -5,6 +5,7 @@ import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
 import { isTauriRuntime } from "../runtime";
 import { UPDATE_PERIODIC_CHECK_MS, UPDATE_RECHECK_INTERVAL_MS } from "../updatePolicy";
+import { updateCheckFailureMessage } from "../updateSources";
 
 const STARTUP_CHECK_DELAY_MS = 10_000;
 
@@ -157,8 +158,13 @@ export function useAppUpdater(
             setState({ ...INITIAL_STATE, phase: "unavailable" });
             return;
           }
-          setState((current) => ({ ...current, phase: "error", error: message }));
-          if (explicitCheckRef.current) onError(`检查更新失败：${message}`);
+          // The updater reports the last feed it tried, which is the GitHub
+          // mirror once the primary feed fails. Report the primary feed only
+          // and keep the raw text for diagnostics.
+          const failure = updateCheckFailureMessage(message);
+          if (failure !== message) console.warn("miniQ update check failed:", message);
+          setState((current) => ({ ...current, phase: "error", error: failure }));
+          if (explicitCheckRef.current) onError(`检查更新失败：${failure}`);
         }
       })();
       checkRef.current = task;

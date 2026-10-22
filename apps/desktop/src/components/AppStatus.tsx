@@ -88,6 +88,12 @@ export function AppStatusBar(props: {
       ...(deviceBar.onAppearance ? [{ id: "appearance", label: "外观", icon: <Palette size={15} />, run: deviceBar.onAppearance }] : []),
     ] : []),
     { id: "browser", label: browserLabel, icon: <Globe2 size={15} />, disabled: remote && !currentSession, run: props.onOpenBrowser },
+    ...(props.onToggleSideConversation ? [{
+      id: "side-chat",
+      label: props.sideConversationOpen ? "关闭侧边聊天" : "侧边聊天",
+      icon: <MessageSquareText size={15} />,
+      run: props.onToggleSideConversation,
+    }] : []),
     ...(reviewFiles > 0 ? [{ id: "review", label: `审阅代码修改（${reviewFiles} 个文件）`, icon: <FileDiff size={15} />, run: props.onToggleReview }] : []),
     ...(remote && currentSession ? [
       { id: "share-session", label: "分享会话", icon: <Share2 size={15} />, run: () => dispatchSessionToolbarAction(currentSession.id, "share") },
@@ -167,7 +173,7 @@ export function AppStatusBar(props: {
         {remote && currentSession && (
           <button
             type="button"
-            className="statusbar-icon-button"
+            className="statusbar-icon-button statusbar-search"
             data-tooltip="搜索和筛选会话"
             title="搜索和筛选会话"
             aria-label="搜索和筛选会话"

@@ -502,7 +502,11 @@ function PreviewPanelContent({
       )}
       {(preview.error || actionError || renderError) && (
         <div className="review-error preview-error" role="alert">
-          <span>无法打开：{preview.error ?? actionError ?? renderError}</span>
+          <span>
+            {missingLocalFile
+              ? `未找到文件：${path}`
+              : `无法打开：${preview.error ?? actionError ?? renderError}`}
+          </span>
           {canAuthorizeTarget && target && onAuthorizeFile && (
             <button
               type="button"

@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Pencil, X, Zap } from "lucide-react";
+import { ChevronDown, ChevronUp, FileText, Image as ImageIcon, Pencil, X, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { QueuedMessage } from "../types";
 import { errorMessage } from "../errorMessage";
@@ -11,6 +11,8 @@ export interface QueueActions {
   onRemove: (id: string) => Promise<void>;
   onMove?: (item: QueuedMessage, direction: "up" | "down") => Promise<void>;
 }
+
+const IMAGE_ATTACHMENT = /\.(?:png|jpe?g|gif|webp|avif|bmp|svg|heic)$/i;
 
 export function QueueBar({
   queue,
@@ -55,7 +57,12 @@ export function QueueBar({
     void perform(() => actions.onMove!(item, direction));
   }
 
-  if (queue.length === 0 && !editing && !error) return null;
+  // Reordering only earns its two icons when another item can trade places.
+  const reorderable = !!actions.onMove && queue.length > 1;
+
+  // Nothing queued means nothing to dock: the bar only exists while a message
+  // waits, or while its draft is still being edited so text cannot be lost.
+  if (queue.length === 0 && !editing) return null;
   return (
     <section
       ref={region}
@@ -64,35 +71,46 @@ export function QueueBar({
       aria-label="排队消息"
       aria-busy={pending}
     >
-      <div className="queue-title">
-        已排队 {queue.length} 条，当前任务结束后依次执行
+      <div className="queue-head">
+        <span className="queue-pill">
+          <span className="queue-pill-dot" aria-hidden="true" />
+          排队中 · {queue.length}
+        </span>
+        <span className="queue-hint">前序任务完成后自动执行</span>
       </div>
       <div className="queue-list">
         {queue.map((item, index) => (
           <div key={item.id} className="queue-item">
+            <span className="queue-position">#{index + 1}</span>
             <div
               className="queue-content"
               tabIndex={0}
-              title={actions.onMove ? "按 Alt+↑/↓ 调整排队顺序" : undefined}
+              title={reorderable ? `${item.content}\n\n按 Alt+↑/↓ 调整排队顺序` : item.content}
               onKeyDown={(event) => {
                 if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
                 event.preventDefault();
                 move(item, event.key === "ArrowUp" ? "up" : "down");
               }}
             >
-              <span className="queue-position">{index + 1}.</span>{" "}
               {item.content}
-              {!!item.attachments?.length && (
-                <div
-                  className="queue-attachments"
-                  title={item.attachments.map((file) => file.path).join("\n")}
-                >
-                  附件：{item.attachments.map((file) => file.name).join("、")}
-                </div>
-              )}
             </div>
+            {!!item.attachments?.length && (
+              <div
+                className="queue-attachments"
+                title={item.attachments.map((file) => file.path).join("\n")}
+              >
+                {item.attachments.map((file) => (
+                  <span key={file.path} className="queue-attachment">
+                    {IMAGE_ATTACHMENT.test(file.name)
+                      ? <ImageIcon size={11} aria-hidden="true" />
+                      : <FileText size={11} aria-hidden="true" />}
+                    <span className="queue-attachment-name">{file.name}</span>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="queue-actions">
-              {actions.onMove && (
+              {reorderable && (
                 <>
                   <button
                     type="button"
@@ -103,7 +121,7 @@ export function QueueBar({
                     title={index === 0 ? "已经是第一条" : "上移（Alt+↑）"}
                     onClick={() => move(item, "up")}
                   >
-                    <ChevronUp size={13} /> 上移
+                    <ChevronUp size={13} />
                   </button>
                   <button
                     type="button"
@@ -114,7 +132,7 @@ export function QueueBar({
                     title={index === queue.length - 1 ? "已经是最后一条" : "下移（Alt+↓）"}
                     onClick={() => move(item, "down")}
                   >
-                    <ChevronDown size={13} /> 下移
+                    <ChevronDown size={13} />
                   </button>
                 </>
               )}
@@ -123,22 +141,24 @@ export function QueueBar({
                 className="ghost"
                 disabled={pending || !!editing}
                 aria-label={`编辑第 ${index + 1} 条排队消息`}
+                title="编辑这条消息"
                 onClick={(event) => {
                   editTrigger.current = event.currentTarget;
                   setError(null);
                   setEditing(item);
                 }}
               >
-                <Pencil size={13} /> 编辑
+                <Pencil size={13} />
               </button>
               <button
                 type="button"
                 className="ghost queue-steer"
                 disabled={pending || !!editing}
+                aria-label="调整方向"
                 title="调整方向：打断当前任务，立即执行这条消息"
                 onClick={() => void perform(() => actions.onSteer(item.id))}
               >
-                <Zap size={13} /> 调整方向
+                <Zap size={13} />
               </button>
               <button
                 type="button"
