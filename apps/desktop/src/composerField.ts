@@ -79,7 +79,9 @@ function segmentAt(root: HTMLElement, cursor: number): { area: HTMLTextAreaEleme
 export function placeComposerCaret(root: HTMLElement | null, cursor: number) {
   if (!root) return;
   const target = segmentAt(root, cursor);
-  if (target) focusTextarea(target.area, target.offset);
+  if (!target) return;
+  target.area.focus();
+  target.area.setSelectionRange(target.offset, target.offset);
 }
 
 export interface ComposerKeyOptions {

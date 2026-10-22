@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
+import { readComposerValue } from "../composerField";
 import { HeroPage } from "./HeroPage";
 import { STARTER_PROMPTS } from "./StarterPrompts";
 
@@ -90,12 +91,11 @@ it("lets a sample be edited and sends only after explicit submission", async () 
   const input = screen.getByRole<HTMLTextAreaElement>("textbox", {
     name: "消息",
   });
-  expect(input.value).toBe(
-    STARTER_PROMPTS.find((prompt) => prompt.id === "pdf-notes")!.prompt,
-  );
+  const prompt = STARTER_PROMPTS.find((item) => item.id === "pdf-notes")!.prompt;
+  expect(readComposerValue(input.parentElement)).toBe(prompt);
   expect(document.activeElement).toBe(input);
   expect(app.actions.startTask).not.toHaveBeenCalled();
-  const draft = `${input.value}重点关注市场风险`;
+  const draft = `${prompt}重点关注市场风险`;
   fireEvent.change(input, { target: { value: draft } });
   fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
   await vi.waitFor(() =>

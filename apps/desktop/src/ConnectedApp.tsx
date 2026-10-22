@@ -34,7 +34,7 @@ const HostContent = memo(function HostContent(props: { theme: ThemeId; onThemeCh
       sessionId={app.catalog.currentSessionId}
       workspacePath={app.catalog.currentSession?.workingDirectory ?? app.catalog.currentWorkspace?.path}
       workspacePaths={app.catalog.currentWorkspacePaths}
-      authorizedFiles={app.preview.authorizedFiles}
+      authorizedFiles={app.preview?.authorizedFiles}
     >
       <AppShell active={active} contentOnly={!!props.publish} app={app} theme={props.theme} onThemeChange={props.onThemeChange} />
     </SessionFileAccess>

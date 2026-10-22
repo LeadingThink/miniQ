@@ -269,7 +269,8 @@ export function ComposerCard(props: {
         : props.draftRequest.content;
     setDraft(content);
     props.onDraftRequestApplied?.();
-    requestAnimationFrame(() => placeComposerCaret(fieldRef.current, content.length));
+    // The starter button keeps document focus. Move the caret into the draft.
+    placeCaret(content.length);
     // The request id intentionally allows selecting the same starter twice.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.draftRequest?.id]);
