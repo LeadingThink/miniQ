@@ -24,6 +24,7 @@ mod responses_request;
 mod sse;
 
 pub use anthropic::AnthropicProvider;
+pub use compat_schema::compatible_tool_schema;
 pub use configured::{infer_protocol, ConfiguredProvider};
 pub use image::{decode_static_image, load_static_image, read_image_bytes, validate_image_path};
 pub use media_upload::{provider_media_uploader, ProviderMediaReference, ProviderMediaUploader};

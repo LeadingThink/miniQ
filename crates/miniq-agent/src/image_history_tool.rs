@@ -227,11 +227,12 @@ impl ToolExecutor for ImageHistoryExecutor<'_> {
     fn specs_for(&self, ctx: &crate::TurnToolCtx) -> Vec<ToolSpec> {
         let mut specs = self.inner.specs_for(ctx);
         if self.enabled {
-            let mut parameters =
-                serde_json::to_value(schemars::schema_for!(Input)).expect("image history schema");
-            // Every tagged variant is an object. Responses additionally requires
-            // this root declaration; the generated alternatives remain intact.
-            parameters["type"] = json!("object");
+            // Flatten the tagged-enum schema: providers that ignore a root
+            // `oneOf` would otherwise see an object with no declared fields and
+            // call the tool with empty arguments.
+            let parameters = miniq_models::compatible_tool_schema(
+                &serde_json::to_value(schemars::schema_for!(Input)).expect("image history schema"),
+            );
             specs.push(ToolSpec {
                 name: TOOL_NAME.into(),
                 description: "List, inspect sources, or reread images already observed in this conversation. List returns a lightweight paginated index of IDs and paths; sources pages through the full original metadata for one ID. Read accepts IDs only, returns actual pixels, and defaults to original resolution. It cannot open paths or access another conversation. Historical screenshots cannot ground new computer/browser actions.".into(),

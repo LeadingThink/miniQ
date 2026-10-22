@@ -257,13 +257,17 @@ fn assert_wire_archive(body: &Value, protocol: ApiProtocol) {
     for action in ["list", "read", "sources"] {
         assert!(schema.to_string().contains(&format!("\"{action}\"")));
     }
-    if protocol != ApiProtocol::Responses {
-        let actions = schema["properties"]["action"]["enum"].as_array().unwrap();
-        assert_eq!(actions.len(), 3);
-        for action in ["list", "read", "sources"] {
-            assert!(actions.contains(&json!(action)));
-        }
+    // Every protocol, Responses included, must see the action discriminator:
+    // providers that ignore a root `oneOf` would otherwise call with no fields.
+    let actions = schema["properties"]["action"]["enum"].as_array().unwrap();
+    assert_eq!(actions.len(), 3);
+    for action in ["list", "read", "sources"] {
+        assert!(actions.contains(&json!(action)));
     }
+    assert!(schema["required"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("action")));
 }
 
 async fn run(protocol: ApiProtocol) -> Value {

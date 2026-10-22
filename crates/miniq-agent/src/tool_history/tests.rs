@@ -148,3 +148,28 @@ async fn native_compaction_retires_old_input_and_preserves_latest_tool_pair() {
     assert_eq!(compactions, 1);
     assert_eq!(outcome.final_text, "finished");
 }
+
+#[test]
+fn spec_declares_a_flat_object_so_every_provider_sees_the_action() {
+    let tools = Tools;
+    let executor = ToolHistoryExecutor::new(&tools, true);
+    let spec = executor
+        .specs()
+        .into_iter()
+        .find(|spec| spec.name == TOOL_NAME)
+        .expect("tool history spec");
+    let parameters = &spec.parameters;
+    assert_eq!(parameters["type"], "object");
+    assert!(parameters.get("oneOf").is_none());
+    assert_eq!(parameters["required"], json!(["action"]));
+    assert_eq!(
+        parameters["properties"]["action"]["enum"],
+        json!(["list", "read"])
+    );
+    for field in ["offset", "limit", "toolCallId", "length"] {
+        assert!(
+            parameters["properties"].get(field).is_some(),
+            "missing property {field}"
+        );
+    }
+}

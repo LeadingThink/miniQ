@@ -10,7 +10,13 @@ const COMBINATORS: [&str; 3] = ["oneOf", "anyOf", "allOf"];
 /// adapters behind OpenAI-compatible relays. The tool runtime still validates
 /// calls against the original schema, so this wire representation may safely
 /// broaden conditional constraints that the upstream API cannot express.
-pub(crate) fn compatible_tool_schema(schema: &Value) -> Value {
+///
+/// Tool specs defined through `schemars` for a tagged enum put the fields under
+/// a root `oneOf`, which several providers ignore while still requiring a root
+/// object. Flattening at spec construction keeps one schema for every
+/// protocol, so callers that send `parameters` verbatim (Responses) describe
+/// the same fields as the adapters that normalize on the wire.
+pub fn compatible_tool_schema(schema: &Value) -> Value {
     match schema {
         Value::Array(values) => Value::Array(values.iter().map(compatible_tool_schema).collect()),
         Value::Object(source) => Value::Object(compatible_schema_object(source)),

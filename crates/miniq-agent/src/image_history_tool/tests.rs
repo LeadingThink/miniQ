@@ -482,3 +482,29 @@ async fn missing_user_reference_survives_compaction_for_provider_recovery() {
         1
     );
 }
+
+#[test]
+fn spec_declares_a_flat_object_so_every_provider_sees_the_action() {
+    let inner = Executor::default();
+    let messages = vec![ChatMessage::system("policy"), ChatMessage::user("look")];
+    let executor = ImageHistoryExecutor::new(&inner, &messages);
+    let spec = executor
+        .specs()
+        .into_iter()
+        .find(|spec| spec.name == TOOL_NAME)
+        .expect("image history spec");
+    let parameters = &spec.parameters;
+    assert_eq!(parameters["type"], "object");
+    assert!(parameters.get("oneOf").is_none());
+    assert_eq!(parameters["required"], json!(["action"]));
+    assert_eq!(
+        parameters["properties"]["action"]["enum"],
+        json!(["list", "read", "sources"])
+    );
+    for field in ["id", "ids", "offset", "limit", "detail"] {
+        assert!(
+            parameters["properties"].get(field).is_some(),
+            "missing property {field}"
+        );
+    }
+}
