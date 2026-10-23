@@ -41,3 +41,11 @@ promo/*/build/
 # Local App Store submission screenshots and signing materials.
 /苹果注册/
 .workbuddy/
+
+# Local run artifacts: audit screenshots, release watch logs, captured console
+# output, proxy dumps, and per-incident request payloads. They are machine and
+# timestamp specific, so they stay out of the repository.
+.miniq-audit/
+.miniq-diagnostics/
+.playwright-mcp/
+docs/diagnostics/
