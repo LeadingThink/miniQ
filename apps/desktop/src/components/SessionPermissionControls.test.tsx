@@ -20,7 +20,7 @@ const client = (call: ReturnType<typeof vi.fn>) =>
     onEvent: () => () => {},
   }) as unknown as RpcClient;
 
-it("changes only the selected session and can restore inheritance", async () => {
+it("changes only the selected session", async () => {
   const call = vi
     .fn()
     .mockResolvedValueOnce({ mode: null, effective: "auto" })
@@ -34,9 +34,7 @@ it("changes only the selected session and can restore inheritance", async () => 
     "session.approval.update",
     { sessionId: "one", mode: "alwaysAsk" },
   ]);
-  fireEvent.click(screen.getByRole("button", { name: "恢复跟随全局审批设置" }));
-  await screen.findByRole("button", { name: "替我审批" });
-  expect(call.mock.lastCall?.[1]).toEqual({ sessionId: "one", mode: null });
+  expect(screen.queryByRole("button", { name: "恢复跟随全局审批设置" })).toBeNull();
 });
 
 it("does not apply stale permission data to another session", async () => {
@@ -67,7 +65,7 @@ it("can pin the currently inherited mode without changing it twice", async () =>
   render(<SessionPermissionControls client={client(call)} sessionId="one" />);
   fireEvent.click(await screen.findByRole("button", { name: "替我审批" }));
   fireEvent.click(screen.getByRole("option", { name: /替我审批/ }));
-  await screen.findByRole("button", { name: "恢复跟随全局审批设置" });
+  await screen.findByRole("button", { name: "替我审批" });
   expect(call.mock.calls[1].slice(0, 2)).toEqual(["session.approval.update", { sessionId: "one", mode: "auto" }]);
 });
 

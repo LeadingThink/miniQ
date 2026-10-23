@@ -23,6 +23,8 @@ import "./external-sessions.css";
 import "./styles/mobile-controls.css";
 import "./styles/window-chrome.css";
 import "./styles/hero.css";
+// HUD skin for the "量子驾驶舱 / 全息白昼" themes only; other themes are untouched.
+import "./styles/cyber.css";
 import { initializeAppearance } from "./theme";
 import { initializeBackground } from "./background";
 import { initializeRotation } from "./backgroundRotation";

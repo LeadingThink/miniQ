@@ -27,15 +27,25 @@
 }
 .session-model-dialog .session-model-popover :is(input, button) { min-height: 44px; }
 .session-model-dialog .session-model-popover input { font-size: var(--font-callout); }
-.session-model-dialog .session-model-popover .session-model-list {
+.session-model-dialog .session-model-popover .model-picker-list {
   max-height: none;
   overflow: visible;
 }
-.session-model-dialog .session-model-popover .session-model-list > button {
+.session-model-dialog .session-model-popover .model-picker-list > button,
+.session-model-dialog .session-model-popover .model-picker-row > button {
   min-height: 44px;
   padding: 10px 8px;
 }
-.session-model-dialog .session-model-list > button span { white-space: normal; }
+.session-model-dialog .session-model-popover .model-picker-name {
+  white-space: normal;
+}
+/* 手机上悬停不可用：点模型后在行下方展开档位，底部「完成」收起。 */
+.session-model-dialog .session-model-popover .model-picker-inline-effort {
+  padding: 4px 8px 10px;
+}
+.session-model-dialog .session-model-popover .model-picker-inline-effort .model-picker-effort-options button {
+  min-height: 40px;
+}
 .session-model-dialog .session-model-popover > footer {
   position: sticky;
   bottom: -14px;

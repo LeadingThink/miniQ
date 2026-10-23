@@ -66,14 +66,15 @@ it("collapses search behind an icon until opened, and stays open while a query i
   expect(toolbar.getAttribute("data-search-open")).toBe("false");
   rerender(<TimelineToolbar filter="all" query="needle" exporting={false} onFilter={vi.fn()} onQuery={vi.fn()} onExport={vi.fn()} />);
   expect(toolbar.getAttribute("data-search-open")).toBe("true");
+  // 切换记录类型不再顺带撑开搜索框（以前会导致工具栏突然变宽）。
   rerender(<TimelineToolbar filter="errors" query="" exporting={false} onFilter={vi.fn()} onQuery={vi.fn()} onExport={vi.fn()} />);
-  expect(toolbar.getAttribute("data-search-open")).toBe("true");
+  expect(toolbar.getAttribute("data-search-open")).toBe("false");
 });
 
-it("toggles search from the top-bar event and collapses when the close button is clicked", () => {
+it("toggles search from the top-bar event and collapses it without touching the filter", () => {
   const onFilter = vi.fn();
   const { container } = render(
-    <TimelineToolbar sessionId="s1" filter="all" query="" exporting={false} onFilter={onFilter} onQuery={vi.fn()} onExport={vi.fn()} />,
+    <TimelineToolbar sessionId="s1" filter="errors" query="" exporting={false} onFilter={onFilter} onQuery={vi.fn()} onExport={vi.fn()} />,
   );
   const toolbar = container.querySelector(".conversation-tools")!;
   expect(toolbar.getAttribute("data-search-open")).toBe("false");
@@ -81,8 +82,8 @@ it("toggles search from the top-bar event and collapses when the close button is
     dispatchSessionToolbarAction("s1", "search");
   });
   expect(toolbar.getAttribute("data-search-open")).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "收起搜索和筛选" }));
-  expect(onFilter).toHaveBeenCalledWith("all");
+  fireEvent.click(screen.getByRole("button", { name: "收起搜索" }));
+  expect(onFilter).not.toHaveBeenCalled();
   expect(toolbar.getAttribute("data-search-open")).toBe("false");
 });
 

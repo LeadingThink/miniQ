@@ -783,12 +783,12 @@ export function ComposerCard(props: {
         )}
         {!props.chipSlot && contextControls}
         {props.permissionSlot}
-        {props.modelSlot}
         <div className="composer-submit">
           <div className="composer-submit-buttons">
             <p id={keyboardHintId} className="composer-keyboard-hint">
               {inputMode.keyboardHint}
             </p>
+            {props.modelSlot}
             {voiceControl && (
               <div className="composer-voice-inline">{voiceControl}</div>
             )}

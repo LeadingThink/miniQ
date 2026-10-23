@@ -17,6 +17,7 @@ import "../styles/scheduling.css";
 import "../styles/remote.css";
 import "../styles/experience.css";
 import "../styles/theme-picker.css";
+import "../styles/cyber.css";
 import "../styles/living-background.css";
 import { initializeBackground, storeBackground } from "../background";
 import { LivingBackground } from "../components/LivingBackground";

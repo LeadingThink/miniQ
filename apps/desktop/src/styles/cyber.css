@@ -1,0 +1,258 @@
+/* 量子 HUD 皮肤 -------------------------------------------------------------
+   只作用于 quantum（暗）/ holo（亮）这两套主题，其余 110 套主题完全不受影响。
+   设计语言：点阵网格底、青色霓虹描边、切角面板、等宽字体的元信息。
+   刻意保留原有字号与间距刻度：概念稿里 9–10px 的字号在真实办公场景不可读。 */
+
+/* ---------- 1. 语义令牌 ---------- */
+:root[data-theme="quantum"][data-theme-mode="dark"] {
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  --canvas: #06070a;
+  --bg: #0b0e14;
+  --sidebar-bg: #080a0f;
+  --bg-subtle: #101520;
+  --bg-hover: #141b28;
+  --bg-active: #1a2333;
+  --border: rgb(0 240 255 / 14%);
+  --border-strong: rgb(0 240 255 / 32%);
+  --hairline: rgb(0 240 255 / 10%);
+  --text: #e6f7ff;
+  --text-mid: #a8c2d4;
+  --text-dim: #7b93a6;
+  --accent: #00f0ff;
+  --danger: #ff5470;
+  --danger-bg: rgb(255 84 112 / 12%);
+  --ok: #2fe6a8;
+  --warn: #ffb020;
+  --warn-bg: rgb(255 176 32 / 12%);
+  --glass: rgb(9 12 18 / 86%);
+  --shadow: 0 1px 2px rgb(0 0 0 / 50%), 0 8px 24px rgb(0 0 0 / 45%);
+  --shadow-sheet: 0 1px 2px rgb(0 0 0 / 45%), 0 16px 42px rgb(0 0 0 / 50%);
+  --shadow-lg: 0 2px 6px rgb(0 0 0 / 50%), 0 28px 72px rgb(0 0 0 / 60%);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 40%);
+  --shadow-popover: 0 10px 30px rgb(0 0 0 / 65%);
+  --shadow-page: 0 8px 28px rgb(0 0 0 / 55%);
+  --scrollbar-thumb: rgb(0 240 255 / 22%);
+  --scrollbar-thumb-hover: rgb(0 240 255 / 45%);
+  --media-overlay-bg: rgb(2 8 12 / 72%);
+
+  /* HUD 私有令牌 */
+  --hud-accent-2: #8b5cf6;
+  --hud-corner: rgb(0 240 255 / 55%);
+  --hud-panel: rgb(11 15 23 / 92%);
+  --hud-glow: 0 0 20px -6px rgb(0 240 255 / 55%);
+  --hud-glow-strong: 0 0 26px -4px rgb(0 240 255 / 70%);
+  --hud-grid-line: rgb(0 240 255 / 4.5%);
+  --hud-ambient: rgb(0 240 255 / 9%);
+}
+
+:root[data-theme="holo"][data-theme-mode="light"] {
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  --canvas: #eef5f8;
+  --bg: #fbfdff;
+  --sidebar-bg: #e6f0f5;
+  --bg-subtle: #f2f8fb;
+  --bg-hover: #e9f3f8;
+  --bg-active: #dcebf2;
+  --border: rgb(0 110 130 / 16%);
+  --border-strong: rgb(0 110 130 / 34%);
+  --hairline: rgb(0 110 130 / 12%);
+  --text: #0a1a22;
+  --text-mid: #33505f;
+  --text-dim: #5d7887;
+  --accent: #00727f;
+  --danger: #c81e3c;
+  --danger-bg: #fdecef;
+  --ok: #0f7a5a;
+  --warn: #a45c00;
+  --warn-bg: #fff4e0;
+  --glass: rgb(251 253 255 / 88%);
+  --shadow: 0 1px 2px rgb(4 40 52 / 6%), 0 8px 24px rgb(4 40 52 / 8%);
+  --shadow-sheet: 0 1px 2px rgb(4 40 52 / 6%), 0 16px 42px rgb(4 40 52 / 10%);
+  --shadow-lg: 0 2px 6px rgb(4 40 52 / 8%), 0 28px 72px rgb(4 40 52 / 16%);
+  --shadow-sm: 0 1px 3px rgb(4 40 52 / 10%);
+  --shadow-popover: 0 10px 28px rgb(4 40 52 / 14%);
+  --shadow-page: 0 8px 28px rgb(4 40 52 / 14%);
+  --scrollbar-thumb: rgb(0 110 130 / 24%);
+  --scrollbar-thumb-hover: rgb(0 110 130 / 44%);
+
+  --hud-accent-2: #2f6ed6;
+  --hud-corner: rgb(0 110 130 / 45%);
+  --hud-panel: rgb(255 255 255 / 92%);
+  --hud-glow: 0 0 0 1px rgb(0 110 130 / 8%), 0 10px 26px -16px rgb(0 110 130 / 45%);
+  --hud-glow-strong: 0 0 0 1px rgb(0 110 130 / 14%), 0 12px 28px -14px rgb(0 110 130 / 55%);
+  --hud-grid-line: rgb(0 110 130 / 5%);
+  --hud-ambient: rgb(0 110 130 / 7%);
+}
+
+/* ---------- 2. 画布：点阵网格 + 顶部环境光 ---------- */
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .app {
+  background-color: var(--canvas);
+  background-image:
+    radial-gradient(120% 55% at 50% -10%, var(--hud-ambient), transparent 62%),
+    linear-gradient(var(--hud-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hud-grid-line) 1px, transparent 1px);
+  background-size: 100% 100%, 26px 26px, 26px 26px;
+  background-attachment: local, local, local;
+}
+
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) ::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) ::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) ::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  box-shadow: var(--hud-glow);
+}
+
+/* ---------- 3. 外壳：侧栏与顶栏 ---------- */
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .sidebar {
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+}
+
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .sidebar-section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .session-item.active {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 15%, transparent), transparent 72%);
+  box-shadow: inset 2px 0 0 var(--accent);
+  border-color: var(--border-strong);
+}
+
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .statusbar.app-toolbar {
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 0%), 0 8px 24px -22px var(--accent);
+}
+
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .app-toolbar-title {
+  letter-spacing: 0.01em;
+}
+
+/* 顶栏里的元信息（项目名 / 连接状态）统一走等宽字体 */
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .app-toolbar-project,
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .connection-state,
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .status-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+/* ---------- 4. 面板与卡片：切角 + 细描边 ---------- */
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .composer-card,
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .approval-card,
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .settings-panel {
+  border-color: var(--border);
+}
+
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .composer-card {
+  position: relative;
+  background: var(--hud-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--hud-glow), var(--shadow-sheet);
+}
+
+/* 四角切角标记：只画左上都右下，避免视觉过载 */
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .composer-card::before,
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .composer-card::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  pointer-events: none;
+  border-color: var(--hud-corner);
+  border-style: solid;
+}
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .composer-card::before {
+  top: -1px;
+  left: -1px;
+  border-width: 2px 0 0 2px;
+  border-top-left-radius: 2px;
+}
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .composer-card::after {
+  right: -1px;
+  bottom: -1px;
+  border-width: 0 2px 2px 0;
+  border-bottom-right-radius: 2px;
+}
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .composer-card:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--hud-glow-strong), var(--shadow-sheet);
+}
+
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .approval-card {
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+  box-shadow: 0 0 20px -8px color-mix(in srgb, var(--warn) 60%, transparent);
+}
+
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .tool-step,
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .execution-plan {
+  border-color: var(--border);
+}
+
+/* ---------- 5. 控件 ---------- */
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .send-btn:not(.stop):not(:disabled) {
+  background: linear-gradient(135deg, var(--accent), var(--hud-accent-2));
+  color: var(--accent-fg);
+  box-shadow: var(--hud-glow);
+}
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .send-btn:not(.stop):not(:disabled):hover {
+  box-shadow: var(--hud-glow-strong);
+  filter: saturate(115%);
+}
+
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) :focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 1px;
+}
+
+/* 分段控件 / 标签页选中态：底部一道电光 */
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) [role="tab"][aria-selected="true"] {
+  color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* ---------- 6. 浮层 ---------- */
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .app-toolbar-menu,
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .composer-plus-panel,
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .session-model-popover,
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .palette-panel {
+  background: var(--hud-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--hud-glow), var(--shadow-popover);
+}
+
+/* ---------- 7. 首页 / 空态 ---------- */
+:is(:root[data-theme="quantum"], :root[data-theme="holo"]) .hero {
+  background-image:
+    radial-gradient(90% 60% at 50% 0%, var(--hud-ambient), transparent 65%);
+}

@@ -48,10 +48,9 @@ export function TimelineToolbar(props: {
   const menu = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
-  // Phones collapse filter + search behind one icon until needed. An active
-  // query or filter keeps them expanded so the user can see why rows are hidden.
+  // 搜索是独立状态：切换「回答/执行/异常」筛选不再顺带撑开搜索框。
   const [searching, setSearching] = useState(false);
-  const expanded = searching || !!props.query || props.filter !== "all";
+  const expanded = searching || !!props.query;
   useEffect(() => {
     if (searching) search.current?.focus();
   }, [searching]);
@@ -94,25 +93,31 @@ export function TimelineToolbar(props: {
       <TimelineFilterSheet open={filterOpen} filter={props.filter} counts={props.filterCounts} onClose={() => setFilterOpen(false)} onFilter={props.onFilter} />
       <label className="timeline-search">
         <Search size={14} aria-hidden="true" />
-        <input ref={search} type="search" aria-label="搜索当前会话" placeholder="搜索会话" data-session-search="true" title="搜索当前会话（⌘/Option+F 或 Ctrl+F）" value={props.query} onChange={(event) => props.onQuery(event.target.value)} onKeyDown={(event) => {
+        <input ref={search} type="search" aria-label="搜索当前会话" placeholder="搜索会话" data-session-search="true" title="搜索当前会话（⌘/Option+F 或 Ctrl+F）" value={props.query} onChange={(event) => props.onQuery(event.target.value)} onFocus={() => setSearching(true)} onKeyDown={(event) => {
           if (event.key === "Enter" && !event.nativeEvent.isComposing && props.onStep) {
             event.preventDefault();
             props.onStep(event.shiftKey ? 1 : -1);
-          } else if (event.key === "Escape" && props.query) {
+          } else if (event.key === "Escape") {
             event.preventDefault();
             props.onQuery("");
+            setSearching(false);
           }
         }} />
         {props.query ? (
-          <button type="button" className="icon-button" title="清空会话搜索" aria-label="清空会话搜索" onClick={() => props.onQuery("")}><X size={14} /></button>
-        ) : (searching || props.filter !== "all") ? (
-          <button type="button" className="icon-button timeline-search-close" title="收起搜索和筛选" aria-label="收起搜索和筛选" onClick={() => {
-            props.onFilter("all");
-            setSearching(false);
-          }}><X size={14} /></button>
+          <button type="button" className="icon-button" title="清空搜索" aria-label="清空会话搜索" onClick={() => props.onQuery("")}><X size={14} /></button>
+        ) : expanded ? (
+          <button
+            type="button"
+            className="icon-button timeline-search-close"
+            title="收起搜索（Esc）"
+            aria-label="收起搜索"
+            onClick={() => setSearching(false)}
+          >
+            <X size={14} />
+          </button>
         ) : null}
       </label>
-      {props.navigator}
+      {expanded && props.navigator}
       {props.summary}
       <div className="timeline-actions">
         <button ref={menu} type="button" className="timeline-actions-trigger" title="更多会话操作" aria-label="更多会话操作" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>

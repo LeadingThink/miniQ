@@ -24,7 +24,7 @@ function setup() {
   return { ...view, client, model };
 }
 
-it("uses a modal top layer on the phone and applies model plus strength together", async () => {
+it("uses a modal top layer on the phone, keeps it open while picking, then applies on done", async () => {
   const { model } = setup();
   const trigger = screen.getByRole("button", { name: "选择模型和思考强度" });
   fireEvent.click(trigger);
@@ -35,9 +35,9 @@ it("uses a modal top layer on the phone and applies model plus strength together
   fireEvent.mouseDown(option);
   fireEvent.click(option);
   expect(screen.getByRole("dialog", { name: "选择会话模型" })).toBeTruthy();
-  fireEvent.click(within(dialog).getByRole("button", { name: "应用" }));
+  await waitFor(() => expect(model.update).toHaveBeenCalledExactlyOnceWith({ model: "claude-opus-very-long-model-name", apiProtocol: "auto", reasoningEffort: null }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "完成" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(model.update).toHaveBeenCalledExactlyOnceWith({ model: "claude-opus-very-long-model-name", apiProtocol: "auto", reasoningEffort: null });
   expect(document.activeElement).toBe(trigger);
 });
 
@@ -48,7 +48,7 @@ it("filters while typing without closing the portal, and dismisses safely on tas
   const input = screen.getByRole("textbox", { name: "模型 ID" });
   fireEvent.mouseDown(input);
   fireEvent.change(input, { target: { value: "opus" } });
-  expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(false);
+  fireEvent.keyDown(input, { key: "Enter" });
   expect(view.model.update).not.toHaveBeenCalled();
   expect(screen.queryByRole("option", { name: "gpt-5.6-sol" })).toBeNull();
   expect(screen.getByRole("option", { name: "claude-opus-very-long-model-name" })).toBeTruthy();
@@ -57,14 +57,11 @@ it("filters while typing without closing the portal, and dismisses safely on tas
   expect(view.model.update).not.toHaveBeenCalled();
 });
 
-it("handles Escape inside the native dialog before its default cancel closes the surface", async () => {
+it("closes the native dialog on Escape", async () => {
   setup();
   fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
   await screen.findByRole("option", { name: "gpt-5.6-sol" });
   const input = screen.getByRole("textbox", { name: "模型 ID" });
-  expect(fireEvent.keyDown(input, { key: "Escape" })).toBe(false);
-  expect(screen.queryByRole("listbox")).toBeNull();
-  expect(screen.getByRole("dialog")).toBeTruthy();
   expect(fireEvent.keyDown(input, { key: "Escape" })).toBe(false);
   expect(screen.queryByRole("dialog")).toBeNull();
 });
@@ -89,6 +86,6 @@ it.each([
   setup();
   fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
   await screen.findByRole("textbox", { name: "模型 ID" });
-  expect(screen.queryByRole("dialog", { name: "选择会话模型" }) !== null).toBe(dialog);
-  expect(screen.getByRole("form", { name: "会话模型配置" }).closest(".session-model-controls") !== null).toBe(!dialog);
+  expect(document.querySelector("dialog.session-model-dialog") !== null).toBe(dialog);
+  expect(document.querySelector(".session-model-popover")?.closest(".session-model-controls") !== null).toBe(!dialog);
 });

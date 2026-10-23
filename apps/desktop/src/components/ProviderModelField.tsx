@@ -2,6 +2,7 @@ import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import { moveMenuIndex } from "../menuNavigation";
+import { MODEL_AVAILABILITY_NOTICE, MODEL_AVAILABILITY_URL } from "../modelSelection";
 import type { RpcClient } from "../rpc";
 import { ModelRankingLink } from "./ModelRankingLink";
 
@@ -182,6 +183,12 @@ export function ProviderModelField(props: ProviderModelFieldProps) {
           {loading ? "正在读取模型列表…" : "刷新模型列表"}
         </button>
         <ModelRankingLink />
+        <ModelRankingLink
+          href={MODEL_AVAILABILITY_URL}
+          label="查看模型可用性"
+          notice={MODEL_AVAILABILITY_NOTICE}
+          failure="无法打开模型可用性页面，请重试"
+        />
       </div>
       {catalogStatus && <small role="status">{catalogStatus}</small>}
     </div>

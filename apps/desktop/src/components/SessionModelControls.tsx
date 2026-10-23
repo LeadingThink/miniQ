@@ -1,6 +1,6 @@
 import { ModelRankingLink } from "./ModelRankingLink";
-import { Check, ChevronDown, Cpu, RefreshCw, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Check, ChevronDown, Cpu, RefreshCw, Search, X } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   DEFAULT_MODEL_SETTINGS,
   EFFORT_LABELS,
@@ -13,6 +13,9 @@ import type { useSessionModel } from "../hooks/useSessionModel";
 import { SessionModelSurface } from "./SessionModelSurface";
 
 const MODEL_DIALOG_QUERY = "(max-width: 720px), (pointer: coarse)";
+const SUBMENU_WIDTH = 164;
+const SUBMENU_GAP = 6;
+
 function needsModelDialog() {
   return window.matchMedia?.(MODEL_DIALOG_QUERY).matches ?? window.innerWidth <= 720;
 }
@@ -34,20 +37,62 @@ export function SessionModelControls({
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
+  const [hovered, setHovered] = useState("");
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [selectedEffort, setSelectedEffort] = useState<ReasoningEffort | null>(null);
   const [description, setDescription] = useState<ModelDescription | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [descriptionFor, setDescriptionFor] = useState("");
   const [descriptionLoading, setDescriptionLoading] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [modelListOpen, setModelListOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const hoveredRow = useRef<HTMLElement | null>(null);
+  const closeTimer = useRef<number | undefined>(undefined);
+  const descriptions = useRef(new Map<string, ModelDescription>());
   const [mobile, setMobile] = useState(needsModelDialog);
-  const selectedModelRef = useRef<HTMLButtonElement>(null);
   const [popoverMaxHeight, setPopoverMaxHeight] = useState<number | null>(null);
   const disabled = busy || model.pending || !model.ready;
+
+  const placeSubmenu = useCallback((row: HTMLElement) => {
+    const rect = row.getBoundingClientRect();
+    const openRight = rect.right + SUBMENU_GAP + SUBMENU_WIDTH <= window.innerWidth - 8;
+    const estimatedHeight = 34 + 8 * 28 + 12;
+    setMenuPos({
+      top: Math.max(8, Math.min(rect.top, window.innerHeight - estimatedHeight)),
+      left: Math.max(8, openRight ? rect.right + SUBMENU_GAP : rect.left - SUBMENU_GAP - SUBMENU_WIDTH),
+    });
+  }, []);
+
+  const cancelClose = useCallback(() => {
+    window.clearTimeout(closeTimer.current);
+    closeTimer.current = undefined;
+  }, []);
+
+  const closeSubmenu = useCallback(() => {
+    cancelClose();
+    setHovered("");
+    setMenuPos(null);
+    hoveredRow.current = null;
+  }, [cancelClose]);
+
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => {
+      setHovered("");
+      setMenuPos(null);
+      hoveredRow.current = null;
+    }, 160);
+  }, [cancelClose]);
+
+  const openSubmenu = useCallback((id: string, row: HTMLElement | null) => {
+    cancelClose();
+    setHovered(id);
+    hoveredRow.current = row;
+    if (!mobile && row) placeSubmenu(row);
+  }, [cancelClose, mobile, placeSubmenu]);
 
   useEffect(() => {
     const media = window.matchMedia?.(MODEL_DIALOG_QUERY);
@@ -61,14 +106,32 @@ export function SessionModelControls({
   }, [busy, model.ready]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      closeSubmenu();
+      return;
+    }
     const handleOutsideMouseDown = (event: MouseEvent) => {
       const root = rootRef.current;
-      if (root && !root.contains(event.target as Node) && !formRef.current?.contains(event.target as Node)) setOpen(false);
+      if (root && !root.contains(event.target as Node) && !panelRef.current?.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener("mousedown", handleOutsideMouseDown);
     return () => document.removeEventListener("mousedown", handleOutsideMouseDown);
-  }, [open]);
+  }, [open, closeSubmenu]);
+
+  // fixed 定位的二级菜单跟着行一起走，滚轮滚动时重新贴合。
+  useEffect(() => {
+    if (!open || mobile) return;
+    const reposition = () => {
+      if (hoveredRow.current) placeSubmenu(hoveredRow.current);
+    };
+    const list = listRef.current;
+    list?.addEventListener("scroll", reposition, { passive: true });
+    window.addEventListener("resize", reposition);
+    return () => {
+      list?.removeEventListener("scroll", reposition);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [open, mobile, placeSubmenu]);
 
   useLayoutEffect(() => {
     if (!open || mobile) {
@@ -82,41 +145,12 @@ export function SessionModelControls({
       const availableHeight = placement === "below"
         ? window.innerHeight - bounds.bottom - 26
         : bounds.top - 26;
-      setPopoverMaxHeight(Math.max(120, Math.floor(availableHeight)));
+      setPopoverMaxHeight(Math.max(160, Math.floor(availableHeight)));
     };
     updatePopoverHeight();
     window.addEventListener("resize", updatePopoverHeight);
     return () => window.removeEventListener("resize", updatePopoverHeight);
   }, [open, placement, mobile]);
-
-  const descriptionTarget = open ? selectedModel : model.effective?.model;
-  useEffect(() => {
-    if (!descriptionTarget || (!open && descriptionFor === descriptionTarget)) return;
-    let stale = false;
-    setDescriptionLoading(true);
-    setDescription(null);
-    setDescriptionError(null);
-    void client
-      .call<ModelDescription>("model.describe", {
-        model: descriptionTarget,
-        apiProtocol: open ? "auto" : (model.effective?.apiProtocol ?? "auto"),
-      })
-      .then((value) => {
-        if (!stale) {
-          setDescription(value);
-          setDescriptionFor(descriptionTarget);
-        }
-      })
-      .catch((cause) => {
-        if (!stale) setDescriptionError(String(cause));
-      })
-      .finally(() => {
-        if (!stale) setDescriptionLoading(false);
-      });
-    return () => {
-      stale = true;
-    };
-  }, [client, descriptionTarget, model.effective?.apiProtocol, open, attempt]);
 
   useEffect(() => {
     setSelectedModel(model.settings.model ?? model.effective?.model ?? "");
@@ -144,18 +178,49 @@ export function SessionModelControls({
     };
   }, [client, open, attempt]);
 
-  useLayoutEffect(() => {
-    if (!modelListOpen) return;
-    const selectedModel = selectedModelRef.current;
-    if (typeof selectedModel?.scrollIntoView === "function") {
-      selectedModel.scrollIntoView({ block: "start" });
+  // 悬停的模型决定右侧档位菜单；描述按模型缓存，来回划过不发请求。
+  const describeTarget = open ? hovered || selectedModel : (model.effective?.model ?? "");
+  useEffect(() => {
+    if (!describeTarget) return;
+    const cached = descriptions.current.get(describeTarget);
+    if (cached) {
+      setDescription(cached);
+      setDescriptionFor(describeTarget);
+      setDescriptionError(null);
+      setDescriptionLoading(false);
+      return;
     }
-  }, [modelListOpen, models, query]);
+    let stale = false;
+    setDescriptionLoading(true);
+    setDescription(null);
+    setDescriptionError(null);
+    void client
+      .call<ModelDescription>("model.describe", {
+        model: describeTarget,
+        apiProtocol: open ? "auto" : (model.effective?.apiProtocol ?? "auto"),
+      })
+      .then((value) => {
+        descriptions.current.set(describeTarget, value);
+        if (!stale) {
+          setDescription(value);
+          setDescriptionFor(describeTarget);
+        }
+      })
+      .catch((cause) => {
+        if (!stale) setDescriptionError(String(cause));
+      })
+      .finally(() => {
+        if (!stale) setDescriptionLoading(false);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [client, describeTarget, model.effective?.apiProtocol, open, attempt]);
 
   const applySelection = async (
     id: string | null,
     effort: ReasoningEffort | null,
-    closeAfterSave = mobile,
+    closeAfterSave = true,
   ) => {
     if (disabled || (id !== null && (loading || catalogError || !models.includes(id)))) return;
     try {
@@ -163,15 +228,43 @@ export function SessionModelControls({
       setSelectedModel(id ?? "");
       setSelectedEffort(effort);
       setQuery("");
-      setModelListOpen(false);
       if (closeAfterSave) setOpen(false);
     } catch { /* The model hook exposes the save error. */ }
   };
-  const reopenList = () => {
-    if (!modelListOpen) setQuery("");
-    setModelListOpen(true);
-  };
-  const displayModel = open ? selectedModel : (model.effective?.model ?? "模型");
+  const currentModel = model.effective?.model ?? "";
+  const currentEffort = model.settings.reasoningEffort ?? model.effective?.reasoningEffort ?? null;
+  const displayModel = open ? selectedModel : (currentModel || "模型");
+  const visibleModels = filterModelIds(models, query);
+  const effortOptions = description?.reasoningEfforts ?? [];
+
+  const effortList = (id: string) => (
+    <div className="model-picker-effort-options" role="group" aria-label="思考强度档位">
+      <button
+        type="button"
+        aria-pressed={selectedEffort === null}
+        onClick={() => void applySelection(id, null)}
+      >默认</button>
+      {effortOptions.map((effort) => (
+        <button
+          key={effort}
+          type="button"
+          aria-pressed={selectedEffort === effort}
+          onClick={() => void applySelection(id, effort)}
+        >
+          {EFFORT_LABELS[effort]}
+          {selectedEffort === effort && <Check size={12} aria-hidden="true" />}
+        </button>
+      ))}
+    </div>
+  );
+
+  const effortState = descriptionLoading || descriptionFor !== describeTarget
+    ? <p className="model-picker-status" role="status">读取档位…</p>
+    : descriptionError
+      ? <div className="model-picker-status" role="alert">读取失败<button type="button" className="ghost" onClick={() => setAttempt((value) => value + 1)}>重试</button></div>
+      : effortOptions.length
+        ? effortList(hovered || selectedModel)
+        : <p className="model-picker-status">该模型不支持调整</p>;
 
   return (
     <div
@@ -184,24 +277,26 @@ export function SessionModelControls({
         ref={triggerRef}
         disabled={disabled}
         aria-expanded={open}
-        aria-haspopup={mobile ? "dialog" : undefined}
+        aria-haspopup="dialog"
         aria-label="选择模型和思考强度"
         title={busy ? "当前任务结束后可更换模型" : "选择模型和思考强度"}
         onClick={() => {
-          setOpen(!open);
-          setModelListOpen(mobile);
+          const next = !open;
+          setOpen(next);
           setQuery("");
-          setSelectedModel(model.settings.model ?? model.effective?.model ?? "");
+          closeSubmenu();
+          const startingModel = model.settings.model ?? model.effective?.model ?? "";
+          setSelectedModel(startingModel);
           setSelectedEffort(model.settings.reasoningEffort ?? model.effective?.reasoningEffort ?? null);
         }}
       >
         <Cpu size={14} />
         <span>{displayModel}</span>
         <span className="model-trigger-separator" aria-hidden="true">·</span>
-        <span>{model.settings.reasoningEffort
-          ? EFFORT_LABELS[model.settings.reasoningEffort]
-          : model.effective?.reasoningEffort
-            ? EFFORT_LABELS[model.effective.reasoningEffort]
+        <span>{selectedEffort
+          ? EFFORT_LABELS[selectedEffort]
+          : currentEffort
+            ? EFFORT_LABELS[currentEffort]
             : "默认"}</span>
         <ChevronDown size={13} aria-hidden="true" />
       </button>
@@ -221,197 +316,139 @@ export function SessionModelControls({
       )}
       {open && (
         <SessionModelSurface mobile={mobile} trigger={triggerRef} onClose={() => setOpen(false)}>
-        <form
-          ref={formRef}
-          className="session-model-popover"
-          style={
-            popoverMaxHeight === null
-              ? undefined
-              : { maxHeight: `${popoverMaxHeight}px` }
-          }
-          aria-label="会话模型配置"
-          aria-busy={model.pending}
-          onSubmit={(event) => {
-            event.preventDefault();
-            void applySelection(selectedModel || null, selectedEffort, true);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
-              event.preventDefault();
-              if (!event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) reopenList();
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              if (modelListOpen) setModelListOpen(false);
-              else setOpen(false);
-            }
-          }}
-        >
-          <header>
-            <div>
-              <strong>会话模型</strong>
-              <ModelRankingLink />
-            </div>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="关闭模型选择"
-              title="关闭模型选择"
-              onClick={() => setOpen(false)}
-            >
-              <X size={15} />
-            </button>
-          </header>
-          <label>
-            模型 ID
-            {models.length > 0 ? (
-              <span className="session-model-select">
-                <span className="session-model-search">
-                  <input
-                    autoFocus={!mobile}
-                    enterKeyHint={mobile ? "search" : undefined}
-                    value={query}
-                    placeholder={selectedModel || "搜索模型"}
-                    aria-label="模型 ID"
-                    disabled={disabled}
-                    onFocus={reopenList}
-                    onClick={reopenList}
-                    onChange={(event) => {
-                      setQuery(event.target.value);
-                      setModelListOpen(true);
-                    }}
-                    spellCheck={false}
-                  />
-                  <ChevronDown size={15} />
-                </span>
-                {modelListOpen && (
-                  <span
-                    className="session-model-list"
-                    role="listbox"
-                    aria-label="会话模型列表"
-                  >
-                    {filterModelIds(models, query).map((id) => {
-                      const selected = id === selectedModel;
-                      return (
-                        <button
-                          key={id}
-                          ref={selected ? selectedModelRef : undefined}
-                          type="button"
-                          role="option"
-                          aria-selected={selected}
-                          disabled={disabled}
-                          onClick={() => {
-                            setSelectedModel(id);
-                            setSelectedEffort(null);
-                            setQuery("");
-                            setModelListOpen(false);
-                          }}
-                        >
-                          <span>{id}</span>
-                          {selected && <Check size={14} />}
-                        </button>
-                      );
-                    })}
-                    {filterModelIds(models, query).length === 0 && (
-                      <span className="session-model-empty">没有匹配的文本模型</span>
-                    )}
-                  </span>
-                )}
-              </span>
-            ) : (
+          <div
+            ref={panelRef}
+            className="session-model-popover"
+            style={popoverMaxHeight === null ? undefined : { maxHeight: `${popoverMaxHeight}px` }}
+            role={mobile ? undefined : "dialog"}
+            aria-label={mobile ? undefined : "选择会话模型"}
+            aria-busy={model.pending}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                if (hovered) closeSubmenu();
+                else setOpen(false);
+              }
+            }}
+            onMouseLeave={mobile ? undefined : scheduleClose}
+          >
+            <header>
+              <strong>选择模型</strong>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="关闭模型选择"
+                title="关闭模型选择"
+                onClick={() => setOpen(false)}
+              >
+                <X size={15} />
+              </button>
+            </header>
+            <div className="model-picker-search">
+              <Search size={14} aria-hidden="true" />
               <input
                 autoFocus={!mobile}
-                aria-label="模型 ID"
-                disabled
-                enterKeyHint={mobile ? "search" : undefined}
                 value={query}
-                placeholder={model.effective?.model ?? "模型 ID"}
-                onChange={(event) => setQuery(event.target.value)}
+                placeholder="搜索模型"
+                aria-label="模型 ID"
+                disabled={disabled}
                 spellCheck={false}
+                onChange={(event) => setQuery(event.target.value)}
               />
+            </div>
+            {loading && <span role="status" className="model-picker-status">正在读取模型列表</span>}
+            {catalogError && (
+              <div role="alert" className="model-picker-status">
+                {catalogError}
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label="重试模型列表"
+                  title="重试模型列表"
+                  onClick={() => setAttempt((value) => value + 1)}
+                >
+                  <RefreshCw size={14} />
+                </button>
+              </div>
             )}
-          </label>
-          {loading && <span role="status">正在读取模型列表</span>}
-          {catalogError && (
-            <div role="alert">
-              {catalogError}
+            <div className="model-picker-list" role="listbox" aria-label="会话模型列表" ref={listRef}>
+              {visibleModels.map((id) => {
+                const selected = id === selectedModel;
+                return (
+                  <div className="model-picker-row" key={id}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      aria-haspopup="menu"
+                      disabled={disabled}
+                      title={id}
+                      className={id === hovered ? "active" : undefined}
+                      onMouseEnter={(event) => openSubmenu(id, event.currentTarget)}
+                      onFocus={(event) => openSubmenu(id, event.currentTarget)}
+                      onClick={() => {
+                        closeSubmenu();
+                        // 同一模型再点一次时保留已选档位，换模型才回到默认。
+                        const effort = id === currentModel ? currentEffort : null;
+                        if (mobile) {
+                          setSelectedEffort(effort);
+                          void applySelection(id, effort, false);
+                          openSubmenu(id, null);
+                        } else {
+                          void applySelection(id, effort);
+                        }
+                      }}
+                    >
+                      <span className="model-picker-name">{id}</span>
+                      {selected && <Check size={13} aria-hidden="true" />}
+                    </button>
+                    {mobile && hovered === id && (
+                      <div className="model-picker-inline-effort" aria-label="思考强度">
+                        <span className="model-picker-effort-title">思考强度</span>
+                        {effortState}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {visibleModels.length === 0 && !loading && (
+                <span className="model-picker-status">没有匹配的文本模型</span>
+              )}
+            </div>
+            <footer>
               <button
-                className="icon-button"
                 type="button"
-                aria-label="重试模型列表"
-                title="重试模型列表"
-                onClick={() => setAttempt((value) => value + 1)}
+                className="ghost"
+                disabled={disabled}
+                onClick={() => void applySelection(DEFAULT_MODEL_SETTINGS.model, null)}
               >
                 <RefreshCw size={14} />
+                恢复默认
               </button>
-            </div>
-          )}
-          {description && (
-            <dl className="model-capabilities">
-              <dt>上下文上限</dt>
-              <dd>
-                {description.maxContextTokens?.toLocaleString() ?? "未提供"}
-              </dd>
-              <dt>输出上限</dt>
-              <dd>
-                {description.maxOutputTokens?.toLocaleString() ?? "未提供"}
-              </dd>
-            </dl>
-          )}
-          {descriptionError && <span role="alert">{descriptionError}</span>}
-          <section className="session-model-effort" aria-label="思考强度">
-            <div className="session-model-effort-heading">
-              <strong>思考强度</strong>
-              <span>{selectedEffort ? EFFORT_LABELS[selectedEffort] : "默认"}</span>
-            </div>
-            {descriptionLoading || descriptionFor !== descriptionTarget ? (
-              <p className="session-model-effort-status" role="status">正在读取当前模型的思考档位…</p>
-            ) : descriptionError ? (
-              <div className="session-model-effort-status" role="alert">
-                未能读取思考档位
-                <button type="button" className="ghost" onClick={() => setAttempt((value) => value + 1)}>重试</button>
-              </div>
-            ) : description?.reasoningEfforts.length ? (
-              <div className="session-model-effort-options" role="group" aria-label="思考强度档位">
-                <button
-                  type="button"
-                  className="session-model-effort-option"
-                  aria-pressed={selectedEffort === null}
-                  onClick={() => setSelectedEffort(null)}
-                >默认</button>
-                {description.reasoningEfforts.map((effort) => (
-                  <button
-                    key={effort}
-                    type="button"
-                    className="session-model-effort-option"
-                    aria-pressed={selectedEffort === effort}
-                    onClick={() => setSelectedEffort(effort)}
-                  >
-                    {EFFORT_LABELS[effort]}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="session-model-effort-status" role="status">当前模型使用默认思考强度</p>
-            )}
-          </section>
-          <footer>
-            <button
-              type="button"
-              className="ghost"
-              disabled={disabled}
-              onClick={() => void applySelection(DEFAULT_MODEL_SETTINGS.model, null, true)}
-            >
-              <RefreshCw size={14} />
-              恢复默认
-            </button>
-            <button type="submit" disabled={disabled || loading || Boolean(catalogError) || !models.includes(selectedModel)}>
-              <Check size={14} />
-              {model.pending ? "正在应用…" : "应用"}
-            </button>
-          </footer>
-        </form>
+              <ModelRankingLink />
+              {mobile && (
+                <button type="button" onClick={() => setOpen(false)}>
+                  <Check size={14} />
+                  完成
+                </button>
+              )}
+            </footer>
+          </div>
         </SessionModelSurface>
+      )}
+      {open && !mobile && hovered && menuPos && (
+        <div
+          className="model-picker-submenu"
+          role="group"
+          aria-label="思考强度"
+          style={{ top: menuPos.top, left: menuPos.left }}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+        >
+          <div className="model-picker-submenu-title">思考强度</div>
+          {effortState}
+        </div>
       )}
     </div>
   );

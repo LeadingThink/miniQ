@@ -56,10 +56,10 @@ afterEach(() => {
 
 describe("theme catalog", () => {
   it("covers all palettes with a valid opposite-mode fallback", () => {
-    expect(THEMES).toHaveLength(110);
-    expect(new Set(THEMES.map((theme) => theme.id)).size).toBe(110);
-    expect(THEMES.filter((theme) => theme.mode === "light")).toHaveLength(69);
-    expect(THEMES.filter((theme) => theme.mode === "dark")).toHaveLength(41);
+    expect(THEMES).toHaveLength(112);
+    expect(new Set(THEMES.map((theme) => theme.id)).size).toBe(112);
+    expect(THEMES.filter((theme) => theme.mode === "light")).toHaveLength(70);
+    expect(THEMES.filter((theme) => theme.mode === "dark")).toHaveLength(42);
     for (const theme of THEMES) {
       expect(isThemeId(theme.id)).toBe(true);
       expect(resolveTheme(theme.id)).toBe(theme.id);

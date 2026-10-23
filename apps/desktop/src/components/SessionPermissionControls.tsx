@@ -1,4 +1,4 @@
-import { RotateCcw, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage } from "../errorMessage";
 import type { RpcClient } from "../rpc";
@@ -56,12 +56,11 @@ function Controls({ client, sessionId }: Props) {
       window.removeEventListener("focus", load);
     };
   }, [client, sessionId, load]);
-  const update = async (mode: ApprovalMode | null, confirmed = false) => {
+  const update = async (mode: ApprovalMode, confirmed = false) => {
     if (updating.current) return;
     if (
       !confirmed &&
       client.mode === "remote" &&
-      mode &&
       settings &&
       RANK[mode] > RANK[settings.effective]
     ) {
@@ -99,18 +98,6 @@ function Controls({ client, sessionId }: Props) {
           disabled={pending}
           onChange={(mode) => void update(mode)}
         />
-      )}
-      {settings?.mode && (
-        <button
-          type="button"
-          className="icon-button"
-          disabled={pending}
-          title="恢复跟随全局审批设置"
-          aria-label="恢复跟随全局审批设置"
-          onClick={() => void update(null)}
-        >
-          <RotateCcw size={14} />
-        </button>
       )}
       {!settings && !error && <span role="status">正在读取权限</span>}
       {error && (

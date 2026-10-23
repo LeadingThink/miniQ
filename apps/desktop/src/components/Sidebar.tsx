@@ -354,7 +354,7 @@ export function Sidebar(props: SidebarProps) {
           <MoreHorizontal className="nav-icon" size={16} /> {moreOpen ? "收起功能" : "更多功能"}
         </button>
         </div>}
-        <div className="sidebar-account-row">
+        <div className={`sidebar-account-row${mobile ? "" : " desktop"}`}>
           <div className="sidebar-account" title="本机账户">
             <span className="sidebar-account-avatar" aria-hidden="true">Q</span>
             <span className="sidebar-account-status" aria-hidden="true"><span /></span>
@@ -387,7 +387,7 @@ export function Sidebar(props: SidebarProps) {
             </DropdownMenu>
           </>}
           <button type="button" className="nav-item sidebar-nav-button sidebar-settings-button" onClick={props.onShowSettings} title="设置（⌘/Ctrl+,）">
-            <Settings className="nav-icon" size={16} /> 设置
+            <Settings className="nav-icon" size={16} /> <span className="sidebar-settings-label">设置</span>
           </button>
         </div>
       </div>

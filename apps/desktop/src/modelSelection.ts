@@ -39,6 +39,8 @@ export const DEFAULT_MODEL_SETTINGS: SessionModelSettings = {
 };
 export const MODEL_RANKING_URL = "https://platform.zaiwenai.com/ranking";
 export const MODEL_RANKING_NOTICE = "模型热度榜仅表示使用热度，不代表质量";
+export const MODEL_AVAILABILITY_URL = "https://platform.zaiwenai.com/models";
+export const MODEL_AVAILABILITY_NOTICE = "在问平台的模型列表与当前可用状态";
 export const PROTOCOL_LABELS: Record<ApiProtocol, string> = {
   auto: "自动协议",
   responses: "Responses",

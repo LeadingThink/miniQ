@@ -40,14 +40,12 @@ async function openPicker() {
   return trigger;
 }
 
-it("confirms the new-conversation draft and closes without starting or changing a session", async () => {
+it("applies the picked model to the new-conversation draft and closes without touching a session", async () => {
   const { call, drafts } = setup(null);
   const trigger = await openPicker();
   fireEvent.click(screen.getByRole("option", { name: "claude-test" }));
-  await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(trigger.textContent).toContain("claude-test");
-  fireEvent.click(screen.getByRole("button", { name: "应用" }));
-  await waitFor(() => expect(screen.queryByRole("form", { name: "会话模型配置" })).toBeNull());
   expect(drafts.get("stock_news")).toEqual({ ...DEFAULT_MODEL_SETTINGS, model: "claude-test" });
   expect(call.mock.calls.every(([method]) => ["workspace.modelGet", "model.list", "model.describe"].includes(method))).toBe(true);
   await openPicker();
@@ -61,14 +59,14 @@ it("waits for the save, shows failure, and closes only after a successful retry"
     .mockImplementation(async (settings) => result(settings));
   const { call } = setup("session-a", save);
   const trigger = await openPicker();
-  fireEvent.click(screen.getByRole("button", { name: "应用" }));
-  expect(screen.getByRole("form", { name: "会话模型配置" }).getAttribute("aria-busy")).toBe("true");
-  expect(screen.getByRole<HTMLButtonElement>("button", { name: "正在应用…" }).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("option", { name: "gpt-default" }));
+  await waitFor(() => expect(document.querySelector(".session-model-popover")?.getAttribute("aria-busy")).toBe("true"));
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
   await act(async () => reject(new Error("save failed")));
   expect(screen.getByRole("alert").textContent).toContain("save failed");
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "应用" }));
-  await waitFor(() => expect(screen.queryByRole("form", { name: "会话模型配置" })).toBeNull());
+  fireEvent.click(screen.getByRole("option", { name: "gpt-default" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(save).toHaveBeenCalledTimes(2);
   expect(call).toHaveBeenLastCalledWith("session.modelUpdate", {
     sessionId: "session-a", settings: { ...DEFAULT_MODEL_SETTINGS, model: "gpt-default" },

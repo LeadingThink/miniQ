@@ -335,3 +335,105 @@
   padding: 8px 12px;
   margin-right: 6px;
 }
+
+/* ---------- 手机端输入区：收成一行，和首屏一致 ---------- */
+@media (max-width: 720px) {
+  .native-mobile .composer-card {
+    padding: 6px 8px 8px;
+    border-radius: 20px;
+  }
+  .native-mobile .composer-row {
+    flex-wrap: nowrap;
+    gap: 4px;
+    align-items: center;
+  }
+  /* 工作区名在会话标题里已经有了，手机上不再重复占位 */
+  .native-mobile .composer-row > .chip {
+    display: none;
+  }
+  .native-mobile .composer-submit {
+    margin-left: auto;
+  }
+  .native-mobile .composer-submit .model-trigger {
+    max-width: 128px;
+    padding: 4px 6px;
+  }
+  .native-mobile .session-permissions .mode-trigger {
+    min-height: 30px;
+    padding: 0 8px;
+    font-size: var(--font-caption);
+  }
+  .native-mobile .composer-keyboard-hint {
+    display: none;
+  }
+}
+
+/* ---------- 手机端侧栏：去掉多余的方框，贴着主页面 ---------- */
+@media (max-width: 720px) {
+  .native-mobile .sidebar > .sidebar-primary-actions > .sidebar-skills-button,
+  .native-mobile .sidebar > .sidebar-primary-actions > .sidebar-running-button {
+    justify-content: flex-start;
+    min-height: 36px;
+    padding: 6px 4px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-mid);
+  }
+  .native-mobile .sidebar > .sidebar-primary-actions > .sidebar-skills-button:hover,
+  .native-mobile .sidebar > .sidebar-primary-actions > .sidebar-running-button:hover,
+  .native-mobile .sidebar > .sidebar-primary-actions > .sidebar-running-button.active {
+    border: 0;
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+}
+
+@media (max-width: 720px) {
+  /* 权限按钮不能被压成竖排文字 */
+  .native-mobile .composer-row > .session-permissions {
+    flex: none;
+  }
+  .native-mobile .session-permissions .mode-trigger {
+    white-space: nowrap;
+  }
+  /* 只留模型名，强度在展开的二级菜单里选 */
+  .native-mobile .model-trigger .model-trigger-separator,
+  .native-mobile .model-trigger .model-trigger-separator + span {
+    display: none;
+  }
+  .native-mobile .composer-submit .model-trigger {
+    max-width: 140px;
+  }
+}
+
+@media (max-width: 720px) {
+  /* 一行放得下五个控件的宽度预算 */
+  .native-mobile .composer-plus-trigger {
+    width: 38px;
+    height: 38px;
+  }
+  .native-mobile .composer-submit .model-trigger {
+    max-width: 118px;
+  }
+  .native-mobile .composer-row {
+    gap: 3px;
+  }
+}
+
+@media (max-width: 720px) {
+  .native-mobile .composer-submit .model-trigger {
+    max-width: 96px;
+  }
+}
+
+@media (max-width: 720px) {
+  .native-mobile .session-permissions .mode-trigger {
+    padding: 0 6px;
+    font-size: 11px;
+    gap: 3px;
+  }
+  .native-mobile .composer-submit .model-trigger {
+    max-width: 122px;
+  }
+}

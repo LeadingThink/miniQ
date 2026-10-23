@@ -187,6 +187,65 @@
   flex: none;
   width: auto;
 }
+
+/* 桌面端底部账户区：压成一行，次级操作降级成小图标按钮，
+   和上面成排的导航条目区分开。移动端抽屉继续用原样式。 */
+.sidebar-account-row.desktop {
+  gap: 2px;
+  padding: var(--space-1) var(--space-1) 0;
+}
+.sidebar-account-row.desktop .sidebar-account {
+  gap: 7px;
+  padding: 3px 4px;
+  border-radius: var(--radius-sm);
+}
+.sidebar-account-row.desktop .sidebar-account-avatar {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+}
+.sidebar-account-row.desktop .sidebar-account-status,
+.sidebar-account-row.desktop .sidebar-account-chevron {
+  display: none;
+}
+.sidebar-account-row.desktop .sidebar-account-copy {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+.sidebar-account-row.desktop .sidebar-account-name {
+  font-size: var(--font-footnote);
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-account-row.desktop .sidebar-account-copy small {
+  font-size: var(--font-caption);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-account-row.desktop .sidebar-settings-button {
+  height: 28px;
+  gap: 5px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-caption);
+  color: var(--text-dim);
+}
+.sidebar-account-row.desktop .sidebar-settings-button .nav-icon {
+  width: 14px;
+  height: 14px;
+}
+.sidebar-account-row.desktop .sidebar-settings-button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
 .session-copy {
   display: flex;
   flex-direction: column;

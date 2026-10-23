@@ -100,3 +100,13 @@ it("debounces typing and cancels requests when unmounted", async () => {
   unmount();
   expect(signal.aborted).toBe(true);
 });
+
+it("links to the model ranking and the availability catalog", () => {
+  const call = vi.fn().mockResolvedValue({ models: [] });
+  render(<ProviderModelField {...baseProps} client={{ call } as unknown as RpcClient} />);
+  const ranking = screen.getByRole("link", { name: "查看模型热度榜" });
+  const availability = screen.getByRole("link", { name: "查看模型可用性" });
+  expect(ranking.getAttribute("href")).toBe("https://platform.zaiwenai.com/ranking");
+  expect(availability.getAttribute("href")).toBe("https://platform.zaiwenai.com/models");
+  expect(availability.getAttribute("title")).toBe("在问平台的模型列表与当前可用状态");
+});

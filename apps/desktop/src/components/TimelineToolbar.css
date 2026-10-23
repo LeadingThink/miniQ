@@ -161,3 +161,78 @@
   .conversation-tools .session-search-locate { min-width: 44px; height: 40px; }
   .native-mobile .conversation-tools[data-search-open="false"] .session-search-nav { display: none; }
 }
+
+/* ---------- 搜索：一枚胶囊承载输入、清除与计数 ---------- */
+.timeline-toolbar .timeline-search {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  min-width: 180px;
+  margin-left: 4px;
+  padding: 0 3px 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text-dim);
+  transition: border-color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
+}
+.timeline-toolbar .timeline-search:hover { border-color: var(--border); }
+.timeline-toolbar .timeline-search:focus-within {
+  border-color: var(--border-strong);
+  background: var(--bg);
+}
+.timeline-toolbar .timeline-search input {
+  width: 100%;
+  padding: 0;
+  font-size: var(--font-footnote);
+}
+.timeline-toolbar .timeline-search .icon-button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-dim);
+  background: transparent;
+}
+.timeline-toolbar .timeline-search .icon-button:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+/* 计数与上下步进合成一个胶囊，不再并排三个方框 */
+.session-search-nav {
+  height: 30px;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+}
+.session-search-count {
+  min-width: 44px;
+  padding: 0 2px;
+  font-size: var(--font-caption, 11px);
+}
+.session-search-nav .icon-button {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+}
+.session-search-locate {
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--text-mid);
+  background: transparent;
+  font-size: var(--font-caption, 11px);
+}
+.session-search-locate:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.timeline-toolbar .timeline-search input:focus,
+.timeline-toolbar .timeline-search input:focus-visible { outline: none; }
