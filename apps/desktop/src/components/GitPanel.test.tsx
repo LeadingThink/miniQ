@@ -9,35 +9,59 @@ afterEach(cleanup);
 const STATUS = {
   root: "/project",
   branch: "main...origin/main",
-  entries: [{ path: "src/app.ts", indexStatus: "M", worktreeStatus: "M" }],
+  entries: [{ path: "src/app.ts", indexStatus: "M", worktreeStatus: "M", additions: 1, deletions: 0 }],
+  stats: { additions: 1, deletions: 0 },
 };
 
-it("loads repository status and switches between worktree and staged diffs", async () => {
-  const call = vi.fn((method: string, input: { staged?: boolean }) => {
-    if (method === "git.status") return Promise.resolve(STATUS);
-    return Promise.resolve({ diff: input.staged ? "staged change" : "worktree change" });
-  });
-  render(
-    <GitPanel
-      client={{ call } as unknown as RpcClient}
-      sessionId="session-1"
-    />,
+it("loads status, expands the first file, and collapses it on click", async () => {
+  const call = vi.fn((method: string) =>
+    Promise.resolve(method === "git.status" ? STATUS : { diff: "worktree change" }),
   );
+  render(<GitPanel client={{ call } as unknown as RpcClient} sessionId="session-1" />);
 
   expect(await screen.findByText("worktree change")).toBeTruthy();
-  expect(call).toHaveBeenCalledWith(
-    "git.diff",
-    { sessionId: "session-1", path: "src/app.ts", staged: false },
-    expect.objectContaining({ signal: expect.any(AbortSignal) }),
-  );
+  expect(screen.getByText("main")).toBeTruthy();
+  expect(screen.getByText("origin/main")).toBeTruthy();
+  expect(screen.getAllByText("+1")).toHaveLength(2);
+  expect(call).toHaveBeenCalledWith("git.diff", {
+    sessionId: "session-1",
+    path: "src/app.ts",
+    staged: false,
+  });
 
-  fireEvent.click(screen.getByRole("button", { name: "暂存区" }));
-  await waitFor(() => expect(screen.getByText("staged change")).toBeTruthy());
-  expect(call).toHaveBeenCalledWith(
-    "git.diff",
-    { sessionId: "session-1", path: "src/app.ts", staged: true },
-    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+  fireEvent.click(screen.getByRole("button", { name: /app\.ts/ }));
+  await waitFor(() => expect(screen.queryByText("worktree change")).toBeNull());
+});
+
+it("compares against a branch picked from the searchable menu", async () => {
+  const call = vi.fn((method: string, input?: { base?: string }) => {
+    if (method === "git.branches")
+      return Promise.resolve({
+        current: "main",
+        branches: [
+          { name: "main", remote: false, current: true },
+          { name: "origin/dev", remote: true, current: false },
+        ],
+      });
+    if (method === "git.status")
+      return Promise.resolve(input?.base ? { ...STATUS, base: input.base, entries: [], stats: { additions: 0, deletions: 0 } } : STATUS);
+    return Promise.resolve({ diff: "" });
+  });
+  render(<GitPanel client={{ call } as unknown as RpcClient} sessionId="session-1" />);
+
+  await screen.findByText("origin/main");
+  fireEvent.click(screen.getByRole("button", { name: /origin\/main/ }));
+  fireEvent.click(await screen.findByRole("menuitemradio", { name: "origin/dev" }));
+
+  await waitFor(() =>
+    expect(call).toHaveBeenCalledWith(
+      "git.status",
+      { sessionId: "session-1", base: "origin/dev" },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    ),
   );
+  expect(await screen.findByText("与 origin/dev 没有差异。")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "分支" })).toBeTruthy();
 });
 
 it("renders a unified diff line by line with syntax highlighting", async () => {
@@ -105,7 +129,7 @@ it("colors a raw diff when the payload has no structured hunks", async () => {
   ].join("\n");
   const call = vi.fn((method: string) =>
     Promise.resolve(method === "git.status"
-      ? { ...STATUS, entries: [{ path: "notes.txt", indexStatus: "M", worktreeStatus: " " }] }
+      ? { ...STATUS, entries: [{ path: "notes.txt", indexStatus: "M", worktreeStatus: " ", additions: 1, deletions: 1 }] }
       : { diff }),
   );
   const view = render(

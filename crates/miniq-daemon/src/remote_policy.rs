@@ -125,6 +125,7 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "host.remove"
         | "git.status"
         | "git.diff"
+        | "git.branches"
         | "terminal.create"
         | "terminal.read"
         | "terminal.input"
@@ -414,6 +415,7 @@ mod tests {
         for method in [
             "git.status",
             "git.diff",
+            "git.branches",
             "terminal.create",
             "terminal.read",
             "terminal.input",

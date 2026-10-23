@@ -174,6 +174,7 @@ async fn dispatch_from(
         }
         "git.status" => git::status(state, req.params).await,
         "git.diff" => git::diff(state, req.params).await,
+        "git.branches" => git::branches(state, req.params).await,
         "terminal.create" => terminal::create(state, req.params).await,
         "terminal.read" => terminal::read(state, req.params).await,
         "terminal.input" => terminal::input(state, req.params).await,
