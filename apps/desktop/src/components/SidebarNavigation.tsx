@@ -1,5 +1,5 @@
 import { useCallback, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import { CheckCheck, ListFilter, Search, X } from "lucide-react";
+import { CheckCheck, ChevronDown, ListFilter, Search, X } from "lucide-react";
 import { isSessionRunning } from "../sessionStatus";
 import { isMobileLayout, MOBILE_LAYOUT_QUERY } from "../mobileViewport";
 import type { Session, Workspace } from "../types";
@@ -105,57 +105,85 @@ export function SidebarFilters(props: {
   query: string;
   filter: SidebarFilter;
   counts: Record<SidebarFilter, number>;
+  workspaceCount?: number;
+  showQuery?: boolean;
   onQuery: (value: string) => void;
   onFilter: (value: SidebarFilter) => void;
   onMarkAllRead?: () => void;
+  onCollapseAll?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const mobile = useMobileSidebarLayout();
-  const controlsVisible = mobile || expanded;
+  const controlsVisible = expanded;
   const active = props.query !== "" || props.filter !== "all";
+  const showQuery = props.showQuery ?? true;
   return (
     <div className="sidebar-filters">
       <div className="sidebar-section sidebar-section-heading">
-        <span>项目与会话</span>
+        <span className="sidebar-section-title">工作区与项目</span>
+        {typeof props.workspaceCount === "number" && <span className="sidebar-section-count">{props.workspaceCount}</span>}
+        {mobile && <div className="sidebar-mobile-status-options" role="group" aria-label="会话状态筛选">
+          <button type="button" aria-label={`全部 ${props.counts.all}`} aria-pressed={props.filter === "all"}
+            onClick={() => props.onFilter("all")}>全部</button>
+          <button type="button" aria-label={`进行中 ${props.counts.running}`} aria-pressed={props.filter === "running"}
+            onClick={() => props.onFilter("running")}>
+            <span>进行中</span><i aria-hidden="true" />
+          </button>
+        </div>}
+        {props.onCollapseAll && <button type="button" className="sidebar-collapse-all" aria-label="全部折叠" title="全部折叠" onClick={props.onCollapseAll}>
+          <span>全部折叠</span><ChevronDown size={14} aria-hidden="true" />
+        </button>}
         {props.onMarkAllRead && props.counts.unread > 0 && <button type="button" className="sidebar-filter-toggle sidebar-mark-all-read"
           aria-label="全部标为已读" title="全部标为已读（⇧Esc）" onClick={props.onMarkAllRead}>
           <CheckCheck size={14} />
         </button>}
-        {!mobile && <button type="button" className={`sidebar-filter-toggle ${active ? "active" : ""}`}
-          aria-label="筛选项目和会话" aria-expanded={controlsVisible} aria-controls="sidebar-filter-controls"
+        <button type="button" className={`sidebar-filter-toggle ${active ? "active" : ""}`}
+          aria-label={mobile ? "更多会话筛选" : "筛选项目和会话"} aria-expanded={controlsVisible} aria-controls="sidebar-filter-controls"
           title={active ? "筛选已启用，点击调整" : "筛选项目和会话"} onClick={() => setExpanded(!expanded)}>
           <ListFilter size={14} />
-        </button>}
+        </button>
       </div>
       {controlsVisible && (
         <div className="sidebar-filter-controls" id="sidebar-filter-controls">
-          <div className="sidebar-filter-query">
-            <Search size={13} aria-hidden="true" />
-            <input aria-label="筛选会话、项目或电脑" placeholder="搜索标题、项目或电脑" value={props.query}
-              autoComplete="off" enterKeyHint="search"
-              onChange={(event) => props.onQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && mobile && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  event.currentTarget.blur();
-                }
-                if (event.key === "Escape") {
-                  event.stopPropagation();
-                  props.onQuery("");
-                  props.onFilter("all");
-                }
-              }} />
-            {active && <button type="button" aria-label="清除会话筛选" title="清除筛选"
-              onClick={() => { props.onQuery(""); props.onFilter("all"); }}><X size={13} /></button>}
-          </div>
-          <div className="sidebar-filter-options" role="group" aria-label="会话状态筛选">
-            {([ ["all", "全部"], ["running", "进行中"], ["waiting", "待确认"], ["unread", "未读"], ["failed", "失败"], ["pinned", "置顶"] ] as const).map(([value, label]) => (
+          {showQuery && <SidebarSearchField query={props.query} active={active} onQuery={props.onQuery}
+            onClear={() => { props.onQuery(""); props.onFilter("all"); }} placeholder="搜索标题、项目或电脑" mobile={mobile} />}
+          <div className="sidebar-filter-options" role="group" aria-label={mobile ? "更多会话状态筛选" : "会话状态筛选"}>
+            {([ ["all", "全部"], ["running", "进行中"], ["waiting", "待确认"], ["unread", "未读"], ["failed", "失败"], ["pinned", "置顶"] ] as const).filter(([value]) => !mobile || value !== "all" && value !== "running").map(([value, label]) => (
               <button type="button" key={value} aria-label={`${label} ${props.counts[value]}`} aria-pressed={props.filter === value}
                 onClick={() => props.onFilter(value)}>{label}<span>{props.counts[value]}</span></button>
             ))}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+export function SidebarSearchField(props: {
+  query: string;
+  active: boolean;
+  placeholder: string;
+  mobile?: boolean;
+  onQuery: (value: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="sidebar-filter-query">
+      <Search size={13} aria-hidden="true" />
+      <input aria-label="筛选会话、项目或电脑" placeholder={props.placeholder} value={props.query}
+        autoComplete="off" enterKeyHint="search"
+        onChange={(event) => props.onQuery(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && props.mobile && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            props.onClear();
+          }
+        }} />
+      {props.active && <button type="button" aria-label="清除会话筛选" title="清除筛选" onClick={props.onClear}><X size={13} /></button>}
     </div>
   );
 }

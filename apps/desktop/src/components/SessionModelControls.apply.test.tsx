@@ -33,7 +33,7 @@ function setup(sessionId: string | null, save?: (settings: SessionModelSettings)
 }
 
 async function openPicker() {
-  const trigger = screen.getByRole<HTMLButtonElement>("button", { name: "选择会话模型" });
+  const trigger = screen.getByRole<HTMLButtonElement>("button", { name: "选择模型和思考强度" });
   await waitFor(() => expect(trigger.disabled).toBe(false));
   fireEvent.click(trigger);
   await screen.findByRole("option", { name: "claude-test" });

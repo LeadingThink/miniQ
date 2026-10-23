@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
@@ -378,12 +378,18 @@ describe("mobile Sidebar", () => {
   it("makes title search available immediately and keeps less frequent actions accessible", () => {
     mobileViewport();
     const onShowSchedule = vi.fn();
+    const onShowSearch = vi.fn();
+    const onShowSkills = vi.fn();
     const onClose = vi.fn();
-    render(<Sidebar {...sidebarProps({ onShowSchedule, onClose })} />);
+    render(<Sidebar {...sidebarProps({ onShowSchedule, onShowSearch, onShowSkills, onClose })} />);
     expect(screen.getByRole("textbox", { name: "筛选会话、项目或电脑" })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "技能中心" }));
+    expect(onShowSkills).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button", { name: "已安排" })).toBeNull();
     expect(screen.getByRole("button", { name: "设置" })).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "更多功能" }));
+    fireEvent.click(screen.getByRole("button", { name: "搜索会话内容" }));
+    expect(onShowSearch).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "已安排" }));
     expect(onShowSchedule).toHaveBeenCalledOnce();
     expect(screen.getByRole("button", { name: "导入会话" })).not.toBeNull();
@@ -393,6 +399,62 @@ describe("mobile Sidebar", () => {
     expect(screen.queryByRole("button", { name: "导入会话" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "关闭项目与会话侧栏" }));
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("synchronizes both running filters and combines them with the search query", () => {
+    mobileViewport();
+    const otherWorkspace = { ...workspace, id: "other", name: "其他项目" };
+    const sessions: Session[] = [session,
+      { ...session, id: "waiting", title: "等待确认的任务", status: "waiting_approval" },
+      { ...session, id: "idle", workspaceId: otherWorkspace.id, title: "普通会话", status: "idle" },
+      { ...session, id: "archived", title: "归档任务", archived: true }];
+    render(<Sidebar {...sidebarProps({ workspaces: [workspace, otherWorkspace], sessions })} />);
+    const filters = within(screen.getByRole("group", { name: "会话状态筛选" }));
+    const quick = screen.getByRole("button", { name: "快捷筛选：进行中 2" });
+    expect(filters.getByRole("button", { name: "全部 3" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(quick);
+    expect(filters.getByRole("button", { name: "进行中 2" }).getAttribute("aria-pressed")).toBe("true");
+    expect(quick.getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelectorAll(".session-select")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: otherWorkspace.name })).toBeNull();
+    const query = screen.getByRole("textbox", { name: "筛选会话、项目或电脑" });
+    fireEvent.change(query, { target: { value: "完善预览" } });
+    expect(document.querySelectorAll(".session-select")).toHaveLength(1);
+    fireEvent.click(filters.getByRole("button", { name: "全部 3" }));
+    expect((query as HTMLInputElement).value).toBe("完善预览");
+    expect(quick.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(filters.getByRole("button", { name: "进行中 2" }));
+    expect(quick.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(quick);
+    expect(filters.getByRole("button", { name: "全部 3" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "清除会话筛选" }));
+    expect(document.querySelectorAll(".session-select")).toHaveLength(3);
+  });
+
+  it("updates the running count when a task finishes and handles zero results", () => {
+    mobileViewport();
+    const props = sidebarProps({ sessions: [session, { ...session, id: "idle", title: "普通会话", status: "idle" }] });
+    const view = render(<Sidebar {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "快捷筛选：进行中 1" }));
+    view.rerender(<Sidebar {...props} sessions={props.sessions.map((item) => ({ ...item, status: "idle" }))} />);
+    expect(screen.getByRole("button", { name: "快捷筛选：进行中 0" }).getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelectorAll(".session-select")).toHaveLength(0);
+    expect(screen.getByText("没有符合条件的会话")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "全部 2" }));
+    expect(document.querySelectorAll(".session-select")).toHaveLength(2);
+  });
+
+  it("clears filtering and persists project collapse from the collapse-all control", () => {
+    mobileViewport();
+    render(<Sidebar {...sidebarProps()} />);
+    fireEvent.click(screen.getByRole("button", { name: "快捷筛选：进行中 1" }));
+    const query = screen.getByRole("textbox", { name: "筛选会话、项目或电脑" });
+    fireEvent.change(query, { target: { value: "完善预览" } });
+    fireEvent.click(screen.getByRole("button", { name: "全部折叠" }));
+    expect((query as HTMLInputElement).value).toBe("");
+    expect(screen.getByRole("button", { name: "全部 1" }).getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelectorAll(".session-select")).toHaveLength(0);
+    expect(window.localStorage.getItem(`miniq.sidebar.project.${workspace.id}.collapsed`)).toBe("true");
   });
 
   it("preserves a filter when rotating between compact and desktop layouts", () => {
@@ -460,6 +522,7 @@ describe("mobile Sidebar", () => {
       { ...session, id: "waiting", title: "允许发送", status: "waiting_approval" },
       { ...session, id: "failed", title: "需要恢复", status: "failed" },
       { ...session, id: "archived-failed", title: "旧错误", status: "failed", archived: true }] })} />);
+    fireEvent.click(screen.getByRole("button", { name: "更多会话筛选" }));
     fireEvent.click(screen.getByRole("button", { name: "待确认 1" }));
     expect(document.querySelectorAll(".session-select")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "允许发送，等待确认" })).not.toBeNull();

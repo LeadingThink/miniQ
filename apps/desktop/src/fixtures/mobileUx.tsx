@@ -12,6 +12,7 @@ import { SessionFileAccess } from "../sessionFileAccess";
 import { useSessionModel } from "../hooks/useSessionModel";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import { initializeMobileViewport, isMobileLayout } from "../mobileViewport";
+import { applyTheme, isThemeId } from "../theme";
 import type { PlanTask } from "../types";
 import type { AgentSummary } from "../components/AgentSummary";
 import type { WorkbenchView } from "../hooks/useAppWorkbench";
@@ -96,6 +97,8 @@ function Fixture() {
   </SessionFileAccess>;
 }
 if (import.meta.env.DEV) {
+  const theme = new URLSearchParams(location.search).get("theme");
+  if (isThemeId(theme)) applyTheme(theme);
   if (nativePreview) document.documentElement.classList.add("native-mobile");
   initializeMobileViewport();
   createRoot(document.getElementById("root")!).render(<Fixture />);

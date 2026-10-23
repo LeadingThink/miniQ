@@ -24,9 +24,9 @@ function setup() {
   return { ...view, client, model };
 }
 
-it("uses a modal top layer on the phone, saves a choice immediately, and closes", async () => {
+it("uses a modal top layer on the phone and applies model plus strength together", async () => {
   const { model } = setup();
-  const trigger = screen.getByRole("button", { name: "选择会话模型" });
+  const trigger = screen.getByRole("button", { name: "选择模型和思考强度" });
   fireEvent.click(trigger);
   const dialog = screen.getByRole("dialog", { name: "选择会话模型" });
   expect((dialog as HTMLDialogElement).open).toBe(true);
@@ -34,6 +34,8 @@ it("uses a modal top layer on the phone, saves a choice immediately, and closes"
   const option = await within(dialog).findByRole("option", { name: "claude-opus-very-long-model-name" });
   fireEvent.mouseDown(option);
   fireEvent.click(option);
+  expect(screen.getByRole("dialog", { name: "选择会话模型" })).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "应用" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(model.update).toHaveBeenCalledExactlyOnceWith({ model: "claude-opus-very-long-model-name", apiProtocol: "auto", reasoningEffort: null });
   expect(document.activeElement).toBe(trigger);
@@ -41,7 +43,7 @@ it("uses a modal top layer on the phone, saves a choice immediately, and closes"
 
 it("filters while typing without closing the portal, and dismisses safely on task start", async () => {
   const view = setup();
-  fireEvent.click(screen.getByRole("button", { name: "选择会话模型" }));
+  fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
   await screen.findByRole("option", { name: "gpt-5.6-sol" });
   const input = screen.getByRole("textbox", { name: "模型 ID" });
   fireEvent.mouseDown(input);
@@ -57,7 +59,7 @@ it("filters while typing without closing the portal, and dismisses safely on tas
 
 it("handles Escape inside the native dialog before its default cancel closes the surface", async () => {
   setup();
-  fireEvent.click(screen.getByRole("button", { name: "选择会话模型" }));
+  fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
   await screen.findByRole("option", { name: "gpt-5.6-sol" });
   const input = screen.getByRole("textbox", { name: "模型 ID" });
   expect(fireEvent.keyDown(input, { key: "Escape" })).toBe(false);
@@ -85,7 +87,7 @@ it.each([
     addEventListener: vi.fn(), removeEventListener: vi.fn(),
   }));
   setup();
-  fireEvent.click(screen.getByRole("button", { name: "选择会话模型" }));
+  fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
   await screen.findByRole("textbox", { name: "模型 ID" });
   expect(screen.queryByRole("dialog", { name: "选择会话模型" }) !== null).toBe(dialog);
   expect(screen.getByRole("form", { name: "会话模型配置" }).closest(".session-model-controls") !== null).toBe(!dialog);

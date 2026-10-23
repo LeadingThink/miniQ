@@ -219,7 +219,7 @@ describe("AppStatusBar", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("places session search on the remote top bar and merges share and diagnostics into the single overflow menu", () => {
+  it("places session search in the session actions menu and keeps share and diagnostics in the overflow menu", () => {
     const app = {
       ...appFixture(true, "remote"),
       catalog: {
@@ -243,7 +243,9 @@ describe("AppStatusBar", () => {
       />,
     );
     const actions = within(container.querySelector<HTMLElement>(".app-toolbar-actions")!);
-    fireEvent.click(actions.getByRole("button", { name: "搜索和筛选会话" }));
+    expect(actions.queryByRole("button", { name: "搜索和筛选会话" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "会话操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /搜索和筛选会话/ }));
     const more = actions.getByRole("button", { name: "更多操作" });
     fireEvent.click(more);
     const menu = screen.getByRole("menu", { name: "更多操作" });

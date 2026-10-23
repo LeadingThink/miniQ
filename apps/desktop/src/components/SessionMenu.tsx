@@ -5,6 +5,7 @@ import {
   ChevronRight,
   GitBranch,
   MessageSquarePlus,
+  Search,
   SlidersHorizontal,
   PencilLine,
   Pin,
@@ -21,6 +22,7 @@ interface Props {
   onRename: (title: string) => void | Promise<void>;
   onTogglePin: () => void;
   onNewSideChat: () => void;
+  onSearch: () => void;
   onFork: (anchorMessageId: string) => void | Promise<unknown>;
   onArchive: () => void;
 }
@@ -60,6 +62,7 @@ export function SessionMenu({
   onRename,
   onTogglePin,
   onNewSideChat,
+  onSearch,
   onFork,
   onArchive,
 }: Props) {
@@ -268,6 +271,16 @@ export function SessionMenu({
 
               <div className="session-menu-separator" role="separator" />
 
+              <button
+                type="button"
+                className="session-menu-item"
+                role="menuitem"
+                onClick={() => run(onSearch)}
+              >
+                <Search className="session-menu-icon" size={15} />
+                <span className="session-menu-label">搜索和筛选会话</span>
+                <span className="session-menu-shortcut">{shortcutLabel("find")}</span>
+              </button>
               <button
                 type="button"
                 className="session-menu-item"

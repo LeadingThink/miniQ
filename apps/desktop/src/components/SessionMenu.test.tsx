@@ -31,6 +31,7 @@ function renderMenu(overrides: Partial<Parameters<typeof SessionMenu>[0]> = {}) 
     onRename: vi.fn(),
     onTogglePin: vi.fn(),
     onNewSideChat: vi.fn(),
+    onSearch: vi.fn(),
     onFork: vi.fn(),
     onArchive: vi.fn(),
     ...overrides,
@@ -45,6 +46,7 @@ describe("SessionMenu", () => {
     renderMenu();
     expect(screen.getByText("重命名")).toBeTruthy();
     expect(screen.getByText("置顶")).toBeTruthy();
+    expect(screen.getByText("搜索和筛选会话")).toBeTruthy();
     expect(screen.getByText("新建侧边聊天")).toBeTruthy();
     expect(screen.getByText("分叉")).toBeTruthy();
     expect(screen.getByText("归档")).toBeTruthy();
@@ -57,6 +59,12 @@ describe("SessionMenu", () => {
     expect(screen.getByText("从哪条回复分叉")).toBeTruthy();
     fireEvent.click(screen.getByText("补了重试逻辑"));
     expect(props.onFork).toHaveBeenCalledWith("a2");
+  });
+
+  it("opens session search from the session actions menu", () => {
+    const props = renderMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: /搜索和筛选会话/ }));
+    expect(props.onSearch).toHaveBeenCalledOnce();
   });
 
   it("renames inline and keeps the menu open until saved", async () => {

@@ -34,7 +34,7 @@ import { EmptyState } from "./ui/EmptyState";
 import { SidebarPanel } from "./SidebarPanel";
 import { SidebarSessionItem } from "./SidebarSessionItem";
 import { SidebarAttention } from "./SidebarAttention";
-import { handleSidebarNavigation, SidebarFilters, sidebarGroups, useMobileSidebarLayout, useProjectDisclosure, type SidebarFilter } from "./SidebarNavigation";
+import { handleSidebarNavigation, SidebarFilters, SidebarSearchField, sidebarGroups, useMobileSidebarLayout, useProjectDisclosure, type SidebarFilter } from "./SidebarNavigation";
 import "./Sidebar.css";
 
 const COLLAPSED_SESSION_COUNT = 3;
@@ -172,6 +172,7 @@ export function Sidebar(props: SidebarProps) {
   const [showArchived, setShowArchived] = useState(() => props.sessions.some((session) => session.id === props.currentSessionId && session.archived));
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SidebarFilter>("all");
+  const [collapseAllVersion, setCollapseAllVersion] = useState(0);
   const hostLabels = useMemo(() => new Map(props.hostGroups?.flatMap((host) => host.workspaceIds.map((id) => [id, host.label] as const))), [props.hostGroups]);
   const workspaceLabels = useMemo(() => new Map(props.workspaces.map((workspace) => [workspace.id,
     [hostLabels.get(workspace.id), workspace.name].filter(Boolean).join(" · ")])), [hostLabels, props.workspaces]);
@@ -202,27 +203,42 @@ export function Sidebar(props: SidebarProps) {
       onTouchCancel={cancelTouch}
     >
       <div className="sidebar-brand-row" data-tauri-drag-region>
-        <div className="brand" data-tauri-drag-region>miniQ</div>
+        <div className="sidebar-brand-lockup" data-tauri-drag-region>
+          <span className="sidebar-brand-mark" aria-hidden="true">mQ</span>
+          <span className="brand" data-tauri-drag-region>miniQ</span>
+          <span className="sidebar-version">v2.4</span>
+        </div>
         {mobile && props.onClose && <button type="button" className="sidebar-close" aria-label="关闭项目与会话侧栏" onClick={props.onClose}><X size={19} /></button>}
       </div>
       <div className="sidebar-primary-actions">
-      <button type="button" className="nav-item sidebar-nav-button" onClick={props.onNewChat} title="新对话（⌘/Ctrl+N）">
+      <button type="button" className="nav-item sidebar-nav-button sidebar-new-chat" aria-label="新对话" onClick={props.onNewChat} title="新对话（⌘/Ctrl+N）">
         <PencilLine className="nav-icon" size={16} /> 新对话
+        <kbd className="sidebar-shortcut">⌘N</kbd>
       </button>
-      <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSearch}>
-        <Search className="nav-icon" size={16} /> {mobile ? "搜索内容" : "搜索"}
-      </button>
+      {mobile ? <SidebarSearchField query={query} active={query !== "" || filter !== "all"}
+        onQuery={setQuery} onClear={() => { setQuery(""); setFilter("all"); }}
+        placeholder="搜索项目或会话内容..." mobile /> : <button type="button" className="nav-item sidebar-nav-button sidebar-search-button" onClick={props.onShowSearch}>
+        <Search className="nav-icon" size={16} /> 搜索
+      </button>}
       {!mobile && <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSchedule}>
         <Clock3 className="nav-icon" size={16} /> 已安排
       </button>}
-      {props.onShowSkills && <button type="button" className={`nav-item sidebar-nav-button ${props.extensionsActive ? "active" : ""}`} aria-current={props.extensionsActive ? "page" : undefined} onClick={props.onShowSkills}>
-        <Sparkles className="nav-icon" size={16} /> 技能与连接器
+      {props.onShowSkills && <button type="button" className={`nav-item sidebar-nav-button sidebar-skills-button ${props.extensionsActive ? "active" : ""}`} aria-current={props.extensionsActive ? "page" : undefined} onClick={props.onShowSkills}>
+        <Sparkles className="nav-icon" size={16} /> <span className="sidebar-skills-label">{mobile ? "技能中心" : "技能与连接器"}</span>
+      </button>}
+      {mobile && <button type="button" className={`nav-item sidebar-nav-button sidebar-running-button ${filter === "running" ? "active" : ""}`} aria-pressed={filter === "running"}
+        aria-label={`快捷筛选：进行中 ${navigation.counts.running}`} onClick={() => setFilter(filter === "running" ? "all" : "running")}>
+        <span className="sidebar-running-dot" aria-hidden="true" /> <span>进行中</span><span className="sidebar-running-count">{navigation.counts.running}</span>
       </button>}
       </div>
 
+      {props.workspaces.length > 0 && <SidebarFilters query={query} filter={filter} counts={navigation.counts}
+        workspaceCount={navigation.groups.length} onQuery={setQuery} onFilter={setFilter}
+        showQuery={!mobile} onMarkAllRead={props.onMarkAllRead} onCollapseAll={() => {
+          setQuery(""); setFilter("all"); setCollapseAllVersion((value) => value + 1);
+        }} />}
       <div className="sidebar-scroll" role="navigation" aria-label="项目与会话" onKeyDown={handleSidebarNavigation}>
         <SidebarAttention sessions={props.sessions} unreadSessionIds={props.unreadSessionIds} workspaceLabels={workspaceLabels} onSelectSession={props.onSelectSession} onClose={props.onClose} />
-        {props.workspaces.length > 0 && <SidebarFilters query={query} filter={filter} counts={navigation.counts} onQuery={setQuery} onFilter={setFilter} onMarkAllRead={props.onMarkAllRead} />}
         {props.hostGroups?.filter((host) => !navigation.groups.some(({ workspace }) => host.workspaceIds.includes(workspace.id))).map((host) => <HostHeading key={host.key} host={host} />)}
         {navigation.groups.map(({ workspace, sessions }, index) => (
           <Fragment key={workspace.id}>
@@ -232,6 +248,7 @@ export function Sidebar(props: SidebarProps) {
             key={workspace.id}
             selected={workspace.id === props.selectedWorkspaceId}
             sessions={sessions}
+            collapseAllVersion={collapseAllVersion}
             filtering={navigation.filtering}
             unreadSessionIds={props.unreadSessionIds}
             workspace={workspace}
@@ -313,6 +330,9 @@ export function Sidebar(props: SidebarProps) {
           onInstall={props.onInstallUpdate}
         />}
         {showSecondary && <div className="sidebar-secondary-actions" id="sidebar-secondary-footer">
+        <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSearch}>
+          <Search className="nav-icon" size={16} /> 搜索会话内容
+        </button>
         {mobile && <button type="button" className="nav-item sidebar-nav-button" onClick={props.onShowSchedule}>
           <Clock3 className="nav-icon" size={16} /> 已安排
         </button>}
@@ -328,8 +348,8 @@ export function Sidebar(props: SidebarProps) {
           <MessageSquareText className="nav-icon" size={16} /> 反馈
         </button>
         </div>}
-        {mobile && <div className="sidebar-primary-actions">
-        <button type="button" className="nav-item sidebar-nav-button" aria-expanded={moreOpen}
+        {mobile && <div className="sidebar-primary-actions sidebar-more-actions">
+        <button type="button" className="nav-item sidebar-nav-button sidebar-more-card" aria-expanded={moreOpen}
           aria-controls="sidebar-secondary-footer" onClick={() => setMoreOpen((value) => !value)}>
           <MoreHorizontal className="nav-icon" size={16} /> {moreOpen ? "收起功能" : "更多功能"}
         </button>
@@ -337,7 +357,9 @@ export function Sidebar(props: SidebarProps) {
         <div className="sidebar-account-row">
           <div className="sidebar-account" title="本机账户">
             <span className="sidebar-account-avatar" aria-hidden="true">Q</span>
-            <span className="sidebar-account-name">本机</span>
+            <span className="sidebar-account-status" aria-hidden="true"><span /></span>
+            <span className="sidebar-account-copy"><span className="sidebar-account-name">本机</span><small>(Localhost)</small></span>
+            <ChevronDown className="sidebar-account-chevron" size={14} aria-hidden="true" />
           </div>
           {!mobile && <>
             <button
@@ -391,6 +413,7 @@ function HostHeading({ host }: { host: SidebarHostGroup }) {
 interface WorkspaceGroupProps {
   workspace: Workspace;
   sessions: Session[];
+  collapseAllVersion: number;
   unreadSessionIds: ReadonlySet<string>;
   currentSessionId: string | null;
   selected: boolean;
@@ -436,6 +459,9 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
     setOpen(true);
     if (currentIndex >= COLLAPSED_SESSION_COUNT) setExpanded(true);
   }, [props.currentSessionId, props.sessions, setOpen]);
+  useEffect(() => {
+    if (props.collapseAllVersion > 0) setOpen(false);
+  }, [props.collapseAllVersion, setOpen]);
   const visibleSessions = !open ? [] : (expanded || props.filtering)
     ? props.sessions
     : props.sessions.slice(0, COLLAPSED_SESSION_COUNT);
@@ -485,6 +511,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
             type="button"
             className="workspace-select"
             title={[props.workspace.path, ...props.workspace.additionalPaths].join("\n")}
+            aria-label={props.workspace.name}
             aria-current={props.selected ? "true" : undefined}
             aria-expanded={open}
             onClick={() => {
@@ -496,6 +523,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
             <Folder className="workspace-icon" size={15} />
             <span className="workspace-name">{props.workspace.name}</span>
             {props.workspace.additionalPaths.length > 0 && <span className="workspace-root-count">{props.workspace.additionalPaths.length + 1}</span>}
+            <span className="workspace-session-count" aria-label={`${props.sessions.length} 条会话`}>{props.sessions.length}</span>
           </button>
         )}
         <button
@@ -583,6 +611,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
           </DropdownMenu>
         </div>
       </div>
+      {visibleSessions.length > 0 && <div className="workspace-sessions">
       {visibleSessions.map((session) => (
         <SidebarSessionItem
           current={session.id === props.currentSessionId}
@@ -598,6 +627,7 @@ function WorkspaceGroup(props: WorkspaceGroupProps) {
           onSetArchived={props.onSetSessionArchived}
         />
       ))}
+      </div>}
       {open && !props.filtering && hiddenCount > 0 && (
         <button
           type="button"

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Mail, MailOpen, MoreHorizontal, PencilLine, Pin, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Mail, MailOpen, MessageSquareText, MoreHorizontal, PencilLine, Pin, Trash2 } from "lucide-react";
 import type { Session } from "../types";
 import { relativeAge } from "../time";
 import { sessionStatusLabel } from "../sessionStatus";
@@ -106,6 +106,7 @@ export function SidebarSessionItem(props: {
             className={`session-status ${props.session.status} ${unread ? "unread" : ""}`}
             aria-hidden="true"
           />
+          <MessageSquareText className="session-chat-icon" size={14} aria-hidden="true" />
           {external && (
             <span className={`session-source ${external.provider}`} title={PROVIDER_LABELS[external.provider]}>
               {PROVIDER_MARKS[external.provider]}

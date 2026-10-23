@@ -3,13 +3,14 @@ import { Check, ChevronDown, Cpu, RefreshCw, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   DEFAULT_MODEL_SETTINGS,
+  EFFORT_LABELS,
   filterModelIds,
   type ModelDescription,
+  type ReasoningEffort,
 } from "../modelSelection";
 import type { RpcClient } from "../rpc";
 import type { useSessionModel } from "../hooks/useSessionModel";
 import { SessionModelSurface } from "./SessionModelSurface";
-import { SessionReasoningControl } from "./SessionReasoningControl";
 
 const MODEL_DIALOG_QUERY = "(max-width: 720px), (pointer: coarse)";
 function needsModelDialog() {
@@ -33,8 +34,11 @@ export function SessionModelControls({
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
+  const [selectedEffort, setSelectedEffort] = useState<ReasoningEffort | null>(null);
   const [description, setDescription] = useState<ModelDescription | null>(null);
   const [descriptionError, setDescriptionError] = useState<string | null>(null);
+  const [descriptionFor, setDescriptionFor] = useState("");
+  const [descriptionLoading, setDescriptionLoading] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [modelListOpen, setModelListOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -85,30 +89,39 @@ export function SessionModelControls({
     return () => window.removeEventListener("resize", updatePopoverHeight);
   }, [open, placement, mobile]);
 
+  const descriptionTarget = open ? selectedModel : model.effective?.model;
   useEffect(() => {
-    if (!model.effective) return;
+    if (!descriptionTarget || (!open && descriptionFor === descriptionTarget)) return;
     let stale = false;
+    setDescriptionLoading(true);
     setDescription(null);
     setDescriptionError(null);
     void client
       .call<ModelDescription>("model.describe", {
-        model: model.effective.model,
-        apiProtocol: model.effective.apiProtocol,
+        model: descriptionTarget,
+        apiProtocol: open ? "auto" : (model.effective?.apiProtocol ?? "auto"),
       })
       .then((value) => {
-        if (!stale) setDescription(value);
+        if (!stale) {
+          setDescription(value);
+          setDescriptionFor(descriptionTarget);
+        }
       })
       .catch((cause) => {
         if (!stale) setDescriptionError(String(cause));
+      })
+      .finally(() => {
+        if (!stale) setDescriptionLoading(false);
       });
     return () => {
       stale = true;
     };
-  }, [client, model.effective?.model, model.effective?.apiProtocol, attempt]);
+  }, [client, descriptionTarget, model.effective?.apiProtocol, open, attempt]);
 
   useEffect(() => {
     setSelectedModel(model.settings.model ?? model.effective?.model ?? "");
-  }, [model.settings.model, model.effective?.model]);
+    setSelectedEffort(model.settings.reasoningEffort ?? model.effective?.reasoningEffort ?? null);
+  }, [model.settings.model, model.settings.reasoningEffort, model.effective?.model, model.effective?.reasoningEffort]);
 
   useEffect(() => {
     if (!open) return;
@@ -118,7 +131,7 @@ export function SessionModelControls({
     void client
       .call<{ models: string[] }>("model.list")
       .then((result) => {
-        if (!stale) setModels(result.models);
+        if (!stale) setModels(Array.isArray(result.models) ? result.models : []);
       })
       .catch((cause) => {
         if (!stale) setCatalogError(String(cause));
@@ -139,11 +152,16 @@ export function SessionModelControls({
     }
   }, [modelListOpen, models, query]);
 
-  const saveModel = async (id: string | null, closeAfterSave = mobile) => {
+  const applySelection = async (
+    id: string | null,
+    effort: ReasoningEffort | null,
+    closeAfterSave = mobile,
+  ) => {
     if (disabled || (id !== null && (loading || catalogError || !models.includes(id)))) return;
     try {
-      await model.update({ model: id, apiProtocol: "auto", reasoningEffort: null });
+      await model.update({ ...model.settings, model: id, apiProtocol: "auto", reasoningEffort: effort });
       setSelectedModel(id ?? "");
+      setSelectedEffort(effort);
       setQuery("");
       setModelListOpen(false);
       if (closeAfterSave) setOpen(false);
@@ -153,6 +171,7 @@ export function SessionModelControls({
     if (!modelListOpen) setQuery("");
     setModelListOpen(true);
   };
+  const displayModel = open ? selectedModel : (model.effective?.model ?? "模型");
 
   return (
     <div
@@ -166,38 +185,26 @@ export function SessionModelControls({
         disabled={disabled}
         aria-expanded={open}
         aria-haspopup={mobile ? "dialog" : undefined}
-        aria-label="选择会话模型"
-        title={
-          busy
-            ? "当前任务结束后可更换模型"
-            : model.effective?.model ?? "选择模型"
-        }
+        aria-label="选择模型和思考强度"
+        title={busy ? "当前任务结束后可更换模型" : "选择模型和思考强度"}
         onClick={() => {
           setOpen(!open);
           setModelListOpen(mobile);
           setQuery("");
           setSelectedModel(model.settings.model ?? model.effective?.model ?? "");
+          setSelectedEffort(model.settings.reasoningEffort ?? model.effective?.reasoningEffort ?? null);
         }}
       >
         <Cpu size={14} />
-        <span>{model.effective?.model ?? "模型"}</span>
+        <span>{displayModel}</span>
+        <span className="model-trigger-separator" aria-hidden="true">·</span>
+        <span>{model.settings.reasoningEffort
+          ? EFFORT_LABELS[model.settings.reasoningEffort]
+          : model.effective?.reasoningEffort
+            ? EFFORT_LABELS[model.effective.reasoningEffort]
+            : "默认"}</span>
+        <ChevronDown size={13} aria-hidden="true" />
       </button>
-      <SessionReasoningControl
-        description={description}
-        error={descriptionError}
-        disabled={disabled}
-        value={model.settings.reasoningEffort}
-        onRetry={() => setAttempt((current) => current + 1)}
-        onChange={(effort) =>
-          void model
-            .update({
-              ...model.settings,
-              apiProtocol: "auto",
-              reasoningEffort: effort,
-            })
-            .catch(() => {})
-        }
-      />
       {model.error && (
         <span role="alert" className="model-error">
           {model.error}
@@ -226,7 +233,7 @@ export function SessionModelControls({
           aria-busy={model.pending}
           onSubmit={(event) => {
             event.preventDefault();
-            void saveModel(selectedModel || null, true);
+            void applySelection(selectedModel || null, selectedEffort, true);
           }}
           onKeyDown={(event) => {
             if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
@@ -293,7 +300,12 @@ export function SessionModelControls({
                           role="option"
                           aria-selected={selected}
                           disabled={disabled}
-                          onClick={() => void saveModel(id)}
+                          onClick={() => {
+                            setSelectedModel(id);
+                            setSelectedEffort(null);
+                            setQuery("");
+                            setModelListOpen(false);
+                          }}
                         >
                           <span>{id}</span>
                           {selected && <Check size={14} />}
@@ -347,12 +359,48 @@ export function SessionModelControls({
             </dl>
           )}
           {descriptionError && <span role="alert">{descriptionError}</span>}
+          <section className="session-model-effort" aria-label="思考强度">
+            <div className="session-model-effort-heading">
+              <strong>思考强度</strong>
+              <span>{selectedEffort ? EFFORT_LABELS[selectedEffort] : "默认"}</span>
+            </div>
+            {descriptionLoading || descriptionFor !== descriptionTarget ? (
+              <p className="session-model-effort-status" role="status">正在读取当前模型的思考档位…</p>
+            ) : descriptionError ? (
+              <div className="session-model-effort-status" role="alert">
+                未能读取思考档位
+                <button type="button" className="ghost" onClick={() => setAttempt((value) => value + 1)}>重试</button>
+              </div>
+            ) : description?.reasoningEfforts.length ? (
+              <div className="session-model-effort-options" role="group" aria-label="思考强度档位">
+                <button
+                  type="button"
+                  className="session-model-effort-option"
+                  aria-pressed={selectedEffort === null}
+                  onClick={() => setSelectedEffort(null)}
+                >默认</button>
+                {description.reasoningEfforts.map((effort) => (
+                  <button
+                    key={effort}
+                    type="button"
+                    className="session-model-effort-option"
+                    aria-pressed={selectedEffort === effort}
+                    onClick={() => setSelectedEffort(effort)}
+                  >
+                    {EFFORT_LABELS[effort]}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="session-model-effort-status" role="status">当前模型使用默认思考强度</p>
+            )}
+          </section>
           <footer>
             <button
               type="button"
               className="ghost"
               disabled={disabled}
-              onClick={() => void saveModel(DEFAULT_MODEL_SETTINGS.model)}
+              onClick={() => void applySelection(DEFAULT_MODEL_SETTINGS.model, null, true)}
             >
               <RefreshCw size={14} />
               恢复默认

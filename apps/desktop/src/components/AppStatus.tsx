@@ -12,7 +12,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelRight,
-  Search,
   Server,
   Settings,
   Share2,
@@ -157,6 +156,7 @@ export function AppStatusBar(props: {
             onRename={(title) => app.actions.renameSession(currentSession.id, title)}
             onTogglePin={() => void app.actions.setSessionPinned(currentSession.id, !currentSession.pinned)}
             onNewSideChat={() => props.onNewSideChat?.()}
+            onSearch={() => dispatchSessionToolbarAction(currentSession.id, "search")}
             onFork={(anchorMessageId) => app.actions.forkSession(anchorMessageId)}
             onArchive={() => void app.actions.setSessionArchived(currentSession.id, true)}
           />
@@ -168,18 +168,6 @@ export function AppStatusBar(props: {
             data-tooltip="侧边聊天" title="侧边聊天" aria-label={props.sideConversationOpen ? "关闭侧边聊天" : "打开侧边聊天"}
             aria-pressed={props.sideConversationOpen ?? false} onClick={props.onToggleSideConversation}>
             <MessageSquareText size={16} />
-          </button>
-        )}
-        {remote && currentSession && (
-          <button
-            type="button"
-            className="statusbar-icon-button statusbar-search"
-            data-tooltip="搜索和筛选会话"
-            title="搜索和筛选会话"
-            aria-label="搜索和筛选会话"
-            onClick={() => dispatchSessionToolbarAction(currentSession.id, "search")}
-          >
-            <Search size={16} />
           </button>
         )}
         {props.showAttentionInbox && (

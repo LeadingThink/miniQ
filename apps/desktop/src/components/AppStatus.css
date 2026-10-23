@@ -94,9 +94,3 @@
     padding-right: max(8px, var(--safe-right));
   }
 }
-
-/* Narrow phones already show a "搜索和筛选" field above the conversation, so the
-   header search icon yields its slot to the title and connection dropdown. */
-@media (max-width: 480px) {
-  .statusbar .statusbar-search { display: none; }
-}

@@ -1,14 +1,65 @@
+/* Keep the queue attached to the composer on phones. The controls retain
+ * touch-sized hit areas while the visible row stays compact. */
 @media (max-width: 720px), (pointer: coarse) {
-  .queue-bar .queue-item { flex-direction: column; }
-  .queue-bar .queue-content { width: 100%; flex: auto; }
-  .queue-bar .queue-actions { width: 100%; gap: 6px; }
-  .queue-bar :is(.queue-actions, .queue-editor-actions) button {
-    min-height: 44px;
-    min-width: 44px;
+  .queue-bar {
+    margin: -4px -6px 4px;
+    padding: 8px 10px 6px;
   }
+
+  .queue-bar .queue-head {
+    gap: 6px;
+  }
+
+  .queue-bar .queue-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 4px;
+  }
+
+  .queue-bar .queue-position { grid-column: 1; grid-row: 1; }
+  .queue-bar .queue-content {
+    grid-column: 2;
+    grid-row: 1;
+    width: auto;
+    min-width: 0;
+    flex: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .queue-bar .queue-attachments {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    max-width: none;
+    flex-wrap: wrap;
+  }
+
+  .queue-bar .queue-actions {
+    grid-column: 3;
+    grid-row: 1;
+    width: auto;
+    gap: 0;
+    margin-left: 0;
+  }
+
+  .queue-bar .queue-actions button {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+  }
+
   .queue-bar .queue-editor textarea {
     font-size: var(--font-callout);
     max-height: min(220px, calc(var(--app-height, 100dvh) * 0.35));
   }
+
   .queue-bar .queue-editor-hint { flex-basis: 100%; }
 }

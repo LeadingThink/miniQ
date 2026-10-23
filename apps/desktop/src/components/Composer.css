@@ -5,12 +5,113 @@
   overflow-wrap: anywhere;
 }
 
+/* Composer dock: quiet context chips on the left, model and delivery actions
+ * on the right. These selectors stay scoped to the composer so other ghost
+ * buttons keep their existing treatment. */
+.composer-card .composer-row {
+  min-height: 38px;
+  padding: 7px 4px 0;
+  border-top: 1px solid var(--border);
+}
+
+.composer-card .composer-plus-trigger {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text-mid);
+}
+
+.composer-card .composer-plus-trigger:hover,
+.composer-card .composer-plus-trigger.open {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.composer-card .chip {
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+}
+
+.composer-card .session-permissions,
+.composer-card .session-model-controls {
+  gap: 4px;
+}
+
+.composer-card .session-permissions .mode-trigger,
+.composer-card .session-model-controls .mode-trigger,
+.composer-card .model-trigger {
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  font-size: var(--font-footnote);
+}
+
+.composer-card .session-permissions .mode-trigger.warn {
+  border-color: color-mix(in srgb, var(--warn) 28%, var(--border));
+  background: color-mix(in srgb, var(--warn) 11%, var(--bg));
+  color: var(--warn);
+}
+
+.composer-card .session-permissions .mode-trigger.warn:hover {
+  background: color-mix(in srgb, var(--warn) 17%, var(--bg));
+}
+
+.composer-card .model-trigger > svg {
+  color: var(--blue);
+}
+
+.composer-card .model-trigger:hover,
+.composer-card .session-model-controls .mode-trigger:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.composer-card .composer-voice-inline .attach-btn,
+.composer-card .composer-voice-inline .voice-btn,
+.composer-card .attach-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.composer-card .send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--accent-fg);
+  background: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.composer-card .send-btn:hover:not(:disabled) {
+  opacity: 1;
+  filter: brightness(0.96);
+}
+
+.composer-card .send-btn.stop {
+  color: var(--danger-contrast);
+  background: var(--danger);
+}
+
+.composer-card .send-btn.stop:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+
 /* Keep remote task controls reachable when a phone keyboard is visible. */
 @media (max-width: 720px), (pointer: coarse) {
   .composer-card .composer-row {
     column-gap: 6px;
     row-gap: 4px;
-    padding: 0 2px;
+    padding: 7px 2px 0;
   }
 
   /* One row on phones: model picker shares the line with attach/send and only
@@ -40,6 +141,37 @@
 
   .composer-card .composer-submit-buttons {
     gap: 6px;
+  }
+
+  .composer-card .composer-plus-trigger,
+  .composer-card .composer-voice-inline .attach-btn,
+  .composer-card .composer-voice-inline .voice-btn,
+  .composer-card .attach-btn,
+  .composer-card .send-btn,
+  .composer-card .session-permissions .mode-trigger,
+  .composer-card .session-model-controls .mode-trigger,
+  .composer-card .model-trigger {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .composer-card .composer-plus-trigger,
+  .composer-card .composer-voice-inline .attach-btn,
+  .composer-card .composer-voice-inline .voice-btn,
+  .composer-card .attach-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .composer-card .send-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .composer-card .session-permissions .mode-trigger,
+  .composer-card .session-model-controls .mode-trigger,
+  .composer-card .model-trigger {
+    padding-inline: 8px;
   }
 
   .composer-card .voice-input {
