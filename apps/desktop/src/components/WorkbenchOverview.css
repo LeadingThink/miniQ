@@ -1,0 +1,173 @@
+.workbench-overview {
+  overflow: auto;
+  padding: 22px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--hairline);
+  border-top: 0;
+  container-type: inline-size;
+}
+.overview-heading {
+  margin-bottom: 16px;
+}
+.overview-eyebrow {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+}
+.overview-heading h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.overview-card {
+  min-width: 0;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--bg);
+}
+.overview-card > h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  color: var(--text);
+  font-size: var(--font-footnote);
+  font-weight: 600;
+}
+.overview-card > h3 > svg {
+  color: var(--text-dim);
+}
+.overview-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--bg-subtle);
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+  font-variant-numeric: tabular-nums;
+}
+.workbench-overview p {
+  margin: 8px 0;
+  color: var(--text-dim);
+  font-size: var(--font-footnote);
+  line-height: 1.7;
+}
+.workbench-overview .execution-plan {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.workbench-overview .execution-plan-head {
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: var(--font-caption);
+}
+.workbench-overview .execution-plan-head strong {
+  font-weight: 500;
+  color: var(--text-mid);
+}
+.workbench-overview .execution-plan progress {
+  margin: 12px 0 16px;
+  height: 4px;
+  border: 0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.workbench-overview .execution-plan progress::-webkit-progress-bar {
+  background: var(--bg-hover);
+}
+.workbench-overview .execution-plan progress::-webkit-progress-value {
+  border-radius: 4px;
+  background: var(--ok);
+}
+.workbench-overview .execution-plan ol {
+  gap: 14px;
+}
+.workbench-overview .execution-plan li {
+  font-size: var(--font-footnote);
+  line-height: 1.6;
+}
+.workbench-overview .artifact-card {
+  margin-block: 8px;
+}
+.workbench-artifact-search {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+}
+.overview-empty-files {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-dim);
+}
+.overview-empty-files > svg {
+  flex: none;
+}
+.overview-empty-files p {
+  margin: 0;
+}
+.overview-project {
+  padding: 0;
+  overflow: hidden;
+}
+.overview-project-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 15px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-size: var(--font-footnote);
+  font-weight: 600;
+}
+.overview-project-toggle span {
+  flex: 1;
+}
+.overview-project-toggle > svg {
+  flex: none;
+  color: var(--text-dim);
+}
+.overview-project-toggle[aria-expanded="true"] > svg:last-child {
+  transform: rotate(180deg);
+}
+.overview-project-toggle:hover {
+  background: var(--bg-hover);
+}
+.overview-project .remote-file-browser {
+  padding: 0 12px 12px;
+}
+.workbench-overview .ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+@container (max-width: 360px) {
+  .overview-card {
+    padding: 12px;
+  }
+  .overview-project {
+    padding: 0;
+  }
+  .overview-heading h2 {
+    font-size: 16px;
+  }
+  .overview-empty-files {
+    padding: 10px;
+  }
+}

@@ -4,6 +4,7 @@ import { RemoteFileUpload } from "./RemoteFileUpload";
 import { errorMessage } from "../errorMessage";
 import { formatFileSize } from "../localFiles";
 import type { FileReadOptions, RemoteDirectory } from "../remoteFiles";
+import "./RemoteFiles.css";
 
 export function RemoteFileBrowser({
   access,
@@ -98,20 +99,22 @@ export function RemoteFileBrowser({
       {client?.mode === "remote" && <RemoteFileUpload access={access} />}
       {page && (
         <>
-          <select
-            aria-label="项目目录"
-            value={page.roots.includes(page.path) ? page.path : ""}
-            onChange={(event) => setPath(event.target.value)}
-          >
-            {!page.roots.includes(page.path) && (
-              <option value="">{page.path}</option>
-            )}
-            {page.roots.map((root) => (
-              <option key={root} value={root}>
-                {root}
-              </option>
-            ))}
-          </select>
+          {page.roots.length > 1 && (
+            <select
+              aria-label="项目目录"
+              value={page.roots.includes(page.path) ? page.path : ""}
+              onChange={(event) => setPath(event.target.value)}
+            >
+              {!page.roots.includes(page.path) && (
+                <option value="">{page.path}</option>
+              )}
+              {page.roots.map((root) => (
+                <option key={root} value={root}>
+                  {root}
+                </option>
+              ))}
+            </select>
+          )}
           <div className="remote-file-location">
             <button
               type="button"
@@ -137,7 +140,8 @@ export function RemoteFileBrowser({
             {page.entries.map((entry) => (
               <button
                 type="button"
-                className="ghost"
+                className="remote-file-entry"
+                data-directory={entry.directory}
                 key={entry.path}
                 disabled={loading || entry.unavailable}
                 onClick={() =>

@@ -17,6 +17,7 @@ import { AgentAvatar, AgentSummaryStats, type AgentSummary } from "./AgentSummar
 import { conversationTimestamp, formatDuration } from "../time";
 import { turnProgressLabel } from "./ExecutionActivity";
 import { useAgentSummary } from "../hooks/useAgentSummary";
+import "./AgentPanel.css";
 
 const ACTIVE = new Set(["running", "stopping", "finalizing"]);
 const ONGOING = new Set([...ACTIVE, "queued", "waiting", "waiting_approval"]);
@@ -223,34 +224,38 @@ function SessionAgentPanel({
                     className={selected === agent.agentId ? "open" : ""}
                   />
                   <AgentAvatar seed={agent.agentId} name={agent.name} status={agent.status} />
-                  {ACTIVE.has(agent.status) && (
-                    <LoaderCircle size={13} className="activity-spinner" />
-                  )}
-                  <strong>{agent.name}</strong>
-                  <span>{agent.description}</span>
-                  <small>
-                    {agent.parentId
-                      ? `${names.get(agent.parentId) ?? agent.parentId} / `
-                      : ""}
-                    {agent.model ?? "默认模型"} ·{" "}
-                    {LABELS[agent.status] ?? agent.status} ·{" "}
-                    <time dateTime={agent.createdAt} title={conversationTimestamp(agent.createdAt)?.full}>
-                      {conversationTimestamp(agent.createdAt)?.label}
-                    </time>
-                    {agent.elapsedMs !== undefined &&
-                      formatDuration(agent.elapsedMs) && ` · ${agent.timingComplete === false ? "至少 " : ""}${formatDuration(agent.elapsedMs)}`}
-                    {!!agent.heldMessagesCount &&
-                      ` · ${agent.heldMessagesCount} 条待处理消息`}
-                  </small>
-                  {ACTIVE.has(agent.status) && agent.progress && (
-                    <small className="agent-phase">
-                      {turnProgressLabel(agent.progress)}
-                      {agent.progress.modelStep != null && ` · 第 ${agent.progress.modelStep} 轮`}
+                  <span className="agent-copy">
+                    <span className="agent-identity">
+                      <strong>{agent.name}</strong>
+                      <span className="agent-row-status" data-status={agent.status}>
+                        {ACTIVE.has(agent.status) && <LoaderCircle size={11} className="activity-spinner" />}
+                        {LABELS[agent.status] ?? agent.status}
+                      </span>
+                    </span>
+                    <span className="agent-description">{agent.description}</span>
+                    <small>
+                      {agent.parentId
+                        ? `${names.get(agent.parentId) ?? agent.parentId} / `
+                        : ""}
+                      {agent.model ?? "默认模型"} ·{" "}
+                      <time dateTime={agent.createdAt} title={conversationTimestamp(agent.createdAt)?.full}>
+                        {conversationTimestamp(agent.createdAt)?.label}
+                      </time>
+                      {agent.elapsedMs !== undefined &&
+                        formatDuration(agent.elapsedMs) && ` · ${agent.timingComplete === false ? "至少 " : ""}${formatDuration(agent.elapsedMs)}`}
+                      {!!agent.heldMessagesCount &&
+                        ` · ${agent.heldMessagesCount} 条待处理消息`}
                     </small>
-                  )}
-                  {agent.progress?.retry && (
-                    <RetryNotice progress={agent.progress} />
-                  )}
+                    {ACTIVE.has(agent.status) && agent.progress && (
+                      <small className="agent-phase">
+                        {turnProgressLabel(agent.progress)}
+                        {agent.progress.modelStep != null && ` · 第 ${agent.progress.modelStep} 轮`}
+                      </small>
+                    )}
+                    {agent.progress?.retry && (
+                      <RetryNotice progress={agent.progress} />
+                    )}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -394,6 +399,7 @@ function SessionAgentPanel({
             <input
               type="search"
               aria-label="搜索子任务"
+              placeholder="搜索子任务"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />

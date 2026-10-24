@@ -9,27 +9,19 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+  padding-inline: 2px;
 }
 .starter-prompts-v2-heading h2 {
   margin: 0;
-  font-size: 14px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-}
-.starter-prompts-v2-heading p {
-  margin: 4px 0 0;
   color: var(--text-mid);
-  font-size: 11px;
-  line-height: 1.6;
+  font-size: var(--font-footnote);
+  font-weight: 600;
+  letter-spacing: 0;
 }
+.starter-prompts-v2-heading p,
 .starter-prompts-v2-count {
-  flex: none;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--bg-active);
-  color: var(--text-mid);
-  font-size: 11px;
+  display: none;
 }
 .starter-prompts-v2-list {
   display: grid;
@@ -37,43 +29,34 @@
   gap: 10px;
 }
 .starter-prompt-v2 {
-  --prompt-color: #059669;
+  --prompt-color: var(--accent);
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-direction: row;
+  align-items: center;
   gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  padding: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
   color: var(--text-mid);
-  background: var(--bg);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 3%);
+  background: var(--control-bg);
+  box-shadow: none;
   text-align: left;
   cursor: pointer;
   transition:
-    border-color 150ms ease,
-    box-shadow 150ms ease,
-    transform 150ms ease;
-}
-.starter-prompt-v2[data-prompt="pdf-notes"] {
-  --prompt-color: #6366f1;
-}
-.starter-prompt-v2[data-prompt="spreadsheet-review"] {
-  --prompt-color: #0d9488;
-}
-.starter-prompt-v2[data-prompt="meeting-brief"] {
-  --prompt-color: #d97706;
-}
-.starter-prompt-v2[data-prompt="mcp"] {
-  --prompt-color: #8b5cf6;
+    border-color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration) var(--ease-standard),
+    transform var(--duration) var(--ease-out);
 }
 .starter-prompt-v2:hover {
-  border-color: color-mix(in srgb, var(--prompt-color) 35%, var(--border));
-  box-shadow: var(--shadow);
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--hairline));
+  background: color-mix(in srgb, var(--accent) 4%, var(--control-bg));
+  box-shadow: 0 12px 30px -22px color-mix(in srgb, var(--text) 45%, transparent);
+  transform: translateY(-2px);
 }
 .starter-prompt-v2:active {
-  transform: scale(0.98);
+  transform: scale(0.99);
 }
 .starter-prompt-v2:focus-visible {
   outline: 2px solid var(--focus-ring, var(--blue));
@@ -83,62 +66,76 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius);
   color: var(--prompt-color);
-  background: color-mix(in srgb, var(--prompt-color) 9%, var(--bg));
+  background: color-mix(in srgb, var(--prompt-color) 10%, var(--bg));
 }
 .starter-prompt-v2-copy {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   overflow-wrap: anywhere;
 }
 :root[data-theme-mode="dark"] .starter-prompt-v2-icon {
-  color: color-mix(in srgb, var(--prompt-color) 65%, #fff);
+  color: color-mix(in srgb, var(--prompt-color) 72%, #fff);
 }
 .starter-prompt-v2-copy strong {
   color: var(--text);
-  font-size: 13px;
-  font-weight: 650;
-  line-height: 1.5;
+  font-size: var(--font-body);
+  font-weight: 600;
+  line-height: 1.45;
 }
 .starter-prompt-v2-copy small {
-  color: var(--text-mid);
-  font-size: 12px;
-  line-height: 1.65;
+  color: var(--text-dim);
+  font-size: var(--font-footnote);
+  line-height: 1.55;
 }
 .starter-shortcuts h2 {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
+  padding-inline: 2px;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--font-caption);
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
 }
 .starter-shortcuts-list {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 .starter-shortcut {
-  flex-direction: row;
-  align-items: center;
-  gap: 14px;
+  gap: 12px;
+  padding: 10px 12px;
+  border-color: transparent;
+  background: transparent;
+}
+.starter-shortcut:hover {
+  border-color: var(--hairline);
+  background: var(--control-bg);
+  box-shadow: none;
+  transform: none;
 }
 .starter-shortcut .starter-prompt-v2-icon {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
 }
 .starter-shortcut .starter-prompt-v2-copy {
   flex: 1;
 }
 .starter-shortcut .starter-prompt-v2-copy strong {
-  font-size: 14px;
+  font-size: var(--font-body);
 }
 .starter-shortcut-arrow {
   flex: none;
   color: var(--text-dim);
+}
+@media (max-width: 720px) {
+  .starter-shortcuts-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 @media (max-width: 720px) {
   .starter-prompt-v2 {

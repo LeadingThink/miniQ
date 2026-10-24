@@ -286,6 +286,8 @@ button.ui-list-row-main:active:not(:disabled) {
   justify-content: center;
   padding: var(--space-6);
   background: var(--scrim);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   animation: ui-fade-in var(--duration) var(--ease-out);
 }
 
@@ -294,11 +296,13 @@ button.ui-list-row-main:active:not(:disabled) {
   width: min(420px, 100%);
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-5);
-  background: var(--bg);
+  padding: var(--space-6);
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
   border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--inset-highlight), var(--shadow-sheet);
   color: var(--text);
   animation: ui-pop-in var(--duration) var(--ease-spring);
 }

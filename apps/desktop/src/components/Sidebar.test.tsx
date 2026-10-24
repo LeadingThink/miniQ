@@ -32,6 +32,14 @@ beforeEach(() => window.localStorage.clear());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("Sidebar", () => {
+  it("starts with navigation on desktop and keeps the mobile drawer header", () => {
+    const media = Object.assign(new EventTarget(), { matches: false });
+    vi.stubGlobal("matchMedia", () => media);
+    const view = render(<Sidebar {...sidebarProps()} />);
+    expect(view.container.querySelector(".sidebar-brand-row")).toBeNull();
+    act(() => { media.matches = true; media.dispatchEvent(new Event("change")); });
+    expect(view.container.querySelector(".sidebar-brand-row")).not.toBeNull();
+  });
   it("toggles all project sessions when the project is clicked repeatedly", () => {
     const onSelectWorkspace = vi.fn();
     render(

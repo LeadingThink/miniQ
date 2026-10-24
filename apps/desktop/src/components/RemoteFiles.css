@@ -6,17 +6,37 @@
 .remote-file-browser select {
   width: 100%;
   min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-mid);
+  font: inherit;
+  font-size: var(--font-footnote);
 }
 .remote-file-location {
   display: flex;
   align-items: center;
   gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+}
+.remote-file-location .icon-button {
+  flex: none;
+  width: 28px;
+  min-height: 28px;
+  padding: 6px;
+  background: transparent;
+  color: var(--text-mid);
 }
 .remote-file-location span {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: var(--font-footnote);
+  font-size: var(--font-caption);
+  color: var(--text-mid);
 }
 .remote-file-list {
   max-height: 35dvh;
@@ -27,8 +47,20 @@
   gap: 8px;
   align-items: center;
   width: 100%;
-  min-height: 44px;
+  min-height: 38px;
+  padding: 9px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-footnote);
   text-align: left;
+}
+.remote-file-list button:hover {
+  background: var(--bg-hover);
+}
+.remote-file-list button[data-directory="true"] > svg {
+  color: var(--text-mid);
 }
 .remote-file-list button svg {
   flex-shrink: 0;
@@ -41,6 +73,7 @@
 .remote-file-list button small {
   flex-shrink: 0;
   color: var(--text-dim);
+  font-size: var(--font-caption);
 }
 .file-preview-loading {
   display: grid;
@@ -69,21 +102,91 @@
   }
 }
 
-.remote-file-upload { display: grid; gap: 8px; margin-block: 8px 12px; min-width: 0; }
-.remote-file-upload-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.remote-file-upload-actions button, .remote-file-upload-progress button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; }
-.remote-file-upload-progress { display: grid; gap: 8px; }
-.remote-file-upload-progress span { overflow-wrap: anywhere; font-size: var(--font-footnote); color: var(--text-mid); }
-.remote-file-upload > small, .remote-file-upload > p { overflow-wrap: anywhere; }
-.remote-file-upload progress { width: 100%; height: 6px; accent-color: var(--accent); }
-.remote-file-upload > small { color: var(--text-muted); }
-.remote-file-receipt { margin: 0; padding: 6px 10px; border-radius: var(--radius); font-size: var(--font-footnote); background: var(--bg-subtle); }
-.remote-file-receipt.failed { color: var(--danger); background: var(--danger-bg); }
-@media (max-width: 340px) { .remote-file-upload-actions { grid-template-columns: minmax(0, 1fr); } }
+.remote-file-upload {
+  display: grid;
+  gap: 8px;
+  margin-block: 8px 12px;
+  min-width: 0;
+}
+.remote-file-upload-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.remote-file-upload-actions button,
+.remote-file-upload-progress button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+}
+.remote-file-upload-progress {
+  display: grid;
+  gap: 8px;
+}
+.remote-file-upload-progress span {
+  overflow-wrap: anywhere;
+  font-size: var(--font-footnote);
+  color: var(--text-mid);
+}
+.remote-file-upload > small,
+.remote-file-upload > p {
+  overflow-wrap: anywhere;
+}
+.remote-file-upload progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--accent);
+}
+.remote-file-upload > small {
+  color: var(--text-muted);
+}
+.remote-file-receipt {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  font-size: var(--font-footnote);
+  background: var(--bg-subtle);
+}
+.remote-file-receipt.failed {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+@media (max-width: 340px) {
+  .remote-file-upload-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 
 /* Preview status and chunk controls must wrap inside narrow panels. */
-.file-preview-loading { text-align: center; overflow-wrap: anywhere; }
-.file-preview-loading > span { max-width: 100%; font-size: var(--font-footnote); color: var(--text-mid); }
-.file-preview-loading > button { min-height: 44px; padding-inline: 16px; }
-.file-preview-tools [role="status"] { max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-footnote); color: var(--text-mid); }
-.remote-download-receipt { flex: none; padding: 2px 8px; border-radius: 999px; font-size: var(--font-footnote); color: var(--accent); background: var(--bg-subtle); white-space: nowrap; }
+.file-preview-loading {
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.file-preview-loading > span {
+  max-width: 100%;
+  font-size: var(--font-footnote);
+  color: var(--text-mid);
+}
+.file-preview-loading > button {
+  min-height: 44px;
+  padding-inline: 16px;
+}
+.file-preview-tools [role="status"] {
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-footnote);
+  color: var(--text-mid);
+}
+.remote-download-receipt {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--font-footnote);
+  color: var(--accent);
+  background: var(--bg-subtle);
+  white-space: nowrap;
+}

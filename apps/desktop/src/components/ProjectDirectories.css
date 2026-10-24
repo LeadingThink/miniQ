@@ -13,7 +13,7 @@
 .project-directories header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .project-directories h2 { margin: 0 0 6px; font-size: var(--font-headline); }
 .project-directories header span { color: var(--text-mid); overflow-wrap: anywhere; }
-.project-directories button { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 8px; width: 36px; height: 36px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); cursor: pointer; }
+.project-directories :where(button:not(.icon-button)) { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 8px; width: 36px; height: 36px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text); cursor: pointer; }
 .project-directories button svg { flex: 0 0 auto; }
 .project-directories button:hover:not(:disabled) { background: var(--bg-hover); }
 .project-directories button:disabled { opacity: 0.4; cursor: default; }

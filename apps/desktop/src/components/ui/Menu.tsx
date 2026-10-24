@@ -26,6 +26,7 @@ export interface MenuProps {
   placement?: "right";
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }
 
@@ -45,10 +46,15 @@ export function Menu(props: MenuProps) {
   const family = useContext(MenuFamily) ?? id;
   const position = useAnchoredPosition(props.anchorRef, menu, props.open, props.point, undefined, props.placement);
   const { open, onClose, anchorRef } = props;
+  const positioned = position !== null;
+
+  useEffect(() => {
+    // Browsers cannot focus items while the positioning pass hides the menu.
+    if (open && positioned) menuItems(menu.current)[0]?.focus({ preventScroll: true });
+  }, [open, positioned]);
 
   useEffect(() => {
     if (!open) return;
-    menuItems(menu.current)[0]?.focus({ preventScroll: true });
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
       if (menu.current?.contains(target) || anchorRef.current?.contains(target)) return;
@@ -65,6 +71,8 @@ export function Menu(props: MenuProps) {
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    props.onKeyDown?.(event);
+    if (event.defaultPrevented) return;
     const items = menuItems(menu.current);
     const current = items.indexOf(document.activeElement as HTMLElement);
     let next = -2;

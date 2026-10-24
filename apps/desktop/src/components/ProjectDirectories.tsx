@@ -70,7 +70,7 @@ export function ProjectDirectories({ workspace, sessions, onSave, onClose, readO
       onCancel={(event) => { event.preventDefault(); if (!saving) onClose(); }}>
       <header>
         <div><h2 id="project-directories-title">项目目录</h2><span>{workspace.name}{readOnly ? " · 只读" : ""}</span></div>
-        <button type="button" disabled={saving} title="关闭" aria-label="关闭" onClick={onClose}><X size={18} /></button>
+        <button type="button" className="icon-button" disabled={saving} title="关闭" aria-label="关闭" onClick={onClose}><X size={18} /></button>
       </header>
       <ol className="project-root-list">
         {paths.map((directory, index) => (

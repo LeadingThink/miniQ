@@ -1,0 +1,101 @@
+.agent-panel {
+  flex: none;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border);
+  max-height: 35vh;
+  overflow: auto;
+}
+.agent-open .open {
+  transform: rotate(90deg);
+}
+.agent-list {
+  padding-bottom: 8px;
+}
+.agent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 0;
+  border-top: 1px solid var(--hairline);
+}
+.agent-open {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 12px 24px minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.agent-open > svg {
+  margin-top: 5px;
+  color: var(--text-dim);
+}
+.agent-open > .agent-avatar {
+  width: 24px;
+  height: 24px;
+}
+.agent-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.agent-identity {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+}
+.agent-identity strong {
+  font-size: var(--font-footnote);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.agent-row-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+  white-space: nowrap;
+}
+.agent-row-status[data-status="completed"] {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 8%, transparent);
+}
+.agent-row-status[data-status="running"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.agent-row-status[data-status="failed"],
+.agent-row-status[data-status="interrupted"] {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+.agent-description {
+  color: var(--text-mid);
+  font-size: var(--font-footnote);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.agent-copy small {
+  color: var(--text-dim);
+  font-size: var(--font-caption);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.agent-row > .icon-button {
+  flex: none;
+  width: 26px;
+  min-height: 26px;
+  padding: 5px;
+  color: var(--text-dim);
+  background: transparent;
+}

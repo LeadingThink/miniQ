@@ -17,7 +17,7 @@ export function ObservationViewer(props: {
     onCancel={(event) => { event.preventDefault(); props.onClose(); }}>
     <header><strong>{props.title}</strong>
       <a href={props.url} download={props.filename} aria-label="下载原始截图"><Download size={18} /></a>
-      <button type="button" aria-label="关闭截图预览" onClick={props.onClose}><X size={20} /></button>
+      <button type="button" className="icon-button" aria-label="关闭截图预览" onClick={props.onClose}><X size={20} /></button>
     </header>
     <ImageInspector url={props.url} label={props.title} intrinsicSize={{ width: props.width, height: props.height }} onError={props.onError} />
   </dialog>;

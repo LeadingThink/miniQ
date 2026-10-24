@@ -50,7 +50,7 @@ export function RemoteBrowserPanel(props: {
   const selected = records.find((call) => call.id === selectedId) ?? records[0];
   return <aside className="remote-browser-panel" aria-label="桌面网页记录">
     <header><Globe2 size={18} /><strong>桌面网页记录</strong>
-      <button type="button" aria-label="关闭桌面网页记录" onClick={props.onClose}><X size={20} /></button>
+      <button type="button" className="icon-button" aria-label="关闭桌面网页记录" onClick={props.onClose}><X size={20} /></button>
     </header>
     <p className="remote-browser-note">这里展示任务保存的网页观察，并非实时画面。记录保留电脑当时的页面状态；在本机打开链接不会共享电脑的登录状态。</p>
     {records.length > 0 && <label className="remote-browser-selection">查看记录

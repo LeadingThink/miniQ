@@ -431,21 +431,21 @@
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 
 .asset-card {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 13px 14px;
+  background: var(--control-bg);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   transition:
     border-color var(--duration-fast) var(--ease-standard),
-    box-shadow var(--duration-fast) var(--ease-standard),
-    transform var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration) var(--ease-standard),
+    transform var(--duration) var(--ease-out),
     background var(--duration-fast) var(--ease-standard);
 }
 
@@ -454,9 +454,9 @@
 }
 
 .asset-card.clickable:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow);
-  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 20%, var(--hairline));
+  box-shadow: 0 12px 30px -22px color-mix(in srgb, var(--text) 45%, transparent);
+  transform: translateY(-2px);
 }
 
 .asset-card.off {
@@ -477,17 +477,17 @@
 }
 
 .asset-icon {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius);
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 10%, var(--hairline));
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: var(--font-callout);
   font-weight: 650;
-  color: var(--text-mid);
+  color: var(--accent);
   flex: none;
 }
 

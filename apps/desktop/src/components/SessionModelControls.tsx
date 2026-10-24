@@ -1,6 +1,7 @@
 import { ModelRankingLink } from "./ModelRankingLink";
 import { Check, ChevronDown, Cpu, RefreshCw, Search, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   DEFAULT_MODEL_SETTINGS,
   EFFORT_LABELS,
@@ -47,7 +48,7 @@ export function SessionModelControls({
   const [attempt, setAttempt] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const hoveredRow = useRef<HTMLElement | null>(null);
   const closeTimer = useRef<number | undefined>(undefined);
@@ -59,9 +60,9 @@ export function SessionModelControls({
   const placeSubmenu = useCallback((row: HTMLElement) => {
     const rect = row.getBoundingClientRect();
     const openRight = rect.right + SUBMENU_GAP + SUBMENU_WIDTH <= window.innerWidth - 8;
-    const estimatedHeight = 34 + 8 * 28 + 12;
+    const height = submenuRef.current?.offsetHeight ?? 0;
     setMenuPos({
-      top: Math.max(8, Math.min(rect.top, window.innerHeight - estimatedHeight)),
+      top: Math.max(8, Math.min(rect.top, window.innerHeight - height - 8)),
       left: Math.max(8, openRight ? rect.right + SUBMENU_GAP : rect.left - SUBMENU_GAP - SUBMENU_WIDTH),
     });
   }, []);
@@ -70,6 +71,8 @@ export function SessionModelControls({
     window.clearTimeout(closeTimer.current);
     closeTimer.current = undefined;
   }, []);
+
+  useEffect(() => cancelClose, [cancelClose]);
 
   const closeSubmenu = useCallback(() => {
     cancelClose();
@@ -112,26 +115,30 @@ export function SessionModelControls({
     }
     const handleOutsideMouseDown = (event: MouseEvent) => {
       const root = rootRef.current;
-      if (root && !root.contains(event.target as Node) && !panelRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (root && !root.contains(target) && !panelRef.current?.contains(target) && !submenuRef.current?.contains(target)) setOpen(false);
     };
     document.addEventListener("mousedown", handleOutsideMouseDown);
     return () => document.removeEventListener("mousedown", handleOutsideMouseDown);
   }, [open, closeSubmenu]);
 
-  // fixed 定位的二级菜单跟着行一起走，滚轮滚动时重新贴合。
-  useEffect(() => {
-    if (!open || mobile) return;
+  // The portal uses viewport coordinates; measure again when reasoning levels load.
+  useLayoutEffect(() => {
+    if (!open || mobile || !hovered) return;
     const reposition = () => {
       if (hoveredRow.current) placeSubmenu(hoveredRow.current);
     };
-    const list = listRef.current;
-    list?.addEventListener("scroll", reposition, { passive: true });
+    reposition();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(reposition);
+    if (submenuRef.current) observer?.observe(submenuRef.current);
+    window.addEventListener("scroll", reposition, true);
     window.addEventListener("resize", reposition);
     return () => {
-      list?.removeEventListener("scroll", reposition);
+      observer?.disconnect();
+      window.removeEventListener("scroll", reposition, true);
       window.removeEventListener("resize", reposition);
     };
-  }, [open, mobile, placeSubmenu]);
+  }, [open, mobile, hovered, placeSubmenu]);
 
   useLayoutEffect(() => {
     if (!open || mobile) {
@@ -192,6 +199,7 @@ export function SessionModelControls({
     }
     let stale = false;
     setDescriptionLoading(true);
+    setDescriptionFor(describeTarget);
     setDescription(null);
     setDescriptionError(null);
     void client
@@ -241,18 +249,20 @@ export function SessionModelControls({
     <div className="model-picker-effort-options" role="group" aria-label="思考强度档位">
       <button
         type="button"
-        aria-pressed={selectedEffort === null}
+        aria-pressed={id !== selectedModel || selectedEffort === null}
+        disabled={disabled}
         onClick={() => void applySelection(id, null)}
       >默认</button>
       {effortOptions.map((effort) => (
         <button
           key={effort}
           type="button"
-          aria-pressed={selectedEffort === effort}
+          aria-pressed={id === selectedModel && selectedEffort === effort}
+          disabled={disabled}
           onClick={() => void applySelection(id, effort)}
         >
           {EFFORT_LABELS[effort]}
-          {selectedEffort === effort && <Check size={12} aria-hidden="true" />}
+          {id === selectedModel && selectedEffort === effort && <Check size={12} aria-hidden="true" />}
         </button>
       ))}
     </div>
@@ -291,7 +301,7 @@ export function SessionModelControls({
         }}
       >
         <Cpu size={14} />
-        <span>{displayModel}</span>
+        <span className="model-trigger-name">{displayModel}</span>
         <span className="model-trigger-separator" aria-hidden="true">·</span>
         <span>{selectedEffort
           ? EFFORT_LABELS[selectedEffort]
@@ -354,7 +364,7 @@ export function SessionModelControls({
                 aria-label="模型 ID"
                 disabled={disabled}
                 spellCheck={false}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => { setQuery(event.target.value); closeSubmenu(); }}
               />
             </div>
             {loading && <span role="status" className="model-picker-status">正在读取模型列表</span>}
@@ -372,7 +382,7 @@ export function SessionModelControls({
                 </button>
               </div>
             )}
-            <div className="model-picker-list" role="listbox" aria-label="会话模型列表" ref={listRef}>
+            <div className="model-picker-list" role="listbox" aria-label="会话模型列表">
               {visibleModels.map((id) => {
                 const selected = id === selectedModel;
                 return (
@@ -437,18 +447,27 @@ export function SessionModelControls({
           </div>
         </SessionModelSurface>
       )}
-      {open && !mobile && hovered && menuPos && (
+      {open && !mobile && hovered && menuPos && createPortal(
         <div
+          ref={submenuRef}
           className="model-picker-submenu"
           role="group"
           aria-label="思考强度"
           style={{ top: menuPos.top, left: menuPos.left }}
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              closeSubmenu();
+              panelRef.current?.querySelector("input")?.focus();
+            }
+          }}
         >
           <div className="model-picker-submenu-title">思考强度</div>
           {effortState}
-        </div>
+        </div>, document.body
       )}
     </div>
   );

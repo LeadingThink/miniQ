@@ -6,6 +6,7 @@ import { memo, useLayoutEffect, useState } from "react";
 import { useDesktopHost } from "./desktopHost";
 import { hostKey } from "./hostWorkspace";
 import { UnifiedSidebar } from "./components/UnifiedSidebar";
+import { AppMenuBar } from "./components/AppMenuBar";
 import type { MiniqAppController } from "./hooks/useMiniqApp";
 
 export default function ConnectedApp(props: {
@@ -15,12 +16,15 @@ export default function ConnectedApp(props: {
   const desktop = useDesktopHost();
   const [controller, setController] = useState<MiniqAppController | null>(null);
   if (!desktop) return <HostContent {...props} />;
-  return <div className={`app ${desktop.sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
-    {controller && <UnifiedSidebar app={controller} />}
-    <div style={{ display: desktop.host === null ? "contents" : "none" }} inert={desktop.host !== null}>
-      <HostContent {...props} active={desktop.host === null} publish={setController} />
+  return <div className="desktop-workspace">
+    <AppMenuBar app={controller} />
+    <div className={`app ${desktop.sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+      {controller && <UnifiedSidebar app={controller} />}
+      <div style={{ display: desktop.host === null ? "contents" : "none" }} inert={desktop.host !== null}>
+        <HostContent {...props} active={desktop.host === null} publish={setController} />
+      </div>
+      {desktop.host !== null && <HostContent key={hostKey(desktop.host)} {...props} publish={setController} />}
     </div>
-    {desktop.host !== null && <HostContent key={hostKey(desktop.host)} {...props} publish={setController} />}
   </div>;
 }
 

@@ -6,18 +6,22 @@
 
 /* ---------- Toolbar ---------- */
 .statusbar.app-toolbar {
+  position: relative;
+  z-index: 20;
   flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-2);
-  min-height: 44px;
-  padding: var(--space-1) var(--space-4);
+  min-height: 52px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
   -webkit-user-select: none;
   user-select: none;
 }
 .app-toolbar-title {
   display: flex;
   align-items: baseline;
-  gap: var(--space-2);
+  gap: 6px;
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -29,6 +33,7 @@
   text-overflow: ellipsis;
   font-size: var(--font-body);
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--text);
 }
 .app-toolbar-project {
@@ -38,6 +43,11 @@
   text-overflow: ellipsis;
   font-size: var(--font-footnote);
   color: var(--text-dim);
+}
+.app-toolbar-project::before {
+  content: "/";
+  margin-right: 6px;
+  color: var(--border-strong);
 }
 /* `.statusbar > *` keeps toolbar items at their natural width. The title is
    the one item that must yield, so long session names cannot push the
@@ -57,13 +67,14 @@
 .app-toolbar-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 2px;
   flex: none;
   flex-wrap: nowrap;
 }
 .app-toolbar-actions .statusbar-icon-button.active {
-  background: var(--bg-active);
-  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .app-toolbar-menu {
@@ -265,37 +276,40 @@
 /* ---------- Settings sheet (two panes) ---------- */
 .settings-overlay .settings-shell-panel {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: 224px minmax(0, 1fr);
   gap: 0;
-  width: min(960px, 92vw);
-  height: min(680px, 88vh);
+  width: min(1000px, 92vw);
+  height: min(720px, 88vh);
   max-height: none;
   padding: 0;
   overflow: hidden;
+  border-radius: var(--radius-lg);
 }
 .settings-sidebar {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   min-height: 0;
-  padding: var(--space-4) var(--space-2);
+  padding: 20px 10px;
   border-right: 1px solid var(--hairline);
-  background: var(--bg-subtle);
+  background: color-mix(in srgb, var(--sidebar-bg) 72%, var(--bg));
   overflow-y: auto;
 }
 .settings-panel h2.settings-sidebar-title {
   padding: 0 var(--space-3) var(--space-2);
   font-size: var(--font-headline);
+  letter-spacing: -0.02em;
 }
 .settings-sidebar-nav .settings-tabs {
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   border-bottom: 0;
 }
 .settings-sidebar-nav .settings-tabs button {
   justify-content: flex-start;
   gap: var(--space-2);
   width: 100%;
+  min-height: 36px;
   padding: var(--space-2) var(--space-3);
   border: 0;
   border-radius: var(--radius-sm);
@@ -307,9 +321,10 @@
   color: var(--text);
 }
 .settings-sidebar-nav .settings-tabs button[aria-selected="true"] {
-  background: var(--bg-active);
-  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
   border-bottom-color: transparent;
+  font-weight: 600;
 }
 .settings-content {
   display: flex;
@@ -322,7 +337,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-5) var(--space-3);
+  padding: 24px 28px 18px;
   border-bottom: 1px solid var(--hairline);
 }
 .settings-group-heading {
@@ -332,25 +347,28 @@
   margin: 0;
   font-size: var(--font-title);
   font-weight: 650;
+  letter-spacing: -0.025em;
 }
 .settings-group-heading p {
-  margin: var(--space-1) 0 0;
+  margin: 6px 0 0;
   font-size: var(--font-footnote);
+  line-height: 1.5;
   color: var(--text-dim);
 }
 .settings-content-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-4) var(--space-5);
+  padding: 24px 28px 32px;
 }
 .settings-content-scroll > [role="tabpanel"] {
   min-height: 0;
 }
 .settings-content > .approval-actions {
   flex: none;
-  padding: var(--space-3) var(--space-5);
+  padding: 16px 28px 20px;
   border-top: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
 }
 /* Skills / MCP / Plugins used to be full pages; flatten their chrome here. */
 .settings-embedded-page .page {

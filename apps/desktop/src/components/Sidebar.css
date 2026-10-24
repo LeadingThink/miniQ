@@ -338,14 +338,30 @@
 
 /* Mobile drawer layout inherits the active appearance, including custom
    theme colors and automatic light/dark changes. */
+.sidebar-brand-row {
+  min-height: 40px;
+  margin-bottom: 10px;
+  padding: 0 4px;
+}
 .sidebar-brand-lockup {
   display: flex;
   align-items: center;
   min-width: 0;
-  gap: 8px;
+  gap: 9px;
 }
 .sidebar-brand-mark {
-  display: none;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  border-radius: 9px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  box-shadow: var(--inset-highlight);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: -0.06em;
 }
 .sidebar-version,
 .sidebar-shortcut,

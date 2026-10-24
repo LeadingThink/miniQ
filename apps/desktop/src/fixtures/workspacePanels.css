@@ -1,0 +1,68 @@
+.workspace-panels-fixture {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+}
+.fixture-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-caption);
+}
+.fixture-columns {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(400px, 1fr) minmax(360px, 1fr);
+  min-height: 0;
+}
+.fixture-conversation {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 16px 24px;
+}
+.fixture-summary-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+.fixture-chat-copy {
+  padding: 60px 0;
+  color: var(--text-dim);
+  font-size: var(--font-footnote);
+  line-height: 1.8;
+}
+.fixture-composer {
+  position: relative;
+  margin-top: auto;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  backdrop-filter: blur(20px);
+  transform: translateZ(0);
+}
+.fixture-composer > div:first-child {
+  padding: 0 0 20px;
+  color: var(--text-dim);
+}
+.fixture-composer .session-model-controls {
+  justify-content: flex-end;
+}
+@media (max-width: 720px) {
+  .fixture-columns {
+    display: block;
+    overflow: auto;
+  }
+  .fixture-conversation {
+    height: 500px;
+    padding: 16px;
+  }
+  .fixture-tools {
+    padding: 8px;
+  }
+}

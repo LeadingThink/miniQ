@@ -226,7 +226,7 @@ pub fn setup_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Windows and Linux keep their current window chrome without a menu bar.
+/// Windows uses the webview menu bar; macOS owns the native application menu.
 #[cfg(not(target_os = "macos"))]
 pub fn setup_app_menu(_app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())

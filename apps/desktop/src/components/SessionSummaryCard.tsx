@@ -1,13 +1,28 @@
-import { ChevronDown, ChevronUp, FileDiff, GitBranch, GitPullRequest, Globe } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  FileDiff,
+  GitBranch,
+  GitPullRequest,
+  Globe,
+  X,
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { PullRequestRef, WebSource } from "../sessionContext";
-import { AgentAvatar, orderAgentsForSummary, type AgentSummary } from "./AgentSummary";
+import type { AgentSummary } from "./AgentSummary";
 import "./SessionSummaryCard.css";
 
 export type SessionSummarySection = "agents" | "sources" | "pulls";
 
-const ONGOING = new Set(["running", "stopping", "finalizing", "queued", "waiting", "waiting_approval"]);
-const AVATAR_STACK = 4;
+const ONGOING = new Set([
+  "running",
+  "stopping",
+  "finalizing",
+  "queued",
+  "waiting",
+  "waiting_approval",
+]);
 const COLLAPSED_KEY = "miniq.sessionSummary.collapsed";
 
 export interface SessionSummaryCardProps {
@@ -62,8 +77,12 @@ export function SessionSummaryCard(props: SessionSummaryCardProps) {
   const toggle = (section: SessionSummarySection) =>
     props.onExpandedChange(props.expanded === section ? null : section);
   const progress = agentProgress(props.agents);
-  const ordered = orderAgentsForSummary(props.agents);
-  const sectionButton = (section: SessionSummarySection, label: string, icon: ReactNode, value: ReactNode) => (
+  const sectionButton = (
+    section: SessionSummarySection,
+    label: string,
+    icon: ReactNode,
+    value: ReactNode,
+  ) => (
     <button
       type="button"
       className="session-summary-item"
@@ -74,14 +93,23 @@ export function SessionSummaryCard(props: SessionSummaryCardProps) {
       {icon}
       <span className="session-summary-label">{label}</span>
       <span className="session-summary-value">{value}</span>
+      <ChevronRight
+        size={14}
+        className="session-summary-chevron"
+        aria-hidden="true"
+      />
     </button>
   );
 
   return (
-    <aside className={`session-summary${collapsed ? " is-collapsed" : ""}`} aria-label="会话摘要">
+    <aside
+      className={`session-summary${collapsed ? " is-collapsed" : ""}`}
+      aria-label="会话摘要"
+    >
       <button
         type="button"
         className="session-summary-trigger"
+        aria-label="会话摘要"
         aria-expanded={!collapsed}
         aria-controls="session-summary-popover"
         title={collapsed ? "展开会话摘要" : "收起会话摘要"}
@@ -91,42 +119,63 @@ export function SessionSummaryCard(props: SessionSummaryCardProps) {
         {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
       </button>
       <div id="session-summary-popover" className="session-summary-popover">
-        <div className="session-summary-items">
-        {hasChanges && (
+        <header className="session-summary-heading">
+          <div>
+            <strong>会话摘要</strong>
+            <span>修改、子任务与参考资料</span>
+          </div>
           <button
             type="button"
-            className="session-summary-item"
-            title="在审阅面板查看本会话的修改"
-            onClick={props.onOpenReview}
+            className="icon-button"
+            aria-label="收起会话摘要"
+            onClick={toggleCollapsed}
           >
-            <FileDiff size={14} aria-hidden="true" />
-            <span className="session-summary-label">变更</span>
-            <span className="session-summary-value">
-              <span className="diff-add">+{props.diff.additions}</span>{" "}
-              <span className="diff-delete">-{props.diff.deletions}</span>
-            </span>
+            <X size={15} />
           </button>
-        )}
-        {hasAgents && sectionButton(
-          "agents",
-          "子智能体",
-          <GitBranch size={14} aria-hidden="true" />,
-          <>
-            <span className="session-summary-avatars">
-              {ordered.slice(0, AVATAR_STACK).map((agent) => (
-                <AgentAvatar key={agent.agentId} seed={agent.agentId} name={agent.name} status={agent.status} />
-              ))}
-            </span>
-            {progress.completed} 完成 / {progress.ongoing} 进行中
-          </>,
-        )}
-        {hasSources && sectionButton("sources", "来源", <Globe size={14} aria-hidden="true" />, props.sources.length)}
-        {hasPulls && sectionButton(
-          "pulls",
-          "拉取请求",
-          <GitPullRequest size={14} aria-hidden="true" />,
-          props.pullRequests.length,
-        )}
+        </header>
+        <div className="session-summary-items">
+          {hasChanges && (
+            <button
+              type="button"
+              className="session-summary-item"
+              title="在审阅面板查看本会话的修改"
+              onClick={props.onOpenReview}
+            >
+              <FileDiff size={14} aria-hidden="true" />
+              <span className="session-summary-label">变更</span>
+              <span className="session-summary-file-count">
+                {props.diff.files.length} 个文件
+              </span>
+              <span className="session-summary-value">
+                <span className="diff-add">+{props.diff.additions}</span>{" "}
+                <span className="diff-delete">-{props.diff.deletions}</span>
+              </span>
+              <ChevronRight size={14} aria-hidden="true" />
+            </button>
+          )}
+          {hasAgents &&
+            sectionButton(
+              "agents",
+              "子智能体",
+              <GitBranch size={14} aria-hidden="true" />,
+              <>
+                {progress.completed} 完成 / {progress.ongoing} 进行中
+              </>,
+            )}
+          {hasSources &&
+            sectionButton(
+              "sources",
+              "来源",
+              <Globe size={14} aria-hidden="true" />,
+              props.sources.length,
+            )}
+          {hasPulls &&
+            sectionButton(
+              "pulls",
+              "拉取请求",
+              <GitPullRequest size={14} aria-hidden="true" />,
+              props.pullRequests.length,
+            )}
         </div>
         {props.expanded === "agents" && hasAgents && (
           <div id="session-summary-agents" className="session-summary-detail">
@@ -134,24 +183,45 @@ export function SessionSummaryCard(props: SessionSummaryCardProps) {
           </div>
         )}
         {props.expanded === "sources" && hasSources && (
-          <ul id="session-summary-sources" className="session-summary-detail session-summary-links" aria-label="来源">
+          <ul
+            id="session-summary-sources"
+            className="session-summary-detail session-summary-links"
+            aria-label="来源"
+          >
             {props.sources.map((source) => (
               <li key={source.url}>
-                <button type="button" title={source.url} onClick={() => props.onOpenUrl(source.url)}>
+                <button
+                  type="button"
+                  title={source.url}
+                  onClick={() => props.onOpenUrl(source.url)}
+                >
                   <strong>{source.title ?? source.domain}</strong>
-                  <small>{source.domain}{source.via === "search" ? " · 搜索结果" : ""}</small>
+                  <small>
+                    {source.domain}
+                    {source.via === "search" ? " · 搜索结果" : ""}
+                  </small>
                 </button>
               </li>
             ))}
           </ul>
         )}
         {props.expanded === "pulls" && hasPulls && (
-          <ul id="session-summary-pulls" className="session-summary-detail session-summary-links" aria-label="拉取请求">
+          <ul
+            id="session-summary-pulls"
+            className="session-summary-detail session-summary-links"
+            aria-label="拉取请求"
+          >
             {props.pullRequests.map((pull) => (
               <li key={pull.url}>
-                <button type="button" title={pull.url} onClick={() => props.onOpenUrl(pull.url)}>
+                <button
+                  type="button"
+                  title={pull.url}
+                  onClick={() => props.onOpenUrl(pull.url)}
+                >
                   <strong>#{pull.number}</strong>
-                  <small>{pull.owner}/{pull.repo}</small>
+                  <small>
+                    {pull.owner}/{pull.repo}
+                  </small>
                 </button>
               </li>
             ))}

@@ -4,11 +4,11 @@
    rather than source order. Tokens only; no literal colors. */
 
 /* ============ Reading column ============ */
-/* Reading column: ~920px; :root covers fixtures rendered outside .main. */
+/* Reading column: ~860px; :root covers fixtures rendered outside .main. */
 :root,
 body .main {
-  /* Give conversations more room while preserving centered margins. */
-  --conversation-content-width: 920px;
+  /* Give conversations comfortable margins at every window size. */
+  --conversation-content-width: 860px;
 }
 
 /* Ordered transcript: activity stays visible, details expand in place. */
@@ -22,7 +22,7 @@ body .main {
 .timeline-turn {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
   min-width: 0;
 }
 
@@ -141,16 +141,13 @@ body .main {
 }
 
 /* ============ Minimal composer ============ */
-.main .composer-card,
-.hero .composer-card {
-  border-radius: var(--radius-lg);
-  padding: var(--space-1) var(--space-2) var(--space-2);
+.main .composer-card {
+  border-radius: var(--radius-xl);
+  padding: var(--space-2) 10px 10px;
 }
 
 .main .composer-card textarea,
-.hero .composer-card textarea,
-.main .composer-field,
-.hero .composer-field {
+.main .composer-field {
   padding: var(--space-3) var(--space-3) var(--space-2);
 }
 
@@ -278,7 +275,7 @@ body .main {
 
 /* ============ Markdown reading rhythm ============ */
 .timeline-inner .md {
-  line-height: 1.6;
+  line-height: 1.75;
 }
 
 .timeline-inner .md p { margin: var(--space-2) 0; }

@@ -107,7 +107,7 @@ export function AppStatusBar(props: {
     <div className="statusbar app-toolbar" data-tauri-drag-region>
       <button
         type="button"
-        className="statusbar-icon-button"
+        className="statusbar-icon-button app-toolbar-sidebar"
         data-tooltip={`${sidebarLabel}（⌘/Ctrl+B）`}
         title={`${sidebarLabel}（⌘/Ctrl+B）`}
         aria-label={sidebarLabel}

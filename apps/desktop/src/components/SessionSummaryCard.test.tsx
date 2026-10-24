@@ -2,7 +2,11 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import { SessionSummaryCard, type SessionSummaryCardProps, type SessionSummarySection } from "./SessionSummaryCard";
+import {
+  SessionSummaryCard,
+  type SessionSummaryCardProps,
+  type SessionSummarySection,
+} from "./SessionSummaryCard";
 import type { AgentSummary } from "./AgentSummary";
 
 afterEach(() => {
@@ -41,7 +45,12 @@ it("renders nothing when every section is empty", () => {
 
 it("shows only non-empty sections", () => {
   const onOpenReview = vi.fn();
-  render(<Harness diff={{ files: [{}], additions: 12, deletions: 3 }} onOpenReview={onOpenReview} />);
+  render(
+    <Harness
+      diff={{ files: [{}], additions: 12, deletions: 3 }}
+      onOpenReview={onOpenReview}
+    />,
+  );
   expect(screen.getByText("变更")).toBeTruthy();
   expect(screen.getByText("+12")).toBeTruthy();
   expect(screen.getByText("-3")).toBeTruthy();
@@ -53,7 +62,15 @@ it("shows only non-empty sections", () => {
 });
 
 it("summarizes child agents and expands the full agent panel", () => {
-  render(<Harness agents={[agent("a", "completed"), agent("b", "running"), agent("c", "failed")]} />);
+  render(
+    <Harness
+      agents={[
+        agent("a", "completed"),
+        agent("b", "running"),
+        agent("c", "failed"),
+      ]}
+    />,
+  );
   const button = screen.getByRole("button", { name: /子智能体/ });
   expect(button.textContent).toContain("1 完成 / 1 进行中");
   expect(screen.queryByText("agent panel")).toBeNull();
@@ -67,8 +84,22 @@ it("lists sources and pull requests and opens them in the embedded browser", () 
   render(
     <Harness
       onOpenUrl={onOpenUrl}
-      sources={[{ url: "https://example.com/a", title: "Example", domain: "example.com", via: "visited" }]}
-      pullRequests={[{ url: "https://github.com/o/r/pull/7", owner: "o", repo: "r", number: 7 }]}
+      sources={[
+        {
+          url: "https://example.com/a",
+          title: "Example",
+          domain: "example.com",
+          via: "visited",
+        },
+      ]}
+      pullRequests={[
+        {
+          url: "https://github.com/o/r/pull/7",
+          owner: "o",
+          repo: "r",
+          number: 7,
+        },
+      ]}
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: /来源/ }));
@@ -85,8 +116,23 @@ it("remembers the collapsed state", () => {
   const trigger = screen.getByRole("button", { name: "会话摘要" });
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(trigger);
-  expect(window.localStorage.getItem("miniq.sessionSummary.collapsed")).toBe("0");
+  expect(window.localStorage.getItem("miniq.sessionSummary.collapsed")).toBe(
+    "0",
+  );
   cleanup();
   render(<Harness diff={{ files: [{}], additions: 1, deletions: 0 }} />);
-  expect(screen.getByRole("button", { name: "会话摘要" }).getAttribute("aria-expanded")).toBe("true");
+  expect(
+    screen
+      .getByRole("button", { name: "会话摘要" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "收起会话摘要" }));
+  expect(window.localStorage.getItem("miniq.sessionSummary.collapsed")).toBe(
+    "1",
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "会话摘要" })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
 });

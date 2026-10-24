@@ -109,7 +109,6 @@
   margin: 0;
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
-.workbench-overview,
 .workbench-file-index {
   overflow: auto;
   padding: 16px;
@@ -117,37 +116,15 @@
   border: 1px solid var(--hairline);
   border-top: 0;
 }
-.workbench-overview h2,
 .workbench-file-index h2 {
   margin: 4px 0 14px;
   font-size: var(--font-callout);
   overflow-wrap: anywhere;
 }
-.workbench-overview h3 {
-  margin: 20px 0 10px;
-  font-size: var(--font-body);
-}
-.workbench-overview > p,
 .workbench-file-index > p {
   color: var(--text-dim);
   font-size: var(--font-footnote);
   line-height: 1.7;
-}
-.workbench-overview .artifact-card {
-  margin-block: 8px;
-}
-.workbench-overview .execution-plan {
-  margin: 12px 0;
-}
-.workbench-artifact-search {
-  display: block;
-  width: 100%;
-  margin-bottom: 10px;
-}
-.workbench-overview .ghost {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
 }
 @media (max-width: 420px) {
   .workbench-toolbar {

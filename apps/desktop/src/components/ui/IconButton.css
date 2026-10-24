@@ -1,0 +1,42 @@
+/* Neutral defaults for icon actions, including close buttons in portaled dialogs. */
+.icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  line-height: 1;
+}
+
+.icon-button > svg {
+  flex: none;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+  opacity: 1;
+}
+
+.icon-button:active:not(:disabled) {
+  background: var(--bg-active);
+  transform: none;
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .icon-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

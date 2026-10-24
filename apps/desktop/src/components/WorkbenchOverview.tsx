@@ -1,11 +1,22 @@
-import { Files, FolderOpen, PanelRight } from "lucide-react";
+import {
+  ChevronDown,
+  Files,
+  FolderOpen,
+  ListChecks,
+  Package,
+  PanelRight,
+} from "lucide-react";
 import { useState } from "react";
 import type { MiniqAppController } from "../hooks/useMiniqApp";
 import type { LocalFileTarget } from "../localFiles";
 import { PlanProgress } from "./ExecutionActivity";
 import { ArtifactCard } from "./TimelineInteractions";
 import { RemoteFileBrowser } from "./RemoteFileBrowser";
-import { WorkbenchLauncher, type WorkbenchLauncherActions } from "./WorkbenchLauncher";
+import {
+  WorkbenchLauncher,
+  type WorkbenchLauncherActions,
+} from "./WorkbenchLauncher";
+import "./WorkbenchOverview.css";
 
 export function WorkbenchOverview({
   app,
@@ -32,7 +43,11 @@ export function WorkbenchOverview({
     !app.feed.artifacts.length &&
     !app.preview.canReopenClosedTab &&
     (filesOnly || !app.feed.plan.length);
-  if (empty && launcher) {
+  if (
+    empty &&
+    launcher &&
+    (!app.catalog.currentSessionId || (filesOnly && fileTreeVisible))
+  ) {
     const Icon = filesOnly ? Files : PanelRight;
     return (
       <section
@@ -44,11 +59,7 @@ export function WorkbenchOverview({
         <p>
           {!app.catalog.currentSessionId
             ? "打开一个会话后，可以在这里查看文件、网页和修改。"
-            : filesOnly
-              ? fileTreeVisible
-                ? "从右侧文件树选择文件，或按快捷键快速筛选"
-                : "从项目目录中选择要预览的文件"
-              : "任务计划和交付文件会显示在这里，也可以直接打开："}
+            : "从右侧文件树选择文件，或按快捷键快速筛选"}
         </p>
         <WorkbenchLauncher actions={launcher} />
       </section>
@@ -59,75 +70,101 @@ export function WorkbenchOverview({
       className="workbench-overview"
       aria-label={filesOnly ? "会话文件" : "任务概览"}
     >
-      <h2>
-        {filesOnly
-          ? "会话文件"
-          : (app.catalog.currentSession?.title ?? "工作面板")}
-      </h2>
-      {!filesOnly && launcher && <WorkbenchLauncher actions={launcher} compact />}
+      <header className="overview-heading">
+        <span className="overview-eyebrow">
+          {filesOnly ? "会话资源" : "任务概览"}
+        </span>
+        <h2>
+          {filesOnly
+            ? "会话文件"
+            : (app.catalog.currentSession?.title ?? "工作面板")}
+        </h2>
+      </header>
+      {!filesOnly && launcher && (
+        <WorkbenchLauncher actions={launcher} compact />
+      )}
       {!app.catalog.currentSessionId && (
         <p>打开一个会话后，可以在这里查看任务计划、交付文件和修改内容。</p>
       )}
-      {!filesOnly && <PlanProgress plan={app.feed.plan} busy={!!app.busy} />}
-      {!filesOnly && !app.feed.plan.length && app.catalog.currentSessionId && (
-        <p>本会话尚未记录任务计划。文件、网页和审阅可以随时切换。</p>
+      {!filesOnly && (
+        <section className="overview-card" aria-label="任务计划">
+          <h3>
+            <ListChecks size={16} />
+            任务计划
+          </h3>
+          <PlanProgress plan={app.feed.plan} busy={!!app.busy} />
+          {!app.feed.plan.length && app.catalog.currentSessionId && (
+            <p>本会话尚未记录任务计划。文件、网页和审阅可以随时切换。</p>
+          )}
+        </section>
       )}
-      <h3>交付文件 · {app.feed.artifacts.length}</h3>
-      {app.preview.canReopenClosedTab && (
-        <button
-          type="button"
-          className="ghost"
-          onClick={app.preview.reopenClosedTab}
-        >
-          重新打开关闭的文件
-        </button>
-      )}
-      {app.feed.artifacts.length > 0 && (
-        <input
-          type="search"
-          className="workbench-artifact-search"
-          aria-label="筛选交付文件"
-          placeholder="按文件名、标题或路径筛选"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-      )}
-      {artifacts.map((artifact) => (
-        <ArtifactCard
-          key={artifact.id}
-          artifact={artifact}
-          workspacePath={
-            app.catalog.currentSession?.workingDirectory ??
-            app.catalog.currentWorkspace?.path
-          }
-          workspacePaths={app.catalog.currentWorkspacePaths}
-          onOpenFile={onOpenFile}
-          onError={app.setError}
-        />
-      ))}
-      {!artifacts.length && (
-        <p>
-          {query
-            ? "没有匹配的交付文件"
-            : "生成的交付文件会集中显示在这里，也可以浏览项目文件。"}
-        </p>
-      )}
-      {app.feed.nextCursor && (
-        <p>此处列出已加载的交付记录；更早的记录会随会话历史一起加载。</p>
-      )}
-      {fileTreeVisible && (
-        <p className="workbench-tree-tip">从右侧文件树打开项目文件，按 ⌘P 可快速筛选。</p>
-      )}
-      {app.catalog.currentSessionId && !fileTreeVisible && (
-        <>
+      <section className="overview-card" aria-label="交付文件">
+        <h3>
+          <Package size={16} />
+          交付文件{" "}
+          <span className="overview-count">{app.feed.artifacts.length}</span>
+        </h3>
+        {app.preview.canReopenClosedTab && (
           <button
             type="button"
             className="ghost"
+            onClick={app.preview.reopenClosedTab}
+          >
+            重新打开关闭的文件
+          </button>
+        )}
+        {app.feed.artifacts.length > 0 && (
+          <input
+            type="search"
+            className="workbench-artifact-search"
+            aria-label="筛选交付文件"
+            placeholder="按文件名、标题或路径筛选"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        )}
+        {artifacts.map((artifact) => (
+          <ArtifactCard
+            key={artifact.id}
+            artifact={artifact}
+            workspacePath={
+              app.catalog.currentSession?.workingDirectory ??
+              app.catalog.currentWorkspace?.path
+            }
+            workspacePaths={app.catalog.currentWorkspacePaths}
+            onOpenFile={onOpenFile}
+            onError={app.setError}
+          />
+        ))}
+        {!artifacts.length && (
+          <div className="overview-empty-files">
+            <Files size={22} strokeWidth={1.5} aria-hidden="true" />
+            <p>{query ? "没有匹配的交付文件" : "生成的交付文件会显示在这里"}</p>
+          </div>
+        )}
+        {app.feed.nextCursor && (
+          <p>此处列出已加载的交付记录；更早的记录会随会话历史一起加载。</p>
+        )}
+      </section>
+      {fileTreeVisible && (
+        <p className="workbench-tree-tip">
+          从右侧文件树打开项目文件，按 ⌘P 可快速筛选。
+        </p>
+      )}
+      {app.catalog.currentSessionId && !fileTreeVisible && (
+        <section
+          className="overview-card overview-project"
+          aria-label="项目目录"
+        >
+          <button
+            type="button"
+            className="overview-project-toggle"
             aria-expanded={browse}
             onClick={() => setBrowse((value) => !value)}
           >
             <FolderOpen size={16} />
-            {browse ? "收起项目文件" : "浏览项目文件"}
+            <span>{browse ? "收起项目文件" : "浏览项目文件"}</span>
+            <ChevronDown size={14} />
           </button>
           {browse && (
             <RemoteFileBrowser
@@ -139,7 +176,7 @@ export function WorkbenchOverview({
               onOpen={(path) => onOpenFile({ path, line: null, column: null })}
             />
           )}
-        </>
+        </section>
       )}
     </section>
   );

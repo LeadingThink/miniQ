@@ -7,6 +7,7 @@
   flex-direction: column;
   min-width: 0;
   position: relative;
+  isolation: isolate;
   /* Seamless split pane: the main column runs flush against the sidebar and
      the window edges. One hairline is the only thing separating the two
      surfaces — no inset, radius or shadow, which read as a floating card. */
@@ -117,25 +118,27 @@
 
 /* ============ Composer card ============ */
 .composer-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg);
-  box-shadow: var(--shadow);
-  padding: 6px 8px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-xl);
+  background: var(--composer-surface);
+  box-shadow: var(--inset-highlight), var(--shadow-composer);
+  padding: 8px 10px 10px;
   display: flex;
   flex-direction: column;
 }
 
 .composer-card:focus-within {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow), 0 0 0 3px var(--focus-shadow);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow:
+    var(--inset-highlight),
+    var(--shadow-composer),
+    0 0 0 3px var(--focus-shadow);
 }
 
-/* The docked queue bar and the toolbar read as one block: one divider above
-   the toolbar, no extra frame around the queue itself. */
+/* The docked queue bar and toolbar share one quiet surface. */
 .composer-card .composer-row {
-  border-top: 1px solid var(--border);
-  padding-top: 6px;
+  border-top: 0;
+  padding-top: 8px;
 }
 
 .composer-card textarea,
@@ -557,10 +560,10 @@
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
   scrollbar-gutter: stable;
-  padding: 12px 20px;
+  padding: 20px 20px 28px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 20px;
 }
 
 .timeline-inner {
@@ -569,7 +572,7 @@
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 28px;
 }
 
 /* Invisible anchor used to prefetch older pages as the reader reaches the
@@ -585,17 +588,17 @@
 .bubble {
   max-width: 92%;
   word-break: break-word;
-  line-height: 1.6;
+  line-height: 1.7;
   font-size: var(--font-callout);
 }
 
 .bubble.user {
   align-self: flex-end;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 8%, var(--control-bg));
+  border: 1px solid color-mix(in srgb, var(--accent) 10%, var(--hairline));
   border-radius: var(--radius-lg);
   padding: 10px 16px;
-  max-width: 70%;
+  max-width: min(76%, 680px);
   /* User messages are plain text: preserve their line breaks. */
   white-space: pre-wrap;
 }

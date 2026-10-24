@@ -1,0 +1,51 @@
+.desktop-workspace {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.app-menubar {
+  display: flex;
+  align-items: center;
+  flex: 0 0 44px;
+  gap: 4px;
+  padding-left: 14px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--sidebar-bg);
+  color: var(--text-mid);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.app-menubar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-right: 10px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+.app-menubar-brand img { width: 24px; height: 24px; object-fit: contain; }
+.app-menubar-nav { display: flex; align-items: center; gap: 2px; }
+.app-menubar button { border: 0; background: transparent; color: inherit; font: inherit; }
+.app-menubar .app-menubar-trigger { height: 30px; padding: 0 12px; border-radius: 5px; font-size: 13px; }
+.app-menubar .app-menubar-sidebar { display: grid; place-items: center; width: 30px; height: 30px; margin-right: 8px; border-radius: 5px; }
+.app-menubar button:hover, .app-menubar-trigger[aria-expanded="true"] { background: var(--bg-hover); color: var(--text); }
+.app-menubar button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.app-menubar button:disabled { opacity: 0.4; }
+.app-menubar-drag { flex: 1; align-self: stretch; min-width: 32px; }
+.app-menubar-dropdown.ui-menu { min-width: 260px; padding: 5px; border-radius: 8px; }
+.app-menubar-dropdown .ui-menu-item { min-height: 32px; font-size: 13px; }
+.app-menubar-dropdown .ui-kbd { margin-left: 24px; }
+.window-controls { display: flex; align-self: stretch; }
+.window-controls button { display: grid; place-items: center; width: 46px; border-radius: 0; }
+.window-controls .window-close:hover { background: #c42b1c; color: #fff; }
+.desktop-workspace .app-toolbar-sidebar { display: none; }
+
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .app-menubar, .app-menubar-dropdown { display: none; }
+  .desktop-workspace .app-toolbar-sidebar { display: inline-flex; }
+}

@@ -9,9 +9,9 @@
  * on the right. These selectors stay scoped to the composer so other ghost
  * buttons keep their existing treatment. */
 .composer-card .composer-row {
-  min-height: 38px;
-  padding: 7px 4px 0;
-  border-top: 1px solid var(--border);
+  min-height: 40px;
+  padding: 8px 2px 0;
+  border-top: 0;
 }
 
 .composer-card .composer-plus-trigger {
@@ -89,7 +89,7 @@
   border-radius: 50%;
   color: var(--accent-fg);
   background: var(--accent);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
 .composer-card .send-btn:hover:not(:disabled) {

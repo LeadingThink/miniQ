@@ -4,21 +4,28 @@
   --text: var(--theme-text, #17191d);
   --accent: var(--theme-accent, #14775f);
   --sidebar-bg: var(--theme-sidebar, #ecefe9);
+  --sidebar-glass: color-mix(in srgb, var(--sidebar-bg) 88%, transparent);
   --bg-subtle: color-mix(in srgb, var(--text) 4%, var(--bg));
-  --bg-hover: color-mix(in srgb, var(--text) 7%, var(--bg));
-  --bg-active: color-mix(in srgb, var(--text) 11%, var(--bg));
-  --border: color-mix(in srgb, var(--text) 13%, var(--bg));
-  --border-strong: color-mix(in srgb, var(--text) 23%, var(--bg));
-  --hairline: color-mix(in srgb, var(--text) 10%, transparent);
-  --text-dim: color-mix(in srgb, var(--text) 72%, var(--bg));
-  --text-mid: color-mix(in srgb, var(--text) 85%, var(--bg));
+  --bg-hover: color-mix(in srgb, var(--text) 6%, var(--bg));
+  --bg-active: color-mix(in srgb, var(--text) 10%, var(--bg));
+  --border: color-mix(in srgb, var(--text) 11%, var(--bg));
+  --border-strong: color-mix(in srgb, var(--text) 20%, var(--bg));
+  --hairline: color-mix(in srgb, var(--text) 8%, transparent);
+  --text-dim: color-mix(in srgb, var(--text) 68%, var(--bg));
+  --text-mid: color-mix(in srgb, var(--text) 82%, var(--bg));
   --blue: var(--accent);
-  --glass: color-mix(in srgb, var(--bg) 96%, transparent);
+  --glass: color-mix(in srgb, var(--bg) 84%, transparent);
+  --composer-surface: color-mix(in srgb, var(--bg) 94%, transparent);
+  --control-bg: color-mix(in srgb, var(--text) 4%, var(--bg));
   --danger-contrast: #ffffff;
   --scrim: rgb(24 24 30 / 24%);
-  --glass-highlight: rgb(255 255 255 / 65%);
+  --glass-highlight: rgb(255 255 255 / 72%);
+  --inset-highlight: inset 0 1px 0 var(--glass-highlight);
   --focus-ring: var(--accent);
   --focus-shadow: color-mix(in srgb, var(--accent) 12%, transparent);
+  --shadow-composer:
+    0 1px 2px color-mix(in srgb, var(--text) 5%, transparent),
+    0 24px 60px -28px color-mix(in srgb, var(--text) 32%, transparent);
   --diff-hunk-bg: color-mix(in srgb, var(--accent) 8%, var(--bg));
   --diff-hunk-border: color-mix(in srgb, var(--accent) 20%, var(--bg));
   --diff-add-bg: color-mix(in srgb, var(--ok) 10%, var(--bg));
@@ -35,14 +42,19 @@
   --warn: #efb65c;
   --warn-bg: rgb(239 182 92 / 12%);
   --scrim: rgb(0 0 0 / 50%);
-  --glass-highlight: rgb(255 255 255 / 8%);
-  --shadow: 0 1px 2px rgb(0 0 0 / 20%), 0 8px 24px rgb(0 0 0 / 18%);
-  --shadow-sheet: 0 1px 2px rgb(0 0 0 / 22%), 0 16px 42px rgb(0 0 0 / 24%);
-  --shadow-lg: 0 2px 5px rgb(0 0 0 / 24%), 0 28px 72px rgb(0 0 0 / 42%);
+  --glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --composer-surface: color-mix(in srgb, var(--text) 5%, var(--bg));
+  --glass-highlight: rgb(255 255 255 / 10%);
+  --shadow: 0 1px 2px rgb(0 0 0 / 20%), 0 12px 32px rgb(0 0 0 / 20%);
+  --shadow-sheet: 0 1px 2px rgb(0 0 0 / 22%), 0 24px 64px rgb(0 0 0 / 32%);
+  --shadow-lg: 0 2px 5px rgb(0 0 0 / 24%), 0 32px 90px rgb(0 0 0 / 48%);
   --shadow-sm: 0 1px 3px rgb(0 0 0 / 30%);
-  --shadow-popover: 0 8px 24px rgb(0 0 0 / 40%);
-  --shadow-page: 0 8px 28px rgb(0 0 0 / 45%);
+  --shadow-popover: 0 12px 36px rgb(0 0 0 / 42%);
+  --shadow-page: 0 12px 40px rgb(0 0 0 / 45%);
   --shadow-knob: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-composer:
+    0 1px 2px rgb(0 0 0 / 24%),
+    0 24px 64px -24px rgb(0 0 0 / 56%);
 }
 
 ::selection {

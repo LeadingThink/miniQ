@@ -1,0 +1,249 @@
+.background-row {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.background-rotation {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+.background-rotation-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.background-rotation-head h4 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: var(--font-body);
+  font-weight: 600;
+}
+.background-rotation-head p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--font-footnote);
+}
+.background-rotation-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+.background-rotation .background-rotation-controls > label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text-mid);
+  font-size: var(--font-footnote);
+  font-weight: 400;
+}
+.background-playlist-field {
+  flex: 1 1 140px;
+}
+.background-rotation .background-rotation-controls select {
+  min-width: 0;
+  width: 100%;
+  height: 36px;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-footnote);
+}
+.background-rotation-actions {
+  display: flex;
+  gap: 6px;
+}
+.background-rotation-button,
+.background-more {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-mid);
+  font: inherit;
+  font-size: var(--font-footnote);
+  cursor: pointer;
+}
+.background-rotation-button:hover,
+.background-more:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.background-rotation-detail,
+.background-empty {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--font-footnote);
+  line-height: 1.6;
+}
+.background-rotation-detail {
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+.background-empty {
+  padding: 24px 0;
+  text-align: center;
+}
+.background-more {
+  justify-self: center;
+  min-width: 180px;
+}
+.background-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px 12px;
+}
+.background-choice {
+  position: relative;
+  min-width: 0;
+}
+.background-row .background-choice > label {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  cursor: pointer;
+  color: var(--text);
+  font-size: var(--font-footnote);
+}
+.background-collect {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 20%);
+  border-radius: 7px;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.background-choice:hover .background-collect,
+.background-choice:focus-within .background-collect,
+.background-collect.is-collected {
+  opacity: 1;
+}
+.background-collect:hover {
+  background: rgb(0 0 0 / 75%);
+}
+.background-collect.is-collected {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--hairline);
+}
+.background-collect:disabled {
+  cursor: not-allowed;
+  opacity: 0;
+}
+.background-choice:hover .background-collect:disabled {
+  opacity: 0.4;
+}
+.background-choice input[type="radio"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.background-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--hairline);
+  background: var(--bg-subtle);
+  color: var(--text-dim);
+  transition: box-shadow 120ms ease;
+}
+.background-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.background-preview-glyph {
+  background:
+    radial-gradient(circle at 50% 120%, color-mix(in srgb, currentColor 34%, transparent), transparent 70%),
+    #05060c;
+  font-family: var(--font-mono, monospace);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 12px currentColor;
+}
+.background-preview-glyph.is-light {
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, currentColor 18%, transparent), transparent 70%),
+    #f4f6fb;
+  text-shadow: none;
+}
+.background-choice:hover .background-preview {
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+.background-choice:has(input:checked) .background-preview {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.background-choice:has(input:focus-visible) .background-preview {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+.background-choice .theme-copy {
+  font-size: var(--font-footnote);
+  line-height: 1.5;
+}
+.background-row > .settings-section-description {
+  margin: 0;
+  line-height: 1.6;
+}
+@media (max-width: 560px) {
+  .background-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .background-rotation-controls > label {
+    flex: 1 1 100px;
+  }
+  .background-rotation-actions {
+    flex: 1 1 100%;
+  }
+  .background-rotation-actions button {
+    flex: 1;
+  }
+}
+@media (pointer: coarse) {
+  .background-rotation .background-rotation-controls select,
+  .background-rotation-button,
+  .background-more {
+    min-height: 44px;
+  }
+  .background-collect {
+    width: 44px;
+    height: 44px;
+    opacity: 1;
+  }
+}

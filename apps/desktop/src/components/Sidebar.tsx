@@ -202,14 +202,14 @@ export function Sidebar(props: SidebarProps) {
       onTouchEnd={finishTouch}
       onTouchCancel={cancelTouch}
     >
-      <div className="sidebar-brand-row" data-tauri-drag-region>
+      {mobile && <div className="sidebar-brand-row">
         <div className="sidebar-brand-lockup" data-tauri-drag-region>
           <span className="sidebar-brand-mark" aria-hidden="true">mQ</span>
           <span className="brand" data-tauri-drag-region>miniQ</span>
           <span className="sidebar-version">v2.4</span>
         </div>
-        {mobile && props.onClose && <button type="button" className="sidebar-close" aria-label="关闭项目与会话侧栏" onClick={props.onClose}><X size={19} /></button>}
-      </div>
+        {props.onClose && <button type="button" className="sidebar-close" aria-label="关闭项目与会话侧栏" onClick={props.onClose}><X size={19} /></button>}
+      </div>}
       <div className="sidebar-primary-actions">
       <button type="button" className="nav-item sidebar-nav-button sidebar-new-chat" aria-label="新对话" onClick={props.onNewChat} title="新对话（⌘/Ctrl+N）">
         <PencilLine className="nav-icon" size={16} /> 新对话

@@ -28,6 +28,20 @@ const page = (
   nextCursor,
 });
 
+it("shows a root switcher only for multiple project roots and loads the selected root", async () => {
+  const call = vi.fn().mockResolvedValueOnce(page([entry("a.md")]))
+    .mockResolvedValueOnce({ ...page([]), roots: ["/project", "/shared"] })
+    .mockResolvedValueOnce({ ...page([]), path: "/shared", roots: ["/project", "/shared"] });
+  const client = { mode: "local", call } as FileReadOptions["client"];
+  render(<RemoteFileBrowser access={{ client, sessionId: "one" }} onOpen={vi.fn()} />);
+  await screen.findByRole("button", { name: /a.md/ });
+  expect(screen.queryByRole("combobox", { name: "项目目录" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "刷新文件列表" }));
+  fireEvent.change(await screen.findByRole("combobox", { name: "项目目录" }), { target: { value: "/shared" } });
+  await screen.findByText("/shared", { selector: "span" });
+  expect(call.mock.calls[2][1]).toMatchObject({ path: "/shared", sessionId: "one" });
+});
+
 it("keeps earlier pages, browses folders, and opens the exact selected file", async () => {
   const call = vi
     .fn()

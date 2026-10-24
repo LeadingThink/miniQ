@@ -1,4 +1,4 @@
-import { Check, Minus, Plus, Shuffle, SkipForward, Sparkles, ListOrdered } from "lucide-react";
+import { Check, Minus, Plus, Shuffle, SkipForward, Sparkles, ListOrdered, Search } from "lucide-react";
 import { useDeferredValue, useMemo, useState, useSyncExternalStore } from "react";
 import { ambientThumbStyle } from "../ambient/ambientPresets";
 import { getActiveBackground, storeBackground, subscribeBackground } from "../background";
@@ -16,6 +16,8 @@ import {
   updateRotation,
   type PlaylistId,
 } from "../backgroundRotation";
+import { Switch } from "./ui/Switch";
+import "./BackgroundPicker.css";
 
 export const PAGE_SIZE = 24;
 const ALL_TAB = "全部";
@@ -25,12 +27,20 @@ function BackgroundPreview({ background }: { background: BackgroundDefinition })
   if (background.thumb) {
     return (
       <span className="background-preview" aria-hidden="true">
-        <img src={background.thumb} alt="" loading="lazy" draggable={false} style={{ objectPosition: background.position }} />
+        <img
+          src={background.thumb}
+          alt=""
+          loading="lazy"
+          draggable={false}
+          style={{ objectPosition: background.position }}
+        />
       </span>
     );
   }
   if (background.kind === "ambient" && background.palette) {
-    return <span className="background-preview" style={ambientThumbStyle(background.palette)} aria-hidden="true" />;
+    return (
+      <span className="background-preview" style={ambientThumbStyle(background.palette)} aria-hidden="true" />
+    );
   }
   if (background.kind === "glyph") {
     return (
@@ -113,58 +123,69 @@ function RotationPanel() {
   return (
     <div className="background-rotation">
       <div className="background-rotation-head">
-        <label className="background-rotation-toggle">
-          <input
-            type="checkbox"
-            data-testid="rotation-toggle"
-            checked={rotation.enabled}
-            onChange={(event) => updateRotation({ enabled: event.target.checked })}
-          />
-          <span>自动轮播</span>
-        </label>
-        <select
-          aria-label="轮播间隔"
-          value={rotation.interval}
-          onChange={(event) => updateRotation({ interval: Number(event.target.value) })}
-        >
-          {ROTATION_INTERVALS.map((minutes) => (
-            <option key={minutes} value={minutes}>
-              {minutes === 60 ? "每 1 小时" : `每 ${minutes} 分钟`}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="background-rotation-button"
-          aria-label={rotation.order === "shuffle" ? "随机播放，点击改为顺序播放" : "顺序播放，点击改为随机播放"}
-          onClick={() => updateRotation({ order: rotation.order === "shuffle" ? "sequence" : "shuffle" })}
-        >
-          {rotation.order === "shuffle" ? <Shuffle size={14} /> : <ListOrdered size={14} />}
-          <span>{rotation.order === "shuffle" ? "随机" : "顺序"}</span>
-        </button>
-        <button
-          type="button"
-          className="background-rotation-button"
-          data-testid="rotation-next"
-          onClick={() => advanceRotation()}
-        >
-          <SkipForward size={14} />
-          <span>下一张</span>
-        </button>
+        <div>
+          <h4>自动轮播</h4>
+          <p>{rotation.enabled ? "已开启，按所选合集切换壁纸" : "已关闭，保持当前壁纸"}</p>
+        </div>
+        <Switch
+          label="自动轮播"
+          checked={rotation.enabled}
+          onChange={(enabled) => updateRotation({ enabled })}
+        />
       </div>
-      <div className="background-chips" role="radiogroup" aria-label="壁纸合集">
-        {PLAYLISTS.map((item) => (
-          <label key={item.id} className="background-chip" title={item.description}>
-            <input
-              type="radio"
-              name="appearance-playlist"
-              value={item.id}
-              checked={rotation.playlistId === item.id}
-              onChange={() => updateRotation({ playlistId: item.id as PlaylistId })}
-            />
-            <span>{item.name}</span>
-          </label>
-        ))}
+      <div className="background-rotation-controls">
+        <label className="background-playlist-field">
+          <span>壁纸合集</span>
+          <select
+            value={rotation.playlistId}
+            onChange={(event) => updateRotation({ playlistId: event.target.value as PlaylistId })}
+          >
+            {PLAYLISTS.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>轮播间隔</span>
+          <select
+            value={rotation.interval}
+            onChange={(event) => updateRotation({ interval: Number(event.target.value) })}
+          >
+            {ROTATION_INTERVALS.map((minutes) => (
+              <option key={minutes} value={minutes}>
+                {minutes === 60 ? "每 1 小时" : `每 ${minutes} 分钟`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="background-rotation-actions">
+          <button
+            type="button"
+            className="background-rotation-button"
+            aria-label={
+              rotation.order === "shuffle" ? "随机播放，点击改为顺序播放" : "顺序播放，点击改为随机播放"
+            }
+            onClick={() =>
+              updateRotation({
+                order: rotation.order === "shuffle" ? "sequence" : "shuffle",
+              })
+            }
+          >
+            {rotation.order === "shuffle" ? <Shuffle size={14} /> : <ListOrdered size={14} />}
+            <span>{rotation.order === "shuffle" ? "随机" : "顺序"}</span>
+          </button>
+          <button
+            type="button"
+            className="background-rotation-button"
+            aria-label="下一张壁纸"
+            onClick={() => advanceRotation()}
+          >
+            <SkipForward size={14} />
+            <span>下一张</span>
+          </button>
+        </div>
       </div>
       <p className="background-rotation-detail">{detail}</p>
     </div>
@@ -179,7 +200,7 @@ function matches(item: BackgroundDefinition, query: string) {
 export function BackgroundPicker() {
   const active = useSyncExternalStore(subscribeBackground, getActiveBackground, getActiveBackground);
   const rotation = useSyncExternalStore(subscribeRotation, getRotation, getRotation);
-  const [tab, setTab] = useState(ALL_TAB);
+  const [category, setCategory] = useState(ALL_TAB);
   const [search, setSearch] = useState("");
   const [limit, setLimit] = useState(PAGE_SIZE);
   const query = useDeferredValue(search.trim().toLowerCase());
@@ -187,52 +208,58 @@ export function BackgroundPicker() {
   const customSet = useMemo(() => new Set(rotation.custom), [rotation.custom]);
   const items = useMemo(() => {
     let list: readonly BackgroundDefinition[];
-    if (tab === CUSTOM_TAB) {
+    if (category === CUSTOM_TAB) {
       list = rotation.custom.map((id) => BACKGROUNDS.find((item) => item.id === id)!).filter(Boolean);
-    } else if (tab === ALL_TAB) list = BACKGROUNDS;
-    else list = BACKGROUNDS.filter((item) => item.group === tab);
+    } else if (category === ALL_TAB) list = BACKGROUNDS;
+    else list = BACKGROUNDS.filter((item) => item.group === category);
     return list.filter((item) => matches(item, query));
-  }, [tab, query, rotation.custom]);
+  }, [category, query, rotation.custom]);
 
-  const selectTab = (next: string) => {
-    setTab(next);
+  const selectCategory = (next: string) => {
+    setCategory(next);
     setLimit(PAGE_SIZE);
   };
   const customFull = rotation.custom.length >= CUSTOM_LIMIT;
-  const tabs = [ALL_TAB, ...BACKGROUND_GROUPS, CUSTOM_TAB];
+  const categories = [ALL_TAB, ...BACKGROUND_GROUPS, CUSTOM_TAB];
 
   return (
     <section className="background-row" aria-label="背景">
-      <h3>
-        背景<span>{active.kind === "none" ? "使用主题配色" : active.story}</span>
-      </h3>
+      <div className="appearance-section-heading">
+        <h3>
+          背景壁纸<span>当前 · {active.name}</span>
+        </h3>
+        <p>{active.kind === "none" ? "保持纯净界面，或选一张喜欢的壁纸。" : active.story}</p>
+      </div>
       <RotationPanel />
-      <div className="background-toolbar">
-        <div className="background-tabs" role="tablist" aria-label="背景分类">
-          {tabs.map((name) => (
-            <button
-              key={name}
-              type="button"
-              role="tab"
-              aria-selected={tab === name}
-              className="background-tab"
-              onClick={() => selectTab(name)}
-            >
-              {name === CUSTOM_TAB ? `${name} ${rotation.custom.length}` : name}
-            </button>
-          ))}
+      <div className="appearance-filters">
+        <div className="appearance-search">
+          <Search size={15} aria-hidden="true" />
+          <input
+            type="search"
+            placeholder="搜索壁纸"
+            aria-label="搜索壁纸"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setLimit(PAGE_SIZE);
+            }}
+          />
         </div>
-        <input
-          type="search"
-          className="background-search"
-          placeholder="搜索壁纸"
-          aria-label="搜索壁纸"
-          value={search}
-          onChange={(event) => {
-            setSearch(event.target.value);
-            setLimit(PAGE_SIZE);
-          }}
-        />
+        <select
+          aria-label="背景分类"
+          value={category}
+          onChange={(event) => selectCategory(event.target.value)}
+        >
+          {categories.map((name) => (
+            <option key={name} value={name}>
+              {name === CUSTOM_TAB
+                ? `${name} ${rotation.custom.length}`
+                : name === ALL_TAB
+                  ? "全部分类"
+                  : name}
+            </option>
+          ))}
+        </select>
       </div>
       <div className="background-grid" role="radiogroup" aria-label="背景">
         {items.slice(0, limit).map((item) => (
@@ -247,18 +274,22 @@ export function BackgroundPicker() {
       </div>
       {!items.length && (
         <p className="background-empty">
-          {tab === CUSTOM_TAB && !query
+          {category === CUSTOM_TAB && !query
             ? "我的合集还是空的。在壁纸卡片上点「+」加入。"
             : "没有找到匹配的背景，换个关键词试试"}
         </p>
       )}
       {items.length > limit && (
-        <button type="button" className="background-more" onClick={() => setLimit((value) => value + PAGE_SIZE)}>
+        <button
+          type="button"
+          className="background-more"
+          onClick={() => setLimit((value) => value + PAGE_SIZE)}
+        >
           显示更多（还有 {items.length - limit} 个）
         </button>
       )}
       <p className="settings-section-description">
-        新增精选壁纸随应用内置，可离线播放。其余视频首次选择时下载并缓存，加载失败时显示封面。光影氛围和字符效果由程序绘制。
+        点击「+」收藏壁纸，可在轮播合集里选择「我的合集」。部分动态壁纸首次使用需下载。
       </p>
     </section>
   );

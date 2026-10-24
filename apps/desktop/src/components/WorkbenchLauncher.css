@@ -52,15 +52,16 @@
   flex-wrap: wrap;
   gap: 6px;
   width: 100%;
-  margin: 4px 0 8px;
+  margin: 0;
 }
 .workbench-launcher.compact .workbench-launcher-entry {
   width: auto;
-  min-height: 30px;
-  padding: 5px 10px;
+  min-height: 34px;
+  padding: 6px 10px;
   gap: 6px;
   border: 1px solid var(--hairline);
-  border-radius: 999px;
+  border-radius: 8px;
+  background: var(--bg);
 }
 .workbench-launcher.compact .workbench-launcher-entry > span {
   flex: none;

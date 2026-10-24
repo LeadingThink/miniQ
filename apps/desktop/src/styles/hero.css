@@ -1,29 +1,51 @@
 /* Task home shares the app theme and native safe areas. */
-/* Soft accent wash behind the task home. Derived from the active theme's
-   accent so it stays coherent in every palette and in dark mode, instead of
-   the fixed lavender/peach pair that turned muddy on dark surfaces. */
 .main:has(.hero) {
-  background: radial-gradient(
-    ellipse 88% 360px at 50% -120px,
-    color-mix(in srgb, var(--accent) 14%, var(--bg)) 0%,
-    color-mix(in srgb, var(--accent) 5%, var(--bg)) 52%,
-    var(--bg) 100%
-  );
+  background: var(--bg);
+}
+.main:has(.hero)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 68% 44% at 50% -8%,
+      color-mix(in srgb, var(--accent) 12%, transparent),
+      transparent 72%
+    ),
+    radial-gradient(
+      ellipse 42% 36% at 8% 92%,
+      color-mix(in srgb, var(--accent) 5%, transparent),
+      transparent 76%
+    );
+}
+.main:has(.hero) :is(.app-toolbar, .hero) {
+  position: relative;
+  z-index: 1;
+}
+.main:has(.hero) .statusbar.app-toolbar {
+  border-bottom-color: transparent;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 :root[data-background] .main:has(.hero) {
   background: transparent;
 }
+:root[data-background] .main:has(.hero)::before {
+  display: none;
+}
 
 .hero {
-  --hero-content-width: 760px;
-  --hero-green: #059669;
+  --hero-content-width: 800px;
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 24px;
-  padding: clamp(24px, 5vh, 64px) 28px max(32px, var(--safe-bottom));
+  padding: clamp(44px, 8vh, 88px) 32px max(36px, var(--safe-bottom));
   overflow-y: auto;
   overscroll-behavior-y: contain;
 }
@@ -32,52 +54,52 @@
   width: 100%;
   max-width: var(--hero-content-width);
 }
-:root[data-theme-mode="dark"] .hero {
-  --hero-green: #34d399;
-}
 .hero-heading {
   text-align: center;
-  padding-block: 4px;
+  padding: 0;
 }
 .hero-heading h1 {
   margin: 0;
   color: var(--text);
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1.5;
+  font-size: var(--font-large-title);
+  font-weight: 650;
+  line-height: 1.2;
   letter-spacing: -0.035em;
+  text-wrap: balance;
   overflow-wrap: anywhere;
 }
 .hero-project-name {
-  font-family: var(--font-mono);
-  text-decoration: underline;
-  text-decoration-color: var(--border-strong);
-  text-decoration-thickness: 2px;
-  text-underline-offset: 6px;
+  color: var(--accent);
+  font-weight: 650;
 }
 .hero-heading p {
-  margin: 8px 0 0;
-  color: var(--text-mid);
-  font-size: 12px;
+  margin: 12px 0 0;
+  color: var(--text-dim);
+  font-size: var(--font-callout);
   line-height: 1.6;
+  letter-spacing: 0.01em;
 }
 .hero .composer-card {
-  padding: 16px;
-  border-radius: 24px;
-  background: color-mix(in srgb, var(--bg) 96%, transparent);
-  box-shadow:
-    0 10px 30px -5px rgb(0 0 0 / 6%),
-    0 1px 3px rgb(0 0 0 / 3%);
+  padding: 18px 18px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--composer-surface);
+  box-shadow: var(--inset-highlight), var(--shadow-composer);
+  transition:
+    border-color var(--duration) var(--ease-standard),
+    box-shadow var(--duration) var(--ease-standard);
 }
 /* The hero card uses a wider padding, so its queue bar needs the same inset. */
 .hero .composer-card .queue-bar {
-  margin: -16px -16px 10px;
+  margin: -18px -18px 12px;
 }
 
-.hero .composer-card:focus-within {  border-color: color-mix(in srgb, var(--hero-green) 60%, var(--border));
+.hero .composer-card:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
   box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--hero-green) 12%, transparent),
-    var(--shadow);
+    var(--inset-highlight),
+    var(--shadow-composer),
+    0 0 0 4px var(--focus-shadow);
 }
 .composer-context {
   display: flex;
@@ -89,13 +111,13 @@
 }
 .hero .composer-context .mode-trigger {
   max-width: 100%;
-  min-height: 36px;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg-subtle);
+  min-height: 34px;
+  padding: 6px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  background: var(--control-bg);
   color: var(--text-mid);
-  font-size: 12px;
+  font-size: var(--font-footnote);
   overflow-wrap: anywhere;
   text-align: left;
 }
@@ -107,62 +129,66 @@
   color: var(--warn);
 }
 .hero .composer-context .mode-trigger[aria-haspopup="listbox"]:not(.warn) {
-  color: var(--hero-green);
-  border-color: color-mix(in srgb, var(--hero-green) 20%, var(--border));
-  background: color-mix(in srgb, var(--hero-green) 7%, var(--bg));
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
 }
 .hero .composer-card textarea,
 .hero .composer-field {
-  min-height: 100px;
-  padding: 4px 0 12px;
+  min-height: 112px;
+  padding: 4px 2px 12px;
   font-size: 16px;
   line-height: 1.65;
 }
 .hero .composer-card .composer-row {
   gap: 8px;
-  padding: 10px 0 0;
-  border-top: 1px solid var(--hairline);
+  padding: 12px 0 0;
+  border-top: 0;
 }
 .hero .composer-row .composer-plus-trigger {
   width: 36px;
   height: 36px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--bg-subtle);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--control-bg);
 }
 .hero .model-trigger {
-  padding: 6px 8px;
-  border-radius: 10px;
-  background: var(--bg-subtle);
+  padding: 6px 9px;
+  border-radius: var(--radius);
+  background: var(--control-bg);
 }
 .hero .model-trigger > svg {
-  color: #818cf8;
+  color: var(--accent);
 }
 .hero .send-btn {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  color: #fff;
-  background: #059669;
+  color: var(--accent-fg);
+  background: var(--accent);
 }
 .hero .send-btn:not(:disabled) {
-  box-shadow: 0 4px 12px rgb(5 150 105 / 25%);
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--accent) 26%, transparent);
 }
 .hero .send-btn:hover:not(:disabled) {
-  background: #047857;
+  background: color-mix(in srgb, var(--accent) 88%, var(--text));
+  filter: none;
 }
 
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
   .hero {
     padding: 22px max(16px, var(--safe-right)) max(28px, var(--safe-bottom))
       max(16px, var(--safe-left));
-    gap: 24px;
+    gap: 20px;
   }
   .hero-heading h1 {
-    font-size: 24px;
+    font-size: 26px;
   }
   .hero .composer-card {
     padding: 14px;
+  }
+  .hero .composer-card .queue-bar {
+    margin: -14px -14px 10px;
   }
   .hero .composer-card .composer-row > .session-model-controls {
     flex: 1 1 0%;
