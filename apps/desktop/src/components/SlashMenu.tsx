@@ -1,9 +1,8 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useLayoutEffect, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { useComposerPopoverPosition } from "../hooks/useComposerPopoverPosition";
 import {
-  AtSign,
   ArrowLeft,
+  AtSign,
   Bot,
   Brain,
   Check,
@@ -20,9 +19,11 @@ import {
   Share2,
   Sparkles,
   Wrench,
+  type LucideIcon,
 } from "lucide-react";
+import { useComposerPopoverPosition } from "../hooks/useComposerPopoverPosition";
 import type { ComposerSlashCommand, ComposerSlashIcon } from "../composerSlash";
-import type { LucideIcon } from "lucide-react";
+import { VirtualList, type VirtualListHandle } from "./ui/VirtualList";
 import "./SlashMenu.css";
 
 const ICONS: Record<ComposerSlashIcon, LucideIcon> = {
@@ -43,11 +44,12 @@ const ICONS: Record<ComposerSlashIcon, LucideIcon> = {
   help: AtSign,
 };
 
-export function SlashMenu(props: {
+interface Props {
   inputRef: RefObject<HTMLElement | null>;
   id: string;
   commands: ComposerSlashCommand[];
   activeIndex: number;
+  navigationKey?: string;
   loading: boolean;
   error: string | null;
   parent?: ComposerSlashCommand;
@@ -55,18 +57,77 @@ export function SlashMenu(props: {
   onPick: (command: ComposerSlashCommand) => void;
   onBack: () => void;
   onRetry: () => void;
+}
+
+function SlashOption({
+  command,
+  index,
+  props,
+}: {
+  command: ComposerSlashCommand;
+  index: number;
+  props: Props;
 }) {
-  const position = useComposerPopoverPosition(props.inputRef);
-  const activeRef = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => {
-    activeRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [props.activeIndex, props.commands.length]);
-  return createPortal(
-    <div
-      className="slash-menu"
-      style={position}
-      aria-label="快捷命令"
+  const Icon = ICONS[command.icon ?? "help"];
+  return (
+    <button
+      id={`${props.id}-option-${index}`}
+      type="button"
+      role="option"
+      tabIndex={-1}
+      aria-selected={index === props.activeIndex}
+      aria-disabled={Boolean(command.disabled)}
+      aria-setsize={props.commands.length}
+      aria-posinset={index + 1}
+      className={`slash-item${index === props.activeIndex ? " active" : ""}`}
+      onPointerMove={(event) => {
+        if (event.pointerType === "mouse" && index !== props.activeIndex)
+          props.onActiveIndexChange(index);
+      }}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={() => {
+        if (!command.disabled) props.onPick(command);
+      }}
     >
+      <Icon size={16} aria-hidden="true" />
+      <span className="slash-copy">
+        <span className="slash-name">{command.name}</span>
+        <span className="slash-desc">
+          {command.disabled
+            ? (command.disabledReason ?? command.description)
+            : command.description}
+        </span>
+      </span>
+      <span className="slash-meta">
+        {command.selected && <Check size={14} aria-label="当前设置" />}
+        {!props.parent && !command.id.startsWith("skill:") && (
+          <code>/{command.id}</code>
+        )}
+        {(command.children || command.loadChildren) && (
+          <ChevronRight size={14} aria-label="展开选项" />
+        )}
+      </span>
+    </button>
+  );
+}
+
+export function SlashMenu(props: Props) {
+  const position = useComposerPopoverPosition(props.inputRef);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const handle = useRef<VirtualListHandle>(null);
+  const pointerIndex = useRef<number | null>(null);
+  const activeKey = props.commands[props.activeIndex]?.id;
+  useLayoutEffect(() => {
+    if (pointerIndex.current !== props.activeIndex)
+      handle.current?.scrollToIndex(props.activeIndex);
+    pointerIndex.current = null;
+  }, [props.activeIndex, activeKey, props.navigationKey]);
+  const onActiveIndexChange = (index: number) => {
+    pointerIndex.current = index;
+    props.onActiveIndexChange(index);
+  };
+  return createPortal(
+    <div className="slash-menu" style={position} aria-label="快捷命令">
       <header className="slash-header">
         {props.parent ? (
           <button
@@ -84,62 +145,46 @@ export function SlashMenu(props: {
         <span>{props.commands.length} 项</span>
       </header>
       <div
+        ref={resultsRef}
         className="slash-results"
         id={props.id}
         role="listbox"
         aria-label="斜杠菜单"
         aria-busy={props.loading}
       >
-        {props.commands.map((command, index) => {
-          const Icon = ICONS[command.icon ?? "help"];
-          const groupStart =
-            index === 0 || props.commands[index - 1].group !== command.group;
-          return (
-            <div key={command.id} role="presentation">
-              {groupStart && (
-                <div className="slash-title" role="presentation">
-                  {command.group}
-                </div>
-              )}
-              <button
-                id={`${props.id}-option-${index}`}
-                type="button"
-                role="option"
-                tabIndex={-1}
-                ref={index === props.activeIndex ? activeRef : undefined}
-                aria-selected={index === props.activeIndex}
-                aria-disabled={Boolean(command.disabled)}
-                className={`slash-item${index === props.activeIndex ? " active" : ""}`}
-                onMouseEnter={() => props.onActiveIndexChange(index)}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  if (!command.disabled) props.onPick(command);
-                }}
-              >
-                <Icon size={16} aria-hidden="true" />
-                <span className="slash-copy">
-                  <span className="slash-name">{command.name}</span>
-                  <span className="slash-desc">
-                    {command.disabled
-                      ? (command.disabledReason ?? command.description)
-                      : command.description}
-                  </span>
-                </span>
-                <span className="slash-meta">
-                  {command.selected && (
-                    <Check size={14} aria-label="当前设置" />
-                  )}
-                  {!props.parent && !command.id.startsWith("skill:") && (
-                    <code>/{command.id}</code>
-                  )}
-                  {(command.children || command.loadChildren) && (
-                    <ChevronRight size={14} aria-label="展开选项" />
-                  )}
-                </span>
-              </button>
-            </div>
-          );
-        })}
+        <VirtualList
+          count={props.commands.length}
+          getKey={(index) => props.commands[index].id}
+          estimateSize={(index) =>
+            index === 0 ||
+            props.commands[index - 1].group !== props.commands[index].group
+              ? 104
+              : 76
+          }
+          scrollRef={resultsRef}
+          handle={handle}
+          keepMounted={[props.activeIndex]}
+        >
+          {(index) => {
+            const command = props.commands[index];
+            const groupStart =
+              index === 0 || props.commands[index - 1].group !== command.group;
+            return (
+              <div role="presentation">
+                {groupStart && (
+                  <div className="slash-title" role="presentation">
+                    {command.group}
+                  </div>
+                )}
+                <SlashOption
+                  command={command}
+                  index={index}
+                  props={{ ...props, onActiveIndexChange }}
+                />
+              </div>
+            );
+          }}
+        </VirtualList>
       </div>
       {props.loading && (
         <div className="slash-state" role="status">

@@ -3,22 +3,17 @@ import {
   FolderPlus,
   Archive,
   ChevronDown,
-  ChevronRight,
   ChevronUp,
   Clock3,
   Download,
-  Folder,
-  FolderOpen,
   MessageSquareText,
   MoreHorizontal,
   PencilLine,
-  Plus,
   RefreshCw,
   Search,
   SearchX,
   Settings,
   Sparkles,
-  Trash2,
   X,
 } from "lucide-react";
 import type { CatalogStatus } from "../hostWorkspace";
@@ -27,17 +22,15 @@ import type { AppUpdaterState } from "../hooks/useAppUpdater";
 import { openExternalUrl } from "../externalLinks";
 import { UpdateNotice } from "./UpdateNotice";
 import { DropdownMenu } from "./DropdownMenu";
-import { revealInFinder } from "../fileActions";
 import { isTauriRuntime } from "../runtime";
-import { ConfirmDialog } from "./ui/Dialog";
 import { EmptyState } from "./ui/EmptyState";
 import { SidebarPanel } from "./SidebarPanel";
-import { SidebarSessionItem } from "./SidebarSessionItem";
+import { SidebarSessionList } from "./SidebarSessionList";
 import { SidebarAttention } from "./SidebarAttention";
-import { handleSidebarNavigation, SidebarFilters, SidebarSearchField, sidebarGroups, useMobileSidebarLayout, useProjectDisclosure, type SidebarFilter } from "./SidebarNavigation";
+import { handleSidebarNavigation, SidebarFilters, SidebarSearchField, sidebarGroups, useMobileSidebarLayout, type SidebarFilter } from "./SidebarNavigation";
+import { WorkspaceGroup } from "./WorkspaceGroup";
 import "./Sidebar.css";
 
-const COLLAPSED_SESSION_COUNT = 3;
 const FEEDBACK_FORM_URL =
   "https://zaiwen-chattests.feishu.cn/share/base/form/shrcncCk7TJ5Jns8e34ycHSD3yf";
 
@@ -173,6 +166,8 @@ export function Sidebar(props: SidebarProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SidebarFilter>("all");
   const [collapseAllVersion, setCollapseAllVersion] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const hostLabels = useMemo(() => new Map(props.hostGroups?.flatMap((host) => host.workspaceIds.map((id) => [id, host.label] as const))), [props.hostGroups]);
   const workspaceLabels = useMemo(() => new Map(props.workspaces.map((workspace) => [workspace.id,
     [hostLabels.get(workspace.id), workspace.name].filter(Boolean).join(" · ")])), [hostLabels, props.workspaces]);
@@ -228,7 +223,7 @@ export function Sidebar(props: SidebarProps) {
       </button>}
       {mobile && <button type="button" className={`nav-item sidebar-nav-button sidebar-running-button ${filter === "running" ? "active" : ""}`} aria-pressed={filter === "running"}
         aria-label={`快捷筛选：进行中 ${navigation.counts.running}`} onClick={() => setFilter(filter === "running" ? "all" : "running")}>
-        <span className="sidebar-running-dot" aria-hidden="true" /> <span>进行中</span><span className="sidebar-running-count">{navigation.counts.running}</span>
+        <span className={`sidebar-running-dot${navigation.counts.running ? "" : " idle"}`} aria-hidden="true" /> <span>进行中</span><span className="sidebar-running-count">{navigation.counts.running}</span>
       </button>}
       </div>
 
@@ -237,7 +232,8 @@ export function Sidebar(props: SidebarProps) {
         showQuery={!mobile} onMarkAllRead={props.onMarkAllRead} onCollapseAll={() => {
           setQuery(""); setFilter("all"); setCollapseAllVersion((value) => value + 1);
         }} />}
-      <div className="sidebar-scroll" role="navigation" aria-label="项目与会话" onKeyDown={handleSidebarNavigation}>
+      <div ref={scrollRef} className="sidebar-scroll" role="navigation" aria-label="项目与会话" onKeyDown={handleSidebarNavigation}>
+        <div ref={contentRef}>
         <SidebarAttention sessions={props.sessions} unreadSessionIds={props.unreadSessionIds} workspaceLabels={workspaceLabels} onSelectSession={props.onSelectSession} onClose={props.onClose} />
         {props.hostGroups?.filter((host) => !navigation.groups.some(({ workspace }) => host.workspaceIds.includes(workspace.id))).map((host) => <HostHeading key={host.key} host={host} />)}
         {navigation.groups.map(({ workspace, sessions }, index) => (
@@ -248,6 +244,8 @@ export function Sidebar(props: SidebarProps) {
             key={workspace.id}
             selected={workspace.id === props.selectedWorkspaceId}
             sessions={sessions}
+            scrollRef={scrollRef}
+            contentRef={contentRef}
             collapseAllVersion={collapseAllVersion}
             filtering={navigation.filtering}
             unreadSessionIds={props.unreadSessionIds}
@@ -301,25 +299,11 @@ export function Sidebar(props: SidebarProps) {
               <span>已归档 {archivedSessions.length}</span>
               {archiveOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </button>
-            {archiveOpen &&
-              archivedSessions.map((session) => (
-                <SidebarSessionItem
-                  current={session.id === props.currentSessionId}
-                  key={session.id}
-                  session={session}
-                  contextLabel={workspaceLabels.get(session.workspaceId)}
-                  onSelect={props.onSelectSession}
-                  onSeen={props.onSessionSeen}
-                  onMarkUnread={props.onSessionUnread}
-                  unread={props.unreadSessionIds.has(session.id)}
-                  onDelete={props.onDeleteSession}
-                  onRename={props.onRenameSession}
-                  onSetPinned={props.onSetSessionPinned}
-                  onSetArchived={props.onSetSessionArchived}
-                />
-              ))}
+            {archiveOpen && <SidebarSessionList {...props} sessions={archivedSessions}
+              scrollRef={scrollRef} contentRef={contentRef} workspaceLabels={workspaceLabels} />}
           </>
         )}
+        </div>
       </div>
 
       <div className="sidebar-footer">
@@ -351,14 +335,14 @@ export function Sidebar(props: SidebarProps) {
         {mobile && <div className="sidebar-primary-actions sidebar-more-actions">
         <button type="button" className="nav-item sidebar-nav-button sidebar-more-card" aria-expanded={moreOpen}
           aria-controls="sidebar-secondary-footer" onClick={() => setMoreOpen((value) => !value)}>
-          <MoreHorizontal className="nav-icon" size={16} /> {moreOpen ? "收起功能" : "更多功能"}
+          <MoreHorizontal className="nav-icon" size={16} /> <span className="sidebar-more-label">{moreOpen ? "收起功能" : "更多功能"}</span>
         </button>
         </div>}
         <div className={`sidebar-account-row${mobile ? "" : " desktop"}`}>
           <div className="sidebar-account" title="本机账户">
             <span className="sidebar-account-avatar" aria-hidden="true">Q</span>
             <span className="sidebar-account-status" aria-hidden="true"><span /></span>
-            <span className="sidebar-account-copy"><span className="sidebar-account-name">本机</span><small>(Localhost)</small></span>
+            <span className="sidebar-account-copy"><span className="sidebar-account-name">本机</span><small>Localhost</small></span>
             <ChevronDown className="sidebar-account-chevron" size={14} aria-hidden="true" />
           </div>
           {!mobile && <>
@@ -408,251 +392,6 @@ function HostHeading({ host }: { host: SidebarHostGroup }) {
     {host.catalogStatus === "ready" && !host.workspaceIds.length && <p>此电脑还没有项目</p>}
     {host.onRetry && host.catalogStatus === "error" && <button type="button" className="ghost" onClick={host.onRetry}>重试加载 {host.label} 的项目</button>}
   </div>;
-}
-
-interface WorkspaceGroupProps {
-  workspace: Workspace;
-  sessions: Session[];
-  collapseAllVersion: number;
-  unreadSessionIds: ReadonlySet<string>;
-  currentSessionId: string | null;
-  selected: boolean;
-  filtering: boolean;
-  onSelectWorkspace: (workspaceId: string) => void;
-  onCreateSession: (workspaceId: string) => void;
-  onDeleteWorkspace: (workspaceId: string) => void;
-  onRenameWorkspace: (workspaceId: string, name: string) => void;
-  onEditWorkspace: (workspaceId: string) => void;
-  canReveal?: boolean;
-  onError?: (message: string) => void;
-  onSelectSession: (sessionId: string) => void;
-  onSessionSeen: (sessionId: string) => void;
-  onSessionUnread?: (sessionId: string) => void;
-  onDeleteSession: (sessionId: string) => void;
-  onRenameSession: (sessionId: string, title: string) => void;
-  onSetSessionPinned: (sessionId: string, pinned: boolean) => void;
-  onSetSessionArchived: (sessionId: string, archived: boolean) => void;
-}
-
-function WorkspaceGroup(props: WorkspaceGroupProps) {
-  const [preferredOpen, setOpen] = useProjectDisclosure(props.workspace.id);
-  const open = props.filtering || preferredOpen;
-  const [expanded, setExpanded] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(props.workspace.name);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const menuBtnRef = useRef<HTMLButtonElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const renameCommittedRef = useRef(false);
-  const hiddenCount = Math.max(0, props.sessions.length - COLLAPSED_SESSION_COUNT);
-  const previousSession = useRef({ id: props.currentSessionId, revealed: false });
-
-  useEffect(() => {
-    if (previousSession.current.id !== props.currentSessionId) {
-      previousSession.current = { id: props.currentSessionId, revealed: false };
-    }
-    if (previousSession.current.revealed) return;
-    const currentIndex = props.sessions.findIndex((session) => session.id === props.currentSessionId);
-    if (currentIndex < 0) return;
-    previousSession.current.revealed = true;
-    setOpen(true);
-    if (currentIndex >= COLLAPSED_SESSION_COUNT) setExpanded(true);
-  }, [props.currentSessionId, props.sessions, setOpen]);
-  useEffect(() => {
-    if (props.collapseAllVersion > 0) setOpen(false);
-  }, [props.collapseAllVersion, setOpen]);
-  const visibleSessions = !open ? [] : (expanded || props.filtering)
-    ? props.sessions
-    : props.sessions.slice(0, COLLAPSED_SESSION_COUNT);
-
-  useEffect(() => {
-    if (renaming && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [renaming]);
-
-  const commitRename = () => {
-    if (renameCommittedRef.current) return;
-    renameCommittedRef.current = true;
-    const trimmed = renameValue.trim();
-    setRenaming(false);
-    if (trimmed && trimmed !== props.workspace.name) {
-      props.onRenameWorkspace(props.workspace.id, trimmed);
-    } else {
-      setRenameValue(props.workspace.name);
-    }
-  };
-
-  return (
-    <div className="workspace-group">
-      <div className={`workspace-item ${props.selected ? "selected" : ""}`}>
-        {renaming ? (
-          <input
-            ref={inputRef}
-            className="rename-input"
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                commitRename();
-              }
-              if (e.key === "Escape") {
-                setRenameValue(props.workspace.name);
-                setRenaming(false);
-              }
-            }}
-          />
-        ) : (
-          <button
-            type="button"
-            className="workspace-select"
-            title={[props.workspace.path, ...props.workspace.additionalPaths].join("\n")}
-            aria-label={props.workspace.name}
-            aria-current={props.selected ? "true" : undefined}
-            aria-expanded={open}
-            onClick={() => {
-              props.onSelectWorkspace(props.workspace.id);
-              if (!props.filtering) setOpen(!open);
-            }}
-          >
-            <ChevronRight className="workspace-disclosure" size={12} aria-hidden="true" />
-            <Folder className="workspace-icon" size={15} />
-            <span className="workspace-name">{props.workspace.name}</span>
-            {props.workspace.additionalPaths.length > 0 && <span className="workspace-root-count">{props.workspace.additionalPaths.length + 1}</span>}
-            <span className="workspace-session-count" aria-label={`${props.sessions.length} 条会话`}>{props.sessions.length}</span>
-          </button>
-        )}
-        <button
-          type="button"
-          className="new-session"
-          aria-label={`在 ${props.workspace.name} 中新建会话`}
-          title="新建会话"
-          onClick={(event) => {
-            event.stopPropagation();
-            props.onCreateSession(props.workspace.id);
-          }}
-        >
-          <Plus size={15} />
-        </button>
-        <div className="menu-container">
-          <button
-            type="button"
-            ref={menuBtnRef}
-            className="menu-trigger"
-            aria-label={`${props.workspace.name} 的更多操作`}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            title="更多操作"
-            onClick={(event) => {
-              event.stopPropagation();
-              setMenuOpen((v) => !v);
-            }}
-          >
-            <MoreHorizontal size={14} />
-          </button>
-          <DropdownMenu
-            triggerRef={menuBtnRef}
-            open={menuOpen}
-            onClose={() => setMenuOpen(false)}
-          >
-            <button type="button" className="dropdown-item" onClick={(event) => {
-              event.stopPropagation();
-              setMenuOpen(false);
-              props.onCreateSession(props.workspace.id);
-            }}>
-              <Plus size={13} /><span>在此项目新建会话</span>
-            </button>
-            <button type="button" className="dropdown-item" onClick={() => {
-              setMenuOpen(false);
-              props.onEditWorkspace(props.workspace.id);
-            }}>
-              <Folder size={13} /><span>项目目录</span>
-            </button>
-            {props.canReveal && (
-              <button type="button" className="dropdown-item" onClick={() => {
-                setMenuOpen(false);
-                void revealInFinder(props.workspace.path, { directory: true }).catch((cause) =>
-                  props.onError?.(cause instanceof Error ? cause.message : String(cause)),
-                );
-              }}>
-                <FolderOpen size={13} /><span>在 Finder 中显示</span>
-              </button>
-            )}
-            <button
-              type="button"
-              className="dropdown-item"
-              onClick={(event) => {
-                event.stopPropagation();
-                setMenuOpen(false);
-                renameCommittedRef.current = false;
-                setRenameValue(props.workspace.name);
-                setRenaming(true);
-              }}
-            >
-              <PencilLine size={13} />
-              <span>重命名</span>
-            </button>
-            <button
-              type="button"
-              className="dropdown-item danger"
-              onClick={(event) => {
-                event.stopPropagation();
-                setMenuOpen(false);
-                setConfirmDelete(true);
-              }}
-            >
-              <Trash2 size={13} />
-              <span>删除工作区</span>
-            </button>
-          </DropdownMenu>
-        </div>
-      </div>
-      {visibleSessions.length > 0 && <div className="workspace-sessions">
-      {visibleSessions.map((session) => (
-        <SidebarSessionItem
-          current={session.id === props.currentSessionId}
-          key={session.id}
-          session={session}
-          onSelect={props.onSelectSession}
-          onSeen={props.onSessionSeen}
-                  onMarkUnread={props.onSessionUnread}
-          unread={props.unreadSessionIds.has(session.id)}
-          onDelete={props.onDeleteSession}
-          onRename={props.onRenameSession}
-          onSetPinned={props.onSetSessionPinned}
-          onSetArchived={props.onSetSessionArchived}
-        />
-      ))}
-      </div>}
-      {open && !props.filtering && hiddenCount > 0 && (
-        <button
-          type="button"
-          className="session-toggle"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((current) => !current)}
-        >
-          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          <span>{expanded ? "收起" : `展开 ${hiddenCount} 条会话`}</span>
-        </button>
-      )}
-      <ConfirmDialog
-        open={confirmDelete}
-        tone="danger"
-        title={`删除项目“${props.workspace.name}”？`}
-        description="该项目下的所有会话也将被删除，此操作无法撤销。"
-        confirmLabel="删除项目"
-        onCancel={() => setConfirmDelete(false)}
-        onConfirm={() => {
-          setConfirmDelete(false);
-          props.onDeleteWorkspace(props.workspace.id);
-        }}
-      />
-    </div>
-  );
 }
 
 /** Desktop keeps routine update states in the footer menu; only states that

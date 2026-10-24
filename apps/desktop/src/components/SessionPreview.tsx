@@ -19,6 +19,7 @@ export function SessionPreview({ children, title, preview, contextLabel, detail,
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [tracking, setTracking] = useState(false);
   const [position, setPosition] = useState({ left: 8, top: 8, width: 300 });
   const visible = open && !disabled;
   const clearTimer = useCallback(() => {
@@ -28,6 +29,7 @@ export function SessionPreview({ children, title, preview, contextLabel, detail,
   const close = useCallback(() => {
     clearTimer();
     setOpen(false);
+    setTracking(false);
   }, [clearTimer]);
   const leave = () => {
     clearTimer();
@@ -39,7 +41,7 @@ export function SessionPreview({ children, title, preview, contextLabel, detail,
   }, [disabled, close]);
 
   useEffect(() => {
-    if (disabled) return;
+    if (!tracking || disabled) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") close();
     };
@@ -52,7 +54,7 @@ export function SessionPreview({ children, title, preview, contextLabel, detail,
       window.removeEventListener("scroll", close, true);
       window.removeEventListener("resize", close);
     };
-  }, [disabled, close, clearTimer]);
+  }, [tracking, disabled, close, clearTimer]);
 
   useLayoutEffect(() => {
     if (!visible || !anchor.current || !tooltip.current) return;
@@ -79,6 +81,7 @@ export function SessionPreview({ children, title, preview, contextLabel, detail,
         onPointerEnter={(event) => {
           if (event.pointerType !== "mouse" || disabled || isMobileLayout()) return;
           clearTimer();
+          setTracking(true);
           if (!open) timer.current = setTimeout(() => {
             if (!isMobileLayout()) setOpen(true);
           }, 400);
@@ -95,6 +98,7 @@ export function SessionPreview({ children, title, preview, contextLabel, detail,
         onKeyDownCapture={() => { pointerFocus.current = false; }}
         onFocusCapture={() => {
           if (disabled || pointerFocus.current || isMobileLayout()) return;
+          setTracking(true);
           setFocused(true);
           clearTimer();
           setOpen(true);

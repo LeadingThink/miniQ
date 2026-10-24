@@ -41,6 +41,7 @@ export function filterSlashCommands(
   query: string,
 ) {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return commands;
   return commands.filter((command) => {
     const text = [
       command.id,

@@ -5,6 +5,8 @@ import { errorMessage } from "../errorMessage";
 
 import { skillDisplayName } from "../skillDisplay";
 
+const NO_COMMANDS: ComposerSlashCommand[] = [];
+
 interface Skill {
   name: string;
   displayName?: string;
@@ -65,7 +67,7 @@ export function useSlashSkills(
     };
   }, [client, active, scope, workspaceId, attempt]);
   return {
-    commands: client && result.scope === scope ? result.commands : [],
+    commands: client && result.scope === scope ? result.commands : NO_COMMANDS,
     loading: active && Boolean(client) && loading,
     error: active && client ? error : null,
     retry: () => setAttempt((value) => value + 1),

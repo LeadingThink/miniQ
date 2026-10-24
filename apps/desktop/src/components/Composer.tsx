@@ -2,6 +2,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -457,12 +458,10 @@ export function ComposerCard(props: {
     }
   };
 
-  const slash = useComposerSlash({
-    draft,
-    scope: props.draftKey,
-    workspaceId: props.workspaceId,
-    client: props.client,
-    commands: [
+  const pickFilesRef = useRef(pickFiles);
+  pickFilesRef.current = pickFiles;
+  const slashCommands = useMemo<ComposerSlashCommand[]>(
+    () => [
       ...(props.slashCommands ?? []),
       ...(canAttach
         ? [
@@ -473,11 +472,19 @@ export function ComposerCard(props: {
               group: "工具",
               icon: "file" as const,
               keywords: ["attach", "file", "附件", "文件"],
-              onSelect: pickFiles,
+              onSelect: () => pickFilesRef.current(),
             },
           ]
         : []),
     ],
+    [props.slashCommands, canAttach, remoteHost],
+  );
+  const slash = useComposerSlash({
+    draft,
+    scope: props.draftKey,
+    workspaceId: props.workspaceId,
+    client: props.client,
+    commands: slashCommands,
     inputRef: textareaRef,
     setDraft,
     onPick: async (command) => {

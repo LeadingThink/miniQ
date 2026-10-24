@@ -1,5 +1,5 @@
 import { useCallback, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import { CheckCheck, ChevronDown, ListFilter, Search, X } from "lucide-react";
+import { CheckCheck, ChevronsDownUp, ListFilter, Search, X } from "lucide-react";
 import { isSessionRunning } from "../sessionStatus";
 import { isMobileLayout, MOBILE_LAYOUT_QUERY } from "../mobileViewport";
 import type { Session, Workspace } from "../types";
@@ -85,20 +85,38 @@ export function useProjectDisclosure(workspaceId: string) {
   return [open, update] as const;
 }
 
+type SidebarListNavigation = { count: number; focus: (index: number) => void };
+const sidebarLists = new WeakMap<HTMLElement, SidebarListNavigation>();
+
+export function registerSidebarList(element: HTMLElement, navigation: SidebarListNavigation) {
+  sidebarLists.set(element, navigation);
+  return () => { sidebarLists.delete(element); };
+}
+
+/** Navigate the complete data order, including rows outside the DOM window. */
 export function handleSidebarNavigation(event: KeyboardEvent<HTMLDivElement>) {
   if (event.altKey || event.ctrlKey || event.metaKey) return;
-  if (!(event.target instanceof HTMLButtonElement)) return;
-  if (!event.target.matches(".workspace-select, .session-select")) return;
-  const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>(".workspace-select, .session-select"));
-  const current = controls.indexOf(event.target);
-  let next = current;
-  if (event.key === "ArrowDown") next = Math.min(current + 1, controls.length - 1);
-  else if (event.key === "ArrowUp") next = Math.max(current - 1, 0);
-  else if (event.key === "Home") next = 0;
-  else if (event.key === "End") next = controls.length - 1;
-  else return;
+  const target = event.target;
+  if (!(target instanceof HTMLButtonElement) || !target.matches(".workspace-select, .session-select")) return;
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  const segments = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(".workspace-select, [data-sidebar-session-list]"));
+  const owner = target.closest<HTMLElement>("[data-sidebar-session-list]") ?? target;
+  let current = 0, total = 0;
+  for (const element of segments) {
+    if (element === owner) current = total + Number(target.closest<HTMLElement>("[data-index]")?.dataset.index ?? 0);
+    total += sidebarLists.get(element)?.count ?? 1;
+  }
+  let next = event.key === "Home" ? 0 : event.key === "End" ? total - 1
+    : Math.max(0, Math.min(total - 1, current + (event.key === "ArrowDown" ? 1 : -1)));
   event.preventDefault();
-  controls[next]?.focus();
+  for (const element of segments) {
+    const list = sidebarLists.get(element), size = list?.count ?? 1;
+    if (next < size) {
+      if (list) list.focus(next); else element.focus();
+      return;
+    }
+    next -= size;
+  }
 }
 
 export function SidebarFilters(props: {
@@ -122,16 +140,8 @@ export function SidebarFilters(props: {
       <div className="sidebar-section sidebar-section-heading">
         <span className="sidebar-section-title">工作区与项目</span>
         {typeof props.workspaceCount === "number" && <span className="sidebar-section-count">{props.workspaceCount}</span>}
-        {mobile && <div className="sidebar-mobile-status-options" role="group" aria-label="会话状态筛选">
-          <button type="button" aria-label={`全部 ${props.counts.all}`} aria-pressed={props.filter === "all"}
-            onClick={() => props.onFilter("all")}>全部</button>
-          <button type="button" aria-label={`进行中 ${props.counts.running}`} aria-pressed={props.filter === "running"}
-            onClick={() => props.onFilter("running")}>
-            <span>进行中</span><i aria-hidden="true" />
-          </button>
-        </div>}
         {props.onCollapseAll && <button type="button" className="sidebar-collapse-all" aria-label="全部折叠" title="全部折叠" onClick={props.onCollapseAll}>
-          <span>全部折叠</span><ChevronDown size={14} aria-hidden="true" />
+          <span>全部折叠</span><ChevronsDownUp size={14} aria-hidden="true" />
         </button>}
         {props.onMarkAllRead && props.counts.unread > 0 && <button type="button" className="sidebar-filter-toggle sidebar-mark-all-read"
           aria-label="全部标为已读" title="全部标为已读（⇧Esc）" onClick={props.onMarkAllRead}>
@@ -147,10 +157,10 @@ export function SidebarFilters(props: {
         <div className="sidebar-filter-controls" id="sidebar-filter-controls">
           {showQuery && <SidebarSearchField query={props.query} active={active} onQuery={props.onQuery}
             onClear={() => { props.onQuery(""); props.onFilter("all"); }} placeholder="搜索标题、项目或电脑" mobile={mobile} />}
-          <div className="sidebar-filter-options" role="group" aria-label={mobile ? "更多会话状态筛选" : "会话状态筛选"}>
+          <div className="sidebar-filter-options" role="group" aria-label="会话状态筛选">
             {([ ["all", "全部"], ["running", "进行中"], ["waiting", "待确认"], ["unread", "未读"], ["failed", "失败"], ["pinned", "置顶"] ] as const).filter(([value]) => !mobile || value !== "all" && value !== "running").map(([value, label]) => (
               <button type="button" key={value} aria-label={`${label} ${props.counts[value]}`} aria-pressed={props.filter === value}
-                onClick={() => props.onFilter(value)}>{label}<span>{props.counts[value]}</span></button>
+                onClick={() => props.onFilter(mobile && props.filter === value ? "all" : value)}>{label}<span>{props.counts[value]}</span></button>
             ))}
           </div>
         </div>

@@ -10,6 +10,8 @@ import { showUndoToast, useToast } from "./ui/Toast";
 
 export function SidebarSessionItem(props: {
   session: Session;
+  revealCurrent?: boolean;
+  onInteracting?: (id: string, active: boolean) => void;
   current: boolean;
   contextLabel?: string;
   onSelect: (sessionId: string) => void;
@@ -36,8 +38,13 @@ export function SidebarSessionItem(props: {
   const statusText = unread ? "新回复" : sessionStatusLabel(props.session.status);
 
   useEffect(() => {
-    if (props.current) itemRef.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-  }, [props.current]);
+    if (props.current && props.revealCurrent !== false) itemRef.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [props.current, props.revealCurrent]);
+
+  useEffect(() => {
+    props.onInteracting?.(props.session.id, menuOpen || renaming || pendingDelete);
+    return () => props.onInteracting?.(props.session.id, false);
+  }, [props.onInteracting, props.session.id, menuOpen, renaming, pendingDelete]);
 
   useEffect(() => {
     if (renaming && inputRef.current) {

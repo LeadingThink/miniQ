@@ -368,26 +368,7 @@
   }
 }
 
-/* ---------- 手机端侧栏：去掉多余的方框，贴着主页面 ---------- */
-@media (max-width: 720px) {
-  .native-mobile .sidebar > .sidebar-primary-actions > .sidebar-skills-button,
-  .native-mobile .sidebar > .sidebar-primary-actions > .sidebar-running-button {
-    justify-content: flex-start;
-    min-height: 36px;
-    padding: 6px 4px;
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-mid);
-  }
-  .native-mobile .sidebar > .sidebar-primary-actions > .sidebar-skills-button:hover,
-  .native-mobile .sidebar > .sidebar-primary-actions > .sidebar-running-button:hover,
-  .native-mobile .sidebar > .sidebar-primary-actions > .sidebar-running-button.active {
-    border: 0;
-    background: var(--bg-hover);
-    color: var(--text);
-  }
-}
+/* 手机端侧栏样式统一在 Sidebar.css 的 Mobile drawer 段落里维护。 */
 
 @media (max-width: 720px) {
   /* 权限按钮不能被压成竖排文字 */

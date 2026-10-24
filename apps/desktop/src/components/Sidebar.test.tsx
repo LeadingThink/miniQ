@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import type { Session, Workspace } from "../types";
 import { Sidebar } from "./Sidebar";
+import { mockVirtualListLayout } from "../test/virtualListLayout";
 
 const noop = () => undefined;
 const workspace: Workspace = {
@@ -211,14 +212,47 @@ describe("Sidebar navigation", () => {
     expect(screen.queryByRole("button", { name: "完善预览，执行中" })).not.toBeNull();
   });
 
-  it("keeps hidden session controls unmounted and makes all sessions available on expansion", () => {
-    const sessions = Array.from({ length: 400 }, (_, index) => ({ ...session, id: `s${index}`, title: `任务 ${index}` }));
-    render(<Sidebar {...sidebarProps({ sessions })} />);
+
+  it("keeps thousands of expanded sessions windowed and every index reachable", () => {
+    mockVirtualListLayout();
+    const sessions = Array.from({ length: 1500 }, (_, index) => ({ ...session, id: `s${index}`, title: `任务 ${index}` }));
+    const onSelectSession = vi.fn();
+    render(<Sidebar {...sidebarProps({ sessions, onSelectSession })} />);
     expect(document.querySelectorAll(".session-select")).toHaveLength(3);
-    fireEvent.click(screen.getByRole("button", { name: "展开 397 条会话" }));
-    expect(document.querySelectorAll(".session-select")).toHaveLength(400);
+    fireEvent.click(screen.getByRole("button", { name: "展开 1497 条会话" }));
+    expect(document.querySelectorAll(".session-select").length).toBeLessThan(40);
+    expect(document.querySelector('[data-virtualized="true"]')).not.toBeNull();
+    const scroll = screen.getByRole("navigation", { name: "项目与会话" });
+    scroll.scrollTop = 700 * 36;
+    fireEvent.scroll(scroll);
+    expect(screen.getByRole("button", { name: "任务 700，执行中" })).toBeTruthy();
+    const project = screen.getByRole("button", { name: workspace.name });
+    fireEvent.keyDown(project, { key: "End" });
+    const last = screen.getByRole("button", { name: "任务 1499，执行中" });
+    expect(document.activeElement).toBe(last);
+    fireEvent.click(last);
+    expect(onSelectSession).toHaveBeenCalledExactlyOnceWith("s1499");
+    expect(document.querySelectorAll(".session-select").length).toBeLessThan(40);
+    fireEvent.keyDown(last, { key: "Home" });
+    expect(document.activeElement).toBe(project);
     fireEvent.click(screen.getByRole("button", { name: "收起" }));
     expect(document.querySelectorAll(".session-select")).toHaveLength(3);
+  });
+
+  it("reveals a selected deep row and searches the complete data", () => {
+    mockVirtualListLayout();
+    const sessions = Array.from({ length: 1500 }, (_, index) => ({ ...session, id: `s${index}`, title: `任务 ${index}` }));
+    const props = sidebarProps({ sessions, currentSessionId: "s1499" });
+    const view = render(<Sidebar {...props} />);
+    expect(screen.getByRole("button", { name: "任务 1499，执行中" }).getAttribute("aria-current")).toBe("page");
+    expect(document.querySelectorAll(".session-select").length).toBeLessThan(40);
+    fireEvent.click(screen.getByRole("button", { name: "筛选项目和会话" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "筛选会话、项目或电脑" }), { target: { value: "任务 1498" } });
+    expect(screen.getByRole("button", { name: "任务 1498，执行中" })).toBeTruthy();
+    expect(document.querySelectorAll(".session-select")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "清除会话筛选" }));
+    view.rerender(<Sidebar {...props} currentSessionId="s1200" />);
+    expect(screen.getByRole("button", { name: "任务 1200，执行中" }).getAttribute("aria-current")).toBe("page");
   });
 
   it("reveals a selected session beyond the initial three without reopening on unrelated updates", () => {
@@ -409,7 +443,7 @@ describe("mobile Sidebar", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("synchronizes both running filters and combines them with the search query", () => {
+  it("keeps one running filter in the tile and combines it with the search query", () => {
     mobileViewport();
     const otherWorkspace = { ...workspace, id: "other", name: "其他项目" };
     const sessions: Session[] = [session,
@@ -417,25 +451,36 @@ describe("mobile Sidebar", () => {
       { ...session, id: "idle", workspaceId: otherWorkspace.id, title: "普通会话", status: "idle" },
       { ...session, id: "archived", title: "归档任务", archived: true }];
     render(<Sidebar {...sidebarProps({ workspaces: [workspace, otherWorkspace], sessions })} />);
-    const filters = within(screen.getByRole("group", { name: "会话状态筛选" }));
-    const quick = screen.getByRole("button", { name: "快捷筛选：进行中 2" });
-    expect(filters.getByRole("button", { name: "全部 3" }).getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(quick);
-    expect(filters.getByRole("button", { name: "进行中 2" }).getAttribute("aria-pressed")).toBe("true");
-    expect(quick.getAttribute("aria-pressed")).toBe("true");
+    const running = screen.getByRole("button", { name: "快捷筛选：进行中 2" });
+    expect(screen.queryByRole("group", { name: "会话状态筛选" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "全部 3" })).toBeNull();
+    expect(running.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(running);
+    expect(running.getAttribute("aria-pressed")).toBe("true");
     expect(document.querySelectorAll(".session-select")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: otherWorkspace.name })).toBeNull();
     const query = screen.getByRole("textbox", { name: "筛选会话、项目或电脑" });
     fireEvent.change(query, { target: { value: "完善预览" } });
     expect(document.querySelectorAll(".session-select")).toHaveLength(1);
-    fireEvent.click(filters.getByRole("button", { name: "全部 3" }));
+    fireEvent.click(running);
     expect((query as HTMLInputElement).value).toBe("完善预览");
-    expect(quick.getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(filters.getByRole("button", { name: "进行中 2" }));
-    expect(quick.getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(quick);
-    expect(filters.getByRole("button", { name: "全部 3" }).getAttribute("aria-pressed")).toBe("true");
+    expect(running.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(screen.getByRole("button", { name: "清除会话筛选" }));
+    expect(document.querySelectorAll(".session-select")).toHaveLength(3);
+    fireEvent.click(screen.getByRole("button", { name: "更多会话筛选" }));
+    const filters = within(screen.getByRole("group", { name: "会话状态筛选" }));
+    expect(filters.queryByRole("button", { name: /^(全部|进行中) / })).toBeNull();
+    const waiting = filters.getByRole("button", { name: "待确认 1" });
+    fireEvent.click(waiting);
+    expect(waiting.getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelectorAll(".session-select")).toHaveLength(1);
+    fireEvent.click(running);
+    expect(waiting.getAttribute("aria-pressed")).toBe("false");
+    expect(running.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(waiting);
+    fireEvent.click(waiting);
+    expect(waiting.getAttribute("aria-pressed")).toBe("false");
+    expect(running.getAttribute("aria-pressed")).toBe("false");
     expect(document.querySelectorAll(".session-select")).toHaveLength(3);
   });
 
@@ -448,7 +493,7 @@ describe("mobile Sidebar", () => {
     expect(screen.getByRole("button", { name: "快捷筛选：进行中 0" }).getAttribute("aria-pressed")).toBe("true");
     expect(document.querySelectorAll(".session-select")).toHaveLength(0);
     expect(screen.getByText("没有符合条件的会话")).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "全部 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "快捷筛选：进行中 0" }));
     expect(document.querySelectorAll(".session-select")).toHaveLength(2);
   });
 
@@ -460,7 +505,7 @@ describe("mobile Sidebar", () => {
     fireEvent.change(query, { target: { value: "完善预览" } });
     fireEvent.click(screen.getByRole("button", { name: "全部折叠" }));
     expect((query as HTMLInputElement).value).toBe("");
-    expect(screen.getByRole("button", { name: "全部 1" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "快捷筛选：进行中 1" }).getAttribute("aria-pressed")).toBe("false");
     expect(document.querySelectorAll(".session-select")).toHaveLength(0);
     expect(window.localStorage.getItem(`miniq.sidebar.project.${workspace.id}.collapsed`)).toBe("true");
   });

@@ -1,0 +1,7 @@
+.virtual-list {
+  position: relative;
+  overflow-anchor: none;
+}
+.virtual-list-row {
+  display: flow-root;
+}

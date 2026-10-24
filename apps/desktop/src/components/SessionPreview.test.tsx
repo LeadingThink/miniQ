@@ -22,6 +22,19 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("does not subscribe idle rows to global events and releases listeners after closing", () => {
+  const add = vi.spyOn(window, "addEventListener");
+  const remove = vi.spyOn(window, "removeEventListener");
+  render(view());
+  const names = ["keydown", "scroll", "resize"];
+  expect(add.mock.calls.filter(([name]) => names.includes(name))).toHaveLength(0);
+  hover();
+  expect(add.mock.calls.filter(([name]) => names.includes(name))).toHaveLength(3);
+  fireEvent.scroll(window);
+  expect(remove.mock.calls.filter(([name]) => names.includes(name))).toHaveLength(3);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
 it("waits 400ms and renders the complete preview in a body portal", () => {
   const { container } = render(view());
   hover();

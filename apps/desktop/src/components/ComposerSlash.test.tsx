@@ -12,6 +12,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ComposerSlashCommand } from "../composerSlash";
 import type { RpcClient } from "../rpc";
 import { Composer, ComposerCard } from "./Composer";
+import { mockVirtualListLayout } from "../test/virtualListLayout";
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
@@ -20,6 +21,7 @@ afterEach(() => {
   cleanup();
   localStorage.clear();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const skills = [
@@ -175,6 +177,36 @@ it("keeps more than thirty skills reachable, including by keyboard and search", 
   await act(async () => {});
   fireEvent.change(input, { target: { value: "/编号 40" } });
   expect(await screen.findByRole("option", { name: /技能 40/ })).toBeTruthy();
+  expect(screen.getAllByRole("option")).toHaveLength(1);
+});
+
+
+it("windows hundreds of skills without dropping descriptions, search or keyboard selection", async () => {
+  mockVirtualListLayout();
+  const many = Array.from({ length: 343 }, (_, index) => ({
+    name: `技能 ${index}`,
+    description: "完整描述与参数。".repeat(40) + `唯一检索词-${index}`,
+    enabled: true,
+  }));
+  const { input, onSend } = renderComposer({ slashCommands: [], call: vi.fn().mockResolvedValue({ skills: many }) });
+  fireEvent.change(input, { target: { value: "/" } });
+  await screen.findByText("343 项");
+  expect(screen.getAllByRole("option").length).toBeLessThan(40);
+  expect(screen.getByRole("option", { selected: true }).textContent).toContain(many[0].description);
+  const list = screen.getByRole("listbox");
+  list.scrollTop = 170 * 76;
+  fireEvent.scroll(list);
+  expect(screen.getByRole("option", { name: /技能 170完整/ })).toBeTruthy();
+  fireEvent.keyDown(input, { key: "ArrowUp" });
+  const last = screen.getByRole("option", { selected: true });
+  expect(last.textContent).toContain("技能 342");
+  expect(input.getAttribute("aria-activedescendant")).toBe(last.id);
+  expect(last.getAttribute("aria-setsize")).toBe("343");
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(input.value).toBe("使用技能「技能 342」：");
+  expect(onSend).not.toHaveBeenCalled();
+  fireEvent.change(input, { target: { value: "/唯一检索词-342" } });
+  await screen.findByRole("option", { name: /技能 342/ });
   expect(screen.getAllByRole("option")).toHaveLength(1);
 });
 

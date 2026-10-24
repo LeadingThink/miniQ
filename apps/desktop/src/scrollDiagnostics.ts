@@ -60,7 +60,13 @@ const wheel = (e: WheelEvent) => {
   clearTimeout(timer);
   timer = window.setTimeout(report, 1500);
 };
-const scroll = (e: Event) => { if (e.target === target) { scrollTimes.push(performance.now()); positions.push({ t: performance.now(), top: target.scrollTop }); } };
+const scroll = (e: Event) => {
+  const currentTarget = target;
+  if (e.target === currentTarget && currentTarget) {
+    scrollTimes.push(performance.now());
+    positions.push({ t: performance.now(), top: currentTarget.scrollTop });
+  }
+};
 document.addEventListener("wheel", wheel, { capture: true, passive: true });
 document.addEventListener("scroll", scroll, { capture: true, passive: true });
 raf = requestAnimationFrame(frame);

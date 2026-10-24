@@ -1,6 +1,7 @@
 import {
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -42,10 +43,13 @@ export function useComposerSlash(props: {
   }, [scopeKey, props.draft]);
   const active = draftQuery !== null && dismissed !== dismissalKey;
   const skills = useSlashSkills(props.client, active, props.workspaceId);
-  const roots = groupSlashCommands([
-    ...(props.commands ?? []),
-    ...skills.commands,
-  ]);
+  const roots = useMemo(
+    () =>
+      active
+        ? groupSlashCommands([...(props.commands ?? []), ...skills.commands])
+        : [],
+    [active, props.commands, skills.commands],
+  );
   const [prefix, ...rest] = (draftQuery ?? "").split(/\s/);
   const parent =
     active && rest.length > 0
@@ -93,11 +97,18 @@ export function useComposerSlash(props: {
   }, [loadKey, active, attempt, parent?.disabled]);
   const current = loaded?.key === loadKey ? loaded : null;
   const items = parent ? (parent.children ?? current?.commands ?? []) : roots;
-  const visible = groupSlashCommands(filterSlashCommands(items, query)).map(
-    (command) =>
-      parent?.disabled
-        ? { ...command, disabled: true, disabledReason: parent.disabledReason }
-        : command,
+  const visible = useMemo(
+    () =>
+      groupSlashCommands(filterSlashCommands(items, query)).map((command) =>
+        parent?.disabled
+          ? {
+              ...command,
+              disabled: true,
+              disabledReason: parent.disabledReason,
+            }
+          : command,
+      ),
+    [items, query, parent?.disabled, parent?.disabledReason],
   );
   const index = clampMenuIndex(activeIndex, visible.length);
   const loading =
@@ -118,7 +129,13 @@ export function useComposerSlash(props: {
   useEffect(() => {
     if (!active) return;
     const closeOutside = (event: PointerEvent) => {
-      if (document.getElementById(id)?.closest(".slash-menu")?.contains(event.target as Node)) return;
+      if (
+        document
+          .getElementById(id)
+          ?.closest(".slash-menu")
+          ?.contains(event.target as Node)
+      )
+        return;
       if (
         !props.inputRef.current
           ?.closest(".composer-card")
@@ -175,8 +192,13 @@ export function useComposerSlash(props: {
       );
       return true;
     }
-    if ((event.key === "Enter" || event.key === "Tab") &&
-      !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    if (
+      (event.key === "Enter" || event.key === "Tab") &&
+      !event.shiftKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey
+    ) {
       event.preventDefault();
       if (index >= 0 && visible[index]) void pick(visible[index]);
       return true;
@@ -192,6 +214,7 @@ export function useComposerSlash(props: {
         id={id}
         commands={visible}
         activeIndex={index}
+        navigationKey={dismissalKey}
         parent={parent}
         loading={Boolean(loading)}
         error={error}

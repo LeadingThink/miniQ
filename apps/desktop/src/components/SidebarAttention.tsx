@@ -32,12 +32,20 @@ export function SidebarAttention({ sessions, unreadSessionIds, workspaceLabels, 
   if (items.length === 0) return null;
   const actionableCount = items.filter((item) => item.kind !== "unread").length;
   const unreadCount = items.filter((item) => item.kind === "unread").length;
+  const waiting = items.some((item) => item.kind === "waiting");
+  const tone = waiting ? "waiting" : actionableCount > 0 ? "failed" : "unread";
+  // With nothing to act on, lead with the unread count instead of "待处理 0".
+  const title = actionableCount > 0 ? "待处理" : "新回复";
+  const count = actionableCount > 0 ? actionableCount : unreadCount;
+  const countLabel = actionableCount > 0 ? `${actionableCount} 条待处理` : `${unreadCount} 条未读`;
+  const detail = [waiting ? "有待审批" : actionableCount > 0 ? "有任务失败" : "",
+    actionableCount > 0 && unreadCount > 0 ? `${unreadCount} 条未读` : ""].filter(Boolean).join(" · ");
   const select = (sessionId: string) => { onSelectSession(sessionId); onClose?.(); };
   return (
-    <section className="sidebar-attention" aria-labelledby="sidebar-attention-heading">
+    <section className="sidebar-attention" data-tone={tone} aria-labelledby="sidebar-attention-heading">
       <button type="button" className="sidebar-attention-summary" aria-controls="sidebar-attention-list" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
-        <span className="sidebar-attention-title"><AlertCircle size={15} aria-hidden="true" /><span id="sidebar-attention-heading">待处理</span><strong aria-label={`${actionableCount} 条待处理`}>{actionableCount}</strong></span>
-        <span className="sidebar-attention-priority">{items.some((item) => item.kind === "waiting") ? "有待审批" : actionableCount > 0 ? "需要查看" : "暂无待处理"}{unreadCount > 0 && <span className="sidebar-attention-unread">· {unreadCount} 条未读</span>}</span>
+        <span className="sidebar-attention-title"><AlertCircle size={15} aria-hidden="true" /><span id="sidebar-attention-heading">{title}</span><strong aria-label={countLabel}>{count}</strong></span>
+        <span className="sidebar-attention-priority">{detail}</span>
         <ChevronDown className="sidebar-attention-chevron" size={15} aria-hidden="true" />
       </button>
       {expanded && <div id="sidebar-attention-list" className="sidebar-attention-list" role="list" aria-label="待处理会话">
