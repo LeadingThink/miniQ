@@ -15,7 +15,7 @@ vi.mock("./rpc", () => ({ RpcClient: class { targetDeviceId: string; disconnect 
 vi.mock("./desktopHost", () => ({ DesktopHostProvider: ({children}: {children: React.ReactNode}) => children, useDesktopHost: () => state.desktop }));
 vi.mock("./ConnectedApp", () => ({ default: () => {
   latestBar = useContext(RemoteDeviceBarContext);
-  return <div>工作台</div>;
+  return <div className="desktop-workspace">工作台</div>;
 } }));
 vi.mock("./taskBanner", () => ({ dismissTaskBanner: vi.fn() }));
 const credentials = { apiKey: "test", relayUrl: "wss://relay.test", deviceId: "phone", deviceName: "phone" };
@@ -81,6 +81,23 @@ it("首次即使仅一台在线也等待选择，不创建业务连接", () => {
   render(<RemoteWorkbench credentials={credentials} theme="night" onThemeChange={() => {}} />);
   expect(screen.getByRole("region", { name: "选择连接的电脑" })).toBeTruthy();
   expect(state.roots).toHaveLength(0);
+});
+
+it("切换电脑时隐藏保留的工作台，返回后恢复显示且不重建连接", async () => {
+  const removeStyles = applyWorkbenchStyles(true);
+  try {
+    rememberSelectedDesktop("room", b);
+    render(<RemoteWorkbench credentials={credentials} theme="night" onThemeChange={() => {}} />);
+    const workspace = await screen.findByText("工作台");
+    expect(window.getComputedStyle(workspace.parentElement!).display).not.toBe("none");
+    act(() => latestBar!.onSwitch());
+    expect(screen.getByRole("region", { name: "选择连接的电脑" })).toBeTruthy();
+    expect(window.getComputedStyle(workspace.parentElement!).display).toBe("none");
+    fireEvent.click(screen.getByRole("button", { name: "返回当前电脑" }));
+    expect(window.getComputedStyle(workspace.parentElement!).display).not.toBe("none");
+    expect(state.roots).toHaveLength(1);
+    expect(state.roots[0].disconnect).not.toHaveBeenCalled();
+  } finally { removeStyles(); }
 });
 it("恢复离线A不切到在线B；显式切换销毁A，新建B，目录更新不换根", async () => {
   rememberSelectedDesktop("room", a);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { Sidebar } from "../components/Sidebar";
 import { AppStatusBar } from "../components/AppStatus";
@@ -26,18 +26,37 @@ import "../styles/pages.css";
 import "../styles/remote.css";
 import "../styles/experience.css";
 import "../styles/mobile-controls.css";
+import "../RemoteWorkbench.css";
+import "../components/AppMenuBar.css";
+import "../components/SessionSummaryCard.css";
 
 const noop = () => {};
 // ?native=1 previews the phone app shell: busy turn, plan step and sub-agent pill.
 const nativePreview = new URLSearchParams(location.search).has("native");
+const shortPreview = new URLSearchParams(location.search).has("short");
 const fixturePlan = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ content: `步骤 ${n}`, status: n === 1 ? "completed" : n === 2 ? "in_progress" : "pending" })) as PlanTask[];
 const fixtureAgents = Array.from({ length: 57 }, (_, i) => ({ agentId: `a${i}`, parentId: null, name: `子任务 ${i}`, description: "", status: i < 38 ? "completed" : i < 52 ? "failed" : "cancelled", model: null, createdAt: "2026-09-08T00:00:00Z", queuedMessages: 0, error: null })) as AgentSummary[];
 const asyncNoop = async () => {};
+
+// Match the remote shell as well as its content; a missing flex ancestor can
+// leave long transcripts unscrollable even when Timeline works on its own.
+function RemoteFixtureFrame({ children }: { children: ReactNode }) {
+  return <div className="remote-workbench">
+    <header className="remote-desktop-bar"><button type="button">模拟电脑<span>在线 · 切换电脑</span></button></header>
+    <div className="remote-workbench-content">
+      <div className="desktop-workspace">
+        <div className="app-menubar">miniQ · 模拟工作区菜单</div>
+        {children}
+      </div>
+    </div>
+  </div>;
+}
+
 function Fixture() {
   const [collapsed, setCollapsed] = useState(isMobileLayout);
   const [sessionId, setSessionId] = useState(sessions[0].id);
   const [workspaceId, setWorkspaceId] = useState(workspaces[0].id);
-  const [start, setStart] = useState(16);
+  const [start, setStart] = useState(shortPreview ? 0 : 16);
   const [pages, setPages] = useState(0);
   const [notice, setNotice] = useState("");
   const [connected, setConnected] = useState(true);
@@ -48,9 +67,13 @@ function Fixture() {
   const [draftRequest, setDraftRequest] = useState<{ id: number; content: string; append?: boolean }>();
   const model = useSessionModel(fixtureClient, sessionId, workspaceId);
   const session = sessions.find((value) => value.id === sessionId)!;
-  const messages = history(sessionId);
+  const fullHistory = history(sessionId);
+  const messages = shortPreview ? [
+    { ...fullHistory[0], content: "请帮我打开浏览器搜索小红书" },
+    { ...fullHistory[1], content: "已打开浏览器并搜索“小红书”。" },
+  ] : fullHistory;
   const selectSession = (id: string) => {
-    setSessionId(id); setStart(16); setPages(0);
+    setSessionId(id); setStart(shortPreview ? 0 : 16); setPages(0);
     setWorkspaceId(sessions.find((value) => value.id === id)!.workspaceId);
     if (isMobileLayout()) setCollapsed(true);
   };
@@ -63,7 +86,7 @@ function Fixture() {
     busy: false, feed: { messages: [] }, actions: { openSession: selectSession },
     review: { data: { files: [] } }, preview: { viewScope: sessionId }, setError: setNotice,
   } as unknown as MiniqAppController;
-  return <SessionFileAccess client={fixtureClient} sessionId={sessionId}>
+  return <SessionFileAccess client={fixtureClient} sessionId={sessionId}><RemoteFixtureFrame>
     <div className={`app${collapsed ? " sidebar-collapsed" : ""}`}>
       {!collapsed && <button className="mobile-sidebar-scrim" aria-label="关闭侧栏遮罩" onClick={() => setCollapsed(true)} />}
       <Sidebar workspaces={workspaces} sessions={sessions} unreadSessionIds={new Set([sessions[1].id])} currentSessionId={sessionId} selectedWorkspaceId={workspaceId}
@@ -77,13 +100,17 @@ function Fixture() {
           <span>模拟验收 · 已请求 {pages} 页</span><button className="ghost" onClick={() => setConnected(!connected)}>模拟断线/恢复</button>
         </div>
         {notice && <div role="status" style={{ padding: 8, overflowWrap: "anywhere" }} onClick={() => setNotice("")}>{notice}</div>}
-        <Timeline key={sessionId} client={fixtureClient} sessionId={sessionId} title={session.title} messages={messages.slice(start)} toolCalls={[]} approvals={[]} questions={[]} plan={nativePreview ? fixturePlan : []}
-          agents={nativePreview ? fixtureAgents : undefined} onOpenAgentPanel={nativePreview ? () => setNotice("打开子任务面板") : undefined}
-          historyCursor={start ? { at: messages[start].createdAt, id: messages[start].id } : null} onLoadOlder={async () => { setStart((value) => Math.max(0, value - 8)); setPages((value) => value + 1); }}
-          artifacts={[{ id: "report", sessionId, title: "2026年第三季度用户访谈与产品改进报告完整版.md", path: reportPath, kind: "markdown", createdAt: messages.at(-1)!.createdAt }]} queue={[]} workspacePath={session.workingDirectory}
-          streamingText="" turnProgress={null} busy={nativePreview} onResolveApproval={noop} onResolveQuestion={noop} onRollback={noop} onOpenFile={showFile} onOpenUrl={noop} onSteerQueued={asyncNoop} onRemoveQueued={asyncNoop} onUpdateQueued={asyncNoop} onRewrite={async () => true} onError={setNotice} />
-        <ComposerCard client={fixtureClient} workspaceId={workspaceId} busy={false} placeholder="继续告诉 miniQ 需要做什么…" draftKey={`mobile-ux-fixture-${sessionId}`} draftRequest={draftRequest} onDraftRequestApplied={() => setDraftRequest(undefined)}
-          modelSlot={<SessionModelControls client={fixtureClient} model={model} busy={false} />} sendBlocked={!connected} onSend={(content) => { setNotice(`仅模拟发送：${content}`); return true; }} onError={setNotice} />
+        <div className="session-stage">
+          <Timeline key={sessionId} client={fixtureClient} sessionId={sessionId} title={session.title} messages={messages.slice(start)} toolCalls={[]} approvals={[]} questions={[]} plan={nativePreview ? fixturePlan : []}
+            agents={nativePreview ? fixtureAgents : undefined} onOpenAgentPanel={nativePreview ? () => setNotice("打开子任务面板") : undefined}
+            historyCursor={start ? { at: messages[start].createdAt, id: messages[start].id } : null} onLoadOlder={async () => { setStart((value) => Math.max(0, value - 8)); setPages((value) => value + 1); }}
+            artifacts={[{ id: "report", sessionId, title: "2026年第三季度用户访谈与产品改进报告完整版.md", path: reportPath, kind: "markdown", createdAt: messages.at(-1)!.createdAt }]} queue={[]} workspacePath={session.workingDirectory}
+            streamingText="" turnProgress={null} busy={nativePreview} onResolveApproval={noop} onResolveQuestion={noop} onRollback={noop} onOpenFile={showFile} onOpenUrl={noop} onSteerQueued={asyncNoop} onRemoveQueued={asyncNoop} onUpdateQueued={asyncNoop} onRewrite={async () => true} onError={setNotice} />
+        </div>
+        <div className="composer-outer">
+          <ComposerCard client={fixtureClient} workspaceId={workspaceId} busy={false} placeholder="继续告诉 miniQ 需要做什么…" draftKey={`mobile-ux-fixture-${sessionId}`} draftRequest={draftRequest} onDraftRequestApplied={() => setDraftRequest(undefined)}
+            modelSlot={<SessionModelControls client={fixtureClient} model={model} busy={false} />} sendBlocked={!connected} onSend={(content) => { setNotice(`仅模拟发送：${content}`); return true; }} onError={setNotice} />
+        </div>
       </main>
       {open && <WorkbenchPanel expanded={expanded} onRestore={() => setExpanded(false)} onLayoutChange={setLayout}>
         <WorkbenchToolbar active={view} files={1} browsers={0} changes={0} remote hasSession expanded={expanded} mobile={layout === "mobile"} onSelect={setView} onExpand={() => setExpanded(!expanded)} onClose={() => setOpen(false)} />
@@ -94,7 +121,7 @@ function Fixture() {
         </div>
       </WorkbenchPanel>}
     </div>
-  </SessionFileAccess>;
+  </RemoteFixtureFrame></SessionFileAccess>;
 }
 if (import.meta.env.DEV) {
   const theme = new URLSearchParams(location.search).get("theme");
