@@ -103,9 +103,9 @@ export function DocumentControls(props: {
       </button>
       <button
         type="button"
-        className="icon-button"
         aria-label={`重置 ${label} 缩放`}
         title="原始尺寸"
+        className="icon-button document-reset-zoom"
         disabled={!count || (scale === 1 && !fit)}
         onClick={() => onScale(1)}
       >

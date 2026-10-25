@@ -63,27 +63,24 @@
   .file-preview-panel .file-preview-header {
     max-height: 42%;
     overflow: auto;
-    align-items: flex-start;
-    padding: 8px;
-    gap: 6px;
+    align-items: center;
+    padding: 4px 8px;
+    gap: 2px 6px;
+    min-height: 0;
   }
-  .file-preview-panel .file-preview-header > svg { margin-top: 3px; }
   .file-preview-panel .file-preview-location > strong {
-    white-space: normal;
-    overflow-wrap: anywhere;
     font-size: var(--font-body);
-    line-height: 1.5;
+    line-height: 1.4;
   }
-  .file-preview-panel .file-preview-path > summary { min-height: 36px; padding-block: 9px; }
-  .file-preview-panel .file-path-summary { display: none; }
-  .file-preview-panel .file-path-hint { display: inline; font: inherit; }
-  .file-preview-panel .file-preview-path > span { font-size: var(--font-footnote); line-height: 1.6; }
+  /* The path lives in the ⋯ menu (复制路径); a separate row wastes height. */
+  .file-preview-panel .file-preview-path,
+  .file-preview-panel .file-preview-breadcrumb { display: none; }
   .file-preview-panel .file-preview-tools {
     flex-wrap: nowrap;
     overflow-x: auto;
     overscroll-behavior-x: contain;
-    gap: 4px;
-    padding-bottom: 3px;
+    gap: 2px;
+    margin-inline: -4px;
   }
   .file-preview-panel .file-preview-tools > * { flex-shrink: 0; }
   .file-preview-panel .file-preview-tools .icon-button,

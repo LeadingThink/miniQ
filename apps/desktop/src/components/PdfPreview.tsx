@@ -248,15 +248,16 @@ export function PdfPreview(props: {
           <RotateCw size={16} />
         </button>
       </DocumentControls>
-      <PdfSearch document={pdf} onPage={goTo} />
-      <label className="pdf-text-toggle">
-        <input
-          type="checkbox"
-          checked={showText}
-          onChange={(event) => setShowText(event.target.checked)}
-        />
-        原文
-      </label>
+      <PdfSearch document={pdf} onPage={goTo}>
+        <label className="pdf-text-toggle">
+          <input
+            type="checkbox"
+            checked={showText}
+            onChange={(event) => setShowText(event.target.checked)}
+          />
+          原文
+        </label>
+      </PdfSearch>
       {showText && (
         <pre className="pdf-extracted-text" aria-label={`第 ${page} 页原文`}>
           {currentText === undefined

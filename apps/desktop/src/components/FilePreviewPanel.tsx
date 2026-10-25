@@ -538,11 +538,6 @@ function PreviewPanelContent({
       {preview.authorization && <FilePreviewAuthorization authorization={preview.authorization} />}
       {onDiscuss && <PreviewSelection text={selection.text} onClear={selection.clear}
         onDiscuss={() => { onDiscuss(path, selection.text); selection.clear(); }} />}
-      {preview.transport && <div role="status" className="file-preview-loading">
-        <span>{preview.transport === "storage"
-          ? "传输方式：私有存储直连"
-          : "传输方式：加密连接分块读取"}</span>
-      </div>}
       {preview.textPage && <div role="status" className="file-preview-loading">
         <span>分段预览：已读取 {formatFileSize(preview.textPage.end)} / {formatFileSize(preview.textPage.total)}；下载可获取完整原文件</span>
         {preview.textPage.next && <button type="button" onClick={() => void preview.loadNextPage?.()}>继续读取下一段</button>}
@@ -558,11 +553,7 @@ function PreviewPanelContent({
           <div className="file-preview-loading" role="status">
             <span>{preview.progress
               ? `正在接收文件… ${formatFileSize(preview.progress.received)} / ${formatFileSize(preview.progress.total)}`
-              : preview.transport === "storage"
-                ? "正在准备存储链接并等待文件响应…"
-                : preview.transport === "connection"
-                  ? "正在等待桌面通过加密连接返回文件…"
-                  : "正在获取文件信息…"}</span>
+              : "正在加载文件…"}</span>
             {preview.progress && <progress aria-label="文件加载进度" value={preview.progress.received} max={preview.progress.total || 1} />}
             <button type="button" className="ghost" onClick={onClose}>取消加载</button>
           </div>

@@ -16,7 +16,7 @@ afterEach(() => {
   delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
 });
 
-it("retries reading after a read failure and shows the connection transport", () => {
+it("retries reading after a read failure without exposing the transfer route", () => {
   const retry = vi.fn();
   render(<FilePreviewPanel
     preview={{ target: { path: "/project/file.pdf", line: null, column: null },
@@ -28,7 +28,7 @@ it("retries reading after a read failure and shows the connection transport", ()
   />);
   fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
   expect(retry).toHaveBeenCalledOnce();
-  expect(screen.getByText("传输方式：加密连接分块读取")).toBeTruthy();
+  expect(screen.queryByText(/传输方式/)).toBeNull();
 });
 
 it("offers explicit authorization for a file outside the workspace", () => {

@@ -1,8 +1,10 @@
 import { ChevronLeft, ChevronRight, LoaderCircle, Search, X } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { searchPdf, type PdfMatch, type PdfTextDocument } from "../pdfSearch";
 
-export function PdfSearch({ document, onPage }: { document: PdfTextDocument | null; onPage: (page: number) => void }) {
+/** Full-text search row. Extra controls (children) share the same row. */
+export function PdfSearch({ document, onPage, children }: { document: PdfTextDocument | null; onPage: (page: number) => void; children?: ReactNode }) {
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<PdfMatch[]>([]);
   const [index, setIndex] = useState(-1);
@@ -49,6 +51,7 @@ export function PdfSearch({ document, onPage }: { document: PdfTextDocument | nu
           type="search"
           aria-label="搜索 PDF 全文"
           disabled={!document}
+          placeholder="搜索全文"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
@@ -60,36 +63,39 @@ export function PdfSearch({ document, onPage }: { document: PdfTextDocument | nu
         />
       </label>
       {query && (
-        <button
-          type="button"
-          className="icon-button"
-          title="清空 PDF 搜索"
-          aria-label="清空 PDF 搜索"
-          onClick={() => setQuery("")}
-        >
-          <X size={14} />
-        </button>
+        <>
+          <button
+            type="button"
+            className="icon-button"
+            title="清空 PDF 搜索"
+            aria-label="清空 PDF 搜索"
+            onClick={() => setQuery("")}
+          >
+            <X size={14} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            title="上一个匹配页"
+            aria-label="上一个匹配页"
+            disabled={!matches.length}
+            onClick={() => move(-1)}
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            title="下一个匹配页"
+            aria-label="下一个匹配页"
+            disabled={!matches.length}
+            onClick={() => move(1)}
+          >
+            <ChevronRight size={14} />
+          </button>
+        </>
       )}
-      <button
-        type="button"
-        className="icon-button"
-        title="上一个匹配页"
-        aria-label="上一个匹配页"
-        disabled={!matches.length}
-        onClick={() => move(-1)}
-      >
-        <ChevronLeft size={14} />
-      </button>
-      <button
-        type="button"
-        className="icon-button"
-        title="下一个匹配页"
-        aria-label="下一个匹配页"
-        disabled={!matches.length}
-        onClick={() => move(1)}
-      >
-        <ChevronRight size={14} />
-      </button>
+      {children}
       {query.trim() && (
         <span role="status">
           {searching ? (

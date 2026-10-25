@@ -42,6 +42,14 @@
   background: var(--bg);
   color: var(--text);
 }
+/* Inside the search row the toggle is one more inline control. */
+.pdf-search .pdf-text-toggle {
+  min-height: 30px;
+  padding: 0 4px;
+  background: transparent;
+  white-space: nowrap;
+  cursor: pointer;
+}
 .pdf-extracted-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
