@@ -75,6 +75,10 @@
   /* The path lives in the ⋯ menu (复制路径); a separate row wastes height. */
   .file-preview-panel .file-preview-path,
   .file-preview-panel .file-preview-breadcrumb { display: none; }
+  /* The tab strip already names the file: drop the repeated name/size row,
+     leaving one row of file actions. */
+  .file-preview-panel.has-tabs .file-preview-header > :is(svg, .file-preview-location, small) { display: none; }
+  .file-preview-panel.has-tabs .file-preview-header { padding-block: 0; }
   .file-preview-panel .file-preview-tools {
     flex-wrap: nowrap;
     overflow-x: auto;

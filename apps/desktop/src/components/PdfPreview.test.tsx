@@ -120,6 +120,19 @@ it("bounds raster memory and renders a selectable text layer for only the curren
   expect(page.getTextContent).toHaveBeenCalledTimes(1);
 });
 
+it("folds full-text search behind a toggle that focuses the search field", async () => {
+  documentFixture();
+  const view = render(<PdfPreview dataBase64="AA==" onError={vi.fn()} />);
+  const toggle = await screen.findByRole("button", { name: "搜索全文" });
+  await waitFor(() => expect(toggle.hasAttribute("disabled")).toBe(false));
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  expect(view.container.querySelector(".pdf-preview")!.classList.contains("search-open")).toBe(true);
+  expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "搜索 PDF 全文" }));
+  fireEvent.click(screen.getByRole("button", { name: "收起搜索" }));
+  expect(view.container.querySelector(".pdf-preview")!.classList.contains("search-open")).toBe(false);
+});
+
 it("packages compatibility resources locally and accepts password retries without saving the password", async () => {
   documentFixture();
   const view = render(<PdfPreview dataBase64="AA==" onError={vi.fn()} />);

@@ -285,7 +285,7 @@ function PreviewPanelContent({
 
   return (
     <aside
-      className={`file-preview-panel${expanded && !withinWorkbench ? " preview-expanded" : ""}`}
+      className={`file-preview-panel${onCloseTab ? " has-tabs" : ""}${expanded && !withinWorkbench ? " preview-expanded" : ""}`}
       aria-label="文件预览"
       onKeyDown={(event) => {
         if (event.key === "Escape" && expanded && !event.defaultPrevented) {

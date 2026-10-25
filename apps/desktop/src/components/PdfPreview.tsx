@@ -1,5 +1,5 @@
 import type { RemotePreviewSource } from "../remoteTransfer";
-import { RotateCw, Unlock } from "lucide-react";
+import { RotateCw, Search, Unlock } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -56,6 +56,12 @@ export function PdfPreview(props: {
   const count = pdf?.numPages ?? 0;
   const page = clampPage(savedPage, count);
   const stageRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  // Opening the folded search on a phone should go straight to typing.
+  useEffect(() => {
+    if (searchOpen) rootRef.current?.querySelector<HTMLInputElement>(".pdf-search input[type=search]")?.focus();
+  }, [searchOpen]);
   const pagesRef = useRef<HTMLDivElement>(null);
   const width = usePreviewWidth(stageRef);
   const fitWidth = fit ? width : 0;
@@ -223,7 +229,7 @@ export function PdfPreview(props: {
         />,
       );
   return (
-    <div className="pdf-preview">
+    <div ref={rootRef} className={`pdf-preview${searchOpen ? " search-open" : ""}`}>
       <DocumentControls
         label="PDF"
         page={page}
@@ -239,13 +245,25 @@ export function PdfPreview(props: {
       >
         <button
           type="button"
-          className="icon-button"
+          className="icon-button pdf-rotate"
           title="旋转 PDF"
           aria-label="旋转 PDF"
           disabled={!pdf}
           onClick={() => setRotation((value) => (value + 90) % 360)}
         >
           <RotateCw size={16} />
+        </button>
+        {/* Phones fold full-text search behind this button; desktop always shows it. */}
+        <button
+          type="button"
+          className="icon-button pdf-search-toggle"
+          title={searchOpen ? "收起搜索" : "搜索全文"}
+          aria-label={searchOpen ? "收起搜索" : "搜索全文"}
+          aria-expanded={searchOpen}
+          disabled={!pdf}
+          onClick={() => setSearchOpen((open) => !open)}
+        >
+          <Search size={16} />
         </button>
       </DocumentControls>
       <PdfSearch document={pdf} onPage={goTo}>

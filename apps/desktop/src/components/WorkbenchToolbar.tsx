@@ -78,7 +78,7 @@ export function WorkbenchToolbar(props: {
   ] as const;
   return (
     <header className="workbench-toolbar inspector-toolbar" aria-label="检查器">
-      {props.mobile && <button type="button" className="workbench-back" onClick={props.onClose}><ArrowLeft size={18} />返回会话</button>}
+      {props.mobile && <button type="button" className="workbench-back" aria-label="返回会话" title="返回会话" onClick={props.onClose}><ArrowLeft size={18} /><span>返回会话</span></button>}
       <div role="tablist" className="inspector-segmented" aria-label="检查器内容">
         {sections.map(({ key, label, icon: Icon, count, disabled }) => (
           <button

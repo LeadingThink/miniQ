@@ -32,6 +32,10 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
+/* Desktop keeps search visible; phones show the toggle (mobile-controls.css). */
+.pdf-toolbar .pdf-search-toggle {
+  display: none;
+}
 .pdf-text-toggle {
   display: flex;
   flex-shrink: 0;

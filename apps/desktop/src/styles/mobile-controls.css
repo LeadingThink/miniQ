@@ -129,13 +129,21 @@
     padding: 0 4px;
     overflow-x: auto;
     overscroll-behavior-x: contain;
+    scrollbar-width: none;
   }
+  .pdf-toolbar::-webkit-scrollbar { display: none; }
+  #root .pdf-toolbar .icon-button { width: 40px; flex-basis: 40px; }
   .pdf-toolbar > * { flex-shrink: 0; }
   .pdf-toolbar > :first-child { margin-left: auto; }
   .pdf-toolbar > :last-child { margin-right: auto; }
   .pdf-toolbar-separator,
-  .pdf-toolbar .document-reset-zoom { display: none; }
+  .pdf-toolbar .document-reset-zoom,
+  .pdf-toolbar .pdf-rotate { display: none; }
   .pdf-page-input input { width: 40px; }
+  /* Search folds behind the toolbar's search button. */
+  .pdf-preview:not(.search-open) > .pdf-search { display: none; }
+  #root .pdf-toolbar .pdf-search-toggle { display: inline-flex; }
+  .pdf-toolbar .pdf-search-toggle[aria-expanded="true"] { color: var(--accent); background: var(--bg-active); }
   .pdf-search {
     flex-wrap: nowrap;
     gap: 2px;
