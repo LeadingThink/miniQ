@@ -96,6 +96,12 @@ describe("theme picker", () => {
     expect((screen.getByRole("radio", { name: "浅色" }) as HTMLInputElement).checked).toBe(true);
   });
 
+  it("wraps the library tabs in the sticky header layer", () => {
+    render(<Fixture />);
+    const tablist = screen.getByRole("tablist", { name: "外观设置" });
+    expect(tablist.parentElement?.className).toBe("appearance-library-sticky");
+  });
+
   it("switches libraries by keyboard and preserves palette filters", () => {
     render(<Fixture />);
     fireEvent.change(screen.getByRole("searchbox", { name: "搜索配色主题" }), {

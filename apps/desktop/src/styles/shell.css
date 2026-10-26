@@ -356,10 +356,12 @@
   color: var(--text-dim);
 }
 .settings-content-scroll {
+  --settings-scroll-pad-top: 24px;
+  --settings-scroll-pad-inline: 28px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 24px 28px 32px;
+  padding: var(--settings-scroll-pad-top) var(--settings-scroll-pad-inline) 32px;
 }
 .settings-content-scroll > [role="tabpanel"] {
   min-height: 0;

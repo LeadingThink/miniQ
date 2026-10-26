@@ -229,10 +229,18 @@
   flex: none;
   color: var(--accent);
 }
-.appearance-library-tabs {
+/* Pins the tabs flush against the settings header: the negative offset cancels the scroll padding. */
+.appearance-library-sticky {
   position: sticky;
-  top: 0;
-  z-index: 1;
+  top: calc(-1 * var(--settings-scroll-pad-top));
+  z-index: 2;
+  margin: calc(-1 * var(--settings-scroll-pad-top)) calc(-1 * var(--settings-scroll-pad-inline)) -12px;
+  padding: var(--settings-scroll-pad-top) var(--settings-scroll-pad-inline) 12px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+.appearance-library-tabs {
   display: flex;
   gap: 4px;
   padding: 4px;

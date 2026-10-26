@@ -256,33 +256,35 @@ export function ThemePicker(props: {
         <ThemeLibrary {...props} />
       ) : (
         <>
-          <div className="appearance-library-tabs" role="tablist" aria-label="外观设置">
-            {tabs.map((item, index) => (
-              <button
-                key={item.id}
-                id={`${id}-${item.id}-tab`}
-                type="button"
-                role="tab"
-                aria-selected={tab === item.id}
-                aria-controls={`${id}-${item.id}-panel`}
-                tabIndex={tab === item.id ? 0 : -1}
-                onClick={() => setTab(item.id)}
-                onKeyDown={(event) => {
-                  let next: number;
-                  if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
-                  else if (event.key === "ArrowLeft") next = (index + tabs.length - 1) % tabs.length;
-                  else if (event.key === "Home") next = 0;
-                  else if (event.key === "End") next = tabs.length - 1;
-                  else return;
-                  event.preventDefault();
-                  setTab(tabs[next].id);
-                  document.getElementById(`${id}-${tabs[next].id}-tab`)?.focus();
-                }}
-              >
-                <item.icon size={15} aria-hidden="true" />
-                {item.label}
-              </button>
-            ))}
+          <div className="appearance-library-sticky">
+            <div className="appearance-library-tabs" role="tablist" aria-label="外观设置">
+              {tabs.map((item, index) => (
+                <button
+                  key={item.id}
+                  id={`${id}-${item.id}-tab`}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === item.id}
+                  aria-controls={`${id}-${item.id}-panel`}
+                  tabIndex={tab === item.id ? 0 : -1}
+                  onClick={() => setTab(item.id)}
+                  onKeyDown={(event) => {
+                    let next: number;
+                    if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+                    else if (event.key === "ArrowLeft") next = (index + tabs.length - 1) % tabs.length;
+                    else if (event.key === "Home") next = 0;
+                    else if (event.key === "End") next = tabs.length - 1;
+                    else return;
+                    event.preventDefault();
+                    setTab(tabs[next].id);
+                    document.getElementById(`${id}-${tabs[next].id}-tab`)?.focus();
+                  }}
+                >
+                  <item.icon size={15} aria-hidden="true" />
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
           <div
             id={`${id}-themes-panel`}
