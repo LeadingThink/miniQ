@@ -36,7 +36,10 @@ it.each([false, true])("preserves authorization and streaming without the WebVie
       socket.pipe(destination).pipe(socket);
     });
     tunnels.add(destination);
-    destination.on("close", () => tunnels.delete(destination));
+    destination.on("close", () => {
+      tunnels.delete(destination);
+      socket.destroy();
+    });
     socket.on("close", () => destination.destroy());
   });
   await new Promise<void>((resolve) => networkProxy.listen(0, "127.0.0.1", resolve));
@@ -66,8 +69,8 @@ it.each([false, true])("preserves authorization and streaming without the WebVie
     expect((await reader.read()).done).toBe(true);
   } finally {
     upstreamResponse?.end();
-    await vite.close();
     for (const socket of tunnels) socket.destroy();
+    await vite.close();
     await new Promise<void>((resolve) => networkProxy.close(() => resolve()));
     await new Promise<void>((resolve, reject) => upstream.close((error) => error ? reject(error) : resolve()));
     await rm(root, { recursive: true, force: true });

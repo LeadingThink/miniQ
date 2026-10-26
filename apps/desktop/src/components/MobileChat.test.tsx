@@ -229,6 +229,7 @@ it("does not steal the user's scroll or rewrite history for every streaming chun
   const feed = screen.getByRole("region", { name: "问答记录" });
   Object.defineProperties(feed, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 300 } });
   await enterQuestion();
+  fireEvent.touchStart(feed, { touches: [{ clientY: 200 }] });
   feed.scrollTop = 100;
   fireEvent.scroll(feed);
   await act(async () => { streaming.push({ choices: [{ delta: { content: "流式内容" } }] }); });

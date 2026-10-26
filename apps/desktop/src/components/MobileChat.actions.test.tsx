@@ -64,7 +64,7 @@ it("copies the complete Markdown source of either role without action or status 
   await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith("请保留 Markdown"));
   fireEvent.click(within(rows()[1]).getByRole("button", { name: "复制" }));
   await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith(markdown));
-  expect(within(rows()[1]).getByRole("button", { name: "已复制" })).toBeTruthy();
+  expect(await within(rows()[1]).findByRole("button", { name: "已复制" })).toBeTruthy();
   expect(rows()[0].querySelector("time")?.dateTime).toBe("2026-09-20T08:00:00.000Z");
   expect(within(rows()[1]).getByText("用时 1 分 12 秒")).toBeTruthy();
   await screen.findByText("chat-model");
