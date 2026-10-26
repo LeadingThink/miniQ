@@ -8,9 +8,10 @@ const window = vi.hoisted(() => ({
   minimize: vi.fn(async () => {}), toggleMaximize: vi.fn(async () => {}), close: vi.fn(async () => {}),
 }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => window }));
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); delete document.documentElement.dataset.background; });
 
-it("uses native controls and follows the actual maximized state", async () => {
+it.each([false, true])("uses native controls and follows the actual maximized state with wallpaper=%s", async (wallpaper) => {
+  if (wallpaper) document.documentElement.dataset.background = "image";
   render(<WindowControls onError={vi.fn()} />);
   await waitFor(() => expect(window.onResized).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole("button", { name: "最小化" }));
