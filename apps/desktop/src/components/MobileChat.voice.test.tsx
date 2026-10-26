@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { MobileChat } from "./MobileChat";
+import { MOBILE_MODEL_API_BASE_URL } from "../mobileApiConfig";
 import { startVoiceCapture } from "../voiceCapture";
 import { appleSpeechAvailable, startAppleSpeech } from "../appleSpeech";
 vi.mock("../voiceCapture", () => ({ startVoiceCapture: vi.fn() }));
@@ -24,7 +25,7 @@ it("shares the model catalog, preserves a draft and posts voice directly before 
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "结束录音" })));
   await waitFor(() => expect(input.value).toBe("已有草稿语音文字"));
   expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([
-    "https://oneapi.zaiwenai.com/v1/models", "https://oneapi.zaiwenai.com/v1/audio/transcriptions"]);
+    `${MOBILE_MODEL_API_BASE_URL}/models`, `${MOBILE_MODEL_API_BASE_URL}/audio/transcriptions`]);
   expect(stop).toHaveBeenCalled();
 });
 it("uses iOS on-device speech recognition without calling cloud ASR when available", async () => {
@@ -47,5 +48,5 @@ it("uses iOS on-device speech recognition without calling cloud ASR when availab
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "结束录音" })));
   await waitFor(() => expect(input.value).toBe("本机语音文字"));
   expect(startAppleSpeech).toHaveBeenCalledOnce();
-  expect(fetch.mock.calls.map(([url]) => String(url))).toEqual(["https://oneapi.zaiwenai.com/v1/models"]);
+  expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([`${MOBILE_MODEL_API_BASE_URL}/models`]);
 });

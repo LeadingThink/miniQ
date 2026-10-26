@@ -203,7 +203,6 @@
 
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
   .app .sidebar.sidebar {
-    width: min(calc(100vw - 40px), 400px) !important;
     touch-action: pan-y;
     overscroll-behavior-x: contain;
   }
@@ -349,20 +348,6 @@
   min-width: 0;
   gap: 9px;
 }
-.sidebar-brand-mark {
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
-  border-radius: 9px;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
-  box-shadow: var(--inset-highlight);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: -0.06em;
-}
 .sidebar-version,
 .sidebar-shortcut,
 .workspace-session-count,
@@ -404,11 +389,8 @@
     --drawer-accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
     --drawer-accent-line: color-mix(in srgb, var(--accent) 36%, transparent);
     --drawer-radius: 12px;
-    width: min(calc(100vw - var(--safe-left) - var(--safe-right)), 430px) !important;
-    max-width: none;
     padding: max(10px, var(--safe-top)) max(14px, var(--safe-right)) 0 max(14px, var(--safe-left));
     gap: 0;
-    background: var(--sidebar-bg);
     color: var(--text);
     border-right: 1px solid var(--hairline);
   }
@@ -426,18 +408,6 @@
   }
   .sidebar .sidebar-brand-lockup {
     gap: 10px;
-  }
-  .sidebar .sidebar-brand-mark {
-    width: 30px;
-    height: 30px;
-    border: 0;
-    border-radius: 10px;
-    color: var(--accent);
-    background: var(--drawer-accent-soft);
-    box-shadow: inset 0 0 0 1px var(--drawer-accent-line);
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: -0.05em;
   }
   .sidebar .brand {
     padding: 0;
@@ -1116,7 +1086,7 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     border-top: 1px solid var(--drawer-line);
-    background: var(--sidebar-bg);
+    background: transparent;
   }
   .sidebar .sidebar-footer > * {
     grid-column: 1 / -1;

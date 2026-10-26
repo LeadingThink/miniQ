@@ -23,6 +23,7 @@ mod file_tickets;
 mod files;
 mod keep_awake;
 mod push;
+mod socket;
 mod subscriptions;
 mod transport;
 mod upload;

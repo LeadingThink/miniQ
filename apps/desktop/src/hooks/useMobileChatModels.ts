@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { mobileVoiceModel } from "../mobileVoice";
 import { errorMessage } from "../errorMessage";
 import { MOBILE_MODEL_STORAGE_KEY, mobileResponseError, textChatModels } from "../mobileChatData";
-import { MOBILE_API_BASE_URL } from "../mobileApiConfig";
+import { MOBILE_MODEL_API_BASE_URL } from "../mobileApiConfig";
 
 export function useMobileChatModels(apiKey: string) {
   const [transcribeModel, setTranscribeModel] = useState<string | null>(null);
@@ -23,7 +23,7 @@ export function useMobileChatModels(apiKey: string) {
       setLoading(false);
       return () => controller.abort();
     }
-    void fetch(`${MOBILE_API_BASE_URL}/models`, {
+    void fetch(`${MOBILE_MODEL_API_BASE_URL}/models`, {
       headers: { Authorization: `Bearer ${apiKey}` }, signal: controller.signal,
     }).then(async (response) => {
       if (!response.ok) throw new Error(await mobileResponseError(response));

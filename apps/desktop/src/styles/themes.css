@@ -3,8 +3,6 @@
   --bg: var(--theme-surface, #ffffff);
   --text: var(--theme-text, #17191d);
   --accent: var(--theme-accent, #14775f);
-  --sidebar-bg: var(--theme-sidebar, #ecefe9);
-  --sidebar-glass: color-mix(in srgb, var(--sidebar-bg) 88%, transparent);
   --bg-subtle: color-mix(in srgb, var(--text) 4%, var(--bg));
   --bg-hover: color-mix(in srgb, var(--text) 6%, var(--bg));
   --bg-active: color-mix(in srgb, var(--text) 10%, var(--bg));

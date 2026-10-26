@@ -57,7 +57,7 @@ it("opens computers directly from the header and selects an offline computer wit
   expect(screen.queryByRole("dialog", { name: "会话与连接信息" })).toBeNull();
   expect(
     screen
-      .getByRole("button", { name: /电脑A.*当前选择/ })
+      .getByRole("button", { name: /电脑A\s*在线/ })
       .getAttribute("aria-pressed"),
   ).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: /电脑B.*离线/ }));
@@ -83,17 +83,13 @@ it("can refresh failed discovery while preserving the current computer and closi
   expect(document.activeElement).toBe(trigger);
 });
 
-it("keeps connection details available from the dropdown", () => {
-  HTMLDialogElement.prototype.showModal = vi.fn(function (
-    this: HTMLDialogElement,
-  ) {
-    this.open = true;
-  });
-  HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) {
-    this.open = false;
-  });
+it("keeps the dropdown focused on choosing a computer", () => {
   setup();
-  fireEvent.click(screen.getByRole("button", { name: "查看会话与连接详情" }));
-  expect(screen.queryByRole("dialog", { name: "切换连接的电脑" })).toBeNull();
-  expect(screen.getByRole("dialog", { name: "会话与连接信息" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "切换电脑" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "刷新电脑列表" }).textContent).toBe("");
+  expect(screen.queryByText(first.id)).toBeNull();
+  expect(screen.queryByText(second.id)).toBeNull();
+  expect(screen.queryByText("当前选择")).toBeNull();
+  expect(screen.queryByText(/选择使用这个 Key/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "查看会话与连接详情" })).toBeNull();
 });

@@ -5,7 +5,7 @@ import {
   type ChatContent, type MobileChatMessage,
 } from "../mobileChatData";
 import { readSse } from "../mobileChatStream";
-import { MOBILE_API_BASE_URL } from "../mobileApiConfig";
+import { MOBILE_MODEL_API_BASE_URL } from "../mobileApiConfig";
 
 export function useMobileChat(apiKey: string, model: string) {
   const [messages, setMessages] = useState<MobileChatMessage[]>(readMobileChat);
@@ -78,7 +78,7 @@ export function useMobileChat(apiKey: string, model: string) {
 
     void (async () => {
       try {
-        const response = await fetch(`${MOBILE_API_BASE_URL}/chat/completions`, {
+        const response = await fetch(`${MOBILE_MODEL_API_BASE_URL}/chat/completions`, {
           method: "POST", signal: controller.signal,
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
           // Preserve received partial answers so a follow-up such as “continue”

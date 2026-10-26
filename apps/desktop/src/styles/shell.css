@@ -292,7 +292,7 @@
   min-height: 0;
   padding: 20px 10px;
   border-right: 1px solid var(--hairline);
-  background: color-mix(in srgb, var(--sidebar-bg) 72%, var(--bg));
+  background: var(--bg);
   overflow-y: auto;
 }
 .settings-panel h2.settings-sidebar-title {

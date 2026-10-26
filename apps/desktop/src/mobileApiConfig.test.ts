@@ -6,10 +6,20 @@ vi.mock("capacitor-secure-storage-plugin", () => ({ SecureStoragePlugin: native 
 beforeEach(() => {
   vi.resetModules(); vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
   vi.stubEnv("VITE_MINIQ_API_BASE_URL", "");
+  vi.stubEnv("DEV", false);
 });
 afterEach(() => vi.unstubAllEnvs());
 it("defaults to the production service and preserves production credential storage", async () => {
   const config = await import("./mobileApiConfig");
+  expect(config.MOBILE_API_BASE_URL).toBe("https://oneapi.zaiwenai.com/v1");
+  expect(config.MOBILE_MODEL_API_BASE_URL).toBe(config.MOBILE_API_BASE_URL);
+  expect(config.IS_MOBILE_TEST_API).toBe(false);
+  expect(config.mobileCredentialStorageKey("miniq.remote.credentials")).toBe("miniq.remote.credentials");
+});
+it("proxies model requests in development without treating production Keys as staging Keys", async () => {
+  vi.stubEnv("DEV", true);
+  const config = await import("./mobileApiConfig");
+  expect(config.MOBILE_MODEL_API_BASE_URL).toBe("/__miniq_model_api");
   expect(config.MOBILE_API_BASE_URL).toBe("https://oneapi.zaiwenai.com/v1");
   expect(config.IS_MOBILE_TEST_API).toBe(false);
   expect(config.mobileCredentialStorageKey("miniq.remote.credentials")).toBe("miniq.remote.credentials");

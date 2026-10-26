@@ -237,6 +237,7 @@ describe("AppStatusBar", () => {
     expect(onSwitchMode).toHaveBeenCalledTimes(1);
     expect(onAppearance).toHaveBeenCalledTimes(1);
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "miniq:remote-connection-details" }));
+    expect(screen.getByRole("dialog", { name: "会话与连接信息" })).toBeTruthy();
     expect(screen.queryByRole("menu")).toBeNull();
   });
 

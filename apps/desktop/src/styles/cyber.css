@@ -11,7 +11,6 @@
 
   --canvas: #06070a;
   --bg: #0b0e14;
-  --sidebar-bg: #080a0f;
   --bg-subtle: #101520;
   --bg-hover: #141b28;
   --bg-active: #1a2333;
@@ -55,7 +54,6 @@
 
   --canvas: #eef5f8;
   --bg: #fbfdff;
-  --sidebar-bg: #e6f0f5;
   --bg-subtle: #f2f8fb;
   --bg-hover: #e9f3f8;
   --bg-active: #dcebf2;
@@ -120,7 +118,6 @@
 
 /* ---------- 3. 外壳：侧栏与顶栏 ---------- */
 :is(:root[data-theme="quantum"], :root[data-theme="holo"]) .sidebar {
-  background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
 }
 

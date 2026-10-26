@@ -29,3 +29,9 @@ APK 输出在 `apps/desktop/android/app/build/outputs/apk/debug/app-debug.apk`�
 iOS 工程位于 `apps/desktop/ios/App/App.xcodeproj`。安装完整 Xcode 后执行 `npm run mobile:ios`，在 Xcode 中选择 Apple Developer Team，再进行真机归档和签名。
 
 通过 GitHub Actions 上传内部测试构建的配置和操作步骤见 [miniQ TestFlight 发布](ios-testflight.md)。内部 TestFlight 不要求先准备 App Store 商品页截图。
+
+## 真机热更新开发
+
+开发壳通过 `CAP_DEV_SERVER_URL=http://localhost:1420` 加载 Vite，Android USB 连接使用 `adb reverse tcp:1420 tcp:1420`。模型列表、流式问答和语音请求由 Vite 的 `/__miniq_model_api` 转发到 `VITE_MINIQ_API_BASE_URL` 指定的服务，默认仍为正式 OneAPI。这样开发地址无需加入正式接口的跨域白名单，也不会改变 Key 的存储归属。
+
+如果电脑访问接口依赖网络代理，可在本机环境或 `apps/desktop/.env.development.local` 中设置 `HTTPS_PROXY`（或 `HTTP_PROXY`）；本机代理配置不要提交。正式构建直接使用服务的 HTTPS 地址，不依赖 Vite。

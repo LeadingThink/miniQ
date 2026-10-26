@@ -8,11 +8,9 @@ import "./RemoteComputerPicker.css";
 export function RemoteComputerPicker({
   bar,
   children,
-  onDetails,
 }: {
   bar: RemoteDeviceBar;
   children: ReactNode;
-  onDetails: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -49,16 +47,6 @@ export function RemoteComputerPicker({
             bar.onSelect(device);
           }}
         />
-        <button
-          type="button"
-          className="remote-computer-details"
-          onClick={() => {
-            close();
-            onDetails();
-          }}
-        >
-          查看会话与连接详情
-        </button>
       </Popover>
     </>
   );

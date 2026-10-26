@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, Bot, ImagePlus, RefreshCw, Send, Square, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, ImagePlus, RefreshCw, Settings, Square, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { handleComposerKeyDown } from "../composerInput";
 import { readDraft, storeDraft } from "../composerDraft";
@@ -17,6 +17,7 @@ import type { VoicePreview } from "../voiceTranscription";
 import { MobileChatRow } from "./MobileChatRow";
 import { MobileModelPicker } from "./MobileModelPicker";
 import { BillingDialog } from "./BillingDialog";
+import "./MobileChat.css";
 
 export function MobileChat(props: { apiKey: string; onBack: () => void; onSettings?: () => void; onAccount?: () => void }) {
   const catalog = useMobileChatModels(props.apiKey);
@@ -98,13 +99,16 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
     <main className="mobile-chat">
       <header className="mobile-chat-header">
         <button type="button" className="icon-button" aria-label="返回" title="返回" onClick={props.onBack}><ArrowLeft size={18} /></button>
-        <div><strong>移动问答</strong><small>独立运行</small></div>
-        <MobileModelPicker catalog={catalog} disabled={chat.busy} />
-        {props.onSettings && <button type="button" onClick={props.onSettings}>设置</button>}
+        <strong>移动问答</strong>
+        {props.onSettings && <button type="button" className="icon-button" aria-label="设置" title="设置" onClick={props.onSettings}><Settings size={18} /></button>}
       </header>
       <section className="mobile-chat-feed" ref={feedRef} tabIndex={0} aria-label="问答记录" onScroll={onScroll}>
         <div ref={historyTopRef} aria-hidden="true" />
-        {chat.messages.length === 0 && <div className="mobile-chat-empty"><Bot size={28} /><strong>有什么需要一起完成？</strong><span>这里适合随手问答；涉及本地项目时切换到远程桌面。</span></div>}
+        {chat.messages.length === 0 && <div className="mobile-chat-empty">
+          <span className="mobile-chat-empty-mark" aria-hidden="true">Q</span>
+          <h1>今天想聊点什么？</h1>
+          <p>有问题就问，也可以发张图片。</p>
+        </div>}
         {chat.messages.slice(startIndex).map((message) => (
           <MobileChatRow key={message.id} message={message} active={chat.busy && message.id === chat.activeMessageId} onDelete={chat.deleteMessage} />
         ))}
@@ -116,30 +120,33 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
         {!chat.busy && chat.canRetry && <button type="button" className="mobile-chat-retry" disabled={!ready} onClick={() => { if (chat.retry()) jumpToLatest(); }}><RefreshCw size={14} />重新回答</button>}
         {showLatest && <button type="button" className="mobile-chat-jump" onClick={jumpToLatest}><ArrowDown size={14} />查看最新内容</button>}
       </section>
-      <form className={`mobile-chat-composer${canTranscribe ? " with-voice" : ""}`} onSubmit={(event) => { event.preventDefault(); send(); }}>
+      <form className="mobile-chat-composer" aria-label="问答输入" onSubmit={(event) => { event.preventDefault(); send(); }}>
         {pendingImage && <div className="mobile-chat-image-chip"><ImagePlus size={14} /><span title={pendingImage.name}>{pendingImage.name}</span><button type="button" aria-label="移除图片" title="移除图片" onClick={() => setPendingImage(null)}><X size={13} /></button></div>}
         {voicePreview && <VoiceTranscript preview={voicePreview} />}
-        <textarea ref={textarea} value={draft} rows={2} aria-label="输入问题或任务" aria-describedby={keyboardHintId} enterKeyHint={inputMode.enterSends ? "send" : "enter"} placeholder="输入问题或任务" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => handleComposerKeyDown(event, setDraft, send, inputMode)} />
-        <label className="mobile-chat-image-button" title={readingImage ? "正在读取图片" : "附加图片"}><ImagePlus size={16} /><input type="file" aria-label="附加图片" disabled={readingImage} accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.currentTarget.value = "";
-          if (file) void attachImage(file);
-        }} /></label>
-        {canTranscribe && <VoiceInput key={props.apiKey} transcriber={transcriber} preferLocal={localSpeech} disabled={readingImage}
-          onStart={() => { voiceDraft.current = { text: draft, start: textarea.current?.selectionStart ?? draft.length, end: textarea.current?.selectionEnd ?? draft.length }; }}
-          onPreview={setVoicePreview} onError={setImageError} onTranscribed={(text) => {
-            const input = textarea.current;
-            setDraftValue((current) => {
-              const saved = voiceDraft.current;
-              const range = saved.text === current ? saved : { start: input?.selectionStart ?? current.length, end: input?.selectionEnd ?? current.length };
-              const result = insertTranscript(current, text, range);
-              storeDraft("mobile-chat", result.value);
-              requestAnimationFrame(() => { input?.focus(); input?.setSelectionRange(result.cursor, result.cursor); });
-              return result.value;
-            });
-          }} />}
-        {chat.busy ? <button type="button" className="mobile-chat-send" aria-label="停止" title="停止" onClick={chat.stop}><Square size={16} /></button>
-          : <button type="submit" className="mobile-chat-send" aria-label="发送" title="发送" disabled={Boolean(voicePreview) || !ready || readingImage || (!draft.trim() && !pendingImage)}><Send size={17} /></button>}
+        <textarea ref={textarea} value={draft} rows={2} aria-label="输入问题或任务" aria-describedby={keyboardHintId} enterKeyHint={inputMode.enterSends ? "send" : "enter"} placeholder="有什么想问的…" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => handleComposerKeyDown(event, setDraft, send, inputMode)} />
+        <div className="mobile-chat-composer-toolbar">
+          <MobileModelPicker catalog={catalog} disabled={chat.busy} />
+          <label className="mobile-chat-image-button" title={readingImage ? "正在读取图片" : "附加图片"}><ImagePlus size={19} /><input type="file" aria-label="附加图片" disabled={readingImage} accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.currentTarget.value = "";
+            if (file) void attachImage(file);
+          }} /></label>
+          {canTranscribe && <VoiceInput key={props.apiKey} transcriber={transcriber} preferLocal={localSpeech} disabled={readingImage}
+            onStart={() => { voiceDraft.current = { text: draft, start: textarea.current?.selectionStart ?? draft.length, end: textarea.current?.selectionEnd ?? draft.length }; }}
+            onPreview={setVoicePreview} onError={setImageError} onTranscribed={(text) => {
+              const input = textarea.current;
+              setDraftValue((current) => {
+                const saved = voiceDraft.current;
+                const range = saved.text === current ? saved : { start: input?.selectionStart ?? current.length, end: input?.selectionEnd ?? current.length };
+                const result = insertTranscript(current, text, range);
+                storeDraft("mobile-chat", result.value);
+                requestAnimationFrame(() => { input?.focus(); input?.setSelectionRange(result.cursor, result.cursor); });
+                return result.value;
+              });
+            }} />}
+          {chat.busy ? <button type="button" className="mobile-chat-send" aria-label="停止" title="停止" onClick={chat.stop}><Square size={16} /></button>
+            : <button type="submit" className="mobile-chat-send" aria-label="发送" title="发送" disabled={Boolean(voicePreview) || !ready || readingImage || (!draft.trim() && !pendingImage)}><ArrowUp size={20} /></button>}
+        </div>
         <div id={keyboardHintId} className="mobile-chat-keyboard-hint">{inputMode.keyboardHint}</div>
       </form>
     </main>

@@ -1,10 +1,11 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { buildThemeBootstrap } from "./src/themeBootstrap";
 import { viteStaticCopy } from "vite-plugin-static-copy";
+import { mobileModelProxy } from "./devModelProxy";
 
 // Tauri expects a fixed dev port.
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: "./",
   plugins: [
     react({
@@ -35,6 +36,7 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
+    proxy: mobileModelProxy(loadEnv(mode, process.cwd(), "")),
     watch: {
       ignored: ["**/src-tauri/**"],
     },
@@ -43,4 +45,4 @@ export default defineConfig({
     target: "es2022",
     outDir: "dist",
   },
-});
+}));

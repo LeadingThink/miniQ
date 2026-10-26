@@ -11,9 +11,12 @@ it("retains the complete provider failure and copies its diagnostic details", as
   vi.stubGlobal("navigator", { clipboard: { writeText } });
   render(<TurnFailureNotice outcome={{ anchorMessageId: "user", status: "failed", error: reason }} onError={vi.fn()} />);
   expect(screen.getByRole("alert").textContent).toContain(reason);
-  fireEvent.click(screen.getByRole("button", { name: "复制失败详情" }));
+  const copy = screen.getByRole("button", { name: "复制失败详情" });
+  expect(copy.textContent).toBe("");
+  expect(copy.title).toBe("复制失败详情");
+  fireEvent.click(copy);
   await waitFor(() => expect(writeText).toHaveBeenCalledExactlyOnceWith(reason));
-  expect(screen.getByRole("button", { name: "已复制" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "已复制" }).textContent).toBe("");
 });
 
 it("shows actionable wording while keeping the original error available", () => {

@@ -39,7 +39,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 rand = "0.9"
-reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "stream", "rustls-tls"] }
+# Keep OS proxy discovery when disabling reqwest defaults for rustls.
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "stream", "rustls-tls", "system-proxy"] }
 async-trait = "0.1"
 tokio-util = "0.7"
 ignore = "0.4"

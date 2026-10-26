@@ -1,36 +1,23 @@
-.remote-computer-popover {
+.ui-popover.remote-computer-popover {
   box-sizing: border-box;
-  width: min(360px, calc(100vw - 16px));
+  width: min(300px, calc(100vw - 16px));
   color: var(--text);
   padding: 6px;
+  border-radius: var(--radius-xl);
 }
 .remote-computer-popover .remote-device-picker {
   box-sizing: border-box;
-  padding: 8px;
+  padding: 0;
 }
 .remote-computer-popover .remote-device-picker h2 {
-  font-size: 14px;
+  padding-left: 10px;
+  font-size: 13px;
 }
 .remote-computer-popover .remote-device-picker p {
   font-size: 12px;
   color: var(--text-mid);
+  margin: 8px 10px;
 }
 .remote-computer-popover .remote-device-options > button {
-  border-color: var(--border);
   padding: 10px;
-}
-.remote-computer-popover .remote-device-options > button[aria-pressed="true"] {
-  outline: none;
-  border-color: var(--ok);
-  background: var(--bg-subtle);
-}
-.remote-computer-details {
-  width: 100%;
-  min-height: 44px;
-  text-align: left;
-  padding: 8px;
-  color: var(--text-mid);
-  background: transparent;
-  border: 0;
-  border-top: 1px solid var(--border);
 }

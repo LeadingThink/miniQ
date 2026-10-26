@@ -26,6 +26,17 @@ function controller() {
 }
 
 describe("AppSidebar mobile navigation", () => {
+  it("closes from the exposed conversation and removes the dismiss target when collapsed", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    const app = controller();
+    const { rerender } = render(<AppSidebar app={app} />);
+    fireEvent.click(screen.getByRole("button", { name: "关闭侧栏" }));
+    expect(app.navigation.setSidebarCollapsed).toHaveBeenCalledWith(true);
+
+    rerender(<AppSidebar app={{ ...app, navigation: { ...app.navigation, sidebarCollapsed: true } }} />);
+    expect(screen.queryByRole("button", { name: "关闭侧栏" })).toBeNull();
+  });
+
   it("keeps the drawer open when expanding a project and closes it after opening a session", () => {
     vi.stubGlobal("matchMedia", () => ({ matches: true }));
     const app = controller();

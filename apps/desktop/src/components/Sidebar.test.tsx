@@ -39,7 +39,9 @@ describe("Sidebar", () => {
     const view = render(<Sidebar {...sidebarProps()} />);
     expect(view.container.querySelector(".sidebar-brand-row")).toBeNull();
     act(() => { media.matches = true; media.dispatchEvent(new Event("change")); });
-    expect(view.container.querySelector(".sidebar-brand-row")).not.toBeNull();
+    const header = view.container.querySelector<HTMLElement>(".sidebar-brand-row")!;
+    expect(within(header).getByText("miniQ")).not.toBeNull();
+    expect(within(header).queryByText("mQ")).toBeNull();
   });
   it("toggles all project sessions when the project is clicked repeatedly", () => {
     const onSelectWorkspace = vi.fn();

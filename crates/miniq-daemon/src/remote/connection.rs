@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+use super::socket::RelaySocket;
 use super::transport;
 use super::*;
 
@@ -19,16 +20,13 @@ impl Drop for Writer {
     }
 }
 
-type RelaySocket =
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
-
 async fn connect(
     state: &AppState,
     config: &ActiveConfig,
 ) -> anyhow::Result<(RelaySocket, CryptoIdentity, RelayFrame)> {
-    let (mut socket, _) = tokio::time::timeout(
+    let mut socket = tokio::time::timeout(
         Duration::from_secs(15),
-        tokio_tungstenite::connect_async(&config.relay_url),
+        super::socket::connect(&config.relay_url),
     )
     .await
     .map_err(|_| anyhow::anyhow!("连接 relay 超时"))??;

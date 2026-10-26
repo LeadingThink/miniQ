@@ -1,3 +1,5 @@
+@import "./mobile-sidebar.css";
+
 .mobile-entry,
 .mobile-chat {
   min-height: 0;
@@ -295,50 +297,6 @@
   margin-top: 8px;
 }
 
-.mobile-chat {
-  height: 100%;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-}
-
-.mobile-chat-header {
-  min-height: 58px;
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) minmax(124px, 42%);
-  align-items: center;
-  gap: 10px;
-  padding: max(8px, var(--safe-top)) max(12px, var(--safe-right)) 8px max(12px, var(--safe-left));
-  background: var(--glass);
-  backdrop-filter: var(--glass-blur);
-  border-bottom: 1px solid var(--border);
-}
-
-.mobile-chat-header > div {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.mobile-chat-header strong {
-  font-size: var(--font-body);
-}
-
-.mobile-chat-header small {
-  color: var(--text-dim);
-  font-size: var(--font-caption);
-}
-
-.mobile-chat-feed {
-  width: 100%;
-  max-width: 760px;
-  min-height: 0;
-  margin: 0 auto;
-  padding: 18px max(14px, var(--safe-right)) 28px max(14px, var(--safe-left));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-}
-
 .native-mobile body {
   width: 100%;
   min-width: 0;
@@ -354,159 +312,6 @@
 .native-mobile .md {
   -webkit-user-select: text;
   user-select: text;
-}
-
-.mobile-chat-empty {
-  min-height: 56vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  color: var(--text-dim);
-  text-align: center;
-}
-
-.mobile-chat-empty strong {
-  color: var(--text);
-  font-size: var(--font-headline);
-}
-
-.mobile-chat-empty span {
-  max-width: 280px;
-  font-size: var(--font-footnote);
-  line-height: 1.6;
-}
-
-.mobile-chat-message {
-  width: fit-content;
-  max-width: min(92%, 680px);
-  margin-bottom: 14px;
-  padding: 10px 12px;
-  overflow-wrap: anywhere;
-  line-height: 1.65;
-  white-space: pre-wrap;
-}
-
-.mobile-chat-message.user {
-  margin-left: auto;
-  color: var(--accent-fg);
-  background: var(--accent);
-  border-radius: var(--radius) var(--radius) var(--radius-sm) var(--radius);
-}
-
-.mobile-chat-message.assistant {
-  padding-left: 0;
-  padding-right: 0;
-  color: var(--text);
-  white-space: normal;
-}
-
-.mobile-chat-message .md {
-  font-size: var(--font-body);
-}
-
-.mobile-chat-composer {
-  position: relative;
-  width: min(calc(100% - max(10px, var(--safe-left)) - max(10px, var(--safe-right))), 760px);
-  min-height: 58px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px 44px;
-  align-items: end;
-  gap: 8px;
-  margin: 0 auto max(10px, var(--safe-bottom));
-  padding: 7px;
-  background: var(--bg);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sheet);
-}
-
-.mobile-chat-image-chip {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  color: var(--text-mid);
-  font-size: var(--font-caption);
-}
-
-.mobile-chat-image-chip span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mobile-chat-image-chip button,
-.mobile-chat-image-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  background: transparent;
-}
-
-.mobile-chat-image-chip button {
-  padding: 3px;
-  color: var(--text-dim);
-}
-
-.mobile-chat-image-button {
-  position: relative;
-  width: 44px;
-  height: 44px;
-  color: var(--text-mid);
-  cursor: pointer;
-}
-
-.mobile-chat-image-button input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.mobile-chat-message.user img {
-  display: block;
-  max-width: min(100%, 280px);
-  max-height: 280px;
-  margin-top: 6px;
-  border-radius: var(--radius);
-  object-fit: contain;
-}
-
-.mobile-chat-composer textarea {
-  width: 100%;
-  min-width: 0;
-  max-height: 144px;
-  padding: 7px 8px;
-  resize: none;
-  color: var(--text);
-  background: transparent;
-  border: 0;
-  outline: 0;
-  font-size: var(--font-body);
-  line-height: 1.5;
-}
-
-.mobile-chat-keyboard-hint {
-  grid-column: 1 / -1;
-  padding: 0 8px 3px;
-  color: var(--text-dim);
-  font-size: var(--font-caption);
-  line-height: 1.5;
-}
-
-.mobile-chat-send {
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border-radius: var(--radius);
 }
 
 @media (max-width: 520px) {
@@ -525,59 +330,7 @@
   }
 }
 
-.mobile-sidebar-scrim {
-  display: none;
-}
-
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
-  .sidebar > .workbench-resizer { display: none; }
-
-  .app {
-    width: 100%;
-    height: var(--app-height, 100dvh);
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .app .sidebar {
-    position: fixed;
-    inset: var(--app-offset-top, 0px) auto auto 0;
-    height: var(--app-height, 100dvh);
-    z-index: 51;
-    width: min(86vw, 320px) !important;
-    padding-top: max(14px, var(--safe-top));
-    padding-bottom: max(10px, var(--safe-bottom));
-    padding-left: max(10px, var(--safe-left));
-    box-shadow: var(--shadow-lg);
-  }
-
-  .app.sidebar-collapsed .sidebar {
-    display: none;
-  }
-
-  .app .mobile-sidebar-scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 50;
-    display: block;
-    width: 100%;
-    height: 100%;
-    padding: 0;
-    background: var(--scrim);
-    border: 0;
-    border-radius: 0;
-    backdrop-filter: blur(2px);
-  }
-
-  .app .main,
-  .app.sidebar-collapsed .main {
-    width: 100%;
-    height: var(--app-height, 100dvh);
-    margin: 0;
-    border: 0;
-    border-radius: 0;
-  }
-
   /* .statusbar.app-toolbar (shell.css) is more specific than .statusbar, so
      name it too or the desktop padding hides the Android status-bar inset. */
   .statusbar,
@@ -637,10 +390,3 @@
     grid-template-columns: 1fr;
   }
 }
-
-.mobile-chat-composer.with-voice {
-  grid-template-columns: minmax(0, 1fr) 44px auto 44px;
-}
-.mobile-chat-composer .voice-transcript { grid-column: 1 / -1; min-width: 0; }
-.mobile-chat-composer .voice-input .attach-btn { width: 44px; height: 44px; }
-.mobile-chat-composer .voice-state { display: none; }

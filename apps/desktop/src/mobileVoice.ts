@@ -1,4 +1,4 @@
-import { MOBILE_API_BASE_URL } from "./mobileApiConfig";
+import { MOBILE_MODEL_API_BASE_URL } from "./mobileApiConfig";
 import type { VoiceTranscriber } from "./voiceTranscription";
 import { throwIfAborted } from "./abortSignal";
 
@@ -48,7 +48,7 @@ async function request(key: string, path: string, init: RequestInit, signal: Abo
   if (signal?.aborted) forward(); else signal?.addEventListener("abort", forward, { once: true });
   const timer = setTimeout(() => abort.abort(new Error("语音服务连接超时，请重试")), timeout);
   try {
-    const response = await fetch(`${MOBILE_API_BASE_URL}${path}`, {
+    const response = await fetch(`${MOBILE_MODEL_API_BASE_URL}${path}`, {
       ...init, headers: { Authorization: `Bearer ${key.trim()}` }, signal: abort.signal,
       redirect: "error",
     });

@@ -200,7 +200,6 @@ export function Sidebar(props: SidebarProps) {
     >
       {mobile && <div className="sidebar-brand-row">
         <div className="sidebar-brand-lockup" data-tauri-drag-region>
-          <span className="sidebar-brand-mark" aria-hidden="true">mQ</span>
           <span className="brand" data-tauri-drag-region>miniQ</span>
           <span className="sidebar-version">v2.4</span>
         </div>

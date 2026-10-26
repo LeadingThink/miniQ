@@ -56,7 +56,7 @@ export function RemoteConnectionStatus({ app, onToggleReview }: { app: MiniqAppC
     workspace?.name ?? "",
   ].filter(Boolean).join(" · ")}</small></span>;
   return <>
-    {bar ? <RemoteComputerPicker bar={bar} onDetails={() => show(null)}>{identity}</RemoteComputerPicker> :
+    {bar ? <RemoteComputerPicker bar={bar}>{identity}</RemoteComputerPicker> :
       <button type="button" className="statusbar-identity" aria-label="查看完整会话标题与连接信息" aria-haspopup="dialog" onClick={(event) => show(event.currentTarget)}>
         {identity}<ChevronDown size={15} />
       </button>}

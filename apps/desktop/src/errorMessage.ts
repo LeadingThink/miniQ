@@ -58,5 +58,8 @@ export function errorMessage(error: unknown): string {
   if (normalized === "not connected" || /\bwebsocket\b.*\b(closed|disconnected|not connected)\b/.test(normalized)) {
     return "与 miniQ 的连接已断开，请检查连接后重试。";
   }
+  if (["failed to fetch", "load failed", "networkerror when attempting to fetch resource."].includes(normalized)) {
+    return "无法连接服务，请检查网络后重试。";
+  }
   return raw;
 }

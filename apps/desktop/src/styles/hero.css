@@ -230,13 +230,6 @@
     background: transparent;
     border-bottom: 0;
   }
-  .main:has(.hero) .statusbar .statusbar-identity {
-    padding: 6px 12px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--bg) 80%, transparent);
-    box-shadow: var(--shadow-sm);
-  }
   .main:has(.hero) .statusbar-identity strong {
     display: none;
   }

@@ -21,12 +21,6 @@
   margin-left: auto;
 }
 
-.turn-failure-heading button {
-  gap: 5px;
-  min-height: 32px;
-  font-size: 12px;
-}
-
 .turn-failure-notice .turn-failure-reason,
 .turn-failure-notice pre {
   margin: 8px 0 0;
@@ -39,10 +33,4 @@
 .turn-failure-notice details {
   margin-top: 8px;
   font-size: 12px;
-}
-
-@media (pointer: coarse) {
-  .turn-failure-heading button {
-    min-height: 44px;
-  }
 }

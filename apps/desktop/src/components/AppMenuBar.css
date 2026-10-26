@@ -12,7 +12,7 @@
   gap: 4px;
   padding-left: 14px;
   border-bottom: 1px solid var(--hairline);
-  background: var(--sidebar-bg);
+  background: var(--bg);
   color: var(--text-mid);
   user-select: none;
   -webkit-user-select: none;

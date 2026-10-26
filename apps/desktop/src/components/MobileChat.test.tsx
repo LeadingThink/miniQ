@@ -44,6 +44,7 @@ it("selects an available text model, supports search, and sends the selected mod
   vi.stubGlobal("fetch", fetcher);
   render(<MobileChat apiKey="test-key" onBack={() => {}} />);
   await screen.findByText("custom-chat");
+  expect(screen.getByRole("form", { name: "问答输入" }).contains(screen.getByRole("button", { name: "问答模型" }))).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "问答模型" }));
   expect(screen.queryByRole("option", { name: "image-model" })).toBeNull();
   fireEvent.change(screen.getByRole("searchbox", { name: "搜索模型" }), { target: { value: "GEMINI" } });
@@ -67,6 +68,24 @@ it("does not send an unavailable fallback model and reloads a failed catalog wit
   await screen.findByText("custom-chat");
   expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("先写下问题");
   expect((screen.getByRole("button", { name: "发送" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("explains model network failures, keeps settings accessible, and preserves the draft on retry", async () => {
+  const fetcher = vi.fn().mockRejectedValueOnce(new TypeError("Failed to fetch"))
+    .mockResolvedValueOnce(json({ data: catalog }));
+  const onSettings = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  render(<MobileChat apiKey="test-key" onBack={() => {}} onSettings={onSettings} />);
+  fireEvent.change(screen.getByRole("textbox"), { target: { value: "你好" } });
+  await screen.findByText("无法连接服务，请检查网络后重试。");
+  const settings = screen.getByRole("button", { name: "设置" });
+  expect(settings.textContent).toBe("");
+  fireEvent.click(settings);
+  expect(onSettings).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: "重新加载模型" }));
+  await screen.findByText("custom-chat");
+  expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("你好");
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "发送" }).disabled).toBe(false);
 });
 
 it("restores an unsent draft after returning from remote mode and clears it only after accepting send", async () => {

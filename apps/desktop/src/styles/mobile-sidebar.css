@@ -1,0 +1,80 @@
+.mobile-sidebar-scrim {
+  display: none;
+}
+
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .app {
+    /* Keep the conversation and its menu visible beside the open drawer. */
+    --mobile-sidebar-peek: max(64px, 16.667vw, var(--safe-right));
+    --mobile-sidebar-width: min(
+      430px,
+      calc(100vw - var(--mobile-sidebar-peek))
+    );
+    width: 100%;
+    height: var(--app-height, 100dvh);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .sidebar > .workbench-resizer {
+    display: none;
+  }
+
+  .app .sidebar {
+    position: fixed;
+    inset: var(--app-offset-top, 0px) auto auto 0;
+    z-index: 51;
+    width: var(--mobile-sidebar-width) !important;
+    max-width: none;
+    height: var(--app-height, 100dvh);
+    padding-top: max(14px, var(--safe-top));
+    padding-bottom: max(10px, var(--safe-bottom));
+    padding-left: max(10px, var(--safe-left));
+    box-shadow: 4px 0 18px rgb(0 0 0 / 8%);
+    transition:
+      transform var(--duration-slow) var(--ease-standard),
+      visibility var(--duration-slow);
+  }
+
+  .app.sidebar-collapsed .sidebar {
+    display: flex;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(-100%);
+  }
+
+  /* Row actions explicitly set visibility; they must follow the drawer. */
+  .app.sidebar-collapsed .sidebar * {
+    visibility: inherit !important;
+  }
+
+  .app .main,
+  .app.sidebar-collapsed .main {
+    flex: 0 0 100%;
+    width: 100%;
+    height: var(--app-height, 100dvh);
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    transition: transform var(--duration-slow) var(--ease-standard);
+  }
+
+  .app:not(.sidebar-collapsed) .main {
+    transform: translateX(var(--mobile-sidebar-width));
+  }
+
+  /* The exposed conversation is a clear, tappable way back to the task. */
+  .app .mobile-sidebar-scrim {
+    position: fixed;
+    inset: var(--app-offset-top, 0px) 0 auto var(--mobile-sidebar-width);
+    z-index: 50;
+    display: block;
+    width: auto;
+    height: var(--app-height, 100dvh);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    touch-action: none;
+  }
+}

@@ -1,19 +1,20 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { createMobileVoiceTranscriber, fetchMobileVoiceCapabilities } from "./mobileVoice";
+import { MOBILE_MODEL_API_BASE_URL } from "./mobileApiConfig";
 const signal = () => new AbortController().signal;
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 it("discovers audio models with the phone's key directly at the fixed service", async () => {
   const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [{id:"sencevoice-small"}] })));
   vi.stubGlobal("fetch", fetch);
   expect(await fetchMobileVoiceCapabilities("phone-key")).toEqual({transcribe:true,transcribeModel:"sencevoice-small"});
-  expect(fetch).toHaveBeenCalledWith("https://oneapi.zaiwenai.com/v1/models",expect.objectContaining({headers:{Authorization:"Bearer phone-key"},redirect:"error"}));
+  expect(fetch).toHaveBeenCalledWith(`${MOBILE_MODEL_API_BASE_URL}/models`,expect.objectContaining({headers:{Authorization:"Bearer phone-key"},redirect:"error"}));
 });
 it("sends binary WAV in multipart without relay encoding", async () => {
   const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({text:" 测试 "})));
   vi.stubGlobal("fetch",fetch);
   expect(await createMobileVoiceTranscriber("phone-key")(new Uint8Array(100),false,signal())).toBe("测试");
-  const [url, options] = fetch.mock.calls[0]; expect(url).toBe("https://oneapi.zaiwenai.com/v1/audio/transcriptions");
+  const [url, options] = fetch.mock.calls[0]; expect(url).toBe(`${MOBILE_MODEL_API_BASE_URL}/audio/transcriptions`);
   expect(options.body.get("file").size).toBe(100); expect(options.body.get("file").type).toBe("audio/wav");
   expect(options.body.get("model")).toBe("grok-transcribe");
 });

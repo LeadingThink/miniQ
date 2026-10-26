@@ -106,7 +106,7 @@ describe("theme catalog", () => {
     for (const [key, value] of Object.entries(theme.preview))
       expect(root.style.getPropertyValue(`--theme-${key}`)).toBe(value);
     expect(contrastRatio(theme.preview.accent, accentForeground(theme.preview.accent))).toBeGreaterThanOrEqual(4.5);
-    for (const surface of [theme.preview.page, theme.preview.sidebar, theme.preview.surface]) {
+    for (const surface of [theme.preview.page, theme.preview.surface]) {
       expect(contrastRatio(theme.preview.text, surface)).toBeGreaterThanOrEqual(7);
     }
   });

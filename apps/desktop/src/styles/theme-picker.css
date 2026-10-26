@@ -164,7 +164,7 @@
 .theme-preview-sidebar {
   width: 27%;
   padding: 10px 6px;
-  background: var(--theme-sidebar);
+  background: var(--theme-surface);
   display: grid;
   align-content: start;
   gap: 5px;

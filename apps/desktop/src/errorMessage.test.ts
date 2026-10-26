@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { billingErrorKind, errorMessage, isBillingError } from "./errorMessage";
 
 describe("errorMessage", () => {
+  it.each(["Failed to fetch", "Load failed", "NetworkError when attempting to fetch resource."])(
+    "explains a browser network failure: %s", (message) => {
+      expect(errorMessage(new TypeError(message))).toBe("无法连接服务，请检查网络后重试。");
+    },
+  );
   it.each([
     "401 Unauthorized (code -32000)",
     "provider returned 401",

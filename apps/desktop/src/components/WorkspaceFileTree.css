@@ -173,7 +173,7 @@
   border: 1px solid var(--hairline);
   border-top: 0;
   border-inline-start: 0;
-  background: var(--sidebar-bg, var(--bg));
+  background: var(--bg);
   border-radius: 0 0 var(--radius-lg) 0;
 }
 .workbench-files.with-tree .workbench-files-main > * {
