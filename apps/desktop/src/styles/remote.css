@@ -594,17 +594,35 @@
     white-space: nowrap;
   }
 
-  .timeline {
-    padding: 10px max(10px, var(--safe-right)) 10px max(10px, var(--safe-left));
+  .timeline,
+  .composer-outer {
+    padding-right: max(12px, var(--safe-right));
+    padding-left: max(12px, var(--safe-left));
   }
 
-  .bubble,
+  .timeline {
+    padding-block: 10px;
+    scrollbar-gutter: auto;
+    scrollbar-width: none;
+  }
+
+  .timeline::-webkit-scrollbar {
+    display: none;
+  }
+
   .bubble.user {
     max-width: 92%;
   }
 
+  .timeline .message-entry.assistant > .bubble {
+    width: 100%;
+    max-width: 100%;
+    padding-inline: 0;
+  }
+
   .composer-outer {
-    padding: 8px max(10px, var(--safe-right)) max(10px, var(--safe-bottom)) max(10px, var(--safe-left));
+    padding-top: 8px;
+    padding-bottom: max(10px, var(--safe-bottom));
   }
 
   .settings-overlay {

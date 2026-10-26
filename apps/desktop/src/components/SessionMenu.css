@@ -155,3 +155,16 @@
   background: var(--accent);
   color: #ffffff;
 }
+
+@media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
+  .session-menu {
+    max-width: calc(100vw - 20px);
+    border-radius: 16px;
+  }
+  .session-menu .session-menu-item {
+    min-height: 44px;
+  }
+  .session-menu-shortcut {
+    display: none;
+  }
+}

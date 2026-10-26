@@ -9,8 +9,8 @@ import {
 import type { Session } from "../types";
 import {
   registerSidebarList,
-  useMobileSidebarLayout,
 } from "./SidebarNavigation";
+import { useMobileLayout } from "../hooks/useMobileLayout";
 import { SidebarSessionItem } from "./SidebarSessionItem";
 import { VirtualList, type VirtualListHandle } from "./ui/VirtualList";
 
@@ -33,7 +33,7 @@ interface Props {
 export function SidebarSessionList(props: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const handle = useRef<VirtualListHandle>(null);
-  const mobile = useMobileSidebarLayout();
+  const mobile = useMobileLayout();
   const [interacting, setInteracting] = useState<ReadonlySet<string>>(
     new Set(),
   );

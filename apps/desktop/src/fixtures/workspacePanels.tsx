@@ -254,6 +254,7 @@ function Fixture() {
         <section className="fixture-conversation">
           <div className="fixture-summary-toolbar">
             <SessionSummaryCard
+              sessionId="sample"
               diff={{
                 files: [{}, {}, {}, {}, {}],
                 additions: 1050,

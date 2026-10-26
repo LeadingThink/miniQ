@@ -8,6 +8,7 @@ import { AppErrorBanner, AppStatusBar } from "./AppStatus";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 function appFixture(collapsed = true, mode: "local" | "remote" = "local") {
@@ -64,6 +65,26 @@ describe("AppErrorBanner", () => {
 });
 
 describe("AppStatusBar", () => {
+  it("places the phone session menu before reminders and opens the current summary from it", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    const app = appFixture(true, "remote");
+    app.catalog.currentSession = { id: "phone-session", title: "真机会话", status: "idle" } as NonNullable<typeof app.catalog.currentSession>;
+    const dispatch = vi.spyOn(window, "dispatchEvent");
+    const { container } = render(<AppStatusBar app={app} showAttentionInbox
+      onOpenBrowser={vi.fn()} onToggleReview={vi.fn()} onOpenFile={vi.fn()} onToggleWorkbench={vi.fn()} />);
+    const actions = within(container.querySelector<HTMLElement>(".app-toolbar-actions")!);
+    expect(actions.getAllByRole("button").map((button) => button.getAttribute("aria-label")))
+      .toEqual(["会话操作", "提醒", "显示检查器", "更多操作"]);
+    const trigger = actions.getByRole("button", { name: "会话操作" });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "会话摘要" }));
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: "miniq:session-toolbar-action", detail: { sessionId: "phone-session", action: "summary" },
+    }));
+    expect(screen.queryByRole("menuitem", { name: "会话摘要" })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
   it("shows an icon side-conversation entry and invokes its toggle", () => {
     const onToggleSideConversation = vi.fn();
     render(

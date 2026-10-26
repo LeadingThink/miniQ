@@ -4,6 +4,7 @@ import {
   Archive,
   ChevronRight,
   GitBranch,
+  ListTree,
   MessageSquarePlus,
   Search,
   SlidersHorizontal,
@@ -23,6 +24,7 @@ interface Props {
   onTogglePin: () => void;
   onNewSideChat: () => void;
   onSearch: () => void;
+  onSummary?: () => void;
   onFork: (anchorMessageId: string) => void | Promise<unknown>;
   onArchive: () => void;
 }
@@ -63,6 +65,7 @@ export function SessionMenu({
   onTogglePin,
   onNewSideChat,
   onSearch,
+  onSummary,
   onFork,
   onArchive,
 }: Props) {
@@ -245,6 +248,15 @@ export function SessionMenu({
             </form>
           ) : (
             <>
+              {onSummary && <button
+                type="button"
+                className="session-menu-item"
+                role="menuitem"
+                onClick={() => run(() => { trigger.current?.focus(); onSummary(); })}
+              >
+                <ListTree className="session-menu-icon" size={15} />
+                <span className="session-menu-label">会话摘要</span>
+              </button>}
               <button
                 type="button"
                 className="session-menu-item"

@@ -27,7 +27,8 @@ import { EmptyState } from "./ui/EmptyState";
 import { SidebarPanel } from "./SidebarPanel";
 import { SidebarSessionList } from "./SidebarSessionList";
 import { SidebarAttention } from "./SidebarAttention";
-import { handleSidebarNavigation, SidebarFilters, SidebarSearchField, sidebarGroups, useMobileSidebarLayout, type SidebarFilter } from "./SidebarNavigation";
+import { handleSidebarNavigation, SidebarFilters, SidebarSearchField, sidebarGroups, type SidebarFilter } from "./SidebarNavigation";
+import { useMobileLayout } from "../hooks/useMobileLayout";
 import { WorkspaceGroup } from "./WorkspaceGroup";
 import "./Sidebar.css";
 
@@ -90,7 +91,7 @@ interface SidebarProps {
 }
 
 export function Sidebar(props: SidebarProps) {
-  const mobile = useMobileSidebarLayout();
+  const mobile = useMobileLayout();
   type SwipeSource = "pointer" | "touch";
   type Swipe = { source: SwipeSource; id: number; startX: number; startY: number; horizontal: boolean; cancelled: boolean };
   const swipe = useRef<Swipe | null>(null);

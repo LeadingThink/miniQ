@@ -206,21 +206,42 @@
   overflow-wrap: anywhere;
 }
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
-  .session-summary-trigger {
-    min-width: 44px;
+  .ui-dialog-scrim:has(.session-summary-sheet) {
+    align-items: flex-end;
+    padding: 10px max(10px, var(--safe-right)) max(10px, var(--safe-bottom)) max(10px, var(--safe-left));
+  }
+  .session-summary-sheet.ui-dialog {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    width: 100%;
+    max-width: none;
+    max-height: min(80dvh, calc(var(--app-height, 100dvh) - 24px));
+    padding: 20px 0 8px;
+    overflow: hidden;
+    border-radius: 24px;
+  }
+  .session-summary-sheet .ui-dialog-title,
+  .session-summary-sheet .ui-dialog-description {
+    flex: none;
+    margin: 0;
+    padding: 0 56px 8px 20px;
+  }
+  .session-summary-sheet .session-summary-close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 44px;
+    height: 44px;
+  }
+  .session-summary-sheet .session-summary-item {
     min-height: 44px;
   }
-  .session-summary-trigger span {
-    display: none;
-  }
-  .session-summary-popover {
-    position: fixed;
-    top: auto;
-    right: 10px;
-    bottom: calc(10px + var(--safe-bottom, 0px));
-    left: 10px;
-    width: auto;
-    max-width: none;
-    max-height: min(80dvh, 660px);
-  }
+}
+
+.session-summary-empty {
+  margin: 0;
+  padding: 16px 20px 24px;
+  color: var(--text-dim);
 }

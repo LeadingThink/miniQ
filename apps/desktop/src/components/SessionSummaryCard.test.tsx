@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import {
@@ -8,10 +8,12 @@ import {
   type SessionSummarySection,
 } from "./SessionSummaryCard";
 import type { AgentSummary } from "./AgentSummary";
+import { dispatchSessionToolbarAction } from "./TimelineToolbar";
 
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
+  vi.unstubAllGlobals();
 });
 
 const emptyDiff = { files: [], additions: 0, deletions: 0 };
@@ -24,6 +26,7 @@ function Harness(props: Partial<SessionSummaryCardProps>) {
   const [expanded, setExpanded] = useState<SessionSummarySection | null>(null);
   return (
     <SessionSummaryCard
+      sessionId="session-1"
       diff={emptyDiff}
       agents={[]}
       sources={[]}
@@ -135,4 +138,42 @@ it("remembers the collapsed state", () => {
       .getByRole("button", { name: "会话摘要" })
       .getAttribute("aria-expanded"),
   ).toBe("false");
+});
+
+function usePhoneViewport() {
+  vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+}
+
+it("opens a phone sheet only for the selected session, without a standalone summary row", () => {
+  usePhoneViewport();
+  window.localStorage.setItem("miniq.sessionSummary.collapsed", "0");
+  const view = render(<Harness />);
+  expect(view.container.firstChild).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  act(() => dispatchSessionToolbarAction("another-session", "summary"));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  act(() => dispatchSessionToolbarAction("session-1", "summary"));
+  const sheet = screen.getByRole("dialog", { name: "会话摘要" });
+  expect(within(sheet).getByText("当前会话暂无修改、子任务或参考资料。")).toBeTruthy();
+  fireEvent.click(within(sheet).getByRole("button", { name: "收起会话摘要" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(window.localStorage.getItem("miniq.sessionSummary.collapsed")).toBe("0");
+});
+
+it("closes the phone summary before opening review and when changing sessions", () => {
+  usePhoneViewport();
+  const onOpenReview = vi.fn();
+  const props = { diff: { files: [{}], additions: 12, deletions: 3 }, onOpenReview };
+  const view = render(<Harness {...props} />);
+  act(() => dispatchSessionToolbarAction("session-1", "summary"));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /变更/ }));
+  expect(onOpenReview).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  act(() => dispatchSessionToolbarAction("session-1", "summary"));
+  view.rerender(<Harness {...props} sessionId="session-2" />);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  act(() => dispatchSessionToolbarAction("session-1", "summary"));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  act(() => dispatchSessionToolbarAction("session-2", "summary"));
+  expect(screen.getByRole("dialog", { name: "会话摘要" })).toBeTruthy();
 });

@@ -232,6 +232,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
             onOpenAgentPanel={openAgentPanel}
             summary={
               <SessionSummaryCard
+                sessionId={app.catalog.currentSessionId!}
                 diff={app.review.data}
                 agents={agentSummary.agents}
                 agentError={agentSummary.error}

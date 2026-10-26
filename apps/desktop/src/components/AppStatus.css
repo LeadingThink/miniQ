@@ -73,16 +73,26 @@
   }
 }
 @media (max-width: 720px), (pointer: coarse) and (max-height: 520px) {
-  .statusbar { column-gap: 8px; row-gap: 6px; }
+  .statusbar.app-toolbar { gap: 4px; }
   .statusbar > span:empty { display: none; }
-  .statusbar .statusbar-icon-button { width: 44px; height: 44px; }
-  .statusbar .statusbar-action-label { display: inline; font-size: var(--font-caption); white-space: nowrap; }
+  .statusbar .statusbar-icon-button {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 12px;
+    color: var(--text-mid);
+  }
+  .statusbar .statusbar-icon-button > svg { width: 20px; height: 20px; stroke-width: 1.75; }
+  .statusbar .statusbar-icon-button:active { background: var(--bg-active); }
+  .statusbar .app-toolbar-title { align-items: center; gap: 0; }
+  .statusbar .app-toolbar-actions { gap: 0; }
+  .statusbar .statusbar-action-label { display: none; }
   /* Phone header priority: the session title and its dropdown keep the free space.
      Side chat moves into the overflow menu, previews open from the inspector, so
      neither needs a dedicated toolbar slot on small screens. */
   .statusbar .side-conversation-trigger,
   .statusbar .open-preview-trigger { display: none; }
-  .statusbar .statusbar-icon-button:has(.statusbar-action-label) { display: inline-flex; align-items: center; justify-content: center; width: auto; gap: 5px; padding-inline: 8px; }
   .statusbar:has(.remote-connection-trigger) > .badge,
   .statusbar:has(.remote-connection-trigger) .distill-button,
   .statusbar:has(.remote-connection-trigger) .review-toggle { display: none; }

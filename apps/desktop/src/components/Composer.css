@@ -108,10 +108,48 @@
 
 /* Keep remote task controls reachable when a phone keyboard is visible. */
 @media (max-width: 720px), (pointer: coarse) {
+  .composer-outer .composer-card {
+    padding: 10px;
+    border-radius: 20px;
+    border-color: color-mix(in srgb, var(--accent) 16%, var(--border));
+    box-shadow: var(--shadow-composer);
+  }
+
+  .composer-outer .composer-card:focus-within {
+    border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+    box-shadow: var(--shadow-composer), 0 0 0 2px var(--focus-shadow);
+  }
+
+  .composer-outer .composer-field {
+    padding: 8px 4px 10px;
+    min-height: 48px;
+  }
+
+  .composer-outer .composer-card .composer-field > textarea {
+    padding: 0;
+  }
+
   .composer-card .composer-row {
+    flex-wrap: wrap;
     column-gap: 6px;
-    row-gap: 4px;
-    padding: 7px 2px 0;
+    row-gap: 6px;
+    padding: 4px 0 0;
+  }
+
+  .composer-outer .composer-row > .chip {
+    display: none;
+  }
+
+  .composer-card .composer-row > .session-permissions {
+    flex: none;
+    max-width: 100%;
+  }
+
+  .composer-card .session-permissions .mode-trigger {
+    gap: 4px;
+    border-radius: 12px;
+    font-size: var(--font-caption);
+    white-space: nowrap;
   }
 
   /* One row on phones: model picker shares the line with attach/send and only
@@ -136,11 +174,45 @@
   }
 
   .composer-card .composer-submit {
+    flex: 1 1 140px;
+    min-width: 0;
     margin-left: auto;
   }
 
+  .composer-card .composer-submit:has(.composer-voice-inline),
+  .composer-card .composer-submit:has(.stop) {
+    flex-basis: 188px;
+  }
+
+  .composer-card .composer-submit:has(.composer-voice-inline):has(.stop) {
+    flex-basis: 236px;
+  }
+
   .composer-card .composer-submit-buttons {
+    flex: 1;
+    min-width: 0;
     gap: 6px;
+  }
+
+  .composer-card .composer-submit .session-model-controls {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .composer-card .composer-submit .model-trigger {
+    width: 100%;
+    max-width: none;
+    border-radius: 12px;
+    font-size: var(--font-caption);
+  }
+
+  .composer-card .model-trigger-name {
+    flex: 1;
+  }
+
+  .composer-card .model-trigger-separator,
+  .composer-card .model-trigger-separator + span {
+    display: none;
   }
 
   .composer-card .composer-plus-trigger,
@@ -163,9 +235,24 @@
     height: 44px;
   }
 
+  .composer-card .composer-plus-trigger {
+    border-radius: 12px;
+    background: var(--bg-subtle);
+  }
+
+  .composer-card .composer-plus-trigger > svg {
+    width: 20px;
+    height: 20px;
+  }
+
   .composer-card .send-btn {
     width: 44px;
     height: 44px;
+  }
+
+  .composer-card .send-btn > svg {
+    width: 21px;
+    height: 21px;
   }
 
   .composer-card .session-permissions .mode-trigger,

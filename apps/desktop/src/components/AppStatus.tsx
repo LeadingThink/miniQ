@@ -34,6 +34,7 @@ import { isBillingError } from "../errorMessage";
 import { BillingDialog } from "./BillingDialog";
 import { GitChangesPopover } from "./GitChangesPopover";
 import { SessionMenu } from "./SessionMenu";
+import { useMobileLayout } from "../hooks/useMobileLayout";
 
 export function AppStatusBar(props: {
   app: MiniqAppController;
@@ -51,6 +52,7 @@ export function AppStatusBar(props: {
   onOpenAttentionLocalItem?: (item: AttentionItem) => boolean;
 }) {
   const { app } = props;
+  const mobile = useMobileLayout();
   const { connected, health } = app.connection;
   const currentSession = app.catalog.currentSession;
   const currentWorkspace = app.catalog.currentWorkspace;
@@ -78,6 +80,19 @@ export function AppStatusBar(props: {
       : "连接中断，正在恢复";
   const title = currentSession?.title || "新对话";
   const projectName = currentWorkspace?.name;
+  const sessionMenu = currentSession && (
+    <SessionMenu
+      session={currentSession}
+      messages={app.feed.messages}
+      onRename={(title) => app.actions.renameSession(currentSession.id, title)}
+      onTogglePin={() => void app.actions.setSessionPinned(currentSession.id, !currentSession.pinned)}
+      onNewSideChat={() => props.onNewSideChat?.()}
+      onSearch={() => dispatchSessionToolbarAction(currentSession.id, "search")}
+      onSummary={mobile ? () => dispatchSessionToolbarAction(currentSession.id, "summary") : undefined}
+      onFork={(anchorMessageId) => app.actions.forkSession(anchorMessageId)}
+      onArchive={() => void app.actions.setSessionArchived(currentSession.id, true)}
+    />
+  );
 
   const menuItems: OverflowItem[] = [
     ...(remote && deviceBar ? [
@@ -149,20 +164,10 @@ export function AppStatusBar(props: {
             )}
           </>
         )}
-        {currentSession && (
-          <SessionMenu
-            session={currentSession}
-            messages={app.feed.messages}
-            onRename={(title) => app.actions.renameSession(currentSession.id, title)}
-            onTogglePin={() => void app.actions.setSessionPinned(currentSession.id, !currentSession.pinned)}
-            onNewSideChat={() => props.onNewSideChat?.()}
-            onSearch={() => dispatchSessionToolbarAction(currentSession.id, "search")}
-            onFork={(anchorMessageId) => app.actions.forkSession(anchorMessageId)}
-            onArchive={() => void app.actions.setSessionArchived(currentSession.id, true)}
-          />
-        )}
+        {!mobile && sessionMenu}
       </div>
       <div className="app-toolbar-actions">
+        {mobile && sessionMenu}
         {props.onToggleSideConversation && (
           <button type="button" className={`statusbar-icon-button side-conversation-trigger${props.sideConversationOpen ? " active" : ""}`}
             data-tooltip="侧边聊天" title="侧边聊天" aria-label={props.sideConversationOpen ? "关闭侧边聊天" : "打开侧边聊天"}

@@ -1,24 +1,10 @@
-import { useCallback, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { useCallback, useState, type KeyboardEvent } from "react";
 import { CheckCheck, ChevronsDownUp, ListFilter, Search, X } from "lucide-react";
 import { isSessionRunning } from "../sessionStatus";
-import { isMobileLayout, MOBILE_LAYOUT_QUERY } from "../mobileViewport";
+import { useMobileLayout } from "../hooks/useMobileLayout";
 import type { Session, Workspace } from "../types";
 
 export type SidebarFilter = "all" | "running" | "waiting" | "unread" | "failed" | "pinned";
-
-function subscribeMobileLayout(onChange: () => void) {
-  const query = window.matchMedia?.(MOBILE_LAYOUT_QUERY);
-  if (query) {
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }
-  window.addEventListener("resize", onChange);
-  return () => window.removeEventListener("resize", onChange);
-}
-
-export function useMobileSidebarLayout() {
-  return useSyncExternalStore(subscribeMobileLayout, isMobileLayout, () => false);
-}
 
 export function sidebarGroups(
   workspaces: Workspace[],
@@ -131,7 +117,7 @@ export function SidebarFilters(props: {
   onCollapseAll?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const mobile = useMobileSidebarLayout();
+  const mobile = useMobileLayout();
   const controlsVisible = expanded;
   const active = props.query !== "" || props.filter !== "all";
   const showQuery = props.showQuery ?? true;

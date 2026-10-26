@@ -8,7 +8,7 @@ import "./TimelineToolbar.css";
 const filters = [["all", "全部"], ["answers", "回答"], ["activity", "执行"], ["errors", "异常"]] as const;
 
 export const SESSION_TOOLBAR_ACTION_EVENT = "miniq:session-toolbar-action";
-export type SessionToolbarAction = "search" | "share" | "diagnostics";
+export type SessionToolbarAction = "search" | "share" | "diagnostics" | "summary";
 export interface SessionToolbarActionDetail {
   sessionId?: string;
   action: SessionToolbarAction;

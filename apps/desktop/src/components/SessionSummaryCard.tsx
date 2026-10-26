@@ -8,7 +8,13 @@ import {
   Globe,
   X,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
+import { useMobileLayout } from "../hooks/useMobileLayout";
+import { Dialog } from "./ui/Dialog";
+import {
+  SESSION_TOOLBAR_ACTION_EVENT,
+  type SessionToolbarActionDetail,
+} from "./TimelineToolbar";
 import type { PullRequestRef, WebSource } from "../sessionContext";
 import type { AgentSummary } from "./AgentSummary";
 import "./SessionSummaryCard.css";
@@ -26,6 +32,7 @@ const ONGOING = new Set([
 const COLLAPSED_KEY = "miniq.sessionSummary.collapsed";
 
 export interface SessionSummaryCardProps {
+  sessionId: string;
   diff: { files: readonly unknown[]; additions: number; deletions: number };
   agents: AgentSummary[];
   agentError?: string | null;
@@ -55,16 +62,69 @@ export function agentProgress(agents: readonly AgentSummary[]) {
   };
 }
 
-/** Session-level context shown from the conversation toolbar. Empty sections
- * are omitted and the control disappears when all sections are empty. */
+/** Phones open the summary from the session menu; desktop keeps its popover. */
 export function SessionSummaryCard(props: SessionSummaryCardProps) {
-  const [collapsed, setCollapsed] = useState(readCollapsed);
-  const hasChanges = props.diff.files.length > 0;
-  const hasAgents = props.agents.length > 0 || !!props.agentError;
-  const hasSources = props.sources.length > 0;
-  const hasPulls = props.pullRequests.length > 0;
-  if (!hasChanges && !hasAgents && !hasSources && !hasPulls) return null;
+  const mobile = useMobileLayout();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  useEffect(() => {
+    if (!mobile) return;
+    const onAction = (event: Event) => {
+      const detail = (event as CustomEvent<SessionToolbarActionDetail>).detail;
+      if (detail?.action === "summary" && detail.sessionId === props.sessionId)
+        setMobileOpen(true);
+    };
+    window.addEventListener(SESSION_TOOLBAR_ACTION_EVENT, onAction);
+    return () =>
+      window.removeEventListener(SESSION_TOOLBAR_ACTION_EVENT, onAction);
+  }, [mobile, props.sessionId]);
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [mobile, props.sessionId]);
+  useEffect(() => {
+    if (mobile && props.expanded) setMobileOpen(true);
+  }, [mobile, props.expanded]);
+  if (mobile) {
+    const close = () => {
+      setMobileOpen(false);
+      props.onExpandedChange(null);
+    };
+    return (
+      <Dialog
+        open={mobileOpen}
+        title="会话摘要"
+        description="修改、子任务与参考资料"
+        className="session-summary-sheet"
+        onClose={close}
+      >
+        <button
+          type="button"
+          className="icon-button session-summary-close"
+          aria-label="收起会话摘要"
+          onClick={close}
+        >
+          <X size={20} />
+        </button>
+        <SessionSummaryContent
+          {...props}
+          onOpenReview={() => {
+            close();
+            props.onOpenReview();
+          }}
+          onOpenUrl={(url) => {
+            close();
+            props.onOpenUrl(url);
+          }}
+        />
+      </Dialog>
+    );
+  }
+  return <DesktopSummaryPopover {...props} />;
+}
 
+function DesktopSummaryPopover(props: SessionSummaryCardProps) {
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const panelId = useId();
+  if (!hasSummaryContent(props)) return null;
   const toggleCollapsed = () => {
     const next = !collapsed;
     setCollapsed(next);
@@ -74,33 +134,6 @@ export function SessionSummaryCard(props: SessionSummaryCardProps) {
       // Storage can be unavailable in private contexts; the toggle still works.
     }
   };
-  const toggle = (section: SessionSummarySection) =>
-    props.onExpandedChange(props.expanded === section ? null : section);
-  const progress = agentProgress(props.agents);
-  const sectionButton = (
-    section: SessionSummarySection,
-    label: string,
-    icon: ReactNode,
-    value: ReactNode,
-  ) => (
-    <button
-      type="button"
-      className="session-summary-item"
-      aria-expanded={props.expanded === section}
-      aria-controls={`session-summary-${section}`}
-      onClick={() => toggle(section)}
-    >
-      {icon}
-      <span className="session-summary-label">{label}</span>
-      <span className="session-summary-value">{value}</span>
-      <ChevronRight
-        size={14}
-        className="session-summary-chevron"
-        aria-hidden="true"
-      />
-    </button>
-  );
-
   return (
     <aside
       className={`session-summary${collapsed ? " is-collapsed" : ""}`}
@@ -111,14 +144,14 @@ export function SessionSummaryCard(props: SessionSummaryCardProps) {
         className="session-summary-trigger"
         aria-label="会话摘要"
         aria-expanded={!collapsed}
-        aria-controls="session-summary-popover"
+        aria-controls={panelId}
         title={collapsed ? "展开会话摘要" : "收起会话摘要"}
         onClick={toggleCollapsed}
       >
         <span>会话摘要</span>
         {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
       </button>
-      <div id="session-summary-popover" className="session-summary-popover">
+      <div id={panelId} className="session-summary-popover">
         <header className="session-summary-heading">
           <div>
             <strong>会话摘要</strong>
@@ -133,101 +166,179 @@ export function SessionSummaryCard(props: SessionSummaryCardProps) {
             <X size={15} />
           </button>
         </header>
-        <div className="session-summary-items">
-          {hasChanges && (
-            <button
-              type="button"
-              className="session-summary-item"
-              title="在审阅面板查看本会话的修改"
-              onClick={props.onOpenReview}
-            >
-              <FileDiff size={14} aria-hidden="true" />
-              <span className="session-summary-label">变更</span>
-              <span className="session-summary-file-count">
-                {props.diff.files.length} 个文件
-              </span>
-              <span className="session-summary-value">
-                <span className="diff-add">+{props.diff.additions}</span>{" "}
-                <span className="diff-delete">-{props.diff.deletions}</span>
-              </span>
-              <ChevronRight size={14} aria-hidden="true" />
-            </button>
-          )}
-          {hasAgents &&
-            sectionButton(
-              "agents",
-              "子智能体",
-              <GitBranch size={14} aria-hidden="true" />,
-              <>
-                {progress.completed} 完成 / {progress.ongoing} 进行中
-              </>,
-            )}
-          {hasSources &&
-            sectionButton(
-              "sources",
-              "来源",
-              <Globe size={14} aria-hidden="true" />,
-              props.sources.length,
-            )}
-          {hasPulls &&
-            sectionButton(
-              "pulls",
-              "拉取请求",
-              <GitPullRequest size={14} aria-hidden="true" />,
-              props.pullRequests.length,
-            )}
-        </div>
-        {props.expanded === "agents" && hasAgents && (
-          <div id="session-summary-agents" className="session-summary-detail">
+        <SessionSummaryContent {...props} />
+      </div>
+    </aside>
+  );
+}
+
+function hasSummaryContent(props: SessionSummaryCardProps) {
+  return (
+    props.diff.files.length > 0 ||
+    props.agents.length > 0 ||
+    !!props.agentError ||
+    props.sources.length > 0 ||
+    props.pullRequests.length > 0
+  );
+}
+
+function SessionSummaryContent(props: SessionSummaryCardProps) {
+  const sectionId = useId();
+  if (!hasSummaryContent(props))
+    return (
+      <p className="session-summary-empty">
+        当前会话暂无修改、子任务或参考资料。
+      </p>
+    );
+  return (
+    <>
+      <SessionSummaryItems {...props} sectionId={sectionId} />
+      {props.expanded === "agents" &&
+        (props.agents.length > 0 || props.agentError) && (
+          <div id={`${sectionId}-agents`} className="session-summary-detail">
             {props.agentPanel}
           </div>
         )}
-        {props.expanded === "sources" && hasSources && (
-          <ul
-            id="session-summary-sources"
-            className="session-summary-detail session-summary-links"
-            aria-label="来源"
+      {props.expanded === "sources" && (
+        <SummaryLinks
+          id={`${sectionId}-sources`}
+          label="来源"
+          links={props.sources.map((source) => ({
+            url: source.url,
+            title: source.title ?? source.domain,
+            detail: `${source.domain}${source.via === "search" ? " · 搜索结果" : ""}`,
+          }))}
+          onOpen={props.onOpenUrl}
+        />
+      )}
+      {props.expanded === "pulls" && (
+        <SummaryLinks
+          id={`${sectionId}-pulls`}
+          label="拉取请求"
+          links={props.pullRequests.map((pull) => ({
+            url: pull.url,
+            title: `#${pull.number}`,
+            detail: `${pull.owner}/${pull.repo}`,
+          }))}
+          onOpen={props.onOpenUrl}
+        />
+      )}
+    </>
+  );
+}
+
+function SummaryLinks({
+  id,
+  label,
+  links,
+  onOpen,
+}: {
+  id: string;
+  label: string;
+  links: { url: string; title: string; detail: string }[];
+  onOpen: (url: string) => void;
+}) {
+  if (!links.length) return null;
+  return (
+    <ul
+      id={id}
+      className="session-summary-detail session-summary-links"
+      aria-label={label}
+    >
+      {links.map((link) => (
+        <li key={link.url}>
+          <button
+            type="button"
+            title={link.url}
+            onClick={() => onOpen(link.url)}
           >
-            {props.sources.map((source) => (
-              <li key={source.url}>
-                <button
-                  type="button"
-                  title={source.url}
-                  onClick={() => props.onOpenUrl(source.url)}
-                >
-                  <strong>{source.title ?? source.domain}</strong>
-                  <small>
-                    {source.domain}
-                    {source.via === "search" ? " · 搜索结果" : ""}
-                  </small>
-                </button>
-              </li>
-            ))}
-          </ul>
+            <strong>{link.title}</strong>
+            <small>{link.detail}</small>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SessionSummaryItems(
+  props: SessionSummaryCardProps & { sectionId: string },
+) {
+  const hasChanges = props.diff.files.length > 0;
+  const hasAgents = props.agents.length > 0 || !!props.agentError;
+  const hasSources = props.sources.length > 0;
+  const hasPulls = props.pullRequests.length > 0;
+  const toggle = (section: SessionSummarySection) =>
+    props.onExpandedChange(props.expanded === section ? null : section);
+  const progress = agentProgress(props.agents);
+  const sectionButton = (
+    section: SessionSummarySection,
+    label: string,
+    icon: ReactNode,
+    value: ReactNode,
+  ) => (
+    <button
+      type="button"
+      className="session-summary-item"
+      aria-expanded={props.expanded === section}
+      aria-controls={`${props.sectionId}-${section}`}
+      onClick={() => toggle(section)}
+    >
+      {icon}
+      <span className="session-summary-label">{label}</span>
+      <span className="session-summary-value">{value}</span>
+      <ChevronRight
+        size={14}
+        className="session-summary-chevron"
+        aria-hidden="true"
+      />
+    </button>
+  );
+
+  return (
+    <div className="session-summary-items">
+      {hasChanges && (
+        <button
+          type="button"
+          className="session-summary-item"
+          title="在审阅面板查看本会话的修改"
+          onClick={props.onOpenReview}
+        >
+          <FileDiff size={14} aria-hidden="true" />
+          <span className="session-summary-label">变更</span>
+          <span className="session-summary-file-count">
+            {props.diff.files.length} 个文件
+          </span>
+          <span className="session-summary-value">
+            <span className="diff-add">+{props.diff.additions}</span>{" "}
+            <span className="diff-delete">-{props.diff.deletions}</span>
+          </span>
+          <ChevronRight size={14} aria-hidden="true" />
+        </button>
+      )}
+      {hasAgents &&
+        sectionButton(
+          "agents",
+          "子智能体",
+          <GitBranch size={14} aria-hidden="true" />,
+          <>
+            {progress.completed} 完成 / {progress.ongoing} 进行中
+          </>,
         )}
-        {props.expanded === "pulls" && hasPulls && (
-          <ul
-            id="session-summary-pulls"
-            className="session-summary-detail session-summary-links"
-            aria-label="拉取请求"
-          >
-            {props.pullRequests.map((pull) => (
-              <li key={pull.url}>
-                <button
-                  type="button"
-                  title={pull.url}
-                  onClick={() => props.onOpenUrl(pull.url)}
-                >
-                  <strong>#{pull.number}</strong>
-                  <small>
-                    {pull.owner}/{pull.repo}
-                  </small>
-                </button>
-              </li>
-            ))}
-          </ul>
+      {hasSources &&
+        sectionButton(
+          "sources",
+          "来源",
+          <Globe size={14} aria-hidden="true" />,
+          props.sources.length,
         )}
-      </div>
-    </aside>
+      {hasPulls &&
+        sectionButton(
+          "pulls",
+          "拉取请求",
+          <GitPullRequest size={14} aria-hidden="true" />,
+          props.pullRequests.length,
+        )}
+    </div>
   );
 }
