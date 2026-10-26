@@ -126,6 +126,29 @@ export function useConversationScroll(options: ConversationScrollOptions) {
       if (root && pinned.current) root.scrollTop = root.scrollHeight;
     });
   }, []);
+  // An explicit jump keeps landing on the bottom while late layout (windowed
+  // turns, images, fonts) still grows the transcript, until the reader acts.
+  const settleFrame = useRef<number | null>(null);
+  const cancelSettle = useCallback(() => {
+    if (settleFrame.current !== null) cancelAnimationFrame(settleFrame.current);
+    settleFrame.current = null;
+  }, []);
+  const settleAtBottom = useCallback(() => {
+    cancelSettle();
+    let height = -1;
+    let stableFrames = 0;
+    let remaining = 60;
+    const step = () => {
+      settleFrame.current = null;
+      const root = scrollRef.current;
+      if (!root || !pinned.current) return;
+      root.scrollTop = root.scrollHeight;
+      stableFrames = root.scrollHeight === height ? stableFrames + 1 : 0;
+      height = root.scrollHeight;
+      if (stableFrames < 2 && --remaining > 0) settleFrame.current = requestAnimationFrame(step);
+    };
+    step();
+  }, [cancelSettle]);
 
   const requestOlder = useCallback((automatic: boolean, intentional = false) => {
     const current = latest.current;
@@ -203,7 +226,7 @@ export function useConversationScroll(options: ConversationScrollOptions) {
   const onScroll = useCallback(() => {
     const root = scrollRef.current;
     if (!root) return;
-    pinned.current = nearBottom(root);
+    pinned.current = nearBottom(root) || settleFrame.current !== null;
     setShowJump(!pinned.current);
     if (request.current?.viewKey === latest.current.viewKey) {
       request.current.anchor = pinned.current ? null : viewportAnchor(root);
@@ -219,6 +242,7 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     if (view.current !== options.viewKey) {
       immediate = true;
       cancelFollow();
+      cancelSettle();
       cancelRetry();
       exhausted.current = null;
       view.current = options.viewKey;
@@ -296,10 +320,11 @@ export function useConversationScroll(options: ConversationScrollOptions) {
   useEffect(() => () => {
     cancelRetry();
     cancelFollow();
+    cancelSettle();
     inFlight.current = null;
     request.current = null;
     exhausted.current = null;
-  }, [cancelRetry, cancelFollow]);
+  }, [cancelRetry, cancelFollow, cancelSettle]);
 
   useEffect(() => {
     const pause = () => {
@@ -337,9 +362,15 @@ export function useConversationScroll(options: ConversationScrollOptions) {
       if (root.scrollTop > 320) return;
       requestOlder(true, true);
     };
-    const wheel = (event: WheelEvent) => { if (event.deltaY < 0) navigateUp(); };
+    const wheel = (event: WheelEvent) => {
+      cancelSettle();
+      if (event.deltaY < 0) navigateUp();
+    };
     let touchY: number | null = null;
-    const touchStart = (event: TouchEvent) => { touchY = event.touches[0]?.clientY ?? null; };
+    const touchStart = (event: TouchEvent) => {
+      cancelSettle();
+      touchY = event.touches[0]?.clientY ?? null;
+    };
     const touchMove = (event: TouchEvent) => {
       const y = event.touches[0]?.clientY;
       if (touchY !== null && y !== undefined && y > touchY) {
@@ -350,19 +381,23 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     const key = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
       if (target.closest("input, textarea, select, [contenteditable='true']")) return;
+      cancelSettle();
       if (["ArrowUp", "PageUp", "Home"].includes(event.key) || (event.key === " " && event.shiftKey)) navigateUp();
     };
     root.addEventListener("wheel", wheel, { passive: true });
     root.addEventListener("touchstart", touchStart, { passive: true });
     root.addEventListener("touchmove", touchMove, { passive: true });
     root.addEventListener("keydown", key);
+    // Dragging the scrollbar is also the reader taking over.
+    root.addEventListener("pointerdown", cancelSettle);
     return () => {
       root.removeEventListener("wheel", wheel);
       root.removeEventListener("touchstart", touchStart);
       root.removeEventListener("touchmove", touchMove);
       root.removeEventListener("keydown", key);
+      root.removeEventListener("pointerdown", cancelSettle);
     };
-  }, [options.viewKey, requestOlder]);
+  }, [options.viewKey, requestOlder, cancelSettle]);
 
   const jumpToBottom = useCallback(() => {
     const root = scrollRef.current;
@@ -370,10 +405,10 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     // An explicit jump supersedes a page anchor, even while it is in flight.
     if (request.current) request.current.anchor = null;
     cancelFollow();
-    root.scrollTop = root.scrollHeight;
     pinned.current = true;
+    settleAtBottom();
     setShowJump(false);
-  }, [cancelFollow]);
+  }, [cancelFollow, settleAtBottom]);
   const loadOlder = useCallback(() => requestOlder(false), [requestOlder]);
   /** Scroll an element to the upper third and stop following new output. */
   const reveal = useCallback((element: HTMLElement) => {
@@ -386,11 +421,12 @@ export function useConversationScroll(options: ConversationScrollOptions) {
     }
     pinned.current = false;
     cancelFollow();
+    cancelSettle();
     if (request.current) request.current.anchor = null;
     const offset = element.getBoundingClientRect().top - root.getBoundingClientRect().top;
     root.scrollTop = Math.max(0, root.scrollTop + offset - root.clientHeight / 3);
     setShowJump(true);
-  }, [cancelFollow]);
+  }, [cancelFollow, cancelSettle]);
 
   return { scrollRef, historyTopRef, onScroll, loadOlder, jumpToBottom, showJump, reveal, historyError, retryingOlder };
 }

@@ -487,7 +487,6 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
         <AppErrorBanner app={app} />
         <SettingsLoadErrorBanner client={app.client} />
         <RemotePermissionNotice client={app.client} />
-        {active && <AppOverlays app={app} theme={theme} onThemeChange={onThemeChange} runCommand={commands.runCommand} />}
         {active && <KeyboardShortcutsDialog open={commands.showShortcuts} onClose={() => commands.setShowShortcuts(false)} />}
         {active && slash.dialogs}
         {active && <MainPage
@@ -509,6 +508,7 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
           if (sessionId && app.catalog.currentSessionId === sessionId && sideConversationSourceId)
             await app.actions.openSession(sideConversationSourceId);
         }} />}
+      {active && <AppOverlays app={app} theme={theme} onThemeChange={onThemeChange} runCommand={commands.runCommand} />}
       <AppWorkbench suspended={!active} app={app} workbench={workbench} onDiscuss={(content) => {
         if (app.catalog.currentSessionId) setFileQuestion({ sessionId: app.catalog.currentSessionId, id: Date.now(), content, append: true });
       }} />

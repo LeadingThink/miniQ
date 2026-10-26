@@ -141,6 +141,8 @@
 :root[data-background] .mobile-chat {
   background: transparent;
 }
+/* Include the desktop title row, not only its inner conversation shell. */
+:root[data-background] .desktop-workspace,
 :root[data-background] .app,
 :root[data-background] .mobile-entry,
 :root[data-background] .mobile-chat {

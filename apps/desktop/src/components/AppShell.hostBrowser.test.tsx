@@ -10,8 +10,9 @@ vi.mock("../runtime", () => ({ isTauriRuntime: () => true }));
 vi.mock("../hooks/useAppSlashCommands", () => ({ useAppSlashCommands: () => ({ commands: [], dialogs: null }) }));
 vi.mock("./AppStatus", () => ({ AppStatusBar: () => null, AppErrorBanner: () => null }));
 vi.mock("./Skills", () => ({ SkillsPanel: () => <p>Local skills view</p> }));
+vi.mock("./Settings", () => ({ SettingsPanel: () => <section role="dialog" aria-label="设置测试面板" /> }));
 // Active-only side chat has its own subscription lifecycle and test coverage.
-vi.mock("./SideConversationPanel", () => ({ SideConversationPanel: () => null }));
+vi.mock("./SideConversationPanel", () => ({ SideConversationPanel: () => <aside aria-label="侧边聊天测试面板" /> }));
 vi.mock("../browserWorkbench", async (original) => ({
   ...await original<typeof import("../browserWorkbench")>(),
   browserCapabilities: vi.fn(async () => ({
@@ -121,4 +122,15 @@ it("keeps the real local browser and driver alive while its host is inactive", a
   expect(closeBrowser).not.toHaveBeenCalled();
   fireEvent.keyDown(window, { key: "n", ctrlKey: true });
   expect(fixture_.newChat).toHaveBeenCalledOnce();
+});
+
+it("mounts settings above the side conversation and outside the isolated main column", () => {
+  const fixture_ = fixture();
+  fixture_.app.navigation.showSettings = true;
+  render(<AppShell app={fixture_.app} theme="jade" onThemeChange={() => {}} contentOnly active />);
+
+  const sideConversation = screen.getByRole("complementary", { name: "侧边聊天测试面板" });
+  const settings = screen.getByRole("dialog", { name: "设置测试面板" });
+  expect(settings.closest(".main")).toBeNull();
+  expect(sideConversation.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
