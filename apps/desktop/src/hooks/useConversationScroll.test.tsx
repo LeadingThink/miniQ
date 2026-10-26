@@ -326,6 +326,8 @@ it("keeps following latest when a pending history page commits after an explicit
   rerender(<Harness loadOlder={loadOlder} cursorKey="cursor-2" prepend={600} tail={700} />);
   expect(screen.getByTestId("viewport").scrollTop).toBe(2500);
   expect(screen.queryByRole("button", { name: "Jump" })).toBeNull();
+  // Let the jump settle on the now-stable bottom before the reader scrolls.
+  while (frames.size) flushFrames();
   // A committed page must not release the in-flight lock prematurely.
   scrollTo(250);
   expect(loadOlder).toHaveBeenCalledTimes(1);
@@ -497,6 +499,33 @@ it("rearms exhausted transient history near the top on online, with another boun
   await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
   expect(loadOlder).toHaveBeenCalledTimes(8);
   expect(screen.getByTestId("retrying").textContent).toBe("false");
+});
+
+it("keeps landing on the bottom after a jump while late layout grows the transcript", () => {
+  render(<Harness />);
+  const viewport = screen.getByTestId("viewport");
+  scrollTo(250);
+  fireEvent.click(screen.getByRole("button", { name: "Jump" }));
+  expect(viewport.scrollTop).toBe(1200);
+  // Remounted windowed turns or images grow the transcript after the jump.
+  viewport.dataset.height = "1900";
+  flushFrames();
+  expect(viewport.scrollTop).toBe(1900);
+  flushFrames();
+  flushFrames();
+  expect(frames.size).toBe(0);
+  expect(screen.queryByRole("button", { name: "Jump" })).toBeNull();
+});
+
+it("stops settling at the bottom as soon as the reader scrolls away", () => {
+  render(<Harness />);
+  const viewport = screen.getByTestId("viewport");
+  scrollTo(250);
+  fireEvent.click(screen.getByRole("button", { name: "Jump" }));
+  fireEvent.wheel(viewport, { deltaY: -120 });
+  viewport.dataset.height = "1900";
+  flushFrames();
+  expect(viewport.scrollTop).toBe(1200);
 });
 
 it("never rearms permanent failures on online", async () => {

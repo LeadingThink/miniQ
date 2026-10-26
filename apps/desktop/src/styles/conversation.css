@@ -639,8 +639,10 @@
 .jump-to-bottom {
   position: absolute;
   bottom: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  /* Centre with margins: the global button:active scale would replace a translate. */
+  left: 0;
+  right: 0;
+  margin-inline: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
