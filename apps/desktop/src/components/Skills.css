@@ -59,8 +59,10 @@
   gap: 10px;
   margin-bottom: 24px;
 }
-.skill-search {
+/* Outranks the global `.settings-panel label` column layout so icon and input share one row. */
+.skill-filters > .skill-search {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
   flex: 1 1 280px;
@@ -71,7 +73,7 @@
   color: var(--text-dim);
   background: var(--surface);
 }
-.skill-search input {
+.skill-filters > .skill-search input {
   min-height: 42px;
   flex: 1;
   min-width: 0;
@@ -86,8 +88,9 @@
 }
 .skill-filters [role="status"] {
   color: var(--text-dim);
-  font-size: 13px;
+  font-size: var(--font-footnote);
   margin-left: auto;
+  white-space: nowrap;
 }
 .all-skills-section .section-heading,
 .curated-section .section-heading {
@@ -223,7 +226,7 @@
   .skill-filters {
     align-items: stretch;
   }
-  .skill-search {
+  .skill-filters > .skill-search {
     flex-basis: 100%;
   }
   .skill-filters select {

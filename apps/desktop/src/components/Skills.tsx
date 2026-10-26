@@ -485,7 +485,7 @@ export function SkillsPanel(props: {
                 <option value="missing">缺少依赖</option>
               </select>
               <span role="status">
-                {filteredSkills.length} / {visibleSkills.length} 个技能
+                共 {filteredSkills.length} 个技能
               </span>
             </div>
           </>

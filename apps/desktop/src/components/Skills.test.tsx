@@ -18,10 +18,14 @@ it("shows Chinese titles, finds both names, and reads/toggles using the stable I
   render(<SkillsPanel client={rpc} workspaceId="workspace-1" />);
   await screen.findByText(skill.displayName);
   const search = screen.getByPlaceholderText("搜索任务、技能名称或描述");
+  expect(screen.getByRole("status").textContent).toBe("共 1 个技能");
   for (const text of ["界面打磨", "frontend-polish"]) {
     fireEvent.change(search, { target: { value: text } });
     expect(screen.getByText(skill.displayName)).toBeTruthy();
   }
+  fireEvent.change(search, { target: { value: "no-such-skill" } });
+  expect(screen.getByRole("status").textContent).toBe("共 0 个技能");
+  fireEvent.change(search, { target: { value: "" } });
   fireEvent.click(screen.getByRole("switch"));
   await waitFor(() => expect(rpc.call).toHaveBeenCalledWith("skill.setEnabled", { name: skill.name, enabled: false }));
   fireEvent.click(screen.getByText(skill.displayName));
