@@ -220,7 +220,9 @@ async fn queue_edit_uses_observed_full_content_and_does_not_replace_attachments(
     assert_eq!(
         requests[1]["params"],
         json!({"sessionId":"s","queuedMessageId":"q",
-        "expectedContent":old,"content":"修改后的全文"})
+        "expectedContent":old,
+        "expectedAttachments":[{"path":"/shared/original.png","name":"original.png"}],
+        "content":"修改后的全文"})
     );
     assert!(requests[1]["params"].get("attachments").is_none());
 }
