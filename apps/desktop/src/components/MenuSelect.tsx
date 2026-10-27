@@ -11,6 +11,13 @@ import { Check, ChevronDown, type LucideIcon } from "lucide-react";
 import { moveMenuIndex } from "../menuNavigation";
 import { menuPosition } from "../menuPosition";
 
+function cssPixelValue(name: string): number {
+  if (typeof window === "undefined" || typeof document === "undefined") return 0;
+  const value = window.getComputedStyle(document.documentElement).getPropertyValue(name);
+  const pixels = Number.parseFloat(value);
+  return Number.isFinite(pixels) ? Math.max(0, pixels) : 0;
+}
+
 export interface MenuOption<T extends string> {
   value: T;
   label: string;
@@ -25,6 +32,7 @@ export function MenuSelect<T extends string>(props: {
   onChange: (value: T) => void;
   menuLabel: string;
   title?: string;
+  menuClassName?: string;
   disabled?: boolean;
   tone?: "warn";
 }) {
@@ -72,6 +80,11 @@ export function MenuSelect<T extends string>(props: {
     if (!open) return;
     const place = () => {
       if (!triggerRef.current || !menuRef.current) return;
+      const viewport = window.visualViewport;
+      const offsetLeft = Math.max(0, viewport?.offsetLeft ?? 0);
+      const offsetTop = Math.max(0, viewport?.offsetTop ?? 0);
+      const viewportWidth = viewport?.width ?? window.innerWidth;
+      const viewportHeight = viewport?.height ?? window.innerHeight;
       setPosition(
         menuPosition(
           triggerRef.current.getBoundingClientRect(),
@@ -80,8 +93,12 @@ export function MenuSelect<T extends string>(props: {
             height: menuRef.current.scrollHeight,
           },
           {
-            width: window.innerWidth,
-            height: window.visualViewport?.height ?? window.innerHeight,
+            width: viewportWidth,
+            height: viewportHeight,
+            left: offsetLeft + cssPixelValue("--safe-left"),
+            right: offsetLeft + viewportWidth - cssPixelValue("--safe-right"),
+            top: offsetTop + cssPixelValue("--safe-top"),
+            bottom: offsetTop + viewportHeight - cssPixelValue("--safe-bottom"),
           },
         ),
       );
@@ -139,7 +156,7 @@ export function MenuSelect<T extends string>(props: {
             ref={menuRef}
             style={position}
             id={menuId}
-            className="mode-menu"
+            className={`mode-menu${props.menuClassName ? ` ${props.menuClassName}` : ""}`}
             role="listbox"
             aria-label={props.menuLabel}
             onKeyDown={(event) => {

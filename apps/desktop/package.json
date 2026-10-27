@@ -1,7 +1,7 @@
 {
   "name": "miniq-desktop",
   "private": true,
-  "version": "0.1.183",
+  "version": "0.1.184",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@capacitor/app": "^8.0.1",
+    "@capacitor/camera": "^8.0.1",
     "@capacitor/core": "^8.5.1",
     "@capacitor/device": "^8.0.3",
     "@capacitor/haptics": "^8.0.2",

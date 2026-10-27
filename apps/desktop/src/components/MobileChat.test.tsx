@@ -57,6 +57,19 @@ it("selects an available text model, supports search, and sends the selected mod
   expect(localStorage.getItem(MOBILE_MODEL_STORAGE_KEY)).toBe("gemini-test");
 });
 
+it("offers camera and photo-library actions from the image button", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ data: catalog })));
+  render(<MobileChat apiKey="test-key" onBack={() => {}} />);
+  await screen.findByText("custom-chat");
+  fireEvent.click(screen.getByRole("button", { name: "添加图片" }));
+  expect(screen.getByRole("dialog", { name: "添加图片" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "拍照" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "从相册选择" })).toBeTruthy();
+  expect(document.querySelector('input[aria-label="拍照"]')?.getAttribute("capture")).toBe("environment");
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  expect(screen.queryByRole("dialog", { name: "添加图片" })).toBeNull();
+});
+
 it("does not send an unavailable fallback model and reloads a failed catalog without losing input", async () => {
   const fetcher = vi.fn().mockResolvedValueOnce(new Response("", { status: 503 })).mockResolvedValueOnce(json({ data: catalog }));
   vi.stubGlobal("fetch", fetcher);

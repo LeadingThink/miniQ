@@ -32,6 +32,7 @@ const config: CapacitorConfig = {
     // through the native MiniqPush/MiniqBackground plugins instead.
     includePlugins: [
       "@capacitor/app",
+      "@capacitor/camera",
       "@capacitor/network",
       "@capacitor/device",
       "@capacitor/haptics",

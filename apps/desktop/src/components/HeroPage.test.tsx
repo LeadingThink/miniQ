@@ -55,7 +55,7 @@ it("uses the selected project and keeps project/approval controls before the inp
   const input = screen.getByRole("textbox", { name: "消息" });
   expect(document.activeElement).not.toBe(input);
   const project = screen.getByRole("button", { name: "stock_news" });
-  const approval = screen.getByRole("button", { name: "替我审批" });
+  const approval = screen.getByRole("button", { name: "帮我批准" });
   for (const control of [project, approval]) {
     expect(
       control.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -65,7 +65,16 @@ it("uses the selected project and keeps project/approval controls before the inp
   fireEvent.click(screen.getByRole("option", { name: /stock_news/ }));
   expect(app.actions.selectProject).toHaveBeenCalledWith("project");
   fireEvent.click(approval);
-  fireEvent.click(screen.getByRole("option", { name: /请求批准/ }));
+  expect(screen.getByRole("option", { name: /^请求批准/ }).textContent).toContain(
+    "编辑外部文件和使用互联网时始终询问",
+  );
+  expect(screen.getByRole("option", { name: /^帮我批准/ }).textContent).toContain(
+    "仅对检测到的风险操作请求批准",
+  );
+  expect(screen.getByRole("option", { name: /^完全访问权限/ }).textContent).toContain(
+    "不受限制地访问互联网和你电脑上的任何文件",
+  );
+  fireEvent.click(screen.getByRole("option", { name: /^请求批准/ }));
   expect(app.connection.changeApprovalMode).toHaveBeenCalledWith("alwaysAsk");
 });
 

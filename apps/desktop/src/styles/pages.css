@@ -105,6 +105,16 @@
   padding-left: 21px;
 }
 
+.approval-mode-menu {
+  width: min(360px, calc(100vw - 16px));
+}
+
+.approval-mode-menu .mode-item-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- sidebar v2 ---- */
 .sidebar-scroll {
   flex: 1;

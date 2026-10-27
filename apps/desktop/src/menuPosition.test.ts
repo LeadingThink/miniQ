@@ -29,3 +29,14 @@ it("supports a larger viewport gap for wide anchored panels", () => {
   expect(rect.left).toBe(624);
   expect(rect.left + 360).toBe(984);
 });
+
+it("keeps menus inside the visible viewport safe area", () => {
+  const rect = menuPosition(
+    { left: 40, top: 220, bottom: 252 },
+    { width: 320, height: 300 },
+    { width: 390, height: 740, top: 48, bottom: 400 },
+  );
+  expect(rect.top).toBe(56);
+  expect(rect.maxHeight).toBe(156);
+  expect(rect.left).toBe(40);
+});

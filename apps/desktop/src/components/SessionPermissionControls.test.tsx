@@ -27,8 +27,8 @@ it("changes only the selected session", async () => {
     .mockResolvedValueOnce({ mode: "alwaysAsk", effective: "alwaysAsk" })
     .mockResolvedValue({ mode: null, effective: "auto" });
   render(<SessionPermissionControls client={client(call)} sessionId="one" />);
-  fireEvent.click(await screen.findByRole("button", { name: "替我审批" }));
-  fireEvent.click(screen.getByRole("option", { name: /请求批准/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "帮我批准" }));
+  fireEvent.click(screen.getByRole("option", { name: /^请求批准/ }));
   await screen.findByRole("button", { name: "请求批准" });
   expect(call.mock.calls[1].slice(0, 2)).toEqual([
     "session.approval.update",
@@ -57,15 +57,15 @@ it("does not apply stale permission data to another session", async () => {
   await act(async () =>
     finish({ mode: "fullAccess", effective: "fullAccess" }),
   );
-  expect(screen.queryByRole("button", { name: "完全访问" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "完全访问权限" })).toBeNull();
 });
 
 it("can pin the currently inherited mode without changing it twice", async () => {
   const call = vi.fn().mockResolvedValueOnce({ mode: null, effective: "auto" }).mockResolvedValue({ mode: "auto", effective: "auto" });
   render(<SessionPermissionControls client={client(call)} sessionId="one" />);
-  fireEvent.click(await screen.findByRole("button", { name: "替我审批" }));
-  fireEvent.click(screen.getByRole("option", { name: /替我审批/ }));
-  await screen.findByRole("button", { name: "替我审批" });
+  fireEvent.click(await screen.findByRole("button", { name: "帮我批准" }));
+  fireEvent.click(screen.getByRole("option", { name: /帮我批准/ }));
+  await screen.findByRole("button", { name: "帮我批准" });
   expect(call.mock.calls[1].slice(0, 2)).toEqual(["session.approval.update", { sessionId: "one", mode: "auto" }]);
 });
 
@@ -76,10 +76,10 @@ it("keeps the confirmed policy on a failed update and allows retry", async () =>
     .mockRejectedValueOnce(new Error("storage unavailable"))
     .mockResolvedValue({ mode: "alwaysAsk", effective: "alwaysAsk" });
   render(<SessionPermissionControls client={client(call)} sessionId="one" />);
-  fireEvent.click(await screen.findByRole("button", { name: "替我审批" }));
-  fireEvent.click(screen.getByRole("option", { name: /请求批准/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "帮我批准" }));
+  fireEvent.click(screen.getByRole("option", { name: /^请求批准/ }));
   await screen.findByRole("alert");
-  expect(screen.getByRole("button", { name: "替我审批" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "帮我批准" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "刷新会话权限" }));
   await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
 });
@@ -88,16 +88,16 @@ it("asks for confirmation before a remote client raises permissions", async () =
   const call = vi.fn().mockResolvedValue({ mode: null, effective: "auto" });
   const rpc = { ...client(call), mode: "remote" } as unknown as RpcClient;
   render(<SessionPermissionControls client={rpc} sessionId="one" />);
-  fireEvent.click(await screen.findByRole("button", { name: "替我审批" }));
-  fireEvent.click(screen.getByRole("option", { name: /完全访问/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "帮我批准" }));
+  fireEvent.click(screen.getByRole("option", { name: /完全访问权限/ }));
   const dialog = screen.getByRole("alertdialog");
-  expect(dialog.textContent).toContain("完全访问");
+  expect(dialog.textContent).toContain("完全访问权限");
   fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
   expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(call).toHaveBeenCalledTimes(1);
 
-  fireEvent.click(screen.getByRole("button", { name: "替我审批" }));
-  fireEvent.click(screen.getByRole("option", { name: /完全访问/ }));
+  fireEvent.click(screen.getByRole("button", { name: "帮我批准" }));
+  fireEvent.click(screen.getByRole("option", { name: /完全访问权限/ }));
   fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "提升权限" }));
   await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
   expect(call).toHaveBeenLastCalledWith("session.approval.update", { sessionId: "one", mode: "fullAccess" });

@@ -16,6 +16,7 @@ import { insertTranscript } from "../voiceAudio";
 import type { VoicePreview } from "../voiceTranscription";
 import { MobileChatRow } from "./MobileChatRow";
 import { MobileModelPicker } from "./MobileModelPicker";
+import { MobileImagePicker } from "./MobileImagePicker";
 import { BillingDialog } from "./BillingDialog";
 import "./MobileChat.css";
 
@@ -126,11 +127,7 @@ export function MobileChat(props: { apiKey: string; onBack: () => void; onSettin
         <textarea ref={textarea} value={draft} rows={2} aria-label="输入问题或任务" aria-describedby={keyboardHintId} enterKeyHint={inputMode.enterSends ? "send" : "enter"} placeholder="有什么想问的…" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => handleComposerKeyDown(event, setDraft, send, inputMode)} />
         <div className="mobile-chat-composer-toolbar">
           <MobileModelPicker catalog={catalog} disabled={chat.busy} />
-          <label className="mobile-chat-image-button" title={readingImage ? "正在读取图片" : "附加图片"}><ImagePlus size={19} /><input type="file" aria-label="附加图片" disabled={readingImage} accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.currentTarget.value = "";
-            if (file) void attachImage(file);
-          }} /></label>
+          <MobileImagePicker disabled={readingImage} onImage={attachImage} onError={setImageError} />
           {canTranscribe && <VoiceInput key={props.apiKey} transcriber={transcriber} preferLocal={localSpeech} disabled={readingImage}
             onStart={() => { voiceDraft.current = { text: draft, start: textarea.current?.selectionStart ?? draft.length, end: textarea.current?.selectionEnd ?? draft.length }; }}
             onPreview={setVoicePreview} onError={setImageError} onTranscribed={(text) => {

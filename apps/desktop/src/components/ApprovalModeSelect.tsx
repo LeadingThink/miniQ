@@ -7,19 +7,19 @@ const MODE_OPTIONS: MenuOption<ApprovalMode>[] = [
     value: "alwaysAsk",
     label: "请求批准",
     icon: Hand,
-    desc: "修改文件和使用网络等操作每次都询问",
+    desc: "编辑外部文件和使用互联网时始终询问",
   },
   {
     value: "auto",
-    label: "替我审批",
+    label: "帮我批准",
     icon: SquareCheck,
-    desc: "常规操作自动执行，联网访问和危险命令等高风险操作才询问",
+    desc: "仅对检测到的风险操作请求批准",
   },
   {
     value: "fullAccess",
-    label: "完全访问",
+    label: "完全访问权限",
     icon: CircleAlert,
-    desc: "非阻止操作直接执行；确需选择时询问，3 分钟无回复自动继续",
+    desc: "不受限制地访问互联网和你电脑上的任何文件",
   },
 ];
 
@@ -33,6 +33,7 @@ export function ApprovalModeSelect(props: {
     <MenuSelect
       value={known ? props.mode : "auto"}
       options={MODE_OPTIONS}
+      menuClassName="approval-mode-menu"
       onChange={props.onChange}
       menuLabel="执行权限"
       disabled={props.disabled}

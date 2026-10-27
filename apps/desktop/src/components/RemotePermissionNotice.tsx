@@ -6,8 +6,8 @@ import type { ApprovalMode } from "../types";
 
 export const APPROVAL_MODE_NAMES: Record<ApprovalMode, string> = {
   alwaysAsk: "请求批准",
-  auto: "替我审批",
-  fullAccess: "完全访问",
+  auto: "帮我批准",
+  fullAccess: "完全访问权限",
 };
 
 type Raise = {
