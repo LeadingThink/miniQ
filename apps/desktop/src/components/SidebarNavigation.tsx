@@ -124,8 +124,8 @@ export function SidebarFilters(props: {
   return (
     <div className="sidebar-filters">
       <div className="sidebar-section sidebar-section-heading">
-        <span className="sidebar-section-title">工作区与项目</span>
-        {typeof props.workspaceCount === "number" && <span className="sidebar-section-count">{props.workspaceCount}</span>}
+        <span className="sidebar-section-title">工作区与项目{typeof props.workspaceCount === "number" &&
+          <span className="sidebar-section-count">({props.workspaceCount})</span>}</span>
         {props.onCollapseAll && <button type="button" className="sidebar-collapse-all" aria-label="全部折叠" title="全部折叠" onClick={props.onCollapseAll}>
           <span>全部折叠</span><ChevronsDownUp size={14} aria-hidden="true" />
         </button>}

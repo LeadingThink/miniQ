@@ -355,15 +355,11 @@
   display: none;
 }
 .sidebar-section-count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 17px;
-  height: 17px;
-  padding: 0 4px;
-  border-radius: var(--radius-pill);
-  color: var(--text-mid);
-  background: var(--bg-hover);
-  font-size: var(--font-caption);
+  display: inline;
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
 }
@@ -626,15 +622,6 @@
   .sidebar .sidebar-section-title {
     text-transform: none;
     white-space: nowrap;
-  }
-  .sidebar .sidebar-section-count {
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    color: var(--text-mid);
-    background: var(--drawer-surface);
-    font-size: var(--font-caption);
-    font-weight: 600;
   }
   .sidebar :is(.sidebar-collapse-all, .sidebar-mark-all-read, .sidebar-filter-toggle) {
     position: relative;

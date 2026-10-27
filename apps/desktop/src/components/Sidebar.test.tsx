@@ -203,6 +203,13 @@ describe("desktop Sidebar footer", () => {
 });
 
 describe("Sidebar navigation", () => {
+  it("shows the project count in parentheses directly after the section title", () => {
+    render(<Sidebar {...sidebarProps()} />);
+    const title = document.querySelector(".sidebar-section-title")!;
+    expect(title.textContent).toBe("工作区与项目(1)");
+    expect(title.querySelector(".sidebar-section-count")?.textContent).toBe("(1)");
+  });
+
   it("preserves project collapse across remounts and reveals a newly selected session", () => {
     const props = sidebarProps();
     const first = render(<Sidebar {...props} />);
