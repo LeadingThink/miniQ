@@ -228,7 +228,6 @@ export function SessionModelControls({
   const applySelection = async (
     id: string | null,
     effort: ReasoningEffort | null,
-    closeAfterSave = true,
   ) => {
     if (disabled || (id !== null && (loading || catalogError || !models.includes(id)))) return;
     try {
@@ -236,14 +235,19 @@ export function SessionModelControls({
       setSelectedModel(id ?? "");
       setSelectedEffort(effort);
       setQuery("");
-      if (closeAfterSave) setOpen(false);
+      setOpen(false);
     } catch { /* The model hook exposes the save error. */ }
   };
   const currentModel = model.effective?.model ?? "";
   const currentEffort = model.settings.reasoningEffort ?? model.effective?.reasoningEffort ?? null;
   const displayModel = open ? selectedModel : (currentModel || "模型");
+  const displayEffort = open ? selectedEffort : currentEffort;
   const visibleModels = filterModelIds(models, query);
   const effortOptions = description?.reasoningEfforts ?? [];
+  const selectEffort = (id: string, effort: ReasoningEffort | null) => {
+    if (mobile) setSelectedEffort(effort);
+    else void applySelection(id, effort);
+  };
 
   const effortList = (id: string) => (
     <div className="model-picker-effort-options" role="group" aria-label="思考强度档位">
@@ -251,7 +255,7 @@ export function SessionModelControls({
         type="button"
         aria-pressed={id !== selectedModel || selectedEffort === null}
         disabled={disabled}
-        onClick={() => void applySelection(id, null)}
+        onClick={() => selectEffort(id, null)}
       >默认</button>
       {effortOptions.map((effort) => (
         <button
@@ -259,7 +263,7 @@ export function SessionModelControls({
           type="button"
           aria-pressed={id === selectedModel && selectedEffort === effort}
           disabled={disabled}
-          onClick={() => void applySelection(id, effort)}
+          onClick={() => selectEffort(id, effort)}
         >
           {EFFORT_LABELS[effort]}
           {id === selectedModel && selectedEffort === effort && <Check size={12} aria-hidden="true" />}
@@ -275,6 +279,21 @@ export function SessionModelControls({
       : effortOptions.length
         ? effortList(hovered || selectedModel)
         : <p className="model-picker-status">该模型不支持调整</p>;
+
+  const modelError = model.error && (
+    <span role="alert" className="model-error">
+      {model.error}
+      <button
+        type="button"
+        className="icon-button"
+        aria-label="重新读取模型配置"
+        title="重新读取模型配置"
+        onClick={() => void model.reload()}
+      >
+        <RefreshCw size={14} />
+      </button>
+    </span>
+  );
 
   return (
     <div
@@ -303,27 +322,10 @@ export function SessionModelControls({
         <Cpu size={14} />
         <span className="model-trigger-name">{displayModel}</span>
         <span className="model-trigger-separator" aria-hidden="true">·</span>
-        <span>{selectedEffort
-          ? EFFORT_LABELS[selectedEffort]
-          : currentEffort
-            ? EFFORT_LABELS[currentEffort]
-            : "默认"}</span>
+        <span>{displayEffort ? EFFORT_LABELS[displayEffort] : "默认"}</span>
         <ChevronDown size={13} aria-hidden="true" />
       </button>
-      {model.error && (
-        <span role="alert" className="model-error">
-          {model.error}
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="重新读取模型配置"
-            title="重新读取模型配置"
-            onClick={() => void model.reload()}
-          >
-            <RefreshCw size={14} />
-          </button>
-        </span>
-      )}
+      {!open && modelError}
       {open && (
         <SessionModelSurface mobile={mobile} trigger={triggerRef} onClose={() => setOpen(false)}>
           <div
@@ -395,15 +397,16 @@ export function SessionModelControls({
                       disabled={disabled}
                       title={id}
                       className={id === hovered ? "active" : undefined}
-                      onMouseEnter={(event) => openSubmenu(id, event.currentTarget)}
-                      onFocus={(event) => openSubmenu(id, event.currentTarget)}
+                      onMouseEnter={mobile ? undefined : (event) => openSubmenu(id, event.currentTarget)}
+                      onFocus={mobile ? undefined : (event) => openSubmenu(id, event.currentTarget)}
                       onClick={() => {
                         closeSubmenu();
                         // 同一模型再点一次时保留已选档位，换模型才回到默认。
                         const effort = id === currentModel ? currentEffort : null;
                         if (mobile) {
-                          setSelectedEffort(effort);
-                          void applySelection(id, effort, false);
+                          // Existing sessions broadcast changes on save; defer it until Done.
+                          setSelectedEffort(id === selectedModel ? selectedEffort : effort);
+                          setSelectedModel(id);
                           openSubmenu(id, null);
                         } else {
                           void applySelection(id, effort);
@@ -426,6 +429,7 @@ export function SessionModelControls({
                 <span className="model-picker-status">没有匹配的文本模型</span>
               )}
             </div>
+            {modelError}
             <footer>
               <button
                 type="button"
@@ -438,7 +442,8 @@ export function SessionModelControls({
               </button>
               <ModelRankingLink />
               {mobile && (
-                <button type="button" onClick={() => setOpen(false)}>
+                <button type="button" disabled={disabled || loading || !!catalogError || !models.includes(selectedModel)}
+                  onClick={() => void applySelection(selectedModel, selectedEffort)}>
                   <Check size={14} />
                   完成
                 </button>

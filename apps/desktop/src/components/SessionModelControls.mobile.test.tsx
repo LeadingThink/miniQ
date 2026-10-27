@@ -24,7 +24,7 @@ function setup() {
   return { ...view, client, model };
 }
 
-it("uses a modal top layer on the phone, keeps it open while picking, then applies on done", async () => {
+it("keeps model and effort choices local in the phone dialog until done", async () => {
   const { model } = setup();
   const trigger = screen.getByRole("button", { name: "选择模型和思考强度" });
   fireEvent.click(trigger);
@@ -35,8 +35,12 @@ it("uses a modal top layer on the phone, keeps it open while picking, then appli
   fireEvent.mouseDown(option);
   fireEvent.click(option);
   expect(screen.getByRole("dialog", { name: "选择会话模型" })).toBeTruthy();
-  await waitFor(() => expect(model.update).toHaveBeenCalledExactlyOnceWith({ model: "claude-opus-very-long-model-name", apiProtocol: "auto", reasoningEffort: null }));
+  const high = await within(dialog).findByRole("button", { name: "高" });
+  fireEvent.click(high);
+  expect(high.getAttribute("aria-pressed")).toBe("true");
+  expect(model.update).not.toHaveBeenCalled();
   fireEvent.click(within(dialog).getByRole("button", { name: "完成" }));
+  await waitFor(() => expect(model.update).toHaveBeenCalledExactlyOnceWith({ model: "claude-opus-very-long-model-name", apiProtocol: "auto", reasoningEffort: "high" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(document.activeElement).toBe(trigger);
 });
@@ -64,6 +68,20 @@ it("closes the native dialog on Escape", async () => {
   const input = screen.getByRole("textbox", { name: "模型 ID" });
   expect(fireEvent.keyDown(input, { key: "Escape" })).toBe(false);
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("does not move touch effort controls to another row on hover or focus", async () => {
+  const { model } = setup();
+  fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
+  const selected = await screen.findByRole("option", { name: "gpt-5.6-sol" });
+  fireEvent.click(selected);
+  fireEvent.click(await screen.findByRole("button", { name: "高" }));
+  const other = screen.getByRole("option", { name: "claude-opus-very-long-model-name" });
+  fireEvent.mouseEnter(other);
+  fireEvent.focus(other);
+  expect(selected.parentElement?.contains(screen.getByRole("button", { name: "高" }))).toBe(true);
+  expect(selected.getAttribute("aria-selected")).toBe("true");
+  expect(model.update).not.toHaveBeenCalled();
 });
 
 it.each([
