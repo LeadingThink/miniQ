@@ -1,0 +1,31 @@
+/* Center native dialogs inside the visible safe area, including when the
+   keyboard reduces --app-height. Full-screen viewers and sheets opt out. */
+.model-diagnostics,
+.project-directories,
+.share-dialog,
+.microphone-permission-dialog,
+.mobile-update-dialog,
+.slash-rename-dialog,
+.open-preview-dialog {
+  --dialog-gap: 16px;
+  --dialog-top: calc(var(--safe-top) + var(--dialog-gap));
+  --dialog-bottom: calc(var(--safe-bottom) + var(--dialog-gap));
+  --dialog-left: calc(var(--safe-left) + var(--dialog-gap));
+  --dialog-right: calc(var(--safe-right) + var(--dialog-gap));
+  position: fixed;
+  top: calc(var(--app-offset-top, 0px) + var(--dialog-top));
+  right: var(--dialog-right);
+  bottom: calc(100% - var(--app-offset-top, 0px) - var(--app-height, 100dvh) + var(--dialog-bottom));
+  left: var(--dialog-left);
+  max-width: calc(100% - var(--dialog-left) - var(--dialog-right));
+  max-height: calc(var(--app-height, 100dvh) - var(--dialog-top) - var(--dialog-bottom));
+  margin: auto;
+  box-sizing: border-box;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.share-dialog,
+.mobile-update-dialog {
+  --dialog-gap: 24px;
+}

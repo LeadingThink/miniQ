@@ -3,6 +3,7 @@ import { clearRemoteCredentials, type RemoteCredentials } from "./remoteAccess";
 import { clearSelectedDesktop, loadSelectedDesktop, rememberSelectedDesktop, type RemoteDesktop } from "./remoteDevices";
 import { useRemoteDevices } from "./hooks/useRemoteDevices";
 import { RemoteDevicePicker } from "./components/RemoteDevicePicker";
+import { AppLoadingScreen } from "./components/AppLoadingScreen";
 import { DesktopHostProvider, useDesktopHost } from "./desktopHost";
 import { RpcClient } from "./rpc";
 import { dismissTaskBanner, type TaskNotificationTarget } from "./taskBanner";
@@ -34,7 +35,7 @@ function DeviceWorkbench({ credentials, device, scope, theme, onThemeChange, not
 }) {
   const [root] = useState(() => new RpcClient({ ...credentials, kind: "remote", targetDeviceId: device.id }, JSON.stringify([scope, device.id]) + ":"));
   useEffect(() => () => { root.disconnect("selected computer changed"); dismissTaskBanner(); }, [root]);
-  return <DesktopHostProvider root={root}><NotificationDestination notification={notification} /><Suspense fallback={<main>正在加载远程工作台…</main>}>
+  return <DesktopHostProvider root={root}><NotificationDestination notification={notification} /><Suspense fallback={<AppLoadingScreen label="正在加载远程工作台…" />}>
     <RemoteDeviceBarContext.Provider value={bar}><ConnectedApp theme={theme} onThemeChange={onThemeChange} /></RemoteDeviceBarContext.Provider>
   </Suspense></DesktopHostProvider>;
 }

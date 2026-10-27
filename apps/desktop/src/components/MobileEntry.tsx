@@ -7,6 +7,7 @@ import { MobileUpdateCheck } from "./MobileUpdateCheck";
 import { clearMobilePrivacyConsent, hasMobilePrivacyConsent, MINIQ_PRIVACY_URL, MINIQ_SUPPORT_URL, recordMobilePrivacyConsent } from "../mobilePrivacy";
 import { storeMobileEntryMode, type MobileEntryMode } from "../mobileEntryMode";
 import { MobileKeyField } from "./MobileKeyField";
+import { AppLoadingScreen } from "./AppLoadingScreen";
 import { MobileAccountPanel } from "./MobileAccountPanel";
 import { isIosIapAvailable } from "../iosIap";
 import { isMobileAccountAvailable } from "../mobileAccountPlatform";
@@ -122,11 +123,10 @@ export function MobileEntry(props: { onRemote: () => void; initialMode?: MobileE
       {accountOpen && <MobileAccountPanel onBack={() => { setAccountOpen(false); setPrivacyAccepted(hasMobilePrivacyConsent()); }} onBusyChange={setAccountBusy} />}
       {/* Keep drafts and pending image reads alive while another entry page is visible. */}
       {chatOpened && <div style={{ display: section === "chat" && !accountOpen ? "contents" : "none" }}>
-        <Suspense fallback={<main className="mobile-entry">
-          <p role="status">正在加载移动问答…</p>
-          <button type="button" onClick={openSettings}>设置</button>
-          <button type="button" onClick={() => setSection("home")}><ArrowLeft size={15} />返回</button>
-        </main>}><MobileChat apiKey={configured ? activeKey : ""} onBack={() => setSection("home")} onSettings={openSettings} onAccount={isIosIapAvailable() ? () => setAccountOpen(true) : undefined} /></Suspense>
+        <Suspense fallback={<AppLoadingScreen label="正在加载移动问答…">
+          <button type="button" className="secondary" onClick={() => setSection("home")}><ArrowLeft size={15} />返回</button>
+          <button type="button" className="secondary" onClick={openSettings}>设置</button>
+        </AppLoadingScreen>}><MobileChat apiKey={configured ? activeKey : ""} onBack={() => setSection("home")} onSettings={openSettings} onAccount={isIosIapAvailable() ? () => setAccountOpen(true) : undefined} /></Suspense>
       </div>}
       {section !== "chat" && !accountOpen && (
         <main className="mobile-entry">

@@ -40,9 +40,13 @@ describe("appearance settings integration", () => {
     await waitFor(() => expect(call).toHaveBeenCalledWith("settings.get"));
 
     const dialog = screen.getByRole("dialog");
+    expect(screen.getAllByRole("button", { name: "关闭设置" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "关闭" })).toBeNull();
     fireEvent.click(dialog.parentElement!);
     expect(onClose).not.toHaveBeenCalled();
 
+    fireEvent.click(screen.getByRole("tab", { name: "外观" }));
+    expect(screen.getAllByRole("region", { name: "外观" })).toContain(document.querySelector(".settings-content"));
     fireEvent.click(screen.getByRole("button", { name: "关闭设置" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });

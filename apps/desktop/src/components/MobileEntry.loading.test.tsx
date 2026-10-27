@@ -25,6 +25,12 @@ it("loads chat only after selection and lets the user leave while its code is lo
   await screen.findByRole("heading", { name: "随时继续工作" });
   fireEvent.click(screen.getByRole("button", { name: /移动问答/ }));
   await screen.findByText("正在加载移动问答…");
+  expect(screen.getByRole("status").textContent).toBe("正在加载移动问答…");
+  fireEvent.click(screen.getByRole("button", { name: "设置" }));
+  expect(screen.getByRole("heading", { name: "移动设置" })).toBeTruthy();
+  expect(screen.queryAllByRole("status").map((element) => element.textContent)).not.toContain("正在加载移动问答…");
+  fireEvent.click(screen.getByRole("button", { name: "返回" }));
+  await screen.findByText("正在加载移动问答…");
   fireEvent.click(screen.getByRole("button", { name: "返回" }));
   await act(async () => chat.release());
   expect(screen.queryByRole("region", { name: "移动问答" })).toBeNull();

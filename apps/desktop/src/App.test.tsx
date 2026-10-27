@@ -86,8 +86,10 @@ it("keeps the workbench module out of the entry screen and preserves context whe
   fireEvent.click(screen.getByRole("button", { name: "连接远程" }));
   fireEvent.click(await screen.findByRole("button", { name: /测试电脑/ }, { timeout: 10_000 }));
   await screen.findByText("正在加载远程工作台…");
+  expect(screen.getByRole("status").textContent).toBe("正在加载远程工作台…");
   await act(async () => state.releaseHarness());
   const workbench = await screen.findByRole("region", { name: "工作台" }, { timeout: 10_000 });
+  expect(screen.queryByText("正在加载远程工作台…")).toBeNull();
   expect(workbench.getAttribute("data-session")).toBe("session-one");
   expect(workbench.getAttribute("data-mode")).toBe("remote");
   expect(workbench.getAttribute("data-theme")).toBe("jade");

@@ -311,7 +311,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
           <h2 id="settings-title" className="settings-sidebar-title">设置</h2>
           <SettingsTabs selected={tab} onSelect={setTab} groups={groups} />
         </aside>
-        <section className="settings-content" aria-labelledby="settings-group-title">
+        <section className="settings-content" aria-labelledby={`settings-tab-${tab}`}>
         <div className="settings-header">
           <div className="settings-group-heading">
             <h3 id="settings-group-title">{group.label}</h3>
@@ -593,19 +593,16 @@ export function SettingsPanel(props: SettingsPanelProps) {
           )}
         </div>
         </div>
-        <div className="approval-actions">
-          {tab === "services" && canConfigureProvider && (
+        {tab === "services" && canConfigureProvider && (
+          <div className="approval-actions">
             <button
               type="submit"
               disabled={loading || providerKeyLoading || saving || accountBusy || !baseUrl.trim() || !defaultModel.trim() || (!hasKey && !apiKey.trim()) || !deviceName.trim()}
             >
               {saving ? "正在保存..." : "保存并返回"}
             </button>
-          )}
-          <button type="button" className="secondary" onClick={props.onClose}>
-            关闭
-          </button>
-        </div>
+          </div>
+        )}
         </section>
       </form>
     </div>

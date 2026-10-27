@@ -1,4 +1,4 @@
-.share-dialog { width: min(760px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow: auto; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); color: var(--text); }
+.share-dialog { width: min(760px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg); color: var(--text); }
 .share-dialog::backdrop { background: var(--scrim); backdrop-filter: blur(4px); }
 .share-dialog header, .share-dialog header > div, .share-dialog footer, .share-selection-heading, .share-result, .share-existing > div { display: flex; align-items: center; gap: 12px; }
 .share-dialog header, .share-dialog footer { justify-content: space-between; }

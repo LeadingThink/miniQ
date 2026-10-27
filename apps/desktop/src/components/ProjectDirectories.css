@@ -1,8 +1,6 @@
 .project-directories {
   width: min(620px, calc(100% - 24px));
-  max-height: calc(100dvh - 32px);
   padding: 20px;
-  margin: auto;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--bg);

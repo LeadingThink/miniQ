@@ -126,7 +126,6 @@
 }
 .slash-rename-dialog {
   width: min(420px, calc(100vw - 32px));
-  box-sizing: border-box;
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);

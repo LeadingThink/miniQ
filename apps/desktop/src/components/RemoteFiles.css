@@ -88,9 +88,6 @@
 @media (max-width: 600px) {
   .open-preview-dialog {
     width: calc(100vw - 24px);
-    max-height: calc(100dvh - 24px);
-    overflow: auto;
-    box-sizing: border-box;
   }
   .file-preview-tools {
     flex-wrap: wrap;
