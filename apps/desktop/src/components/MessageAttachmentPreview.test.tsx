@@ -6,6 +6,13 @@ import { readImagePreview } from "../localFiles";
 vi.mock("../localFiles", () => ({ readImagePreview: vi.fn() }));
 vi.mock("../sessionFileAccess", () => ({ useSessionFileAccess: () => undefined }));
 afterEach(cleanup);
+
+it("previews legacy image attachments without a MIME type", async () => {
+  vi.mocked(readImagePreview).mockResolvedValue({ mimeType: "image/png", dataBase64: "aW1hZ2U=" } as never);
+  render(<MessageAttachmentPreview attachment={{ path: "/work/legacy.png", name: "legacy.png" } as never} />);
+  expect(await screen.findByRole("img", { name: "legacy.png" })).toBeTruthy();
+});
+
 it("uses a signed image URL and renews on error without creating a Blob", async () => {
   const refreshed = { getUrl: "https://bucket.qiniucs.com/remote-files/r/new", refresh: vi.fn().mockRejectedValue(new Error("exhausted")) };
   const source = { getUrl: "https://bucket.qiniucs.com/remote-files/r/old", refresh: vi.fn().mockResolvedValue(refreshed) };

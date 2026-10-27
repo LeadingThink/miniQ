@@ -4,6 +4,11 @@ import type { MessageAttachment } from "../types";
 import { readImagePreview } from "../localFiles";
 import { useSessionFileAccess } from "../sessionFileAccess";
 
+function isImageAttachment(attachment: MessageAttachment): boolean {
+  return Boolean(attachment.mimeType?.startsWith("image/"))
+    || /\.(?:png|jpe?g|webp|gif)$/i.test(attachment.name || attachment.path);
+}
+
 export function MessageAttachmentPreview({
   attachment,
 }: {
@@ -13,7 +18,7 @@ export function MessageAttachmentPreview({
   const source = useRef<RemotePreviewSource | null>(null);
   const generation = useRef(0);
   const access = useSessionFileAccess();
-  const isImage = Boolean(attachment.mimeType?.startsWith("image/"));
+  const isImage = isImageAttachment(attachment);
 
   useEffect(() => {
     if (!isImage) return;

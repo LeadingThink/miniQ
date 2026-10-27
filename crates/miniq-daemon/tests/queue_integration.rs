@@ -410,7 +410,7 @@ async fn queue_edit_validates_parameters_and_detects_concurrent_client_changes()
         ("content", json!(" \n ")),
         ("content", json!(null)),
         ("expectedContent", json!("stale")),
-        ("attachments", json!([])),
+        ("unknownField", json!(true)),
     ] {
         let mut invalid = valid.clone();
         invalid[key] = value;

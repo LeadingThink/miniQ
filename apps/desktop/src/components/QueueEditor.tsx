@@ -1,8 +1,23 @@
 import { useRef, useState } from "react";
-import type { QueuedMessage } from "../types";
+import { X } from "lucide-react";
+import type { MessageAttachment, QueuedMessage } from "../types";
+import { clipboardFiles } from "../clipboardFiles";
 import { errorMessage } from "../errorMessage";
+import { savePastedFile } from "../localFiles";
 import { CopyButton } from "./CopyButton";
+import { MessageAttachmentPreview } from "./MessageAttachmentPreview";
 import type { QueueActions } from "./QueueBar";
+
+function fileName(path: string): string {
+  return path.split(/[\\/]/).at(-1) || "pasted-file";
+}
+
+function attachmentsEqual(left: MessageAttachment[] = [], right: MessageAttachment[] = []): boolean {
+  return left.length === right.length && left.every((attachment, index) => {
+    const other = right[index];
+    return attachment.path === other.path && attachment.name === other.name && attachment.mimeType === other.mimeType;
+  });
+}
 
 export function QueueEditor({
   original,
@@ -17,12 +32,36 @@ export function QueueEditor({
 }) {
   const [base, setBase] = useState(original);
   const [content, setContent] = useState(original.content);
+  const [attachments, setAttachments] = useState<MessageAttachment[]>(original.attachments ?? []);
+  const [attaching, setAttaching] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
-  const changedElsewhere = !!current && current.content !== base.content;
-  const valid = !!content.trim() || !!base.attachments?.length;
-  const canSave = !!current && !changedElsewhere && valid && !pending;
+  const changedElsewhere = !!current && (
+    current.content !== base.content || !attachmentsEqual(current.attachments, base.attachments)
+  );
+  const valid = !!content.trim() || attachments.length > 0;
+  const canSave = !!current && !changedElsewhere && valid && !pending && !attaching;
+
+  async function pasteFiles(files: File[]) {
+    if (files.length === 0 || attaching || pending) return;
+    setAttaching(true);
+    setError(null);
+    try {
+      const saved = await Promise.all(files.map(async (file) => {
+        const path = await savePastedFile(file);
+        return { path, name: file.name || fileName(path), ...(file.type ? { mimeType: file.type } : {}) };
+      }));
+      setAttachments((currentAttachments) => {
+        const paths = new Set(currentAttachments.map((attachment) => attachment.path));
+        return [...currentAttachments, ...saved.filter((attachment) => !paths.has(attachment.path))];
+      });
+    } catch (cause) {
+      setError(`无法粘贴文件: ${errorMessage(cause)}`);
+    } finally {
+      setAttaching(false);
+    }
+  }
 
   async function save() {
     if (!canSave || inFlight.current) return;
@@ -30,7 +69,7 @@ export function QueueEditor({
     setPending(true);
     setError(null);
     try {
-      await onUpdate(base, content);
+      await onUpdate(base, content, attachments);
       onClose();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -58,6 +97,12 @@ export function QueueEditor({
           value={content}
           disabled={pending}
           onChange={(event) => setContent(event.target.value)}
+          onPaste={(event) => {
+            const files = clipboardFiles(event.clipboardData);
+            if (files.length === 0) return;
+            event.preventDefault();
+            void pasteFiles(files);
+          }}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -71,9 +116,23 @@ export function QueueEditor({
           }}
         />
       </label>
-      {!!base.attachments?.length && (
-        <div className="queue-attachments">
-          保留附件：{base.attachments.map((file) => file.name).join("、")}
+      {!!attachments.length && (
+        <div className="queue-attachments" aria-label="排队消息附件">
+          {attachments.map((attachment) => (
+            <span className="queue-editor-attachment" key={attachment.path}>
+              <MessageAttachmentPreview attachment={attachment} />
+              <button
+                type="button"
+                className="attach-remove"
+                aria-label={`移除附件 ${attachment.name}`}
+                title={`移除附件 ${attachment.name}`}
+                disabled={pending}
+                onClick={() => setAttachments((items) => items.filter((item) => item.path !== attachment.path))}
+              >
+                <X size={11} />
+              </button>
+            </span>
+          ))}
         </div>
       )}
       {!current && (
@@ -91,6 +150,7 @@ export function QueueEditor({
             onClick={() => {
               setBase(current);
               setContent(current.content);
+              setAttachments(current.attachments ?? []);
               setError(null);
             }}
           >
@@ -115,7 +175,7 @@ export function QueueEditor({
           取消
         </button>
         <button type="submit" disabled={!canSave}>
-          {pending ? "保存中…" : "保存"}
+          {attaching ? "正在添加附件…" : pending ? "保存中…" : "保存"}
         </button>
       </div>
     </form>

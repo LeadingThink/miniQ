@@ -263,6 +263,12 @@
   overflow-wrap: anywhere;
   font-size: var(--font-footnote);
 }
+.queue-editor-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
 
 @media (max-width: 600px) {
   .queue-hint { display: none; }

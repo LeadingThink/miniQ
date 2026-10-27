@@ -9,6 +9,14 @@ vi.mock("./Md", () => ({
   Md: (props: { children: string }) => <div>{props.children}</div>,
 }));
 
+vi.mock("./MessageAttachmentPreview", () => ({
+  MessageAttachmentPreview: ({
+    attachment,
+  }: {
+    attachment: { name: string };
+  }) => <span>{attachment.name}</span>,
+}));
+
 const { Timeline } = await import("./Timeline");
 
 afterEach(cleanup);
@@ -28,7 +36,13 @@ const tool = (id: string, minute: number): ToolCall => ({
 
 const steeredMessages = [
   message("u1", "user", 1),
-  message("u2", "user", 3, { content: "改用 pnpm", steered: true }),
+  message("u2", "user", 3, {
+    content: "改用 pnpm",
+    steered: true,
+    attachments: [
+      { path: "/tmp/guide.png", name: "guide.png", mimeType: "image/png" },
+    ],
+  }),
   message("a2", "assistant", 5),
 ];
 const steeredTools = [tool("t1", 2), tool("t2", 4)];
@@ -77,7 +91,10 @@ it("renders a steered message as an inline steer note in the process flow", asyn
   // CompletedProcess disclosure, just like tool details.
   expect(note).toBeNull();
   fireEvent.click(container.querySelector(".completed-process summary")!);
-  await waitFor(() => expect(container.querySelector(".steer-note")?.textContent).toBe("引导：改用 pnpm"));
+  await waitFor(() => expect(container.querySelector(".steer-note")).not.toBeNull());
+  expect(container.querySelector(".steer-note-label")?.textContent).toBe("引导：");
+  expect(screen.getByText("改用 pnpm")).toBeTruthy();
+  expect(screen.getByText("guide.png")).toBeTruthy();
   expect(container.querySelector('[data-user-message-id="u2"]')).toBeNull();
 });
 

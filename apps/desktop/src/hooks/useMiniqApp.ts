@@ -8,6 +8,7 @@ import { hostKey } from "../hostWorkspace";
 import { loadUnread, saveUnread, withUnread } from "../unreadStore";
 import type { SettingsTab } from "../settingsNavigation";
 import type {
+  MessageAttachment,
   QueuedMessage,
   Session,
   SessionStatus,
@@ -494,12 +495,14 @@ function useTurnActions(
   );
 
   const updateQueued = useCallback(
-    async (original: QueuedMessage, content: string) => {
+    async (original: QueuedMessage, content: string, attachments: MessageAttachment[]) => {
       await client.call("session.queueUpdate", {
         sessionId: original.sessionId,
         queuedMessageId: original.id,
         expectedContent: original.content,
+        expectedAttachments: original.attachments ?? [],
         content,
+        attachments,
       });
     },
     [client],

@@ -11,6 +11,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { QueuedMessage } from "../types";
 import { QueueBar } from "./QueueBar";
 
+vi.mock("../localFiles", () => ({
+  savePastedFile: vi.fn(async () => "C:\\cache\\pasted.png"),
+}));
+
+vi.mock("./MessageAttachmentPreview", () => ({
+  MessageAttachmentPreview: ({
+    attachment,
+  }: {
+    attachment: { name: string };
+  }) => <span>{attachment.name}</span>,
+}));
+
 afterEach(cleanup);
 const item: QueuedMessage = {
   id: "q1",
@@ -71,14 +83,20 @@ describe("pending queue editing", () => {
     );
     render(<QueueBar queue={[item]} {...props} />);
     edit("修改后的多行\n完整消息");
-    expect(screen.getByText("保留附件：说明.pdf")).toBeTruthy();
+    expect(screen.getByLabelText("排队消息附件").textContent).toContain(
+      "说明.pdf",
+    );
     fireEvent.keyDown(screen.getByRole("textbox"), {
       key: "Enter",
       ctrlKey: true,
     });
     fireEvent.submit(screen.getByRole("form"));
     expect(props.onUpdate).toHaveBeenCalledTimes(1);
-    expect(props.onUpdate).toHaveBeenCalledWith(item, "修改后的多行\n完整消息");
+    expect(props.onUpdate).toHaveBeenCalledWith(
+      item,
+      "修改后的多行\n完整消息",
+      item.attachments,
+    );
     expect(
       screen.getByRole<HTMLButtonElement>("button", { name: "取消" }).disabled,
     ).toBe(true);
@@ -104,6 +122,51 @@ describe("pending queue editing", () => {
     view.rerender(<QueueBar key="s2" queue={[]} {...props} />);
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("pastes an image into the editor and saves it with the updated message", async () => {
+    const props = callbacks();
+    render(<QueueBar queue={[{ ...item, attachments: [] }]} {...props} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "编辑第 1 条排队消息" }),
+    );
+    const image = new File(["png"], "pasted.png", { type: "image/png" });
+    fireEvent.paste(screen.getByRole("textbox"), {
+      clipboardData: {
+        items: [{ kind: "file", getAsFile: () => image }],
+        files: [],
+      },
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: "保存" }),
+      ).toMatchObject({ disabled: false }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(props.onUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ attachments: [] }),
+        "原来的消息",
+        [
+          {
+            path: "C:\\cache\\pasted.png",
+            name: "pasted.png",
+            mimeType: "image/png",
+          },
+        ],
+      ),
+    );
+  });
+
+  it("removes an attachment while editing", async () => {
+    const props = callbacks();
+    render(<QueueBar queue={[item]} {...props} />);
+    edit("保留正文");
+    fireEvent.click(screen.getByRole("button", { name: "移除附件 说明.pdf" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() =>
+      expect(props.onUpdate).toHaveBeenCalledWith(item, "保留正文", []),
+    );
   });
 
   it("keeps the draft when the message starts while being edited", () => {
@@ -139,7 +202,11 @@ describe("pending queue editing", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() =>
-      expect(props.onUpdate).toHaveBeenCalledWith(remote, "合并后的消息"),
+      expect(props.onUpdate).toHaveBeenCalledWith(
+        remote,
+        "合并后的消息",
+        remote.attachments,
+      ),
     );
   });
 

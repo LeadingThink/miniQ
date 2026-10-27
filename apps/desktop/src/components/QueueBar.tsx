@@ -1,12 +1,12 @@
 import { ChevronDown, ChevronUp, FileText, Image as ImageIcon, Pencil, X, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { QueuedMessage } from "../types";
+import type { MessageAttachment, QueuedMessage } from "../types";
 import { errorMessage } from "../errorMessage";
 import { QueueEditor } from "./QueueEditor";
 import "./QueueBar.css";
 
 export interface QueueActions {
-  onUpdate: (original: QueuedMessage, content: string) => Promise<void>;
+  onUpdate: (original: QueuedMessage, content: string, attachments: MessageAttachment[]) => Promise<void>;
   onSteer: (id: string) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
   onMove?: (item: QueuedMessage, direction: "up" | "down") => Promise<void>;

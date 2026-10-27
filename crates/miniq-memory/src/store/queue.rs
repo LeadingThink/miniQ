@@ -88,14 +88,16 @@ impl Store {
     }
 
     /// Edit only a still-pending message, under the same lock as queue draining.
-    /// Compare the original content to avoid overwriting another client's edit.
-    /// Attachments, identity, timestamp and execution order remain unchanged.
+    /// Compare the original payload to avoid overwriting another client's edit.
+    /// Identity, timestamp and execution order remain unchanged.
     pub fn update_queued_message(
         &self,
         session_id: &str,
         id: &str,
         expected_content: &str,
         content: &str,
+        expected_attachments: Option<&[MessageAttachment]>,
+        attachments: Option<&[MessageAttachment]>,
     ) -> Result<QueuedMessage> {
         let conn = self.conn.lock().unwrap();
         let mut message = conn
@@ -109,20 +111,24 @@ impl Store {
             .ok_or_else(|| {
                 MemoryError::NotFound("排队消息已开始执行或已被移除，请保留编辑内容".into())
             })?;
-        if message.content != expected_content {
+        if message.content != expected_content
+            || expected_attachments.is_some_and(|expected| message.attachments != expected)
+        {
             return Err(MemoryError::InvalidData(
                 "这条排队消息已在其他设备更新，请查看最新内容后再编辑".into(),
             ));
         }
         let content = content.trim();
-        if content.is_empty() && message.attachments.is_empty() {
+        let next_attachments = attachments.unwrap_or(&message.attachments);
+        if content.is_empty() && next_attachments.is_empty() {
             return Err(MemoryError::InvalidData("消息内容不能为空".into()));
         }
         conn.execute(
-            "UPDATE queued_messages SET content = ?2 WHERE id = ?1",
-            params![id, content],
+            "UPDATE queued_messages SET content = ?2, attachments_json = ?3 WHERE id = ?1",
+            params![id, content, serde_json::to_string(next_attachments)?],
         )?;
         message.content = content.into();
+        message.attachments = next_attachments.to_vec();
         Ok(message)
     }
 
@@ -326,7 +332,14 @@ mod tests {
             .enqueue_message_with_attachments(&session_id, "original", &attachments)
             .unwrap();
         let edited = store
-            .update_queued_message(&session_id, &queued.id, "original", "  new\n完整内容  ")
+            .update_queued_message(
+                &session_id,
+                &queued.id,
+                "original",
+                "  new\n完整内容  ",
+                Some(&attachments),
+                Some(&attachments),
+            )
             .unwrap();
         assert_eq!(edited.id, queued.id);
         assert_eq!(edited.position, queued.position);
@@ -348,7 +361,14 @@ mod tests {
         assert_eq!(started.content, "new\n完整内容");
         assert_eq!(started.attachments[0].path, attachments[0].path);
         assert!(store
-            .update_queued_message(&session_id, &queued.id, &edited.content, "too late")
+            .update_queued_message(
+                &session_id,
+                &queued.id,
+                &edited.content,
+                "too late",
+                Some(&attachments),
+                Some(&attachments)
+            )
             .is_err());
         assert_eq!(
             store.list_messages(&session_id).unwrap()[1].content,
@@ -366,7 +386,7 @@ mod tests {
             (session_id.as_str(), "original", " \n "),
         ] {
             assert!(store
-                .update_queued_message(session, &queued.id, expected, content)
+                .update_queued_message(session, &queued.id, expected, content, Some(&[]), Some(&[]))
                 .is_err());
             assert_eq!(
                 store.list_queued_messages(&session_id).unwrap()[0].content,
@@ -374,10 +394,24 @@ mod tests {
             );
         }
         store
-            .update_queued_message(&session_id, &queued.id, "original", "mobile edit")
+            .update_queued_message(
+                &session_id,
+                &queued.id,
+                "original",
+                "mobile edit",
+                Some(&[]),
+                Some(&[]),
+            )
             .unwrap();
         assert!(store
-            .update_queued_message(&session_id, &queued.id, "original", "desktop edit")
+            .update_queued_message(
+                &session_id,
+                &queued.id,
+                "original",
+                "desktop edit",
+                Some(&[]),
+                Some(&[])
+            )
             .is_err());
         assert_eq!(
             store.list_queued_messages(&session_id).unwrap()[0].content,
@@ -385,7 +419,14 @@ mod tests {
         );
         store.remove_queued_message(&queued.id).unwrap();
         assert!(store
-            .update_queued_message(&session_id, &queued.id, "mobile edit", "too late")
+            .update_queued_message(
+                &session_id,
+                &queued.id,
+                "mobile edit",
+                "too late",
+                Some(&[]),
+                Some(&[])
+            )
             .is_err());
         assert!(store.list_queued_messages(&session_id).unwrap().is_empty());
     }
@@ -408,7 +449,14 @@ mod tests {
             .enqueue_message_with_attachments(&session.id, "caption", &attachments)
             .unwrap();
         store
-            .update_queued_message(&session.id, &queued.id, "caption", "")
+            .update_queued_message(
+                &session.id,
+                &queued.id,
+                "caption",
+                "",
+                Some(&attachments),
+                Some(&attachments),
+            )
             .unwrap();
         drop(store);
         let store = Store::open(&path).unwrap();
@@ -416,6 +464,36 @@ mod tests {
         assert_eq!(queue[0].id, queued.id);
         assert!(queue[0].content.is_empty());
         assert_eq!(queue[0].attachments[0].path, "/tmp/pic.png");
+    }
+
+    #[test]
+    fn legacy_content_edit_preserves_current_attachments() {
+        let (store, session_id) = store_with_session();
+        let attachments = vec![MessageAttachment {
+            path: "/tmp/current.png".into(),
+            name: "current.png".into(),
+            mime_type: None,
+        }];
+        let queued = store
+            .enqueue_message_with_attachments(&session_id, "original", &attachments)
+            .unwrap();
+
+        let edited = store
+            .update_queued_message(
+                &session_id,
+                &queued.id,
+                "original",
+                "legacy edit",
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(edited.attachments, attachments);
+        assert_eq!(
+            store.list_queued_messages(&session_id).unwrap()[0].attachments,
+            attachments
+        );
     }
 
     #[test]

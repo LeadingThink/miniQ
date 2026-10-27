@@ -296,8 +296,17 @@ export function TimelineEntries(props: {
                 className="steer-note"
                 data-history-anchor={`message:${item.message.id}`}
               >
-                <span className="steer-note-label">引导：</span>
-                {item.message.content}
+                <div>
+                  <span className="steer-note-label">引导：</span>
+                  {item.message.content}
+                </div>
+                {!!item.message.attachments?.length && (
+                  <div className="message-attachments">
+                    {item.message.attachments.map((attachment) => (
+                      <MessageAttachmentPreview key={attachment.path} attachment={attachment} />
+                    ))}
+                  </div>
+                )}
               </div>
             ) : <div
               key={item.message.id}

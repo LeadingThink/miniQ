@@ -120,6 +120,7 @@ fn queue_request(command: QueueCommand, observed: &Value) -> Result<(&'static st
             "session.queueUpdate",
             json!({"sessionId":session,"queuedMessageId":id,
                 "expectedContent":observed["content"].as_str().context("queued content missing")?,
+                "expectedAttachments":observed["attachments"].clone(),
                 "content":content(text)?}),
             json,
         ),

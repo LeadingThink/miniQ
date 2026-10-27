@@ -1,6 +1,6 @@
 //! Pending-message operations. Editing never restarts or interrupts a turn.
 
-use miniq_protocol::{ErrorCode, Event, RpcError, SessionStatus};
+use miniq_protocol::{ErrorCode, Event, MessageAttachment, RpcError, SessionStatus};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -44,7 +44,11 @@ struct QueueUpdateParams {
     session_id: String,
     queued_message_id: String,
     expected_content: String,
+    #[serde(default)]
+    expected_attachments: Option<Vec<MessageAttachment>>,
     content: String,
+    #[serde(default)]
+    attachments: Option<Vec<MessageAttachment>>,
 }
 
 #[derive(Deserialize)]
@@ -65,6 +69,8 @@ enum QueueMoveDirection {
 
 pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcError> {
     let input: QueueUpdateParams = params(raw)?;
+    let expected_attachments = input.expected_attachments.as_deref();
+    let attachments = input.attachments.as_deref();
     let updated = state
         .store
         .update_queued_message(
@@ -72,6 +78,8 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
             &input.queued_message_id,
             &input.expected_content,
             &input.content,
+            expected_attachments,
+            attachments,
         )
         .map_err(|error| match &error {
             miniq_memory::MemoryError::NotFound(_) | miniq_memory::MemoryError::InvalidData(_) => {
