@@ -71,7 +71,7 @@ it("uses the selected project and keeps project/approval controls before the inp
   expect(screen.getByRole("option", { name: /^帮我批准/ }).textContent).toContain(
     "仅对检测到的风险操作请求批准",
   );
-  expect(screen.getByRole("option", { name: /^完全访问权限/ }).textContent).toContain(
+  expect(screen.getByRole("option", { name: /^完全访问/ }).textContent).toContain(
     "不受限制地访问互联网和你电脑上的任何文件",
   );
   fireEvent.click(screen.getByRole("option", { name: /^请求批准/ }));

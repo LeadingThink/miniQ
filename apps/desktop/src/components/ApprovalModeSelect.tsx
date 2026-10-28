@@ -17,7 +17,7 @@ const MODE_OPTIONS: MenuOption<ApprovalMode>[] = [
   },
   {
     value: "fullAccess",
-    label: "完全访问权限",
+    label: "完全访问",
     icon: CircleAlert,
     desc: "不受限制地访问互联网和你电脑上的任何文件",
   },

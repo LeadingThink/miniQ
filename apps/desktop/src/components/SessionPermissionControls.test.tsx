@@ -57,7 +57,7 @@ it("does not apply stale permission data to another session", async () => {
   await act(async () =>
     finish({ mode: "fullAccess", effective: "fullAccess" }),
   );
-  expect(screen.queryByRole("button", { name: "完全访问权限" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "完全访问" })).toBeNull();
 });
 
 it("can pin the currently inherited mode without changing it twice", async () => {
@@ -89,15 +89,15 @@ it("asks for confirmation before a remote client raises permissions", async () =
   const rpc = { ...client(call), mode: "remote" } as unknown as RpcClient;
   render(<SessionPermissionControls client={rpc} sessionId="one" />);
   fireEvent.click(await screen.findByRole("button", { name: "帮我批准" }));
-  fireEvent.click(screen.getByRole("option", { name: /完全访问权限/ }));
+  fireEvent.click(screen.getByRole("option", { name: /^完全访问/ }));
   const dialog = screen.getByRole("alertdialog");
-  expect(dialog.textContent).toContain("完全访问权限");
+  expect(dialog.textContent).toContain("完全访问");
   fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
   expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(call).toHaveBeenCalledTimes(1);
 
   fireEvent.click(screen.getByRole("button", { name: "帮我批准" }));
-  fireEvent.click(screen.getByRole("option", { name: /完全访问权限/ }));
+  fireEvent.click(screen.getByRole("option", { name: /^完全访问/ }));
   fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "提升权限" }));
   await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
   expect(call).toHaveBeenLastCalledWith("session.approval.update", { sessionId: "one", mode: "fullAccess" });

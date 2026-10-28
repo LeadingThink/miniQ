@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { COMPOSER_KEYBOARD_HINT } from "../composerInput";
@@ -55,6 +57,17 @@ it("recomputes composer height when its width changes during a sidebar drag", ()
   notifyResize();
 
   expect(textarea.style.height).toBe("176px");
+});
+
+it("keeps the composer field's top and left inset compact on desktop and touch layouts", () => {
+  const conversationCss = readFileSync(resolve(process.cwd(), "src/styles/conversation.css"), "utf8");
+  const conversationV2Css = readFileSync(resolve(process.cwd(), "src/styles/conversation-v2.css"), "utf8");
+  const composerCss = readFileSync(resolve(process.cwd(), "src/components/Composer.css"), "utf8");
+  expect(conversationCss).toMatch(/\.composer-card\s*\{[^}]*padding: 6px 8px 10px;/s);
+  expect(conversationCss).toMatch(/\.composer-card textarea,\s*\.composer-field\s*\{[^}]*padding: 4px 4px 6px;/s);
+  expect(conversationV2Css).toMatch(/\.main \.composer-card\s*\{[^}]*padding: 6px 8px 10px;/s);
+  expect(conversationV2Css).toMatch(/\.main \.composer-card textarea,\s*\.main \.composer-field\s*\{[^}]*padding: 6px 8px 20px;/s);
+  expect(composerCss).toMatch(/\.composer-outer \.composer-field\s*\{[^}]*padding: 4px 2px 10px;/s);
 });
 
 it("keeps the keyboard hint beside the right-aligned send controls", () => {
