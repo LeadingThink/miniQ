@@ -1,4 +1,5 @@
 import { accentForeground, LAST_THEME_STORAGE_KEY, LEGACY_THEMES, MODE_STORAGE_KEY, THEMES, THEME_STORAGE_KEY } from "./theme";
+import { FONT_SIZE_LIMITS, FONT_SIZE_STORAGE_KEY } from "./fontScale";
 
 // Vite embeds this from the same catalog, before CSS/React load, so every
 // theme (including migrated IDs and "follow system") has a matching first paint.
@@ -30,6 +31,8 @@ export function buildThemeBootstrap(): string {
     }
     const [themeMode, page, text, accent, foreground] = palettes[id];
     const root = document.documentElement;
+    const interfaceSize = Number(get(${JSON.stringify(FONT_SIZE_STORAGE_KEY)}));
+    root.style.setProperty("--interface-font-size", String(Number.isInteger(interfaceSize) && interfaceSize >= ${FONT_SIZE_LIMITS.min} && interfaceSize <= ${FONT_SIZE_LIMITS.max} ? interfaceSize : ${FONT_SIZE_LIMITS.default}) + "px");
     root.dataset.theme = id;
     root.dataset.themeMode = themeMode;
     root.style.colorScheme = themeMode;

@@ -12,6 +12,7 @@ import {
 } from "../theme";
 import { themeCategories, type ThemeDefinition } from "../themeCatalog";
 import { BackgroundPicker } from "./BackgroundPicker";
+import { FontScaleControl } from "./FontScaleControl";
 
 const MODES: { id: AppearanceMode; label: string }[] = [
   { id: "system", label: "自动" },
@@ -192,6 +193,7 @@ function ThemeLibrary(props: { theme: ThemeId; onThemeChange: (theme: ThemeId) =
   return (
     <div className="theme-library">
       <AppearanceModes />
+      <FontScaleControl />
       <section className="theme-library-controls" aria-label="配色主题库">
         <div className="appearance-section-heading">
           <h3>

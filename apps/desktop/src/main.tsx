@@ -26,6 +26,7 @@ import "./styles/hero.css";
 // HUD skin for the "量子驾驶舱 / 全息白昼" themes only; other themes are untouched.
 import "./styles/cyber.css";
 import { initializeAppearance } from "./theme";
+import { initializeFontScale } from "./fontScale";
 import { initializeBackground } from "./background";
 import { initializeRotation } from "./backgroundRotation";
 import { LivingBackground } from "./components/LivingBackground";
@@ -39,6 +40,7 @@ const CompanionWindow = React.lazy(() => import("./components/CompanionWindow"))
 const isCompanion = new URLSearchParams(window.location.search).has("companion");
 
 initializeAppearance();
+initializeFontScale();
 if (!isCompanion && !isNativeMobileApp()) {
   initializeBackground();
   initializeRotation();

@@ -87,8 +87,8 @@ export default function CodePreview(props: {
         scrollBeyondLastLine: false,
         smoothScrolling: true,
         wordWrap: props.wrap ? "on" : "off",
-        fontFamily: "JetBrains Mono Variable, Consolas, monospace",
         fontSize: 12.5,
+        fontFamily: "JetBrains Mono Variable, Consolas, monospace",
         lineHeight: 20,
         padding: { top: 10, bottom: 16 },
       }}

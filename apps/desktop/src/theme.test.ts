@@ -20,6 +20,7 @@ import {
   themeById,
 } from "./theme";
 import { buildThemeBootstrap } from "./themeBootstrap";
+import { FONT_SIZE_STORAGE_KEY, getFontSize, initializeFontScale, storeFontSize } from "./fontScale";
 
 let dark = false;
 let changeListeners: Array<() => void> = [];
@@ -46,6 +47,7 @@ beforeEach(() => {
   document.documentElement.removeAttribute("style");
   stubSystem(false);
   initializeAppearance();
+  initializeFontScale();
   // 初始化会写入完整偏好；清掉以便各用例模拟老用户/新用户的存储状态。
   localStorage.clear();
 });
@@ -113,6 +115,22 @@ describe("theme catalog", () => {
 });
 
 describe("appearance mode", () => {
+  it("persists the interface font size and applies it to the root", () => {
+    storeFontSize(16);
+    expect(getFontSize()).toBe(16);
+    expect(localStorage.getItem(FONT_SIZE_STORAGE_KEY)).toBe("16");
+    expect(document.documentElement.style.getPropertyValue("--interface-font-size")).toBe("16px");
+    localStorage.setItem(FONT_SIZE_STORAGE_KEY, "25");
+    initializeFontScale();
+    expect(getFontSize()).toBe(14);
+  });
+
+  it("applies stored font sizes during the first paint bootstrap", () => {
+    localStorage.setItem(FONT_SIZE_STORAGE_KEY, "16");
+    bootstrapTheme();
+    expect(document.documentElement.style.getPropertyValue("--interface-font-size")).toBe("16px");
+  });
+
   it("follows the system for new users, including the first paint", () => {
     localStorage.clear();
     stubSystem(true);

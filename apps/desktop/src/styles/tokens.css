@@ -2,14 +2,15 @@
    Modeled on the macOS HIG: a small type ramp, a 4pt grid, three corner radii,
    and one family of easing curves. Colors live in base.css / themes.css. */
 :root {
+  --interface-font-size: 14px;
   /* Type ramp (macOS): caption / footnote / body / callout / headline / title / large title */
-  --font-caption: 11px;
-  --font-footnote: 12px;
-  --font-body: 13px;
-  --font-callout: 15px;
-  --font-headline: 18px;
-  --font-title: 24px;
-  --font-large-title: 34px;
+  --font-caption: calc(var(--interface-font-size) * 0.846);
+  --font-footnote: calc(var(--interface-font-size) * 0.923);
+  --font-body: var(--interface-font-size);
+  --font-callout: calc(var(--interface-font-size) * 1.077);
+  --font-headline: calc(var(--interface-font-size) * 1.286);
+  --font-title: calc(var(--interface-font-size) * 1.714);
+  --font-large-title: calc(var(--interface-font-size) * 2.429);
 
   /* 4pt spacing grid */
   --space-1: 4px;

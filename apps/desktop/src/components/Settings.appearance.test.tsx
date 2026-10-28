@@ -6,6 +6,7 @@ import { MobileAppearanceSheet } from "./MobileAppearanceSheet";
 import { mobileBackgroundPolicy } from "../mobileBackgroundPolicy";
 import { initializeAppearance, getAppearance } from "../theme";
 import { BACKGROUNDS } from "../backgroundCatalog";
+import { getFontSize } from "../fontScale";
 import type { RpcClient } from "../rpc";
 const runtime = vi.hoisted(() => ({ mobile: true }));
 vi.mock("../mobileRuntime", () => ({
@@ -79,4 +80,22 @@ it("keeps the desktop appearance picker on desktop", async () => {
   expect(document.querySelector(".mobile-appearance-embedded")).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "背景壁纸" }));
   expect(screen.getByRole("radiogroup", { name: "背景" })).toBeTruthy();
+});
+
+it("changes the interface font size from appearance settings", async () => {
+  runtime.mobile = false;
+  await act(async () => {
+    render(
+      <SettingsPanel
+        client={client}
+        theme="jade"
+        initialTab="appearance"
+        onThemeChange={() => {}}
+        onClose={() => {}}
+      />,
+    );
+  });
+  fireEvent.change(screen.getByRole("spinbutton", { name: "界面字号" }), { target: { value: "16" } });
+  expect(getFontSize()).toBe(16);
+  expect(document.documentElement.style.getPropertyValue("--interface-font-size")).toBe("16px");
 });
