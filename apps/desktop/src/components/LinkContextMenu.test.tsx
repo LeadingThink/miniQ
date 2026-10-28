@@ -81,9 +81,9 @@ it("opens a real application submenu with keyboard and keeps it open during inte
   expect(screen.queryByRole("menu")).toBeNull();
 });
 
-it("supports inline file references and copies complete text", async () => {
-  conversation("`资料/说明.md`");
-  fireEvent.keyDown(screen.getByRole("button", { name: "资料/说明.md" }), { key: "ContextMenu" });
+it("supports explicitly relative inline file references and copies complete text", async () => {
+  conversation("`./资料/说明.md`");
+  fireEvent.keyDown(screen.getByRole("button", { name: "./资料/说明.md" }), { key: "ContextMenu" });
   fireEvent.click(screen.getByRole("menuitem", { name: "复制文件内容" }));
   await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith("完整文件内容"));
 });

@@ -157,13 +157,25 @@ export function looksLikeFileReference(reference: string): boolean {
   );
 }
 
-/** Names only become links when they carry a path shape.
- * A bare name such as `lib.rs` matches many files in this repository, so resolving it
- * against the workspace root would open a path that does not exist. Codex treats ordinary
- * file destinations the same way: only `file://`, absolute, `~/`, `./`, `../`, UNC and
- * drive-letter references become local links. */
-export function hasPathSeparator(reference: string): boolean {
-  return /[\\/]/.test(parseLocation(reference).reference);
+/**
+ * Inline code is usually explanatory text. Only an explicitly rooted path or
+ * a path whose relative base is explicit should become an interactive file
+ * reference; a snippet such as `logs\\daemon.log` must remain code.
+ *
+ * Markdown links use `resolveLocalFileReference` directly and remain clickable
+ * for ordinary relative destinations such as `docs/README.md`.
+ */
+export function isExplicitLocalFileReference(reference: string): boolean {
+  const value = parseLocation(reference).reference;
+  if (!value) return false;
+  const path = /^file:/i.test(value) ? fileUriPath(value) : decodePath(value);
+  if (!path) return false;
+  return (
+    WINDOWS_DRIVE.test(path) ||
+    path.startsWith("/") ||
+    path.startsWith("\\\\") ||
+    /^\.\.?[\\/]/.test(path)
+  );
 }
 
 export function isTextPreviewFile(path: string): boolean {

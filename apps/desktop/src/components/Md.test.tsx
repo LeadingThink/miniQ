@@ -36,12 +36,23 @@ describe("Md file references", () => {
   it("turns inline code paths into workspace file controls", () => {
     const html = renderToStaticMarkup(
       <Md workspacePath="D:/work/project">
-        {"Generated `novel_8352189/download.py`."}
+        {"Generated `./novel_8352189/download.py`."}
       </Md>,
     );
 
     expect(html).toContain('class="file-reference"');
     expect(html).toContain("D:/work/project/novel_8352189/download.py");
+  });
+
+  it("keeps explanatory relative paths as code", () => {
+    const html = renderToStaticMarkup(
+      <Md workspacePath="D:/work/project">
+        {"Logs are written to `logs\\daemon.log`."}
+      </Md>,
+    );
+
+    expect(html).toContain("<code>logs\\daemon.log</code>");
+    expect(html).not.toContain('class="file-reference"');
   });
 
   it("keeps a bare file name as plain code", () => {

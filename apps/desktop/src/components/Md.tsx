@@ -15,7 +15,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { openExternalUrl } from "../externalLinks";
 import {
-  hasPathSeparator,
+  isExplicitLocalFileReference,
   openLocalFile,
   resolveLocalFileReference,
   type LocalFileTarget,
@@ -142,7 +142,7 @@ function MarkdownCode(
     ...codeProps
   } = props;
   const text = typeof children === "string" ? children : "";
-  const filePath = !text.includes("\n") && hasPathSeparator(text)
+  const filePath = !text.includes("\n") && isExplicitLocalFileReference(text)
     ? resolveLocalFileReference(text, referenceBasePath ?? workspacePath)
     : null;
   if (filePath) {
