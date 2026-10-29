@@ -1,5 +1,34 @@
-import { describe, expect, it } from "vitest";
-import { conversationTimestamp, formatDuration, showTurnSeparator, turnSeparatorLabel } from "./time";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { conversationTimestamp, formatDuration, relativeAge, showTurnSeparator, turnSeparatorLabel } from "./time";
+
+afterEach(() => vi.useRealTimers());
+
+describe("relative age", () => {
+  it.each([
+    [30_000, "刚刚"],
+    [60_000, "1 分钟前"],
+    [23 * 60 * 60_000, "23 小时前"],
+    [24 * 60 * 60_000, "1 天前"],
+    [6 * 24 * 60 * 60_000, "6 天前"],
+    [7 * 24 * 60 * 60_000, "1 周前"],
+    [28 * 24 * 60 * 60_000, "4 周前"],
+  ])("formats an age of %s ms as %s", (ageMs, expected) => {
+    const now = new Date(2026, 9, 29, 12);
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    expect(relativeAge(new Date(now.getTime() - ageMs).toISOString())).toBe(expected);
+  });
+
+  it("keeps absolute dates, future timestamps, and invalid values stable", () => {
+    const now = new Date(2026, 9, 29, 12);
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const old = new Date(now.getTime() - 35 * 24 * 60 * 60_000);
+    expect(relativeAge(old.toISOString())).toBe(old.toLocaleDateString());
+    expect(relativeAge(new Date(now.getTime() + 60_000).toISOString())).toBe("刚刚");
+    expect(relativeAge("invalid")).toBe("");
+  });
+});
 
 describe("conversation time", () => {
   const now = new Date(2026, 8, 20, 14, 30);

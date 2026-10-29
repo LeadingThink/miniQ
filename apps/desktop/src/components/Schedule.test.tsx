@@ -5,7 +5,7 @@ import type { RpcClient } from "../rpc";
 import type { ScheduledTask, ScheduledTaskRun, Session, Workspace } from "../types";
 import { describeSchedule, SchedulePanel } from "./Schedule";
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 const workspaces: Workspace[] = ["one", "two"].map((id) => ({
   id, name: `项目 ${id}`, path: `/${id}`, additionalPaths: [],
@@ -36,6 +36,13 @@ function fill() {
 }
 
 describe("SchedulePanel", () => {
+  it("shows the last run as elapsed time without duplicating 前", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-09-23T12:00:00Z").getTime());
+    setup([{ ...task, lastRunAt: "2026-09-22T12:00:00Z" }]);
+    expect(await screen.findByText(/上次运行 1 天前/)).toBeTruthy();
+    expect(screen.queryByText(/前前/)).toBeNull();
+  });
+
   it("selects eligible sessions by title and updates an existing heartbeat", async () => {
     const { call } = setup([task], async (method) => method === "schedule.list" ? { tasks: [task] } : method === "session.list" ? {
       sessions: [session("target"), session("other-project", { workspaceId: "two" }), session("archived", { archived: true }), session("external", { external: { provider: "codex", externalId: "x", sourcePath: "/x", continuationMode: "read_only", importedAt: task.createdAt, lastSyncedAt: task.createdAt } })],

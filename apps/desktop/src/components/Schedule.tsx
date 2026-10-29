@@ -119,7 +119,7 @@ function ScheduledTaskList(props: {
       <div className="skill-row-main">
         <span className="tool-name">{task.name}</span>
         <span className={`badge ${task.enabled ? "succeeded" : ""}`}>{task.enabled ? describeSchedule(task.schedule) : "已暂停"} · {task.mode === "heartbeat" ? "续接会话" : "新会话"}</span>
-        <div className="sub">{props.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? "已删除的项目"}{task.enabled && ` · 下次 ${localDateTime(task.nextRunAt)}`}{task.lastRunAt && ` · 上次运行 ${relativeAge(task.lastRunAt)}前`}{props.latestRuns[task.id] && ` · ${runStatusLabel(props.latestRuns[task.id]!.status)}`}</div>
+        <div className="sub">{props.workspaces.find((workspace) => workspace.id === task.workspaceId)?.name ?? "已删除的项目"}{task.enabled && ` · 下次 ${localDateTime(task.nextRunAt)}`}{task.lastRunAt && ` · 上次运行 ${relativeAge(task.lastRunAt)}`}{props.latestRuns[task.id] && ` · ${runStatusLabel(props.latestRuns[task.id]!.status)}`}</div>
         {props.runErrors[task.id] && <div className="settings-status" role="alert">运行记录加载失败：{props.runErrors[task.id]} <button type="button" className="ghost" onClick={props.onRetryRuns}>重试</button></div>}
       </div>
       {task.lastSessionId && <button type="button" className="ghost" onClick={() => props.onOpenResult(task.lastSessionId!)}>查看结果</button>}
