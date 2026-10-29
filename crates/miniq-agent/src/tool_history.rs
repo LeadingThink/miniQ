@@ -72,7 +72,9 @@ pub(crate) fn collect_tool_archive(messages: &[ChatMessage]) -> Vec<ArchivedTool
             });
         }
     }
-    archive.into_values().collect()
+    let mut results = archive.into_values().collect::<Vec<_>>();
+    miniq_models::strip_memory_archive(&mut results);
+    results
 }
 
 pub(crate) fn attach_tool_archive(

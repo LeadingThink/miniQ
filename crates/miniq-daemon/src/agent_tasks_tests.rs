@@ -16,6 +16,9 @@ mod retry;
 #[path = "agent_tasks_tests/persistence.rs"]
 mod persistence;
 
+#[path = "agent_tasks_tests/memory.rs"]
+mod memory;
+
 #[path = "agent_tasks_tests/parallel.rs"]
 mod parallel;
 

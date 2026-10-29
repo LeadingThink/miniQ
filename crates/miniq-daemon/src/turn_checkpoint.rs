@@ -18,6 +18,7 @@ pub(crate) struct SessionCheckpoint {
     pub events: tokio::sync::mpsc::WeakSender<miniq_agent::AgentEvent>,
     pub anchor_id: Mutex<String>,
     pub model_identity: Option<String>,
+    pub memory_generation: i64,
     pub partial_message: Mutex<Option<Message>>,
 }
 
@@ -45,6 +46,7 @@ impl CheckpointStore for SessionCheckpoint {
         let mut history = checkpoint.history.into_iter().skip(1).collect::<Vec<_>>();
         history.push(ChatMessage::system(UNFINISHED_TURN));
         crate::security::redact_provider_history(&mut history);
+        miniq_models::strip_memory_payloads(&mut history);
         let history =
             serde_json::to_value(history).map_err(|e| AgentError::Checkpoint(e.to_string()))?;
         let message = (!checkpoint.display_text.trim().is_empty()).then(|| Message {
@@ -63,12 +65,13 @@ impl CheckpointStore for SessionCheckpoint {
             .map(|m| m.id.clone())
             .unwrap_or_else(|| self.anchor_id.lock().unwrap().clone());
         self.store
-            .save_context_with_message(
+            .save_guarded_context_with_message(
                 &self.session_id,
                 &anchor,
                 &history,
                 self.model_identity.as_deref(),
                 message.as_ref(),
+                self.memory_generation,
             )
             .map_err(|e| AgentError::Checkpoint(e.to_string()))?;
         *self.anchor_id.lock().unwrap() = anchor;
@@ -88,6 +91,7 @@ impl CheckpointStore for SessionCheckpoint {
         let mut history = checkpoint.history.into_iter().skip(1).collect::<Vec<_>>();
         history.push(ChatMessage::system(UNFINISHED_TURN));
         crate::security::redact_provider_history(&mut history);
+        miniq_models::strip_memory_payloads(&mut history);
         let message =
             (checkpoint.stopped && !checkpoint.display_text.trim().is_empty()).then(|| Message {
                 id: self.message_id.lock().unwrap().clone(),
@@ -107,12 +111,13 @@ impl CheckpointStore for SessionCheckpoint {
         let history = serde_json::to_value(history)
             .map_err(|error| AgentError::Checkpoint(error.to_string()))?;
         self.store
-            .save_context_with_message(
+            .save_guarded_context_with_message(
                 &self.session_id,
                 &anchor,
                 &history,
                 self.model_identity.as_deref(),
                 message.as_ref(),
+                self.memory_generation,
             )
             .map_err(|error| AgentError::Checkpoint(error.to_string()))?;
         if message.is_some() {

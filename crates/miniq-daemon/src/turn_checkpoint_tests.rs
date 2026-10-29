@@ -89,6 +89,7 @@ async fn image_archive_survives_session_checkpoint_and_next_turn_restore() {
     }]))
     .unwrap();
     let checkpoint = crate::turn_checkpoint::SessionCheckpoint {
+        memory_generation: store.memory_generation().unwrap(),
         store: store.clone(),
         session_id: session.id.clone(),
         anchor_id: Mutex::new(user.id),

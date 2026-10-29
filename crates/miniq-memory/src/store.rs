@@ -13,6 +13,12 @@ mod goals;
 mod history;
 mod history_visible;
 mod memories;
+mod memory_index;
+mod memory_jobs;
+mod memory_policy;
+mod memory_project;
+mod memory_recall;
+mod memory_write;
 mod model_calls;
 mod model_context;
 mod output_cap;
@@ -36,6 +42,9 @@ pub use agent_tasks::AgentTaskRow;
 pub use checkpoints::TurnCheckpoints;
 pub use external_sessions::ExternalImportOutcome;
 pub use memories::MemoryPage;
+pub use memory_jobs::MemoryJob;
+pub use memory_write::MemoryEvidence;
+pub use miniq_protocol::MemoryRecord as MemoryRow;
 pub use model_context::ModelContextSnapshot;
 pub use turn_activity::TurnActivity;
 
@@ -162,8 +171,18 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0028_session_forks",
         include_str!("../../../migrations/0028_session_forks.sql"),
     ),
+    (
+        "0029_personal_memory",
+        include_str!("../../../migrations/0029_personal_memory.sql"),
+    ),
 ];
 
+#[cfg(test)]
+mod memory_concurrency_tests;
+#[cfg(test)]
+mod memory_kernel_tests;
+#[cfg(test)]
+mod memory_migration_tests;
 #[cfg(test)]
 mod message_kind_tests;
 #[cfg(test)]
@@ -209,18 +228,6 @@ pub struct CheckpointRow {
     /// File state after the tool finished: `absent` or `sha256:<hex>`.
     /// `None` when it was not recorded (older checkpoints).
     pub after_state: Option<String>,
-}
-
-/// Long-term memory row.
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MemoryRow {
-    pub id: String,
-    pub workspace_id: Option<String>,
-    pub scope: String,
-    pub content: String,
-    pub created_at: String,
-    pub updated_at: String,
 }
 
 /// Rows repaired when a daemon starts after the previous process exited
@@ -309,6 +316,9 @@ impl Store {
                 }
                 let transaction = conn.transaction()?;
                 transaction.execute_batch(sql)?;
+                if *name == "0029_personal_memory" {
+                    memory_index::rebuild(&transaction)?;
+                }
                 transaction.execute(
                     "INSERT INTO schema_migrations (name, applied_at) VALUES (?1, ?2)",
                     params![name, now_iso()],

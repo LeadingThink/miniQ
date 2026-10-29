@@ -19,6 +19,7 @@ pub mod hooks;
 pub mod learn;
 pub mod mcp;
 pub mod media_capabilities;
+pub mod memory;
 mod model_resolution;
 mod observed_provider;
 mod parallel_policy;

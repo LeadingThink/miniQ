@@ -60,6 +60,9 @@ const TOOL_ACTIONS: Record<string, ToolAction> = {
   doc_write: { running: "正在生成文档", finished: "生成了文档" },
   memory_search: { running: "正在检索记忆", finished: "检索了记忆" },
   memory_write: { running: "正在保存记忆", finished: "保存了记忆" },
+  memory_read: { running: "正在读取记忆", finished: "读取了记忆" },
+  memory_project_read: { running: "正在读取项目进展", finished: "读取了项目进展" },
+  memory_forget: { running: "正在删除记忆", finished: "删除了记忆" },
   skill_read: { running: "正在加载技能", finished: "加载了技能" },
   ask_user: { running: "正在准备确认问题", finished: "确认了下一步" },
 };

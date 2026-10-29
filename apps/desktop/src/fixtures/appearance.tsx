@@ -103,6 +103,8 @@ const client = {
     ? { rules: [] }
     : method === "memory.list"
     ? { memories: [], nextCursor: null }
+    : method === "memory.settings"
+    ? { recallEnabled: true, autoSave: false }
     : method === "model.list"
       ? { models: ["gpt-5.6-sol", "claude-sonnet"] }
       : settings,

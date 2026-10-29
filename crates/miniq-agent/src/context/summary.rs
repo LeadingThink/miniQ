@@ -6,8 +6,11 @@ use crate::{retry::ModelRetries, AgentError, AgentEvent};
 
 // Native replay data contains private thinking, signatures and duplicate tool
 // payloads. It belongs to protocol replay, not to the visible conversation a
-// summarizer is asked to read. Borrow the public fields without copying history.
+// summarizer is asked to read. Memory projections become references before serialization.
 fn transcript(messages: &[ChatMessage]) -> Result<String, ProviderError> {
+    let mut source = messages.to_vec();
+    miniq_models::strip_memory_payloads(&mut source);
+    let messages = &source;
     #[derive(serde::Serialize)]
     struct Entry<'a> {
         role: miniq_models::ChatRole,

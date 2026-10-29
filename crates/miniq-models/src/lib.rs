@@ -10,6 +10,8 @@ mod error;
 mod image;
 mod image_upload;
 mod media_upload;
+mod memory_context;
+pub use memory_context::{strip_memory_archive, strip_memory_payloads};
 mod openai;
 mod provider;
 mod reasoning;

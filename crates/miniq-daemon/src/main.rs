@@ -90,10 +90,12 @@ async fn main() -> anyhow::Result<()> {
     miniq_daemon::schedule::spawn_scheduler(state.clone());
     miniq_daemon::remote::spawn(state.clone());
     let media_worker = miniq_daemon::media_capabilities::spawn(state.clone());
+    let memory_worker = miniq_daemon::memory::spawn(state.clone());
     let shutdown = state.shutdown.clone();
     let result = server::serve(listener, state).await;
     shutdown.cancel();
     let _ = media_worker.await;
+    let _ = memory_worker.await;
     let _ = std::fs::remove_file(dir.join("daemon.json"));
     result
 }

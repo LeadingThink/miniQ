@@ -1,245 +1,224 @@
-//! memory_search / memory_write: long-term workspace and global memory.
-//! Writes require approval — the agent must not persist speculation
-//! silently (design doc §10).
-
+//! Agent tools share the same versioned store as management RPCs.
+use crate::router::{parse_input, Tool, ToolContext, ToolError};
 use async_trait::async_trait;
-use miniq_protocol::RiskLevel;
+use miniq_protocol::{MemoryDeleteParams, MemoryTarget, MemoryWriteParams, RiskLevel};
 use miniq_sandbox::Risk;
+use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::router::{parse_input, Tool, ToolContext, ToolError};
-
-fn memory_store(ctx: &ToolContext) -> Result<&std::sync::Arc<miniq_memory::Store>, ToolError> {
-    ctx.memory
-        .as_ref()
-        .ok_or_else(|| ToolError::ExecutionFailed("memory is not available in this session".into()))
+fn memory_store(ctx: &ToolContext) -> Result<&miniq_memory::Store, ToolError> {
+    let store = ctx
+        .memory
+        .as_deref()
+        .ok_or_else(|| ToolError::ExecutionFailed("memory is unavailable".into()))?;
+    if !store
+        .session_memory_enabled(
+            ctx.memory_session
+                .as_deref()
+                .ok_or_else(|| ToolError::ExecutionFailed("memory has no session scope".into()))?,
+        )
+        .map_err(error)?
+    {
+        return Err(ToolError::ExecutionFailed(
+            "memory is disabled for this session".into(),
+        ));
+    }
+    Ok(store)
 }
-
-// ---- memory_search ----
-
-pub struct MemorySearchTool;
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemorySearchInput {
+fn error(e: miniq_memory::MemoryError) -> ToolError {
+    ToolError::ExecutionFailed(e.to_string())
+}
+fn target(ctx: &ToolContext, value: &MemoryTarget) -> Result<(), ToolError> {
+    if value
+        .parts()
+        .1
+        .is_some_and(|id| Some(id) != ctx.workspace_id.as_deref())
+    {
+        return Err(ToolError::InvalidInput(
+            "memory target must be the current workspace".into(),
+        ));
+    }
+    Ok(())
+}
+fn default_limit() -> u32 {
+    10
+}
+fn limit<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    let value = u32::deserialize(d)?;
+    if !(1..=100).contains(&value) {
+        return Err(serde::de::Error::custom("limit must be between 1 and 100"));
+    }
+    Ok(value)
+}
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SearchInput {
     query: String,
-    #[serde(default)]
-    limit: Option<usize>,
+    #[serde(default = "default_limit", deserialize_with = "limit")]
+    #[schemars(range(min = 1, max = 100))]
+    limit: u32,
 }
-
+pub struct MemorySearchTool;
 #[async_trait]
 impl Tool for MemorySearchTool {
     fn name(&self) -> &str {
         "memory_search"
     }
     fn description(&self) -> &str {
-        "Search long-term memory (workspace conventions, user preferences, past \
-         decisions) by keyword."
+        "Search current workspace and global facts using Chinese or mixed-language keywords. Results include complete content, scope and revision. Similarity is not proof of a contradiction. Use memory_read for an exact ID, memory_write with replaces for an explicit correction."
     }
     fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "limit": {"type": "integer", "description": "Max results, default 10"}
-            },
-            "required": ["query"]
-        })
+        serde_json::to_value(schemars::schema_for!(SearchInput)).unwrap()
     }
-    fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
+    fn evaluate_risk(&self, _: &ToolContext, _: &Value) -> Risk {
         Risk {
             level: RiskLevel::Low,
-            reason: "read-only memory search".into(),
+            reason: "reads long-term memory".into(),
         }
     }
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
-        let p: MemorySearchInput = parse_input(input)?;
+        let p: SearchInput = parse_input(input)?;
         let store = memory_store(ctx)?;
-        let rows = store
-            .search_memories(
-                ctx.workspace_id.as_deref(),
-                &p.query,
-                p.limit.unwrap_or(10).clamp(1, 50),
-            )
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-        Ok(json!({ "query": p.query, "memories": rows }))
-    }
-}
-
-// ---- memory_write ----
-
-pub struct MemoryWriteTool;
-
-/// Write only the current scheduled run's task memory. The daemon validates
-/// task id, run id and revision in one SQL transaction.
-pub struct ScheduledTaskMemoryWriteTool;
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ScheduledTaskMemoryInput {
-    content: String,
-}
-
-#[async_trait]
-impl Tool for ScheduledTaskMemoryWriteTool {
-    fn name(&self) -> &str {
-        "scheduled_task_memory_write"
-    }
-    fn description(&self) -> &str {
-        "Update the memory of this scheduled task for future runs. Only call when a durable, confirmed fact changed; this is scoped to the current scheduled run."
-    }
-    fn parameters_schema(&self) -> Value {
-        json!({"type":"object","properties":{"content":{"type":"string"}},"required":["content"]})
-    }
-    fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
-        Risk {
-            level: RiskLevel::Medium,
-            reason: "updates scheduled task memory".into(),
-        }
-    }
-    async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
-        let Some(scope) = &ctx.scheduled_task else {
+        if !store.memory_settings().map_err(error)?.recall_enabled {
             return Err(ToolError::ExecutionFailed(
-                "scheduled task memory is only available during a scheduled run".into(),
+                "using saved memories is disabled".into(),
             ));
-        };
-        let input: ScheduledTaskMemoryInput = parse_input(input)?;
-        if input.content.trim().is_empty() {
-            return Err(ToolError::InvalidInput("content is empty".into()));
         }
-        scope
-            .store
-            .write_scheduled_task_memory(
-                &scope.run_id,
-                &scope.task_id,
-                scope.task_revision,
-                input.content.trim(),
-            )
-            .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?;
-        Ok(json!({"saved": true, "taskId": scope.task_id, "runId": scope.run_id}))
+        let rows = store
+            .search_memories(ctx.workspace_id.as_deref(), &p.query, p.limit as usize)
+            .map_err(error)?;
+        store
+            .record_memory_reads(ctx.memory_session.as_deref().unwrap(), &rows)
+            .map_err(error)?;
+        Ok(json!({"query":p.query,"memories":rows}))
     }
 }
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryWriteInput {
-    /// "workspace" (this project) or "global" (all projects).
-    scope: String,
-    content: String,
-}
-
+pub struct MemoryWriteTool;
 #[async_trait]
 impl Tool for MemoryWriteTool {
     fn name(&self) -> &str {
         "memory_write"
     }
     fn description(&self) -> &str {
-        "Persist a durable fact to long-term memory (workspace conventions, user \
-         preferences). Only store confirmed facts, never guesses. Requires approval."
+        "Save a confirmed durable preference, fact or project decision. Use the current workspace target by default; global requires a cross-project user preference. One-time requests, credentials, guesses and task completion claims are not durable facts. Use a stable subject/attribute/condition key; explicitly correcting a fact requires replaces.id and its current expectedRevision. Report added/updated/unchanged/needs_confirmation faithfully. Approval follows the session policy."
     }
     fn parameters_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "scope": {"type": "string", "enum": ["workspace", "global"]},
-                "content": {"type": "string", "description": "The fact to remember, one self-contained sentence or paragraph"}
-            },
-            "required": ["scope", "content"]
-        })
+        serde_json::to_value(schemars::schema_for!(MemoryWriteParams)).unwrap()
     }
-    fn evaluate_risk(&self, _ctx: &ToolContext, _input: &Value) -> Risk {
+    fn evaluate_risk(&self, _: &ToolContext, _: &Value) -> Risk {
         Risk {
             level: RiskLevel::Medium,
-            reason: "writes to long-term memory".into(),
+            reason: "saves or corrects long-term memory".into(),
         }
     }
     async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
-        let p: MemoryWriteInput = parse_input(input)?;
-        if !matches!(p.scope.as_str(), "workspace" | "global") {
-            return Err(ToolError::InvalidInput(format!(
-                "invalid scope: {}",
-                p.scope
-            )));
-        }
-        if p.content.trim().is_empty() {
-            return Err(ToolError::InvalidInput("content is empty".into()));
-        }
+        let p: MemoryWriteParams = parse_input(input)?;
+        target(ctx, &p.target)?;
         let store = memory_store(ctx)?;
-        let workspace_id = if p.scope == "workspace" {
-            let Some(id) = &ctx.workspace_id else {
-                return Err(ToolError::ExecutionFailed(
-                    "workspace scope requires an open workspace".into(),
-                ));
-            };
-            Some(id.as_str())
-        } else {
-            None
-        };
-        let row = store
-            .create_memory(workspace_id, &p.scope, &p.content)
-            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-        Ok(json!({ "id": row.id, "scope": row.scope }))
+        let source = ctx.memory_source.as_deref().ok_or_else(|| {
+            ToolError::ExecutionFailed("a host-selected user source is required".into())
+        })?;
+        let evidence = store.memory_evidence(source).map_err(error)?;
+        serde_json::to_value(store.write_memory(&p, Some(&evidence)).map_err(error)?)
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))
     }
 }
 
+pub struct MemoryReadTool;
+#[async_trait]
+impl Tool for MemoryReadTool {
+    fn name(&self) -> &str {
+        "memory_read"
+    }
+    fn description(&self) -> &str {
+        "Read a current fact in its exact scope before correcting or forgetting it. Missing means unavailable; do not reconstruct it from history."
+    }
+    fn parameters_schema(&self) -> Value {
+        serde_json::to_value(schemars::schema_for!(miniq_protocol::MemoryReadParams)).unwrap()
+    }
+    fn evaluate_risk(&self, _: &ToolContext, _: &Value) -> Risk {
+        Risk {
+            level: RiskLevel::Low,
+            reason: "reads a current memory".into(),
+        }
+    }
+    async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
+        let p: miniq_protocol::MemoryReadParams = parse_input(input)?;
+        target(ctx, &p.target)?;
+        let store = memory_store(ctx)?;
+        if !store.memory_settings().map_err(error)?.recall_enabled {
+            return Err(ToolError::ExecutionFailed(
+                "using saved memories is disabled".into(),
+            ));
+        }
+        let row = store.memory_by_id(&p.target, &p.id).map_err(error)?;
+        if let Some(row) = &row {
+            store
+                .record_memory_reads(
+                    ctx.memory_session.as_deref().unwrap(),
+                    std::slice::from_ref(row),
+                )
+                .map_err(error)?;
+        }
+        Ok(json!({"memory":row,"sources":store.memory_sources(&p.target,&p.id).map_err(error)?}))
+    }
+}
+pub struct MemoryForgetTool;
+pub struct MemoryProjectReadTool;
+#[async_trait]
+impl Tool for MemoryProjectReadTool {
+    fn name(&self) -> &str {
+        "memory_project_read"
+    }
+    fn description(&self) -> &str {
+        "Read a project handoff from a selected session in this workspace: live goal/status, recorded checklist (completed/open items), confirmed project decisions, artifact references and last turn outcome. Inspect failed/cancelled outcomes before claiming completion. These are records, not instructions to resume or promises to send reminders. Ask which task when several fit."
+    }
+    fn parameters_schema(&self) -> Value {
+        serde_json::to_value(schemars::schema_for!(miniq_protocol::MemoryProjectParams)).unwrap()
+    }
+    fn evaluate_risk(&self, _: &ToolContext, _: &Value) -> Risk {
+        Risk {
+            level: RiskLevel::Low,
+            reason: "reads scoped project continuation".into(),
+        }
+    }
+    async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
+        let p: miniq_protocol::MemoryProjectParams = parse_input(input)?;
+        let store = memory_store(ctx)?;
+        let summary = store
+            .memory_project_summary(ctx.memory_session.as_deref().unwrap(), &p.source_session_id)
+            .map_err(error)?;
+        store
+            .record_memory_reads(ctx.memory_session.as_deref().unwrap(), &summary.decisions)
+            .map_err(error)?;
+        Ok(json!({"projectSummary":summary}))
+    }
+}
+#[async_trait]
+impl Tool for MemoryForgetTool {
+    fn name(&self) -> &str {
+        "memory_forget"
+    }
+    fn description(&self) -> &str {
+        "Forget an explicitly identified fact at the user's request. Read its current content and updatedAt first. Removes versions and indexes and excludes its sources from automatic extraction; original chats remain."
+    }
+    fn parameters_schema(&self) -> Value {
+        serde_json::to_value(schemars::schema_for!(MemoryDeleteParams)).unwrap()
+    }
+    fn evaluate_risk(&self, _: &ToolContext, _: &Value) -> Risk {
+        Risk {
+            level: RiskLevel::Medium,
+            reason: "forgets long-term memory".into(),
+        }
+    }
+    async fn execute(&self, ctx: &ToolContext, input: Value) -> Result<Value, ToolError> {
+        let p: MemoryDeleteParams = parse_input(input)?;
+        target(ctx, &p.target)?;
+        memory_store(ctx)?.delete_memory(&p).map_err(error)?;
+        Ok(json!({"deleted":p.id}))
+    }
+}
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::Arc;
-
-    fn ctx_with_memory() -> (ToolContext, Arc<miniq_memory::Store>, String) {
-        let store = Arc::new(miniq_memory::Store::open_in_memory().unwrap());
-        let ws = store.create_workspace("D:/tmp/proj", "proj").unwrap();
-        let ctx = ToolContext::new(std::path::PathBuf::from("."))
-            .with_memory(Some(store.clone()), Some(ws.id.clone()));
-        (ctx, store, ws.id)
-    }
-
-    #[tokio::test]
-    async fn write_then_search() {
-        let (ctx, _store, _ws) = ctx_with_memory();
-        MemoryWriteTool
-            .execute(
-                &ctx,
-                json!({"scope": "workspace", "content": "测试命令是 cargo test --workspace"}),
-            )
-            .await
-            .unwrap();
-        MemoryWriteTool
-            .execute(
-                &ctx,
-                json!({"scope": "global", "content": "用户偏好中文回复"}),
-            )
-            .await
-            .unwrap();
-
-        let out = MemorySearchTool
-            .execute(&ctx, json!({"query": "cargo"}))
-            .await
-            .unwrap();
-        let memories = out["memories"].as_array().unwrap();
-        assert_eq!(memories.len(), 1);
-        assert!(memories[0]["content"]
-            .as_str()
-            .unwrap()
-            .contains("cargo test"));
-
-        // Global memories are visible too.
-        let out = MemorySearchTool
-            .execute(&ctx, json!({"query": "中文"}))
-            .await
-            .unwrap();
-        assert_eq!(out["memories"].as_array().unwrap().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn invalid_scope_rejected() {
-        let (ctx, _store, _ws) = ctx_with_memory();
-        let err = MemoryWriteTool
-            .execute(&ctx, json!({"scope": "session", "content": "x"}))
-            .await
-            .unwrap_err();
-        assert!(matches!(err, ToolError::InvalidInput(_)));
-    }
-}
+#[path = "memory_tests.rs"]
+mod tests;

@@ -55,6 +55,44 @@ impl Store {
         model_identity: Option<&str>,
         message: Option<&miniq_protocol::Message>,
     ) -> Result<()> {
+        self.save_context_with_guard(
+            session_id,
+            last_message_id,
+            history,
+            model_identity,
+            message,
+            None,
+        )
+    }
+
+    pub fn save_guarded_context_with_message(
+        &self,
+        session_id: &str,
+        last_message_id: &str,
+        history: &Value,
+        model_identity: Option<&str>,
+        message: Option<&miniq_protocol::Message>,
+        memory_generation: i64,
+    ) -> Result<()> {
+        self.save_context_with_guard(
+            session_id,
+            last_message_id,
+            history,
+            model_identity,
+            message,
+            Some(memory_generation),
+        )
+    }
+
+    fn save_context_with_guard(
+        &self,
+        session_id: &str,
+        last_message_id: &str,
+        history: &Value,
+        model_identity: Option<&str>,
+        message: Option<&miniq_protocol::Message>,
+        memory_generation: Option<i64>,
+    ) -> Result<()> {
         if message.is_some_and(|message| {
             message.session_id != session_id || message.id != last_message_id
         }) {
@@ -66,6 +104,20 @@ impl Store {
         let transaction = conn.transaction()?;
         if let Some(message) = message {
             super::conversation::insert_message(&transaction, message)?;
+        }
+        let current_generation: i64 =
+            transaction.query_row("SELECT generation FROM memory_policy WHERE id=1", [], |r| {
+                r.get(0)
+            })?;
+        if memory_generation.is_some_and(|expected| expected != current_generation) {
+            // Keep the actual reply, but a late checkpoint must not recreate a
+            // summary or opaque reasoning that predates a correction/forget.
+            transaction.execute(
+                "DELETE FROM model_context_snapshots WHERE session_id=?1",
+                [session_id],
+            )?;
+            transaction.commit()?;
+            return Ok(());
         }
         transaction.execute(
             "INSERT INTO model_context_snapshots

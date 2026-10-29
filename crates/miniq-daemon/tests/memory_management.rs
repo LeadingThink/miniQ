@@ -18,15 +18,9 @@ async fn memory_rpc_is_paged_scope_bound_and_checks_delete_version() {
     let store = Store::open_in_memory().unwrap();
     let a = store.create_workspace("/a", "A").unwrap();
     let b = store.create_workspace("/b", "B").unwrap();
-    let item = store
-        .create_memory(Some(&a.id), "workspace", "private A")
-        .unwrap();
-    store
-        .create_memory(Some(&b.id), "workspace", "private B")
-        .unwrap();
-    store
-        .create_memory(None, "global", "global preference")
-        .unwrap();
+    let item = seed(&store, Some(&a.id), "workspace", "private A").unwrap();
+    seed(&store, Some(&b.id), "workspace", "private B").unwrap();
+    seed(&store, None, "global", "global preference").unwrap();
     let state = AppState::new(
         store,
         "memory-test".into(),
@@ -74,4 +68,18 @@ async fn memory_rpc_is_paged_scope_bound_and_checks_delete_version() {
             ["memories"][0]["content"],
         "global preference"
     );
+}
+
+fn seed(
+    store: &miniq_memory::Store,
+    workspace: Option<&str>,
+    scope: &str,
+    content: &str,
+) -> Result<miniq_memory::MemoryRow, miniq_memory::MemoryError> {
+    let mut target = serde_json::json!({"scope":scope});
+    if let Some(workspace) = workspace {
+        target["workspaceId"] = workspace.into();
+    }
+    let input = serde_json::from_value(serde_json::json!({"target":target,"content":content}))?;
+    Ok(store.write_memory(&input, None)?.memory.unwrap())
 }

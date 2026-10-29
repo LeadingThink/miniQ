@@ -5,8 +5,8 @@ import type { RpcClient } from "../rpc";
 import { MemoryPanel, type MemoryRecord } from "./MemoryPanel";
 
 afterEach(cleanup);
-const memory: MemoryRecord = { id: "a1", workspaceId: "a", scope: "workspace", content: "只属于 A 的记忆", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-02T00:00:00Z" };
-function client(call: ReturnType<typeof vi.fn>) { return { call, onStatus: () => () => {} } as unknown as RpcClient; }
+const memory: MemoryRecord = { revision: 1, kind: "fact", key: null, origin: "unknown", id: "a1", workspaceId: "a", scope: "workspace", content: "只属于 A 的记忆", createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-02T00:00:00Z" };
+function client(call: ReturnType<typeof vi.fn>) { return { call: (method: string, ...args: unknown[]) => method === "memory.settings" ? Promise.resolve({ recallEnabled: true, autoSave: false }) : (call as (...values: unknown[]) => unknown)(method, ...args), onStatus: () => () => {} } as unknown as RpcClient; }
 const page = (memories: MemoryRecord[] = [memory]) => ({ memories, nextCursor: null });
 
 it("separates global and workspace requests and renders full content on demand", async () => {

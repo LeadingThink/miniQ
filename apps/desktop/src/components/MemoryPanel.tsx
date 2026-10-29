@@ -4,6 +4,7 @@ import type { RpcClient } from "../rpc";
 import "./MemoryPanel.css";
 import { EmptyState } from "./ui/EmptyState";
 import { LoadingState } from "./ui/Spinner";
+import { MemorySettingsControls } from "./MemorySettingsControls";
 
 export type MemoryTarget = { scope: "workspace"; workspaceId: string } | { scope: "global" };
 export interface MemoryRecord {
@@ -11,6 +12,10 @@ export interface MemoryRecord {
   workspaceId: string | null;
   scope: "workspace" | "global";
   content: string;
+  revision: number;
+  kind: "preference" | "fact" | "project";
+  key: string | null;
+  origin: "unknown" | "explicit" | "extracted";
   createdAt: string;
   updatedAt: string;
 }
@@ -33,6 +38,7 @@ function MemoryScopes({ client, workspaceId }: Props) {
   return (
     <section className="memory-panel" aria-label="长期记忆管理">
       <p className="memory-description">查看 AI 已保存的偏好和项目事实。项目记忆仅供该项目使用，全局记忆可供所有项目使用。</p>
+      <MemorySettingsControls client={client} />
       <div className="memory-tabs" role="group" aria-label="记忆范围">
         <button type="button" disabled={!workspaceId} aria-pressed={scope === "workspace"} onClick={() => setScope("workspace")}>当前项目</button>
         <button type="button" aria-pressed={scope === "global"} onClick={() => setScope("global")}>全局</button>

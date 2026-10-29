@@ -101,7 +101,15 @@ impl Store {
         if let Some(error) = error {
             outcome["error"] = serde_json::Value::String(error.to_string());
         }
-        self.append_audit_event(Some(session_id), "turn_outcome", &outcome)
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        if status == "completed" {
+            super::memory_jobs::enqueue(&tx, session_id, &anchor)?;
+        }
+        tx.execute("INSERT INTO audit_events(id,session_id,event_type,payload_json,created_at) VALUES (?1,?2,'turn_outcome',?3,?4)",
+            params![new_id("audit"), session_id, serde_json::to_string(&outcome)?, now_iso()])?;
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn last_turn_outcome(&self, session_id: &str) -> Result<Option<Value>> {

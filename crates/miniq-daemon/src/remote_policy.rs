@@ -142,6 +142,8 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "computer.permissions"
         | "workspace.list"
         | "memory.list"
+        | "memory.settings"
+        | "memory.read"
         | "tool.detail"
         | "tool.list"
         | "model.list"
@@ -178,6 +180,9 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "workspace.rename"
         | "workspace.delete"
         | "memory.delete"
+        | "memory.write"
+        | "memory.configure"
+        | "session.memory.configure"
         | "model.update"
         | "workspace.modelUpdate"
         | "agent.message"
@@ -218,6 +223,9 @@ pub fn audited(method: &str) -> bool {
             | "plugin.setEnabled"
             | "workspace.delete"
             | "memory.delete"
+            | "memory.write"
+            | "memory.configure"
+            | "session.memory.configure"
     )
 }
 

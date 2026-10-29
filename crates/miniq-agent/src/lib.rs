@@ -435,12 +435,18 @@ async fn run_turn_inner(
                 ));
             }
             let request = CompletionRequest {
-                context_compact_threshold: (limits.purpose == miniq_models::ModelCallPurpose::Task)
-                    .then_some(
-                        (context_policy.soft_limit_tokens.saturating_mul(4) / 5)
-                            .min(u32::MAX as usize)
-                            .max(1) as u32,
-                    ),
+                context_compact_threshold: (limits.purpose == miniq_models::ModelCallPurpose::Task
+                    && !tools.iter().any(|tool| {
+                        matches!(
+                            tool.name.as_str(),
+                            "memory_read" | "memory_search" | "memory_project_read"
+                        )
+                    }))
+                .then_some(
+                    (context_policy.soft_limit_tokens.saturating_mul(4) / 5)
+                        .min(u32::MAX as usize)
+                        .max(1) as u32,
+                ),
                 trace: miniq_models::ModelCallTrace {
                     purpose: limits.purpose,
                     step: Some(steps),

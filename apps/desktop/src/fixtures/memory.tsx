@@ -7,6 +7,7 @@ import "../styles/themes.css";
 import "../styles/interactions.css";
 
 const initial: MemoryRecord[] = Array.from({ length: 26 }, (_, index) => ({
+  revision: 1, kind: "fact", key: null, origin: "unknown",
   id: `sample-${index}`, workspaceId: index < 23 ? "sample-project" : null,
   scope: index < 23 ? "workspace" : "global", createdAt: "2026-09-20T08:00:00Z", updatedAt: "2026-09-20T08:00:00Z",
   content: index === 0 ? "用户偏好中文回复。\n保留完整的项目背景与决定，必要时可展开查看全文。\n这些都是测试样例，不包含任何实际用户信息。\n第四行也会完整保留。"
@@ -18,6 +19,8 @@ function Fixture() {
   const [workspaceId, setWorkspaceId] = useState<string | null>("sample-project");
   const client = useMemo(() => ({
     call: async (method: string, input: { target: MemoryTarget; query?: string; before?: MemoryPage["nextCursor"]; limit?: number; id?: string; expectedUpdatedAt?: string; expectedContent?: string }) => {
+      if (method === "memory.settings") return { recallEnabled: true, autoSave: false };
+      if (method === "memory.configure") return input;
       const inScope = (item: MemoryRecord) => item.scope === input.target.scope && item.workspaceId === (input.target.scope === "workspace" ? input.target.workspaceId : null);
       if (method === "memory.list") {
         const found = records.current.filter((item) => inScope(item) && item.content.includes(input.query ?? ""));

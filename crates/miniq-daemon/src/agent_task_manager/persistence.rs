@@ -78,6 +78,7 @@ impl AgentTaskManager {
             .map(|history| {
                 let mut history = history.to_vec();
                 crate::security::redact_provider_history(&mut history);
+                miniq_models::strip_memory_payloads(&mut history);
                 serde_json::to_value(history)
             })
             .transpose()

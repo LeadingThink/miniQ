@@ -83,6 +83,9 @@ pub struct ToolContext {
     pub skills: Option<Arc<miniq_skills::SkillStore>>,
     /// SQLite store for memory tools; `None` = memory tools unavailable.
     pub memory: Option<Arc<miniq_memory::Store>>,
+    /// Host-selected user message; the model cannot choose or forge provenance.
+    pub memory_source: Option<String>,
+    pub memory_session: Option<String>,
     /// Workspace id for workspace-scoped memory.
     pub workspace_id: Option<String>,
     /// MCP bridge; `None` = mcp_call unavailable.
@@ -118,6 +121,8 @@ impl ToolContext {
             workspace,
             skills: None,
             memory: None,
+            memory_source: None,
+            memory_session: None,
             workspace_id: None,
             mcp: None,
             processes: Arc::new(crate::process::ProcessManager::default()),
@@ -208,9 +213,16 @@ impl ToolContext {
         mut self,
         memory: Option<Arc<miniq_memory::Store>>,
         workspace_id: Option<String>,
+        session_id: Option<String>,
     ) -> Self {
         self.memory = memory;
+        self.memory_session = session_id;
         self.workspace_id = workspace_id;
+        self
+    }
+
+    pub fn with_memory_source(mut self, source: Option<String>) -> Self {
+        self.memory_source = source;
         self
     }
 

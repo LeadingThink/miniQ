@@ -37,6 +37,7 @@ mod pdf_visual;
 mod plan_mode;
 mod process;
 mod router;
+mod scheduled_task_memory;
 mod search;
 mod shell;
 mod skill;
@@ -76,7 +77,9 @@ pub use media::{
 pub use media_capabilities::{
     MediaCapabilityRegistry, MediaCapabilitySnapshot, MEDIA_REFRESH_INTERVAL_SECS,
 };
-pub use memory::{MemorySearchTool, MemoryWriteTool, ScheduledTaskMemoryWriteTool};
+pub use memory::{
+    MemoryForgetTool, MemoryProjectReadTool, MemoryReadTool, MemorySearchTool, MemoryWriteTool,
+};
 pub use native::{
     adapt_native_tool_call, canonical_name as canonical_native_tool_name, native_aliases,
     AdaptedToolCall, NativeToolError,
@@ -95,6 +98,7 @@ pub use router::{
     RegistrationHandle, ScheduledTaskMemoryContext, Tool, ToolCatalog, ToolContext, ToolError,
     ToolOrigin, ToolRouter,
 };
+pub use scheduled_task_memory::ScheduledTaskMemoryWriteTool;
 pub use search::{FileGlobTool, FileGrepTool};
 pub use shell::{ShellBatchTool, ShellRunTool};
 pub use skill::SkillReadTool;
@@ -149,6 +153,9 @@ pub fn default_router() -> ToolRouter {
         std::sync::Arc::new(ProcessKillTool),
         std::sync::Arc::new(MemorySearchTool),
         std::sync::Arc::new(MemoryWriteTool),
+        std::sync::Arc::new(MemoryReadTool),
+        std::sync::Arc::new(MemoryForgetTool),
+        std::sync::Arc::new(MemoryProjectReadTool),
         std::sync::Arc::new(ScheduledTaskMemoryWriteTool),
         std::sync::Arc::new(McpCallTool),
         std::sync::Arc::new(BrowserAutomationTool::default()),

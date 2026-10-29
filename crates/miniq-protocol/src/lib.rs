@@ -11,6 +11,8 @@ pub mod execution;
 pub mod external;
 pub mod history;
 pub mod memory;
+mod memory_write;
+pub use memory_write::*;
 pub mod model;
 pub mod node_plugin;
 pub mod plugin;

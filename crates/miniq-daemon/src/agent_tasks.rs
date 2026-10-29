@@ -75,18 +75,31 @@ impl DaemonAgentBridge {
             .state
             .provider_config_for_session(&self.session_id, request.model.as_deref())
             .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?;
+        let memory_generation = self
+            .state
+            .store
+            .memory_generation()
+            .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?;
         self.state
             .agent_tasks
             .bind_model_context(
                 &record,
                 &mut history,
-                crate::session_models::model_identity(config.as_ref()),
+                crate::memory::context_identity(
+                    crate::session_models::model_identity(config.as_ref()),
+                    memory_generation,
+                ),
             )
             .await?;
         let media = config
             .as_ref()
             .map(|config| self.state.media_config_for(config));
-        let provider = self.state.provider_from_config(config);
+        let provider = Arc::new(crate::memory::MemoryProvider::for_tools(
+            self.state.provider_from_config(config),
+            self.state.clone(),
+            &self.session_id,
+            memory_generation,
+        ));
         crate::parallel_policy::refresh_child_policy(&mut history);
         history.push(ChatMessage::user(request.prompt.clone()));
         loop {
@@ -245,6 +258,7 @@ impl DaemonAgentBridge {
             .with_memory(
                 Some(self.state.store.clone()),
                 Some(self.workspace_id.clone()),
+                Some(self.session_id.clone()),
             )
             .with_mcp(self.state.mcp_bridge())
             .with_processes(self.state.processes.clone())
