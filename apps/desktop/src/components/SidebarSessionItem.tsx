@@ -18,6 +18,8 @@ export function SidebarSessionItem(props: {
   onSeen: (sessionId: string) => void;
   unread: boolean;
   onDelete: (sessionId: string) => void;
+  onDeleteStart?: (sessionId: string) => void;
+  onDeleteUndo?: (sessionId: string) => void;
   onRename: (sessionId: string, title: string) => void;
   onSetPinned: (sessionId: string, pinned: boolean) => void;
   onSetArchived: (sessionId: string, archived: boolean) => void;
@@ -236,11 +238,16 @@ export function SidebarSessionItem(props: {
               setMenuOpen(false);
               const sessionId = props.session.id;
               const onDelete = props.onDelete;
+              const wasCurrent = props.current;
               setPendingDelete(true);
+              if (wasCurrent) props.onDeleteStart?.(sessionId);
               showUndoToast(toast, {
                 message: `已删除会话“${props.session.title}”`,
                 onCommit: () => onDelete(sessionId),
-                onUndo: () => setPendingDelete(false),
+                onUndo: () => {
+                  setPendingDelete(false);
+                  if (wasCurrent) props.onDeleteUndo?.(sessionId);
+                },
               });
             }}
           >

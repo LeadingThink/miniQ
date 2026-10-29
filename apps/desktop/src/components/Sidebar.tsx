@@ -72,6 +72,8 @@ interface SidebarProps {
   onSessionUnread?: (sessionId: string) => void;
   onMarkAllRead?: () => void;
   onDeleteSession: (sessionId: string) => void;
+  onDeleteSessionStart?: (sessionId: string) => void;
+  onDeleteSessionUndo?: (sessionId: string) => void;
   onRenameSession: (sessionId: string, title: string) => void;
   onSetSessionPinned: (sessionId: string, pinned: boolean) => void;
   onSetSessionArchived: (sessionId: string, archived: boolean) => void;
@@ -262,6 +264,8 @@ export function Sidebar(props: SidebarProps) {
             onSessionSeen={props.onSessionSeen}
             onSessionUnread={props.onSessionUnread}
             onDeleteSession={props.onDeleteSession}
+            onDeleteSessionStart={props.onDeleteSessionStart}
+            onDeleteSessionUndo={props.onDeleteSessionUndo}
             onRenameSession={props.onRenameSession}
             onSetSessionPinned={props.onSetSessionPinned}
             onSetSessionArchived={props.onSetSessionArchived}

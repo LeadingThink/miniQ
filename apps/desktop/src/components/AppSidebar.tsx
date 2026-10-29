@@ -60,6 +60,10 @@ export function AppSidebar({ app, hostGroups, onCreateSession }: { app: MiniqApp
         onDeleteSession={(sessionId) =>
           void app.actions.deleteSession(sessionId)
         }
+        onDeleteSessionStart={() => app.actions.newChat()}
+        onDeleteSessionUndo={(sessionId) =>
+          void app.actions.openSession(sessionId)
+        }
         onRenameSession={(sessionId, title) =>
           void app.actions.renameSession(sessionId, title)
         }

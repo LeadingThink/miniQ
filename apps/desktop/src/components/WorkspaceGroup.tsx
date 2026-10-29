@@ -30,6 +30,8 @@ interface WorkspaceGroupProps {
   onSessionSeen: (sessionId: string) => void;
   onSessionUnread?: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
+  onDeleteSessionStart?: (sessionId: string) => void;
+  onDeleteSessionUndo?: (sessionId: string) => void;
   onRenameSession: (sessionId: string, title: string) => void;
   onSetSessionPinned: (sessionId: string, pinned: boolean) => void;
   onSetSessionArchived: (sessionId: string, archived: boolean) => void;
@@ -222,6 +224,8 @@ export function WorkspaceGroup(props: WorkspaceGroupProps) {
         onSessionSeen={props.onSessionSeen}
         onSessionUnread={props.onSessionUnread}
         onDeleteSession={props.onDeleteSession}
+        onDeleteSessionStart={props.onDeleteSessionStart}
+        onDeleteSessionUndo={props.onDeleteSessionUndo}
         onRenameSession={props.onRenameSession}
         onSetSessionPinned={props.onSetSessionPinned}
         onSetSessionArchived={props.onSetSessionArchived}

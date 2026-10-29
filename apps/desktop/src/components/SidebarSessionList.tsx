@@ -25,6 +25,8 @@ interface Props {
   onSessionSeen: (sessionId: string) => void;
   onSessionUnread?: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
+  onDeleteSessionStart?: (sessionId: string) => void;
+  onDeleteSessionUndo?: (sessionId: string) => void;
   onRenameSession: (sessionId: string, title: string) => void;
   onSetSessionPinned: (sessionId: string, pinned: boolean) => void;
   onSetSessionArchived: (sessionId: string, archived: boolean) => void;
@@ -148,6 +150,8 @@ export function SidebarSessionList(props: Props) {
               onMarkUnread={props.onSessionUnread}
               unread={props.unreadSessionIds.has(session.id)}
               onDelete={props.onDeleteSession}
+              onDeleteStart={props.onDeleteSessionStart}
+              onDeleteUndo={props.onDeleteSessionUndo}
               onRename={props.onRenameSession}
               onSetPinned={props.onSetSessionPinned}
               onSetArchived={props.onSetSessionArchived}

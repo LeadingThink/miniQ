@@ -8,20 +8,32 @@ vi.mock("./Sidebar", () => ({ Sidebar: (props: {
   onSelectWorkspace: (id: string) => void;
   onSelectSession: (id: string) => void;
   onCreateSession: (id: string) => void;
+  onDeleteSession: (id: string) => void;
+  onDeleteSessionStart: (id: string) => void;
+  onDeleteSessionUndo: (id: string) => void;
 }) => <div>
   <button onClick={() => props.onSelectWorkspace("project")}>展开项目</button>
   <button onClick={() => props.onSelectSession("session")}>打开会话</button>
   <button onClick={() => props.onCreateSession("project")}>创建会话</button>
+  <button onClick={() => props.onDeleteSessionStart("session")}>开始删除会话</button>
+  <button onClick={() => props.onDeleteSessionUndo("session")}>撤销删除会话</button>
+  <button onClick={() => props.onDeleteSession("session")}>提交删除会话</button>
 </div> }));
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 function controller() {
   return {
-    catalog: { workspaces: [], sessions: [] }, unreadSessionIds: new Set(),
+    catalog: { workspaces: [], sessions: [], currentSessionId: "session" }, unreadSessionIds: new Set(),
     navigation: { setSidebarCollapsed: vi.fn(), sidebarCollapsed: false },
     updater: { supported: false, state: {} }, setError: vi.fn(),
-    actions: { selectWorkspace: vi.fn(), openSession: vi.fn().mockResolvedValue(undefined), createSession: vi.fn().mockResolvedValue(undefined) },
+    actions: {
+      selectWorkspace: vi.fn(),
+      openSession: vi.fn().mockResolvedValue(undefined),
+      createSession: vi.fn().mockResolvedValue(undefined),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+      newChat: vi.fn(),
+    },
   } as unknown as MiniqAppController;
 }
 
@@ -68,5 +80,18 @@ describe("AppSidebar mobile navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建会话" }));
     expect(app.actions.createSession).toHaveBeenCalledWith("project");
     expect(app.navigation.setSidebarCollapsed).not.toHaveBeenCalled();
+  });
+
+  it("leaves the active session on delete intent and restores it on undo", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: false }));
+    const app = controller();
+    render(<AppSidebar app={app} />);
+    fireEvent.click(screen.getByRole("button", { name: "开始删除会话" }));
+    expect(app.actions.newChat).toHaveBeenCalledOnce();
+    expect(app.actions.deleteSession).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "撤销删除会话" }));
+    expect(app.actions.openSession).toHaveBeenCalledWith("session");
+    fireEvent.click(screen.getByRole("button", { name: "提交删除会话" }));
+    expect(app.actions.deleteSession).toHaveBeenCalledWith("session");
   });
 });

@@ -133,3 +133,41 @@ it("restores an optimistic deletion after scrolling away and undoing", () => {
   expect(screen.getByRole("button", { name: "会话 0" })).toBeTruthy();
   expect(onDeleteSession).not.toHaveBeenCalled();
 });
+
+it("leaves the active session immediately and restores it on undo", () => {
+  const onDeleteSession = vi.fn();
+  const onDeleteSessionStart = vi.fn();
+  const onDeleteSessionUndo = vi.fn();
+  render(
+    <Fixture
+      currentSessionId="s0"
+      onDeleteSession={onDeleteSession}
+      onDeleteSessionStart={onDeleteSessionStart}
+      onDeleteSessionUndo={onDeleteSessionUndo}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "会话 0 的更多操作" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "删除会话" }));
+  expect(onDeleteSessionStart).toHaveBeenCalledExactlyOnceWith("s0");
+  expect(onDeleteSession).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+  expect(onDeleteSessionUndo).toHaveBeenCalledExactlyOnceWith("s0");
+  expect(onDeleteSession).not.toHaveBeenCalled();
+});
+
+it("does not navigate when deleting a session that is not active", () => {
+  const onDeleteSessionStart = vi.fn();
+  const onDeleteSessionUndo = vi.fn();
+  render(
+    <Fixture
+      currentSessionId="s1"
+      onDeleteSessionStart={onDeleteSessionStart}
+      onDeleteSessionUndo={onDeleteSessionUndo}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "会话 0 的更多操作" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "删除会话" }));
+  fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+  expect(onDeleteSessionStart).not.toHaveBeenCalled();
+  expect(onDeleteSessionUndo).not.toHaveBeenCalled();
+});
