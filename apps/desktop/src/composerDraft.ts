@@ -62,7 +62,12 @@ export function readPastes(key: string | undefined): PendingPaste[] {
       const paste = entry as Partial<PendingPaste> | null;
       return typeof paste?.placeholder === "string" && paste.placeholder &&
         typeof paste.text === "string"
-        ? [{ placeholder: paste.placeholder, text: paste.text }]
+        ? [{
+            placeholder: paste.placeholder,
+            text: paste.text,
+            ...(typeof paste.label === "string" ? { label: paste.label } : {}),
+            ...(paste.kind === "file-selection" ? { kind: paste.kind } : {}),
+          }]
         : [];
     });
   } catch {

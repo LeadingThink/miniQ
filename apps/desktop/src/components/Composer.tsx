@@ -44,7 +44,7 @@ import type { VoicePreview } from "../voiceTranscription";
 import { savePastedFile } from "../localFiles";
 import { clipboardFiles } from "../clipboardFiles";
 import { readDraft, storeDraft, readAttachments, storeAttachments, readPastes, storePastes } from "../composerDraft";
-import { expandPastes, isLargePaste, nextPlaceholder, type PendingPaste } from "../largePaste";
+import { expandPastes, isLargePaste, nextContextPlaceholder, nextPlaceholder, type DraftContext, type PendingPaste } from "../largePaste";
 import { ComposerField as ComposerFieldView } from "./ComposerField";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { RemotePathDialog } from "./RemotePathDialog";
@@ -124,7 +124,7 @@ export function ComposerCard(props: {
   /** Persist unsent drafts under this key (restored on remount). */
   draftKey?: string;
   /** Replace the draft on an explicit user-selected starter action. */
-  draftRequest?: { id: number; content: string; append?: boolean };
+  draftRequest?: { id: number; content?: string; context?: DraftContext; append?: boolean };
   onDraftRequestApplied?: () => void;
   /** Load enabled skills from the current workspace. */
   client?: RpcClient;
@@ -266,10 +266,28 @@ export function ComposerCard(props: {
 
   useEffect(() => {
     if (!props.draftRequest) return;
-    const content =
-      props.draftRequest.append && draft
-        ? `${draft}\n\n${props.draftRequest.content}`
-        : props.draftRequest.content;
+    const context = props.draftRequest.context;
+    const requested = props.draftRequest.content ?? "";
+    let content = props.draftRequest.append && draft
+      ? `${draft}\n\n${requested}`
+      : requested;
+    if (context) {
+      const followsFileReference = pastesRef.current.some(
+        (paste) => paste.kind === "file-selection" && draft.endsWith(paste.placeholder),
+      );
+      const placeholder = nextContextPlaceholder(
+        context.label,
+        pastesRef.current.map((paste) => paste.placeholder),
+      );
+      applyPastes([...pastesRef.current, {
+        placeholder,
+        ...context,
+        text: `${context.text}\n\n`,
+      }]);
+      content = props.draftRequest.append && draft
+        ? `${draft}${followsFileReference ? "" : "\n\n"}${placeholder}`
+        : placeholder;
+    }
     setDraft(content);
     props.onDraftRequestApplied?.();
     // The starter button keeps document focus. Move the caret into the draft.

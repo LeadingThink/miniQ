@@ -1,4 +1,4 @@
-import { Clipboard } from "lucide-react";
+import { Clipboard, FileText } from "lucide-react";
 import type { ClipboardEvent, FormEvent, KeyboardEvent, RefObject } from "react";
 import { draftSegments } from "../largePaste";
 import type { PendingPaste } from "../largePaste";
@@ -32,7 +32,8 @@ export function ComposerField(props: {
     >
       {segments.map((segment) => {
         if (segment.kind === "paste") {
-          const label = segment.paste.placeholder.slice(1, -1);
+          const label = segment.paste.label ?? segment.paste.placeholder.slice(1, -1);
+          const Icon = segment.paste.kind === "file-selection" ? FileText : Clipboard;
           return (
             <span
               key={segment.paste.placeholder}
@@ -40,7 +41,7 @@ export function ComposerField(props: {
               data-placeholder={segment.paste.placeholder}
               title={segment.paste.placeholder}
             >
-              <Clipboard size={12} aria-hidden="true" />
+              <Icon size={12} aria-hidden="true" />
               <span className="paste-chip-label">{label}</span>
               <button
                 type="button"

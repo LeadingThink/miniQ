@@ -126,7 +126,7 @@ function Fixture() {
         {paths.map((path) => <button className="ghost" key={path} onClick={() => openFile(target(path))}>{path.slice("/fixture/".length)}</button>)}
       </section>
       <label>会话草稿<textarea id="panel-fixture-draft" aria-label="会话草稿" value={draft} onChange={(event) => setDraft(event.target.value)}
-        placeholder="在文件中选中文字，再点“加入提问”" style={{ display: "block", width: "100%", minHeight: 160, marginTop: 8, fontSize: 16 }} /></label>
+        placeholder="在文件中选中文字，再点“引用”" style={{ display: "block", width: "100%", minHeight: 160, marginTop: 8, fontSize: 16 }} /></label>
       {notice && <p role="status">{notice}</p>}
     </main>
     <WorkbenchPanel hidden={!open} expanded={expanded} onRestore={() => setExpanded(false)}>

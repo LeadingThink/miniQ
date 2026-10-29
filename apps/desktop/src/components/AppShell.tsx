@@ -13,6 +13,7 @@ import { ProcessRecordsContext, type ProcessRecordsContextValue } from "../proce
 import { Composer } from "./Composer";
 import { QueueBar } from "./QueueBar";
 import type { ComposerSlashCommand } from "../composerSlash";
+import type { DraftContext } from "../largePaste";
 import { useAppSlashCommands } from "../hooks/useAppSlashCommands";
 import { DistillModal } from "./Distill";
 import { ExternalSessionImportDialog } from "./ExternalSessionImport";
@@ -146,7 +147,7 @@ interface WorkbenchPageProps extends AppOnlyProps {
   onOpenUrl: (url: string) => void;
   onOpenTurnReview: (turnId: string, path?: string) => void;
   onOpenReview: () => void;
-  draftRequest?: { id: number; content: string; append?: boolean };
+  draftRequest?: { id: number; content?: string; context?: DraftContext; append?: boolean };
   onDraftRequestApplied?: () => void;
 }
 
@@ -374,7 +375,13 @@ function MainPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, onO
 export function AppShell({ app, theme, onThemeChange, contentOnly = false, active = true }: AppShellProps) {
   const desktop = useDesktopHost();
   const workbench = useAppWorkbench(app);
-  const [fileQuestion, setFileQuestion] = useState<{ sessionId: string; id: number; content: string; append: boolean }>();
+  const [fileQuestion, setFileQuestion] = useState<{
+    sessionId: string;
+    id: number;
+    content?: string;
+    context?: DraftContext;
+    append: boolean;
+  }>();
   const [sideConversationOpen, setSideConversationOpen] = useState(false);
   const [sideConversationSourceId, setSideConversationSourceId] = useState<string | null>(null);
   const [sideConversationSessionId, setSideConversationSessionId] = useState<string | null>(null);
@@ -509,8 +516,13 @@ export function AppShell({ app, theme, onThemeChange, contentOnly = false, activ
             await app.actions.openSession(sideConversationSourceId);
         }} />}
       {active && <AppOverlays app={app} theme={theme} onThemeChange={onThemeChange} runCommand={commands.runCommand} />}
-      <AppWorkbench suspended={!active} app={app} workbench={workbench} onDiscuss={(content) => {
-        if (app.catalog.currentSessionId) setFileQuestion({ sessionId: app.catalog.currentSessionId, id: Date.now(), content, append: true });
+      <AppWorkbench suspended={!active} app={app} workbench={workbench} onDiscuss={(request) => {
+        if (app.catalog.currentSessionId) setFileQuestion({
+          sessionId: app.catalog.currentSessionId,
+          id: Date.now(),
+          ...(typeof request === "string" ? { content: request } : { context: request }),
+          append: true,
+        });
       }} />
     </Container>
   );

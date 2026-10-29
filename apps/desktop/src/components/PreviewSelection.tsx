@@ -1,35 +1,46 @@
-import { MessageSquare, X } from "lucide-react";
+import { MessageSquare } from "lucide-react";
+import { useRef } from "react";
+import { createPortal } from "react-dom";
+import type { PreviewSelectionAnchor } from "../hooks/usePreviewSelection";
+import { useAnchoredPosition } from "./ui/useAnchoredPosition";
 import "./PreviewSelection.css";
 
 export function PreviewSelection({
-  text,
+  visible,
+  anchor,
   onDiscuss,
   onClear,
 }: {
-  text: string;
+  visible: boolean;
+  anchor: PreviewSelectionAnchor | null;
   onDiscuss: () => void;
   onClear: () => void;
 }) {
-  if (!text) return null;
-  return (
-    <section className="preview-selection" aria-label="选中的文件内容">
-      <div>
-        <strong>针对选中内容提问</strong>
-        <small>仅加入输入框，确认后发送</small>
-        <button
-          type="button"
-          className="icon-button"
-          title="清除选区"
-          aria-label="清除选区"
-          onClick={onClear}
-        >
-          <X size={14} />
-        </button>
-      </div>
-      <blockquote>{text}</blockquote>
-      <button type="button" className="ghost" onClick={onDiscuss}>
-        <MessageSquare size={14} /> 加入提问
-      </button>
-    </section>
+  const floatingRef = useRef<HTMLButtonElement>(null);
+  const unusedAnchorRef = useRef<HTMLElement>(null);
+  const position = useAnchoredPosition(
+    unusedAnchorRef,
+    floatingRef,
+    Boolean(visible && anchor),
+    anchor,
+    8,
+  );
+  if (!visible || !anchor) return null;
+  return createPortal(
+    <button
+      ref={floatingRef}
+      type="button"
+      className="preview-selection primary"
+      onClick={onDiscuss}
+      style={position ? {
+        left: position.left,
+        top: position.top,
+        maxHeight: position.maxHeight,
+      } : undefined}
+      onBlur={onClear}
+    >
+      <MessageSquare size={14} /> 引用
+    </button>,
+    document.body,
   );
 }

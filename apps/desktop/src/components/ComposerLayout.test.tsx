@@ -65,6 +65,7 @@ it("keeps the composer field's top and left inset compact on desktop and touch l
   const composerCss = readFileSync(resolve(process.cwd(), "src/components/Composer.css"), "utf8");
   expect(conversationCss).toMatch(/\.composer-card\s*\{[^}]*padding: 6px 8px 10px;/s);
   expect(conversationCss).toMatch(/\.composer-card textarea,\s*\.composer-field\s*\{[^}]*padding: 4px 4px 6px;/s);
+  expect(conversationCss).toMatch(/\.composer-field\s*\{[^}]*align-items: flex-start;[^}]*align-content: flex-start;/s);
   expect(conversationV2Css).toMatch(/\.main \.composer-card\s*\{[^}]*padding: 6px 8px 10px;/s);
   expect(conversationV2Css).toMatch(/\.main \.composer-card textarea,\s*\.main \.composer-field\s*\{[^}]*padding: 6px 8px 20px;/s);
   expect(composerCss).toMatch(/\.composer-outer \.composer-field\s*\{[^}]*padding: 4px 2px 10px;/s);

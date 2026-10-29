@@ -1,36 +1,11 @@
 .preview-selection {
-  flex: none;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-subtle);
-}
-.preview-selection > div {
-  display: flex;
+  position: fixed;
+  z-index: 1200;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.preview-selection strong {
-  font-size: var(--font-footnote);
-}
-.preview-selection small {
-  flex: 1;
-  color: var(--text-dim);
-  font-size: var(--font-caption);
-}
-.preview-selection blockquote {
-  margin: 8px 0;
-  padding: 4px 10px;
-  border-left: 2px solid var(--accent);
-  max-height: 100px;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: var(--font-footnote);
-  user-select: text;
-}
-.preview-selection > button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  gap: 5px;
+  width: auto;
+  min-height: 30px;
+  padding: 5px 10px;
+  box-shadow: var(--shadow-lg);
 }

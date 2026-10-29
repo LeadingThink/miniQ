@@ -291,3 +291,48 @@ it("offers explicit continuation and shows partial HTML as source", async () => 
   fireEvent.click(screen.getByRole("button", { name: "继续读取下一段" }));
   expect(loadNextPage).toHaveBeenCalledOnce();
 });
+
+it("opens a question button above a rendered selection and sends its line range", () => {
+  const discuss = vi.fn();
+  render(
+    <FilePreviewPanel
+      preview={{
+        target: { path: "/workspace/report.md", line: null, column: null },
+        resolvedPath: "/workspace/report.md",
+        content: "# 完整选区",
+        kind: "markdown",
+        mimeType: "text/markdown",
+        dataBase64: null,
+        size: 16,
+        loading: false,
+        error: null,
+        open: true,
+      }}
+      workspacePath="/workspace"
+      workspacePaths={[]}
+      onClose={vi.fn()}
+      onOpenFile={vi.fn()}
+      onRetry={vi.fn()}
+      onDiscuss={discuss}
+    />,
+  );
+
+  const heading = screen.getByRole("heading", { name: "完整选区" });
+  const range = document.createRange();
+  range.selectNodeContents(heading);
+  range.getBoundingClientRect = () =>
+    ({ left: 100, top: 120, right: 180, bottom: 144 }) as DOMRect;
+  const browserSelection = window.getSelection()!;
+  browserSelection.removeAllRanges();
+  browserSelection.addRange(range);
+  fireEvent(document, new Event("selectionchange"));
+
+  const button = screen.getByRole("button", { name: "引用" });
+  expect(button.style.position).toBe("");
+  fireEvent.scroll(document.querySelector(".file-preview-content")!);
+  expect(screen.queryByRole("button", { name: "引用" })).toBeNull();
+  fireEvent(document, new Event("selectionchange"));
+  fireEvent.click(screen.getByRole("button", { name: "引用" }));
+  expect(discuss).toHaveBeenCalledWith("/workspace/report.md", "完整选区", 1, 1);
+  expect(screen.queryByRole("button", { name: "引用" })).toBeNull();
+});

@@ -10,6 +10,15 @@ export interface PendingPaste {
   placeholder: string;
   /** Original clipboard text, expanded on submit. */
   text: string;
+  /** Visible chip label when it differs from the placeholder token. */
+  label?: string;
+  kind?: "paste" | "file-selection";
+}
+
+export interface DraftContext {
+  label: string;
+  text: string;
+  kind: "file-selection";
 }
 
 /** Characters, not UTF-16 units: a CJK paste is one unit per glyph. */
@@ -28,6 +37,14 @@ export function nextPlaceholder(text: string, taken: readonly string[]): string 
   let index = 2;
   while (taken.includes(`${label} #${index}]`)) index += 1;
   return `${label} #${index}]`;
+}
+
+export function nextContextPlaceholder(label: string, taken: readonly string[]): string {
+  const token = `[${label}]`;
+  if (!taken.includes(token)) return token;
+  let index = 2;
+  while (taken.includes(`[${label} #${index}]`)) index += 1;
+  return `[${label} #${index}]`;
 }
 
 /** Restores every collapsed paste still present in the draft. */

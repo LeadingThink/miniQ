@@ -81,7 +81,7 @@ interface FilePreviewPanelProps {
   onCloseAllTabs?: () => void;
   onReopenClosedTab?: () => void;
   canReopenClosedTab?: boolean;
-  onDiscuss?: (path: string, selection?: string) => void;
+  onDiscuss?: (path: string, selection?: string, startLine?: number, endLine?: number) => void;
   expanded?: boolean;
   onToggleExpanded?: () => void;
   withinWorkbench?: boolean;
@@ -219,7 +219,26 @@ function PreviewPanelContent({
     const selected = instance.onDidChangeCursorSelection(() => {
       const range = instance.getSelection();
       const text = range && !range.isEmpty() ? instance.getModel()?.getValueInRange(range) : "";
-      selection.setText(text && range ? `第 ${range.startLineNumber}–${range.endLineNumber} 行：\n${text}` : "");
+      const position = range && instance.getScrolledVisiblePosition({
+        lineNumber: range.endLineNumber,
+        column: range.endColumn,
+      });
+      const editorRect = instance.getDomNode()?.getBoundingClientRect();
+      if (text && range && position && editorRect) {
+        selection.setText(
+          {
+            text,
+            startLine: range.startLineNumber,
+            endLine: range.endLineNumber,
+          },
+          {
+            x: editorRect.left + position.left,
+            y: editorRect.top + position.top + position.height,
+          },
+        );
+      } else {
+        selection.clear();
+      }
     });
     instance.onDidDispose(() => {
       scroll.dispose();
@@ -536,8 +555,11 @@ function PreviewPanelContent({
         </div>
       )}
       {preview.authorization && <FilePreviewAuthorization authorization={preview.authorization} />}
-      {onDiscuss && <PreviewSelection text={selection.text} onClear={selection.clear}
-        onDiscuss={() => { onDiscuss(path, selection.text); selection.clear(); }} />}
+      {onDiscuss && <PreviewSelection visible={Boolean(selection.text)} anchor={selection.anchor} onClear={selection.clear}
+        onDiscuss={() => {
+          onDiscuss(path, selection.text, selection.startLine ?? 1, selection.endLine ?? selection.startLine ?? 1);
+          selection.clear();
+        }} />}
       {preview.textPage && <div role="status" className="file-preview-loading">
         <span>分段预览：已读取 {formatFileSize(preview.textPage.end)} / {formatFileSize(preview.textPage.total)}；下载可获取完整原文件</span>
         {preview.textPage.next && <button type="button" onClick={() => void preview.loadNextPage?.()}>继续读取下一段</button>}
@@ -546,6 +568,7 @@ function PreviewPanelContent({
         ref={selection.ref}
         className="file-preview-content"
         id={contentId}
+        onScrollCapture={selection.clear}
         role={tabs.length ? "tabpanel" : undefined}
         aria-label={tabs.length ? fileName(path) : undefined}
       >

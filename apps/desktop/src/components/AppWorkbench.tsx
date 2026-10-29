@@ -10,6 +10,7 @@ import { WorkbenchOverview } from "./WorkbenchOverview";
 import { PreviewViewStore } from "../previewViewState";
 import type { WorkbenchLauncherActions } from "./WorkbenchLauncher";
 import { useBrowserHistory } from "../hooks/useBrowserHistory";
+import type { DraftContext } from "../largePaste";
 
 const FilePreviewPanel = lazy(() =>
   import("./FilePreviewPanel").then((module) => ({
@@ -39,7 +40,7 @@ export function AppWorkbench({
 }: {
   app: MiniqAppController;
   workbench: AppWorkbenchController;
-  onDiscuss: (content: string) => void;
+  onDiscuss: (content: string | DraftContext) => void;
   suspended?: boolean;
 }) {
   const [expandedScope, setExpandedScope] = useState<string | null>(null);
@@ -134,7 +135,7 @@ export function AppWorkbench({
     app.navigation.showDistill ||
     app.navigation.showExternalImport ||
     Boolean(app.navigation.editingWorkspaceId);
-  const discuss = (content: string) => {
+  const discuss = (content: string | DraftContext) => {
     setExpandedScope(null);
     if (layout !== "split") workbench.close();
     onDiscuss(content);
@@ -318,17 +319,26 @@ export function AppWorkbench({
                     }
                     onDiscuss={
                       app.catalog.currentSessionId
-                        ? (path, selected) =>
-                            discuss(
-                              `关于文件「${path}」：\n${
-                                selected
-                                  ? `\n选中内容：\n${selected
-                                      .split("\n")
-                                      .map((line) => `> ${line}`)
-                                      .join("\n")}\n\n修改要求：`
-                                  : ""
-                              }`,
-                            )
+                        ? (path, selected, startLine, endLine) => {
+                            if (!selected) {
+                              discuss(`关于文件「${path}」：\n`);
+                              return;
+                            }
+                            const name = path.split(/[\\/]/).at(-1) ?? path;
+                            const lineLabel = startLine === undefined
+                              ? "选中内容"
+                              : startLine === endLine
+                                ? `第 ${startLine} 行`
+                                : `第 ${startLine}–${endLine} 行`;
+                            discuss({
+                              kind: "file-selection",
+                              label: `${name} ${lineLabel}`,
+                              text: `文件「${path}」${startLine === undefined ? "选中内容" : lineLabel}：\n${selected
+                                .split("\n")
+                                .map((line) => `> ${line}`)
+                                .join("\n")}`,
+                            });
+                          }
                         : undefined
                     }
                     onOpenFile={workbench.openFile}

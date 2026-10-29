@@ -49,10 +49,10 @@ vi.mock("./WorkspaceFileTree", () => ({
 }));
 vi.mock("./FilePreviewPanel", () => ({
   FilePreviewPanel: (props: {
-    onDiscuss: (path: string, text: string) => void;
+    onDiscuss: (path: string, text: string, startLine: number, endLine: number) => void;
   }) => (
     <button
-      onClick={() => props.onDiscuss("/project/report.md", "完整选区\n第二行")}
+      onClick={() => props.onDiscuss("/project/report.md", "完整选区\n第二行", 5, 11)}
     >
       讨论选区
     </button>
@@ -172,9 +172,11 @@ it("restores split view when discussing from fullscreen, preserving all selected
       ?.hasAttribute("data-expanded"),
   ).toBe(false);
   expect(props.workbench.close).not.toHaveBeenCalled();
-  expect(discuss).toHaveBeenCalledWith(
-    "关于文件「/project/report.md」：\n\n选中内容：\n> 完整选区\n> 第二行\n\n修改要求：",
-  );
+  expect(discuss).toHaveBeenCalledWith({
+    kind: "file-selection",
+    label: "report.md 第 5–11 行",
+    text: "文件「/project/report.md」第 5–11 行：\n> 完整选区\n> 第二行",
+  });
 });
 
 it("hides narrow desktop overlays so the discussion draft remains accessible", async () => {
