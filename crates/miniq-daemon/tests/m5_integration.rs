@@ -14,9 +14,8 @@ use tokio_tungstenite::tungstenite::Message;
 type WsClient =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-async fn start(provider: Arc<MockProvider>) -> (u16, String) {
+async fn start(store: Store, provider: Arc<MockProvider>) -> (u16, String) {
     let token = "test-token".to_string();
-    let store = Store::open_in_memory().unwrap();
     let state = AppState::new(store, token.clone(), provider);
     let listener = server::bind(0).await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -61,25 +60,6 @@ async fn next_event_of(ws: &mut WsClient, wanted: &str) -> Value {
     }
 }
 
-async fn setup_session(ws: &mut WsClient, dir: &std::path::Path) -> String {
-    let resp = call(
-        ws,
-        "setup1",
-        "workspace.open",
-        json!({"path": dir.to_string_lossy()}),
-    )
-    .await;
-    let ws_id = resp["result"]["id"].as_str().unwrap().to_string();
-    let resp = call(
-        ws,
-        "setup2",
-        "session.create",
-        json!({"workspaceId": ws_id}),
-    )
-    .await;
-    resp["result"]["id"].as_str().unwrap().to_string()
-}
-
 fn tool_call(id: &str, name: &str, arguments: Value) -> ChatDelta {
     ChatDelta::ToolCall(ToolCallRequest {
         id: id.to_string(),
@@ -90,20 +70,27 @@ fn tool_call(id: &str, name: &str, arguments: Value) -> ChatDelta {
 
 #[tokio::test]
 async fn memory_write_needs_approval_then_search_finds_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open_in_memory().unwrap();
+    let workspace = store
+        .create_workspace(dir.path().to_str().unwrap(), "memory test")
+        .unwrap();
+    let sess_id = store
+        .create_session(&workspace.id, "memory test")
+        .unwrap()
+        .id;
+    let target = json!({"scope":"workspace","workspaceId":workspace.id});
     let provider = Arc::new(MockProvider::new(vec![
         vec![tool_call(
             "c1",
             "memory_write",
-            json!({"scope": "workspace", "content": "构建命令是 npm run build"}),
+            json!({"target":target,"content":"构建命令是 npm run build"}),
         )],
         vec![tool_call("c2", "memory_search", json!({"query": "构建"}))],
         vec![ChatDelta::Text("已记住".into())],
     ]));
-    let (port, token) = start(provider).await;
+    let (port, token) = start(store, provider).await;
     let mut ws = connect(port, &token).await;
-
-    let dir = tempfile::tempdir().unwrap();
-    let sess_id = setup_session(&mut ws, dir.path()).await;
     call(
         &mut ws,
         "mode0",
@@ -116,7 +103,7 @@ async fn memory_write_needs_approval_then_search_finds_it() {
         &mut ws,
         "r1",
         "session.sendMessage",
-        json!({"sessionId": sess_id, "message": {"role": "user", "content": "记住构建命令"}}),
+        json!({"sessionId": sess_id, "message": {"role": "user", "content": "记住项目构建命令是 npm run build"}}),
     )
     .await;
 
@@ -134,6 +121,9 @@ async fn memory_write_needs_approval_then_search_finds_it() {
 
     let f1 = next_event_of(&mut ws, "tool_call_finished").await;
     assert_eq!(f1["status"], "succeeded");
+    assert_eq!(f1["output"]["status"], "added");
+    assert_eq!(f1["output"]["memory"]["revision"], 1);
+    assert_eq!(f1["output"]["memory"]["workspaceId"], workspace.id);
 
     // memory_search runs without approval and finds the stored fact.
     let f2 = next_event_of(&mut ws, "tool_call_finished").await;
@@ -145,4 +135,13 @@ async fn memory_write_needs_approval_then_search_finds_it() {
         .unwrap()
         .contains("npm run build"));
     next_event_of(&mut ws, "turn_completed").await;
+    let read = call(
+        &mut ws,
+        "read",
+        "memory.read",
+        json!({"target":target,"id":memories[0]["id"]}),
+    )
+    .await;
+    assert_eq!(read["result"]["memory"]["origin"], "explicit");
+    assert_eq!(read["result"]["sources"][0]["sessionId"], sess_id);
 }

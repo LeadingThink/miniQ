@@ -4,13 +4,34 @@ use serde_json::Value;
 
 pub(super) fn plan_mode_allows(call: &ToolCallRequest, risk: RiskLevel) -> bool {
     match call.name.as_str() {
-        "file_read" | "file_list" | "file_glob" | "file_grep" | "git_status" | "git_diff"
-        | "doc_read" | "view_image" | "view_pdf" | "skill_read" | "memory_search"
-        | "tool_search" | "web_fetch" | "web_search" | "ask_user" | "task_update"
-        | "task_create" | "task_get" | "task_list" | "task_item_update" | "plan_mode"
-        | "process_output" | "agent_wait" | "agent_result" | "process_kill" | "agent_message" => {
-            true
-        }
+        "file_read"
+        | "file_list"
+        | "file_glob"
+        | "file_grep"
+        | "git_status"
+        | "git_diff"
+        | "doc_read"
+        | "view_image"
+        | "view_pdf"
+        | "skill_read"
+        | "memory_search"
+        | "memory_read"
+        | "memory_project_read"
+        | "tool_search"
+        | "web_fetch"
+        | "web_search"
+        | "ask_user"
+        | "task_update"
+        | "task_create"
+        | "task_get"
+        | "task_list"
+        | "task_item_update"
+        | "plan_mode"
+        | "process_output"
+        | "agent_wait"
+        | "agent_result"
+        | "process_kill"
+        | "agent_message" => true,
         "process_input" => risk == RiskLevel::Low,
         "shell_run" | "shell_batch" => risk == RiskLevel::Low,
         "browser_automation" => matches!(
@@ -75,6 +96,10 @@ mod tests {
         for (name, action, allowed) in [
             ("view_image", "", true),
             ("view_pdf", "", true),
+            ("memory_read", "", true),
+            ("memory_project_read", "", true),
+            ("memory_write", "", false),
+            ("memory_forget", "", false),
             ("computer_use", "screenshot", true),
             ("computer_use", "click", false),
             ("computer_use", "type", false),
