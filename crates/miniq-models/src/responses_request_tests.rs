@@ -42,8 +42,8 @@ fn local_preview_uses_provider_high_detail_for_responses() {
         detail: ImageDetail::Preview,
     });
     let input = build_input(&[message]).unwrap();
-    assert_eq!(input[0]["content"][1]["type"], "input_image");
-    assert_eq!(input[0]["content"][1]["detail"], "high");
+    assert_eq!(input[0]["content"][2]["type"], "input_image");
+    assert_eq!(input[0]["content"][2]["detail"], "high");
 }
 
 #[test]

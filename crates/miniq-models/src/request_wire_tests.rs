@@ -1,5 +1,7 @@
 //! Assert raw HTTP bytes, not just parsed JSON, for each production adapter.
 
+mod images;
+
 use std::sync::{Arc, Mutex};
 
 use axum::{body::Bytes, http::HeaderMap, routing::post, Router};

@@ -176,7 +176,7 @@ fn encodes_images_as_responses_input_parts() {
         mime_type: "image/png".into(),
     });
     let body = provider().build_body(&request(vec![message]));
-    assert_eq!(body["input"][0]["content"][1]["type"], "input_image");
+    assert_eq!(body["input"][0]["content"][2]["type"], "input_image");
     let _ = std::fs::remove_file(path);
 }
 

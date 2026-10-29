@@ -4,6 +4,8 @@
 
 ## 协议
 
+本节说明 relay 的签名对象存储协议。SSH 主机的 `file.download.prepare` 返回连接分块描述符，具体字段及读取、释放接口见 [SSH 文件预览与下载](ssh-connections.md#ssh-文件预览与下载)。两者共用会话文件权限校验，客户端按目标连接选择传输协议。
+
 此通道针对当前连接桌面的本地会话项目；它不是任意 SSH 主机的通用文件上传接口。每个文件最大 200 MiB。SHA-256 使用 64 位小写十六进制。上传保持所选 File 的原始字节，包含 HEIC；预览转换不能替换上传原件。系统照片选择器可能返回兼容格式，若必须保留相机原始 HEIC，应从系统文件选择器选取原件；此通道本身不做 JPEG 重编码。HEIC 能否直接预览取决于平台解码支持，不能预览仍可保存原文件。
 
 - `file.download.prepare {sessionId,path,revision}`：验证会话文件权限与版本，流式上传到私有对象，返回 `{transferId,getUrl,expiresAt,size,sha256,revision}`。

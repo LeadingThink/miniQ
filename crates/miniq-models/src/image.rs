@@ -9,6 +9,16 @@ use sha2::{Digest, Sha256};
 
 use crate::{ChatImage, ImageDetail, ProviderError};
 
+/// Bind user-visible pixels to their original local file, even when the image
+/// payload is resized or replaced with a provider upload URL.
+pub(crate) fn source_label(image: &ChatImage, index: usize) -> String {
+    format!(
+        "Image #{} local file (use this exact path for file processing): {}",
+        index + 1,
+        serde_json::json!({"path": image.path, "mimeType": image.mime_type})
+    )
+}
+
 // Sanity guards for pathological inputs, not target sizes. What actually
 // reaches the model is bounded by the geometry applied before encoding.
 const MAX_IMAGE_BYTES: u64 = 256 * 1024 * 1024;

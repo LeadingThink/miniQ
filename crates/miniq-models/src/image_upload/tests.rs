@@ -173,6 +173,17 @@ async fn uploads_before_enforcing_wire_budget_and_keeps_every_distinct_image() {
     .await
     .unwrap();
     assert_eq!(body["input"].as_array().unwrap().len(), 4);
+    for (index, message) in original.messages.iter().enumerate() {
+        let content = &body["input"][index]["content"];
+        let (_, source) = content[1]["text"]
+            .as_str()
+            .unwrap()
+            .split_once(": ")
+            .unwrap();
+        let source: Value = serde_json::from_str(source).unwrap();
+        assert_eq!(source["path"], message.images[0].path);
+        assert_eq!(content[2]["image_url"], URL);
+    }
     assert_eq!(uploader.uploaded.lock().unwrap().len(), 4);
     assert!(crate::request_budget::wire_size(&body).unwrap() < 4096);
     assert_eq!(crate::request_budget::image_wire_size(&body), 0);

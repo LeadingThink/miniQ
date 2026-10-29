@@ -1,5 +1,6 @@
 //! Session-scoped artifact access and streaming transfers for browser and mobile clients.
 pub(crate) mod access;
+pub(crate) mod download;
 mod transfer;
 use super::common::{params, store_err};
 use crate::state::AppState;

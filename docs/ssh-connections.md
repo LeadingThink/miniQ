@@ -10,6 +10,18 @@ SSH 连接由本机 daemon 统一维护，每台主机都有自己的连接、�
 
 对应本机 ChatGPT/Codex 的源码证据、差异及验收边界见 [unified-ssh-workspaces.md](unified-ssh-workspaces.md)。
 
+## SSH 文件预览与下载
+
+SSH 的文件准备接口由远端 daemon 提供，不依赖该服务器加入 relay 或配置对象存储。参考实现为本地 `reference-repos/codex/codex-rs/exec-server/src/remote_file_stream.rs` 的 `fs/open → fs/readBlock → fs/close`：准备文件句柄、按偏移读取有界数据块、结束后释放。
+
+- `file.download.prepare {sessionId,path,revision,forceRefresh?}`：检查当前会话的项目根目录及附件权限，固定普通文件句柄，计算 SHA-256，返回 `{transport:"connection",transferId,size,revision,sha256,expiresAt,chunkBytes:262144}`。每次准备独立句柄；`forceRefresh` 不复用旧句柄。
+- `file.download.read {sessionId,transferId,offset,length}`：`offset` 为非负整数，`length` 为 1–262144 的整数。返回 `{offset,nextOffset,totalBytes,revision,done,dataBase64}`；每次读取重查会话权限、文件身份和版本，不接受额外路径或 URL。
+- `file.transfer.status {sessionId,transferId}` 查询句柄是否仍可读；`file.transfer.cancel` 使用相同参数关闭句柄。句柄绑定会话和调用来源，15 分钟到期自动释放；每个 daemon 最多保留 64 个句柄，同时最多准备 2 个文件，单文件上限 200 MiB。
+- 桌面和手机预览走同一 `host.call` 主机上下文。大文本逐页读取，保留跨块 UTF-8 字符；全文件读取校验 SHA-256。完成、异常或离开预览时关闭句柄，不通过 `file.read` 错误回退。
+- 桌面 SSH 下载和复制原文件内容也使用此协议。手机 App 的系统保存功能目前仅接收私有存储签名 URL，SSH 文件可预览但尚不能保存到手机；界面明确提示此限制，不伪报保存成功。
+
+应用前端与 SSH 服务器上的 daemon 都需要包含这些接口。仅重启旧版程序不会增加方法；普通 relay 会话继续使用原有签名对象存储协议。
+
 ## 首次连接
 
 ### 1. 在桌面电脑上准备 SSH

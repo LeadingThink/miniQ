@@ -1,7 +1,7 @@
 // Object downloads can require repeating the RPC over encrypted chunks. Only
 // handlers audited as reads may use that transport; commands must run once.
 const replayableReads = new Set([
-  "file.describe", "file.read", "file.list", "observation.read",
+  "file.describe", "file.read", "file.download.read", "file.list", "observation.read",
   "workspace.list", "session.list", "session.open", "session.history",
   "session.sync", "session.processRecords", "session.modelCalls", "session.executionEvents",
   "session.diff", "session.search", "session.queueList", "tool.detail",

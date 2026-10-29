@@ -152,6 +152,12 @@ async fn dispatch_from(
         }
         "daemon.health" => system::health(state),
         "file.describe" => files::describe(state, req.params, authenticated_remote).await,
+        "file.download.prepare"
+        | "file.download.read"
+        | "file.transfer.status"
+        | "file.transfer.cancel" => {
+            files::download::dispatch(state, &req.method, req.params, remote_actor.clone()).await
+        }
         "file.read" => {
             files::read(
                 state,

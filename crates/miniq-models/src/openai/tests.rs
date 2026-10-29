@@ -171,9 +171,9 @@ fn encodes_attached_images_as_openai_vision_content_parts() {
     let body = provider().build_body(&request);
     let content = body["messages"][0]["content"].as_array().unwrap();
     assert_eq!(content[0]["type"], "text");
-    assert_eq!(content[1]["type"], "image_url");
-    assert_eq!(content[1]["image_url"]["detail"], "auto");
-    assert!(content[1]["image_url"]["url"]
+    assert_eq!(content[2]["type"], "image_url");
+    assert_eq!(content[2]["image_url"]["detail"], "auto");
+    assert!(content[2]["image_url"]["url"]
         .as_str()
         .unwrap()
         .starts_with("data:image/png;base64,"));

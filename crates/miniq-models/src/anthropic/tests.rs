@@ -199,7 +199,7 @@ fn encodes_images_as_anthropic_source_blocks() {
     });
     let body = provider().build_body(&request(vec![message]));
     assert_eq!(
-        body["messages"][0]["content"][1]["source"]["type"],
+        body["messages"][0]["content"][2]["source"]["type"],
         "base64"
     );
     let _ = std::fs::remove_file(path);

@@ -1,8 +1,8 @@
 import { Download, Share2, Square } from "lucide-react";
 import { throwIfAborted } from "../abortSignal";
 import { useEffect, useRef, useState } from "react";
-import type { FileReadOptions } from "../remoteFiles";
-import { downloadRemoteFile, validateDescriptor, type SignedDownload } from "../remoteTransfer";
+import { readRemoteFile, type FileReadOptions } from "../remoteFiles";
+import { validateDescriptor, type SignedDownload } from "../remoteTransfer";
 import { Capacitor } from "@capacitor/core";
 import { saveRemoteFile } from "../nativeFileTransfer";
 import { useSessionFileAccess } from "../sessionFileAccess";
@@ -50,6 +50,7 @@ function useRemoteDownload({ path, preview, onError }: DownloadProps) {
         try {
             const name = path.split(/[\\/]/).at(-1) || "download";
             if (access.client && access.sessionId && Capacitor.isNativePlatform()) {
+                if (access.client.sshHost) throw new Error("手机端暂不支持保存 SSH 文件，请在电脑端下载；文件预览可正常使用");
                 const described = await access.client.call<{
                     mimeType: string;
                     revision: string;
@@ -81,13 +82,12 @@ function useRemoteDownload({ path, preview, onError }: DownloadProps) {
             }
             if (!access.client || !access.sessionId)
                 return;
-            const described = await access.client.call<{
-                revision: string;
-                mimeType: string;
-            }>("file.describe", { sessionId: access.sessionId, path }, { signal: controller.signal });
-            const signed = await downloadRemoteFile(access.client, access.sessionId, path, described.revision, controller.signal, (received, total) => setProgress(total ? Math.round((received / total) * 100) : 100));
+            const file = await readRemoteFile(path, { ...access, download: true, signal: controller.signal,
+                onProgress: (received, total) => setProgress(total ? Math.round((received / total) * 100) : 100),
+            });
             throwIfAborted(controller.signal);
-            const downloadable = new File([signed.blob], name, { type: described.mimeType });
+            if (!file.blob) throw new Error("无法下载文件");
+            const downloadable = new File([file.blob], name, { type: file.mimeType });
             const shareable = typeof navigator.share === "function" &&
                 Boolean(navigator.canShare?.({ files: [downloadable] }));
             const url = URL.createObjectURL(downloadable);

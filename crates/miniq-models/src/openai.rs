@@ -149,7 +149,12 @@ fn message_to_json(msg: &ChatMessage) -> Result<Value, ProviderError> {
         if !msg.content.trim().is_empty() {
             parts.push(json!({ "type": "text", "text": msg.content }));
         }
-        for image in &msg.images {
+        for (index, image) in msg.images.iter().enumerate() {
+            if msg.role == ChatRole::User {
+                parts.push(
+                    json!({"type": "text", "text": crate::image::source_label(image, index)}),
+                );
+            }
             parts.push(image_to_json(image)?);
         }
         Value::Array(parts)

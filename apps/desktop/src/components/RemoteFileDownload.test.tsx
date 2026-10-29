@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { RemoteFileDownload } from "./RemoteFileDownload";
 import { downloadRemoteFile } from "../remoteTransfer";
 import { saveRemoteFile } from "../nativeFileTransfer";
@@ -13,7 +14,9 @@ const ticket = { transferId: "t", getUrl: "https://s3.qiniucs.com/bucket/remote-
 beforeEach(() => {
     vi.clearAllMocks();
     state.native = false;
-    state.access = { client: { mode: "remote", call: vi.fn(async (method) => method === "file.describe" ? { mimeType: "application/pdf", revision: "v1" } : ticket) }, sessionId: "one" };
+    state.access = { client: { mode: "remote", call: vi.fn(async (method) => method === "file.describe" ? {
+        path: "/work/result.pdf", kind: "pdf", mimeType: "application/pdf", revision: "v1", size: 3, chunkBytes: 262144,
+    } : ticket) }, sessionId: "one" };
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:file"), revokeObjectURL: vi.fn() }));
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => { });
     Object.defineProperty(navigator, "canShare", { configurable: true, value: vi.fn(() => true) });
@@ -67,4 +70,29 @@ it("does not treat a dismissed share sheet as failure", async () => {
     fireEvent.click(await screen.findByRole("button", { name: "分享或存储文件" }));
     await waitFor(() => expect(navigator.share).toHaveBeenCalled());
     expect(error).not.toHaveBeenCalled();
+});
+it("downloads SSH bytes through the prepared RPC stream from the preview button", async () => {
+    Object.assign(state.access.client, { sshHost: "server" });
+    const original = state.access.client.call.getMockImplementation()!;
+    state.access.client.call.mockImplementation(async (method, params) => {
+        if (method === "file.download.prepare") return { ...ticket, getUrl: undefined, transport: "connection", chunkBytes: 262144,
+            sha256: createHash("sha256").update("pdf").digest("hex") };
+        if (method === "file.download.read") return { offset: 0, nextOffset: 3, totalBytes: 3, revision: "v1", done: true, dataBase64: "cGRm" };
+        if (method === "file.transfer.cancel") return { status: "cancelled" };
+        return original(method, params);
+    });
+    start();
+    expect((await screen.findByRole("link")).getAttribute("download")).toBe("result.pdf");
+    expect(downloadRemoteFile).not.toHaveBeenCalled();
+    expect(state.access.client.call).toHaveBeenCalledWith("file.download.read", expect.objectContaining({ sessionId: "one", transferId: "t" }), expect.anything());
+});
+it("explains the native SSH save limitation without opening a storage download", async () => {
+    state.native = true;
+    Object.assign(state.access.client, { sshHost: "server" });
+    const onError = vi.fn();
+    render(<RemoteFileDownload path="/work/result.pdf" onError={onError}/>);
+    fireEvent.click(screen.getByRole("button", { name: "下载到当前设备" }));
+    await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.stringContaining("手机端暂不支持保存 SSH 文件")));
+    expect(state.access.client.call).not.toHaveBeenCalled();
+    expect(saveRemoteFile).not.toHaveBeenCalled();
 });

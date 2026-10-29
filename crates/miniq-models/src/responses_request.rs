@@ -28,7 +28,13 @@ fn message_content(message: &ChatMessage, text_kind: &str) -> Result<Vec<Value>,
     if !message.content.is_empty() {
         content.push(text_part(text_kind, &message.content));
     }
-    for image in &message.images {
+    for (index, image) in message.images.iter().enumerate() {
+        if message.role == ChatRole::User {
+            content.push(text_part(
+                text_kind,
+                &crate::image::source_label(image, index),
+            ));
+        }
         let detail = image.detail.wire_detail();
         let image = encode_image(image)?;
         content.push(json!({

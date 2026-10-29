@@ -169,7 +169,7 @@ impl<'a> ImageHistoryExecutor<'a> {
                 }
                 let end = offset.saturating_add(limit).min(total);
                 Ok((
-                    json!({"id": id, "sources": &entry.sources[offset..end],
+                    json!({"id": id, "image": entry.image, "sources": &entry.sources[offset..end],
                     "total": total, "next_offset": (end < total).then_some(end),
                     "historical_evidence": true}),
                     Vec::new(),

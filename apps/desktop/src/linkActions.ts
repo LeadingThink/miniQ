@@ -83,6 +83,7 @@ export async function downloadFileToDevice(path: string, access: FileReadOptions
   const { Capacitor } = await import("@capacitor/core");
   if (Capacitor.isNativePlatform()) {
     if (!access.client || !access.sessionId) throw new Error("请先连接桌面并打开会话");
+    if (access.client.sshHost) throw new Error("手机端暂不支持保存 SSH 文件，请在电脑端下载；文件预览可正常使用");
     const { validateDescriptor } = await import("./remoteTransfer");
     const { saveRemoteFile } = await import("./nativeFileTransfer");
     const description = await access.client.call<{ revision: string; mimeType: string }>("file.describe", { sessionId: access.sessionId, path });

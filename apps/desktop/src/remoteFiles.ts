@@ -4,9 +4,10 @@ import type { LocalFilePreview, LocalPreviewKind } from "./localFiles";
 import { downloadRemoteFile, prepareRemotePreview, readRemoteRange, SMALL_RPC_FILE_BYTES, type RemotePreviewSource } from "./remoteTransfer";
 import { canFallbackRemoteFile } from "./remoteFileErrors";
 import { CONNECTION_FILE_LIMIT, readConnectionFile, type ConnectionFileDescription } from "./remoteConnectionFile";
+import { readSshFile } from "./sshFileDownload";
 
 export interface FileReadOptions {
-  client?: Pick<RpcClient, "call" | "mode">;
+  client?: Pick<RpcClient, "call" | "mode"> & Partial<Pick<RpcClient, "sshHost" | "targetDeviceId">>;
   sessionId?: string | null;
   signal?: AbortSignal;
   onProgress?: (received: number, total: number) => void;
@@ -36,6 +37,7 @@ export async function readRemoteFile(path: string, options: FileReadOptions): Pr
   if (kind === "unsupported" && !options.download) return file;
   if (size > MAX_FILE_BYTES) throw new Error("当前手机单文件预览与下载上限为 200 MB，请让 AI 生成较小的预览版或拆分文件");
   options.reserveBytes?.(size);
+  if (client.sshHost) return readSshFile(file, revision, options);
   const text = (kind === "text" || kind === "markdown") && !options.download;
   const transport = (value: "storage" | "connection") => { file.transport = value; options.onTransport?.(value); };
   const connection = async (cause: unknown): Promise<Blob> => {

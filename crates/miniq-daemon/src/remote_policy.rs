@@ -136,6 +136,7 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "file.describe"
         | "file.read"
         | "file.download.prepare"
+        | "file.download.read"
         | "file.transfer.status"
         | "file.list"
         | "computer.permissions"

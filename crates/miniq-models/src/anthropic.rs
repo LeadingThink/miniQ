@@ -95,7 +95,11 @@ fn content_blocks(message: &ChatMessage, text_type: &str) -> Result<Vec<Value>, 
     if !message.content.is_empty() {
         blocks.push(json!({ "type": text_type, "text": message.content }));
     }
-    for image in &message.images {
+    for (index, image) in message.images.iter().enumerate() {
+        if message.role == ChatRole::User {
+            blocks
+                .push(json!({"type": text_type, "text": crate::image::source_label(image, index)}));
+        }
         let image = encode_image(image)?;
         blocks.push(json!({
             "type": "image",

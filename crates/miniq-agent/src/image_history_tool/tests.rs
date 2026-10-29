@@ -72,6 +72,27 @@ fn call(arguments: Value) -> ToolCallRequest {
 }
 
 #[tokio::test]
+async fn user_sources_identify_the_attachment_without_a_filesystem_search() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("image.png");
+    std::fs::write(&path, crate::missing_images::tests::PNG).unwrap();
+    let mut user = ChatMessage::user("把这个文件切成九宫格");
+    user.images.push(image(path.to_str().unwrap()));
+    let inner = Executor::default();
+    let executor = ImageHistoryExecutor::new(&inner, &[user]);
+    let result = executor
+        .execute(&call(json!({"action":"sources", "id":"img_1"})))
+        .await
+        .unwrap();
+    assert_eq!(result["image"]["path"], path.to_str().unwrap());
+    assert_eq!(result["sources"][0]["role"], "user");
+    assert_eq!(
+        std::fs::read(result["image"]["path"].as_str().unwrap()).unwrap(),
+        crate::missing_images::tests::PNG
+    );
+}
+
+#[tokio::test]
 async fn list_is_paginated_and_read_is_scoped_without_arbitrary_paths() {
     let directory = tempfile::tempdir().unwrap();
     let inner = Executor::default();
@@ -90,6 +111,11 @@ async fn list_is_paginated_and_read_is_scoped_without_arbitrary_paths() {
         .await
         .unwrap();
     assert_eq!(sources["sources"][0]["tool_name"], "view_image");
+    assert_eq!(
+        sources["image"]["path"],
+        first["images"][0]["image"]["path"]
+    );
+    assert_eq!(sources["image"]["mime_type"], "image/png");
     assert!(sources["sources"][0]["source_content"]
         .as_str()
         .unwrap()
