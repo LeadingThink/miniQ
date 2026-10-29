@@ -42,4 +42,10 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
 
   const baseCss = readFileSync(new URL("./styles/base.css", import.meta.url), "utf8");
   expect(baseCss).toContain('@import "./conversation-v2.css"');
+
+  const timeline = readFileSync(
+    new URL("./components/Timeline.tsx", import.meta.url),
+    "utf8",
+  );
+  expect(timeline).toContain("<AgentStatusIndicator");
 });

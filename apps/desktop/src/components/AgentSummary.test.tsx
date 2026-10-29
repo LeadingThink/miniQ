@@ -77,10 +77,10 @@ describe("AgentStatusIndicator", () => {
     render(
       <AgentStatusIndicator
         agents={[
-          { ...base, agentId: "done", name: "文档整理", status: "completed" },
-          { ...base, agentId: "a", name: "资料核查" },
-          { ...base, agentId: "b", name: "测试执行" },
-          { ...base, agentId: "c", name: "代码审查" },
+          { ...base, agentId: "done", name: "agent_done", description: "文档整理", status: "completed" },
+          { ...base, agentId: "a", name: "agent_a", description: "资料核查" },
+          { ...base, agentId: "b", name: "agent_b", description: "测试执行" },
+          { ...base, agentId: "c", name: "agent_c", description: "代码审查" },
         ]}
         onOpen={onOpen}
       />,
@@ -92,6 +92,32 @@ describe("AgentStatusIndicator", () => {
     expect(onOpen).toHaveBeenCalledWith("a");
     fireEvent.click(main);
     expect(onOpen).toHaveBeenLastCalledWith();
+  });
+
+  it("uses the description as the child label in the compact status", () => {
+    render(
+      <AgentStatusIndicator
+        agents={[
+          {
+            ...base,
+            name: "agent_c087f9f1ec3d4360bcb5ee21e71bb857",
+            description: "复核校对用户名归属与兼容性",
+          },
+        ]}
+        onOpen={vi.fn()}
+      />,
+    );
+
+    const status = screen.getByRole("button", {
+      name: "子任务：1 个执行中，0 个等待，0 个异常",
+    });
+    expect(status.textContent).toContain("复核校对用户名归属与兼容性 正在执行");
+    expect(status.textContent).not.toContain("agent_c087f9f1ec3d4360bcb5ee21e71bb857");
+    expect(
+      screen.getByRole("button", {
+        name: "打开 复核校对用户名归属与兼容性 子任务",
+      }),
+    ).toBeTruthy();
   });
 
   it("assigns each agent a stable avatar tone", () => {

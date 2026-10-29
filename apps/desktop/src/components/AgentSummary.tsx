@@ -88,7 +88,7 @@ export function orderAgentsForSummary(agents: AgentSummary[]): AgentSummary[] {
 }
 
 function agentDisplayName(agent: AgentSummary): string {
-  return agent.name.trim() || agent.description.trim() || "子任务";
+  return agent.description.trim() || agent.name.trim() || "子任务";
 }
 
 const PHASE_LABELS: Record<TurnProgress["phase"], string> = {
@@ -227,18 +227,21 @@ export function AgentStatusIndicator({
   return (
     <div className="agent-status-indicator" data-state={running > 0 ? "active" : failed > 0 ? "failed" : "idle"}>
       <span className="agent-avatar-stack">
-        {ordered.slice(0, 3).map((agent) => (
-          <button
-            key={agent.agentId}
-            type="button"
-            className="agent-avatar-button"
-            aria-label={`打开 ${agentDisplayName(agent)} 子任务`}
-            title={`${agentDisplayName(agent)}：${agent.description}`}
-            onClick={() => onOpen(agent.agentId)}
-          >
-            <AgentAvatar seed={agent.agentId} name={agentDisplayName(agent)} status={agent.status} />
-          </button>
-        ))}
+        {ordered.slice(0, 3).map((agent) => {
+          const displayName = agentDisplayName(agent);
+          return (
+            <button
+              key={agent.agentId}
+              type="button"
+              className="agent-avatar-button"
+              aria-label={`打开 ${displayName} 子任务`}
+              title={displayName}
+              onClick={() => onOpen(agent.agentId)}
+            >
+              <AgentAvatar seed={agent.agentId} name={displayName} status={agent.status} />
+            </button>
+          );
+        })}
       </span>
       <button
         type="button"
