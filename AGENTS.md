@@ -46,6 +46,14 @@ Without an explicit release request, do not:
 
 When release authorization is explicit, use the existing GitHub Actions workflow. Do not bypass it with a manual `gh release create` flow.
 
+## Release Execution Environment
+
+- 发布时不要在本地编译。Windows、macOS、Linux、Android 和 iOS 的发布编译、打包、签名及完整验证均由现有 GitHub Actions 工作流执行。
+- Do not run local release builds, including `cargo build`, `cargo test`, `cargo check`, `npm run build`, Tauri builds, Gradle builds, or Xcode archive/export. Rust tests and checks also compile code, so release authorization alone does not authorize running them locally.
+- During release preparation, limit local work to Git synchronization, source/diff review, version and lockfile updates, and lightweight checks that do not compile, such as version validation, `cargo fmt --all -- --check`, and `git diff --check`. Leave full test suites to CI; do not repeat them locally before dispatching a release.
+- Monitor CI through completion and verify the published assets and update metadata. A queued or running workflow is not a successful release.
+- Only make an exception when the user explicitly asks for a local build or local compilation in the current task. Routine development validation is separate from this release-only rule.
+
 ## Windows Release Workflow
 
 The current release pipeline publishes signed desktop installers and Tauri updater metadata. Source code and tags live in `LeadingThink/miniQ`; Qiniu is the primary release origin and `LeadingThink/miniQ-releases` is the public mirror.
@@ -66,23 +74,18 @@ The current release pipeline publishes signed desktop installers and Tauri updat
 
    From `apps/desktop`, `npm version <version> --no-git-tag-version` may be used to update `package.json` and `package-lock.json` together.
 
-4. Validate the release from the correct directories. At minimum run:
+4. Run only lightweight local release checks from the correct directories:
 
    ```powershell
    cd apps/desktop
    npm run release:check-version -- v<version>
-   npm test
-   npm run build
 
    cd ../..
    cargo fmt --all -- --check
-   cargo test -p miniq-daemon
-   cargo check --workspace
-   cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
    git diff --check
    ```
 
-   Broaden tests when the release changes shared or high-risk behavior.
+   The existing release workflow must run frontend tests/build, daemon tests, workspace checks, and desktop Rust checks on CI. Do not run these compilation or full-suite steps locally as part of a release. Add relevant CI validation when shared or high-risk behavior requires it.
 
 5. Inspect the final diff and status. Commit the intended release contents, push the release commit to `origin/main`, create tag `v<version>` on that exact commit, and push the tag.
 
@@ -147,15 +150,13 @@ The iOS app uses bundle identifier `com.leadingthink.miniq`. GitHub Actions buil
 
 3. Confirm the intended source commit and determine the next unused build number from App Store Connect or previous successful workflow runs.
 
-4. From `apps/desktop`, run the same portable checks used by the workflow:
+4. From `apps/desktop`, optionally check the workflow contract without compiling:
 
    ```powershell
    node --test scripts/ios_testflight.node-test.mjs
-   npx vitest run src/components/MobileEntry.test.ts src/remoteCrypto.test.ts src/remotePayload.test.ts src/remoteBlob.test.ts src/hooks/useDaemonConnection.test.ts src/hooks/useDaemonConnection.integration.test.tsx
-   npm run build
    ```
 
-5. Run `git diff --check` from the repository root and inspect the final status. The macOS-only Capacitor sync, Xcode archive, signing, and IPA export remain the responsibility of GitHub Actions.
+5. Run `git diff --check` from the repository root and inspect the final status. Mobile tests, frontend compilation, Capacitor sync, Xcode archive, signing, and IPA export run in GitHub Actions; do not run local builds for release preparation.
 
 ### Upload To TestFlight
 
