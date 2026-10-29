@@ -187,6 +187,8 @@ export function Sidebar(props: SidebarProps) {
   }, [props.currentSessionId, props.sessions]);
   const archivedSessions = navigation.archived;
   const archiveOpen = showArchived || navigation.filtering;
+  const updateDividerVisible = props.updateSupported && updateNeedsAttention(props.updateState);
+  const updateNoticeVisible = mobile || updateDividerVisible;
   return (
     <SidebarPanel
       onPointerDown={onPointerDown}
@@ -306,8 +308,8 @@ export function Sidebar(props: SidebarProps) {
         </div>
       </div>
 
-      <div className="sidebar-footer">
-        {(mobile || updateNeedsAttention(props.updateState)) && <UpdateNotice
+      <div className={`sidebar-footer${updateDividerVisible ? " has-update-notice" : ""}`}>
+        {updateNoticeVisible && <UpdateNotice
           supported={props.updateSupported}
           state={props.updateState}
           onCheck={props.onCheckForUpdates}

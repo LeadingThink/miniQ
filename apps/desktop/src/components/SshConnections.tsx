@@ -60,7 +60,7 @@ export function SshConnections(props: SshConnectionsProps) {
         <li>在远端运行 <code>miniq configure</code> 配置服务，再运行 <code>miniq doctor</code> 检查。</li>
         <li>在这里连接主机。远程使用那台电脑自身的项目、配置与模型 Key。</li>
       </ol><p>端口、私钥与跳板机请在 <code>~/.ssh/config</code> 中配置。不保存 SSH 密码，也不复制本机 API Key。</p>
-        <a href="https://github.com/LeadingThink/miniQ-releases/releases" target="_blank" rel="noreferrer">下载终端版</a>
+        <a className="ssh-download-link" href="https://github.com/LeadingThink/miniQ-releases/releases" target="_blank" rel="noreferrer">下载终端版</a>
       </details>
     </>}
     {!props.canManage && <p className="ssh-help">可连接桌面已保存的 SSH 电脑。新增电脑或授权新目录，请在桌面端设置；移动端通信继续使用加密中继。</p>}

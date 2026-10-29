@@ -37,6 +37,15 @@ it("mobile connects saved computers without exposing host or workspace authoriza
   expect(input.onSelectHost).toHaveBeenCalledWith("work");
 });
 
+it("presents the terminal download as a primary external action", () => {
+  render(<SshConnections {...props()} />);
+  const link = screen.getByRole("link", { name: "下载终端版" });
+  expect(link.classList.contains("ssh-download-link")).toBe(true);
+  expect(link.getAttribute("href")).toBe("https://github.com/LeadingThink/miniQ-releases/releases");
+  expect(link.getAttribute("target")).toBe("_blank");
+  expect(link.getAttribute("rel")).toBe("noreferrer");
+});
+
 it("reports root refresh errors and routes disconnect/remove separately", async () => {
   const input = props(); input.onRefresh = vi.fn().mockRejectedValue(new Error("registry unavailable"));
   render(<SshConnections {...input} />);

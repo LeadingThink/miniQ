@@ -596,10 +596,14 @@ body {
 .sidebar-footer {
   margin-top: auto;
   padding-top: 10px;
-  border-top: 1px solid var(--border);
+  border-top: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.sidebar-footer.has-update-notice {
+  border-top: 1px solid var(--border);
 }
 
 .update-notice {

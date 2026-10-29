@@ -5,7 +5,9 @@
 }
 .mcp-actions-row > .form-card {
   margin-top: 0;
-  width: min(100%, 640px);
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
 }
 .mcp-actions-row > .form-card label {
   display: flex;

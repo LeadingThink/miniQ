@@ -85,6 +85,7 @@
   gap: 0;
   border-top: 1px solid var(--hairline);
 }
+.theme-library-controls { padding-top: 14px; }
 .settings-panel .font-size-row,
 .font-size-row {
   display: flex;
@@ -93,7 +94,6 @@
   justify-content: space-between;
   gap: 20px;
   padding: 14px 0;
-  border-bottom: 1px solid var(--hairline);
   cursor: pointer;
 }
 .font-size-copy { display: grid; gap: 4px; min-width: 0; text-align: left; }

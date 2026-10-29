@@ -184,6 +184,33 @@ function sidebarProps(overrides: Partial<ComponentProps<typeof Sidebar>> = {}): 
 }
 
 describe("desktop Sidebar footer", () => {
+  it("shows the upper divider only while an update notice needs attention", () => {
+    const view = render(<Sidebar {...sidebarProps({ updateSupported: true })} />);
+    const footer = view.container.querySelector(".sidebar-footer")!;
+    expect(footer.classList.contains("has-update-notice")).toBe(false);
+
+    view.rerender(<Sidebar {...sidebarProps({
+      updateSupported: true,
+      updateState: { phase: "checking", version: null, downloadedBytes: 0, totalBytes: null, error: null, busyReason: null, releaseNotes: [] },
+    })} />);
+    expect(footer.classList.contains("has-update-notice")).toBe(true);
+    expect(screen.getByText("正在检查更新")).not.toBeNull();
+
+    view.rerender(<Sidebar {...sidebarProps({
+      updateSupported: true,
+      updateState: { phase: "up-to-date", version: "9.9.9", downloadedBytes: 0, totalBytes: null, error: null, busyReason: null, releaseNotes: [] },
+    })} />);
+    expect(footer.classList.contains("has-update-notice")).toBe(false);
+  });
+
+  it("does not add the update divider for the idle mobile update action", () => {
+    const media = Object.assign(new EventTarget(), { matches: true });
+    vi.stubGlobal("matchMedia", () => media);
+    const view = render(<Sidebar {...sidebarProps({ updateSupported: true })} />);
+    expect(screen.getByRole("button", { name: "检查更新" })).not.toBeNull();
+    expect(view.container.querySelector(".sidebar-footer")?.classList.contains("has-update-notice")).toBe(false);
+  });
+
   it("keeps routine actions in the account menu and surfaces updates that need attention", () => {
     const onImportSessions = vi.fn();
     const onCheckForUpdates = vi.fn();

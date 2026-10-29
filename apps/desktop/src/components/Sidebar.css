@@ -1072,8 +1072,11 @@
     padding: 10px 0 max(10px, var(--safe-bottom));
     overflow-y: auto;
     overscroll-behavior: contain;
-    border-top: 1px solid var(--drawer-line);
+    border-top: 0;
     background: transparent;
+  }
+  .sidebar .sidebar-footer.has-update-notice {
+    border-top: 1px solid var(--drawer-line);
   }
   .sidebar .sidebar-footer > * {
     grid-column: 1 / -1;
