@@ -71,6 +71,11 @@ it("keeps the composer field's top and left inset compact on desktop and touch l
   expect(composerCss).toMatch(/\.composer-outer \.composer-field\s*\{[^}]*padding: 4px 2px 10px;/s);
 });
 
+it("keeps timeline activity compact while preserving separation between entries", () => {
+  const conversationV2Css = readFileSync(resolve(process.cwd(), "src/styles/conversation-v2.css"), "utf8");
+  expect(conversationV2Css).toMatch(/\.timeline-turn\s*\{[^}]*gap: 8px;/s);
+});
+
 it("keeps the keyboard hint beside the right-aligned send controls", () => {
   const { container } = render(
     <ComposerCard

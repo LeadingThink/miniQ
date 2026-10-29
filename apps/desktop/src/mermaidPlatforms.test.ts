@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
-it("ships Mermaid through the Tauri and Capacitor WebView entry points", () => {
+it("ships the shared frontend through the Tauri and Capacitor WebView entry points", () => {
   const tauri = JSON.parse(
     readFileSync(
       new URL("../src-tauri/tauri.conf.json", import.meta.url),
@@ -36,4 +36,10 @@ it("ships Mermaid through the Tauri and Capacitor WebView entry points", () => {
     "utf8",
   );
   expect(iosEntry).toContain("CAPBridgeViewController");
+
+  const webEntry = readFileSync(new URL("./main.tsx", import.meta.url), "utf8");
+  expect(webEntry).toContain('import "./styles/base.css"');
+
+  const baseCss = readFileSync(new URL("./styles/base.css", import.meta.url), "utf8");
+  expect(baseCss).toContain('@import "./conversation-v2.css"');
 });
