@@ -2219,7 +2219,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-desktop"
-version = "0.1.191"
+version = "0.1.192"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2259,7 +2259,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-local"
-version = "0.1.191"
+version = "0.1.192"
 dependencies = [
  "base64 0.22.1",
  "dunce",
@@ -2280,7 +2280,7 @@ dependencies = [
 
 [[package]]
 name = "miniq-protocol"
-version = "0.1.191"
+version = "0.1.192"
 dependencies = [
  "schemars 0.8.22",
  "serde",

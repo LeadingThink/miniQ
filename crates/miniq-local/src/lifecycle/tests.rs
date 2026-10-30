@@ -45,7 +45,8 @@ async fn early_exit_reports_status_and_preserves_stderr_without_waiting_for_time
         .map(|entry| entry.unwrap().path())
         .collect();
     assert_eq!(logs.len(), 1);
-    assert!(error.to_string().contains(logs[0].to_str().unwrap()));
+    let canonical_log = std::fs::canonicalize(&logs[0]).unwrap();
+    assert!(error.to_string().contains(canonical_log.to_str().unwrap()));
     assert!(std::fs::read_to_string(&logs[0])
         .unwrap()
         .contains("database unavailable"));
