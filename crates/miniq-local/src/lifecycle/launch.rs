@@ -100,11 +100,32 @@ fn detach(command: &mut Command, _log: &mut File) -> io::Result<()> {
     Ok(())
 }
 
-pub(super) fn operation_file(directory: &Path) -> io::Result<File> {
-    std::fs::create_dir_all(directory)?;
-    OpenOptions::new()
+pub(super) fn operation_file(directory: &Path) -> io::Result<(File, PathBuf)> {
+    let absolute = std::path::absolute(directory)?;
+    let parent = absolute
+        .parent()
+        .ok_or_else(|| io::Error::other("data directory needs a parent"))?;
+    std::fs::create_dir_all(parent)?;
+    let directory = if absolute.exists() {
+        std::fs::canonicalize(&absolute)?
+    } else {
+        std::fs::canonicalize(parent)?.join(
+            absolute
+                .file_name()
+                .ok_or_else(|| io::Error::other("data directory needs a name"))?,
+        )
+    };
+    // Keep the operation lock outside movable data, so a directory migration cannot
+    // unlink the lock and let another client acquire a newly created lock file.
+    let mut name = directory
+        .file_name()
+        .ok_or_else(|| io::Error::other("data directory needs a name"))?
+        .to_os_string();
+    name.push(".daemon-lifecycle.lock");
+    let file = OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
-        .open(directory.join("daemon-lifecycle.lock"))
+        .open(directory.with_file_name(name))?;
+    Ok((file, directory))
 }

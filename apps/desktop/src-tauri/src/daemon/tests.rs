@@ -17,6 +17,11 @@ async fn update_guard_blocks_startup_until_cancelled() {
     });
     assert!(lifecycle.ensure().await.unwrap_err().contains("paused"));
     assert!(lifecycle
+        .migrate_to(directory.path().to_owned())
+        .await
+        .unwrap_err()
+        .contains("paused"));
+    assert!(lifecycle
         .prepare_update()
         .await
         .unwrap_err()
@@ -33,6 +38,11 @@ async fn update_guard_blocks_startup_until_cancelled() {
         .contains("not been prepared"));
     lifecycle.begin_shutdown();
     assert!(lifecycle.ensure().await.unwrap_err().contains("exiting"));
+    assert!(lifecycle
+        .migrate_to(directory.path().to_owned())
+        .await
+        .unwrap_err()
+        .contains("exiting"));
     assert!(lifecycle
         .prepare_update()
         .await

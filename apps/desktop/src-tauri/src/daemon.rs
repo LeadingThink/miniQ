@@ -22,6 +22,72 @@ pub struct DaemonLifecycle {
 }
 
 impl DaemonLifecycle {
+    pub async fn migrate_to(&self, target: PathBuf) -> Result<(), String> {
+        let update = self.update.lock().await;
+        if self.shutdown.is_cancelled() {
+            return Err("miniQ is exiting".into());
+        }
+        if update.is_some() {
+            return Err("data migration is paused while installing an update".into());
+        }
+        let source = data_dir();
+        let target = std::fs::canonicalize(target).map_err(|e| e.to_string())?;
+        let source = std::fs::canonicalize(source).map_err(|e| e.to_string())?;
+        if source == target {
+            return Ok(());
+        }
+        if target.starts_with(&source) || source.starts_with(&target) {
+            return Err("新旧数据目录不能相互包含".into());
+        }
+        let operation = OperationLock::acquire(&source, lifecycle::START_TIMEOUT)
+            .await
+            .map_err(|e| e.to_string())?;
+        let destination = OperationLock::acquire(&target, lifecycle::START_TIMEOUT)
+            .await
+            .map_err(|e| e.to_string())?;
+        if std::fs::read_dir(&target)
+            .map_err(|e| e.to_string())?
+            .next()
+            .is_some()
+        {
+            return Err("目标数据目录必须为空".into());
+        }
+        let source_guard = operation
+            .stop_and_retain(Duration::from_secs(10))
+            .await
+            .map_err(|e| e.to_string())?;
+        // Keep both locks with the blocking move even if the invoking webview disappears.
+        let (source_guard, destination) = tokio::task::spawn_blocking(move || {
+            miniq_local::migrate_data_dir(&source, &target).map_err(|e| e.to_string())?;
+            if let Err(config_error) = miniq_local::write_data_dir_config(&target) {
+                return match miniq_local::migrate_data_dir(&target, &source) {
+                    Ok(()) => Err(format!("无法保存数据目录设置，数据已移回原目录: {config_error}")),
+                    Err(rollback_error) => Err(format!("无法保存数据目录设置，且数据无法移回原目录: {config_error}; {rollback_error}")),
+                };
+            }
+            Ok((source_guard, destination))
+        }).await.map_err(|e| e.to_string())??;
+        let path = self
+            .runtime_path
+            .get_or_try_init(|| async {
+                tokio::task::spawn_blocking(resolve_runtime_path)
+                    .await
+                    .map_err(|e| e.to_string())
+            })
+            .await?;
+        let result = destination
+            .ensure(
+                || daemon_command(path),
+                lifecycle::START_TIMEOUT,
+                &self.shutdown,
+            )
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+        drop(source_guard);
+        result
+    }
+
     pub async fn ensure(&self) -> Result<ConnectionInfo, String> {
         let update = self.update.lock().await;
         if self.shutdown.is_cancelled() {

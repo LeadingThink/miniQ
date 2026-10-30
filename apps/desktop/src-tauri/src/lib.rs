@@ -8,6 +8,7 @@ mod apple_speech;
 mod browser;
 mod companion;
 mod daemon;
+mod data_directory;
 mod dragged_image;
 mod export_file;
 mod file_link_actions;
@@ -38,6 +39,24 @@ async fn daemon_connection(
 ) -> Result<daemon::ConnectionInfo, String> {
     companion::authorized(webview.label())?;
     state.ensure().await
+}
+
+#[tauri::command]
+fn current_data_directory(
+    webview: tauri::Webview,
+) -> Result<data_directory::DataDirectoryInfo, String> {
+    companion::authorized(webview.label())?;
+    Ok(data_directory::current())
+}
+
+#[tauri::command]
+async fn choose_data_directory(
+    webview: tauri::Webview,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, DaemonState>,
+) -> Result<String, String> {
+    companion::authorized(webview.label())?;
+    data_directory::choose_and_migrate(app, state.inner().clone()).await
 }
 
 /// Hold a native sleep-prevention lease only while a user-enabled task runs.
@@ -345,6 +364,8 @@ pub fn run() {
                 companion::companion_open_main,
                 companion::companion_context_menu,
                 daemon_connection,
+                current_data_directory,
+                choose_data_directory,
                 terminal_install::terminal_install_status,
                 terminal_install::install_terminal_command,
                 terminal_open::open_terminal,

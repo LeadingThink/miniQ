@@ -229,3 +229,36 @@ async fn http_200_is_not_protocol_readiness() {
     assert!(probe(&info, Duration::from_secs(1)).await.is_err());
     server.await.unwrap();
 }
+
+#[tokio::test]
+async fn migration_keeps_operation_lock_and_does_not_recreate_old_directory() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("old");
+    let target = root.path().join("new");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(source.join("history.db"), b"complete history").unwrap();
+    let source_guard = OperationLock::acquire(&source, Duration::from_secs(1))
+        .await
+        .unwrap();
+    let destination = OperationLock::acquire(&target, Duration::from_secs(1))
+        .await
+        .unwrap();
+    let source_guard = source_guard.stop_and_retain(Duration::ZERO).await.unwrap();
+    let waiting = OperationLock::acquire(&source, Duration::from_secs(2));
+    let migration = async {
+        sleep(Duration::from_millis(100)).await;
+        crate::migrate_data_dir(&source, &target).unwrap();
+        assert!(OperationLock::acquire(&target, Duration::ZERO)
+            .await
+            .is_err());
+        drop(source_guard);
+        drop(destination);
+    };
+    let (result, ()) = tokio::join!(waiting, migration);
+    assert_eq!(result.err().unwrap().kind(), io::ErrorKind::NotFound);
+    assert!(!source.exists());
+    assert_eq!(
+        std::fs::read(target.join("history.db")).unwrap(),
+        b"complete history"
+    );
+}

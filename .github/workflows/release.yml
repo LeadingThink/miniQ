@@ -255,6 +255,9 @@ jobs:
       - name: Check desktop Rust application on Windows
         if: runner.os == 'Windows'
         run: cargo check --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --target ${{ matrix.target }}
+      - name: Test desktop lifecycle and data migration guards
+        if: matrix.target != 'x86_64-apple-darwin'
+        run: cargo test --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --lib daemon::tests --target ${{ matrix.target }}
       - name: Verify macOS microphone permission in signed application
         if: runner.os == 'macOS'
         working-directory: apps/desktop

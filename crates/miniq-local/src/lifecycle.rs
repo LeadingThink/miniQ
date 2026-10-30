@@ -25,15 +25,23 @@ pub struct OperationLock {
 
 impl OperationLock {
     pub async fn acquire(directory: &Path, timeout: Duration) -> io::Result<Self> {
-        let file = launch::operation_file(directory)?;
+        let (file, directory) = launch::operation_file(directory)?;
+        let existed = directory.exists();
         let deadline = Instant::now() + timeout;
         loop {
             match crate::try_exclusive_lock(&file) {
                 Ok(()) => {
+                    if existed && !directory.exists() {
+                        return Err(io::Error::new(
+                            io::ErrorKind::NotFound,
+                            "后台数据目录已迁移，请重新连接",
+                        ));
+                    }
+                    std::fs::create_dir_all(&directory)?;
                     return Ok(Self {
                         _file: file,
-                        directory: std::fs::canonicalize(directory)?,
-                    })
+                        directory,
+                    });
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
                 Err(error) => return Err(error),
@@ -59,16 +67,22 @@ impl OperationLock {
     }
 
     pub async fn stop(self, grace: Duration) -> io::Result<()> {
+        self.stop_and_retain(grace).await.map(drop)
+    }
+
+    /// Retain serialization while moving data or replacing a stopped daemon.
+    pub async fn stop_and_retain(self, grace: Duration) -> io::Result<Self> {
         // Keep ownership of the operation lock even if the caller drops its future.
         tokio::spawn(async move {
-            let _operation = self;
-            let Some(info) = read_connection_info(&_operation.directory)? else {
-                return Ok(());
+            let operation = self;
+            let Some(info) = read_connection_info(&operation.directory)? else {
+                return Ok(operation);
             };
             let Some(process) = DaemonProcess::open(info.pid, &info.process_identity)? else {
-                return Ok(());
+                return Ok(operation);
             };
-            stop_verified(info, process, grace).await
+            stop_verified(info, process, grace).await?;
+            Ok(operation)
         })
         .await
         .map_err(io::Error::other)?
