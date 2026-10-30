@@ -8,12 +8,13 @@ mod apple_speech;
 mod browser;
 mod companion;
 mod daemon;
-mod daemon_process;
 mod dragged_image;
 mod export_file;
 mod file_link_actions;
 mod file_link_apps;
 mod html_preview;
+#[cfg(all(test, windows))]
+mod installer_tests;
 mod keep_awake;
 mod link_download;
 mod local_file;
@@ -36,10 +37,7 @@ async fn daemon_connection(
     state: tauri::State<'_, DaemonState>,
 ) -> Result<daemon::ConnectionInfo, String> {
     companion::authorized(webview.label())?;
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || state.ensure())
-        .await
-        .map_err(|e| e.to_string())?
+    state.ensure().await
 }
 
 /// Hold a native sleep-prevention lease only while a user-enabled task runs.
@@ -52,26 +50,17 @@ fn set_keep_awake(state: tauri::State<'_, KeepAwakeState>, enabled: bool) -> Res
 
 #[tauri::command]
 async fn prepare_daemon_update(state: tauri::State<'_, DaemonState>) -> Result<(), String> {
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || state.prepare_update())
-        .await
-        .map_err(|e| e.to_string())?
+    state.prepare_update().await
 }
 
 #[tauri::command]
 async fn cancel_daemon_update(state: tauri::State<'_, DaemonState>) -> Result<(), String> {
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || state.cancel_update())
-        .await
-        .map_err(|e| e.to_string())?
+    state.cancel_update().await
 }
 
 #[tauri::command]
 async fn wait_for_daemon_exit(state: tauri::State<'_, DaemonState>) -> Result<(), String> {
-    let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || state.wait_for_exit())
-        .await
-        .map_err(|error| error.to_string())?
+    state.wait_for_exit().await
 }
 
 #[tauri::command]

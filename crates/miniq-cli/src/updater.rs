@@ -6,7 +6,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use crate::busy_policy;
-use crate::client::{self, is_busy, Client};
+use crate::client::{is_busy, Client};
 
 const MANIFEST_URL: &str = "https://oss.zaiwen.top/releases/miniq/terminal.json";
 const MANAGED_MARKER: &str = "miniq-terminal-v1";
@@ -81,17 +81,8 @@ pub async fn run(check: bool, activate: bool, stop_running: bool, directory: &Pa
     } else {
         "miniq-daemon"
     });
-    if !activate_backend(
-        daemon,
-        health.as_ref(),
-        directory,
-        &binary,
-        &wanted,
-        stop_running,
-        interactive,
-    )
-    .await?
-    {
+    drop(daemon);
+    if !activate_backend(directory, &binary, &wanted, stop_running, interactive).await? {
         return Ok(if activate { 3 } else { 0 });
     }
     println!("Running backend is now {wanted}. Sessions and history remain available.");
@@ -133,29 +124,40 @@ fn choose_stop() -> Result<bool> {
 }
 
 async fn activate_backend(
-    daemon: Option<Client>,
-    health: Option<&Value>,
     directory: &Path,
     binary: &Path,
     version: &Version,
     stop_running: bool,
     interactive: bool,
 ) -> Result<bool> {
-    if let Some(mut daemon) = daemon {
-        if health.is_none_or(|health| health["capabilities"]["idleShutdown"] != true) {
-            bail!("this running backend cannot activate updates safely. The installed update is ready; wait for all tasks to finish and restart the backend normally");
+    let operation = miniq_local::lifecycle::OperationLock::acquire(
+        directory,
+        miniq_local::lifecycle::START_TIMEOUT,
+    )
+    .await?;
+    if let Some(info) = miniq_local::read_connection_info(directory)? {
+        if let Some(process) = miniq_local::DaemonProcess::open(info.pid, &info.process_identity)? {
+            let mut daemon = Client::connect_info(directory, info).await?;
+            let health = daemon.call("daemon.health", serde_json::json!({})).await?;
+            if health["capabilities"]["idleShutdown"] != true {
+                bail!("this running backend cannot activate updates safely. The installed update is ready; wait for all tasks to finish and restart the backend normally");
+            }
+            match request_shutdown(&mut daemon, stop_running, interactive).await? {
+                true => {}
+                false => return Ok(false),
+            }
+            drop(daemon);
+            tokio::task::spawn_blocking(move || process.wait(Duration::from_secs(15))).await??;
         }
-        let port = miniq_local::read_connection_info(directory)
-            .context("backend discovery file disappeared; activation was not started")?
-            .port;
-        match request_shutdown(&mut daemon, stop_running, interactive).await? {
-            true => {}
-            false => return Ok(false),
-        }
-        drop(daemon);
-        wait_until_stopped(port).await?;
     }
-    let mut daemon = client::ensure(directory, Some(binary), false).await?;
+    let info = operation
+        .ensure(
+            || Ok(std::process::Command::new(binary.canonicalize()?)),
+            miniq_local::lifecycle::START_TIMEOUT,
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
+    let mut daemon = Client::connect_info(directory, info).await?;
     let health = daemon.call("daemon.health", serde_json::json!({})).await?;
     if health["daemonVersion"].as_str() != Some(version.to_string().as_str()) {
         bail!("connected backend version {} differs from installed {version}; run `miniq doctor` before trying activation again", health["daemonVersion"]);
@@ -196,24 +198,6 @@ async fn request_shutdown(
         result["cancelledTurns"], result["cancelledAgents"]
     );
     Ok(true)
-}
-
-async fn wait_until_stopped(port: u16) -> Result<()> {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    loop {
-        let connected = tokio::time::timeout(
-            Duration::from_secs(1),
-            tokio::net::TcpStream::connect(("127.0.0.1", port)),
-        )
-        .await;
-        if matches!(connected, Ok(Err(_))) {
-            return Ok(());
-        }
-        if tokio::time::Instant::now() >= deadline {
-            bail!("backend is still shutting down; the installed update is ready. Run `miniq doctor` before retrying");
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
 }
 
 fn release_version(manifest: &Value) -> Result<Version> {

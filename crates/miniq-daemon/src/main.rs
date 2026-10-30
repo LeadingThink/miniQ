@@ -1,3 +1,4 @@
+use anyhow::Context;
 use miniq_daemon::state::AppState;
 use miniq_daemon::{data_dir, generate_token, server, write_connection_info, ConnectionInfo};
 use miniq_memory::Store;
@@ -9,15 +10,12 @@ async fn main() -> anyhow::Result<()> {
     }
     let dir = data_dir();
     std::fs::create_dir_all(&dir)?;
-    let _instance = miniq_local::DaemonLock::acquire(&dir).map_err(|error| {
-        anyhow::anyhow!("another miniQ daemon owns this data directory: {error}")
+    let _instance = miniq_local::DaemonLock::acquire(&dir).with_context(|| {
+        format!(
+            "cannot acquire miniQ daemon instance lock in {}",
+            dir.display()
+        )
     })?;
-    // Older installed daemons predate the lock. Never recover their active database.
-    if miniq_local::read_connection_info(&dir).is_some_and(|info| miniq_local::health_ok(info.port))
-    {
-        anyhow::bail!("a miniQ daemon is already serving this data directory");
-    }
-
     // Logs go to stdout (visible in dev terminals) and to a daily-rotated
     // file so installed builds, which run without a console, stay debuggable.
     let file_appender = tracing_appender::rolling::daily(dir.join("logs"), "daemon.log");
@@ -62,14 +60,7 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = server::bind(port).await?;
     let addr = listener.local_addr()?;
-    write_connection_info(
-        &dir,
-        &ConnectionInfo {
-            port: addr.port(),
-            token: token.clone(),
-            pid: std::process::id(),
-        },
-    )?;
+    write_connection_info(&dir, &ConnectionInfo::current(addr.port(), token.clone())?)?;
     tracing::info!("miniq-daemon listening on ws://{addr}/ws");
 
     let settings_path = dir.join("settings.json");

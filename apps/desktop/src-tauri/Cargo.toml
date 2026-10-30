@@ -48,7 +48,6 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38.2"
 windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Registry", "Win32_UI_Shell"] }
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # WKWebView's completion handler is an Objective-C block.  Keep these

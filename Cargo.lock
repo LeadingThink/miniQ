@@ -2746,6 +2746,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-tungstenite 0.26.2",
+ "tokio-util",
  "unicode-width 0.2.2",
  "url",
 ]
@@ -2820,11 +2821,18 @@ dependencies = [
  "base64 0.22.1",
  "dunce",
  "fs2",
+ "futures-util",
  "libc",
+ "miniq-protocol",
  "serde",
  "serde_json",
  "tempfile",
+ "tokio",
+ "tokio-tungstenite 0.26.2",
+ "tokio-util",
  "tracing",
+ "url",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4946,6 +4954,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

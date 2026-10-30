@@ -36,11 +36,11 @@ impl Fixture {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         miniq_local::write_connection_info(
             dir.path(),
-            &miniq_local::ConnectionInfo {
-                port: listener.local_addr().unwrap().port(),
-                token: "private-fixture-token".into(),
-                pid: std::process::id(),
-            },
+            &miniq_local::ConnectionInfo::current(
+                listener.local_addr().unwrap().port(),
+                "private-fixture-token".into(),
+            )
+            .unwrap(),
         )
         .unwrap();
         let requests = Arc::new(Mutex::new(Vec::new()));

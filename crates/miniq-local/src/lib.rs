@@ -1,22 +1,34 @@
 //! Local daemon discovery shared by the desktop, terminal and daemon.
 
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
+pub mod lifecycle;
+pub mod process;
+pub use process::{DaemonProcess, ProcessIdentity};
 
 // Debug is implemented below with the connection token redacted.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionInfo {
     pub port: u16,
     pub token: String,
-    #[serde(default)]
     pub pid: u32,
+    pub process_identity: ProcessIdentity,
+}
+
+impl ConnectionInfo {
+    pub fn current(port: u16, token: String) -> io::Result<Self> {
+        Ok(Self {
+            port,
+            token,
+            pid: std::process::id(),
+            process_identity: DaemonProcess::current_identity()?,
+        })
+    }
 }
 
 impl std::fmt::Debug for ConnectionInfo {
@@ -25,6 +37,7 @@ impl std::fmt::Debug for ConnectionInfo {
             .debug_struct("ConnectionInfo")
             .field("port", &self.port)
             .field("pid", &self.pid)
+            .field("process_identity", &self.process_identity)
             .field("token", &"[redacted]")
             .finish()
     }
@@ -41,8 +54,21 @@ pub fn data_dir() -> PathBuf {
     base.join("miniq")
 }
 
-pub fn read_connection_info(dir: &Path) -> Option<ConnectionInfo> {
-    serde_json::from_slice(&std::fs::read(dir.join("daemon.json")).ok()?).ok()
+pub fn read_connection_info(dir: &Path) -> io::Result<Option<ConnectionInfo>> {
+    let bytes = match std::fs::read(dir.join("daemon.json")) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    serde_json::from_slice(&bytes).map(Some).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "无法验证后台连接记录 {}：{error}",
+                dir.join("daemon.json").display()
+            ),
+        )
+    })
 }
 
 pub fn write_connection_info(dir: &Path, info: &ConnectionInfo) -> std::io::Result<()> {
@@ -79,30 +105,20 @@ impl DaemonLock {
             .create(true)
             .truncate(false)
             .open(dir.join("daemon.lock"))?;
-        file.try_lock_exclusive()?;
+        try_exclusive_lock(&file)?;
         Ok(Self { _file: file })
     }
 }
 
-/// This probe is only for discovery; clients must authenticate before issuing RPCs.
-pub fn health_ok(port: u16) -> bool {
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
-    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(500)) else {
-        return false;
-    };
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(800)));
-    let _ = stream.set_write_timeout(Some(Duration::from_millis(800)));
-    if write!(
-        stream,
-        "GET /health HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n"
-    )
-    .is_err()
-    {
-        return false;
-    }
-    let mut response = [0u8; 12];
-    stream.read_exact(&mut response).is_ok()
-        && (&response == b"HTTP/1.1 200" || &response == b"HTTP/1.0 200")
+pub(crate) fn try_exclusive_lock(file: &File) -> io::Result<()> {
+    file.try_lock_exclusive().map_err(|error| {
+        // fs2 reports ERROR_LOCK_VIOLATION on Windows, which std does not classify as WouldBlock.
+        if error.raw_os_error() == fs2::lock_contended_error().raw_os_error() {
+            io::Error::new(io::ErrorKind::WouldBlock, error)
+        } else {
+            error
+        }
+    })
 }
 
 #[cfg(test)]
@@ -122,14 +138,13 @@ mod tests {
         for port in [1000, 2000] {
             write_connection_info(
                 dir.path(),
-                &ConnectionInfo {
-                    port,
-                    token: "fixture".into(),
-                    pid: 1,
-                },
+                &ConnectionInfo::current(port, "fixture".into()).unwrap(),
             )
             .unwrap();
-            assert_eq!(read_connection_info(dir.path()).unwrap().port, port);
+            assert_eq!(
+                read_connection_info(dir.path()).unwrap().unwrap().port,
+                port
+            );
         }
         #[cfg(unix)]
         {

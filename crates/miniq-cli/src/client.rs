@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
@@ -9,9 +8,6 @@ use miniq_local::{read_connection_info, ConnectionInfo};
 use serde_json::{json, Value};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{tungstenite::Message, MaybeTlsStream, WebSocketStream};
-
-const DAEMON_READY_TIMEOUT: Duration = Duration::from_secs(90);
-const DAEMON_SLOW_START_HINT_AFTER: Duration = Duration::from_secs(3);
 
 #[cfg(test)]
 #[path = "client_test_fixture.rs"]
@@ -65,11 +61,13 @@ pub struct Client {
 
 impl Client {
     pub async fn connect(directory: &Path) -> Result<Self> {
-        let info = read_connection_info(directory).context("no daemon connection file")?;
+        let info = read_connection_info(directory)?.context("no daemon connection file")?;
         Self::connect_info(directory, info).await
     }
 
-    async fn connect_info(directory: &Path, info: ConnectionInfo) -> Result<Self> {
+    pub(crate) async fn connect_info(directory: &Path, info: ConnectionInfo) -> Result<Self> {
+        miniq_local::DaemonProcess::open(info.pid, &info.process_identity)?
+            .context("daemon process has exited or its identity changed")?;
         let mut url = url::Url::parse(&format!("ws://127.0.0.1:{}/ws", info.port))?;
         url.query_pairs_mut().append_pair("token", &info.token);
         // Never propagate a transport error containing the authenticated URL.
@@ -262,68 +260,31 @@ fn after_snapshot(event: &Value, cursor: Option<&Value>) -> bool {
 }
 
 pub async fn ensure(directory: &Path, explicit: Option<&Path>, no_start: bool) -> Result<Client> {
-    if let Ok(client) = Client::connect(directory).await {
-        return Ok(client);
-    }
     if no_start {
-        bail!("no accessible daemon; --no-start prevents starting one");
+        return Client::connect(directory)
+            .await
+            .context("no accessible daemon; --no-start prevents starting one");
     }
-    // Do not spawn around a live but incompatible/unauthenticated daemon.
-    if let Some(info) = read_connection_info(directory) {
-        if miniq_local::health_ok(info.port) {
-            return Client::connect(directory).await;
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let startup = miniq_local::lifecycle::ensure(
+        directory,
+        || {
+            daemon_binary(explicit)
+                .and_then(|path| Ok(std::process::Command::new(path.canonicalize()?)))
+                .map_err(std::io::Error::other)
+        },
+        miniq_local::lifecycle::START_TIMEOUT,
+        &cancel,
+    );
+    tokio::pin!(startup);
+    let info = tokio::select! {
+        result = &mut startup => result?,
+        _ = tokio::time::sleep(Duration::from_secs(3)) => {
+            eprintln!("miniQ: waiting for the local backend to start or finish updating; logs: {}", directory.join("logs").display());
+            startup.await?
         }
-    }
-    let binary = daemon_binary(explicit)?;
-    let mut command = std::process::Command::new(&binary);
-    command
-        .env("MINIQ_DATA_DIR", directory)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    detach_terminal(&mut command);
-    let mut child = command
-        .spawn()
-        .with_context(|| format!("start {}", binary.display()))?;
-    // Reap without tying the daemon lifetime to this terminal.
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    // The first start after an upgrade may build the active-work indexes over
-    // a large history (about 20 s on a 5 GB database), so allow for that and
-    // tell the user why it is slow instead of failing at 20 s.
-    let started = std::time::Instant::now();
-    let mut hinted = false;
-    while started.elapsed() < DAEMON_READY_TIMEOUT {
-        if let Ok(client) = Client::connect(directory).await {
-            return Ok(client);
-        }
-        if !hinted && started.elapsed() >= DAEMON_SLOW_START_HINT_AFTER {
-            hinted = true;
-            eprintln!(
-                "miniQ: preparing the local database. The first start after an update can take up to a minute."
-            );
-        }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
-    bail!(
-        "daemon did not become ready; inspect {}/logs",
-        directory.display()
-    )
-}
-
-fn detach_terminal(command: &mut std::process::Command) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // Ctrl+C in one terminal must not signal the shared daemon or its tasks.
-        command.process_group(0);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000 | 0x0000_0200);
-    }
+    };
+    Client::connect_info(directory, info).await
 }
 
 fn daemon_binary(explicit: Option<&Path>) -> Result<PathBuf> {
@@ -357,20 +318,6 @@ fn daemon_binary(explicit: Option<&Path>) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(unix)]
-    #[test]
-    fn spawned_daemon_has_its_own_process_group() {
-        let mut command = std::process::Command::new("sh");
-        command.args(["-c", "ps -o pid= -o pgid= -p $$"]);
-        detach_terminal(&mut command);
-        let output = command.output().unwrap();
-        assert!(output.status.success());
-        let text = String::from_utf8(output.stdout).unwrap();
-        let ids: Vec<_> = text.split_whitespace().collect();
-        assert_eq!(ids.len(), 2);
-        assert_eq!(ids[0], ids[1]);
-    }
-
     #[test]
     fn snapshot_cursor_deduplicates_pending_approvals_without_losing_new_events() {
         let cursor = json!({"epoch":"one", "sequence":5});

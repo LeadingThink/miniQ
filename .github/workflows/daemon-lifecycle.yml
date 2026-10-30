@@ -1,0 +1,31 @@
+name: Daemon lifecycle
+
+on:
+  pull_request:
+    paths:
+      - 'crates/miniq-local/**'
+      - 'crates/miniq-cli/**'
+      - 'crates/miniq-daemon/src/main.rs'
+      - 'apps/desktop/src-tauri/src/daemon/**'
+      - 'apps/desktop/src-tauri/src/daemon.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/daemon-lifecycle.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test native process identities, startup, shutdown and CLI integration
+        run: cargo test --locked -p miniq-local -p miniq-cli

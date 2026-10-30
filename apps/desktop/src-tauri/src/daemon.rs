@@ -1,146 +1,112 @@
-//! Daemon discovery and launch.
-//!
-//! The daemon writes `daemon.json` (port/token/pid) into the miniQ data dir
-//! on startup. The shell reads it, health-checks the port, and spawns the
-//! daemon binary if nothing is running.
-
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
-
-use futures_util::{SinkExt, StreamExt};
-use serde_json::Value;
-use tokio_tungstenite::tungstenite::Message;
-
-use super::daemon_process::DaemonProcess;
+//! Desktop policy around the shared daemon lifecycle.
 pub use miniq_local::ConnectionInfo;
-use miniq_local::{data_dir, health_ok};
+use miniq_local::{
+    data_dir,
+    lifecycle::{self, OperationLock},
+    DaemonProcess,
+};
+use std::{io, path::PathBuf, sync::Arc, time::Duration};
+use tokio::sync::{Mutex, OnceCell};
+use tokio_util::sync::CancellationToken;
 
-// First start after an upgrade may build the active-work indexes over a very
-// large history (about 20 s measured on a 5 GB database), so leave headroom.
-const DAEMON_STARTUP_TIMEOUT: Duration = Duration::from_secs(90);
-const DAEMON_HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(250);
-
-fn read_connection_info() -> Option<ConnectionInfo> {
-    miniq_local::read_connection_info(&data_dir())
+struct UpdateGuard {
+    operation: OperationLock,
+    process: Arc<DaemonProcess>,
 }
 
 #[derive(Default)]
 pub struct DaemonLifecycle {
-    update: Mutex<Option<DaemonProcess>>,
-    exiting: AtomicBool,
-    runtime_path: std::sync::OnceLock<miniq_local::runtime_path::PathResolution>,
+    update: Mutex<Option<UpdateGuard>>,
+    shutdown: CancellationToken,
+    runtime_path: OnceCell<miniq_local::runtime_path::PathResolution>,
 }
 
 impl DaemonLifecycle {
-    pub fn ensure(&self) -> Result<ConnectionInfo, String> {
-        if self.exiting.load(Ordering::SeqCst) {
-            return Err("daemon startup is blocked while miniQ is exiting".into());
-        }
-        // Serialize startup with update preparation so an in-flight reconnect cannot respawn it.
-        let update = self.update.lock().map_err(|e| e.to_string())?;
-        if self.exiting.load(Ordering::SeqCst) {
+    pub async fn ensure(&self) -> Result<ConnectionInfo, String> {
+        let update = self.update.lock().await;
+        if self.shutdown.is_cancelled() {
             return Err("daemon startup is blocked while miniQ is exiting".into());
         }
         if update.is_some() {
             return Err("daemon startup is paused while installing an update".into());
         }
-        let runtime_path = self.runtime_path.get_or_init(resolve_runtime_path);
-        ensure_daemon(runtime_path)
+        let path = self
+            .runtime_path
+            .get_or_try_init(|| async {
+                tokio::task::spawn_blocking(resolve_runtime_path)
+                    .await
+                    .map_err(|error| error.to_string())
+            })
+            .await?;
+        lifecycle::ensure(
+            &data_dir(),
+            || daemon_command(path),
+            lifecycle::START_TIMEOUT,
+            &self.shutdown,
+        )
+        .await
+        .map_err(|error| error.to_string())
     }
 
-    pub fn prepare_update(&self) -> Result<(), String> {
-        let mut update = self.update.lock().map_err(|e| e.to_string())?;
+    pub async fn prepare_update(&self) -> Result<(), String> {
+        let mut update = self.update.lock().await;
+        if self.shutdown.is_cancelled() {
+            return Err("miniQ is exiting".into());
+        }
         if update.is_some() {
             return Err("a daemon update is already in progress".into());
         }
-        let info = read_connection_info().ok_or("daemon connection information is unavailable")?;
-        *update = Some(DaemonProcess::open(info.pid)?);
+        let directory = data_dir();
+        let operation = tokio::select! {
+            _ = self.shutdown.cancelled() => return Err("miniQ is exiting".into()),
+            result = OperationLock::acquire(&directory, lifecycle::START_TIMEOUT) => result.map_err(|e| e.to_string())?,
+        };
+        let info = miniq_local::read_connection_info(&directory)
+            .map_err(|e| e.to_string())?
+            .ok_or("daemon connection information is unavailable")?;
+        let process = DaemonProcess::open(info.pid, &info.process_identity)
+            .map_err(|e| e.to_string())?
+            .ok_or("daemon process has exited or its identity changed")?;
+        *update = Some(UpdateGuard {
+            operation,
+            process: Arc::new(process),
+        });
         Ok(())
     }
 
-    pub fn wait_for_exit(&self) -> Result<(), String> {
-        let update = self.update.lock().map_err(|e| e.to_string())?;
-        update
+    pub async fn wait_for_exit(&self) -> Result<(), String> {
+        let update = self.update.lock().await;
+        let process = update
             .as_ref()
             .ok_or("daemon update has not been prepared")?
-            .wait(Duration::from_secs(30))
+            .process
+            .clone();
+        tokio::task::spawn_blocking(move || process.wait(Duration::from_secs(30)))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())
     }
 
-    pub fn cancel_update(&self) -> Result<(), String> {
-        self.update.lock().map_err(|e| e.to_string())?.take();
+    pub async fn cancel_update(&self) -> Result<(), String> {
+        self.update.lock().await.take();
         Ok(())
     }
 
     pub fn begin_shutdown(&self) {
-        self.exiting.store(true, Ordering::SeqCst);
+        self.shutdown.cancel();
     }
 
     pub async fn shutdown(&self) -> Result<(), String> {
         self.begin_shutdown();
-        // Wait for an ensure() that already passed the exit check. Once its
-        // startup lock is released, daemon.json points at the process to stop.
-        {
-            let _startup = self.update.lock().map_err(|error| error.to_string())?;
-        }
-        let Some(info) = read_connection_info() else {
-            return Ok(());
+        // Startup cancellation finishes killing/reaping our own child before this guard releases.
+        let mut update = self.update.lock().await;
+        let result = if let Some(update) = update.take() {
+            update.operation.stop(Duration::from_secs(10)).await
+        } else {
+            lifecycle::stop(&data_dir(), Duration::from_secs(10)).await
         };
-        let process = DaemonProcess::open(info.pid)?;
-        request_shutdown(&info).await?;
-        tauri::async_runtime::spawn_blocking(move || process.stop(Duration::from_secs(10)))
-            .await
-            .map_err(|error| error.to_string())?
+        result.map_err(|e| e.to_string())
     }
-}
-
-async fn request_shutdown(info: &ConnectionInfo) -> Result<(), String> {
-    let mut url = url::Url::parse(&format!("ws://127.0.0.1:{}/ws", info.port))
-        .map_err(|_| "invalid daemon shutdown URL".to_owned())?;
-    url.query_pairs_mut().append_pair("token", &info.token);
-    let (mut socket, _) = tokio::time::timeout(
-        Duration::from_secs(3),
-        tokio_tungstenite::connect_async(url.as_str()),
-    )
-    .await
-    .map_err(|_| "daemon shutdown connection timed out".to_owned())?
-    .map_err(|_| "daemon shutdown connection failed".to_owned())?;
-    socket
-        .send(Message::text(
-            serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": "desktop-quit",
-                "method": "daemon.shutdown"
-            })
-            .to_string(),
-        ))
-        .await
-        .map_err(|_| "daemon shutdown request failed".to_owned())?;
-
-    tokio::time::timeout(Duration::from_secs(3), async {
-        while let Some(message) = socket.next().await {
-            let message = message.map_err(|_| "daemon shutdown response failed".to_owned())?;
-            let Message::Text(text) = message else {
-                continue;
-            };
-            let response: Value = serde_json::from_str(&text)
-                .map_err(|_| "daemon returned an invalid shutdown response".to_owned())?;
-            if response["id"] != "desktop-quit" {
-                continue;
-            }
-            if let Some(error) = response.get("error") {
-                return Err(format!(
-                    "daemon rejected shutdown: {}",
-                    error["message"].as_str().unwrap_or("unknown error")
-                ));
-            }
-            return Ok(());
-        }
-        Err("daemon disconnected before confirming shutdown".to_owned())
-    })
-    .await
-    .map_err(|_| "daemon shutdown response timed out".to_owned())?
 }
 
 /// Candidate locations for the daemon binary.
@@ -194,152 +160,24 @@ fn resolve_runtime_path() -> miniq_local::runtime_path::PathResolution {
     result
 }
 
-fn spawn_daemon(path: &miniq_local::runtime_path::PathResolution) -> Result<(), String> {
+fn daemon_command(
+    path: &miniq_local::runtime_path::PathResolution,
+) -> io::Result<std::process::Command> {
     let binary = daemon_binary_candidates()
         .into_iter()
-        .find(|p| p.is_file())
+        .find(|path| path.is_file())
         .ok_or_else(|| {
-            "miniq-daemon binary not found; build it with `cargo build -p miniq-daemon` \
-             or set MINIQ_DAEMON_PATH"
-                .to_string()
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "miniq-daemon binary not found; build the daemon or set MINIQ_DAEMON_PATH",
+            )
         })?;
-    let mut cmd = std::process::Command::new(&binary);
+    let mut command = std::process::Command::new(binary.canonicalize()?);
     if let Some(path) = &path.path {
-        cmd.env("PATH", path);
+        command.env("PATH", path);
     }
-    // Release builds hide the daemon's console window; debug builds keep it
-    // attached so `tauri dev` still shows daemon logs in the terminal.
-    #[cfg(all(windows, not(debug_assertions)))]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-    cmd.spawn()
-        .map_err(|e| format!("failed to start {}: {e}", binary.display()))?;
-    Ok(())
-}
-
-/// Return connection info for a healthy daemon, starting one if needed.
-fn ensure_daemon(
-    path: &miniq_local::runtime_path::PathResolution,
-) -> Result<ConnectionInfo, String> {
-    if let Some(info) = read_connection_info() {
-        if health_ok(info.port) {
-            return Ok(info);
-        }
-
-        // A daemon can have written its connection file before its HTTP
-        // health endpoint is ready. Reusing that process avoids launching a
-        // second daemon, which would lose the startup race on daemon.lock and
-        // leave the shell waiting on stale connection information.
-        if daemon_process_alive(info.pid) {
-            return wait_for_healthy(DAEMON_STARTUP_TIMEOUT);
-        }
-    }
-    spawn_daemon(path)?;
-    wait_for_healthy(DAEMON_STARTUP_TIMEOUT)
-}
-
-fn wait_for_healthy(timeout: Duration) -> Result<ConnectionInfo, String> {
-    let deadline = Instant::now() + timeout;
-    while Instant::now() < deadline {
-        std::thread::sleep(DAEMON_HEALTH_POLL_INTERVAL);
-        if let Some(info) = read_connection_info() {
-            if health_ok(info.port) {
-                return Ok(info);
-            }
-        }
-    }
-    Err(format!(
-        "本地后台服务在 {} 秒内未就绪；这与远程中继无关，请重试或查看 miniQ 日志",
-        timeout.as_secs()
-    ))
-}
-
-fn daemon_process_alive(pid: u32) -> bool {
-    DaemonProcess::open(pid)
-        .and_then(|process| process.is_running())
-        .unwrap_or(false)
+    Ok(command)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use futures_util::{SinkExt, StreamExt};
-    use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
-    use tokio_tungstenite::tungstenite::Message;
-
-    #[test]
-    fn update_guard_blocks_startup_until_cancelled() {
-        let lifecycle = DaemonLifecycle {
-            update: Mutex::new(Some(DaemonProcess::open(std::process::id()).unwrap())),
-            exiting: AtomicBool::new(false),
-            runtime_path: std::sync::OnceLock::new(),
-        };
-        assert!(lifecycle.ensure().unwrap_err().contains("paused"));
-        assert!(lifecycle
-            .prepare_update()
-            .unwrap_err()
-            .contains("already in progress"));
-        lifecycle.cancel_update().unwrap();
-        assert!(lifecycle.update.lock().unwrap().is_none());
-        assert!(lifecycle
-            .wait_for_exit()
-            .unwrap_err()
-            .contains("not been prepared"));
-        lifecycle.begin_shutdown();
-        assert!(lifecycle.ensure().unwrap_err().contains("exiting"));
-    }
-
-    #[tokio::test]
-    async fn shutdown_request_is_authenticated_and_waits_for_confirmation() {
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            let mut socket = tokio_tungstenite::accept_hdr_async(
-                stream,
-                |request: &Request, response: Response| {
-                    assert_eq!(request.uri().query(), Some("token=test-token"));
-                    Ok(response)
-                },
-            )
-            .await
-            .unwrap();
-            let Message::Text(request) = socket.next().await.unwrap().unwrap() else {
-                panic!("expected a text shutdown request");
-            };
-            let request: Value = serde_json::from_str(&request).unwrap();
-            assert_eq!(request["method"], "daemon.shutdown");
-            socket
-                .send(Message::text(
-                    serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "id": "desktop-quit",
-                        "result": {"accepted": true}
-                    })
-                    .to_string(),
-                ))
-                .await
-                .unwrap();
-        });
-
-        request_shutdown(&ConnectionInfo {
-            port,
-            token: "test-token".to_owned(),
-            pid: std::process::id(),
-        })
-        .await
-        .unwrap();
-        server.await.unwrap();
-    }
-
-    #[test]
-    fn process_liveness_rejects_missing_pid_and_accepts_current_process() {
-        assert!(!daemon_process_alive(0));
-        assert!(daemon_process_alive(std::process::id()));
-    }
-}
+mod tests;
