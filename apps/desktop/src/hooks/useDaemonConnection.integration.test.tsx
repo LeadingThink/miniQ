@@ -13,6 +13,31 @@ vi.mock("@capacitor/app", () => ({ App: { addListener: vi.fn((_event, callback) 
 }) } }));
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
+it("reports a local startup timeout on the first failed discovery and clears it after recovery", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    resolveConnection.mockRejectedValueOnce(new Error("本地后台服务在 90 秒内未就绪"));
+    resolveConnection.mockResolvedValue({ kind: "local", port: 1234, token: "test" });
+    const client = {
+      connected: true, connect: vi.fn().mockResolvedValue(undefined),
+      call: vi.fn().mockResolvedValue({}), onStatus: () => () => {}, onResync: () => () => {}, onEvent: () => () => {},
+    } as unknown as RpcClient;
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    const onError = vi.fn();
+    const hook = renderHook(() => useDaemonConnection({
+      client, refreshWorkspaces: refresh, refreshSessions: refresh, onError,
+    }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(resolveConnection).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenLastCalledWith("本地后台服务在 90 秒内未就绪，正在继续尝试连接 miniQ 服务");
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(hook.result.current.connectionEpoch).toBe(1);
+    expect(onError).toHaveBeenLastCalledWith(null);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("discards an in-flight connection lookup when installation pauses reconnect", async () => {
   let finish!: (value: unknown) => void;
   resolveConnection.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));

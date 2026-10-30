@@ -39,6 +39,7 @@ type Pending = {
 
 const CONNECTION_TIMEOUT_MS = 15_000;
 const RPC_TIMEOUT_MS = 60_000;
+const CANCELLABLE_LOCAL_READS = new Set(["git.status", "git.diff", "git.branches"]);
 
 export class RpcClient {
   constructor(readonly remoteConnection?: RemoteConnectionInfo, readonly storageScope = "") { if (remoteConnection) this.connectionMode = "remote"; }
@@ -389,13 +390,13 @@ export class RpcClient {
         if (!pending) return;
         this.pending.delete(id);
         pending.cleanup();
-        this.cancelRemoteRequest(id);
+        this.cancelRequest(id, method);
         // A slow remote history/file response is an RPC failure, not a
         // transport failure. Keep the remote WebSocket alive so heartbeats
         // and subsequent requests can continue while the relay/desktop
-        // recovers. A local timeout still tears down the socket so a wedged
-        // daemon can be rediscovered on the next attempt.
-        if (method !== "daemon.health" && !method.startsWith("host.") && this.connectionMode !== "remote") {
+        // recovers. Cancellable local Git reads release their own work;
+        // other local timeouts rediscover a potentially wedged daemon.
+        if (method !== "daemon.health" && !method.startsWith("host.") && !CANCELLABLE_LOCAL_READS.has(method) && this.connectionMode !== "remote") {
           this.disconnect("rpc timeout");
         }
         reject(new Error(`请求 ${method} 超时`));
@@ -406,7 +407,7 @@ export class RpcClient {
         this.pending.delete(id);
         window.clearTimeout(pending.timer);
         pending.cleanup();
-        this.cancelRemoteRequest(id);
+        this.cancelRequest(id, method);
         reject(new DOMException("Request cancelled", "AbortError"));
       };
       const cleanup = () => options.signal?.removeEventListener("abort", abort);
@@ -518,15 +519,21 @@ export class RpcClient {
     pending.timer = window.setTimeout(() => {
       this.pending.delete(id);
       pending.cleanup();
-      this.cancelRemoteRequest(id);
+      this.cancelRequest(id, pending.method);
       pending.reject(new Error(`请求 ${pending.method} 超时`));
     }, RPC_TIMEOUT_MS);
   }
 
-  private cancelRemoteRequest(id: string) {
+  private cancelRequest(id: string, method: string) {
     this.reader?.cancelRequest(id);
     if (this.connectionMode === "remote" && this.ws && this.remoteKey) {
       void this.sendRemote(this.ws, this.remoteKey, { type: "remote_cancel", requestId: id }).catch(() => {});
+    } else if (this.connectionMode === "local" && CANCELLABLE_LOCAL_READS.has(method) && this.ws?.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify({ jsonrpc: "2.0", method: "request.cancel", params: { requestId: id } }));
+      } catch {
+        // A closed socket also cancels its Git reads on the daemon.
+      }
     }
   }
 

@@ -84,6 +84,55 @@ describe("RpcClient timeouts", () => {
     await rejected;
   });
 
+  it.each(["git.status", "git.diff", "git.branches"])("cancels an aborted local %s request on the wire", async (method) => {
+    const client = new RpcClient();
+    const connected = client.connect({ kind: "local", port: 9000, token: "fixture" });
+    const socket = FakeWebSocket.instances[0]; socket.open(); await connected;
+    const controller = new AbortController();
+    const response = client.call(method, { sessionId: "old" }, { signal: controller.signal });
+    const rejected = expect(response).rejects.toMatchObject({ name: "AbortError" });
+    const request = JSON.parse(socket.sent[0]);
+    controller.abort();
+    await rejected;
+    expect(JSON.parse(socket.sent[1])).toEqual({
+      jsonrpc: "2.0", method: "request.cancel", params: { requestId: request.id },
+    });
+    socket.receive({ jsonrpc: "2.0", id: request.id, result: "obsolete" });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(socket.sent).toHaveLength(2);
+    expect(client.connected).toBe(true);
+  });
+
+  it("cancels a timed-out local Git query without closing a model task's socket", async () => {
+    const client = new RpcClient();
+    const connected = client.connect({ kind: "local", port: 9000, token: "fixture" });
+    const socket = FakeWebSocket.instances[0]; socket.open(); await connected;
+    const task = client.call("session.sendMessage", { sessionId: "active" });
+    const response = client.call("git.status", { sessionId: "slow" }, { timeoutMs: 100 });
+    const rejected = expect(response).rejects.toThrow("请求 git.status 超时");
+    await vi.advanceTimersByTimeAsync(100);
+    await rejected;
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+      jsonrpc: "2.0", method: "request.cancel", params: { requestId: "req_2" },
+    });
+    expect(client.connected).toBe(true);
+    socket.receive({ jsonrpc: "2.0", id: "req_1", result: "task accepted" });
+    await expect(task).resolves.toBe("task accepted");
+  });
+
+  it.each(["session.sendMessage", "file.write"])("does not cancel local %s work when its caller aborts", async (method) => {
+    const client = new RpcClient();
+    const connected = client.connect({ kind: "local", port: 9000, token: "fixture" });
+    const socket = FakeWebSocket.instances[0]; socket.open(); await connected;
+    const controller = new AbortController();
+    const response = client.call(method, {}, { signal: controller.signal });
+    const rejected = expect(response).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await rejected;
+    expect(socket.sent).toHaveLength(1);
+    expect(client.connected).toBe(true);
+  });
+
   it("clears the request timeout after a normal response", async () => {
     const client = new RpcClient();
     const connected = client.connect({ kind: "local", port: 9000, token: "token" });

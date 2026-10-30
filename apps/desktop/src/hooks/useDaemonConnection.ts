@@ -97,7 +97,9 @@ async function connectWithRetry(
       return;
     } catch (error) {
       if (options.isDisposed()) return;
-      if (attempt === 3) {
+      // Local discovery already waits for the daemon's startup deadline. Show
+      // that failure immediately instead of hiding it for two more deadlines.
+      if (!remote || attempt >= 3) {
         options.onError(connectionFailureMessage(error, reconnecting));
       }
       const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";

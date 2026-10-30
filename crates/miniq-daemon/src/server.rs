@@ -15,6 +15,10 @@ use tokio::net::TcpListener;
 use crate::gateway;
 use crate::state::AppState;
 
+mod git_queries;
+#[cfg(test)]
+mod tests;
+
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/ws", get(ws_upgrade))
@@ -71,6 +75,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let background_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
     let host_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(32));
     let dispatch_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(64));
+    let mut git_queries = git_queries::GitQueries::default();
 
     let writer = tokio::spawn(async move {
         while let Some(text) = rx.recv().await {
@@ -107,6 +112,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     loop {
         let msg = tokio::select! {
             _ = shutdown.cancelled() => break,
+            response = git_queries.join_next() => {
+                if let Some(response) = response {
+                    if tx.send(serde_json::to_string(&response).unwrap()).await.is_err() {
+                        break;
+                    }
+                }
+                continue;
+            }
             msg = stream.next() => msg,
         };
         let Some(Ok(msg)) = msg else {
@@ -115,6 +128,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         let WsMessage::Text(text) = msg else {
             continue;
         };
+        if git_queries.cancel_notification(&text) {
+            continue;
+        }
         let request = serde_json::from_str::<RpcRequest>(&text);
         // Network-bound uploads and speech recognition must not block navigation
         // or task cancellation on this connection.
@@ -174,6 +190,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 let req = request.unwrap();
                 let state = state.clone();
                 let replies = tx.clone();
+                if git_queries::cancellable(&req.method) {
+                    let id = req.id.clone();
+                    git_queries.spawn(&id, async move {
+                        let _permit = permit;
+                        gateway::dispatch(&state, req).await
+                    });
+                    continue;
+                }
                 tokio::spawn(async move {
                     let _permit = permit;
                     let response = gateway::dispatch(&state, req).await;
