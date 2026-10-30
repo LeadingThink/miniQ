@@ -22,10 +22,10 @@ function setup(save = vi.fn(async (_settings: SessionModelSettings) => {})) {
     if (method === "session.modelGet") return result();
     if (method === "model.list") return { models: ["claude-opus-4.8", "gpt-5.6-sol"] };
     if (method === "model.describe") return { reasoningEfforts: ["low", "high"] };
-    if (method === "session.modelUpdate") {
+    if (method === "model.update") {
       await save(params!.settings);
       settings = params!.settings;
-      events.forEach((listener) => listener({ type: "model_settings_changed", sessionId: "existing", workspaceId: "study", settings }));
+      events.forEach((listener) => listener({ type: "global_model_settings_changed", settings }));
       return result();
     }
     throw new Error(`Unexpected call: ${method}`);
@@ -65,7 +65,7 @@ it.each(["claude-opus-4.8", "gpt-5.6-sol"])("saves %s and its effort together on
   fireEvent.click(within(dialog).getByRole("button", { name: "完成" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(save).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_MODEL_SETTINGS, model, reasoningEffort: "high" });
-  expect(call).toHaveBeenCalledWith("session.modelUpdate", { sessionId: "existing", settings: { ...DEFAULT_MODEL_SETTINGS, model, reasoningEffort: "high" } });
+  expect(call).toHaveBeenCalledWith("model.update", { settings: { ...DEFAULT_MODEL_SETTINGS, model, reasoningEffort: "high" } });
   const reopened = await openPicker();
   fireEvent.click(within(reopened).getByRole("option", { name: model }));
   expect((await within(reopened).findByRole("button", { name: "高" })).getAttribute("aria-pressed")).toBe("true");

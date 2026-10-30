@@ -57,6 +57,23 @@ export const EFFORT_LABELS: Record<ReasoningEffort, string> = {
   max: "最大",
   ultra: "Ultra",
 };
+export const DEFAULT_MODEL_ID = "gpt-5.6-sol";
+
+export function modelControlLabel(
+  settings: SessionModelSettings,
+  effective: SessionModelResult["effective"],
+): { model: string; effort: string | null } {
+  const model = settings.model ?? effective?.model ?? "模型";
+  const effort = settings.reasoningEffort ?? effective?.reasoningEffort ?? null;
+  return {
+    model,
+    effort: effort
+      ? EFFORT_LABELS[effort]
+      : model === DEFAULT_MODEL_ID
+        ? "默认"
+        : null,
+  };
+}
 export function filterModelIds(models: string[], query: string): string[] {
   return models.filter((model) =>
     model.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())

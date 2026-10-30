@@ -50,7 +50,116 @@ fn model_catalog_url_adds_v1_only_for_a_bare_domain() {
 }
 
 #[tokio::test]
-async fn global_update_changes_defaults_without_overwriting_session_or_project_choices() {
+async fn global_update_failures_preserve_file_runtime_database_and_events() {
+    for database_failure in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("test.db");
+        let path = dir.path().join("settings.json");
+        let (mut state, _, _) = state();
+        state.store = Arc::new(miniq_memory::Store::open(&db).unwrap());
+        state.settings_path = Some(Arc::new(path.clone()));
+        let workspace = state.store.create_workspace("/test", "test").unwrap();
+        let session = state.store.create_session(&workspace.id, "test").unwrap();
+        let previous = state.settings.lock().unwrap().clone();
+        previous.save(&path).unwrap();
+        let original_file = std::fs::read(&path).unwrap();
+        let mut events = state.events.subscribe();
+        if database_failure {
+            // Fail the second write after workspace rows have been updated.
+            rusqlite::Connection::open(&db)
+                .unwrap()
+                .execute_batch(
+                    "CREATE TRIGGER reject_model_sync BEFORE INSERT ON session_model_settings
+                 BEGIN SELECT RAISE(ABORT, 'injected model sync failure'); END;",
+                )
+                .unwrap();
+        } else {
+            std::fs::remove_file(&path).unwrap();
+            std::fs::create_dir(&path).unwrap();
+        }
+        let error = global_update(&state, Some(json!({"settings":{"model":"new-global"}})))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::InternalError as i64);
+        assert_eq!(
+            serde_json::to_value(&*state.settings.lock().unwrap()).unwrap(),
+            serde_json::to_value(&previous).unwrap(),
+        );
+        assert_eq!(
+            state.store.workspace_model_settings(&workspace.id).unwrap(),
+            SessionModelSettings::default()
+        );
+        assert_eq!(
+            state.store.session_model_settings(&session.id).unwrap(),
+            SessionModelSettings::default()
+        );
+        assert!(events.try_recv().is_err());
+        if database_failure {
+            assert_eq!(std::fs::read(&path).unwrap(), original_file);
+            let reopened = miniq_memory::Store::open(&db).unwrap();
+            assert_eq!(
+                reopened.workspace_model_settings(&workspace.id).unwrap(),
+                SessionModelSettings::default()
+            );
+        } else {
+            assert!(path.is_dir());
+        }
+    }
+}
+
+#[tokio::test]
+async fn new_projects_and_sessions_inherit_global_effort_but_explicit_models_can_clear_it() {
+    let (state, _, _) = state();
+    global_update(
+        &state,
+        Some(json!({"settings":{
+            "model":"gpt-5.6-sol", "apiProtocol":"responses", "reasoningEffort":"high"
+        }})),
+    )
+    .await
+    .unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let workspace = super::super::workspace::open(
+        &state,
+        Some(json!({
+            "path":directory.path().to_str().unwrap(), "name":"new project"
+        })),
+    )
+    .unwrap();
+    let workspace_id = workspace["id"].as_str().unwrap();
+    let response = workspace_get(&state, Some(json!({"workspaceId":workspace_id}))).unwrap();
+    assert_eq!(response["effective"]["reasoningEffort"], "high");
+    let session = super::super::session::create(&state, Some(json!({"workspaceId":workspace_id})))
+        .await
+        .unwrap();
+    let id = session["id"].as_str().unwrap();
+    let inherited = get(&state, Some(json!({"sessionId":id}))).unwrap();
+    assert_eq!(inherited["settings"]["reasoningEffort"], "high");
+    assert_eq!(inherited["effective"]["reasoningEffort"], "high");
+    let cleared = update(
+        &state,
+        Some(json!({"sessionId":id,"settings":{
+            "model":"gpt-5.6-sol", "apiProtocol":"responses", "reasoningEffort":null
+        }})),
+    )
+    .await
+    .unwrap();
+    assert_eq!(cleared["effective"]["reasoningEffort"], Value::Null);
+    assert_eq!(
+        state
+            .settings
+            .lock()
+            .unwrap()
+            .provider
+            .as_ref()
+            .unwrap()
+            .reasoning_effort,
+        Some(miniq_protocol::ReasoningEffort::High)
+    );
+}
+
+#[tokio::test]
+async fn global_update_synchronizes_session_and_project_choices() {
     let (state, a, b) = state();
     let workspace_id = state.store.get_session(&a).unwrap().workspace_id;
     let selected = SessionModelSettings {
@@ -76,20 +185,28 @@ async fn global_update_changes_defaults_without_overwriting_session_or_project_c
     assert_eq!(response["effective"]["model"], "custom/model");
     assert!(!response.to_string().contains("private-key"));
     assert!(!response.to_string().contains("baseUrl"));
-    assert_eq!(state.store.session_model_settings(&a).unwrap(), selected);
+    let synchronized = SessionModelSettings {
+        model: Some("custom/model".into()),
+        api_protocol: ApiProtocol::ChatCompletions,
+        reasoning_effort: None,
+    };
+    assert_eq!(
+        state.store.session_model_settings(&a).unwrap(),
+        synchronized
+    );
     assert_eq!(
         state.store.session_model_settings(&b).unwrap(),
-        SessionModelSettings::default()
+        synchronized
     );
     assert_eq!(
         state
             .store
             .workspace_model_settings(&other_workspace.id)
             .unwrap(),
-        selected
+        synchronized
     );
     let workspace = workspace_get(&state, Some(json!({"workspaceId": workspace_id}))).unwrap();
-    assert_eq!(workspace["settings"]["model"], Value::Null);
+    assert_eq!(workspace["settings"]["model"], "custom/model");
     assert_eq!(workspace["effective"]["model"], "custom/model");
     assert!(!workspace.to_string().contains("private-key"));
     let provider = state.settings.lock().unwrap().provider.clone().unwrap();
@@ -101,7 +218,7 @@ async fn global_update_changes_defaults_without_overwriting_session_or_project_c
 }
 
 #[tokio::test]
-async fn invalid_choices_are_rejected_and_active_turns_keep_running() {
+async fn invalid_choices_are_rejected_and_global_updates_keep_active_turns_running() {
     let (state, a, _) = state();
     for settings in [
         json!({"model":" "}),
@@ -125,13 +242,16 @@ async fn invalid_choices_are_rejected_and_active_turns_keep_running() {
     assert_eq!(changed["effective"]["model"], "another");
     assert_eq!(
         state.store.session_model_settings(&a).unwrap(),
-        SessionModelSettings::default()
+        SessionModelSettings {
+            model: Some("another".into()),
+            ..SessionModelSettings::default()
+        }
     );
     assert!(state.active_turns.lock().unwrap().contains_key(&a));
 }
 
 #[tokio::test]
-async fn creating_and_updating_sessions_isolates_models_protocols_and_effort() {
+async fn global_updates_override_existing_session_and_workspace_choices() {
     let (state, a, b) = state();
     let workspace_id = state.store.get_session(&a).unwrap().workspace_id;
     let before_a = get(&state, Some(json!({"sessionId":a}))).unwrap();
@@ -175,10 +295,19 @@ async fn creating_and_updating_sessions_isolates_models_protocols_and_effort() {
     global_update(&state, Some(json!({"settings":{"model":"new-global"}})))
         .await
         .unwrap();
-    assert_eq!(get(&state, Some(json!({"sessionId":id}))).unwrap(), chosen);
+    for session_id in [&a, &b, id, next_id] {
+        let synchronized = get(&state, Some(json!({"sessionId":session_id}))).unwrap();
+        assert_eq!(synchronized["effective"]["model"], "new-global");
+        assert_eq!(synchronized["effective"]["reasoningEffort"], Value::Null);
+    }
     assert_eq!(
-        get(&state, Some(json!({"sessionId":next_id}))).unwrap(),
-        next_settings
+        state
+            .store
+            .workspace_model_settings(&workspace_id)
+            .unwrap()
+            .model
+            .as_deref(),
+        Some("new-global")
     );
     update(&state, Some(json!({"sessionId":id,"settings":{"model":"claude-sonnet-4.6","apiProtocol":"anthropic_messages"}}))).await.unwrap();
     let config = state
@@ -189,8 +318,8 @@ async fn creating_and_updating_sessions_isolates_models_protocols_and_effort() {
     assert_eq!(config.api_protocol, ApiProtocol::AnthropicMessages);
     assert_eq!(config.reasoning_effort, None);
     assert_eq!(
-        get(&state, Some(json!({"sessionId":next_id}))).unwrap(),
-        next_settings
+        get(&state, Some(json!({"sessionId":next_id}))).unwrap()["effective"]["model"],
+        "new-global"
     );
 }
 
@@ -227,18 +356,20 @@ async fn invalid_draft_settings_do_not_create_a_partial_session() {
 }
 
 #[tokio::test]
-async fn sessions_created_with_defaults_keep_their_model_when_global_defaults_change() {
+async fn global_updates_change_existing_and_future_sessions() {
     let (state, a, _) = state();
     let workspace_id = state.store.get_session(&a).unwrap().workspace_id;
     let created = super::super::session::create(&state, Some(json!({"workspaceId":workspace_id})))
         .await
         .unwrap();
     let id = created["id"].as_str().unwrap();
-    let before = get(&state, Some(json!({"sessionId":id}))).unwrap();
     global_update(&state, Some(json!({"settings":{"model":"new-global"}})))
         .await
         .unwrap();
-    assert_eq!(get(&state, Some(json!({"sessionId":id}))).unwrap(), before);
+    assert_eq!(
+        get(&state, Some(json!({"sessionId":id}))).unwrap()["effective"]["model"],
+        "new-global"
+    );
     let next = super::super::session::create(&state, Some(json!({"workspaceId":workspace_id})))
         .await
         .unwrap();
@@ -253,7 +384,14 @@ async fn sessions_created_with_defaults_keep_their_model_when_global_defaults_ch
     global_update(&state, Some(json!({"settings":{"model":"another-global"}})))
         .await
         .unwrap();
-    assert_eq!(get(&state, Some(json!({"sessionId":id}))).unwrap(), reset);
+    assert_eq!(
+        get(&state, Some(json!({"sessionId":id}))).unwrap()["effective"]["model"],
+        "another-global"
+    );
+    assert_eq!(
+        get(&state, Some(json!({"sessionId":next["id"]}))).unwrap()["effective"]["model"],
+        "another-global"
+    );
 }
 
 #[tokio::test]
@@ -371,5 +509,55 @@ async fn a_declared_partial_catalog_is_not_presented_as_complete() {
     let error = catalog(&state).await.unwrap_err();
     assert_eq!(error.code, ErrorCode::ProviderError as i64);
     assert!(error.message.contains("partial model catalog"));
+    server.abort();
+}
+
+#[tokio::test]
+async fn model_performance_preserves_all_samples_and_normalizes_field_names() {
+    use axum::{routing::get as route, Json, Router};
+    let app = Router::new().route(
+        "/v1/models/perf",
+        route(|| async move {
+            Json(json!({
+                "code": "0",
+                "msg": "获取模型性能指标成功",
+                "data": {
+                    "window_hours": 72,
+                    "models": {
+                        "gpt-5.6-sol": {
+                            "availability": 99.94,
+                            "throughput": 97.7,
+                            "samples": 9511,
+                            "series": [
+                                {"ts": 1793095200_u64, "availability": 100.0, "samples": 98},
+                                {"ts": 1793098800_u64, "availability": null, "samples": 0}
+                            ]
+                        }
+                    }
+                }
+            }))
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let result = performance_for(&format!("http://{address}/v1/models/perf"))
+        .await
+        .unwrap();
+    assert_eq!(result["windowHours"], 72);
+    assert_eq!(result["models"]["gpt-5.6-sol"]["availability"], 99.94);
+    assert_eq!(result["models"]["gpt-5.6-sol"]["throughput"], 97.7);
+    assert_eq!(
+        result["models"]["gpt-5.6-sol"]["series"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        result["models"]["gpt-5.6-sol"]["series"][1]["availability"],
+        Value::Null
+    );
     server.abort();
 }

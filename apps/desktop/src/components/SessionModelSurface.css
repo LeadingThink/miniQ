@@ -35,11 +35,24 @@
 .session-model-dialog .session-model-popover .model-picker-row > button {
   min-height: 44px;
   padding: 10px 8px;
+  flex-wrap: wrap;
 }
 .session-model-dialog .session-model-popover .model-picker-name {
+  flex-basis: calc(100% - 24px);
   white-space: normal;
 }
+.session-model-dialog .session-model-popover .model-performance {
+  flex: 1 1 100%;
+  margin-top: 2px;
+}
+.session-model-dialog .session-model-popover .model-performance-chart {
+  width: 100%;
+}
 /* 手机上悬停不可用：点模型后在行下方展开档位，底部「完成」收起。 */
+.session-model-dialog .session-model-popover .model-picker-row {
+  flex-direction: column;
+  align-items: stretch;
+}
 .session-model-dialog .session-model-popover .model-picker-inline-effort {
   padding: 4px 8px 10px;
 }

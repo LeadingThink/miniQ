@@ -55,4 +55,21 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
     "utf8",
   );
   expect(timeline).toContain("<AgentStatusIndicator");
+
+  const hero = readFileSync(
+    new URL("./components/HeroPage.tsx", import.meta.url),
+    "utf8",
+  );
+  const shell = readFileSync(
+    new URL("./components/AppShell.tsx", import.meta.url),
+    "utf8",
+  );
+  expect(hero).toContain("<SessionModelControls");
+  expect(shell).toContain("<SessionModelControls");
+  const modelControls = readFileSync(
+    new URL("./components/SessionModelControls.tsx", import.meta.url),
+    "utf8",
+  );
+  expect(modelControls).toContain('call<ModelPerformanceResult>("model.performance")');
+  expect(modelControls).toContain("<ModelPerformanceIndicator");
 });

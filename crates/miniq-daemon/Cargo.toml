@@ -53,4 +53,5 @@ same-file = "1"
 tempfile = "3"
 
 [dev-dependencies]
+rusqlite = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

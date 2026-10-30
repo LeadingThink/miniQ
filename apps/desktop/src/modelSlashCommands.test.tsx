@@ -138,7 +138,7 @@ it("explains missing configuration without asking the server for an undefined mo
   expect(call).not.toHaveBeenCalled();
 });
 
-it("writes only the selected session through the real session-model hook", async () => {
+it("updates the global model through the real session-model hook", async () => {
   const initial: SessionModelResult = {
     settings: { ...DEFAULT_MODEL_SETTINGS, model: "gpt-5.6-sol" },
     effective: {
@@ -154,7 +154,7 @@ it("writes only the selected session through the real session-model hook", async
     ) => {
       if (method === "session.modelGet") return initial;
       if (method === "model.list") return { models: ["claude-sonnet"] };
-      if (method === "session.modelUpdate")
+      if (method === "model.update")
         return { ...initial, settings: params?.settings };
       throw new Error(`Unexpected RPC: ${method}`);
     },
@@ -174,8 +174,7 @@ it("writes only the selected session through the real session-model hook", async
   await act(async () => {
     await children[0].onSelect!();
   });
-  expect(call).toHaveBeenCalledWith("session.modelUpdate", {
-    sessionId: "session-a",
+  expect(call).toHaveBeenCalledWith("model.update", {
     settings: {
       model: "claude-sonnet",
       apiProtocol: "auto",
@@ -185,6 +184,6 @@ it("writes only the selected session through the real session-model hook", async
   expect(call.mock.calls.map(([method]) => method)).toEqual([
     "session.modelGet",
     "model.list",
-    "session.modelUpdate",
+    "model.update",
   ]);
 });

@@ -13,8 +13,11 @@ pub(crate) fn apply_selection(config: &mut ProviderConfig, selection: &SessionMo
     } else if selection.api_protocol != ApiProtocol::Auto {
         config.api_protocol = selection.api_protocol;
     }
-    // Default effort means provider default, not another session's/global effort.
-    config.reasoning_effort = selection.reasoning_effort;
+    // An empty selection inherits the global configuration. Once a model or
+    // protocol is selected, None explicitly means that provider's default.
+    if *selection != SessionModelSettings::default() {
+        config.reasoning_effort = selection.reasoning_effort;
+    }
 }
 
 pub(crate) fn snapshot_selection(
@@ -26,6 +29,7 @@ pub(crate) fn snapshot_selection(
         apply_selection(&mut config, &selection);
         selection.model = Some(config.model);
         selection.api_protocol = config.api_protocol;
+        selection.reasoning_effort = config.reasoning_effort;
     }
     selection
 }

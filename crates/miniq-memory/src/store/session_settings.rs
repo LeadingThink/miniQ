@@ -184,6 +184,26 @@ impl Store {
         )?;
         Ok(())
     }
+
+    pub fn synchronize_model_settings(&self, settings: &SessionModelSettings) -> Result<()> {
+        let raw = serde_json::to_string(settings)?;
+        let mut conn = self.conn.lock().unwrap();
+        let transaction = conn.transaction()?;
+        transaction.execute(
+            "INSERT INTO workspace_model_settings (workspace_id, settings_json)
+             SELECT id, ?1 FROM workspaces WHERE true
+             ON CONFLICT(workspace_id) DO UPDATE SET settings_json = excluded.settings_json",
+            params![raw],
+        )?;
+        transaction.execute(
+            "INSERT INTO session_model_settings (session_id, settings_json)
+             SELECT id, ?1 FROM sessions WHERE true
+             ON CONFLICT(session_id) DO UPDATE SET settings_json = excluded.settings_json",
+            params![raw],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

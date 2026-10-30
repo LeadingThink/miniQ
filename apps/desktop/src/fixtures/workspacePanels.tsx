@@ -172,7 +172,6 @@ function Fixture() {
       setNotice(`已保存：${next.model} / ${next.reasoningEffort ?? "默认"}`);
     },
     reload: async () => {},
-    clearDraft: () => setSettings(DEFAULT_MODEL_SETTINGS),
   };
   const app = {
     client,

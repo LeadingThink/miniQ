@@ -147,6 +147,7 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "tool.detail"
         | "tool.list"
         | "model.list"
+        | "model.performance"
         | "model.describe"
         | "workspace.modelGet"
         | "agent.list"
@@ -357,6 +358,13 @@ mod tests {
     #[test]
     fn undeclared_methods_are_denied_by_default() {
         assert_eq!(reason(check("plugin.brandNew", None)), "undeclared");
+    }
+
+    #[test]
+    fn model_performance_is_available_as_read_only_remote_data() {
+        assert_eq!(level("model.performance"), Some(RemoteLevel::ReadOnly));
+        assert!(check("model.performance", None).is_ok());
+        assert!(!audited("model.performance"));
     }
 
     #[test]

@@ -62,6 +62,9 @@ it("opens the effort menu for the hovered model and applies both together", asyn
   );
   const model = setup(call);
   fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
+  await screen.findByRole("option", { name: "minimax-m3" });
+  expect(screen.queryByRole("option", { name: "gpt-5.6-sol" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "OpenAI" }));
   const target = await screen.findByRole("option", { name: "gpt-5.6-sol" });
   expect(screen.queryByRole("button", { name: "高" })).toBeNull();
   fireEvent.mouseEnter(target);
@@ -141,7 +144,7 @@ it("distinguishes loading from unavailable reasoning settings", async () => {
   expect(screen.getByText("读取档位…")).toBeTruthy();
 });
 
-it("fits the submenu using its rendered height and flips left near the viewport edge", async () => {
+it("fits the submenu using its rendered height and keeps it on the right near the viewport edge", async () => {
   setup(
     vi.fn(async (method: string) =>
       method === "model.list"
@@ -164,6 +167,6 @@ it("fits the submenu using its rendered height and flips left near the viewport 
   fireEvent.mouseEnter(row);
   const submenu = await screen.findByRole("group", { name: "思考强度" });
   expect(submenu.style.top).toBe(`${window.innerHeight - 328}px`);
-  expect(submenu.style.left).toBe(`${window.innerWidth - 390}px`);
+  expect(submenu.style.left).toBe(`${window.innerWidth - 172}px`);
   expect(await screen.findByRole("button", { name: "Ultra" })).toBeTruthy();
 });

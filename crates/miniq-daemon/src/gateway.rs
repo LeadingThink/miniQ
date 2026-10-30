@@ -234,6 +234,7 @@ async fn dispatch_from(
         "workspace.modelUpdate" => session_model::workspace_update(state, req.params).await,
         "session.modelUpdate" => session_model::update(state, req.params).await,
         "model.list" => session_model::catalog(state).await,
+        "model.performance" => session_model::performance().await,
         "media.capabilities" => crate::media_capabilities::capabilities(state, req.params),
         "model.describe" => session_model::describe(state, req.params).await,
         "agent.list" => agents::list(state, req.params).await,

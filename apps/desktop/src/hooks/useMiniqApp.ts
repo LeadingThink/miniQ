@@ -443,7 +443,6 @@ function useTurnActions(
           sessionId: session.id,
           message: { role: "user", content, attachments },
         });
-        sessionModel.clearDraft();
         if (epoch === catalog.navigationEpoch.current) await openSession(session.id);
         void catalog.refreshSessions();
         return true;
@@ -585,7 +584,6 @@ export function useMiniqApp(active = true) {
     client,
     catalog.currentSessionId,
     catalog.selectedWorkspace?.id ?? null,
-    desktop?.getModelDrafts(client.sshHost),
   );
   const markSessionSeen = useCallback((sessionId: string) => {
     desktop?.markSeen(client.sshHost, sessionId);

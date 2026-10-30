@@ -5,7 +5,6 @@ import { HostRpcClient } from "./hostRpc";
 import { hostKey, validSshTarget, type HostDestination, type HostNavigation } from "./hostWorkspace";
 import { useHostCatalogs } from "./hooks/useHostCatalogs";
 import { isMobileLayout } from "./mobileViewport";
-import type { SessionModelSettings } from "./modelSelection";
 import { PreviewViewStore } from "./previewViewState";
 import type { FilePreviewCache } from "./hooks/useFilePreview";
 import { hasLocalRunningTasks, useKeepAwake } from "./keepAwake";
@@ -43,19 +42,12 @@ function useHostState(suppliedRoot?: RpcClient) {
   const [transportPaused, setTransportPaused] = useState(false);
   const [destination, setDestination] = useState<HostDestination>({ workspaceId: null, sessionId: null, revision: 0 });
   const locations = useRef(new Map<string, HostNavigation>());
-  const modelDrafts = useRef(new Map<string, Map<string | null, SessionModelSettings>>());
   const filePreviews = useRef(new Map<string, FilePreviewCache>());
   const getFilePreviewCache = useCallback((target: string | null) => {
     const key = hostKey(target);
     let cache = filePreviews.current.get(key);
     if (!cache) { cache = { sessions: {}, views: new PreviewViewStore() }; filePreviews.current.set(key, cache); }
     return cache;
-  }, []);
-  const getModelDrafts = useCallback((target: string | null) => {
-    const key = hostKey(target);
-    let drafts = modelDrafts.current.get(key);
-    if (!drafts) { drafts = new Map(); modelDrafts.current.set(key, drafts); }
-    return drafts;
   }, []);
   const rememberNavigation = useCallback((target: string | null, navigation: HostNavigation) => { locations.current.set(hostKey(target), navigation); }, []);
   const catalogs = useHostCatalogs(root, clientFor, { host, navigation: locations.current.get(hostKey(host)) ?? destination }, transportPaused);
@@ -147,10 +139,10 @@ function useHostState(suppliedRoot?: RpcClient) {
     return () => { queueMicrotask(() => { if (generation === lifecycle.current) root.disconnect("workbench detached"); }); };
   }, [root]);
   return useMemo(() => ({ ...catalogs, root, host, pending, error: error ?? catalogs.error, clearError, selectHost, clientFor,
-    destination, sidebarCollapsed, setSidebarCollapsed, rememberNavigation, getModelDrafts, getFilePreviewCache,
+    destination, sidebarCollapsed, setSidebarCollapsed, rememberNavigation, getFilePreviewCache,
     setTransportPaused,
     saveHost, removeHost, disconnectHost, openSession }),
-  [root, host, pending, error, clearError, selectHost, clientFor, destination, sidebarCollapsed, rememberNavigation, getModelDrafts, getFilePreviewCache, saveHost, removeHost, disconnectHost, openSession, catalogs]);
+  [root, host, pending, error, clearError, selectHost, clientFor, destination, sidebarCollapsed, rememberNavigation, getFilePreviewCache, saveHost, removeHost, disconnectHost, openSession, catalogs]);
 }
 
 /** Transport, host catalogs and sidebar outlive any individual execution view. */

@@ -3,13 +3,42 @@ use miniq_protocol::{
     ApiProtocol, ErrorCode, Event, GlobalModelUpdate, RpcError, SessionModelSettings,
     SessionModelUpdate, WorkspaceModelUpdate,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::common::{params, store_err, to_value};
 use crate::state::AppState;
 
 const MODEL_CATALOG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+const MODEL_PERFORMANCE_URL: &str = "https://oneapi.zaiwenai.com/v1/models/perf";
+
+#[derive(Deserialize, Serialize)]
+struct ModelPerformanceSeriesPoint {
+    ts: u64,
+    availability: Option<f64>,
+    samples: u64,
+}
+
+#[derive(Deserialize, Serialize)]
+struct ModelPerformanceMetric {
+    availability: Option<f64>,
+    throughput: Option<f64>,
+    samples: u64,
+    series: Vec<ModelPerformanceSeriesPoint>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct ModelPerformanceData {
+    #[serde(rename(deserialize = "window_hours", serialize = "windowHours"))]
+    window_hours: u64,
+    models: std::collections::BTreeMap<String, ModelPerformanceMetric>,
+}
+
+#[derive(Deserialize)]
+struct ModelPerformanceResponse {
+    code: String,
+    data: Option<ModelPerformanceData>,
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -139,13 +168,25 @@ async fn apply_global_update(
 ) -> Result<Value, RpcError> {
     let baseline = state.settings.lock().unwrap().provider.clone();
     validate_settings(&baseline, &mut settings).await?;
-    let mut daemon_settings = state.settings.lock().unwrap().clone();
+    let previous_settings = state.settings.lock().unwrap().clone();
+    let mut daemon_settings = previous_settings.clone();
     if let Some(provider) = &mut daemon_settings.provider {
         crate::session_models::apply_selection(provider, &settings);
     }
     state
         .update_settings(daemon_settings)
         .map_err(|error| RpcError::new(ErrorCode::InternalError, error))?;
+    if let Err(error) = state.store.synchronize_model_settings(&settings) {
+        // The database transaction rolls itself back. Restore the persisted
+        // provider and runtime settings too; never announce a partial update.
+        state.update_settings(previous_settings).map_err(|rollback| {
+            RpcError::new(
+                ErrorCode::InternalError,
+                format!("model synchronization failed: {error}; settings rollback failed: {rollback}"),
+            )
+        })?;
+        return Err(store_err(error));
+    }
     state.emit(Event::GlobalModelSettingsChanged {
         settings: settings.clone(),
     });
@@ -252,6 +293,41 @@ pub(super) async fn catalog_for(config: &miniq_models::ProviderConfig) -> Result
     to_value(json!({ "models": models, "defaultModel": config.model }))
 }
 
+pub(super) async fn performance() -> Result<Value, RpcError> {
+    performance_for(MODEL_PERFORMANCE_URL).await
+}
+
+async fn performance_for(url: &str) -> Result<Value, RpcError> {
+    let client = reqwest::Client::builder()
+        .timeout(MODEL_CATALOG_TIMEOUT)
+        .build()
+        .map_err(performance_http_err)?;
+    let response = client.get(url).send().await.map_err(performance_http_err)?;
+    if !response.status().is_success() {
+        return Err(RpcError::new(
+            ErrorCode::ProviderError,
+            format!(
+                "model performance returned HTTP {}",
+                response.status().as_u16()
+            ),
+        ));
+    }
+    let payload: ModelPerformanceResponse = response.json().await.map_err(performance_http_err)?;
+    if payload.code != "0" {
+        return Err(RpcError::new(
+            ErrorCode::ProviderError,
+            "model performance endpoint rejected the request",
+        ));
+    }
+    let data = payload.data.ok_or_else(|| {
+        RpcError::new(
+            ErrorCode::ProviderError,
+            "model performance response is missing data",
+        )
+    })?;
+    to_value(data)
+}
+
 fn model_catalog_url(base_url: &str) -> Result<url::Url, RpcError> {
     let mut url = url::Url::parse(base_url.trim())
         .map_err(|_| RpcError::new(ErrorCode::InvalidParams, "provider baseUrl is invalid"))?;
@@ -310,6 +386,13 @@ fn http_err(_: reqwest::Error) -> RpcError {
     RpcError::new(
         ErrorCode::ProviderError,
         "could not read the model catalog; check the endpoint and connection",
+    )
+}
+
+fn performance_http_err(_: reqwest::Error) -> RpcError {
+    RpcError::new(
+        ErrorCode::ProviderError,
+        "could not read model performance; check the connection",
     )
 }
 

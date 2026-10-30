@@ -34,6 +34,7 @@
     "@capacitor/status-bar": "^8.0.1",
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@icons-pack/react-simple-icons": "^13.15.1",
     "@monaco-editor/react": "^4.7.0",
     "@tanstack/react-virtual": "^3.14.22",
     "@tauri-apps/api": "^2.9.0",

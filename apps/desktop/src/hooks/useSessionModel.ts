@@ -7,29 +7,10 @@ import {
 import type { RpcClient } from "../rpc";
 import { useSessionError } from "./useSessionError";
 
-function draftResult(
-  defaults: SessionModelResult,
-  settings: SessionModelSettings | undefined,
-): SessionModelResult {
-  if (!settings) return defaults;
-  return {
-    settings,
-    effective: defaults.effective
-      ? {
-          model: settings.model ?? defaults.effective.model,
-          apiProtocol: settings.model || settings.apiProtocol !== "auto"
-            ? settings.apiProtocol : defaults.effective.apiProtocol,
-          reasoningEffort: settings.reasoningEffort,
-        }
-      : null,
-  };
-}
-
 export function useSessionModel(
   client: RpcClient,
   sessionId: string | null,
   workspaceId: string | null = null,
-  savedDrafts?: Map<string | null, SessionModelSettings>,
 ) {
   const [result, setResult] = useState<SessionModelResult>({
     settings: DEFAULT_MODEL_SETTINGS,
@@ -42,8 +23,6 @@ export function useSessionModel(
   currentContext.current = modelContext;
   const [pending, setPending] = useState(false);
   const [error, setError] = useSessionError(modelContext);
-  const drafts = useRef(savedDrafts ?? new Map<string | null, SessionModelSettings>());
-  const draftDefaults = useRef<SessionModelResult>(result);
   const generation = useRef(0);
   const updatePending = useRef(false);
 
@@ -54,12 +33,6 @@ export function useSessionModel(
       let next: SessionModelResult;
       if (sessionId) {
         next = await client.call("session.modelGet", { sessionId });
-        if (next.settings.apiProtocol && next.settings.apiProtocol !== "auto") {
-          next = await client.call("session.modelUpdate", {
-            sessionId,
-            settings: { ...next.settings, apiProtocol: "auto" },
-          });
-        }
       } else if (workspaceId)
         next = await client.call("workspace.modelGet", { workspaceId });
       else {
@@ -78,10 +51,6 @@ export function useSessionModel(
         };
       }
       if (request !== generation.current) return;
-      if (!sessionId) {
-        draftDefaults.current = next;
-        next = draftResult(next, drafts.current.get(workspaceId));
-      }
       setResult(next);
       setLoadedContext(modelContext);
       setError(null);
@@ -120,18 +89,12 @@ export function useSessionModel(
     if (updatePending.current) return;
     if (!ready || loadedContext !== modelContext)
       throw new Error("请等待当前会话的模型配置加载完成");
-    if (!sessionId) {
-      drafts.current.set(workspaceId, settings);
-      setResult(draftResult(draftDefaults.current, settings));
-      setError(null);
-      return;
-    }
     updatePending.current = true;
     const request = generation.current;
     setPending(true);
     try {
-      const next = await client.call<SessionModelResult>("session.modelUpdate", {
-        sessionId, settings,
+      const next = await client.call<SessionModelResult>("model.update", {
+        settings,
       });
       if (request === generation.current) setResult(next);
       if (currentContext.current === modelContext) setError(null);
@@ -143,7 +106,6 @@ export function useSessionModel(
       setPending(false);
     }
   };
-  const selectedDraft = drafts.current.get(workspaceId);
   return {
     ...(loadedContext === modelContext
       ? result
@@ -153,9 +115,5 @@ export function useSessionModel(
     error,
     update,
     reload,
-    clearDraft: () => {
-      if (drafts.current.get(workspaceId) === selectedDraft)
-        drafts.current.delete(workspaceId);
-    },
   };
 }

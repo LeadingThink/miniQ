@@ -5,6 +5,7 @@ import { SessionModelControls } from "./SessionModelControls";
 import type { RpcClient } from "../rpc";
 import type { useSessionModel } from "../hooks/useSessionModel";
 import { DEFAULT_MODEL_SETTINGS } from "../modelSelection";
+import { readFileSync } from "node:fs";
 
 beforeEach(() => {
   vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
@@ -16,13 +17,51 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 function setup() {
   const client = { call: vi.fn((method) => Promise.resolve(method === "model.list"
     ? { models: ["gpt-5.6-sol", "claude-opus-very-long-model-name"] }
-    : { reasoningEfforts: ["low", "high"] })) } as unknown as RpcClient;
+    : method === "model.performance"
+      ? { windowHours: 72, models: { "gpt-5.6-sol": { availability: 100, throughput: 12.5, samples: 20, series: [] } } }
+      : { reasoningEfforts: ["low", "high"] })) } as unknown as RpcClient;
   const model = { settings: { ...DEFAULT_MODEL_SETTINGS }, effective: { ...DEFAULT_MODEL_SETTINGS, model: "gpt-5.6-sol" },
     ready: true, pending: false, error: null, update: vi.fn().mockResolvedValue(undefined), reload: vi.fn(),
   } as unknown as ReturnType<typeof useSessionModel>;
   const view = render(<SessionModelControls client={client} model={model} busy={false} />);
   return { ...view, client, model };
 }
+
+it("shows the shared availability statistics in the native mobile dialog", async () => {
+  setup();
+  fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
+  await screen.findByRole("option", { name: "gpt-5.6-sol" });
+  expect(screen.getByLabelText("gpt-5.6-sol 可用性 100%，吞吐 12.5 t/s，72 小时样本 20")).toBeTruthy();
+  expect(screen.getByLabelText("claude-opus-very-long-model-name 暂无可用性统计")).toBeTruthy();
+});
+
+it("stacks inline effort below the full-width mobile model button", async () => {
+  // Use the real row rules; jsdom cannot parse all modern stylesheet syntax.
+  const styles = document.createElement("style");
+  const experienceCss = readFileSync("src/styles/experience.css", "utf8");
+  const surfaceCss = readFileSync("src/components/SessionModelSurface.css", "utf8");
+  const desktopRule = experienceCss.match(/\.model-picker-row\s*\{[^}]+\}/)?.[0];
+  const mobileRule = surfaceCss.match(/\.session-model-dialog \.session-model-popover \.model-picker-row\s*\{[^}]+\}/)?.[0];
+  expect(desktopRule).toBeTruthy();
+  expect(mobileRule).toBeTruthy();
+  styles.textContent = `${desktopRule}\n${mobileRule}`;
+  document.head.append(styles);
+  try {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
+    const option = await screen.findByRole("option", { name: "gpt-5.6-sol" });
+    fireEvent.click(option);
+    const high = await screen.findByRole("button", { name: "高" });
+    const effort = high.closest(".model-picker-inline-effort");
+    const row = option.parentElement!;
+    expect(option.nextElementSibling).toBe(effort);
+    expect(getComputedStyle(row).display).toBe("flex");
+    expect(getComputedStyle(row).flexDirection).toBe("column");
+    expect(getComputedStyle(row).alignItems).toBe("stretch");
+  } finally {
+    styles.remove();
+  }
+});
 
 it("keeps model and effort choices local in the phone dialog until done", async () => {
   const { model } = setup();
