@@ -65,7 +65,7 @@ fn parses_name_status_entries_including_renames() {
 #[tokio::test]
 async fn batched_untracked_counts_match_git_without_creating_the_real_index() {
     let (_directory, path) = repository().await;
-    let mut files: Vec<(&str, &[u8])> = vec![
+    let files: &[(&str, &[u8])] = &[
         (".gitattributes", b"*.data -diff\n*.text diff\n"),
         ("with spaces.txt", b"one\ntwo\n"),
         ("-leading", b"no trailing newline"),
@@ -73,10 +73,10 @@ async fn batched_untracked_counts_match_git_without_creating_the_real_index() {
         ("binary", b"one\0two\n"),
         ("forced.data", b"one\ntwo\n"),
         ("forced.text", b"one\0two\n"),
+        #[cfg(unix)]
+        ("with\nnewline.txt", b"one\ntwo\nthree"),
     ];
-    #[cfg(unix)]
-    files.push(("with\nnewline.txt", b"one\ntwo\nthree"));
-    for (name, bytes) in &files {
+    for (name, bytes) in files {
         std::fs::write(path.join(name), bytes).unwrap();
     }
     #[cfg(unix)]
@@ -161,7 +161,10 @@ async fn subdirectory_status_keeps_staged_worktree_and_untracked_paths_consisten
     let result = status(&state, Some(json!({"sessionId":session_id})))
         .await
         .unwrap();
-    assert_eq!(result["root"], path.to_str().unwrap());
+    assert_eq!(
+        std::fs::canonicalize(result["root"].as_str().unwrap()).unwrap(),
+        path
+    );
     assert_eq!(result["entries"].as_array().unwrap().len(), 3);
     assert_eq!(result["stats"]["additions"], 5);
     assert_eq!(result["stats"]["deletions"], 1);
