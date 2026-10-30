@@ -34,11 +34,104 @@ pub fn data_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("MINIQ_DATA_DIR") {
         return PathBuf::from(dir);
     }
+    let default = default_data_dir();
+    read_configured_data_dir(&data_dir_config_path(&default)).unwrap_or(default)
+}
+
+pub fn data_dir_is_managed_by_environment() -> bool {
+    std::env::var_os("MINIQ_DATA_DIR").is_some()
+}
+
+fn default_data_dir() -> PathBuf {
     let base = std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share")))
         .unwrap_or_else(|| PathBuf::from("."));
     base.join("miniq")
+}
+
+fn data_dir_config_path(default: &Path) -> PathBuf {
+    default
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("miniq-data-dir.json")
+}
+
+#[derive(Deserialize, Serialize)]
+struct DataDirConfig {
+    data_dir: PathBuf,
+}
+
+fn read_configured_data_dir(path: &Path) -> Option<PathBuf> {
+    serde_json::from_slice::<DataDirConfig>(&std::fs::read(path).ok()?)
+        .ok()
+        .map(|config| config.data_dir)
+}
+
+pub fn configured_data_dir() -> PathBuf {
+    data_dir()
+}
+
+pub fn write_data_dir_config(path: &Path) -> std::io::Result<()> {
+    let default = default_data_dir();
+    write_private_json(
+        &data_dir_config_path(&default),
+        &DataDirConfig {
+            data_dir: path.to_path_buf(),
+        },
+    )
+}
+
+pub fn migrate_data_dir(source: &Path, target: &Path) -> std::io::Result<()> {
+    if source == target {
+        return Ok(());
+    }
+    if !source.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "source data directory does not exist",
+        ));
+    }
+    let target_existed = target.exists();
+    if target_existed && std::fs::read_dir(target)?.next().is_some() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "target data directory is not empty",
+        ));
+    }
+    let parent = target.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    match std::fs::rename(source, target) {
+        Ok(()) => Ok(()),
+        Err(rename_error) => {
+            if let Err(copy_error) = copy_dir_contents(source, target) {
+                let _ = std::fs::remove_dir_all(target);
+                if target_existed {
+                    let _ = std::fs::create_dir(target);
+                }
+                return Err(std::io::Error::new(
+                    copy_error.kind(),
+                    format!("could not move data directory: {rename_error}; {copy_error}"),
+                ));
+            }
+            std::fs::remove_dir_all(source)
+        }
+    }
+}
+
+fn copy_dir_contents(source: &Path, target: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(target)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let target_path = target.join(entry.file_name());
+        if source_path.is_dir() {
+            copy_dir_contents(&source_path, &target_path)?;
+        } else {
+            std::fs::copy(source_path, target_path)?;
+        }
+    }
+    Ok(())
 }
 
 pub fn read_connection_info(dir: &Path) -> Option<ConnectionInfo> {
@@ -143,6 +236,58 @@ mod tests {
                 0o600
             );
         }
+    }
+
+    #[test]
+    fn moves_the_complete_data_directory_and_rejects_existing_targets() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("old");
+        let target = root.path().join("new");
+        std::fs::create_dir_all(source.join("nested")).unwrap();
+        std::fs::write(source.join("nested").join("history.db"), b"data").unwrap();
+
+        migrate_data_dir(&source, &target).unwrap();
+        assert!(!source.exists());
+        assert_eq!(
+            std::fs::read(target.join("nested/history.db")).unwrap(),
+            b"data"
+        );
+        assert_eq!(
+            migrate_data_dir(&root.path().join("missing"), &root.path().join("another"))
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
+        let second_source = root.path().join("second-old");
+        std::fs::create_dir(&second_source).unwrap();
+        let occupied = root.path().join("occupied");
+        std::fs::create_dir(&occupied).unwrap();
+        std::fs::write(occupied.join("keep.txt"), b"keep").unwrap();
+        assert_eq!(
+            migrate_data_dir(&second_source, &occupied)
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::AlreadyExists
+        );
+        assert!(target.exists());
+    }
+
+    #[test]
+    fn migrates_into_an_existing_empty_directory_selected_by_the_user() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("old");
+        let target = root.path().join("selected-empty-folder");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(source.join("settings.json"), b"settings").unwrap();
+        std::fs::create_dir(&target).unwrap();
+
+        migrate_data_dir(&source, &target).unwrap();
+
+        assert!(!source.exists());
+        assert_eq!(
+            std::fs::read(target.join("settings.json")).unwrap(),
+            b"settings"
+        );
     }
 }
 pub mod files;

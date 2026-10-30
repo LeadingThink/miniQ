@@ -9,12 +9,19 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
     ),
   );
   expect(tauri.build.frontendDist).toBe("../dist");
+  const tauriEntry = readFileSync(
+    new URL("../src-tauri/src/lib.rs", import.meta.url),
+    "utf8",
+  );
+  expect(tauriEntry).toContain("current_data_directory");
+  expect(tauriEntry).toContain("choose_data_directory");
 
   const capacitor = readFileSync(
     new URL("../capacitor.config.ts", import.meta.url),
     "utf8",
   );
   expect(capacitor).toMatch(/webDir:\s*["']dist["']/);
+  expect(capacitor).not.toContain("choose_data_directory");
 
   const androidEntry = readFileSync(
     new URL(

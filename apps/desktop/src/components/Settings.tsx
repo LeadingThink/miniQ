@@ -27,6 +27,7 @@ import { isTauriRuntime } from "../runtime";
 import { TerminalSettings } from "./TerminalSettings";
 import { ProviderKeyField } from "./ProviderKeyField";
 import { DesktopAccountLogin } from "./DesktopAccountLogin";
+import { DataDirectorySettings } from "./DataDirectorySettings";
 
 export const ZAIWEN_API_PORTAL_URL = "https://platform.zaiwenai.com/";
 export const ZAIWEN_API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
@@ -325,6 +326,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
         <div id="settings-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={tab !== "general"}>
           {tab === "general" && <TaskNotificationSettings />}
           {tab === "general" && <CompanionSettings />}
+          {tab === "general" && typeof window !== "undefined" && isTauriRuntime() && props.client.mode === "local" && (
+            <DataDirectorySettings />
+          )}
         </div>
         <div id="settings-skills" className="settings-embedded-page" role="tabpanel" aria-labelledby="settings-tab-skills" hidden={tab !== "skills"}>
           {tab === "skills" && <SkillsPanel client={props.client} workspaceId={props.workspaceId ?? null} />}

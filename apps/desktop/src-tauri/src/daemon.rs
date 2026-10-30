@@ -34,6 +34,33 @@ pub struct DaemonLifecycle {
 }
 
 impl DaemonLifecycle {
+    pub async fn migrate_to(&self, target: PathBuf) -> Result<(), String> {
+        self.begin_shutdown();
+        if let Err(error) = self.shutdown().await {
+            self.exiting.store(false, Ordering::SeqCst);
+            return Err(error);
+        }
+        let source = data_dir();
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            miniq_local::migrate_data_dir(&source, &target).map_err(|error| error.to_string())?;
+            if let Err(config_error) = miniq_local::write_data_dir_config(&target) {
+                return match miniq_local::migrate_data_dir(&target, &source) {
+                    Ok(()) => Err(format!("无法保存数据目录设置，数据已移回原目录: {config_error}")),
+                    Err(rollback_error) => Err(format!(
+                        "无法保存数据目录设置，且数据无法移回原目录: {config_error}; {rollback_error}"
+                    )),
+                };
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|error| error.to_string());
+        self.exiting.store(false, Ordering::SeqCst);
+        result??;
+        let runtime_path = self.runtime_path.get_or_init(resolve_runtime_path);
+        ensure_daemon(runtime_path).map(|_| ())
+    }
+
     pub fn ensure(&self) -> Result<ConnectionInfo, String> {
         if self.exiting.load(Ordering::SeqCst) {
             return Err("daemon startup is blocked while miniQ is exiting".into());
