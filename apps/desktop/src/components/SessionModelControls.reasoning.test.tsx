@@ -130,6 +130,26 @@ it("dismisses the portal when clicking outside and when filtering its model away
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
+it("dismisses the effort submenu before switching providers", async () => {
+  const model = setup(
+    vi.fn(async (method: string) =>
+      method === "model.list"
+        ? { models: ["minimax-m3", "gpt-5.6-sol"] }
+        : { reasoningEfforts: ["high"] },
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
+  const minimax = await screen.findByRole("option", { name: "minimax-m3" });
+  fireEvent.mouseEnter(minimax);
+  await screen.findByRole("group", { name: "思考强度" });
+
+  fireEvent.click(screen.getByRole("button", { name: "OpenAI" }));
+
+  expect(screen.queryByRole("group", { name: "思考强度" })).toBeNull();
+  expect(screen.getByRole("option", { name: "gpt-5.6-sol" })).toBeTruthy();
+  expect(model.update).not.toHaveBeenCalled();
+});
+
 it("distinguishes loading from unavailable reasoning settings", async () => {
   setup(
     vi.fn((method: string) =>

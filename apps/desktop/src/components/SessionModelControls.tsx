@@ -334,6 +334,11 @@ export function SessionModelControls({
     setFavoriteModels(next);
     writeFavoriteModelIds(window.localStorage, next);
   };
+  const selectCategory = (nextCategory: ModelPickerCategory) => {
+    closeSubmenu();
+    setQuery("");
+    setCategory(nextCategory);
+  };
   const effortOptions = description?.reasoningEfforts ?? [];
   const selectEffort = (id: string, effort: ReasoningEffort | null) => {
     if (mobile) setSelectedEffort(effort);
@@ -467,7 +472,7 @@ export function SessionModelControls({
             {!mobile && (
               <div className="model-picker-body">
                 <nav className="model-picker-nav" aria-label="模型分类">
-                  <button type="button" className={category === "favorites" && !query ? "active" : undefined} aria-label="收藏" title="收藏" aria-pressed={category === "favorites" && !query} onClick={() => { setQuery(""); setCategory("favorites"); }}>
+                  <button type="button" className={category === "favorites" && !query ? "active" : undefined} aria-label="收藏" title="收藏" aria-pressed={category === "favorites" && !query} onClick={() => selectCategory("favorites")}>
                     <Star size={15} aria-hidden="true" />
                     <span>收藏</span>
                   </button>
@@ -480,7 +485,7 @@ export function SessionModelControls({
                       aria-label={group.label}
                       title={group.label}
                       aria-pressed={category === group.category && !query}
-                      onClick={() => { setQuery(""); setCategory(group.category); }}
+                      onClick={() => selectCategory(group.category)}
                     >
                       <ProviderIcon provider={group.category as ModelProvider} />
                       <span>{group.label}</span>
