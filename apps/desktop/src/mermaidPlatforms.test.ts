@@ -87,4 +87,17 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
   );
   expect(modelControls).toContain('call<ModelPerformanceResult>("model.performance")');
   expect(modelControls).toContain("<ModelPerformanceIndicator");
+
+  const modelSurface = readFileSync(
+    new URL("./components/SessionModelSurface.tsx", import.meta.url),
+    "utf8",
+  );
+  expect(modelSurface).toContain('import "./SessionModelSurface.css"');
+  const modelSurfaceCss = readFileSync(
+    new URL("./components/SessionModelSurface.css", import.meta.url),
+    "utf8",
+  );
+  expect(modelSurfaceCss).toMatch(
+    /\.session-model-dialog \.session-model-popover \.model-performance\s*\{[^}]*flex:\s*1 1 100%;/,
+  );
 });

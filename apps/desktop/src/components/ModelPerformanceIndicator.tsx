@@ -1,6 +1,8 @@
 import type { ModelPerformanceMetric } from "../modelPerformance";
 import { formatPerformanceValue } from "../modelPerformance";
 
+const MAX_VISIBLE_SERIES_POINTS = 10;
+
 export function ModelPerformanceIndicator({
   modelId,
   metric,
@@ -23,6 +25,7 @@ export function ModelPerformanceIndicator({
   const availability = formatPerformanceValue(metric.availability);
   const throughput = formatPerformanceValue(metric.throughput);
   const hours = windowHours ?? 0;
+  const recentSeries = metric.series.slice(-MAX_VISIBLE_SERIES_POINTS);
   return (
     <span
       className="model-performance"
@@ -39,9 +42,9 @@ export function ModelPerformanceIndicator({
           <b>{throughput} t/s</b>
         </span>
       </span>
-      {metric.series.length > 0 && (
+      {recentSeries.length > 0 && (
         <span className="model-performance-chart" aria-hidden="true">
-          {metric.series.map((point, index) => (
+          {recentSeries.map((point, index) => (
             <span
               className="model-performance-bar"
               data-empty={point.samples === 0 || point.availability === null || undefined}

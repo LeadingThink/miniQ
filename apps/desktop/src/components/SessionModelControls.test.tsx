@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import type { useSessionModel } from "../hooks/useSessionModel";
 import type { RpcClient } from "../rpc";
 import { SessionModelControls } from "./SessionModelControls";
@@ -8,6 +9,23 @@ import { DEFAULT_MODEL_SETTINGS } from "../modelSelection";
 
 beforeEach(() => localStorage.clear());
 afterEach(cleanup);
+
+it("keeps model names aligned when the selected check appears", () => {
+  const experienceCss = readFileSync("src/styles/experience.css", "utf8");
+  const modelPopoverRule = experienceCss.match(/\.session-model-popover\s*\{[^}]+\}/)?.[0];
+  const modelBodyRule = experienceCss.match(/\.model-picker-body\s*\{[^}]+\}/)?.[0];
+  const modelButtonRule = experienceCss.match(/\.model-picker-row > button\s*\{[^}]+\}/)?.[0];
+  const modelNameRule = experienceCss.match(/\.model-picker-name\s*\{[^}]+\}/)?.[0];
+  const performanceRule = experienceCss.match(/\.model-performance\s*\{[^}]+\}/)?.[0];
+  const performanceValuesRule = experienceCss.match(/\.model-performance-values\s*\{[^}]+\}/)?.[0];
+  expect(modelPopoverRule).toContain("width: min(540px, calc(100vw - 32px));");
+  expect(modelBodyRule).toContain("grid-template-columns: 168px minmax(0, 1fr);");
+  expect(modelButtonRule).toContain("justify-content: flex-start;");
+  expect(modelNameRule).toContain("flex: 0 0 144px;");
+  expect(modelNameRule).toContain("text-align: left;");
+  expect(performanceRule).toContain("flex: 0 0 116px;");
+  expect(performanceValuesRule).toContain("flex-direction: column;");
+});
 
 it("opens the catalog at the current model and switches on click", async () => {
   const call = vi.fn((method: string) => {
