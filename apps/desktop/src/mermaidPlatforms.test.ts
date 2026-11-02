@@ -9,6 +9,11 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
     ),
   );
   expect(tauri.build.frontendDist).toBe("../dist");
+  const tauriLock = readFileSync(
+    new URL("../src-tauri/Cargo.lock", import.meta.url),
+    "utf8",
+  );
+  expect(tauriLock).toContain('name = "tauri-runtime-wry"');
   const tauriEntry = readFileSync(
     new URL("../src-tauri/src/lib.rs", import.meta.url),
     "utf8",
@@ -31,6 +36,11 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
     "utf8",
   );
   expect(androidEntry).toContain("extends BridgeActivity");
+  const androidLayout = readFileSync(
+    new URL("../android/app/src/main/res/layout/activity_main.xml", import.meta.url),
+    "utf8",
+  );
+  expect(androidLayout).toContain("<WebView");
 
   const iosPackage = readFileSync(
     new URL("../ios/App/CapApp-SPM/Package.swift", import.meta.url),
@@ -43,6 +53,11 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
     "utf8",
   );
   expect(iosEntry).toContain("CAPBridgeViewController");
+  const iosScene = readFileSync(
+    new URL("../ios/App/App/SceneDelegate.swift", import.meta.url),
+    "utf8",
+  );
+  expect(iosScene).toContain("rootViewController = MainViewController()");
 
   const webEntry = readFileSync(new URL("./main.tsx", import.meta.url), "utf8");
   expect(webEntry).toContain('import "./styles/base.css"');

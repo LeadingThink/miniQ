@@ -188,6 +188,12 @@
   flex-basis: 100%;
 }
 
+/* Plain drafts have one scrolling owner. Keeping the wrapper fixed prevents
+   WebViews from showing a second scrollbar and re-anchoring the timeline. */
+.composer-field:not(.has-paste) {
+  overflow-y: hidden;
+}
+
 .paste-chip {
   display: inline-flex;
   flex: none;

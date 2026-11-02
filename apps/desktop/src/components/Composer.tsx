@@ -82,8 +82,11 @@ function resizeComposer(field: HTMLElement | null) {
   if (areas.length === 0) return;
   if (areas.length === 1) {
     const textarea = areas[0];
+    const scrollTop = textarea.scrollTop;
+    const pinnedToEnd = textarea.scrollHeight - scrollTop - textarea.clientHeight <= 1;
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+    textarea.scrollTop = pinnedToEnd ? textarea.scrollHeight : scrollTop;
     return;
   }
   for (const textarea of areas) textarea.style.height = "auto";

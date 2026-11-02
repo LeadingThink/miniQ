@@ -59,6 +59,30 @@ it("recomputes composer height when its width changes during a sidebar drag", ()
   expect(textarea.style.height).toBe("176px");
 });
 
+it("keeps a long draft at the caret without moving the conversation viewport", () => {
+  const { container } = render(
+    <div data-testid="conversation">
+      <ComposerCard busy={false} placeholder="消息" draftKey="scroll-stability" onSend={vi.fn()} />
+    </div>,
+  );
+  const conversation = screen.getByTestId("conversation");
+  const textarea = screen.getByRole<HTMLTextAreaElement>("textbox");
+  Object.defineProperties(conversation, {
+    scrollTop: { configurable: true, writable: true, value: 640 },
+  });
+  Object.defineProperties(textarea, {
+    clientHeight: { configurable: true, value: 200 },
+    scrollHeight: { configurable: true, value: 480 },
+    scrollTop: { configurable: true, writable: true, value: 280 },
+  });
+
+  fireEvent.change(textarea, { target: { value: "a\n".repeat(80), selectionStart: 160 } });
+
+  expect(textarea.scrollTop).toBe(480);
+  expect(conversation.scrollTop).toBe(640);
+  expect(container.querySelector(".composer-field")?.classList.contains("has-paste")).toBe(false);
+});
+
 it("keeps the composer field's top and left inset compact on desktop and touch layouts", () => {
   const conversationCss = readFileSync(resolve(process.cwd(), "src/styles/conversation.css"), "utf8");
   const conversationV2Css = readFileSync(resolve(process.cwd(), "src/styles/conversation-v2.css"), "utf8");
@@ -66,6 +90,7 @@ it("keeps the composer field's top and left inset compact on desktop and touch l
   expect(conversationCss).toMatch(/\.composer-card\s*\{[^}]*padding: 6px 8px 10px;/s);
   expect(conversationCss).toMatch(/\.composer-card textarea,\s*\.composer-field\s*\{[^}]*padding: 4px 4px 6px;/s);
   expect(conversationCss).toMatch(/\.composer-field\s*\{[^}]*align-items: flex-start;[^}]*align-content: flex-start;/s);
+  expect(conversationCss).toMatch(/\.composer-field:not\(\.has-paste\)\s*\{[^}]*overflow-y: hidden;/s);
   expect(conversationV2Css).toMatch(/\.main \.composer-card\s*\{[^}]*padding: 6px 8px 10px;/s);
   expect(conversationV2Css).toMatch(/\.main \.composer-card textarea,\s*\.main \.composer-field\s*\{[^}]*padding: 6px 8px 20px;/s);
   expect(composerCss).toMatch(/\.composer-outer \.composer-field\s*\{[^}]*padding: 4px 2px 10px;/s);
