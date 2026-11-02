@@ -123,7 +123,7 @@ impl McpManager {
     }
 
     fn command(config: &McpServerConfig) -> tokio::process::Command {
-        let mut command = tokio::process::Command::new(&config.command);
+        let mut command = miniq_local::subprocess::async_command(&config.command);
         command.args(&config.args);
         miniq_local::subprocess_env::apply_allowlist(command.as_std_mut(), &config.env);
         command
@@ -374,6 +374,22 @@ pub fn merge_servers(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn stdio_server_has_no_console_window_and_preserves_output() {
+        let config: McpServerConfig = serde_json::from_value(json!({
+            "name": "console-probe",
+            "command": "powershell.exe",
+            "args": ["-NoProfile", "-NonInteractive", "-Command",
+                include_str!("../../miniq-local/tests/fixtures/console_probe.ps1")],
+        }))
+        .unwrap();
+        let output = McpManager::command(&config).output().await.unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert!(String::from_utf8_lossy(&output.stdout).contains("miniq-no-console"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("miniq-stderr"));
+    }
 
     #[test]
     fn stdio_server_env_is_allowlisted() {

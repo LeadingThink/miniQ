@@ -28,7 +28,7 @@ impl Drop for Bridge {
 }
 
 pub fn ssh_command(host: &str) -> Command {
-    let mut command = Command::new("ssh");
+    let mut command = miniq_local::subprocess::async_command("ssh");
     command.args([
         "-T",
         "-o",
@@ -56,8 +56,6 @@ pub fn ssh_command(host: &str) -> Command {
         host,
         REMOTE_COMMAND,
     ]);
-    #[cfg(windows)]
-    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
     command
 }
 

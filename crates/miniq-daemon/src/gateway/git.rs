@@ -75,7 +75,7 @@ fn cwd(state: &AppState, session_id: &str) -> Result<PathBuf, RpcError> {
 }
 
 fn git(cwd: &PathBuf) -> Command {
-    let mut command = Command::new("git");
+    let mut command = miniq_local::subprocess::async_command("git");
     command
         .arg("--literal-pathspecs")
         .args(["-c", &format!("core.hooksPath={}", null_device())])

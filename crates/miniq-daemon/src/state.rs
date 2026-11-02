@@ -626,9 +626,9 @@ impl AppState {
         tokio::spawn(async move {
             let _activity = activity;
             #[cfg(windows)]
-            let mut child = tokio::process::Command::new("powershell.exe");
+            let mut child = miniq_local::subprocess::async_command("powershell.exe");
             #[cfg(not(windows))]
-            let mut child = tokio::process::Command::new("sh");
+            let mut child = miniq_local::subprocess::async_command("sh");
             #[cfg(windows)]
             child.args(["-NoProfile", "-NonInteractive", "-Command", &command]);
             #[cfg(not(windows))]

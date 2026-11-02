@@ -123,7 +123,7 @@ fn convert_to_pdf(source: &Path, output: &Path, family: &str) -> Result<(), Stri
     let script = output.with_extension("vbs");
     std::fs::write(&script, CONVERT_SCRIPT)
         .map_err(|error| format!("无法创建 WPS/Office 转换脚本: {error}"))?;
-    let result = std::process::Command::new(executable)
+    let result = miniq_local::subprocess::command(executable)
         .args([
             "//NoLogo",
             &script.to_string_lossy(),

@@ -85,7 +85,11 @@ impl Tool for ViewPdfTool {
                 "PDF path must be a regular file".into(),
             ));
         }
-        let info = run(ctx, Command::new("pdfinfo").arg(&path)).await?;
+        let info = run(
+            ctx,
+            miniq_local::subprocess::async_command("pdfinfo").arg(&path),
+        )
+        .await?;
         let total = total_pages(&String::from_utf8_lossy(&info))?;
         let pages = selected_pages(&input, total)?;
         let temp = tempfile::tempdir().map_err(failed)?;
@@ -144,7 +148,7 @@ async fn render(
     let prefix = temp.join(format!("page-{page}"));
     run(
         ctx,
-        Command::new("pdftoppm")
+        miniq_local::subprocess::async_command("pdftoppm")
             .args([
                 "-png",
                 "-singlefile",

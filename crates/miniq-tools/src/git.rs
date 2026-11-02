@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use crate::router::{parse_input, Tool, ToolContext, ToolError};
 
 async fn run_git(cwd: &std::path::Path, args: &[&str]) -> Result<std::process::Output, ToolError> {
-    tokio::process::Command::new("git")
+    miniq_local::subprocess::async_command("git")
         .args(args)
         .current_dir(cwd)
         .stdin(std::process::Stdio::null())

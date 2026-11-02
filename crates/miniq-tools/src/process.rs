@@ -522,7 +522,7 @@ async fn terminate(process: &ManagedProcess) -> Result<(), ToolError> {
     if let Some(pid) = process.pgid {
         // Pipe processes also need descendant cleanup; ConPTY closure alone is
         // not a portable guarantee for detached grandchildren.
-        let status = tokio::process::Command::new("taskkill.exe")
+        let status = miniq_local::subprocess::async_command("taskkill.exe")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())

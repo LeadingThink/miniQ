@@ -168,6 +168,7 @@ jobs:
         shell: bash
         run: |
           cargo test --release --locked -p miniq-daemon --target ${{ matrix.target }}
+          cargo test --release --locked -p miniq-tools --lib shell::tests::pipe_shells_have_no_console_window_and_preserve_output --target ${{ matrix.target }}
           cargo check --release --locked --workspace --target ${{ matrix.target }}
       - name: Build Windows terminal launcher
         if: runner.os == 'Windows'

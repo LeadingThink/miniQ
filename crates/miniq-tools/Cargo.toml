@@ -9,6 +9,7 @@ default = ["desktop"]
 desktop = ["dep:enigo", "dep:xcap"]
 
 [dependencies]
+miniq-local = { path = "../miniq-local" }
 miniq-protocol = { path = "../miniq-protocol" }
 miniq-sandbox = { path = "../miniq-sandbox" }
 miniq-models = { path = "../miniq-models" }

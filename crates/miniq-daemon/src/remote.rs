@@ -97,7 +97,7 @@ fn os_host_name() -> Option<String> {
 }
 
 fn command_output(program: &str, args: &[&str]) -> Option<String> {
-    let output = std::process::Command::new(program)
+    let output = miniq_local::subprocess::command(program)
         .args(args)
         .output()
         .ok()?;

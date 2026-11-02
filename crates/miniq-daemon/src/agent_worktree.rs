@@ -2,8 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use miniq_local::subprocess::async_command;
 use miniq_tools::ToolError;
-use tokio::process::Command;
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AgentWorktree {
@@ -61,7 +61,7 @@ pub(crate) async fn create(workspace: &Path, agent_id: &str) -> Result<AgentWork
         )));
     }
     let branch = format!("miniq-agent/{agent_id}");
-    let output = Command::new("git")
+    let output = async_command("git")
         .arg("-C")
         .arg(&repo_root)
         .args(["worktree", "add", "-b"])
@@ -72,7 +72,7 @@ pub(crate) async fn create(workspace: &Path, agent_id: &str) -> Result<AgentWork
         .await
         .map_err(|error| ToolError::ExecutionFailed(format!("failed to start git: {error}")))?;
     if !output.status.success() {
-        let _ = Command::new("git")
+        let _ = async_command("git")
             .arg("-C")
             .arg(&repo_root)
             .args(["branch", "-D"])
@@ -110,7 +110,7 @@ pub(crate) async fn finalize(worktree: &AgentWorktree) -> FinalizeResult {
         };
     }
 
-    let removed = Command::new("git")
+    let removed = async_command("git")
         .arg("-C")
         .arg(&worktree.repo_root)
         .args(["worktree", "remove", "--force"])
@@ -130,7 +130,7 @@ pub(crate) async fn finalize(worktree: &AgentWorktree) -> FinalizeResult {
         Err(error) => return retained_error(ToolError::ExecutionFailed(error.to_string())),
     }
 
-    let branch = Command::new("git")
+    let branch = async_command("git")
         .arg("-C")
         .arg(&worktree.repo_root)
         .args(["branch", "-D"])
@@ -159,7 +159,7 @@ async fn git_output(
     directory: &Path,
     arguments: &[&str],
 ) -> Result<std::process::Output, ToolError> {
-    let output = Command::new("git")
+    let output = async_command("git")
         .arg("-C")
         .arg(directory)
         .args(arguments)

@@ -45,12 +45,10 @@ fn install_directory() -> Result<PathBuf, String> {
 
 fn configure_process(command: &mut Command) {
     command.stdin(Stdio::null()).kill_on_drop(true);
-    #[cfg(windows)]
-    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
 }
 
 async fn read_version(executable: &Path) -> Result<String, String> {
-    let mut command = Command::new(executable);
+    let mut command = miniq_local::subprocess::async_command(executable);
     configure_process(&mut command);
     command.arg("--version");
     let output = tokio::time::timeout(Duration::from_secs(5), command.output())
@@ -97,7 +95,7 @@ pub async fn terminal_install_status() -> Result<TerminalStatus, String> {
 fn installer_process(script: &Path, directory: &Path) -> Command {
     #[cfg(windows)]
     let mut command = {
-        let mut command = Command::new("powershell.exe");
+        let mut command = miniq_local::subprocess::async_command("powershell.exe");
         command.args([
             "-NoProfile",
             "-NonInteractive",
@@ -108,7 +106,7 @@ fn installer_process(script: &Path, directory: &Path) -> Command {
         command
     };
     #[cfg(not(windows))]
-    let mut command = Command::new("/bin/sh");
+    let mut command = miniq_local::subprocess::async_command("/bin/sh");
     command.arg(script);
     command.env("MINIQ_INSTALL_DIR", directory);
     command.env_remove("MINIQ_VERSION");

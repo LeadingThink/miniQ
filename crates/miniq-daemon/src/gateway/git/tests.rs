@@ -14,6 +14,28 @@ async fn repository() -> (tempfile::TempDir, PathBuf) {
     (directory, path)
 }
 
+#[cfg(windows)]
+#[tokio::test]
+async fn background_git_and_its_children_have_no_console_window() {
+    let (_directory, path) = repository().await;
+    let probe = path.join("console probe.ps1");
+    std::fs::write(
+        &probe,
+        include_str!("../../../../miniq-local/tests/fixtures/console_probe.ps1"),
+    )
+    .unwrap();
+    let alias = format!(
+        "alias.console-probe=!powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '{}'",
+        probe.to_string_lossy().replace('\\', "/").replace('\'', "'\\''")
+    );
+    let mut command = git(&path);
+    command.args(["-c", &alias, "console-probe"]);
+    let result = output(command).await.unwrap();
+    assert!(result.status.success(), "{result:?}");
+    assert!(String::from_utf8_lossy(&result.stdout).contains("miniq-no-console"));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("miniq-stderr"));
+}
+
 fn state_for(path: &Path) -> (AppState, String) {
     let store = miniq_memory::Store::open_in_memory().unwrap();
     let workspace = store

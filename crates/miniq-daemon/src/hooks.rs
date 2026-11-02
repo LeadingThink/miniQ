@@ -437,13 +437,13 @@ pub async fn run_command(
 
     #[cfg(windows)]
     let mut cmd = {
-        let mut cmd = tokio::process::Command::new("powershell.exe");
+        let mut cmd = miniq_local::subprocess::async_command("powershell.exe");
         cmd.args(["-NoProfile", "-NonInteractive", "-Command", command]);
         cmd
     };
     #[cfg(not(windows))]
     let mut cmd = {
-        let mut cmd = tokio::process::Command::new("sh");
+        let mut cmd = miniq_local::subprocess::async_command("sh");
         cmd.args(["-lc", command]);
         // Own process group so a timeout can kill grandchildren too.
         cmd.process_group(0);
@@ -551,7 +551,7 @@ fn kill_tree(pid: Option<u32>) {
 #[cfg(windows)]
 fn kill_tree(pid: Option<u32>) {
     if let Some(pid) = pid {
-        let _ = std::process::Command::new("taskkill")
+        let _ = miniq_local::subprocess::command("taskkill")
             .args(["/T", "/F", "/PID", &pid.to_string()])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())

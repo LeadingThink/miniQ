@@ -1,6 +1,29 @@
 use super::*;
 use serde_json::json;
 
+#[cfg(windows)]
+#[tokio::test]
+async fn session_start_hook_has_no_console_window_and_preserves_output() {
+    let directory = tempfile::tempdir().unwrap();
+    let context = HookContext {
+        session_id: "console-probe".into(),
+        workspace_id: "console-probe".into(),
+        cwd: directory.path().to_path_buf(),
+    };
+    let result = run_command(
+        include_str!("../../../miniq-local/tests/fixtures/console_probe.ps1"),
+        &context.cwd,
+        b"{}",
+        HookEvent::SessionStart,
+        &context,
+        Duration::from_secs(10),
+    )
+    .await;
+    assert_eq!(result.exit_code, Some(0), "{}", result.stderr);
+    assert!(result.stdout.contains("miniq-no-console"));
+    assert!(result.stderr.contains("miniq-stderr"));
+}
+
 fn hook(event: &str, command: &str) -> HookConfig {
     HookConfig {
         event: event.to_string(),

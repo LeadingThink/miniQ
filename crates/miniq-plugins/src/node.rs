@@ -16,7 +16,7 @@ use miniq_tools::{RegistrationHandle, Tool, ToolContext, ToolError};
 use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::process::{Child, ChildStdin, Command};
+use tokio::process::{Child, ChildStdin};
 use tokio::sync::{broadcast, oneshot, Mutex as AsyncMutex, Semaphore};
 use tokio_util::sync::CancellationToken;
 
@@ -111,7 +111,7 @@ impl NodePluginProcess {
         install_host(plugin_dir)?;
         let host_entry = Path::new(".miniq-node-plugin-host-v1/host.mjs");
         let (plugin_dir, data_dir) = prepare_directories(plugin_dir, data_dir)?;
-        let mut command = Command::new(node);
+        let mut command = miniq_local::subprocess::async_command(node);
         command
             .args(node_permission_args(&plugin_dir, &data_dir))
             .arg(node_cli_path(host_entry))
@@ -125,8 +125,6 @@ impl NodePluginProcess {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
-        #[cfg(windows)]
-        command.creation_flags(0x08000000);
         let mut child = command
             .spawn()
             .map_err(|error| PluginError::new(PluginFailureKind::Process, error.to_string()))?;
@@ -582,7 +580,7 @@ fn node_cli_path(path: &Path) -> String {
 }
 
 async fn find_node(manifest: &PluginManifest) -> Result<PathBuf, PluginError> {
-    let output = Command::new("node")
+    let output = miniq_local::subprocess::async_command("node")
         .arg("-p")
         .arg("`${process.execPath}\\n${process.version}`")
         .output()

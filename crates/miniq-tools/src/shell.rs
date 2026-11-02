@@ -387,7 +387,7 @@ pub(crate) fn shell_command(command: &str, interactive: bool) -> tokio::process:
              }}; exit 1 \
          }}; exit 0"
     );
-    let mut cmd = tokio::process::Command::new("powershell.exe");
+    let mut cmd = miniq_local::subprocess::async_command("powershell.exe");
     cmd.args(["-NoLogo", "-NoProfile"]);
     if !interactive {
         cmd.arg("-NonInteractive");
@@ -398,7 +398,7 @@ pub(crate) fn shell_command(command: &str, interactive: bool) -> tokio::process:
 
 #[cfg(not(windows))]
 pub(crate) fn shell_command(command: &str, _interactive: bool) -> tokio::process::Command {
-    let mut cmd = tokio::process::Command::new("sh");
+    let mut cmd = miniq_local::subprocess::async_command("sh");
     cmd.arg("-c").arg(command);
     cmd
 }
@@ -407,6 +407,26 @@ pub(crate) fn shell_command(command: &str, _interactive: bool) -> tokio::process
 mod tests {
     use super::*;
     use miniq_protocol::RiskLevel;
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn pipe_shells_have_no_console_window_and_preserve_output() {
+        for interactive in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let ctx = ToolContext::new(dir.path().to_path_buf());
+            let out = ShellRunTool
+                .execute(&ctx, json!({
+                    "command": include_str!("../../miniq-local/tests/fixtures/console_probe.ps1"),
+                    "interactive": interactive,
+                    "yieldTimeMs": 10000,
+                }))
+                .await
+                .unwrap();
+            assert_eq!(out["exitCode"], 0, "{out}");
+            assert!(out["stdout"].as_str().unwrap().contains("miniq-no-console"));
+            assert!(out["stderr"].as_str().unwrap().contains("miniq-stderr"));
+        }
+    }
 
     #[tokio::test]
     async fn runs_echo() {
