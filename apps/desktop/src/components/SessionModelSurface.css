@@ -33,6 +33,7 @@
 }
 .session-model-dialog .session-model-popover .model-picker-list > button,
 .session-model-dialog .session-model-popover .model-picker-row > button {
+  display: flex;
   min-height: 44px;
   padding: 10px 8px;
   flex-wrap: wrap;
@@ -44,6 +45,8 @@
 .session-model-dialog .session-model-popover .model-performance {
   flex: 1 1 100%;
   margin-top: 2px;
+  padding-left: 0;
+  border-left: 0;
 }
 .session-model-dialog .session-model-popover .model-performance-chart {
   width: 100%;

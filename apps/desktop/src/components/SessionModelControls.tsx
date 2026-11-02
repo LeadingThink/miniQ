@@ -509,11 +509,10 @@ export function SessionModelControls({
                   {displayedModels.map((id) => {
                     const selected = id === selectedModel;
                     return (
-                      <div className="model-picker-row" key={id}>
+                      <div className={`model-picker-row${selected ? " selected" : ""}${id === hovered ? " active" : ""}`} key={id}>
                         <button type="button" role="option" aria-label={id} aria-selected={selected} aria-haspopup="menu" disabled={disabled} title={id} className={id === hovered ? "active" : undefined} onMouseEnter={(event) => openSubmenu(id, event.currentTarget)} onFocus={(event) => openSubmenu(id, event.currentTarget)} onClick={() => { closeSubmenu(); const effort = id === currentModel ? currentEffort : null; void applySelection(id, effort); }}>
                           <span className="model-picker-name">{id}</span>
                           <ModelPerformanceIndicator modelId={id} metric={performance?.models?.[id]} windowHours={performance?.windowHours ?? null} />
-                          {selected && <Check size={13} aria-hidden="true" />}
                         </button>
                         <button
                           type="button"
@@ -551,7 +550,7 @@ export function SessionModelControls({
               {visibleModels.map((id) => {
                 const selected = id === selectedModel;
                 return (
-                  <div className="model-picker-row" key={id}>
+                  <div className={`model-picker-row${selected ? " selected" : ""}${id === hovered ? " active" : ""}`} key={id}>
                     <button
                       type="button"
                       role="option"
@@ -579,7 +578,6 @@ export function SessionModelControls({
                     >
                       <span className="model-picker-name">{id}</span>
                       <ModelPerformanceIndicator modelId={id} metric={performance?.models?.[id]} windowHours={performance?.windowHours ?? null} />
-                      {selected && <Check size={13} aria-hidden="true" />}
                     </button>
                     {mobile && hovered === id && (
                       <div className="model-picker-inline-effort" aria-label="思考强度">

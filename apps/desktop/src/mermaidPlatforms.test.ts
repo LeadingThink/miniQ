@@ -98,6 +98,9 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
     "utf8",
   );
   expect(modelSurfaceCss).toMatch(
-    /\.session-model-dialog \.session-model-popover \.model-performance\s*\{[^}]*flex:\s*1 1 100%;/,
+    /\.session-model-dialog \.session-model-popover \.model-picker-row > button\s*\{[^}]*display:\s*flex;/,
+  );
+  expect(modelSurfaceCss).toMatch(
+    /\.session-model-dialog \.session-model-popover \.model-performance\s*\{[^}]*flex:\s*1 1 100%;[^}]*border-left:\s*0;/,
   );
 });
