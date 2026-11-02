@@ -20,7 +20,6 @@ it("uses a dedicated performance column and highlights the selected row", () => 
   const selectedModelNameRule = experienceCss.match(/\.model-picker-row\.selected \.model-picker-name\s*\{[^}]+\}/)?.[0];
   const favoriteRule = experienceCss.match(/\.model-picker-favorite\s*\{[^}]+\}/)?.[0];
   const performanceRule = experienceCss.match(/\.model-performance\s*\{[^}]+\}/)?.[0];
-  const performanceValuesRule = experienceCss.match(/\.model-performance-values\s*\{[^}]+\}/)?.[0];
   expect(modelPopoverRule).toContain("width: min(540px, calc(100vw - 32px));");
   expect(modelBodyRule).toContain("grid-template-columns: 168px minmax(0, 1fr);");
   expect(modelButtonRule).toContain("display: grid;");
@@ -28,7 +27,6 @@ it("uses a dedicated performance column and highlights the selected row", () => 
   expect(modelNameRule).toContain("text-align: left;");
   expect(performanceRule).toContain("border-left: 1px solid var(--hairline);");
   expect(performanceRule).toContain("padding-left: 10px;");
-  expect(performanceValuesRule).toContain("flex-direction: column;");
   expect(modelRowStateRule).toContain("background: var(--bg-hover);");
   expect(selectedModelNameRule).toContain("color: var(--ok);");
   expect(favoriteRule).toContain("z-index: 1;");
@@ -190,9 +188,10 @@ it("shows availability statistics beside every desktop model", async () => {
   fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
   await screen.findByRole("option", { name: "gpt-5.6-sol" });
 
-  expect(screen.getByLabelText("gpt-5.6-sol 可用性 99.94%，吞吐 97.7 t/s，72 小时样本 9511")).toBeTruthy();
+  expect(screen.getByLabelText("gpt-5.6-sol 可用性 99.94%")).toBeTruthy();
   expect(screen.getByLabelText("gpt-6-luna 暂无可用性统计")).toBeTruthy();
-  expect(document.querySelectorAll(".model-performance-bar")).toHaveLength(2);
+  expect(screen.queryByText("吞吐")).toBeNull();
+  expect(document.querySelector(".model-performance-chart")).toBeNull();
   expect(client.call).toHaveBeenCalledWith("model.performance");
 });
 

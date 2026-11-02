@@ -48,9 +48,6 @@
   padding-left: 0;
   border-left: 0;
 }
-.session-model-dialog .session-model-popover .model-performance-chart {
-  width: 100%;
-}
 /* 手机上悬停不可用：点模型后在行下方展开档位，底部「完成」收起。 */
 .session-model-dialog .session-model-popover .model-picker-row {
   flex-direction: column;

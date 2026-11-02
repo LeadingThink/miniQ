@@ -512,7 +512,7 @@ export function SessionModelControls({
                       <div className={`model-picker-row${selected ? " selected" : ""}${id === hovered ? " active" : ""}`} key={id}>
                         <button type="button" role="option" aria-label={id} aria-selected={selected} aria-haspopup="menu" disabled={disabled} title={id} className={id === hovered ? "active" : undefined} onMouseEnter={(event) => openSubmenu(id, event.currentTarget)} onFocus={(event) => openSubmenu(id, event.currentTarget)} onClick={() => { closeSubmenu(); const effort = id === currentModel ? currentEffort : null; void applySelection(id, effort); }}>
                           <span className="model-picker-name">{id}</span>
-                          <ModelPerformanceIndicator modelId={id} metric={performance?.models?.[id]} windowHours={performance?.windowHours ?? null} />
+                          <ModelPerformanceIndicator modelId={id} metric={performance?.models?.[id]} />
                         </button>
                         <button
                           type="button"
@@ -577,7 +577,7 @@ export function SessionModelControls({
                       }}
                     >
                       <span className="model-picker-name">{id}</span>
-                      <ModelPerformanceIndicator modelId={id} metric={performance?.models?.[id]} windowHours={performance?.windowHours ?? null} />
+                      <ModelPerformanceIndicator modelId={id} metric={performance?.models?.[id]} />
                     </button>
                     {mobile && hovered === id && (
                       <div className="model-picker-inline-effort" aria-label="思考强度">

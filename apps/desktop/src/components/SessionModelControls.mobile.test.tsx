@@ -31,7 +31,9 @@ it("shows the shared availability statistics in the native mobile dialog", async
   setup();
   fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
   await screen.findByRole("option", { name: "gpt-5.6-sol" });
-  expect(screen.getByLabelText("gpt-5.6-sol 可用性 100%，吞吐 12.5 t/s，72 小时样本 20")).toBeTruthy();
+  expect(screen.getByLabelText("gpt-5.6-sol 可用性 100%")).toBeTruthy();
+  expect(screen.queryByText("吞吐")).toBeNull();
+  expect(document.querySelector(".model-performance-chart")).toBeNull();
   expect(screen.getByLabelText("claude-opus-very-long-model-name 暂无可用性统计")).toBeTruthy();
 });
 

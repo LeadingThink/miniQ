@@ -87,6 +87,13 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
   );
   expect(modelControls).toContain('call<ModelPerformanceResult>("model.performance")');
   expect(modelControls).toContain("<ModelPerformanceIndicator");
+  const performanceIndicator = readFileSync(
+    new URL("./components/ModelPerformanceIndicator.tsx", import.meta.url),
+    "utf8",
+  );
+  expect(performanceIndicator).toContain("可用性");
+  expect(performanceIndicator).not.toContain("吞吐");
+  expect(performanceIndicator).not.toContain("model-performance-chart");
 
   const modelSurface = readFileSync(
     new URL("./components/SessionModelSurface.tsx", import.meta.url),

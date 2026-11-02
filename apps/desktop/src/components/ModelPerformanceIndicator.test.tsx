@@ -1,45 +1,50 @@
 // @vitest-environment jsdom
-import { render } from "@testing-library/react";
-import { expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, expect, it } from "vitest";
 import type { ModelPerformanceMetric } from "../modelPerformance";
 import { ModelPerformanceIndicator } from "./ModelPerformanceIndicator";
 
-function metricWithSeries(length: number): ModelPerformanceMetric {
+afterEach(cleanup);
+
+function metric(overrides: Partial<ModelPerformanceMetric> = {}): ModelPerformanceMetric {
   return {
-    availability: 100,
+    availability: 99.94,
     throughput: 12.5,
-    samples: length,
-    series: Array.from({ length }, (_, index) => ({
-      ts: index + 1,
-      availability: (index + 1) * 10,
-      samples: 1,
-    })),
+    samples: 20,
+    series: [{ ts: 1, availability: 99.94, samples: 20 }],
+    ...overrides,
   };
 }
 
-it("renders only the latest ten performance samples", () => {
+it("renders only model availability", () => {
   const { container } = render(
-    <ModelPerformanceIndicator
-      modelId="gpt-test"
-      metric={metricWithSeries(12)}
-      windowHours={72}
-    />,
+    <ModelPerformanceIndicator modelId="gpt-test" metric={metric()} />,
   );
-  const bars = container.querySelectorAll(".model-performance-bar");
 
-  expect(bars).toHaveLength(10);
-  expect(bars[0]?.getAttribute("style")).toContain("height: 3px");
-  expect(bars[9]?.getAttribute("style")).toContain("height: 12px");
+  expect(screen.getByLabelText("gpt-test 可用性 99.94%")).toBeTruthy();
+  expect(container.textContent).toBe("可用性99.94%");
+  expect(container.textContent).not.toContain("吞吐");
+  expect(container.querySelector(".model-performance-chart")).toBeNull();
 });
 
-it("renders all performance samples when there are fewer than ten", () => {
-  const { container } = render(
+it("does not require throughput or history to show availability", () => {
+  render(
     <ModelPerformanceIndicator
       modelId="gpt-test"
-      metric={metricWithSeries(3)}
-      windowHours={72}
+      metric={metric({ throughput: null, series: [] })}
     />,
   );
 
-  expect(container.querySelectorAll(".model-performance-bar")).toHaveLength(3);
+  expect(screen.getByLabelText("gpt-test 可用性 99.94%")).toBeTruthy();
+});
+
+it("shows the empty state when availability is missing", () => {
+  render(
+    <ModelPerformanceIndicator
+      modelId="gpt-test"
+      metric={metric({ availability: null })}
+    />,
+  );
+
+  expect(screen.getByLabelText("gpt-test 暂无可用性统计")).toBeTruthy();
 });
