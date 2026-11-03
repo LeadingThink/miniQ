@@ -38,6 +38,11 @@
   padding: 10px 8px;
   flex-wrap: wrap;
 }
+.session-model-dialog .session-model-popover .model-picker-hover-target {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+}
 .session-model-dialog .session-model-popover .model-picker-name {
   flex-basis: calc(100% - 24px);
   white-space: normal;

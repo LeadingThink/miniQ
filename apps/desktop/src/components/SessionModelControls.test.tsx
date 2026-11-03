@@ -10,20 +10,22 @@ import { DEFAULT_MODEL_SETTINGS } from "../modelSelection";
 beforeEach(() => localStorage.clear());
 afterEach(cleanup);
 
-it("uses a dedicated performance column and highlights the selected row", () => {
+it("limits hover interaction to the content grid and highlights the selected row", () => {
   const experienceCss = readFileSync("src/styles/experience.css", "utf8");
   const modelPopoverRule = experienceCss.match(/\.session-model-popover\s*\{[^}]+\}/)?.[0];
   const modelBodyRule = experienceCss.match(/\.model-picker-body\s*\{[^}]+\}/)?.[0];
-  const modelRowStateRule = experienceCss.match(/\.model-picker-row:hover,[\s\S]*?\.model-picker-row\.selected\s*\{[^}]+\}/)?.[0];
+  const modelRowStateRule = experienceCss.match(/\.model-picker-row\.active,[\s\S]*?\.model-picker-row\.selected\s*\{[^}]+\}/)?.[0];
   const modelButtonRule = experienceCss.match(/\.model-picker-row > button\s*\{[^}]+\}/)?.[0];
+  const hoverTargetRule = experienceCss.match(/\.model-picker-hover-target\s*\{[^}]+\}/)?.[0];
   const modelNameRule = experienceCss.match(/(?:^|\n)\.model-picker-name\s*\{[^}]+\}/)?.[0];
   const selectedModelNameRule = experienceCss.match(/\.model-picker-row\.selected \.model-picker-name\s*\{[^}]+\}/)?.[0];
   const favoriteRule = experienceCss.match(/\.model-picker-favorite\s*\{[^}]+\}/)?.[0];
   const performanceRule = experienceCss.match(/\.model-performance\s*\{[^}]+\}/)?.[0];
   expect(modelPopoverRule).toContain("width: min(540px, calc(100vw - 32px));");
   expect(modelBodyRule).toContain("grid-template-columns: 168px minmax(0, 1fr);");
-  expect(modelButtonRule).toContain("display: grid;");
-  expect(modelButtonRule).toContain("grid-template-columns: minmax(0, 1fr) 116px;");
+  expect(modelButtonRule).toContain("display: flex;");
+  expect(hoverTargetRule).toContain("grid-template-columns: minmax(0, 1fr) 116px;");
+  expect(hoverTargetRule).toContain("width: 100%;");
   expect(modelNameRule).toContain("text-align: left;");
   expect(performanceRule).toContain("border-left: 1px solid var(--hairline);");
   expect(performanceRule).toContain("padding-left: 10px;");

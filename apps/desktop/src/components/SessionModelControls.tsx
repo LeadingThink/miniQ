@@ -510,9 +510,15 @@ export function SessionModelControls({
                     const selected = id === selectedModel;
                     return (
                       <div className={`model-picker-row${selected ? " selected" : ""}${id === hovered ? " active" : ""}`} key={id}>
-                        <button type="button" role="option" aria-label={id} aria-selected={selected} aria-haspopup="menu" disabled={disabled} title={id} className={id === hovered ? "active" : undefined} onMouseEnter={(event) => openSubmenu(id, event.currentTarget)} onFocus={(event) => openSubmenu(id, event.currentTarget)} onClick={() => { closeSubmenu(); const effort = id === currentModel ? currentEffort : null; void applySelection(id, effort); }}>
-                          <span className="model-picker-name">{id}</span>
-                          <ModelPerformanceIndicator modelId={id} metric={performance?.models?.[id]} />
+                        <button type="button" role="option" aria-label={id} aria-selected={selected} aria-haspopup="menu" disabled={disabled} title={id} className={id === hovered ? "active" : undefined} onFocus={(event) => openSubmenu(id, event.currentTarget)} onClick={() => { closeSubmenu(); const effort = id === currentModel ? currentEffort : null; void applySelection(id, effort); }}>
+                          <span
+                            className="model-picker-hover-target"
+                            onMouseEnter={(event) => openSubmenu(id, event.currentTarget.parentElement)}
+                            onMouseLeave={scheduleClose}
+                          >
+                            <span className="model-picker-name">{id}</span>
+                            <ModelPerformanceIndicator modelId={id} metric={performance?.models?.[id]} />
+                          </span>
                         </button>
                         <button
                           type="button"
@@ -560,7 +566,6 @@ export function SessionModelControls({
                       disabled={disabled}
                       title={id}
                       className={id === hovered ? "active" : undefined}
-                      onMouseEnter={mobile ? undefined : (event) => openSubmenu(id, event.currentTarget)}
                       onFocus={mobile ? undefined : (event) => openSubmenu(id, event.currentTarget)}
                       onClick={() => {
                         closeSubmenu();
@@ -576,8 +581,14 @@ export function SessionModelControls({
                         }
                       }}
                     >
-                      <span className="model-picker-name">{id}</span>
-                      <ModelPerformanceIndicator modelId={id} metric={performance?.models?.[id]} />
+                      <span
+                        className="model-picker-hover-target"
+                        onMouseEnter={mobile ? undefined : (event) => openSubmenu(id, event.currentTarget.parentElement)}
+                        onMouseLeave={mobile ? undefined : scheduleClose}
+                      >
+                        <span className="model-picker-name">{id}</span>
+                        <ModelPerformanceIndicator modelId={id} metric={performance?.models?.[id]} />
+                      </span>
                     </button>
                     {mobile && hovered === id && (
                       <div className="model-picker-inline-effort" aria-label="思考强度">

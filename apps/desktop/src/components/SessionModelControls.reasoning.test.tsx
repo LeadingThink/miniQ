@@ -13,6 +13,7 @@ import { DEFAULT_MODEL_SETTINGS } from "../modelSelection";
 import { SessionModelControls } from "./SessionModelControls";
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   vi.restoreAllMocks();
 });
@@ -36,6 +37,14 @@ function setup(call: ReturnType<typeof vi.fn>) {
   return model;
 }
 
+function hoverModel(name: string) {
+  const option = screen.getByRole("option", { name });
+  const target = option.querySelector<HTMLElement>(".model-picker-hover-target");
+  expect(target).toBeTruthy();
+  fireEvent.mouseEnter(target!);
+  return { option, target: target! };
+}
+
 it("states the provider default when a model exposes no reasoning levels", async () => {
   const model = setup(
     vi.fn((method: string) =>
@@ -47,8 +56,8 @@ it("states the provider default when a model exposes no reasoning levels", async
     ),
   );
   fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
-  const row = await screen.findByRole("option", { name: "minimax-m3" });
-  fireEvent.mouseEnter(row);
+  await screen.findByRole("option", { name: "minimax-m3" });
+  hoverModel("minimax-m3");
   expect(await screen.findByRole("group", { name: "思考强度" })).toBeTruthy();
   expect(screen.getByText("该模型不支持调整")).toBeTruthy();
   expect(model.update).not.toHaveBeenCalled();
@@ -65,9 +74,9 @@ it("opens the effort menu for the hovered model and applies both together", asyn
   await screen.findByRole("option", { name: "minimax-m3" });
   expect(screen.queryByRole("option", { name: "gpt-5.6-sol" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "OpenAI" }));
-  const target = await screen.findByRole("option", { name: "gpt-5.6-sol" });
+  await screen.findByRole("option", { name: "gpt-5.6-sol" });
   expect(screen.queryByRole("button", { name: "高" })).toBeNull();
-  fireEvent.mouseEnter(target);
+  hoverModel("gpt-5.6-sol");
   const high = await screen.findByRole("button", { name: "高" });
   const submenu = screen.getByRole("group", { name: "思考强度" });
   expect(submenu.parentElement).toBe(document.body);
@@ -84,6 +93,25 @@ it("opens the effort menu for the hovered model and applies both together", asyn
   );
 });
 
+it("does not treat blank space in a model row as a hover target", async () => {
+  setup(
+    vi.fn(async (method: string) =>
+      method === "model.list"
+        ? { models: ["minimax-m3"] }
+        : { reasoningEfforts: ["high"] },
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
+  await vi.waitFor(() => expect(screen.getByRole("option", { name: "minimax-m3" })).toBeTruthy());
+
+  const { option, target } = hoverModel("minimax-m3");
+  await screen.findByRole("group", { name: "思考强度" });
+  fireEvent.mouseLeave(target, { relatedTarget: option });
+  await waitFor(() => expect(screen.queryByRole("group", { name: "思考强度" })).toBeNull());
+  fireEvent.mouseEnter(option);
+  expect(screen.queryByRole("group", { name: "思考强度" })).toBeNull();
+});
+
 it("shows description failures and lets the hovered submenu retry", async () => {
   let fail = true;
   setup(
@@ -94,9 +122,8 @@ it("shows description failures and lets the hovered submenu retry", async () => 
     }),
   );
   fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
-  fireEvent.mouseEnter(
-    await screen.findByRole("option", { name: "minimax-m3" }),
-  );
+  await screen.findByRole("option", { name: "minimax-m3" });
+  hoverModel("minimax-m3");
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect(screen.queryByText("读取档位…")).toBeNull();
   fail = false;
@@ -119,8 +146,8 @@ it("dismisses the portal when clicking outside and when filtering its model away
     ),
   );
   fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
-  const row = await screen.findByRole("option", { name: "minimax-m3" });
-  fireEvent.mouseEnter(row);
+  await screen.findByRole("option", { name: "minimax-m3" });
+  hoverModel("minimax-m3");
   await screen.findByRole("button", { name: "高" });
   fireEvent.change(screen.getByRole("textbox", { name: "模型 ID" }), {
     target: { value: "other" },
@@ -139,8 +166,8 @@ it("dismisses the effort submenu before switching providers", async () => {
     ),
   );
   fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
-  const minimax = await screen.findByRole("option", { name: "minimax-m3" });
-  fireEvent.mouseEnter(minimax);
+  await screen.findByRole("option", { name: "minimax-m3" });
+  hoverModel("minimax-m3");
   await screen.findByRole("group", { name: "思考强度" });
 
   fireEvent.click(screen.getByRole("button", { name: "OpenAI" }));
@@ -159,8 +186,8 @@ it("distinguishes loading from unavailable reasoning settings", async () => {
     ),
   );
   fireEvent.click(screen.getByRole("button", { name: "选择模型和思考强度" }));
-  const row = await screen.findByRole("option", { name: "minimax-m3" });
-  fireEvent.mouseEnter(row);
+  await screen.findByRole("option", { name: "minimax-m3" });
+  hoverModel("minimax-m3");
   expect(screen.getByText("读取档位…")).toBeTruthy();
 });
 
@@ -184,7 +211,7 @@ it("fits the submenu using its rendered height and keeps it on the right near th
       return this.classList.contains("model-picker-submenu") ? 320 : 0;
     },
   );
-  fireEvent.mouseEnter(row);
+  hoverModel("minimax-m3");
   const submenu = await screen.findByRole("group", { name: "思考强度" });
   expect(submenu.style.top).toBe(`${window.innerHeight - 328}px`);
   expect(submenu.style.left).toBe(`${window.innerWidth - 172}px`);

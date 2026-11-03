@@ -87,6 +87,8 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
   );
   expect(modelControls).toContain('call<ModelPerformanceResult>("model.performance")');
   expect(modelControls).toContain("<ModelPerformanceIndicator");
+  expect(modelControls).toContain('className="model-picker-hover-target"');
+  expect(modelControls).toContain("onMouseLeave={scheduleClose}");
   const performanceIndicator = readFileSync(
     new URL("./components/ModelPerformanceIndicator.tsx", import.meta.url),
     "utf8",
@@ -106,6 +108,9 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
   );
   expect(modelSurfaceCss).toMatch(
     /\.session-model-dialog \.session-model-popover \.model-picker-row > button\s*\{[^}]*display:\s*flex;/,
+  );
+  expect(modelSurfaceCss).toMatch(
+    /\.session-model-dialog \.session-model-popover \.model-picker-hover-target\s*\{[^}]*display:\s*flex;/,
   );
   expect(modelSurfaceCss).toMatch(
     /\.session-model-dialog \.session-model-popover \.model-performance\s*\{[^}]*flex:\s*1 1 100%;[^}]*border-left:\s*0;/,

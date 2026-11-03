@@ -213,7 +213,6 @@
   align-items: center;
   border-radius: var(--radius-sm);
 }
-.model-picker-row:hover,
 .model-picker-row.active,
 .model-picker-row.selected {
   background: var(--bg-hover);
@@ -222,10 +221,8 @@
   flex: 1;
   min-width: 0;
   min-height: 48px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 116px;
+  display: flex;
   align-items: center;
-  column-gap: 8px;
   padding: 4px 8px;
   border: 0;
   border-radius: var(--radius-sm);
@@ -233,6 +230,13 @@
   color: var(--text);
   font: inherit;
   text-align: left;
+}
+.model-picker-hover-target {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 116px;
+  align-items: center;
+  column-gap: 8px;
+  width: 100%;
 }
 .model-picker-row > button[aria-selected="true"] {
   color: var(--text);
