@@ -1,5 +1,5 @@
 import { ArrowUp, Loader2, MessageSquareText, Paperclip, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MAX_COMPOSER_ATTACHMENTS, canSendComposer } from "../composerInput";
 import { errorMessage } from "../errorMessage";
 import { useDroppedFiles } from "../hooks/useDroppedFiles";
@@ -12,6 +12,7 @@ import { uploadRemoteFile } from "../remoteTransfer";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { MessageAttachmentPreview } from "./MessageAttachmentPreview";
 import { Md } from "./Md";
+import { WorkbenchResizer } from "./WorkbenchResizer";
 import "./SideConversationPanel.css";
 
 interface Props {
@@ -32,7 +33,9 @@ const SIDE_WIDTH_MIN = 300;
 const SIDE_WIDTH_MAX = 760;
 
 function storedWidth(): number {
-  const value = Number(localStorage.getItem(SIDE_WIDTH_KEY));
+  const stored = localStorage.getItem(SIDE_WIDTH_KEY);
+  if (stored === null) return SIDE_WIDTH_DEFAULT;
+  const value = Number(stored);
   if (!Number.isFinite(value)) return SIDE_WIDTH_DEFAULT;
   return Math.min(SIDE_WIDTH_MAX, Math.max(SIDE_WIDTH_MIN, Math.round(value)));
 }
@@ -51,7 +54,8 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [forkInfo, setForkInfo] = useState<SessionForkInfo | null>(null);
-  const [width, setWidth] = useState(storedWidth);
+  const [preferredWidth, setPreferredWidth] = useState(storedWidth);
+  const [dragWidth, setDragWidth] = useState<number | null>(null);
   const conversationRef = useRef(conversation);
   conversationRef.current = conversation;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -59,7 +63,6 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
   attachmentsRef.current = attachments;
   const busyRef = useRef(busy);
   busyRef.current = busy;
-  const drag = useRef<(() => void) | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const storageKey = sideConversationStorageKey(client.sshHost ?? null);
 
@@ -84,8 +87,6 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
 
   // Hiding the panel, switching main conversations or quitting must not delete the
   // side chat: only the delete button or the idle deadline ends it.
-  useEffect(() => () => { drag.current?.(); }, []);
-
   useEffect(() => client.onEvent((event) => {
     const sessionId = conversationRef.current.sessionId;
     if (!sessionId) return;
@@ -209,57 +210,26 @@ export function SideConversationPanel({ client, open, workspace, sourceSessionId
     } catch (cause) { setBusy(false); setError(errorMessage(cause)); setDraft(content); setAttachments(files); }
   };
 
-  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || drag.current) return;
-    event.preventDefault();
-    const handle = event.currentTarget;
-    const pointerId = event.pointerId;
-    let x = event.clientX;
-    let next = width;
-    const move = (pointer: PointerEvent) => {
-      if (pointer.pointerId !== pointerId) return;
-      next = Math.min(SIDE_WIDTH_MAX, Math.max(SIDE_WIDTH_MIN, next + x - pointer.clientX));
-      x = pointer.clientX;
-      setWidth(Math.round(next));
-    };
-    const stop = (pointer: PointerEvent) => {
-      if (pointer.pointerId !== pointerId) return;
-      cleanup();
-      const committed = Math.round(next);
-      setWidth(committed);
-      localStorage.setItem(SIDE_WIDTH_KEY, String(committed));
-    };
-    const cleanup = () => {
-      drag.current = null;
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", stop);
-      window.removeEventListener("pointercancel", stop);
-      document.body.classList.remove("workbench-resizing");
-      if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
-    };
-    handle.setPointerCapture(pointerId);
-    document.body.classList.add("workbench-resizing");
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", stop);
-    window.addEventListener("pointercancel", stop);
-    drag.current = cleanup;
+  const commitWidth = (nextWidth: number) => {
+    setDragWidth(null);
+    setPreferredWidth(nextWidth);
+    localStorage.setItem(SIDE_WIDTH_KEY, String(nextWidth));
   };
 
   if (!open) return null;
   const canCompose = !!workspace && !!sourceSessionId && !busy;
+  const width = dragWidth ?? preferredWidth;
   return <aside className="side-conversation" style={{ width, flexBasis: width }} aria-label="侧边聊天">
-    <div
-      className="workbench-resizer side-conversation-resizer"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="调整侧边聊天宽度"
-      aria-valuemin={SIDE_WIDTH_MIN}
-      aria-valuemax={SIDE_WIDTH_MAX}
-      aria-valuenow={width}
-      tabIndex={0}
-      title="拖动调整侧边聊天宽度"
-      onPointerDown={startResize}
-      onDoubleClick={() => { setWidth(SIDE_WIDTH_DEFAULT); localStorage.setItem(SIDE_WIDTH_KEY, String(SIDE_WIDTH_DEFAULT)); }}
+    <WorkbenchResizer
+      edge="left"
+      label="调整侧边聊天宽度"
+      width={width}
+      min={SIDE_WIDTH_MIN}
+      max={SIDE_WIDTH_MAX}
+      onResize={setDragWidth}
+      onCommit={commitWidth}
+      onCancel={() => setDragWidth(null)}
+      onReset={() => commitWidth(SIDE_WIDTH_DEFAULT)}
     />
     <header>
       <span className="side-conversation-title"><MessageSquareText size={16} /><strong>侧边聊天</strong></span>

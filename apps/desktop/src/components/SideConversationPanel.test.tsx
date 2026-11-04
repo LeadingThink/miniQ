@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DaemonEvent, Message, Session, SessionForkInfo, Workspace } from "../types";
 import { SideConversationPanel } from "./SideConversationPanel";
 
@@ -10,12 +10,35 @@ vi.mock("../localFiles", async (importOriginal) => ({
   savePastedFile: async (file: File) => `/tmp/${file.name}`,
 }));
 
+beforeEach(() => {
+  const captures = new Set<number>();
+  vi.stubGlobal(
+    "PointerEvent",
+    class extends MouseEvent {
+      pointerId: number;
+      constructor(type: string, options: PointerEventInit) {
+        super(type, options);
+        this.pointerId = options.pointerId ?? 1;
+      }
+    },
+  );
+  Object.assign(HTMLElement.prototype, {
+    setPointerCapture: (id: number) => captures.add(id),
+    hasPointerCapture: (id: number) => captures.has(id),
+    releasePointerCapture: (id: number) => captures.delete(id),
+  });
+});
+
 afterEach(() => {
   cleanup();
   localStorage.removeItem("miniq.sideConversationWidth");
   for (const key of Object.keys(localStorage)) {
     if (key.startsWith("miniq.sideConversation.")) localStorage.removeItem(key);
   }
+  vi.unstubAllGlobals();
+  delete (HTMLElement.prototype as Partial<HTMLElement>).setPointerCapture;
+  delete (HTMLElement.prototype as Partial<HTMLElement>).hasPointerCapture;
+  delete (HTMLElement.prototype as Partial<HTMLElement>).releasePointerCapture;
 });
 
 const workspace = {
@@ -100,12 +123,31 @@ describe("SideConversationPanel", () => {
     })));
   });
 
-  it("exposes a width separator for the side panel", () => {
+  it("uses the shared sidebar resizer and persists keyboard width changes", () => {
     const { client } = fixture();
     render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-session" onClose={() => {}} />);
     const separator = screen.getByRole("separator", { name: "调整侧边聊天宽度" });
     expect(separator.getAttribute("aria-valuemin")).toBe("300");
     expect(separator.getAttribute("aria-valuemax")).toBe("760");
+    expect(separator.getAttribute("aria-valuetext")).toBe("380 像素");
+
+    fireEvent.keyDown(separator, { key: "ArrowLeft" });
+
+    expect(separator.getAttribute("aria-valuenow")).toBe("392");
+    expect(localStorage.getItem("miniq.sideConversationWidth")).toBe("392");
+  });
+
+  it("resizes from the docked left edge and persists the finished drag", () => {
+    const { client } = fixture();
+    render(<SideConversationPanel client={client as never} open workspace={workspace} sourceSessionId="main-session" onClose={() => {}} />);
+    const separator = screen.getByRole("separator", { name: "调整侧边聊天宽度" });
+
+    fireEvent.pointerDown(separator, { button: 0, pointerId: 1, clientX: 800 });
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 760 });
+
+    expect(separator.getAttribute("aria-valuenow")).toBe("420");
+    expect(localStorage.getItem("miniq.sideConversationWidth")).toBe("420");
+    expect(document.body.classList.contains("workbench-resizing")).toBe(false);
   });
 
   it("deletes the side session when the user releases it", async () => {

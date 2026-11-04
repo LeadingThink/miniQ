@@ -46,7 +46,7 @@ it("does not open a picker result in a different session", async () => {
   await act(async () => resolve("/project/report.md"));
   expect(onOpen).not.toHaveBeenCalled();
 });
-it("opens a chosen file in its original workspace and treats cancel as no action", async () => {
+it("fills the path from the picker and only opens after explicit confirmation", async () => {
   const onOpen = vi.fn();
   open.mockResolvedValueOnce(null).mockResolvedValueOnce("/project/report.md");
   render(
@@ -61,15 +61,31 @@ it("opens a chosen file in its original workspace and treats cancel as no action
   await act(async () =>
     fireEvent.click(screen.getByRole("button", { name: "浏览文件…" })),
   );
+  const browse = screen.getByRole("button", { name: "浏览文件…" });
+  const preview = screen.getByRole("button", { name: "打开预览" });
+  expect(browse.classList.contains("open-preview-browse")).toBe(true);
+  expect(browse.textContent).toBe("");
+  expect(browse.closest(".open-preview-path-control")).toBeTruthy();
+  expect(preview.className).toBe("");
   expect(onOpen).not.toHaveBeenCalled();
+  expect(
+    (screen.getByLabelText("预览文件路径") as HTMLInputElement).value,
+  ).toBe("");
   await act(async () =>
     fireEvent.click(screen.getByRole("button", { name: "浏览文件…" })),
   );
+  expect(
+    (screen.getByLabelText("预览文件路径") as HTMLInputElement).value,
+  ).toBe("/project/report.md");
+  expect(screen.getByRole("dialog", { name: "打开项目文件" })).toBeTruthy();
+  expect(onOpen).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "打开预览" }));
   expect(onOpen).toHaveBeenCalledWith({
     path: "/project/report.md",
     line: null,
     column: null,
   });
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 it("opens relative paths without a model request and restores focus on cancel", () => {
   const onOpen = vi.fn();

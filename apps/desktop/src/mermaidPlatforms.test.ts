@@ -28,6 +28,24 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
   expect(capacitor).toMatch(/webDir:\s*["']dist["']/);
   expect(capacitor).not.toContain("choose_data_directory");
 
+  const openPreviewButton = readFileSync(
+    new URL("./components/OpenPreviewButton.tsx", import.meta.url),
+    "utf8",
+  );
+  expect(openPreviewButton).toContain('import("@tauri-apps/plugin-dialog")');
+  expect(openPreviewButton).toContain("setPath(selected)");
+  expect(openPreviewButton).toMatch(/!remote\s*&&\s*<button/);
+  const appStatusCss = readFileSync(
+    new URL("./components/AppStatus.css", import.meta.url),
+    "utf8",
+  );
+  expect(appStatusCss).toMatch(
+    /\.open-preview-path-control:focus-within\s*\{[^}]*border-color:\s*var\(--focus-ring, var\(--accent\)\);/,
+  );
+  expect(appStatusCss).toMatch(
+    /\.open-preview-dialog input\s*\{[^}]*border:\s*0;[^}]*outline:\s*none;/,
+  );
+
   const androidEntry = readFileSync(
     new URL(
       "../android/app/src/main/java/com/leadingthink/miniq/MainActivity.java",
@@ -71,6 +89,22 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
   expect(conversationCss).toMatch(
     /\.composer-field\.has-paste > textarea\.is-before-paste\s*\{[^}]*flex:\s*0 1 auto;/,
   );
+  const sideConversationCss = readFileSync(
+    new URL("./components/SideConversationPanel.css", import.meta.url),
+    "utf8",
+  );
+  expect(sideConversationCss).toMatch(
+    /\.side-conversation\s*\{[^}]*border-left:\s*1px solid var\(--hairline\);[^}]*background:\s*var\(--bg\);/,
+  );
+  expect(sideConversationCss).toMatch(/\.side-conversation > \.workbench-resizer::before\s*\{\s*display:\s*none;/);
+  expect(sideConversationCss).toMatch(
+    /@media \(max-width: 820px\)[\s\S]*\.side-conversation > \.workbench-resizer\s*\{\s*display:\s*none;/,
+  );
+  const workbenchResizer = readFileSync(
+    new URL("./components/WorkbenchResizer.tsx", import.meta.url),
+    "utf8",
+  );
+  expect(workbenchResizer).toContain('import "./WorkbenchResizer.css"');
 
   const timeline = readFileSync(
     new URL("./components/Timeline.tsx", import.meta.url),

@@ -38,16 +38,55 @@
 .open-preview-dialog footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
 }
+.open-preview-dialog header { justify-content: space-between; }
+.open-preview-dialog footer { justify-content: flex-end; }
 .open-preview-dialog label {
   display: grid;
   gap: 8px;
 }
+.open-preview-path {
+  display: grid;
+  gap: 8px;
+}
+.open-preview-path-control {
+  position: relative;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.open-preview-path-control:focus-within {
+  border-color: var(--focus-ring, var(--accent));
+}
 .open-preview-dialog input {
   width: 100%;
-  padding: 10px;
+  padding: 10px 46px 10px 10px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  box-sizing: border-box;
+}
+.open-preview-browse {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  transform: translateY(-50%);
+  background: transparent;
+  color: var(--text-mid);
+}
+.open-preview-browse:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  opacity: 1;
+}
+.open-preview-browse:active:not(:disabled) {
+  transform: translateY(-50%) scale(0.96);
 }
 .open-preview-dialog small {
   color: var(--text-dim);

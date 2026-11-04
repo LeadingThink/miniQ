@@ -66,8 +66,7 @@ export function OpenPreviewButton(props: {
         typeof selected === "string" &&
         current.current.scope === scope
       ) {
-        setVisible(false);
-        current.current.onOpen({ path: selected, line: null, column: null });
+        setPath(selected);
       }
     } catch (error) {
       if (mounted.current && current.current.scope === scope)
@@ -118,28 +117,32 @@ export function OpenPreviewButton(props: {
               </button>
             </header>
             {remote && access && <RemoteFileBrowser access={access} onOpen={submit} />}
-            <label>
-              文件路径
-              <input
-                autoFocus={!remote}
-                aria-label="预览文件路径"
-                value={path}
-                placeholder="例如 docs/report.md，或粘贴完整路径"
-                onChange={(event) => setPath(event.target.value)}
-              />
-            </label>
+            <div className="open-preview-path">
+              <span>文件路径</span>
+              <div className="open-preview-path-control">
+                <input
+                  autoFocus={!remote}
+                  aria-label="预览文件路径"
+                  value={path}
+                  placeholder="例如 docs/report.md，或粘贴完整路径"
+                  onChange={(event) => setPath(event.target.value)}
+                />
+                {!remote && <button
+                  type="button"
+                  className="open-preview-browse"
+                  aria-label="浏览文件…"
+                  title="浏览文件…"
+                  disabled={pending}
+                  onClick={() => void choose()}
+                >
+                  <FolderOpen size={16} />
+                </button>}
+              </div>
+            </div>
             <small title={props.workspacePath}>
               项目：{props.workspacePath}
             </small>
             <footer>
-              {!remote && <button
-                type="button"
-                className="ghost"
-                disabled={pending}
-                onClick={() => void choose()}
-              >
-                浏览文件…
-              </button>}
               <button type="submit" disabled={!path.trim()}>
                 打开预览
               </button>

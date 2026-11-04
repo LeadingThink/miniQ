@@ -5,6 +5,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { clampWorkbenchWidth } from "../workbenchWidth";
+import "./WorkbenchResizer.css";
 
 interface WorkbenchResizerProps {
   edge?: "left" | "right";
