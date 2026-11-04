@@ -99,7 +99,9 @@ impl Process {
 
 #[cfg(target_os = "linux")]
 fn details(pid: u32) -> io::Result<(bool, ProcessIdentity)> {
-    let stat = std::fs::read(format!("/proc/{pid}/stat"))?;
+    // A process may exit after /proc opens its stat file but before it is read.
+    // Linux returns ESRCH in that race, which means the same absence as ENOENT.
+    let stat = std::fs::read(format!("/proc/{pid}/stat")).map_err(process_error)?;
     let (zombie, start_ticks) = parse_stat(&stat)?;
     let boot_id = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")?
         .trim()
@@ -161,7 +163,7 @@ fn details(pid: u32) -> io::Result<(bool, ProcessIdentity)> {
         )
     };
     if read <= 0 {
-        return Err(process_error());
+        return Err(process_error(io::Error::last_os_error()));
     }
     if read != size {
         return Err(io::Error::other("incomplete process identity"));
@@ -216,7 +218,7 @@ fn unique_id(pid: u32) -> io::Result<u64> {
     let size = std::mem::size_of::<UniqueInfo>() as i32;
     let read = unsafe { libc::proc_pidinfo(pid as i32, 17, 1, info.as_mut_ptr().cast(), size) };
     if read <= 0 {
-        return Err(process_error());
+        return Err(process_error(io::Error::last_os_error()));
     }
     if read != size {
         return Err(io::Error::other("incomplete unique process identity"));
@@ -224,12 +226,27 @@ fn unique_id(pid: u32) -> io::Result<u64> {
     Ok(unsafe { info.assume_init() }.id)
 }
 
-#[cfg(target_os = "macos")]
-fn process_error() -> io::Error {
-    let error = io::Error::last_os_error();
+fn process_error(error: io::Error) -> io::Error {
     if error.raw_os_error() == Some(libc::ESRCH) {
         io::Error::from(io::ErrorKind::NotFound)
     } else {
         error
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn process_exit_is_absence_but_query_failures_remain_errors() {
+    for code in [libc::ESRCH, libc::ENOENT] {
+        assert_eq!(
+            process_error(io::Error::from_raw_os_error(code)).kind(),
+            io::ErrorKind::NotFound
+        );
+    }
+    for code in [libc::EACCES, libc::EPERM, libc::EIO] {
+        assert_eq!(
+            process_error(io::Error::from_raw_os_error(code)).raw_os_error(),
+            Some(code)
+        );
     }
 }
