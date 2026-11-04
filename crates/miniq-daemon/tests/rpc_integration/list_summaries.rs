@@ -85,7 +85,8 @@ async fn settings_schema_returns_ordered_groups_and_defaults() {
             "skills",
             "mcp",
             "plugins",
-            "memory"
+            "memory",
+            "advanced"
         ]
     );
     assert_eq!(
@@ -94,4 +95,5 @@ async fn settings_schema_returns_ordered_groups_and_defaults() {
     );
     assert_eq!(result["defaults"]["approvalMode"], "auto");
     assert_eq!(result["defaults"]["theme"], "system");
+    assert_eq!(result["defaults"]["maxSubagents"], 8);
 }
