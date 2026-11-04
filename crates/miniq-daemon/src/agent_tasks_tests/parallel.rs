@@ -5,6 +5,13 @@ async fn background_cohort_exceeds_old_count_limits_and_preserves_each_result() 
     let directory = tempfile::tempdir().unwrap();
     let provider = Arc::new(GatedProvider::new());
     let bridge = bridge_with_provider(&directory, provider.clone());
+    bridge
+        .state
+        .settings
+        .lock()
+        .unwrap()
+        .agent_preferences
+        .max_subagents = 12;
     let mut ids = Vec::new();
     const COUNT: usize = 10;
     for index in 0..COUNT {
@@ -34,6 +41,9 @@ async fn background_cohort_exceeds_old_count_limits_and_preserves_each_result() 
                     .content
                     .starts_with(crate::parallel_policy::PARALLEL_POLICY)
                 && message.content.contains("there is no target worker count")
+                && message
+                    .content
+                    .contains("configured maximum active subagent count")
         })
     }));
     provider.gate.add_permits(COUNT);
@@ -53,4 +63,70 @@ async fn background_cohort_exceeds_old_count_limits_and_preserves_each_result() 
         .collect::<Vec<_>>();
     expected.sort();
     assert_eq!(results, expected);
+}
+
+#[tokio::test]
+async fn active_subagents_respect_the_configured_session_limit() {
+    let directory = tempfile::tempdir().unwrap();
+    let provider = Arc::new(GatedProvider::new());
+    let bridge = bridge_with_provider(&directory, provider.clone());
+    bridge
+        .state
+        .settings
+        .lock()
+        .unwrap()
+        .agent_preferences
+        .max_subagents = 2;
+
+    for index in 0..2 {
+        let mut input = request(&format!("parallel-{index}"));
+        input.name = Some(format!("parallel-{index}"));
+        input.run_in_background = true;
+        assert_eq!(bridge.run(input).await.unwrap()["status"], "running");
+    }
+    let mut rejected = request("one too many");
+    rejected.name = Some("rejected".into());
+    rejected.run_in_background = true;
+    let error = bridge.run(rejected).await.unwrap_err().to_string();
+    assert!(error.contains("subagent limit reached (2)"), "{error}");
+
+    provider.gate.add_permits(2);
+}
+
+#[tokio::test]
+async fn resumed_subagents_respect_the_configured_session_limit() {
+    let directory = tempfile::tempdir().unwrap();
+    let provider = Arc::new(GatedProvider::new());
+    let bridge = bridge_with_provider(&directory, provider.clone());
+    bridge
+        .state
+        .settings
+        .lock()
+        .unwrap()
+        .agent_preferences
+        .max_subagents = 1;
+
+    let mut first = request("completed");
+    first.name = Some("completed-agent".into());
+    first.run_in_background = true;
+    let completed = bridge.run(first).await.unwrap();
+    let completed_id = completed["agentId"].as_str().unwrap();
+    provider.gate.add_permits(1);
+    bridge
+        .output(completed_id, true, Duration::from_secs(5))
+        .await
+        .unwrap();
+
+    let mut occupying = request("occupying");
+    occupying.name = Some("occupying-agent".into());
+    occupying.run_in_background = true;
+    bridge.run(occupying).await.unwrap();
+
+    let mut resumed = request("resume");
+    resumed.resume = Some(completed_id.to_owned());
+    resumed.name = None;
+    let error = bridge.run(resumed).await.unwrap_err();
+    assert!(error.to_string().contains("subagent limit reached (1)"));
+
+    provider.gate.add_permits(1);
 }

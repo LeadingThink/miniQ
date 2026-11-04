@@ -2,7 +2,7 @@ use miniq_protocol::{ApprovalMode, RpcError};
 use serde_json::{json, Value};
 
 /// Settings navigation groups in display order: `(id, label, lucide icon)`.
-const GROUPS: [(&str, &str, &str); 8] = [
+const GROUPS: [(&str, &str, &str); 9] = [
     ("general", "通用", "settings"),
     ("appearance", "外观", "palette"),
     ("services", "服务与远程", "server"),
@@ -11,6 +11,7 @@ const GROUPS: [(&str, &str, &str); 8] = [
     ("mcp", "MCP 连接", "plug"),
     ("plugins", "插件", "puzzle"),
     ("memory", "记忆", "brain"),
+    ("advanced", "高级", "sliders-horizontal"),
 ];
 
 /// Read-only description of the settings UI: ordered groups and the values a
@@ -27,6 +28,7 @@ pub(super) fn schema() -> Result<Value, RpcError> {
             "theme": "system",
             "lightTheme": "jade",
             "darkTheme": "night",
+            "maxSubagents": crate::state::DEFAULT_MAX_SUBAGENTS,
         },
     }))
 }
@@ -54,12 +56,14 @@ mod tests {
                 "skills",
                 "mcp",
                 "plugins",
-                "memory"
+                "memory",
+                "advanced"
             ]
         );
         assert_eq!(value["groups"][5]["label"], "MCP 连接");
         assert_eq!(value["groups"][0]["icon"], "settings");
         assert_eq!(value["defaults"]["approvalMode"], "auto");
         assert_eq!(value["defaults"]["theme"], "system");
+        assert_eq!(value["defaults"]["maxSubagents"], 8);
     }
 }

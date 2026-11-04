@@ -26,6 +26,7 @@ impl AgentTaskManager {
             records: Mutex::new(HashMap::new()),
             names: Mutex::new(HashMap::new()),
             loaded_sessions: Mutex::new(HashSet::new()),
+            admission: Mutex::new(()),
         }
     }
 

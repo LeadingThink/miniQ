@@ -8,6 +8,7 @@ export const SETTINGS_TAB_IDS = [
   "mcp",
   "plugins",
   "memory",
+  "advanced",
 ] as const;
 
 export type SettingsTab = (typeof SETTINGS_TAB_IDS)[number];

@@ -892,6 +892,9 @@ mod tests {
         assert!(history[0]
             .content
             .contains("execution is a fixed default; there is no target worker count"));
+        assert!(history[0]
+            .content
+            .contains("configured maximum active subagent count"));
     }
 
     #[test]

@@ -28,6 +28,7 @@ import { TerminalSettings } from "./TerminalSettings";
 import { ProviderKeyField } from "./ProviderKeyField";
 import { DesktopAccountLogin } from "./DesktopAccountLogin";
 import { DataDirectorySettings } from "./DataDirectorySettings";
+import { AdvancedSettings } from "./AdvancedSettings";
 
 export const ZAIWEN_API_PORTAL_URL = "https://platform.zaiwenai.com/";
 export const ZAIWEN_API_BASE_URL = "https://oneapi.zaiwenai.com/v1";
@@ -341,6 +342,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
         </div>
         <div id="settings-memory" role="tabpanel" aria-labelledby="settings-tab-memory" hidden={tab !== "memory"}>
           {tab === "memory" && <MemoryPanel client={props.client} workspaceId={props.workspaceId ?? null} />}
+        </div>
+        <div id="settings-advanced" role="tabpanel" aria-labelledby="settings-tab-advanced" hidden={tab !== "advanced"}>
+          {tab === "advanced" && <AdvancedSettings client={props.client} onClose={props.onClose} />}
         </div>
         <div id="settings-computer" role="tabpanel" aria-labelledby="settings-tab-computer" hidden={tab !== "computer"}>
           {tab === "computer" && <ComputerSettings client={props.client} />}

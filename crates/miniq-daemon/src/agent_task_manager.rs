@@ -87,6 +87,7 @@ pub(crate) struct AgentTaskManager {
     records: Mutex<HashMap<String, Arc<AgentRecord>>>,
     names: Mutex<HashMap<(String, String), String>>,
     loaded_sessions: Mutex<HashSet<String>>,
+    admission: Mutex<()>,
 }
 
 pub(crate) enum MessageDisposition {
@@ -126,6 +127,7 @@ impl AgentTaskManager {
         Ok(entries)
     }
 
+    #[cfg(test)]
     pub(crate) async fn create(
         &self,
         session_id: &str,
@@ -133,6 +135,19 @@ impl AgentTaskManager {
         request: &AgentRunRequest,
         cancel: CancellationToken,
     ) -> Result<(String, Arc<AgentRecord>), ToolError> {
+        self.create_with_limit(session_id, parent_id, request, cancel, usize::MAX)
+            .await
+    }
+
+    pub(crate) async fn create_with_limit(
+        &self,
+        session_id: &str,
+        parent_id: Option<&str>,
+        request: &AgentRunRequest,
+        cancel: CancellationToken,
+        max_active: usize,
+    ) -> Result<(String, Arc<AgentRecord>), ToolError> {
+        let _admission = self.admission.lock().await;
         self.ensure_loaded(session_id).await?;
         let id = miniq_memory::new_id("agent");
         let name = request.name.clone().unwrap_or_else(|| id.clone());
@@ -141,6 +156,23 @@ impl AgentTaskManager {
         if names.contains_key(&scoped_name) {
             return Err(ToolError::InvalidInput(format!(
                 "agent name is already in use: {name}"
+            )));
+        }
+        let mut records = self.records.lock().await;
+        let session_records = records
+            .values()
+            .filter(|record| record.session_id == session_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut active = 0;
+        for record in session_records {
+            if record.state.lock().await.status.is_active() {
+                active += 1;
+            }
+        }
+        if active >= max_active {
+            return Err(ToolError::InvalidInput(format!(
+                "subagent limit reached ({max_active}); wait for an active subagent to finish or increase the limit in Advanced settings"
             )));
         }
         let record = Arc::new(AgentRecord {
@@ -190,7 +222,7 @@ impl AgentTaskManager {
             })
             .map_err(persistence::storage_error)?;
         names.insert(scoped_name, id.clone());
-        self.records.lock().await.insert(id.clone(), record.clone());
+        records.insert(id.clone(), record.clone());
         drop(names);
         Ok((id, record))
     }
@@ -219,6 +251,7 @@ impl AgentTaskManager {
         Ok((id, record))
     }
 
+    #[cfg(test)]
     pub(crate) async fn prepare_resume(
         &self,
         session_id: &str,
@@ -226,14 +259,48 @@ impl AgentTaskManager {
         request: &mut AgentRunRequest,
         cancel: CancellationToken,
     ) -> Result<(String, Arc<AgentRecord>, Vec<ChatMessage>), ToolError> {
+        self.prepare_resume_with_limit(session_id, id_or_name, request, cancel, usize::MAX)
+            .await
+    }
+
+    pub(crate) async fn prepare_resume_with_limit(
+        &self,
+        session_id: &str,
+        id_or_name: &str,
+        request: &mut AgentRunRequest,
+        cancel: CancellationToken,
+        max_active: usize,
+    ) -> Result<(String, Arc<AgentRecord>, Vec<ChatMessage>), ToolError> {
+        let _admission = self.admission.lock().await;
         let (id, record) = self.resolve(session_id, id_or_name).await?;
-        let mut guard = record.state.lock().await;
-        let mut state = guard.clone();
-        if state.status.is_active() {
+        {
+            let state = record.state.lock().await;
+            if state.status.is_active() {
+                return Err(ToolError::InvalidInput(format!(
+                    "agent is already running: {id}"
+                )));
+            }
+        }
+        let records = self.records.lock().await;
+        let session_records = records
+            .values()
+            .filter(|candidate| candidate.session_id == session_id && candidate.id != id)
+            .cloned()
+            .collect::<Vec<_>>();
+        drop(records);
+        let mut active = 0;
+        for candidate in session_records {
+            if candidate.state.lock().await.status.is_active() {
+                active += 1;
+            }
+        }
+        if active >= max_active {
             return Err(ToolError::InvalidInput(format!(
-                "agent is already running: {id}"
+                "subagent limit reached ({max_active}); wait for an active subagent to finish or increase the limit in Advanced settings"
             )));
         }
+        let mut guard = record.state.lock().await;
+        let mut state = guard.clone();
         inherit_request(request, &state.request);
         request.validate()?;
         let mut history: Vec<ChatMessage> = self

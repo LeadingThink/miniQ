@@ -21,6 +21,28 @@ pub(crate) struct ActiveTurn {
 }
 
 /// Persisted daemon settings (data dir `settings.json`).
+pub const DEFAULT_MAX_SUBAGENTS: usize = 8;
+pub const MAX_SUBAGENTS_LIMIT: usize = 32;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPreferences {
+    #[serde(default = "default_max_subagents")]
+    pub max_subagents: usize,
+}
+
+impl Default for AgentPreferences {
+    fn default() -> Self {
+        Self {
+            max_subagents: DEFAULT_MAX_SUBAGENTS,
+        }
+    }
+}
+
+const fn default_max_subagents() -> usize {
+    DEFAULT_MAX_SUBAGENTS
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DaemonSettings {
@@ -38,6 +60,9 @@ pub struct DaemonSettings {
     /// User lifecycle hooks (`preToolUse`, `stop`, ...), run in order.
     #[serde(default)]
     pub hooks: Vec<crate::hooks::HookConfig>,
+    /// Maximum number of simultaneously active child agents per session.
+    #[serde(default)]
+    pub agent_preferences: AgentPreferences,
     /// Staged feature flags (plan §4.7). Missing section keeps defaults.
     #[serde(default)]
     pub features: crate::features::FeatureFlags,

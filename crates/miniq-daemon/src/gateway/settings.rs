@@ -37,6 +37,7 @@ pub(super) fn get(state: &AppState) -> Result<Value, RpcError> {
         "remoteStatus": crate::remote::status(state),
         "turnEndedCommand": settings.turn_ended_command,
         "hooks": settings.hooks,
+        "agentPreferences": settings.agent_preferences,
     }))
 }
 
@@ -53,6 +54,14 @@ struct UpdateParams {
     turn_ended_command: Option<Option<String>>,
     #[serde(default)]
     hooks: Option<Vec<crate::hooks::HookConfig>>,
+    #[serde(default)]
+    agent_preferences: Option<AgentPreferencesUpdate>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AgentPreferencesUpdate {
+    max_subagents: usize,
 }
 
 #[derive(Deserialize)]
@@ -145,6 +154,18 @@ pub(super) fn update(state: &AppState, raw: Option<Value>) -> Result<Value, RpcE
         crate::hooks::validate(&hooks)
             .map_err(|error| RpcError::new(ErrorCode::InvalidParams, error))?;
         settings.hooks = hooks;
+    }
+    if let Some(preferences) = input.agent_preferences {
+        if !(1..=crate::state::MAX_SUBAGENTS_LIMIT).contains(&preferences.max_subagents) {
+            return Err(RpcError::new(
+                ErrorCode::InvalidParams,
+                format!(
+                    "agentPreferences.maxSubagents must be between 1 and {}",
+                    crate::state::MAX_SUBAGENTS_LIMIT
+                ),
+            ));
+        }
+        settings.agent_preferences.max_subagents = preferences.max_subagents;
     }
 
     let global_model = provider_changed
@@ -255,6 +276,33 @@ fn merged_key(new_key: Option<String>, existing: Option<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn state() -> AppState {
+        AppState::new(
+            miniq_memory::Store::open_in_memory().unwrap(),
+            "fixture".into(),
+            std::sync::Arc::new(miniq_models::mock::MockProvider::new(Vec::new())),
+        )
+    }
+
+    #[test]
+    fn agent_preferences_are_persisted_and_range_checked() {
+        let state = state();
+        assert_eq!(get(&state).unwrap()["agentPreferences"]["maxSubagents"], 8);
+        let updated = update(
+            &state,
+            Some(json!({"agentPreferences": {"maxSubagents": 12}})),
+        )
+        .unwrap();
+        assert_eq!(updated["agentPreferences"]["maxSubagents"], 12);
+        for invalid in [0, 33] {
+            assert!(update(
+                &state,
+                Some(json!({"agentPreferences": {"maxSubagents": invalid}})),
+            )
+            .is_err());
+        }
+    }
 
     #[tokio::test]
     async fn provider_key_is_explicit_local_only_and_absent_from_public_settings() {

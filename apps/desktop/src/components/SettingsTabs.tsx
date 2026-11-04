@@ -5,6 +5,7 @@ import {
   Plug,
   PlugZap,
   Server,
+  Settings2,
   SlidersHorizontal,
   Sparkles,
   type LucideIcon,
@@ -30,6 +31,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
   { id: "mcp", label: "MCP 连接", icon: PlugZap, description: "连接外部工具与数据源。" },
   { id: "plugins", label: "插件", icon: Plug, description: "安装和管理扩展能力。" },
   { id: "memory", label: "记忆", icon: Brain, description: "miniQ 记住的偏好与项目事实。" },
+  { id: "advanced", label: "高级", icon: Settings2, description: "子 Agent 并发与高级运行偏好。" },
 ];
 
 /** Shape returned by the daemon `settings.schema` RPC. */

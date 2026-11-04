@@ -402,18 +402,37 @@ impl DaemonAgentBridge {
         }
         let cancel = self.cancel.child_token();
         let resuming = request.resume.is_some();
+        let max_subagents = self
+            .state
+            .settings
+            .lock()
+            .unwrap()
+            .agent_preferences
+            .max_subagents;
         let (id, record, resumed_history) = match request.resume.clone() {
             Some(resume) => {
                 self.state
                     .agent_tasks
-                    .prepare_resume(&self.session_id, &resume, &mut request, cancel)
+                    .prepare_resume_with_limit(
+                        &self.session_id,
+                        &resume,
+                        &mut request,
+                        cancel,
+                        max_subagents,
+                    )
                     .await?
             }
             None => {
                 let (id, record) = self
                     .state
                     .agent_tasks
-                    .create(&self.session_id, self.agent_id.as_deref(), &request, cancel)
+                    .create_with_limit(
+                        &self.session_id,
+                        self.agent_id.as_deref(),
+                        &request,
+                        cancel,
+                        max_subagents,
+                    )
                     .await?;
                 (id, record, Vec::new())
             }
