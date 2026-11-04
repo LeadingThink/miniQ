@@ -238,7 +238,7 @@ describe("appearance settings integration", () => {
     const { unmount } = render(<Fixture />);
     await waitFor(() => expect(call).toHaveBeenCalledWith("settings.get"));
     expect(screen.getAllByRole("tab").map((element) => element.textContent)).toEqual([
-      "通用", "外观", "服务与远程", "电脑控制", "技能", "MCP 连接", "插件", "记忆",
+      "通用", "外观", "服务与远程", "电脑控制", "技能", "MCP 连接", "插件", "记忆", "高级",
     ]);
     fireEvent.keyDown(screen.getByRole("tab", { name: "服务与远程" }), { key: "ArrowRight" });
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "电脑控制" }));
@@ -246,6 +246,9 @@ describe("appearance settings integration", () => {
     await waitFor(() => expect(screen.getAllByText("已授权")).toHaveLength(2));
     expect(screen.queryByRole("searchbox")).toBeNull();
     fireEvent.keyDown(document.activeElement!, { key: "End" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "高级" }));
+    expect(await screen.findByRole("spinbutton", { name: /最多子 Agent 数量/ })).toBeTruthy();
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "记忆" }));
     fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "插件" }));
