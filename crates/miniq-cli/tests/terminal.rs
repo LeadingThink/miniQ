@@ -215,7 +215,7 @@ impl Fixture {
                             _ => vec![
                                 json!({"type":"assistant_replaced","text":""}),
                                 json!({"type":"message_created","message":{"id":"answer-1","role":"assistant","content":"fixture answer"}}),
-                                json!({"type":"turn_completed"}),
+                                json!({"type":"turn_completed","summary":{"toolCalls":0}}),
                             ],
                         };
                         for (index, mut event) in events.into_iter().enumerate() {

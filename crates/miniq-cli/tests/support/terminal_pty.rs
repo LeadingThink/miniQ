@@ -17,6 +17,10 @@ impl Fixture {
             .args([
                 "-q",
                 "/dev/null",
+                "/bin/sh",
+                "-c",
+                "stty rows 40 cols 160; exec \"$@\"",
+                "miniq-test-terminal",
                 env!("CARGO_BIN_EXE_miniq"),
                 "--no-start",
                 "--data-dir",
@@ -79,22 +83,37 @@ impl Fixture {
 async fn remote_settings_work_in_both_terminal_modes() {
     for term in ["dumb", "xterm-256color"] {
         let fixture = Fixture::new("success").await;
-        let transcript = fixture
-            .run_terminal_with_term(
-                &[],
-                &[
-                    ("miniq>", "/help\n"),
-                    ("/remote status", "/remote\n"),
-                    ("Select/search>", "1\n"),
-                    ("远程设置已保存", "/remote name 我的服务器\n"),
-                    ("远程设置已保存", "/remote status\n"),
-                    ("连接状态：已连接", "/remote off\n"),
-                    ("远程设置已保存", "/exit\n"),
-                ],
-                term,
-            )
-            .await;
+        let steps = if term == "dumb" {
+            vec![
+                ("miniq>", "/help\n"),
+                ("/remote status", "/remote\n"),
+                ("Select/search>", "1\n"),
+                ("远程设置已保存", "/remote name 我的服务器\n"),
+                ("远程设置已保存", "/remote status\n"),
+                ("连接状态：已连接", "/remote off\n"),
+                ("远程设置已保存", "/exit\n"),
+            ]
+        } else {
+            vec![
+                ("ctrl+p commands", "/remote\r"),
+                ("Type to search", "\r"),
+                ("Press Enter to return", "\n"),
+                ("ctrl+p commands", "/remote name 我的服务器\r"),
+                ("Press Enter to return", "\n"),
+                ("ctrl+p commands", "/remote status\r"),
+                ("Press Enter to return", "\n"),
+                ("ctrl+p commands", "/remote off\r"),
+                ("Press Enter to return", "\n"),
+                ("ctrl+p commands", "/exit\r"),
+            ]
+        };
+        let transcript = fixture.run_terminal_with_term(&[], &steps, term).await;
         assert!(transcript.contains("设备名称：我的服务器"), "{transcript}");
+        assert!(transcript.contains("连接状态：已连接"), "{transcript}");
+        if term != "dumb" {
+            assert!(transcript.contains("\x1b[?1049h"));
+            assert!(transcript.contains("\x1b[?1049l"));
+        }
         let requests = fixture.requests.lock().unwrap();
         let updates = requests
             .iter()
@@ -124,9 +143,9 @@ async fn up_arrow_recalls_previous_prompt_in_session() {
         .run_terminal_with_term(
             &[],
             &[
-                ("miniq>", "Review the project\n"),
-                ("miniq>", "\x1b[A\n"),
-                ("miniq>", "/exit\n"),
+                ("ctrl+p commands", "Review the project\r"),
+                ("0 tools", "\x1b[A\r"),
+                ("0 tools", "/exit\r"),
             ],
             "xterm-256color",
         )
@@ -147,11 +166,11 @@ async fn context_compact_and_undo_commands_drive_the_session() {
         .run_terminal_with_term(
             &["--max-turns", "7"],
             &[
-                ("miniq>", "hello\n"),
-                ("miniq>", "/context\n"),
-                ("auto-compacts", "/compact\n"),
-                ("Context compacted", "/undo\n"),
-                ("Undid the last prompt", "\x15/exit\n"),
+                ("ctrl+p commands", "hello\r"),
+                ("0 tools", "/context\r"),
+                ("auto-compacts", "/compact\r"),
+                ("Context compacted", "/undo\r"),
+                ("Undid the last prompt", "\x15/exit\r"),
             ],
             "xterm-256color",
         )
