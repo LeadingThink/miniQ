@@ -63,7 +63,7 @@ miniq doctor
 
 First launch detects existing shared desktop settings. If no key is configured, it offers the default `https://oneapi.zaiwenai.com/v1` service, concealed key input and a searchable list of text models before creating a session. Get a key from [Zaiwen API](https://platform.zaiwenai.com/). `miniq configure` reopens setup; `--base-url` and `--model` are optional overrides. An existing saved endpoint is preserved. A secret manager may supply `MINIQ_API_KEY`. Never put a key in command-line arguments, shell history, logs or screenshots. Setup updates shared provider settings; session model changes are separate. Saved settings/connection files use atomic replacement and owner-only permissions on Unix; Windows inherits the current user's data-directory ACL. Do not use a shared data directory.
 
-Desktop settings on another computer are not copied automatically. Configure each target computer separately; WSL also has its own configuration and conversations. In a session, use `/model` to select a model and `/effort` to choose its supported reasoning level for that session. From the shell, `miniq resume` continues a session in the current project and `miniq doctor` checks terminal/daemon versions and dependencies. See the platform-specific installation and update guidance above.
+Desktop settings on another computer are not copied automatically. Configure each target computer separately; WSL also has its own configuration and conversations. In a session, use `/models` to select a model and `/effort` to choose its supported reasoning level for that session. From the shell, `miniq resume` continues a session in the current project and `miniq doctor` checks terminal/daemon versions and dependencies. See the platform-specific installation and update guidance above.
 
 `miniq logout` removes the saved shared provider key without cancelling running tasks. Also remove `MINIQ_API_KEY` from your environment/secret manager when appropriate; a running request may already hold its key. A blank key keeps the saved key only for the same endpoint, never forwards it to a new endpoint.
 
@@ -81,20 +81,23 @@ miniq sessions
 miniq sessions --all
 ```
 
-`miniq resume` opens a project-scoped searchable session dialog; `resume --last` or `miniq -c` resumes immediately. Resume reuses saved context without resending the earlier task. The full-screen terminal opens on a centered home prompt and keeps a multiline composer below the conversation. It renders streaming Markdown, folded tool output and pending input cards. On wide terminals a toggleable sidebar shows the session, model, context usage, workspace and plan. Its main commands are:
+`miniq resume` opens a project-scoped searchable session dialog; `resume --last` or `miniq -c` resumes immediately. Resume reuses saved context without resending the earlier task. The full-screen terminal opens on a centered home prompt and keeps a multiline composer below the conversation. It renders streaming Markdown, folded tool output and pending input cards. While a turn runs, an animated spinner beside its current phase and elapsed time appears after the latest message, and a scanning block animation keeps the interrupt hint visible below the composer. Pending approvals/questions replace the animation with a request for your response; completed, failed and paused turns stop animating. On wide terminals a toggleable sidebar shows the session, model, context usage, workspace and plan. Its main commands are:
 
 | Commands | Purpose |
 | --- | --- |
-| `/commands`, `/models`, `/sessions` | Open searchable command, model and session dialogs; `/models` and `/sessions` alias `/model` and `/resume`. |
+| `/commands`, `/sessions` | Open searchable command and session dialogs; `/sessions` aliases `/resume`. |
 | `/sidebar`, `/details` | Toggle the sidebar or expand/collapse complete tool output. |
-| `/model [ID]`, `/effort [LEVEL]` | Select a session model and supported reasoning effort; `default` clears the effort override. |
+| `/models [ID]`, `/effort [LEVEL]` | Select a session model and supported reasoning effort; `default` clears the effort override. |
 | `/permissions [alwaysAsk\|auto\|fullAccess]` | Inspect/change this session's permission mode; `/approvals` is an alias. |
 | `/new`, `/resume`, `/fork`, `/rename TITLE` | Create, switch, branch or rename sessions. |
-| `/undo`, `/diff`, `/compact`, `/context` | Undo the latest turn, inspect changes, compact context or inspect estimated usage. |
+| `/undo`, `/redo`, `/diff`, `/compact`, `/context` | Undo/restore an exchange and file changes, inspect changed files, compact context or inspect estimated usage. |
 | `/pause`, `/resume-turn`, `/stop`, `/steer MESSAGE` | Pause/resume or interrupt/steer the active turn. |
 | `/goal [TEXT\|pause\|resume\|cancel\|done]` | Read/set a goal or explicitly control its state. |
 | `/queue [ACTION …]`, `/agents [ACTION …]` | Manage queued follow-ups and inspect/stop child agents. |
-| `/attach PATH`, `/clear-attachments`, `/history [OPTIONS]` | Attach files or read saved conversation history. |
+| `/attach PATH`, `/attachments`, `/clear-attachments` | Add files, preview/open them, or remove individual pending attachments. |
+| `/messages [QUERY]`, `/history [OPTIONS]`, `/export PATH` | Search durable messages, jump/copy/edit/fork/undo from a selected message, or export every history page to a new JSON file. |
+| `/drafts`, `/processes` | Recover unsent drafts or inspect live local command output. |
+| `/settings`, `/theme` | Choose dark/light/terminal colors, enable/disable animations and select the editor mode. |
 | `/status`, `/usage`, `/remote`, `/update`, `/help`, `/exit` | Inspect session/usage, control remote access, update or leave. |
 | `/mcp`, `/skills`, `/plugins`, `/hooks` | Inspect extensions; skills/plugins also accept their management subcommands. |
 | `/keybindings`, `/vim`, `/statusline` | Inspect/customize keys, editing mode and status line in the data directory's `cli.json`. |
@@ -110,9 +113,27 @@ PageUp/PageDown and the mouse wheel scroll the conversation independently of the
 
 Approvals display the tool, risk and complete input in a panel above the composer. Choose `1`/`y` to approve once, `2` for the session, `3` to always allow that tool or `4`/`n` to reject; with an empty input, Left/Right and Enter select and confirm an action. Alt+Up/Down scrolls the complete request details. `/approval inbox` and `/approval rules` manage the shared inbox and saved rules; `/permissions` changes the session mode. Questions display option descriptions, support numbered choices or a custom answer, and show a countdown/default answer when the daemon supplies an automatic continuation deadline. Answers and approval decisions from desktop/mobile remove the matching pending card.
 
-The full-screen editor is used when stdin/stdout are terminals and `TERM` supports it. Exiting restores the previous terminal screen, cursor and input modes. `MINIQ_REPL=line` selects the simpler line terminal with in-memory prompt recall; it shares the management parser and `/manage` commands, while advanced keys and cards belong to the full-screen editor. Shell management commands temporarily leave the full-screen view and wait for Enter before returning, so their output stays readable. `miniq watch` detaches on Ctrl+C without cancelling. `/exit` leaves the shared daemon running.
+The full-screen editor is used when stdin/stdout are terminals and `TERM` supports it; Windows terminals also qualify when `TERM` is unset. `TERM=dumb` retains line mode. Exiting restores the previous terminal screen, cursor and input modes. `MINIQ_REPL=line` selects the simpler line terminal with in-memory prompt recall; it shares the management parser and `/manage` commands, while advanced keys and cards belong to the full-screen editor. Management commands and `!command` run in background processes with streaming output. `/processes` reopens their complete output; Ctrl+C in a process reader stops that process tree. Esc or `/stop` interrupts the active local command before cancelling a daemon turn. Remote settings (`/remote`) and the external editor deliberately hand over the terminal until they return. `miniq watch` detaches on Ctrl+C without cancelling. `/exit` leaves the shared daemon running.
 
 `--add-dir` updates the shared project, preserving existing roots; the backend refuses while that project has active tasks. `-C` cannot move a resumed session. `resume --last` is scoped to the current project's most recently updated, non-archived local session, not a globally pinned session.
+
+### Panels, mouse and draft recovery
+
+Switching sessions during an active turn leaves that task running. Each session keeps its text, cursor, folded paste, attachments, expanded tools and scroll position while the terminal stays open. Failed sends preserve their full content in the editor or under `/drafts`; failed edits reopen their form. These drafts are in-memory recovery, not a persistent cross-restart draft store. Deleting or archiving the current session opens a new session. Use Ctrl+D in the session list for rename, pin, archive and delete actions; destructive actions require confirmation.
+
+Slow RPCs show loading/error states while keyboard input and animation continue. Ctrl+R retries a failed list or detail view. Automatic reconnect never resends prompts or mutations; inspect history after an uncertain send result before resubmitting. Ordered mutations do not block read-only panels or local previews.
+
+Click the composer to position the cursor, a completion to insert it, a tool row to expand it, or a message to open its actions. Drag across conversation text and use Ctrl+Y to copy; copying a message through its action menu preserves the original text without visual wrapping. Alt+Up/Down moves between messages when no input card is active. `/messages` searches the loaded result page as you type; Ctrl+F searches all durable history, Ctrl+H opens earlier results, and Enter opens the selected message's actions.
+
+In `/models`, Ctrl+F toggles a favorite, Ctrl+D loads capability details, and Ctrl+R refreshes the catalog. Favorites and recently selected models appear first and persist in `cli.json`. `/queue` supports editing, reordering, removal and steering with the backend's conflict checks. `/agents` opens live output, paged history/full messages and stop confirmation. `/mcp` exposes connection details, enable/disable and settings edits; plugin-owned servers remain read-only, and omitted environment secrets remain stored by the daemon. `/skills` reads and enables/disables skills.
+
+Use `@"path with spaces/中文.png"` or `/attach` for paths with spaces. Ctrl+V reads clipboard text or a clipboard image; image files are stored in the private data directory. Windows uses native clipboard support; macOS uses its clipboard utilities; Linux requires `wl-paste` or `xclip`. `/attachments` previews text and PNG/JPEG/GIF/WebP images, opens originals using the default application, and removes pending attachments without deleting originals. The terminal image preview uses scaled half-block color cells and the first frame for animated images; the attached original is unchanged. Long paste is folded only for display and expands on editing. Ctrl+G uses `VISUAL`/`EDITOR`, defaulting to Notepad on Windows and vi on Unix; trailing newlines are preserved.
+
+Multi-select questions show checkboxes: click or press Space to toggle, then choose Submit selection. Full approval/question details are available with Alt+D. Decisions stay pending until the daemon confirms success and can be retried after errors. `/tools` offers independent expansion and Ctrl+D for full input/output. `/diff` opens a changed-file list; the detail reader supports filtering, scrolling and n/N to navigate diff hunks.
+
+`/undo` records a durable redo snapshot. `/redo` restores the exact saved conversation, queue, tool records and file contents without calling the model again. It rejects new conversation work or files changed since undo, and rejects incomplete recovery. Redo snapshots include full conversation data and file backups in the daemon data directory. Export preserves complete history pages, tool payloads and attachments and refuses to overwrite an existing file.
+
+Custom `statusLine` output applies to the idle footer; running and pending-input feedback stays visible. Retry feedback includes attempt/max-attempts, reason and countdown, and reopening a running session restores its phase and elapsed time. `/settings` saves `theme` (`dark`, `light`, `system`) and `animations` separately; disabling animation keeps status and timing visible. `NO_COLOR` only disables color.
 
 ## Finding and Reading Sessions
 
@@ -464,7 +485,7 @@ Archive files must be safely extracted to the workspace, then their image/PDF fi
 - Claude Code installation: https://code.claude.com/docs/en/setup
 - Claude Code CLI: https://code.claude.com/docs/en/cli-reference
 
-The adopted patterns are a real terminal entry point, project-scoped resume, model selection, hidden key entry, stdin/JSONL automation, separated progress/final output, explicit permissions and diagnostics. This is not a claim to reproduce the competitors' private clients, subscription authentication, every TUI feature, or a provider's unavailable model capabilities. macOS is runtime-tested locally; Windows/Linux build jobs are provided for platform validation, not represented as already executed on this Mac.
+The adopted patterns are a real terminal entry point, project-scoped resume, model selection, hidden key entry, stdin/JSONL automation, separated progress/final output, explicit permissions and diagnostics. This is not a claim to reproduce the competitors' private clients, subscription authentication, every TUI feature, or a provider's unavailable model capabilities. Platform validation must be reported separately: this interaction update was tested on Windows with the production renderer and isolated process/RPC fixtures; macOS/Linux manual terminal acceptance remains outstanding.
 
 ## Verification
 

@@ -69,6 +69,7 @@ pub fn level(method: &str) -> Option<RemoteLevel> {
         | "session.sendMessage"
         | "session.rewriteMessage"
         | "session.undo"
+        | "session.redo"
         | "session.revertTurn"
         | "session.compact"
         | "session.pause"

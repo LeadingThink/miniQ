@@ -24,9 +24,37 @@ pub async fn key(
     client: &mut Client,
     key: KeyEvent,
 ) -> Result<Flow> {
+    if repl.panel_key(editor, client, key).await? {
+        return Ok(Flow::Handled);
+    }
+    if repl.ui.form.is_some() {
+        repl.form_key(client, key).await?;
+        return Ok(Flow::Handled);
+    }
+    if let Some(reader) = repl.ui.reader.as_mut() {
+        if reader.key(key) {
+            repl.ui.reader = None;
+        }
+        return Ok(Flow::Handled);
+    }
+    if key.code == KeyCode::Char('r') && key.modifiers == KeyModifiers::CONTROL {
+        if let Some(purpose) = repl
+            .ui
+            .picker
+            .as_ref()
+            .filter(|picker| picker.error.is_some())
+            .map(|picker| picker.purpose)
+        {
+            repl.open_picker(client, purpose).await?;
+            return Ok(Flow::Handled);
+        }
+    }
     if let Some(picker) = repl.ui.picker.as_mut() {
         return match picker.key(key) {
             Outcome::Close => {
+                if picker.purpose == Purpose::Confirm {
+                    repl.confirmation = None;
+                }
                 repl.ui.picker = None;
                 Ok(Flow::Handled)
             }
@@ -82,6 +110,13 @@ pub async fn key(
     }
     if key.modifiers == KeyModifiers::ALT && repl.cards.front().is_some() {
         match key.code {
+            KeyCode::Char('d') => {
+                repl.show_detail(
+                    "Request details",
+                    &repl.cards.front().unwrap().body().to_owned(),
+                );
+                return Ok(Flow::Handled);
+            }
             KeyCode::Up => {
                 repl.ui.card_offset = repl.ui.card_offset.saturating_sub(1);
                 return Ok(Flow::Handled);
@@ -92,6 +127,10 @@ pub async fn key(
             }
             _ => {}
         }
+    }
+    if key.modifiers == KeyModifiers::ALT && matches!(key.code, KeyCode::Up | KeyCode::Down) {
+        repl.ui.navigate_message(key.code == KeyCode::Down);
+        return Ok(Flow::Handled);
     }
     match key.code {
         KeyCode::PageUp if key.modifiers == KeyModifiers::ALT => {
@@ -128,9 +167,9 @@ pub async fn key(
             Some(Card::Approval { .. }) => 4,
             Some(Card::Question {
                 options,
-                multi_select: false,
+                multi_select,
                 ..
-            }) => options.len(),
+            }) => options.len() + usize::from(*multi_select),
             _ => 0,
         };
         if choices > 0 {
@@ -139,10 +178,9 @@ pub async fn key(
                     repl.ui.card_selected = (repl.ui.card_selected + choices - 1) % choices
                 }
                 KeyCode::Right => repl.ui.card_selected = (repl.ui.card_selected + 1) % choices,
-                KeyCode::Enter => {
-                    let answer = (repl.ui.card_selected + 1).to_string();
-                    repl.resolve(client, &answer).await?;
-                    repl.ui.card_selected = 0;
+                KeyCode::Enter | KeyCode::Char(' ') => {
+                    repl.choose_card(client, key.code == KeyCode::Char(' '))
+                        .await?
                 }
                 _ => return Ok(Flow::Ignored),
             }
@@ -170,6 +208,17 @@ pub async fn mouse(
     client: &mut Client,
     event: MouseEvent,
 ) -> Result<Option<u8>> {
+    if repl.ui.form.is_some() {
+        return Ok(None);
+    }
+    if let Some(reader) = repl.ui.reader.as_mut() {
+        match event.kind {
+            MouseEventKind::ScrollUp => reader.offset = reader.offset.saturating_sub(3),
+            MouseEventKind::ScrollDown => reader.offset += 3,
+            _ => {}
+        }
+        return Ok(None);
+    }
     if let Some(picker) = repl.ui.picker.as_mut() {
         match event.kind {
             MouseEventKind::ScrollUp => {
@@ -201,6 +250,9 @@ pub async fn mouse(
             }
             _ => {}
         }
+        return Ok(None);
+    }
+    if super::mouse::interact(repl, editor, client, event).await? {
         return Ok(None);
     }
     match event.kind {

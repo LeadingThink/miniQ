@@ -139,16 +139,16 @@ impl Editor {
                 end: self.cursor,
             });
         }
-        let start = head.rfind(char::is_whitespace).map_or(0, |i| {
-            i + head[i..].chars().next().map_or(1, char::len_utf8)
-        });
-        let token = &head[start..];
-        if let Some(query) = token.strip_prefix('@') {
-            let query = query.to_string();
+        if let Some(mention) = super::super::attachments::mentions(head)
+            .last()
+            .filter(|mention| mention.end == head.len())
+        {
+            let start = mention.start;
+            let query = mention.path.replace('\\', "/");
             let files = self.files();
             let items: Vec<_> = fuzzy(files, &query)
                 .into_iter()
-                .map(|path| (format!("@{path}"), String::new()))
+                .map(|path| (super::super::attachments::quote(&path), String::new()))
                 .collect();
             if items.is_empty() {
                 return None;

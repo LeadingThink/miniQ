@@ -36,6 +36,44 @@ fn streamed_answer_is_not_printed_twice() {
     assert!(!repl.running);
 }
 
+#[test]
+fn busy_phase_tracks_model_and_tool_events_and_stops_on_terminal_outcomes() {
+    for end in [
+        json!({"type":"turn_completed"}),
+        json!({"type":"turn_failed","error":"provider failed"}),
+        json!({"type":"turn_failed","error":"cancelled"}),
+        json!({"type":"session_status_changed","status":"idle"}),
+        json!({"type":"session_status_changed","status":"failed"}),
+    ] {
+        let mut repl = Repl::new("s", &Default::default());
+        repl.event(&json!({"type":"session_status_changed","status":"running"}));
+        assert!(repl.running);
+        assert_eq!(repl.phase, "Thinking");
+        let started = repl.started;
+        for (phase, label) in [
+            ("preparing_context", "Preparing context"),
+            ("compacting_context", "Compacting context"),
+            ("requesting_model", "Thinking"),
+            ("receiving_model", "Responding"),
+            ("waiting_retry", "Waiting to retry"),
+            ("finalizing", "Finishing"),
+        ] {
+            repl.event(&json!({"type":"turn_progress_changed","progress":{"phase":phase,"startedAt":"2026-11-04T00:00:00Z"}}));
+            assert_eq!(repl.phase, label);
+        }
+        repl.event(&json!({"type":"tool_call_started","toolCallId":"t","toolName":"shell"}));
+        assert_eq!(repl.phase, "Running shell");
+        repl.event(&json!({"type":"tool_call_finished","toolCallId":"t","status":"completed"}));
+        assert_eq!(repl.phase, "Thinking");
+        repl.event(&json!({"type":"assistant_delta","delta":"answer"}));
+        assert_eq!(repl.phase, "Responding");
+        assert_eq!(repl.started, started);
+        repl.event(&end);
+        assert!(!repl.running);
+        assert!(repl.phase.is_empty());
+    }
+}
+
 #[tokio::test]
 async fn model_overlay_updates_only_session_model_and_preserves_prompt_draft() {
     let state = json!({"settings":{"model":null,"apiProtocol":"auto","reasoningEffort":null},"effective":{"model":"old","apiProtocol":"auto"}});
@@ -47,21 +85,20 @@ async fn model_overlay_updates_only_session_model_and_preserves_prompt_draft() {
             "session.modelGet",
             Reply::Result(json!({"effective":{"model":"new","reasoningEffort":"high"}})),
         ),
-        (
-            "session.approval.get",
-            Reply::Result(json!({"effective":"alwaysAsk"})),
-        ),
     ])
     .await;
     let mut repl = Repl::new("s", &Default::default());
     let mut editor = Editor::new(commands::list(), PathBuf::from("."));
     editor.insert("unfinished 中文 prompt");
-    repl.open_picker(&mut fixture.client, Purpose::Models)
+    commands::run(&mut repl, &mut editor, &mut fixture.client, "/models")
         .await
         .unwrap();
+    assert_eq!(repl.ui.picker.as_ref().unwrap().purpose, Purpose::Models);
+    repl.finish_jobs(&mut editor, &mut fixture.client).await;
     repl.choose(&mut editor, &mut fixture.client, "new")
         .await
         .unwrap();
+    repl.finish_jobs(&mut editor, &mut fixture.client).await;
     assert_eq!(editor.buffer(), "unfinished 中文 prompt");
     assert_eq!(repl.model, "new");
     let requests = fixture.finish().await;
@@ -111,6 +148,7 @@ async fn choosing_reject_sends_exact_approval_decision_and_keeps_draft_untouched
     )
     .await
     .unwrap();
+    repl.finish_jobs(&mut editor, &mut fixture.client).await;
     assert!(repl.cards.is_empty());
     let requests = fixture.finish().await;
     assert_eq!(
@@ -127,6 +165,8 @@ async fn earlier_history_uses_the_returned_cursor_and_requests_complete_payloads
     repl.ui.transcript_area.width = 80;
     repl.ui.scroll = Some(0);
     repl.earlier(&mut fixture.client).await.unwrap();
+    let mut editor = Editor::new(commands::list(), PathBuf::from("."));
+    repl.finish_jobs(&mut editor, &mut fixture.client).await;
     assert_eq!(repl.ui.transcript.entries[0].id, "old");
     assert_eq!(repl.ui.transcript.entries[1].id, "new");
     let requests = fixture.finish().await;
@@ -154,6 +194,7 @@ async fn page_up_loads_older_messages_even_when_current_history_fits_the_viewpor
     )
     .await
     .unwrap();
+    repl.finish_jobs(&mut editor, &mut fixture.client).await;
     assert_eq!(repl.ui.transcript.entries[0].content, "older context");
     assert!(repl.ui.transcript.next_cursor.is_none());
     assert_eq!(fixture.finish().await.len(), 1);

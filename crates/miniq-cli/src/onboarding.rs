@@ -78,7 +78,7 @@ pub async fn configure(
     if result["provider"]["baseUrl"].is_string() {
         result["provider"]["baseUrl"] = json!(display_endpoint(base_url));
     }
-    progress(&format!("Configuration saved. New sessions start with {model}; /model changes only the current session.\nNo model reply has been tested. Send a message with `miniq` to verify a real reply.\nRun `miniq resume` to continue a session, or `miniq exec 'task'` for scripts."));
+    progress(&format!("Configuration saved. New sessions start with {model}; /models changes only the current session.\nNo model reply has been tested. Send a message with `miniq` to verify a real reply.\nRun `miniq resume` to continue a session, or `miniq exec 'task'` for scripts."));
     Ok(Some(result))
 }
 

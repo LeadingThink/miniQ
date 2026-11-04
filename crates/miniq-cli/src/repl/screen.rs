@@ -8,7 +8,10 @@ use ratatui::{
     Frame,
 };
 use serde_json::Value;
+use std::time::Duration;
 
+#[path = "activity.rs"]
+mod activity;
 #[path = "composer.rs"]
 mod composer;
 #[path = "sidebar.rs"]
@@ -23,7 +26,7 @@ pub struct Status {
     pub cwd: String,
     pub running: bool,
     pub phase: String,
-    pub elapsed: u64,
+    pub elapsed: Duration,
     pub context: Option<f64>,
     pub queue: usize,
     pub files: Vec<String>,
@@ -31,9 +34,19 @@ pub struct Status {
     pub custom: Option<(String, bool)>,
     pub card: Option<(String, Vec<String>)>,
     pub color: bool,
+    pub theme: String,
+    pub animations: bool,
 }
 
 pub struct Screen {
+    pub selection: Option<((usize, usize), (usize, usize))>,
+    pub dragging: bool,
+    pub card_checked: std::collections::BTreeSet<usize>,
+    pub card_hits: Vec<(Rect, usize)>,
+    pub reader: Option<super::reader::Reader>,
+    pub form: Option<super::forms::Form>,
+    pub expanded_tools: std::collections::HashSet<String>,
+    pub row_entries: Vec<Option<usize>>,
     pub transcript: Transcript,
     pub picker: Option<Picker>,
     pub sidebar: bool,
@@ -57,6 +70,14 @@ pub struct Screen {
 impl Default for Screen {
     fn default() -> Self {
         Self {
+            selection: None,
+            dragging: false,
+            card_checked: Default::default(),
+            card_hits: vec![],
+            reader: None,
+            form: None,
+            expanded_tools: std::collections::HashSet::new(),
+            row_entries: Vec::new(),
             transcript: Transcript::default(),
             picker: None,
             sidebar: true,
@@ -80,6 +101,9 @@ impl Default for Screen {
 }
 
 impl Screen {
+    pub fn invalidate(&mut self) {
+        self.cache_key = None;
+    }
     pub fn home(&self) -> bool {
         self.transcript.entries.is_empty()
     }
@@ -97,10 +121,33 @@ impl Screen {
     pub fn rows(&mut self, width: usize, color: bool) -> &[Line<'static>] {
         let key = (self.transcript.version, width, self.expanded, color);
         if self.cache_key != Some(key) {
-            self.cached = self.transcript.lines(width, self.expanded, color);
+            (self.cached, self.row_entries) =
+                self.transcript
+                    .layout(width, self.expanded, color, &self.expanded_tools);
             self.cache_key = Some(key);
         }
         &self.cached
+    }
+
+    pub fn toggle_tool(&mut self, id: &str) {
+        if !self.expanded_tools.remove(id) {
+            self.expanded_tools.insert(id.into());
+        }
+        self.cache_key = None;
+    }
+
+    pub fn jump_to(&mut self, id: &str) {
+        if let Some(index) = self
+            .transcript
+            .entries
+            .iter()
+            .position(|entry| entry.id == id)
+        {
+            self.scroll = self
+                .row_entries
+                .iter()
+                .position(|owner| *owner == Some(index));
+        }
     }
 
     pub fn draw(&mut self, frame: &mut Frame, editor: &Editor, status: &Status) {
@@ -112,6 +159,7 @@ impl Screen {
         };
         frame.render_widget(Block::default().style(base), area);
         self.card_area = Rect::default();
+        self.card_hits.clear();
         self.sidebar_area = Rect::default();
         let min_height = if status.card.is_some() {
             13
@@ -168,7 +216,7 @@ impl Screen {
                 main.width,
                 composer_y.saturating_sub(3 + card_height),
             );
-            self.draw_transcript(frame, transcript, status.color);
+            self.draw_transcript(frame, transcript, status);
             if card_height > 0 {
                 self.draw_card(
                     frame,
@@ -177,7 +225,15 @@ impl Screen {
                 );
             }
         }
-        composer::draw(frame, composer, editor, status, input, cursor);
+        composer::draw(
+            frame,
+            composer,
+            editor,
+            status,
+            input,
+            cursor,
+            self.picker.is_none() && self.reader.is_none() && self.form.is_none(),
+        );
         if side_width > 0 {
             self.sidebar_area = Rect::new(area.width - side_width, 0, side_width, area.height - 1);
             sidebar::draw(
@@ -212,6 +268,15 @@ impl Screen {
         }
         if let Some(picker) = self.picker.as_mut() {
             picker.draw(frame);
+        }
+        if let Some(reader) = self.reader.as_mut() {
+            reader.draw(frame);
+        }
+        if let Some(form) = self.form.as_ref() {
+            form.draw(frame);
+        }
+        if status.color {
+            super::theme::apply(frame, &status.theme);
         }
         if !status.color {
             // NO_COLOR preserves layout and emphasis without forcing a palette.
@@ -281,22 +346,26 @@ impl Screen {
         );
     }
 
-    fn draw_transcript(&mut self, frame: &mut Frame, area: Rect, color: bool) {
+    fn draw_transcript(&mut self, frame: &mut Frame, area: Rect, status: &Status) {
         self.transcript_area = area;
         self.page_height = area.height as usize;
-        self.total = self
-            .rows(area.width.saturating_sub(1) as usize, color)
-            .len();
+        let width = area.width.saturating_sub(1) as usize;
+        let pending = activity::response(status)
+            .map(|line| text::wrap(&[line], width))
+            .unwrap_or_default();
+        self.total = self.rows(width, status.color).len() + pending.len();
         let bottom = self.total.saturating_sub(self.page_height);
         self.top = self.scroll.unwrap_or(bottom).min(bottom);
         let visible: Vec<_> = self
             .cached
             .iter()
+            .chain(pending.iter())
             .skip(self.top)
             .take(self.page_height)
             .cloned()
             .collect();
         frame.render_widget(Paragraph::new(visible), area);
+        self.highlight_selection(frame, area);
         if self.total > self.page_height && area.height > 0 {
             let thumb = (self.top * (area.height - 1) as usize / bottom.max(1)) as u16;
             frame.render_widget(
@@ -357,7 +426,28 @@ impl Screen {
                 })
                 .collect::<Vec<_>>(),
         );
-        let line = if !choices.is_empty() && line.width() > area.width.saturating_sub(2) as usize {
+        let compact = !choices.is_empty() && line.width() > area.width.saturating_sub(2) as usize;
+        if compact {
+            self.card_hits.push((
+                Rect::new(
+                    area.x + 1,
+                    area.bottom() - 2,
+                    area.width.saturating_sub(2),
+                    1,
+                ),
+                self.card_selected,
+            ));
+        } else {
+            let mut x = area.x + 1;
+            for (index, span) in line.spans.iter().enumerate() {
+                self.card_hits.push((
+                    Rect::new(x, area.bottom() - 2, span.width() as u16, 1),
+                    index,
+                ));
+                x += span.width() as u16;
+            }
+        }
+        let line = if compact {
             Line::styled(
                 format!(
                     "‹ {}/{}  {} ›",
@@ -380,7 +470,7 @@ impl Screen {
             ),
         );
         frame.render_widget(
-            Paragraph::new("←→ choose · enter confirm · type a custom answer · alt+↑↓ details")
+            Paragraph::new("←→ choose · space toggle · enter select/submit · alt+d details")
                 .style(Style::default().fg(text::MUTED)),
             Rect::new(
                 area.x + 2,

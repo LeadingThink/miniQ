@@ -3,33 +3,61 @@ use super::*;
 use std::io::Write;
 
 /// Copy via OSC 52 (works over SSH) and, when available, the local clipboard tool.
-pub(super) fn copy(text: &str) {
-    use base64_lite::encode;
-    let _ = write!(
+pub(super) async fn copy(text: &str) -> Result<Value> {
+    use tokio::io::AsyncWriteExt;
+    write!(
         std::io::stdout(),
         "\x1b]52;c;{}\x07",
-        encode(text.as_bytes())
-    );
-    let _ = std::io::stdout().flush();
-    for tool in ["pbcopy", "wl-copy", "xclip -selection clipboard"] {
+        base64_lite::encode(text.as_bytes())
+    )?;
+    std::io::stdout().flush()?;
+    let tools: &[&str] = if cfg!(windows) {
+        &["clip.exe"]
+    } else if cfg!(target_os = "macos") {
+        &["pbcopy"]
+    } else {
+        &["wl-copy", "xclip -selection clipboard"]
+    };
+    for tool in tools {
         let mut parts = tool.split(' ');
-        let Some(program) = parts.next() else {
-            continue;
-        };
-        if let Ok(mut child) = std::process::Command::new(program)
+        let mut command = tokio::process::Command::new(parts.next().unwrap());
+        #[cfg(windows)]
+        command.creation_flags(0x08000000);
+        let mut child = match command
             .args(parts)
+            .kill_on_drop(true)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
         {
-            if let Some(mut stdin) = child.stdin.take() {
-                let _ = stdin.write_all(text.as_bytes());
+            Ok(child) => child,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        };
+        let copied = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            let mut stdin = child.stdin.take().unwrap();
+            let bytes = if cfg!(windows) {
+                text.encode_utf16().flat_map(u16::to_le_bytes).collect()
+            } else {
+                text.as_bytes().to_vec()
+            };
+            stdin.write_all(&bytes).await?;
+            drop(stdin);
+            child.wait().await
+        })
+        .await;
+        match copied {
+            Ok(Ok(status)) if status.success() => return Ok(json!({"native":true})),
+            Err(_) => {
+                child.kill().await?;
+                anyhow::bail!("clipboard helper timed out");
             }
-            let _ = child.wait();
-            return;
+            Ok(Err(error)) => return Err(error.into()),
+            _ => continue,
         }
     }
+    Ok(json!({"native":false}))
 }
 
 pub(super) mod base64_lite {
@@ -91,58 +119,4 @@ pub(super) fn usage(result: &Value) -> String {
         text.push_str(&format!(" · {unknown} call(s) without usage data"));
     }
     text
-}
-
-pub(super) fn list_hooks(repl: &mut Repl, result: &Value) {
-    let hooks = result["hooks"].as_array().cloned().unwrap_or_default();
-    let mut text = String::new();
-    if result["enabled"] == json!(false) {
-        text.push_str("  (hooks feature flag is off)\n");
-    }
-    if hooks.is_empty() {
-        repl.info(&format!("{}No hooks.", text.trim_start()));
-        return;
-    }
-    for hook in hooks {
-        let event = hook["event"].as_str().unwrap_or("?");
-        let matcher = hook["matcher"].as_str().unwrap_or("*");
-        let disabled = if hook["enabled"] == json!(false) {
-            " (disabled)"
-        } else {
-            ""
-        };
-        let command = hook["command"].as_str().unwrap_or("");
-        text.push_str(&format!(
-            "  {event} [{matcher}]{disabled}  {}\n",
-            command.to_owned()
-        ));
-    }
-    repl.emit(&terminal_text(&text));
-}
-
-pub(super) fn list_names(repl: &mut Repl, result: &Value, keys: &[&str], label: &str) {
-    let items = keys
-        .iter()
-        .find_map(|k| result[*k].as_array())
-        .or(result.as_array())
-        .cloned()
-        .unwrap_or_default();
-    if items.is_empty() {
-        repl.info(&format!("No {label}."));
-        return;
-    }
-    let mut text = String::new();
-    for item in items {
-        let name = item["name"]
-            .as_str()
-            .or(item["id"].as_str())
-            .or(item.as_str())
-            .unwrap_or("?");
-        let detail = item["description"]
-            .as_str()
-            .or(item["status"].as_str())
-            .unwrap_or("");
-        text.push_str(&format!("  {name}  {}\n", detail.to_owned()));
-    }
-    repl.emit(&terminal_text(&text));
 }

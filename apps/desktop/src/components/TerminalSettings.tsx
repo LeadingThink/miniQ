@@ -108,7 +108,7 @@ export function TerminalSettings() {
     {error && <p role="alert" className="terminal-install-error">{error}</p>}
     <p className="settings-section-description">安装完成后重新打开终端，进入项目目录，再运行 <code>miniq</code> 开始任务。</p>
     <ul className="terminal-command-help">
-      <li>会话中输入 <code>/model</code> 选择模型，<code>/effort</code> 调整当前会话的推理强度。</li>
+      <li>会话中输入 <code>/models</code> 选择模型，<code>/effort</code> 调整当前会话的推理强度。</li>
       <li><code>miniq resume</code>：选择并继续当前项目的历史会话。</li>
       <li><code>miniq update</code>：更新终端程序，安装当前平台已发布的最新版。</li>
       <li><code>miniq doctor</code>：检查终端、后台版本与依赖状态。</li>

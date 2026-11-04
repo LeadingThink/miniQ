@@ -501,6 +501,7 @@ export type DaemonEvent = {
   | { type: "turn_progress_changed"; sessionId: string; progress: TurnProgress }
   | { type: "turn_timing_changed"; sessionId: string; messageId: string; timing: TurnTiming }
   | { type: "message_created"; sessionId: string; message: Message }
+  | { type: "session_restored"; sessionId: string }
   | {
       type: "session_rewritten";
       sessionId: string;

@@ -24,6 +24,7 @@ mod model_context;
 mod output_cap;
 mod queue;
 mod records;
+mod redo;
 mod reviews;
 mod row_mappers;
 pub use output_cap::cap_stored_output;
@@ -174,6 +175,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0029_personal_memory",
         include_str!("../../../migrations/0029_personal_memory.sql"),
+    ),
+    (
+        "0030_session_redo",
+        include_str!("../../../migrations/0030_session_redo.sql"),
     ),
 ];
 

@@ -36,7 +36,9 @@ function fixture() {
 
 it("loads the text catalog only when opened and changes the session model with automatic protocol", async () => {
   const { call, client, model } = fixture();
-  const [command] = buildModelSlashCommands(client, model, false);
+  const commands = buildModelSlashCommands(client, model, false);
+  expect(commands.map(({ id }) => id)).toEqual(["models", "reasoning"]);
+  const [command] = commands;
   expect(call).not.toHaveBeenCalled();
   expect(command.insertText).toBeUndefined();
   const children = await command.loadChildren!();

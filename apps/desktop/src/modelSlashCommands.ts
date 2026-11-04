@@ -27,7 +27,7 @@ export function buildModelSlashCommands(
 
   return [
     {
-      id: "model",
+      id: "models",
       name: "切换模型",
       description: currentModel
         ? `当前会话：${currentModel}`

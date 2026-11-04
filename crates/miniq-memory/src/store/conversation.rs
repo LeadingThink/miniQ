@@ -120,7 +120,7 @@ impl Store {
         content: &str,
         attachments: &[MessageAttachment],
     ) -> Result<SessionRewrite> {
-        self.cut_session_at_user_message(session_id, message_id, Some((content, attachments)))
+        self.cut_session_at_user_message(session_id, message_id, Some((content, attachments)), true)
     }
 
     /// Remove a user message and everything after it, as if that turn had
@@ -131,7 +131,15 @@ impl Store {
         session_id: &str,
         message_id: &str,
     ) -> Result<SessionRewrite> {
-        self.cut_session_at_user_message(session_id, message_id, None)
+        self.cut_session_at_user_message(session_id, message_id, None, true)
+    }
+
+    pub fn undo_session_with_file_recovery(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<SessionRewrite> {
+        self.cut_session_at_user_message(session_id, message_id, None, false)
     }
 
     fn cut_session_at_user_message(
@@ -139,9 +147,15 @@ impl Store {
         session_id: &str,
         message_id: &str,
         replacement: Option<(&str, &[MessageAttachment])>,
+        redo_ready: bool,
     ) -> Result<SessionRewrite> {
         let mut conn = self.conn.lock().unwrap();
         let transaction = conn.transaction()?;
+        let redo = if replacement.is_none() {
+            Some(super::redo::capture(&transaction, session_id)?)
+        } else {
+            None
+        };
         let message = transaction
             .query_row(
                 "SELECT id, session_id, role, content, attachments_json, created_at, steered, assistant_kind
@@ -259,6 +273,9 @@ impl Store {
             },
             None => message,
         };
+        if let Some(previous) = redo {
+            super::redo::record(&transaction, session_id, previous, redo_ready)?;
+        }
         transaction.commit()?;
         Ok(SessionRewrite {
             message: updated,

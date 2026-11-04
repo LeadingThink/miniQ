@@ -9,13 +9,34 @@ use ratatui::{
     Frame,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Purpose {
     Commands,
     Models,
     Effort,
     Sessions,
     Permissions,
+    Messages,
+    MessageActions,
+    Tools,
+    Queue,
+    QueueActions,
+    Agents,
+    AgentActions,
+    SessionActions,
+    Attachments,
+    AttachmentActions,
+    Mcp,
+    McpActions,
+    Skills,
+    SkillActions,
+    Themes,
+    Settings,
+    Drafts,
+    Processes,
+    Confirm,
+    Diff,
+    AgentHistory,
 }
 
 pub struct Item {
@@ -34,6 +55,10 @@ impl Item {
 }
 
 pub struct Picker {
+    pub request: Option<u64>,
+    pub loading: bool,
+    pub error: Option<String>,
+    pub hint: String,
     pub purpose: Purpose,
     pub title: String,
     pub query: String,
@@ -52,12 +77,21 @@ pub enum Outcome {
 }
 
 impl Picker {
+    pub fn selected_value(&self) -> Option<String> {
+        self.matches()
+            .get(self.selected)
+            .map(|index| self.items[*index].value.clone())
+    }
     pub fn new(purpose: Purpose, title: &str, items: Vec<Item>, current: Option<String>) -> Self {
         let selected = current
             .as_ref()
             .and_then(|value| items.iter().position(|i| &i.value == value))
             .unwrap_or(0);
         Self {
+            request: None,
+            loading: false,
+            error: None,
+            hint: String::new(),
             purpose,
             title: title.into(),
             query: String::new(),
@@ -246,19 +280,32 @@ impl Picker {
         }
         if matches.is_empty() {
             frame.render_widget(
-                Paragraph::new("No results"),
-                Rect::new(inner.x, inner.y + 4, inner.width, 1),
+                Paragraph::new(text::wrap(
+                    &text::styled(self.error.as_deref().unwrap_or(if self.loading {
+                        "Loading…  esc closes; you can keep typing to search"
+                    } else {
+                        "No results"
+                    })),
+                    inner.width as usize,
+                )),
+                Rect::new(inner.x, inner.y + 4, inner.width, available as u16),
             );
         }
-        let footer = format!(
-            "↑↓ select  enter confirm  alt+↑↓ details  {}/{}",
-            if matches.is_empty() {
-                0
-            } else {
-                self.selected + 1
-            },
-            matches.len()
-        );
+        let footer = if self.error.is_some() {
+            "ctrl+r retry · esc close".into()
+        } else if !self.hint.is_empty() {
+            self.hint.clone()
+        } else {
+            format!(
+                "↑↓ select  enter confirm  alt+↑↓ details  {}/{}",
+                if matches.is_empty() {
+                    0
+                } else {
+                    self.selected + 1
+                },
+                matches.len()
+            )
+        };
         frame.render_widget(
             Paragraph::new(footer).style(Style::default().fg(text::MUTED)),
             Rect::new(inner.x, area.bottom() - 2, inner.width, 1),

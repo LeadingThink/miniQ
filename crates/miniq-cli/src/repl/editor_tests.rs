@@ -12,7 +12,7 @@ fn ctrl(c: char) -> KeyEvent {
 fn editor() -> Editor {
     Editor::new(
         vec![
-            ("/model".into(), "switch model".into()),
+            ("/models".into(), "switch model".into()),
             ("/mcp".into(), "list MCP servers".into()),
             ("/help".into(), "help".into()),
         ],
@@ -142,8 +142,8 @@ fn slash_menu_and_tab() {
     e.key(key(KeyCode::Tab));
     assert_eq!(e.buffer(), "/help ");
     e.clear();
-    typed(&mut e, "/model");
-    assert_eq!(e.key(key(KeyCode::Enter)), Action::Submit("/model".into()));
+    typed(&mut e, "/models");
+    assert_eq!(e.key(key(KeyCode::Enter)), Action::Submit("/models".into()));
 }
 
 #[test]
@@ -151,6 +151,21 @@ fn tab_without_completion_is_reported() {
     let mut e = editor();
     typed(&mut e, "plain");
     assert_eq!(e.key(key(KeyCode::Tab)), Action::Tab);
+}
+
+#[test]
+fn model_completion_offers_one_command_from_the_real_catalog() {
+    let mut e = Editor::new(crate::repl::commands::list(), PathBuf::from("."));
+    typed(&mut e, "/model");
+    let menu = e.menu.as_ref().unwrap();
+    assert_eq!(menu.items.len(), 1);
+    assert_eq!(menu.items[0].0, "/models");
+    e.key(key(KeyCode::Tab));
+    assert_eq!(e.buffer(), "/models ");
+    assert_eq!(
+        e.key(key(KeyCode::Enter)),
+        Action::Submit("/models ".into())
+    );
 }
 
 #[test]

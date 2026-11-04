@@ -43,7 +43,7 @@ export class HostRpcClient extends RpcClient {
 
   override onEvent(listener: (event: DaemonEvent) => void) {
     return this.root.onHostEvent((event) => {
-      if (event.type === "host_event" && event.hostId === this.hostId && event.event.type !== "remote_resync") listener(event.event);
+      if (event.type === "host_event" && event.hostId === this.hostId && event.event.type !== "remote_resync" && event.event.type !== "session_restored") listener(event.event);
     });
   }
 
@@ -56,7 +56,7 @@ export class HostRpcClient extends RpcClient {
   override onResync(listener: () => void) {
     const offRoot = this.root.onResync(listener);
     const offHost = this.root.onHostEvent((event) => {
-      if (event.type === "host_event" && event.hostId === this.hostId && event.event.type === "remote_resync") listener();
+      if (event.type === "host_event" && event.hostId === this.hostId && (event.event.type === "remote_resync" || event.event.type === "session_restored")) listener();
     });
     return () => { offRoot(); offHost(); };
   }

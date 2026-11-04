@@ -40,7 +40,7 @@ function Fixture() {
     reasoningEffort: null,
   });
   const [notice, setNotice] = useState(
-    "输入 / 选择命令；也可试 /model、/reasoning、/project",
+    "输入 / 选择命令；也可试 /models、/reasoning、/project",
   );
   const model = {
     settings,

@@ -30,7 +30,7 @@ impl Card {
         }
     }
 
-    fn id(&self) -> &Value {
+    pub(super) fn id(&self) -> &Value {
         match self {
             Self::Approval { id, .. } | Self::Question { id, .. } => id,
         }
@@ -135,6 +135,35 @@ pub(crate) fn approval_text(event: &Value) -> String {
 }
 
 impl Repl {
+    pub(super) async fn choose_card(&mut self, client: &mut Client, toggle: bool) -> Result<()> {
+        if let Some(Card::Question {
+            options,
+            multi_select: true,
+            ..
+        }) = self.cards.front()
+        {
+            let selected = self.ui.card_selected;
+            if selected < options.len() {
+                if !self.ui.card_checked.remove(&selected) {
+                    self.ui.card_checked.insert(selected);
+                }
+            } else if !toggle {
+                let answer = self
+                    .ui
+                    .card_checked
+                    .iter()
+                    .map(|index| (index + 1).to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                self.resolve(client, &answer).await?;
+            }
+        } else if !toggle {
+            self.resolve(client, &(self.ui.card_selected + 1).to_string())
+                .await?;
+        }
+        Ok(())
+    }
+
     pub(super) fn card(&mut self, event: &Value) {
         let card = if event["type"] == "approval_requested" {
             let approval = &event["approval"];
@@ -169,6 +198,7 @@ impl Repl {
         if !self.cards.iter().any(|pending| pending.id() == card.id()) {
             self.emit(card.body());
             self.ui.card_selected = 0;
+            self.ui.card_checked.clear();
             self.ui.card_offset = 0;
             self.ui.scroll = None;
             self.cards.push_back(card);
@@ -188,12 +218,13 @@ impl Repl {
                 _ => true,
             });
         if self.cards.front().map(Card::id) != previous.as_ref() {
+            self.ui.card_checked.clear();
             self.ui.card_selected = 0;
             self.ui.card_offset = 0;
         }
     }
 
-    pub(super) async fn resolve(&mut self, client: &mut Client, answer: &str) -> Result<()> {
+    pub(super) async fn resolve(&mut self, _client: &mut Client, answer: &str) -> Result<()> {
         let Some(card) = self.cards.front().cloned() else {
             return Ok(());
         };
@@ -226,11 +257,19 @@ impl Repl {
                 )
             }
         };
-        client.call(method, params).await?;
-        self.cards.retain(|pending| pending.id() != card.id());
-        self.ui.card_selected = 0;
-        self.ui.card_offset = 0;
-        self.info(&format!("→ {notice}"));
+        let id = card.id().clone();
+        anyhow::ensure!(
+            !self.resolving_cards.contains(&id),
+            "This response is already being sent"
+        );
+        let answer = matches!(card, Card::Question { .. }).then_some(notice);
+        self.resolving_cards.push(id.clone());
+        self.rpc(
+            "Sending response",
+            super::jobs::Effect::Resolved { id, answer },
+            method,
+            params,
+        );
         Ok(())
     }
 }

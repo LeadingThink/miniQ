@@ -79,7 +79,7 @@ impl StatusLine {
     }
 
     /// Text to show, if the command is configured and its last run succeeded
-    /// with non-empty output. `true` in the pair means "replace the built-in line".
+    /// with non-empty output. `true` in the pair means "replace the idle line".
     pub fn text(&self) -> Option<(&str, bool)> {
         let config = self.config.as_ref()?;
         if self.error.is_some() {
@@ -143,9 +143,9 @@ impl StatusLine {
             config.command,
             config.timeout_ms,
             if config.replace {
-                "replaces the built-in line"
+                "replaces the idle status line"
             } else {
-                "appended to the built-in line"
+                "appended to the idle status line"
             },
             config_path.display()
         );
@@ -295,6 +295,7 @@ pub fn sanitize(text: &str) -> String {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     fn config(command: &str, timeout_ms: u64) -> StatusLineConfig {
         StatusLineConfig {
             command: command.into(),

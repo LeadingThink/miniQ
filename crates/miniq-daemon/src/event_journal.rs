@@ -64,6 +64,15 @@ impl EventJournal {
         if cursor.epoch != self.cursor.epoch || cursor.sequence > self.cursor.sequence {
             return None;
         }
+        if self.entries.iter().any(|(event, _)| {
+            event["type"] == "session_restored"
+                && event["sessionId"] == session_id
+                && event["eventCursor"]["sequence"]
+                    .as_u64()
+                    .is_some_and(|sequence| sequence > cursor.sequence)
+        }) {
+            return None;
+        }
         let first = self
             .entries
             .front()
@@ -123,6 +132,18 @@ pub(crate) fn sidebar_event(event: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn redo_requires_a_snapshot_only_for_the_restored_session() {
+        let mut journal = EventJournal::default();
+        let before = journal.cursor();
+        journal.record(&Event::SessionRestored {
+            session_id: "restored".into(),
+        });
+        assert!(journal.replay("restored", &before).is_none());
+        assert!(journal.replay("other", &before).is_some());
+        assert!(journal.replay("restored", &journal.cursor()).is_some());
+    }
 
     #[test]
     fn tool_replay_keeps_persisted_timestamps_while_deferring_payloads() {

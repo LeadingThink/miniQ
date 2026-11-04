@@ -85,7 +85,7 @@ it("keeps installation and usage guidance available after a failed status check 
   expect(screen.getByRole("button", { name: "复制 Windows PowerShell 安装命令" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "复制 Linux / WSL 安装命令" })).toBeTruthy();
   expect(screen.getByText(/进入项目目录，再运行/)).toBeTruthy();
-  for (const command of ["/model", "/effort", "miniq resume", "miniq update", "miniq doctor"]) {
+  for (const command of ["/models", "/effort", "miniq resume", "miniq update", "miniq doctor"]) {
     expect(screen.getByText(command)).toBeTruthy();
   }
   fireEvent.click(screen.getByRole("button", { name: "刷新状态" }));

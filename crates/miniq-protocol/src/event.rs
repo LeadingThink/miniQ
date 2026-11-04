@@ -80,6 +80,11 @@ pub enum Event {
         session_id: String,
         message: Message,
     },
+    /// Undo was redone; clients must reload the authoritative session snapshot.
+    SessionRestored {
+        #[serde(rename = "sessionId")]
+        session_id: String,
+    },
     /// A user message was edited in place and its old continuation removed.
     SessionRewritten {
         #[serde(rename = "sessionId")]
@@ -287,6 +292,7 @@ impl Event {
             | Event::TurnTimingChanged { session_id, .. }
             | Event::MessageCreated { session_id, .. }
             | Event::SessionRewritten { session_id, .. }
+            | Event::SessionRestored { session_id }
             | Event::AssistantDelta { session_id, .. }
             | Event::AssistantReplaced { session_id, .. }
             | Event::ContextCompacted { session_id, .. }

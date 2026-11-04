@@ -72,9 +72,11 @@ fn undo_locked(
         .store
         .checkpoints_since_user_message(session_id, message_id)
         .map_err(store_err)?;
+    let recovery =
+        super::session_redo::before_undo(state, if restore_files { &checkpoints } else { &[] })?;
     let rewrite = state
         .store
-        .undo_session_to_user_message(session_id, message_id)
+        .undo_session_with_file_recovery(session_id, message_id)
         .map_err(store_err)?;
     let mut restored = Vec::new();
     let mut failed = Vec::new();
@@ -101,6 +103,9 @@ fn undo_locked(
         // Report in first-edited order.
         restored.reverse();
     }
+    let redo_error = super::session_redo::after_undo(state, session_id, recovery)
+        .err()
+        .map(|error| error.message);
     let _ = state.store.append_audit_event(
         Some(session_id),
         "session_undo",
@@ -119,6 +124,8 @@ fn undo_locked(
         "removedMessageIds": rewrite.removed_message_ids,
         "restoredFiles": restored,
         "failedFiles": failed,
+        "redoAvailable": redo_error.is_none(),
+        "redoError": redo_error,
     }))
 }
 

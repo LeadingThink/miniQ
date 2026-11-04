@@ -168,14 +168,14 @@ async fn context_compact_and_undo_commands_drive_the_session() {
             &[
                 ("ctrl+p commands", "hello\r"),
                 ("0 tools", "/context\r"),
-                ("auto-compacts", "/compact\r"),
-                ("Context compacted", "/undo\r"),
-                ("Undid the last prompt", "\x15/exit\r"),
+                ("Context usage", "\x03/compact\r"),
+                ("Context compaction", "\x03/undo\r"),
+                ("Prompt undone", "\x15/exit\r"),
             ],
             "xterm-256color",
         )
         .await;
-    assert!(transcript.contains("restored 1 file(s)"), "{transcript}");
+    assert!(transcript.contains("Restored 1 file(s)"), "{transcript}");
     let requests = fixture.requests.lock().unwrap();
     let send = requests
         .iter()
@@ -295,7 +295,7 @@ async fn resume_search_and_model_picker_update_only_the_selected_session() {
             &[
                 ("Select/search>", "中文\n"),
                 ("Select/search>", "1\n"),
-                ("miniq>", "/model\n"),
+                ("miniq>", "/models\n"),
                 ("Select/search>", "opus\n"),
                 ("Select/search>", "1\n"),
                 ("miniq>", "/effort\n"),

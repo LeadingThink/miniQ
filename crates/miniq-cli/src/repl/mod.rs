@@ -3,15 +3,40 @@
 //! Only used when stdin/stdout are terminals and `TERM` is not `dumb`; every other
 //! case keeps the line-mode loop in `monitor::interactive`.
 
+mod agent_panel;
+mod attachments;
 mod cards;
+mod connection;
 mod dialogs;
+mod drafts;
 mod events;
+mod forms;
+mod image_preview;
+mod jobs;
+mod message_panel;
+mod mouse;
 mod navigation;
+mod panel_actions;
+mod panel_keys;
+mod panels;
 mod picker;
+mod platform;
 mod presentation;
+mod processes;
+mod progress;
+mod reader;
+mod requests;
+mod result_views;
+mod results;
 mod standalone;
 mod terminal_surface;
+mod theme;
+mod tool_view;
 pub(crate) use standalone::choose;
+#[cfg(test)]
+mod interaction_tests;
+#[cfg(test)]
+mod lifecycle_tests;
 #[cfg(test)]
 mod live_preview;
 mod runtime;
@@ -31,7 +56,7 @@ pub mod render;
 pub mod statusline;
 pub mod vim;
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -53,8 +78,16 @@ const NOTIFY_AFTER: Duration = Duration::from_secs(10);
 pub fn supported() -> bool {
     io::stdin().is_terminal()
         && io::stdout().is_terminal()
-        && !matches!(std::env::var("TERM").as_deref(), Ok("dumb") | Err(_))
+        && terminal_capable(std::env::var("TERM").ok().as_deref(), cfg!(windows))
         && !matches!(std::env::var("MINIQ_REPL").as_deref(), Ok("line"))
+}
+
+fn terminal_capable(term: Option<&str>, windows: bool) -> bool {
+    match term {
+        Some("dumb") => false,
+        Some(_) => true,
+        None => windows,
+    }
 }
 
 use cards::Card;
@@ -62,6 +95,7 @@ pub(crate) use cards::{approval_text, question_answer, question_text};
 
 pub(crate) struct Repl {
     pub session: String,
+    pub workspace: Option<String>,
     pub options: crate::args::ChatOptions,
     pub files: Vec<PathBuf>,
     pub style: Style,
@@ -87,13 +121,29 @@ pub(crate) struct Repl {
     leader: Option<Instant>,
     /// Directory holding `cli.json` (the daemon data directory).
     pub prefs_dir: PathBuf,
+    pub preferences: prefs::Prefs,
     pub statusline: statusline::StatusLine,
+    jobs: jobs::Jobs,
+    pending_labels: BTreeMap<u64, String>,
+    drafts: HashMap<String, drafts::Draft>,
+    switch_request: Option<u64>,
+    refresh_request: Option<u64>,
+    snapshot_events: Vec<Value>,
+    processes: processes::Processes,
+    progress: Option<miniq_protocol::TurnProgress>,
+    catalogs: HashMap<picker::Purpose, Value>,
+    panel_target: String,
+    confirmation: Option<forms::Confirmation>,
+    form_retries: HashMap<u64, forms::Form>,
+    form_sequence: u64,
+    resolving_cards: Vec<Value>,
 }
 
 impl Repl {
     fn new(session: &str, options: &crate::args::ChatOptions) -> Self {
         Self {
             session: session.to_owned(),
+            workspace: None,
             options: copy_options(options),
             files: options.attachments.clone(),
             style: Style::detect(),
@@ -116,7 +166,22 @@ impl Repl {
             last_interrupt: None,
             leader: None,
             prefs_dir: PathBuf::new(),
+            preferences: prefs::Prefs::default(),
             statusline: statusline::StatusLine::new(None),
+            jobs: jobs::Jobs::default(),
+            pending_labels: BTreeMap::new(),
+            drafts: HashMap::new(),
+            switch_request: None,
+            refresh_request: None,
+            snapshot_events: vec![],
+            processes: processes::Processes::default(),
+            progress: None,
+            catalogs: HashMap::new(),
+            panel_target: String::new(),
+            confirmation: None,
+            form_retries: HashMap::new(),
+            form_sequence: 0,
+            resolving_cards: vec![],
         }
     }
 
@@ -152,18 +217,14 @@ impl Repl {
         }
     }
 
-    /// Re-read the estimated context occupancy (older daemons: silently none).
-    pub async fn refresh_context(&mut self, client: &mut Client) {
-        self.context_stale = false;
-        self.context_percent = client
-            .call("session.contextUsage", json!({"sessionId":self.session}))
-            .await
-            .ok()
-            .and_then(|usage| usage["percentUsed"].as_f64());
-    }
-
     /// Apply a `session.open` snapshot (startup, reconnect, resume, fork).
     pub fn restore(&mut self, snapshot: &Value) {
+        self.workspace = snapshot["session"]["workspaceId"]
+            .as_str()
+            .map(str::to_owned);
+        if let Some(path) = snapshot["session"]["workingDirectory"].as_str() {
+            self.options.directory = Some(path.into());
+        }
         self.ui.transcript.restore(snapshot);
         self.ui.scroll = None;
         self.ui.plan = snapshot["plan"].clone();
@@ -176,15 +237,33 @@ impl Repl {
             .into_iter()
             .flatten()
             .rfind(|message| message["role"] == "assistant");
-        if let Some(message) = last {
-            self.last_answer = message["content"].as_str().unwrap_or("").to_owned();
-        }
+        self.last_answer = last
+            .and_then(|message| message["content"].as_str())
+            .unwrap_or("")
+            .to_owned();
         let status = snapshot["session"]["status"].as_str().unwrap_or("idle");
         let running = !matches!(status, "idle" | "failed");
         if running && !self.running {
             self.started = Some(Instant::now());
         }
         self.running = running;
+        self.progress = serde_json::from_value(snapshot["turnProgress"].clone()).ok();
+        if let Some(progress) = &self.progress {
+            self.phase = progress::label(&progress.phase).into();
+        } else if running {
+            self.phase = "Thinking".into();
+        } else {
+            self.phase.clear();
+            self.started = None;
+        }
+        if running {
+            if let Some(at) = snapshot["latestTurnTiming"]["timing"]["startedAt"]
+                .as_str()
+                .or(snapshot["turnProgress"]["startedAt"].as_str())
+            {
+                self.started = Instant::now().checked_sub(progress::elapsed(at));
+            }
+        }
         if !running {
             if let Some(reason) = crate::session_outcome::failure(snapshot) {
                 self.error(&format!("Execution failed: {reason}"));
@@ -192,9 +271,7 @@ impl Repl {
                 self.info("Turn paused. /resume-turn continues it.");
             }
         }
-        if let Some(queue) = snapshot["queue"].as_array() {
-            self.queue = queue.clone();
-        }
+        self.queue = snapshot["queue"].as_array().cloned().unwrap_or_default();
         self.cards.clear();
         for approval in snapshot["approvals"].as_array().into_iter().flatten() {
             let mut event = approval.clone();
@@ -207,75 +284,55 @@ impl Repl {
     }
 
     /// Enter queues a follow-up; Tab explicitly steers the queued message.
-    pub async fn send(&mut self, client: &mut Client, text: &str, steer: bool) -> Result<()> {
+    pub async fn send(&mut self, _client: &mut Client, text: &str, steer: bool) -> Result<()> {
         let mut files = self.files.clone();
         for path in mentioned_files(text, &self.working_directory()) {
             if !files.contains(&path) {
                 files.push(path);
             }
         }
-        let outcome = crate::sessions::send_with_policy(
-            client,
-            &self.session,
-            text,
-            &files,
-            Some(crate::busy_policy::BusyPolicy::Queue),
-        )
-        .await?;
-        match outcome {
-            crate::sessions::SendOutcome::Started => {
-                self.files.clear();
-                self.mark_running();
-                self.ui.scroll = None;
-            }
-            crate::sessions::SendOutcome::Queued { id } => {
-                self.files.clear();
-                self.mark_running();
-                if steer {
-                    client
-                        .call("session.queueSteer", json!({"queuedMessageId":id}))
-                        .await?;
-                    self.info("↳ Steering the running turn with this message.");
-                } else {
-                    self.info(&format!(
-                        "↳ Queued as {id}; it runs after the current turn. Tab steers instead."
-                    ));
-                }
-            }
-            crate::sessions::SendOutcome::Cancelled => {}
-        }
+        crate::sessions::attachments(&files)?;
+        self.request(
+            "Sending message",
+            jobs::Effect::Sent {
+                files: files.clone(),
+                text: text.into(),
+            },
+            requests::Request::Send {
+                text: text.into(),
+                files,
+                steer,
+            },
+        );
+        self.files.clear();
         Ok(())
     }
 
-    async fn cancel(&mut self, client: &mut Client) {
-        match client
-            .call("session.cancel", json!({"sessionId":self.session}))
-            .await
-        {
-            Ok(_) => self.info("Cancellation requested…"),
-            Err(error) => self.error(&format!("{error:#}")),
+    async fn cancel(&mut self, _client: &mut Client) {
+        if self.processes.cancel(&self.session) {
+            self.notice = "Interrupting local command…".into();
+            return;
         }
+        self.rpc(
+            "Interrupting",
+            jobs::Effect::Notice("Cancellation requested…".into()),
+            "session.cancel",
+            json!({"sessionId":self.session}),
+        );
     }
 
-    async fn cycle_mode(&mut self, client: &mut Client) {
+    async fn cycle_mode(&mut self, _client: &mut Client) {
         let index = MODES
             .iter()
             .position(|m| *m == self.mode)
             .map_or(0, |i| i + 1);
         let mode = MODES[index % MODES.len()];
-        match client
-            .call(
-                "session.approval.update",
-                json!({"sessionId":self.session,"mode":mode}),
-            )
-            .await
-        {
-            Ok(state) => {
-                self.mode = state["effective"].as_str().unwrap_or(mode).to_owned();
-                self.notice = format!("permissions: {}", self.mode);
-            }
-            Err(error) => self.error(&format!("{error:#}")),
-        }
+        self.rpc(
+            "Updating permissions",
+            jobs::Effect::Permissions,
+            "session.approval.update",
+            json!({"sessionId":self.session,"mode":mode}),
+        );
     }
 }
 
@@ -297,15 +354,20 @@ fn copy_options(options: &crate::args::ChatOptions) -> crate::args::ChatOptions 
 /// `@path` tokens naming existing regular files become attachments (text is kept as-is).
 pub fn mentioned_files(text: &str, root: &std::path::Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    for token in text.split_whitespace() {
-        let Some(path) = token.strip_prefix('@') else {
-            continue;
-        };
-        let path = path.trim_end_matches([',', '.', ';', ':', ')', '?', '!']);
-        if path.is_empty() {
+    for mention in attachments::mentions(text) {
+        if mention.path.is_empty() {
             continue;
         }
-        let candidate = root.join(path);
+        let exact = root.join(mention.path);
+        let candidate = if exact.is_file() {
+            exact
+        } else {
+            root.join(
+                mention
+                    .path
+                    .trim_end_matches([',', '.', ';', ':', ')', '?', '!']),
+            )
+        };
         if candidate.is_file() && !files.contains(&candidate) {
             files.push(candidate);
         }

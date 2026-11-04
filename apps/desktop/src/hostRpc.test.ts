@@ -36,3 +36,10 @@ it("one host becoming unavailable does not disconnect the root or another host",
   a.setAvailable(false); expect(status).toHaveBeenCalledWith(false);
   expect(a.connected).toBe(false); expect(b.connected).toBe(true); expect(root.disconnect).not.toHaveBeenCalled();
 });
+
+it("restoring a session reloads only its owning host", () => {
+  const { a, b, emit } = setup(); const first = vi.fn(), second = vi.fn(), events = vi.fn();
+  a.onResync(first); b.onResync(second); b.onEvent(events);
+  emit({ type: "host_event", hostId: "b", event: { type: "session_restored", sessionId: "s" } });
+  expect(first).not.toHaveBeenCalled(); expect(second).toHaveBeenCalledOnce(); expect(events).not.toHaveBeenCalled();
+});

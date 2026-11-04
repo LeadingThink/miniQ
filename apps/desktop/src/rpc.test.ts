@@ -420,6 +420,17 @@ describe("RpcClient timeouts", () => {
     expect(client.connected).toBe(true);
   });
 
+  it("reloads a restored session without replaying obsolete transcript deltas", async () => {
+    const { client, receive } = await remoteClient();
+    const resync = vi.fn();
+    const event = vi.fn();
+    client.onResync(resync); client.onEvent(event);
+    await receive({ type: "session_restored", sessionId: "s" });
+    await vi.waitFor(() => expect(resync).toHaveBeenCalledOnce());
+    expect(event).not.toHaveBeenCalled();
+    expect(client.connected).toBe(true);
+  });
+
   it("cancels old requests on the wire without cancelling a model task or closing the connection", async () => {
     const {client,socket}=await remoteClient();
     const controller=new AbortController();

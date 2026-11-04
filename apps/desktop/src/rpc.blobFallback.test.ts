@@ -70,6 +70,7 @@ describe("remote object transfer replay safety", () => {
     ["session.sendMessage", { sessionId: "s", message: { content: "run once" } }],
     ["session.rewriteMessage", { sessionId: "s" }],
     ["session.undo", { sessionId: "s" }],
+    ["session.redo", { sessionId: "s" }],
     ["session.compact", { sessionId: "s" }],
     ["session.create", { workspaceId: "w" }],
     ["approval.resolve", { id: "approval", decision: "approve" }],

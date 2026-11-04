@@ -18,6 +18,7 @@ pub enum Kind {
 
 #[derive(Clone, Debug)]
 pub struct Entry {
+    pub message: Option<Value>,
     pub id: String,
     pub at: String,
     pub kind: Kind,
@@ -34,6 +35,22 @@ pub struct Transcript {
 }
 
 impl Transcript {
+    pub fn local_output(&mut self, id: &str, content: &str) {
+        let content = terminal_text(content);
+        if let Some(entry) = self.entries.iter_mut().find(|entry| entry.id == id) {
+            entry.content = content;
+        } else {
+            self.entries.push(Entry {
+                message: None,
+                id: id.into(),
+                at: String::new(),
+                kind: Kind::Notice,
+                content,
+                tool: None,
+            });
+        }
+        self.version += 1;
+    }
     pub fn restore(&mut self, snapshot: &Value) {
         self.entries = page(snapshot);
         self.next_cursor = snapshot.get("nextCursor").filter(|v| !v.is_null()).cloned();
@@ -61,6 +78,7 @@ impl Transcript {
             return;
         }
         self.entries.push(Entry {
+            message: None,
             id: String::new(),
             at: String::new(),
             kind: Kind::Notice,
@@ -73,6 +91,7 @@ impl Transcript {
     fn delta(&mut self, delta: &str) {
         let index = *self.streaming.get_or_insert_with(|| {
             self.entries.push(Entry {
+                message: None,
                 id: String::new(),
                 at: String::new(),
                 kind: Kind::Assistant,
@@ -135,7 +154,19 @@ impl Transcript {
         self.version += 1;
     }
 
+    #[cfg(test)]
     pub fn lines(&self, width: usize, expanded: bool, color: bool) -> Vec<Line<'static>> {
+        self.layout(width, expanded, color, &std::collections::HashSet::new())
+            .0
+    }
+
+    pub fn layout(
+        &self,
+        width: usize,
+        expanded: bool,
+        color: bool,
+        tools: &std::collections::HashSet<String>,
+    ) -> (Vec<Line<'static>>, Vec<Option<usize>>) {
         let mut lines = Vec::new();
         let style = render::Style { color };
         if self.next_cursor.is_some() {
@@ -145,7 +176,9 @@ impl Transcript {
             ));
             lines.push(Line::default());
         }
-        for entry in &self.entries {
+        let mut owners = vec![None; lines.len()];
+        for (index, entry) in self.entries.iter().enumerate() {
+            let start = lines.len();
             let mut body = match entry.kind {
                 Kind::User => text::styled(&terminal_text(&entry.content)),
                 Kind::Assistant => {
@@ -154,7 +187,11 @@ impl Transcript {
                     rendered.push_str(&markdown.finish(style));
                     text::styled(rendered.trim_end_matches('\n'))
                 }
-                Kind::Tool => tool_lines(entry.tool.as_ref().unwrap(), expanded, style),
+                Kind::Tool => tool_lines(
+                    entry.tool.as_ref().unwrap(),
+                    expanded || tools.contains(&entry.id),
+                    style,
+                ),
                 Kind::Notice => text::styled(entry.content.trim_end_matches('\n')),
             };
             let inset = if entry.kind == Kind::User { 3 } else { 2 };
@@ -185,8 +222,9 @@ impl Transcript {
                 ));
             }
             lines.push(Line::default());
+            owners.extend(std::iter::repeat_n(Some(index), lines.len() - start));
         }
-        lines
+        (lines, owners)
     }
 }
 
@@ -203,6 +241,7 @@ fn message(value: &Value) -> Option<Entry> {
         }
     }
     Some(Entry {
+        message: Some(value.clone()),
         id: value["id"].as_str().unwrap_or("").into(),
         at: value["createdAt"].as_str().unwrap_or("").into(),
         kind,
@@ -213,6 +252,7 @@ fn message(value: &Value) -> Option<Entry> {
 
 fn tool_entry(value: &Value) -> Entry {
     Entry {
+        message: None,
         id: value["id"].as_str().unwrap_or("").into(),
         at: value["createdAt"].as_str().unwrap_or("").into(),
         kind: Kind::Tool,
@@ -256,14 +296,10 @@ fn tool_lines(tool: &Value, expanded: bool, style: render::Style) -> Vec<Line<'s
     if expanded || matches!(status, "failed" | "cancelled") {
         if tool["payloadDeferred"] == true {
             lines.push(Line::raw(
-                "Payload not loaded. /tool detail SESSION_ID TOOL_CALL_ID opens it.",
+                "Loading tool payload… click again to retry if it fails.",
             ));
         } else {
-            lines.extend(text::styled(&render::tool_finished(
-                status,
-                tool.get("output"),
-                style,
-            )));
+            lines.extend(text::styled(&super::tool_view::details(tool, style)));
         }
     }
     lines

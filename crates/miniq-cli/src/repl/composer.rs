@@ -1,5 +1,5 @@
 //! OpenCode-style prompt surface: left accent, multiline editor, metadata, footer.
-use super::Status;
+use super::{activity, Status};
 use crate::repl::{
     editor::{Editor, Menu},
     text,
@@ -19,6 +19,7 @@ pub fn draw(
     status: &Status,
     lines: Vec<Line<'static>>,
     cursor: (usize, usize),
+    focused: bool,
 ) {
     if area.width < 6 || area.height < 6 {
         return;
@@ -93,26 +94,16 @@ pub fn draw(
         Paragraph::new(Line::from(metadata)),
         Rect::new(input.x, area.bottom() - 3, input.width, 1),
     );
-    let footer = if let Some((custom, true)) = &status.custom {
-        custom.clone()
-    } else if status.running {
-        format!(
-            "◉ {}  {}s   esc interrupt · enter queue · tab steer",
-            status.phase, status.elapsed
-        )
-    } else if let Some((custom, false)) = &status.custom {
-        format!("{}  {custom}", status.cwd)
-    } else {
-        status.cwd.clone()
-    };
     frame.render_widget(
-        Paragraph::new(footer).style(Style::default().fg(text::MUTED)),
+        Paragraph::new(activity::footer(status)).style(Style::default().fg(text::MUTED)),
         Rect::new(area.x + 2, area.bottom() - 1, area.width - 2, 1),
     );
-    frame.set_cursor_position((
-        input.x + cursor.1.min(input.width.saturating_sub(1) as usize) as u16,
-        input.y + (cursor.0 - first).min(input.height.saturating_sub(1) as usize) as u16,
-    ));
+    if focused {
+        frame.set_cursor_position((
+            input.x + cursor.1.min(input.width.saturating_sub(1) as usize) as u16,
+            input.y + (cursor.0 - first).min(input.height.saturating_sub(1) as usize) as u16,
+        ));
+    }
 }
 
 pub fn completion(frame: &mut Frame, composer: Rect, menu: &Menu) {

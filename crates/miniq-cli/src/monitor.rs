@@ -219,7 +219,7 @@ pub async fn interactive(
     let mut files = options.attachments.clone();
     // Line mode (TERM=dumb / MINIQ_REPL=line): prompt history stays in this process only.
     let mut editor = rustyline::DefaultEditor::new()?;
-    progress(&format!("miniQ {} · Session: {session}\n/model selects this session's model; /effort selects supported reasoning. /help lists commands.\nCtrl+C during a task cancels it; /exit between turns detaches. Later: miniq resume {session}", env!("CARGO_PKG_VERSION")));
+    progress(&format!("miniQ {} · Session: {session}\n/models selects this session's model; /effort selects supported reasoning. /help lists commands.\nCtrl+C during a task cancels it; /exit between turns detaches. Later: miniq resume {session}", env!("CARGO_PKG_VERSION")));
     let selection = client
         .call("session.modelGet", json!({"sessionId":session}))
         .await?;
@@ -310,7 +310,7 @@ async fn command(
         "/help" => {
             progress("/pause · /resume-turn · /goal [TEXT|pause|resume|complete|cancel]\n/queue [list|update|move|remove|steer] · /agents [list|output|history|message|stop]\n/history [--limit N|--before CURSOR|--json] · /update [--check|--activate]\n/manage COMMAND   Run a shell management command (session, approval, git, file, …).\nUse `/manage COMMAND --help` for the exact options.");
             progress("/remote             远程连接设置（这台电脑共用）：开启、关闭、设备名称和状态\n/remote on|off      开启或关闭远程连接\n/remote name NAME   修改设备名称\n/remote status      查看连接状态");
-            progress(&format!("/model              Search/select a text model for this session\n/model MODEL        Switch this session to an exact model ID\n/effort             Select a supported reasoning effort\n/effort LEVEL       Set effort, or default to clear the override\n/attach PATH        Add a file to the next message\n/clear-attachments  Remove pending attachments\n/status             Show this session's effective model\n/history            Show recent messages and the next history cursor\n/exit               Leave the terminal without deleting the session\n\nThis session: {session}\n\nFrom the shell:\n  miniq resume {session}   Continue this session later\n  miniq resume --last        Continue this project's most recent session\n  miniq sessions [--all]     List sessions (title, status, updated, ID)\n  miniq watch {session}    Follow it from another terminal without sending\n  miniq history {session} --limit 40\n  miniq exec - < task.md     Multiline or scripted tasks\nminiq --help shows the full quick reference."));
+            progress(&format!("/models             Search/select a text model for this session\n/models MODEL       Switch this session to an exact model ID\n/effort             Select a supported reasoning effort\n/effort LEVEL       Set effort, or default to clear the override\n/attach PATH        Add a file to the next message\n/clear-attachments  Remove pending attachments\n/status             Show this session's effective model\n/history            Show recent messages and the next history cursor\n/exit               Leave the terminal without deleting the session\n\nThis session: {session}\n\nFrom the shell:\n  miniq resume {session}   Continue this session later\n  miniq resume --last        Continue this project's most recent session\n  miniq sessions [--all]     List sessions (title, status, updated, ID)\n  miniq watch {session}    Follow it from another terminal without sending\n  miniq history {session} --limit 40\n  miniq exec - < task.md     Multiline or scripted tasks\nminiq --help shows the full quick reference."));
             Ok(())
         }
         "/attach" if !arg.is_empty() => {
@@ -330,7 +330,7 @@ async fn command(
             files.clear();
             Ok(())
         }
-        "/model" | "/effort" => change_model(client, session, command, arg).await,
+        "/models" | "/effort" => change_model(client, session, command, arg).await,
         "/status" => {
             let result = client
                 .call("session.modelGet", json!({"sessionId":session}))
@@ -361,7 +361,7 @@ pub(crate) async fn change_model(
         let state = client
             .call("session.modelGet", json!({"sessionId":session}))
             .await?;
-        if command == "/model" {
+        if command == "/models" {
             crate::selection::model(client, state["effective"]["model"].as_str()).await?
         } else {
             choose_effort(client, &state).await?
@@ -371,7 +371,7 @@ pub(crate) async fn change_model(
         return Ok(());
     };
     let options = crate::args::ChatOptions {
-        model: (command == "/model").then(|| selected.clone()),
+        model: (command == "/models").then(|| selected.clone()),
         effort: (command == "/effort").then(|| selected.clone()),
         ..Default::default()
     };
@@ -411,4 +411,33 @@ async fn choose_effort(client: &mut Client, state: &Value) -> Result<Option<Stri
                 .unwrap_or("default"),
         ),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::test_fixture::{Fixture, Reply};
+
+    #[tokio::test]
+    async fn models_command_changes_only_the_current_session() {
+        let mut fixture = Fixture::new(vec![
+            (
+                "session.modelGet",
+                Reply::Result(json!({"settings":{"model":"old","apiProtocol":"responses","reasoningEffort":"high"}})),
+            ),
+            ("session.modelUpdate", Reply::Result(json!({}))),
+        ])
+        .await;
+        let mut files = Vec::new();
+        assert!(
+            !command(&mut fixture.client, "session-1", "/models new", &mut files)
+                .await
+                .unwrap()
+        );
+        let requests = fixture.finish().await;
+        assert_eq!(
+            requests[1]["params"],
+            json!({"sessionId":"session-1","settings":{"model":"new","apiProtocol":"auto","reasoningEffort":null}})
+        );
+    }
 }

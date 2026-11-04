@@ -289,7 +289,7 @@ it("loads submenu options, highlights the current model and applies a selected o
   const { input, onSend } = renderComposer({
     slashCommands: [
       {
-        id: "model",
+        id: "models",
         name: "切换模型",
         description: "选择当前会话模型",
         group: "会话",
@@ -297,9 +297,9 @@ it("loads submenu options, highlights the current model and applies a selected o
       },
     ],
   });
-  fireEvent.change(input, { target: { value: "/model" } });
+  fireEvent.change(input, { target: { value: "/models" } });
   fireEvent.keyDown(input, { key: "Enter" });
-  expect(input.value).toBe("/model ");
+  expect(input.value).toBe("/models ");
   expect(screen.getByRole("status").textContent).toContain("正在加载切换模型");
   await act(async () =>
     resolve([
@@ -351,7 +351,7 @@ it("retries failed submenu loads and returns to all commands with Escape", async
   const { input } = renderComposer({
     slashCommands: [
       {
-        id: "model",
+        id: "models",
         name: "切换模型",
         description: "选择模型",
         group: "会话",
@@ -359,7 +359,7 @@ it("retries failed submenu loads and returns to all commands with Escape", async
       },
     ],
   });
-  fireEvent.change(input, { target: { value: "/model " } });
+  fireEvent.change(input, { target: { value: "/models " } });
   expect(await screen.findByRole("alert")).toHaveProperty(
     "textContent",
     expect.stringContaining("服务暂不可用"),

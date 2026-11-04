@@ -356,7 +356,7 @@ export class RpcClient {
         for (const listener of this.hostListeners) this.deliver(() => listener(data as HostEvent));
         return;
       }
-      if (data.type === "remote_resync") {
+      if (data.type === "remote_resync" || data.type === "session_restored") {
         for (const listener of this.resyncListeners) this.deliver(listener);
         return;
       }

@@ -1,18 +1,20 @@
-//! Populate overlays from the actual daemon catalog and apply the chosen item.
+//! Open overlays immediately; populate them when their background request completes.
 use super::{
     commands,
     editor::Editor,
+    jobs::Effect,
     picker::{Item, Picker, Purpose},
+    requests::Request,
     Repl,
 };
 use crate::client::Client;
 use anyhow::{Context, Result};
-use serde_json::json;
+use serde_json::{json, Value};
 
 impl Repl {
     pub(super) async fn open_picker(
         &mut self,
-        client: &mut Client,
+        _client: &mut Client,
         purpose: Purpose,
     ) -> Result<()> {
         let (title, items, current) = match purpose {
@@ -24,60 +26,9 @@ impl Repl {
                     .collect(),
                 None,
             ),
-            Purpose::Models => {
-                let catalog = client.call("model.list", json!({})).await?;
-                let items = crate::selection::model_choices(&catalog)?
-                    .iter()
-                    .map(|choice| Item::new(&choice.id, &choice.label, ""))
-                    .collect();
-                ("Select model", items, Some(self.model.clone()))
-            }
-            Purpose::Effort => {
-                let state = client
-                    .call("session.modelGet", json!({"sessionId":self.session}))
-                    .await?;
-                let description = client.call("model.describe", json!({"model":state["effective"]["model"],"apiProtocol":state["effective"]["apiProtocol"]})).await?;
-                let mut items = vec![Item::new(
-                    "default",
-                    "Default",
-                    "Use the model's default reasoning effort",
-                )];
-                for effort in description["reasoningEfforts"]
-                    .as_array()
-                    .context("invalid reasoning capabilities")?
-                {
-                    let effort = effort.as_str().context("invalid reasoning effort")?;
-                    items.push(Item::new(effort, effort, ""));
-                }
-                ("Reasoning effort", items, Some(self.effort.clone()))
-            }
-            Purpose::Sessions => {
-                let result = crate::sessions::list(client, &self.options, false).await?;
-                let mut sessions: Vec<_> = result["sessions"]
-                    .as_array()
-                    .context("invalid session list")?
-                    .iter()
-                    .filter(|s| s["archived"] != true && s["external"].is_null())
-                    .collect();
-                sessions.sort_by(|a, b| b["updatedAt"].as_str().cmp(&a["updatedAt"].as_str()));
-                let items = sessions
-                    .into_iter()
-                    .map(|s| {
-                        let id = s["id"].as_str().context("session ID missing")?;
-                        let label = s["title"].as_str().unwrap_or(id);
-                        let updated = s["updatedAt"]
-                            .as_str()
-                            .map(|at| crate::listing::relative(at, time::OffsetDateTime::now_utc()))
-                            .unwrap_or_default();
-                        Ok(Item::new(
-                            id,
-                            label,
-                            &format!("{} · {updated}", s["status"].as_str().unwrap_or("idle")),
-                        ))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                ("Switch session", items, Some(self.session.clone()))
-            }
+            Purpose::Models => ("Select model", vec![], Some(self.model.clone())),
+            Purpose::Effort => ("Reasoning effort", vec![], Some(self.effort.clone())),
+            Purpose::Sessions => ("Switch session", vec![], Some(self.session.clone())),
             Purpose::Permissions => (
                 "Permissions",
                 vec![
@@ -99,8 +50,33 @@ impl Repl {
                 ],
                 Some(self.mode.clone()),
             ),
+            _ => {
+                self.panel(purpose);
+                return Ok(());
+            }
         };
-        self.ui.picker = Some(Picker::new(purpose, title, items, current));
+        let mut picker = Picker::new(purpose, title, items, current);
+        if purpose == Purpose::Models {
+            picker.hint = "enter select · ctrl+f favorite · ctrl+d details · ctrl+r reload".into();
+        }
+        if purpose == Purpose::Sessions {
+            picker.hint = "enter switch · ctrl+d session actions · ctrl+r reload".into();
+        }
+        if matches!(
+            purpose,
+            Purpose::Models | Purpose::Effort | Purpose::Sessions
+        ) {
+            picker.request = Some(self.request(
+                title,
+                Effect::Picker(purpose),
+                Request::Picker {
+                    purpose,
+                    options: super::copy_options(&self.options),
+                },
+            ));
+            picker.loading = true;
+        }
+        self.ui.picker = Some(picker);
         Ok(())
     }
 
@@ -121,44 +97,125 @@ impl Repl {
                     effort: (picker.purpose == Purpose::Effort).then(|| value.to_owned()),
                     ..Default::default()
                 };
-                crate::sessions::update_model(client, &self.session, &options).await?;
-                self.refresh(client).await;
-                self.notice = format!("Selected {value}");
+                self.request("Updating model", Effect::Model, Request::Model(options));
             }
-            Purpose::Sessions => {
-                if self.running {
-                    anyhow::bail!(
-                        "wait for this turn to finish or interrupt it before switching sessions"
-                    );
-                }
-                let id = crate::sessions::prepare(client, &self.options, Some(value)).await?;
-                commands::switch(self, client, &id).await?;
-            }
+            Purpose::Sessions => commands::switch(self, client, value).await?,
             Purpose::Permissions => {
-                let state = client
-                    .call(
-                        "session.approval.update",
-                        json!({"sessionId":self.session,"mode":value}),
-                    )
-                    .await?;
-                self.mode = state["effective"].as_str().unwrap_or(value).to_owned();
+                self.rpc(
+                    "Updating permissions",
+                    Effect::Permissions,
+                    "session.approval.update",
+                    json!({"sessionId":self.session,"mode":value}),
+                );
             }
+            purpose => self.choose_panel(editor, client, purpose, value).await?,
         }
         Ok(None)
     }
 
-    pub(super) async fn earlier(&mut self, client: &mut Client) -> Result<()> {
+    pub(super) fn picker_items(&self, purpose: Purpose, value: &Value) -> Result<Vec<Item>> {
+        Ok(match purpose {
+            Purpose::Models => {
+                let mut choices = crate::selection::model_choices(value)?;
+                choices.sort_by_key(|choice| {
+                    (
+                        !self.preferences.favorite_models.contains(&choice.id),
+                        self.preferences
+                            .recent_models
+                            .iter()
+                            .position(|id| id == &choice.id)
+                            .unwrap_or(usize::MAX),
+                    )
+                });
+                choices
+                    .iter()
+                    .map(|choice| {
+                        Item::new(
+                            &choice.id,
+                            &format!(
+                                "{}{}",
+                                if self.preferences.favorite_models.contains(&choice.id) {
+                                    "★ "
+                                } else {
+                                    ""
+                                },
+                                choice.label
+                            ),
+                            if self.preferences.recent_models.contains(&choice.id) {
+                                "Recently used"
+                            } else {
+                                ""
+                            },
+                        )
+                    })
+                    .collect()
+            }
+            Purpose::Effort => {
+                let mut items = vec![Item::new(
+                    "default",
+                    "Default",
+                    "Use the model's default reasoning effort",
+                )];
+                for effort in value["reasoningEfforts"]
+                    .as_array()
+                    .context("invalid reasoning capabilities")?
+                {
+                    let effort = effort.as_str().context("invalid reasoning effort")?;
+                    items.push(Item::new(effort, effort, ""));
+                }
+                items
+            }
+            Purpose::Sessions => {
+                let mut sessions: Vec<_> = value["sessions"]
+                    .as_array()
+                    .context("invalid session list")?
+                    .iter()
+                    .filter(|session| session["archived"] != true && session["external"].is_null())
+                    .collect();
+                sessions.sort_by(|a, b| {
+                    b["pinned"]
+                        .as_bool()
+                        .cmp(&a["pinned"].as_bool())
+                        .then_with(|| b["updatedAt"].as_str().cmp(&a["updatedAt"].as_str()))
+                });
+                sessions
+                    .into_iter()
+                    .map(|session| {
+                        let id = session["id"].as_str().context("session ID missing")?;
+                        Ok(Item::new(
+                            id,
+                            session["title"].as_str().unwrap_or(id),
+                            &format!(
+                                "{} · {}\n{}",
+                                session["status"].as_str().unwrap_or("idle"),
+                                session["updatedAt"].as_str().unwrap_or(""),
+                                session["workingDirectory"].as_str().unwrap_or("")
+                            ),
+                        ))
+                    })
+                    .collect::<Result<Vec<_>>>()?
+            }
+            _ => self.resource_items(purpose, value),
+        })
+    }
+
+    pub(super) async fn earlier(&mut self, _client: &mut Client) -> Result<()> {
         let Some(cursor) = self.ui.transcript.next_cursor.clone() else {
             return Ok(());
         };
-        let page = client.call("session.history", json!({"sessionId":self.session,"before":cursor,"limit":100,"includePayloads":true})).await?;
-        let width = self.ui.transcript_area.width.saturating_sub(1).max(1) as usize;
-        let before = self.ui.rows(width, self.style.color).len();
-        let top = self.ui.scroll.unwrap_or(self.ui.top);
-        self.ui.transcript.prepend(&page);
-        let after = self.ui.rows(width, self.style.color).len();
-        // Keep the same visible content while earlier records are inserted.
-        self.ui.scroll = Some(top.saturating_add(after.saturating_sub(before)));
+        if self
+            .pending_labels
+            .values()
+            .any(|label| label == "Loading earlier messages")
+        {
+            return Ok(());
+        }
+        self.rpc(
+            "Loading earlier messages",
+            Effect::History,
+            "session.history",
+            json!({"sessionId":self.session,"before":cursor,"limit":100,"includePayloads":true}),
+        );
         Ok(())
     }
 }

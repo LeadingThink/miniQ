@@ -29,6 +29,8 @@ impl Repl {
     }
 
     fn screen_status(&self) -> screen::Status {
+        let process = self.processes.active(&self.session);
+        let phase = super::progress::phase(self.progress.as_ref(), &self.phase);
         let card = self.cards.front().map(|card| {
             let choices = match card {
                 Card::Approval { .. } => {
@@ -43,7 +45,21 @@ impl Repl {
                     ..
                 } => {
                     if *multi_select {
-                        Vec::new()
+                        options
+                            .iter()
+                            .enumerate()
+                            .map(|(index, option)| {
+                                format!(
+                                    "{} {option}",
+                                    if self.ui.card_checked.contains(&index) {
+                                        "☑"
+                                    } else {
+                                        "☐"
+                                    }
+                                )
+                            })
+                            .chain(std::iter::once("Submit selection".into()))
+                            .collect()
                     } else {
                         options.clone()
                     }
@@ -61,15 +77,17 @@ impl Repl {
             effort: terminal_text(&self.effort),
             mode: self.mode.clone(),
             cwd: terminal_text(&self.working_directory().display().to_string()),
-            running: self.running,
-            phase: terminal_text(if self.phase.is_empty() {
+            running: self.running || process.is_some(),
+            phase: terminal_text(if process.is_some() {
+                "Running local command"
+            } else if self.phase.is_empty() {
                 "Thinking"
             } else {
-                &self.phase
+                &phase
             }),
-            elapsed: self
-                .started
-                .map(|s| s.elapsed().as_secs())
+            elapsed: process
+                .map(|p| p.started.elapsed())
+                .or_else(|| self.started.map(|s| s.elapsed()))
                 .unwrap_or_default(),
             context: self.context_percent,
             queue: self.queue.len(),
@@ -78,10 +96,20 @@ impl Repl {
                 .iter()
                 .map(|p| terminal_text(&p.display().to_string()))
                 .collect(),
-            notice: terminal_text(&self.notice),
+            notice: terminal_text(&if self.notice.is_empty() {
+                self.pending_labels
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(" · ")
+            } else {
+                self.notice.clone()
+            }),
             custom: self.statusline.text().map(|(s, b)| (s.to_owned(), b)),
             card,
             color: self.style.color,
+            theme: self.preferences.theme.clone(),
+            animations: self.preferences.animations,
         }
     }
 

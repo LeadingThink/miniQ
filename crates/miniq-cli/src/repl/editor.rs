@@ -15,6 +15,8 @@ use super::vim::{Effect, Mode, Vim};
 mod completion;
 #[path = "editor_history.rs"]
 mod history;
+#[path = "editor_interaction.rs"]
+mod interaction;
 #[path = "editor_movement.rs"]
 mod movement;
 #[cfg(test)]
@@ -64,6 +66,7 @@ pub struct Menu {
 
 #[derive(Debug)]
 pub struct Editor {
+    pub folded: bool,
     buffer: String,
     /// Byte offset into `buffer`, always on a char boundary.
     cursor: usize,
@@ -92,6 +95,7 @@ pub struct View {
 impl Editor {
     pub fn new(commands: Vec<(String, String)>, root: PathBuf) -> Self {
         Self {
+            folded: false,
             buffer: String::new(),
             cursor: 0,
             history: Vec::new(),
@@ -145,6 +149,23 @@ impl Editor {
         &self.buffer
     }
 
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    pub fn set_cursor(&mut self, cursor: usize) {
+        self.cursor = cursor.min(self.buffer.len());
+        while !self.buffer.is_char_boundary(self.cursor) {
+            self.cursor -= 1;
+        }
+    }
+
+    pub fn set_root(&mut self, root: PathBuf) {
+        self.root = root;
+        self.files = None;
+        self.menu = None;
+    }
+
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty()
     }
@@ -155,12 +176,14 @@ impl Editor {
     }
 
     pub fn set_buffer(&mut self, text: &str) {
+        self.folded = false;
         self.buffer = text.to_string();
         self.cursor = self.buffer.len();
         self.menu = None;
     }
 
     pub fn clear(&mut self) {
+        self.folded = false;
         self.buffer.clear();
         self.cursor = 0;
         self.browsing = None;
@@ -199,6 +222,7 @@ impl Editor {
     }
 
     pub fn key(&mut self, key: KeyEvent) -> Action {
+        self.folded = false;
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
 
         if self.search.is_some() {
@@ -423,43 +447,6 @@ impl Editor {
         if self.cursor >= end && end > self.line_start() {
             self.left();
         }
-    }
-
-    /// Lines to display (prompt on the first line, `… ` continuation prompts).
-    pub fn view(&self, prompt: &str) -> View {
-        if let Some(search) = &self.search {
-            let found = search
-                .matched
-                .map(|i| self.history[i].replace('\n', "⏎"))
-                .unwrap_or_default();
-            let line = format!("(reverse-i-search)`{}': {}", search.query, found);
-            let column = UnicodeWidthStr::width(line.as_str());
-            return View {
-                lines: vec![line],
-                cursor: (0, column),
-            };
-        }
-        let continuation = if prompt.is_empty() {
-            String::new()
-        } else {
-            " ".repeat(UnicodeWidthStr::width(prompt).saturating_sub(2)) + "… "
-        };
-        let mut lines = Vec::new();
-        let mut cursor = (0, 0);
-        let mut offset = 0;
-        for (row, text) in self.buffer.split('\n').enumerate() {
-            let lead = if row == 0 { prompt } else { &continuation };
-            if self.cursor >= offset && self.cursor <= offset + text.len() {
-                let before = &text[..self.cursor - offset];
-                cursor = (
-                    row,
-                    UnicodeWidthStr::width(lead) + UnicodeWidthStr::width(before),
-                );
-            }
-            lines.push(format!("{lead}{text}"));
-            offset += text.len() + 1;
-        }
-        View { lines, cursor }
     }
 }
 

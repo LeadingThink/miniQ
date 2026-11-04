@@ -12,6 +12,9 @@ enum Input {
     Terminal(Option<io::Result<Event>>),
     Daemon(Result<Value>),
     Tick,
+    Completed(jobs::Completion),
+    Process(processes::Event),
+    Connected(Result<Client>),
 }
 
 async fn next_key(keys: &mut Option<EventStream>) -> Option<io::Result<Event>> {
@@ -30,6 +33,7 @@ pub(crate) async fn run(
     let mut repl = Repl::new(session, options);
     let style = repl.style;
     let prefs = prefs::Prefs::load_reporting(&client.directory);
+    repl.preferences = prefs.clone();
     let (keymap, warnings) = keymap::Keymap::new(&prefs.keybindings);
     for warning in warnings {
         eprintln!("miniq: warning: {warning}");
@@ -66,18 +70,61 @@ pub(crate) async fn run(
     let mut tick = tokio::time::interval(Duration::from_millis(33));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut redraw = true;
+    let mut connected = true;
+    let mut connecting: connection::Connecting = None;
     let code = loop {
+        repl.jobs.start(&client.directory, client.max_turns);
         if redraw {
             repl.draw(&editor)?;
             redraw = false;
         }
         let input = tokio::select! {
             key = next_key(&mut repl.keys) => Input::Terminal(key),
-            event = client.next_event() => Input::Daemon(event),
+            event = client.next_event(), if connected => Input::Daemon(event),
             _ = tick.tick() => Input::Tick,
+            completed = repl.jobs.next() => Input::Completed(completed),
+            event = repl.processes.next() => Input::Process(event),
+            result = connection::next(&mut connecting) => Input::Connected(result),
         };
         let flow = match input {
+            Input::Connected(result) => {
+                connecting = None;
+                match result {
+                    Ok(mut new) => {
+                        new.scope(&repl.session);
+                        if let Some(target) = client.watched() {
+                            new.watch(target);
+                        }
+                        *client = new;
+                        connected = true;
+                        repl.notice = "Connected".into();
+                        repl.history_stale = true;
+                    }
+                    Err(error) => {
+                        repl.notice = format!("Disconnected: {error:#} · ctrl+r reconnect")
+                    }
+                }
+                redraw = true;
+                None
+            }
+            Input::Process(event) => {
+                repl.process_event(event);
+                redraw = true;
+                None
+            }
+            Input::Completed(completed) => {
+                repl.complete(&mut editor, client, completed);
+                redraw = true;
+                None
+            }
             Input::Tick => {
+                if repl.ui.reader.as_ref().is_some_and(|reader| {
+                    reader.live
+                        && reader.error.is_none()
+                        && reader.refreshed.elapsed() >= Duration::from_secs(1)
+                }) {
+                    repl.refresh_reader();
+                }
                 redraw = true;
                 if let Some(notice) = updates.tick() {
                     repl.info(&notice);
@@ -87,38 +134,81 @@ pub(crate) async fn run(
             Input::Terminal(None) | Input::Terminal(Some(Err(_))) => Some(0),
             Input::Terminal(Some(Ok(event))) => {
                 redraw = true;
-                terminal_event(&mut repl, &mut editor, client, event).await?
+                if !connected
+                    && connecting.is_none()
+                    && matches!(
+                        event,
+                        Event::Key(KeyEvent {
+                            code: KeyCode::Char('r'),
+                            modifiers: KeyModifiers::CONTROL,
+                            ..
+                        })
+                    )
+                {
+                    connecting = connection::start(client.directory.clone(), client.max_turns);
+                    repl.notice = "Reconnecting…".into();
+                    None
+                } else {
+                    terminal_event(&mut repl, &mut editor, client, event).await?
+                }
             }
             Input::Daemon(event) => {
-                let resync = match &event {
-                    Ok(event) => repl.event(event),
-                    Err(_) => true,
-                };
-                if resync {
-                    repl.info("Reconnecting to the same session; no prompt will be resent.");
-                    let snapshot = client.reconnect(&repl.session).await?;
-                    repl.restore(&snapshot);
+                match event {
+                    Ok(event) => {
+                        if repl.switch_request.is_some() || repl.refresh_request.is_some() {
+                            repl.snapshot_events.push(event.clone());
+                        }
+                        if event["sessionId"]
+                            .as_str()
+                            .is_none_or(|id| id == repl.session)
+                            && repl.event(&event)
+                        {
+                            repl.history_stale = true;
+                        }
+                    }
+                    Err(_) => {
+                        connected = false;
+                        connecting = connection::start(client.directory.clone(), client.max_turns);
+                        repl.notice =
+                            "Reconnecting… input stays editable; prompts are not resent".into();
+                    }
                 }
+                redraw = true;
                 None
             }
         };
         if let Some(code) = flow {
             break code;
         }
-        if repl.history_stale {
+        if repl.history_stale && repl.refresh_request.is_none() {
             repl.history_stale = false;
-            let snapshot = client
-                .call(
-                    "session.open",
-                    json!({"sessionId":repl.session,"includePayloads":true}),
-                )
-                .await?;
-            repl.restore(&snapshot);
+            let anchor = repl.ui.scroll.and_then(|_| {
+                repl.ui
+                    .transcript
+                    .entries
+                    .iter()
+                    .find(|entry| entry.message.is_some())
+                    .map(|entry| entry.id.clone())
+            });
+            repl.request(
+                "Refreshing conversation",
+                jobs::Effect::Refresh,
+                requests::Request::Refresh(anchor),
+            );
         }
         if repl.context_stale && !repl.running {
-            repl.refresh_context(client).await;
+            repl.context_stale = false;
+            repl.rpc(
+                "Updating context",
+                jobs::Effect::Context,
+                "session.contextUsage",
+                json!({"sessionId":repl.session}),
+            );
         }
     };
+    if let Some(connecting) = connecting {
+        connecting.abort();
+    }
     repl.suspend();
     println!(
         "{}",
@@ -138,11 +228,13 @@ async fn terminal_event(
 ) -> Result<Option<u8>> {
     match event {
         Event::Paste(text) => {
-            if let Some(picker) = repl.ui.picker.as_mut() {
+            if let Some(form) = repl.ui.form.as_mut() {
+                form.editor.paste(&text);
+            } else if let Some(picker) = repl.ui.picker.as_mut() {
                 picker.query.push_str(&terminal_text(&text));
                 picker.selected = 0;
             } else {
-                editor.insert(&text);
+                editor.paste(&text);
             }
             Ok(None)
         }
@@ -223,9 +315,10 @@ async fn key_event(
             let text = editor.buffer().to_owned();
             if repl.running && !text.trim().is_empty() {
                 editor.remember(&text);
-                editor.clear();
                 if let Err(error) = repl.send(client, &text, true).await {
                     repl.error(&format!("{error:#}"));
+                } else {
+                    editor.clear();
                 }
             }
             Ok(None)
@@ -235,13 +328,13 @@ async fn key_event(
             Ok(None)
         }
         Action::Escape => {
-            if repl.running {
+            if repl.running || repl.processes.active(&repl.session).is_some() {
                 repl.cancel(client).await;
             }
             Ok(None)
         }
         Action::Interrupt => {
-            if repl.running {
+            if repl.running || repl.processes.active(&repl.session).is_some() {
                 repl.cancel(client).await;
             } else if !editor.is_empty() {
                 editor.clear();
@@ -286,7 +379,7 @@ async fn submit(
     }
     editor.remember(&text);
     if let Some(command) = trimmed.strip_prefix('!') {
-        shell(repl, command.trim()).await;
+        repl.shell(command.trim());
         return Ok(None);
     }
     if trimmed.starts_with('/') {
@@ -300,67 +393,41 @@ async fn submit(
         };
     }
     if let Err(error) = repl.send(client, &text, false).await {
+        editor.set_buffer(&text);
         repl.error(&format!("{error:#}"));
     }
     Ok(None)
 }
 
-/// `!cmd` runs locally in the working directory; output stays on screen and is not sent.
-async fn shell(repl: &mut Repl, command: &str) {
-    if command.is_empty() {
-        repl.notice = "Type ! followed by a shell command".into();
-        return;
-    }
-    repl.emit(&repl.style.bold(&format!("$ {}", terminal_text(command))));
-    #[cfg(windows)]
-    let mut process = {
-        let mut c = tokio::process::Command::new("cmd.exe");
-        c.arg("/C");
-        c
-    };
-    #[cfg(not(windows))]
-    let mut process = {
-        let mut c =
-            tokio::process::Command::new(std::env::var("SHELL").unwrap_or_else(|_| "sh".into()));
-        c.arg("-c");
-        c
-    };
-    match process
-        .arg(command)
-        .current_dir(repl.working_directory())
-        .kill_on_drop(true)
-        .output()
-        .await
-    {
-        Ok(output) => {
-            repl.emit(&terminal_text(&String::from_utf8_lossy(&output.stdout)));
-            repl.emit(&terminal_text(&String::from_utf8_lossy(&output.stderr)));
-            if !output.status.success() {
-                repl.error(&format!("Exit status {}", output.status));
-            }
-        }
-        Err(error) => repl.error(&error.to_string()),
-    }
-}
-
 pub(super) fn external_editor(repl: &mut Repl, text: &str) -> Result<String> {
-    let path = std::env::temp_dir().join(format!("miniq-prompt-{}.md", std::process::id()));
+    let temporary = tempfile::Builder::new()
+        .prefix("miniq-prompt-")
+        .suffix(".md")
+        .tempfile()?
+        .into_temp_path();
+    let path: &std::path::Path = temporary.as_ref();
     std::fs::write(&path, text)?;
     let editor = std::env::var("VISUAL")
         .or_else(|_| std::env::var("EDITOR"))
-        .unwrap_or_else(|_| "vi".into());
+        .unwrap_or_else(|_| if cfg!(windows) { "notepad.exe" } else { "vi" }.into());
     repl.suspend();
+    #[cfg(windows)]
+    let status = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-Command"])
+        .arg(format!("& {editor} $env:MINIQ_EDITOR_FILE"))
+        .env("MINIQ_EDITOR_FILE", &path)
+        .status();
+    #[cfg(not(windows))]
     let status = std::process::Command::new("sh")
         .arg("-c")
         .arg(format!("{editor} \"$1\""))
         .arg("sh")
         .arg(&path)
         .status();
-    let _ = repl.resume();
+    repl.resume()?;
     let result = std::fs::read_to_string(&path);
-    let _ = std::fs::remove_file(&path);
     if !status?.success() {
         anyhow::bail!("editor exited with an error; prompt unchanged");
     }
-    Ok(result?.trim_end_matches('\n').to_owned())
+    Ok(result?)
 }

@@ -42,15 +42,33 @@ impl EditorMode {
 pub struct StatusLineConfig {
     pub command: String,
     pub timeout_ms: u64,
-    /// Replace the built-in status line instead of appending to it.
+    /// Replace the idle status line; active turn and input feedback stay visible.
     pub replace: bool,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Prefs {
     pub editor_mode: EditorMode,
     pub keybindings: BTreeMap<String, Vec<String>>,
     pub status_line: Option<StatusLineConfig>,
+    pub theme: String,
+    pub animations: bool,
+    pub favorite_models: Vec<String>,
+    pub recent_models: Vec<String>,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Self {
+            editor_mode: EditorMode::Emacs,
+            keybindings: BTreeMap::new(),
+            status_line: None,
+            theme: "dark".into(),
+            animations: true,
+            favorite_models: vec![],
+            recent_models: vec![],
+        }
+    }
 }
 
 pub fn path(directory: &Path) -> PathBuf {
@@ -107,6 +125,39 @@ impl Prefs {
             return (prefs, warnings);
         };
         let mut warn = |text: String| warnings.push(format!("{}: {text}", file.display()));
+
+        if let Some(theme) = object.get("theme") {
+            match theme.as_str() {
+                Some(name @ ("dark" | "light" | "system")) => prefs.theme = name.into(),
+                _ => warn("theme must be dark, light or system".into()),
+            }
+        }
+        if let Some(value) = object.get("animations") {
+            match value.as_bool() {
+                Some(enabled) => prefs.animations = enabled,
+                None => warn("animations must be true or false".into()),
+            }
+        }
+        for (key, target) in [
+            ("favoriteModels", &mut prefs.favorite_models),
+            ("recentModels", &mut prefs.recent_models),
+        ] {
+            if let Some(value) = object.get(key) {
+                if let Some(items) = value
+                    .as_array()
+                    .filter(|items| items.iter().all(Value::is_string))
+                {
+                    for item in items {
+                        let id = item.as_str().unwrap().to_owned();
+                        if !target.contains(&id) {
+                            target.push(id);
+                        }
+                    }
+                } else {
+                    warn(format!("{key} must be a list of model IDs"));
+                }
+            }
+        }
 
         match object.get("editorMode") {
             None | Some(Value::Null) => {}
@@ -192,6 +243,10 @@ impl Prefs {
 
 /// Persist `editorMode`, keeping every other field of an existing `cli.json`.
 pub fn save_editor_mode(directory: &Path, mode: EditorMode) -> Result<PathBuf> {
+    save_values(directory, serde_json::json!({"editorMode":mode.as_str()}))
+}
+
+pub fn save_values(directory: &Path, values: Value) -> Result<PathBuf> {
     let file = path(directory);
     let mut object = match fs::read_to_string(&file) {
         Ok(text) if text.trim().is_empty() => Map::new(),
@@ -205,7 +260,12 @@ pub fn save_editor_mode(directory: &Path, mode: EditorMode) -> Result<PathBuf> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Map::new(),
         Err(error) => return Err(error).with_context(|| format!("reading {}", file.display())),
     };
-    object.insert("editorMode".into(), Value::String(mode.as_str().into()));
+    object.extend(
+        values
+            .as_object()
+            .context("preferences must be an object")?
+            .clone(),
+    );
     fs::create_dir_all(directory).with_context(|| format!("creating {}", directory.display()))?;
     let temp = file.with_extension("json.tmp");
     {

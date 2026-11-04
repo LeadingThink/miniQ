@@ -102,21 +102,26 @@ pub(super) async fn run(repl: &mut Repl, client: &mut Client, line: &str) -> Res
     let Some(argv) = arguments(line, &repl.session)? else {
         return Ok(false);
     };
-    let command = match Invocation::try_parse_from(argv) {
-        Ok(value) => value.command,
+    match Invocation::try_parse_from(&argv) {
+        Ok(_) => {}
         Err(error) if matches!(error.kind(), clap::error::ErrorKind::DisplayHelp) => {
             repl.emit(&error.to_string());
             return Ok(true);
         }
         Err(error) => return Err(error.into()),
     };
-    repl.suspend();
-    let result = dispatch(client, command).await;
-    repl.return_from_command()?;
-    result?;
-    // Drain replies in the normal event loop before reconnecting if activation
-    // replaced the daemon. Installing or choosing Later keeps its connection.
-    repl.context_stale = true;
+    let mut args = vec![
+        "--data-dir".into(),
+        client.directory.to_string_lossy().into_owned(),
+    ];
+    args.extend(argv.into_iter().skip(1));
+    repl.processes.start(
+        &repl.session,
+        line,
+        std::env::current_exe()?,
+        args,
+        repl.working_directory(),
+    );
     Ok(true)
 }
 

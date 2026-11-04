@@ -8,7 +8,11 @@ impl Repl {
         self.ui.transcript.event(event);
         match event["type"].as_str().unwrap_or("") {
             "remote_resync" => return true,
-            "assistant_delta" => self.mark_running(),
+            "assistant_delta" => {
+                self.mark_running();
+                self.progress = None;
+                self.phase = "Responding".into();
+            }
             "message_created" if event["message"]["role"] == "assistant" => {
                 if event["message"]["assistantKind"] != "commentary" {
                     self.last_answer = event["message"]["content"]
@@ -19,6 +23,7 @@ impl Repl {
             }
             "tool_call_started" => {
                 self.mark_running();
+                self.progress = None;
                 self.phase = format!(
                     "Running {}",
                     terminal_text(event["toolName"].as_str().unwrap_or("tool"))
@@ -37,8 +42,9 @@ impl Repl {
             }
             "turn_progress_changed" => {
                 let progress = &event["progress"];
-                if let Some(phase) = progress["phase"].as_str().or(progress.as_str()) {
-                    self.phase = terminal_text(phase);
+                self.progress = serde_json::from_value(progress.clone()).ok();
+                if let Some(progress) = &self.progress {
+                    self.phase = progress::label(&progress.phase).into();
                 }
             }
             "context_compacted" => {
@@ -47,7 +53,7 @@ impl Repl {
                 self.info(&format!("[context compacted: ~{before} → ~{after} tokens]"));
                 self.context_stale = true;
             }
-            "session_rewritten" => {
+            "session_rewritten" | "session_restored" => {
                 self.context_stale = true;
                 self.history_stale = true;
             }
@@ -85,6 +91,7 @@ impl Repl {
                 } else if matches!(status, "idle" | "failed") {
                     self.running = false;
                     self.phase.clear();
+                    self.progress = None;
                 }
             }
             "turn_completed" => {
@@ -112,7 +119,7 @@ impl Repl {
         if !self.running {
             self.running = true;
             self.started = Some(Instant::now());
-            self.phase = "thinking".into();
+            self.phase = "Thinking".into();
         }
     }
 
@@ -121,6 +128,7 @@ impl Repl {
         self.running = false;
         self.started = None;
         self.phase.clear();
+        self.progress = None;
         self.cards.clear();
         if elapsed >= NOTIFY_AFTER {
             // Bell plus OSC 9 desktop notification (ignored by terminals without support).

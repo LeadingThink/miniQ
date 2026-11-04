@@ -51,6 +51,7 @@ pub struct Client {
     events: VecDeque<Value>,
     next_id: u64,
     scope: Option<String>,
+    watched: Option<String>,
     snapshot_cursor: Option<Value>,
     connecting: bool,
     pub directory: PathBuf,
@@ -83,6 +84,7 @@ impl Client {
             events: VecDeque::new(),
             next_id: 0,
             scope: None,
+            watched: None,
             snapshot_cursor: None,
             connecting: true,
             directory: directory.into(),
@@ -105,9 +107,28 @@ impl Client {
     }
 
     pub fn scope(&mut self, session: &str) {
+        self.watched = None;
         self.scope = Some(session.to_owned());
         self.snapshot_cursor = None;
         self.events.clear();
+    }
+
+    pub fn watch(&mut self, session: &str) {
+        self.watched = Some(session.into());
+    }
+
+    pub fn clear_watch(&mut self) {
+        self.watched = None;
+    }
+
+    pub fn watched(&self) -> Option<&str> {
+        self.watched.as_deref()
+    }
+
+    pub fn accept_snapshot(&mut self, snapshot: &Value) {
+        self.snapshot_cursor = snapshot.get("eventCursor").cloned();
+        let cursor = self.snapshot_cursor.as_ref();
+        self.events.retain(|event| after_snapshot(event, cursor));
     }
 
     pub async fn call(&mut self, method: &str, params: Value) -> Result<Value> {
@@ -184,6 +205,10 @@ impl Client {
     fn is_scoped(&self, value: &Value) -> bool {
         value["type"] == "remote_resync"
             || self
+                .watched
+                .as_deref()
+                .is_some_and(|id| value["sessionId"].as_str() == Some(id))
+            || self
                 .scope
                 .as_deref()
                 .is_some_and(|id| value["sessionId"].as_str() == Some(id))
@@ -250,7 +275,7 @@ impl Client {
     }
 }
 
-fn after_snapshot(event: &Value, cursor: Option<&Value>) -> bool {
+pub(crate) fn after_snapshot(event: &Value, cursor: Option<&Value>) -> bool {
     let Some(cursor) = cursor else {
         return true;
     };

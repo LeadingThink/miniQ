@@ -50,11 +50,34 @@ impl Fixture {
             .to_string_lossy()
             .into_owned();
         let server = tokio::spawn(async move {
-            let mut remote = json!({"enabled":false,"deviceName":"fixture-host","relayUrl":"wss://fixture.test/ws","deviceId":"fixture-id"});
+            let remote = Arc::new(Mutex::new(
+                json!({"enabled":false,"deviceName":"fixture-host","relayUrl":"wss://fixture.test/ws","deviceId":"fixture-id"}),
+            ));
+            let (events, _) = tokio::sync::broadcast::channel::<(u64, Value)>(256);
+            let mut connections = tokio::task::JoinSet::new();
+            let mut connection = 0;
             loop {
                 let (stream, _) = listener.accept().await.unwrap();
+                connection += 1;
+                let (recorded, remote, root, events) = (
+                    recorded.clone(),
+                    remote.clone(),
+                    root.clone(),
+                    events.clone(),
+                );
+                connections.spawn(async move {
                 let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
-                while let Some(Ok(Message::Text(text))) = socket.next().await {
+                let mut receiver = events.subscribe();
+                loop {
+                    let incoming = tokio::select! {
+                        incoming = socket.next() => incoming,
+                        event = receiver.recv() => {
+                            let Ok((origin,event)) = event else { break; };
+                            if origin != connection && socket.send(Message::text(event.to_string())).await.is_err() { break; }
+                            continue;
+                        }
+                    };
+                    let Some(Ok(Message::Text(text))) = incoming else { break; };
                     let request: Value = serde_json::from_str(&text).unwrap();
                     recorded.lock().unwrap().push(request.clone());
                     let method = request["method"].as_str().unwrap();
@@ -63,16 +86,16 @@ impl Fixture {
                             json!({"protocolVersion":2,"capabilities":{"rejectBusy":mode != "old"}})
                         }
                         "settings.get" => {
-                            json!({"provider":if mode == "unconfigured" {Value::Null} else {json!({"baseUrl":"https://oneapi.zaiwenai.com/v1","model":"fixture","apiProtocol":"responses","hasApiKey":true})},"remoteAccess":remote,"approvalMode":if matches!(mode, "full" | "session-ask") {"fullAccess"} else {"alwaysAsk"}})
+                            json!({"provider":if mode == "unconfigured" {Value::Null} else {json!({"baseUrl":"https://oneapi.zaiwenai.com/v1","model":"fixture","apiProtocol":"responses","hasApiKey":true})},"remoteAccess":remote.lock().unwrap().clone(),"approvalMode":if matches!(mode, "full" | "session-ask") {"fullAccess"} else {"alwaysAsk"}})
                         }
                         "settings.update" => {
                             if let Some(update) = request["params"]["remoteAccess"].as_object() {
-                                remote.as_object_mut().unwrap().extend(update.clone());
+                                remote.lock().unwrap().as_object_mut().unwrap().extend(update.clone());
                             }
                             json!({"provider":{"hasApiKey":true}})
                         }
                         "remote.status" => {
-                            json!({"state":if remote["enabled"] == true {"connected"} else {"disabled"},"mobileClients":0})
+                            json!({"state":if remote.lock().unwrap()["enabled"] == true {"connected"} else {"disabled"},"mobileClients":0})
                         }
                         "settings.models" | "model.list" => {
                             json!({"models":["claude-opus", "gemini-3.8-flash", "gpt-5.6-sol"]})
@@ -134,8 +157,10 @@ impl Fixture {
                         }
                         "session.sendMessage" => {
                             // Real daemons can deliver events before the RPC response.
-                            socket.send(Message::text(json!({"type":"assistant_delta","sessionId":"other-session","delta":"PRIVATE OTHER TASK"}).to_string())).await.unwrap();
-                            socket.send(Message::text(json!({"type":"assistant_delta","sessionId":"session-1","delta":"partial"}).to_string())).await.unwrap();
+                            for event in [json!({"type":"assistant_delta","sessionId":"other-session","delta":"PRIVATE OTHER TASK"}), json!({"type":"assistant_delta","sessionId":"session-1","delta":"partial"})] {
+                                let _ = events.send((connection,event.clone()));
+                                let _ = socket.send(Message::text(event.to_string())).await;
+                            }
                             json!({"message":{"id":"user-1"}})
                         }
                         "session.approval.update" => {
@@ -189,7 +214,7 @@ impl Fixture {
                             socket.close(None).await.unwrap();
                             break;
                         }
-                        let events = match mode {
+                        let turn_events = match mode {
                             "question" => vec![
                                 json!({"type":"question_requested","question":{"id":"question-1","prompt":"Choose"}}),
                             ],
@@ -218,7 +243,7 @@ impl Fixture {
                                 json!({"type":"turn_completed","summary":{"toolCalls":0}}),
                             ],
                         };
-                        for (index, mut event) in events.into_iter().enumerate() {
+                        for (index, mut event) in turn_events.into_iter().enumerate() {
                             if mode == "idle-delayed-completed" {
                                 if index == 1 {
                                     tokio::time::sleep(Duration::from_millis(400)).await;
@@ -227,10 +252,12 @@ impl Fixture {
                                     json!({"epoch":"fixture","sequence":index + 1});
                             }
                             event["sessionId"] = json!("session-1");
-                            socket.send(Message::text(event.to_string())).await.unwrap();
+                            let _ = events.send((connection,event.clone()));
+                            let _ = socket.send(Message::text(event.to_string())).await;
                         }
                     }
                 }
+                });
             }
         });
         Self {

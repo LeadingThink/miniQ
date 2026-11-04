@@ -29,6 +29,7 @@ mod session_diff;
 mod session_goal;
 mod session_history;
 mod session_model;
+mod session_redo;
 
 /// Chat model catalog of a provider, shared with sub-agent model resolution.
 pub(crate) async fn chat_model_catalog(
@@ -247,6 +248,7 @@ async fn dispatch_from(
         "session.sendMessage" => session::send_message(state, req.params).await,
         "session.rewriteMessage" => session::rewrite_message(state, req.params).await,
         "session.undo" => session_context::undo(state, req.params),
+        "session.redo" => session_redo::redo(state, req.params),
         "session.compact" => session_context::compact(state, req.params).await,
         "session.contextUsage" => session_context::context_usage(state, req.params).await,
         "session.pause" => session::pause(state, req.params),
