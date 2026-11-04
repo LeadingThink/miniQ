@@ -30,7 +30,7 @@ export function ComposerField(props: {
       ref={props.fieldRef}
       className={`composer-field${chipped ? " has-paste" : ""}`}
     >
-      {segments.map((segment) => {
+      {segments.map((segment, segmentIndex) => {
         if (segment.kind === "paste") {
           const label = segment.paste.label ?? segment.paste.placeholder.slice(1, -1);
           const Icon = segment.paste.kind === "file-selection" ? FileText : Clipboard;
@@ -59,10 +59,11 @@ export function ComposerField(props: {
         const index = textIndex;
         textIndex += 1;
         const only = !chipped;
+        const beforePaste = segments.slice(segmentIndex + 1).some((next) => next.kind === "paste");
         return (
           <textarea
             key={`text-${index}`}
-            className="composer-segment"
+            className={`composer-segment${beforePaste ? " is-before-paste" : ""}`}
             readOnly={props.readOnly}
             aria-label={index === 0 ? "消息" : undefined}
             aria-describedby={index === 0 ? props.describedBy : undefined}

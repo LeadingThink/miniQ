@@ -64,6 +64,13 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
 
   const baseCss = readFileSync(new URL("./styles/base.css", import.meta.url), "utf8");
   expect(baseCss).toContain('@import "./conversation-v2.css"');
+  const conversationCss = readFileSync(
+    new URL("./styles/conversation.css", import.meta.url),
+    "utf8",
+  );
+  expect(conversationCss).toMatch(
+    /\.composer-field\.has-paste > textarea\.is-before-paste\s*\{[^}]*flex:\s*0 1 auto;/,
+  );
 
   const timeline = readFileSync(
     new URL("./components/Timeline.tsx", import.meta.url),

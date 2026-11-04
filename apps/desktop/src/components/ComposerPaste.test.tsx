@@ -89,6 +89,24 @@ it("collapses a long paste and restores it when the message is sent", async () =
   expect(screen.queryByText("粘贴内容 1500 字")).toBeNull();
 });
 
+it("places a long paste directly after preceding text or at the field start", () => {
+  const first = render(<ComposerCard {...props} draftKey="paste-inline-text" />);
+  fireEvent.change(screen.getByRole("textbox", { name: "消息" }), {
+    target: { value: "粘贴测试测试，" },
+  });
+  pasteOutside(document.body, { text: longText });
+  const chip = screen.getByText("粘贴内容 1500 字").closest(".paste-chip")!;
+  const preceding = chip.previousElementSibling!;
+  expect(preceding.classList.contains("is-before-paste")).toBe(true);
+  expect((preceding as HTMLTextAreaElement).value).toBe("粘贴测试测试，");
+
+  first.unmount();
+  render(<ComposerCard {...props} draftKey="paste-at-start" />);
+  pasteOutside(document.body, { text: longText });
+  const leading = screen.getByText("粘贴内容 1500 字").closest(".paste-chip")?.previousElementSibling;
+  expect(leading).toBeNull();
+});
+
 it("keeps two large pastes apart and expands each in order", async () => {
   const onSend = vi.fn().mockResolvedValue(true);
   render(<ComposerCard busy={false} placeholder="消息" draftKey="paste-large-twice" onSend={onSend} />);
