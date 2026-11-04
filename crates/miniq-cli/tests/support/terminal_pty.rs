@@ -139,13 +139,15 @@ async fn remote_settings_work_in_both_terminal_modes() {
 #[tokio::test]
 async fn up_arrow_recalls_previous_prompt_in_session() {
     let fixture = Fixture::new("success").await;
+    // The renderer can reuse the trailing `s` from the previous elapsed-time
+    // cell. Synchronize on the newly painted summary, not that unchanged cell.
     fixture
         .run_terminal_with_term(
             &[],
             &[
                 ("ctrl+p commands", "Review the project\r"),
-                ("0 tools", "\x1b[A\r"),
-                ("0 tools", "/exit\r"),
+                ("· 0 tool", "\x1b[A\r"),
+                ("· 0 tool", "/exit\r"),
             ],
             "xterm-256color",
         )
@@ -167,7 +169,7 @@ async fn context_compact_and_undo_commands_drive_the_session() {
             &["--max-turns", "7"],
             &[
                 ("ctrl+p commands", "hello\r"),
-                ("0 tools", "/context\r"),
+                ("· 0 tool", "/context\r"),
                 ("Context usage", "\x03/compact\r"),
                 ("Context compaction", "\x03/undo\r"),
                 ("Prompt undone", "\x15/exit\r"),
