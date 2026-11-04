@@ -228,6 +228,13 @@ export function ComposerCard(props: {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
+  useEffect(() => {
+    if (!props.autoFocus) return;
+    const frame = requestAnimationFrame(() =>
+      focusTextarea(activeTextarea(fieldRef.current)),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [props.autoFocus, props.draftKey]);
   // When the draft key changes (e.g. switching sessions), load that key's draft.
   useEffect(() => {
     if (draftKeyRef.current === props.draftKey) return;
@@ -874,7 +881,7 @@ export function ComposerCard(props: {
 }
 
 /** Bottom-docked composer for an open session. */
-export function Composer(props: Omit<ComponentProps<typeof ComposerCard>, "placeholder" | "autoFocus" | "chipSlot"> & { onCancel: () => void }) {
+export function Composer(props: Omit<ComponentProps<typeof ComposerCard>, "placeholder" | "chipSlot"> & { onCancel: () => void }) {
   return (
     <div className="composer-outer">
       <ComposerCard

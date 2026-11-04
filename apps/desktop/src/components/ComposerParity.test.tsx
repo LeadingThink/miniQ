@@ -172,6 +172,25 @@ it("keeps ArrowUp default without history", () => {
   expect(input.value).toBe("");
 });
 
+it("focuses an open-session composer when its history finishes loading", () => {
+  const props = {
+    busy: false,
+    draftKey: "existing-session",
+    sessionId: "existing-session",
+    messages: [
+      { id: "user", sessionId: "existing-session", role: "user", content: "已有问题", createdAt: "" },
+      { id: "assistant", sessionId: "existing-session", role: "assistant", content: "已有回答", createdAt: "" },
+    ] as Message[],
+    onSend: vi.fn(),
+    onCancel: vi.fn(),
+  };
+  const view = render(<Composer {...props} autoFocus={false} />);
+  const input = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "消息" });
+  expect(document.activeElement).not.toBe(input);
+  view.rerender(<Composer {...props} autoFocus />);
+  expect(document.activeElement).toBe(input);
+});
+
 it.each([{ metaKey: true }, { ctrlKey: true }])("opens the attachment picker with %j+U", (modifier) => {
   const { client } = fakeClient({ mode: "remote", sshHost: "devbox" });
   const { input } = renderCard({ client });

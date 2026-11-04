@@ -291,6 +291,7 @@ function SessionPage({ app, slashCommands, onOpenFile, onOpenUrl, onOpenReview, 
         <ProviderOnboardingPrompt onOpenSettings={() => app.navigation.openSettings("services")} />
       )}
       <Composer
+        autoFocus={!app.feed.loading}
         queueSlot={
           <QueueBar
             queue={app.feed.queue}

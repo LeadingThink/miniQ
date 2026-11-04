@@ -19,6 +19,11 @@ function setup(extra: Partial<React.ComponentProps<typeof ComposerCard>> = {}) {
   return { ...view, props, onSend, input: screen.getByRole<HTMLTextAreaElement>("textbox", { name: "消息" }) };
 }
 
+it("does not focus the mobile composer unless a caller explicitly requests it", () => {
+  const { input } = setup();
+  expect(document.activeElement).not.toBe(input);
+});
+
 it("inserts a soft-keyboard newline without sending, then sends the entire draft from the button", async () => {
   const { input, onSend } = setup();
   fireEvent.change(input, { target: { value: "第一行下一行" } });

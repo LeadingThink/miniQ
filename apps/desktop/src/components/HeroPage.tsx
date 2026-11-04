@@ -47,6 +47,7 @@ export function HeroPage({
           />
         )}
         <ComposerCard
+          autoFocus
           onVoiceFocusApplied={app.actions.companionVoiceHandled}
           voiceFocusRequest={
             app.companionVoiceRequest?.sessionId === null &&

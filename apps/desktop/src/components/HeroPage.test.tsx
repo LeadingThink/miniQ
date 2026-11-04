@@ -46,14 +46,14 @@ function fixture(withProject = true) {
   } as unknown as MiniqAppController;
 }
 
-it("uses the selected project and keeps project/approval controls before the input", () => {
+it("focuses the task input and keeps project/approval controls before it", () => {
   const app = fixture();
   render(<HeroPage app={app} slashCommands={[]} />);
   expect(
     screen.getByRole("heading", { name: "要在 stock_news 中完成什么？" }),
   ).toBeTruthy();
   const input = screen.getByRole("textbox", { name: "消息" });
-  expect(document.activeElement).not.toBe(input);
+  expect(document.activeElement).toBe(input);
   const project = screen.getByRole("button", { name: "stock_news" });
   const approval = screen.getByRole("button", { name: "帮我批准" });
   for (const control of [project, approval]) {
