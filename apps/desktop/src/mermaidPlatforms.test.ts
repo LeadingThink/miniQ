@@ -71,6 +71,19 @@ it("ships the shared frontend through the Tauri and Capacitor WebView entry poin
   );
   expect(timeline).toContain("<AgentStatusIndicator");
 
+  const timelineInteractions = readFileSync(
+    new URL("./components/TimelineInteractions.tsx", import.meta.url),
+    "utf8",
+  );
+  expect(timelineInteractions).toContain('import "./ArtifactCard.css"');
+  const artifactCardCss = readFileSync(
+    new URL("./components/ArtifactCard.css", import.meta.url),
+    "utf8",
+  );
+  expect(artifactCardCss).toMatch(
+    /\.artifact-file\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-width:\s*0;[^}]*overflow:\s*hidden;/,
+  );
+
   const hero = readFileSync(
     new URL("./components/HeroPage.tsx", import.meta.url),
     "utf8",

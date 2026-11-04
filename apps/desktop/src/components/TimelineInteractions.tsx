@@ -112,18 +112,11 @@ const FILE_TYPE_ICONS: Record<DeliveredFileType, LucideIcon> = {
   other: File,
 };
 
-/** Breadcrumb segments for a delivered path, without inventing a missing drive. */
-function pathCrumbs(path: string): { key: string; label: string }[] {
+/** Directory containing a delivered artifact, without inventing a missing drive. */
+function artifactDirectory(path: string): string {
   const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  const drive = /^[A-Za-z]:/.exec(normalized)?.[0];
-  const body = drive ? normalized.slice(drive.length) : normalized;
-  const parts = body.split("/").filter(Boolean);
-  if (parts.length > 1) parts.pop();
-  const labels = drive ? [drive, ...parts] : parts;
-  return labels.map((label, index) => ({
-    key: `${index}:${label}`,
-    label,
-  }));
+  const separator = normalized.lastIndexOf("/");
+  return separator > 0 ? normalized.slice(0, separator) : "";
 }
 
 export function ArtifactCard(props: {
@@ -142,7 +135,7 @@ export function ArtifactCard(props: {
   const fileType = fileTypeInfo(path ?? artifact.path, artifact.kind);
   const Icon = FILE_TYPE_ICONS[fileType.type];
   const extension = fileExtension(path ?? artifact.path);
-  const crumbs = pathCrumbs(path ?? artifact.path);
+  const directoryPath = artifactDirectory(path ?? artifact.path);
   const directory = artifact.kind === "directory";
   const fileRef = path
     ? { ...fileReferenceAttributes({ path, line: null, column: null }), "data-file-directory": directory ? "true" : undefined }
@@ -205,15 +198,8 @@ export function ArtifactCard(props: {
                 已就绪
               </span>
             </div>
-            {crumbs.length > 0 && (
-              <div className="artifact-crumbs">
-                {crumbs.map((crumb, index) => (
-                  <span key={crumb.key} className="artifact-crumb">
-                    {index > 0 && <span className="artifact-crumb-sep" aria-hidden="true">/</span>}
-                    <span className={index === crumbs.length - 1 ? "is-current" : undefined}>{crumb.label}</span>
-                  </span>
-                ))}
-              </div>
+            {directoryPath && (
+              <div className="artifact-path" title={directoryPath}>{directoryPath}</div>
             )}
           </div>
         </div>
