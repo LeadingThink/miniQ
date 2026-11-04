@@ -235,7 +235,10 @@ impl Client {
                     new.max_turns = self.max_turns;
                     new.scope(session);
                     let snapshot = new
-                        .call("session.open", json!({"sessionId":session}))
+                        .call(
+                            "session.open",
+                            json!({"sessionId":session,"includePayloads":true}),
+                        )
                         .await?;
                     *self = new;
                     return Ok(snapshot);
@@ -318,6 +321,51 @@ fn daemon_binary(explicit: Option<&Path>) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn reconnect_restores_complete_tool_payloads_and_keeps_only_newer_events() {
+        let mut fixture = test_fixture::Fixture::new(vec![]).await;
+        let directory = tempfile::tempdir().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        miniq_local::write_connection_info(
+            directory.path(),
+            &ConnectionInfo::current(
+                listener.local_addr().unwrap().port(),
+                "reconnect-fixture".into(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        fixture.client.directory = directory.path().into();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let health: Value =
+                serde_json::from_str(socket.next().await.unwrap().unwrap().to_text().unwrap())
+                    .unwrap();
+            socket.send(Message::text(json!({"id":health["id"],"result":{"protocolVersion":miniq_protocol::PROTOCOL_VERSION}}).to_string())).await.unwrap();
+            let request: Value =
+                serde_json::from_str(socket.next().await.unwrap().unwrap().to_text().unwrap())
+                    .unwrap();
+            assert_eq!(request["method"], "session.open");
+            assert_eq!(
+                request["params"],
+                json!({"sessionId":"s","includePayloads":true})
+            );
+            for sequence in [5, 6] {
+                socket.send(Message::text(json!({"type":"assistant_delta","sessionId":"s","delta":sequence.to_string(),"eventCursor":{"epoch":"one","sequence":sequence}}).to_string())).await.unwrap();
+            }
+            socket.send(Message::text(json!({"id":request["id"],"result":{
+                "eventCursor":{"epoch":"one","sequence":5},
+                "toolCalls":[{"id":"t","output":{"stdout":"complete","stderr":"diagnostic"}}]
+            }}).to_string())).await.unwrap();
+        });
+        let snapshot = fixture.client.reconnect("s").await.unwrap();
+        assert_eq!(snapshot["toolCalls"][0]["output"]["stderr"], "diagnostic");
+        assert_eq!(fixture.client.next_event().await.unwrap()["delta"], "6");
+        server.await.unwrap();
+        fixture.finish().await;
+    }
+
     #[test]
     fn snapshot_cursor_deduplicates_pending_approvals_without_losing_new_events() {
         let cursor = json!({"epoch":"one", "sequence":5});

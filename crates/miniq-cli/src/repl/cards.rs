@@ -12,9 +12,11 @@ use crate::{client::Client, output::terminal_text};
 pub(crate) enum Card {
     Approval {
         id: Value,
+        body: String,
     },
     Question {
         id: Value,
+        body: String,
         options: Vec<String>,
         multi_select: bool,
         deadline: Option<OffsetDateTime>,
@@ -22,9 +24,15 @@ pub(crate) enum Card {
 }
 
 impl Card {
+    pub(super) fn body(&self) -> &str {
+        match self {
+            Self::Approval { body, .. } | Self::Question { body, .. } => body,
+        }
+    }
+
     fn id(&self) -> &Value {
         match self {
-            Self::Approval { id } | Self::Question { id, .. } => id,
+            Self::Approval { id, .. } | Self::Question { id, .. } => id,
         }
     }
 
@@ -128,14 +136,12 @@ pub(crate) fn approval_text(event: &Value) -> String {
 
 impl Repl {
     pub(super) fn card(&mut self, event: &Value) {
-        let (card, text) = if event["type"] == "approval_requested" {
+        let card = if event["type"] == "approval_requested" {
             let approval = &event["approval"];
-            (
-                Card::Approval {
-                    id: approval["id"].clone(),
-                },
-                approval_text(event),
-            )
+            Card::Approval {
+                body: approval_text(event),
+                id: approval["id"].clone(),
+            }
         } else {
             let question = &event["question"];
             let deadline = question["createdAt"]
@@ -152,26 +158,28 @@ impl Repl {
                 .filter_map(Value::as_str)
                 .map(str::to_owned)
                 .collect();
-            (
-                Card::Question {
-                    id: question["id"].clone(),
-                    options,
-                    multi_select: question["multiSelect"] == true,
-                    deadline,
-                },
-                question_text(question),
-            )
+            Card::Question {
+                body: question_text(question),
+                id: question["id"].clone(),
+                options,
+                multi_select: question["multiSelect"] == true,
+                deadline,
+            }
         };
         if !self.cards.iter().any(|pending| pending.id() == card.id()) {
-            self.emit(&text);
+            self.emit(card.body());
+            self.ui.card_selected = 0;
+            self.ui.card_offset = 0;
+            self.ui.scroll = None;
             self.cards.push_back(card);
         }
     }
 
     pub(super) fn resolved_card(&mut self, event: &Value) {
+        let previous = self.cards.front().map(|card| card.id().clone());
         self.cards
             .retain(|card| match (event["type"].as_str(), card) {
-                (Some("approval_resolved"), Card::Approval { id }) => {
+                (Some("approval_resolved"), Card::Approval { id, .. }) => {
                     *id != event["approval"]["id"]
                 }
                 (Some("question_resolved"), Card::Question { id, .. }) => {
@@ -179,6 +187,10 @@ impl Repl {
                 }
                 _ => true,
             });
+        if self.cards.front().map(Card::id) != previous.as_ref() {
+            self.ui.card_selected = 0;
+            self.ui.card_offset = 0;
+        }
     }
 
     pub(super) async fn resolve(&mut self, client: &mut Client, answer: &str) -> Result<()> {
@@ -186,7 +198,7 @@ impl Repl {
             return Ok(());
         };
         let (method, params, notice) = match &card {
-            Card::Approval { id } => {
+            Card::Approval { id, .. } => {
                 let decision = match answer {
                     "1" | "y" | "Y" => "approve",
                     "2" => "approve_for_session",
@@ -216,6 +228,8 @@ impl Repl {
         };
         client.call(method, params).await?;
         self.cards.retain(|pending| pending.id() != card.id());
+        self.ui.card_selected = 0;
+        self.ui.card_offset = 0;
         self.info(&format!("→ {notice}"));
         Ok(())
     }
@@ -261,18 +275,33 @@ mod tests {
     #[test]
     fn remote_resolution_removes_only_the_matching_card() {
         let mut repl = Repl::new("s", &Default::default());
-        repl.cards.push_back(Card::Approval { id: json!("a") });
-        repl.cards.push_back(Card::Approval { id: json!("b") });
+        repl.cards.push_back(Card::Approval {
+            id: json!("a"),
+            body: String::new(),
+        });
+        repl.cards.push_back(Card::Approval {
+            id: json!("b"),
+            body: String::new(),
+        });
         repl.cards.push_back(Card::Question {
             id: json!("q"),
+            body: String::new(),
             options: vec![],
             multi_select: false,
             deadline: None,
         });
+        repl.ui.card_selected = 3;
+        repl.ui.card_offset = 20;
         repl.resolved_card(&json!({"type":"approval_resolved","approval":{"id":"b"}}));
         assert_eq!(repl.cards.len(), 2);
         assert_eq!(repl.cards.front().unwrap().id(), "a");
+        assert_eq!(repl.ui.card_selected, 3);
+        assert_eq!(repl.ui.card_offset, 20);
+        repl.resolved_card(&json!({"type":"approval_resolved","approval":{"id":"a"}}));
+        assert_eq!(repl.cards.front().unwrap().id(), "q");
+        assert_eq!(repl.ui.card_selected, 0);
+        assert_eq!(repl.ui.card_offset, 0);
         repl.resolved_card(&json!({"type":"question_resolved","questionId":"q"}));
-        assert_eq!(repl.cards.len(), 1);
+        assert!(repl.cards.is_empty());
     }
 }

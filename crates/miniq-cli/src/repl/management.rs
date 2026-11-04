@@ -112,7 +112,7 @@ pub(super) async fn run(repl: &mut Repl, client: &mut Client, line: &str) -> Res
     };
     repl.suspend();
     let result = dispatch(client, command).await;
-    repl.resume()?;
+    repl.return_from_command()?;
     result?;
     // Drain replies in the normal event loop before reconnecting if activation
     // replaced the daemon. Installing or choosing Later keeps its connection.

@@ -36,6 +36,9 @@ pub fn choose(title: &str, choices: &[Choice], current: Option<&str>) -> Result<
         progress("No available choices.");
         return Ok(None);
     }
+    if crate::repl::supported() {
+        return crate::repl::choose(title, choices, current);
+    }
     let mut query = String::new();
     let mut page = 0;
     loop {

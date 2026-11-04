@@ -27,7 +27,7 @@ it("checks the installed CLI without installing until explicitly requested", asy
   expect(screen.getByText(missing.path)).toBeTruthy();
 });
 
-it("copies the correct installer for each platform and pins the available Linux release", async () => {
+it("copies the correct installer for each platform and installs the latest Linux release", async () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
   invoke.mockResolvedValue({ ...missing, path: "C:\\Users\\test\\AppData\\Local\\miniQ\\bin\\miniq.exe" });
@@ -41,7 +41,7 @@ it("copies the correct installer for each platform and pins the available Linux 
   fireEvent.click(screen.getByRole("button", { name: "复制 Windows PowerShell 安装命令" }));
   await waitFor(() => expect(writeText).toHaveBeenLastCalledWith("irm https://oss.zaiwen.top/releases/miniq/install.ps1 | iex"));
   fireEvent.click(screen.getByRole("button", { name: "复制 Linux / WSL 安装命令" }));
-  await waitFor(() => expect(writeText).toHaveBeenLastCalledWith("curl -fsSL https://oss.zaiwen.top/releases/miniq/install.sh | MINIQ_VERSION=0.1.54 sh"));
+  await waitFor(() => expect(writeText).toHaveBeenLastCalledWith("curl -fsSL https://oss.zaiwen.top/releases/miniq/install.sh | sh"));
   expect(invoke.mock.calls).toEqual([["terminal_install_status"]]);
 });
 

@@ -36,5 +36,7 @@ time = { workspace = true }
 tempfile = "3"
 crossterm = { version = "0.28", default-features = false, features = ["bracketed-paste", "events", "event-stream", "windows"] }
 unicode-width = "0.2"
+unicode-segmentation = "1"
+ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
 ignore = { workspace = true }
 shell-words = "1"

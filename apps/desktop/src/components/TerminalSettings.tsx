@@ -26,8 +26,8 @@ const INSTALLERS = [
   },
   {
     platform: "Linux / WSL",
-    requirements: "支持 x86_64，需 glibc 2.31 或更高版本。当前可用版本为 0.1.54，请使用此指定版本命令安装或重装。",
-    command: "curl -fsSL https://oss.zaiwen.top/releases/miniq/install.sh | MINIQ_VERSION=0.1.54 sh",
+    requirements: "支持 x86_64，需 glibc 2.31 或更高版本。命令会自动安装当前平台已发布的最新版。",
+    command: "curl -fsSL https://oss.zaiwen.top/releases/miniq/install.sh | sh",
   },
 ];
 
@@ -110,7 +110,7 @@ export function TerminalSettings() {
     <ul className="terminal-command-help">
       <li>会话中输入 <code>/model</code> 选择模型，<code>/effort</code> 调整当前会话的推理强度。</li>
       <li><code>miniq resume</code>：选择并继续当前项目的历史会话。</li>
-      <li><code>miniq update</code>：更新 macOS / Windows 终端程序；Linux / WSL 暂请使用下方指定版本的安装命令。</li>
+      <li><code>miniq update</code>：更新终端程序，安装当前平台已发布的最新版。</li>
       <li><code>miniq doctor</code>：检查终端、后台版本与依赖状态。</li>
     </ul>
     <TerminalInstallGuide />

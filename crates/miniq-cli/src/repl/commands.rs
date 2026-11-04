@@ -1,6 +1,5 @@
 //! Slash commands for the rich REPL.
 
-use std::io::Write;
 use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
@@ -11,8 +10,19 @@ use super::{render, Repl};
 use crate::client::Client;
 use crate::output::terminal_text;
 
+#[path = "command_output.rs"]
+mod output;
+#[cfg(test)]
+use output::base64_lite;
+use output::{copy, list_hooks, list_names, usage};
+
 const COMMANDS: &[(&str, &str)] = &[
     ("/help", "show commands and keys"),
+    ("/commands", "open the command palette"),
+    ("/models", "choose this session's model"),
+    ("/sessions", "switch to another session"),
+    ("/sidebar", "toggle session sidebar"),
+    ("/details", "expand or collapse complete tool output"),
     ("/model", "choose this session's model"),
     ("/effort", "choose reasoning effort"),
     (
@@ -93,7 +103,9 @@ pub fn list() -> Vec<(String, String)> {
 
 const KEYS: &str = "Keys: Enter send (queues while running) · Tab steer running turn / complete · Shift+Enter, Alt+Enter or \\ Enter newline
   Esc interrupt · Ctrl+C clear/interrupt, twice to exit · Ctrl+D exit on empty line · Shift+Tab cycle permissions
-  Up/Down history · Ctrl+R search history · Ctrl+L clear screen · Ctrl+G edit in $EDITOR
+  Ctrl+P commands · Ctrl+X then N new / L sessions / M models / B sidebar / D tool details
+  PgUp/PgDn or mouse wheel scroll · Ctrl+Home older history · Ctrl+End latest
+  Up/Down history · Ctrl+R search history · Ctrl+L redraw screen · Ctrl+G edit in $EDITOR
   Customize keys, editorMode (emacs|vim) and statusLine in cli.json: see /keybindings, /vim, /statusline
   Vim mode: Esc for NORMAL (h j k l w b e 0 ^ $ i a I A o O x X dd D C cc dw cw db d$ yy p P u r G gg)
   @path attaches an existing file (Tab completes paths) · !cmd runs a local shell command, output is not sent";
@@ -111,9 +123,23 @@ pub async fn run(
     if super::management::run(repl, client, line).await? {
         return Ok(None);
     }
+    let command = match command {
+        "/models" => "/model",
+        "/sessions" => "/resume",
+        other => other,
+    };
     let session = repl.session.clone();
     match command {
         "/exit" | "/quit" => return Ok(Some(0)),
+        "/commands" => {
+            repl.open_picker(client, super::picker::Purpose::Commands)
+                .await?
+        }
+        "/sidebar" => repl.ui.sidebar = !repl.ui.sidebar,
+        "/details" => {
+            repl.ui.expanded = !repl.ui.expanded;
+            repl.ui.scroll = None;
+        }
         "/help" => {
             let mut text = String::from("Commands:\n");
             for (name, description) in COMMANDS {
@@ -124,25 +150,38 @@ pub async fn run(
             repl.emit(&text);
         }
         "/model" | "/effort" => {
-            repl.suspend();
-            let result = crate::monitor::change_model(client, &session, command, arg).await;
-            repl.resume()?;
-            result?;
-            repl.refresh(client).await;
+            if arg.is_empty() {
+                repl.open_picker(
+                    client,
+                    if command == "/model" {
+                        super::picker::Purpose::Models
+                    } else {
+                        super::picker::Purpose::Effort
+                    },
+                )
+                .await?;
+            } else {
+                let options = crate::args::ChatOptions {
+                    model: (command == "/model").then(|| arg.to_owned()),
+                    effort: (command == "/effort").then(|| arg.to_owned()),
+                    ..Default::default()
+                };
+                crate::sessions::update_model(client, &session, &options).await?;
+                repl.refresh(client).await;
+                repl.notice = format!("Selected {arg}");
+            }
         }
         "/remote" => {
             repl.suspend();
             let result = crate::remote_settings::run(client, arg).await;
-            repl.resume()?;
+            repl.return_from_command()?;
             result?;
         }
         "/permissions" | "/approvals" => {
             let mode = match arg {
                 "" => {
-                    repl.info(&format!(
-                        "permissions: {} (Shift+Tab cycles; /permissions alwaysAsk|auto|fullAccess)",
-                        repl.mode
-                    ));
+                    repl.open_picker(client, super::picker::Purpose::Permissions)
+                        .await?;
                     return Ok(None);
                 }
                 "ask" | "alwaysAsk" => "alwaysAsk",
@@ -180,17 +219,12 @@ pub async fn run(
         }
         "/resume" => {
             idle(repl)?;
-            let id = if arg.is_empty() {
-                repl.suspend();
-                let picked = crate::selection::session(client, &repl.options).await;
-                repl.resume()?;
-                match picked? {
-                    Some(id) => id,
-                    None => return Ok(None),
-                }
-            } else {
-                arg.to_owned()
-            };
+            if arg.is_empty() {
+                repl.open_picker(client, super::picker::Purpose::Sessions)
+                    .await?;
+                return Ok(None);
+            }
+            let id = arg.to_owned();
             let id = crate::sessions::prepare(client, &repl.options, Some(&id)).await?;
             switch(repl, client, &id).await?;
         }
@@ -373,13 +407,10 @@ pub async fn run(
         }
         "/clear" => {
             editor.clear();
-            let mut out = std::io::stdout();
-            let _ = crossterm::execute!(
-                out,
-                crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
-                crossterm::cursor::MoveTo(0, 0)
-            );
-            let _ = out.flush();
+            repl.ui.scroll = None;
+            if let Some(terminal) = repl.terminal.as_mut() {
+                terminal.terminal.clear()?;
+            }
         }
         "/keybindings" => {
             let text = format!(
@@ -428,201 +459,24 @@ fn idle(repl: &Repl) -> Result<()> {
     Ok(())
 }
 
-async fn switch(repl: &mut Repl, client: &mut Client, id: &str) -> Result<()> {
-    let snapshot = client.call("session.open", json!({"sessionId":id})).await?;
+pub(super) async fn switch(repl: &mut Repl, client: &mut Client, id: &str) -> Result<()> {
+    let snapshot = client
+        .call(
+            "session.open",
+            json!({"sessionId":id,"includePayloads":true}),
+        )
+        .await?;
     repl.session = id.to_owned();
     repl.context_percent = None;
     repl.context_stale = true;
     repl.last_answer.clear();
     repl.restore(&snapshot);
     repl.refresh(client).await;
-    let title = snapshot["session"]["title"]
-        .as_str()
-        .unwrap_or("")
-        .to_owned();
-    repl.info(&format!("Session: {id} {title}"));
+    repl.ui.picker = None;
+    repl.ui.scroll = None;
     Ok(())
 }
 
-/// Copy via OSC 52 (works over SSH) and, when available, the local clipboard tool.
-fn copy(text: &str) {
-    use base64_lite::encode;
-    let _ = write!(
-        std::io::stdout(),
-        "\x1b]52;c;{}\x07",
-        encode(text.as_bytes())
-    );
-    let _ = std::io::stdout().flush();
-    for tool in ["pbcopy", "wl-copy", "xclip -selection clipboard"] {
-        let mut parts = tool.split(' ');
-        let Some(program) = parts.next() else {
-            continue;
-        };
-        if let Ok(mut child) = std::process::Command::new(program)
-            .args(parts)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-        {
-            if let Some(mut stdin) = child.stdin.take() {
-                let _ = stdin.write_all(text.as_bytes());
-            }
-            let _ = child.wait();
-            return;
-        }
-    }
-}
-
-mod base64_lite {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    pub fn encode(bytes: &[u8]) -> String {
-        let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-        for chunk in bytes.chunks(3) {
-            let b = [
-                chunk[0],
-                *chunk.get(1).unwrap_or(&0),
-                *chunk.get(2).unwrap_or(&0),
-            ];
-            let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
-            for i in 0..4 {
-                if i <= chunk.len() {
-                    out.push(TABLE[(n >> (18 - 6 * i) & 63) as usize] as char);
-                } else {
-                    out.push('=');
-                }
-            }
-        }
-        out
-    }
-}
-
-fn usage(result: &Value) -> String {
-    let calls = result["calls"]
-        .as_array()
-        .or(result["modelCalls"].as_array())
-        .or(result.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let (mut input, mut output, mut cached, mut unknown) = (0u64, 0u64, 0u64, 0usize);
-    for call in &calls {
-        let usage = if call["response"]["usage"].is_object() {
-            &call["response"]["usage"]
-        } else {
-            &call["usage"]
-        };
-        if !usage.is_object() {
-            unknown += 1;
-            continue;
-        }
-        let field = |names: &[&str]| names.iter().find_map(|n| usage[*n].as_u64()).unwrap_or(0);
-        // Exact provider fields: OpenAI chat/responses and Anthropic shapes.
-        input += field(&["input_tokens", "prompt_tokens", "inputTokens"]);
-        output += field(&["output_tokens", "completion_tokens", "outputTokens"]);
-        cached += usage["input_tokens_details"]["cached_tokens"]
-            .as_u64()
-            .or(usage["prompt_tokens_details"]["cached_tokens"].as_u64())
-            .unwrap_or_else(|| field(&["cache_read_input_tokens", "cachedInputTokens"]));
-    }
-    let mut text = format!(
-        "{} model call(s) · input {input} tokens ({cached} cached) · output {output} tokens",
-        calls.len()
-    );
-    if unknown > 0 {
-        text.push_str(&format!(" · {unknown} call(s) without usage data"));
-    }
-    text
-}
-
-fn list_hooks(repl: &mut Repl, result: &Value) {
-    let hooks = result["hooks"].as_array().cloned().unwrap_or_default();
-    let mut text = String::new();
-    if result["enabled"] == json!(false) {
-        text.push_str("  (hooks feature flag is off)\n");
-    }
-    if hooks.is_empty() {
-        repl.info(&format!("{}No hooks.", text.trim_start()));
-        return;
-    }
-    for hook in hooks {
-        let event = hook["event"].as_str().unwrap_or("?");
-        let matcher = hook["matcher"].as_str().unwrap_or("*");
-        let disabled = if hook["enabled"] == json!(false) {
-            " (disabled)"
-        } else {
-            ""
-        };
-        let command = hook["command"].as_str().unwrap_or("");
-        text.push_str(&format!(
-            "  {event} [{matcher}]{disabled}  {}\n",
-            command.to_owned()
-        ));
-    }
-    repl.emit(&terminal_text(&text));
-}
-
-fn list_names(repl: &mut Repl, result: &Value, keys: &[&str], label: &str) {
-    let items = keys
-        .iter()
-        .find_map(|k| result[*k].as_array())
-        .or(result.as_array())
-        .cloned()
-        .unwrap_or_default();
-    if items.is_empty() {
-        repl.info(&format!("No {label}."));
-        return;
-    }
-    let mut text = String::new();
-    for item in items {
-        let name = item["name"]
-            .as_str()
-            .or(item["id"].as_str())
-            .or(item.as_str())
-            .unwrap_or("?");
-        let detail = item["description"]
-            .as_str()
-            .or(item["status"].as_str())
-            .unwrap_or("");
-        text.push_str(&format!("  {name}  {}\n", detail.to_owned()));
-    }
-    repl.emit(&terminal_text(&text));
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn base64_matches_reference() {
-        assert_eq!(base64_lite::encode(b""), "");
-        assert_eq!(base64_lite::encode(b"f"), "Zg==");
-        assert_eq!(base64_lite::encode(b"fo"), "Zm8=");
-        assert_eq!(base64_lite::encode(b"foobar"), "Zm9vYmFy");
-    }
-
-    #[test]
-    fn usage_sums_known_calls() {
-        let text = usage(&json!({"calls":[
-            {"response":{"usage":{"input_tokens":7,"output_tokens":1,"cache_read_input_tokens":4}}},
-            {"response":{"usage":{"prompt_tokens":3,"completion_tokens":1,"prompt_tokens_details":{"cached_tokens":1}}}},
-            {"response":{"usage":null}}
-        ]}));
-        assert!(text.contains("input 10"));
-        assert!(text.contains("output 2"));
-        assert!(text.contains("(5 cached)"));
-        assert!(text.contains("1 call(s) without usage"));
-    }
-
-    #[test]
-    fn commands_are_unique_and_include_context_tools() {
-        let names: Vec<_> = COMMANDS.iter().map(|c| c.0).collect();
-        let mut sorted = names.clone();
-        sorted.sort();
-        sorted.dedup();
-        assert_eq!(sorted.len(), names.len());
-        for name in ["/undo", "/compact", "/context"] {
-            assert!(names.contains(&name), "{name}");
-        }
-    }
-}
+#[path = "command_tests.rs"]
+mod tests;

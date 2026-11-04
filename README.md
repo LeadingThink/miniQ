@@ -91,12 +91,12 @@ Windows 10 / 11 x64，在 PowerShell 中执行：
 irm https://oss.zaiwen.top/releases/miniq/install.ps1 | iex
 ```
 
-Linux / WSL（x86_64，glibc 2.31+），当前可用终端正式版为 0.1.54：
+Linux / WSL（x86_64，glibc 2.31+）：
 
 ```sh
-curl -fsSL https://oss.zaiwen.top/releases/miniq/install.sh | MINIQ_VERSION=0.1.54 sh
+curl -fsSL https://oss.zaiwen.top/releases/miniq/install.sh | sh
 ```
 
-安装后重新打开终端，进入项目目录运行 `miniq`。首次使用会引导配置 API Key 并搜索选择文本模型；本机已有桌面配置会直接复用，其他电脑需单独配置，WSL 与 Windows 使用独立的数据目录。在会话中输入 `/model` 选择模型，`/effort` 调整当前会话的推理强度。`miniq resume` 选择当前项目的历史会话，`miniq doctor` 查看终端、后台版本与依赖状态。
+安装器会读取当前平台的官方发布清单并安装最新版；如需安装某个已发布版本，可设置 `MINIQ_VERSION=x.y.z`。安装后重新打开终端，进入项目目录运行 `miniq`。首次使用会引导配置 API Key 并搜索选择文本模型；本机已有桌面配置会直接复用，其他电脑需单独配置，WSL 与 Windows 使用独立的数据目录。在会话中输入 `/model` 选择模型，`/effort` 调整当前会话的推理强度。`miniq resume` 选择当前项目的历史会话，`miniq doctor` 查看终端、后台版本与依赖状态。
 
-macOS / Windows 可用 `miniq update` 更新终端程序。0.1.55 未发布 Linux 终端包，Linux / WSL 暂请使用上方指定 0.1.54 的命令安装或重装。更新保留运行中的任务，详见[终端安装、使用与多端说明](docs/terminal.md)。
+`miniq update` 会使用同一安装机制更新到当前平台已发布的最新版，更新保留运行中的任务，详见[终端安装、使用与多端说明](docs/terminal.md)。

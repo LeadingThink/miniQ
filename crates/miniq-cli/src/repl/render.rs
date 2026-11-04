@@ -80,12 +80,13 @@ impl Markdown {
     /// Flush any partial line at the end of a message.
     pub fn finish(&mut self, style: Style) -> String {
         let rest = std::mem::take(&mut self.pending);
-        self.fence = None;
-        if rest.is_empty() {
+        let result = if rest.is_empty() {
             String::new()
         } else {
             format!("{}\n", self.line(&rest, style))
-        }
+        };
+        self.fence = None;
+        result
     }
 
     fn line(&mut self, raw: &str, style: Style) -> String {
@@ -304,7 +305,7 @@ fn tool_detail(input: &Value) -> String {
             input.to_string()
         }
     });
-    truncate(&terminal_text(&detail).replace('\n', " ⏎ "), 100)
+    terminal_text(&detail).replace('\n', " ⏎ ")
 }
 
 pub fn tool_summary(name: &str, input: &Value) -> String {
@@ -337,12 +338,8 @@ pub fn tool_summary(name: &str, input: &Value) -> String {
     }
 }
 
-pub fn tool_started(name: &str, input: &Value, style: Style) -> String {
-    format!("{} {}\n", style.cyan("•"), tool_summary(name, input))
-}
-
-/// Completion mark plus up to `max` lines of output.
-pub fn tool_finished(status: &str, output: Option<&Value>, max: usize, style: Style) -> String {
+/// Completion status and complete output; the transcript handles folding/scrolling.
+pub fn tool_finished(status: &str, output: Option<&Value>, style: Style) -> String {
     let ok = matches!(status, "completed" | "succeeded" | "success" | "ok");
     let mark = if ok {
         style.green("✓")
@@ -352,35 +349,18 @@ pub fn tool_finished(status: &str, output: Option<&Value>, max: usize, style: St
     let text = match output {
         Some(Value::String(s)) => s.clone(),
         Some(Value::Null) | None => String::new(),
-        Some(value) => value
-            .get("output")
-            .or_else(|| value.get("stdout"))
-            .or_else(|| value.get("text"))
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .unwrap_or_else(|| value.to_string()),
+        Some(value) => serde_json::to_string_pretty(value).expect("JSON value is serializable"),
     };
     let text = terminal_text(&text);
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let lines: Vec<&str> = text.lines().collect();
     let mut out = format!("  {mark}");
     if lines.is_empty() {
         out.push('\n');
         return out;
     }
     out.push('\n');
-    for line in lines.iter().take(max) {
-        out.push_str(&format!(
-            "  {} {}\n",
-            style.dim("│"),
-            style.dim(&truncate(line, 160))
-        ));
-    }
-    if lines.len() > max {
-        out.push_str(&format!(
-            "  {} {}\n",
-            style.dim("│"),
-            style.dim(&format!("… {} more lines", lines.len() - max))
-        ));
+    for line in &lines {
+        out.push_str(&format!("  {} {}\n", style.dim("│"), style.dim(line)));
     }
     out
 }
@@ -443,99 +423,6 @@ pub fn duration(millis: u64) -> String {
     }
 }
 
-pub fn truncate(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
-        return text.to_string();
-    }
-    let mut out: String = text.chars().take(max.saturating_sub(1)).collect();
-    out.push('…');
-    out
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    const PLAIN: Style = Style { color: false };
-    const COLOR: Style = Style { color: true };
-
-    #[test]
-    fn markdown_streams_by_line() {
-        let mut md = Markdown::default();
-        assert_eq!(md.push("# Tit", PLAIN), "");
-        assert_eq!(md.push("le\n- **a** `b`\n", PLAIN), "TITLE\n• a b\n");
-        assert_eq!(md.push("> quote", PLAIN), "");
-        assert_eq!(md.finish(PLAIN), "▌ quote\n");
-    }
-
-    #[test]
-    fn markdown_code_blocks_and_color() {
-        let mut md = Markdown::default();
-        let out = md.push("```diff\n+add\n-del\n```\n", COLOR);
-        assert!(out.contains("┌── diff"));
-        assert!(out.contains("\x1b[32m+add"));
-        assert!(out.contains("\x1b[31m-del"));
-        assert!(out.contains("└──"));
-        assert_eq!(inline("**b**", COLOR), "\x1b[1mb\x1b[0m");
-    }
-
-    #[test]
-    fn markdown_strips_control_sequences() {
-        let mut md = Markdown::default();
-        let out = md.push("evil\x1b]52;c;AAAA\x07text\n", PLAIN);
-        assert!(!out.contains('\x1b'));
-    }
-
-    #[test]
-    fn diff_rendering() {
-        let result = json!({"files": [{"path": "a.rs", "additions": 1, "deletions": 1,
-            "hunks": [{"lines": [
-                {"kind": "context", "content": "x"},
-                {"kind": "deletion", "content": "old"},
-                {"kind": "addition", "content": "new"}]}]}]});
-        let out = diff(&result, PLAIN);
-        assert!(out.contains("a.rs +1 -1"));
-        assert!(out.contains(" x\n-old\n+new\n"));
-        assert_eq!(
-            diff(&json!({"files": []}), PLAIN),
-            "No changes in this session.\n"
-        );
-    }
-
-    #[test]
-    fn tool_lines() {
-        assert_eq!(
-            tool_summary("shell", &json!({"command": "ls -la"})),
-            "Ran shell: ls -la"
-        );
-        assert_eq!(
-            tool_summary("file_read", &json!({"path": "a"})),
-            "Read file_read: a"
-        );
-        let out = tool_finished("completed", Some(&json!("1\n2\n3\n4\n5\n6\n7")), 5, PLAIN);
-        assert!(out.starts_with("  ✓\n"));
-        assert!(out.contains("│ 5\n"));
-        assert!(!out.contains("│ 6\n"));
-        assert!(out.contains("… 2 more lines"));
-        assert!(tool_finished("failed", None, 5, PLAIN).contains("✗ failed"));
-    }
-
-    #[test]
-    fn plan_and_summary() {
-        let out = plan(
-            &json!([{"content": "a", "status": "completed"}, {"content": "b", "status": "in_progress"}, {"content": "c", "status": "pending"}]),
-            PLAIN,
-        );
-        assert_eq!(out, "  ☑ a\n  ◐ b\n  ☐ c\n");
-        let s = turn_summary(
-            Some(
-                &json!({"toolCalls": 3, "failedToolCalls": 1, "filesChanged": 2, "durationMs": 12500}),
-            ),
-            Default::default(),
-            PLAIN,
-        );
-        assert_eq!(s, "─ 12.5s · 3 tools (1 failed) · 2 files changed ─\n");
-        assert_eq!(duration(75_000), "1m15s");
-    }
-}
+#[path = "render_tests.rs"]
+mod tests;
