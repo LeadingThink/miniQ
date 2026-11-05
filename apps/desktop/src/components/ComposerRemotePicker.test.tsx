@@ -35,6 +35,20 @@ async function choose(name = "选择本机文件", count = 1) {
   await act(async () => { fireEvent.change(screen.getByLabelText(name), { target: { files } }); });
   return files;
 }
+it("leaves the initially closed picker alone and closes it after dismissal", () => {
+  const close = vi.spyOn(HTMLDialogElement.prototype, "close");
+  try {
+    render(<ComposerCard {...base} />);
+    expect(close).not.toHaveBeenCalled();
+    open();
+    const picker = screen.getByRole("dialog", { name: "附加远程文件" });
+    fireEvent.click(within(picker).getByRole("button", { name: "关闭" }));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  } finally {
+    close.mockRestore();
+  }
+});
 it("offers original photos and files, waits for actual receipt, preserves text and never sends", async () => {
   let finish!: (result: ReturnType<typeof receipt>) => void;
   vi.mocked(uploadRemoteFile).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));

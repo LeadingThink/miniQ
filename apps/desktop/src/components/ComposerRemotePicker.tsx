@@ -25,8 +25,13 @@ export function ComposerRemotePicker(props: {
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
   useEffect(() => {
-    if (props.open) { setError(""); setPath(""); dialog.current?.showModal(); }
-    else dialog.current?.close();
+    if (props.open) {
+      setError("");
+      setPath("");
+      dialog.current?.showModal();
+    } else if (dialog.current?.open) {
+      dialog.current.close();
+    }
   }, [props.open]);
   const select = (selection: ComposerUploadSelection) => {
     const result = props.onSelect(selection);

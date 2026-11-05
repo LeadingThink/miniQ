@@ -168,8 +168,11 @@ jobs:
         shell: bash
         run: |
           cargo test --release --locked -p miniq-daemon --target ${{ matrix.target }}
-          cargo test --release --locked -p miniq-memory --lib store::redo::tests --target ${{ matrix.target }}
+          cargo test --release --locked -p miniq-memory --lib store:: --target ${{ matrix.target }}
           cargo test --release --locked -p miniq-memory --test store_test --target ${{ matrix.target }}
+          cargo test --release --locked -p miniq-models --lib --target ${{ matrix.target }}
+          cargo test --release --locked -p miniq-protocol --lib memory_write:: --target ${{ matrix.target }}
+          cargo test --release --locked -p miniq-tools --lib native::tests --target ${{ matrix.target }}
           cargo test --release --locked -p miniq-tools --lib shell::tests::pipe_shells_have_no_console_window_and_preserve_output --target ${{ matrix.target }}
           cargo check --release --locked --workspace --target ${{ matrix.target }}
       - name: Build Windows terminal launcher
@@ -260,7 +263,9 @@ jobs:
         run: cargo check --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --target ${{ matrix.target }}
       - name: Test desktop lifecycle and data migration guards
         if: matrix.target != 'x86_64-apple-darwin'
-        run: cargo test --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --lib daemon::tests --target ${{ matrix.target }}
+        run: |
+          cargo test --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --lib daemon::tests --target ${{ matrix.target }}
+          cargo test --release --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --lib local_upload::tests --target ${{ matrix.target }}
       - name: Verify macOS microphone permission in signed application
         if: runner.os == 'macOS'
         working-directory: apps/desktop
