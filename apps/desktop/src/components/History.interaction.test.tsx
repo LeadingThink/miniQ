@@ -15,11 +15,14 @@ it("keeps historical failures collapsed, paginates all steps and can collapse ag
   render(<ToolGroup calls={Array.from({length:75}, (_, index) => ({...tool, id:`tool-${index}`}))} onRollback={vi.fn()} />);
   expect(document.querySelectorAll(".tool-step")).toHaveLength(0);
   const toggle = screen.getByRole("button", {name:/75 个执行步骤/});
+  expect(toggle.textContent).toBe("75 个执行步骤0 已完成");
   fireEvent.click(toggle);
   const firstPage = screen.getByRole("button", {name:/运行了 30 条命令/});
   expect(firstPage.getAttribute("aria-expanded")).toBe("false");
+  expect(firstPage.textContent).not.toContain("未成功");
   fireEvent.click(firstPage);
   expect(document.querySelectorAll(".tool-run-steps .tool-step")).toHaveLength(30);
+  expect(document.querySelectorAll(".tool-run-steps .tool-step.failed")).toHaveLength(30);
   fireEvent.click(screen.getByRole("button", {name:"下一页步骤"}));
   fireEvent.click(screen.getByRole("button", {name:"下一页步骤"}));
   fireEvent.click(screen.getByRole("button", {name:/运行了 15 条命令/}));

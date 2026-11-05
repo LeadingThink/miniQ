@@ -9,7 +9,6 @@
 .tool-segment > summary > svg { flex: none; }
 .tool-segment-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-segment-state { flex: none; }
-.tool-segment-state.failed { color: var(--danger); }
 .tool-segment-chevron { opacity: 0; transition: transform 0.15s ease, opacity 0.15s ease; }
 .tool-segment > summary:hover .tool-segment-chevron,
 .tool-segment > summary:focus-visible .tool-segment-chevron,

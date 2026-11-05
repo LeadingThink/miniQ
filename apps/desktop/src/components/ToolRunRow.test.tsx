@@ -25,11 +25,12 @@ it("merges mixed exploration, reveals all calls, and stops animating on completi
   expect(view.container.querySelectorAll(".tool-run-steps > [data-history-anchor]")).toHaveLength(3);
 });
 
-it("keeps a manually opened group open as calls append, and exposes failures while collapsed", () => {
-  const calls = [call("a", "file_read"), call("b", "file_read", "failed")];
+it.each(["failed", "rejected", "cancelled"] as const)("omits %s counts and keeps a manually opened group open as calls append", (status) => {
+  const calls = [call("a", "file_read"), call("b", "file_read", status)];
   const view = render(<ToolRunRow run={toolRuns(calls)[0]} {...props} />);
-  expect(screen.getByText("1 项未成功")).toBeTruthy();
+  expect(screen.queryByText(/未成功/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /已探索/ }));
+  expect(view.container.querySelector(`.tool-run-steps .tool-step.${status}`)).toBeTruthy();
   view.rerender(<ToolRunRow run={toolRuns([...calls, call("c", "file_read", "running")])[0]} {...props} />);
   expect(view.container.querySelectorAll(".tool-run-steps > [data-history-anchor]")).toHaveLength(3);
 });

@@ -82,9 +82,3 @@ export function mergeByTime<T extends { id: string; createdAt: string }>(current
   for (const record of incoming) records.set(record.id, record);
   return [...records.values()].sort((a, b) => compareTimestamps(a.createdAt, b.createdAt));
 }
-
-/** Tool calls that failed, were rejected or cancelled. */
-export function failedCount(summary: ProcessSummary): number {
-  const { failed = 0, rejected = 0, cancelled = 0 } = summary.statusCounts;
-  return failed + rejected + cancelled;
-}

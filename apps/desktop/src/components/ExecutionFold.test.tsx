@@ -45,7 +45,7 @@ it("keeps failures and pending approvals collapsed until clicked", () => {
       <p>失败明细</p>
     </ExecutionFold>,
   );
-  expect(screen.getByRole("button", { name: /1 项操作失败/ }).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getByRole("button", { name: "已执行 2 项操作 · 用时 1分20秒" }).getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText("失败明细")).toBeNull();
 
   rerender(
@@ -86,14 +86,14 @@ it("does not reopen details when a running operation fails after manual collapse
   expect(screen.getByText("操作明细")).toBeTruthy();
   fireEvent.click(toggle);
   rerender(<ExecutionFold calls={[call("a", "failed")]} active={false}><p>操作明细</p></ExecutionFold>);
-  expect(screen.getByRole("button", { name: /1 项操作失败/ }).getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getByRole("button", { name: "已执行 1 项操作" }).getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText("操作明细")).toBeNull();
 });
 
 it("prefers the daemon turn summary over locally derived counts", () => {
   const timing: TurnTiming = {
     ...done,
-    summary: { toolCalls: 12, failedToolCalls: 0, filesChanged: 3, durationMs: 5_000, status: "completed" },
+    summary: { toolCalls: 12, failedToolCalls: 2, filesChanged: 3, durationMs: 5_000, status: "completed" },
   };
   render(
     <ExecutionFold calls={[call("a", "succeeded")]} timing={timing} active={false}>

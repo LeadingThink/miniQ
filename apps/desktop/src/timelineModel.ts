@@ -118,7 +118,6 @@ export function toolCounts(calls: ToolCall[]) {
   return {
     completed: calls.filter((call) => call.status === "succeeded").length,
     running: calls.filter((call) => ["running", "pending", "waiting_approval"].includes(call.status)).length,
-    failed: calls.filter((call) => ["failed", "rejected", "cancelled"].includes(call.status)).length,
     attention: calls.some((call) => call.status === "failed" || call.status === "waiting_approval"),
   };
 }

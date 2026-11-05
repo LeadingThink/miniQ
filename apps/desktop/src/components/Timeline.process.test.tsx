@@ -101,7 +101,7 @@ it("renders a folded turn from its summary and fetches nothing until it is opene
   const server = vi.fn<Server>(async (_turn, before) => serverPage(before));
   render(<Harness server={server} />);
   const summaryRow = fold().querySelector("summary")!;
-  expect(summaryRow.textContent).toBe("已工作 1分38秒 · 5 条记录 · 1 个失败");
+  expect(summaryRow.textContent).toBe("已工作 1分38秒 · 5 条记录");
   expect(screen.getByText("第一个回答")).toBeTruthy();
   expect(fold().querySelector("[data-lazy-body]")).toBeNull();
   expect(server).not.toHaveBeenCalled();

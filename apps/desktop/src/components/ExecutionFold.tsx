@@ -37,7 +37,6 @@ export function ExecutionFold({
     : `已执行 ${data.steps} 项操作`];
   if (active && data.waitingApproval) parts.push("等待确认");
   else if (active && attention) parts.push("等待回复");
-  if (data.failed) parts.push(`${data.failed} 项操作失败`);
   if (data.filesChanged) parts.push(`修改 ${data.filesChanged} 个文件`);
   if (!running && data.durationMs !== undefined) parts.push(`用时 ${compactDuration(data.durationMs)}`);
   const liveStartedAt = running && timing?.status === "running" ? timing.startedAt : undefined;

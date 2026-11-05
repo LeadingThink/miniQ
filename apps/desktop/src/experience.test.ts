@@ -167,7 +167,7 @@ describe("long task evidence", () => {
         tool("3", 3, "waiting_approval"),
         tool("4", 4, "failed"),
       ])
-    ).toEqual({ completed: 1, running: 2, failed: 1, attention: true });
+    ).toEqual({ completed: 1, running: 2, attention: true });
   });
   it.each([false, 0, "", null])("keeps non-truthy payload %s", (value) => {
     expect(payloadText(value)).toBe(

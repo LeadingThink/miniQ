@@ -9,19 +9,20 @@ afterEach(cleanup);
 const call = (id: string, toolName: string, input: unknown, status: ToolCall["status"] = "succeeded"): ToolCall =>
   ({ id, sessionId: "s", toolName, input, status, createdAt: "2026-10-14T00:00:00Z" });
 
-it("renders a closed one-line summary and mounts steps only when opened", async () => {
-  const calls = [call("a", "file_read", { path: "a.ts" }), call("b", "shell_run", { command: "npm test" }, "failed")];
+it.each(["failed", "rejected", "cancelled"] as const)("omits %s counts from the closed summary and mounts steps only when opened", async (status) => {
+  const calls = [call("a", "file_read", { path: "a.ts" }), call("b", "shell_run", { command: "npm test" }, status)];
   const { container } = render(<ToolSegment calls={calls} expanded={false} />);
   const segment = container.querySelector<HTMLDetailsElement>(".tool-segment")!;
   expect(segment.open).toBe(false);
   expect(segment.dataset.historyAnchor).toBe("tool:a");
   expect(segment.dataset.searchRecords).toBe("tool:a tool:b");
   expect(segment.querySelector(".tool-segment-label")?.textContent).toBe("已探索 1 项，运行了 1 条命令");
-  expect(segment.querySelector(".tool-segment-state.failed")?.textContent).toBe("1 项未成功");
+  expect(segment.querySelector("summary")?.textContent).toBe("已探索 1 项，运行了 1 条命令");
   expect(segment.querySelector("[data-lazy-body]")).toBeNull();
   fireEvent.click(segment.querySelector("summary")!);
   await waitFor(() => expect(segment.querySelector("[data-lazy-body]")).toBeTruthy());
   expect(segment.querySelector('[data-history-anchor="tool:b"]')).toBeTruthy();
+  expect(segment.querySelector(`.tool-step.${status}`)).toBeTruthy();
 });
 
 it("names the active call and starts open when groups are expanded", () => {

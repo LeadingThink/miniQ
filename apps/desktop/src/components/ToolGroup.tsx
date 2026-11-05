@@ -71,7 +71,6 @@ export function ToolGroup({
         {automationSummary && <span className="group-automation">{automationSummary}</span>}
         <span>{counts.completed} 已完成</span>
         {counts.running > 0 && <span className="group-running">{counts.running} 执行中</span>}
-        {counts.failed > 0 && <span className="group-failed">{counts.failed} 未成功</span>}
         <ChevronRight size={14} className={open ? "open" : ""} />
       </button>}
       {open && (

@@ -134,7 +134,8 @@ describe("semantic step views", () => {
     render(<ExecutionFold calls={calls} active={false}>
       <ToolGroup calls={calls} onRollback={vi.fn()} />
     </ExecutionFold>);
-    const fold = screen.getByRole("button", { name: /1 项操作失败/ });
+    const fold = screen.getByRole("button", { name: /^已执行 \d+ 项操作/ });
+    expect(fold.textContent).not.toContain("失败");
     const stepExists = () => screen.queryByRole("button", { name: /运行了\s*rg --version/ }) !== null;
     const step = () => screen.getByRole("button", { name: /运行了\s*rg --version/ });
     expect(stepExists()).toBe(false);

@@ -35,7 +35,7 @@ export function ToolRunRow({ run, onRollback, client, focusId, stepExpanded, exp
     if (focused || expanded) setOpen(true);
   }, [focused, expanded]);
   const summary = toolRunSummary(run);
-  const failed = run.calls.filter((call) => FAILED.has(call.status)).length;
+  const failed = run.calls.some((call) => FAILED.has(call.status));
   const activeTitle = active ? toolStepTitle(active, true) : null;
   const animating = run.calls.some(call => call.status === "running" || call.status === "pending");
   const exploring = ["read", "list", "codeSearch", "exploration"].includes(run.kind ?? "");
@@ -65,7 +65,6 @@ export function ToolRunRow({ run, onRollback, client, focusId, stepExpanded, exp
           {active?.status === "waiting_approval" && (
             <span className="tool-step-state waiting_approval">等待确认</span>
           )}
-          {failed > 0 && <span className="tool-step-state failed">{failed} 项未成功</span>}
           {active ? (
             <LiveElapsed startedAt={active.createdAt} className="tool-duration" />
           ) : (

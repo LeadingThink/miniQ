@@ -7,8 +7,6 @@ import { ToolRunRow } from "./ToolRunRow";
 import { isActiveCall, toolRuns, toolSegmentSummary, toolStepTitle } from "./toolSummary";
 import "./ToolSegment.css";
 
-const FAILED = new Set(["failed", "rejected", "cancelled"]);
-
 /** A contiguous run of tool calls as one quiet line; steps mount only when opened. */
 export function ToolSegment({ calls, expanded, client, onRollback }: {
   calls: ToolCall[];
@@ -21,7 +19,6 @@ export function ToolSegment({ calls, expanded, client, onRollback }: {
     if (expanded) setOpen(true);
   }, [expanded]);
   const active = [...calls].reverse().find(isActiveCall);
-  const failed = calls.filter((call) => FAILED.has(call.status)).length;
   const title = active ? toolStepTitle(active, true) : null;
   const label = active
     ? `${title?.verb ?? toolActionLabel(active.toolName, true, active.input)} ${title?.target ?? toolInputSummary(active)}`.trim()
@@ -36,7 +33,6 @@ export function ToolSegment({ calls, expanded, client, onRollback }: {
       <SquareTerminal size={14} aria-hidden="true" />
       <span className={`tool-segment-label${active && !waiting ? " tool-run-shimmer" : ""}`} title={label}>{label}</span>
       {waiting && <span className="tool-segment-state">等待确认</span>}
-      {failed > 0 && <span className="tool-segment-state failed">{failed} 项未成功</span>}
       <ChevronDown className="tool-segment-chevron" size={13} aria-hidden="true" />
     </summary>
     {open && <div className="tool-segment-body" data-lazy-body="">
